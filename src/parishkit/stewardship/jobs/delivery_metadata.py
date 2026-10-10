@@ -79,26 +79,25 @@ DELIVERY_SORTING = Sorting.by_column(
 # Every character Python's str.strip() removes, so a name trimmed in SQL
 # matches family_names.py exactly (as directory_reports.sql's name_trim).
 _WHITESPACE = "".join(chr(code) for code in range(0x110000) if chr(code).isspace())
-# The Family name sort keys of one outbox message, read from the current
+# The Family name sort keys of one listed row, read from the current
 # ParishSoft snapshot by its unique (snapshot, source_key) indexes: the
 # surname (family_names.family_display_name, "Family" without one), then the
 # whole "Squyres, Tracy and Jeff" name (family_names.family_heads_name), the
 # string with_family_names shows. Both are lowercased, as the Family codes
-# directory orders them (directory_reports.sql builds the same name). The
-# email stores no name, so this runs per message, and only when the name
-# sort is chosen: a few index lookups and small JSON parses each, however
-# large the outbox grows. Computing the keys once per Family (a grouped
-# derived table joined in) would repeat less work for a Family with many
-# emails, but a queryset annotation cannot join one without raw SQL for the
-# whole listing; at a parish's few emails per Family the repeats are cheap,
-# so the correlated form stays. NULL (sorted last) for an Administrator report or
-# a Family the snapshot lacks. {result} is the selected expression and
-# {family} the outer query's FamilyCampaign id column.
+# directory orders them (directory_reports.sql builds the same name). Neither
+# an email nor a refusal stores a name, so this runs per row, and only when
+# the name sort is chosen: a few index lookups and small JSON parses each,
+# however large the outbox grows. Computing the keys once per Family (a
+# grouped derived table joined in) would repeat less work for a Family with
+# many emails, but a queryset annotation cannot join one without raw SQL for
+# the whole listing; at a parish's few emails per Family the repeats are
+# cheap, so the correlated form stays. NULL (sorted last) for an
+# Administrator report or a Family the snapshot lacks. {result} is the
+# selected expression and {duid} the outer query's Family DUID expression.
 _FAMILY_NAME_SQL = """(SELECT {result}
-FROM stewardship_family_campaign fc
-JOIN stewardship_source_current sc ON sc.singleton
+FROM stewardship_source_current sc
 JOIN stewardship_snapshot_family sf
-    ON sf.snapshot_id=sc.snapshot_id AND sf.source_key=fc.family_duid::text
+    ON sf.snapshot_id=sc.snapshot_id AND sf.source_key=({duid})::text
 JOIN stewardship_source_family sp ON sp.id=sf.payload_id
 CROSS JOIN LATERAL (SELECT sp.canonical::jsonb AS doc, %s::text AS ws) d
 CROSS JOIN LATERAL (SELECT coalesce(
@@ -107,7 +106,11 @@ CROSS JOIN LATERAL (SELECT coalesce(
     -- "first last" when there is no last name: the first name alone.
     nullif(btrim(d.doc->>'firstName',d.ws),''),
     'Family') AS surname) s
-WHERE fc.id={family})"""
+WHERE sc.singleton)"""
+# An outbox message's Family DUID: its FamilyCampaign's, by primary key
+# (NULL for an Administrator report, which has no Family).
+OUTBOX_FAMILY_DUID = """(SELECT fc.family_duid FROM stewardship_family_campaign fc
+WHERE fc.id=stewardship_outbox_message.family_id)"""
 # The heads after the surname: each active head in DUID order, by first name
 # when they share the surname and in full otherwise, blanks skipped, joined
 # "A", "A and B", "A, B and C" (family_names.name_series).
@@ -133,15 +136,17 @@ _HEADS_SQL = """(SELECT CASE WHEN cardinality(parts)<3
         WHERE m.doc->'active'='true'::jsonb) heads)"""
 
 
-def with_name_keys(selected, family="stewardship_outbox_message.family_id"):
-    """Annotate the Family name sort keys DELIVERY_SORTING's name orders by.
+def with_name_keys(selected, duid=OUTBOX_FAMILY_DUID):
+    """Annotate the Family name sort keys a name sort orders by.
 
-    ``family`` is the SQL column holding each row's FamilyCampaign id: the
-    outbox message's by default (tests also key FamilyCampaign rows).
+    ``family_sort_surname`` and ``family_sort_name`` back Outgoing mail's
+    and Refused addresses' name columns (#931, #935). ``duid`` is the SQL
+    expression giving each row's Family DUID: an outbox message's by
+    default, or a column such as a refusal's ``family_duid``.
     """
-    surname = _FAMILY_NAME_SQL.format(result="lower(s.surname)", family=family)
+    surname = _FAMILY_NAME_SQL.format(result="lower(s.surname)", duid=duid)
     name = _FAMILY_NAME_SQL.format(
-        result=f"lower(s.surname||coalesce(', '||{_HEADS_SQL},''))", family=family
+        result=f"lower(s.surname||coalesce(', '||{_HEADS_SQL},''))", duid=duid
     )
     return selected.annotate(
         family_sort_surname=RawSQL(surname, (_WHITESPACE,), output_field=TextField()),

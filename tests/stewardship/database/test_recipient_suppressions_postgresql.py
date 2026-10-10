@@ -96,10 +96,17 @@ def refused(
     address="valid@example.org",
     intended=None,
     routed=None,
+    duid=1,
 ):
-    """Record a synthetic provider refusal through real task/outbox state edges."""
+    """Record a synthetic provider refusal, of Family ``duid``'s ``address``,
+    through real task/outbox state edges."""
     status = email(
-        harness, mode=mode, address=address, intended=intended, routed=routed
+        harness,
+        mode=mode,
+        address=address,
+        intended=intended,
+        routed=routed,
+        duid=duid,
     )
     failed = change(
         submit(status),

@@ -68,8 +68,13 @@ def test_refused_addresses_name_the_family_and_link_the_email(page, component_or
         "Address",
         "Email",
     ]
-    # Family is a plain heading; the others sort on the server.
-    assert table.locator("thead th").nth(1).locator(".sort-link").count() == 0
+    # Email is a plain heading; the others, Family included, sort on the
+    # server (a table with a Family name and DUID sorts on both, #932).
+    sortable = [
+        table.locator("thead th").nth(column).locator(".sort-link").count()
+        for column in range(5)
+    ]
+    assert sortable == [1, 1, 1, 1, 0]
     row = table.locator("tbody tr").first
     assert row.locator("th").inner_text() == "Castellanos, Maximiliana and Bartholomew"
     assert row.locator("td").nth(1).inner_text() == "12345"

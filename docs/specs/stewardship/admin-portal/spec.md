@@ -3570,8 +3570,13 @@ refusal's ID shows only under Technical details on its own page, though
 the command line can still sort by it (`--sort id`). The Family's name is
 read as Outgoing mail reads it (the latest ParishSoft data, for the shown
 page only, at most three small queries) and shows "Not in current
-ParishSoft data" when that data no longer has the Family; the Family and
-Email columns do not sort. The address opens the refusal's own page, and
+ParishSoft data" when that data no longer has the Family. Family sorts on
+the server as Outgoing mail's does (sort token `name`: surname, then the
+whole shown name, then Family DUID), with Families no longer in the data
+last in both directions; Family DUID sorts too (token `duid`), since a
+table that shows a Family name and a Family DUID sorts on both
+([#932](https://github.com/epiphany40223/parishkit/issues/932)). Only the
+Email column does not sort. The address opens the refusal's own page, and
 the Email column's **Open email** opens the email whose delivery recorded
 it. A link above the list leads back to Outgoing mail. The two pages stay
 separate: a refusal is per address and outlives the email that recorded

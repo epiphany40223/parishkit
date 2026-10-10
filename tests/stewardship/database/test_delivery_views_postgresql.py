@@ -28,6 +28,7 @@ from parishkit.stewardship.jobs.delivery_metadata import (
 )
 from parishkit.stewardship.jobs.delivery_reads import (
     read_listing,
+    read_refusals,
     with_family_names,
     with_refusal_counts,
 )
@@ -348,7 +349,7 @@ def test_family_name_sort_keys_match_the_shown_names(response_service):
     current = SourceCurrent.objects.get().snapshot_id
     keyed = with_name_keys(
         FamilyCampaign.objects.filter(campaign=response_service.campaign),
-        family="stewardship_family_campaign.id",
+        duid="stewardship_family_campaign.family_duid",
     )
     with task_login(ServiceRole.WEB, exact=True):
         rows = list(
@@ -425,6 +426,39 @@ def test_tied_family_names_keep_each_familys_emails_together(response_service):
         ):
             rows = read_listing(QueryDict(f"sort={sort}"))["rows"]
             assert [row["id"] for row in rows] == newest[first] + newest[second], sort
+
+
+def test_refused_addresses_sort_by_family_name(response_service, google):
+    """#935: Refused addresses' Family column sorts on the server by the
+    Family's name (surname, whole name, Family DUID, then address), so each
+    Family's addresses stay together, as Outgoing mail's Family column."""
+    harness = activate_response_service(response_service)
+    for duid, mailbox in (
+        (1, "b@example.org"),
+        (2, "c@example.org"),
+        (1, "a@example.org"),
+    ):
+        remember(refused(harness, address=mailbox, duid=duid), address=mailbox)
+    snapshot = SourceCurrent.objects.values_list("snapshot_id", flat=True).first()
+    assert snapshot_family_names(snapshot, [1, 2]) == {
+        1: "Example, Member",
+        2: "Empty",
+    }
+
+    def addresses(sort):
+        """The refused addresses in the order one page lists them."""
+        rows = read_refusals(QueryDict(f"sort={sort}"))["rows"]
+        return [row["address"] for row in rows]
+
+    with task_login(ServiceRole.WEB, exact=True):
+        assert addresses("name") == ["c@example.org", "a@example.org", "b@example.org"]
+        assert addresses("-name") == ["b@example.org", "a@example.org", "c@example.org"]
+        assert addresses("duid") == ["a@example.org", "b@example.org", "c@example.org"]
+        browser, _ = signed_in()
+        html = browser.get("/admin/mail/refusals/", {"sort": "name"}).content.decode()
+    heading = html.split('aria-sort="ascending"')[1].split("</th>")[0]
+    assert ">Family<" in heading
+    assert html.index("c@example.org") < html.index("a@example.org")
 
 
 def test_outgoing_mail_and_refused_addresses_lead_to_each_other(

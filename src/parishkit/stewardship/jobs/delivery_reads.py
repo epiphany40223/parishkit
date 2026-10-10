@@ -19,18 +19,30 @@ from django.utils.translation import gettext_lazy as _
 from parishkit.stewardship.web.contracts import PageWindow, expected_version, filters
 from parishkit.stewardship.web.tables import Sorting, bounded_count, read_window
 
-from .delivery_metadata import DELIVERY_SORTING, FIELDS, family_duid, listing, messages
+from .delivery_metadata import (
+    DELIVERY_SORTING,
+    FIELDS,
+    family_duid,
+    listing,
+    messages,
+    with_name_keys,
+)
 
-# Every Refused addresses column but Family and Email sorts on the server;
-# the default keeps the old Family DUID, then address, order. id has no
-# column (the refusal's own page shows it under Technical details) but keeps
-# its sort for the command line's --sort id, and is the unique tiebreak. No
-# index orders these keys (the recipient_refusal_identity index leads with
+# Every Refused addresses column but Email sorts on the server; the default
+# keeps the old Family DUID, then address, order. Family (name) sorts as
+# Outgoing mail's does: surname, then the whole shown name, then Family DUID
+# (so each Family's addresses stay together) and address, read from the latest
+# ParishSoft data (delivery_metadata.with_name_keys), with Families that
+# data no longer has last in both directions. id has no column (the
+# refusal's own page shows it under Technical details) but keeps its sort
+# for the command line's --sort id, and is the unique tiebreak. No index
+# orders these keys (the recipient_refusal_identity index leads with
 # organization_id, then family_duid), so each is a top-N sort over the
 # unresolved refusals, a small set (one row per refused Family address).
 REFUSAL_SORTING = Sorting.by_column(
     {
         "address": ("address",),
+        "name": ("family_sort_surname", "family_sort_name", "family_duid", "address"),
         "duid": ("family_duid", "address"),
         "refused": ("created_at",),
         "id": ("id",),
@@ -394,6 +406,8 @@ def read_refusals(parameters):
     if values.get("duid"):
         query = query.filter(family_duid=family_duid(values["duid"]))
     total = bounded_count(query)
+    if REFUSAL_SORTING.tokens[values["sort"]][0] == "name":
+        query = with_name_keys(query, duid="stewardship_recipient_refusal.family_duid")
     window, rows, has_next = read_window(
         window,
         REFUSAL_SORTING.order(query, values["sort"]).values(

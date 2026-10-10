@@ -4,7 +4,7 @@
 <h1>{% translate "Refused addresses" %}</h1>
 {% aboutpage "refused-addresses" %}<p>{% translate "A refused address is one the mail service rejected permanently, so the system stops sending campaign email to it for that Family. Check that the mailbox works again before clearing a refusal. Clearing does not send any email." %}</p>
 <p>{% translate "Each row shows when the address was refused, the Family's name from the latest ParishSoft data (as in the Family directory) and, in its own column, the Family DUID. Select the address to check it and clear the refusal. In the Email column, Open email shows the email whose delivery recorded the refusal; that email may still show Delivered, because another address of the Family accepted it." %}</p>
-<p>{% translate "On Outgoing mail, each email with a refused address that is still being skipped is marked, and the mark leads here, showing only that Family's refused addresses. The name column does not sort; sort by Family DUID to keep each Family's addresses together." %}</p>{% endaboutpage %}
+<p>{% translate "On Outgoing mail, each email with a refused address that is still being skipped is marked, and the mark leads here, showing only that Family's refused addresses. The Family and Family DUID columns both sort, and either keeps each Family's addresses together; Families the latest ParishSoft data no longer has sort last." %}</p>{% endaboutpage %}
 <p><a href="{% url 'admin:deliveries' %}">{% translate "See all outgoing mail" %}</a></p>
 <form id="table-filters" data-table-sync method="get" class="filter-bar">
   <div class="short"><label for="family-duid">{% translate "Exact Family DUID" %}</label>
@@ -20,7 +20,7 @@
   <caption id="refusal-table-caption">{% translate "Unresolved refused addresses" %}</caption>
   <thead><tr>
     {% translate "Refused at" as heading %}{% sort_heading table "refused" heading %}
-    <th scope="col">{% translate "Family" %}</th>
+    {% translate "Family" as heading %}{% sort_heading table "name" heading %}
     {% translate "Family DUID" as heading %}{% sort_heading table "duid" heading "numeric" %}
     {% translate "Address" as heading %}{% sort_heading table "address" heading %}
     <th scope="col">{% translate "Email" %}</th>
