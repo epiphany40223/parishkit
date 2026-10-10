@@ -174,6 +174,11 @@ def test_native_page_and_downloads(response_service, google, settings):
         book = load_workbook(io.BytesIO(body))
         assert book.sheetnames == ["Members", "Families"]
         assert book["Members"]["D2"].value == "Painter; Other: Organ"
+        # The Member DUID column comes last, as the page shows it (#960).
+        assert [book["Members"]["G1"].value, book["Members"]["G2"].value] == [
+            "Member DUID",
+            "3",
+        ]
         assert search(browser, export, {"format": "pdf"})[0].status_code == 400
         # A talent filter no longer offered (here, never offered) reads as
         # "Everything": the tables, the re-posted forms and the download.

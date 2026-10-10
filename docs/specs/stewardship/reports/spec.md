@@ -1276,11 +1276,13 @@ Families who cannot attend Mass or prayer services (see
 [Family portal](../parishioner-portal/spec.md#talents-and-cannot-participate)).
 Testing responses are excluded. The Members table shows each listed Member's
 DUID in its own sortable column; a Member the Family added on the form has none
-yet, reads "New Member" and sorts last. Filters are a name or Family DUID search and
-one choice of everything, cannot participate, cannot attend, or a single
-talent; a summary counts each. The filtered result downloads immediately as CSV
-(Members, then Families) or XLSX (one sheet each), in a chosen display
-timezone. A download is rendered in memory on the web connection under the
+yet, reads "New Member" and sorts last. Filters are
+a name or Family DUID search and one choice of everything, cannot participate,
+cannot attend, or a single talent; a summary counts each. The filtered result
+downloads immediately as CSV (Members, then Families) or XLSX (one sheet each),
+in a chosen display timezone; the Members table ends with the Member DUID
+column, blank for a new Member.
+A download is rendered in memory on the web connection under the
 interactive campaign read guard, not through the dedicated download pool, whose
 login cannot read the response and source data the report needs. Viewing and
 downloading are audited with the row count, the Show choice (`report_filter`:
