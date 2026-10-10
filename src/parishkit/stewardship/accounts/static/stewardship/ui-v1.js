@@ -2558,6 +2558,9 @@
         paragraph.append(link);
       });
     }
+    // While the campaign admits no test mail, the server sends why in place
+    // of the test address (#923), so the page never links a dead end.
+    if (option.dataset.testNote) line(option.dataset.testNote);
   };
 
   // Repeating reminders (#469). expandRecurrence turns a repeat rule into

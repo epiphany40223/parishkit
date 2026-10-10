@@ -18,7 +18,8 @@ Under the email list, data-email-summary is where ui-v1.js describes the
 chosen email from its option's data- attributes (#446,
 schedule_forms.email_details): the start of its text, the saved schedules
 that send it and, on Dates and mail schedules, links to preview, test and
-edit it. data-schedule-label names this saved schedule (on every page that
+edit it (while the campaign admits no test mail, a note saying why in place
+of the test link, #923). data-schedule-label names this saved schedule (on every page that
 lists schedules), so the summary can tell whether other schedules share the
 email. The script adds the summary's id to the list's aria-describedby.
 {% endcomment %}<fieldset class="panel" data-schedule-row data-schedule-fields="{{ form.field_rules }}"{% if form.schedule_label %} data-schedule-label="{{ form.schedule_label }}"{% endif %}{% with row=form.schedule_row %}{% if row %} id="{{ row.anchor }}" tabindex="-1" data-schedule-editor{% if row.read_only %} data-schedule-past{% endif %}{% if not row.open %} hidden{% endif %}{% endif %}{% endwith %}><legend>{% if form.schedule_row %}{{ form.schedule_row.label }}{% elif form.initial.id %}{% translate "Schedule" %} <span data-schedule-number>{{ number|number }}</span>{% else %}{% translate "New schedule" %}{% endif %}</legend>

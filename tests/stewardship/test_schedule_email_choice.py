@@ -2,7 +2,11 @@
 
 import json
 from html import unescape
+from types import SimpleNamespace
 
+import pytest
+
+from parishkit.stewardship.accounts.campaign_mail import admits_test_mail
 from parishkit.stewardship.accounts.schedule_forms import (
     Schedules,
     email_choices,
@@ -129,6 +133,48 @@ def test_options_carry_the_summary_and_links_only_when_asked():
     # described as well.
     blank = str(formset(rows, saved(rows), email_links=True).empty_form)
     assert "data-edit-url" in blank
+
+
+def test_no_test_link_while_the_campaign_admits_no_test_mail():
+    """A live campaign's options say why there is no test, not link one (#923)."""
+    rows = emails()
+    initial, first, second = rows
+    linked = unescape(
+        str(
+            formset(rows, saved(rows), email_links=True, test_mail=False).forms[1][
+                "template_version"
+            ]
+        )
+    )
+    assert "data-test-url" not in linked
+    assert (
+        'data-test-note="Test emails can be sent only while the campaign is being '
+        'tested, or while live email delivery is paused."' in linked
+    )
+    # Editing the email still works, so its link stays.
+    assert (
+        f'data-edit-url="/admin/campaign/content/email/reminder/{first["id"]}/"'
+        in linked
+    )
+
+
+@pytest.mark.parametrize(
+    ("mode", "state", "paused", "expected"),
+    [
+        ("testing", "draft", False, True),
+        ("testing", "scheduled", False, False),
+        ("production", "active", False, False),
+        ("production", "active", True, True),
+        ("production", "scheduled", True, True),
+        ("production", "closed", True, True),
+        ("production", "archived", True, False),
+        ("production", "draft", True, False),
+    ],
+)
+def test_test_mail_follows_the_sql_admission(mode, state, paused, expected):
+    """The page check mirrors stewardship_campaign_mail_live_v1's lifecycle part."""
+    row = SimpleNamespace(state=state, delivery_paused=paused)
+    assert admits_test_mail(mode, row) is expected
 
 
 def test_excerpt_is_one_line_cut_at_a_word():

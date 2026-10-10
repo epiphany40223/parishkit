@@ -496,8 +496,10 @@ def test_intake_refuses_production_ineligible_families_and_stale_sign_in(
         assert browser.get(path).status_code == 403
         page = browser.get(sample)
     # An unpaused Production campaign has no fictional sample either, so the
-    # page is refused as stale and offers no chosen-Family link anywhere.
-    assert page.status_code == 409 and b"/families" not in page.content
+    # page is refused, saying why rather than asking for a reload (#923), and
+    # offers no chosen-Family link anywhere.
+    assert page.status_code == 404 and b"/families" not in page.content
+    assert page.json()["refusal"]["link"]["url"] == reverse("admin:delivery_control")
 
 
 def test_at_most_ten_tests_may_be_in_progress_per_campaign(family_test, monkeypatch):
