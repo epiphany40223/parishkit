@@ -89,3 +89,19 @@ def eventually(page, expression, expected=True, *, arg=None, timeout=30000):
         if time.monotonic() > deadline:
             raise AssertionError(f"{expression!r} returned {value!r}, not {expected!r}")
         page.wait_for_timeout(50)
+
+
+def painted(page):
+    """Wait until the page has drawn two more frames.
+
+    After typing, Firefox scrolls the focused field's caret into view at its
+    next refresh, not at once: a test that scrolls, or measures where things
+    sit, right after ``fill`` races that deferred scroll and sees the page
+    jump by up to the whole viewport. Two frames let it land first. A user
+    cannot type and scroll in the same frame, so this changes no behaviour
+    under test.
+    """
+    page.evaluate(
+        "new Promise((done) =>"
+        " requestAnimationFrame(() => requestAnimationFrame(done)))"
+    )

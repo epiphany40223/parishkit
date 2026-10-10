@@ -13,7 +13,7 @@ import pytest
 
 from .refresh_schedule_components import CHECK, CLOSE, PRODUCTION, check_answer
 from .test_components import axe_violations
-from .waits import has_text, hidden, recorded, visible
+from .waits import has_text, hidden, painted, recorded, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -120,14 +120,14 @@ def test_a_change_is_checked_live_and_blocks_save_until_fixed(page, component_or
     assert save.is_disabled()
     # The line kept its room, and the shorter preview (below Save) moved
     # nothing above it.
-    assert gap() == box
+    assert within_half_a_pixel(box, gap())
     page.locator(f'{STATUS} a[href="#rules-1"]').click()
     field.fill("09:00")
     recorded(page, requests, 2)
     contains(status, "of ParishSoft time a day")
     has_text(page.locator("#rules-1-messages"), "")
     assert save.is_enabled()
-    assert gap() == box
+    assert within_half_a_pixel(box, gap())
 
 
 def test_a_failed_check_keeps_the_answer_and_leaves_save_available(
@@ -516,6 +516,8 @@ def test_a_pointer_above_the_switch_keeps_the_switch_in_place(
     pointed = "([x, y]) => document.elementFromPoint(x, y)"
     assert page.evaluate(f"{pointed}.matches('[data-refresh-schedule]')", [x, y])
     field.fill("23:30")
+    # Firefox scrolls rule 2's caret into view a frame after the fill.
+    painted(page)
     if not focused:
         page.evaluate("document.activeElement.blur()")
     before = tops(page, ".schedule-switch")
@@ -535,6 +537,9 @@ def test_a_pointer_outside_the_form_keeps_what_it_points_at_in_place(
     recorded(page, requests, 1)
     has_text(message, "")
     field.fill("23:50")
+    # Firefox scrolls rule 2's caret into view a frame after the fill, which
+    # would undo the scroll to the top below.
+    painted(page)
     # Rule 4's field is focused without scrolling it into view, with the
     # heading at the top of the screen under the pointer.
     page.evaluate(

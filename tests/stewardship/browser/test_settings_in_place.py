@@ -31,7 +31,7 @@ from .settings_components import (
     TALENTS,
 )
 from .test_in_place import MARK, MARKED, count_requests
-from .waits import has_attribute, has_text, hidden, recorded, visible
+from .waits import has_attribute, has_text, hidden, painted, recorded, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -467,6 +467,9 @@ def test_a_share_apply_ends_at_the_applied_version(page, component_origin):
     assert page.locator(DIGEST).input_value() == "a" * 64
     recorded(page, held, 1)
     page.locator("#id_options-1-label").fill("Typed while applying")
+    # Firefox scrolls the caret into view a frame after the fill; measure
+    # once it has.
+    painted(page)
     before = page.evaluate(FORM_TOP)
     held[0].continue_()
     visible(page.get_by_role("heading", name="Applied: your change is saved"))
