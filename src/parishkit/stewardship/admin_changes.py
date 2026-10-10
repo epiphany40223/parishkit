@@ -2,7 +2,9 @@
 
 ``schedule preview`` and ``schedule confirm`` change mail schedules and the
 draft campaign dates as the Dates and mail schedules page does, through the same
-functions (``accounts.schedule_changes``, ``admin_editing.confirm_intent``):
+functions (``accounts.schedule_changes``, ``admin_editing.confirm_intent``),
+and ``config request cancel`` cancels a live end-date change that has not
+applied (#944):
 
 - ``schedule preview`` admits the caller as the page's form post does
   (recording activity, so it needs a full-scope session), binds the operator's
@@ -30,7 +32,9 @@ A saved schedule named by ``id`` keeps every field the document leaves out;
 ``delete`` removes it; an entry without ``id`` adds a schedule. Saved
 schedules the document does not name stay as they are: as on the page,
 omission never removes one. ``window`` (any of its fields) changes the
-campaign's dates only while they may still change.
+campaign's dates only while they may still change; for a live campaign
+(scheduled or open in Production, #912) only ``end_date`` may change, and
+confirming it binds the exceptional end-date intent as the page does.
 """
 
 import json
@@ -153,7 +157,7 @@ def _window_initial(campaign):
     return initial
 
 
-def form_data(changes, previous, campaign, *, editable, base_digest):
+def form_data(changes, previous, campaign, *, editable, base_digest, end_only=False):
     """The page's posted form for this change document.
 
     ``previous`` is the campaign's saved schedule records and ``campaign``
@@ -162,6 +166,8 @@ def form_data(changes, previous, campaign, *, editable, base_digest):
     page's forms read exactly what a browser would have posted. A window
     change while the dates may not change is refused as the page refuses one
     (``StaleRecordError``); values equal to the current ones are no change.
+    ``end_only`` (a live campaign, #912) admits a change to the end date
+    alone.
     Returns ``(data, identifiers)``, the latter naming each form row for
     field errors.
     """
@@ -208,8 +214,13 @@ def form_data(changes, previous, campaign, *, editable, base_digest):
     initial = _window_initial(campaign)
     window = initial | changes["window"]
     if not editable:
-        if window != initial:
+        changed = {name for name in window if window[name] != initial.get(name)}
+        # A live campaign's end date alone may still change (#912).
+        if changed - ({"end_date"} if end_only else set()):
             raise StaleRecordError("Campaign dates are structurally locked.")
+        if end_only:
+            # The page posts its one open window field, changed or not.
+            data["window-end_date"] = window["end_date"]
         return data, identifiers
     if set(window) - set(initial):
         raise InvalidChange(
@@ -395,7 +406,11 @@ def preview_schedule(caller, service, campaign_id, *, expected_version, changes)
     from .accounts.content_views import _records
     from .accounts.schedule_changes import build_preview, preview_salt
     from .accounts.schedule_forms import Schedules, ScheduleWindow, schedule_action
-    from .accounts.schedule_reads import campaign_schedules, schedule_state
+    from .accounts.schedule_reads import (
+        campaign_schedules,
+        live_end_at,
+        schedule_state,
+    )
     from .campaigns.work_locks import work_transaction
 
     actor = _admit_change(caller, service)
@@ -413,19 +428,24 @@ def preview_schedule(caller, service, campaign_id, *, expected_version, changes)
                 raise NotAvailable("No such campaign.") from None
             previous = campaign.active_configuration.values
             saved = campaign_schedules(state[0], target)
+            # A live campaign's end date alone may still change (#912).
+            live_at = None if editable else live_end_at(state, campaign)
             data, identifiers = form_data(
                 parsed,
                 saved,
                 previous,
                 editable=editable,
                 base_digest=expected_version,
+                end_only=live_at is not None,
             )
             window = ScheduleWindow(
-                data, prefix="window", previous=previous, editable=editable
+                data,
+                prefix="window",
+                previous=previous,
+                editable=editable,
+                live_at=live_at,
             )
-            schedule_action(
-                data, window_fields=set(window.fields) if editable else set()
-            )
+            schedule_action(data, window_fields=window.open_fields)
             schedules = Schedules(
                 data,
                 prefix="schedules",
@@ -548,3 +568,160 @@ def confirm_schedule(caller, service, campaign_id, *, token, context):
     return ScheduleConfirm(
         created=bool(created), request=config_request(receipt).to_document()
     )
+
+
+# The longest cancellation reason: the abort journal's column.
+REASON_LIMIT = 1024
+# ``config request cancel``'s refusal of a change still validating whose
+# candidate was never prepared: no new machinery rescues it (#944).
+UNPREPARED = {
+    "field": "request",
+    "code": "invalid",
+    "message": (
+        "This change's new settings were never prepared, so there is nothing "
+        "to cancel yet. The configuration installer's log says what stops it; "
+        "once that is fixed, the installer applies the change or refuses it."
+    ),
+}
+
+
+@dataclass(frozen=True)
+class ConfigCancel(ReadModel):
+    """A live end-date change's cancellation and the request's status then.
+
+    ``cancelled`` is false when this same cancellation was already recorded
+    (a repeat), which changes nothing. The request is still unfinished until
+    the configuration installer restores the previous settings and records
+    it as failed; ``config request show`` follows it.
+    """
+
+    cancelled: bool
+    request: dict
+
+
+def cancel_end_change(caller, service, request_id, *, reason, context):
+    """``config request cancel``: abort an unapplied live end-date change (#944).
+
+    The operator's path out of a stuck change, which the data specification
+    requires to go through the abort journal: in one durable transaction, as
+    the installer's own lock order has it (the configuration lock, the
+    runtime row, then the request), the current Administrator records the
+    immutable ``CampaignConfigurationAbort`` with ``reason`` and the
+    command's ``admin_cmd_config_request_cancel`` event. The journal's own
+    trigger refuses a change that applied, has not started (``staged``) or
+    whose base is no longer applied (``stale_version``). So does this
+    command, more plainly, for a change already journaled with another
+    reason (``stale_version``) and for one still ``validating`` whose
+    candidate was never prepared (``invalid``, with ``UNPREPARED``'s
+    message): that one has written nothing to undo, and only fixing what
+    stops the installer moves it. The configuration
+    installer then restores the previous YAML and records the request as
+    failed, before any other request; nothing else is undone.
+
+    A change that has not started is the change's own Administrator's to
+    cancel, as Change status allows; another's is ``stale_version``, since
+    the installer refuses or applies it within seconds. Only a request with
+    a bound live end-date change is found here; any other is
+    ``not_available``.
+    """
+    from django.db import IntegrityError, connection, transaction
+
+    from .accounts.configuration_models import AppliedConfigurationVersion
+    from .accounts.configuration_requests import _checkpoint, _status
+    from .accounts.request_models import ConfigurationChangeRequest
+    from .accounts.runtime_models import SystemConfiguration
+    from .audit.schemas import Action, ActorKind, Outcome
+    from .audit.services import record_action
+    from .campaigns.configuration_intents import journal_abort
+    from .campaigns.live_end_date import admit_end_edit, end_intent
+    from .campaigns.models import Campaign, CampaignConfigurationAbort
+    from .observability import _guard_refusal, current_correlation
+    from .storage import StaleRecordError
+
+    reason = (reason or "").strip()
+    if not reason or len(reason) > REASON_LIMIT:
+        raise ValueError(f"Give a reason of at most {REASON_LIMIT} characters.")
+    actor = _admit_change(caller, service)
+    context["request_id"] = str(request_id)
+    correlation = current_correlation()
+
+    def cancel():
+        """Journal the abort, or cancel an unstarted change; return whether new."""
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [736220, 1])
+        runtime = SystemConfiguration.objects.select_for_update().get()
+        intent = end_intent(request_id)
+        request = (
+            ConfigurationChangeRequest.objects.select_for_update(of=("self",))
+            .filter(pk=request_id, authority="admin")
+            .first()
+        )
+        if intent is None or request is None:
+            raise NotAvailable("No live end-date change has this id.")
+        status = _status(request)
+        abort = CampaignConfigurationAbort.objects.filter(intent=intent).first()
+        if abort is not None and abort.reason == reason:
+            return False
+        if status.state == "staged" and request.actor_id == actor.identity:
+            _checkpoint(
+                request,
+                sequence=status.sequence + 1,
+                state="cancelled",
+                actor_id=actor.identity,
+                correlation_id=correlation,
+            )
+            return True
+        if status.state in {"staged", "applied", "failed", "cancelled"}:
+            raise StaleRecordError("This change can no longer be cancelled here.")
+        if abort is not None:
+            # Journaled already (by another cancellation or the installer's
+            # own refusal) with another reason, and not yet restored: the
+            # journal is immutable, so say so rather than let journal_abort's
+            # invariant surface as an internal error.
+            raise StaleRecordError(
+                "This change is already being cancelled; config request show "
+                "follows it."
+            )
+        if not AppliedConfigurationVersion.objects.filter(
+            pk=request.candidate_version_id,
+            digest=request.candidate_digest,
+            predecessor_id=request.base_id,
+        ).exists():
+            # Stuck validating before its candidate was prepared: the journal
+            # (and its restore) needs a prepared candidate, and nothing was
+            # written yet that needs undoing. Refused as ``invalid`` because
+            # only that code carries a message, and this one says what to do.
+            raise InvalidChange([UNPREPARED])
+        campaign = Campaign.objects.select_for_update().get(pk=intent.campaign_id)
+        admit_end_edit("abort_configuration", campaign, runtime, intent)
+        journal_abort(
+            intent, reason=reason, actor_id=actor.identity, correlation_id=correlation
+        )
+        return True
+
+    try:
+        with transaction.atomic(durable=True):
+            created = cancel()
+            if created:
+                record_action(
+                    Action.ADMIN_CMD_CONFIG_REQUEST_CANCEL,
+                    actor_kind=ActorKind.PORTAL_USER,
+                    actor_id=actor.identity,
+                    subject_id=caller.automation_session_id,
+                    context={"outcome": Outcome.SUCCEEDED},
+                )
+            status = _status(ConfigurationChangeRequest.objects.get(pk=request_id))
+    except IntegrityError as error:
+        if not _guard_refusal(error):
+            raise
+        # The journal's trigger: applied, or its base no longer applied.
+        _ended_or_raise(
+            caller,
+            service,
+            actor,
+            StaleRecordError("This change can no longer be cancelled."),
+        )
+    except (NotAvailable, StaleRecordError, PermissionError, InvalidChange) as error:
+        _ended_or_raise(caller, service, actor, error)
+    context["committed"] = True
+    return ConfigCancel(cancelled=created, request=config_request(status).to_document())

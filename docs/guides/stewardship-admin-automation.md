@@ -356,8 +356,9 @@ covers each Admin page, or why none does yet.
 ## Schedule changes
 
 `schedule preview` and `schedule confirm` change mail schedules and, while
-they may still change, the campaign dates, through the same review and
-confirmation as the Dates and mail schedules page. Both need a full-scope session.
+they may still change, the campaign dates (for a live campaign, its end date
+alone), through the same review and confirmation as the Dates and mail
+schedules page. Both need a full-scope session.
 Neither asks for a fresh Google sign-in or a confirmation at the prompt,
 because the page asks for neither. `config request show` follows the
 resulting change; any session may run it.
@@ -410,7 +411,7 @@ The document is JSON with two optional members:
 
 | Member | What it holds |
 | --- | --- |
-| `window` | Any of `start_date`, `end_date` (`YYYY-MM-DD`), `timezone` and `overlap_confirmed` (true or false, only for a campaign with a financial period). Members you leave out keep their values. Changing the dates once they are locked is exit 1 (`stale_version`), as on the page. |
+| `window` | Any of `start_date`, `end_date` (`YYYY-MM-DD`), `timezone` and `overlap_confirmed` (true or false, only for a campaign with a financial period). Members you leave out keep their values. Changing the dates once they are locked is exit 1 (`stale_version`), as on the page, except that a live campaign (scheduled or open in Production, before it closes) may change `end_date` alone. Family codes and links keep working until the new end date. |
 | `schedules` | A list of entries, each one of the three below. Saved schedules you do not name stay as they are; leaving one out never removes it. |
 
 | Entry | Members |
@@ -442,6 +443,22 @@ schedule from 0, or `window` or `schedules` for a problem between fields),
 | --- | --- |
 | `created` | False when this token was confirmed before: the original request is returned and nothing changes |
 | `request` | The request, as `config request show` prints it |
+
+| `config request cancel` field | What it holds |
+| --- | --- |
+| `cancelled` | False when this same cancellation was recorded before; nothing changes |
+| `request` | The request, as `config request show` prints it, before the installer ends it |
+
+`config request cancel REQUEST_ID --reason TEXT` cancels a live campaign's
+end-date change that is stuck before it applied, for example one the
+configuration installer keeps failing on. Through `pk-admin` it needs
+`--yes`, since it cannot read a typed answer (its first words are
+`config request show`'s). It records your reason and the cancellation, and
+the installer then
+restores the previous settings and marks the change failed; the end date
+stays as it was. See the
+[specification](../specs/stewardship/admin-automation/spec.md#schedules-and-configuration)
+for which changes it accepts.
 
 | `config request show` field | What it holds |
 | --- | --- |
@@ -1173,3 +1190,4 @@ error, as `logs export` does; the wrapper refuses to write it to a terminal.
   `delivery refusal-clear`, which prompt. `delivery show`'s `actions` may
   now include `resend` (it listed only `delivery resolve` actions); an
   offered `resend` is `delivery resend`.
+- `pk-admin/1` (#944): additive. `config request cancel`, which prompts.

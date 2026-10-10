@@ -867,6 +867,28 @@ def config_request_show(args, preamble, runtime, context):
     return read_config_request(context["caller"], runtime, args.request_id)
 
 
+def config_request_cancel(args, preamble, runtime, context):
+    """Cancel a live end-date change that has not applied (#944).
+
+    The reason is read first, so a refused prompt has nothing left to read;
+    the prompt comes before any transaction opens.
+    """
+    from .admin_changes import REASON_LIMIT, cancel_end_change
+
+    reason = _input(args.reason, context, REASON_LIMIT * 4)
+    confirm(
+        context,
+        (
+            f"Cancel configuration request {args.request_id}, a live campaign's "
+            "end-date change that has not applied.",
+            "The previous end date stays; the change cannot be resumed.",
+        ),
+    )
+    return cancel_end_change(
+        context["caller"], runtime, args.request_id, reason=reason, context=context
+    )
+
+
 def task_retry(args, preamble, runtime, context):
     """Retry a failed background task as its page's Retry button does (PR 9).
 
@@ -1652,6 +1674,16 @@ def _config_request_options(parser):
     _watch_options(parser)
 
 
+def _config_cancel_options(parser):
+    """Options of ``config request cancel``: the request and the reason."""
+    parser.add_argument("request_id", type=_uuid, metavar="REQUEST_ID")
+    parser.add_argument(
+        "--reason",
+        required=True,
+        help="why it is cancelled, or - to read it from standard input (needs --yes)",
+    )
+
+
 def _task_retry_options(parser):
     """Options of ``task retry``: the failed task, and the request key."""
     parser.add_argument("task_id", type=_uuid, metavar="TASK_ID")
@@ -2379,8 +2411,12 @@ def _read_specs():
 
 
 def _change_specs():
-    """The schedule change commands and configuration request status (PR 4)."""
-    from .admin_changes import ScheduleConfirm, SchedulePreview
+    """The schedule change commands and configuration request status (PR 4).
+
+    ``config request cancel`` (#944) is the operator's way out of a live
+    end-date change stuck before it applied.
+    """
+    from .admin_changes import ConfigCancel, ScheduleConfirm, SchedulePreview
     from .admin_reads import ConfigRequest
 
     return (
@@ -2418,6 +2454,18 @@ def _change_specs():
             audit_event=None,
             watch=True,
             watch_subject="request_id",
+        ),
+        CommandSpec(
+            "config request cancel",
+            "Cancel a live end-date change that has not applied.",
+            config_request_cancel,
+            "full",
+            True,
+            ConfigCancel.field_names(),
+            # In the change commands' group (ADM-11 PR 4); added by #944.
+            4,
+            options=(_config_cancel_options,),
+            prompts=True,
         ),
     )
 

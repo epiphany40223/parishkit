@@ -634,8 +634,13 @@ Where a rule can be checked in the browser, the page checks it too, and
 shows its error at the field the same way. The browser's own checks (a
 required field, a format) mark a field when the reader leaves it, and clear
 once the value is valid. A page can also check a rule live, as the value is
-entered (a follow-up contact time in the future). Save is held while such an
-error stands only on forms that use the complete-before-submit gate above.
+entered (a follow-up contact time in the future), or have the server check
+one field as it is typed (`data-live-check` in the page script, a
+single-field check first used by a live campaign's
+[end date](../admin-portal/spec.md#campaign-configuration), #944; the ParishSoft refresh
+schedule's multi-row editor, #920, checks its whole formset with its own
+mechanism for now). Save is held while such an error stands only on forms
+that use the complete-before-submit gate above.
 The server stays the authority: it checks every save, and its refusal is
 shown at the field as above, even when the browser would have allowed the
 value (a wrong computer clock, for example).

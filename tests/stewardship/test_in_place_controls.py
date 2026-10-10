@@ -144,8 +144,11 @@ def test_every_in_place_control_names_its_region_as_a_fragment():
     or action in a #fragment that names a region (data-in-place-region or
     data-table-region, literally or as {{ table.anchor }}) in the same
     template, or, for a fragment template listed in HOSTED, in the page
-    template that draws it around the control. The earlier data-region-link
-    name is gone."""
+    template that draws it around the control. A hosted fragment template
+    may name its region ``{{ region_id|default:'…' }}``: each host's region is
+    then the default, or the region_id its include passes (Campaign
+    settings' leader-role panel, #922). The earlier data-region-link name is
+    gone."""
     found = 0
     for path in sorted(TEMPLATES.rglob("*.html")):
         text = path.read_text()
@@ -160,8 +163,19 @@ def test_every_in_place_control_names_its_region_as_a_fragment():
                 if (path.name in HOSTED)
                 else [text]
             )
+            named = re.fullmatch(r"\{\{ region_id\|default:'([\w-]+)' \}\}", fragment)
             for host in hosts:
-                assert names_region(host, fragment), (path.name, fragment)
+                if named is None:
+                    assert names_region(host, fragment), (path.name, fragment)
+                    continue
+                assert path.name in HOSTED, path.name
+                passed = re.findall(
+                    rf"\{{% include 'stewardship/{re.escape(path.name)}'"
+                    r' with [^%]*region_id="([\w-]+)"',
+                    host,
+                )
+                for region in [named.group(1), *passed]:
+                    assert names_region(host, region), (path.name, region)
     assert found >= 8
 
 

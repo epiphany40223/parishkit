@@ -14,7 +14,7 @@ server refuses to change or delete one anyway (schedule_entry_views).
 {% aboutpage "schedules" %}{% include 'stewardship/schedule-guide.html' with browser_times=True %}
 <p>{% translate "New scheduled email adds a schedule; Edit changes one that has not run yet. Either shows what would change before you apply it, and nothing takes effect until the status says Applied. Delete asks first, then removes the schedule; email already sent is never recalled." %}</p>{% endaboutpage %}
 <p>{{ campaign.active_configuration.name }}</p>
-<p class="campaign-dates">{% blocktranslate trimmed with start=values.start_date|parish_date end=values.end_date|parish_date %}Campaign dates: {{ start }} – {{ end }}{% endblocktranslate %}{% if editable %} · <a href="{% url 'admin:campaign_settings' %}">{% translate "Change the dates in Campaign settings" %}</a>{% endif %}</p>
+<p class="campaign-dates">{% blocktranslate trimmed with start=values.start_date|parish_date end=values.end_date|parish_date %}Campaign dates: {{ start }} – {{ end }}{% endblocktranslate %}{% if editable %} · <a href="{% url 'admin:campaign_settings' %}">{% translate "Change the dates in Campaign settings" %}</a>{% elif end_live %} · <a href="{% url 'admin:campaign_settings' %}#end-date">{% translate "Change the end date in Campaign settings" %}</a>{% endif %}</p>
 <p>{% button href=new_url %}{% translate "New scheduled email" %}{% endbutton %}</p>
 {% translate "Scheduled emails" as caption %}
 <section id="{{ table.anchor }}" class="panel" data-table-region data-refresh-url="{{ refresh_url }}" aria-labelledby="schedule-table-title">

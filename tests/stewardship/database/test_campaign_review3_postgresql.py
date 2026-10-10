@@ -23,6 +23,7 @@ from parishkit.stewardship.campaigns.read_guards import (
 )
 from parishkit.stewardship.campaigns.runtime import return_to_testing
 from parishkit.stewardship.jobs.storage import change_run
+from parishkit.stewardship.runtime_process import next_configuration_request
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .campaign_builders import (
@@ -111,13 +112,21 @@ def test_committed_pending_close_blocks_end_edit_until_task_reconciled(tmp_path)
                 correlation_id=uuid4(),
             )
         request, _ = end_request(store, campaign, actor, "edit_end")
-        with pytest.raises(admission.CampaignAdmissionUnavailable):
-            install_request(
-                store,
-                request_id=request.request_id,
-                correlation_id=uuid4(),
-                admit_campaign=admit_test_work,
-            )
+        before = store.active()
+        # Claimed close work refuses the change cleanly (#944), so it never
+        # waits ahead of every later request; YAML and database still agree.
+        refused = install_request(
+            store,
+            request_id=request.request_id,
+            correlation_id=uuid4(),
+            admit_campaign=admit_test_work,
+        )
+        assert (refused.state, refused.failure_code) == (
+            "failed",
+            "invalid_candidate",
+        )
+        assert store.active() == before
+        assert next_configuration_request() is None
         change_run(
             run_id=run.run_id,
             expected_version=run.version,
@@ -127,6 +136,8 @@ def test_committed_pending_close_blocks_end_edit_until_task_reconciled(tmp_path)
             correlation_id=uuid4(),
             admit=admit_task_work,
         )
+        # Once the close work is reconciled, the change asked again applies.
+        request, _ = end_request(store, campaign, actor, "edit_end")
         assert (
             install_request(
                 store,

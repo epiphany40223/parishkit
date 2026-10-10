@@ -18,6 +18,7 @@ from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.campaigns.live_end_date import bind_reviewed_end_edit
 from parishkit.stewardship.campaigns.single_campaign import refuse_campaign_creation
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.observability import (
@@ -289,7 +290,14 @@ def summary_errors(form):
 
 
 def review_region(
-    page, form=None, *, review=None, receipt=None, refusal=None, message=None
+    page,
+    form=None,
+    *,
+    review=None,
+    receipt=None,
+    refusal=None,
+    message=None,
+    link=None,
 ):
     """Template context for an in-place settings page's review region (#532).
 
@@ -300,7 +308,9 @@ def review_region(
     the region's error summary, and ``message`` a plain refusal sentence.
     Otherwise a bound form's errors are. A ``review`` naming a ``template``
     draws its own content (an ordered list's before and after) in place of
-    the changed settings.
+    the changed settings. ``link`` (``{"url", "label"}``) follows the errors
+    when the page names where to resolve them, as a live end-date review does
+    for mail (#912).
     """
     if message is not None:
         errors = [{"field_id": None, "message": message}]
@@ -325,6 +335,8 @@ def review_region(
     return {
         "review": review,
         "review_errors": errors,
+        # Where to resolve what blocks the change, when a page names it.
+        "review_link": link,
         "receipt": receipt,
         "status_url": status_url,
     }
@@ -406,6 +418,17 @@ def confirm_intent(
                 raise expired_preview(link)
             return True
 
+    def attach_all(created):
+        """Bind a live end-date edit, then record the editor's companion rows.
+
+        A change to a live campaign's end date (#912) crosses the structural
+        lock only with its exceptional intent, bound here in the request's
+        own transaction so the installer never sees the request without it.
+        """
+        bind_reviewed_end_edit(created)
+        if attach is not None:
+            attach(created, intent.get("extra"))
+
     return record_request(
         base_digest=intent["base"],
         patch=intent["patch"],
@@ -414,11 +437,7 @@ def confirm_intent(
         correlation_id=current_correlation(),
         admit=admit,
         request_schema=request_schema,
-        attach=(
-            None
-            if attach is None
-            else lambda created: attach(created, intent.get("extra"))
-        ),
+        attach=attach_all,
     )
 
 

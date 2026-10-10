@@ -154,19 +154,32 @@ def abort_configuration_intent(
             intent = CampaignConfigurationIntent.objects.get(request=request)
             campaign = Campaign.objects.select_for_update().get(pk=intent.campaign_id)
             admit("abort_configuration", campaign, runtime, intent)
-            abort = CampaignConfigurationAbort.objects.filter(intent=intent).first()
-            if abort is None:
-                CampaignConfigurationAbort.objects.create(
-                    intent=intent,
-                    reason=reason,
-                    actor_id=actor_id,
-                    correlation_id=correlation_id,
-                )
-            elif abort.reason != reason:
-                raise StorageInvariantError(
-                    "Exceptional cancellation has different intent."
-                )
+            journal_abort(
+                intent, reason=reason, actor_id=actor_id, correlation_id=correlation_id
+            )
         return recover_configuration_abort(materializer)
+
+
+def journal_abort(intent, *, reason, actor_id, correlation_id):
+    """Record ``intent``'s abort in the caller's transaction; repeats return it.
+
+    The journal's own trigger (``stewardship_exceptional_abort_v1``) takes the
+    configuration lock and refuses unless the request is unapplied, past
+    staging and its candidate prepared, so a journal never names a request
+    that applied or could still apply. A second abort of the same intent with
+    another reason is refused; with the same reason it is the same decision.
+    """
+    abort = CampaignConfigurationAbort.objects.filter(intent=intent).first()
+    if abort is None:
+        return CampaignConfigurationAbort.objects.create(
+            intent=intent,
+            reason=reason,
+            actor_id=actor_id,
+            correlation_id=correlation_id,
+        )
+    if abort.reason != reason:
+        raise StorageInvariantError("Exceptional cancellation has different intent.")
+    return abort
 
 
 def recover_configuration_abort(materializer):

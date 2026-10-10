@@ -276,10 +276,11 @@ def test_campaign_settings_reviews_in_place_and_keeps_its_module_scripts(
 def test_a_live_campaigns_leader_roles_are_reviewed_and_applied_in_place(
     page, component_origin
 ):
-    """A live campaign's one editable setting besides its Ministries, the
-    Ministry leader roles (#922), has its own form: Review shows the change
-    under it and takes focus, and Apply shows the change's status there.
-    Nothing reloads and the ticks stay as the reader left them."""
+    """A live campaign's Ministry leader roles (#922) have their own form
+    beside the end date's (#912): Review shows the change under it and
+    takes focus, and Apply shows the change's status there, never under the
+    end date (Administrator decision E2). Nothing reloads and the ticks stay
+    as the reader left them."""
     reviews = answer_reviews(page, component_origin, LEADERS_REVIEW, address=LEADERS)
     page.goto(component_origin + LEADERS)
     page.evaluate(MARK)
@@ -299,12 +300,16 @@ def test_a_live_campaigns_leader_roles_are_reviewed_and_applied_in_place(
     assert "ministry_leader_roles=Chairperson" in reviews[0]
     assert "ministry_leader_roles=Staff" not in reviews[0]
     assert page.evaluate(FOCUSED, "#settings-review-title")
-    panel = page.locator("#leader-roles #settings-review")
+    panel = page.locator("#leader-roles #leader-roles-review")
     assert "Chairperson, Staff" in panel.inner_text()
+    # The end date's panel stays, with nothing in its own region.
+    end_region = page.locator("#end-date #settings-review")
+    assert end_region.inner_text().strip() == ""
     assert current_step(page) == "Review"
     page.get_by_role("button", name="Apply changes").click()
     visible(panel.get_by_role("heading", name="Change status"))
-    assert page.url == f"{component_origin}{LEADERS_PENDING}#settings-review"
+    assert page.url == f"{component_origin}{LEADERS_PENDING}#leader-roles-review"
+    assert end_region.inner_text().strip() == ""
     assert not roles.get_by_label("Staff").is_checked()
     assert page.evaluate(MARKED) == "kept"
 

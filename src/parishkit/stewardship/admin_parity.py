@@ -119,10 +119,14 @@ LEDGER = {
     "schedule_new": command("schedule preview", "schedule confirm"),
     "schedule_edit": command("schedule show", "schedule preview", "schedule confirm"),
     "schedule_delete": command("schedule preview", "schedule confirm"),
-    "configuration_request": command("config request show"),
+    # Change status; ``config request cancel`` (#944) is the operator's way
+    # out of a stuck live end-date change, which the page offers no button for.
+    "configuration_request": command("config request show", "config request cancel"),
     "campaign_settings": pending(
         "PR 10", "campaign show", "campaign preview", "campaign confirm"
     ),
+    # The live end-date check validates what ``schedule preview`` reviews.
+    "campaign_end_date_check": command("schedule preview"),
     "campaign_clone": pending("PR 10", "campaign clone"),
     "campaign_ministries": pending("PR 10", "campaign ministries"),
     "share_settings": pending("PR 10", "campaign shares"),

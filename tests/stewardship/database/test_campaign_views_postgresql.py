@@ -246,9 +246,12 @@ def test_live_lock_invalidates_preview_without_a_yaml_change(auth_service, googl
     assert post(browser, url(row), fields(store, row, name="Locked")).status_code == 409
     response = browser.get(url(row))
     assert response.status_code == 200 and b"read-only" in response.content
-    assert b"Review changes" not in response.content
-    # A read-only page is not a step of any flow (#196).
-    assert flow_steps(response.content) is None
+    assert b"data-campaign-form" not in response.content
+    # Only the end date stays editable once live (#912): its form is the
+    # page's one change, the first step of edit, review, apply (#196).
+    assert response.content.count(b"Review changes") == 1
+    assert b'id="end-date"' in response.content
+    assert flow_steps(response.content) == (STEPS, "Make changes")
 
 
 def test_source_replacement_requires_fresh_preview(auth_service, google):
@@ -563,6 +566,13 @@ def leader_post(browser, row, roles, *, version):
     )
 
 
+def leader_region(body):
+    """The leader-role panel's own in-place review region (#922, E2)."""
+    body = body.decode()
+    start = body.index('<div id="leader-roles-review" data-in-place-region>')
+    return body[start : body.index("</div>", start)]
+
+
 def test_a_live_campaign_changes_its_leader_roles_in_place(auth_service, google):
     """A live campaign keeps one editable leader-role form (#922), reviewed and
     applied in place under it; every other setting stays read-only.
@@ -598,13 +608,28 @@ def test_a_live_campaign_changes_its_leader_roles_in_place(auth_service, google)
         refused = leader_post(browser, row, roles, version=version)
         assert refused.status_code == 400 and message in refused.content.decode()
     review = leader_post(browser, row, ["Chairperson"], version=version)
-    shown = region(review.content)
+    # A second Review of the same version, refused below once the first is
+    # applied.
+    later = leader_post(browser, row, ["Staff"], version=version)
+    shown = leader_region(review.content)
     assert "Ministry leader roles" in shown and "Chairperson, Staff" in shown
+    # Its Apply answers into the leader-role panel's own region (E2).
+    assert 'action="#leader-roles-review"' in shown
+    assert 'data-review-of="leader-roles-form"' in shown
     response = post(browser, url(row), {"action": "confirm", "preview": token(review)})
     assert response["Location"].endswith("#settings-review")
     apply(store, response)
     row.refresh_from_db()
     assert row.active_configuration.values["ministry_leader_roles"] == ["Chairperson"]
+    # The change's status shows under the leader-role panel, not under the
+    # end date's (Administrator decision E2) ...
+    status = browser.get(response["Location"])
+    assert "Change status" in leader_region(status.content)
+    assert status.content.decode().count('id="settings-status-title"') == 1
+    # ... and so does a refused Apply (a preview now out of date).
+    stale = post(browser, url(row), {"action": "confirm", "preview": token(later)})
+    assert stale.status_code == 409
+    assert "This preview is out of date." in leader_region(stale.content)
     # The other settings stay locked whatever the browser posts.
     assert post(browser, url(row), fields(store, row, name="Locked")).status_code == 409
 

@@ -44,7 +44,7 @@ from .schedule_forms import (
     window_text,
 )
 from .schedule_preview import work_summary
-from .schedule_reads import campaign_schedules, schedule_state
+from .schedule_reads import campaign_schedules, live_end_at, schedule_state
 from .schedule_table import SORTING, attach, schedule_rows
 from .sessions import authenticated_admin
 
@@ -60,14 +60,15 @@ def campaign_email_names(records):
     )
 
 
-def _list(request, state, campaign, editable, sort):
+def _list(request, state, campaign, editable, sort, *, end_live=False):
     """The scheduled emails list (#878): dates on one line, the table, New.
 
     The rows are the saved schedules in sending order, described from the
     counts-only work summary (``schedule_table``); ``sort`` is the When
     heading's token. ``refresh_url`` is this page's own address, sort
     included, from which the confirmation dialog redraws the table after a
-    deletion is applied.
+    deletion is applied. ``end_live`` says a live campaign's end date may
+    still change (#912), so the dates line links to Campaign settings.
     """
     configuration = state[0]
     values = campaign.active_configuration.values
@@ -88,6 +89,7 @@ def _list(request, state, campaign, editable, sort):
             "campaign": campaign,
             "values": values,
             "editable": editable,
+            "end_live": end_live,
             "base_digest": configuration.active_configuration.digest,
             "table": whole_table(rows, sorting=SORTING, sort=sort),
             "refresh_url": request.get_full_path(),
@@ -206,7 +208,9 @@ def schedule_settings(request, campaign_id):
             else work_transaction()
         ):
             state, campaign, editable = schedule_state(service, campaign_id)
-            if proposed and not editable:
+            # A live campaign's end date alone may still change (#912).
+            live_at = None if editable else live_end_at(state, campaign)
+            if proposed and not editable and live_at is None:
                 raise StaleRecordError("Campaign dates are structurally locked.")
             listing = request.method in {"GET", "HEAD"} and not proposed
             previous = campaign.active_configuration.values
@@ -215,13 +219,11 @@ def schedule_settings(request, campaign_id):
                 prefix="window",
                 previous=previous,
                 editable=editable,
+                live_at=live_at,
                 proposed=proposed,
             )
             if request.method == "POST":
-                schedule_action(
-                    request.POST,
-                    window_fields=set(window.fields) if editable else set(),
-                )
+                schedule_action(request.POST, window_fields=window.open_fields)
             schedules = Schedules(
                 request.POST if request.method == "POST" else None,
                 prefix="schedules",
@@ -236,7 +238,14 @@ def schedule_settings(request, campaign_id):
                 test_mail=admits_test_mail(state[0].mode, campaign),
             )
             response = (
-                _list(request, state, campaign, editable, sort)
+                _list(
+                    request,
+                    state,
+                    campaign,
+                    editable,
+                    sort,
+                    end_live=live_at is not None,
+                )
                 if listing
                 else _preview(
                     request,
