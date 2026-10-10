@@ -10,12 +10,12 @@
 // the line beside Save (the only live region, changed only when its words
 // change, which also says the problems of the schedule as a whole), the
 // problems at each row, the summary and the seven-day list. Nothing it draws
-// sits above the rows, each row keeps room for a line of messages, and the
-// control under the pointer (else the one being edited) is kept where it
-// was on the screen, so a check never moves it under the pointer (#736). Each row's
-// controls are described by its messages and marked invalid while it has
-// problems. The words this script writes come from the editor's
-// data-*-text attributes, translated by the template.
+// sits above the rows, each row keeps room for a line of messages, and what
+// is under the pointer (else the control being edited) is kept where it
+// was on the screen, so a check never moves it under the pointer (#736;
+// pointedAt). Each row's controls are described by its messages and marked
+// invalid while it has problems. The words this script writes come from the
+// editor's data-*-text attributes, translated by the template.
 // Only the latest check's answer is shown. While a changed schedule has
 // problems, Save is unavailable; when a check fails, the earlier answer
 // stays, marked as not checked, and Save stays available (saving checks
@@ -168,41 +168,53 @@
   document.addEventListener("pointercancel", () => { pointer = null; });
   document.documentElement.addEventListener("pointerleave", () => { pointer = null; });
 
-  // What under the pointer a redraw should keep in place, as something the
-  // redraw does not replace: a row (its messages are redrawn inside it) or
-  // a check part (its contents are replaced, it stays). Blank space between
-  // or beside rows points at a container whose top never moves, so take the
-  // first row at or below the pointer instead.
+  // What a redraw should keep in place, one rule wherever the pointer is
+  // (#736): the element under the pointer, made stable. Inside something a
+  // redraw replaces or refills, that is its row (rows hold their messages)
+  // or its check part. Over a container that holds rows (the page, the
+  // form, the editor, a rows list), whose top never moves, it is the first
+  // stable block at or below the pointer: a row, or a block after the rows
+  // such as the skips, the switch, "Edit as text" or Save. Below every
+  // block, it is the last row's bottom edge. Anything else, inside or
+  // outside the form, is kept itself: a redraw does not replace it.
+  // Returns {element, edge} to measure, or null with no pointer.
+  const drawn = (element) => element.getClientRects().length > 0;
+  // A container's blocks in page order: its drawn children, with a child
+  // that holds rows (and is not one) opened up into its own blocks.
+  const blocks = (container) => [...container.children].filter(drawn).flatMap((child) =>
+    (!child.matches("[data-schedule-row]") && child.querySelector("[data-schedule-row]") ? blocks(child) : [child]));
   const pointedAt = () => {
     const pointed = pointer && document.elementFromPoint(pointer.x, pointer.y);
-    if (!pointed || !form.contains(pointed)) return null;
-    const row = pointed.closest("[data-schedule-row]");
-    if (row) return row;
-    if (pointed === form || pointed.querySelector("[data-schedule-row]")) {
-      return SCOPES.flatMap(rowList).find((each) => each.getBoundingClientRect().bottom >= pointer.y) || null;
-    }
-    return pointed.closest("[data-schedule-part]") || pointed;
+    if (!pointed) return null;
+    const stable = pointed.closest("[data-schedule-row], [data-schedule-part]");
+    if (stable) return {element: stable, edge: "top"};
+    if (!pointed.querySelector("[data-schedule-row]")) return {element: pointed, edge: "top"};
+    const below = blocks(pointed).find((block) => block.getBoundingClientRect().bottom >= pointer.y);
+    if (below) return {element: below, edge: "top"};
+    const rows = pointed.querySelectorAll("[data-schedule-row]");
+    return {element: rows[rows.length - 1], edge: "bottom"};
   };
 
   // Keep one thing where it is on the screen while ``change`` redraws or
   // replaces things above it, scrolling by the amount it moved. Each row
   // keeps room for one line of messages (ui-v1.css), so most messages move
-  // nothing; this covers longer ones and replaced rows. The first of these
-  // still on the page afterwards is kept: ``anchor`` when given (the button
-  // just chosen), else what is under the pointer within the form (the rule
-  // #736 is about), else the focused control (the one being edited, or Add
-  // after a Remove).
+  // nothing; this covers longer ones and replaced rows. Every candidate is
+  // measured first, and the first still on the page afterwards is kept:
+  // ``anchor`` when given (the button just chosen), else what the pointer
+  // points at (pointedAt), else, with no pointer at all (keyboard only, or
+  // the pointer left the window), the focused control.
   const keepInPlace = (change, anchor) => {
     const focused = document.activeElement;
-    const candidates = [anchor, pointedAt(),
-      focused && focused !== document.body && form.contains(focused) ? focused : null]
-      .filter(Boolean).map((element) => ({element, before: element.getBoundingClientRect().top}));
+    const candidates = [anchor && {element: anchor, edge: "top"}, pointedAt(),
+      focused && focused !== document.body ? {element: focused, edge: "top"} : null]
+      .filter(Boolean).map((candidate) => ({...candidate,
+        before: candidate.element.getBoundingClientRect()[candidate.edge]}));
     change();
     const kept = candidates.find((candidate) => candidate.element.isConnected);
     if (!kept) return;
     // Rounded: WebKit scrolls by whole pixels and drops the fraction, which
     // would leave up to a pixel of movement; rounding leaves at most half.
-    const shift = Math.round(kept.element.getBoundingClientRect().top - kept.before);
+    const shift = Math.round(kept.element.getBoundingClientRect()[kept.edge] - kept.before);
     if (shift) window.scrollBy(0, shift);
   };
 

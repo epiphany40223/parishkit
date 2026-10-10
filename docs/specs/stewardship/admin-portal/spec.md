@@ -2020,10 +2020,14 @@ and removes rows, fills presets and reads times through the shared
   pointer. A row's messages are drawn under its controls, in room kept for
   one line, so a one-line message that comes or goes moves nothing. When
   a longer message changes what is above, the page scrolls by the same
-  amount, so the row under the pointer (or, over blank space, the next row
-  below it; else the control being edited) stays where it was on the
-  screen. "Use these lists" keeps its own button in place, even with the
-  pointer elsewhere. The "Edit as text" error is drawn after Use these
+  amount, so what is under the pointer stays where it was on the screen,
+  wherever the pointer is on the page. Inside a row or a part the check
+  redraws, that is the row or the part; over blank space beside or between
+  rows, it is the first row or later block (the skips, the switch, "Edit
+  as text", Save) at or below the pointer, and below all of them the last
+  row's bottom edge. With no pointer (keyboard only, or the pointer has
+  left the window), the control being edited stays in place. "Use these
+  lists" keeps its own button in place, even with the pointer elsewhere. The "Edit as text" error is drawn after Use these
   lists, in room kept for one line.
   The preview and the problems at each row are not live regions. This is
   the same pattern as the mail schedules' repeat panel

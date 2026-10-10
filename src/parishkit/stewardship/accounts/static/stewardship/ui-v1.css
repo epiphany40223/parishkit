@@ -763,9 +763,10 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
    border is drawn as a shadow, so marking it moves nothing (#736). */
 .schedule-row-fields :is(input, select)[aria-invalid=true] { border-width: 1px; box-shadow: inset 0 0 0 1px var(--error-border); }
 .schedule-row-fields :is(input, select)[aria-invalid=true]:focus { box-shadow: inset 0 0 0 1px var(--error-border), 0 0 0 3px rgb(17 94 86 / 22%); }
-/* Forced colors draw no shadow: an outline inside the border marks it. */
+/* Forced colors draw no shadow: an outline inside the border marks it,
+   except under keyboard focus, where the global 3px focus ring shows. */
 @media (forced-colors: active) {
-  .schedule-row-fields :is(input, select)[aria-invalid=true] { outline: 1px solid CanvasText; outline-offset: -2px; }
+  .schedule-row-fields :is(input, select)[aria-invalid=true]:not(:focus-visible) { outline: 1px solid CanvasText; outline-offset: -2px; }
 }
 .schedule-row-messages { padding-top: .5rem; min-height: calc(1lh + .5rem); }
 .schedule-row-messages > * { margin: 0; }
