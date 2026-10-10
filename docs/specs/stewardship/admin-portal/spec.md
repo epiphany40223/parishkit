@@ -1404,8 +1404,9 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   URL's fragment. A POST form saves a change unless it is marked
   `data-in-place-read` (the System logs cross-links only read): a read may
   be cancelled by a newer choice and, with no answer at all, falls back to
-  the ordinary submission. A form marked `data-in-place-filters` sets the
-  page's filters from outside its filter form, so after the swap the filter
+  the ordinary submission. A form or link marked `data-in-place-filters`
+  sets the page's filters from outside its filter form (a response list's
+  mode link clears its private search), so after the swap the filter
   form's visible fields, and any disclosure in it, show what the fresh page
   applied, and the next Apply, sort or page keeps them; every other swap
   leaves filters typed but not yet applied alone. A region a
