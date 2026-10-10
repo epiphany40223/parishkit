@@ -28,12 +28,10 @@ from .export_views import SAFE_FAILURES
 
 
 @require_POST
-def create(request, campaign_id, *, postal=False):
+def create(request, campaign_id):
     """Forms supply filters, never a result document, Family ID or retained input.
 
-    The page's hidden ``mailing`` field chooses the mail-merge export. The old
-    postal export route (``postal``) serves forms rendered before the pages
-    merged, which carry no ``mailing`` field and meant the mail merge.
+    The page's hidden ``mailing`` field chooses the mail-merge export.
 
     The file holds every listed Family's live code, so creating it needs a
     Google sign-in within the last five minutes (#547). A stale one gets the
@@ -45,7 +43,7 @@ def create(request, campaign_id, *, postal=False):
         principal = _principal(request, service.store)
         parameters = request.POST.copy()
         parameters.pop("csrfmiddlewaretoken", None)
-        postal = mailing_option(parameters, default=postal)
+        postal = mailing_option(parameters)
         try:
             require_fresh(request)
         except FreshAuthenticationRequired:

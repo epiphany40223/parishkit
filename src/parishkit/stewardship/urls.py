@@ -45,12 +45,6 @@ from .admin_urls import parish as admin_parish
 from .admin_urls import reports as admin_reports
 from .admin_urls import system as admin_system
 from .jobs import views as job_views
-from .reports import (
-    directory_export_views,
-    directory_views,
-    exact_views,
-    export_views,
-)
 from .responses import views as response_views
 
 public_patterns = [
@@ -82,51 +76,6 @@ admin_patterns = [
     *admin_campaign.patterns,
     *admin_reports.patterns,
     *admin_legacy.patterns,
-    path(
-        "reports/<uuid:campaign_id>/postal/export",
-        directory_export_views.create,
-        {"postal": True},
-        name="postal_directory_export",
-    ),
-    path(
-        "reports/<uuid:campaign_id>/postal/",
-        directory_views.directory,
-        {"postal": True},
-        name="postal_directory",
-    ),
-    path(
-        "campaign/<uuid:campaign_id>/exports/participation",
-        export_views.create,
-        name="export_create",
-    ),
-    path("exports/download", export_views.download, name="export_download"),
-    path(
-        "campaign/<uuid:campaign_id>/exports/exact-participation",
-        exact_views.create,
-        name="exact_export_create",
-    ),
-    path(
-        "exact-exports/<uuid:request_id>",
-        exact_views.status,
-        name="exact_export_status",
-    ),
-    path(
-        "exact-exports/<uuid:request_id>/cancel",
-        exact_views.cancel,
-        name="exact_export_cancel",
-    ),
-    path(
-        "exact-exports/<uuid:request_id>/retry",
-        exact_views.retry,
-        name="exact_export_retry",
-    ),
-    path("exports/<uuid:request_id>", export_views.status, name="export_status"),
-    path("exports/<uuid:request_id>/cancel", export_views.cancel, name="export_cancel"),
-    path(
-        "exports/<uuid:request_id>/download-grant",
-        export_views.download_grant,
-        name="export_download_grant",
-    ),
     path(
         "setup/slack-test",
         setup_notification_views.setup_notification,

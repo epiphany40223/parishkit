@@ -791,10 +791,10 @@ with mailing columns (unless it already lists them) and the Admin home page
 show how many active Families across the campaign no campaign mail can reach,
 linking to that list.
 
-The old postal-outreach address (`reports/<campaign>/postal/`) redirects to
-the page with mailing columns on and reach "By postal mail only" (or the known
-reach its link named), so bookmarks keep working. Forms rendered before the merge still submit to the
-old page and export addresses, which serve them with mailing columns on.
+The old postal-outreach page and export addresses
+(`reports/<campaign>/postal/` and its `export`) are retired with no redirect
+(#758, #864): they are Admin-only, and the mail merge is the directory
+export with mailing columns on.
 
 Each row's **Contact details** list the active heads (the ones the Family
 name lists) with their email addresses from the same ParishSoft data

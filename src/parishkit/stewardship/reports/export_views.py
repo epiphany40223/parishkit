@@ -1,7 +1,9 @@
-"""Requester-scoped report endpoints, separate from Admin-only operational jobs.
+"""Shared export view helpers and the Admin-only export cleanup retry.
 
-These closed participation endpoints are the export substrate, not the Phase 5
-report catalog. Requests and one-use grants are POST bodies, never URL secrets.
+The export pages (export_ui, exact_ui and the report export forms) and the
+Admin automation command line share the admission (``_principal``), field
+parsing (``_body``) and the guarded one-use download (``download_with_grant``)
+here. The JSON export API that once lived here was retired unused (#758).
 All policy is reloaded by services and again inside the download read guard.
 """
 
@@ -12,7 +14,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, transaction
 from django.http import JsonResponse
 from django.shortcuts import redirect, render
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import require_POST
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.admin_caller import AdminCaller
@@ -31,17 +33,10 @@ from parishkit.stewardship.web.responses import campaign_response
 from .artifacts import ArtifactChunks, ArtifactReceipt
 from .export_models import ExportPublication
 from .export_services import (
-    ExportConflict,
-    ExportExpired,
-    ExportRequestBound,
     admit_campaign,
     audit,
     authorize,
-    cancel_export,
     consume_download,
-    create_export,
-    export_status,
-    issue_download,
 )
 from .facts import FactUnavailable
 
@@ -60,11 +55,6 @@ SAFE_FAILURES = (
     ReadUnavailable,
     FactUnavailable,
 )
-
-
-BOUND = "This request key was already used for a different export."
-# Only the authorized requester reaches an ExportExpired, so it can be told.
-EXPIRED = "This export has expired. Regenerate it from its status page."
 
 
 def _json(value, *, status=200):
@@ -96,84 +86,6 @@ def _principal(request, store, *, read_only=False, ministry_jobs=False):
     ):
         raise PermissionError("This export is unavailable.")
     return principal
-
-
-@require_POST
-def create(request, campaign_id):
-    """Accept only the compiled report's finite format/timezone/input vocabulary."""
-    try:
-        service = runtime()
-        principal = _principal(request, service.store)
-        values = _body(
-            request, {"fact_set_id", "format", "browser_timezone", "request_key"}
-        )
-        result = create_export(
-            service.store,
-            principal.identity,
-            campaign_id=campaign_id,
-            fact_set_id=UUID(values["fact_set_id"]),
-            format=values["format"],
-            browser_timezone=values["browser_timezone"],
-            request_key=UUID(values["request_key"]),
-        )
-        return _json({"id": str(result.pk)}, status=202)
-    except ExportRequestBound:
-        return _json({"error": BOUND}, status=409)
-    except SAFE_FAILURES:
-        return denial()
-    except ValueError:
-        return _json({"error": "Invalid export request."}, status=400)
-
-
-@require_GET
-def status(request, request_id):
-    """Knowing another job UUID never permits viewing its status or task journal."""
-    try:
-        if request.GET:
-            raise ValueError("Export status does not accept query parameters.")
-        service = runtime()
-        principal = _principal(request, service.store, ministry_jobs=True)
-        return _json(export_status(service.store, principal.identity, request_id))
-    except SAFE_FAILURES:
-        return denial()
-    except ValueError:
-        return _json({"error": "Invalid export request."}, status=400)
-
-
-@require_POST
-def cancel(request, request_id):
-    """Cancellation becomes durable before the worker next reaches a safe point."""
-    try:
-        _body(request, set())
-        service = runtime()
-        principal = _principal(request, service.store, ministry_jobs=True)
-        cancel_export(service.store, principal.identity, request_id)
-        return _json({"id": str(request_id), "state": "cancelled"})
-    except ExportConflict:
-        return _json({"error": "Export cannot be cancelled."}, status=409)
-    except SAFE_FAILURES:
-        return denial()
-    except ValueError:
-        return _json({"error": "Invalid export request."}, status=400)
-
-
-@require_POST
-def download_grant(request, request_id):
-    """Grant possession alone is insufficient: consumption still requires its user."""
-    try:
-        _body(request, set())
-        service = runtime()
-        principal = _principal(request, service.store, ministry_jobs=True)
-        grant = issue_download(service.store, principal.identity, request_id)
-        return _json(
-            {"grant": str(grant.pk), "expires_at": grant.expires_at.isoformat()}
-        )
-    except ExportExpired:
-        return _json({"error": EXPIRED}, status=410)
-    except SAFE_FAILURES:
-        return denial()
-    except ValueError:
-        return _json({"error": "Invalid export request."}, status=400)
 
 
 @require_POST
@@ -216,22 +128,6 @@ def _cleanup_error(request, task_id, *, status):
     response.stewardship_safe_error = True
     response["Cache-Control"] = "no-store"
     return response
-
-
-@require_POST
-def download(request):
-    """Serve bytes in-app with bounded download admission through response close."""
-    try:
-        service = runtime()
-        principal = _principal(request, service.store, ministry_jobs=True)
-        values = _body(request, {"grant"})
-        return download_with_grant(request, service, principal, UUID(values["grant"]))
-    except ExportExpired:
-        return _json({"error": EXPIRED}, status=410)
-    except SAFE_FAILURES:
-        return denial()
-    except ValueError:
-        return _json({"error": "Invalid download grant."}, status=400)
 
 
 @dataclass(frozen=True)
@@ -317,7 +213,7 @@ def prepare_download(subject, service, principal, grant_id):
 
 
 def download_with_grant(request, service, principal, grant_id):
-    """Both native and JSON workflows consume the same guarded one-use grant."""
+    """Consume a guarded one-use grant and stream the export inside its read guard."""
     finish, handed_off = None, False
     try:
         download = prepare_download(request, service, principal, grant_id)
