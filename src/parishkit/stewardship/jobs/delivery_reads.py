@@ -69,8 +69,11 @@ def read_listing(parameters):
     """Outgoing mail: one filtered page of messages, never their content.
 
     Returns ``values`` (the validated filters), ``window``, ``rows``,
-    ``has_next``, ``total`` (a ``bounded_count``) and ``send`` (the
-    described Family email send it is limited to, or None). A malformed or
+    ``has_next``, ``total`` (a ``bounded_count``), ``send`` (the described
+    Family email send it is limited to, or None) and ``snapshot``: the
+    current ParishSoft snapshot id the Family sort read, which the page
+    passes to ``with_family_names`` so the shown names match the order (or
+    None before the first ParishSoft sync). A malformed or
     unknown send is refused rather than ignored, so a filtered link never
     silently lists every email instead (#432).
     """
@@ -84,8 +87,14 @@ def read_listing(parameters):
         described = describe(send)
         if described is None:
             raise ValueError("Unknown Family email send.")
+    snapshot = current_snapshot()
     window, rows, has_next, total = listing(
-        window, state=state, query=query, sort=values["sort"], send=send
+        window,
+        state=state,
+        query=query,
+        sort=values["sort"],
+        send=send,
+        snapshot=snapshot,
     )
     return dict(
         values=values | {"state": state, "q": query},
@@ -94,7 +103,36 @@ def read_listing(parameters):
         has_next=has_next,
         total=total,
         send=described,
+        snapshot=snapshot,
     )
+
+
+def current_snapshot():
+    """The current ParishSoft snapshot id, or None before the first sync."""
+    from parishkit.stewardship.source.snapshot_models import SourceCurrent
+
+    return SourceCurrent.objects.values_list("snapshot_id", flat=True).first()
+
+
+def with_family_names(rows, snapshot):
+    """Each listed email with its Family's name, for the Outgoing mail page (#931).
+
+    ``family_name`` is the directory's surname-and-heads name from
+    ``snapshot`` (``read_listing``'s, the one the list was sorted by), read
+    by ``snapshot_family_names`` as the Family timeline names a Family, or
+    None for an Administrator report and for a Family that snapshot lacks.
+    The email itself stores no name, so the names are read for the shown
+    page only: at most two small queries (its Families and their heads),
+    however many rows. The command line's ``delivery list`` does not read
+    them.
+    """
+    from parishkit.stewardship.source.snapshot_names import snapshot_family_names
+
+    duids = {row["family__family_duid"] for row in rows} - {None}
+    names = snapshot_family_names(snapshot, duids, "Family")
+    return [
+        row | {"family_name": names.get(row["family__family_duid"])} for row in rows
+    ]
 
 
 def offered_actions(state, task_state, *, campaign_state, can_resolve, can_retry):

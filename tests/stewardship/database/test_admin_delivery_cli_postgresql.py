@@ -33,7 +33,8 @@ from .test_background_grants_postgresql import task_login
 from .test_delivery_resolution_postgresql import failed_delivery
 from .test_family_mail_preparation_postgresql import family_mail  # noqa: F401
 from .test_family_mail_test_postgresql import family_test  # noqa: F401
-from .test_recipient_suppressions_postgresql import refused, remember
+from .test_outbox_postgresql import submit
+from .test_recipient_suppressions_postgresql import email, refused, remember
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -112,6 +113,32 @@ def test_list_and_show_read_outgoing_mail_without_recipients(
         assert code == 1 and missing["error"]["code"] == "not_available"
         code, bad, _ = admin("delivery", "list", "--search", "x", secret=secret)
         assert code == 1 and bad["error"]["code"] == "invalid"
+
+
+def test_list_sorts_by_last_change_and_by_family_name(admin, response_service, google):
+    """#931: ``delivery list`` sorts as Outgoing mail does. The default is
+    ``-changed`` (the latest change first, not the newest email), ``name``
+    orders by the Family's name, and the old ``recipient`` token is gone."""
+    harness = activate_response_service(response_service)
+    example = email(harness, duid=1)  # "Example, Member"
+    empty = email(harness, duid=2)  # "Empty"
+    submit(example)  # The older email now has the latest change.
+    _, secret, _ = paired(admin.service, scope="read-only")
+
+    def listed(*options):
+        """The document's sort and its delivery ids, in order."""
+        code, document, _ = admin("delivery", "list", *options, secret=secret)
+        assert code == 0, document
+        result = document["result"]
+        return result["sort"], [row["id"] for row in result["deliveries"]]
+
+    example, empty = str(example.message_id), str(empty.message_id)
+    assert listed() == ("-changed", [example, empty])
+    assert listed("--sort=-created") == ("-created", [empty, example])
+    assert listed("--sort", "name") == ("name", [empty, example])
+    assert listed("--sort=-name") == ("-name", [example, empty])
+    code, document, _ = admin("delivery", "list", "--sort", "recipient", secret=secret)
+    assert code == 1 and document["error"]["code"] == "invalid"
 
 
 def test_resolve_accepts_external_evidence_once_per_key(

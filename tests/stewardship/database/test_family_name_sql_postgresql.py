@@ -17,6 +17,7 @@ from django.db.models.functions import Cast
 
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.jobs.delivery_metadata import with_name_keys
 from parishkit.stewardship.source.models import SourceCurrent
 from parishkit.stewardship.source.snapshot_name_sql import SnapshotFamilyName
 from parishkit.stewardship.source.snapshot_names import snapshot_family_names
@@ -220,3 +221,32 @@ def test_sql_family_name_treats_non_array_heads_as_none(response_service):
     )
     expected = seed_name_cases(snapshot_id, cases)
     assert sql_family_names(snapshot_id, expected) == expected
+
+
+def test_outgoing_mail_name_keys_match_every_edge_case(response_service):
+    """Outgoing mail's Family sort keys (delivery_metadata.with_name_keys,
+    #934) are each NAME_CASES name, lowercased, and its surname alone; they
+    name a Family without any usable name "Family", as the page does."""
+    snapshot_id = SourceCurrent.objects.get().snapshot_id
+    expected = seed_name_cases(snapshot_id)
+    with task_login(ServiceRole.WEB, exact=True), work_transaction():
+        keys = {
+            duid: (surname, name)
+            for duid, surname, name in with_name_keys(
+                SnapshotFamily.objects.filter(
+                    snapshot_id=snapshot_id,
+                    source_key__in=[str(duid) for duid in expected],
+                ).annotate(duid=Cast("source_key", BigIntegerField())),
+                snapshot_id,
+                duid="duid",
+            ).values_list("duid", "family_sort_surname", "family_sort_name")
+        }
+    labels = {BASE + 1000 + offset: case[0] for offset, case in enumerate(NAME_CASES)}
+    for duid, name in expected.items():
+        name = "Family" if name == DEFAULT else name
+        # No surname in these cases holds a comma, so it ends at the first.
+        surname = name.split(", ")[0]
+        assert (labels[duid], keys[duid]) == (
+            labels[duid],
+            (surname.lower(), name.lower()),
+        )

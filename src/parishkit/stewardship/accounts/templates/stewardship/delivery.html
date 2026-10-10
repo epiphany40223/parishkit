@@ -35,13 +35,13 @@
 <h2>{% translate "Admin evidence and decisions" %}</h2>
 {% for note in notes %}<section class="panel"><p>{{ note.action|delivery_label }} · <time datetime="{{ note.created_at|instant }}" data-local-instant>{{ note.created_at|instant }}</time></p><p>{{ note.evidence_note }}</p></section>
 {% empty %}<p>{% translate "No Admin evidence on this page." %}</p>{% endfor %}
-<h2>{% translate "Attempt history" %}</h2>
-{% for event in events %}
-<section class="panel">
-  <p>{% translate "Attempt" %} {{ event.attempt|number }} · {{ event|delivery_event_label }} · {{ event.state|delivery_label }}</p>
-  <p><time datetime="{{ event.created_at|instant }}" data-local-instant>{{ event.created_at|instant }}</time></p>
-</section>
-{% empty %}<p>{% translate "No attempt history on this page." %}</p>{% endfor %}
+<h2 id="attempt-history-heading">{% translate "Attempt history" %}</h2>
+{# One table, one short row per recorded change, newest first; When leads, as in every log table, heads each row and uses the dense tables' compact date (#934, Admin tables' column order). The heading above names it on screen, so its caption is only for screen readers. #}
+{% if events %}<div class="table-scroll" tabindex="0" role="region" aria-labelledby="attempt-history-heading"><table class="data-table whole-words"><caption class="visually-hidden">{% translate "Attempt history" %}</caption>
+<thead><tr><th scope="col">{% translate "When" %}</th><th scope="col" class="numeric">{% translate "Attempt" %}</th><th scope="col">{% translate "What happened" %}</th><th scope="col">{% translate "State" %}</th></tr></thead>
+<tbody>{% for event in events %}<tr><th scope="row" class="nowrap"><time datetime="{{ event.created_at|instant }}" data-local-instant data-compact>{{ event.created_at|instant }}</time></th><td class="numeric">{{ event.attempt|number }}</td><td>{{ event|delivery_event_label }}</td><td>{{ event.state|delivery_label }}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% else %}<p>{% translate "No attempt history on this page." %}</p>{% endif %}
 <nav aria-label="{% translate 'Evidence and attempt pages' %}">{% if previous_query %}<a href="?{{ previous_query }}#delivery-history" data-in-place="page-previous" data-in-place-fallback="page-next" data-in-place-message="{% translate 'Previous page shown.' %}">{% translate "Previous page" %}</a>{% endif %} {% if next_query %}<a href="?{{ next_query }}#delivery-history" data-in-place="page-next" data-in-place-fallback="page-previous" data-in-place-message="{% translate 'Next page shown.' %}">{% translate "Next page" %}</a>{% endif %}</nav>
 </div>
 {% endblock %}

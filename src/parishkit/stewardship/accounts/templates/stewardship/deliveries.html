@@ -2,7 +2,9 @@
 {% block title %}{% translate "Outgoing mail" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Outgoing mail" %}</h1>
-{% aboutpage "outgoing-mail" %}<p>{% translate "Every email the system has sent or is about to send. Open a recipient to see that email's history and, if its delivery is uncertain, decide what to do." %}</p>
+{% aboutpage "outgoing-mail" %}<p>{% translate "Every email the system has sent or is about to send. Select a Family's name (or Administrator report) to see that email's history and, if its delivery is uncertain, decide what to do." %}</p>
+<p>{% translate "Each row is one email, like a log. When is the time of the email's current state: when it was last changed, such as when it was delivered. Sort by When to see the latest first; the email's own page shows its whole history." %}</p>
+<p>{% translate "The Family's name comes from the latest ParishSoft data, as in the Family directory. Sort by Family or by Family DUID to see each Family's emails together." %}</p>
 <dl><dt>{% translate "Delivered" %}</dt><dd>{% translate "The mail service accepted the email. That does not prove it reached the inbox." %}</dd><dt>{% translate "Not sure it arrived" %}</dt><dd>{% translate "The mail service did not confirm either way, so the email may or may not have arrived. These are never retried automatically; open one to decide what to do." %}</dd><dt>{% translate "Failed" %}</dt><dd>{% translate "The email could not be sent. Open it to see its history and whether a retry is offered." %}</dd><dt>{% translate "Still sending" %}</dt><dd>{% translate "The email is still on its way; no action is needed. The words in brackets say where it is: queued, waiting to retry after a temporary problem, or being handed to the mail service." %}</dd><dt>{% translate "Not sent (cancelled)" %}</dt><dd>{% translate "The email was cancelled before it was sent." %}</dd></dl>
 <p>{% translate "Mode is Testing for email sent while the system is in Testing mode, which goes only to the Testing recipient, and Production for real email. Provider attempts counts how many times the email was handed to the mail service." %}</p>
 <p>{% translate "When Family email is waiting on a sending limit (this server's daily limit, Gmail's own limit, or a receiving mail service asking for fewer emails), a note above the list says so and links to System health. Those emails are sent automatically when the wait ends." %}</p>
@@ -25,26 +27,26 @@
 <div id="{{ table.anchor }}" data-table-region>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="delivery-table-caption">
-<table class="data-table">
+<table class="data-table whole-words">
   <caption id="delivery-table-caption">{% translate "Outgoing mail" %}</caption>
   <thead><tr>
-    {% translate "Recipient" as heading %}{% sort_heading table "recipient" heading %}
+    {% translate "When" as heading %}{% sort_heading table "changed" heading %}
+    {% translate "Family" as heading %}{% sort_heading table "name" heading %}
+    {% translate "Family DUID" as heading %}{% sort_heading table "duid" heading "numeric" %}
     {% translate "Purpose" as heading %}{% sort_heading table "purpose" heading %}
     {% translate "Mode" as heading %}{% sort_heading table "mode" heading %}
     {% translate "State" as heading %}{% sort_heading table "state" heading %}
     {% translate "Provider attempts" as heading %}{% sort_heading table "attempts" heading "numeric" %}
-    {% translate "Last changed" as heading %}{% sort_heading table "changed" heading %}
-    {% translate "Created" as heading %}{% sort_heading table "created" heading %}
   </tr></thead>
   <tbody>
   {% for delivery in table.rows %}<tr>
-    <th scope="row"><a href="{% url 'admin:delivery' delivery.id %}">{% if delivery.family__family_duid %}{% translate "Family DUID" %} {{ delivery.family__family_duid|duid }}{% else %}{% translate "Administrator report" %}{% endif %}</a></th>
+    <td class="nowrap"><time datetime="{{ delivery.updated_at|instant }}" data-local-instant data-compact>{{ delivery.updated_at|instant }}</time></td>
+    <th scope="row"><a href="{% url 'admin:delivery' delivery.id %}">{% if not delivery.family__family_duid %}{% translate "Administrator report" %}{% elif delivery.family_name %}{{ delivery.family_name }}{% else %}<span class="cell-detail">{% translate "Not in current ParishSoft data" %}</span>{% endif %}</a></th>
+    <td class="numeric nowrap">{% if delivery.family__family_duid %}{{ delivery.family__family_duid|duid }}{% else %}—{% endif %}</td>
     <td>{{ delivery.purpose|delivery_label }}</td>
     <td>{{ delivery.mode|delivery_label }}</td>
     <td>{{ delivery.state|delivery_label }}</td>
     <td class="numeric">{{ delivery.attempt|number }}</td>
-    <td><time datetime="{{ delivery.updated_at|instant }}" data-local-instant data-compact>{{ delivery.updated_at|instant }}</time></td>
-    <td><time datetime="{{ delivery.created_at|instant }}" data-local-instant data-compact>{{ delivery.created_at|instant }}</time></td>
   </tr>{% empty %}<tr><td colspan="7">{% translate "No email matches this view. Choose All under Delivery state to see every email." %}</td></tr>{% endfor %}
   </tbody>
 </table>
