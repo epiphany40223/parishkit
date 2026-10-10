@@ -373,6 +373,21 @@ def test_the_directory_and_mail_merge_exports(
     postal = ExportRequest.objects.get(pk=document["result"]["export"]["id"])
     assert postal.report == "postal_outreach"
     assert count("admin_cmd_export_postal") == 1
+    # The mail merge lists only "By postal mail only" Families (#951): the
+    # stored filters' effective reach is mail, also when it was asked for.
+    assert postal.parameters["filters"]["reach"] == "mail"
+    code, document = run("export", "postal", *base, "--filter", "reach=mail")
+    assert code == 0, document
+    asked = ExportRequest.objects.get(pk=document["result"]["export"]["id"])
+    assert asked.parameters["filters"]["reach"] == "mail"
+    assert count("admin_cmd_export_postal") == 2
+    # Any other reach would be another list: a usage error, nothing made.
+    before = ExportRequest.objects.count()
+    for value in ("reach=email", "reach=neither"):
+        code, document = run("export", "postal", *base, "--filter", value)
+        assert code == 2 and document["error"]["code"] == "usage", value
+    assert ExportRequest.objects.count() == before
+    assert count("admin_cmd_export_postal") == 2
 
     # The codes reach only the file: the worker decrypts them, and the
     # stream is the page's download of the same export, byte for byte.

@@ -2086,8 +2086,10 @@ Administrator confirmation).
 `export directory` and `export postal` (PR 8f) are the Family directory's
 export form, for the Family-code directory and the mail merge, through
 its own service, `create_directory_export`. As on the page, the mail merge
-always uses reach `mail`, whatever `--filter reach=` says
-([mailing columns](../reports/spec.md#mailing-columns)). The service holds the code MAC
+always uses reach `mail` ([mailing columns](../reports/spec.md#mailing-columns)),
+so `export postal` accepts `--filter reach=mail` or `reach=any` and refuses
+any other reach as a usage error (exit 2) before it prompts, rather than
+quietly exporting another list. The service holds the code MAC
 keyring's inventory steady while it binds the selection, so this process
 loads that one keyring (`family_code_mac`), and only for these commands
 and only for a new request: a repeated request key runs the service's own

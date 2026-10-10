@@ -1263,20 +1263,29 @@ def export_postal(args, preamble, runtime, context):
     """Request a postal mail-merge export, as its form does (PR 8f).
 
     Like the page, it lists only the Families postal invitations are for:
-    reach is always ``mail`` (#951; ``DirectoryQuery.postal``).
+    reach is always ``mail`` (#951; ``DirectoryQuery.postal``), so a
+    ``--filter reach=`` asking for any other list (``email`` or
+    ``neither``) is a usage error rather than silently replaced.
 
     Fresh-gated (#547), so it asks at the confirmation prompt first, as
     ``export financial`` does.
     """
     from .admin_family_exports import export_directory as request
 
+    for pair in args.filter or ():
+        name, _, value = pair.partition("=")
+        if name == "reach" and value not in {"mail", "any"}:
+            raise UsageError(
+                "export postal lists only Families reached by postal mail; "
+                "--filter reach may be only mail or any."
+            )
     confirm(
         context,
         (
-            "Create a mail-merge export: a file of the code and mailing "
-            "address of every matching active Family with no deliverable "
-            "head email and a usable mailing address (--filter reach is "
-            "always mail) for the current campaign.",
+            "Create a mail-merge export of the active Families that get "
+            "their invitation by postal mail (no deliverable head email, "
+            "a usable mailing address) and match the filters: each one's "
+            "code and mailing address for the current campaign.",
         ),
     )
     return request(
