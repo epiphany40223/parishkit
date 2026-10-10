@@ -567,9 +567,15 @@ def leader_post(browser, row, roles, *, version):
 
 
 def leader_region(body):
-    """The leader-role panel's own in-place review region (#922, E2)."""
+    """The leader-role panel's own in-place review region (#922, E2).
+
+    The region may carry more attributes after its marker, such as
+    data-keep-height (#768, #973).
+    """
     body = body.decode()
-    start = body.index('<div id="leader-roles-review" data-in-place-region>')
+    start = re.search(
+        r'<div id="leader-roles-review" data-in-place-region[ >]', body
+    ).start()
     return body[start : body.index("</div>", start)]
 
 

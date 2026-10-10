@@ -33,11 +33,11 @@
 {{ end_form.base_digest }}
 {% comment %}The shared Review button (#924): its change gate holds Review on the saved date, with its own hint; the complete hint after it carries the live check's words.{% endcomment %}{% translate "Choose a different end date first." as unchanged_hint %}{% include 'stewardship/components/review-changes-button.html' with describedby="settings-complete-hint" hint=unchanged_hint %}<p class="help" id="settings-complete-hint" data-complete-hint hidden></p>
 </form>
-{% comment %}The leader-role panel below has its own review region; this one shows only the end date's own answers (review_in).{% endcomment %}<div id="settings-review" data-in-place-region>{% if review_in != "leaders" %}{% include 'stewardship/settings-review.html' %}{% endif %}</div></section>
+{% comment %}The leader-role panel below has its own review region; this one shows only the end date's own answers (review_in).{% endcomment %}<div id="settings-review" data-in-place-region data-keep-height>{% if review_in != "leaders" %}{% include 'stewardship/settings-review.html' %}{% endif %}</div></section>
 {% comment %}While background work holds it, the end date's panel says so rather than vanishing (#944). A change's status stays on the page even once the end date can no longer change, as when the change itself was refused because the campaign closed.{% endcomment %}{% elif end_held %}<section class="panel" id="end-date" aria-labelledby="end-date-title"><h2 id="end-date-title">{% translate "Change the end date" %}</h2>
 <p role="status">{% translate "The end date can change once the background work now running finishes, usually within minutes. Reload this page then." %}</p>
-{% if receipt and review_in != "leaders" %}<div id="settings-review" data-in-place-region>{% include 'stewardship/settings-review.html' %}</div>{% endif %}</section>
-{% elif receipt and review_in != "leaders" %}<div id="settings-review" data-in-place-region>{% include 'stewardship/settings-review.html' %}</div>{% endif %}
+{% if receipt and review_in != "leaders" %}<div id="settings-review" data-in-place-region data-keep-height>{% include 'stewardship/settings-review.html' %}</div>{% endif %}</section>
+{% elif receipt and review_in != "leaders" %}<div id="settings-review" data-in-place-region data-keep-height>{% include 'stewardship/settings-review.html' %}</div>{% endif %}
 {% if ministries_live %}<section class="panel" id="ministry-selections"><h2>{% translate "Ministry selections" %}</h2>
 <p>{% translate "This campaign is live, but its Ministries can still be added or removed while it is open. Answers Families already gave are never deleted." %}</p>
 <p>{% url 'admin:campaign_ministries' as button_href %}{% button variant="primary" href=button_href %}{% translate "Change Campaign Ministries" %}{% endbutton %}</p></section>{% endif %}
@@ -49,7 +49,7 @@
 <div>{{ leader_form.ministry_leader_roles.as_field_group }}</div>
 {% include 'stewardship/components/review-changes-button.html' %}
 </form>
-<div id="leader-roles-review" data-in-place-region>{% if review_in == "leaders" %}{% include 'stewardship/settings-review.html' with form_id="leader-roles-form" region_id="leader-roles-review" %}{% endif %}</div></section>{% endif %}
+<div id="leader-roles-review" data-in-place-region data-keep-height>{% if review_in == "leaders" %}{% include 'stewardship/settings-review.html' with form_id="leader-roles-form" region_id="leader-roles-review" %}{% endif %}</div></section>{% endif %}
 <div class="panel"><fieldset disabled><legend>{% translate "Saved campaign settings (read-only)" %}</legend>{{ form.as_div }}</fieldset></div>
 {% endif %}
 {% endblock %}
