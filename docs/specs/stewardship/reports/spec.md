@@ -928,9 +928,9 @@ line and a city, plus a state or postal code), or neither. A one-click
 "Can't be reached by email or mail" preset opens the page filtered to
 neither. It and the mailing-columns preset (`?mailing=yes`) are the only
 values accepted in a link, since neither carries a private value. The page
-with mailing columns (unless it already lists them) and the Admin home page
-show how many active Families across the campaign no campaign mail can reach,
-linking to that list.
+with mailing columns (which never lists those Families) and the Admin home
+page show how many active Families across the campaign no campaign mail can
+reach, linking to that list.
 
 The old postal-outreach page and export addresses
 (`reports/<campaign>/postal/` and its `export`) are retired with no redirect
@@ -1002,24 +1002,42 @@ only a keyed fingerprint when correlation is operationally necessary.
 
 ### Mailing columns
 
-An **Include mailing columns** checkbox, off by default, adds Addressee and
-Mailing address columns to the table and makes the export a postal mail
-merge. It is independent of every filter: it never changes which Families
-are listed, so any listed Family, including one that email reaches, shows its
-addressee and mailing address, and the mail merge covers exactly the listed
-Families, including those without a usable mailing address (as below). To
-list the Families postal mail
-is for, filter reach to "By postal mail only" (or email availability to a
-reason). Families without deliverable email are the
-complement of the deliverable-email
-statistics card, not of the syntactic eligible-email card. The Addressee
-column names the Family as the mail-merge file does; a Family without a
-usable mailing address has no addressee, and its Mailing address column says
-its address columns are blank in the file. Mailing columns show
-nothing the active parishioner family directory's contact details do not already show Admin and
-Staff, and Ministry leaders are denied either way. Viewing with mailing
-columns is audited as postal outreach, and its export is a `postal_outreach`
-export request.
+An **Include mailing columns** checkbox, off by default, lists the Families
+postal invitations are for, adds Addressee and Mailing address columns to the
+table and makes the export a postal mail merge. By Administrator decision
+([#951](https://github.com/epiphany40223/parishkit/issues/951)), postal
+delivery of invitations is only for active parishioner Families where no head
+of household has a deliverable email address: a valid address that has not
+been permanently refused (or whose refusal was resolved), the rule the
+invitation sender uses. The directory already lists only active parishioner
+Families, so with mailing columns on, Campaign mail can reach is always "By
+postal mail only" (no deliverable email and a usable mailing address),
+whatever reach was chosen. While the box is ticked, the Campaign mail can
+reach select stays in place but shows "By postal mail only", disabled (the
+page script's `data-locked-when`, re-applied on `pageshow`; #563, #736). The
+filter bar shows no help line under either field, since a line there makes
+that field taller than the others and misaligns the bottom-aligned row
+(Administrator, pk-local batch 5, 2026-10-10): the box's and the select's
+toggletips and the About panel say what the box does and why the select is
+set. The rule is
+applied when the rows are selected, never to the page's own filters: the
+page still sends and keeps the reach the reader chose, which comes back when
+the box is unticked (Any by default), and the server applies the rule to
+every request whatever the page sends. The audit records the reach applied,
+and an export's captured filters hold reach `mail`; its status page returns
+to the directory with mailing columns on and no reach preset. The other
+filters still narrow the list. Families with
+neither a deliverable email nor a usable mailing address cannot be mailed
+and stay on the "Can't be reached by email or mail" list. Families without
+deliverable email are the complement of the deliverable-email statistics
+card, not of the syntactic eligible-email card. The Addressee column names
+the Family as the mail-merge file does. Mailing columns show nothing the
+active parishioner family directory's contact details do not already show
+Admin and Staff, and Ministry leaders are denied either way. Viewing with
+mailing columns is audited as postal outreach, and its export is a
+`postal_outreach` export request. An export captured before #951 keeps its
+own filters, including a reach other than "By postal mail only", until it
+expires.
 
 Detail contains Family DUID, envelope number where present, Family/head names,
 head email addresses, family/member phone numbers, complete primary address, reason, and campaign
@@ -1033,12 +1051,10 @@ emails (as in the [active parishioner family directory](#active-parishioner-fami
 Family heads join the active heads' names naturally ("Aaron and Isabelle
 Williams" when they share a surname, "Aaron Williams and Isabelle Smith"
 otherwise); Addressee falls back to the Family name. The file has exactly the
-rows the filters list on the page. A Family without a usable mailing address
-cannot be mailed, but it keeps its row: its Addressee, Address line 1–3,
-City, State and ZIP are blank (never a partial address), and ParishSoft DUID,
-Family, Family heads and Family code stay for follow-up. The page's export
-panel says so, and the file's report details count the rows with no usable
-mailing address. Existing columns keep their names and order (Family head
+rows the filters list on the page. In a file captured before #951, a Family
+without a usable mailing address keeps its row: its Addressee, Address line
+1–3, City, State and ZIP are blank (never a partial address), and the file's
+report details count those rows. Existing columns keep their names and order (Family head
 emails was added at the end), so existing mail-merge templates keep working.
 The PDF lays the same content out as address blocks (a block without an
 address says "No usable mailing address"), leaving out the head emails,

@@ -2324,6 +2324,47 @@
       update();
     });
   };
+  // A field marked data-locked-when="name=value" (or "name!=value") stays
+  // where it is but is locked while the rule holds: it shows its
+  // data-locked-value, disabled, so locking moves nothing. The field's own
+  // help (its toggletip) says why; a reason line under the field would make
+  // it taller than its neighbours in a bottom-aligned filter bar. The first
+  // use is the directory's Campaign mail can reach, which shows "By postal
+  // mail only" while Include mailing columns is ticked (#951).
+  // data-show-when would hide the field and drop the reader's value; this
+  // shows the value that applies and keeps the reader's own: a disabled
+  // field is not sent, so the hidden input marked data-locked-own="<field
+  // id>" carries it while locked, and the field takes it back once the rule
+  // stops holding. The server draws either state itself and applies the
+  // rule on every request in any case. Listening on the form, not the
+  // control, also catches a filter sync's synthetic form change.
+  let lockedUpdates = []; // {node, update} for each data-locked-when mark
+  const wireLockedWhen = (root) => {
+    within(root, "[data-locked-when]").forEach((node) => {
+      const rule = node.dataset.lockedWhen;
+      const negated = rule.includes("!=");
+      const [name, value] = rule.split(negated ? "!=" : "=");
+      const form = node.form;
+      const control = form && form.elements.namedItem(name);
+      const own = form && form.querySelector(`[data-locked-own="${CSS.escape(node.id)}"]`);
+      if (!control || !own) return;
+      const update = () => {
+        if (!node.isConnected) return;
+        const locked = (ruleValue(control) === value) !== negated;
+        if (locked && !node.disabled) {
+          own.value = node.value;
+          node.value = node.dataset.lockedValue;
+        } else if (!locked && node.disabled) {
+          node.value = own.value;
+        }
+        node.disabled = locked;
+        own.disabled = !locked;
+      };
+      form.addEventListener("change", update);
+      lockedUpdates.push({node, update});
+      update();
+    });
+  };
   const wireComplete = (root) => {
     within(root, "form[data-require-complete]").forEach((form) => {
       gateComplete(form);
@@ -2450,9 +2491,11 @@
   };
   const wireConditional = (root) => {
     showWhenUpdates = showWhenUpdates.filter(({node}) => node.isConnected);
+    lockedUpdates = lockedUpdates.filter(({node}) => node.isConnected);
     completeForms = completeForms.filter((form) => form.isConnected);
     notFutureChecks = notFutureChecks.filter(({date}) => date.isConnected);
     wireShowWhen(root);
+    wireLockedWhen(root);
     wireComplete(root);
     wireNotFuture(root);
   };
@@ -2460,6 +2503,7 @@
   document.addEventListener("parishkit:swap", (event) => wireConditional(event.target));
   window.addEventListener("pageshow", () => {
     showWhenUpdates.forEach(({update}) => update());
+    lockedUpdates.forEach(({update}) => update());
     completeForms.forEach(gateComplete);
     notFutureChecks.forEach(({check}) => check());
   });
