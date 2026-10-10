@@ -485,7 +485,7 @@ furthest form step reached or a Family's current eligibility; those belong to
 live views. The query returns one row per Family of the campaign with each
 instant as it stood at the cutoff, so the totals, the series below and the
 lists of Families behind any count all come from the same rows. It is the
-installed SQL function `stewardship_family_response_v1` (migration 0043,
+installed SQL function `stewardship_family_response_v1` (migration 0050,
 [#933](https://github.com/epiphany40223/parishkit/issues/933)), which the
 dashboard, the digest and the
 [directory's Response filter](#response-filters) all read, so their counts
@@ -1162,7 +1162,7 @@ shown: when Include response columns is off, or the chosen Response does not
 show that column, the order falls back to Family (by name), for the page, the
 export and the audit entry alike.
 
-The selection is `stewardship_directory_report_v2` (migration 0043). It reads
+The selection is `stewardship_directory_report_v2` (migration 0050). It reads
 the funnel through `stewardship_family_response_v1`, so the directory and the
 dashboard share one definition. Version 1 stays installed and unused. The
 selection also takes an optional mode and rehearsal epoch so a Testing view
@@ -1176,7 +1176,7 @@ with the closed values `directory_response`, `directory_data_check`,
 The selection itself still accepts v1's `yes` and `no` Response values, read
 as Submitted and Not submitted for active Families only, so the previous
 release's application can still queue directory exports if it is ever
-restored after migration 0043.
+restored after migration 0050.
 
 ### Mailing columns
 

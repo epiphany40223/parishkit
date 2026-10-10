@@ -180,6 +180,9 @@ FROZEN = {
     "0049_family_test_names_formats.sql": (
         "255a01e671064c1811c778b8a04c810d6ec47adca6d629e3f519e17ecef212f7"
     ),
+    "0050_directory_response_filters.sql": (
+        "b917ece976c55f0bb56890ad36717653ea1779026df56bb566378d7501c1bc72"
+    ),
 }
 
 

@@ -5,10 +5,12 @@ word processor can use it directly. Report details (parish, campaign, capture
 time, filters and the privacy note) are not columns: they go in the PDF header
 and footer and in the XLSX "Report information" sheet.
 
-- The Family-code directory lists Family (the surname, then the heads of
-  household: "Squyres, Tracy and Jeff"), ParishSoft DUID and Family code. When
-  it is filtered to Families that no campaign mail can reach (reach
-  "neither"), it adds their phone numbers for follow-up calls.
+- The Family-code directory lists, as the page does (#932, #933), any
+  response dates first, then Family (the surname, then the heads of
+  household: "Squyres, Tracy and Jeff"), Family DUID, Envelope number, any
+  Submissions count and What to check, and Family code. When it is filtered
+  to Families that no campaign mail can reach (reach "neither"), it adds
+  their phone numbers for follow-up calls.
 - Every export ends with Family head emails: each distinct head address once,
   with the heads who have it ("Anna Example and Ben Example: a@x; Cara
   Example: (no email)"), read when the file is rendered (#604): from the
@@ -29,14 +31,31 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from parishkit.stewardship.source.family_names import (
-    family_heads_name,
     heads_salutation_name,
 )
 from parishkit.stewardship.web.presentation import phone as format_phone
 
-from .directories import REACH, REASONS, head_emails_text
+from .directories import (
+    CHECKS,
+    INACTIVE,
+    MISSING_NAME,
+    REACH,
+    REASONS,
+    RESPONSES,
+    add_responses,
+    head_emails_text,
+    response_columns,
+    row_name,
+)
 
-CODE_HEADINGS = ("Family", "ParishSoft DUID", "Family code")
+# The Family-code file's identity columns, named as the page names them
+# (#932); response dates come before them, and Submissions and What to check
+# after them, when the page shows those.
+IDENTITY_HEADINGS = ("Family", "Family DUID", "Envelope number")
+CODE_HEADING = "Family code"
+# The code list's columns with no response columns, data check or phones.
+CODE_HEADINGS = (*IDENTITY_HEADINGS, CODE_HEADING)
+CHECK_HEADING = "What to check"
 PHONE_HEADING = "Phone numbers"
 EMAIL_HEADING = "Family head emails"
 # The postal columns and their order are what parishes' mail-merge templates
@@ -68,10 +87,16 @@ TESTING_NOTE = (
 )
 FILTER_LABELS = {
     "phone": ("Phone available", {"yes": "Yes", "no": "No"}),
-    "response": ("Campaign response", {"yes": "Responded", "no": "Not yet responded"}),
+    # Captures made before #933 hold the older yes and no.
+    "response": (
+        "Response",
+        RESPONSES | {"yes": "Responded", "no": "Not yet responded"},
+    ),
     "reason": ("Email availability", REASONS),
     "reach": ("Campaign mail can reach", REACH),
+    "check": ("ParishSoft data to check", CHECKS),
 }
+COUNTED_DETAIL = "Responses counted at"
 
 
 @dataclass(frozen=True, repr=False)
@@ -136,17 +161,43 @@ def _zip(address):
     )
 
 
-def export_headings(*, postal, reach):
+def export_headings(*, postal, reach, dates=(), counts=(), checks=False):
     """The export's columns: the mail merge, or codes (plus phones for "neither").
 
-    Family head emails is always the last column, after any phones.
+    The mail merge's columns never change. The code list follows the page:
+    the response ``dates`` and ``counts`` (``directories.response_columns``)
+    when the response columns are on, What to check when ``checks`` (a data
+    check filter is applied), then the Family code. Family head emails is
+    always the last column, after any phones.
 
     The directory page lists them so the Admin knows what the file contains.
     """
     if postal:
         return POSTAL_HEADINGS
     phones = (PHONE_HEADING,) if reach == "neither" else ()
-    return CODE_HEADINGS + phones + (EMAIL_HEADING,)
+    return (
+        tuple(column.heading for column in dates)
+        + IDENTITY_HEADINGS
+        + tuple(column.heading for column in counts)
+        + ((CHECK_HEADING,) if checks else ())
+        + (CODE_HEADING,)
+        + phones
+        + (EMAIL_HEADING,)
+    )
+
+
+def file_columns(parameters):
+    """The response (dates, counts) and whether What to check is in the file.
+
+    Read from the captured selection's parameters; captures made before #933
+    have neither choice, so their files have neither.
+    """
+    filters = parameters["filters"]
+    if parameters.get("responses"):
+        dates, counts = response_columns(filters["response"])
+    else:
+        dates, counts = (), ()
+    return dates, counts, filters.get("check", "any") != "any"
 
 
 def _filters(parameters):
@@ -161,7 +212,19 @@ def _filters(parameters):
             applied.append(f"{label}: {choices[value]}")
     if parameters["exact"]:
         applied.append("Exact Family code")
+    if parameters.get("responses"):
+        applied.append("Response columns included")
     return "; ".join(applied) or "None"
+
+
+def _family_cell(item):
+    """The code list's Family cell: the page's name, marked when inactive.
+
+    A Family the Response filter lists after the current ParishSoft data
+    stopped listing it as active says so, as the page does (#933).
+    """
+    name = row_name(item)
+    return name if item.get("active", True) else f"{name} ({INACTIVE})"
 
 
 def directory_document(
@@ -225,7 +288,7 @@ def directory_document(
             rows.append(
                 (
                     str(item["family_duid"]),
-                    item["family_name"],
+                    item["family_name"] or MISSING_NAME,
                     mailing[0],
                     heads,
                     *mailing[1:],
@@ -234,15 +297,29 @@ def directory_document(
                 )
             )
     else:
+        dates, counts, checks = file_columns(parameters)
         headings = export_headings(
-            postal=False, reach=parameters["filters"].get("reach")
+            postal=False,
+            reach=parameters["filters"].get("reach"),
+            dates=dates,
+            counts=counts,
+            checks=checks,
         )
         # Only the "neither" list adds the phone column; see export_headings.
         phones = PHONE_HEADING in headings
+        add_responses(payload["rows"])
         for item in payload["rows"]:
             row = (
-                family_heads_name(item["family_name"], item["heads"]),
+                *(
+                    instant(item[column.field]) if item[column.field] else None
+                    for column in dates
+                ),
+                _family_cell(item),
                 str(item["family_duid"]),
+                # Envelope number 0 is a value, not a blank (#933).
+                "" if item.get("envelope") is None else str(item["envelope"]).strip(),
+                *(item[column.field] for column in counts),
+                *(("; ".join(item["checks"]),) if checks else ()),
                 item["code"] or "",
             )
             if phones:
@@ -262,6 +339,11 @@ def directory_document(
         *(
             ((HEAD_EMAILS_DETAIL, instant(head_emails_as_of)),)
             if head_emails_as_of
+            else ()
+        ),
+        *(
+            ((COUNTED_DETAIL, instant(source["counted_at"])),)
+            if source.get("counted_at")
             else ()
         ),
         ("Families in this file", f"{len(rows):,}"),

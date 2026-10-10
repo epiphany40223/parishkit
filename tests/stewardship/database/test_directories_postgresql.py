@@ -84,14 +84,21 @@ def test_native_directory_code_filters_contacts_and_response(
         assert page(harness, **filters)["total"] == 1
     for filters in (
         {"exact_code": "ZZZZZZZZ"},
-        {"response": "yes"},
+        {"response": "submitted"},
         {"phone": "no"},
         {"search": "Empty"},
         {"page": "2"},
     ):
         assert page(harness, **filters)["rows"] == []
     respond(harness, "Do not show this private text in the directory")
-    assert page(harness, response="yes")["total"] == 1
+    # The Responded column is any current live response. The Response filter
+    # counts the funnel at the request's real instant, and this fixture's
+    # campaign clock dates submissions in its 2054 campaign (#421), after
+    # that instant, so the funnel does not count this one yet; the Response
+    # filters are tested on real-clock data in
+    # test_directory_responses_postgresql.
+    assert page(harness)["rows"][0]["responded"]
+    assert page(harness, response="submitted")["total"] == 0
     browser, _ = signed_in()
     route = reverse("admin:family_directory")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
@@ -355,53 +362,71 @@ def test_directory_pages_are_bounded_and_exclude_nonparishioners(response_servic
         # hides its inner plan. Do not maintain a second copy of the query.
         cursor.execute(
             "SELECT prosrc FROM pg_proc WHERE "
-            "oid='stewardship_directory_report_v1(uuid,jsonb,integer)'::regprocedure"
+            "oid='stewardship_directory_report_v2(uuid,jsonb,integer)'::regprocedure"
         )
         statement = (
             cursor.fetchone()[0]
             .split("-- BEGIN DIRECTORY SELECTION")[1]
             .split("-- END DIRECTORY SELECTION")[0]
         )
-        statement = (
-            statement.replace("INTO answer", "")
-            .replace("campaign_uuid", "%(campaign)s")
-            .replace("SELECT f AS f", "SELECT %(filters)s::jsonb AS f")
-            .replace("page_number", "%(page)s")
-        )
+        # The PL/pgSQL variables become parameters, in this order: the
+        # funnel's arguments and the metadata before their single names.
         for expression, parameter in (
-            ("(parameters->>'postal')::boolean", "%(postal)s"),
+            ("INTO answer", ""),
+            ("report_mode,epoch_uuid,counted", "'production',NULL::uuid,now()"),
+            ("'report_mode',report_mode", "'report_mode','production'"),
+            ("THEN counted END", "THEN now() END"),
+            ("funnel_needed", "%(funnel)s"),
+            ("campaign_uuid", "%(campaign)s"),
+            ("SELECT f AS f", "SELECT %(filters)s::jsonb AS f"),
+            ("page_number", "%(page)s"),
             ("(parameters->>'exact')::boolean", "%(exact)s"),
             ("(parameters->>'family_id')::uuid", "%(family)s::uuid"),
         ):
+            assert expression in statement, expression
             statement = statement.replace(expression, parameter)
-        cursor.execute(
-            "EXPLAIN (ANALYZE, VERBOSE, FORMAT JSON) " + statement,
-            {
-                "campaign": harness.campaign.pk,
-                "filters": json.dumps(DirectoryQuery().form_values()),
-                "exact": False,
-                "family": None,
-                "postal": False,
-                "page": 1,
-            },
-        )
-        plan = cursor.fetchone()[0][0]["Plan"]
-    nodes, phone_loops, head_groups = [plan], [], []
-    while nodes:
-        node = nodes.pop()
-        nodes.extend(node.get("Plans", []))
-        outputs = node.get("Output", [])
-        if node["Node Type"] != "Aggregate":
-            continue
-        if any("jsonb_build_object('owner'" in output for output in outputs):
-            phone_loops.append(node["Actual Loops"])
-        elif any("jsonb_build_object('duid'" in output for output in outputs):
-            head_groups.append(node)
-    # Phones are gathered per shown row; heads in one grouped pass over the
-    # page's Families only (page_heads), never the whole directory.
-    assert phone_loops == [50]
-    assert len(head_groups) == 1 and head_groups[0]["Actual Loops"] == 1
-    assert head_groups[0]["Actual Rows"] <= 50
+        plans = {}
+        # Without a response filter, column or order the funnel never runs;
+        # with a response order it runs once, for the whole selection (#933).
+        for funnel, sort in ((False, "name"), (True, "invited")):
+            filters = DirectoryQuery(sort=sort).form_values()
+            # The selection's filters: no code, no column choice.
+            del filters["exact_code"], filters["responses"]
+            cursor.execute(
+                "EXPLAIN (ANALYZE, VERBOSE, FORMAT JSON) " + statement,
+                {
+                    "campaign": harness.campaign.pk,
+                    "filters": json.dumps(filters),
+                    "exact": False,
+                    "family": None,
+                    "page": 1,
+                    "funnel": funnel,
+                },
+            )
+            plans[funnel] = cursor.fetchone()[0][0]["Plan"]
+    for funnel, plan in plans.items():
+        nodes, phone_loops, head_groups, funnel_loops = [plan], [], [], []
+        while nodes:
+            node = nodes.pop()
+            nodes.extend(node.get("Plans", []))
+            outputs = node.get("Output", [])
+            if node["Node Type"] == "Function Scan" and (
+                node.get("Function Name") == "stewardship_family_response_v1"
+            ):
+                funnel_loops.append(node["Actual Loops"])
+            if node["Node Type"] != "Aggregate":
+                continue
+            if any("jsonb_build_object('owner'" in output for output in outputs):
+                phone_loops.append(node["Actual Loops"])
+            elif any("jsonb_build_object('duid'" in output for output in outputs):
+                head_groups.append(node)
+        # Phones are gathered per shown row; heads in one grouped pass over
+        # the page's Families only (page_heads), never the whole directory.
+        assert phone_loops == [50]
+        assert len(head_groups) == 1 and head_groups[0]["Actual Loops"] == 1
+        assert head_groups[0]["Actual Rows"] <= 50
+        # Unneeded, the funnel is planned away or never executed.
+        assert funnel_loops == [1] if funnel else not any(funnel_loops)
 
 
 def test_staff_directories_survive_limiter_outage_but_not_revocation(
