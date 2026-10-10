@@ -3235,10 +3235,13 @@ columns follow the Admin tables' shared order
 Family, Family DUID, Purpose, Mode, State and Provider attempts. The
 command line's `--sort` takes the same tokens and also `created`, when the
 email was created. The table fits a 1280-pixel-wide screen beside the
-Admin menu without scrolling. Each email's own page shows its
-history and offers the resolutions its state allows (an evidence note,
-confirming delivery or that it was not sent, a retry, or a duplicate-risk
-resend), each with a required note, as the
+Admin menu without scrolling. Each email's own page shows its history,
+its attempts as one table of short rows, one per recorded change, newest
+first, with When leading as in any log, then the attempt number, what
+happened and the resulting state (#934); and it offers the resolutions its
+state allows (an evidence note, confirming delivery or that it was not
+sent, a retry, or a duplicate-risk resend), each with a required note, as
+the
 [delivery workflow](../background-processing/spec.md#family-invitations-and-reminders)
 defines.
 

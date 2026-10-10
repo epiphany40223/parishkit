@@ -149,3 +149,43 @@ def test_family_email_history_puts_the_dates_first(page, component_origin):
     assert detail.evaluate("node => getComputedStyle(node).color") != first.locator(
         "th"
     ).evaluate("node => getComputedStyle(node).color")
+
+
+def test_attempt_history_is_one_table_of_short_rows(page, component_origin):
+    """An email's own page lists its attempt history as one table, one row
+    per recorded change (#934), not one panel each: When leads, as in a log,
+    newest first, and every row stays one line at laptop width."""
+    table = open_at(page, component_origin, "/delivery-attempts", 1280)
+    history = page.locator("#delivery-history")
+    # The Admin evidence above keeps its panels; no attempt is one.
+    assert history.locator("section.panel", has_text="Acceptance unknown").count() == 0
+    assert table.count() == 1
+    assert [text.strip() for text in table.locator("thead th").all_inner_texts()] == [
+        "When",
+        "Attempt",
+        "What happened",
+        "State",
+    ]
+    rows = table.locator("tbody tr")
+    assert rows.count() == 4
+    assert [row.locator("td").nth(1).inner_text() for row in rows.all()] == [
+        "2",
+        "2",
+        "1",
+        "1",
+    ]
+    assert rows.first.locator("td").nth(2).inner_text() == "Acceptance unknown"
+    times = table.locator("tbody time").evaluate_all(
+        "nodes => nodes.map(node => node.getAttribute('datetime'))"
+    )
+    assert times == sorted(times, reverse=True)
+    # Short rows: every cell reads on one line.
+    assert (
+        table.evaluate("""table => [...table.querySelectorAll('tbody td')]
+            .filter(cell => cell.getClientRects().length !== 1
+                || cell.getBoundingClientRect().height > 2.2 * parseFloat(
+                    getComputedStyle(cell).lineHeight))
+            .map(cell => cell.textContent)""")
+        == []
+    )
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")

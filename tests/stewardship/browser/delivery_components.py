@@ -216,6 +216,29 @@ def components(now):
         ],
     )
     yield "/delivery", "delivery", delivery
+    # A message retried after a failure: each recorded change is one short
+    # row of the attempt history table, newest first (#934).
+    yield (
+        "/delivery-attempts",
+        "delivery",
+        delivery
+        | dict(
+            events=[
+                dict(
+                    attempt=attempt,
+                    action=action,
+                    state=state,
+                    created_at=now - timedelta(minutes=minutes),
+                )
+                for attempt, action, state, minutes in (
+                    (2, "mark_unknown", "delivery_unknown", 0),
+                    (2, "submit", "submitting", 5),
+                    (1, "retry_unaccepted", "retry_wait", 30),
+                    (1, "submit", "submitting", 35),
+                )
+            ]
+        ),
+    )
     # The evidence and attempt history over two pages, as Next page and
     # Previous page fetch them in place (#519 PR 6).
     first = delivery | dict(next_query="page=2")
