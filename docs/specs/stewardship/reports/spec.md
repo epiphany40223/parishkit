@@ -245,8 +245,8 @@ PDF that the same process is rendering. The Participation page's chart is drawn
 from an immutable fact set, so each web process keeps its most recent page
 chart PNGs in memory, keyed by the exact drawing inputs (the document and the
 date format). A repeat view returns the stored image without waiting. Only the
-first view of a newly calculated chart can wait, for at most the time of a PDF
-already rendering
+first view of a newly calculated chart can wait, behind the other renderings
+in that process, within the read guard's deadline
 ([#905](https://github.com/epiphany40223/parishkit/issues/905)).
 
 For **Historical as of day**, the source cutoff is the last promoted source
