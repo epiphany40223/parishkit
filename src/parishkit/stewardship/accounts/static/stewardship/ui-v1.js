@@ -1104,7 +1104,11 @@
   // draws it ("Filter by identifier" opens when one is set), and the Apply
   // gate checks again. Only then: any other swap keeps filters the reader
   // has typed but not applied. The browser-zone field holds this browser's
-  // zone and is left alone (see syncHidden).
+  // zone and is left alone (see syncHidden). A field whose value this
+  // changes gets its own (non-bubbling) change event, so a rule listening
+  // on it runs again: the System logs level boxes come back when a
+  // cross-link's answer clears the Activity choice (data-enabled-when,
+  // #953); the form's own change event below covers the form-wide gates.
   const syncFilters = (parsed) => {
     const form = document.getElementById("table-filters");
     const fresh = parsed.getElementById("table-filters");
@@ -1113,8 +1117,11 @@
     [...form.elements].forEach((field) => {
       if (!field.name || field.type === "hidden" || field.matches("[data-browser-zone]")) return;
       const copy = copies.find((node) => node.name === field.name);
+      const before = field.type === "checkbox" ? field.checked : field.value;
       if (field.type === "checkbox") field.checked = Boolean(copy?.checked);
       else if (copy && "value" in field) field.value = copy.value;
+      const after = field.type === "checkbox" ? field.checked : field.value;
+      if (after !== before) field.dispatchEvent(new Event("change"));
     });
     form.querySelectorAll("details[id]").forEach((node) => {
       node.open = Boolean(fresh.querySelector(`#${CSS.escape(node.id)}`)?.open);
