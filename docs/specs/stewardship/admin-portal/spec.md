@@ -1532,22 +1532,16 @@ words, no cron text, and every refused or skipped time explained where it
 appears. It follows the [in-place controls](../ui-conventions/spec.md#in-place-controls) and
 conditional-field rules: nothing on the page reloads it.
 
-Status: the scheduler side is built (steps 2a and 2b of the
-[delivery plan](../../../plans/stewardship/refresh-schedule.md#delivery-plan));
-this page is step 4 and is not built yet. Today the ParishSoft settings page
-offers a full-refresh frequency, an "At these times" list of up to eight
-parish-local times and a quick-update choice (`accounts/integration_forms.py`).
-A schedule stored with rules is kept as it is, and that page then omits the
-three fields, since only this editor will write rules from the web.
-
-**Time zone.** Schedule times are entered and shown in the parish's time
-zone, a recorded exception to the browser-local rule
+**Time zone.** Schedule times are entered and shown in the refresh
+schedule's own time zone (the current campaign's, else the parish's, as the
+scheduler reads it), a recorded exception to the browser-local rule
 ([#558](https://github.com/epiphany40223/parishkit/issues/558)): a recurring
 wall-clock schedule belongs to the parish's clock, whose daylight-saving
 changes decide when each refresh runs and when reminders are due, and a time
-converted from another zone would shift twice a year. The page names the
-parish time zone beside the editor ("Times are in the parish's time zone,
-America/New_York") and, when the browser's zone differs, says so and shows
+converted from another zone would shift twice a year. The page names that
+zone beside the editor ("Times are in the refresh schedule's time zone,
+America/New_York: the current campaign's, or the parish's when there is no
+campaign") and, when the browser's zone differs, says so and shows
 each preview time in the browser's zone as well. See decision 18 in the
 [plan](../../../plans/stewardship/refresh-schedule.md#open-decisions).
 
@@ -1567,23 +1561,35 @@ each preview time in the browser's zone as well. See decision 18 in the
     11:00, 13:00, 15:00, 17:00 and 19:00; the others are covered by the full
     refreshes).
 
-  Choosing a preset when the editor has unsaved changes asks first, in
-  place: "Replace your changes with this preset?" No preset needs to avoid
-  the Family email windows by hand: the automatic exclusions do that.
+  A preset replaces the rule rows and clears the skips. Choosing a preset
+  when the editor has unsaved changes asks first, in place: "Replace your
+  changes with this preset?" No preset needs to avoid the Family email
+  windows by hand: the automatic exclusions do that.
 - **Rule rows**, each "[Full | Quick] every [interval] from [time] to [time]"
   or "[Full | Quick] at [time]", with **Add a rule** and **Remove**. Time
   fields use the shared [time entry](../ui-conventions/spec.md#time-entry), with its live reading
   beside the field, and accept quarter-hour times; a kept off-quarter-hour full time is shown as a single time,
-  labeled as kept from the earlier schedule.
-- **Skip these times**: single times or from–to ranges.
+  labeled as kept from the earlier schedule. A schedule has at most 64
+  rules, said beside the rules; Add a rule is unavailable at that many.
+  "Every" rules give any number of times, and the cap keeps a save within
+  the server's limit on posted fields.
+- **Skip these times**: single times or from–to ranges, at most 16, said
+  and enforced the same way.
 - **Skip refreshes around Family emails**, with one line saying what it
   does: refreshes are skipped while a reminder is being prepared and while a
   Family email is being sent. It starts on when no schedule is stored, and
   off for an existing schedule shown converted (below), since such a
   schedule never skips today. Presets fill the rules and leave it as it is.
+  The settings page always has a stored document to show: one with no
+  schedule settings at all runs the default schedule (02:00 and quick
+  updates every quarter hour) and is shown converted, with the switch off.
 - **Edit as text**: the resulting full and quick times as two plain lists,
-  for pasting. Editing them replaces the rules with single times, and the
-  page says so before it does. The lists and the rows stay in step.
+  for pasting. Choosing "Use these lists" replaces the rules with single
+  times and clears the skips, and the page says so beside the lists before
+  it does. Since each time becomes a rule, the two lists together hold at
+  most 64 times, said beside them; a schedule with more (such as quick
+  updates every 15 minutes) is changed with its rules instead. The lists
+  and the rows stay in step: each check refills them from the rows.
 - The page states which full time is the nightly refresh and that it runs
   even while Family emails are being sent.
 - A schedule saved before this page existed is shown converted to the
@@ -1611,6 +1617,14 @@ the same checks on save.
   end is not after its start (both would cross midnight): at that row ("Use
   two ranges: one up to 23:45 and one from 00:00"). A rule whose last time
   equals its start time is allowed and gives that one time.
+- Problems of the schedule as a whole (no full rule, more refreshes a day
+  than there is room for, more rows than the cap) have no row: the line
+  beside Save says them in full, after its links, rather than a message
+  above the rows that would push the rows, Add and Save under the pointer
+  ([#736](https://github.com/epiphany40223/parishkit/issues/736)).
+
+A row's controls are described by its messages (`aria-describedby`) and
+marked invalid (`aria-invalid`) while the row has problems.
 
 While any problem remains in a changed schedule, Save is unavailable (an
 unchanged converted schedule is the exception described under
@@ -1638,8 +1652,38 @@ and removes rows, fills presets and reads times through the shared
   to the latest check is shown; an older one that arrives late is dropped.
 - **What is announced.** The line beside Save (problem count, or "About
   1 h 34 min of ParishSoft time a day") is the check's only live region. It
-  keeps room for two lines and changes only when its text changes, so
-  neither it nor a longer preview moves Save or the rows under the pointer.
+  keeps room for two lines and changes only when its text changes, and the
+  cost and freshness summary and the seven-day list are drawn below Save,
+  so neither the line nor a longer preview moves Save or the rows under the
+  pointer. A row's messages are drawn under its controls, in room kept for
+  one line, so a one-line message that comes or goes moves nothing. Every
+  other change the page's script makes (messages, the line beside Save,
+  the summary, the seven-day list, the "Not checked" line, the "Edit as
+  text" error, a time's reading line, and rows added, removed or
+  replaced) keeps the page steady at one height on the screen: the
+  pointer's, whatever is beside it; with no pointer (keyboard only, a
+  lifted touch, or the pointer has left the window), or with the pointer
+  over something that does not scroll with the page (the sticky Admin
+  menu), the top of the control being edited, or of Use these lists when
+  it replaces the rows. The script measures each part it changes before
+  and after the change and scrolls by the sum of the height changes of
+  the parts wholly above that height. In a part that spans it, it adds how
+  far the content at that height moved within the part: the same element,
+  followed wherever rows added or removed around it put it (over a gap
+  between rows, the row just below the gap). Only where that content is
+  gone (its row removed, or the part redrawn) is it followed by position,
+  and where nothing is left there, nothing is added. So what is under the
+  pointer stays where it was on the screen, within half a pixel, except
+  where it is itself removed or redrawn, and as far as the page can
+  scroll: near the top or bottom of the page the scroll stops at the
+  page's edge. Moving focus (to Add a rule after Remove, or to Replace my
+  changes) never scrolls the page under the pointer; with no pointer, a
+  control off the screen is brought just into view. The browser's own
+  scroll anchoring stays on for the page, so a note the header shows
+  above the page moves nothing; the parts the script steadies opt out of
+  it, so it does not add a second adjustment. Those parts take the same
+  room as plain blocks. The "Edit as text" error is drawn after Use these
+  lists, in room kept for one line.
   The preview and the problems at each row are not live regions. This is
   the same pattern as the mail schedules' repeat panel
   ([#469](https://github.com/epiphany40223/parishkit/issues/469)).
@@ -1649,7 +1693,9 @@ and removes rows, fills presets and reads times through the shared
 - **Saving** uses the ordinary configuration request of this page. The
   form turns the rows into `refresh_rules`, derives the stored lists
   (`refresh_rules.stored_settings`) and checks them; nothing posted can set
-  the stored lists directly. The review before applying lists, in words,
+  the stored lists directly. A request without the editor's rows keeps the
+  stored schedule, and a new key is never saved together with a schedule
+  change. The review before applying lists, in words,
   the full and quick times added and removed, the switch if it changed, and
   each difference that
   [stored schedule and upgrade](../background-processing/spec.md#stored-schedule-and-upgrade)

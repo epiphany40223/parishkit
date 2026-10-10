@@ -33,6 +33,7 @@ from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.credential_runtime import acknowledge_rotations
 from parishkit.stewardship.deployment import ServiceRole, load_deployment
 
+from ..schedule_rows import rows
 from . import campaign_builders
 from .auth_builders import signed_in, stale_sign_in
 from .campaign_builders import change
@@ -539,12 +540,13 @@ def test_blank_key_keeps_the_settings_preview(working):
 
 
 def test_key_with_a_first_schedule_change_says_to_save_them_apart(working):
-    """Older settings with no stored schedule refuse a key plus a schedule change.
+    """A key plus a refresh schedule change is refused (#632).
 
     The refusal names the reason and the order to save in, rather than the
     generic "Check your entries" page, and nothing is staged.
     """
-    response = save(working, full_refresh="hourly")
+    hourly = {"kind": "full", "every": 60, "from": "00:00", "to": "23:00"}
+    response = save(working, **rows([hourly]))
     assert response.status_code == 400
     refusal = response.json()["refusal"]
     assert refusal["message"].startswith("Nothing was saved: a new key and a")

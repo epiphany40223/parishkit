@@ -547,6 +547,9 @@ NON_PAGES = frozenset(
         "ministry_followup_update",
         "ministry_packet",
         "participation_chart",
+        # The ParishSoft refresh schedule editor's live check (#632), a
+        # fragment the settings page reads.
+        "refresh_schedule_check",
         "report_exact_create",
         "report_export_cancel",
         "report_export_create",

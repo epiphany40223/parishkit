@@ -67,9 +67,8 @@ def test_setup_credential_help_is_a_tip_with_a_visible_hint():
 
 def test_admin_integration_and_schedule_hints():
     """Regular Admin forms shorten their longest help the same way."""
-    refresh = IntegrationForm("parishsoft").fields["full_refresh"]
-    assert "never overlap" in str(refresh.tip)
-    assert "few minutes" in str(refresh.help_text)
+    organization = IntegrationForm("parishsoft").fields["organization_id"]
+    assert str(organization.help_text) and hasattr(organization, "tip")
     key = InlineCredentialForm("slack").fields["candidate"]
     assert "xoxb-" in str(key.tip)
     assert str(key.help_text) == "Leave blank to keep the current key."

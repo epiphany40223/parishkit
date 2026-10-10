@@ -1,0 +1,12 @@
+{% comment %}
+The refresh schedule editor's live check (#632): the parts of the editor
+the page script puts in place, each drawn by the same include as the page.
+Read-only; data-blocking says whether Save stays unavailable.
+{% endcomment %}<div data-schedule-check data-blocking="{{ schedule.blocking|yesno:'true,false' }}">
+<div data-schedule-part="status">{% include 'stewardship/refresh-schedule-status.html' %}</div>
+{% for row in schedule.rule_rows %}<div data-check-row="rules-{{ row.index }}">{% include 'stewardship/refresh-schedule-messages.html' %}</div>{% endfor %}
+{% for row in schedule.skip_rows %}<div data-check-row="skips-{{ row.index }}">{% include 'stewardship/refresh-schedule-messages.html' %}</div>{% endfor %}
+<div data-schedule-part="summary">{% include 'stewardship/refresh-schedule-summary.html' %}</div>
+<div data-schedule-part="preview">{% include 'stewardship/refresh-schedule-preview.html' %}</div>
+<div data-schedule-text{% if schedule.text_lists %} data-full="{{ schedule.text_lists.full }}" data-quick="{{ schedule.text_lists.quick }}"{% endif %}></div>
+</div>
