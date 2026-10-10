@@ -296,3 +296,140 @@ def test_standard_refusals_and_link_validation():
     ):
         with pytest.raises(TypeError):
             UserFacingError("Message", link=link, link_label=label)
+
+
+# Untyped 404s on portal addresses (#927): an unknown address or Http404.
+JSON = {"HTTP_ACCEPT": "application/json", "HTTP_SEC_FETCH_MODE": "cors"}
+SECRET = "/admin/no-such-page-private?token=private-query"
+
+
+def _assert_no_page(response, *, admin=True):
+    """The styled not-found page: 404, closed text, nothing from the address."""
+    body = response.content.decode()
+    assert response.status_code == 404
+    assert response["Content-Type"].startswith("text/html")
+    assert response["Cache-Control"] == "no-store"
+    assert "<h1>Page not found</h1>" in body
+    assert "There is no page at this address." in body
+    assert "Check the address, or use the links below to continue." in body
+    assert "private" not in body
+    assert "Check this value." not in body
+    assert ('class="js-required"' in body) is admin
+    return body
+
+
+@pytest.mark.parametrize("debug", [False, True])
+def test_unknown_admin_address_shows_the_styled_page(client, debug):
+    """No URL pattern matches: a person sees the Admin page, never plain text.
+
+    Under DEBUG Django skips handler404 and builds its own trace page; the
+    middleware replaces both, so the path and query are never echoed.
+    """
+    with override_settings(DEBUG=debug):
+        response = client.get(SECRET, **PAGE)
+    body = _assert_no_page(response)
+    assert 'href="/admin/">Administration home</a>' in body
+    # Signed out: the minimal Admin layout, with no menu.
+    assert "admin-sidebar" not in body
+    # The outer security envelope still applies.
+    assert response["X-Frame-Options"] == "DENY"
+
+
+def test_unknown_admin_address_answers_scripts_with_typed_json(client):
+    """A script gets the closed JSON refusal instead of plain text."""
+    response = client.get(SECRET, **JSON)
+    assert response.status_code == 404
+    assert response["Content-Type"] == "application/json"
+    assert "Accept" in response["Vary"]
+    body = json.loads(response.content)
+    assert body["errors"][0]["code"] == "invalid"
+    assert body["refusal"]["message"] == "There is no page at this address."
+    assert "private" not in response.content.decode()
+
+
+def test_raised_http404_becomes_the_styled_page():
+    """A view's Http404 (Django's own 404 response) is styled too."""
+    from django.http import HttpResponseNotFound
+
+    request = RequestFactory().get("/admin/reports/lists/x/", **PAGE)
+    _assert_no_page(through(request, HttpResponseNotFound(b"Not Found")))
+
+
+def test_typed_not_found_keeps_its_own_title():
+    """A view's typed 404 already says something specific; it is not replaced."""
+    request = RequestFactory().get("/admin/x", **PAGE)
+    response = through(request, error_response(LookupError("private")))
+    body = response.content.decode()
+    assert "Page unavailable" in body and "Page not found" not in body
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/static/stewardship/missing-v1.css",
+        "/branding/missing.png",
+        "/missing-private",
+        "/health/missing",
+    ],
+)
+def test_non_portal_not_found_stays_plain(client, path):
+    """Assets, probes and stray addresses keep the plain normalized 404."""
+    response = client.get(path, **PAGE)
+    assert response.status_code == 404
+    assert response.content == b"Not Found\n"
+
+
+def test_chrome_check_is_read_only_and_needs_a_session(monkeypatch):
+    """Only a request with a session cookie is checked, read-only, for chrome.
+
+    A failure of that check leaves the minimal layout, never another error.
+    """
+    from types import SimpleNamespace
+
+    from django.http import HttpResponseNotFound
+
+    from parishkit.stewardship.accounts import authentication, sessions
+    from parishkit.stewardship.accounts.limiting import LimiterUnavailable
+    from parishkit.stewardship.web import error_pages
+
+    calls = []
+    restored = []
+    monkeypatch.setattr(error_pages, "_restore_review", lambda: bool(restored))
+
+    def check(request, *, store, read_only=False):
+        """Record the call, then fail like an outage would."""
+        calls.append((store, read_only))
+        raise LimiterUnavailable("outage")
+
+    monkeypatch.setattr(sessions, "authenticated_admin", check)
+    monkeypatch.setattr(
+        authentication, "runtime", lambda: SimpleNamespace(store="store")
+    )
+    signed_out = RequestFactory().get("/admin/missing", **PAGE)
+    signed_out.session = SimpleNamespace(session_key=None)
+    _assert_no_page(through(signed_out, HttpResponseNotFound()))
+    assert calls == []
+    signed_in = RequestFactory().get("/admin/missing", **PAGE)
+    signed_in.session = SimpleNamespace(session_key="key")
+    _assert_no_page(through(signed_in, HttpResponseNotFound()))
+    assert calls == [("store", True)]
+    # During a restore review the gate closes every real page, so the
+    # not-found page skips the check and keeps the menu-less layout.
+    restored.append(True)
+    under_review = RequestFactory().get("/admin/missing", **PAGE)
+    under_review.session = SimpleNamespace(session_key="key")
+    _assert_no_page(through(under_review, HttpResponseNotFound()))
+    assert calls == [("store", True)]
+
+
+def test_unknown_family_address_shows_the_family_page(client):
+    """A Family address gets the same page in the Family layout, linking home."""
+    response = client.get("/family/no-such-page-private?code=private", **PAGE)
+    body = _assert_no_page(response, admin=False)
+    assert 'href="/">Family portal home</a>' in body
+    assert "/admin/" not in body
+    script = client.get("/family/no-such-page-private", **JSON)
+    assert script.status_code == 404
+    assert json.loads(script.content)["refusal"]["message"] == (
+        "There is no page at this address."
+    )

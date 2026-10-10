@@ -8,6 +8,7 @@ keeping the status code, no-store caching and the safe-error marking. Only
 server-owned text is shown: never exception strings or submitted values.
 """
 
+import contextlib
 from urllib.parse import urlsplit
 
 from django.conf import settings
@@ -19,8 +20,9 @@ from django.utils.cache import patch_vary_headers
 from django.utils.translation import gettext_lazy as _
 
 from ..deployment import DeploymentProfile
-from .contracts import MESSAGES, ErrorCode
+from .contracts import MESSAGES, ErrorCode, FieldError, validation_response
 from .namespaces import ADMIN_HOME, admin_return_path, is_admin
+from .refusals import Refusal
 
 # Headers that choose between the JSON and HTML representations.
 NEGOTIATION_HEADERS = ("Accept", "Sec-Fetch-Mode", "X-Requested-With")
@@ -67,6 +69,96 @@ _NOT_FOUND = (
     _("Page unavailable"),
     _("This item may have been removed, or the link may be incomplete."),
 )
+
+# An address that no page answers (#927): no URL pattern matched, or a view
+# raised Http404. Static and closed, so nothing from the address is shown.
+_NO_PAGE_TITLE = _("Page not found")
+_NO_PAGE = Refusal(
+    _("There is no page at this address."),
+    fix=_(
+        "The link may be incomplete or out of date, or the page may have "
+        "moved. Check the address, or use the links below to continue."
+    ),
+)
+
+# Portal addresses whose untyped 404s become the styled page: the Admin
+# portal, and the Family portal in its own layout. Everything else (static
+# assets, branding images, hosted files, probes, stray addresses) keeps the
+# plain normalized 404 from the security middleware.
+_STYLED_PREFIXES = ("/admin/", "/family/")
+
+
+def not_found_response():
+    """The typed 404 for an address no page answers; scripts get its JSON."""
+    response = validation_response(
+        [FieldError(ErrorCode.INVALID)], status=404, refusal=_NO_PAGE
+    )
+    response.stewardship_no_page = True
+    return response
+
+
+def _untyped_not_found(request, response):
+    """Whether Django, not a view's typed error, produced this portal 404.
+
+    That is a URL no pattern matches, or a view that raised ``Http404``
+    (including Django's DEBUG 404 page). Any response a view already marked
+    safe keeps its own content.
+    """
+    return (
+        response.status_code == 404
+        and not getattr(response, "stewardship_safe_error", False)
+        and request.path_info.startswith(_STYLED_PREFIXES)
+    )
+
+
+def _restore_review():
+    """Whether a restore awaits review: the flag the access gate reads."""
+    from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+
+    return bool(
+        SystemConfiguration.objects.values_list(
+            "restore_review_required", flat=True
+        ).first()
+    )
+
+
+def _admit_for_chrome(request):
+    """Let a signed-in Admin's not-found page show the usual header and menu.
+
+    An unknown address runs no view, so nothing has authenticated the request
+    and the chrome (``admin_context.portal_chrome``) would be empty. This is
+    the read-only check the old-address redirects use: it renews no idle time,
+    rotates nothing and revokes no ended session, and marks the request with
+    the principal it finds. (Like every Admin check, it still refuses a
+    command-line session's cookie used in a browser, which queues that
+    session's revocation.) A signed-out visitor (no session cookie) costs no
+    query, and any failure just leaves the minimal layout: presentation must
+    never turn a 404 into a different error.
+
+    During a restore review every real Admin page shows the maintenance page
+    (or sends an Administrator to it) from the access gate, which never runs
+    for an unknown address. So the not-found page then skips the session
+    check, too, and keeps the menu-less layout rather than offering a menu
+    whose every link is closed. It reads the same flag the gate reads.
+    """
+    if getattr(request, "principal", None) is not None:
+        return
+    session = getattr(request, "session", None)
+    if session is None or not session.session_key:
+        return
+    from parishkit.config import ConfigError
+    from parishkit.stewardship.accounts.authentication import runtime
+    from parishkit.stewardship.accounts.limiting import LimiterUnavailable
+    from parishkit.stewardship.accounts.sessions import authenticated_admin
+
+    # The failures the access gate and old-address redirects already treat
+    # as "no chrome": a missing runtime, a limiter or database outage, or a
+    # refused session.
+    with contextlib.suppress(
+        ConfigError, LimiterUnavailable, DatabaseError, PermissionError
+    ):
+        if not _restore_review():
+            authenticated_admin(request, store=runtime().store, read_only=True)
 
 
 def page_request(request):
@@ -130,6 +222,10 @@ def error_page(request, response):
     admin = is_admin(request)
     code = errors[0].code
     title, guidance = _NOT_FOUND if response.status_code == 404 else _GUIDANCE[code]
+    if getattr(response, "stewardship_no_page", False):
+        title = _NO_PAGE_TITLE
+        if admin:
+            _admit_for_chrome(request)
     # A user-facing refusal replaces the closed message with its own reviewed
     # explanation, fix and link (see web.refusals); still never raw text.
     refusal = getattr(response, "stewardship_refusal", None)
@@ -206,8 +302,15 @@ class BrowserErrorMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        """Replace only responses that carry typed ``stewardship_errors``."""
+        """Replace only responses that carry typed ``stewardship_errors``.
+
+        An untyped portal 404 first becomes the typed not-found response, so
+        it is negotiated like every other refusal.
+        """
         response = self.get_response(request)
+        if _untyped_not_found(request, response):
+            response.close()
+            response = not_found_response()
         if not getattr(response, "stewardship_errors", None):
             return response
         patch_vary_headers(response, NEGOTIATION_HEADERS)
