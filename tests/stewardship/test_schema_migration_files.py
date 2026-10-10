@@ -181,7 +181,7 @@ FROZEN = {
         "255a01e671064c1811c778b8a04c810d6ec47adca6d629e3f519e17ecef212f7"
     ),
     "0050_directory_response_filters.sql": (
-        "b917ece976c55f0bb56890ad36717653ea1779026df56bb566378d7501c1bc72"
+        "768e09939df9cf7458121d997bf255c4ecb655995f0c22c181e6d6f589c6fd1b"
     ),
 }
 

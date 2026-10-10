@@ -238,8 +238,9 @@ def directory(request, campaign_id):
                 mutable = False
             testing = testing_codes_context(campaign_id, principal)
             report_url = reverse("admin:family_directory")
-            # The response columns the Response choice shows (#933): its
-            # dates lead the row and Submissions follows the envelope number.
+            # The response columns the Response choice shows (#933):
+            # Submissions follows the envelope number and the dates follow
+            # What to check (Family first, #932).
             dates, counts = (
                 response_columns(query.response)
                 if query.responses == "yes"

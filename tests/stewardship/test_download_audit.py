@@ -199,6 +199,7 @@ def test_directory_sorts_read_in_words():
     assert str(field_value("directory_sort", "name")) == "Family (ascending)"
     assert str(field_value("directory_sort", "name_desc")) == "Family (descending)"
     assert str(field_value("directory_sort", "duid")) == "Family DUID (ascending)"
+    assert str(field_value("directory_sort", "duid_desc")) == "Family DUID (descending)"
     for key, column in RESPONSE_COLUMNS.items():
         ascending = str(field_value("directory_sort", key))
         assert ascending == f"{column.heading} (ascending)"

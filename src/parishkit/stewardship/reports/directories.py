@@ -114,8 +114,10 @@ RESPONSE_COLUMNS = {
     )
 }
 # The response columns each Response choice shows, as the response lists
-# showed them: the dates in the order the events happen (they lead the row,
-# #932), then Submissions where a list had it (after the envelope number).
+# showed them: the dates in the order the events happen, then Submissions
+# where a list had it. On the page and in the export Submissions follows the
+# envelope number and the dates follow What to check: Family leads a Family
+# table, and dates lead only event or log tables (#932).
 RESPONSE_COLUMN_SETS = {
     "any": ("invited", "opened", "submitted", "submissions"),
     "submitted": ("submitted", "submissions"),
@@ -143,7 +145,7 @@ def response_columns(response):
 # The installed selection (stewardship_directory_report_v2) orders and pages
 # the directory itself, 50 rows at a time, so its closed ``sort`` vocabulary
 # is the whole list of column sorts: Family by the shown name (surname
-# first) either way, DUID ascending, and each response column either way
+# first), DUID (both sort, #932) and each response column, each either way
 # (#933; times and counts newest or largest first on the first click, as the
 # response lists sorted them). The other columns cannot be sorted without
 # changing that frozen SQL: Family code would also mean decrypting every
@@ -155,6 +157,7 @@ DIRECTORY_SORTING = Sorting(
         "name": ("family", False),
         "name_desc": ("family", True),
         "duid": ("duid", False),
+        "duid_desc": ("duid", True),
         **{
             token: (key, descending)
             for key in RESPONSE_COLUMNS

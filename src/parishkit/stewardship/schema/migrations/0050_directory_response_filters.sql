@@ -212,7 +212,7 @@ BEGIN
        OR f->>'response' NOT IN ('any','yes','no','submitted','more-than-once','started',
            'progressed','opened-only','never-opened','link-followed','link-not-followed',
            'not-invited','not-submitted')
-       OR f->>'sort' NOT IN ('name','name_desc','duid','invited','invited_desc','link','link_desc',
+       OR f->>'sort' NOT IN ('name','name_desc','duid','duid_desc','invited','invited_desc','link','link_desc',
            'opened','opened_desc','progressed','progressed_desc','submitted','submitted_desc',
            'last','last_desc','submissions','submissions_desc')
        OR coalesce(f->>'reach','any') NOT IN ('any','email','mail','neither')
@@ -222,7 +222,7 @@ BEGIN
     report_mode:=coalesce(report_mode,'production');
     epoch_uuid:=(parameters->>'epoch')::uuid;
     -- The funnel is read only when a filter, a column or the order uses it.
-    funnel_needed:=f->>'response'<>'any' OR f->>'sort' NOT IN ('name','name_desc','duid')
+    funnel_needed:=f->>'response'<>'any' OR f->>'sort' NOT IN ('name','name_desc','duid','duid_desc')
         OR coalesce((parameters->>'responses')::boolean,false);
     -- BEGIN DIRECTORY SELECTION
 WITH selected AS MATERIALIZED (
@@ -447,13 +447,15 @@ WITH selected AS MATERIALIZED (
               WHERE a.source_key='family:'||r.source_key||':primary'
               AND position(lower(o.f->>'search') IN lower(v.value))>0))
 ), ordered AS (
-    -- Surname first, then the whole shown name, then the DUID. A response
-    -- column sorts either way with missing values last, then by name.
+    -- Surname first, then the whole shown name, then the DUID. The DUID and
+    -- each response column sort either way, a response column with missing
+    -- values last, then by name.
     SELECT r.*,row_number() OVER (ORDER BY
         CASE WHEN o.f->>'sort'='name' THEN lower(family_name) END,
         CASE WHEN o.f->>'sort'='name' THEN lower(display_name) END,
         CASE WHEN o.f->>'sort'='name_desc' THEN lower(family_name) END DESC NULLS LAST,
         CASE WHEN o.f->>'sort'='name_desc' THEN lower(display_name) END DESC NULLS LAST,
+        CASE WHEN o.f->>'sort'='duid_desc' THEN family_duid END DESC,
         CASE o.f->>'sort' WHEN 'invited' THEN invited_at WHEN 'link' THEN link_at
             WHEN 'opened' THEN form_opened_at WHEN 'progressed' THEN progressed_at
             WHEN 'submitted' THEN submitted_at WHEN 'last' THEN last_submitted_at END,
@@ -463,8 +465,8 @@ WITH selected AS MATERIALIZED (
             END DESC NULLS LAST,
         CASE WHEN o.f->>'sort'='submissions' THEN submissions END,
         CASE WHEN o.f->>'sort'='submissions_desc' THEN submissions END DESC NULLS LAST,
-        CASE WHEN o.f->>'sort' NOT IN ('name','name_desc','duid') THEN lower(family_name) END,
-        CASE WHEN o.f->>'sort' NOT IN ('name','name_desc','duid') THEN lower(display_name) END,
+        CASE WHEN o.f->>'sort' NOT IN ('name','name_desc','duid','duid_desc') THEN lower(family_name) END,
+        CASE WHEN o.f->>'sort' NOT IN ('name','name_desc','duid','duid_desc') THEN lower(display_name) END,
         family_duid) AS ordinal
     FROM filtered r CROSS JOIN options o
 ), page AS MATERIALIZED (
@@ -724,7 +726,7 @@ BEGIN
         ELSIF key='directory_data_check' THEN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('any','anything','mailing-name','envelope') THEN RETURN false; END IF;
         ELSIF key='directory_sort' THEN
-            IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('name','name_desc','duid',
+            IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('name','name_desc','duid','duid_desc',
                 'invited','invited_desc','link','link_desc','opened','opened_desc',
                 'progressed','progressed_desc','submitted','submitted_desc','last','last_desc',
                 'submissions','submissions_desc') THEN RETURN false; END IF;
@@ -764,7 +766,8 @@ BEGIN
              AND proconfig @> ARRAY['jit=off','search_path=pg_catalog, public, pg_temp']
              AND prosrc LIKE '%stewardship_family_response_v1(campaign_uuid,report_mode,epoch_uuid,counted)%'
              AND prosrc LIKE '%-- BEGIN DIRECTORY SELECTION%'
-             AND prosrc LIKE '%WHEN ''not-invited'' THEN active AND family_id IS NOT NULL%') THEN
+             AND prosrc LIKE '%WHEN ''not-invited'' THEN active AND family_id IS NOT NULL%'
+             AND prosrc LIKE '%WHEN o.f->>''sort''=''duid_desc'' THEN family_duid END DESC%') THEN
         RAISE EXCEPTION 'stewardship_directory_report_v2 is not installed as declared';
     END IF;
     -- v1 is left as it was.
@@ -796,6 +799,8 @@ BEGIN
                        "search_used": false, "exact_code_used": false, "page": 1}'::jsonb)
        OR NOT public.stewardship_safe_context_v1(
            'action', '{"directory_response": "yes", "directory_sort": "name"}'::jsonb)
+       OR NOT public.stewardship_safe_context_v1(
+           'action', '{"directory_sort": "duid_desc"}'::jsonb)
        OR NOT public.stewardship_safe_context_v1(
            'action', '{"directory_response": "not-submitted"}'::jsonb)
        OR NOT public.stewardship_safe_context_v1(

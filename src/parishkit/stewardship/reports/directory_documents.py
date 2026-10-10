@@ -5,10 +5,10 @@ word processor can use it directly. Report details (parish, campaign, capture
 time, filters and the privacy note) are not columns: they go in the PDF header
 and footer and in the XLSX "Report information" sheet.
 
-- The Family-code directory lists, as the page does (#932, #933), any
-  response dates first, then Family (the surname, then the heads of
-  household: "Squyres, Tracy and Jeff"), Family DUID, Envelope number, any
-  Submissions count and What to check, and Family code. When it is filtered
+- The Family-code directory lists, as the page does (#932, #933), Family
+  first (the surname, then the heads of household: "Squyres, Tracy and
+  Jeff"), then Family DUID, Envelope number, any Submissions count, What to
+  check and response dates, and Family code. When it is filtered
   to Families that no campaign mail can reach (reach "neither"), it adds
   their phone numbers for follow-up calls.
 - Every export ends with Family head emails: each distinct head address once,
@@ -48,9 +48,10 @@ from .directories import (
     row_name,
 )
 
-# The Family-code file's identity columns, named as the page names them
-# (#932); response dates come before them, and Submissions and What to check
-# after them, when the page shows those.
+# The Family-code file's identity columns, named as the page names them and
+# leading the row: the most relevant column first, and dates lead only event
+# or log tables (#932). Submissions, What to check and the response dates
+# follow them when the page shows those.
 IDENTITY_HEADINGS = ("Family", "Family DUID", "Envelope number")
 CODE_HEADING = "Family code"
 # The code list's columns with no response columns, data check or phones.
@@ -165,9 +166,10 @@ def export_headings(*, postal, reach, dates=(), counts=(), checks=False):
     """The export's columns: the mail merge, or codes (plus phones for "neither").
 
     The mail merge's columns never change. The code list follows the page:
-    the response ``dates`` and ``counts`` (``directories.response_columns``)
-    when the response columns are on, What to check when ``checks`` (a data
-    check filter is applied), then the Family code. Family head emails is
+    the identity columns, the response ``counts``, What to check when
+    ``checks`` (a data check filter is applied) and the response ``dates``
+    (``directories.response_columns``, when the response columns are on),
+    then the Family code. Family head emails is
     always the last column, after any phones.
 
     The directory page lists them so the Admin knows what the file contains.
@@ -176,10 +178,10 @@ def export_headings(*, postal, reach, dates=(), counts=(), checks=False):
         return POSTAL_HEADINGS
     phones = (PHONE_HEADING,) if reach == "neither" else ()
     return (
-        tuple(column.heading for column in dates)
-        + IDENTITY_HEADINGS
+        IDENTITY_HEADINGS
         + tuple(column.heading for column in counts)
         + ((CHECK_HEADING,) if checks else ())
+        + tuple(column.heading for column in dates)
         + (CODE_HEADING,)
         + phones
         + (EMAIL_HEADING,)
@@ -310,16 +312,16 @@ def directory_document(
         add_responses(payload["rows"])
         for item in payload["rows"]:
             row = (
-                *(
-                    instant(item[column.field]) if item[column.field] else None
-                    for column in dates
-                ),
                 _family_cell(item),
                 str(item["family_duid"]),
                 # Envelope number 0 is a value, not a blank (#933).
                 "" if item.get("envelope") is None else str(item["envelope"]).strip(),
                 *(item[column.field] for column in counts),
                 *(("; ".join(item["checks"]),) if checks else ()),
+                *(
+                    instant(item[column.field]) if item[column.field] else None
+                    for column in dates
+                ),
                 item["code"] or "",
             )
             if phones:
