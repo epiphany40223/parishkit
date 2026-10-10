@@ -24,6 +24,7 @@ from .settings_components import (
     SHARE_REFUSED,
     SHARE_REVIEW,
     SHARE_STATUS,
+    STATUS,
     TALENTS,
 )
 from .test_in_place import MARK, MARKED, count_requests
@@ -554,3 +555,30 @@ def test_share_review_is_unavailable_after_applying_a_row_change(
     visible(page.get_by_role("heading", name="Applied: your change is saved"))
     has_attribute(page.locator(DIGEST), "value", "b" * 64)
     expect_review(page, enabled=False, hint=OPTION_HINT)
+
+
+def test_a_shorter_status_never_moves_the_form(page, component_origin):
+    """A reader watching Change status at the foot of the page sees nothing
+    move when Applied (shorter than the running indicator) replaces it, or
+    when the quiet refresh redraws the region: the review region keeps its
+    height (data-keep-height), so the page never gets shorter under them
+    (#736)."""
+    answer_reviews(page, component_origin)
+    held = []
+    page.route(
+        lambda url: url.split("?")[0] == component_origin + STATUS,
+        lambda route: held.append(route),
+    )
+    review(page, component_origin)
+    page.get_by_role("button", name="Apply changes").click()
+    visible(page.get_by_role("heading", name="Change status"))
+    recorded(page, held, 1)
+    page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)")
+    # Only a page scrolled to its foot can be pulled down by a shorter one.
+    assert page.evaluate("scrollY") > 0
+    before = page.evaluate(FORM_TOP)
+    held[0].continue_()
+    visible(page.get_by_role("heading", name="Applied: your change is saved"))
+    has_attribute(page.locator(DIGEST), "value", "b" * 64)
+    assert page.evaluate(FORM_TOP) == before
+    assert page.evaluate(MARKED) == "kept"

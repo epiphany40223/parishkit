@@ -1033,6 +1033,11 @@
     });
     // Charts keep their space until the fresh ones are drawn (chart-v1.js).
     if (window.ParishCharts) window.ParishCharts.hold(region, fresh);
+    // A data-keep-height region (a settings page's review region) never gets
+    // shorter while the page stays loaded: the reader may have scrolled down
+    // to it at the foot of the page, where a shorter page would make the
+    // browser pull everything above it down under the pointer (#736).
+    if (region.hasAttribute("data-keep-height")) fresh.style.minHeight = `${region.offsetHeight}px`;
     region.replaceWith(fresh);
     enhanceSwapped(fresh);
   };
