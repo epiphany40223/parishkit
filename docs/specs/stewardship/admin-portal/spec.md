@@ -1747,13 +1747,14 @@ rule that those rules describe (see also
 | --- | --- | --- |
 | ParishSoft settings | At these times (full refresh) | List, parish time |
 | Dates and mail schedules; first-campaign Mail schedules | Send time | One time, campaign time |
-| Ministry follow-up | Contact attempt time | Native time control for now |
+| Ministry follow-up | Contact attempt time | One time, browser time zone |
 | Logs, reports | Date filters | Dates only, no time of day |
 
-The Ministry follow-up contact attempt still uses its native time control.
-Its in-place save work
-([#592](https://github.com/epiphany40223/parishkit/pull/592)), which it was
-waiting for, has merged, so moving it to this entry is an open follow-up. The planned
+The Ministry follow-up contact attempt moved to this entry after its in-place
+save work ([#592](https://github.com/epiphany40223/parishkit/pull/592))
+merged ([#398](https://github.com/epiphany40223/parishkit/issues/398)); its
+date stays a date control, and its not-in-the-future check reads the typed
+time as the server does. The planned
 [refresh schedule editor](#parishsoft-refresh-schedule-settings)
 ([#632](https://github.com/epiphany40223/parishkit/issues/632)) replaces the
 "At these times" list and uses this entry for its rule and exception times.
@@ -3851,13 +3852,13 @@ refresh re-reads everything (including Ministry rosters and giving) and usually
 takes a few minutes, while the automatic quick updates read only the
 Families ParishSoft reports as changed. A refresh run's background task page,
 and its row in the background-work list, name the run as a "Full refresh" or a
-"15-minute update" from its request kind (whatever the quick-update cadence),
-and describe the current phase in
-words ("Downloading from ParishSoft", "Saving the downloaded records",
-"Checking the new data", "Making the new data current"). The download phase has
-no count, so while a refresh is downloading the page says so instead of a bare
-wait message; other steps without a count keep the general message. Counts are
-labeled as records checked, since every refresh places every record into a
+"Quick update" from its request kind (whatever the quick-update cadence, so the
+label never claims a 15-minute cadence that is not configured), and describe
+the current phase in words ("Downloading from ParishSoft", "Saving the
+downloaded records", "Checking the new data", "Making the new data current").
+The download phase has no count, so while a refresh is downloading the page
+says so instead of a bare wait message; other steps without a count keep the
+general message. Counts are labeled as records checked, since every refresh places every record into a
 complete new copy and reuses unchanged records. Once a refresh has succeeded,
 its task page says how many records it checked and how many changed, by
 collection (for example, "Checked 30,639 records from ParishSoft; 12 changed
@@ -3968,8 +3969,9 @@ values kept, a summary naming the one problem, and that problem shown
 [at its fields](#bootstrap-and-first-admin-wizard): a missing or unsuitable
 outcome marks Outcome, Other without notes marks Notes, a contact attempt in
 the future, or one that reached the server without a usable time zone (see
-below), marks its Date and Time, and an incomplete one marks whichever of
-them is missing (both when one is malformed). The view maps each refusal to
+below), marks its Date and Time, a time the [time entry](#time-entry) rules
+cannot read marks Time with that rule's message, and an incomplete one marks
+whichever of them is missing (both when the date is malformed). The view maps each refusal to
 its fields in one table. The contact fields keep the time-zone note in their
 description, followed by the error.
 

@@ -145,6 +145,12 @@ def test_follow_up_contact_time_uses_the_browser_zone():
     assert local["change"].contact_at == datetime(2026, 9, 20, 0, 30, tzinfo=UTC)
     utc = change_values(form(CONTACT | {"contact_zone": "UTC"}))
     assert utc["change"].contact_at == datetime(2026, 9, 19, 17, 30, tzinfo=UTC)
+    # The time is typed in any common form (#398) and read in the same zone.
+    for typed in ("5:30 pm", "1730", "17h30", " 5:30PM "):
+        typed_form = form(CONTACT | {"contact_time": typed, "contact_zone": "UTC"})
+        assert (
+            change_values(typed_form)["change"].contact_at == utc["change"].contact_at
+        )
     # Without a contact attempt the zone, like the date and time, is ignored.
     assert change_values(form(FORM | {"contact_zone": "Not/A_Zone"}))
 
@@ -161,9 +167,14 @@ def test_follow_up_contact_time_uses_the_browser_zone():
         ),
         (CONTACT | {"contact_zone": "Not/A_Zone"}, "contact_zone"),
         (CONTACT | {"contact_zone": "../UTC"}, "contact_zone"),
-        # A malformed time reads as an incomplete contact attempt.
-        (CONTACT | {"contact_time": "17:30-07:00"}, "contact_incomplete"),
-        (CONTACT | {"contact_time": "24:00"}, "contact_incomplete"),
+        # A time the shared time-of-day parser cannot read (#398) is refused
+        # at the Time field; a malformed date is an incomplete attempt.
+        (CONTACT | {"contact_time": "17:30-07:00"}, "contact_time"),
+        (CONTACT | {"contact_time": "24:00"}, "contact_time"),
+        (
+            CONTACT | {"contact_date": "2026-13-40", "contact_zone": "UTC"},
+            "contact_incomplete",
+        ),
     ],
 )
 def test_follow_up_contact_zone_is_a_correctable_refusal(values, code):

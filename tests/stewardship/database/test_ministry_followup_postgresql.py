@@ -714,7 +714,8 @@ def test_native_queue_detail_and_edit_without_assignment(response_service, googl
     # A request assigned before #552, to someone since disabled: the page reads
     # it as New, says nothing of the assignee except in its past history, and
     # saving its status unchanged clears the assignment. That save also logs a
-    # contact attempt typed in Tokyo time (UTC+9).
+    # contact attempt typed in Tokyo time (UTC+9), its time in a 12-hour form
+    # the shared time-of-day entry reads (#398).
     legacy_assign(harness, head, join, admin, notes="Handed over")
     PortalUser.objects.filter(pk=admin).update(disabled=True, version=F("version") + 1)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
@@ -732,7 +733,7 @@ def test_native_queue_detail_and_edit_without_assignment(response_service, googl
             "notes": "Handed over",
             "contact_channel": "email",
             "contact_date": "2026-01-03",
-            "contact_time": "09:30",
+            "contact_time": "9:30 am",
             "contact_zone": "Asia/Tokyo",
             "contact_notes": "",
         }
@@ -925,7 +926,8 @@ def test_refused_save_resubmits_and_a_stale_refusal_is_a_conflict(
 def test_contact_refusals_mark_their_fields(response_service, google):
     """A contact attempt in the future marks both its date and time in error,
     with the message beside them and the summary linking to the date; one
-    with its time missing marks only the time. Nothing is saved."""
+    with its time missing, or typed in a form the time-of-day entry cannot
+    read (#398), marks only the time. Nothing is saved."""
     harness = setup(response_service)
     browser, _, _, _ = leader(harness, google)
     join, _ = requests()
@@ -951,6 +953,12 @@ def test_contact_refusals_mark_their_fields(response_service, google):
             ("contact-time",),
             ("contact-date",),
             "Enter the date and time of the contact attempt.",
+        ),
+        (
+            contact | {"contact_time": "25:00"},
+            ("contact-time",),
+            ("contact-date",),
+            "“25:00” has no hour 25: hours run from 0 to 23.",
         ),
     ):
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
