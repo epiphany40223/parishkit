@@ -97,6 +97,28 @@ def read_listing(parameters):
     )
 
 
+def with_family_names(rows):
+    """Each listed email with its Family's name, for the Outgoing mail page (#931).
+
+    ``family_name`` is the directory's surname-and-heads name from the
+    latest ParishSoft data (``snapshot_family_names``, as the Family
+    timeline names a Family), or None for an Administrator report and for a
+    Family the latest data no longer has. The email itself stores no name,
+    so the names are read for the shown page only: two snapshot reads,
+    however many rows. The command line's ``delivery list`` does not read
+    them.
+    """
+    from parishkit.stewardship.source.snapshot_models import SourceCurrent
+    from parishkit.stewardship.source.snapshot_names import snapshot_family_names
+
+    duids = {row["family__family_duid"] for row in rows} - {None}
+    snapshot = SourceCurrent.objects.values_list("snapshot_id", flat=True).first()
+    names = snapshot_family_names(snapshot, duids, "Family")
+    return [
+        row | {"family_name": names.get(row["family__family_duid"])} for row in rows
+    ]
+
+
 def offered_actions(state, task_state, *, campaign_state, can_resolve, can_retry):
     """The resolutions a message's page offers now, in the page's order.
 

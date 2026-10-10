@@ -3418,7 +3418,19 @@ Outgoing mail, a restore review that begins while it renders withholds it.
 Outgoing mail (`/admin/mail/outgoing/`, Administrators only) lists every
 email the system has sent or is about to send, with filters by delivery
 state, an exact Family DUID or delivery ID, and a
-[Family email send](#family-email-sends). Each email's own page shows its
+[Family email send](#family-email-sends). Each row names the Family and,
+in a column of its own, its Family DUID
+([#931](https://github.com/epiphany40223/parishkit/issues/931)); an
+Administrator report has no Family. The name is the Family directory's
+surname-and-heads name from the latest ParishSoft data, read for the shown
+page only (two snapshot reads), or "Not in current ParishSoft data" when
+that data no longer has the Family. The email itself stores no name, so the
+Family column does not sort; Family DUID does (its sort token is still
+`recipient`), which keeps each Family's emails together. The name opens the
+email's own page. The columns follow the Admin tables' shared order
+([#932](https://github.com/epiphany40223/parishkit/issues/932)): Created and
+Last changed first, then Family and Family DUID, then Purpose, Mode, State
+and Provider attempts. Each email's own page shows its
 history and offers the resolutions its state allows (an evidence note,
 confirming delivery or that it was not sent, a retry, or a duplicate-risk
 resend), each with a required note, as the

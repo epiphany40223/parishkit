@@ -48,6 +48,7 @@ from .delivery_reads import (
     read_refusal,
     read_refusals,
     read_sending_holds,
+    with_family_names,
 )
 from .delivery_resolution import resolve_delivery
 from .models import TaskRun
@@ -241,7 +242,7 @@ def delivery_list(request):
             table=_table(
                 request,
                 data["window"],
-                data["rows"],
+                with_family_names(data["rows"]),
                 data["has_next"],
                 total=data["total"],
                 sorting=DELIVERY_SORTING,

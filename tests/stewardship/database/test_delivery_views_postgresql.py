@@ -5,9 +5,11 @@ from uuid import uuid4
 import pytest
 from django.db import connection, transaction
 from django.db.models import F
+from django.utils.html import escape
 
 from parishkit.stewardship.accounts.models import PortalSession, PortalUser
 from parishkit.stewardship.audit.models import AuditEvent, OperationalLog
+from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.schedule_models import ScheduleDefinition
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.family_delivery import (
@@ -23,6 +25,7 @@ from parishkit.stewardship.jobs.outbox_models import OutboxEvent
 from parishkit.stewardship.jobs.outbox_storage import change_message
 from parishkit.stewardship.jobs.recipient_models import RecipientRefusalResolution
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
+from parishkit.stewardship.source.snapshot_names import snapshot_family_names
 
 from ..policy_factory import address
 from .auth_builders import signed_in
@@ -139,13 +142,49 @@ def test_delivery_pages_and_warning_are_admin_only(family_mail, google, role):  
     )
     google[0]["email"] = "reader@example.org"
     browser, _ = signed_in()
+    name = family_name(message).encode()
     for path in (
         "/admin/mail/outgoing/",
         f"/admin/mail/outgoing/{message.pk}/",
         "/admin/mail/refusals/",
     ):
-        assert browser.get(path).status_code == 403
+        response = browser.get(path)
+        assert response.status_code == 403
+        # Outgoing mail's Family names (#931) are the page's, not the error's.
+        assert name not in response.content
     assert b"data-delivery-warning" not in browser.get("/admin/").content
+
+
+def family_name(message):
+    """The Family name Outgoing mail shows for ``message``, from the snapshot."""
+    duid = FamilyCampaign.objects.get(pk=message.family_id).family_duid
+    snapshot = SourceCurrent.objects.values_list("snapshot_id", flat=True).first()
+    return snapshot_family_names(snapshot, [duid], "Family")[duid]
+
+
+def test_outgoing_mail_names_each_family_beside_its_duid(family_mail, google):  # noqa: F811
+    """#931: the Family's name opens the email; its DUID is a separate column
+    that still sorts on the server, while the name column does not sort."""
+    message = uncertain(family_mail)
+    duid = FamilyCampaign.objects.get(pk=message.family_id).family_duid
+    name = family_name(message)
+    assert name and name != "Family"
+    browser, _ = signed_in()
+    with task_login(ServiceRole.WEB, exact=True):
+        response = browser.get("/admin/mail/outgoing/", {"sort": "-recipient"})
+    assert response.status_code == 200
+    html = response.content.decode()
+    assert (
+        f'<th scope="row"><a href="/admin/mail/outgoing/{message.pk}/">'
+        f"{escape(name)}</a></th>"
+    ) in html
+    assert f'<td class="numeric nowrap">{duid}</td>' in html
+    # Family is a plain heading; Family DUID is the sorted one.
+    assert '<th scope="col">Family</th>' in html
+    heading = html.split('aria-sort="descending"')[1].split("</th>")[0]
+    assert "Family DUID" in heading
+    # The name is only shown, never searched: the filter stays exact.
+    assert browser.get("/admin/mail/outgoing/", {"q": name}).status_code == 400
 
 
 @pytest.mark.parametrize(
