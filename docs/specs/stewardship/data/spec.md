@@ -825,8 +825,9 @@ Authorization policy materialized from the active YAML version is one list of
 **users** (Administrator decisions of 2026-10-10,
 [#952](https://github.com/epiphany40223/parishkit/issues/952); the
 [Users page](../admin-portal/spec.md#portal-user-management) edits it). The
-`login_rules` section, under a new section schema version, holds only entries
-of the form `{kind: "user", id, email, name, role}`:
+`login_rules` section, under a new configuration schema version
+(`users-v10`, which keeps every other rule of the version before it), holds
+only entries of the form `{kind: "user", id, email, name, role}`:
 
 - `id`: a stable opaque UUID assigned when the user is created, kept across
   configuration versions and never reused; the Edit page's address uses it;

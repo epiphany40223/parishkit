@@ -216,14 +216,18 @@ def _admit_installer_grants(target):
             raise ConfigError("Credential installer metadata grants are excessive.")
 
 
-def admit_grants(allowed, *, database=None, functions=frozenset()):
+def admit_grants(
+    allowed, *, database=None, functions=frozenset(), optional_functions=frozenset()
+):
     """Inspect all application schemas, including indirect definer authority.
 
     System routines and ordinary SECURITY INVOKER helpers do not add authority:
     their table access is checked as this same restricted login. Definer routines,
     sequence privileges, schema creation and relations outside public are denied,
     except the public definer ``functions`` named by signature, which this
-    login must then hold EXECUTE on (web's Family login, #306 M3).
+    login must then hold EXECUTE on (web's Family login, #306 M3). The
+    ``optional_functions`` may be held but are not required: admin recovery
+    must still admit when a newer feature's grants are not yet installed.
     """
     database = connection if database is None else database
     with database.cursor() as cursor:
@@ -258,7 +262,7 @@ def admit_grants(allowed, *, database=None, functions=frozenset()):
         )
         if cursor.fetchone()[0] != len(functions):
             raise ConfigError("Required database function grants are missing.")
-        if excess := excess_authority(cursor, functions):
+        if excess := excess_authority(cursor, set(functions) | set(optional_functions)):
             raise ConfigError(
                 f"Installer database grants are excessive: {', '.join(excess)}."
             )

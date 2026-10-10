@@ -54,6 +54,7 @@ class AppliedConfigurationVersion(ImmutableRecord):
                         "ministry-activity-v4",
                         "campaign-content-v5",
                         "source-cadence-v8",
+                        "users-v10",
                     ]
                 ),
                 name="configuration_validation_schema",

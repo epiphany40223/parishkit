@@ -637,14 +637,21 @@ Administrator may override.
    requires a named operator and reason, and its tagged operator-upgrade
    ConfigurationChangeRequest records that operator as its actor, not a
    fabricated PortalUser. The order is fixed:
-   1. **Preview:** the command prints the same preview as step 1, and the
-      operator must confirm the list of Administrators to be kept, not just
-      the run (an unattended run supplies that list explicitly and is refused
-      if it differs, never confirmed by default).
+   1. **Preview:** `upgrade-users --preview` prints the same preview as step
+      1 and changes nothing. The operator must confirm the list of
+      Administrators to be kept, not just the run: the conversion takes it
+      as `--confirm-administrators` (comma-separated) and is refused if it
+      differs, never confirmed by default.
    2. **Convert:** the first migration of the release has already added the
       new columns while every SQL function still joins
-      `stewardship_domain_rule`; the command then activates the converted
-      configuration.
+      `stewardship_domain_rule`, and `database-grants` has given the
+      `admin-recovery` login the two narrow read functions the conversion
+      uses (recorded identities, and the ParishSoft Member names of only the
+      active rules' and recorded identities' addresses, with no address
+      argument, so it is no lookup for any other address); the command
+      then activates the converted configuration. SQL's activation guard
+      refuses it, and any other activation into the users form, unless every
+      address that held Administrator keeps an Administrator user.
    3. **Swap functions:** the second migration replaces the SQL functions.
       Its self-verifying `DO` block raises, so the migration fails, unless the
       active configuration is in the users form.
@@ -659,6 +666,18 @@ Administrator may override.
    unconverted configuration. An interrupted run resumes by operation ID. The
    scripted upgrade and the deployment runbook gain this step in the code
    slice.
+
+   The scripted upgrade (`tools/stewardship-upgrade-host.sh`) cannot run this
+   order yet: its step 4 migrates to the newest migration and then applies
+   the grants, so it would reach the function swap before any conversion.
+   Either the release that swaps the functions also adds a targeted
+   migration to the release's first migration and a conversion step between
+   the grants and the swap, or the first migration and its two read
+   functions ship in an earlier release than the swap, so that the earlier
+   deploy has already migrated past them and applied their grants. Offline
+   Admin-access recovery never depends on those grants: only
+   `upgrade-users` requires them, and it refuses with an instruction to run
+   `database-grants` when they are missing.
 
    Considered and rejected: shipping the new SQL functions with a domain-join
    fallback until an Administrator converts online after startup. The

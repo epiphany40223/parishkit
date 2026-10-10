@@ -38,6 +38,7 @@ from .content_trust import records_of, trusted_content
 from .ministry_activity import SCHEMA as MINISTRY_SCHEMA
 from .ministry_activity import remember_records
 from .source_cadence_schema import SCHEMA as CADENCE_SCHEMA
+from .users_schema import SCHEMA as USERS_SCHEMA
 
 POLICY_SCHEMAS = {
     "foundation-policy-v2",
@@ -46,13 +47,19 @@ POLICY_SCHEMAS = {
     MINISTRY_SCHEMA,
     CONTENT_SCHEMA,
     CADENCE_SCHEMA,
+    USERS_SCHEMA,
 }
 CAMPAIGN_SCHEMAS = {
     "campaign-foundation-v3",
     MINISTRY_SCHEMA,
     CONTENT_SCHEMA,
     CADENCE_SCHEMA,
+    USERS_SCHEMA,
 }
+# The schemas with local Ministry activity, and those with content. The
+# users form (#952) keeps every section of the schema it follows.
+MINISTRY_SCHEMAS = {MINISTRY_SCHEMA, CONTENT_SCHEMA, CADENCE_SCHEMA, USERS_SCHEMA}
+CONTENT_SCHEMAS = {CONTENT_SCHEMA, CADENCE_SCHEMA, USERS_SCHEMA}
 HISTORY_BATCH_SIZE = 64
 
 
@@ -65,9 +72,9 @@ def _normalized(document, schema=None):
         names += ("login_rules",)
     if selected in CAMPAIGN_SCHEMAS:
         names += ("campaigns", "schedules")
-    if selected in {MINISTRY_SCHEMA, CONTENT_SCHEMA, CADENCE_SCHEMA}:
+    if selected in MINISTRY_SCHEMAS:
         names += ("ministries",)
-    if selected in {CONTENT_SCHEMA, CADENCE_SCHEMA}:
+    if selected in CONTENT_SCHEMAS:
         names += ("content",)
     return {name: sections.get(name, []) for name in names}
 
@@ -145,7 +152,7 @@ def _stored_projections(snapshot):
         from parishkit.stewardship.campaigns.projections import stored_campaigns
 
         result.update(stored_campaigns(snapshot))
-    if snapshot.validation_schema in {MINISTRY_SCHEMA, CONTENT_SCHEMA, CADENCE_SCHEMA}:
+    if snapshot.validation_schema in MINISTRY_SCHEMAS:
         result["ministries"] = [
             {
                 "id": str(row.record_id),
@@ -159,7 +166,7 @@ def _stored_projections(snapshot):
                 snapshot.ministry_activity.all(), key=lambda item: str(item.record_id)
             )
         ]
-    if snapshot.validation_schema in {CONTENT_SCHEMA, CADENCE_SCHEMA}:
+    if snapshot.validation_schema in CONTENT_SCHEMAS:
         result["content"] = [
             {
                 "id": str(row.record_id),
@@ -267,20 +274,11 @@ def _prefetch_history(rows):
         "schedule_revisions",
     )
     prefetch_related_objects(
-        [
-            row
-            for row in rows
-            if row.validation_schema
-            in {MINISTRY_SCHEMA, CONTENT_SCHEMA, CADENCE_SCHEMA}
-        ],
+        [row for row in rows if row.validation_schema in MINISTRY_SCHEMAS],
         "ministry_activity",
     )
     prefetch_related_objects(
-        [
-            row
-            for row in rows
-            if row.validation_schema in {CONTENT_SCHEMA, CADENCE_SCHEMA}
-        ],
+        [row for row in rows if row.validation_schema in CONTENT_SCHEMAS],
         "content_versions",
     )
     if campaign_rows:
@@ -384,6 +382,8 @@ def _remember_policy(document, identities):
         "domain": ("domain",),
         "address": ("email", "creation_origin", "creation_operation"),
         "assignment": ("email", "ministry_duid", "source", "operation_id"),
+        # A user (#952) is bound to its address: a new address is a new user.
+        "user": ("email",),
     }
     for record in records:
         values = record["values"]

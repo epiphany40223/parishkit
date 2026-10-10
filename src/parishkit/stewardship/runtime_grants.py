@@ -274,6 +274,11 @@ TASK_EVENT_PRUNE_FUNCTION = "stewardship_task_event_prune_v1(integer, integer, i
 # export and retry checks, and a download's fresh authorization) learns only
 # the scope, never the Member contact data that decides it.
 LEADER_SCOPE_FUNCTION = "stewardship_ministry_leader_scope_v1(uuid)"
+# The offline users upgrade (#952) reads each recorded Google identity and
+# whether it ever signed in, and the ParishSoft Member names of the addresses
+# it names (a new user's default Name), without audit-log or source grants.
+PORTAL_IDENTITIES_FUNCTION = "stewardship_portal_identities_v1()"
+MEMBER_NAMES_FUNCTION = "stewardship_member_names_v1()"
 
 
 def runtime_functions(role, *, target=None):
@@ -287,7 +292,8 @@ def runtime_functions(role, *, target=None):
     Web and the parishsoft, google_workspace and slack credential installers
     check a secret request's automation sign-in instant (ADM-11 PR 5). Web,
     the general worker and the download login read a user's role-derived
-    Ministry scope (#922).
+    Ministry scope (#922). The offline admin-recovery login reads recorded
+    identities and Member names for the users upgrade (#952).
     """
     role = _identity_role(role, target)
     if role is ServiceRole.CREDENTIAL_INSTALLER:
@@ -310,6 +316,10 @@ def runtime_functions(role, *, target=None):
                 LEADER_SCOPE_FUNCTION,
             },
             "download": {LEADER_SCOPE_FUNCTION},
+            ServiceRole.ADMIN_RECOVERY: {
+                PORTAL_IDENTITIES_FUNCTION,
+                MEMBER_NAMES_FUNCTION,
+            },
         }.get(role, ())
     )
 
