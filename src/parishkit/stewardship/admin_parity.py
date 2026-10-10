@@ -187,9 +187,9 @@ LEDGER = {
     # digests, 8e the Family-level exports that create an export record
     # without the Family keys, 8f the Family directory's exports (the code
     # MAC keyring loaded only for them), 8g the one-Family timeline export (a
-    # new export kind, migration 0044), and 8h the rest: the in-memory
-    # downloads (talents, response lists; after #752's audit fields) and the
-    # exact daily exports.
+    # new export kind, migration 0044), and 8h the exact daily exports (part
+    # 1) and the in-memory downloads (talents, response lists; part 2, after
+    # #752's audit fields).
     # The aggregate report reads (PR 8c): counts and summaries only; the
     # rows behind them are the Family-level exports (PR 8e and 8f).
     "reports": command("report list"),
@@ -235,12 +235,14 @@ LEDGER = {
     # Participation page's export form. The download's grant is issued and
     # consumed inside ``export download``.
     "report_export_create": command("export create"),
-    "report_export": command("export status"),
-    "report_export_cancel": command("export cancel"),
-    "report_export_retry": command("export retry"),
+    # The export pages also serve an exact request (report_exact_create's
+    # redirect), whose commands are the export exact ones (PR 8h).
+    "report_export": command("export status", "export exact status"),
+    "report_export_cancel": command("export cancel", "export exact cancel"),
+    "report_export_retry": command("export retry", "export exact retry"),
     "report_export_regenerate": command("export regenerate"),
     "report_export_download": command("export download"),
-    "report_exact_create": pending("PR 8h", "export exact"),
+    "report_exact_create": command("export exact create"),
     # The digests (PR 8d): the retained reports an emailed digest links to,
     # and the manual weekly report.
     "daily_digest_snapshot": command("digest daily"),

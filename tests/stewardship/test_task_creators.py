@@ -136,12 +136,12 @@ SITES = {
     "reports/exact_services.py::create_exact_export": site(
         "report_exact_export",
         WEB,
-        {"reports/exact_ui.py"},
+        {"admin_exact_exports.py", "reports/exact_ui.py"},
     ),
     "reports/exact_services.py::retry_exact_export": site(
         "report_exact_export",
         WEB,
-        {"reports/exact_ui.py"},
+        {"admin_exact_exports.py", "reports/exact_ui.py"},
     ),
     "reports/export_cleanup.py::retry_cleanup": site(
         "report_export_cleanup", WEB, {"jobs/task_retries.py"}

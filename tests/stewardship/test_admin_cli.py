@@ -114,6 +114,10 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "export directory",
         "export postal",
         "export family-timeline",
+        "export exact create",
+        "export exact status",
+        "export exact cancel",
+        "export exact retry",
     }
     assert set(entries) == (
         session | reads | changes | refresh | tests | operations | reports
@@ -418,6 +422,9 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_export_directory",
         "admin_cmd_export_postal",
         "admin_cmd_export_family_timeline",
+        "admin_cmd_export_exact_create",
+        "admin_cmd_export_exact_cancel",
+        "admin_cmd_export_exact_retry",
         "admin_cmd_digest_weekly_request",
     ]
     for event in events:
