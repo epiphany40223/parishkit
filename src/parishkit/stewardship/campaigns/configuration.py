@@ -75,6 +75,41 @@ BANNER_EMAILS = ("initial", "reminder", "confirmation")
 REMINDER_WORKGROUP = "reminder_workgroup"
 WORKGROUP_NAME_LIMIT = 200
 
+# The campaign's Ministry leader roles (#922): people holding any of these
+# ParishSoft Ministry role names in a Ministry lead it. The key is optional;
+# an absent one means the default, which only SQL's
+# stewardship_ministry_leader_roles_v1 writes down (read it through
+# campaigns.leader_roles). A present value is a non-empty list of distinct
+# names, compared as SQL compares them: ASCII case-insensitively.
+MINISTRY_LEADER_ROLES = "ministry_leader_roles"
+LEADER_ROLE_LIMIT = 50
+ROLE_NAME_LIMIT = 200
+
+
+def leader_role_key(name):
+    """The form SQL compares a role name in: ASCII lowercase, otherwise exact.
+
+    ParishSoft role labels are ASCII; like the SQL match, this never applies
+    locale-dependent or Unicode case folding.
+    """
+    return name.translate(
+        str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
+    )
+
+
+def _leader_roles(names):
+    """Validate a present ``ministry_leader_roles`` value.
+
+    One to LEADER_ROLE_LIMIT trimmed names, none repeated even in another
+    case, since SQL would treat such a repeat as the same role.
+    """
+    if type(names) is not list or not 1 <= len(names) <= LEADER_ROLE_LIMIT:
+        invalid()
+    for name in names:
+        text(name, ROLE_NAME_LIMIT)
+    if len({leader_role_key(name) for name in names}) != len(names):
+        invalid()
+
 
 def _artwork(artwork):
     """Validate the optional ``artwork`` value; it is absent rather than empty.
@@ -109,9 +144,11 @@ def campaign_values(values):
     ``talent_options`` is optional: a campaign that never edited its Member
     talents list resolves to the built-in defaults (see responses.service).
     ``reminder_workgroup`` is optional too (#861): the name of the ParishSoft
-    Family WorkGroup whose Families get no Reminders; absent means none.
+    Family WorkGroup whose Families get no Reminders; absent means none. So is
+    ``ministry_leader_roles`` (#922); absent means the default role names.
     """
-    if set(values) - {"talent_options", "artwork", REMINDER_WORKGROUP} != {
+    optional = {"talent_options", "artwork", REMINDER_WORKGROUP, MINISTRY_LEADER_ROLES}
+    if set(values) - optional != {
         "name",
         "year_label",
         "timezone",
@@ -193,6 +230,8 @@ def campaign_values(values):
         _artwork(values["artwork"])
     if REMINDER_WORKGROUP in values:
         text(values[REMINDER_WORKGROUP], WORKGROUP_NAME_LIMIT)
+    if MINISTRY_LEADER_ROLES in values:
+        _leader_roles(values[MINISTRY_LEADER_ROLES])
     content = values["content_versions"]
     if type(content) is not dict or not set(content) <= {
         "welcome",

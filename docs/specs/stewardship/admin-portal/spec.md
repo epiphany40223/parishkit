@@ -1962,6 +1962,7 @@ The campaign editor includes:
   dates;
 - financial period and explicit current/comparison fund multi-select;
 - campaign Ministry multi-select, initially all active Ministries;
+- Ministry leader roles (see [Ministry leader roles](#ministry-leader-roles));
 - editable/reorderable share options with stable IDs and placeholders;
 - editable/reorderable Member talents (see [Member talents](#member-talents));
 - initial and repeatable reminder date/time, subject, and templates;
@@ -1991,9 +1992,10 @@ The UI labels structural settings and their Production-readiness lock trigger.
 After a `draft` campaign moves to `scheduled` or directly to `active`, the
 server rejects structural mutations even if a stale browser exposes controls.
 They unlock only through the guarded pre-start withdrawal below; an `active`
-campaign never unlocks them. The one exception is the Ministry selections
+campaign never unlocks them. The exceptions are the Ministry selections
 (see
-[Changing a live campaign's Ministries](#changing-a-live-campaigns-ministries)). The campaign timezone is initialized from the
+[Changing a live campaign's Ministries](#changing-a-live-campaigns-ministries))
+and the [Ministry leader roles](#ministry-leader-roles). The campaign timezone is initialized from the
 current Parish timezone, is editable in `draft`, and is one of these structural
 settings. Scheduled, active, closed, and archived pages display it read-only.
 Content and future schedules remain versioned/editable under the
@@ -2172,6 +2174,26 @@ its **Repeat a reminder** panel below the schedule rows, which appends one
 ordinary reminder row per date to its form. Remembering a series for later
 "this and following" edits, and a campaign calendar view, are later slices
 of #469.
+
+### Ministry leader roles
+
+Campaign settings shows the campaign's Ministry leader roles with its
+Ministry selections, only while Ministry stewardship is on (#922). They are
+checkboxes, one per role label the current ParishSoft rosters use, plus any
+saved name no roster uses now; with no saved value the default roles
+(Chairperson and Staff) are ticked. The help says, in plain words, that
+people with any of these ParishSoft Ministry roles can sign in and see their
+Ministry's reports and follow-up with no sign-in rule, using an email address
+their ParishSoft Member record lists. At least one role is required. Leaving
+the roles in effect unchanged writes nothing, so a campaign keeps following
+the default until someone changes it.
+
+A draft changes them with its other settings. A live (scheduled, active or
+closed) campaign that asks about Ministries shows them in their own small
+form, the only campaign setting there besides the Ministry selections link;
+its review and apply happen [in place](../ui-conventions/spec.md#in-place-controls) under that form,
+as the draft's do. Who leads which Ministry, and why, is in the
+[data specification](../data/spec.md#ministry-leaders).
 
 ### Default content
 
@@ -3493,6 +3515,22 @@ operational retry and escalation, while the dashboard event remains visible.
 Acknowledgements and notification outcomes are audited. Each Acknowledge acts
 [in place](../ui-conventions/spec.md#in-place-controls) on Home: the event leaves the list without a
 reload.
+
+### Ministry leaders from ParishSoft
+
+Ministry leaders are not entered in the Admin portal (Administrator decision,
+2026-10-09, #922). Anyone holding one of the campaign's
+[Ministry leader roles](#ministry-leader-roles) in a Ministry in ParishSoft
+leads it, and signs in with Google using an email address their ParishSoft
+Member record lists; no sign-in rule is needed. Sign-in rules still decide
+who is an Administrator or Staff. The
+[data specification](../data/spec.md#ministry-leaders) defines the rule. A
+change in ParishSoft reaches the portal with the next full refresh.
+
+The Ministry leader role on sign-in rules, Ministry assignments and the
+Chairperson suggestion, confirmation and review flows remain from the earlier
+model until they are removed (#922). They grant nothing: the Portal users page
+says so beside each such role and assignment.
 
 ### ParishSoft Ministry leaders without a user
 

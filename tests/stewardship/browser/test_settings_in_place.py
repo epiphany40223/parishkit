@@ -12,6 +12,9 @@ import pytest
 from .settings_components import (
     CAMPAIGN,
     CAMPAIGN_REVIEW,
+    LEADERS,
+    LEADERS_PENDING,
+    LEADERS_REVIEW,
     PENDING,
     REFUSED,
     REQUEST,
@@ -224,3 +227,46 @@ def test_campaign_settings_reviews_in_place_and_keeps_its_module_scripts(
     page.get_by_label("Ministry stewardship").check()
     visible(group)
     visible(page.get_by_text("Choose Review changes again"))
+    # The Ministry leader roles sit in that group too (#922), ticked with
+    # the roles in effect.
+    roles = page.get_by_role("group", name="Ministry leader roles")
+    visible(roles)
+    assert roles.get_by_label("Chairperson").is_checked()
+    assert roles.get_by_label("Staff").is_checked()
+    assert not roles.get_by_label("Member").is_checked()
+
+
+def test_a_live_campaigns_leader_roles_are_reviewed_and_applied_in_place(
+    page, component_origin
+):
+    """A live campaign's one editable setting besides its Ministries, the
+    Ministry leader roles (#922), has its own form: Review shows the change
+    under it and takes focus, and Apply shows the change's status there.
+    Nothing reloads and the ticks stay as the reader left them."""
+    reviews = answer_reviews(page, component_origin, LEADERS_REVIEW, address=LEADERS)
+    page.goto(component_origin + LEADERS)
+    page.evaluate(MARK)
+    roles = page.get_by_role("group", name="Ministry leader roles")
+    visible(roles)
+    # Its help says what the roles do, in plain words (behind its tip).
+    assert "can sign in and see their Ministry" in (
+        page.locator("#leader-roles").text_content()
+    )
+    # The other settings stay read-only.
+    assert page.locator("fieldset[disabled]").count() == 1
+    roles.get_by_label("Staff").uncheck()
+    page.locator("#leader-roles").get_by_role("button", name="Review changes").click()
+    visible(page.get_by_role("heading", name="Review your changes"))
+    assert len(reviews) == 1
+    assert "editor=leader_roles" in reviews[0]
+    assert "ministry_leader_roles=Chairperson" in reviews[0]
+    assert "ministry_leader_roles=Staff" not in reviews[0]
+    assert page.evaluate(FOCUSED, "#settings-review-title")
+    panel = page.locator("#leader-roles #settings-review")
+    assert "Chairperson, Staff" in panel.inner_text()
+    assert current_step(page) == "Review"
+    page.get_by_role("button", name="Apply changes").click()
+    visible(panel.get_by_role("heading", name="Change status"))
+    assert page.url == f"{component_origin}{LEADERS_PENDING}#settings-review"
+    assert not roles.get_by_label("Staff").is_checked()
+    assert page.evaluate(MARKED) == "kept"

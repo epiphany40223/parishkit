@@ -1,10 +1,14 @@
 # Stewardship Chairperson seed review
 
+Since #922 (migration 0042), Ministry leaders come only from ParishSoft
+roles, and what this guide describes grants nothing; see
+[Ministry leaders](../specs/stewardship/data/spec.md#ministry-leaders).
+
 This guide records the seventh slice of
 [ADM-07](../tasks/stewardship/admin-portal.md#adm-07-user-rules-and-ministry-assignments):
 the review of suspended Chairperson-seeded assignments and the provenance
 action the
-[admin portal specification](../specs/stewardship/admin-portal/spec.md#chairperson-suggestions-and-assignments)
+[admin portal specification](../specs/stewardship/admin-portal/spec.md#ministry-leaders-from-parishsoft)
 requires, under the
 [authorization data model](../specs/stewardship/data/spec.md#administration-user-and-policy).
 It continues the

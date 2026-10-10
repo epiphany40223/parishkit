@@ -1,9 +1,9 @@
 -- Current authority is independent of captured data-as-of and caller input.
-CREATE FUNCTION stewardship_ministry_scope_v1(user_uuid uuid)
+CREATE FUNCTION public.stewardship_ministry_scope_v1(user_uuid uuid)
 RETURNS jsonb LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
     WITH policy AS (
-        SELECT u.email,r.active_configuration_id,
-            coalesce(a.roles,d.roles,'[]'::jsonb) AS roles
+        SELECT coalesce(a.roles,d.roles,'[]'::jsonb) AS roles,
+            stewardship_ministry_leader_scope_v1(u.id) AS ministries
         FROM stewardship_portal_user u CROSS JOIN stewardship_system_configuration r
         LEFT JOIN stewardship_address_rule a ON a.configuration_id=r.active_configuration_id
             AND a.email=lower(u.email)
@@ -13,13 +13,9 @@ RETURNS jsonb LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp A
     )
     SELECT jsonb_build_object('capability','ministry_report',
         'operational',p.roles ?| ARRAY['administrator','staff'],
-        'ministries',coalesce((SELECT jsonb_agg(DISTINCT m.ministry_duid ORDER BY m.ministry_duid)
-            FROM stewardship_ministry_assignment m
-            WHERE m.configuration_id=p.active_configuration_id AND m.email=lower(p.email)
-                AND m.ministry_duid BETWEEN 1 AND 2147483647
-                AND (m.source='manual' OR EXISTS(SELECT 1 FROM stewardship_assignment_overlay o
-                    WHERE o.assignment_record_id=m.record_id AND o.active))), '[]'::jsonb))
-    FROM policy p WHERE p.roles ?| ARRAY['administrator','staff','ministry_leader']
+        'ministries',p.ministries)
+    FROM policy p WHERE p.roles ?| ARRAY['administrator','staff']
+        OR jsonb_array_length(p.ministries)>0
 $$;
 
 CREATE FUNCTION stewardship_ministry_scope_authorized_v1(user_uuid uuid, recorded jsonb)

@@ -349,3 +349,46 @@ def test_reminder_workgroup_is_set_and_cleared_by_patch():
     campaign_values(values)
     _, cleared = patched(configuration_version(result.candidate.document()), None)
     assert "reminder_workgroup" not in cleared
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        [],
+        ["Staff", "staff"],
+        [" Staff"],
+        [""],
+        ["x" * 201],
+        ["Staff"] * 2,
+        [f"Role {index}" for index in range(51)],
+        "Staff",
+        None,
+        [7],
+    ],
+)
+def test_ministry_leader_roles_are_distinct_trimmed_names(value):
+    """A present leader-role list (#922) is 1 to 50 distinct names, else absent."""
+    with pytest.raises(ConfigError):
+        campaign_values(campaign(ministry_leader_roles=value)["values"])
+
+
+def test_ministry_leader_roles_are_optional_and_kept_by_patch():
+    """Absent means the default; a patch sets the list and validation admits it."""
+    campaign_values(campaign()["values"])
+    campaign_values(
+        campaign(ministry_leader_roles=["Chairperson", "Team 1 leader"])["values"]
+    )
+    value = document()
+    row = value["sections"]["campaigns"][0]
+    patch = [
+        {
+            "operation": "update",
+            "section": "campaigns",
+            "id": row["id"],
+            "values": {"ministry_leader_roles": ["Chairperson"]},
+        }
+    ]
+    result = build_candidate(configuration_version(value), patch, candidate_id=uuid4())
+    values = result.candidate.document()["sections"]["campaigns"][0]["values"]
+    assert values["ministry_leader_roles"] == ["Chairperson"]
+    campaign_values(values)

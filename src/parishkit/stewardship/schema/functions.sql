@@ -1170,7 +1170,7 @@ BEGIN
         END IF;
         IF EXISTS (SELECT 1 FROM stewardship_campaign c JOIN stewardship_campaign_configuration old_c ON old_c.id=c.active_configuration_id
             WHERE c.id=target AND c.structural_locked
-              AND (old_c.values - ARRAY['name','year_label','content_versions','end_date','artwork','reminder_workgroup','ministry_duids']) IS DISTINCT FROM (candidate.values - ARRAY['name','year_label','content_versions','end_date','artwork','reminder_workgroup','ministry_duids'])) THEN
+              AND (old_c.values - ARRAY['name','year_label','content_versions','end_date','artwork','reminder_workgroup','ministry_duids','ministry_leader_roles']) IS DISTINCT FROM (candidate.values - ARRAY['name','year_label','content_versions','end_date','artwork','reminder_workgroup','ministry_duids','ministry_leader_roles'])) THEN
             RAISE EXCEPTION 'Live structural settings are locked' USING ERRCODE='23514';
         END IF;
         -- The one reviewed live structural exemption (#342): an Administrator
@@ -4394,9 +4394,11 @@ BEGIN
     -- limit is ADMIN_ABSOLUTE (12 hours, accounts/session_policy.py); an
     -- authority rotation copies the older row's earlier deadline. The
     -- principal must be a live PortalUser whose current address or domain
-    -- rule grants at least one Admin role (the same projection as
-    -- stewardship_export_authorized_v1). Python may grant fewer roles than
-    -- the rule names, never more.
+    -- rule grants Administrator or Staff (the same projection as
+    -- stewardship_export_authorized_v1), or who leads at least one Ministry
+    -- through a ParishSoft role (#922, stewardship_ministry_leader_scope_v1).
+    -- A rule's Ministry leader role alone no longer admits anyone. Python
+    -- may grant fewer roles than this, never more.
     IF NEW.expires_at > statement_timestamp() + interval '12 hours'
        OR NEW.authenticated_at > statement_timestamp()
        OR NEW.last_activity_at > statement_timestamp()
@@ -4408,7 +4410,8 @@ BEGIN
         LEFT JOIN stewardship_domain_rule d ON d.configuration_id=r.active_configuration_id
             AND d.domain=lower(u.hosted_domain) AND d.domain=split_part(lower(u.email),'@',2)
         WHERE u.id=NEW.principal_id AND NOT u.disabled
-            AND coalesce(a.roles,d.roles,'[]'::jsonb) ?| ARRAY['administrator','staff','ministry_leader'])
+            AND (coalesce(a.roles,d.roles,'[]'::jsonb) ?| ARRAY['administrator','staff']
+                 OR jsonb_array_length(public.stewardship_ministry_leader_scope_v1(u.id))>0))
     THEN
         RAISE EXCEPTION 'Admin session requires a current authorized principal and bounded lifetime'
             USING ERRCODE='23514';
@@ -5280,36 +5283,12 @@ CREATE FUNCTION public.stewardship_require_chair_receipt_v1(configuration uuid, 
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
-DECLARE receipt stewardship_chair_reconciliation%ROWTYPE;
 BEGIN
-    SELECT * INTO receipt FROM stewardship_chair_reconciliation
-        WHERE configuration_id=configuration AND snapshot_id=snapshot;
-    IF receipt.id IS NULL OR receipt.decisions IS DISTINCT FROM
-        stewardship_chair_decisions_v1(configuration) THEN
-        RAISE EXCEPTION 'Seeded assignment reconciliation is incomplete'
-            USING ERRCODE='23514';
-    END IF;
-    IF EXISTS (SELECT 1 FROM jsonb_array_elements(receipt.decisions) decision
-        LEFT JOIN stewardship_assignment_overlay overlay
-          ON overlay.assignment_record_id=(decision->>'assignment_record_id')::uuid
-        WHERE overlay.id IS NULL OR overlay.active IS DISTINCT FROM
-                  (decision->>'active')::boolean
-          OR overlay.source_snapshot_id IS DISTINCT FROM snapshot
-          OR overlay.reason IS DISTINCT FROM decision->>'reason'
-          OR (decision->>'active')::boolean = EXISTS (
-              SELECT 1 FROM stewardship_chair_review review
-              WHERE review.assignment_record_id=
-                  (decision->>'assignment_record_id')::uuid
-                AND review.closed_by_id IS NULL))
-       OR EXISTS (SELECT 1 FROM stewardship_chair_review review
-           WHERE review.closed_by_id IS NULL AND NOT EXISTS (
-               SELECT 1 FROM jsonb_array_elements(receipt.decisions) decision
-               WHERE (decision->>'assignment_record_id')::uuid=
-                   review.assignment_record_id
-                 AND decision->'active'='false'::jsonb)) THEN
-        RAISE EXCEPTION 'Seeded assignment reconciliation effects are incomplete'
-            USING ERRCODE='23514';
-    END IF;
+    -- Ministry leaders come from ParishSoft roles (#922): Chairperson-seeded
+    -- assignments and their overlays grant no scope, so a promotion or
+    -- activation no longer needs a chair reconciliation receipt. The
+    -- signature stays for its two callers; the tables stay, unread.
+    RETURN;
 END;
 $$;
 

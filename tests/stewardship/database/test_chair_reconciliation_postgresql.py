@@ -86,10 +86,12 @@ def configured(tmp_path, *, manual_scope=True, manual_role=False):
 @pytest.mark.parametrize(
     "manual_scope,manual_role", [(True, False), (False, False), (False, True)]
 )
-def test_next_authorization_preserves_exact_manual_provenance(
+def test_seeds_and_assignments_grant_nothing_whatever_the_source(
     tmp_path, manual_scope, manual_role
 ):
-    """Fresh authorization sees seed loss without deleting independent scope or role."""
+    """Since Ministry leaders come from ParishSoft roles (#922), no seed,
+    manual assignment or rule Ministry leader role grants anything, before or
+    after the source loses or regains the Chairperson."""
     from parishkit.stewardship.accounts.policy import current_principal
 
     from .test_policy_postgresql import user
@@ -99,13 +101,11 @@ def test_next_authorization_preserves_exact_manual_provenance(
     )
     account = user("valid@example.org")
     before = current_principal(store, account.pk)
-    assert "ministry_leader" in before.roles and 4 in before.ministries
+    assert not before.roles and not before.ministries
     data = source()
     data.members[3]["emailAddress"] = ""
     publish(data)
-    after = current_principal(store, account.pk)
-    assert ("ministry_leader" in after.roles) == (manual_scope or manual_role)
-    assert after.ministries == (frozenset({8}) if manual_scope else frozenset())
+    assert current_principal(store, account.pk) == before
     publish(source())
     assert current_principal(store, account.pk) == before
 
@@ -200,7 +200,7 @@ def test_explicit_assignment_removal_closes_open_review_without_a_new_grant(tmp_
     assert not AssignmentOverlay.objects.get().active
 
 
-@pytest.mark.parametrize("failure", ["omitted", "later_failure", "wrong_decision"])
+@pytest.mark.parametrize("failure", ["later_failure", "wrong_decision"])
 def test_incomplete_promotion_never_commits_pointer_or_partial_policy(
     tmp_path, failure
 ):
@@ -214,8 +214,6 @@ def test_incomplete_promotion_never_commits_pointer_or_partial_policy(
 
     def effects(value):
         """Exercise failures after the source pointer changes inside its transaction."""
-        if failure == "omitted":
-            return True
         if failure == "wrong_decision":
             runtime = SystemConfiguration.objects.get()
             ChairReconciliation.objects.create(
@@ -240,29 +238,30 @@ def test_incomplete_promotion_never_commits_pointer_or_partial_policy(
     release_source(claim)
 
 
-def test_seeded_activation_cannot_skip_real_effects(tmp_path, monkeypatch):
-    """The deferred activation constraint replaces the temporary blanket barrier."""
+def test_promotion_and_activation_no_longer_need_a_chair_receipt(tmp_path, monkeypatch):
+    """Seeds grant nothing since #922 (migration 0042), so SQL no longer makes
+    a promotion or an activation prove its chair reconciliation."""
     store, _, actor = configured(tmp_path)
-    previous = SystemConfiguration.objects.get().active_configuration_id
+    receipts = ChairReconciliation.objects.count()
+    snapshot, claim = prepare(source())
+    with work_transaction():
+        promoted = promote_snapshot(
+            snapshot.pk, claim, admit=permit, reconcile=lambda value: True
+        )
+    release_source(claim)
+    assert SourceCurrent.objects.get().snapshot_id == promoted.pk
     monkeypatch.setattr(
         "parishkit.stewardship.accounts.chair_reconciliation.reconcile_configuration_chairs",
         lambda activation: None,
     )
-    with pytest.raises(IntegrityError, match="reconciliation"):
-        change(
-            store,
-            store.active(),
-            actor,
-            [
-                {
-                    "operation": "add",
-                    "section": "ministries",
-                    **activity(ministry_duid=4),
-                }
-            ],
-        )
-    assert SystemConfiguration.objects.get().active_configuration_id == previous
-    assert AssignmentOverlay.objects.get().active
+    result = change(
+        store,
+        store.active(),
+        actor,
+        [{"operation": "add", "section": "ministries", **activity(ministry_duid=4)}],
+    )
+    assert result.state == "applied"
+    assert ChairReconciliation.objects.count() == receipts
 
 
 def test_reconciliation_requires_outer_owner_and_live_source_fence(tmp_path):

@@ -156,6 +156,9 @@ FROZEN = {
     "0041_task_type_creators.sql": (
         "c94558d9c9a56dac0303d38859935922d0e0c7e4ceadab366e5f370bc41fde72"
     ),
+    "0042_ministry_leaders_from_roles.sql": (
+        "d2243bba8e883d25c1c8cbd95ff7fabdda1ce7e8675136373df3d4c1dfa25ece"
+    ),
 }
 
 

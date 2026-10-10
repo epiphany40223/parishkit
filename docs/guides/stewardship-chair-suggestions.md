@@ -1,9 +1,13 @@
 # Stewardship Chairperson suggestions
 
+Since #922 (migration 0042), Ministry leaders come only from ParishSoft
+roles, and what this guide describes grants nothing; see
+[Ministry leaders](../specs/stewardship/data/spec.md#ministry-leaders).
+
 This guide records the fifth slice of
 [ADM-07](../tasks/stewardship/admin-portal.md#adm-07-user-rules-and-ministry-assignments):
 the Chairperson suggestions the
-[admin portal specification](../specs/stewardship/admin-portal/spec.md#chairperson-suggestions-and-assignments)
+[admin portal specification](../specs/stewardship/admin-portal/spec.md#ministry-leaders-from-parishsoft)
 asks the Administrator to review after every source promotion, shown
 read-only on the Portal users page. It continues the
 [security event email increment](stewardship-security-event-mail.md) and

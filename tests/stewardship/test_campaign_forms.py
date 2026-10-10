@@ -263,3 +263,71 @@ def test_the_page_requires_what_clean_requires_for_financial_stewardship():
         form = form_for(complete | {name: [] if name.endswith("duids") else ""})
         assert not form.is_valid()
         assert name in form.errors
+
+
+ROLE_CHOICES = [
+    ("Chairperson", "Chairperson"),
+    ("Member", "Member"),
+    ("Staff", "Staff"),
+]
+
+
+def settings_form(values, *, previous=None, roles=("Chairperson", "Staff")):
+    """Campaign settings' draft form, with the leader roles now in effect."""
+    from parishkit.stewardship.accounts.campaign_forms import CampaignSettingsForm
+
+    return CampaignSettingsForm(
+        values,
+        previous=previous,
+        ministries=[("1", "First ministry"), ("2", "Second ministry")],
+        funds=[("1", "Current fund"), ("2", "Comparison fund")],
+        leader_choices=ROLE_CHOICES,
+        leader_roles=roles,
+    )
+
+
+def test_leader_roles_are_written_only_when_they_change():
+    """Keeping the roles in effect writes nothing; a change writes the list (#922)."""
+    unchanged = settings_form(
+        posted(ministry=True, ministry_leader_roles=["Staff", "Chairperson"])
+    )
+    assert unchanged.is_valid(), unchanged.errors
+    assert "ministry_leader_roles" not in unchanged.values()
+    changed = settings_form(
+        posted(ministry=True, ministry_leader_roles=["Staff", "Member"])
+    )
+    assert changed.is_valid(), changed.errors
+    assert changed.values()["ministry_leader_roles"] == ["Member", "Staff"]
+    assert campaign_values(changed.values())
+
+
+def test_leader_roles_need_one_role_and_only_offered_names():
+    """Ministry stewardship needs a leader role; a posted name must be offered."""
+    for roles in ([], ["Pastor"]):
+        form = settings_form(posted(ministry=True, ministry_leader_roles=roles))
+        assert not form.is_valid()
+        assert "ministry_leader_roles" in form.errors
+    # Without Ministry stewardship the roles are not asked about, and a saved
+    # list is kept as it is.
+    previous = campaign(ministry_leader_roles=["Member"])["values"]
+    form = settings_form(posted(), previous=previous, roles=["Member"])
+    assert form.is_valid(), form.errors
+    assert form.values()["ministry_leader_roles"] == ["Member"]
+
+
+def test_leader_roles_review_lists_the_names():
+    """The review shows the names, not a Python list."""
+    assert (
+        display_value("ministry_leader_roles", ["Chairperson", "Staff"])
+        == "Chairperson, Staff"
+    )
+    assert describe_changes(
+        {"ministry_leader_roles": ["Chairperson", "Staff"]},
+        {"ministry_leader_roles": ["Chairperson"]},
+    ) == [
+        {
+            "label": "Ministry leader roles",
+            "before": "Chairperson, Staff",
+            "after": "Chairperson",
+        }
+    ]

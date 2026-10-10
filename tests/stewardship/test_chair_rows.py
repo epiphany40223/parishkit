@@ -148,19 +148,20 @@ def test_current_rule_and_assignment_are_shown_from_policy():
     assert inherited["rule"]["domain"] == "example.org"
     assert text(inherited["rule"]["roles"]) == ["Staff"]
     assert inherited["assignments"] == []
-    # A confirmed seed, or a manual grant, shows the role as granted.
+    # Even a confirmed seed grants nothing now: Ministry leaders come from
+    # ParishSoft roles (#922).
     (confirmed,) = suggestion_rows(
         AppliedPolicy(records, [], active_seeded=frozenset({records[3]["id"]})),
         [relationship()],
         active=frozenset({4}),
     )
-    assert text(confirmed["rule"]["roles"]) == ["Ministry leader"]
-    assert confirmed["rule"]["suspended"] is False
-    assert confirmed["assignments"][0]["active"] is True
+    assert confirmed["rule"]["roles"] == []
+    assert confirmed["rule"]["suspended"] is True
+    assert confirmed["assignments"][0]["active"] is False
 
 
 def test_manual_and_seeded_assignments_are_both_shown_in_fixed_order():
-    """A manual assignment beside a suspended seed grants scope; neither hides."""
+    """A manual assignment beside a suspended seed is shown; neither hides."""
     seed = assignment("valid@example.org", ministry=4, seeded=True)
     manual = assignment("valid@example.org", ministry=4)
     rule = address("valid@example.org", ("ministry_leader",), seeded=True)
@@ -169,10 +170,10 @@ def test_manual_and_seeded_assignments_are_both_shown_in_fixed_order():
             AppliedPolicy(records, []), [relationship()], active=frozenset({4})
         )
         shown = [(str(item["source"]), item["active"]) for item in row["assignments"]]
+        # No assignment grants scope now (#922), a manual one included.
         assert shown == [
-            ("Administrator entry", True),
+            ("Administrator entry", False),
             ("Parish source Chairperson", False),
         ]
-        # The manual assignment keeps the seeded role in force.
-        assert text(row["rule"]["roles"]) == ["Ministry leader"]
-        assert row["rule"]["suspended"] is False
+        assert row["rule"]["roles"] == []
+        assert row["rule"]["suspended"] is True

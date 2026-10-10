@@ -481,21 +481,29 @@ def test_scheduled_campaign_takes_the_exemption(response_service, monkeypatch, b
     assert applied(select(harness, [4, 9])) and selected(harness) == [4, 9]
 
 
-def test_leader_of_a_removed_ministry_still_opens_the_campaign(response_service):
-    """The report's campaign list keeps a campaign with the leader's requests."""
+def test_a_removed_ministry_leaves_its_leaders_scope(response_service):
+    """A Ministry's leaders lead it only while the campaign asks about it (#922).
+
+    Removing it from a live campaign keeps its requests for Administrators
+    and Staff, but its ParishSoft leaders no longer lead it, so the campaign
+    leaves their report list.
+    """
     harness = setup(response_service)
     leader = actor(harness, ("ministry_leader",), (9,))
     other = actor(harness, ("ministry_leader",), (77,))
+    staff = actor(harness, ("staff",), ())
 
     def readable(principal):
-        """Campaigns the leader may choose, read as the web login."""
+        """Campaigns the reader may choose, read as the web login."""
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             return campaign_ids(principal)
 
     assert harness.campaign.pk in readable(leader)
-    assert applied(select(harness, [4]))
-    assert harness.campaign.pk in readable(leader)
     assert harness.campaign.pk not in readable(other)
+    assert applied(select(harness, [4]))
+    assert harness.campaign.pk not in readable(leader)
+    assert harness.campaign.pk in readable(staff)
+    assert 9 in summaries(harness)
 
 
 def test_removed_ministry_without_current_requests_leaves_reports(response_service):

@@ -57,8 +57,9 @@ def test_a_manual_assignment_beside_the_seed_keeps_scope_and_forbids_restore():
     (row,) = suspended_rows(
         AppliedPolicy(records, []), [review(reason="ministry_inactive")]
     )
-    assert row["manual"] is True and row["leading"] is True
-    assert text(row["granted"]) == ["Ministry leader"]
+    # No assignment grants scope now (#922), a manual one included.
+    assert row["manual"] is True and row["leading"] is False
+    assert row["granted"] == []
     assert str(row["reason"]) == "The Ministry is inactive in the applied activity."
 
 

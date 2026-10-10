@@ -33,7 +33,7 @@ def test_hosted_domain_requires_claim_and_email_suffix(hosted):
     assert roles == (frozenset({"staff"}) if hosted == "example.org" else frozenset())
 
 
-@pytest.mark.parametrize("roles", [(), ("ministry_leader",), ("administrator",)])
+@pytest.mark.parametrize("roles", [(), ("staff",), ("administrator",)])
 def test_exact_rule_replaces_domain_including_denial(roles):
     """Explicit address policy never unions roles inherited from its domain."""
     actual, _ = resolve_roles(
@@ -47,30 +47,51 @@ def test_exact_rule_replaces_domain_including_denial(roles):
     assert actual == expected
 
 
-def test_seeded_suppression_requires_every_provenance_condition():
-    """Missing scope suppresses only an exclusively seeded role on a seeded rule."""
-    rule = address("leader@example.org", ("ministry_leader",), seeded=True)
-    seed = assignment(seeded=True)
-    assert not resolve_roles("leader@example.org", None, [rule, seed])[0]
-    assert resolve_roles(
-        "leader@example.org", None, [rule, seed], frozenset({seed["id"]})
-    )[0] == {"ministry_leader"}
-    rule["values"]["grants"]["ministry_leader"]["manual"] = str(uuid4())
-    roles, ministries = resolve_roles("leader@example.org", None, [rule, seed])
-    assert roles == {"ministry_leader"} and not ministries
-    rule["values"]["grants"]["ministry_leader"].pop("manual")
-    rule["values"]["creation_origin"] = "manual"
-    assert resolve_roles("leader@example.org", None, [rule, seed])[0] == {
-        "ministry_leader"
-    }
+@pytest.mark.parametrize("seeded", [False, True])
+def test_rule_leader_roles_and_assignments_grant_nothing(seeded):
+    """Ministry leaders come only from ParishSoft roles (#922).
+
+    A rule's Ministry leader role, seeded or manual, and any assignment,
+    manual or seeded, give neither the role nor any Ministry.
+    """
+    rule = address("leader@example.org", ("ministry_leader",), seeded=seeded)
+    records = [rule, assignment(), assignment(seeded=True)]
+    assert resolve_roles("leader@example.org", None, records) == (
+        frozenset(),
+        frozenset(),
+    )
+    staff = address("leader@example.org", ("staff", "ministry_leader"))
+    assert resolve_roles("leader@example.org", None, [staff, assignment()]) == (
+        frozenset({"staff"}),
+        frozenset(),
+    )
 
 
-def test_manual_assignment_survives_missing_seed_overlay():
-    """A manual assignment independently supplies Ministry scope."""
-    role = address("leader@example.org", ("ministry_leader",), seeded=True)
-    assert resolve_roles("leader@example.org", None, [role, assignment()]) == (
+def test_role_derived_scope_makes_a_ministry_leader():
+    """A non-empty role-derived scope is the only way to lead (#922).
+
+    It needs no rule at all and adds to a Staff or Administrator rule
+    without narrowing it. An explicit-deny exact-address rule still refuses
+    everything, as SQL's scope does.
+    """
+    led = frozenset({4, 9})
+    assert resolve_roles("leader@example.org", None, [], led) == (
         frozenset({"ministry_leader"}),
-        frozenset({123}),
+        led,
+    )
+    staff = address("leader@example.org", ("staff",))
+    assert resolve_roles("leader@example.org", None, [staff], led) == (
+        frozenset({"staff", "ministry_leader"}),
+        led,
+    )
+    denied = address("leader@example.org", ())
+    assert resolve_roles("leader@example.org", None, [denied], led) == (
+        frozenset(),
+        frozenset(),
+    )
+    assert resolve_roles("leader@example.org", None, [], frozenset()) == (
+        frozenset(),
+        frozenset(),
     )
 
 

@@ -1,16 +1,13 @@
 """An Administrator closes and reopens the Family portal for maintenance (#274)."""
 
-from uuid import uuid4
-
 import pytest
 from django.test import Client
 
 from parishkit.stewardship.accounts import family_maintenance
 from parishkit.stewardship.audit.models import AuditEvent
 
-from ..policy_factory import address
 from .auth_builders import signed_in
-from .campaign_builders import change as change_rules
+from .leader_builders import grant_role
 from .test_security_events_postgresql import home
 from .test_user_rule_views_postgresql import web
 
@@ -147,19 +144,7 @@ def test_changing_the_switch_needs_a_fresh_sign_in(auth_service, google, monkeyp
 
 def reader(auth_service, google, role):
     """Sign in a non-Administrator Admin role."""
-    store = auth_service.store
-    change_rules(
-        store,
-        store.active(),
-        uuid4(),
-        [
-            {
-                "operation": "add",
-                "section": "login_rules",
-                **address("reader@example.org", roles=(role,)),
-            }
-        ],
-    )
+    grant_role(auth_service.store, "reader@example.org", role)
     google[0]["email"] = "reader@example.org"
     browser, _ = signed_in()
     return browser
