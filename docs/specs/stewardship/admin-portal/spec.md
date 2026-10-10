@@ -1356,63 +1356,25 @@ changes.
 
 #### Table column order
 
-Admin tables put their columns in one order, so a reader moving between pages
-finds the same column in the same place
-([#932](https://github.com/epiphany40223/parishkit/issues/932)). The most
-relevant column comes first: the thing the reader looks a row up by. A table
-skips the columns it does not have; the rest keep this relative order:
+Admin tables put their columns in one order, set out with its reasons in the
+UX conventions' [table column order](../ui-conventions/spec.md#table-column-order)
+and [Family and Member names](../ui-conventions/spec.md#family-and-member-names)
+([#932](https://github.com/epiphany40223/parishkit/issues/932)). In short:
+the selection checkbox, then the most relevant column (the Family name for
+Family tables, the Member or Ministry name, or the identifying name or
+address for configuration and account tables; event and log tables keep the
+time first), then the Family name and **Family DUID**, Member name and
+**Member DUID**, Ministry name and **Ministry DUID**, each DUID in its own
+column, then everything else, and actions last. Every Family name is the
+surname, then the active heads ("Squyres, Jeff and Tracy"), from the shared
+helper; where an installed SQL selection searches and orders the rows
+([Admin tables](#admin-tables)), it still searches and orders by the
+surname, and those tables' DUID columns do not sort until one forward
+migration adds the orders
+([#960](https://github.com/epiphany40223/parishkit/issues/960)).
 
-1. The selection checkbox, when the table has bulk actions.
-2. The row's subject, first:
-   - **Family tables** (worklists and reports whose rows are Families or
-     records about one Family: responses, pledges, requests, census changes,
-     sessions): the Family name, as the row header unless another column
-     names the row, linked to the Family's page where the table already links
-     it; then **Family DUID** in its own column under exactly that heading;
-     then Envelope number, when shown.
-   - **Member tables** (rows are Members): the Member name as the row header,
-     then **Member DUID** in its own column, then the Member's Family and
-     Family DUID.
-   - **Ministry tables**: the Ministry name, then **Ministry DUID**.
-   - **Configuration and account tables** (Portal users rules, Automation
-     access sessions, Hosted files, Ministries, Background tasks, Dates and
-     mail schedules, Pages and emails): the identifying name or address, for
-     example the domain or email address on Portal users.
-3. A Member within a Family table (Census changes' Who), then its Member
-   DUID.
-4. Everything else: status, values, counts, notes and dates, in the order
-   that reads best for the table. Several event dates keep the order the
-   events happen (Invitation delivered, then Link followed; First submitted,
-   then Last submitted).
-5. The [actions column](#row-actions-and-confirmation), last.
-
-**Event and log tables** keep the date first, because each row is the event
-itself: System logs (Time), the Family timeline (When), Family email history,
-Outgoing mail and Background task history.
-
-**Family names.** Every Admin table that names a Family names it the same
-way as the
-[active parishioner family directory](../reports/spec.md#active-parishioner-family-directory):
-the surname, then the active heads of household, "Squyres, Jeff and Tracy".
-Pages build it from the ParishSoft snapshot their rows were read from, with
-the one shared helper (`family_heads_name`, through `snapshot_family_names`);
-a Family missing from that snapshot keeps the name its report read. Where an
-installed SQL selection searches and orders the rows, it still searches and
-orders by the surname, which leads that name.
-
-**Sorting.** A table that shows a Family name and a Family DUID sorts on both.
-A new DUID column sorts in place where the page sorts its rows in Python;
-where an installed SQL selection orders the rows (see
-[Admin tables](#admin-tables)), it does not sort until that selection gains
-the order in a forward migration. Financial stewardship and the Additional
-information queue are such tables today: their Family DUID columns wait for
-a migration slice of
-[#932](https://github.com/epiphany40223/parishkit/issues/932).
-
-A DUID is never printed in the same cell as its name ("Name, DUID 1234"):
-a combined cell cannot be sorted or scanned by DUID, reads awkwardly with a
-screen reader and copies badly into a spreadsheet. A template guard test
-reads every Admin template, components included. In each `<td>` and each
+A template guard test keeps each DUID out of its name's cell: it reads
+every Admin template, components included. In each `<td>` and each
 `<th>` whose attributes include `scope="row"`, it refuses a DUID label
 followed by a printed value, and a printed `*duid` variable beside any other
 printed value (values inside tag attributes or `<option>` choices do not
