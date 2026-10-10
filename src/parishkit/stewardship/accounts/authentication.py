@@ -466,12 +466,13 @@ def establish_identity(
                 rotate_token(request)
     if principal is None or not principal.roles:
         # Google verified this account and policy refused it, so the audit
-        # entry names the account, rate-bounded per account (#953), in
-        # place of the anonymous deployment-wide sample.
-        record_account_refusal(user.pk)
+        # entry names the account, bounded per account and deployment-wide
+        # (#953), in place of the anonymous sample. Limiter accounting runs
+        # first so it still counts the attempt if the audit write fails.
         delay = record_failure(
             request, identity=fingerprint, counter=counter, sampled=False
         )
+        record_account_refusal(user.pk)
         return denial(status=429 if delay else 403, retry=delay)
     service.limiter.clear(counter)
     if step_up_only and not stepped_up:
