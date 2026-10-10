@@ -121,3 +121,31 @@ def test_facts_add_the_envelope_number_and_mailing_name(monkeypatch):
         2: snapshot_names.FamilyFacts("Ray", None, ""),
         3: snapshot_names.FamilyFacts("Fox", 42, ""),
     }
+
+
+def test_name_rows_gives_report_rows_the_directory_name(monkeypatch):
+    """Surname-only report rows read "Squyres, Jeff and Tracy" (#932).
+
+    Rows of one Family share one lookup; a Family missing from the snapshot
+    keeps the name its report read, and no rows means no query.
+    """
+    families = {"1": {"lastName": "Squyres", "active_head_duids": [10, 20]}}
+    members = {
+        "10": {"firstName": "Jeff", "lastName": "Squyres", "active": True},
+        "20": {"firstName": "Tracy", "lastName": "Squyres", "active": True},
+    }
+    family_rows, _ = _install(monkeypatch, families, members)
+    rows = [
+        {"family_duid": 1, "family_name": "Squyres"},
+        {"family_duid": 1, "family_name": "Squyres"},
+        {"family_duid": 9, "family_name": "Unavailable Family"},
+    ]
+    assert snapshot_names.name_rows("snap", rows) is rows
+    assert [row["family_name"] for row in rows] == [
+        "Squyres, Jeff and Tracy",
+        "Squyres, Jeff and Tracy",
+        "Unavailable Family",
+    ]
+    assert family_rows.calls == [("snap", {"1", "9"})]
+    assert snapshot_names.name_rows("snap", []) == []
+    assert len(family_rows.calls) == 1
