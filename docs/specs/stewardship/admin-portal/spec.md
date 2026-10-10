@@ -2933,9 +2933,10 @@ again** below, begins an **attempt**, numbered from 1 within the transition
 request. An attempt queues one full refresh, the attempt's refresh. From
 the attempt's start,
 [scheduled refreshes wait](../background-processing/spec.md#refreshes-wait-for-go-live)
-until the attempt's **hold end**, which is the earlier of 60 minutes after
-the attempt's refresh promoted and 3 hours after the attempt started (the
-cap, for a refresh that never promotes). The exact rule, used by every
+until the attempt's **hold end**, which that section defines: 60 minutes
+after the attempt's refresh has promoted and cleanup has completed, and
+never later than 3 hours after the attempt started (the cap, for a refresh
+that never promotes). The exact rule, used by every
 go-live check after Start (the links step, the confirmation readiness
 re-check in `collect_readiness`, and the confirmation deadline) in place of
 today's `source_stale_seconds` expiry, is: the source is ready when the
