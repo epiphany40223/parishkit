@@ -13,13 +13,16 @@ functions, checks and audit; new Admin actions follow its
 
 `/admin/login` offers only "Sign in with Google." A successful Google callback
 must provide a verified email and stable subject. The normalized address is
-evaluated as follows:
+evaluated as follows (#952):
 
-1. If an exact address rule exists, use only its roles, including an empty role
-   set as an explicit denial.
-2. Otherwise, use the matching domain rule, if any.
-3. Expand Administrator to include Staff and Ministry leader.
-4. Deny access if no effective application role remains.
+1. If a [user](#portal-user-management) has that address, take the user's
+   role. Roles are levels: Administrator includes Staff and Ministry leader,
+   and Staff includes Ministry leader.
+2. Otherwise deny access.
+
+Sign-in is by email address only. There are no hosted-domain rules and no
+explicit-deny entries: an address without a user cannot sign in, and the
+signed Google hosted-domain (`hd`) claim plays no part in authorization.
 
 Provider authentication failure and an unverified email may use distinct safe
 error pages. Allowlist denial, no effective role, and any authorization denial
@@ -49,8 +52,8 @@ absolute expiry follow the [architecture session policy](../architecture/spec.md
 Loss of the sole usable Google Admin account is handled only through
 [offline operator recovery](../operations/spec.md#offline-admin-access-recovery),
 not this wizard or a web login bypass. Its additive grant appears in normal
-user management with manual provenance and the persistent recovery security
-event; subsequent role edits retain the ordinary Admin policy.
+user management as an Administrator user, with the persistent recovery
+security event; subsequent role edits retain the ordinary Admin policy.
 
 The `pk-stewardship bootstrap` command runs once against an empty deployment
 through the operator-only [offline bootstrap profile](../operations/spec.md#offline-bootstrap-profile),
@@ -69,7 +72,8 @@ It never collects campaign answers, prints secrets, or stores parish-specific
 values in the image. It is idempotent when given identical values and refuses
 to replace a configured deployment without a separate restore process.
 Bootstrap writes the deployment YAML and a minimal schema-valid Stewardship
-bootstrap YAML version containing only the initial exact-address Admin rule.
+bootstrap YAML version containing only the initial Administrator user (its
+Name defaults to the email's local part when none is given).
 After migration, the latter is imported as the first applied configuration
 snapshot so the initial Admin can authenticate; the wizard supersedes it with
 the first complete version.
@@ -80,7 +84,8 @@ configured ([#142](https://github.com/epiphany40223/parishkit/issues/142)):
 
 1. Parish name, website URL, optional HTTPS online giving URL, IANA timezone,
    US main phone, and logo.
-2. Domain/address login rules while preserving the bootstrap Admin.
+2. The [users](#portal-user-management) who may sign in (email, Name and
+   role), while preserving the bootstrap Administrator.
 3. ParishSoft API key replacement, expected organization, connectivity check,
    and a complete staged source load.
 4. Google Workspace email service-account/delegated mailbox, sender/reply
@@ -471,10 +476,10 @@ through every Admin page (109 pages) and settled by the Administrator's
 moved to it, and the page names, links and URLs fixed against it, by the
 follow-up issues #520 (one name per page), #521 (every page reachable, every
 flow with a way back) and #525 (one URL scheme). Every page already uses the
-table's name (NAV-4, NAV-5a and NAV-5b), except Portal users, which keeps its
-name until NAV-15 splits it into Sign-in rules, Ministry assignments and
-Chairpersons, and the Ministry assignments and Chairpersons pages, which do
-not exist yet (Emailed reports exists since NAV-14). The System pages already have their new
+table's name (NAV-4, NAV-5a and NAV-5b), except Portal users, which becomes
+Users with the Users revamp (#952), which replaced the planned split into
+Sign-in rules, Ministry assignments and Chairpersons (Emailed reports exists
+since NAV-14). The System pages already have their new
 addresses (NAV-6), and so do the Parish data pages and a change's status page
 (NAV-7), the Mail and Family portal pages (NAV-8) and the Campaign setup
 pages (NAV-9: settings, Copy campaign, content and its history, images,
@@ -555,9 +560,7 @@ Home, then these groups, each listing the entries the viewer's role may open:
 | Parish data | Ministries | `/admin/parish/ministries/` | Administrator | Never |
 | Parish data | Hosted files | `/admin/parish/files/` | Administrator | Never |
 | Parish data | Refresh from ParishSoft | `/admin/parish/parishsoft-refresh/` | Administrator | Never |
-| Users and access | Sign-in rules | `/admin/users/sign-in-rules/` | Administrator | Never |
-| Users and access | Ministry assignments | `/admin/users/ministry-assignments/` | Administrator | Never |
-| Users and access | Chairpersons | `/admin/users/chairpersons/` | Administrator | Never |
+| Users and access | Users | `/admin/users/` | Administrator | Never |
 | Users and access | Automation access | `/admin/users/automation/` | Administrator | Never |
 | System | System health | `/admin/system/health/` | Administrator | Never |
 | System | Integrations | `/admin/system/integrations/` | Administrator | Never |
@@ -610,21 +613,17 @@ Notes on the groups:
   ([Family portal maintenance](#family-portal-maintenance)) are side by side.
   The header's background, delivery and presence counts stay as shortcuts to
   their entries.
-- [Portal user management](#portal-user-management) is three entries instead
-  of one long page of five tables: **Sign-in rules** (Google Workspace
-  domain rules and exact-address rules, with their roles), **Ministry
-  assignments** (Ministry assignments for people a domain rule admits) and
-  **Chairpersons** (suspended Chairperson assignments awaiting review, and
-  [Chairperson suggestions](#chairperson-suggestions-and-assignments) from
-  ParishSoft). Each review started on one of them returns to it.
-- Emailed reports, Ministry assignments and Chairpersons are new pages: #520
-  and #521 add their registry entries and views.
+- [Portal user management](#portal-user-management) is one **Users** entry
+  with one table of users (#952). Each review started on it returns to it.
+- Emailed reports is a new page: #520 and #521 add its registry entry and
+  view.
 - Each group's root URL (`/admin/campaign/`, `/admin/mail/`,
   `/admin/reports/`, `/admin/parish/`, `/admin/users/`, `/admin/system/`)
   redirects to the group's first entry available to the viewer, except
   `/admin/reports/`, which keeps its old meaning: Participation, or Ministry
-  requests for a viewer who may not open Participation. A group root with no
-  entry available to the viewer redirects to Home.
+  requests for a viewer who may not open Participation, and `/admin/users/`,
+  which is the Users page itself. A group root with no entry available to
+  the viewer redirects to Home.
 - Until initial setup completes, the only menu entry is the setup wizard,
   which has its own stepper: nothing else works yet, so this is the one
   exception to a stable menu shape.
@@ -906,12 +905,17 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `hosted_file_delete` | Delete hosted files | Hosted files | Administrator | (same) | `/admin/parish/files/deletion/` (POST only) | (same) |  |
 | `hosted_file_rename` | Change placeholder name | Hosted files | Administrator | (same) | `/admin/parish/files/<file>/name/` | (same) |  |
 | `source_refresh` | Refresh from ParishSoft | Menu: Refresh from ParishSoft | Administrator | ParishSoft refresh | `/admin/parish/parishsoft-refresh/` | (same) |  |
-| `users` | Sign-in rules | Menu: Sign-in rules | Administrator | Portal users | `/admin/users` | `/admin/users/sign-in-rules/` | Portal users is split into Sign-in rules, Ministry assignments and Chairpersons (decision 13). |
-| `user_rules` | Review sign-in rules | Sign-in rules | Administrator | Review login rule change; Sign-in rules | `/admin/users/rules` (POST only) | `/admin/users/sign-in-rules/review/` (POST only) |  |
-| `rule_request` | (not a page) | Sign-in rules | Administrator | Rule change (status); Rule change | `/admin/users/rules/requests/<request>` | `/admin/users/sign-in-rules/requests/<request>/` (JSON) | Answers JSON only; reclassify as a non-page. |
-| `assignments` | Review Ministry assignment | Ministry assignments (new page) | Administrator | Review Ministry assignment change; Assignments | `/admin/users/assignments` (POST only) | `/admin/users/ministry-assignments/review/` (POST only) |  |
-| `chair_confirmations` | Review Chairperson suggestion | Chairpersons (new page) | Administrator | Review Chairperson confirmation; Chair suggestions | `/admin/users/suggestions` (POST only) | `/admin/users/chairpersons/suggestions/` (POST only) |  |
-| `chair_reviews` | Review Chairperson decision | Chairpersons (new page) | Administrator | Review Chairperson assignment decision; Chair reviews | `/admin/users/reviews` (POST only) | `/admin/users/chairpersons/reviews/` (POST only) |  |
+| `users` | Users | Menu: Users | Administrator | Portal users; Sign-in rules | `/admin/users` | `/admin/users/` | One table of users (#952), which replaces the planned split into Sign-in rules, Ministry assignments and Chairpersons (decision 13). |
+| `user_new` | New user | Users | Administrator | (new, #952) | (none) | `/admin/users/new/` | Its review applies through Users. |
+| `user_edit` | Edit user | Users | Administrator | (new, #952) | (none) | `/admin/users/<user>/edit/` | The New page filled in; `<user>` is the user's stable ID. |
+| `user_delete` | Delete user | Users | Administrator | (new, #952) | (none) | `/admin/users/deletion/` (POST only) | The table's confirmation dialog posts here. |
+| `user_name_suggestions` | (not a page) | New user | Administrator | (new, #952) | (none) | `/admin/users/new/names/` (POST only, JSON) | Read-only Name suggestions from ParishSoft. |
+| `user_leader_import` | Import Ministry leaders | Users | Administrator | (new, #952) | (none) | `/admin/users/leaders/import/` (POST only) | Review of the chosen ParishSoft Ministry leaders; applies through Users. |
+| `user_rules` | Review sign-in rules | Portal users | Administrator | Review login rule change | `/admin/users/rules` (POST only) | (none) | Retired by #952: removed with the rule tables when Users lands; its old address is not kept (#864). |
+| `rule_request` | (not a page) | Portal users | Administrator | Rule change (status) | `/admin/users/rules/requests/<request>` (JSON) | (none) | Retired by #952 with the autosave queue; a user change's status is its Change status page. |
+| `assignments` | Review Ministry assignment | Portal users | Administrator | Assignments | `/admin/users/assignments` (POST only) | (none) | Retired by #922: removed with Ministry assignments. |
+| `chair_confirmations` | Review Chairperson suggestion | Portal users | Administrator | Chair suggestions | `/admin/users/suggestions` (POST only) | (none) | Retired by #922: removed with Chairperson suggestions. |
+| `chair_reviews` | Review Chairperson decision | Portal users | Administrator | Chair reviews | `/admin/users/reviews` (POST only) | (none) | Retired by #922: removed with Chairperson reviews. |
 | `automation_access` | Automation access | Menu: Automation access | Administrator | (same) | `/admin/users/automation/` | (same) | [Admin automation](../admin-automation/spec.md#revocation-and-listing) (ADM-11); revoke posts to `/admin/users/automation/sessions/<session>/`. |
 | `automation_approval` | Approve an automation session | Automation access | Administrator | (same) | `/admin/users/automation/approval/` | (same) | Opened from the command line's link; needs a fresh sign-in. |
 | `system_health` | System health | Menu: System health | Administrator | (new) | (none) | `/admin/system/health/` | New page ([System health](#system-health), #530, ADM-13). |
@@ -1083,8 +1087,7 @@ under Home. A key's replacement status and its Finish switching page sit under
 the integration the key belongs to, never under each other, because only the
 Administrator who saved a key may read its status. Some pages are named in
 trails but never linked, and "Return to" skips them: those that only answer a
-POST (the sign-in rule, Chairperson suggestion, Chairperson decision and
-Ministry assignment reviews); one-time reviews that refuse once their change is
+POST (the Import Ministry leaders review); one-time reviews that refuse once their change is
 confirmed (Copy campaign, and the campaign image and logo reviews); and Finish
 switching, which still opens afterward but needs a fresh Google sign-in and has
 nothing left to do. A menu page is linked in a trail or "Return to" only while
@@ -1103,9 +1106,8 @@ confirmation. The flows are: making a settings change (Make changes, Review,
 Apply) on every settings editor (campaign settings, Campaign Ministries, Copy
 campaign, pages and emails, dates and mail schedules, share options, member
 talents, campaign images, Parish settings, Parish logos, each integration,
-Ministries and Finish switching), the reviews started on Sign-in rules,
-Ministry assignments and Chairpersons (sign-in rules, Ministry assignments,
-Chairperson suggestions and Chairperson decisions) and every change's status
+Ministries and Finish switching), the reviews started on Users (New user,
+Edit user and Import Ministry leaders) and every change's status
 page; going live (Check readiness, Testing cleanup, Family links, Confirm
 Production, Activation); sending to chosen Families (Choose Families, Review,
 Send and follow); and report exports (Choose report, Prepare file, Download). A
@@ -1153,9 +1155,13 @@ follows them.
     wizard's First campaign step).
 12. **Should the restore-review maintenance page get a way forward?** Yes, in
     its own issue: #537 (as proposed).
-13. **Split Portal users into separate entries?** Split now (for example
-    Sign-in rules and Chairpersons). This spec adds a third entry, Ministry
-    assignments, for the Portal users table that fits neither.
+13. **Split Portal users into separate entries?** Superseded by the Users
+    revamp (Administrator, 2026-10-10,
+    [#952](https://github.com/epiphany40223/parishkit/issues/952)): sign-in
+    is by email address only, Ministry leaders come from ParishSoft roles
+    (#922), and the one Users page replaces the planned Sign-in rules,
+    Ministry assignments and Chairpersons pages. The
+    split (#535, #796, #914) is not built.
 14. **Should menu groups collapse?** Groups are collapsible, with the state
     remembered per browser.
 15. **How should the campaign appear in Admin URLs?** No campaign identifier in
@@ -1290,9 +1296,8 @@ ignored. The participation report's options reshape its statistics, chart and
 exports rather than one table, so its options form is an
 [in-place control](#in-place-controls) of all three panels instead. When
 the fetch fails or returns another page (a sign-in), the ordinary page load happens and its fragment lands on the table rather than at
-the top. Portal users, whose domain and address tables carry role forms bound
-once at load, and the link preparation history keep only the fragment and
-always load in full. A table region is one kind of region that
+the top. The link preparation history keeps only the fragment and always
+loads in full. A table region is one kind of region that
 [in-place controls](#in-place-controls) refresh; that section states the
 shared rules (one request at a time, when a POST may be sent again, the
 fallback, focus and announcements).
@@ -2057,8 +2062,8 @@ credential file, and only the one-shot `backup-worker` profile reads it
   the private half of the key in use, is refused with a warning to treat it
   as exposed.
 - **Announcement.** Applying a changed key records a `backup_key_replaced`
-  security event in the same activation transaction, like a widened
-  sign-in rule: it names the Administrator, the time and the key IDs before
+  security event in the same activation transaction, like an Administrator
+  grant: it names the Administrator, the time and the key IDs before
   and after (the key before is the previous configured key, or before one
   was set the key the newest backup used, when the activating login may
   read it). Its recipients are every address that held Administrator in
@@ -2391,14 +2396,11 @@ that set; see
 [Changing a live campaign's Ministries](#changing-a-live-campaigns-ministries). Historical administrative views retain their recorded inputs;
 current parishioner pages and previews use the applied visibility policy.
 
-For [Chairperson suggestions and assignments](#chairperson-suggestions-and-assignments),
-an active Ministry means one present in the current catalog and locally active.
-Applying an activity change reevaluates suggestions and seeded assignment
-overlays against the current source in the configuration-activation transaction,
-using the same suspension/reactivation and review rules as source promotion.
-It does not delete authoritative grants or alter manual Ministry assignments,
-Staff roles or Admin roles. The impact preview identifies affected seeded
-assignments before confirmation.
+For Ministry leaders, whose Ministries come from ParishSoft roles
+([#922](https://github.com/epiphany40223/parishkit/issues/922)), an active
+Ministry means one present in the current catalog and locally active, so
+marking a Ministry inactive removes it from its leaders' Ministries on their
+next request. It does not change any [user's](#portal-user-management) role.
 
 ### ParishSoft Ministry catalog changes
 
@@ -3937,140 +3939,207 @@ sort by their headings (the automation specification's
 [revocation and listing](../admin-automation/spec.md#revocation-and-listing)
 owns the parameters).
 
-The Admin user page contains sorted domain and exact-address tables. Rows show
-normalized value, effective roles, source, last login, and warnings. Role
-checkbox changes autosave through a `ConfigurationChangeRequest` with a
-transient Applying/Applied/error indicator; each request uses the expected
-active YAML digest to prevent lost updates. A security-policy change is
-effective only when the installer atomically activates its matching normalized
-snapshot, never from an independently edited role row.
+The **Users** page (`/admin/users/`, Administrator only) lists everyone who
+may sign in to the Admin portal (Administrator decisions of 2026-10-10,
+[#952](https://github.com/epiphany40223/parishkit/issues/952)). A **user** is
+one email address with a **Name** and exactly one **role**; the
+[data specification](../data/spec.md#administration-user-and-policy) defines
+the record. The roles are levels, and each includes everything below it:
 
-Each open user-management page serializes its configuration mutations through
-one in-memory queue shared by both role tables and that page's other YAML-backed
-rule/assignment actions. At most one request from that queue may be nonterminal.
-Further checkbox changes remain interactive but visibly **Queued — not saved**;
-store ordered logical intents (stable target, role, desired checked value), not
-copies of the whole configuration or toggle commands. A queued change to an
-in-flight checkbox does not mutate the submitted request. After that request
-reaches `applied`, adopt its returned applied-version ID/digest and authoritative
-values, then form the next minimal patch from the remaining intent. Do not
-advance on HTTP acceptance, `prepared`, or `yaml_activated`. Show Applied only
-for confirmed values; newer queued intent remains visibly distinct.
+1. **Ministry leader** signs in and sees only the Ministries they lead in
+   ParishSoft ([#922](https://github.com/epiphany40223/parishkit/issues/922)).
+   A Ministry leader who leads none signs in and sees an empty My Ministries,
+   with a plain sentence saying why.
+2. **Staff** has everything a Ministry leader has, sees every Ministry, and
+   has the Staff capabilities of the
+   [overview](../spec.md#actors-and-authorization).
+3. **Administrator** has everything Staff has and can see and change
+   everything.
 
-Each submitted intent has a client-generated idempotency key bound to its actor
-and immutable payload/base digest. A lost response resumes status lookup or
-retries that same request key; it never creates a second grant, audit event, or
-security notification. Until the outcome is known, pause further dispatch and
-show an uncertain/reconnecting state. Installer failure, cancellation, validation
-failure, or stale-digest conflict also pauses the queue rather than cascading
-later failures or silently retrying a changed payload.
+People sign in with the Google account of their user's email address
+([login and denial behavior](#login-and-denial-behavior)). The Name is a plain
+label: it is not tied to a ParishSoft Member, and only an Administrator changes
+it. An address with no user cannot sign in, so deleting a user is how
+access is removed; there is no explicit-deny entry and no hosted-domain rule.
+Delete is also the emergency switch for a compromised account. Disabling one
+recorded Google identity (`PortalUser.disabled`) is retired as an action: no
+page, `pk-admin` command or operator command sets it, and none did before the
+revamp. Sign-in still refuses an identity whose flag is already set, and the
+[upgrade preview](../operations/spec.md#users-upgrade-from-sign-in-rules)
+lists such identities.
 
-For a genuine conflict, fetch the latest authorized configuration and show the
-current values beside the remaining desired changes. Preserve unsaved intents
-in the page for review; do not automatically rebase them onto another Admin's
-edits. The Admin can discard or select intents to retry as new requests against
-the refreshed digest. Deleted targets and newly invalid choices need explicit
-resolution; retry never recreates a deleted rule implicitly. Changes from
-another tab follow the same conflict path. Current-Admin, CSRF, last-Admin,
-and provenance guards still apply to every request and activation. Lost access
-stops dispatch and clears restricted page data; session expiry requires normal
-login before any retry, not a role-change-specific reauthentication step.
+The page follows the portal's general conventions, which this section does not
+repeat: [Admin tables](../ui-conventions/spec.md#admin-tables),
+[row actions and confirmation](../ui-conventions/spec.md#row-actions-and-confirmation),
+[table column order](../ui-conventions/spec.md#table-column-order),
+[Review, Apply and Change status](../ui-conventions/spec.md#review-apply-and-change-status),
+[field errors and live checks](../ui-conventions/spec.md#field-errors-and-live-checks)
+and [no layout shift](../ui-conventions/spec.md#no-layout-shift). Nothing on it
+autosaves.
 
-Warn before leaving the page with unsent intents; they are not saved durably
-and are discarded on page teardown. An already accepted request continues
-durably and is reconciled by its request ID/status when the page is revisited;
-do not replay a former browser queue. Inline conflict resolution is exceptional
-error recovery, not a new confirmation dialog for ordinary role changes.
+### Users table
 
-Every role addition, removal, or replacement—including an exact-address
-Administrator grant—uses this autosave interaction. Role changes do not require
-fresh Google authentication or a separate confirmation dialog. This is an
-intentional low-friction administration policy. Each apply still
-requires a currently authorized Admin session and CSRF token, re-evaluates the
-actor's current login rule and role, enforces the last-Administrator guard, and
-records the actor, target, before/after roles, timestamp, and request correlation
-in the audit log.
+The page opens with **New user** above one table of users. Its columns are
+Email (the row header, the most relevant column), Name, Role, Last successful
+sign-in and the row actions. Email, Name, Role and Last successful sign-in
+sort on the server; Role sorts by level (Administrator first on the first
+choice), and Last successful sign-in shows the newest successful Google
+sign-in of any identity with that address, in the browser's time zone, with
+users who never signed in sorting last. The default order is Email. The table
+refreshes in place like every other Admin table.
 
-The following high-impact expansions take effect immediately upon configuration
-activation and also create, in that activation transaction, a durable
-unacknowledged security event and independently queue an operational email to
-every Administrator who existed immediately before activation:
+Each row is one line. An email or Name too long for its column is cut short
+with an ellipsis; the full value stays the cell's text for screen readers and
+copying, the cell's `title` attribute shows it whole as a hover tooltip, and
+the Edit page shows it whole. This is a recorded exception to
+[table fit and row height](../ui-conventions/spec.md#table-fit-and-row-height),
+whose long text wraps instead, because the Administrator asked for one-line
+rows here (#952).
 
-- adding Administrator to an exact-address rule;
-- creating any domain rule; and
-- adding Staff to an existing domain rule.
+Each row's actions are **Edit** and **Delete**. The row of the only
+Administrator has no Delete, and the server refuses it anyway. The table has
+no selection column: users are deleted one at a time.
 
-Adding Ministry leader to an existing domain rule and ordinary exact-address
-Staff/Ministry-leader grants retain the normal audit controls without this
-security alert. The event names the actor, target address/domain, time, rule
-creation or role expansion, and before/after roles without including session or
-provider credentials. It remains prominent on every Admin dashboard until an
-existing Admin acknowledges it; when another Admin existed at activation,
-acknowledgement by the granting actor alone does not clear the event for those
-other recipients. Delivery failure does not roll back or hide the expansion: it
-follows durable operational retry/escalation, while the dashboard event remains
-visible. Acknowledgements and notification outcomes are audited. Each
-Acknowledge acts [in place](#in-place-controls) on Home: the event leaves the
-list without a reload.
+Removed with the revamp, and not shown anywhere: the hosted-domain table and
+its `gmail.com` check, the Rule origin, Configured roles and grant origin,
+Roles granted now, Ministry assignments and Warnings columns, the
+"Exact-address rule" and "Explicit deny" wording, and the autosave queue
+(Queued, Applying and Applied states, intent keys and its conflict review).
 
-Domain rows expose Staff and Ministry-leader columns. Administrator is visibly
-disabled. Creating `gmail.com` fails client and server validation. Address rows
-expose all roles; an empty role set is clearly labeled Explicit deny rather
-than appearing accidental.
+### New and Edit user
 
-The domain table labels its rules as Google Workspace/Cloud Identity hosted-
-domain rules and explains that an email suffix alone never matches. Login-rule
-detail shows whether successful Google sign-ins have presented the matching
-signed hosted-domain claim, without exposing tokens. Personal or consumer-domain
-users must be authorized by exact address.
+**New user** (`/admin/users/new/`) and **Edit user**
+(`/admin/users/<user>/edit/`, opened by a row's Edit) are one page with three
+fields:
 
-Adding/removing a rule shows affected currently logged-in users and exact
-address-over-domain behavior. After activation, removing roles takes effect on
-the next request. The last-Administrator and actor-still-authorized guards are
-rechecked transactionally at request creation and activation.
+- **Email**, required on New: one address, trimmed and lowercased, which must
+  be a valid address and not already a user's. The page checks both as the
+  Administrator leaves the field. On Edit it is read-only, because changing
+  the address is Delete and then New. When a recorded Google identity with
+  that address is disabled, one line under it says so.
+- **Name**, required: plain text, at most 200 characters, trimmed. Its
+  default from ParishSoft is described below.
+- **Role**: three radio buttons, Ministry leader, Staff and Administrator,
+  each with one plain-language line saying what that role can see. New starts
+  with Ministry leader chosen.
 
-### Chairperson suggestions and assignments
+**Review** shows each changed value, before and after, and **Apply** records
+one configuration change, whose status the page follows; it then returns to
+Users. A review with nothing changed says so and records nothing. An unknown
+`<user>` (for example, one deleted meanwhile) is refused, even from an old
+link.
 
-After every source promotion, active Members with current Chairperson roles in
-active Ministries are matched to valid normalized Member emails. Suggestions
-show name, DUID, email, Ministry, whether contact is publishable, current login
-rule, and current assignment.
+#### Name from ParishSoft
 
-Selecting suggestions creates/updates an exact address override with Ministry
-leader role and explicit Ministry assignments. If the address inherited domain
-roles, those roles are preselected because the exact rule replaces them.
-Admins confirm before applying the resulting YAML configuration request.
-Duplicate emails/Members/Ministries are grouped and ambiguities shown, never
-silently guessed.
+When the Administrator leaves the Email field on New user, the page asks the
+server, in place, for the distinct names of the ParishSoft Members in the
+current promoted data whose contact record lists that address (matched
+trimmed and case-insensitively, as sign-in matches, with no Gmail dot or plus
+folding). The request is a CSRF-protected POST, so the address never appears
+in a URL; it is Administrator-only, reads nothing else, and its audit records
+only the count of names found.
 
-The user/assignment UI shows rule and role-grant provenance from the
-[authorization data model](../data/spec.md#administration-user-and-policy),
-including whether a Ministry-leader grant is independently configured or
-subject to chair-seed suppression. It never infers origin from the current
-checkboxes. A **Keep role independently** action for a seeded Ministry-leader
-grant explicitly records a manual origin through the ordinary role-change
-configuration request, with the same no-reauthentication policy and audit.
-It does not create a Ministry assignment or broaden row scope. Unrelated
-autosaves preserve provenance, and a role removal removes all its grant origins.
+- **No match:** Name stays empty and required.
+- **One name:** Name is filled in, and stays editable.
+- **Several distinct names:** the first is filled in. The order is a Member
+  of an active Family first, then a head of household, then by name, then by
+  Member DUID, so the choice is always the same. The others are offered as
+  the Name field's suggestions (a `<datalist>`).
 
-An assignments editor supports manual additions/removals through the same YAML
-configuration-request path. Losing a current Chairperson role immediately
-suspends a `chair-seed` assignment as derived runtime state during source
-promotion, removes its Ministry row scope on the next request, and creates a
-persistent Admin review task/notification. Existing sessions are not trusted to
-retain cached scope. The runtime authorization overlay applies the data model's
-explicit rule/grant provenance predicate without rewriting its applied YAML
-rule or changing Staff, Admin,
-or independently configured roles. Permanently removing that configured role
-requires an applied configuration request.
+A default name is the Member's, surname first ("Smith, Ann"): the
+Administrator's #952 comment of 2026-10-10 asks for the leaders table's names
+in "Last, first" form, and a new user's Name uses the same form so the two
+tables match. The UX conventions spec
+([#958](https://github.com/epiphany40223/parishkit/pull/958)) has no
+Member-name rule yet; it should add one, which this section will then link.
+One help line under the field is always present,
+so nothing moves when the answer arrives: "Suggested from ParishSoft: Smith,
+Ann; Smith, Bob", or "No ParishSoft Member lists this address". The lookup
+never overwrites a Name the Administrator has already typed, and nothing links
+the user to a Member afterwards.
 
-The suspended list shows prior Member/Ministry/source evidence, suspension
-time, current source state, affected user/session, and role effects. An Admin
-may revoke/delete the assignment or explicitly restore it as `manual` after
-confirmation and an entered reason through an applied configuration request;
-restoration never silently rewrites the source. If the same active Chairperson
-relationship returns before a decision, the seed reactivates automatically and
-closes the task with an audit event.
+### Delete a user
+
+A row's Delete opens the shared confirmation dialog. It names the user's
+email, Name and role, and says that they can no longer sign in, that their
+open Admin sessions end on their next request, and that the address can be
+added again later as a new user. Confirming records one configuration change
+and follows it until it is applied, as
+[row actions](../ui-conventions/spec.md#row-actions-and-confirmation) describe.
+
+### User change checks and alerts
+
+Every save, delete and import is checked on the server, in the transaction
+that records the request and again at activation: the actor is a current
+Administrator with the page's CSRF token, the actor is still authorized, and
+the **last-Administrator guard** holds (no change may leave no Administrator;
+an Administrator may demote or delete themselves only while another
+Administrator remains). A user change asks for no fresh Google sign-in and no
+dialog beyond Delete's; this is the accepted low-friction policy of the
+[identity security policy](../architecture/spec.md#identity-and-session-security).
+The audit records the actor, the target email, the Name and role before and
+after, the time and the request correlation. After activation, a demotion or
+deletion takes effect on the next request.
+
+Granting Administrator (a new Administrator user, or raising a user to
+Administrator) takes effect upon configuration activation and also creates,
+in that activation transaction, a durable unacknowledged security event, and
+independently queues an operational email to every Administrator who existed
+immediately before activation. Other user changes keep the normal audit
+without this alert. The event names the actor, the target address, the time
+and the roles before and after, without session or provider credentials. It
+remains prominent on every Admin dashboard until an existing Admin
+acknowledges it; when another Admin existed at activation, acknowledgement by
+the granting actor alone does not clear the event for those other recipients.
+Delivery failure does not roll back or hide the grant: it follows durable
+operational retry and escalation, while the dashboard event remains visible.
+Acknowledgements and notification outcomes are audited. Each Acknowledge acts
+[in place](#in-place-controls) on Home: the event leaves the list without a
+reload.
+
+### ParishSoft Ministry leaders without a user
+
+Below the users table, a second table lists the people ParishSoft counts as
+Ministry leaders ([#922](https://github.com/epiphany40223/parishkit/issues/922),
+the leaders definition of PR #939) who have no user yet, with a way to import
+them (Administrator, 2026-10-10). A leader is listed once for each usable
+email address their Member record lists that matches no user (trimmed and
+case-insensitive, as sign-in matches). When several leader Members list one
+address, it is one row: the Member that the
+[Name default order](#name-from-parishsoft) puts first gives the Name and
+Member DUID, and Ministries led is the union, as their sign-in scope would
+be. Leaders with no usable email are not rows; a muted line under the table
+counts them, since they cannot sign in.
+
+The columns, in the [shared order](../ui-conventions/spec.md#table-column-order),
+are the selection checkbox, Name (the default Name of a new user), Member
+DUID, Email, Ministries led (a short list cut off with a count, such as
+"Choir, Ushers and 3 more") and Role, which is always Ministry leader. Name,
+Member DUID and Email sort; Name is the default order.
+
+**Import selected** and **Import all** are available only while there is
+something to import (and Import selected only while a row is selected). The
+**Import Ministry leaders** review lists each chosen person as a new user
+with the role Ministry leader and their default Name, and lists separately
+anyone skipped because they became a user meanwhile. **Apply** records one
+configuration change for the whole batch, with one audit entry naming the
+count and one audit row per new user, and both tables then refresh in place.
+Import never changes an existing user, never grants more than Ministry
+leader, and so raises no security alert; the last-Administrator guard is
+unaffected. Each imported Name stays editable on that user's Edit page.
+
+Rejected: letting every ParishSoft leader sign in without a user (the
+Administrator decided that sign-in needs an explicit user), and importing
+automatically at each refresh (that would create accounts silently; the
+Administrator sees and confirms who gets access).
+
+### Upgrade from sign-in rules
+
+The release that introduces users converts the old sign-in rules once, as the
+[operations upgrade note](../operations/spec.md#users-upgrade-from-sign-in-rules)
+describes. Before that release, the Portal users page shows a read-only **Upgrade
+preview** panel with exactly what the conversion will do, so the
+Administrator can add any missing address as a user first.
 
 ## Manual ParishSoft refresh
 
@@ -4166,7 +4235,7 @@ holds both buttons until the save is valid. Opening the next item records the
 same read audit as opening it from the queue.
 
 Ministry workflow permissions are row-scoped. Admin/Staff see all; leaders see
-and edit only assigned Ministries. The interface supports queue filters,
+and edit only the Ministries they lead. The interface supports queue filters,
 status/outcome, contact-attempt entry, notes, history, and links to the
 Member's authorized report detail. It never exposes financial or unrelated
 Family data.
