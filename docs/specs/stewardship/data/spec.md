@@ -271,11 +271,23 @@ primitives exist, but no Admin page or command calls them. With no purge,
 there is no `PurgeRequest`. Draft creation checks the mode, the pointer, that
 every existing campaign is archived or purged, that no restore review is
 pending, and that no `CampaignWorkGate` (the purge reservation) is preparing
-or running. A post-go-live end-date edit is in the same position:
-its configuration intent, close-occurrence replacement and abort journal
-exist and are tested, but nothing in the product binds that intent, and the
-date editor refuses date changes once the dates are locked
-([#398](https://github.com/epiphany40223/parishkit/issues/398)).
+or running.
+
+A post-go-live end-date edit
+([#912](https://github.com/epiphany40223/parishkit/issues/912); pages and
+command in the
+[Admin portal spec](../admin-portal/spec.md#campaign-configuration)) binds
+its `edit_end` `CampaignConfigurationIntent` in the same durable transaction
+that records its configuration request, at the campaign and runtime versions
+the confirmation rechecked under the work-order lock, so the installer never
+selects the request without it. The configuration installer service passes
+the owning admission for `edit_end` (`campaigns/live_end_date.py`); a
+`reopen` intent has no owner until
+[#527](https://github.com/epiphany40223/parishkit/issues/527), so it would
+stay staged. The intent binds no token generation, so Family credentials are
+untouched and keep working until the new closing instant; activation retires
+the pending close occurrence and allocates one at the new instant. The abort
+journal above stays the only way to cancel an unapplied candidate.
 
 `CampaignBoundaryOccurrence` stores campaign, kind (`start` or `close`),
 resolved UTC boundary, immutable execution revision, state, attempts/lease,
