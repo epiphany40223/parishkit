@@ -2086,16 +2086,27 @@ it can be reviewed. While the field is empty or holds the saved date,
 Review waits, with the gate's hint after it saying to choose a (different)
 end date, and no error is shown. Any other date is posted, after a short
 pause, to a no-save live check that applies the Review's own checks,
-including stranded mail, and records nothing. While it answers, Review waits;
-when it finds a problem, the field is marked in error (`aria-invalid`,
-described by the message) and the problem's words show in a line reserved
-under the field, so the message never moves Review, with the link to the
-combined review for stranded mail; Review waits with the same words as its
-hint. A date the check clears takes the error away. Calendar dates in these
-messages are the campaign's own and are never shifted into the browser's
-time zone. A check that cannot answer leaves Review available, and every
-Review is still checked in full by the server, whose refusals above still
-apply. Either Apply records
+including stranded mail, and records nothing. Typing another date takes any
+earlier error away at once, since it was about the earlier date. While the
+check answers, Review waits; when it finds a problem, the field is marked in
+error (`aria-invalid`, described by the message) and the problem's words
+show in a line reserved under the field, so the message never moves Review,
+with the link to the combined review for stranded mail; Review waits with
+the same words as its hint. A date the check clears takes the error away.
+The reserved line is a polite live region (`role="status"`), so a screen
+reader hears each answer. Calendar dates in these messages are the
+campaign's own and are never shifted into the browser's time zone.
+
+Review is offered only when the change is known to be possible, so a check
+that cannot answer (the network, a page out of date, the service
+unavailable) keeps Review held: the reserved line and the hint say "Couldn't
+check this end date. Check your connection, then change the date or reload
+the page.", or, when the answer is that the sign-in has ended (401 or 403),
+"Your sign-in has ended. Sign in again, then reload the page." The field is
+not marked invalid, as nothing is known to be wrong with the date. The next
+edit, or showing the page again (`pageshow`), checks again. Every Review is
+still checked in full by the server, whose refusals above still apply.
+Either Apply records
 the request and, in the same transaction, binds its exceptional end-edit
 intent and a `campaign_end_date_requested` audit event (subject: the
 request). The configuration installer applies it with that intent's owning
