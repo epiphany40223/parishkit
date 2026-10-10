@@ -63,11 +63,9 @@ LONG_PARAGRAPH_WORDS = 50
 # Pages not yet converted, with the longest visible message each may keep.
 # Lower or remove an entry when its page is converted; never raise one.
 LONG_PARAGRAPH_ALLOWED = {
-    "chair-confirmation-preview.html": 51,
-    "chair-review-preview.html": 55,
     "setup-content.html": 60,
     "setup-source-progress.html": 67,
-    "users.html": 99,
+    "users.html": 67,
 }
 
 # The page's introduction: everything between its heading and the first
@@ -102,7 +100,7 @@ INTRO_ALLOWED = {
     # The step-up names its return page when it is another page (#547).
     "error.html": 61,
     "setup.html": 46,
-    "ministries.html": 38,
+    "ministries.html": 22,
     "denied.html": 31,
     "go-live-readiness.html": 24,
     "delivery-control.html": 24,

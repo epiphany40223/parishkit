@@ -17,11 +17,10 @@ rules show their roles, how many recorded Google accounts the rule really
 authorizes, the latest successful sign-in by any recorded account at that
 domain, and warnings. Exact-address
 rules show the rule's origin, the configured roles with each grant's origin, the
-roles current policy grants now, Ministry assignments with their source and
-whether the parish source currently confirms them, the last successful sign-in
-and warnings. An empty role set is labelled **Explicit deny**. A third table
-appears only when an assignment belongs to someone with no exact rule, who
-relies on a domain rule, and says whether it is in effect now.
+roles current policy grants now, the last successful sign-in and warnings. An
+empty role set is labelled **Explicit deny**. (Ministry assignments and their
+table were shown here until #922 made Ministry leaders come from ParishSoft
+roles.)
 
 This slice reviewed and changed nothing. Role edits, rule creation and removal
 followed as the
@@ -37,13 +36,13 @@ them.
 
 ### One evaluator
 
-Row shaping is pure and decides nothing. Every role and Ministry scope shown
-comes from `resolve_roles`, the evaluator every sign-in uses, over the same
-applied canonical records. The confirmed Chairperson assignments come from
-`confirmed_seeded`, one query that sign-in and this page now share, so the two
-cannot drift apart. A Chairperson-only Ministry leader role therefore shows as
-suspended exactly when sign-in would drop it, and an Administrator shows the
-roles Administrator implies.
+Row shaping is pure and decides nothing. Every role shown comes from
+`resolve_roles`, the evaluator every sign-in uses, over the same applied
+canonical records, so the page and sign-in cannot drift apart. Only a rule's
+roles are held: a Ministry leader role stays in effect whether or not the
+person leads a Ministry in ParishSoft, and an Administrator shows the roles
+Administrator implies. The page shows no Ministry scope; which Ministries a
+Ministry leader sees comes from their ParishSoft leader roles (#922).
 
 The evaluator is given the hosted-domain claim a recorded Google identity really
 presented, never an email ending. A domain rule's evidence counts only accounts

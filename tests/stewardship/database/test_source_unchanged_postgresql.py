@@ -17,7 +17,6 @@ from django.db import DatabaseError, transaction
 from django.db.models import F
 
 from parishkit import parishsoft_transport
-from parishkit.stewardship.accounts.chair_models import ChairReconciliation
 from parishkit.stewardship.campaigns.credential_models import (
     CampaignCredentialState,
     FamilyCampaign,
@@ -415,8 +414,8 @@ def test_unchanged_state_is_guarded(problem):
             )
 
 
-def test_without_a_campaign_only_chairs_are_checked(tmp_path, monkeypatch):
-    """With no campaign, a reconciled corpus is all a quick update needs."""
+def test_without_a_campaign_nothing_is_checked(tmp_path, monkeypatch):
+    """With no campaign, an identical corpus is all a quick update needs."""
     _, delta, (memberships, _), _ = full_then_quick(
         tmp_path, monkeypatch, campaign=False
     )
@@ -424,8 +423,10 @@ def test_without_a_campaign_only_chairs_are_checked(tmp_path, monkeypatch):
     assert membership_rows() == memberships
 
 
-def test_new_configuration_without_chair_reconciliation_promotes(tmp_path, monkeypatch):
-    """An activation that skipped chair reconciliation costs one promotion."""
+def test_a_new_configuration_alone_does_not_promote(tmp_path, monkeypatch):
+    """A configuration activation leaves an identical quick update unchanged:
+    since #922 nothing reconciles Chairperson seeds, so no receipt is
+    missing."""
 
     def activate(refreshes):
         """Activate a new configuration that leaves the window unchanged."""
@@ -444,8 +445,7 @@ def test_new_configuration_without_chair_reconciliation_promotes(tmp_path, monke
         assert result.state == "applied"
 
     _, delta, *_ = full_then_quick(tmp_path, monkeypatch, quick=activate)
-    assert delta.state == "promoted"
-    assert ChairReconciliation.objects.filter(snapshot=delta).exists()
+    assert delta.state == "unchanged"
 
 
 def bump_population(**values):

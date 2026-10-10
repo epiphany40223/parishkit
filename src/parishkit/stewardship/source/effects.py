@@ -1,4 +1,7 @@
-"""Concrete Phase 2 Family/Chair effects for the compiled refresh handler.
+"""Concrete Phase 2 Family effects for the compiled refresh handler.
+
+Ministry leaders come from ParishSoft roles (#922), so a promotion no longer
+reconciles Chairperson-seeded assignments.
 
 Keyrings and suppression reads are startup-owned dependencies, never broker
 payloads. Later submission/publication owners must extend this composition
@@ -7,7 +10,6 @@ before enabling those features; a placeholder success callback is not an effect.
 
 from functools import partial
 
-from parishkit.stewardship.accounts.chair_reconciliation import reconcile_source_chairs
 from parishkit.stewardship.campaigns.work_locks import require_work_order
 from parishkit.stewardship.storage import StorageInvariantError
 
@@ -52,10 +54,6 @@ def _unchanged(snapshot, corpus, execution, claim, *, suppressions):
     outside ParishSoft, so each is checked against what is stored, with the
     same decisions the effects make:
 
-    - chairs: the active configuration already reconciled the current
-      snapshot. After a configuration activation that skipped its own chair
-      reconciliation (no chair seeds and no open review), the next quick
-      update promotes once more than strictly needed;
     - Families (``population_current``): statuses with today's mail
       suppressions, so a new bounce counts as a change and promotes;
       codes, links and clean population evidence. A stale active link
@@ -67,7 +65,6 @@ def _unchanged(snapshot, corpus, execution, claim, *, suppressions):
     Runs in the caller's work-order transaction. Anything unexpected answers
     False, and the quick update stages and promotes as before.
     """
-    from parishkit.stewardship.accounts.chair_models import ChairReconciliation
     from parishkit.stewardship.campaigns.family_identity import population_current
     from parishkit.stewardship.campaigns.link_tokens import (
         require_current_generation,
@@ -87,14 +84,9 @@ def _unchanged(snapshot, corpus, execution, claim, *, suppressions):
     if current.snapshot_id is None or current.snapshot_id != attempt.snapshot.base_id:
         return False
     scope = _scope(attempt.request, attempt.credential_fingerprint)
-    if not ChairReconciliation.objects.filter(
-        configuration_id=scope.runtime.active_configuration_id,
-        snapshot_id=current.snapshot_id,
-    ).exists():
-        return False
     campaign = scope.campaign
     if campaign is None or campaign.state == "archived":
-        # Promotion would apply only the chair effects checked above.
+        # Promotion would apply no effect at all.
         return True
     if campaign.active_token_generation_id is not None:
         require_current_generation(campaign)
@@ -118,7 +110,6 @@ def _apply(snapshot, execution, claim, *, general, mac, public, suppressions):
     if attempt.snapshot.state != "promoted":
         raise StorageInvariantError("Refresh effects require promoted source truth.")
     scope = _scope(attempt.request, attempt.credential_fingerprint)
-    reconcile_source_chairs(snapshot.pk, claim, campaign_id=attempt.request.campaign_id)
     # No campaign exists during pre-campaign imports. Archived populations are
     # historical; neither case creates a new Family code/cohort opportunistically.
     if scope.campaign is not None and scope.campaign.state != "archived":

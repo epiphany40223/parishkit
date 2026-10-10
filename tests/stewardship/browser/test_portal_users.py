@@ -1,4 +1,4 @@
-"""Administrator review and reviewed edits of login rules and assignments."""
+"""Administrator review and reviewed edits of login rules."""
 
 import pytest
 
@@ -8,11 +8,8 @@ pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
 
-# What a Ministry assignment says now (#922).
-RETIRED = "Ministry assignments no longer grant anything"
 PAGES = (
     "/portal-users",
-    "/portal-users-confirmed",
     "/portal-users-minimal",
     "/portal-users-preview",
     "/portal-users-preview-deny",
@@ -44,9 +41,9 @@ def test_portal_users_mobile_keyboard_and_accessibility(
     # Google verified that person's attempt; being refused is not a sign-in.
     assert blocked.get_by_text("None on record", exact=True).count() == 1
     assert blocked.locator("time").count() == 0
-    # No assignment grants a Ministry since #922, and the rows say so.
+    # A rule's Ministry leader role is held, whatever its origin (2026-10-10).
     chair = page.get_by_role("row", name="chair@example.org", exact=False)
-    assert chair.get_by_text(RETIRED, exact=False).count()
+    assert chair.get_by_role("cell", name="Ministry leader", exact=True).count()
     # A domain rule needs a real hosted-domain claim, not a matching suffix.
     unused = page.get_by_role("row", name="unused.example", exact=False)
     assert unused.get_by_text(
@@ -61,15 +58,9 @@ def test_portal_users_mobile_keyboard_and_accessibility(
     # Policy still grants the address; the warning says this identity cannot use it.
     assert leader.get_by_text("is disabled and cannot sign in", exact=False).count()
     assert leader.get_by_role("cell", name="Staff, Ministry leader", exact=True).count()
-    # No assignment is in effect, whatever rule or claim backs it.
-    for address in (
-        "stray@elsewhere.example",
-        "helper@workspace.example",
-        "consumer@workspace.example",
-    ):
-        row = page.get_by_role("row", name=address, exact=False)
-        assert row.get_by_role("cell", name="No", exact=True).count() == 1
-        assert row.get_by_text(RETIRED, exact=False).count()
+    # Ministry assignment records from before #922 are not shown at all.
+    for address in ("stray@elsewhere.example", "consumer@workspace.example"):
+        assert page.get_by_role("row", name=address, exact=False).count() == 0
     # Scrollable table regions are keyboard reachable and named by their heading.
     region = page.get_by_role("region", name="Exact-address rules")
     region.focus()
@@ -118,10 +109,6 @@ def test_portal_users_mobile_keyboard_and_accessibility(
     )
     assert page.get_by_role("link", name="Return to Portal users").count() == 1
 
-    # A confirmed seed's assignment grants nothing either.
-    page.goto(component_origin + "/portal-users-confirmed")
-    chair = page.get_by_role("row", name="chair@example.org", exact=False)
-    assert chair.get_by_text(RETIRED, exact=False).count()
     page.goto(component_origin + "/portal-users-minimal")
     visible(page.get_by_text("No hosted-domain rules.", exact=True))
     assert (

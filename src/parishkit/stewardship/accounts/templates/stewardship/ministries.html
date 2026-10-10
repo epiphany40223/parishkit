@@ -2,8 +2,8 @@
 {% block title %}{% translate "Ministries" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Ministries" %}</h1>
+{% aboutpage "ministries" %}<p>{% translate "Inactive Ministries are hidden from parishioners. Existing participation and earlier requests are preserved. A Ministry leader sees the Ministries of their ParishSoft Ministry roles listed in Campaign settings; an inactive Ministry leaves its leaders' scope until it is active again." %}</p>{% endaboutpage %}
 <p>{% translate "This page turns Ministries on or off for parishioners." %} {% if campaign_link %}{% translate "To choose which Ministries are in this campaign, use" %} <a href="{{ campaign_link.url }}">{{ campaign_link.label }}</a>.{% else %}{% translate "To choose which Ministries are in a campaign, use Campaign settings → Ministry selections." %}{% endif %}</p>
-<p>{% translate "Inactive Ministries are hidden from parishioners. Existing participation, earlier requests and manual leader assignments are preserved." %}</p>
 <div id="ministry-notice" data-table-sync>{% if notice %}<p class="notice notice-error" role="alert">{{ notice }}</p>{% endif %}</div>
 <form id="table-filters" data-table-sync method="get" class="filter-bar">
   <div><label for="ministry-query">{% translate "Search by name or DUID" %}</label>

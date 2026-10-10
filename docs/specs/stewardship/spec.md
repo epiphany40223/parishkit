@@ -115,7 +115,7 @@ including everything below it
 | Capability | Administrator | Staff | Ministry leader | Family |
 | --- | --- | --- | --- | --- |
 | Configure parish/campaign/integrations | Yes | No | No | No |
-| Manage Admin portal users | Yes | No | No | No |
+| Manage Admin portal users and choose Ministry leader roles | Yes | No | No | No |
 | View/export Family manual codes | Yes | Yes | No | Own code through login or campaign invitation email |
 | Trigger/view operational background work | Yes | No | No | No |
 | Trigger/view own authorized report exports | Yes | Yes | Assigned Ministries only | No |

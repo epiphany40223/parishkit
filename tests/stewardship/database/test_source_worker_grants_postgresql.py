@@ -6,7 +6,6 @@ from uuid import uuid4
 import pytest
 from django.db import DatabaseError, connection
 
-from parishkit.stewardship.accounts.chair_models import ChairReconciliation
 from parishkit.stewardship.accounts.configuration_installation import (
     coherent_configuration,
 )
@@ -66,7 +65,6 @@ def test_restricted_worker_observes_promotes_and_reconciles(
         assert not run(request, bound)
     assert not remaining and calls
     assert SourceCurrent.objects.get().snapshot_id is not None
-    assert ChairReconciliation.objects.count() == 1
     assert FamilyCampaign.objects.exists() == with_campaign
     assert TaskRun.objects.get(pk=request.task_root_id).state == "succeeded"
 

@@ -21,8 +21,10 @@ from ..policy_factory import address
 from ..test_source_corpus import source
 from .auth_builders import signed_in
 from .test_background_grants_postgresql import task_login
-from .test_chair_suggestions_postgresql import publish
-from .test_source_families_postgresql import source_singletons  # noqa: F401
+from .test_source_families_postgresql import (
+    publish,
+    source_singletons,  # noqa: F401
+)
 from .test_source_requests_postgresql import claim
 from .test_user_views_postgresql import add_rules
 

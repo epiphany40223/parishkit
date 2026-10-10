@@ -443,8 +443,6 @@ and content digest, and its cursor counts no change. It never becomes
 current. This applies only when promotion would also change nothing outside
 the corpus:
 
-- the active configuration has already reconciled chairs for the current
-  snapshot;
 - every Family row already holds the current generation and exactly the
   status that today's mail suppressions give it, so a new bounce still
   promotes;
@@ -456,10 +454,6 @@ the corpus:
   itself reconciled does not force another promotion;
 - an active Family link generation is still current (a stale one fails the
   refresh, as promotion would).
-
-After a configuration activation that skipped its own chair reconciliation
-(no chair seeds and no open chair review), the next quick update promotes
-once more than strictly needed.
 
 Otherwise, and whenever the corpus differs in any way (compared by canonical
 payload digest, including a roster's "current" flag on a new day), the quick
