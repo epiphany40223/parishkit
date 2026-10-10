@@ -45,6 +45,18 @@ def live_end_at(state, campaign):
     )
 
 
+def live_end_held(state, campaign):
+    """Whether only background work keeps a live campaign's end date from moving.
+
+    Campaign settings then says the end date can change once that work
+    finishes (#944), rather than leaving its panel out without a word.
+    """
+    from parishkit.stewardship.campaigns.live_end_date import live_end_editable
+    from parishkit.stewardship.campaigns.runtime import _now
+
+    return state[3] and live_end_editable(state[0], campaign, held=False, now=_now())
+
+
 def campaign_schedules(configuration, campaign_id):
     """The campaign's schedule records from the exact applied YAML document."""
     return [

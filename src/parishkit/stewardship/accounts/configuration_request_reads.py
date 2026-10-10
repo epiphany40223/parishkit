@@ -7,6 +7,10 @@ the same checkpoint. It takes no request: ``caller`` is the page's request or
 an ``AdminCaller``.
 """
 
+from dataclasses import replace
+
+from parishkit.stewardship.campaigns.live_end_date import refusal_text
+
 from .configuration_requests import request_status
 from .policy import Capability, allows
 from .sessions import authenticated_admin
@@ -21,6 +25,8 @@ def receipt(caller, service, request_id, actor):
     read raises ``PermissionError``.
     """
     status = request_status(request_id=request_id, actor_id=actor.identity)
+    # A refused live end-date change says why (#944).
+    status = replace(status, refusal=refusal_text(status))
     if not allows(
         authenticated_admin(caller, store=service.store, read_only=True),
         Capability.CONFIGURE,

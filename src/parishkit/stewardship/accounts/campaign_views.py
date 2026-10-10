@@ -265,6 +265,7 @@ def _page(
     *,
     editable,
     end_form=None,
+    end_held=False,
     status=200,
     leader_form=None,
     **region,
@@ -273,7 +274,8 @@ def _page(
 
     ``region`` is ``review_region``'s ``review``, ``receipt``, ``refusal`` or
     ``link`` for the editor's in-place review region (#532). ``end_form`` is
-    a live campaign's end-date form (#912), whose review uses that region.
+    a live campaign's end-date form (#912), whose review uses that region;
+    ``end_held`` says background work alone holds that form back (#944).
     A live campaign that asks about Ministries shows its leader-role form
     (``leader_form``, #922) with that region under it.
     """
@@ -303,6 +305,7 @@ def _page(
             "editable": editable,
             "end_form": end_form,
             "leader_form": leader_form if leaders else None,
+            "end_held": end_held,
             # A live campaign's Ministries keep their own editor (#342).
             "ministries_live": live_ministries_editable(
                 campaign, configuration.current_campaign_id
@@ -725,7 +728,9 @@ def campaign_settings(request, campaign_id):
                         fix=_(
                             "They can be changed only for the current draft "
                             "campaign in Testing mode, before it has ever been "
-                            "active, and while no background work is running."
+                            "active, and while no background work is running. "
+                            "A live campaign's end date alone can still change "
+                            "here, while no background work is running."
                         ),
                     )
                 try:
@@ -741,6 +746,8 @@ def campaign_settings(request, campaign_id):
                         refusal=error.refusal,
                     )
             else:
+                from .schedule_reads import live_end_held
+
                 response = _page(
                     request,
                     configuration,
@@ -748,6 +755,11 @@ def campaign_settings(request, campaign_id):
                     form,
                     editable=editable,
                     end_form=end_form,
+                    end_held=(
+                        end_form is None
+                        and not editable
+                        and live_end_held(state, campaign)
+                    ),
                     receipt=receipt,
                 )
         # Recheck access after the observation ends, so a GET's read-only
