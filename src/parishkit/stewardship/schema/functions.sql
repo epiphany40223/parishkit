@@ -5594,6 +5594,12 @@ BEGIN
            OR NEW.backup_at IS NULL OR NEW.backup_at>stewardship_campaign_now_v1() OR btrim(NEW.reason)=''
            OR NEW.campaign_transition_id IS NOT NULL OR NEW.session_id IS NOT NULL OR NEW.authenticated_at IS NOT NULL THEN
             RAISE EXCEPTION 'A restore review starts only from the operator restore command' USING ERRCODE='23514'; END IF;
+        -- A review already open for the same backup is kept (#799): a re-run
+        -- would replace its restore id and move restore_activated_at, the
+        -- held-email cutoff. A different backup (another restore) still
+        -- starts a new review.
+        IF r.restore_review_required AND NEW.backup_at IS NOT DISTINCT FROM r.restore_backup_at THEN
+            RAISE EXCEPTION 'A restore review is already open for this backup' USING ERRCODE='23514'; END IF;
     ELSIF NEW.action='restore_release' THEN
         -- A freshly signed-in Administrator releases the site after review.
         -- Refused while any email still needs a hold: the list must be found

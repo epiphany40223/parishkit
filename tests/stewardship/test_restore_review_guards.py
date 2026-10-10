@@ -88,6 +88,49 @@ def test_the_backup_time_is_a_set_name_or_an_instant_with_its_offset():
             operator_commands.parse_backup_time(value)
 
 
+def test_restore_begin_reports_an_open_review_as_already_open(monkeypatch):
+    """A re-run for the open review's backup says so and names it (#799)."""
+    from contextlib import nullcontext
+    from uuid import uuid4
+
+    from parishkit.stewardship import runtime_database
+    from parishkit.stewardship.campaigns import restore_review
+    from parishkit.stewardship.deployment import ServiceRole
+
+    restore_id, instant = uuid4(), datetime(2054, 10, 5, 2, tzinfo=UTC)
+    monkeypatch.setattr(
+        operator_commands,
+        "admit_offline_service",
+        lambda configuration: ServiceRole.ADMIN_RECOVERY,
+    )
+    monkeypatch.setattr(
+        operator_commands, "RuntimeLayout", lambda c: type("L", (), {"interlock": None})
+    )
+    monkeypatch.setattr(
+        operator_commands, "StartupLease", lambda *a, **k: nullcontext()
+    )
+    monkeypatch.setattr(
+        operator_commands, "configure_operator_database", lambda c: None
+    )
+    monkeypatch.setattr(runtime_database, "admit_offline_database", lambda c: None)
+    for started in (True, False):
+        monkeypatch.setattr(
+            restore_review,
+            "begin_review",
+            lambda started=started, **values: restore_review.ReviewStart(
+                restore_id, instant, started, None
+            ),
+        )
+        assert operator_commands.restore_begin_command(
+            object(), backup_at="20541005T020000Z", reason="restore"
+        ) == {
+            "restore_review_started": started,
+            "restore_review_already_open": not started,
+            "restore_id": str(restore_id),
+            "backup_at": instant.isoformat(),
+        }
+
+
 def test_restore_begin_refuses_a_bad_time_before_any_admission():
     """The time is checked before the profile or the database is touched."""
     with pytest.raises(ConfigError):
