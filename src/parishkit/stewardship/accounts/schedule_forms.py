@@ -97,10 +97,26 @@ class ScheduleWindow(forms.Form):
         ),
     )
 
-    def __init__(self, *args, previous, editable, proposed=None, **kwargs):
-        """Authoritative initial values, not POST values, own every disabled control."""
+    def __init__(
+        self, *args, previous, editable, live_at=None, proposed=None, **kwargs
+    ):
+        """Authoritative initial values, not POST values, own every disabled control.
+
+        ``live_at`` is the current instant for a live campaign whose end date
+        alone may still change (#912): only that field is editable, and the
+        new end must come after this instant. Its start date, time zone and
+        financial acknowledgement stay locked.
+        """
         self.previous = previous
         self.proposed = bool(proposed)
+        self.live_at = None if editable else live_at
+        open_fields = (
+            {"timezone", "start_date", "end_date"}
+            if editable
+            else {"end_date"}
+            if self.live_at is not None
+            else set()
+        )
         initial = {
             name: previous[name] for name in ("timezone", "start_date", "end_date")
         }
@@ -108,7 +124,7 @@ class ScheduleWindow(forms.Form):
             previous["financial"] and previous["financial"]["overlap_confirmed"]
         )
         if proposed:
-            if not editable or set(proposed) - {"timezone", "start_date", "end_date"}:
+            if not open_fields or set(proposed) - open_fields:
                 raise ValueError("Invalid proposed campaign window.")
             initial.update(proposed)
         super().__init__(*args, initial=initial, **kwargs)
@@ -119,8 +135,13 @@ class ScheduleWindow(forms.Form):
             del self.fields["overlap_confirmed"]
         else:
             self.fields["overlap_confirmed"].template_name = OVERLAP_TEMPLATE
-        for field in self.fields.values():
-            field.disabled = not editable
+        for name, field in self.fields.items():
+            field.disabled = not editable and name not in open_fields
+
+    @property
+    def open_fields(self):
+        """The names of the window fields this form lets change."""
+        return {name for name, field in self.fields.items() if not field.disabled}
 
     @property
     def overlap_needed(self):
@@ -165,11 +186,18 @@ class ScheduleWindow(forms.Form):
             )
             return values
         try:
-            campaign_values(self.values())
+            interval = campaign_values(self.values())
         except ConfigError:
             raise forms.ValidationError(
                 _("Check the campaign dates, timezone and financial overlap.")
             ) from None
+        if self.live_at is not None and interval.end <= self.live_at:
+            # A live campaign can't end in the past (the installer and SQL
+            # refuse it too); say so here rather than as a failed change.
+            self.add_error(
+                "end_date",
+                _("Choose an end date that has not already passed."),
+            )
         return values
 
     def values(self):

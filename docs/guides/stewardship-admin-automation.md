@@ -356,8 +356,9 @@ covers each Admin page, or why none does yet.
 ## Schedule changes
 
 `schedule preview` and `schedule confirm` change mail schedules and, while
-they may still change, the campaign dates, through the same review and
-confirmation as the Dates and mail schedules page. Both need a full-scope session.
+they may still change, the campaign dates (for a live campaign, its end date
+alone), through the same review and confirmation as the Dates and mail
+schedules page. Both need a full-scope session.
 Neither asks for a fresh Google sign-in or a confirmation at the prompt,
 because the page asks for neither. `config request show` follows the
 resulting change; any session may run it.
@@ -410,7 +411,7 @@ The document is JSON with two optional members:
 
 | Member | What it holds |
 | --- | --- |
-| `window` | Any of `start_date`, `end_date` (`YYYY-MM-DD`), `timezone` and `overlap_confirmed` (true or false, only for a campaign with a financial period). Members you leave out keep their values. Changing the dates once they are locked is exit 1 (`stale_version`), as on the page. |
+| `window` | Any of `start_date`, `end_date` (`YYYY-MM-DD`), `timezone` and `overlap_confirmed` (true or false, only for a campaign with a financial period). Members you leave out keep their values. Changing the dates once they are locked is exit 1 (`stale_version`), as on the page, except that a live campaign (scheduled or open in Production, before it closes) may change `end_date` alone. Family codes and links keep working until the new end date. |
 | `schedules` | A list of entries, each one of the three below. Saved schedules you do not name stay as they are; leaving one out never removes it. |
 
 | Entry | Members |

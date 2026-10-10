@@ -6,7 +6,7 @@ keeps working, and the shortened date never strands a Reminder.
 """
 
 from datetime import timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from django.test import Client
@@ -24,13 +24,16 @@ from parishkit.stewardship.campaigns.models import (
     CampaignConfigurationIntent,
 )
 
+from .automation_builders import paired
 from .campaign_builders import campaign_clock, command
 from .response_builders import activate_response_service
+from .test_admin_schedule_cli_postgresql import admin, confirm, events, preview
 from .test_ministry_responses_postgresql import revisit
 from .test_schedule_views_postgresql import setup as campaign_with_reminder
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
+__all__ = ["admin"]  # The command-line fixture, shared with its own tests.
 
 EVENT = "campaign_end_date_requested"
 
@@ -125,6 +128,30 @@ def test_a_draft_end_date_binds_no_exceptional_intent(auth_service):
         ).state
         == "applied"
     )
+
+
+def test_the_command_line_changes_a_live_end_date(admin, google):
+    """``schedule preview`` and ``schedule confirm`` mirror the page (#463)."""
+    store = admin.service.store
+    campaign = live(store)
+    _, secret, row = paired(admin.service)
+    code, document = preview(admin, secret, {"window": {"start_date": "2054-10-02"}})
+    assert code == 1 and document["error"]["code"] == "stale_version"
+    code, document = preview(admin, secret, {"window": {"end_date": "2054-11-15"}})
+    assert code == 0, document
+    result = document["result"]
+    assert result["window"]["changed"] == ["end_date"]
+    assert result["window"]["after"]["end_date"] == "2054-11-15"
+    code, confirmed = confirm(admin, secret, result["preview"]["token"])
+    assert code == 0, confirmed
+    request_id = UUID(confirmed["result"]["request"]["request_id"])
+    intent = CampaignConfigurationIntent.objects.get(request_id=request_id)
+    assert intent.actor_id == row.principal_id
+    assert len(events()) == 1
+    assert AuditEvent.objects.filter(event_type=EVENT, subject_id=request_id).exists()
+    assert installed(store, request_id).state == "applied"
+    campaign.refresh_from_db()
+    assert campaign.active_configuration.end_date.isoformat() == "2054-11-15"
 
 
 def test_the_installer_needs_the_owning_admission(auth_service, google):
