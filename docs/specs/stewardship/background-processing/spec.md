@@ -377,8 +377,12 @@ resolved boundary. At or after start, `scheduled` becomes `active`; at or after
 close, `active` becomes `closed`. Each successful or no-longer-applicable
 occurrence is terminal and audited with intended boundary, actual transition
 time, lag, previous/new state, and correlation ID. Transient failure uses the
-ordinary durable retry/lease policy and emits operational alerts when boundary
-lag exceeds the scheduler-health threshold.
+ordinary durable retry/lease policy. A boundary applied more than 90 seconds
+(the scheduler-health limit) after it was due writes one WARNING
+`campaign_boundary_lag` log entry per occurrence, naming the task, the lag and
+the limit. That entry raises no alert itself; a boundary task admitted late
+counts toward the scheduler's
+[due-work check](#late-work-during-a-bulk-family-send) like any other task.
 
 For each Campaign, apply due boundaries in resolved-time order under the same
 Campaign/global locks, irrespective of broker delivery order. If close arrives
@@ -396,7 +400,9 @@ that date was used previously. Replaced occurrences and task history remain
 immutable; A → B → A creates three distinct execution revisions. It races safely
 under the Campaign lock:
 if closing wins first, changing the date requires the guarded reopen workflow.
-The locked start date cannot be rescheduled after Production readiness.
+The locked start date cannot be rescheduled after Production readiness. In v1
+nothing in the product starts this edit or the reopen workflow (see the
+[data model's status note](../data/spec.md#campaign)).
 
 If shortening the interval affects future Family-mail schedules, that same
 transaction includes the complete Admin-selected reconciliation plan. Every
@@ -417,6 +423,10 @@ recovery therefore reconciles durable state and side effects without creating
 an access or delivery gap.
 
 ### Reopen token preparation
+
+This section is the target design: v1 does not build reopen or automated
+restore release, so no task prepares these tokens yet (BG-02.03; see the
+[data model's status note](../data/spec.md#campaign)).
 
 The existing general worker executes the reopen-readiness token task through
 the durable claim/lease machinery. It needs only public token-encryption keys,
@@ -609,14 +619,20 @@ recall or a schedule-edit bypass. Coordinated dispatch/recovery owners must
 reconcile their outcome handoff before allowing replacement.
 
 The change is rejected while an old-revision outbox row is `submitting` or
-`delivery_unknown`; the Admin must wait for provider submission to finish or
-resolve the unknown result. Otherwise the transaction creates the replacement
+`delivery_unknown`, or waits to be resent after an idempotent-retry
+resolution; while an old-revision occurrence is `delivery_unknown`, is
+`running` with no message yet, or is `pending` while its task is running or
+abandoned. The Admin must wait for provider submission to finish or resolve
+the unknown result. Otherwise the transaction creates the replacement
 revision or removal marker, changes every old-revision `pending` or `retry_wait`
-outbox row to `cancelled`, and marks linked work that has not begun provider
-submission `skipped` with reason `schedule_replaced` or `schedule_removed`.
+outbox row to `cancelled`, marks every old-revision `pending` or `running`
+occurrence `skipped` with reason `schedule_replaced` or `schedule_removed`,
+and cancels their waiting (`queued` or `retry_wait`) tasks. A running task
+keeps its lease and finds the terminal occurrence at its next check.
 Workers holding pre-submission execution hints recheck the locked durable state
-and cannot submit cancelled work. Failed old-revision work is marked superseded
-and loses its manual-retry action without rewriting its recorded failure.
+and cannot submit cancelled work. Failed old-revision occurrences keep their
+recorded failure and are counted; a database guard refuses to retry an
+occurrence whose revision is no longer current.
 
 Successful old-revision deliveries cannot be recalled and remain fulfillment
 of the stable logical schedule. The new revision creates work only for semantic
@@ -656,8 +672,9 @@ semantic fulfillment constraints; do not introduce a second kind of scheduled
 email or delivery identity.
 
 The general worker enumerates targets/slots through the cutoff with stable
-keyset cursors and bounded transactions, defaulting to at most 100 occurrence
-outcomes per batch. Persist occurrence/outbox/coverage changes and progress
+keyset cursors and bounded transactions: one Family of the activation-time
+cohort per batch (planned by the shared Family planner), then each digest
+schedule in batches of at most 100 occurrence outcomes. Persist occurrence/outbox/coverage changes and progress
 checkpoints atomically. No batch performs provider calls or holds the global
 activation locks while scanning the corpus. For a Family with many overdue
 schedules, or a digest covering many days, stage the coalescing decision and
@@ -720,10 +737,12 @@ single configured Testing address, and the subject and both body alternatives
 prominently identify Testing and safely name the intended recipients. Production
 applies none of these overrides.
 
-Safety-critical operational notifications are exempt. CRITICAL alerts and
-privileged backup, restore, publication, and purge outcome messages have routing
-class `operational` and are sent individually to every current Admin exact
-address regardless of global mode; optional Slack routing is likewise
+Safety-critical operational notifications are exempt. Operational incident
+alerts (see [critical errors](#critical-errors-and-notification)) and
+security-event alerts have routing class `operational` and are sent
+individually regardless of global mode: an incident alert to every current
+Administrator's exact address, a security alert to the Administrators
+recorded when its event was raised. Optional Slack routing is likewise
 unchanged. Their subject identifies the current deployment mode, but their
 content contains no Family/Member data, credentials, rendered campaign content,
 or access links. Classification is fixed by notification type rather than an
