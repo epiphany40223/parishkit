@@ -1652,6 +1652,39 @@ logging on, every page also logs how many Families it visited. With the [bulk
 Family send](#bulk-family-send) on, one transaction plans several Families
 instead. A loop with nothing queued plans nothing and takes no work-order lock.
 
+### Send statistics
+
+Every outcome the mail consumers record (Family mail, receipts, Family tests
+and digests, and the helper part for operational and security alerts) carries
+**send statistics** in its evidence note
+([#343](https://github.com/epiphany40223/parishkit/pull/343)): per-phase
+timings in whole milliseconds, how the batched helper and its SMTP
+connection were used, why a connection or helper ended, the transport and
+the caps in effect. They are observations for tuning and post-mortems, never
+evidence: no outcome, retry or report decision reads them.
+
+- **Nothing personal.** The note's `stats` object holds at most 48 values,
+  each key a lowercase identifier and each value a yes/no, a whole number of
+  at most 12 digits, a random helper id, or one of a closed list of words for
+  the keys that take words (`transport`, `limit`, `conn_replaced`,
+  `conn_end`, `helper_end`, `prev_helper_end`). The Family result validator
+  `stewardship_family_smtp_result_v1` enforces this and strips the object
+  before checking the outcome, and `family_delivery.send_stats()` applies
+  the same rule (a unit test compares the two word lists). A new numeric key
+  needs no schema change; a new word does.
+- **Never at the outcome's expense.** A worker records statistics only while
+  the installed validator is this release's (rechecked every five minutes).
+  If the database still refuses them, the settlement is retried in the same
+  transaction without them (`jobs/family_mail_results.settle_with_stats`),
+  with one WARNING, so a message Gmail accepted is never recorded as failed
+  because of its statistics.
+- **Reading them.** The operator's read-only
+  [mail send report](../../../guides/stewardship-mail-send-report.md)
+  summarizes a send's throughput, phase percentiles, connection reuse and
+  retire reasons, and the local environment's
+  [bulk-send rehearsal](../local-environment/spec.md#operator-script) reads
+  them for its report. No Admin page shows them.
+
 ### Bulk Family send
 
 An optional path plans, prepares and sends scheduled Family mail (initial
