@@ -67,6 +67,16 @@ def test_a_kept_parishsoft_key_is_needed_again_once_the_organization_changes(
     key.fill("")
     organization.fill("4321")
     assert save.is_enabled()
+    # The server reads the ID as a whole number, so leading zeros still
+    # name the saved organization and the key can be kept.
+    organization.fill("04321")
+    assert save.is_enabled()
+    hidden(hint)
+    # An emptied ID asks for the ID, not for the key again.
+    organization.fill("")
+    waits_with(save, hint, "Enter the ParishSoft organization ID, a whole number.")
+    organization.fill("4321")
+    assert save.is_enabled()
     # A restored organization, with no events, is checked again on pageshow.
     organization.evaluate("node => { node.value = '555'; }")
     page.evaluate(RESTORE)

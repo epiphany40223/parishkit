@@ -213,8 +213,11 @@ way. On Send to chosen Families, Send is unavailable with the first reason
 the reviewed Families cannot be sent: test codes not ready, campaign work in
 progress, a Family that cannot be sent a test, or more Families than the
 remaining allowance. Check these Families waits for a DUID. Prepare inactive
-Family links is unavailable while links cannot be prepared yet or earlier
-links still exist. The server still checks each of these.
+Family links is unavailable, with its specific reason, while the campaign is
+no longer a draft, Testing cleanup is unfinished, other inputs (such as a
+ParishSoft refresh) are not ready, earlier links still need Cancel, or
+cancelled links are still being discarded. The server still checks each of
+these.
 
 A field error is shown at that field: its message sits directly beside it,
 and the field is marked in error (`aria-invalid="true"`, described by the
