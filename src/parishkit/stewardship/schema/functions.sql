@@ -4301,7 +4301,7 @@ BEGIN
         -- AND, and this trigger also fires on tables without that column.
         actual := jsonb_build_object('kind', 'user', 'email', NEW.email,
             'name', NEW.name, 'role', NEW.role);
-        IF NEW.email <> lower(NEW.email) THEN
+        IF NEW.email <> lower(btrim(NEW.email)) THEN
             RAISE EXCEPTION 'Invalid user' USING ERRCODE = '23514';
         END IF;
     ELSIF TG_TABLE_NAME = 'stewardship_address_rule' THEN

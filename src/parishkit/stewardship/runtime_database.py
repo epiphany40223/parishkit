@@ -420,12 +420,14 @@ def offline_columns(role):
     raise ConfigError("This role has no offline configuration grants.")
 
 
-def admit_offline_database(configuration):
+def admit_offline_database(configuration, *, users_upgrade=False):
     """Offline host confirmation never bypasses SQL identity or schema admission.
 
     Column grants are declared by ``offline_columns`` and verified exactly, as
     the online logins' are: a column privilege is admitted only for a column
-    it names.
+    it names. The users-upgrade definer functions (#952) are required only
+    when ``users_upgrade`` is set; otherwise they are merely permitted, so
+    admin recovery (the lockout fallback) never depends on their grants.
     """
     from django.db import connection
 
@@ -438,7 +440,18 @@ def admit_offline_database(configuration):
     allowed = {table: set(grants) for table, grants in tables.items()}
     for table, grants in columns.items():
         allowed.setdefault(table, set()).update(grants)
-    admit_grants(allowed, functions=runtime_functions(role))
+    functions = runtime_functions(role)
+    admit_grants(allowed, optional_functions=functions)
+    if users_upgrade:
+        # The first pass admitted every table and definer grant, so this
+        # second one can refuse only for a missing users-upgrade function.
+        try:
+            admit_grants(allowed, functions=functions)
+        except ConfigError:
+            raise ConfigError(
+                "The users upgrade needs its database function grants; "
+                "run database-grants after migrating."
+            ) from None
     admit_columns(connection, tables, columns)
     require_no_temporary_authority()
     require_current_schema()

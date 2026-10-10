@@ -106,6 +106,17 @@ def plan_upgrade(records, identities, names):
     # own identity); the address converts when any of them qualifies.
     admitted, disabled, never, overridden = {}, set(), set(), set()
     for identity in identities:
+        # A stored address the policy validator refuses can match no rule
+        # reliably, so the whole conversion fails closed rather than guess.
+        # The message never repeats the untrusted address.
+        # The SQL definer already lowercases it.
+        try:
+            normalized_email(identity.email)
+        except ConfigError:
+            raise ConfigError(
+                "A recorded Google identity has an invalid email address; "
+                "the users upgrade changed nothing."
+            ) from None
         domain = identity.email.rsplit("@", 1)[1]
         rule = domains.get(domain)
         if rule is None or identity.hosted_domain != domain:

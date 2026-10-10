@@ -268,7 +268,7 @@ def upgrade_users_command(
             from .accounts.users_upgrade import upgrade_preview
             from .runtime_database import admit_offline_database
 
-            admit_offline_database(configuration)
+            admit_offline_database(configuration, users_upgrade=True)
             runtime = coherent_configuration(
                 AuthorityStore(configuration.paths["authority"], validate_sections)
             )
@@ -286,7 +286,7 @@ def upgrade_users_command(
     from .accounts.users_upgrade import upgrade_users
     from .runtime_database import admit_offline_database
 
-    admit_offline_database(configuration)
+    admit_offline_database(configuration, users_upgrade=True)
     result = upgrade_users(
         AuthorityStore(configuration.paths["authority"], validate_sections),
         deployment_id=_uuid(deployment_id),

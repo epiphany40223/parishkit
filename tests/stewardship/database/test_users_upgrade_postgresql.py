@@ -359,3 +359,158 @@ def test_member_names_follow_the_default_order(tmp_path):
     )
     assert active_users(store)["shared@example.org"] == ("Example 1, Leader", "staff")
     assert active_users(store)["admin@example.org"] == ("admin", "administrator")
+
+
+def test_administrators_convert_whatever_their_recorded_identities(tmp_path):
+    """Only a disabled identity, or several, never cost an Administrator."""
+    store, _, _ = initialized(tmp_path, rules())
+    disabled = identity("admin@example.org", disabled=True)
+    enabled = identity("second@example.org")
+    identity("second@example.org", disabled=True)
+    identity("second@example.org", None, signed_in=False)
+    assert upgrade.upgrade_users(store, **arguments()).state == "applied"
+    users = active_users(store)
+    assert {email: users[email][1] for email in ADMINS} == dict.fromkeys(
+        ADMINS, "administrator"
+    )
+    # The enabled identity still opens an Admin session; the disabled one
+    # stays refused by its own flag, not by the conversion.
+    assert forge(enabled.pk).principal_id == enabled.pk
+    with refused():
+        forge(disabled.pk)
+
+
+@pytest.mark.parametrize("email", ["not-an-address", "two@@example.org"])
+def test_an_invalid_identity_email_fails_the_whole_conversion(tmp_path, email):
+    """One stored address the validator refuses leaves the deployment unchanged."""
+    store, version, _ = initialized(tmp_path, rules())
+    identity("signed@example.org")
+    identity(email)
+    with pytest.raises(ConfigError, match="invalid email address"):
+        upgrade.upgrade_users(store, **arguments())
+    assert not ConfigurationChangeRequest.objects.filter(
+        authority="operator_upgrade"
+    ).exists()
+    assert store.active().digest == version.digest
+    assert coherent_configuration(store).active_configuration_id == (version.version_id)
+
+
+def test_admin_recovery_never_needs_the_upgrade_grants(tmp_path, monkeypatch):
+    """Recovery and its preview admit without the #952 grants; the upgrade refuses.
+
+    With 0047 migrated but ``database-grants`` not yet run (the two upgrade
+    definers not granted), the lockout fallback must still work, while
+    ``upgrade-users`` refuses with an instruction. The admission's other
+    checks (schema version, capacity, TEMP) are covered elsewhere and
+    stubbed here, so this proves only the function-grant boundary.
+    """
+    from types import SimpleNamespace
+
+    from parishkit.stewardship import operator_commands, runtime_database
+    from parishkit.stewardship.runtime_grants import (
+        MEMBER_NAMES_FUNCTION,
+        PORTAL_IDENTITIES_FUNCTION,
+    )
+
+    from .test_recovery_postgresql import arguments as recovery_arguments
+
+    store, _, _ = initialized(tmp_path, rules())
+    deployment = str(SystemConfiguration.objects.get().pk)
+    configuration = SimpleNamespace(
+        service_role=ServiceRole.ADMIN_RECOVERY,
+        paths={"authority": store.root},
+    )
+    # The test's own connection already runs as the login (task_login).
+    monkeypatch.setattr(
+        operator_commands,
+        "admit_offline_service",
+        lambda configuration: ServiceRole.ADMIN_RECOVERY,
+    )
+    monkeypatch.setattr(
+        operator_commands, "configure_operator_database", lambda configuration: None
+    )
+    monkeypatch.setattr(operator_commands, "StartupLease", lambda *a, **k: _offline())
+    monkeypatch.setattr(
+        operator_commands, "RuntimeLayout", lambda _: SimpleNamespace(interlock=None)
+    )
+    for name in (
+        "require_no_temporary_authority",
+        "require_current_schema",
+        "require_capacity",
+        "require_role_capacity",
+    ):
+        monkeypatch.setattr(runtime_database, name, lambda *a, **k: None)
+    with task_login(ServiceRole.ADMIN_RECOVERY):
+        with connection.cursor() as cursor:
+            cursor.execute("RESET SESSION AUTHORIZATION")
+            for function in (PORTAL_IDENTITIES_FUNCTION, MEMBER_NAMES_FUNCTION):
+                cursor.execute(
+                    f"REVOKE EXECUTE ON FUNCTION public.{function} "
+                    "FROM pk_stewardship_admin_recovery"
+                )
+            cursor.execute("SET SESSION AUTHORIZATION pk_stewardship_admin_recovery")
+        preview = operator_commands.preview_recovery_command(
+            configuration,
+            deployment_id=deployment,
+            target_email="replacement@example.org",
+        )
+        assert preview["recovery_preview"]
+        kwargs = recovery_arguments()
+        result = operator_commands.recover_admin_command(
+            configuration,
+            deployment_id=deployment,
+            operation_id=str(kwargs["operation_id"]),
+            target_email=kwargs["target_email"],
+            confirmed_email=kwargs["confirmed_email"],
+            operator_name=kwargs["operator_name"],
+            reason=kwargs["reason"],
+        )
+        assert result["recovery_applied"] is True
+        with pytest.raises(ConfigError, match="run database-grants"):
+            operator_commands.upgrade_users_command(
+                configuration, deployment_id=deployment, preview=True
+            )
+        # Once database-grants restores them, the upgrade preview admits.
+        with connection.cursor() as cursor:
+            cursor.execute("RESET SESSION AUTHORIZATION")
+            for function in (PORTAL_IDENTITIES_FUNCTION, MEMBER_NAMES_FUNCTION):
+                cursor.execute(
+                    f"GRANT EXECUTE ON FUNCTION public.{function} "
+                    "TO pk_stewardship_admin_recovery"
+                )
+            cursor.execute("SET SESSION AUTHORIZATION pk_stewardship_admin_recovery")
+        assert (
+            operator_commands.upgrade_users_command(
+                configuration, deployment_id=deployment, preview=True
+            )["users_upgrade_preview"]["already_users"]
+            is False
+        )
+
+
+@pytest.mark.parametrize(
+    "email", [" admin@example.org", "admin@example.org ", "Admin@example.org"]
+)
+def test_sql_refuses_a_user_row_with_an_unnormalized_email(tmp_path, email):
+    """A user row's email must already be trimmed and lowercase (#952).
+
+    The row copies a real converted user with only its email changed, so
+    the projection trigger's user check is what refuses it.
+    """
+    store, _, _ = initialized(tmp_path, rules())
+    upgrade.upgrade_users(store, **arguments())
+    row = AddressRule.objects.get(
+        configuration=SystemConfiguration.objects.get().active_configuration,
+        email="admin@example.org",
+    )
+    with (
+        pytest.raises(IntegrityError, match="Invalid user"),
+        transaction.atomic(),
+        connection.cursor() as cursor,
+    ):
+        cursor.execute(
+            "INSERT INTO stewardship_address_rule "
+            "SELECT (jsonb_populate_record(r, jsonb_build_object("
+            "'id', gen_random_uuid(), 'email', %s::text))).* "
+            "FROM stewardship_address_rule r WHERE r.id = %s",
+            [email, row.pk],
+        )

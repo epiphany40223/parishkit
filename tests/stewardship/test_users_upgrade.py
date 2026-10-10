@@ -220,6 +220,44 @@ def test_plan_converts_signed_in_domain_identities_only():
     assert {item["name"] for item in plan["users"]} == {"Smith, Ann"}
 
 
+def test_plan_keeps_administrators_whatever_their_identities():
+    """An Administrator stays one with only a disabled identity, or with several."""
+    records = [
+        address("admin@example.org"),
+        address("second@example.org"),
+        domain("example.org", ("staff",)),
+    ]
+    identities = [
+        identity("admin@example.org", disabled=True),
+        identity("second@example.org"),
+        identity("second@example.org", disabled=True),
+        identity("second@example.org", hosted=None, signed_in=False),
+    ]
+    plan = plan_upgrade(records, identities, no_names)
+    assert plan["administrators"] == ["admin@example.org", "second@example.org"]
+    assert {item["email"]: item["role"] for item in plan["users"]} == {
+        "admin@example.org": "administrator",
+        "second@example.org": "administrator",
+    }
+    assert plan["not_converted"] == {"disabled": [], "never_signed_in": []}
+
+
+@pytest.mark.parametrize(
+    "email", ["no-at-sign", " padded@example.org", "two@@example.org", ""]
+)
+def test_plan_fails_closed_on_an_invalid_identity_email(email):
+    """One stored address the validator refuses stops the whole conversion."""
+    identities = [identity("signed@example.org"), identity(email, disabled=True)]
+    with pytest.raises(ConfigError, match="invalid email address") as caught:
+        plan_upgrade(
+            [address("admin@example.org"), domain("example.org", ("staff",))],
+            identities,
+            no_names,
+        )
+    if email.strip():
+        assert email.strip() not in str(caught.value)
+
+
 def test_upgrade_patch_replaces_every_rule_with_new_user_ids():
     """The one request removes each old rule and adds each user with a new ID."""
     records = [address(), domain()]
