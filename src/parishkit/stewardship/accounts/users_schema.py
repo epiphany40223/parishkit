@@ -27,6 +27,11 @@ UPGRADE_REQUEST_SCHEMA = "operator-upgrade-users-v10"
 REQUEST_SCHEMA = "users-patch-v10"
 CREDENTIAL_SCHEMA = "integration-credential-users-v10"
 RECOVERY_SCHEMA = "operator-recovery-users-v10"
+# The release that swaps the SQL sign-in functions and brings the Users page
+# (#952 slice 4) sets this. Until then the conversion only previews, and
+# startup still accepts a configuration of sign-in rules; once it is set,
+# web, workers and scheduler refuse to start on one (``require_users_form``).
+USERS_ENABLED = False
 # Lowest first: each role includes every role before it.
 ROLE_LEVELS = ("ministry_leader", "staff", "administrator")
 NAME_LIMIT = 200
@@ -123,6 +128,27 @@ def validate_user_change(old_records, new_records):
         email = record["values"]["email"]
         if addresses.get(record["id"], email) != email:
             invalid()
+
+
+def require_users_form(runtime, *, enabled=None):
+    """Refuse to run on a configuration of sign-in rules once users ship (#952).
+
+    The release that swaps the SQL sign-in functions reads only users, so web,
+    workers and scheduler must not start before ``upgrade-users`` converted
+    the configuration. A deployment still in initial setup (the bootstrap
+    configuration) is exempt: its Administrator stays an older exact-address
+    rule until the setup wizard, whose base it is, learns to write users with
+    the Users page (#952 slice 5). ``enabled`` defaults to ``USERS_ENABLED``.
+    """
+    from parishkit.config import ConfigError
+
+    if not (USERS_ENABLED if enabled is None else enabled):
+        return
+    schema = runtime.active_configuration.validation_schema
+    if schema not in (SCHEMA, "bootstrap-policy-v1"):
+        raise ConfigError(
+            "The configuration still holds sign-in rules; run upgrade-users first."
+        )
 
 
 def validate_sections(document):

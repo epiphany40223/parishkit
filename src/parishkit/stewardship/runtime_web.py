@@ -296,13 +296,17 @@ def configure_web_runtime(configuration):
     )
     store = AuthorityStore(configuration.paths["authority"], validate_sections)
     try:
-        coherent_configuration(store)
+        runtime = coherent_configuration(store)
     except ConfigError:
         from .accounts.setup_startup import initial_setup_hold
 
         # Keep the real store for every request. Only the existing original-
         # login cancellation route can use predecessor policy during this hold.
-        initial_setup_hold(store)
+        runtime = initial_setup_hold(store)
+    from .accounts.users_schema import require_users_form
+
+    # Once users ship, never serve sign-ins from unconverted rules (#952).
+    require_users_form(runtime)
     for name in ("reports", "media"):
         private_directory(configuration.paths[name])
     settings.STEWARDSHIP_MEDIA_ROOT = configuration.paths["media"]

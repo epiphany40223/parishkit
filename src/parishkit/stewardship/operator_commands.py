@@ -242,14 +242,6 @@ def preview_recovery_command(configuration, *, deployment_id, target_email, name
         }
 
 
-# The users conversion (#952) is enabled in the release that also brings
-# the Users page and the swap of the SQL sign-in functions (its slice 4).
-# Until then this command only previews: this release can edit a users
-# configuration, but its SQL sign-in functions and its Portal users page
-# still expect sign-in rules.
-USERS_UPGRADE_ENABLED = False
-
-
 def upgrade_users_command(
     configuration,
     *,
@@ -292,7 +284,14 @@ def upgrade_users_command(
                 raise ConfigError("The confirmed deployment does not match.")
             _, version = intake_base(runtime.active_configuration.digest)
             return {"users_upgrade_preview": upgrade_preview(version)}
-    if not USERS_UPGRADE_ENABLED:
+    from .accounts.users_schema import USERS_ENABLED
+
+    # The conversion is enabled (users_schema.USERS_ENABLED) in the release
+    # that also brings the Users page and swaps the SQL sign-in functions
+    # (#952 slices 4 and 5). Until then this command only previews: this
+    # release can edit a users configuration, but its SQL sign-in functions
+    # and its Portal users page still expect sign-in rules.
+    if not USERS_ENABLED:
         raise ConfigError("This release previews the users upgrade only.")
     if not isinstance(confirmed_administrators, str):
         raise ConfigError("Confirm the Administrators the upgrade keeps.")
