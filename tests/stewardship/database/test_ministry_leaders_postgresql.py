@@ -478,29 +478,42 @@ def leader_scope_plans(user_id):
 
     Run as the owner (LOAD needs a superuser) on a new backend, so each
     statement inside the definer functions is planned afresh, as on a
-    request. auto_explain's LOG lines reach the client as notices.
+    request. auto_explain's LOG lines reach the client as notices. Verbose
+    plans name each node's Output columns and expressions, which
+    roster_rows_parsed_to_match reads.
     """
+    settings = {
+        "auto_explain.log_min_duration": "0",
+        "auto_explain.log_analyze": "on",
+        "auto_explain.log_timing": "off",
+        "auto_explain.log_verbose": "on",
+        "auto_explain.log_nested_statements": "on",
+        "auto_explain.log_format": "json",
+        "client_min_messages": "log",
+    }
     connection.close()
     notices = []
-    with connection.cursor() as cursor:
-        connection.connection.add_notice_handler(
-            lambda notice: notices.append(notice.message_primary)
-        )
-        cursor.execute("LOAD 'auto_explain'")
-        for setting in (
-            "auto_explain.log_min_duration=0",
-            "auto_explain.log_analyze=on",
-            "auto_explain.log_timing=off",
-            "auto_explain.log_nested_statements=on",
-            "auto_explain.log_format=json",
-            "client_min_messages=log",
-        ):
-            cursor.execute(f"SET {setting}")
-        cursor.execute(
-            "SELECT public.stewardship_ministry_leader_scope_v1(%s)", [user_id]
-        )
-    # Leave no session settings behind for the next test.
-    connection.close()
+    try:
+        with connection.cursor() as cursor:
+            connection.connection.add_notice_handler(
+                lambda notice: notices.append(notice.message_primary)
+            )
+            cursor.execute("LOAD 'auto_explain'")
+            try:
+                for name, value in settings.items():
+                    cursor.execute(f"SET {name}={value}")
+                cursor.execute(
+                    "SELECT public.stewardship_ministry_leader_scope_v1(%s)",
+                    [user_id],
+                )
+            finally:
+                # Reset even when the read fails, so no LOG notices or plan
+                # logging follow this connection into the next statement.
+                for name in settings:
+                    cursor.execute(f"RESET {name}")
+    finally:
+        # A new backend for the next test: nothing loaded or set survives.
+        connection.close()
     return [
         json.loads(text.split("plan:", 1)[1])["Plan"]
         for text in notices
@@ -509,12 +522,21 @@ def leader_scope_plans(user_id):
 
 
 def roster_rows_parsed_to_match(plans):
-    """Retained roster rows a condition on their JSON is evaluated for.
+    """Retained roster rows whose ``canonical`` JSON a plan parses.
 
-    Each scan of stewardship_source_roster whose own filter, or the join it
-    feeds (through any Hash, Sort or Materialize), compares the row's
-    ``canonical`` JSON parses every row it reads to do so; a scan that is
-    joined on its key first parses nothing here.
+    For each scan of stewardship_source_roster, follow the bare
+    ``<alias>.canonical`` column up the plan while a node only carries it
+    (in its Output, or through a Hash, Sort or Materialize) to the nodes
+    that use it in an expression:
+
+    - a Filter or join condition (on the scan, or on the join it feeds)
+      parses every row the scan reads, kept or not;
+    - an Output expression (such as ``(payload.canonical)::jsonb`` in a
+      MATERIALIZED CTE) parses every row that node returns.
+
+    Each scan counts the most any one of those nodes parses, times its
+    loops. A scan that reads every retained row but is joined on its key
+    before the JSON is parsed therefore counts only the joined rows.
     """
     passing = {"Hash", "Sort", "Incremental Sort", "Materialize", "Memoize"}
     conditions = ("Filter", "Hash Cond", "Merge Cond", "Join Filter")
@@ -523,18 +545,21 @@ def roster_rows_parsed_to_match(plans):
     def visit(node, parents):
         nonlocal parsed
         if node.get("Relation Name") == "stewardship_source_roster":
+            column = f"{node['Alias']}.canonical"
+            loops = node["Actual Loops"]
             read = node["Actual Rows"] + node.get("Rows Removed by Filter", 0)
-            checked = [node]
-            for parent in reversed(parents):
-                checked.append(parent)
-                if parent["Node Type"] not in passing:
+            counts = [0]
+            chain = [node, *reversed(parents)]
+            for item in chain:
+                if any(column in str(item.get(key, "")) for key in conditions):
+                    counts.append(read * loops)
+                outputs = item.get("Output", [])
+                if any(column in out and out != column for out in outputs):
+                    counts.append(item["Actual Rows"] * item["Actual Loops"])
+                carried = item["Node Type"] in passing or column in outputs
+                if not carried:
                     break
-            if any(
-                "canonical" in str(item.get(key, ""))
-                for item in checked
-                for key in conditions
-            ):
-                parsed += read * node["Actual Loops"]
+            parsed += max(counts)
         for child in node.get("Plans", []):
             visit(child, [*parents, node])
 
@@ -556,9 +581,11 @@ def test_scope_cost_on_a_history_sized_roster(response_service):
     wall-clock time (38 ms for the old definition, on a loaded CI host
     anything) tells them apart; what does is how many rows are parsed to
     match. The plans auto_explain reports for a fresh scope read must
-    evaluate a JSON condition on no more roster rows than the current
-    snapshot holds. The first call on each of three fresh web connections
-    is timed and reported for information only.
+    parse at least one roster row (so the count is not vacuously zero) and
+    no more than the current snapshot holds, whether the parse is in a
+    condition or in a CTE's output that a later step filters on. The first
+    call on each of three fresh web connections is timed and reported for
+    information only.
     """
     harness = response_service
     duids = history(harness)
@@ -604,7 +631,7 @@ def test_scope_cost_on_a_history_sized_roster(response_service):
         f"{parsed:.0f} roster rows parsed to match, {current} current, "
         f"{retained} retained"
     )
-    assert parsed <= current
+    assert 1 <= parsed <= current
 
 
 def test_a_draft_campaign_leads_and_one_without_ministries_does_not(
