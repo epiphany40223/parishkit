@@ -444,3 +444,19 @@ def test_names_need_a_time_zone_and_print_a_new_key(monkeypatch):
         monkeypatch, ["--names", "--timezone", "UTC", "--request-key", str(KEY)]
     )
     assert calls[0][1]["request_key"] == KEY and errors == ""
+    assert calls[0][1]["format"] == "csv"
+
+
+def test_names_take_a_file_format(monkeypatch):
+    """--format picks the names file's format (#966) and needs --names."""
+    with pytest.raises(admin_cli.UsageError):
+        families_preview_run(monkeypatch, ["--format", "pdf"])
+    for fmt in ("csv", "xlsx", "pdf"):
+        calls, _ = families_preview_run(
+            monkeypatch, ["--names", "--timezone", "UTC", "--format", fmt]
+        )
+        assert calls[0][1]["format"] == fmt
+    with pytest.raises(admin_cli.UsageError):
+        families_preview_run(
+            monkeypatch, ["--names", "--timezone", "UTC", "--format", "png"]
+        )

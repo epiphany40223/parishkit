@@ -170,7 +170,7 @@ def export_logs(request):
     """Download the filtered log, newest first, bounded to EXPORT_LIMIT entries.
 
     The same closed filters as the screen arrive in the CSRF POST body, plus a
-    format (CSV or JSON Lines) and a timezone: UTC or one supported timezone
+    format (CSV, XLSX or JSON Lines) and a timezone: UTC or one supported timezone
     name, which the page offers from the browser's own zone. The filters'
     ``zone`` (where From and Through days fall) is separate from that display
     choice: it is always the browser zone the page applied. The page's
@@ -201,7 +201,7 @@ def export_logs(request):
             rows = export_rows(query)
         body = export_body(rows, fmt, zone)
         response = HttpResponse(
-            body.encode("utf-8"),
+            body,
             headers=download_headers(
                 export_file_name(fmt, datetime.now(UTC)),
                 content_type=EXPORT_FORMATS[fmt],

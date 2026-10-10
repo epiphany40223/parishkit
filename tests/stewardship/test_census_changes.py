@@ -6,12 +6,16 @@ from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 import pytest
+from openpyxl import load_workbook
 
+from parishkit.stewardship.reports import pdf_design
 from parishkit.stewardship.reports.census_change_views import SORTING
 from parishkit.stewardship.reports.census_changes import (
     HEADINGS,
+    PDF_WEIGHTS,
     CensusQuery,
     census_csv,
+    census_pdf,
     census_xlsx,
     display,
     select,
@@ -223,7 +227,6 @@ def test_csv_keeps_its_own_column_order_in_the_chosen_zone():
 def test_downloads_word_member_duid_as_the_page_does():
     """CSV and XLSX end with the Member DUID: the DUID, "New Member" for a
     Member added on the form, and blank for a household change (#932)."""
-    from openpyxl import load_workbook
 
     proposed = row(
         id="2",
@@ -335,3 +338,79 @@ def test_page_shows_member_duid_beside_who():
     assert positions == sorted(positions)
     assert '<td class="numeric">41</td>' in html
     assert '<td class="numeric">New Member</td>' in html
+
+
+def test_csv_xlsx_and_pdf_carry_the_same_columns_and_rows():
+    """One column set in every format (#966): CSV, XLSX and the PDF table.
+
+    The XLSX cells are the CSV's; the PDF table has the same headings and
+    values, only its Submitted time worded in the parish's date format.
+    """
+    zone = ZoneInfo("America/Chicago")
+    # A formula-like name: the CSV guards it with an apostrophe, the XLSX
+    # stores it as literal text and the PDF shows it as typed.
+    given = rows()
+    given[1] = shape(
+        row(id="todo", handling="manual", field="suffix", family_name="=1+2")
+    )
+    result = select(given, CensusQuery(), administrator=False)
+    table = list(csv.reader(io.StringIO(census_csv(result, zone).decode())))
+    book = load_workbook(io.BytesIO(census_xlsx(result, zone)))
+    sheet = [
+        ["" if value is None else value for value in values]
+        for values in book["Census changes"].iter_rows(values_only=True)
+    ]
+    assert "'=1+2" in [values[0] for values in table]
+    table = [[cell.removeprefix("'") for cell in values] for values in table]
+    assert sheet == table
+    formula_like = [
+        cell
+        for values in book["Census changes"].iter_rows()
+        for cell in values
+        if cell.value == "=1+2"
+    ]
+    assert formula_like and all(cell.data_type == "s" for cell in formula_like)
+    drawn = {}
+    original = pdf_design.table_pages
+
+    def capture(pdf_table, pdf_rows, frame):
+        """Keep the table and rows the PDF lays out, then lay them out."""
+        pdf_rows = list(pdf_rows)
+        drawn.update(table=pdf_table, rows=pdf_rows, frame=frame)
+        return original(pdf_table, pdf_rows, frame)
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(pdf_design, "table_pages", capture)
+        body = census_pdf(
+            result,
+            zone,
+            parish="Example Parish",
+            campaign="Stewardship 2055",
+            as_of=SUBMITTED,
+        )
+    assert body.startswith(b"%PDF-")
+    assert drawn["table"].headings == HEADINGS == tuple(table[0])
+    # Every cell matches except Submitted, which the PDF words as a date.
+    submitted = HEADINGS.index("Submitted")
+
+    def without_submitted(values):
+        """The row's cells other than its Submitted time."""
+        return [cell for index, cell in enumerate(values) if index != submitted]
+
+    assert [without_submitted(values) for values in drawn["rows"]] == [
+        without_submitted(values) for values in table[1:]
+    ]
+    assert drawn["rows"][0][submitted] == "Oct 5, 2054 9:30 AM"
+    assert drawn["frame"].eyebrow == "Example Parish · Stewardship 2055"
+    assert drawn["frame"].details == ("3 changes in this file.",)
+    # Every heading has a PDF column width, and the columns fill the page.
+    assert set(PDF_WEIGHTS) == set(HEADINGS)
+    assert sum(drawn["table"].widths) == pytest.approx(pdf_design.BODY_WIDTH)
+    # A compact time and the longest status each stay on one line.
+    for heading, text in (
+        ("Submitted", "Sep 30, 2026 12:04 PM"),
+        ("Status", "Being published"),
+    ):
+        values = [text if name == heading else "" for name in HEADINGS]
+        cell = drawn["table"].cells(values)[HEADINGS.index(heading)]
+        assert cell == [text], heading

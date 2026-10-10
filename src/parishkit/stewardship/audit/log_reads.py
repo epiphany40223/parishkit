@@ -36,7 +36,15 @@ from .timeouts import record_timeout
 # at most this deep into either order, for the same reason: each page reads
 # the index-ordered keys of every entry before it.
 EXPORT_LIMIT = 10_000
-EXPORT_FORMATS = {"csv": "text/csv", "jsonl": "application/x-ndjson"}
+# CSV, XLSX and JSON Lines; no PDF, the recorded exception to the
+# three-format rule (UX conventions spec, "Downloaded files"): each row
+# carries structured details up to the export limit, too wide to print as a
+# readable page.
+EXPORT_FORMATS = {
+    "csv": "text/csv",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "jsonl": "application/x-ndjson",
+}
 # Each read (the screen's page and count, or an export) may run at most this
 # long in PostgreSQL: the interactive page-view limit the campaign read
 # guards use. Text search has no index (#536), so on a very large log a
@@ -285,7 +293,7 @@ def export_rows(query):
 def export_choice(fmt, zone_name):
     """The download's format and display zone, as ``(format, ZoneInfo)``.
 
-    The format is CSV or JSON Lines; the zone is UTC or one supported
+    The format is CSV, XLSX or JSON Lines; the zone is UTC or one supported
     timezone name. Anything else is a ``ValueError`` (the page's 400).
     """
     if fmt not in EXPORT_FORMATS or (
@@ -301,7 +309,14 @@ def export_file_name(fmt, now):
 
 
 def export_body(rows, fmt, zone):
-    """Serialize the reviewed display rows; nothing beyond what the page shows."""
+    """Serialize the reviewed display rows as bytes; nothing beyond the page.
+
+    CSV and XLSX carry the same ``EXPORT_COLUMNS``, with the details
+    flattened to one ``key=value; ...`` cell; JSON Lines keeps the details
+    as an object. The cross-link identifiers stay in every format, the
+    recorded exception to leaving internal identifiers out of downloads
+    (UX conventions spec, "Downloaded files").
+    """
     records = [
         {
             "time": row["created_at"].astimezone(zone).isoformat(),
@@ -318,13 +333,25 @@ def export_body(rows, fmt, zone):
         for row in rows
     ]
     if fmt == "jsonl":
-        return "".join(json.dumps(record) + "\n" for record in records)
+        return "".join(json.dumps(record) + "\n" for record in records).encode("utf-8")
+    table = [
+        [
+            (
+                "; ".join(f"{key}={value}" for key, value in record[column].items())
+                if column == "details"
+                else record[column]
+            )
+            for column in EXPORT_COLUMNS
+        ]
+        for record in records
+    ]
+    if fmt == "xlsx":
+        # Imported here to keep the web process's startup light.
+        from parishkit.stewardship.reports.xlsx_design import table_workbook
+
+        return table_workbook(EXPORT_COLUMNS, table, sheet_title="System logs")
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\r\n")
     writer.writerow(EXPORT_COLUMNS)
-    for record in records:
-        record["details"] = "; ".join(
-            f"{key}={value}" for key, value in record["details"].items()
-        )
-        writer.writerow([csv_cell(record[column]) for column in EXPORT_COLUMNS])
-    return buffer.getvalue()
+    writer.writerows([csv_cell(value) for value in values] for values in table)
+    return buffer.getvalue().encode("utf-8")

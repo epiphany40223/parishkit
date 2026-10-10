@@ -9,6 +9,7 @@ these commands only write tickets. A live full-scope session stands in for
 the page's fresh sign-in (PR 5a) and leaves the fresh-gate trail (PR 5b).
 """
 
+import io
 import json
 from uuid import uuid4
 
@@ -231,12 +232,17 @@ def test_an_email_changed_since_the_preview_is_refused(
 NAMES_EVENT = "admin_cmd_export_family_test_names"
 
 
-def names_preview(admin, secret, family_test, *duids, key):  # noqa: F811
-    """``test families-preview --names`` for ``duids`` under ``key``."""
+def names_preview(admin, secret, family_test, *duids, key, fmt=None):  # noqa: F811
+    """``test families-preview --names`` for ``duids`` under ``key``.
+
+    ``fmt`` adds ``--format``; without it the command's default (CSV).
+    """
     argv = ["test", "families-preview", revision(family_test)]
     for duid in duids:
         argv += ["--family", str(duid)]
     argv += ["--names", "--timezone", "UTC", "--request-key", str(key)]
+    if fmt is not None:
+        argv += ["--format", fmt]
     return admin(*argv, secret=secret)
 
 
@@ -348,6 +354,100 @@ def test_names_reach_only_the_exported_file(admin, family_test, reports_root):  
     assert again.family_test_names_snapshot_id == capture.pk
 
 
+def test_names_export_in_xlsx_and_pdf(admin, family_test, reports_root):  # noqa: F811
+    """--format: the names as XLSX or PDF, with the CSV's columns (#966).
+
+    The format binds the request key as the selection does; the worker
+    renders each file; a regenerated file keeps its format.
+    """
+    from openpyxl import load_workbook
+
+    from parishkit.stewardship.reports.export_models import ExportRequest
+    from parishkit.stewardship.reports.family_test_names import HEADINGS
+
+    from .test_admin_export_cli_postgresql import download
+    from .test_admin_family_export_cli_postgresql import render
+    from .test_export_cleanup_postgresql import expire_publication
+
+    _, secret, _ = paired(admin.service)
+    names = page_names(1)
+    made = {}
+    for fmt in ("xlsx", "pdf"):
+        key = uuid4()
+        code, document, _ = names_preview(
+            admin, secret, family_test, 1, key=key, fmt=fmt
+        )
+        assert code == 0, document
+        assert document["result"]["export"]["format"] == fmt
+        made[fmt] = ExportRequest.objects.get(pk=document["result"]["export"]["id"])
+        # The same key in another format is another selection: refused.
+        code, bound, _ = names_preview(admin, secret, family_test, 1, key=key)
+        assert code == 1 and bound["error"]["code"] == "invalid", bound
+        render(admin.service, reports_root, made[fmt].pk)
+        code, body, streamed = download(made[fmt].pk, secret)
+        assert code == 0, streamed
+        assert streamed["result"]["file_name"] == f"family_test_names.{fmt}"
+        assert streamed["result"]["count"] == 1
+        if fmt == "xlsx":
+            sheet = load_workbook(io.BytesIO(body)).worksheets[0]
+            rows = list(sheet.iter_rows(values_only=True))
+            assert rows == [HEADINGS, ("1", names[1])]
+        else:
+            assert body.startswith(b"%PDF-")
+    assert names_trail() == (2, 2, 2)
+    # Regeneration keeps the original's format.
+    expire_publication(made["pdf"])
+    code, regenerated, _ = admin(
+        "export",
+        "regenerate",
+        str(made["pdf"].pk),
+        "--request-key",
+        str(uuid4()),
+        secret=secret,
+    )
+    assert code == 0 and regenerated["result"]["export"]["format"] == "pdf"
+
+
+def test_the_constraint_still_refuses_a_png_names_export(admin, family_test):  # noqa: F811
+    """export_report_known admits the names only as CSV, XLSX or PDF (#966).
+
+    Migration 0049 widened that one arm; PNG, which the format constraint
+    allows for charts, stays refused for this kind. The probe copies a real
+    names request with only its identities and format changed, with triggers
+    off for that one savepoint (session_replication_role), so the request
+    guard's binding check cannot answer first; CHECK constraints still run.
+    """
+    from django.db import IntegrityError, connection, transaction
+
+    _, secret, _ = paired(admin.service)
+    code, document, _ = names_preview(
+        admin, secret, family_test, 1, key=uuid4(), fmt="pdf"
+    )
+    assert code == 0, document
+    made = document["result"]["export"]["id"]
+    copy = (
+        "INSERT INTO stewardship_export_request SELECT (jsonb_populate_record("
+        "r, jsonb_build_object('id', %s::uuid, 'request_key', %s::uuid,"
+        " 'task_id', %s::uuid,"
+        " 'format', %s))).* FROM stewardship_export_request r WHERE r.id=%s"
+    )
+    replica = "SET LOCAL session_replication_role = replica"
+    # The savepoint is inside the raises block, so it rolls back first.
+    with (
+        pytest.raises(IntegrityError, match="export_report_known"),
+        transaction.atomic(),
+        connection.cursor() as cursor,
+    ):
+        cursor.execute(replica)
+        cursor.execute(copy, [*(str(uuid4()) for _ in range(3)), "png", made])
+    # The same copy as XLSX is admitted, so the refusal is the format's.
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(replica)
+        cursor.execute(copy, [*(str(uuid4()) for _ in range(3)), "xlsx", made])
+        assert cursor.rowcount == 1
+        transaction.set_rollback(True)
+
+
 def test_names_need_the_time_zone_and_a_testing_review(admin, family_test):  # noqa: F811
     """--names without --timezone is a usage error; refusals export nothing."""
     _, secret, _ = paired(admin.service)
@@ -355,6 +455,9 @@ def test_names_need_the_time_zone_and_a_testing_review(admin, family_test):  # n
     code, document, _ = admin(*argv, "--names", secret=secret)
     assert code == 2 and document["error"]["code"] == "usage", document
     code, document, _ = admin(*argv, "--timezone", "UTC", secret=secret)
+    assert code == 2 and document["error"]["code"] == "usage", document
+    # --format chooses the names file's format, so it needs --names.
+    code, document, _ = admin(*argv, "--format", "pdf", secret=secret)
     assert code == 2 and document["error"]["code"] == "usage", document
     code, document, _ = admin(
         *argv, "--names", "--timezone", "Not/AZone", secret=secret

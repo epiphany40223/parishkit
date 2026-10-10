@@ -16,11 +16,16 @@ Colors are the Admin portal's (``ui-v1.css``); banding is a conditional
 format, so no cell gains a formula or a changed value.
 """
 
+import io
+
+from openpyxl import Workbook
 from openpyxl.formatting.rule import FormulaRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from parishkit.stewardship.web.design_tokens import COLORS, hex6
+
+from .information_rendering import xlsx_cell
 
 
 def _color(token):
@@ -208,3 +213,24 @@ def _print_setup(sheet, title, *, landscape=True):
         sheet.oddHeader.left.text = "&B" + str(title).replace("&", "&&")
     sheet.oddHeader.right.text = "&A"
     sheet.oddFooter.center.text = "Page &P of &N"
+
+
+def table_workbook(headings, rows, *, sheet_title, freeze_first_column=False):
+    """One styled sheet of ``headings`` over ``rows``, as XLSX bytes.
+
+    For downloads whose CSV is exactly a header row plus rows (Census
+    changes, System logs): the workbook holds the same columns, written
+    through ``xlsx_cell`` so text stays literal (a typed "=..." is never a
+    formula), then styled with ``style_table``. ``sheet_title`` names the
+    sheet and the printed page header.
+    """
+    book = Workbook()
+    sheet = book.active
+    sheet.title = sheet_title
+    for row_number, values in enumerate((headings, *rows), start=1):
+        for column, value in enumerate(values, start=1):
+            xlsx_cell(sheet, row_number, column, value)
+    style_table(sheet, freeze_first_column=freeze_first_column, title=sheet_title)
+    output = io.BytesIO()
+    book.save(output)
+    return output.getvalue()

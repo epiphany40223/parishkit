@@ -267,8 +267,8 @@ class ExportRequest(ImmutableRecord):
                     family_test_names_snapshot__isnull=True,
                     format__in=("csv", "xlsx", "pdf"),
                 )
-                # The names behind a chosen-Family test review (#817): a CSV
-                # file only, from its own capture.
+                # The names behind a chosen-Family test review (#817), from
+                # its own capture; CSV, XLSX or PDF since 0049 (#966).
                 | models.Q(
                     report="family_test_names",
                     fact_set__isnull=True,
@@ -277,7 +277,7 @@ class ExportRequest(ImmutableRecord):
                     ministry_snapshot__isnull=True,
                     financial_snapshot__isnull=True,
                     family_test_names_snapshot__isnull=False,
-                    format="csv",
+                    format__in=("csv", "xlsx", "pdf"),
                 ),
                 name="export_report_known",
             ),

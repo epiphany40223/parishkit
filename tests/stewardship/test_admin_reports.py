@@ -513,3 +513,56 @@ def test_a_streaming_commands_usage_error_goes_to_standard_error(argv, streamed)
     written = err.getvalue() if streamed else out.getvalue()
     assert (out.getvalue() if streamed else err.getvalue()) == ""
     assert json.loads(written)["error"]["code"] == "usage"
+
+
+def test_log_csv_and_xlsx_carry_the_same_columns_and_cells():
+    """System logs' CSV and XLSX have one column set and the same cells (#966).
+
+    JSON Lines keeps the same records with the details as an object, and a
+    PDF is refused: the recorded exception to the three-format rule.
+    """
+    import csv
+    from zoneinfo import ZoneInfo
+
+    from openpyxl import load_workbook
+
+    from parishkit.stewardship.audit import log_reads
+
+    rows = [
+        {
+            "created_at": datetime(2054, 10, 5, 14, 30, tzinfo=UTC),
+            "source": "audit",
+            "level": None,
+            "event": "system_logs_exported",
+            # A formula-like actor: CSV guards it, XLSX keeps it as text.
+            "actor": "=1+2",
+            "actor_id": UUID("00000000-0000-4000-8000-000000000001"),
+            "correlation_id": UUID("00000000-0000-4000-8000-000000000002"),
+            "campaign_id": None,
+            "subject_id": None,
+            "details": {"count": "2", "outcome": "=succeeded"},
+        }
+    ]
+    zone = ZoneInfo("America/New_York")
+    table = list(
+        csv.reader(io.StringIO(log_reads.export_body(rows, "csv", zone).decode()))
+    )
+    book = load_workbook(io.BytesIO(log_reads.export_body(rows, "xlsx", zone)))
+    sheet = [
+        ["" if value is None else value for value in values]
+        for values in book.active.iter_rows(values_only=True)
+    ]
+    assert table[0] == sheet[0] == list(log_reads.EXPORT_COLUMNS)
+    # The cells match, except that CSV guards a formula-like cell with an
+    # apostrophe where XLSX stores it as literal text.
+    assert sheet[1] == [cell.removeprefix("'") for cell in table[1]]
+    assert sheet[1][-1] == "count=2; outcome==succeeded"
+    actor = list(log_reads.EXPORT_COLUMNS).index("actor_email")
+    assert table[1][actor] == "'=1+2" and sheet[1][actor] == "=1+2"
+    assert book.active.cell(2, actor + 1).data_type == "s"
+    assert sheet[1][5] == "00000000-0000-4000-8000-000000000001"
+    [record] = map(json.loads, log_reads.export_body(rows, "jsonl", zone).splitlines())
+    assert list(record) == list(log_reads.EXPORT_COLUMNS)
+    assert set(log_reads.EXPORT_FORMATS) == {"csv", "xlsx", "jsonl"}
+    with pytest.raises(ValueError):
+        log_reads.export_choice("pdf", "UTC")

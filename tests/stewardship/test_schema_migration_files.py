@@ -177,6 +177,9 @@ FROZEN = {
     "0048_restore_holds_after_release.sql": (
         "8f58646d41dac78b9cc4c996a05187d636c57249e7d5c0ce9c3072c7b3f6ed6c"
     ),
+    "0049_family_test_names_formats.sql": (
+        "255a01e671064c1811c778b8a04c810d6ec47adca6d629e3f519e17ecef212f7"
+    ),
 }
 
 

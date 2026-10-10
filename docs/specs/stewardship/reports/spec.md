@@ -127,7 +127,8 @@ and never drops a character of a value it draws, and characters the fonts
 cannot draw become visible escapes. Inside the frame, the Family-code
 directory is a zebra-striped table whose heading row repeats on every page,
 with each phone number and each head's emails on its own line; each response
-list is the same table; the postal mail merge is a grid of address cards.
+list and the Census changes list is the same table; the postal mail merge is a
+grid of address cards.
 
 A field/value report (additional information, Ministry, financial, Family
 test names, packets) prints one card per record. Which columns each format
@@ -1270,12 +1271,14 @@ reaches ParishSoft (with *Hide automatic changes* for staff working by
 hand), kind of change (contact details, moved, deceased, new Member), a
 Family name or DUID search, and submitted date. Sorting, paging and filters
 act [in place](../ui-conventions/spec.md#in-place-controls). The filtered list
-downloads as CSV or XLSX (PDF later) with the page's values,
-audited with a count like the other report downloads. The files keep their
-earlier columns in their earlier order, so a spreadsheet that reads columns
-by position keeps working: Family first, Submitted after Status, then the
-page's Member DUID as a new last column, worded as on the page (the DUID,
-"New Member", or blank for a household change)
+downloads as CSV, XLSX or PDF, every format with the page's values
+([downloaded files](../ui-conventions/spec.md#downloaded-files)), audited with
+a count like the other report downloads. The PDF is the shared table, its
+Submitted time in the parish's date format; CSV and XLSX give it in ISO 8601.
+The files keep their earlier columns in their earlier order, so a spreadsheet
+that reads columns by position keeps working: Family first, Submitted after
+Status, then the page's Member DUID as a new last column, worded as on the
+page (the DUID, "New Member", or blank for a household change)
 ([#932](https://github.com/epiphany40223/parishkit/issues/932)).
 
 The read-only page and its downloads are enough for staff to apply every
@@ -1401,8 +1404,8 @@ leave comes from a Member who cannot participate in any ministries.
 
 **Access:** Admin only.
 
-The report behavior, levels, source filters, timezone export, and CSV and
-JSON Lines formats are defined by the
+The report behavior, levels, source filters, timezone export, and CSV, XLSX
+and JSON Lines formats are defined by the
 [Admin log specification](../admin-portal/spec.md#logs).
 It is included in the shared report/export audit pipeline but not offered to
 Staff.

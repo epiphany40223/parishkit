@@ -2009,27 +2009,34 @@ only to the Testing recipient.
 
 The page shows each Family's name beside its DUID so the Administrator
 recognizes the Families; the command line prints none.
-`test families-preview … --names --timezone ZONE [--request-key UUID]`
+`test families-preview … --names --timezone ZONE [--format FORMAT]
+[--request-key UUID]`
 ([#817](https://github.com/epiphany40223/parishkit/issues/817)) runs the
 same review and, in its transaction, captures the names the page's
 `prepare` read (`snapshot_family_names`) into a `family_test_names` export
-(CSV only) keyed by the preview's request key, through the shared
+keyed by the preview's request key, through the shared
 [export lifecycle](#reports-and-exports): the worker renders the file and
 `export fetch` downloads it, so the names reach only the file. The document
 is the preview's with `export`, the export's `export status` document (it is
-null without `--names`). `--names` and `--timezone` go together (`usage`
+null without `--names`). The file is CSV (the default), XLSX or PDF
+(`--format`, [#966](https://github.com/epiphany40223/parishkit/issues/966)),
+each with the same Family DUID and Family name columns. `--names` and
+`--timezone` go together, and `--format` needs `--names` (`usage`
 otherwise); without `--request-key` the new key is written to standard error
 first. Unlike the plain review, it changes state: it admits as a form post
 (recording activity) and runs in the export commands' scope, and records the
 export service's `export_requested` and, only for a new export,
 `admin_cmd_export_family_test_names`; the catalog names that event. The same
-key with the same revision, DUIDs and time zone returns the same export; the
+key with the same revision, DUIDs, format and time zone returns the same
+export; the
 same key for another selection is `invalid`. The capture
 (`stewardship_family_test_names_export_snapshot`, migration 0037) is
 guarded in SQL: only an Administrator, for the current Testing draft, with
 one `{"duid", "name"}` row per reviewed DUID in the review's order; the
-export needs the configure capability to read, as the page does. An expired
-file is regenerated from the retained capture.
+export needs the configure capability to read, as the page does. Migration
+0037 admitted only CSV for this kind; `0049_family_test_names_formats.sql`
+widens that arm of `export_report_known` to CSV, XLSX and PDF. An expired
+file is regenerated from the retained capture, in its original format.
 
 ### Reports and exports
 
@@ -2070,7 +2077,8 @@ the page shows or a Family's or member's DUID from an entry's detail (see
 [personal data on the command line](#personal-data-on-the-command-line)).
 `logs export` needs a full-scope session, admits as the download's form
 post does, and records the page's `system_logs_exported` with its count;
-it streams the page's exact file. As on the page, the export event is
+it streams the page's file (CSV, XLSX or JSON Lines; CSV and JSON Lines
+byte for byte). As on the page, the export event is
 recorded once the file is built, before its bytes are written, so a
 download that breaks off is still recorded. The page keeps no record of a
 download, so the command keeps none either, and `export fetch` does not
@@ -2550,8 +2558,11 @@ amends this specification first. Two later features did, each with its own
 forward migration specified where the feature is:
 `0037_family_test_names.sql` for the chosen-Family test names export
 ([#817](https://github.com/epiphany40223/parishkit/issues/817); see
-[Testing sends](#testing-sends)) and `0038_admin_command_failure_log.sql`
-for the [durable failure entry](#durable-failure-entry)
+[Testing sends](#testing-sends)), widened to every file format by
+`0049_family_test_names_formats.sql`
+([#966](https://github.com/epiphany40223/parishkit/issues/966)), and
+`0038_admin_command_failure_log.sql` for the
+[durable failure entry](#durable-failure-entry)
 ([#617](https://github.com/epiphany40223/parishkit/issues/617)).
 
 ## Testing requirements

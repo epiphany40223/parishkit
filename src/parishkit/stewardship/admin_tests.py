@@ -438,7 +438,7 @@ def preview_families(caller, service, revision_id, duids, *, request_key):
 
 
 def preview_families_with_names(
-    caller, service, revision_id, duids, *, request_key, zone, context
+    caller, service, revision_id, duids, *, request_key, zone, context, format="csv"
 ):
     """``test families-preview --names``: the review, and its names as a file.
 
@@ -447,8 +447,9 @@ def preview_families_with_names(
     the same transaction, captures the names it read
     (``snapshot_family_names``) into a ``family_test_names`` export keyed by
     the preview's request key, so the names reach only the file the worker
-    renders and ``export fetch`` downloads. The document is the preview's,
-    with ``export`` the export's ``export status`` document.
+    renders (as ``format``: CSV, XLSX or PDF) and ``export fetch`` downloads.
+    The document is the preview's, with ``export`` the export's ``export
+    status`` document.
 
     Unlike the plain review this changes state, so it admits as a form post
     does (recording activity, so a full-scope session) and runs in the
@@ -457,7 +458,7 @@ def preview_families_with_names(
     the Administrator rechecked before and after. It records the export
     service's ``export_requested`` and, only for a new export,
     ``admin_cmd_export_family_test_names``. The same key again with the same
-    revision, DUIDs and time zone returns the same export (``export``
+    revision, DUIDs, format and time zone returns the same export (``export``
     unchanged, no new event); the same key for another selection is
     ``invalid``, as the export forms' 409.
     """
@@ -511,6 +512,7 @@ def preview_families_with_names(
                 families=[(choice.duid, choice.name) for choice in preview.families],
                 browser_timezone=zone,
                 request_key=request_key,
+                format=format,
             )
             if not repeat:
                 _command_event(caller, actor, Action.ADMIN_CMD_EXPORT_FAMILY_TEST_NAMES)
