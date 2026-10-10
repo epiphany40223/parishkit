@@ -391,6 +391,7 @@ def test_sign_in_activity_is_a_closed_link_filter():
     assert set(query.activity_types) == {
         "admin_login",
         "admin_login_denied",
+        "admin_login_refused",
         "admin_logout",
         "admin_privileges_changed",
         "admin_reauthenticated",

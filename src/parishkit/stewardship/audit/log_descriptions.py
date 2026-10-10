@@ -77,10 +77,19 @@ DESCRIPTIONS = {
         "An Administrator confirmed their sign-in again for a protected action."
     ),
     # Sampled, anonymous evidence (accounts.auth_incidents): one entry per
-    # five minutes at most, never naming the attempt.
+    # five minutes at most, never naming the attempt. A verified account
+    # refused by the login rules is admin_login_refused instead.
     "admin_login_denied": _(
-        "Someone's sign-in to the portal was refused. At most one refusal is "
-        "recorded every five minutes, without saying who tried."
+        "Someone's sign-in to the portal was refused for a reason other than "
+        "the login rules, such as an expired or repeated sign-in attempt or "
+        "too many attempts. At most one is recorded every five minutes, "
+        "without saying who tried."
+    ),
+    # Named, bounded per account (accounts.auth_incidents, #953).
+    "admin_login_refused": _(
+        "A Google account's sign-in to the portal was refused: no login rule "
+        "gives it a role, or it was disabled. The actor is that account. It is "
+        "recorded at most once every ten minutes per account."
     ),
     "family_login": _("A Family signed in to the Family form."),
     # Session endings the sign-in code records under its ending reason.
@@ -614,6 +623,7 @@ DIRECT_AUDIT_TYPES = frozenset(
     {
         "admin_login",
         "admin_login_denied",
+        "admin_login_refused",
         "admin_logout",
         "admin_privileges_changed",
         "admin_reauthenticated",

@@ -197,6 +197,68 @@ def test_signed_denied_account_is_not_authorized(auth_service, google):
     assert not PortalSession.objects.exists()
 
 
+def refusals():
+    """Each named refusal's actor address, oldest first (#953)."""
+    return [
+        PortalUser.objects.get(pk=event.actor_id).email
+        for event in AuditEvent.objects.filter(
+            event_type="admin_login_refused"
+        ).order_by("created_at", "id")
+    ]
+
+
+def test_refused_account_is_named_once_per_window(auth_service, google, monkeypatch):
+    """A verified account policy refuses is named, bounded per account (#953).
+
+    It replaces the anonymous sample, carries no context, and a second
+    account gets its own entry inside the first one's window.
+    """
+    from parishkit.stewardship.accounts import auth_incidents
+    from parishkit.stewardship.audit.models import AuditContext
+
+    google[0].update(email="outsider@example.net", sub="outsider-subject")
+    assert signed_in()[1].status_code == 403
+    assert signed_in()[1].status_code == 403
+    assert refusals() == ["outsider@example.net"]
+    refused = AuditEvent.objects.get(event_type="admin_login_refused")
+    assert refused.subject_id is None
+    assert not AuditContext.objects.filter(event=refused).exists()
+    assert not AuditEvent.objects.filter(event_type="admin_login_denied").exists()
+    google[0].update(email="stranger@example.net", sub="stranger-subject")
+    assert signed_in()[1].status_code == 403
+    assert refusals() == ["outsider@example.net", "stranger@example.net"]
+    # Once the window has passed, the same account is named again.
+    monkeypatch.setattr(auth_incidents, "ACCOUNT_REFUSAL_INTERVAL", timedelta(0))
+    google[0].update(email="outsider@example.net", sub="outsider-subject")
+    assert signed_in()[1].status_code == 403
+    assert refusals() == [
+        "outsider@example.net",
+        "stranger@example.net",
+        "outsider@example.net",
+    ]
+    assert not PortalSession.objects.exists()
+
+
+def test_disabled_identity_is_a_named_refusal(auth_service, google):
+    """A disabled identity with an Administrator rule is refused and named."""
+    signed_in()
+    PortalUser.objects.update(disabled=True, version=F("version") + 1)
+    assert signed_in()[1].status_code == 403
+    assert refusals() == ["admin@example.org"]
+
+
+def test_anonymous_refusal_stays_a_sample_with_no_actor(auth_service, google):
+    """A replayed sign-in state names no one: the sampled record (#953)."""
+    client = Client(enforce_csrf_checks=True)
+    query = start(client)
+    data = {"code": "synthetic", "state": query["state"][0]}
+    assert client.get("/admin/oauth/callback", data).status_code == 302
+    assert client.get("/admin/oauth/callback", data).status_code == 403
+    denied = AuditEvent.objects.get(event_type="admin_login_denied")
+    assert denied.actor_id is None
+    assert not refusals()
+
+
 def test_google_state_is_one_use_and_unknown_state_never_calls_provider(
     auth_service, google
 ):

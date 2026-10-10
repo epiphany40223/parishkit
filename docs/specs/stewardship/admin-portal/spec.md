@@ -5309,10 +5309,19 @@ types internal type names one at a time:
   [session endings](../architecture/spec.md#identity-and-session-security)
   (sign out, inactivity or absolute expiry, access removed or all sessions
   signed out, a new sign-in that replaced the previous session, and a
-  session replaced by one carrying the person's changed roles); and
-- `admin_login_denied`, the sampled record of refused sign-ins: at most one
-  per deployment every five minutes, with no actor, so public traffic cannot
-  allocate unbounded audit rows.
+  session replaced by one carrying the person's changed roles);
+- `admin_login_refused`, a sign-in by a Google account that Google verified
+  and policy then refused (no rule, a rule with no role, or a disabled
+  identity). Its actor is that account's `PortalUser`, so the Actor column
+  names the address, and it carries no context. It is recorded at most once
+  per account every ten minutes: the account's row is locked while the last
+  ten minutes are checked, so repeated or concurrent attempts cannot flood the
+  log, and only verified identities reach it; and
+- `admin_login_denied`, the sampled record of every other refused sign-in
+  (a stale or repeated sign-in state, a provider error, a rate limit): at
+  most one per deployment every five minutes, with no actor, so public
+  traffic cannot allocate unbounded audit rows. A refusal recorded as
+  `admin_login_refused` is not also sampled.
 
 The server maps the choice to that closed `event_type` list. Operational
 entries are left out while it is chosen, since none is sign-in activity: the
@@ -5330,8 +5339,16 @@ choice is a link filter, so a bookmark or the page's own link keeps it, and the
 download carries it, so the file holds exactly the entries the page lists. The
 Portal users page links to it ([portal user management](#portal-user-management)).
 
-Per-user sign-in history, a per-account record of refused sign-ins by
-verified Google identities and a list of live Admin sessions are later
+A refused account's address is personal data. The entry stores only the
+account's `PortalUser` id; the address it shows is the one that row already
+holds, because every verified sign-in attempt records its identity whether or
+not policy admits it ([administration user and
+policy](../data/spec.md#administration-user-and-policy)). The entry is kept
+like every other audit event, indefinitely by default
+([retention and deletion](../data/spec.md#retention-and-deletion)), and is
+seen only by Administrators.
+
+Per-user sign-in history and a list of live Admin sessions are later
 slices of #953.
 
 ## Campaign purge
