@@ -23,9 +23,8 @@
 <section class="panel"><h2>{% translate "Campaign totals" %}</h2>
 <dl>{% for label,value in cards %}<dt>{{ label }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>
 </section>
-{% if funnel_stages %}<section class="panel" data-digest-funnel><h2>{% translate "Response funnel" %}</h2>
-<div class="table-scroll"><table>
-<caption>{{ funnel_caption }}</caption>
+{% if funnel_stages %}<section class="panel" data-digest-funnel><h2 id="digest-funnel-heading">{% translate "Response funnel" %}</h2>
+<div class="table-scroll"><table aria-labelledby="digest-funnel-heading">
 <thead><tr><th scope="col">{% translate "Stage" %}</th><th scope="col">{% translate "Families" %}</th><th scope="col">{% translate "Compared with invited" %}</th></tr></thead>
 <tbody>{% for label, count, portion, note in funnel_stages %}<tr><th scope="row">{{ label }}{% if note %} <small>({{ note|lower }})</small>{% endif %}</th><td>{{ count|number }}</td><td>{{ portion }}</td></tr>{% endfor %}</tbody>
 </table></div>

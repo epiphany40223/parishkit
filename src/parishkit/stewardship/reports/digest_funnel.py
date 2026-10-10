@@ -1,8 +1,12 @@
 """The response funnel in the daily digest (#477, PR 7 slice 1).
 
 The digest states every figure as of the end of its report day (#721), so
-its funnel is the same five stages and three side figures as the Response
-dashboard (``response_metrics``), counted at that instant. The funnel reads
+its funnel is the same five stages as the Response dashboard
+(``response_metrics``), counted at that instant, with one of the dashboard's
+side figures. The Administrator trimmed the digest (#969): it has no caption
+and leaves out "Invitations not sent (already responded)" and "Submitted
+without a delivered invitation", which stay on the dashboard and in
+``pk-admin report responses``. The funnel reads
 durable timestamps only, so counting it again later gives the same numbers:
 the compiling worker counts it for the email and the saved report page
 counts it again when it is opened, the way both read the ParishSoft data age
@@ -30,13 +34,6 @@ from .response_metrics import ResponseMetrics, ResponseScope, response_metrics
 TESTING_NOTE = (
     "Testing digests leave out the response funnel. To see this rehearsal's "
     "funnel, open the Response dashboard's Testing view."
-)
-# Under the funnel's heading: what the percentages are out of, and why its
-# Submitted can differ from the campaign totals above it.
-CAPTION = (
-    "Families at each stage by the end of the day. Percentages are of the "
-    "Families invited. The campaign totals above count the participating "
-    "Families instead, so their numbers can differ."
 )
 # The funnel's heading in the email's text part.
 FUNNEL_HEADING = "Response funnel (Families):"
@@ -81,17 +78,17 @@ def stage_rows(metrics):
 
 
 def figure_rows(metrics):
-    """The three figures reported beside the funnel, as (label, count)."""
-    return (
-        ("Invitations not sent (already responded)", metrics.skipped_responded),
-        ("Submitted without a delivered invitation", metrics.submitted_uninvited),
-        ("Submitted more than once", metrics.submitted_again),
-    )
+    """The digest's figures beside the funnel, as (label, count).
+
+    Only "Submitted more than once" (#969); the other dashboard figures are
+    left out of the digest but still counted in ``ResponseMetrics``.
+    """
+    return (("Submitted more than once", metrics.submitted_again),)
 
 
 def funnel_text(metrics):
     """The funnel as plain-text lines for the email's text part."""
-    lines = [FUNNEL_HEADING, CAPTION]
+    lines = [FUNNEL_HEADING]
     lines += [
         f"{label}: {count:,} ({portion})" + (f" — {note.lower()}" if note else "")
         for label, count, portion, note in stage_rows(metrics)
