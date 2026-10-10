@@ -220,6 +220,9 @@ def test_the_live_check_says_what_keeps_a_date_from_review(auth_service, google)
     check = reverse("admin:campaign_end_date_check")
     assert f'data-live-check="{check}"' in page.content.decode()
     assert 'data-live-check-saved="2054-10-31"' in page.content.decode()
+    # The read-only saved settings beside it never repeat the form's ids.
+    assert page.content.decode().count('id="id_end_date"') == 1
+    assert 'id="saved_end_date"' in page.content.decode()
     before = ConfigurationChangeRequest.objects.count()
 
     def answer(value, base=None):

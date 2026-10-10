@@ -230,6 +230,8 @@ def components(context, admin):
         form = setup_help.apply(
             CampaignSettingsForm(
                 None,
+                # Read-only, as the view draws a locked page (#944).
+                auto_id="saved_%s",
                 initial=CAMPAIGN_VALUES
                 | {"ministry": True, "ministry_leader_roles": DEFAULT_ROLES},
                 ministries=[("4", "Community outreach")],
@@ -352,7 +354,10 @@ def components(context, admin):
                         "active_configuration": {"name": "Sample campaign"},
                     },
                     "editable": False,
+                    # Read-only beside the end-date form, as the view draws
+                    # it, so no id repeats (#944).
                     "form": CampaignForm(
+                        auto_id="saved_%s",
                         initial=CAMPAIGN_VALUES,
                         ministries=[("4", "Community outreach")],
                         funds=[("9", "Offertory")],

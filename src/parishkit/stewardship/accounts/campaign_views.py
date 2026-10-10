@@ -493,12 +493,20 @@ def _leaders_preview(request, service, actor, state, campaign, settings, form):
     )
 
 
-def _settings_form(configuration, campaign, data=None, *, digest=None, source=None):
+def _settings_form(
+    configuration,
+    campaign,
+    data=None,
+    *,
+    digest=None,
+    source=None,
+    auto_id="id_%s",
+):
     """The campaign's settings form, drawn from its applied values.
 
     ``digest`` is the version the form is drawn at (the current one unless
     an in-place answer keeps the reader's); ``source`` the promoted source
-    for the Ministry and fund names.
+    for the Ministry and fund names; ``auto_id`` the form's id pattern.
     """
     previous = campaign.active_configuration.values
     ministries, funds = _catalog(configuration, source, previous)
@@ -515,6 +523,7 @@ def _settings_form(configuration, campaign, data=None, *, digest=None, source=No
     initial["ministry_leader_roles"] = shown
     form = CampaignSettingsForm(
         data,
+        auto_id=auto_id,
         initial=initial,
         previous=previous,
         ministries=ministries,
@@ -659,6 +668,10 @@ def campaign_settings(request, campaign_id):
                 else None,
                 digest=digest,
                 source=source,
+                # Locked, the form is drawn read-only beside a live
+                # campaign's end-date form, so its ids must not repeat that
+                # form's id_end_date (#944).
+                auto_id="id_%s" if editable else "saved_%s",
             )
             if leaders and action == "preview":
                 if not _leaders_editable(configuration, campaign, editable):

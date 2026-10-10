@@ -114,7 +114,7 @@ def test_review_and_apply_the_end_date_in_place(page, component_origin):
     reviews = answer_reviews(page, component_origin, LIVE_END_REVIEW, address=LIVE_END)
     posts = count_requests(page, "POST", LIVE_END)
     checked = opened(page, component_origin)
-    field = page.get_by_label("Campaign end date")
+    field = page.locator("#end-date").get_by_label("Campaign end date")
     review = page.get_by_role("button", name="Review changes")
     hint = page.locator("#settings-complete-hint")
     # The saved date: nothing to review yet, and nothing wrong either.
@@ -159,7 +159,7 @@ def test_a_date_that_cannot_be_reviewed_says_why_at_the_field(
     marked in error, and Review stays unavailable; nothing moves, and a
     date the check clears takes it all back."""
     checked = opened(page, component_origin)
-    field = page.get_by_label("Campaign end date")
+    field = page.locator("#end-date").get_by_label("Campaign end date")
     review = page.get_by_role("button", name="Review changes")
     error = page.locator("#id_end_date_error")
     top = page.evaluate(REVIEW_TOP)
@@ -191,7 +191,7 @@ def test_the_saved_date_again_needs_no_check(page, component_origin):
     """Going back to the saved date clears an error and holds Review as
     unchanged, without asking the server."""
     checked = opened(page, component_origin)
-    field = page.get_by_label("Campaign end date")
+    field = page.locator("#end-date").get_by_label("Campaign end date")
     review = page.get_by_role("button", name="Review changes")
     field.fill("2026-10-05")
     visible(page.locator("#id_end_date_error"))
@@ -222,7 +222,7 @@ def test_a_check_that_cannot_answer_keeps_review_held(
     moving anything; the next edit and pageshow check again."""
     failing = {"2054-10-20": status}
     checked = opened(page, component_origin, failing=failing)
-    field = page.get_by_label("Campaign end date")
+    field = page.locator("#end-date").get_by_label("Campaign end date")
     review = page.get_by_role("button", name="Review changes")
     error = page.locator("#id_end_date_error")
     hint = page.locator("#settings-complete-hint")
@@ -263,7 +263,7 @@ def test_a_new_date_takes_the_old_error_away_before_its_check(page, component_or
     live check's pageshow re-check sees it."""
     held = []
     opened(page, component_origin, held=held)
-    field = page.get_by_label("Campaign end date")
+    field = page.locator("#end-date").get_by_label("Campaign end date")
     error = page.locator("#id_end_date_error")
     hint = page.locator("#settings-complete-hint")
     field.fill("2026-10-05")
@@ -300,7 +300,7 @@ def test_a_late_answer_for_an_earlier_date_is_ignored(page, component_origin):
 
     held = []
     checked = opened(page, component_origin, held=held)
-    field = page.get_by_label("Campaign end date")
+    field = page.locator("#end-date").get_by_label("Campaign end date")
     review = page.get_by_role("button", name="Review changes")
     error = page.locator("#id_end_date_error")
     # The clear date's check waits; a past date is typed and answered first.
@@ -334,7 +334,7 @@ def test_the_server_still_refuses_a_review_the_check_cleared(page, component_ori
     combined date-change review for stranded mail."""
     answer_reviews(page, component_origin, LIVE_END_REFUSED, 400, address=LIVE_END)
     opened(page, component_origin)
-    page.get_by_label("Campaign end date").fill("2054-11-15")
+    page.locator("#end-date").get_by_label("Campaign end date").fill("2054-11-15")
     review = page.get_by_role("button", name="Review changes")
     enabled(review)
     review.click()
