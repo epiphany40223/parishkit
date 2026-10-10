@@ -5314,14 +5314,20 @@ types internal type names one at a time:
   signed out, a new sign-in that replaced the previous session, and a
   session replaced by one carrying the person's changed roles);
 - `admin_login_refused`, a sign-in by a Google account that Google verified
-  and policy then refused (no rule, a rule with no role, or a disabled
-  identity). Its actor is that account's `PortalUser`, so the Actor column
+  and policy then refused (no rule, a rule with no role, a disabled identity,
+  or the SQL session guard finding the Admin rule gone at the session
+  insert). Its actor is that account's `PortalUser`, so the Actor column
   names the address, and it carries no context. It is recorded at most once
-  per account every ten minutes: the account's row is locked while the last
-  ten minutes are checked, so repeated or concurrent attempts cannot flood the
-  log, and only verified identities reach it; and
+  per account every ten minutes, and at most 20 times per deployment in any
+  ten minutes across all accounts. Anyone can create Google accounts
+  cheaply, so the per-account bound alone would not bound the log; the
+  deployment-wide ceiling does. One deployment-wide advisory lock is held
+  while both bounds are checked, so concurrent refusals cannot pass either
+  bound together. A refusal past the ceiling falls back to the anonymous
+  sample below; and
 - `admin_login_denied`, the sampled record of every other refused sign-in
-  (a stale or repeated sign-in state, a provider error, a rate limit): at
+  (a stale or repeated sign-in state, a provider error, a rate limit
+  including the per-identity limit, or a named refusal past the ceiling): at
   most one per deployment every five minutes, with no actor, so public
   traffic cannot allocate unbounded audit rows. A refusal recorded as
   `admin_login_refused` is not also sampled.
@@ -5345,9 +5351,9 @@ sign-in activity ([portal user management](#portal-user-management)).
 
 A refused account's address is personal data. The entry stores only the
 account's `PortalUser` id; the address it shows is the one that row already
-holds, because every verified sign-in attempt records its identity whether or
-not policy admits it ([administration user and
-policy](../data/spec.md#administration-user-and-policy)). The entry is kept
+holds, because a verified sign-in attempt that passes the per-identity rate
+limit records its identity whether or not policy admits it ([administration
+user and policy](../data/spec.md#administration-user-and-policy)). The entry is kept
 like every other audit event, indefinitely by default
 ([retention and deletion](../data/spec.md#retention-and-deletion)), and is
 seen only by Administrators.

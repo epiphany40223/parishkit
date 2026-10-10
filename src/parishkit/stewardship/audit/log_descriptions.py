@@ -78,18 +78,22 @@ DESCRIPTIONS = {
     ),
     # Sampled, anonymous evidence (accounts.auth_incidents): one entry per
     # five minutes at most, never naming the attempt. A verified account
-    # refused by the login rules is admin_login_refused instead.
+    # refused by the login rules is admin_login_refused instead, unless the
+    # deployment-wide ceiling on named refusals is reached.
     "admin_login_denied": _(
-        "Someone's sign-in to the portal was refused for a reason other than "
-        "the login rules, such as an expired or repeated sign-in attempt or "
-        "too many attempts. At most one is recorded every five minutes, "
-        "without saying who tried."
+        "Someone's sign-in to the portal was refused, for example an expired "
+        "or repeated sign-in attempt, too many attempts, or a refused Google "
+        "account after 20 were already named in ten minutes. At most one is "
+        "recorded every five minutes, without saying who tried."
     ),
-    # Named, bounded per account (accounts.auth_incidents, #953).
+    # Named, bounded per account and deployment-wide (accounts.auth_incidents,
+    # #953).
     "admin_login_refused": _(
         "A Google account's sign-in to the portal was refused: no login rule "
-        "gives it a role, or it was disabled. The actor is that account. It is "
-        "recorded at most once every ten minutes per account."
+        "gives it a role, it was disabled, or its access was removed during "
+        "the sign-in. The actor is that account. It is recorded at most once "
+        "every ten minutes per account, and for at most 20 accounts every ten "
+        "minutes."
     ),
     "family_login": _("A Family signed in to the Family form."),
     # Session endings the sign-in code records under its ending reason.

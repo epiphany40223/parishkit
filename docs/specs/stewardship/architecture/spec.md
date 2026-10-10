@@ -363,7 +363,9 @@ token paths, source addresses, or source/candidate/token fingerprints. They are
 not an exact attempt count or a replayable history of failed authentication.
 An Admin sign-in by a Google account that Google has verified and policy then
 refuses is instead recorded as `admin_login_refused`, naming that account as
-its actor, at most once per account every ten minutes
+its actor, at most once per account and at most 20 times per deployment
+every ten minutes; Google accounts are cheap to create, so past that ceiling
+such a refusal falls back to the anonymous sample
 ([sign-in activity](../admin-portal/spec.md#sign-in-activity)).
 Per-attempt accounting for distributed-abuse detection remains in the
 short-lived keyed telemetry described above when its backing store is available;
