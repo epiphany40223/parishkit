@@ -450,8 +450,9 @@ blocks the others.
 ## Admin page
 
 **Hosted files** is a page in the Admin menu's **Parish data** group, after
-Ministries, at `/admin/parish/files/` (formerly `/admin/files/`, which
-redirects). It is registered in the
+Ministries, at `/admin/parish/files/` (formerly `/admin/files/`, which is
+404 since [#864](https://github.com/epiphany40223/parishkit/issues/864)). It
+is registered in the
 [navigation registry](../admin-portal/spec.md#admin-navigation), with its
 form-action routes classified as non-pages. Page text uses plain words: the
 slug is labelled **Placeholder name**.
@@ -533,9 +534,8 @@ placeholder reference mentions `{{ file.<slug> }}` and links to this page.
 ## Operations
 
 - **Ingress**: only `POST /admin/parish/files/uploads/` admits a request body
-  of up to 11 MB (a 10 MB file plus form overhead), and so does its old address
-  `/admin/files/upload`, which a form left open re-posts to through a 308
-  redirect. Every other route keeps the 6 MB
+  of up to 11 MB (a 10 MB file plus form overhead); its old address
+  `/admin/files/upload` is not kept (#864). Every other route keeps the 6 MB
   `request_body` limit in [production ingress](../operations/spec.md#production-ingress-and-tls).
   The view refuses a `Content-Length` over 11 MB before reading the body.
   Django's file-upload settings keep spooling files over 5 MB to the web
