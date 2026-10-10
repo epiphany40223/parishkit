@@ -28,7 +28,8 @@ other is corrected to match.
   in its own specification, with the decision that allows it, and the
   convention below names the exception.
 
-Each convention gives the **rule**, **why** it exists, the **shared code**
+Each convention gives the **rule** (a short bold summary, or the section's
+text when that states it directly), **why** it exists, the **shared code**
 that implements it (a file and function, template tag or CSS class; new pages
 use that code rather than building their own), and its **precedent** (the
 issue or pull request that decided it). Where a convention is still being
@@ -68,16 +69,14 @@ when it lands.
 
 ### Devices and browsers
 
-**Rule.** The Admin portal is desktop-first: it is laid out for a laptop
-screen and still works at phone width. The Family portal is mobile-first.
 **Why.** Staff work at desks; Families mostly answer on phones; neither may be
 locked out on the other kind of device. **Shared code.** `ui-v1.css` (one
 theme for both portals); the button-label browser test at 320 px and 1280 px
 ([button labels](#button-labels)). **Precedent.** The original presentation
 rules; #227 (laptop-first Admin layout); #614.
 
-The administration portal is desktop-first but fully functional on tablets and
-phones. The Family portal is mobile-first with equivalent desktop fidelity.
+The Admin portal is desktop-first, laid out for a laptop screen, but fully
+functional on tablets and phones. The Family portal is mobile-first with equivalent desktop fidelity.
 Both use one design system and parish branding, meet WCAG 2.2 AA, support the
 current and previous major versions of Chrome, Edge, Firefox, and Safari, and
 remain keyboard operable.
@@ -98,7 +97,9 @@ denominator displays an em dash rather than a misleading percentage.
 ### Dates and times
 
 **Rule.** Every Admin page shows and takes dates and times in the browser's
-own time zone, stored as UTC; no page labels a time "UTC". **Why.** Staff read
+own time zone, stored as UTC; no page labels a time "UTC". Exceptions: the
+ParishSoft refresh times stay in the parish's time zone, and the pages not yet
+moved keep the campaign zone until their #558 slice (below). **Why.** Staff read
 and type their own wall-clock time; a campaign-zone or UTC time on a page is a
 conversion the reader has to do in their head. **Shared code.**
 `data-local-instant` elements filled by `date-format-v1.js`;
@@ -108,10 +109,8 @@ browser-zone field (`data-browser-zone`) that `ui-v1.js` fills; the
 `test_browser_local_times.py` guard. **Precedent.** #558 (Administrator
 decision, 2026-10-04).
 
-All instants are stored as timezone-aware UTC. Every Admin page shows and takes
-dates and times in the browser's time zone, with no campaign-zone exceptions:
-schedule send times, campaign and financial date-times and report day buckets
-included (Administrator decision, 2026-10-04,
+The rule covers schedule send times, campaign and financial date-times and
+report day buckets too (Administrator decision, 2026-10-04,
 [#558](https://github.com/epiphany40223/parishkit/issues/558)). A pure date
 with no time stays a calendar date and is never shifted. The rule governs how
 Admin pages show and take times; system definitions such as the campaign-local
@@ -127,7 +126,10 @@ twice when clocks fall back is the first occurrence; a time skipped when clocks
 spring forward is read with the offset in force before the change (2:30 AM
 becomes 3:30 AM daylight time), so the form is never refused for it. Emails,
 which cannot know a reader's browser, use the parish time zone and name it
-("9:15 PM Eastern"), never "UTC". Pages and emails move to these rules one
+("9:15 PM Eastern"), never "UTC", with one recorded exception: operational and
+security alert emails keep their UTC stamp ([date format](#date-format)),
+pending Administrator decision
+([#956](https://github.com/epiphany40223/parishkit/issues/956)). Pages and emails move to these rules one
 group at a time in the #558 PRs; the Ministry follow-up contact attempt is the
 first ([Admin portal](../admin-portal/spec.md#follow-up-workflows)), the System
 logs date filters the second ([Admin portal](../admin-portal/spec.md#logs)), and
@@ -175,8 +177,12 @@ timestamps as `2027-01-31 14:05:00-05:00` in the export's stated display time
 zone, with the UTC offset so the repeated hour when clocks fall back stays
 unambiguous; Excel may treat such offset timestamps as text), and XLSX, the
 spreadsheet-native export, stores native dates in Excel's built-in
-locale-aware formats (14 for dates, 22 for timestamps). Operational and security alert emails keep
-their UTC stamp, which the database renders identically.
+locale-aware formats (14 for dates, 22 for timestamps). Operational and
+security alert emails keep their UTC stamp, which the database renders
+identically; this is the recorded exception to the
+[dates and times](#dates-and-times) rule that emails never say "UTC", pending
+Administrator decision
+([#956](https://github.com/epiphany40223/parishkit/issues/956)).
 
 ### Accessibility and client behavior
 
@@ -222,7 +228,6 @@ comparing unlike units on one scale.
 
 ### JavaScript requirement
 
-**Rule.** The Admin portal requires JavaScript; the Family portal does not.
 **Why.** One script-driven behavior per control is simpler and better tested
 than a script path plus a no-script fallback; Families use whatever device
 they have. **Shared code.** The `js-required` class (`ui-v1.css`) removed by
@@ -245,8 +250,7 @@ gated and keeps working without script
 
 ### In-place controls
 
-**Rule.** An Admin control acts where the reader is: no page reload and no
-jump to the top. **Why.** Staff lose their place, their scroll position and
+**Why.** Staff lose their place, their scroll position and
 their unsaved typing on a reload. **Shared code.** `ui-v1.js` in-place
 regions (`data-in-place`, `data-table-region`, `data-in-place-region`),
 `live-status-v1.js` for status regions; `test_in_place_controls.py`.
@@ -486,11 +490,11 @@ as an error; a button greyed out with no reason reads as broken. **Shared
 code.** `ui-v1.js`: `data-require-complete` with `data-complete-hint` and
 `data-missing-hint`; `data-required-when` and `data-required-when-shown`;
 the acknowledgment gate (`data-acknowledgment-gated`); the time-entry gate;
-the change gate `data-require-change` (#924); the shared `holdButton` /
-`releaseButton` pair and `GATE_MARKS` list (#924), so gates never release a
+the change gate `data-require-change` (open #924); the shared `holdButton` /
+`releaseButton` pair and `GATE_MARKS` list (open #924), so gates never release a
 button another gate still holds; the `pageshow` re-check;
-`test_campaign_setup_gates.py`, `test_prerequisite_gates.py` (#946).
-**Precedent.** #553, #563 (and its slices, such as #946), #921 / #924.
+`test_campaign_setup_gates.py`, `test_prerequisite_gates.py` (open #946).
+**Precedent.** #553, #563 (and its slices, such as open #946), #921 / open #924.
 
 Known exception: a table's bulk action buttons give their reason as a
 visually hidden hint and a tooltip rather than a visible line, so ticking a
@@ -536,7 +540,7 @@ saves nothing. **Why.** A summary at the top of a long page, or an error found
 only on Save, sends the reader hunting. **Shared code.** `ui-v1.js` field
 errors (`data-field-error`, `clearFieldError`), `ui-v1.css` error styles;
 live no-save checks such as `refresh_schedule_check` in
-`accounts/integration_views.py` (#920). **Precedent.** #592, #562, #920.
+`accounts/integration_views.py` (open #920). **Precedent.** #592, #562, open #920.
 
 A field error is shown at that field: its message sits directly beside it,
 and the field is marked in error (`aria-invalid="true"`, described by the
@@ -572,8 +576,8 @@ Django-rendered ones included, through the shared page script.
 
 **Rule.** A change to configuration or data is made by editing, then
 **Review** (which shows each changed value, current and proposed), then
-**Apply** (or **Save**), after which the page follows the change's status in
-place until it is applied. Changes are saved by an explicit action, never
+**Apply** (or **Save**), after which the change's status is followed until it
+is applied. Changes are saved by an explicit action, never
 autosaved as the reader types or ticks. A checkbox may refresh a *view* on
 change (a filter such as "Include ended sessions"), because that saves
 nothing. **Why.** Review lets the reader see exactly what will change before
@@ -586,6 +590,11 @@ review (`data-table-sync`, `data-review-of`) in `ui-v1.js`
 filters only. **Precedent.** #532 (in-place review), #523
 ([preview lifetimes](../admin-portal/spec.md#preview-lifetimes)), #882 (New and
 Edit pages follow it).
+
+Current state, to be made consistent: only Parish settings and Campaign
+settings review, apply and follow the change in place
+([in-place review](#in-place-controls), #532); every other editor still uses
+its separate Review and Change status pages.
 
 Exception being removed: Portal users' role checkboxes autosave through an
 intent queue
@@ -603,9 +612,8 @@ and after every in-place swap. **Precedent.** #563, #736.
 
 ### Single-campaign interim
 
-**Rule.** Until the single-campaign change, every control whose only purpose
-is working with more than one campaign is shown greyed out with one shared
-tip, and the server refuses its action. **Why.** The system becomes
+**Rule.** Multi-campaign-only controls are greyed out with one shared tip
+until #145 removes them. **Why.** The system becomes
 single-campaign after this campaign; removing the controls piecemeal would
 leave half-working flows. **Shared code.** The `multi_campaign_control`
 template tag (`accounts/templatetags/stewardship.py`) and its tip
@@ -640,9 +648,7 @@ route to test and secure; Families cannot be asked to find a new link.
   addresses ([#864](https://github.com/epiphany40223/parishkit/issues/864)),
   so each answers 404: the addresses from before the scheme, those that named
   a campaign, the retired campaign choosers and the daily and weekly report
-  links in report emails sent before NAV-12. Family-facing addresses (the
-  emailed codes and links, the Family portal and its sign-in) are not Admin
-  addresses and do not change. A page for one record (an export, a digest
+  links in report emails sent before NAV-12. A page for one record (an export, a digest
   snapshot, a cleanup request) refuses a record whose campaign is not current
   ("This campaign is no longer the current campaign", 410 Gone) until the
   single-campaign change (#145).
@@ -654,8 +660,8 @@ layout ("Page not found") with a next step and a way back, never the plain
 text of the security middleware; nothing from the address is shown. Scripts
 get the closed JSON error. **Why.** A bare "Not Found" in a fixed-width font
 looks like a broken site. **Shared code.** `web/error_pages.py`
-(`not_found_response`, `BrowserErrorMiddleware`) and `error.html`.
-**Precedent.** #927, #930 (open). The general error-page rule is under
+(`BrowserErrorMiddleware`, and `not_found_response` (open #930)) and
+`error.html`. **Precedent.** #927, open #930. The general error-page rule is under
 [accessibility and client behavior](#accessibility-and-client-behavior).
 
 ## Admin page layout and help
@@ -881,9 +887,7 @@ time as the server does. The planned
 
 ### Admin tables
 
-**Rule.** Every Admin table uses the one shared table component, so paging,
-sorting, selection and styling behave the same everywhere. **Why.** Staff
-learn one table once. **Shared code.** `table-navigator.html`,
+**Why.** Staff learn one table once. **Shared code.** `table-navigator.html`,
 `table-sort-heading.html` and the `sort_heading` template tag,
 `table-selection.html`; `test_admin_tables.py`.
 **Precedent.** #478, #484, #488.
@@ -927,7 +931,10 @@ orders. In v1 that covers:
 - the Ministry report (Ministry; Member and Submitted in one Ministry's view);
 - the Ministry follow-up queue (Request, Member and Ministry).
 
-Extending those vocabularies is a schema change. Columns that are only
+Extending those vocabularies is a schema change; the DUID columns of the
+financial, Additional information and Ministry tables are the known gap
+([table column order](#table-column-order),
+[#960](https://github.com/epiphany40223/parishkit/issues/960)). Columns that are only
 controls (selection, actions, previews) never sort. Two short before/after
 lists of pending setting changes (credential selection and integration
 preview), the campaign mail test's at most ten reviewed Families and link
@@ -999,7 +1006,7 @@ through a selection column, and Edit opens the item's own page (the New page,
 filled in). **Why.** One pattern for every list of editable things; a dialog
 names exactly what will be removed. **Shared code.** The `table_actions`
 template tag, `components/confirm-dialog.html` and `data-confirm-open` in
-`ui-v1.js`. **Precedent.** #879, #882 (first user), #947 (second slice).
+`ui-v1.js`. **Precedent.** #879, #882 (first user), open #947 (second slice).
 
 A table whose rows can be acted on follows one pattern
 ([#879](https://github.com/epiphany40223/parishkit/issues/879)), built once
@@ -1060,9 +1067,18 @@ column and a DUID column, both sort. **Why.** A combined cell cannot be
 sorted or scanned by DUID, reads badly with a screen reader and copies badly
 into a spreadsheet; staff moving between pages should not re-learn each one.
 **Shared code.** `test_admin_table_columns.py` refuses a cell that prints a
-DUID label with a value (#941). **Precedent.** #932 (Administrator,
+DUID label with a value (open #941). **Precedent.** #932 (Administrator,
 2026-10-09, corrected 2026-10-10 to "most relevant column first", and the
-2026-10-10 rule that the Family name and DUID columns both sort), #941, #950.
+2026-10-10 rule that the Family name and DUID columns both sort), open #941,
+open #950.
+
+Known exceptions, which need a schema change: three report tables are ordered
+by an installed SQL selection with no DUID sort
+([Admin tables](#admin-tables)), so their DUID columns do not sort yet. They
+are Financial stewardship detail and the Additional information queue (Family
+DUID), and the Ministry report (Ministry DUID, and Member DUID in one
+Ministry's view). One forward migration adds those sorts
+([#960](https://github.com/epiphany40223/parishkit/issues/960)).
 
 ### Family and Member names
 
@@ -1098,11 +1114,11 @@ source, item and response references, row versions and similar). CSV and
 XLSX stay the complete audit files with every column. A download follows its
 page's column order. **Why.** Staff print and share these files; internal
 references mean nothing to a reader, but the audit files must stay complete.
-**Shared code.** `reports/pdf_design.py` and `reports/xlsx_design.py` (#929);
+**Shared code.** `reports/pdf_design.py` and `reports/xlsx_design.py` (open #929);
 `web/design_tokens.py`. The format rules for each file type (CSV neutralizing,
 money, headers) are in the reports'
 [shared report behavior](../reports/spec.md#shared-report-behavior).
-**Precedent.** #926, #929 (open).
+**Precedent.** #926, open #929.
 
 ## Family portal
 
