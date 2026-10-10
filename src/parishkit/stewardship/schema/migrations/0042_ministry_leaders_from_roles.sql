@@ -52,7 +52,9 @@
 -- code or link changes; the assignment and chair tables stay, unread.
 -- stewardship_export_authorized_v1 is unchanged: it never admitted Ministry
 -- leaders. stewardship_portal_session_admission_v1 is unchanged too: it
--- already admits a rule granting Ministry leader or higher. Each replaced body is its latest definition with only the change
+-- already admits a rule granting Ministry leader or higher.
+--
+-- Each replaced body is its latest definition with only the change
 -- described; none of them is SECURITY DEFINER, and CREATE OR REPLACE keeps
 -- their owners and grants. Reversing needs its own forward migration.
 SET LOCAL check_function_bodies = false;
