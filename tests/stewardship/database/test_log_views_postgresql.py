@@ -12,6 +12,7 @@ from django.db import connection, transaction
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
+from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit import log_reads, log_search, log_views
 from parishkit.stewardship.audit.log_rows import DETAIL_FIELDS, DETAIL_LIMIT
@@ -1018,3 +1019,80 @@ def test_a_read_past_its_limit_is_stopped_recorded_and_unavailable(
         assert stop["what"] == "statement_timeout"
         assert stop["elapsed_seconds"] >= 0 and "limit_seconds" in stop
         assert "task_id" not in stop
+
+
+def test_sign_in_activity_lists_every_admin_sign_in_type_together(auth_service, google):
+    """The Activity choice (#953) lists the Admin sign-in audit types, and
+    only those, newest first, naming the person; Same actor keeps it; a link
+    carries it; and the download holds exactly the page's entries."""
+    browser, _ = signed_in()
+    admin = PortalUser.objects.get(email="admin@example.org")
+    other = uuid4()
+    diagnostics(("ERROR",))
+    with transaction.atomic():
+        AuditEvent.objects.create(event_type="admin_step_up", actor_id=admin.pk)
+        AuditEvent.objects.create(event_type="admin_timeout", actor_id=other)
+        # Sampled and anonymous by design (accounts.auth_incidents).
+        AuditEvent.objects.create(event_type="admin_login_denied")
+        AuditEvent.objects.create(event_type="admin_logout", actor_id=admin.pk)
+        # A session replaced by one carrying changed roles also ends one.
+        AuditEvent.objects.create(
+            event_type="admin_privileges_changed", actor_id=admin.pk
+        )
+        record_action(
+            Action.DASHBOARD_VIEWED,
+            actor_kind=ActorKind.PORTAL_USER,
+            actor_id=admin.pk,
+            context={"outcome": Outcome.SUCCEEDED, "count": 1},
+        )
+    expected = [
+        "admin_privileges_changed",
+        "admin_logout",
+        "admin_login_denied",
+        "admin_timeout",
+        "admin_step_up",
+        "admin_login",
+    ]
+
+    def types(response):
+        """Each listed entry's stored type, top to bottom."""
+        return re.findall(
+            r"<td>([a-z_]+)<br><span class=\"help\">", response.content.decode()
+        )
+
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        grouped = post(browser, {"activity": "sign_in"})
+        assert grouped.status_code == 200
+        # Every sign-in type, newest first; no operational entry, and no other
+        # audit record such as the dashboard view or this page's own views.
+        assert types(grouped) == expected and levels(grouped) == []
+        body = grouped.content.decode()
+        assert body.count("<td>admin@example.org</td>") == 4
+        assert "Someone&#x27;s sign-in to the portal was refused." in body
+        # Same actor keeps the group: that person's sign-in activity only.
+        mine = post(browser, {"actor": str(admin.pk), "activity": "sign_in"})
+        assert types(mine) == [
+            "admin_privileges_changed",
+            "admin_logout",
+            "admin_step_up",
+            "admin_login",
+        ]
+        # A typed type narrows within the group; one outside it finds nothing.
+        assert types(
+            post(browser, {"activity": "sign_in", "event": "admin_timeout"})
+        ) == ["admin_timeout"]
+        outside = post(browser, {"activity": "sign_in", "event": "dashboard_viewed"})
+        assert b"No matching entries." in outside.content
+        # The Portal users page's link: a bookmarkable GET.
+        linked = browser.get(
+            URL, {"applied": "yes", "audit": "yes", "activity": "sign_in"}
+        )
+        assert linked.status_code == 200 and types(linked) == expected
+        assert browser.get(URL, {"activity": "everything"}).status_code == 400
+        # The download matches the page.
+        download = export(browser, {"activity": "sign_in", "format": "jsonl"})
+        records = [json.loads(line) for line in download.content.decode().splitlines()]
+        assert [record["type"] for record in records] == expected
+        assert {record["source"] for record in records} == {"Audit"}
+    # Each view and the download were audited as before, with counts only.
+    assert {"outcome": "succeeded", "count": 6} in views()

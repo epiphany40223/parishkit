@@ -42,8 +42,9 @@ LOG_SORTING = Sorting({"newest": ("time", True), "oldest": ("time", False)}, "ne
 # snapshot or page, so applying filters starts a new snapshot at page 1.
 PAGING = frozenset({"through", "page", "size", "sort"})
 # Filters that may travel in a web address, so a filtered view can be
-# bookmarked or linked (#536): the closed choices, the type, the Ministry,
-# the days with their zone, and the view's size and sort. Private filters
+# bookmarked or linked (#536): the closed choices, the Activity group
+# (#953), the type, the Ministry, the days with their zone, and the view's
+# size and sort. Private filters
 # stay in POST state, as the Admin tables rule requires: an address is kept
 # in the web server's access log and the browser's history (the page writes
 # its link there) and can travel on when pasted. So the identifiers (actor,
@@ -54,6 +55,7 @@ PAGING = frozenset({"through", "page", "size", "sort"})
 # to one reading. Those travel only in CSRF POST bodies, as before (#519).
 LINK_FIELDS = frozenset(
     {
+        "activity",
         "applied",
         "debug",
         "info",
@@ -105,6 +107,27 @@ LEGACY_SOURCES = frozenset({"both", "operational", "audit"})
 # SQL triggers, such as `admin_login`, so the two vocabularies here are not the
 # whole set; hiding the rest behind a fixed list would make them unsearchable.
 EVENTS = tuple(sorted({item.value for item in Action} | {item.value for item in Event}))
+# Fixed groups of audit types the Activity choice lists together (#953), so a
+# reader never types internal type names one at a time. Sign-in activity is
+# every recorded Admin portal sign-in, re-confirmation and session ending
+# (including a session replaced because the person's roles changed),
+# plus the sampled, anonymous record of refused sign-ins (no actor, by
+# design: ``accounts.auth_incidents``). All are audit records; no operational
+# entry belongs to a group, so choosing one leaves operational entries out.
+ACTIVITY_TYPES = {
+    "sign_in": (
+        "admin_login",
+        "admin_login_denied",
+        "admin_logout",
+        "admin_privileges_changed",
+        "admin_reauthenticated",
+        "admin_revoked",
+        "admin_step_up",
+        "admin_timeout",
+    ),
+}
+# The Activity choice's options, in the order the filter bar lists them.
+ACTIVITY_LABELS = (("", _("All activity")), ("sign_in", _("Sign-in activity")))
 # A type is searched as an exact identifier, never as free text: the same shape
 # the audit table's own check constraint enforces on every stored type.
 EVENT = re.compile(r"[a-z][a-z0-9_]{0,63}")
@@ -172,6 +195,7 @@ class LogQuery:
     navigator, heading and export form carries on with the other filters.
     """
 
+    activity: str = ""
     applied: str = ""
     debug: str = ""
     info: str = ""
@@ -221,6 +245,7 @@ class LogQuery:
             # A legacy source never comes with the audit tick that replaced it.
             or (query.source and (query.source not in LEGACY_SOURCES or query.audit))
             or (query.event and EVENT.fullmatch(query.event) is None)
+            or (query.activity and query.activity not in ACTIVITY_TYPES)
         ):
             raise ValueError("Invalid log filters.")
         if query.source:
@@ -292,6 +317,11 @@ class LogQuery:
             audit="" if self.source == "operational" else "yes",
             **{level.lower(): "yes" if level in levels else "" for level in LEVELS},
         )
+
+    @property
+    def activity_types(self):
+        """The audit types the Activity choice lists, or None for all activity."""
+        return ACTIVITY_TYPES.get(self.activity)
 
     @property
     def bounds(self):
@@ -462,6 +492,7 @@ def page_context(query, table, *, depth_limited=False, linked=False):
             ("audit", AUDIT_LABEL, query.audits),
         ],
         "events": EVENTS,
+        "activities": ACTIVITY_LABELS,
     }
 
 
