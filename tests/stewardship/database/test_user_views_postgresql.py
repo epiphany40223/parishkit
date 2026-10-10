@@ -264,6 +264,9 @@ def test_portal_users_are_not_exposed_to_other_roles(auth_service, google, role)
         response = browser.get(URL)
     assert response.status_code == 403
     assert b"admin@example.org" not in response.content
+    # Nor the users upgrade preview panel (#952), which only this page shows.
+    assert b"upgrade-preview" not in response.content
+    assert b"Upgrade preview" not in response.content
     assert views() == []
 
 
