@@ -212,6 +212,7 @@ def test_participation_census_and_talents_workbooks_share_the_style():
         family_name="Example",
         family_duid=10,
         who="Alex Example",
+        member_duid=101,
         label="Email",
         parishsoft_now="old@example.org",
         family_answer="new@example.org",
