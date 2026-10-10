@@ -566,6 +566,13 @@ def leader_post(browser, row, roles, *, version):
     )
 
 
+def leader_region(body):
+    """The leader-role panel's own in-place review region (#922, E2)."""
+    body = body.decode()
+    start = body.index('<div id="leader-roles-review" data-in-place-region>')
+    return body[start : body.index("</div>", start)]
+
+
 def test_a_live_campaign_changes_its_leader_roles_in_place(auth_service, google):
     """A live campaign keeps one editable leader-role form (#922), reviewed and
     applied in place under it; every other setting stays read-only.
@@ -601,13 +608,28 @@ def test_a_live_campaign_changes_its_leader_roles_in_place(auth_service, google)
         refused = leader_post(browser, row, roles, version=version)
         assert refused.status_code == 400 and message in refused.content.decode()
     review = leader_post(browser, row, ["Chairperson"], version=version)
-    shown = region(review.content)
+    # A second Review of the same version, refused below once the first is
+    # applied.
+    later = leader_post(browser, row, ["Staff"], version=version)
+    shown = leader_region(review.content)
     assert "Ministry leader roles" in shown and "Chairperson, Staff" in shown
+    # Its Apply answers into the leader-role panel's own region (E2).
+    assert 'action="#leader-roles-review"' in shown
+    assert 'data-review-of="leader-roles-form"' in shown
     response = post(browser, url(row), {"action": "confirm", "preview": token(review)})
     assert response["Location"].endswith("#settings-review")
     apply(store, response)
     row.refresh_from_db()
     assert row.active_configuration.values["ministry_leader_roles"] == ["Chairperson"]
+    # The change's status shows under the leader-role panel, not under the
+    # end date's (Administrator decision E2) ...
+    status = browser.get(response["Location"])
+    assert "Change status" in leader_region(status.content)
+    assert status.content.decode().count('id="settings-status-title"') == 1
+    # ... and so does a refused Apply (a preview now out of date).
+    stale = post(browser, url(row), {"action": "confirm", "preview": token(later)})
+    assert stale.status_code == 409
+    assert "This preview is out of date." in leader_region(stale.content)
     # The other settings stay locked whatever the browser posts.
     assert post(browser, url(row), fields(store, row, name="Locked")).status_code == 409
 

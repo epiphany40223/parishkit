@@ -61,6 +61,7 @@ from .campaign_forms import CampaignSettingsForm, LeaderRolesForm, initial_field
 from .campaign_preview import describe_changes
 from .limiting import LimiterUnavailable
 from .policy import Capability, allows
+from .request_models import ConfigurationChangeRequest
 from .request_patch import build_candidate
 from .sessions import authenticated_admin
 
@@ -268,6 +269,7 @@ def _page(
     end_held=False,
     status=200,
     leader_form=None,
+    review_in=None,
     **region,
 ):
     """Keep locked structural values visible without rendering mutation controls.
@@ -277,9 +279,16 @@ def _page(
     a live campaign's end-date form (#912), whose review uses that region;
     ``end_held`` says background work alone holds that form back (#944).
     A live campaign that asks about Ministries shows its leader-role form
-    (``leader_form``, #922) with that region under it.
+    (``leader_form``, #922) with a review region of its own under it, since
+    both live forms can show at once. ``review_in`` names the panel whose
+    region shows ``region`` (Administrator decision E2): "leaders" for the
+    leader-role form's Review, refusals and Change status, otherwise
+    "settings". It defaults to "leaders" when the leader-role form that was
+    posted is passed in.
     """
     leaders = _leaders_editable(configuration, campaign, editable)
+    if review_in is None:
+        review_in = "leaders" if leaders and leader_form is not None else "settings"
     if leaders:
         if leader_form is None:
             leader_form = _leader_form(
@@ -305,6 +314,7 @@ def _page(
             "editable": editable,
             "end_form": end_form,
             "leader_form": leader_form if leaders else None,
+            "review_in": review_in if leaders else "settings",
             "end_held": end_held,
             # The end-date live check compares the typed date with this
             # saved ISO date (ui-v1.js); templates never format dates.
@@ -324,7 +334,9 @@ def _page(
             ).exists(),
             **review_region(
                 "campaign_settings",
-                end_form if end_form is not None else form,
+                # A bound end-date form's errors are its own review's; the
+                # leader-role form shows its own errors beside its fields.
+                end_form if end_form is not None and review_in != "leaders" else form,
                 **region,
             ),
         },
@@ -428,13 +440,55 @@ def _with_leader_roles(values):
     return {**values, MINISTRY_LEADER_ROLES: effective_roles(values)}
 
 
-def _leaders_preview(request, service, actor, state, campaign, settings, form):
+def _leader_change(patch):
+    """Whether ``patch`` is a live leader-role change (#922).
+
+    That is the one campaign update of ``ministry_leader_roles`` alone that
+    ``_leaders_preview`` signs. Its refused Apply and its Change status show
+    under the leader-role panel, not the end date's (Administrator decision
+    E2), so the page reads which change it is answering for.
+    """
+    return (
+        isinstance(patch, list)
+        and len(patch) == 1
+        and isinstance(patch[0], dict)
+        and patch[0].get("section") == "campaigns"
+        and set(patch[0].get("values") or ()) == {MINISTRY_LEADER_ROLES}
+    )
+
+
+def _signed_leader_change(parameters):
+    """Whether a posted Apply's signed preview is a leader-role change.
+
+    An unreadable preview is not; its refusal shows where any other does.
+    """
+    try:
+        patch = signing.loads(parameters.get("preview", ""), salt=SALT)["patch"]
+    except (signing.BadSignature, KeyError, TypeError):
+        return False
+    return _leader_change(patch)
+
+
+def _receipt_in(receipt):
+    """The panel whose review region shows ``receipt``: see ``_page``."""
+    patch = (
+        ConfigurationChangeRequest.objects.filter(pk=receipt.request_id)
+        .values_list("patch", flat=True)
+        .first()
+    )
+    return "leaders" if _leader_change(patch) else None
+
+
+def _leaders_preview(
+    request, service, actor, state, campaign, settings, form, end_form=None
+):
     """Review a live campaign's leader-role change; nothing is requested yet.
 
     The change is one campaign update setting ``ministry_leader_roles``,
     which the installer and the SQL structural lock both admit while live.
     ``settings`` is the page's read-only settings form; ``form`` the bound
-    leader-role form.
+    leader-role form; ``end_form`` the live end-date form, redrawn unchanged
+    beside it when the page has one (#912).
     """
     configuration, fingerprint = state[0], state[-1]
 
@@ -448,6 +502,7 @@ def _leaders_preview(request, service, actor, state, campaign, settings, form):
             editable=False,
             status=status,
             leader_form=form,
+            end_form=end_form,
         )
 
     if not form.is_valid():
@@ -489,6 +544,7 @@ def _leaders_preview(request, service, actor, state, campaign, settings, form):
         settings,
         editable=False,
         leader_form=form,
+        end_form=end_form,
         review=review,
     )
 
@@ -587,7 +643,7 @@ def campaign_settings(request, campaign_id):
             service,
             passive=request.method != "POST" and "request" in request.GET,
         )
-        action, refusal, digest = None, None, None
+        action, refusal, digest, refused_in = None, None, None, None
         leaders = (
             request.method == "POST" and request.POST.get("editor") == LEADER_EDITOR
         )
@@ -630,6 +686,8 @@ def campaign_settings(request, campaign_id):
                     digest = reviewed_base(
                         request.POST, preview_salt(campaign_id) if live_end else SALT
                     )
+                    if not live_end and _signed_leader_change(request.POST):
+                        refused_in = "leaders"
         with (
             read_transaction()
             if request.method in {"GET", "HEAD"}
@@ -686,7 +744,14 @@ def campaign_settings(request, campaign_id):
                 leader_form = _leader_form(configuration, campaign, request.POST)
                 try:
                     response = _leaders_preview(
-                        request, service, actor, state, campaign, form, leader_form
+                        request,
+                        service,
+                        actor,
+                        state,
+                        campaign,
+                        form,
+                        leader_form,
+                        end_form=end_form,
                     )
                 except UserFacingStale as error:
                     response = _page(
@@ -695,6 +760,7 @@ def campaign_settings(request, campaign_id):
                         campaign,
                         form,
                         editable=False,
+                        end_form=end_form,
                         status=409,
                         leader_form=leader_form,
                         refusal=error.refusal,
@@ -712,6 +778,7 @@ def campaign_settings(request, campaign_id):
                     editable=editable,
                     end_form=end_form,
                     status=409,
+                    review_in=refused_in,
                     refusal=refusal,
                 )
             elif (
@@ -778,6 +845,7 @@ def campaign_settings(request, campaign_id):
                         and not editable
                         and live_end_held(state, campaign)
                     ),
+                    review_in=None if receipt is None else _receipt_in(receipt),
                     receipt=receipt,
                 )
         # Recheck access after the observation ends, so a GET's read-only

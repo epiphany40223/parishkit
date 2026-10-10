@@ -2683,8 +2683,9 @@
   // for now.) As the value changes:
   //   - empty: the data-require-complete gate holds Review with the form's
   //     data-missing-hint;
-  //   - the saved value: Review is held with data-unchanged-hint, and no
-  //     error is shown (nothing is wrong, there is just nothing to do);
+  //   - the saved value: nothing is checked and no error is shown (nothing
+  //     is wrong, there is just nothing to do); the form's change gate
+  //     (data-require-change, #924) holds Review with its own hint;
   //   - otherwise any earlier error is taken away (it was about another
   //     value) and Review is held (data-checking-hint) while, after a short
   //     pause, the whole form is posted to the check, which saves nothing.
@@ -2776,7 +2777,7 @@
         // Any error shown was about an earlier value.
         unmark();
         if (!value || value === form.dataset.liveCheckSaved) {
-          hold(value ? form.dataset.unchangedHint : "");
+          hold("");
           return;
         }
         hold(form.dataset.checkingHint);

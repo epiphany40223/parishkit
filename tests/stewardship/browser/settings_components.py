@@ -225,8 +225,10 @@ def components(context, admin):
         )
 
     def leaders(step, **region):
-        """A live campaign's page at ``step``: settings read-only, leader roles
-        in their own form with the review region under it (#922)."""
+        """A live campaign's page at ``step``: settings read-only, the end
+        date's panel (#912) and the leader roles in their own form with its
+        own review region under it, which shows the leader-role answers
+        (#922, Administrator decision E2)."""
         form = setup_help.apply(
             CampaignSettingsForm(
                 None,
@@ -269,7 +271,15 @@ def components(context, admin):
                     },
                     "editable": False,
                     "form": form,
+                    "end_form": LiveEndDateForm(
+                        initial={
+                            "end_date": date(2054, 10, 31),
+                            "base_digest": "a" * 64,
+                        }
+                    ),
+                    "end_saved": "2054-10-31",
                     "leader_form": leader_form,
+                    "review_in": "leaders",
                 }
                 | review_region("campaign_settings", None, **region),
             ),

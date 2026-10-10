@@ -117,10 +117,12 @@ def test_review_and_apply_the_end_date_in_place(page, component_origin):
     field = page.locator("#end-date").get_by_label("Campaign end date")
     review = page.get_by_role("button", name="Review changes")
     hint = page.locator("#settings-complete-hint")
-    # The saved date: nothing to review yet, and nothing wrong either.
+    # The saved date: nothing to review yet, and nothing wrong either; the
+    # shared change gate (#924) says so after Review.
+    unchanged = page.locator("#settings-form-unchanged-hint")
     assert field.input_value() == SAVED and review.is_disabled()
-    visible(hint)
-    assert hint.inner_text() == UNCHANGED
+    visible(unchanged)
+    assert unchanged.inner_text() == UNCHANGED
     assert field.get_attribute("aria-invalid") != "true"
     # The settings themselves stay read-only beside it.
     assert page.locator("fieldset[disabled]").count() == 1
@@ -130,6 +132,7 @@ def test_review_and_apply_the_end_date_in_place(page, component_origin):
     field.fill("2054-11-15")
     enabled(review)
     hidden(hint)
+    hidden(unchanged)
     assert checked == ["2054-11-15"]
     hidden(page.locator("#id_end_date_error"))
     before = page.evaluate(FORM_TOP)
@@ -199,7 +202,7 @@ def test_the_saved_date_again_needs_no_check(page, component_origin):
     hidden(page.locator("#id_end_date_error"))
     has_attribute(field, "aria-invalid", "false")
     assert review.is_disabled()
-    assert page.locator("#settings-complete-hint").inner_text() == UNCHANGED
+    assert page.locator("#settings-form-unchanged-hint").inner_text() == UNCHANGED
     assert checked == ["2026-10-05"]
 
 
