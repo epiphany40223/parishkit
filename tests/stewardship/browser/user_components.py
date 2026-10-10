@@ -1,6 +1,7 @@
 """The portal users review reuses the shared browser server and real row builders."""
 
 from datetime import UTC, datetime
+from uuid import NAMESPACE_URL, uuid5
 
 from django.template.loader import render_to_string
 
@@ -36,9 +37,16 @@ def components(context, admin):
     ]
 
     def identity(email, *, hosted=None, login=moment, disabled=False):
-        """One recorded Google identity; `login` is its last successful sign-in."""
+        """One recorded Google identity; `login` is its last successful sign-in.
+
+        Its id is stable per address, for the row's sign-in activity link.
+        """
         return dict(
-            email=email, hosted_domain=hosted, last_login=login, disabled=disabled
+            id=uuid5(NAMESPACE_URL, email),
+            email=email,
+            hosted_domain=hosted,
+            last_login=login,
+            disabled=disabled,
         )
 
     identities = [

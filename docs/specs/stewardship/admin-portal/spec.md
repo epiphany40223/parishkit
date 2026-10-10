@@ -3941,7 +3941,10 @@ The Admin user page contains sorted domain and exact-address tables. Rows show
 normalized value, effective roles, source, last login, and warnings. A small
 "See sign-in activity in System logs" link beside the page heading opens
 [sign-in activity](#sign-in-activity) on System logs, with only the closed
-link filters in its address. Role
+link filters in its address. Each exact-address row's last-login cell has a
+"Sign-in activity" link-styled button per recorded Google identity for that
+address; it opens the same view narrowed to that identity as its actor, with
+the identity in the CSRF POST body, never in an address. Role
 checkbox changes autosave through a `ConfigurationChangeRequest` with a
 transient Applying/Applied/error indicator; each request uses the expected
 active YAML digest to prevent lost updates. A security-policy change is
@@ -5337,7 +5340,8 @@ time, and the Actor column names the person by address. "Same actor" on an
 entry carries the choice, so it lists that person's sign-in activity. The
 choice is a link filter, so a bookmark or the page's own link keeps it, and the
 download carries it, so the file holds exactly the entries the page lists. The
-Portal users page links to it ([portal user management](#portal-user-management)).
+Portal users page links to it, and to each exact-address identity's own
+sign-in activity ([portal user management](#portal-user-management)).
 
 A refused account's address is personal data. The entry stores only the
 account's `PortalUser` id; the address it shows is the one that row already
@@ -5348,8 +5352,7 @@ like every other audit event, indefinitely by default
 ([retention and deletion](../data/spec.md#retention-and-deletion)), and is
 seen only by Administrators.
 
-Per-user sign-in history and a list of live Admin sessions are later
-slices of #953.
+A list of live Admin sessions is a later slice of #953.
 
 ## Campaign purge
 

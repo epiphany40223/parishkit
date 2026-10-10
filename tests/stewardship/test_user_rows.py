@@ -1,6 +1,7 @@
 """Database-free review rows for login rules, provenance and assignments."""
 
 from datetime import UTC, datetime
+from uuid import UUID
 
 from parishkit.stewardship.accounts.user_rows import (
     AppliedPolicy,
@@ -152,6 +153,17 @@ def test_several_google_identities_for_one_address_are_grouped():
     ]
     _, both = address_rows(AppliedPolicy(records, [old, old | {"last_login": None}]))
     assert text(both["warnings"])[0].startswith("All 2 recorded Google identities")
+
+
+def test_each_recorded_identity_links_its_sign_in_activity():
+    """An address row lists its identities' ids, in a stable order (#953)."""
+    records = [address(), address("moved@example.org", roles=("staff",))]
+    first = identity("moved@example.org") | {"id": UUID(int=2)}
+    second = identity("moved@example.org") | {"id": UUID(int=1)}
+    for identities in ([first, second], [second, first]):
+        admin, moved = address_rows(AppliedPolicy(records, identities))
+        assert moved["accounts"] == [str(UUID(int=1)), str(UUID(int=2))]
+        assert admin["accounts"] == []
 
 
 def test_assignments_relying_on_a_domain_rule_use_the_real_hosted_claim():

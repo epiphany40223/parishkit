@@ -114,6 +114,36 @@ def test_administrator_reviews_rules_provenance_and_warnings(auth_service, googl
             "/admin/system/logs/?applied=yes&amp;audit=yes&amp;activity=sign_in"
         )
         assert browser.get(link.group(1).replace("&amp;", "&")).status_code == 200
+        # Each exact-address identity links to its own sign-in activity
+        # (#953), its account id only in the POST body. The refused attempt
+        # above is listed there, naming the address.
+        blocked = PortalUser.objects.get(email="blocked@example.org")
+        fields = dict(
+            re.findall(
+                r'<input type="hidden" name="(\w+)" value="([^"]*)">',
+                re.search(
+                    r'<form method="post" action="/admin/system/logs/" '
+                    r'class="inline-form">(.*?)</form>',
+                    row(body, "blocked@example.org"),
+                    flags=re.S,
+                ).group(1),
+            )
+        )
+        assert fields.pop("csrfmiddlewaretoken")
+        assert fields == {
+            "applied": "yes",
+            "audit": "yes",
+            "activity": "sign_in",
+            "actor": str(blocked.pk),
+        }
+        assert 'aria-label="Sign-in activity for blocked@example.org"' in body
+        assert "/admin/system/logs/" not in row(body, "leader@example.org")
+        history = browser.post(
+            "/admin/system/logs/",
+            fields | {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value},
+        ).content.decode()
+        assert re.findall(r"<td>([a-z_]+)<br>", history) == ["admin_login_refused"]
+        assert "<td>blocked@example.org</td>" in history
         # Identifying values never travel in a URL.
         assert browser.get(URL + "?email=blocked@example.org").status_code == 400
         # With a genuine CSRF token, so the view itself refuses the method.
