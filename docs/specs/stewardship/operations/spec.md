@@ -655,7 +655,11 @@ Administrator may override.
       uses (recorded identities, and the ParishSoft Member names of only the
       active rules' and recorded identities' addresses, with no address
       argument, so it is no lookup for any other address); the command
-      then activates the converted configuration. SQL's activation guard
+      then activates the converted configuration. A compromised web
+      database login can still insert a portal user (a recorded Google
+      identity) for any address and then read that address's names. That is
+      weaker than its existing ability to match an Admin rule, and each guess
+      is recorded. SQL's activation guard
       refuses it, and any other activation into the users form, unless every
       address that held Administrator keeps an Administrator user.
    3. **Swap functions:** the second migration replaces the SQL functions.
