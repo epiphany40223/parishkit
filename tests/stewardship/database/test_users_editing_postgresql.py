@@ -280,3 +280,52 @@ def test_sql_refuses_a_users_recovery_that_changes_more_than_the_role(
         recover_admin(store, **kwargs)
     assert users(store)["staff@example.org"] == ("staff", "staff")
     assert coherent_configuration(store)
+
+
+def test_recovery_runs_as_the_admin_recovery_login_in_every_state(
+    tmp_path, monkeypatch
+):
+    """D2 as the real offline login: after a refused upgrade, and after one.
+
+    The admin-recovery login records SQL's refusal of an upgrade and
+    restores the base, recovers an Administrator on the sign-in rules, then
+    converts and recovers another as a users Administrator. Every
+    Administrator before each step is still one after it.
+    """
+    from parishkit.stewardship.deployment import ServiceRole
+
+    from .test_background_grants_postgresql import task_login
+    from .test_recovery_session_grants_postgresql import admit
+    from .test_users_upgrade_postgresql import refuse_in_sql
+
+    store, _, _ = initialized(
+        tmp_path, [address(), address("second@example.org", ("administrator",))]
+    )
+    with task_login(ServiceRole.ADMIN_RECOVERY):
+        admit()
+        with monkeypatch.context() as patched:
+            refuse_in_sql(patched)
+            refused_result = upgrade.upgrade_users(
+                store, **upgrade_arguments(["admin@example.org"])
+            )
+        assert refused_result.state == "failed"
+        coherent_configuration(store)
+        kwargs = recovery_arguments()
+        assert recover_admin(store, **kwargs).state == "applied"
+        administrators = [
+            "admin@example.org",
+            "replacement@example.org",
+            "second@example.org",
+        ]
+        assert (
+            upgrade.upgrade_users(store, **upgrade_arguments(administrators)).state
+            == "applied"
+        )
+        again = recovery_arguments() | {
+            "target_email": "third@example.org",
+            "confirmed_email": "third@example.org",
+        }
+        assert recover_admin(store, **again).state == "applied"
+    assert {
+        email for email, (_, role) in users(store).items() if role == "administrator"
+    } == {*administrators, "third@example.org"}

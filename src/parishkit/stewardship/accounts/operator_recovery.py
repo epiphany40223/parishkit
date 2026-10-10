@@ -15,7 +15,12 @@ from django.db import transaction
 from parishkit.config import ConfigError
 
 from . import users_schema as users
-from .configuration_installation import _install_request, coherent_configuration
+from .configuration_installation import (
+    _install_request,
+    _selected_over,
+    coherent_configuration,
+    restore_refused,
+)
 from .configuration_requests import _own_transaction, _status
 from .policy_schema import normalized_email
 from .request_admission import intake_base
@@ -208,6 +213,42 @@ def recovery_preview(version, deployment_id, target_email, name=None):
     }
 
 
+def recovery_runtime(store):
+    """The runtime recovery works from, even with a refused candidate selected.
+
+    A refused activation (``failed`` with ``actor_unauthorized`` or
+    ``invalid_candidate``) leaves the manifest naming its candidate until the
+    installer selects the base again; recovery does that itself before it
+    begins. So that state is not the incoherence the operator must resolve
+    first, and the preview reads the database's active configuration, the
+    base. Any other disagreement still refuses (#952).
+    """
+    try:
+        return coherent_configuration(store)
+    except ConfigError:
+        if not _refused_selection(store):
+            raise
+    return SystemConfiguration.objects.select_related("active_configuration").get()
+
+
+def _refused_selection(store):
+    """True when the manifest names a refused request's candidate over its base."""
+    selected = _selected_over(store)
+    if selected is None:
+        return False
+    (version_id, _), active_digest = selected
+    return any(
+        (status.state, status.failure_code)
+        in {("failed", "actor_unauthorized"), ("failed", "invalid_candidate")}
+        for status in map(
+            _status,
+            ConfigurationChangeRequest.objects.filter(
+                candidate_version_id=version_id, base__digest=active_digest
+            ),
+        )
+    )
+
+
 def recover_admin(
     store,
     *,
@@ -234,7 +275,10 @@ def recover_admin(
     state and failure_code before reporting recovery success.
 
     In the users form (#952) the target becomes an Administrator user, whose
-    Name for a new user is ``name`` or the address's local part.
+    Name for a new user is ``name`` or the address's local part. A manifest
+    left ahead of the database by a recorded activation refusal (such as SQL
+    refusing the users upgrade) is first returned to its base, so recovery
+    works in that state too.
     """
     if any(
         not isinstance(value, UUID)
@@ -277,6 +321,9 @@ def recover_admin(
                     "Recovery operation is already bound to another intent."
                 )
         else:
+            # Finish a refused activation's restore first (#952): until then
+            # the manifest names the refused candidate and nothing is coherent.
+            restore_refused(store)
             runtime = coherent_configuration(store)
             base, version = intake_base(runtime.active_configuration.digest)
             schema = RECOVERY_SCHEMAS.get(

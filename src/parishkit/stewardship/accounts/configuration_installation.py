@@ -275,6 +275,8 @@ class DatabaseMaterializer:
 
         from parishkit.stewardship.campaigns.live_end_date import end_intent, refusal
 
+        if self.request is not None and self.request.authority == "operator_upgrade":
+            return self._apply_upgrade(runtime, selected)
         if self.request is None or end_intent(self.request.pk) is None:
             self._apply(runtime, selected)
             return None
@@ -286,6 +288,30 @@ class DatabaseMaterializer:
             reason = self._end_refusal(selected.document()) or refusal("refused")
             self._journal_end(reason)
             return reason
+        return None
+
+    def _apply_upgrade(self, runtime, selected):
+        """Apply the users upgrade (#952), or record SQL's refusal of it.
+
+        SQL's users-form guard repeats Python's check that every
+        Administrator is kept, and refuses at activation if the two ever
+        disagree. The YAML manifest already names the candidate by then, so
+        an unrecorded refusal would leave the manifest ahead of the database
+        for good: every coherence check, and so offline Admin-access recovery
+        itself, would refuse until a backup restore. Instead the refusal
+        rolls back to a savepoint and is recorded as this request's failure
+        in the same transaction, and the installer selects the base manifest
+        again (``_restore_refused``), as for any other refused activation.
+        """
+        from django.db import IntegrityError
+
+        try:
+            with transaction.atomic():
+                self._apply(runtime, selected)
+        except IntegrityError as error:
+            emit_failure(error, event=Event.INSTALLER_REQUEST_FAILED)
+            self._record("failed", "invalid_candidate")
+            return UpgradeRefused("The users upgrade was refused at activation.")
         return None
 
     def _end_refusal(self, document):
@@ -513,6 +539,10 @@ class SeedUnconfirmable(ActivationRefused):
 
 class LiveMinistryUnavailable(ActivationRefused):
     """A Ministry added to a live campaign is no longer current and active (#342)."""
+
+
+class UpgradeRefused(ActivationRefused):
+    """SQL refused the offline users upgrade at activation (#952)."""
 
 
 class EndEditRefused(ActivationRefused):
