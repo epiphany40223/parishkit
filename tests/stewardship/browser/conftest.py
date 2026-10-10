@@ -104,6 +104,7 @@ from .log_components import components as log_components
 from .menu_components import components as menu_components
 from .ministry_components import components as ministry_components
 from .my_ministries_components import components as my_ministries_components
+from .not_found_components import components as not_found_components
 from .pause_components import components as pause_components
 from .reminder_workgroup_components import components as workgroup_components
 from .report_components import SLOW_GETS as REPORT_SLOW_GETS
@@ -2098,6 +2099,7 @@ def component_origin():
     responses.update(find_family_components(context, admin))
     responses.update(user_components(context, admin))
     responses.update(security_components(context, admin))
+    responses.update(not_found_components(context, admin))
     responses.update(go_live_components(context, admin))
     responses.update(pause_components(context, admin))
     responses.update(send_progress_components(context, admin))
