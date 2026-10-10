@@ -682,6 +682,11 @@ FIELD_LABELS = {
     "snapshot_id": _("ParishSoft data read (its snapshot id)"),
     "search_used": _("Search box used"),
     "report_sort": _("Sorted by"),
+    # The active parishioner family directory's choices (#933).
+    "directory_response": _("Response"),
+    "directory_data_check": _("ParishSoft data to check"),
+    "directory_response_columns": _("Response columns included"),
+    "directory_sort": _("Sorted by"),
 }
 # A response list's sort columns (#851), by sort key, in each list's own
 # column headings (reports.response_lists); ``-key`` is the same column
@@ -699,6 +704,21 @@ _SORT_COLUMNS = {
     "last": _("Last submitted"),
     "mailing": _("Mailing name"),
     "problem": _("What to check"),
+}
+# The directory's sort columns (#933), by the sort token's column part: "name"
+# is the Family column; the rest are the response lists' headings.
+_DIRECTORY_SORT_COLUMNS = {"name": _("Family")} | {
+    key: _SORT_COLUMNS[key]
+    for key in (
+        "duid",
+        "invited",
+        "link",
+        "opened",
+        "progressed",
+        "submitted",
+        "last",
+        "submissions",
+    )
 }
 # Recorded closed values shown in words, by field (#556): each report's own
 # menu wording (reports.response_lists and the Talents report's Show menu).
@@ -719,6 +739,39 @@ VALUE_LABELS = {
         "cannot_serve": _("Cannot participate in ministries"),
         "cannot_attend": _("Families that cannot attend Mass"),
         "option": _("One talent"),
+    },
+    # The directory's Response menu (reports.directories.RESPONSES), plus
+    # the older Campaign response choices earlier entries recorded.
+    "directory_response": {
+        "any": _("Any"),
+        "yes": _("Responded"),
+        "no": _("Not yet responded"),
+        "submitted": _("Submitted"),
+        "more-than-once": _("Submitted more than once"),
+        "not-submitted": _("Not submitted"),
+        "started": _("Started, not submitted"),
+        "progressed": _("Started, got past the first step"),
+        "opened-only": _("Opened the form only"),
+        "never-opened": _("Invited, never opened"),
+        "link-followed": _("Invited, link followed but never opened"),
+        "link-not-followed": _("Invited, link not followed"),
+        "not-invited": _("No invitation delivered"),
+    },
+    "directory_data_check": {
+        "any": _("Any"),
+        "anything": _("Anything to check"),
+        "mailing-name": _("Blank mailing name"),
+        "envelope": _("Envelope number 0"),
+    },
+    # The directory's sort tokens (reports.directories.DIRECTORY_SORTING):
+    # its column headings, with "_desc" for the descending order.
+    "directory_sort": {
+        token: format_lazy(template, heading)
+        for key, heading in _DIRECTORY_SORT_COLUMNS.items()
+        for token, template in (
+            (key, _("{} (ascending)")),
+            (f"{key}_desc", _("{} (descending)")),
+        )
     },
     "report_sort": {
         token: format_lazy(template, heading)

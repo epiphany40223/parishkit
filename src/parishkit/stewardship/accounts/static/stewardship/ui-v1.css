@@ -700,6 +700,10 @@ label.limitation { display: block; margin-block: 1rem; font-weight: 600; }
 
 /* Family codes are short fixed-length tokens; never wrap one mid-code. */
 td.family-code, td.family-code code { white-space: nowrap; }
+/* The Open form link's screen-reader text is positioned absolutely; keep it
+   inside its cell, so a wide table scrolls in its region instead of widening
+   the page when the code column is off-screen (#933). */
+td.family-code { position: relative; }
 /* Contact details open inside the last column. The two-column dl grid used
    elsewhere gives its value column a zero minimum, so in an auto-width table
    cell the long labels took all the room and the values collapsed to zero

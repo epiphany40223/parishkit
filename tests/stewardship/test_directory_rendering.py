@@ -152,7 +152,7 @@ def test_head_names_join_naturally(heads, expected):
     assert head_names(heads) == expected
 
 
-def test_code_directory_csv_has_exactly_four_plain_columns():
+def test_code_directory_csv_has_exactly_five_plain_columns():
     """No record column, no metadata row: a header and one row per Family.
 
     Family is the surname, then the heads of household; heads of another
@@ -161,12 +161,16 @@ def test_code_directory_csv_has_exactly_four_plain_columns():
     rows = csv_rows(document([item(family_duid=12345 + index) for index in range(52)]))
     assert rows[0] == [*CODE_HEADINGS, EMAIL_HEADING]
     assert len(rows) == 53
+    # Family, Family DUID, Envelope number (#932, #933) and Family code.
     assert rows[1] == [
         "'=Sample Family, Aaron Williams and Isabelle Williams",
         "12345",
+        "",
         "ABCDEFGH",
         EMAILS,
     ]
+    rows = csv_rows(document([item(envelope="4711")]))
+    assert rows[1][2] == "4711"
     rows = csv_rows(document([item(family_name="Williams")]))
     assert rows[1][0] == "Williams, Aaron and Isabelle"
 
@@ -304,7 +308,7 @@ def test_xlsx_and_pdf_carry_the_same_columns_and_details():
     book = load_workbook(output)
     sheet = book["Families"]
     assert tuple(cell.value for cell in sheet[1]) == (*CODE_HEADINGS, EMAIL_HEADING)
-    assert sheet["D2"].value == EMAILS
+    assert sheet["E2"].value == EMAILS
     assert sheet["A2"].value == "=Sample Family, Aaron Williams and Isabelle Williams"
     assert sheet["A2"].data_type == "s"
     assert dict(
@@ -313,7 +317,7 @@ def test_xlsx_and_pdf_carry_the_same_columns_and_details():
     book.close()
     cells = directory_table(report).cells(report.rows[0])
     assert "".join(cells[0]) == "=Sample Family, Aaron Williams and Isabelle Williams"
-    assert cells[2] == ["ABCDEFGH"] and "".join(cells[3]) == EMAILS
+    assert cells[3] == ["ABCDEFGH"] and "".join(cells[4]) == EMAILS
     for postal in (False, True):
         output = io.BytesIO()
         assert render_directory(document([item()], postal=postal), output, format="pdf")
@@ -450,12 +454,12 @@ def test_pdf_table_rows_fit_the_page_with_phones_and_emails():
     ]
     report = document([item(phones=phones)], reach="neither")
     [row] = table_rows(report)
-    assert table.cells(row)[3] == [
+    assert table.cells(row)[4] == [
         "Isabelle Williams (mobile): +1 (202) 555-0123;",
         "Family (home): +1 (202) 555-0100",
     ]
     # CSV and XLSX keep the one-line cell.
-    assert report.rows[0][3].count("\n") == 0
+    assert report.rows[0][4].count("\n") == 0
 
 
 def test_current_head_emails_are_dated_in_the_report_details():
@@ -591,3 +595,99 @@ def test_directory_pdf_draws_its_details_heading_note_and_pages(monkeypatch):
         ]
         assert details["Privacy"] in rest
         assert any(details["Testing mode"].startswith(line) for line in rest)
+
+
+def test_response_columns_and_checks_follow_the_page():
+    """Family leads, then the fixed identity columns and Family code (#932).
+
+    Submissions, What to check and the dates follow Family code, so the code
+    never moves with the chosen response columns.
+
+    A Family no longer active in ParishSoft is marked in its Family cell,
+    and one the data no longer has at all is named as such. The details say
+    when the responses were counted and which filters applied.
+    """
+    rows = [
+        item(
+            envelope=0,
+            submitted_at="2026-10-01T13:00:00+00:00",
+            last_submitted_at="2026-10-02T13:00:00+00:00",
+            submissions=2,
+            envelope_zero=True,
+        ),
+        item(family_duid=2, family_name=None, heads=[], active=False, submissions=3),
+    ]
+    payload = dict(
+        metadata=dict(
+            name="Annual campaign",
+            source_as_of=MOMENT.isoformat(),
+            counted_at=MOMENT.isoformat(),
+        ),
+        total=2,
+        rows=rows,
+    )
+    filters = {
+        "search": "",
+        "reason": "any",
+        "phone": "any",
+        "response": "more-than-once",
+        "sort": "submissions_desc",
+        "reach": "any",
+        "check": "envelope",
+    }
+    report = directory_document(
+        payload,
+        {"filters": filters, "postal": False, "exact": False, "responses": True},
+        parish_name="Sample Parish",
+        captured_at=MOMENT,
+        requested_at=MOMENT,
+        timezone="America/Detroit",
+    )
+    assert report.headings == (
+        "Family",
+        "Family DUID",
+        "Envelope number",
+        "Family code",
+        "Submissions",
+        "What to check",
+        "First submitted",
+        "Last submitted",
+        EMAIL_HEADING,
+    )
+    output = io.BytesIO()
+    render_directory(report, output, format="csv")
+    lines = list(csv.reader(io.StringIO(output.getvalue().decode())))
+    assert lines[1][:8] == [
+        "'=Sample Family, Aaron Williams and Isabelle Williams",
+        "12345",
+        "0",
+        "ABCDEFGH",
+        "2",
+        "Envelope number 0",
+        "2026-10-01 09:00:00-04:00",
+        "2026-10-02 09:00:00-04:00",
+    ]
+    assert lines[2][:8] == [
+        "Not in the latest ParishSoft data (No longer active in ParishSoft)",
+        "2",
+        "",
+        "ABCDEFGH",
+        "3",
+        "",
+        "",
+        "",
+    ]
+    # The PDF prints the same cells as the page: compact times in the
+    # display time zone and grouped counts.
+    [first, _] = table_rows(report)
+    assert first[4] == "2"
+    assert first[6].startswith("Oct 1, 2026")
+    details = dict(report.metadata)
+    assert details["Responses counted at"].hour == 9
+    assert "Response: Submitted more than once" in details["Filters applied"]
+    assert "ParishSoft data to check: Envelope number 0" in details["Filters applied"]
+    assert "Response columns included" in details["Filters applied"]
+    for format in ("xlsx", "pdf"):
+        output = io.BytesIO()
+        render_directory(report, output, format=format)
+        assert output.getvalue()

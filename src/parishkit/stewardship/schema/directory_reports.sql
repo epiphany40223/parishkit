@@ -274,7 +274,7 @@ BEGIN
            WHERE active_configuration_id=NEW.configuration_id)
     THEN RAISE EXCEPTION 'Directory export capture is unavailable' USING ERRCODE='23514'; END IF;
     NEW.created_at:=statement_timestamp();
-    NEW.document:=stewardship_directory_report_v1(NEW.campaign_id,NEW.parameters);
+    NEW.document:=stewardship_directory_report_v2(NEW.campaign_id,NEW.parameters);
     IF NEW.document IS NULL THEN
         RAISE EXCEPTION 'Directory export inputs are unavailable' USING ERRCODE='23514';
     END IF;
@@ -282,13 +282,13 @@ BEGIN
     NEW.row_count:=(NEW.document->>'total')::integer;
     -- Keep only the private contact columns the requested file renders
     -- (#388 L6; reports.directory_documents): the postal mail merge uses the
-    -- address, and the code list uses phones only for reach 'neither'. The
-    -- envelope number is in neither file. The keys stay, emptied, so the
-    -- document keeps its shape; heads (names and head emails) are in both.
+    -- address, and the code list uses phones only for reach 'neither' and the
+    -- envelope number (#933). The keys stay, emptied, so the document keeps
+    -- its shape; heads (names and head emails) are in both.
     postal:=coalesce((NEW.parameters->>'postal')::boolean,false);
     phones:=NOT postal AND NEW.parameters->'filters'->>'reach' IS NOT DISTINCT FROM 'neither';
     NEW.document:=jsonb_set(NEW.document,'{rows}',coalesce((SELECT jsonb_agg(
-        e.r||jsonb_build_object('envelope',NULL)
+        e.r||CASE WHEN postal THEN jsonb_build_object('envelope',NULL) ELSE '{}'::jsonb END
            ||CASE WHEN postal THEN '{}'::jsonb ELSE jsonb_build_object('address','{}'::jsonb) END
            ||CASE WHEN phones THEN '{}'::jsonb ELSE jsonb_build_object('phones','[]'::jsonb) END
         ORDER BY e.ordinal)

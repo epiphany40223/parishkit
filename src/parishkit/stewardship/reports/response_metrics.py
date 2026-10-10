@@ -16,7 +16,11 @@ the campaign, so a withdrawal and re-activation after the cutoff cannot change
 an earlier reading.
 
 One statement returns one row per Family of the campaign with each instant as
-it stood at ``as_of`` (``FamilyResponse``); the stage totals, the separate
+it stood at ``as_of`` (``FamilyResponse``). It is the installed SQL function
+``stewardship_family_response_v1`` (migration 0043, #933), which the active
+parishioner family directory's Response filters also read, so the
+dashboard's counts and the directory's lists cannot drift apart. The stage
+totals, the separate
 figures ("skipped: already responded", "submitted without a delivered
 invitation" and "submitted more than once") and the activity series are pure
 functions over those rows, so they are unit tested without a database and a
@@ -85,55 +89,18 @@ lifetime AS (
 # One row per Family of the campaign, with each instant as it stood at
 # as_of: the first delivered invitation, whether a planned invitation was
 # skipped because the Family had already responded, the engagement record's
-# first instants, and the first submission with how many there were. Each
-# source is aggregated once per campaign and joined to the Family rows (hash
-# joins at launch scale, about 1,100 Families), never per Family.
-_FAMILIES = (
-    "WITH "
-    + _LIFETIME
-    + """, invited AS (
-    SELECT m.family_id, min(m.finished_at) AS at
-    FROM stewardship_outbox_message m
-    WHERE m.campaign_id=%(campaign)s AND m.purpose='initial'
-      AND m.mode=%(mail_mode)s
-      AND m.rehearsal_epoch_id IS NOT DISTINCT FROM %(epoch)s
-      AND m.state='delivered' AND m.finished_at<=%(as_of)s
-    GROUP BY m.family_id
-), skipped AS (
-    SELECT DISTINCT o.target
-    FROM stewardship_schedule_definition d
-    JOIN stewardship_schedule_occurrence o ON o.definition_id=d.id
-    JOIN stewardship_occurrence_transition t ON t.occurrence_id=o.id
-    JOIN lifetime l ON t.created_at>=l.started_at AND t.created_at<l.ended_at
-    WHERE d.campaign_id=%(campaign)s AND d.kind='initial'
-      AND o.mode=%(mail_mode)s
-      AND t.after_state='skipped' AND t.reason='family_responded'
-      AND t.created_at<=%(as_of)s
-), responded AS (
-    SELECT s.family_id, min(s.submitted_at) AS at, count(*) AS submissions,
-        max(s.submitted_at) AS last_at
-    FROM stewardship_submission s
-    WHERE s.campaign_id=%(campaign)s AND s.mode=%(response_mode)s
-      AND s.rehearsal_epoch_id IS NOT DISTINCT FROM %(epoch)s
-      AND s.submitted_at<=%(as_of)s
-    GROUP BY s.family_id
-)
-SELECT f.id, f.family_duid, i.at, k.target IS NOT NULL,
-    CASE WHEN e.first_link_at<=%(as_of)s THEN e.first_link_at END,
-    CASE WHEN e.first_form_at<=%(as_of)s THEN e.first_form_at END,
-    CASE WHEN e.first_progress_at<=%(as_of)s THEN e.first_progress_at END,
-    r.at, coalesce(r.submissions, 0), r.last_at
-FROM stewardship_family_campaign f
-LEFT JOIN invited i ON i.family_id=f.id
-LEFT JOIN skipped k ON k.target='family:'||f.id::text
-LEFT JOIN stewardship_family_engagement e ON e.family_id=f.id
-    AND e.mode=%(response_mode)s
-    AND e.rehearsal_epoch_id IS NOT DISTINCT FROM %(epoch)s
-LEFT JOIN responded r ON r.family_id=f.id
-WHERE f.campaign_id=%(campaign)s
-ORDER BY f.family_duid, f.id
+# first instants, and the first submission with how many there were. The
+# statement is the installed ``stewardship_family_response_v1`` (migration
+# 0043), so the active parishioner family directory's Response filters
+# select from exactly these rows (#933). Each source is aggregated once per
+# campaign and joined to the Family rows (hash joins at launch scale, about
+# 1,100 Families), never per Family.
+_FAMILIES = """
+SELECT family_id, family_duid, invited_at, skipped_responded, link_at, form_at,
+    progress_at, submitted_at, submissions, last_submitted_at
+FROM stewardship_family_response_v1(%(campaign)s, %(mode)s, %(epoch)s, %(as_of)s)
+ORDER BY family_duid, family_id
 """
-)
 # Every invitation and reminder send of the mode that had planned an email by
 # as_of (a *send* is one revision of one Family schedule in one mode and
 # Production cycle, as the Family email progress and sends pages count it),
@@ -469,6 +436,7 @@ def _values(scope, as_of):
     _instant(as_of, "as_of")
     return {
         "campaign": scope.campaign_id,
+        "mode": scope.mode,
         "epoch": scope.rehearsal_epoch_id,
         "response_mode": scope.response_mode,
         "mail_mode": scope.mail_mode,

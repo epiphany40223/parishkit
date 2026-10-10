@@ -314,7 +314,10 @@ def test_native_directory_exports_render_download_and_regenerate_retained_inputs
             assert response.status_code == 200
             assert body.startswith(
                 {
-                    "csv": b"Family,ParishSoft DUID,Family code,Family head emails\r\n",
+                    "csv": (
+                        b"Family,Family DUID,Envelope number,Family code,"
+                        b"Family head emails\r\n"
+                    ),
                     "xlsx": b"PK",
                     "pdf": b"%PDF",
                 }[format]
@@ -802,7 +805,8 @@ def test_regenerated_and_retried_exports_read_current_head_emails_after_compacti
         )
     assert render(retry.run_id)
     rows, details = download(retried_route)
-    assert rows[1][:3] == ["Example, Member", "1", harness.code]
+    # The corpus Family has no envelope number: an empty XLSX cell.
+    assert rows[1][:4] == ["Example, Member", "1", None, harness.code]
     assert rows[1][-1] == "Member Example: changed@example.org"
     # The refresh that promoted the current data (XLSX keeps milliseconds).
     as_of = current.promoted_at.replace(tzinfo=None)
@@ -828,7 +832,7 @@ def test_regenerated_and_retried_exports_read_current_head_emails_after_compacti
     assert regenerated.directory_snapshot_id == first.directory_snapshot_id
     assert render(regenerated.task_id)
     rows, details = download(response["Location"])
-    assert rows[1][:3] == ["Example, Member", "1", harness.code]
+    assert rows[1][:4] == ["Example, Member", "1", None, harness.code]
     assert rows[1][-1] == "Member Example: changed@example.org"
     assert HEAD_EMAILS_DETAIL in details
 

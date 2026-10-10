@@ -182,7 +182,35 @@ def test_system_logs_show_the_choices_in_words():
         "snapshot_id",
         "search_used",
         "report_sort",
+        # The active parishioner family directory's choices (#933).
+        "directory_response",
+        "directory_data_check",
+        "directory_response_columns",
+        "directory_sort",
     }
+
+
+def test_directory_sorts_read_in_words():
+    """System logs word each directory sort by the page's own heading (#933)."""
+    from parishkit.stewardship.audit.schemas import DIRECTORY_SORTS
+    from parishkit.stewardship.reports.directories import RESPONSE_COLUMNS
+
+    assert set(VALUE_LABELS["directory_sort"]) == DIRECTORY_SORTS
+    assert str(field_value("directory_sort", "name")) == "Family (ascending)"
+    assert str(field_value("directory_sort", "name_desc")) == "Family (descending)"
+    assert str(field_value("directory_sort", "duid")) == "Family DUID (ascending)"
+    assert str(field_value("directory_sort", "duid_desc")) == "Family DUID (descending)"
+    for key, column in RESPONSE_COLUMNS.items():
+        ascending = str(field_value("directory_sort", key))
+        assert ascending == f"{column.heading} (ascending)"
+        assert (
+            str(field_value("directory_sort", f"{key}_desc"))
+            == f"{column.heading} (descending)"
+        )
+    rows = detail_labels([("directory_sort", "submitted_desc")])
+    assert [(str(key), str(value)) for key, value in rows] == [
+        ("Sorted by", "First submitted (descending)")
+    ]
 
 
 def test_response_list_sorts_are_exactly_the_lists_tokens():

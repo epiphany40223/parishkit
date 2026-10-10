@@ -430,6 +430,8 @@ def _properties(face, size):
 
 CELL_PAD = 5.0
 ROW_PAD = 3.5
+# The thickness of the rule under a table page's last row.
+CLOSING_RULE = 0.75
 
 
 @dataclass(frozen=True)
@@ -475,7 +477,9 @@ def table_pages(table, rows, frame):
     (a Family with very many phone numbers) splits between lines rather
     than drawing past the footer. Each page is a list of (index, cells).
     """
-    room = frame.body_height - table.heading_height
+    # Half the closing rule's thickness hangs below the last row, so a page
+    # filled exactly (a split row always is) must leave room for it.
+    room = frame.body_height - table.heading_height - CLOSING_RULE / 2
     most = max(int((room - 2 * ROW_PAD) // LINE_PITCH), 1)
     page, used = [], 0.0
     for index, values in enumerate(rows):
@@ -505,7 +509,7 @@ def draw_table(table, frame):
             fill = PAPER_SOFT if index % 2 else None
             y += _draw_row(canvas, table, y, cells, fill)
         if page:
-            canvas.hline(MARGIN, PAGE_WIDTH - MARGIN, y, BORDER, 0.75)
+            canvas.hline(MARGIN, PAGE_WIDTH - MARGIN, y, BORDER, CLOSING_RULE)
         else:
             canvas.text(
                 MARGIN + CELL_PAD, y + 16, "No rows match.", BODY_SIZE, "regular", MUTED

@@ -21,7 +21,12 @@ def test_directories_are_accessible_and_keep_filters_in_post(
 ):
     """Actual templates expose codes directly and preserve private pagination."""
     page.set_viewport_size({"width": width, "height": 900})
-    for path in ("/family-directory", "/postal-directory", "/directory-empty"):
+    for path in (
+        "/family-directory",
+        "/postal-directory",
+        "/directory-empty",
+        "/directory-responses",
+    ):
         page.goto(component_origin + path)
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         page.evaluate(axe_source)
@@ -58,6 +63,55 @@ def test_directories_are_accessible_and_keep_filters_in_post(
     assert "exact_code=abcd-efgh" in sent.value.post_data
     assert "mailing=yes" in sent.value.post_data
     assert "Private" not in sent.value.url and "abcd" not in sent.value.url
+
+
+def test_response_filters_columns_and_inactive_families(page, component_origin):
+    """The Response choices, data check and response columns post privately.
+
+    The Family row header leads, then Family DUID, Envelope number, Family
+    code, What to check and the dates (#932), and Family and Family DUID
+    both sort; times
+    show in the browser's time zone; a Family no longer active in ParishSoft
+    is marked and has no Open form link (#933).
+    """
+    page.emulate_media(reduced_motion="reduce")
+    page.goto(component_origin + "/directory-responses")
+    headings = page.locator("table thead th").all_inner_texts()
+    assert [text.split("\n")[0].strip() for text in headings[:7]] == [
+        "Family",
+        "Family DUID",
+        "Envelope number",
+        "Family code",
+        "What to check",
+        "Invitation delivered",
+        "Link followed",
+    ]
+    # Family and Family DUID both sort: each heading is a sort control.
+    for index in (0, 1):
+        assert page.locator("table thead th").nth(index).get_by_role("button").count()
+    visible(page.get_by_role("rowheader", name="Example <Family>, Example Head"))
+    inactive = page.get_by_role("rowheader", name="Not in the latest ParishSoft data")
+    visible(inactive)
+    visible(inactive.get_by_text("No longer active in ParishSoft", exact=True))
+    assert page.locator("[data-open-form]").count() == 1
+    visible(page.get_by_text("HGFEDCBA", exact=True))
+    # A missing Link followed reads "No"; times are localized in place.
+    row = page.get_by_role("row").filter(has_text="HGFEDCBA")
+    assert row.get_by_role("cell").nth(5).inner_text() == "No"
+    assert "2026" in page.locator("#directory-summary time").inner_text()
+    response = page.get_by_label("Response", exact=True)
+    assert response.input_value() == "link-followed"
+    assert page.get_by_label("ParishSoft data to check").input_value() == "anything"
+    columns = page.get_by_label("Include response columns")
+    assert columns.is_checked()
+    response.select_option("submitted")
+    page.get_by_label("ParishSoft data to check").select_option("envelope")
+    page.route("**/families/", lambda route: route.fulfill(body="Filtered"))
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("button", name="Apply filters").click()
+    body = sent.value.post_data
+    assert "response=submitted" in body and "check=envelope" in body
+    assert "responses=yes" in body and "?" not in sent.value.url
 
 
 def test_directory_pagination_posts_privately(page, component_origin):
