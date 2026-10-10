@@ -6,13 +6,17 @@ runtime/fonts and input document, not promised byte-identical across upgrades.
 """
 
 from contextlib import contextmanager
+from functools import lru_cache
+from io import BytesIO
 from threading import RLock
 
-from parishkit.stewardship.web.dates import format_date
+from parishkit.stewardship.web.dates import current, format_date
 
 from .participation import ParticipationDocument
 
 _RENDER_LOCK = RLock()
+# Chart PNGs kept per web process (#905); each is roughly 100 KB.
+PAGE_PNG_CACHE_SIZE = 32
 RENDERER_VERSION = "participation-v2"
 # The daily email's drawing (#720), named in its PNG's Creator text so the
 # saved report page can tell which drawing a retained digest holds.
@@ -253,3 +257,23 @@ def render_participation(document, output, *, format, email=False):
                 }
             )
         figure.savefig(output, format=format, dpi=120, metadata=metadata)
+
+
+def participation_png(document):
+    """Return the Participation page's chart PNG, rendered once per exact input.
+
+    The page's chart comes from an immutable fact set, so a repeat view of the
+    same chart gets the same bytes from this process's cache without entering
+    the render lock: it neither waits behind a PDF rendering in this process
+    nor spends GIL time in matplotlib (#905). The frozen document is the key,
+    with the active date style because tick labels use it.
+    """
+    return _cached_participation_png(document, current())
+
+
+@lru_cache(maxsize=PAGE_PNG_CACHE_SIZE)
+def _cached_participation_png(document, date_style):
+    """Render one page chart; ``date_style`` only separates cache entries."""
+    output = BytesIO()
+    render_participation(document, output, format="png")
+    return output.getvalue()

@@ -239,6 +239,16 @@ The daily digest email states a plain as-of line instead
 and its chart PNG keeps the metadata. The same drawing is used on
 the Participation page, in PNG and PDF exports, and in the daily digest email.
 
+Each process draws one matplotlib file at a time, because matplotlib's style
+settings are process-global, so a web process's chart image can wait behind a
+PDF that the same process is rendering. The Participation page's chart is drawn
+from an immutable fact set, so each web process keeps its most recent page
+chart PNGs in memory, keyed by the exact drawing inputs (the document and the
+date format). A repeat view returns the stored image without waiting. Only the
+first view of a newly calculated chart can wait, for at most the time of a PDF
+already rendering
+([#905](https://github.com/epiphany40223/parishkit/issues/905)).
+
 For **Historical as of day**, the source cutoff is the last promoted source
 generation at or before the resolved end instant of that local day, selected
 from permanent manifest generation/promotion metadata even if that snapshot's
