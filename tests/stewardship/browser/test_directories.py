@@ -260,7 +260,10 @@ def test_mailing_columns_lock_reach_to_postal_mail_only(page, component_origin):
 
     assert reach.is_enabled() and reach.input_value() == "any"
     assert reach.get_attribute("aria-describedby") == "directory-reach-tip"
+    # No field of the bar carries a help line (#945's Include response
+    # columns included); each explains itself in its toggletip.
     assert page.locator("#table-filters p.help").count() == 0
+    assert page.locator("#directory-responses-tip").count() == 1
     # Nothing sits under the reach select in its field, so the bottom-aligned
     # bar keeps it level with its neighbours.
     reach_box = reach.bounding_box()

@@ -1146,7 +1146,9 @@ two can differ slightly: the directory also checks an active Family with no
 campaign record, and follows a change in ParishSoft before the campaign's
 records are refreshed.
 
-An **Include response columns** checkbox, off by default, adds the columns
+An **Include response columns** checkbox, off by default (explained in its
+toggletip, with no help line under it, like
+[Include mailing columns](#mailing-columns)), adds the columns
 the chosen Response's list showed: Any shows Invitation delivered, Form
 opened, First submitted and Submissions; Submitted shows First submitted and
 Submissions; Submitted more than once shows First submitted, Last submitted
