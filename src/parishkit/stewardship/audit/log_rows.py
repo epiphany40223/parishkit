@@ -111,13 +111,16 @@ EVENTS = tuple(sorted({item.value for item in Action} | {item.value for item in 
 # reader never types internal type names one at a time. Sign-in activity is
 # every recorded Admin portal sign-in, re-confirmation and session ending
 # (including a session replaced because the person's roles changed),
-# plus the sampled, anonymous record of refused sign-ins (no actor, by
-# design: ``accounts.auth_incidents``). All are audit records; no operational
+# plus refused sign-ins: a verified Google account policy refused, named
+# and bounded per account, and the sampled, anonymous record of any other
+# refusal (no actor, by design). Both are ``accounts.auth_incidents``. All
+# are audit records; no operational
 # entry belongs to a group, so choosing one leaves operational entries out.
 ACTIVITY_TYPES = {
     "sign_in": (
         "admin_login",
         "admin_login_denied",
+        "admin_login_refused",
         "admin_logout",
         "admin_privileges_changed",
         "admin_reauthenticated",
