@@ -14,6 +14,9 @@
 --
 --   adds stewardship_ministry_leader_roles_v1   the campaign's role names,
 --                                                with the one default
+--   adds stewardship_ministry_leader_role_key_v1
+--                                                the form role names are
+--                                                compared in
 --   adds stewardship_ministry_leaders_v1        every current leader (the
 --                                                one definition; definer,
 --                                                executable by no login)
@@ -65,15 +68,32 @@ AS $$
         '["Chairperson", "Staff"]'::jsonb)
 $$;
 
+-- The form a Ministry role name is compared in (#922): every run of Unicode
+-- whitespace (the characters Python's str.isspace() accepts, the no-break
+-- space included) becomes one space, the ends are trimmed, and ASCII letters
+-- are lowercased; nothing else changes, so no locale-dependent or Unicode
+-- case folding applies. campaigns.configuration.leader_role_key is the same
+-- rule in Python, and a test checks the two agree character for character.
+CREATE FUNCTION public.stewardship_ministry_leader_role_key_v1(name text)
+    RETURNS text LANGUAGE sql IMMUTABLE
+    SET search_path TO pg_catalog, public, pg_temp
+AS $$
+    SELECT translate(btrim(regexp_replace(name,
+        '[\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+',
+        ' ', 'g'), ' '),
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')
+$$;
+
 -- Every current Ministry leader (#922), the one definition of who leads
--- what: each (address, Ministry, Member) where an active Member holds a
--- current roster row on a catalog-present Ministry of the current campaign
--- (asking about Ministries, the Ministry selected and not marked inactive
--- here) whose role label is one of the campaign's leader role names, and the
--- address is a valid email on that Member's ParishSoft contact record. Role
--- labels match trimmed and ASCII case-insensitive, otherwise exactly, as the
--- Chairperson match always has; addresses match case-insensitively with no
--- provider folding. No current campaign or promoted source means no leaders.
+-- what: each (address, Ministry, Member) where an active Member, whatever
+-- their Family's status, holds a current roster row on a catalog-present
+-- Ministry of the current campaign (asking about Ministries, the Ministry
+-- selected and not marked inactive here) whose role label is one of the
+-- campaign's leader role names, and the address is a valid email on that
+-- Member's ParishSoft contact record. Role labels match by
+-- stewardship_ministry_leader_role_key_v1; addresses match
+-- case-insensitively with no provider folding. No current campaign or
+-- promoted source means no leaders.
 -- Definer: it reads Member contact data no reader of a single scope needs.
 -- No login may EXECUTE it; stewardship_ministry_leader_scope_v1 does.
 CREATE FUNCTION public.stewardship_ministry_leaders_v1()
@@ -81,47 +101,64 @@ CREATE FUNCTION public.stewardship_ministry_leaders_v1()
     LANGUAGE plpgsql STABLE SECURITY DEFINER
     SET search_path TO pg_catalog, public, pg_temp
 AS $$
+DECLARE
+    current_configuration uuid; current_values jsonb; current_snapshot uuid;
+    leader_keys text[];
 BEGIN
-    -- PL/pgSQL keeps this query's plan for the session, so a request pays
-    -- only for running it, not for planning its many joins again.
+    -- The setting is read on its own first, so the query below is planned
+    -- with the current snapshot as a known value. Sources keep several
+    -- retained snapshots' roster rows; the query then reads only the
+    -- current snapshot's, through its snapshot_id index, rather than
+    -- scanning and parsing every retained row (#939 review). Nothing is
+    -- cached between calls: the web runs with CONN_MAX_AGE 0, so each
+    -- request plans this afresh, and the cost is paid per call.
+    SELECT runtime.active_configuration_id, campaign.values, pointer.snapshot_id
+      INTO current_configuration, current_values, current_snapshot
+    FROM public.stewardship_system_configuration runtime
+    JOIN public.stewardship_campaign_configuration campaign
+        ON campaign.record_id=runtime.current_campaign_id
+       AND campaign.configuration_id=runtime.active_configuration_id
+    CROSS JOIN public.stewardship_source_current pointer
+    WHERE pointer.singleton AND campaign.values->'modules' ? 'ministry';
+    IF current_snapshot IS NULL THEN
+        RETURN;
+    END IF;
+    SELECT array_agg(DISTINCT public.stewardship_ministry_leader_role_key_v1(role.name))
+      INTO leader_keys
+    FROM jsonb_array_elements_text(
+        public.stewardship_ministry_leader_roles_v1(current_values)) role(name);
+    -- Each MATERIALIZED step runs once: the current roster parsed once;
+    -- its few distinct labels, each compared once (the planner would
+    -- otherwise push the comparison down to every roster row); and the
+    -- leaders' rows, so the keyed lookups after them run for those only.
     RETURN QUERY
-    WITH setting AS (
-        SELECT runtime.active_configuration_id AS configuration_id,
-            campaign.values AS campaign_values, pointer.snapshot_id
-        FROM public.stewardship_system_configuration runtime
-        JOIN public.stewardship_campaign_configuration campaign
-            ON campaign.record_id=runtime.current_campaign_id
-           AND campaign.configuration_id=runtime.active_configuration_id
-        CROSS JOIN public.stewardship_source_current pointer
-        WHERE pointer.singleton AND campaign.values->'modules' ? 'ministry'
-    ), roles AS (
-        SELECT DISTINCT translate(btrim(role.name),
-            'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz') AS name
-        FROM setting CROSS JOIN LATERAL jsonb_array_elements_text(
-            public.stewardship_ministry_leader_roles_v1(setting.campaign_values)) role(name)
+    WITH roster AS MATERIALIZED (
+        SELECT payload.member_key, payload.ministry_key, payload.canonical::jsonb AS doc
+        FROM public.stewardship_snapshot_roster rm
+        JOIN public.stewardship_source_roster payload ON payload.id=rm.payload_id
+        WHERE rm.snapshot_id=current_snapshot
+    ), labels AS MATERIALIZED (
+        SELECT DISTINCT roster.doc->>'ministryRoleName' AS label FROM roster
+    ), leader_labels AS MATERIALIZED (
+        SELECT labels.label FROM labels
+        WHERE public.stewardship_ministry_leader_role_key_v1(labels.label)=ANY(leader_keys)
     ), held AS MATERIALIZED (
-        -- The current snapshot's roster rows holding a leader role, found
-        -- before any Member, Ministry or contact is read, so the keyed
-        -- lookups below run for leaders' rows only.
-        SELECT roster.member_key, roster.ministry_key, roster.canonical
-        FROM setting CROSS JOIN roles
-        JOIN public.stewardship_source_roster roster
-          ON translate(btrim(roster.canonical::jsonb->>'ministryRoleName'),
-                 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz')=roles.name
-        JOIN public.stewardship_snapshot_roster rm
-          ON rm.payload_id=roster.id AND rm.snapshot_id=setting.snapshot_id
+        SELECT roster.member_key, roster.ministry_key
+        FROM roster JOIN leader_labels ON leader_labels.label=roster.doc->>'ministryRoleName'
+        WHERE roster.doc->'schema_version'='1'::jsonb
+          AND roster.doc->'current'='true'::jsonb
     )
     SELECT DISTINCT lower(address.value->>'value'), duid.ministry::integer,
         CASE WHEN member.source_key ~ '^[0-9]{1,18}$' THEN member.source_key::bigint END
-    FROM held CROSS JOIN setting
+    FROM held
     JOIN public.stewardship_snapshot_member mm
-        ON mm.snapshot_id=setting.snapshot_id AND mm.source_key=held.member_key
+        ON mm.snapshot_id=current_snapshot AND mm.source_key=held.member_key
     JOIN public.stewardship_source_member member ON member.id=mm.payload_id
     JOIN public.stewardship_snapshot_ministry tm
-        ON tm.snapshot_id=setting.snapshot_id AND tm.source_key=held.ministry_key
+        ON tm.snapshot_id=current_snapshot AND tm.source_key=held.ministry_key
     JOIN public.stewardship_source_ministry ministry ON ministry.id=tm.payload_id
     JOIN public.stewardship_snapshot_contact cm
-        ON cm.snapshot_id=setting.snapshot_id AND cm.source_key='member:' || member.source_key
+        ON cm.snapshot_id=current_snapshot AND cm.source_key='member:' || member.source_key
     JOIN public.stewardship_source_contact contact ON contact.id=cm.payload_id
     CROSS JOIN LATERAL (SELECT member.canonical::jsonb AS member_doc,
         ministry.canonical::jsonb AS ministry_doc,
@@ -131,19 +168,17 @@ BEGIN
     CROSS JOIN LATERAL (SELECT CASE WHEN ministry.source_key ~ '^[0-9]{1,10}$'
         THEN ministry.source_key::bigint END AS ministry) duid
     CROSS JOIN LATERAL jsonb_array_elements(parsed.contact_doc->'emails') address(value)
-    WHERE held.canonical::jsonb->'schema_version'='1'::jsonb
-      AND held.canonical::jsonb->'current'='true'::jsonb
-      AND parsed.member_doc->'schema_version'='1'::jsonb
+    WHERE parsed.member_doc->'schema_version'='1'::jsonb
       AND parsed.contact_doc->'schema_version'='1'::jsonb
       AND parsed.ministry_doc->'schema_version'='1'::jsonb
       AND parsed.member_doc->'active'='true'::jsonb
       AND parsed.ministry_doc->'catalog_present'='true'::jsonb
       AND duid.ministry BETWEEN 1 AND 2147483647
-      AND setting.campaign_values->'ministry_duids' @> jsonb_build_array(duid.ministry)
+      AND current_values->'ministry_duids' @> jsonb_build_array(duid.ministry)
       AND address.value->'valid'='true'::jsonb
       AND jsonb_typeof(address.value->'value')='string'
       AND NOT EXISTS (SELECT 1 FROM public.stewardship_ministry_activity activity
-          WHERE activity.configuration_id=setting.configuration_id
+          WHERE activity.configuration_id=current_configuration
             AND activity.organization_id=ministry.organization_id
             AND activity.ministry_duid=duid.ministry
             AND NOT activity.active);
@@ -155,10 +190,12 @@ REVOKE ALL ON FUNCTION public.stewardship_ministry_leaders_v1() FROM PUBLIC;
 -- One portal user's role-derived Ministry scope (#922): the ascending DUIDs
 -- of the Ministries stewardship_ministry_leaders_v1 lists for that user's
 -- current address, or [] for an unknown or disabled user or an address an
--- exact-address rule explicitly denies (an empty role set still refuses
--- everything). One address that several leader Members list gets the union
--- of their Ministries, since whoever controls it can sign in as any of
--- them. Definer, so the web,
+-- exact-address rule explicitly denies: an empty role set refuses
+-- everything, ParishSoft leadership included. (Unticking an address's last
+-- role on the Portal users page removes its rule instead, so only a
+-- deliberate deny blocks.) One address that several leader Members list
+-- gets the union of their Ministries, since whoever controls it can sign
+-- in as any of them. Definer, so the web,
 -- worker and download logins, which call it (directly, through
 -- stewardship_ministry_scope_v1 or through the Admin session guard), learn
 -- only a scope and read no contact data; database-grants grants EXECUTE to
@@ -373,11 +410,13 @@ BEGIN
           AND NOT has_function_privilege('public', p.oid, 'EXECUTE')
           AND ((p.proname='stewardship_ministry_leaders_v1'
                 AND pg_get_function_identity_arguments(p.oid)=''
-                AND p.prosrc LIKE '%public.stewardship_ministry_leader_roles_v1(setting.campaign_values)%'
-                AND p.prosrc LIKE '%held.canonical::jsonb->''current''=''true''::jsonb%'
+                AND p.prosrc LIKE '%public.stewardship_ministry_leader_roles_v1(current_values)%'
+                AND p.prosrc LIKE '%public.stewardship_ministry_leader_role_key_v1(labels.label)=ANY(leader_keys)%'
+                AND p.prosrc LIKE '%WHERE rm.snapshot_id=current_snapshot%'
+                AND p.prosrc LIKE '%roster.doc->''current''=''true''::jsonb%'
                 AND p.prosrc LIKE '%parsed.member_doc->''active''=''true''::jsonb%'
                 AND p.prosrc LIKE '%address.value->''valid''=''true''::jsonb%'
-                AND p.prosrc LIKE '%setting.campaign_values->''ministry_duids'' @> jsonb_build_array(duid.ministry)%'
+                AND p.prosrc LIKE '%current_values->''ministry_duids'' @> jsonb_build_array(duid.ministry)%'
                 AND p.prosrc LIKE '%NOT activity.active%')
             OR (p.proname='stewardship_ministry_leader_scope_v1'
                 AND pg_get_function_identity_arguments(p.oid)='user_uuid uuid'
@@ -387,12 +426,17 @@ BEGIN
        )<>2 THEN
         RAISE EXCEPTION 'Migration 0042: the Ministry leader functions are not installed as declared';
     END IF;
-    -- The default role names, from the one accessor.
-    IF public.stewardship_ministry_leader_roles_v1('{}'::jsonb)
+    -- The default role names, from the one accessor, and the comparison
+    -- form: whitespace runs (no-break spaces too) collapse, the ends trim
+    -- and only ASCII letters lowercase.
+    IF public.stewardship_ministry_leader_role_key_v1(
+           E' \u00a0Team\t \u2003ONE\u00a0Lead\u00c9r ')
+           IS DISTINCT FROM E'team one lead\u00c9r'
+       OR public.stewardship_ministry_leader_roles_v1('{}'::jsonb)
            IS DISTINCT FROM '["Chairperson", "Staff"]'::jsonb
        OR public.stewardship_ministry_leader_roles_v1('{"ministry_leader_roles": ["Lead"]}'::jsonb)
            IS DISTINCT FROM '["Lead"]'::jsonb THEN
-        RAISE EXCEPTION 'Migration 0042: stewardship_ministry_leader_roles_v1 is not installed as declared';
+        RAISE EXCEPTION 'Migration 0042: the Ministry leader role helpers are not installed as declared';
     END IF;
     -- The replaced and new invoker functions: not SECURITY DEFINER, the fixed
     -- search_path, and their new rules.
@@ -401,6 +445,9 @@ BEGIN
           AND p.proconfig=ARRAY['search_path=pg_catalog, public, pg_temp']
           AND ((p.proname='stewardship_ministry_leader_roles_v1'
                 AND pg_get_function_identity_arguments(p.oid)='campaign_values jsonb'
+                AND p.provolatile='i')
+            OR (p.proname='stewardship_ministry_leader_role_key_v1'
+                AND pg_get_function_identity_arguments(p.oid)='name text'
                 AND p.provolatile='i')
             OR (p.proname='stewardship_ministry_scope_v1'
                 AND pg_get_function_identity_arguments(p.oid)='user_uuid uuid'
@@ -416,7 +463,7 @@ BEGIN
             OR (p.proname='stewardship_require_chair_receipt_v1'
                 AND pg_get_function_identity_arguments(p.oid)='configuration uuid, snapshot uuid'
                 AND p.prosrc NOT LIKE '%RAISE%'))
-       )<>5 THEN
+       )<>6 THEN
         RAISE EXCEPTION 'Migration 0042: a replaced function is not installed as declared';
     END IF;
 END

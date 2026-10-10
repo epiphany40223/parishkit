@@ -862,22 +862,31 @@ assignment/role requires an Admin-applied `ConfigurationChangeRequest`.
 
 ### Ministry leaders
 
-A person leads a Ministry for the current campaign when an active Member
-holds one of the campaign's Ministry leader roles on that Ministry's current
-roster in the promoted ParishSoft data, and the person signs in with a valid
-email address on that Member's ParishSoft contact record (#922). The Ministry
-must be catalog-present, selected in the current campaign, which asks about
-Ministries, and not marked inactive in the applied
-[Ministry activity](#ministry-activity-policy). Role labels match trimmed and
-ASCII case-insensitive, otherwise exactly; addresses match
-case-insensitively, with no Gmail dot or plus folding, whatever the contact's
-publication flag says. An address that several leader Members list gets the
-union of their Ministries. No current campaign, or a campaign without
-Ministry stewardship, means no Ministry leaders. An exact-address login rule
-with no role still refuses the address, leadership included.
+A person leads a Ministry for the current campaign when an active Member,
+whatever their Family's status, holds one of the campaign's Ministry leader
+roles on that Ministry's current roster in the promoted ParishSoft data, and
+the person signs in with a valid email address on that Member's ParishSoft
+contact record (#922). The Ministry must be catalog-present, selected in the
+current campaign, which asks about Ministries, and not marked inactive in the
+applied [Ministry activity](#ministry-activity-policy). The current campaign
+may still be a draft. Role labels match with each run of whitespace (any
+Unicode whitespace, the no-break space included) read as one space, the ends
+trimmed and ASCII letters case-insensitive, otherwise exactly
+(`stewardship_ministry_leader_role_key_v1`; Python's `leader_role_key` is the
+same rule). Addresses match case-insensitively, with no Gmail dot or plus
+folding, whatever the contact's publication flag says. An address that
+several leader Members list gets the union of their Ministries. No current
+campaign, or a campaign without Ministry stewardship, means no Ministry
+leaders. An exact-address login rule with no role, an explicit deny, still
+refuses the address, leadership included; unticking an address's last role
+on the Portal users page removes its rule instead
+([Portal user management](../admin-portal/spec.md#portal-user-management)).
 
 The campaign's `ministry_leader_roles` value lists the role names: one to 50
-distinct trimmed names, none repeated in another case. A campaign without the
+distinct trimmed names, none repeated once compared as above. Campaign
+settings offers the current roster's role labels with their whitespace
+collapsed, leaving out any label that could not be saved, such as one over
+200 characters. A campaign without the
 value uses the default, `["Chairperson", "Staff"]`, which only SQL's
 `stewardship_ministry_leader_roles_v1` writes down; Python reads it there. The
 value stays editable while the campaign is live (the structural lock exempts
@@ -893,8 +902,15 @@ restates the rule and can never grant more than SQL. Administrator and Staff
 come only from login rules, as before; a Staff member who also leads a
 Ministry keeps Staff's access. Scope is recomputed on every request, so a full
 refresh that removes a role or an address takes effect on the next request; a
-leader left with no Ministry and no other role is refused. A read costs a few
-milliseconds with thousands of roster rows (the migration's measured case).
+leader left with no Ministry and no other role is refused. Nothing is cached
+between requests: the web opens a new database connection for each request,
+and an Admin page reads the scope at least twice (the principal, and the
+menu's follow-up count, which derives the scope in SQL from the actor). The
+function therefore reads the current snapshot first and then parses only
+that snapshot's roster rows, never the other retained snapshots'. With 3,000
+Members, 72 Ministries, 300 leaders and three retained snapshots, the first
+read on a fresh connection takes a few tens of milliseconds, and a test
+bounds it.
 
 ### Submission
 

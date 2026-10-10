@@ -12,7 +12,15 @@ import json
 
 from django.db import connection
 
-from .configuration import MINISTRY_LEADER_ROLES, leader_role_key
+from parishkit.config import ConfigError
+from parishkit.stewardship.schema_primitives import text
+
+from .configuration import (
+    MINISTRY_LEADER_ROLES,
+    ROLE_NAME_LIMIT,
+    leader_role_key,
+    leader_role_label,
+)
 
 
 def effective_roles(values):
@@ -31,26 +39,44 @@ def effective_roles(values):
     return list(json.loads(value) if isinstance(value, str) else value)
 
 
+def saveable(name):
+    """Whether a role name can be saved as one of the campaign's leader roles."""
+    try:
+        text(name, ROLE_NAME_LIMIT)
+    except ConfigError:
+        return False
+    return True
+
+
 def roster_role_names():
     """Distinct role labels on the promoted source's current roster rows.
 
-    Labels are trimmed; ones that differ only in ASCII case count once (SQL
-    matches them alike), spelled as the first in sorted order. No current
-    source means none.
+    Each label's whitespace is collapsed (``leader_role_label``, as SQL
+    compares it); ones that then differ only in ASCII case count once (SQL
+    matches them alike), spelled as the first in sorted order. A label that
+    could not be saved, such as one over the length cap, is left out, so
+    every offered checkbox can be saved. No current source means none.
     """
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT DISTINCT btrim(roster.canonical::jsonb->>'ministryRoleName') "
+            "SELECT DISTINCT roster.canonical::jsonb->>'ministryRoleName' "
             "FROM stewardship_source_current pointer "
             "JOIN stewardship_snapshot_roster rm ON rm.snapshot_id=pointer.snapshot_id "
             "JOIN stewardship_source_roster roster ON roster.id=rm.payload_id "
             "WHERE roster.canonical::jsonb->'current'='true'::jsonb "
             "AND jsonb_typeof(roster.canonical::jsonb->'ministryRoleName')='string'"
         )
-        names = sorted(row[0] for row in cursor.fetchall() if row[0])
+        labels = [row[0] for row in cursor.fetchall()]
+    return unique_labels(labels)
+
+
+def unique_labels(labels):
+    """Saveable, whitespace-collapsed labels, one per comparison key, sorted."""
+    names = sorted({leader_role_label(label) for label in labels})
     unique = {}
     for name in names:
-        unique.setdefault(leader_role_key(name), name)
+        if saveable(name):
+            unique.setdefault(leader_role_key(name), name)
     return list(unique.values())
 
 

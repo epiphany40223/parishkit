@@ -1,7 +1,9 @@
 """Strict campaign schema, historical parser preservation, and cross-record rules."""
 
+import re
 from copy import deepcopy
 from datetime import UTC, datetime
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -10,10 +12,14 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.configuration_schema import validator_for
 from parishkit.stewardship.accounts.request_patch import build_candidate
 from parishkit.stewardship.campaigns.configuration import (
+    ROLE_NAME_LIMIT,
     campaign_values,
+    leader_role_key,
+    leader_role_label,
     schedule_values,
     validate_campaign_sections,
 )
+from parishkit.stewardship.campaigns.leader_roles import saveable, unique_labels
 
 from .campaign_factory import campaign, financial, schedule
 from .configuration_factory import configuration_document, configuration_version
@@ -356,6 +362,8 @@ def test_reminder_workgroup_is_set_and_cleared_by_patch():
     [
         [],
         ["Staff", "staff"],
+        # The same name once whitespace is collapsed, as SQL compares it.
+        ["Team 1 leader", "Team\u00a01  Leader"],
         [" Staff"],
         [""],
         ["x" * 201],
@@ -392,3 +400,55 @@ def test_ministry_leader_roles_are_optional_and_kept_by_patch():
     values = result.candidate.document()["sections"]["campaigns"][0]["values"]
     assert values["ministry_leader_roles"] == ["Chairperson"]
     campaign_values(values)
+
+
+# The whitespace class in SQL's stewardship_ministry_leader_role_key_v1.
+LEADER_MIGRATION = (
+    Path(__file__).resolve().parents[2]
+    / "src/parishkit/stewardship/schema/migrations/0042_ministry_leaders_from_roles.sql"
+)
+
+
+def test_sql_collapses_exactly_the_whitespace_python_splits_on():
+    """SQL's whitespace class is str.isspace(), character for character (#939).
+
+    Python's re reads the class's \\uXXXX escapes as PostgreSQL does, so
+    the class from the frozen file is checked against every code point.
+    """
+    text = LEADER_MIGRATION.read_text(encoding="utf-8")
+    start = text.index("regexp_replace(name,")
+    end = text.index("]+'", start) + 2
+    pattern = re.compile(text[text.index("'", start) + 1 : end])
+    spaces = {code for code in range(0x110000) if chr(code).isspace()}
+    matched = {code for code in range(0x110000) if pattern.fullmatch(chr(code))}
+    assert matched == spaces
+    assert 0xA0 in matched and 0x200B not in matched
+
+
+def test_role_names_compare_with_whitespace_collapsed_and_ascii_case_folded():
+    """The comparison key: whitespace runs as one space, trimmed, ASCII lowered."""
+    assert leader_role_label("\u00a0Team\t 1\u2003 Leader ") == "Team 1 Leader"
+    assert leader_role_key("\u00a0Team\t 1\u2003 Leader ") == "team 1 leader"
+    # Only ASCII letters fold; other characters stay exactly as they are.
+    assert leader_role_key("L\u00c9AD") == "l\u00c9ad"
+    assert leader_role_key("\u200bStaff") == "\u200bstaff"
+
+
+def test_offered_role_labels_can_all_be_saved():
+    """Roster labels offered as choices are collapsed, distinct and saveable."""
+    labels = [
+        "Staff",
+        "\u00a0Staff\u2003",
+        "Team\u00a0 1 leader",
+        "team 1 LEADER",
+        "L" * (ROLE_NAME_LIMIT + 1),
+        "L" * ROLE_NAME_LIMIT,
+        "Bad\x7fcontrol",
+        " \u00a0 ",
+    ]
+    offered = unique_labels(labels)
+    assert offered == ["L" * ROLE_NAME_LIMIT, "Staff", "Team 1 leader"]
+    assert all(saveable(name) for name in offered)
+    assert not saveable("L" * (ROLE_NAME_LIMIT + 1)) and not saveable("")
+    # Every offered label can be saved as the campaign's list.
+    campaign_values(campaign(ministry_leader_roles=offered)["values"])
