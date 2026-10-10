@@ -594,8 +594,9 @@ def test_mail_merge_always_lists_by_postal_mail_only(
     """Mailing columns always use "By postal mail only" (#951).
 
     The one Family has no head email and a mailing address. Asked for "By
-    email" with mailing columns on, the page, the capture, the status page's
-    return link and the mail merge all use reach ``mail`` and hold it.
+    email" with mailing columns on, the page, the capture and the mail
+    merge all use reach ``mail`` and hold it; the page keeps the reach asked
+    for, and the status page returns with the mailing columns alone.
     """
     harness = live_response_service
     data = response_source()
@@ -617,6 +618,9 @@ def test_mail_merge_always_lists_by_postal_mail_only(
         assert response.status_code == 200 and b"Matching Families: 1." in body
         assert b"<td>1 Example Street<br>" in body
         assert b'<option value="mail" selected>' in body
+        # The export form carries the page's own reach; the service applies
+        # "mail" when it binds the selection.
+        assert b'<input type="hidden" name="reach" value="email">' in body
         response = post(browser, reverse("admin:family_directory_export"), fields)
         assert response.status_code == 302
     request = ExportRequest.objects.get(request_key=fields["request_key"])
@@ -624,13 +628,13 @@ def test_mail_merge_always_lists_by_postal_mail_only(
     assert request.parameters["postal"] is True
     assert request.parameters["filters"]["reach"] == "mail"
     assert request.directory_snapshot.row_count == 1
-    # The status page names the mail merge and returns to the same filter
-    # with mailing columns on (closed presets only).
+    # The status page names the mail merge and returns with the mailing
+    # columns on (closed presets only), which apply reach "mail" themselves.
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         status, body = read(browser, response["Location"])
     assert status.status_code == 200
     assert b"Family-directory mail-merge export" in body
-    assert f'href="{route}?reach=mail&amp;mailing=yes"'.encode() in body
+    assert f'href="{route}?mailing=yes"'.encode() in body
     with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
         assert execute_hint(
             request.task_id,

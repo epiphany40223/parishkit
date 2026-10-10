@@ -487,6 +487,9 @@ td > :last-child { margin-bottom: 0; }
    line keeps its space while idle, so it never moves the page (#736). */
 .unchanged-hint { margin-inline-start: .5rem; }
 .unchanged-hint[data-idle] { visibility: hidden; }
+/* A locked field's reason (data-locked-when, ui-v1.js) keeps its space while
+   the field is unlocked, so locking it never moves the controls (#951). */
+.lock-reason.is-idle { visibility: hidden; }
 /* The chosen email under a schedule's email list (#446). */
 .email-summary { margin-block-start: .35rem; }
 .email-summary p { margin-block: .2rem; }

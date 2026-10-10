@@ -5,7 +5,10 @@ directory and postal outreach. The "Include mailing columns" checkbox
 (``mailing``, off by default) adds the addressee and mailing-address columns
 and makes the export a postal mail merge. It also lists only the Families
 postal invitations are for: Campaign mail can reach is "By postal mail
-only", whatever reach was chosen (#951; ``DirectoryQuery.postal``).
+only", whatever reach was chosen (#951; ``DirectoryQuery.postal``). That
+rule is applied when the rows are selected (``selection_parameters``), never
+to the page's own filters, so the reach the reader chose comes back when the
+mailing columns are turned off; the audit records the reach applied.
 """
 
 from uuid import uuid4
@@ -82,7 +85,13 @@ def mailing_option(parameters):
 
 
 def _audit(principal, campaign_id, *, postal, outcome, count, total, query):
-    """Record scope/count, never names, codes, search strings or viewed contacts."""
+    """Record scope/count, never names, codes, search strings or viewed contacts.
+
+    A mailing-columns view records the reach its rows were selected with,
+    "By postal mail only" (#951), not the page's own reach filter.
+    """
+    if postal:
+        query = query.postal()
     # An audit append takes no row locks, so it need not join the
     # writers' work order; waiting there stalled report pages behind
     # every source promotion and installer.
@@ -122,13 +131,11 @@ def _error(campaign_id, *, status):
 def _mailing_rows(rows):
     """Add each row's mail-merge addressee, as the postal export names it.
 
-    Like the file, a Family without a usable mailing address has no addressee;
-    the page shows a dash (read aloud as "No usable mailing address") there.
+    Every row has a usable mailing address: mailing columns list only
+    "By postal mail only" Families (#951).
     """
     for row in rows:
-        row["addressee"] = (
-            head_names(row["heads"]) or row["family_name"] if row["mailable"] else ""
-        )
+        row["addressee"] = head_names(row["heads"]) or row["family_name"]
 
 
 @require_http_methods(["GET", "POST"])
@@ -152,9 +159,6 @@ def directory(request, campaign_id):
         # The selection pages 50 rows at a time, so that is the only size.
         pop_page_size(parameters, (PAGE_SIZE,), default=PAGE_SIZE)
         query = DirectoryQuery.parse(parameters)
-        if postal:
-            # The page shows, audits and exports the list it selects (#951).
-            query = query.postal()
         admit_report_read(campaign_id)
         _audit(
             principal,

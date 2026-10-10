@@ -258,11 +258,15 @@ def detail(request, request_id):
                 )
                 report_url = reverse("admin:family_directory")
                 # Return with the closed link presets the export used: its reach
-                # filter and, for a mail merge, the mailing columns.
+                # filter or, for a mail merge, the mailing columns alone. A mail
+                # merge's reach is always "By postal mail only" (#951), which
+                # the mailing columns apply themselves, so the page's own reach
+                # stays Any for when the reader turns them off.
                 reach = job.parameters["filters"].get("reach", "any")
-                presets = {"reach": reach} if reach in REACH else {}
                 if job.parameters["postal"]:
-                    presets["mailing"] = "yes"
+                    presets = {"mailing": "yes"}
+                else:
+                    presets = {"reach": reach} if reach in REACH else {}
                 if presets:
                     report_url += "?" + urlencode(presets)
             else:

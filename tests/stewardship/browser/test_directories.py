@@ -184,3 +184,62 @@ def test_contact_details_show_each_heads_email(
     })).violations.map(({id,impact}) => ({id,impact}))""")
         == []
     )
+
+
+def test_mailing_columns_lock_reach_to_postal_mail_only(page, component_origin):
+    """Ticking mailing columns shows reach "By postal mail only", locked (#951).
+
+    The reader's own reach is still sent and comes back on unticking, and
+    the reason's space is always kept, so nothing on the filter bar moves.
+    """
+    page.goto(component_origin + "/family-directory")
+    reach = page.get_by_label("Campaign mail can reach", exact=True)
+    mailing = page.get_by_label("Include mailing columns")
+    reason = page.locator("#directory-reach-locked")
+    apply = page.get_by_role("button", name="Apply filters")
+
+    def boxes():
+        """Where the filter bar's controls are drawn."""
+        summary = page.locator("#directory-summary")
+        return [
+            item.bounding_box() for item in (reach, mailing, reason, apply, summary)
+        ]
+
+    assert reach.is_enabled() and reach.input_value() == "any"
+    assert reason.evaluate("node => getComputedStyle(node).visibility") == "hidden"
+    assert reach.get_attribute("aria-describedby") is None
+    reach.select_option("email")
+    before = boxes()
+    mailing.check()
+    assert reach.is_disabled() and reach.input_value() == "mail"
+    assert reason.evaluate("node => getComputedStyle(node).visibility") == "visible"
+    assert reason.inner_text() == "Set by Include mailing columns."
+    assert reach.get_attribute("aria-describedby") == "directory-reach-locked"
+    assert boxes() == before
+    mailing.uncheck()
+    assert reach.is_enabled() and reach.input_value() == "email"
+    assert reason.evaluate("node => getComputedStyle(node).visibility") == "hidden"
+    assert boxes() == before
+    # While locked, the reader's own reach is what the form sends; the server
+    # applies "By postal mail only" itself.
+    mailing.check()
+    page.route("**/families/", lambda route: route.fulfill(body="Filtered"))
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        apply.click()
+    data = sent.value.post_data
+    assert "reach=email" in data and "reach=mail" not in data
+    assert "mailing=yes" in data
+
+
+def test_mailing_columns_page_draws_reach_locked(page, component_origin):
+    """With mailing columns on, the page arrives locked; unticking restores Any."""
+    page.goto(component_origin + "/postal-directory")
+    reach = page.get_by_label("Campaign mail can reach", exact=True)
+    reason = page.locator("#directory-reach-locked")
+    assert reach.is_disabled() and reach.input_value() == "mail"
+    visible(reason)
+    before = reach.bounding_box()
+    page.get_by_label("Include mailing columns").uncheck()
+    assert reach.is_enabled() and reach.input_value() == "any"
+    assert reason.evaluate("node => getComputedStyle(node).visibility") == "hidden"
+    assert reach.bounding_box() == before
