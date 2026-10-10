@@ -41,6 +41,7 @@ from parishkit.stewardship.storage import StaleRecordError
 
 from .admin_editing import editable_configuration, principal
 from .campaign_mail_models import CampaignMailTest
+from .content_views import resave_recommended
 from .go_live_configuration import ConfigurationReadiness, configuration_readiness
 from .integration_selection import current_receipt, integration_records
 from .request_models import ConfigurationChangeRequest, ConfigurationRequestCheckpoint
@@ -61,6 +62,9 @@ class GoLiveInputs:
     mail_test_id: UUID | None
     problems: tuple[str, ...]
     digest: str
+    # Saved pages and emails to re-save (#838), from the applied
+    # configuration the digest already binds.
+    resave: tuple = ()
 
 
 def collect_inputs(caller, service, campaign_id):
@@ -186,6 +190,7 @@ def collect_inputs(caller, service, campaign_id):
             mail,
             tuple(problems),
             digest,
+            tuple(resave_recommended(configuration, campaign)),
         )
 
 

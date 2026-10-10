@@ -10,6 +10,7 @@ any data lock; the only lock is the brief one the first sign-in check
 takes on the reader's own session row.
 """
 
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, transaction
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
@@ -17,17 +18,24 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.views.decorators.http import require_safe
 
+from parishkit.config import ConfigError
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
+from parishkit.stewardship.campaigns.models import Campaign
+from parishkit.stewardship.campaigns.work_locks import read_transaction
 from parishkit.stewardship.jobs.delivery_views import (
     UNAVAILABLE,
     _database_error,
     _error,
 )
+from parishkit.stewardship.observability import debug_swallowed
+from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.system_health import read_health
 from parishkit.stewardship.web.contracts import ErrorCode, filters
 
+from .admin_editing import editable_configuration
 from .authentication import runtime
+from .content_views import resave_recommended
 from .policy import Capability, allows
 from .runtime_models import SystemConfiguration
 from .sessions import authenticated_admin
@@ -51,6 +59,29 @@ def _principal(request, store, *, final=False, activity=False):
     if not allows(actor, Capability.SYSTEM_LOGS):
         raise PermissionError("System health requires an Administrator.")
     return actor
+
+
+def resave_summary(service, campaign_id):
+    """For System health: the current campaign's content to re-save (#838).
+
+    The same rows the Pages and emails list marks, read in their own
+    read-only snapshot on page load only. ``"no_campaign"`` without a
+    current campaign; None when the read cannot run right now (no coherent
+    configuration, a restore, a database fault), so System health says it
+    could not check instead of failing the whole page.
+    """
+    if campaign_id is None:
+        return "no_campaign"
+    try:
+        with read_transaction():
+            configuration = editable_configuration(service)
+            campaign = Campaign.objects.select_related("active_configuration").get(
+                pk=campaign_id
+            )
+            return resave_recommended(configuration, campaign)
+    except (ConfigError, DatabaseError, ObjectDoesNotExist, StorageInvariantError):
+        debug_swallowed("re-save summary unavailable")
+        return None
 
 
 def _read(request, template, *, page):
@@ -82,6 +113,8 @@ def _read(request, template, *, page):
             # Families the form cannot open (#774): on page load only, never
             # in the polled status, so the poll never pays for the scan.
             context["source_form_count"] = source_form_summary(extra["campaign_id"])
+            # Content to re-save (#838): likewise on page load only.
+            context["resave"] = resave_summary(service, extra["campaign_id"])
             # The Admin chrome reuses this instant instead of reading the clock.
             request._stewardship_display_now = health.checked_at
             response = render(request, template, context)

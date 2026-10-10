@@ -1038,7 +1038,10 @@ whose Family code or link is only inside removed markup is marked "Can't be
 sent until fixed" instead, because sending refuses it. Previewing and applying
 the form stores the cleaned version through the normal configuration change
 (after putting back any lost placeholder); nothing rewrites applied history
-automatically. A configuration request that can never verify against
+automatically. [Go-live readiness](../admin-portal/spec.md#production-transition)
+and the [System health page](../admin-portal/spec.md#system-health-page) list
+the same flagged content.
+A configuration request that can never verify against
 the applied history fails with a visible reason instead of waiting forever.
 The direct submission confirmation selects at most one email template
 per campaign; editing replaces its immutable revision, not an arbitrary member
