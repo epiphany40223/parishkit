@@ -171,6 +171,14 @@ remain below `/admin/` and apply server-side authorization.
    requests, other tabs/Admins, removed targets, session expiry/revocation,
    page teardown, and exact-once request/audit/notification behavior.
 
+After launch, #922 replaced Ministry assignments and Chairperson suggestions
+with Ministry leaders from ParishSoft roles, and the Users revamp (#952)
+replaces the rule tables, hosted-domain rules and autosave above with one
+table of users, each with one role, saved through Review and Apply. The
+current behavior is the specification's
+[Portal user management](../../specs/stewardship/admin-portal/spec.md#portal-user-management); the
+slices of #952 are tracked on that issue.
+
 ### ADM-08: Manual refresh, follow-up queues, and logs
 
 1. Add idempotent manual full-refresh trigger/status with request coalescing and
@@ -316,7 +324,7 @@ placement table, the other specs that name those URLs, and the guides.
 | ADM-12.15 | NAV-12 | Export and digest URLs | C |
 | ADM-12.16 | NAV-13 | Optional: trailing slash on sign-in, setup and maintenance | Last |
 | ADM-12.17 | NAV-14 | Emailed reports page | C |
-| ADM-12.18 | NAV-15 | Split Portal users into Sign-in rules, Ministry assignments and Chairpersons (#535) | B |
+| ADM-12.18 | (dropped) | Not built: the Users revamp (#952) replaces the planned Portal users split | — |
 | ADM-12.19 | NAV-16 | Ways back (#521): test-email origin, Return links, linked messages | Serial |
 | ADM-12.20 | NAV-17 | Reachability and no-UUID crawl | Serial |
 | ADM-12.21 | NAV-18 | Home Next steps and Today line | Serial |
@@ -324,7 +332,7 @@ placement table, the other specs that name those URLs, and the guides.
 
 NAV-1 and NAV-2 come first (NAV-1 merges after #559), and NAV-6 merges
 before any lane starts its URL work. Lane A runs NAV-3, NAV-4, NAV-9 and
-NAV-10 (NAV-9 needs NAV-4 and NAV-6); lane B runs NAV-5a, NAV-7 and NAV-15;
+NAV-10 (NAV-9 needs NAV-4 and NAV-6); lane B runs NAV-5a and NAV-7;
 lane C runs NAV-5b, NAV-11, NAV-12, NAV-14 and then NAV-19 (which also needs
 NAV-1), after the in-flight report work in #553, #567, #559 and #477 PR 5
 merges; lane D runs NAV-8. NAV-16 (after NAV-10 and NAV-11) to NAV-18 come at
