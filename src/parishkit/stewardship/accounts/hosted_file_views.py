@@ -2,9 +2,13 @@
 
 The page lists, uploads, renames and deletes files; every action needs a
 current Administrator and a CSRF token, like content edits (no fresh
-sign-in). See docs/specs/stewardship/hosted-files/spec.md.
+sign-in). Its table is an action table (#879): each unused file's Edit opens
+the placeholder-name page and its Delete, like Delete selected, confirms in
+the shared dialog, which posts here and redraws the table in place. See
+docs/specs/stewardship/hosted-files/spec.md.
 """
 
+from urllib.parse import urlencode
 from uuid import UUID
 
 from django import forms
@@ -21,6 +25,7 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.hosted_file_types import FileRefused
+from parishkit.stewardship.web.refusals import UserFacingStale, unexpected_fields
 from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
 
 from . import hosted_file_storage as storage
@@ -176,6 +181,7 @@ def _rows(files):
             "image": row.kind in IMAGE_KINDS,
             "type": KIND_LABELS[row.kind],
             "uses": uses.get(row.pk, []),
+            "edit_url": reverse("admin:hosted_file_rename", args=[row.pk]),
             "uploader": uploaders.get(row.uploaded_by_id, ""),
             "missing": not storage.exists(root, row.pk, row.size),
         }
@@ -193,12 +199,17 @@ def _library(request, *, form=None, status=200, notice=None):
             (row for row in files if str(row.pk) == selected["uploaded"]), None
         )
     table = paginate(_rows(files), selected, sorting=LIBRARY_SORTING)
+    # The table region redraws from this address after a deletion: the page
+    # as shown (sort, page and size), without the one-off upload notice.
+    shown = urlencode([pair for pair in selected.items() if pair[0] != "uploaded"])
+    refresh_url = reverse("admin:hosted_files") + (f"?{shown}" if shown else "")
     response = render(
         request,
         "stewardship/hosted-files.html",
         {
             "form": form or UploadForm(),
             "table": table,
+            "refresh_url": refresh_url,
             "uploaded": uploaded,
             "uploaded_placeholder": (
                 hosted_files.placeholder(uploaded.slug) if uploaded else ""
@@ -275,68 +286,79 @@ def upload(request):
 
 
 def _selected(request):
-    """The distinct file IDs a bulk form submitted, validated as UUIDs."""
+    """The distinct file IDs the dialog posted, validated as UUIDs."""
     values = request.POST.getlist("file_id")
     if not values or len(values) > MAX_FILES or len(set(values)) != len(values):
         raise ValueError("Select at least one file.")
     return [UUID(value) for value in values]
 
 
+# The dialog's refusals (#879), by what went wrong. They name no file: the
+# reader reloads the page, whose Used in column then says where each file is
+# used.
+DELETE_REFUSALS = {
+    "in_use": (
+        gettext_lazy(
+            "A chosen file is now used by a page, an email or unsent mail, so "
+            "nothing was deleted."
+        ),
+        gettext_lazy("Reload the page to see where each file is used."),
+    ),
+    "busy": (
+        gettext_lazy("The library was busy, so nothing was deleted."),
+        gettext_lazy("Try again in a moment."),
+    ),
+    "partly": (
+        gettext_lazy(
+            "Some of the chosen files were deleted, but not all: one came into "
+            "use or the library was busy."
+        ),
+        gettext_lazy("Reload the page to see which files remain, then try again."),
+    ),
+}
+
+
+def _delete_refusal(reason):
+    """A fresh 409 refusal for the dialog, from ``DELETE_REFUSALS``."""
+    message, fix = DELETE_REFUSALS[reason]
+    return UserFacingStale(message, fix=fix)
+
+
 @require_http_methods(["POST"])
 def delete(request):
-    """Confirm, then delete each selected file on its own; report every result."""
+    """Delete the files the confirmation dialog names, then return to the library.
+
+    The dialog (admin-portal spec, "Row actions and confirmation") posts the
+    chosen ``file_id`` values. The whole request is refused, and nothing is
+    deleted, when any chosen file is in use. Otherwise each file is deleted
+    on its own (``hosted_file_uses.delete`` locks it and rechecks its uses;
+    one already gone counts as deleted). Should one fail after others went
+    (it came into use meanwhile, or the storage lock was busy), the answer
+    says so, so the reader reloads. Success redirects to the library, which
+    the dialog then redraws in place.
+    """
     try:
         actor = principal(request, runtime())
         filters(request.GET, allowed=set())
-        if set(request.POST) - {"file_id", "action", "csrfmiddlewaretoken"}:
-            raise ValueError("Invalid deletion fields.")
-        action = request.POST.get("action")
-        if action not in {"preview", "confirm"}:
-            raise ValueError("Unknown deletion action.")
+        if request.FILES or set(request.POST) - {"file_id", "csrfmiddlewaretoken"}:
+            raise unexpected_fields()
         ids = _selected(request)
-        if action == "preview":
-            files = {row.pk: row for row in HostedFile.objects.filter(pk__in=ids)}
-            uses = hosted_file_uses.file_uses(list(files))
-            rows = [
-                {"id": value, "file": files.get(value), "uses": uses.get(value, [])}
-                for value in ids
-            ]
-            return _no_store(
-                render(
-                    request,
-                    "stewardship/hosted-file-delete.html",
-                    {"rows": rows, "confirming": True},
-                )
-            )
-        names = dict(HostedFile.objects.filter(pk__in=ids).values_list("pk", "slug"))
-        results = []
-        for value in ids:
+        if hosted_file_uses.file_uses(ids):
+            raise _delete_refusal("in_use")
+        for done, value in enumerate(ids):
             try:
-                outcome = hosted_file_uses.delete(actor, value)
-                results.append(
-                    {"slug": names.get(value), "outcome": outcome, "uses": []}
-                )
-            except hosted_files.HostedFileError as refusal:
-                results.append(
-                    {
-                        "slug": names.get(value),
-                        "outcome": "in_use",
-                        "uses": refusal.uses,
-                    }
-                )
-            except (ConfigError, DatabaseError):
-                # Busy storage or a brief database problem: this file is
-                # untouched; report it and carry on with the others.
-                results.append(
-                    {"slug": names.get(value), "outcome": "retry", "uses": []}
-                )
-        return _no_store(
-            render(
-                request,
-                "stewardship/hosted-file-delete.html",
-                {"results": results, "confirming": False},
-            )
-        )
+                hosted_file_uses.delete(actor, value)
+            except (hosted_files.HostedFileError, ConfigError, DatabaseError) as error:
+                # In use since the check, or busy storage or a brief database
+                # problem: this file is untouched, and so are the rest.
+                if done:
+                    reason = "partly"
+                elif isinstance(error, hosted_files.HostedFileError):
+                    reason = "in_use"
+                else:
+                    reason = "busy"
+                raise _delete_refusal(reason) from None
+        return _no_store(HttpResponseRedirect(reverse("admin:hosted_files")))
     except ERRORS as error:
         return error_response(error)
 

@@ -833,7 +833,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `ministries` | Ministries | Menu: Ministries | Administrator | Ministry activity | `/admin/parish/ministries/` | (same) |  |
 | `campaign_ministries` | Campaign Ministries | Ministries | Administrator | Change campaign Ministries | `/admin/parish/ministries/campaign/` | (same) | Moves under Ministries, which links it while the campaign is live; its Return link goes to Ministries. Campaign settings keeps a link. |
 | `hosted_files` | Hosted files | Menu: Hosted files | Administrator | (same) | `/admin/parish/files/` | (same) |  |
-| `hosted_file_delete` | Delete hosted files | Hosted files | Administrator | (same) | `/admin/parish/files/deletion/` (POST only) | (same) |  |
+| `hosted_file_delete` | Delete hosted files | Hosted files | Administrator | (same) | `/admin/parish/files/deletion/` (POST only) | (same) | The table's confirmation dialog posts here (#879); it answers with a redirect or a refusal, never a page. |
 | `hosted_file_rename` | Change placeholder name | Hosted files | Administrator | (same) | `/admin/parish/files/<file>/name/` | (same) |  |
 | `source_refresh` | Refresh from ParishSoft | Menu: Refresh from ParishSoft | Administrator | ParishSoft refresh | `/admin/parish/parishsoft-refresh/` | (same) |  |
 | `users` | Users | Menu: Users | Administrator | Portal users; Sign-in rules | `/admin/users` | `/admin/users/` | One table of users (#952), which replaces the planned split into Sign-in rules, Ministry assignments and Chairpersons (decision 13). |
@@ -847,7 +847,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `assignments` | Review Ministry assignment | Portal users | Administrator | Assignments | `/admin/users/assignments` (POST only) | (none) | Retired by #922: removed with Ministry assignments. |
 | `chair_confirmations` | Review Chairperson suggestion | Portal users | Administrator | Chair suggestions | `/admin/users/suggestions` (POST only) | (none) | Retired by #922: removed with Chairperson suggestions. |
 | `chair_reviews` | Review Chairperson decision | Portal users | Administrator | Chair reviews | `/admin/users/reviews` (POST only) | (none) | Retired by #922: removed with Chairperson reviews. |
-| `automation_access` | Automation access | Menu: Automation access | Administrator | (same) | `/admin/users/automation/` | (same) | [Admin automation](../admin-automation/spec.md#revocation-and-listing) (ADM-11); revoke posts to `/admin/users/automation/sessions/<session>/`. |
+| `automation_access` | Automation access | Menu: Automation access | Administrator | (same) | `/admin/users/automation/` | (same) | [Admin automation](../admin-automation/spec.md#revocation-and-listing) (ADM-11); the Revoke dialog posts the session to `/admin/users/automation/sessions/` (#879). |
 | `automation_approval` | Approve an automation session | Automation access | Administrator | (same) | `/admin/users/automation/approval/` | (same) | Opened from the command line's link; needs a fresh sign-in. |
 | `system_health` | System health | Menu: System health | Administrator | (new) | (none) | `/admin/system/health/` | New page ([System health](#system-health), #530, ADM-13). |
 | `source_form` | Families the form cannot open | System health | Administrator | (new, #774) | (none) | `/admin/system/source-form/` | New page ([System health page](#system-health-page)); no menu entry. |
@@ -1345,7 +1345,8 @@ rules; nothing else about those Families changes.
 Hosted files (Parish data) is the Administrator-only library of
 PDF, Office and image files that page and email content links or shows
 with `{{ file.<slug> }}`: upload, placeholder copy, where each file is used,
-and single or multi-select deletion that is refused while a file is in use.
+and single or multi-select deletion that is refused while a file is in use,
+through the shared [row actions and confirmation](#row-actions-and-confirmation).
 The page and its rules are defined by the
 [hosted files specification](../hosted-files/spec.md#admin-page).
 

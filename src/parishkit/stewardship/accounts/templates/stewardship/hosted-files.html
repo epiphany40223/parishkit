@@ -7,6 +7,7 @@
 <p>{% translate "To show an image, copy its image tag and describe the image in alt, or leave alt empty if the image is only decoration." %} <code>{{ example_image }}</code></p>
 <p>{% translate "PDF, Word (.docx), Excel (.xlsx), PowerPoint (.pptx), PNG, JPEG and still GIF files are accepted, up to 10 MB each, 100 files and 200 MB in all. Older Office files (.doc, .xls, .ppt), files with macros and animated images are not. Images are copied without their hidden details (such as location) and fitted within 2,048 pixels. A large upload needs a reasonably fast connection." %}</p>
 <p>{% translate "A file's link never changes, even if you change its placeholder name. Many email programs hide images until the reader allows them, so keep important information in the text too." %}</p>
+<p>{% translate "Each unused file has Edit, to change its placeholder name, and Delete in its Actions column. Delete, or Delete selected for the ticked files, asks first, then removes the files from the list; if any chosen file is in use, nothing is deleted." %}</p>
 <p>{% translate "A file can't be deleted, or have its placeholder name changed, while a page or email still uses it. Deleting a file breaks its link everywhere, including in emails already sent, which then show a “no longer available” page. To replace a file, upload the new one, change the pages and emails to use it, then delete the old one. Anyone with a link can open the file, so never upload anything private." %}</p>
 <p>{% translate "A file marked Missing is still listed, but its stored copy is gone from the server, usually after a backup was restored; its link shows the “no longer available” page. Upload the file again, change the pages and emails to use the new one, then delete the missing entry." %}</p>
 {% endaboutpage %}
@@ -18,20 +19,27 @@
 {{ form.as_div }}
 {% button type="submit" %}{% translate "Upload" %}{% endbutton %}</form>
 <p>{% blocktranslate with count=count max_files=max_files used=total|filesizeformat limit=max_bytes|filesizeformat %}{{ count }} of {{ max_files }} files, {{ used }} of {{ limit }} used.{% endblocktranslate %}</p>
-{% translate "Hosted file pages" as navigator_label %}
-<div id="{{ table.anchor }}" data-table-region>
+{% translate "Hosted file pages" as navigator_label %}{% comment %}
+The file table is an action table (admin-portal spec, "Row actions and
+confirmation", #879). Its region (id table.anchor) holds the navigator, the
+selection form, the table and the confirmation dialog, and is what ui-v1.js
+redraws from data-refresh-url (this page's address: sort, page and size) once
+a deletion is done. A file in use has no selection box and no actions; the
+server refuses to delete or rename one anyway (hosted_file_views).
+{% endcomment %}
+<div id="{{ table.anchor }}" data-table-region data-refresh-url="{{ refresh_url }}">
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
-<form method="post" action="{% url 'admin:hosted_file_delete' %}" data-select-table data-missing-hint="{% translate 'Select at least one file to delete.' %}">
-  {% csrf_token %}<input type="hidden" name="action" value="preview">
+<form method="post" action="{% url 'admin:hosted_file_delete' %}" id="hosted-file-actions" data-select-table data-row-actions data-missing-hint="{% translate 'Select at least one file to delete.' %}">
+  {% csrf_token %}
   <div class="bulk-bar">
-    {% button type="submit" variant="secondary" data-bulk-action %}{% translate "Delete selected" %}{% endbutton %}
+    {% button type="button" variant="secondary" data-bulk-action data-confirm-open="hosted-file-delete" %}{% translate "Delete selected" %}{% endbutton %}
     {% include "stewardship/table-selection.html" %}
   </div>
-  <div class="table-scroll" tabindex="0" role="region" aria-labelledby="hosted-file-caption">
+  <div class="table-scroll" tabindex="0" role="region" aria-labelledby="hosted-file-caption" id="hosted-file-table">
   <table class="data-table hosted-files">
     <caption id="hosted-file-caption">{% translate "Hosted files" %}</caption>
     <thead><tr>
-      <th scope="col" class="select-col"><input type="checkbox" data-select-all aria-label="{% translate 'Select every file on this page' %}"></th>
+      <th scope="col" class="select-col"><input type="checkbox" data-select-all aria-label="{% translate 'Select every unused file on this page' %}"></th>
       <th scope="col">{% translate "Preview" %}</th>
       {% translate "Name" as heading %}{% sort_heading table "name" heading %}
       {% translate "Placeholder" as heading %}{% sort_heading table "placeholder" heading %}
@@ -43,7 +51,7 @@
     </tr></thead>
     <tbody>
     {% for row in table.rows %}<tr>
-      <td class="select-col"><input type="checkbox" name="file_id" value="{{ row.file.pk }}" data-select-row aria-label="{% blocktranslate with name=row.file.slug %}Select {{ name }}{% endblocktranslate %}"></td>
+      <td class="select-col">{% if not row.uses %}<input type="checkbox" name="file_id" value="{{ row.file.pk }}" data-select-row data-confirm-name="{{ row.file.slug }}" aria-label="{% blocktranslate with name=row.file.slug %}Select {{ name }}{% endblocktranslate %}">{% endif %}</td>
       <td>{% if row.missing %}<span class="status-badge">{% translate "Missing" %}</span>{% elif row.image %}<img src="{{ row.link }}" alt="" width="48" class="hosted-file-thumbnail">{% else %}{{ row.type }}{% endif %}</td>
       <th scope="row"><a href="{{ row.link }}" target="_blank" rel="noopener noreferrer">{{ row.file.original_name }}</a></th>
       <td><input type="text" readonly value="{{ row.placeholder }}" id="placeholder-{{ row.file.pk }}" aria-label="{% blocktranslate with name=row.file.slug %}Placeholder for {{ name }}{% endblocktranslate %}" class="hosted-file-copy">
@@ -54,12 +62,14 @@
       <td class="numeric">{{ row.file.size|filesizeformat }}</td>
       <td>{{ row.uploader }}<br><time datetime="{{ row.file.created_at|instant }}" data-local-instant>{{ row.file.created_at|instant }}</time></td>
       <td>{% if row.uses %}<ul>{% for use in row.uses %}<li>{{ use.description }}</li>{% endfor %}</ul>{% else %}{% translate "Not used" %}{% endif %}</td>
-      <td>{% if row.uses %}{% translate "In use" %}{% else %}<a href="{% url 'admin:hosted_file_rename' row.file.pk %}">{% translate "Change placeholder name" %}</a>{% endif %}</td>
+      {% if row.uses %}{% table_actions name=row.file.slug %}{% else %}{% table_actions name=row.file.slug edit=row.edit_url delete=row.file.pk confirm="hosted-file-delete" field="file_id" %}{% endif %}
     </tr>{% empty %}<tr><td colspan="9">{% translate "No files yet. Upload a PDF, Office document or image to link it from pages and emails." %}</td></tr>{% endfor %}
     </tbody>
   </table>
   </div>
 </form>
+{% translate "Delete {name}?" as title_one %}{% translate "Delete {count} files?" as title_many %}{% translate "Deleting a file breaks its link everywhere, including in emails already sent, which then show a “no longer available” page." as body %}{% translate "This cannot be undone. If any chosen file is in use, nothing is deleted." as caution %}{% translate "Delete" as accept %}
+{% include "stewardship/components/confirm-dialog.html" with dialog_id="hosted-file-delete" form_id="hosted-file-actions" fallback="hosted-file-table" title_one=title_one title_many=title_many body=body caution=caution accept=accept done_one=_("Deleted {name}.") done_many=_("Deleted {count} files.") %}
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 </div>
 {% endblock %}
