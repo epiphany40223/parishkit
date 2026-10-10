@@ -106,6 +106,7 @@ def test_pushed_digest_is_smoke_tested_and_attested_before_it_is_evidence():
 
     attest = steps["Attest the image's build provenance"]
     assert attest["uses"].startswith("actions/attest-build-provenance@")
+    assert 0 < attest["timeout-minutes"] <= 10
     assert attest["with"] == {
         "subject-name": "${{ steps.name.outputs.image }}",
         "subject-digest": "${{ steps.push.outputs.digest }}",

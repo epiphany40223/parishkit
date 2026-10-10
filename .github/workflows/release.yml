@@ -268,8 +268,11 @@ jobs:
       # Signed build provenance for the pushed digest (#392 M2), checked by
       # release.sh and the upgrade runbook with gh attestation verify. It is
       # kept in GitHub's attestation store, not pushed to GHCR, so the run
-      # log names no second ...@sha256: reference beside the image's.
+      # log names no second ...@sha256: reference beside the image's. It
+      # signs through Sigstore and normally takes seconds; the limit stops a
+      # stalled signing from holding the runner for the job's default hours.
       - name: Attest the image's build provenance
+        timeout-minutes: 10
         uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ steps.name.outputs.image }}

@@ -77,7 +77,9 @@ repository, `release.yml`, the tag ref and commit, and the GitHub-hosted
 runner, and is kept in GitHub's attestation store, signed through the
 public-good Sigstore instance because the repository is public. It is not
 pushed to GHCR, so the run log names no second `…@sha256:` reference beside
-the image's. Only this job holds `id-token: write` and `attestations: write`.
+the image's. Signing normally takes seconds; the step is limited to ten
+minutes so a stalled signing cannot hold the runner. Only this job holds
+`id-token: write` and `attestations: write`.
 
 The digest artifact is uploaded only after both steps pass, so a failed
 smoke run or attestation leaves no GitHub Release naming the image; the
