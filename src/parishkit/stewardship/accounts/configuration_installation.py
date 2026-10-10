@@ -204,6 +204,43 @@ class DatabaseMaterializer:
             )
         self.checkpoint("yaml_activated")
         self._check()
+        try:
+            refused = self._activation(selected)
+        except Exception as error:
+            if self.request is None or self.request.authority != "operator_upgrade":
+                raise
+            refused = self._upgrade_aborted(error)
+        if isinstance(refused, EndRefusal):
+            self._refuse_end(refused)
+        if refused:
+            raise refused
+
+    def _upgrade_aborted(self, error):
+        """Fail the users upgrade whose activation aborted unrefused (#952).
+
+        A refusal SQL raises is recorded inside the activation itself
+        (``_apply_upgrade``). Any other abort (a deadlock, a statement
+        timeout, a raise that is not 23514) rolls the activation back with
+        the manifest already naming the candidate; retrying would only fail
+        the same way, and until the manifest is restored nothing is
+        coherent, offline Admin-access recovery included. The upgrade runs
+        offline, so nothing else competes with it and such an abort is
+        treated as final: the failure is recorded and the caller selects
+        the base manifest again, as for any refused activation. A lost
+        connection has lost the installation lock too and cannot record
+        anything; that state stays for ``upgrade-users`` to resume or for
+        ``recover-admin`` to undo (``abandon_interrupted_upgrade``).
+        """
+        emit_failure(error, event=Event.INSTALLER_REQUEST_FAILED)
+        self._check()
+        self.checkpoint("failed", failure_code="invalid_candidate")
+        return UpgradeRefused(
+            "The users upgrade failed at activation; "
+            "the previous configuration is selected again."
+        )
+
+    def _activation(self, selected):
+        """Run the one activation transaction; return its recorded refusal, if any."""
         refused = False
         with transaction.atomic(durable=True):
             with connection.cursor() as cursor:
@@ -256,10 +293,7 @@ class DatabaseMaterializer:
                 )
             else:
                 refused = self._apply_or_refuse(runtime, selected)
-        if isinstance(refused, EndRefusal):
-            self._refuse_end(refused)
-        if refused:
-            raise refused
+        return refused
 
     def _apply_or_refuse(self, runtime, selected):
         """Apply inside the activation; return a live end edit's refusal, if any.
@@ -830,6 +864,69 @@ def _restore_refused(store, check):
             store.select(store.read_version(refused.base_id))
             check()
             return
+
+
+def interrupted_upgrade(store):
+    """The users upgrade (#952) stopped between its YAML switch and activation.
+
+    That is an ``operator_upgrade`` request whose candidate the manifest
+    names over its unchanged base, still ``prepared`` or ``yaml_activated``,
+    with no activation recorded: a crash or a lost connection cut the
+    upgrade short before it could record any failure. Returns the request,
+    or None for any other state.
+    """
+    selected = _selected_over(store)
+    if selected is None:
+        return None
+    (version_id, _), active_digest = selected
+    request = ConfigurationChangeRequest.objects.filter(
+        authority="operator_upgrade",
+        candidate_version_id=version_id,
+        base__digest=active_digest,
+    ).first()
+    if (
+        request is None
+        or _status(request).state not in {"prepared", "yaml_activated"}
+        or ConfigurationActivation.objects.filter(request=request).exists()
+    ):
+        return None
+    return request
+
+
+def interrupted_upgrade_message(request):
+    """Tell the operator how to finish or undo an interrupted users upgrade."""
+    return (
+        f"The users upgrade (operation {request.request_key}) stopped after "
+        "selecting its configuration. Run upgrade-users again with that "
+        "operation ID to resume it, or recover-admin to restore the "
+        "previous configuration."
+    )
+
+
+def abandon_interrupted_upgrade(store, *, correlation_id):
+    """Fail an interrupted users upgrade and select its base again (#952).
+
+    Offline Admin-access recovery runs this first, so a users upgrade that
+    stopped before activating can never lock everyone out: the database
+    still holds the base, so recording the request failed and selecting
+    the base manifest again loses nothing. The failure is committed before
+    the manifest changes, under the installation lock, exactly like a
+    refused activation, so a crash in between is finished by the same
+    restore (``_restore_refused``). Returns the abandoned request, or None.
+    """
+    request = interrupted_upgrade(store)
+    if request is None:
+        return None
+    materializer = DatabaseMaterializer(
+        store, actor_id=None, correlation_id=correlation_id, request=request
+    )
+    with materializer.lock():
+        # Judged again under the lock, before anything is written.
+        if getattr(interrupted_upgrade(store), "pk", None) != request.pk:
+            return None
+        materializer.checkpoint("failed", failure_code="invalid_candidate")
+        _restore_refused(store, materializer._check)
+    return request
 
 
 def coherent_configuration(store):

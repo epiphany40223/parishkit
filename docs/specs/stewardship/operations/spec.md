@@ -681,7 +681,14 @@ Administrator may override.
    stays coherent on its sign-in rules, so
    [offline Admin-access recovery](#offline-admin-access-recovery) still
    runs; a failed receipt is terminal, so a new attempt needs a new
-   operation ID. The
+   operation ID. Any other abort of that activation transaction (a
+   deadlock, a statement timeout, any error other than SQL's refusal) is
+   recorded and restored the same way: the upgrade runs offline, so a retry
+   would only fail again. A crash or lost connection between the YAML switch
+   and the activation records nothing; `upgrade-users` then refuses a new
+   operation with an instruction to resume the interrupted one by its
+   operation ID or to run `recover-admin`, which records that upgrade failed
+   and selects its base again before it begins. The
    scripted upgrade and the deployment runbook gain this step in the code
    slice.
 
@@ -821,8 +828,10 @@ recovered through the existing installer protocol first, never overwritten.
 One mismatch is that protocol's own unfinished step and never blocks
 recovery: a manifest naming the candidate of a request whose activation was
 refused and recorded as failed (such as a users upgrade SQL refused), over
-that request's base. Recovery selects the base manifest again before it
-begins, and its preview shows that base (#952).
+that request's base. Another is a users upgrade interrupted between its YAML
+switch and its activation, the database still on its base: recovery records
+that upgrade failed. In both cases recovery selects the base manifest again
+before it begins, and its preview shows that base (#952).
 The command displays deployment/parish identity, current Administrator users,
 the exact normalized target email, and a minimal diff. Require a named
 operator, reason, and explicit confirmation of deployment identity and target
