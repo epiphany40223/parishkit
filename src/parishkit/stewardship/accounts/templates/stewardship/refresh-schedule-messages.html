@@ -1,0 +1,1 @@
+{% if row.note %}<p class="help">{{ row.note }}</p>{% endif %}{% if row.problems %}<ul class="errorlist">{% for problem in row.problems %}<li>{{ problem }}</li>{% endfor %}</ul>{% endif %}

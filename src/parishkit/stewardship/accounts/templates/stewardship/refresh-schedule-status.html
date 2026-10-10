@@ -1,0 +1,1 @@
+{{ schedule.status }}{% for anchor, short in schedule.links %} <a href="#{{ anchor }}">{{ short }}</a>{% if not forloop.last %};{% elif schedule.general %}.{% endif %}{% endfor %}{% for problem in schedule.general %} {{ problem }}{% endfor %}

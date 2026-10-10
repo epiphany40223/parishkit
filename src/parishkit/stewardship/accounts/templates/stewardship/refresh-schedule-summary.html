@@ -1,0 +1,4 @@
+{% load i18n %}{% if schedule.preview %}<p>{{ schedule.preview.summary }}</p>
+{% if schedule.preview.warning %}<p class="notice">{% translate "That is more than a quarter of each day of ParishSoft's time. It is allowed, but consider fewer refreshes." %}</p>{% endif %}
+<p>{{ schedule.preview.freshness }}</p>{% endif %}
+{% if schedule.nightly %}<p>{% blocktranslate with time=schedule.nightly %}The nightly full refresh is the earliest full time, {{ time }}. It runs even while Family emails are being sent.{% endblocktranslate %}</p>{% endif %}

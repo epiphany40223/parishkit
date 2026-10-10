@@ -1,0 +1,44 @@
+{% load i18n stewardship %}{% comment %}
+The ParishSoft refresh schedule editor (#632; admin-portal spec, "ParishSoft
+refresh schedule settings"). Rule rows, skip rows and the switch are posted
+with the page's other settings; presets and "Edit as text" only fill rows.
+The server checks everything: refresh-schedule-v1.js posts the unsaved rows
+to the read-only check (data-check-url) as typing pauses and puts its answer
+in the data-schedule-part elements and each row's messages. The line beside
+Save (integration-settings.html) is the check's only live region, and it
+also says the problems of the schedule as a whole, so nothing the check
+draws appears above the rows. The data-*-text attributes are the script's
+words, translated here.
+{% endcomment %}{% with editor=schedule.editor %}<section class="panel refresh-schedule" id="refresh-schedule" aria-labelledby="refresh-schedule-heading" data-refresh-schedule data-check-url="{% url 'admin:refresh_schedule_check' 'parishsoft' %}" data-schedule-zone="{{ schedule.timezone }}" data-blocking="{{ schedule.blocking|yesno:'true,false' }}" data-browser-zone-text="{% translate "Your browser is in {zone}, so the seven-day list also shows each time in your browser's time." %}" data-browser-time-text="{% translate "({time} your time)" %}" data-too-many-times-text="{% blocktranslate with most=editor.rules.max_num %}These lists have {count} times, but a schedule has at most {{ most }} rules. Use rules that repeat (Full or Quick every …) instead.{% endblocktranslate %}">
+<h2 id="refresh-schedule-heading">{% translate "Refresh schedule" %}</h2>
+<p class="help">{% translate "A full refresh reloads all Families, Members, ministries and giving from ParishSoft and takes a few minutes. A quick update reads only the Family contact changes ParishSoft reports, and checks the connection." %}</p>
+<p class="help">{% translate "Refreshes never overlap: one that comes due while another runs waits for it." %}</p>
+<p class="help">{% blocktranslate with zone=schedule.timezone %}Times are in the refresh schedule's time zone, {{ zone }}: the current campaign's, or the parish's when there is no campaign.{% endblocktranslate %} <span data-browser-zone-note hidden></span></p>
+{% if editor.converted %}<p class="notice">{% translate "Your current schedule, shown as rules. It runs exactly as before until you change it." %}</p>{% endif %}
+<fieldset class="schedule-presets"><legend>{% translate "Start from a preset" %}</legend>
+<p class="help">{% translate "A preset replaces the rules and skips below. Times inside Family email windows are skipped by the switch further down, so no preset needs to avoid them." %}</p>
+<ul class="schedule-preset-list">{% for preset in presets %}<li>{% button type="button" variant="secondary" data-preset=preset.key %}{{ preset.name }}{% endbutton %} <span class="help">{{ preset.description }}</span></li>{% endfor %}</ul>
+<div class="notice" data-preset-confirm hidden><p id="refresh-preset-question">{% translate "Replace your changes with this preset?" %}</p><div class="actions" role="group" aria-labelledby="refresh-preset-question">{% button type="button" data-preset-replace %}{% translate "Replace my changes" %}{% endbutton %}{% button type="button" variant="secondary" data-preset-keep %}{% translate "Keep my changes" %}{% endbutton %}</div></div>
+</fieldset>
+{{ presets_payload|json_script:"refresh-schedule-presets" }}
+<h3>{% translate "Rules" %}</h3>
+<p class="help">{% translate "Each rule gives full refreshes or quick updates every so often between two times, or at one time. Use quarter-hour times (:00, :15, :30 or :45), at least 15 minutes apart." %} {% blocktranslate with most=editor.rules.max_num %}A schedule has at most {{ most }} rules.{% endblocktranslate %}</p>
+<p class="help">{% translate "A quick update that falls at, or just before, a full refresh is covered by it and does not run." %}</p>
+{{ editor.rules.management_form }}{{ editor.skips.management_form }}
+<div data-schedule-rows="rules">{% for row in schedule.rule_rows %}{% include 'stewardship/refresh-schedule-rule.html' %}{% endfor %}</div>
+<template data-row-template="rules">{% include 'stewardship/refresh-schedule-rule.html' with row=schedule.empty_rule_row %}</template>
+<p>{% button type="button" variant="secondary" data-row-add="rules" %}{% translate "Add a rule" %}{% endbutton %}</p>
+<h3>{% translate "Skip these times" %}</h3>
+<p class="help">{% translate "A skip removes a time the rules give, or every time from one time up to (not including) another, for example from 12:00 to 13:00." %} {% blocktranslate with most=editor.skips.max_num %}A schedule has at most {{ most }} skips.{% endblocktranslate %}</p>
+<div data-schedule-rows="skips">{% for row in schedule.skip_rows %}{% include 'stewardship/refresh-schedule-skip.html' %}{% endfor %}</div>
+<template data-row-template="skips">{% include 'stewardship/refresh-schedule-skip.html' with row=schedule.empty_skip_row %}</template>
+<p>{% button type="button" variant="secondary" data-row-add="skips" %}{% translate "Add a skip" %}{% endbutton %}</p>
+<div class="schedule-switch"><input type="checkbox" name="skip_around_family_emails" id="id_skip_around_family_emails" aria-describedby="id_skip_around_family_emails_help"{% if editor.switch %} checked{% endif %}> <label for="id_skip_around_family_emails">{% translate "Skip refreshes around Family emails" %}</label>
+<p class="help" id="id_skip_around_family_emails_help">{% translate "Refreshes are skipped while a reminder is being prepared and while a Family email is being sent, so ParishSoft reads never slow the email down. The nightly full refresh still runs." %}</p></div>
+<details class="schedule-text" data-schedule-text-panel><summary>{% translate "Edit as text" %}</summary>
+<p class="help" id="refresh-text-help">{% translate "The full refresh and quick update times the rules give, as two lists you can copy or paste, separated by commas. Use these lists replaces your rules and skips with one “at” rule for each time." %}</p>
+<p><label for="refresh-text-full">{% translate "Full refresh times" %}</label><textarea id="refresh-text-full" rows="2" spellcheck="false" aria-describedby="refresh-text-help" data-schedule-text="full">{{ schedule.text_lists.full }}</textarea></p>
+<p><label for="refresh-text-quick">{% translate "Quick update times" %}</label><textarea id="refresh-text-quick" rows="2" spellcheck="false" aria-describedby="refresh-text-help" data-schedule-text="quick">{{ schedule.text_lists.quick }}</textarea></p>
+<p class="errorlist" data-schedule-text-error></p>
+<p>{% button type="button" variant="secondary" data-schedule-text-apply %}{% translate "Use these lists" %}{% endbutton %}</p></details>
+</section>{% endwith %}

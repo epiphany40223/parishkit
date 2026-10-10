@@ -2,9 +2,12 @@
 {% block title %}{% translate "Review integration changes" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Review integration changes" %}: {{ label }}</h1>
-<div class="table-scroll"><table><caption>{% if target == 'backup_key' %}{% translate "The public key new backups are encrypted with" %}{% elif removing %}{% translate "Removing this integration" %}{% else %}{% translate "Settings only; the saved key is unchanged" %}{% endif %}</caption>
+{% if changes or not schedule_changes %}<div class="table-scroll"><table><caption>{% if target == 'backup_key' %}{% translate "The public key new backups are encrypted with" %}{% elif removing %}{% translate "Removing this integration" %}{% else %}{% translate "Settings only; the saved key is unchanged" %}{% endif %}</caption>
 <thead><tr><th scope="col">{% translate "Setting" %}</th><th scope="col">{% translate "Current" %}</th><th scope="col">{% translate "Proposed" %}</th></tr></thead>
-<tbody>{% for change in changes %}<tr><th scope="row">{{ change.label }}</th><td>{{ change.before }}</td><td>{{ change.after }}</td></tr>{% endfor %}</tbody></table></div>
+<tbody>{% for change in changes %}<tr><th scope="row">{{ change.label }}</th><td>{{ change.before }}</td><td>{{ change.after }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+{% if schedule_changes %}{# The refresh schedule's differences in words (#632), not its stored settings. #}<section class="panel" aria-labelledby="schedule-changes-heading"><h2 id="schedule-changes-heading">{% translate "Refresh schedule changes" %}</h2>
+<ul>{% for item in schedule_changes %}<li>{{ item }}</li>{% endfor %}</ul>
+<p class="help">{% translate "The new schedule takes effect when the change is applied. Until then, refreshes run as they do now." %}</p></section>{% endif %}
 {% if removing and target == 'slack' %}<p>{% translate "After you confirm, Slack alerts stop. To set Slack up again later, open this page and save the channel ID with the app's bot token." %}</p>{% endif %}
 {% if target == 'backup_key' %}<p>{% translate "You proved you hold the new private key. After you confirm, the next backup is encrypted with the new key. Backups already made still need the old private key: keep it until they have all been deleted by retention." %}</p>{% else %}<p>{% translate "Confirm to save these settings. Saving does not test the connection." %}</p>{% endif %}
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}">

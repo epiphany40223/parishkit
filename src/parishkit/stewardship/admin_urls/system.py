@@ -32,6 +32,11 @@ patterns = [
         name="integration_status",
     ),
     path(
+        "system/integrations/<str:target>/schedule-check/",
+        integration_views.refresh_schedule_check,
+        name="refresh_schedule_check",
+    ),
+    path(
         "system/integrations/<str:target>/dismissal/",
         integration_views.dismiss_credential_result,
         name="dismiss_credential_result",
