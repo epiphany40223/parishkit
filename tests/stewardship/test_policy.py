@@ -47,31 +47,51 @@ def test_exact_rule_replaces_domain_including_denial(roles):
     assert actual == expected
 
 
-def test_seeded_suppression_requires_every_provenance_condition():
-    """Missing scope suppresses only an exclusively seeded role on a seeded rule."""
-    rule = address("leader@example.org", ("ministry_leader",), seeded=True)
-    seed = assignment(seeded=True)
-    assert not resolve_roles("leader@example.org", None, [rule, seed])[0]
-    assert resolve_roles(
-        "leader@example.org", None, [rule, seed], frozenset({seed["id"]})
-    )[0] == {"ministry_leader"}
-    rule["values"]["grants"]["ministry_leader"]["manual"] = str(uuid4())
-    roles, ministries = resolve_roles("leader@example.org", None, [rule, seed])
-    assert roles == {"ministry_leader"} and not ministries
-    rule["values"]["grants"]["ministry_leader"].pop("manual")
-    rule["values"]["creation_origin"] = "manual"
-    assert resolve_roles("leader@example.org", None, [rule, seed])[0] == {
-        "ministry_leader"
-    }
+@pytest.mark.parametrize("seeded", [False, True])
+def test_a_rule_admits_and_assignments_grant_no_ministry(seeded):
+    """A rule's roles are the roles held; Ministries come from ParishSoft (#922).
 
-
-def test_manual_assignment_survives_missing_seed_overlay():
-    """A manual assignment independently supplies Ministry scope."""
-    role = address("leader@example.org", ("ministry_leader",), seeded=True)
-    assert resolve_roles("leader@example.org", None, [role, assignment()]) == (
+    A rule's Ministry leader role, seeded or manual, admits a Ministry leader
+    (Administrator decision, 2026-10-10), but no assignment, manual or
+    seeded, gives a Ministry: with no ParishSoft role they see none.
+    """
+    rule = address("leader@example.org", ("ministry_leader",), seeded=seeded)
+    records = [rule, assignment(), assignment(seeded=True)]
+    assert resolve_roles("leader@example.org", None, records) == (
         frozenset({"ministry_leader"}),
-        frozenset({123}),
+        frozenset(),
     )
+    staff = address("leader@example.org", ("staff", "ministry_leader"))
+    assert resolve_roles("leader@example.org", None, [staff, assignment()]) == (
+        frozenset({"staff", "ministry_leader"}),
+        frozenset(),
+    )
+
+
+def test_role_derived_scope_needs_a_rule():
+    """ParishSoft's scope applies only to someone a rule admits.
+
+    SQL's scope is already empty without a rule; Python never turns a scope
+    into a role either, so no rule, or an explicit-deny exact-address rule,
+    means nothing at all. Staff keep Staff with their led Ministries.
+    """
+    led = frozenset({4, 9})
+    leader = address("leader@example.org", ("ministry_leader",))
+    assert resolve_roles("leader@example.org", None, [leader], led) == (
+        frozenset({"ministry_leader"}),
+        led,
+    )
+    staff = address("leader@example.org", ("staff",))
+    assert resolve_roles("leader@example.org", None, [staff], led) == (
+        frozenset({"staff"}),
+        led,
+    )
+    denied = address("leader@example.org", ())
+    for records in ([], [denied]):
+        assert resolve_roles("leader@example.org", None, records, led) == (
+            frozenset(),
+            frozenset(),
+        )
 
 
 STAFF = {

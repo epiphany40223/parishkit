@@ -44,7 +44,7 @@ from parishkit.stewardship.workflows.models import (
     MinistryWorkflowRevision,
 )
 
-from ..policy_factory import assignment, domain
+from ..policy_factory import domain
 from .auth_builders import signed_in, unguarded
 from .campaign_builders import change
 from .test_background_grants_postgresql import task_login
@@ -1205,7 +1205,7 @@ def test_a_failing_menu_count_leaves_the_page_and_transaction_usable(
 
 
 def test_domain_admitted_users_read_through_the_actor_as_before(response_service):
-    """Staff and leaders admitted by a domain sign-in rule keep their reads (#389 L3).
+    """Staff admitted by a domain sign-in rule, and leaders, keep their reads (#389 L3).
 
     The actor-scoped selections derive scope in SQL
     (stewardship_ministry_scope_v1), which must resolve a hosted-domain rule
@@ -1222,6 +1222,8 @@ def test_domain_admitted_users_read_through_the_actor_as_before(response_service
 
     harness = setup(response_service)
     store = harness.service.store
+    # A domain rule admits head@leaders.example, which leads Food pantry (9)
+    # in ParishSoft (#922).
     change(
         store,
         store.active(),
@@ -1231,7 +1233,6 @@ def test_domain_admitted_users_read_through_the_actor_as_before(response_service
             for record in (
                 domain("staff.example", roles=("staff",)),
                 domain("leaders.example", roles=("ministry_leader",)),
-                assignment("head@leaders.example", ministry=9),
             )
         ],
     )

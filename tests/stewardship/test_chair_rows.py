@@ -129,11 +129,11 @@ def test_current_rule_and_assignment_are_shown_from_policy():
         ],
         active=frozenset({4, 9}),
     )
-    # No overlay confirms the seed: the evaluator grants the seeded address
-    # nothing, so the rule shows its role suspended, not held, and the
-    # assignment reads as suspended.
-    assert exact["rule"]["kind"] == "address" and exact["rule"]["roles"] == []
-    assert exact["rule"]["suspended"] is True and exact["rule"]["deny"] is False
+    # The seeded rule's role is held, since a rule admits a Ministry leader
+    # (2026-10-10), while its assignment grants nothing (#922).
+    assert exact["rule"]["kind"] == "address"
+    assert text(exact["rule"]["roles"]) == ["Ministry leader"]
+    assert exact["rule"]["suspended"] is False and exact["rule"]["deny"] is False
     (seed,) = exact["assignments"]
     assert str(seed["source"]) == "Parish source Chairperson"
     assert seed["active"] is False
@@ -148,7 +148,8 @@ def test_current_rule_and_assignment_are_shown_from_policy():
     assert inherited["rule"]["domain"] == "example.org"
     assert text(inherited["rule"]["roles"]) == ["Staff"]
     assert inherited["assignments"] == []
-    # A confirmed seed, or a manual grant, shows the role as granted.
+    # A confirmed seed's assignment grants nothing now: Ministries come from
+    # ParishSoft roles (#922); the rule's role is held either way.
     (confirmed,) = suggestion_rows(
         AppliedPolicy(records, [], active_seeded=frozenset({records[3]["id"]})),
         [relationship()],
@@ -156,11 +157,11 @@ def test_current_rule_and_assignment_are_shown_from_policy():
     )
     assert text(confirmed["rule"]["roles"]) == ["Ministry leader"]
     assert confirmed["rule"]["suspended"] is False
-    assert confirmed["assignments"][0]["active"] is True
+    assert confirmed["assignments"][0]["active"] is False
 
 
 def test_manual_and_seeded_assignments_are_both_shown_in_fixed_order():
-    """A manual assignment beside a suspended seed grants scope; neither hides."""
+    """A manual assignment beside a suspended seed is shown; neither hides."""
     seed = assignment("valid@example.org", ministry=4, seeded=True)
     manual = assignment("valid@example.org", ministry=4)
     rule = address("valid@example.org", ("ministry_leader",), seeded=True)
@@ -169,10 +170,10 @@ def test_manual_and_seeded_assignments_are_both_shown_in_fixed_order():
             AppliedPolicy(records, []), [relationship()], active=frozenset({4})
         )
         shown = [(str(item["source"]), item["active"]) for item in row["assignments"]]
+        # No assignment grants scope now (#922), a manual one included.
         assert shown == [
-            ("Administrator entry", True),
+            ("Administrator entry", False),
             ("Parish source Chairperson", False),
         ]
-        # The manual assignment keeps the seeded role in force.
         assert text(row["rule"]["roles"]) == ["Ministry leader"]
         assert row["rule"]["suspended"] is False

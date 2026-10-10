@@ -1,9 +1,14 @@
 # Stewardship manual assignment editor
 
+Since #922 (migration 0042), the Ministries a Ministry leader sees come only
+from ParishSoft roles, and the Ministry assignments this guide describes
+grant none; a login rule's role still decides who signs in. See
+[Ministry leaders](../specs/stewardship/data/spec.md#ministry-leaders).
+
 This guide records the eighth slice of
 [ADM-07](../tasks/stewardship/admin-portal.md#adm-07-user-rules-and-ministry-assignments):
 the manual Ministry assignments editor the
-[admin portal specification](../specs/stewardship/admin-portal/spec.md#chairperson-suggestions-and-assignments)
+[admin portal specification](../specs/stewardship/admin-portal/spec.md#ministry-leaders-from-parishsoft)
 requires, under the
 [authorization data model](../specs/stewardship/data/spec.md#administration-user-and-policy).
 It continues the [Chairperson seed review increment](stewardship-chair-review.md)

@@ -1,0 +1,208 @@
+"""Ministry leaders as ParishSoft defines them (#922), for PostgreSQL tests.
+
+A Ministry leader signs in through a login rule granting the role and
+leads the Ministries where an active Member of an active Family, listing
+their email address, holds one of the campaign's leader roles on a current
+roster. Tests therefore make leaders' Ministries the way ParishSoft does:
+they add Members to the synthetic source and promote it; ``grant_role`` adds
+the rule too.
+
+Leader Members join the fixture's memberless Family 2 by default, registered
+at another parish: their active Membership makes it an active Family that is
+not a parishioner here, so it never becomes Portal-eligible and no Family
+form, code or eligibility count changes. A leader may instead join the
+fixture's active registered Family 1 (adding a Member to its Family form) or
+an added Family in ParishSoft's "Inactive" Family group. Each leader holds
+the "Staff" role by default, one of the default leader roles, so the Choir
+fixture's Chairperson column is untouched.
+"""
+
+from copy import deepcopy
+from uuid import uuid4
+
+from .test_source_families_postgresql import prepare, promote
+
+# The fixture Families a leader Member can belong to: the memberless Family 2
+# registered elsewhere, the active registered Family 1, and an added Family
+# in the "Inactive" Family group.
+FAMILIES = {"non_parishioner": 2, "parishioner": 1, "inactive": 800}
+# Another parish's organization (the fixture's own becomes 12345 when staged).
+ELSEWHERE = 6
+# A Family group the fixture does not use otherwise, named as ParishSoft
+# names its inactive group.
+INACTIVE_GROUP = 8
+# Leader Member DUIDs start here, above every fixture Member.
+FIRST_LEADER = 900
+
+
+def leader(
+    email,
+    *ministries,
+    role="Staff",
+    status="Active",
+    ended=False,
+    family="non_parishioner",
+):
+    """One leader Member: its address, Ministries, role, state and Family.
+
+    ``status`` is the Member's ParishSoft status ("Inactive" makes it an
+    inactive Member); ``ended`` gives every roster row a past end date, so
+    none is current; ``family`` is a ``FAMILIES`` key.
+    """
+    return dict(
+        email=email,
+        ministries=ministries,
+        role=role,
+        status=status,
+        ended=ended,
+        family=FAMILIES[family],
+    )
+
+
+def with_leaders(data, leaders):
+    """Return a copy of ``data`` with one Member per leader.
+
+    ``leaders`` maps an address to its Ministry DUIDs (each a Staff leader)
+    or is a list of ``leader()`` values; two entries with the same address are
+    two Members sharing it. A Ministry the source does not list yet is added
+    with a plain name.
+    """
+    data = deepcopy(data)
+    if isinstance(leaders, dict):
+        leaders = [leader(email, *duids) for email, duids in sorted(leaders.items())]
+    data.families[FAMILIES["non_parishioner"]]["registeredOrganizationID"] = ELSEWHERE
+    if any(item["family"] == FAMILIES["inactive"] for item in leaders):
+        duid = FAMILIES["inactive"]
+        data.family_groups[INACTIVE_GROUP] = "Inactive"
+        data.families[duid] = {
+            "familyDUID": duid,
+            "registeredOrganizationID": 5,
+            "famGroupID": INACTIVE_GROUP,
+            "lastName": "Inactive",
+        }
+    for offset, item in enumerate(leaders):
+        duid = FIRST_LEADER + offset
+        data.members[duid] = {
+            "memberDUID": duid,
+            "familyDUID": item["family"],
+            "firstName": "Leader",
+            "lastName": f"Example {offset}",
+            "memberType": "Adult",
+            "memberStatus": item["status"],
+            "emailAddress": item["email"],
+        }
+        for ministry in item["ministries"]:
+            data.ministry_types.setdefault(
+                ministry, {"id": ministry, "name": f"Ministry {ministry}"}
+            )
+            data.ministry_type_memberships.setdefault(ministry, {"membership": []})[
+                "membership"
+            ].append(
+                {
+                    "memberId": duid,
+                    "ministryRoleId": 7,
+                    "ministryRoleName": item["role"],
+                    "startDate": "2020-01-01",
+                    "endDate": "2021-01-01" if item["ended"] else None,
+                }
+            )
+    return data
+
+
+def promote_leaders(harness, data, leaders):
+    """Promote ``data`` with these leaders, as a full refresh would.
+
+    The harness needs the campaign and key rings a promotion reconciles
+    Families with (``campaign`` and ``rings``, as the response harness has).
+    Returns the promoted snapshot.
+    """
+    snapshot, claim = prepare(with_leaders(data, leaders))
+    return promote(snapshot, claim, harness.campaign, harness.rings)
+
+
+def make_leader(store, campaign, email, ministries=(9,)):
+    """Make ``email`` a ParishSoft leader of ``ministries`` in ``campaign``.
+
+    For tests without the response harness: this promotes the response
+    fixture's source with the leader Member (setting up the source singletons
+    and key rings a first promotion needs), turns on Ministry stewardship for
+    these Ministries in the draft ``campaign``, and adds the exact-address
+    Ministry leader rule that signing in needs (2026-10-10).
+    """
+    from parishkit.stewardship.campaigns.domain import EnabledModules
+    from parishkit.stewardship.campaigns.models import Campaign
+    from parishkit.stewardship.source.models import SourceCurrent, SourceMutationLease
+
+    from ..policy_factory import address
+    from .campaign_builders import change
+    from .credential_builders import keys
+    from .response_builders import response_source
+
+    SourceMutationLease.objects.get_or_create(singleton=True)
+    SourceCurrent.objects.get_or_create(singleton=True)
+    snapshot, claim = prepare(with_leaders(response_source(), {email: ministries}))
+    promote(snapshot, claim, campaign, keys())
+    campaign = Campaign.objects.get(pk=campaign.pk)
+    values = campaign.active_configuration.values
+    patch = [
+        {
+            "operation": "add",
+            "section": "login_rules",
+            **address(email, roles=("ministry_leader",)),
+        }
+    ]
+    if "ministry" not in values["modules"] or not set(ministries) <= set(
+        values["ministry_duids"]
+    ):
+        patch.append(
+            {
+                "operation": "update",
+                "section": "campaigns",
+                "id": str(campaign.pk),
+                "values": {
+                    "modules": EnabledModules.from_list(
+                        sorted({*values["modules"], "ministry"})
+                    ).to_list(),
+                    "ministry_duids": sorted({*values["ministry_duids"], *ministries}),
+                },
+            }
+        )
+    result = change(store, store.active(), uuid4(), patch)
+    assert result.state == "applied"
+
+
+def grant_role(store, email, role):
+    """Give ``email`` one Admin role as the current model grants it.
+
+    Every role comes from an exact-address sign-in rule. A Ministry
+    leader's Ministries come from a ParishSoft role in the current campaign
+    (#922), so for that role this creates a draft campaign if there is none
+    and makes ``email`` a ruled ParishSoft leader of Ministry 9 in it
+    (``make_leader``).
+    """
+    from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+    from parishkit.stewardship.campaigns.models import Campaign
+
+    from ..policy_factory import address
+    from .campaign_builders import add_draft, change
+
+    if role == "ministry_leader":
+        current = SystemConfiguration.objects.get().current_campaign_id
+        if current is None:
+            add_draft(store, store.active(), uuid4())
+            current = SystemConfiguration.objects.get().current_campaign_id
+        make_leader(store, Campaign.objects.get(pk=current), email)
+        return
+    result = change(
+        store,
+        store.active(),
+        uuid4(),
+        [
+            {
+                "operation": "add",
+                "section": "login_rules",
+                **address(email, roles=(role,)),
+            }
+        ],
+    )
+    assert result.state == "applied"

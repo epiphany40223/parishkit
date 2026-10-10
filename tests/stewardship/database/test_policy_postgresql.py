@@ -98,8 +98,12 @@ def test_domain_and_exact_policy_take_effect_on_next_lookup(tmp_path):
     assert not current_principal(store, user("external@example.org").pk).roles
 
 
-def test_seed_overlay_immediately_removes_scope_without_rewriting_yaml(tmp_path):
-    """Source-derived scope changes independently of configured grant provenance."""
+def test_a_seed_overlay_grants_nothing_and_leaves_yaml_alone(tmp_path):
+    """Since #922 an active seed overlay grants no scope either; YAML is kept.
+
+    The seeded rule's Ministry leader role is held whatever the overlay says:
+    a rule admits (Administrator decision, 2026-10-10).
+    """
     seed = assignment(seeded=True)
     store, version, _ = initialized(
         tmp_path,
@@ -110,20 +114,20 @@ def test_seed_overlay_immediately_removes_scope_without_rewriting_yaml(tmp_path)
         ],
     )
     leader = user("leader@example.org")
-    assert not current_principal(store, leader.pk).roles
+    assert current_principal(store, leader.pk).roles == {"ministry_leader"}
     overlay = AssignmentOverlay.objects.create(
         assignment_record_id=UUID(seed["id"]),
         active=True,
         source_snapshot_id=uuid4(),
         reason="chair_present",
     )
-    assert allows(
+    assert not allows(
         current_principal(store, leader.pk), Capability.MINISTRY_REPORT, ministry_id=123
     )
     AssignmentOverlay.objects.filter(pk=overlay.pk).update(
         active=False, reason="chair_missing", version=F("version") + 1
     )
-    assert not current_principal(store, leader.pk).roles
+    assert current_principal(store, leader.pk).roles == {"ministry_leader"}
     assert store.active().digest == version.digest
 
 
@@ -279,8 +283,8 @@ def test_legacy_preparation_can_introduce_policy(tmp_path):
     )
 
 
-def test_mixed_case_seed_lookup_uses_same_normalized_identity(tmp_path):
-    """Google email case cannot make the overlay query disagree with policy matching."""
+def test_mixed_case_seed_lookup_grants_nothing(tmp_path):
+    """A confirmed seed grants no scope since #922, whatever the email case."""
     seed = assignment(seeded=True)
     store, _, _ = initialized(
         tmp_path,
@@ -297,7 +301,7 @@ def test_mixed_case_seed_lookup_uses_same_normalized_identity(tmp_path):
         source_snapshot_id=uuid4(),
         reason="chair_present",
     )
-    assert current_principal(store, leader.pk).ministries == {123}
+    assert current_principal(store, leader.pk).ministries == frozenset()
 
 
 def test_manual_provenance_must_identify_its_request(tmp_path):
@@ -419,11 +423,13 @@ def test_missing_grant_projection_cannot_commit(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("restoration", ["assignment", "independent_role"])
 def test_unsuppressing_seeded_login_advances_denial_epoch(tmp_path, restoration):
-    """Unchanged role arrays can still become effective through scope or provenance."""
+    """A policy change advances the denial epoch even when role arrays are
+    unchanged. Since 2026-10-10 the rule's Ministry leader role is held
+    throughout; since #922 an assignment gives no Ministry."""
     leader = address("leader@example.org", ("ministry_leader",), seeded=True)
     store, version, actor = initialized(tmp_path, [address(), leader])
     identity = user("leader@example.org")
-    assert not current_principal(store, identity.pk).roles
+    assert current_principal(store, identity.pk).roles == {"ministry_leader"}
     before = PolicyEpoch.objects.count()
     if restoration == "assignment":
         change(
@@ -458,5 +464,5 @@ def test_unsuppressing_seeded_login_advances_denial_epoch(tmp_path, restoration)
             ).state
             == "applied"
         )
-    assert "ministry_leader" in current_principal(store, identity.pk).roles
+    assert current_principal(store, identity.pk).roles == {"ministry_leader"}
     assert PolicyEpoch.objects.count() == before + 1

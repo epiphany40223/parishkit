@@ -12,16 +12,19 @@ from django.urls import reverse
 from parishkit.stewardship.accounts.models import PortalSession, PortalUser
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.audit.services import operational
+from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.phases import TaskPhase
 from parishkit.stewardship.observability import Event
 
 from ..log_samples import sample as log_sample
-from ..policy_factory import address, assignment
+from ..policy_factory import address
 from . import test_parish_views_postgresql as parish
 from .auth_builders import signed_in
 from .campaign_builders import add_draft, change
+from .leader_builders import make_leader
 from .test_background_grants_postgresql import task_login
+from .test_report_workspace_postgresql import read
 from .test_taskrun_postgresql import act, new
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -42,7 +45,11 @@ def test_navigation_and_testing_banner_match_current_capabilities(
     """Ministry leaders never receive code links or Admin-only configuration details."""
     store = auth_service.store
     add_draft(store, store.active(), uuid4())
-    if role != "administrator":
+    if role == "ministry_leader":
+        # A Ministry leader leads through a ParishSoft role (#922).
+        make_leader(store, Campaign.objects.get(), "reader@example.org")
+        google[0]["email"] = "reader@example.org"
+    elif role != "administrator":
         change(
             store,
             store.active(),
@@ -232,18 +239,23 @@ def test_background_html_is_not_accessible_through_direct_non_admin_url(
 ):
     """The visible menu is not the security boundary."""
     store = auth_service.store
-    change(
-        store,
-        store.active(),
-        uuid4(),
-        [
-            {
-                "operation": "add",
-                "section": "login_rules",
-                **address("reader@example.org", roles=(role,)),
-            }
-        ],
-    )
+    if role == "ministry_leader":
+        # A Ministry leader leads through a ParishSoft role (#922).
+        add_draft(store, store.active(), uuid4())
+        make_leader(store, Campaign.objects.get(), "reader@example.org")
+    else:
+        change(
+            store,
+            store.active(),
+            uuid4(),
+            [
+                {
+                    "operation": "add",
+                    "section": "login_rules",
+                    **address("reader@example.org", roles=(role,)),
+                }
+            ],
+        )
     google[0]["email"] = "reader@example.org"
     browser, _ = signed_in()
     assert browser.get("/admin/system/background/").status_code == 403
@@ -380,15 +392,17 @@ def test_critical_event_warning_is_persistent_and_admin_only(auth_service, googl
 # configuration are now read together (admin_context._current_campaign).
 # The one deliberate addition is the open counts' query (#585), paid only by
 # a viewer whose menu links Additional information or Ministry follow-up:
-# here Administrators and Staff with the draft (it has no Ministry module,
-# so the leader's Ministry follow-up is greyed out and counts nothing).
+# here Administrators and Staff with the draft (it has no Ministry module).
+# A Ministry leader exists only in a campaign that asks about Ministries
+# (#922), so the leader's draft has the Ministry module and a promoted
+# source, a page NAV-1 never measured for leaders: its count is today's,
+# including the open counts' query.
 CHROME_QUERIES = {
     ("administrator", False): (4, 4),
     ("administrator", True): (7, 7),
     ("staff", False): (2, 2),
     ("staff", True): (4, 5),
-    ("ministry_leader", False): (2, 2),
-    ("ministry_leader", True): (4, 4),
+    ("ministry_leader", True): (7, 7),
 }
 # Not menu cost: since #456 the Administrator's chrome also reads whether an
 # integration key change holds the settings queue (one small indexed query),
@@ -397,8 +411,17 @@ BANNER_QUERIES = {"administrator": 1}
 OPEN_COUNTS = {("administrator", True), ("staff", True)}
 
 
-@pytest.mark.parametrize("draft", [False, True])
-@pytest.mark.parametrize("role", ["administrator", "staff", "ministry_leader"])
+@pytest.mark.parametrize(
+    "role, draft",
+    [
+        (role, draft)
+        for role in ("administrator", "staff", "ministry_leader")
+        for draft in (False, True)
+        # A Ministry leader leads through a ParishSoft role in the current
+        # campaign (#922), so there is no leader without one.
+        if (role, draft) != ("ministry_leader", False)
+    ],
+)
 def test_building_the_menu_adds_only_the_open_counts_query(
     auth_service, google, monkeypatch, role, draft
 ):
@@ -420,15 +443,21 @@ def test_building_the_menu_adds_only_the_open_counts_query(
     store = auth_service.store
     if draft:
         add_draft(store, store.active(), uuid4())
-    if role != "administrator":
-        records = [address("reader@example.org", roles=(role,))]
-        if role == "ministry_leader":
-            records.append(assignment("reader@example.org", ministry=9))
+    if role == "ministry_leader":
+        make_leader(store, Campaign.objects.get(), "reader@example.org")
+        google[0]["email"] = "reader@example.org"
+    elif role != "administrator":
         change(
             store,
             store.active(),
             uuid4(),
-            [{"operation": "add", "section": "login_rules", **r} for r in records],
+            [
+                {
+                    "operation": "add",
+                    "section": "login_rules",
+                    **address("reader@example.org", roles=(role,)),
+                }
+            ],
         )
         google[0]["email"] = "reader@example.org"
     engine = engines["django"].engine
@@ -449,11 +478,12 @@ def test_building_the_menu_adds_only_the_open_counts_query(
     assert counted in processors
     monkeypatch.setitem(engine.__dict__, "template_context_processors", processors)
     browser, _ = signed_in()
-    # A report page every role may open. The draft has no Ministry module,
-    # so it renders its "no reports" page.
-    response = browser.get(reverse("admin:ministry_report"))
+    # A report page every role may open. An Administrator's or Staff
+    # member's draft has no Ministry module, so it renders its "no reports"
+    # page; a leader's draft asks about Ministry 9, so the report renders.
+    response, content = read(browser, reverse("admin:ministry_report"))
     assert response.status_code == 200
-    assert b'aria-label="Administration"' in response.content
+    assert b'aria-label="Administration"' in content
     before, now = CHROME_QUERIES[(role, draft)]
     assert counts == [now + BANNER_QUERIES.get(role, 0)], counts
     assert now <= before + ((role, draft) in OPEN_COUNTS), counts

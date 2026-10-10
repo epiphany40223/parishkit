@@ -739,8 +739,8 @@ def test_refusals_explain_without_echoing_and_guards_hold(auth_service, google):
         )
         assert b"High-impact expansion" in promotion.content
         assert b"grants Administrator to an exact address" in promotion.content
-    # A Ministry leader never reaches the editor at all.
-    add_rules(store, address("leader@example.org", roles=("ministry_leader",)))
+    # Nobody but an Administrator reaches the editor at all.
+    add_rules(store, address("leader@example.org", roles=("staff",)))
     google[0].update(email="leader@example.org", sub="leader-subject")
     other, login = signed_in()
     assert login.status_code == 302
@@ -750,7 +750,8 @@ def test_refusals_explain_without_echoing_and_guards_hold(auth_service, google):
             {"csrfmiddlewaretoken": other.cookies["pk_admin_csrf"].value} | extra,
         )
         assert refused.status_code == 403
-    # The second Administrator's and the leader's rules were two more installed
-    # requests; the previews, refusals and the leader's attempt added none.
+    # The second Administrator's and the Staff member's rules were two more
+    # installed requests; the previews, refusals and the Staff attempt added
+    # none.
     assert ConfigurationChangeRequest.objects.count() == requests + 2
     assert PortalUser.objects.filter(email="leader@example.org").exists()

@@ -1170,7 +1170,7 @@ BEGIN
         END IF;
         IF EXISTS (SELECT 1 FROM stewardship_campaign c JOIN stewardship_campaign_configuration old_c ON old_c.id=c.active_configuration_id
             WHERE c.id=target AND c.structural_locked
-              AND (old_c.values - ARRAY['name','year_label','content_versions','end_date','artwork','reminder_workgroup','ministry_duids']) IS DISTINCT FROM (candidate.values - ARRAY['name','year_label','content_versions','end_date','artwork','reminder_workgroup','ministry_duids'])) THEN
+              AND (old_c.values - ARRAY['name','year_label','content_versions','end_date','artwork','reminder_workgroup','ministry_duids','ministry_leader_roles']) IS DISTINCT FROM (candidate.values - ARRAY['name','year_label','content_versions','end_date','artwork','reminder_workgroup','ministry_duids','ministry_leader_roles'])) THEN
             RAISE EXCEPTION 'Live structural settings are locked' USING ERRCODE='23514';
         END IF;
         -- The one reviewed live structural exemption (#342): an Administrator
@@ -5280,36 +5280,12 @@ CREATE FUNCTION public.stewardship_require_chair_receipt_v1(configuration uuid, 
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
-DECLARE receipt stewardship_chair_reconciliation%ROWTYPE;
 BEGIN
-    SELECT * INTO receipt FROM stewardship_chair_reconciliation
-        WHERE configuration_id=configuration AND snapshot_id=snapshot;
-    IF receipt.id IS NULL OR receipt.decisions IS DISTINCT FROM
-        stewardship_chair_decisions_v1(configuration) THEN
-        RAISE EXCEPTION 'Seeded assignment reconciliation is incomplete'
-            USING ERRCODE='23514';
-    END IF;
-    IF EXISTS (SELECT 1 FROM jsonb_array_elements(receipt.decisions) decision
-        LEFT JOIN stewardship_assignment_overlay overlay
-          ON overlay.assignment_record_id=(decision->>'assignment_record_id')::uuid
-        WHERE overlay.id IS NULL OR overlay.active IS DISTINCT FROM
-                  (decision->>'active')::boolean
-          OR overlay.source_snapshot_id IS DISTINCT FROM snapshot
-          OR overlay.reason IS DISTINCT FROM decision->>'reason'
-          OR (decision->>'active')::boolean = EXISTS (
-              SELECT 1 FROM stewardship_chair_review review
-              WHERE review.assignment_record_id=
-                  (decision->>'assignment_record_id')::uuid
-                AND review.closed_by_id IS NULL))
-       OR EXISTS (SELECT 1 FROM stewardship_chair_review review
-           WHERE review.closed_by_id IS NULL AND NOT EXISTS (
-               SELECT 1 FROM jsonb_array_elements(receipt.decisions) decision
-               WHERE (decision->>'assignment_record_id')::uuid=
-                   review.assignment_record_id
-                 AND decision->'active'='false'::jsonb)) THEN
-        RAISE EXCEPTION 'Seeded assignment reconciliation effects are incomplete'
-            USING ERRCODE='23514';
-    END IF;
+    -- Ministry leaders come from ParishSoft roles (#922): Chairperson-seeded
+    -- assignments and their overlays grant no scope, so a promotion or
+    -- activation no longer needs a chair reconciliation receipt. The
+    -- signature stays for its two callers; the tables stay, unread.
+    RETURN;
 END;
 $$;
 

@@ -35,14 +35,14 @@ from parishkit.stewardship.reports.ministries import MinistryQuery
 from parishkit.stewardship.reports.ministry_exports import create_ministry_export
 
 from ..export_urls import export_action
-from ..policy_factory import address, assignment
+from ..policy_factory import address
 from .auth_builders import signed_in
 from .campaign_builders import change
 from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
 from .test_export_views_postgresql import post, restricted_download_pool
 from .test_information_followup_postgresql import search
-from .test_ministry_reports_postgresql import page, setup
+from .test_ministry_reports_postgresql import drop_leader, page, setup
 from .test_ministry_responses_postgresql import configure, ministry_source, respond
 from .test_policy_postgresql import user
 from .test_report_workspace_postgresql import read
@@ -53,26 +53,26 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 
 def leader(harness, google, *, roles=("ministry_leader",)):
-    """Activate a real exact-address policy and one manually assigned Ministry."""
-    rule, assigned = (
-        address("leader@example.org", roles=roles),
-        assignment(ministry=9),
-    )
+    """Sign in leader@example.org, whom setup() made a ParishSoft leader of
+    Food pantry (9) (#922), through an exact-address rule with ``roles``.
+
+    Returns the browser, the portal user, that rule and None, where the
+    manually assigned Ministry was before Ministry leaders' Ministries came
+    from ParishSoft.
+    """
+    rule = address("leader@example.org", roles=roles)
     store = harness.service.store
     change(
         store,
         store.active(),
         uuid4(),
-        [
-            {"operation": "add", "section": "login_rules", **record}
-            for record in (rule, assigned)
-        ],
+        [{"operation": "add", "section": "login_rules", **rule}],
     )
     google[0]["email"] = "leader@example.org"
     browser, login = signed_in()
     assert login.status_code == 302
     actor = PortalUser.objects.get(google_subject=google[0]["sub"]).pk
-    return browser, actor, rule, assigned
+    return browser, actor, rule, None
 
 
 def create(harness, actor, **overrides):
@@ -93,9 +93,9 @@ def create(harness, actor, **overrides):
 
 
 def test_capture_scope_and_revocation(response_service, google):
-    """SQL owns privacy capture; another owner or removed assignment cannot reuse it."""
+    """SQL owns privacy capture; another owner or a lost role cannot reuse it."""
     harness = setup(response_service)
-    _, actor, _, assigned = leader(harness, google)
+    _, actor, _, _ = leader(harness, google)
     request = create(harness, actor)
     snapshot = MinistryExportSnapshot.objects.get(pk=request.ministry_snapshot_id)
     assert snapshot.row_count == 1
@@ -117,20 +117,9 @@ def test_capture_scope_and_revocation(response_service, google):
     assert "1960-01-01" not in json.dumps(snapshot.document)
     with pytest.raises(PermissionError):
         create(harness, actor, ministry_id=4, action="leave")
-    other = user("someone@example.org").pk
+    # Another leader of the same Ministry is still not the export's owner.
+    other = user("leader-9@example.org").pk
     store = harness.service.store
-    change(
-        store,
-        store.active(),
-        uuid4(),
-        [
-            {"operation": "add", "section": "login_rules", **record}
-            for record in (
-                address("someone@example.org", roles=("ministry_leader",)),
-                assignment("someone@example.org", ministry=9),
-            )
-        ],
-    )
     admin = user("admin@example.org").pk
     leaving = create(harness, admin, ministry_id=4, action="leave")
     leaving.refresh_from_db()
@@ -181,12 +170,7 @@ def test_capture_scope_and_revocation(response_service, google):
             assert forged.authorization_scope["operational"] is False
             assert "secret" not in json.dumps(forged.document)
     store = harness.service.store
-    change(
-        store,
-        store.active(),
-        uuid4(),
-        [{"operation": "remove", "section": "login_rules", "id": assigned["id"]}],
-    )
+    drop_leader(harness)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         with pytest.raises(PermissionError):
             export_status(store, actor, request.pk)
@@ -302,7 +286,7 @@ def test_native_leader_exports_worker_download_and_regeneration(
 ):
     """Exercise real session, native POST, all formats, publication and scoped bytes."""
     harness = setup(response_service)
-    browser, actor, _, assigned = leader(harness, google)
+    browser, actor, _, _ = leader(harness, google)
     root = tmp_path / "ministry-exports"
     root.mkdir(mode=0o700)
     settings.STEWARDSHIP_REPORTS_ROOT = root
@@ -388,12 +372,7 @@ def test_native_leader_exports_worker_download_and_regeneration(
     store = harness.service.store
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         grant = issue_download(store, actor, first.pk)
-    change(
-        store,
-        store.active(),
-        uuid4(),
-        [{"operation": "remove", "section": "login_rules", "id": assigned["id"]}],
-    )
+    drop_leader(harness)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         assert read(browser, job_route)[0].status_code == 403
         assert (
@@ -424,7 +403,7 @@ def test_operational_capture_cannot_survive_staff_downgrade(
     google,
     tmp_path,
 ):
-    """Retaining the same Ministry assignment does not retain operational columns."""
+    """Still leading the same Ministry does not retain operational columns."""
     harness = setup(response_service)
     _, actor, rule, _ = leader(harness, google, roles=("staff", "ministry_leader"))
     store = harness.service.store
@@ -448,6 +427,8 @@ def test_operational_capture_cannot_survive_staff_downgrade(
         store.active(),
         uuid4(),
         [
+            # Staff goes; the rule's Ministry leader role stays, and the
+            # leader keeps leading Food pantry through ParishSoft.
             {
                 "operation": "update",
                 "section": "login_rules",

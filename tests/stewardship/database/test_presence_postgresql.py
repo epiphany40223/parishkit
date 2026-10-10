@@ -1,7 +1,6 @@
 """Real Family/Admin sessions prove presence is not activity or credential evidence."""
 
 from datetime import timedelta
-from uuid import uuid4
 
 import pytest
 from django.db import IntegrityError, connection, transaction
@@ -15,11 +14,11 @@ from parishkit.stewardship.campaigns.credential_models import FamilySession
 from parishkit.stewardship.campaigns.family_identity import FamilyStatus
 from parishkit.stewardship.deployment import ServiceRole
 
-from ..policy_factory import address
 from ..test_source_corpus import source
 from .auth_builders import signed_in, unguarded
-from .campaign_builders import campaign_clock, change
+from .campaign_builders import campaign_clock
 from .credential_builders import populate
+from .leader_builders import grant_role
 from .test_background_grants_postgresql import task_login
 from .test_current_chair_postgresql import publish
 from .test_family_auth_postgresql import family_service as family_service
@@ -201,25 +200,16 @@ def test_admin_poll_does_not_refresh_admin_idle(family_service, google):
     assert row.last_activity_at == before
 
 
-@pytest.mark.parametrize("role", ["staff", "ministry_leader"])
+# A Ministry leader leads through a ParishSoft role (#922), which this
+# fixture's synthetic population has none of; the capability matrix
+# (test_policy.py) shows leaders hold no presence capability either.
+@pytest.mark.parametrize("role", ["staff"])
 def test_presence_is_admin_only_even_for_direct_json(
     family_service, google, auth_service, role
 ):
     """Staff access to codes does not imply presence or observation access."""
     store = auth_service.store
-    result = change(
-        store,
-        store.active(),
-        uuid4(),
-        [
-            {
-                "operation": "add",
-                "section": "login_rules",
-                **address("observer@example.org", roles=(role,)),
-            }
-        ],
-    )
-    assert result.state == "applied"
+    grant_role(store, "observer@example.org", role)
     google[0]["email"] = "observer@example.org"
     google[0]["sub"] = f"observer-{role}"
     browser, _ = signed_in()

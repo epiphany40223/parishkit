@@ -18,10 +18,16 @@ from parishkit.stewardship.deployment import ServiceRole
 from ..policy_factory import address, assignment, domain
 from .auth_builders import auth_runtime, signed_in
 from .campaign_builders import change
+from .leader_builders import grant_role
 from .role_grants import seed_user
 from .test_background_grants_postgresql import task_login
 
 pytestmark = pytest.mark.django_db(transaction=True)
+# What a Ministry assignment says it does now (#922).
+RETIRED = (
+    "Ministry assignments no longer grant anything: a Ministry leader sees "
+    "the Ministries of their ParishSoft Ministry roles."
+)
 URL = "/admin/users"
 
 
@@ -119,12 +125,14 @@ def test_administrator_reviews_rules_provenance_and_warnings(auth_service, googl
     assert "Explicit deny" in denied and "None on record" in denied
     assert "data-local-instant" not in denied
     assert "Ministry DUID 9" in row(body, "leader@example.org")
+    # A rule's Ministry leader role is held; assignments give no Ministry
+    # now (#922), and say so.
+    assert RETIRED in row(body, "leader@example.org")
     idle = row(body, "idle@example.org")
-    assert "Ministry leader with no active Ministry assignment." in idle
+    assert RETIRED not in idle and "<td>Ministry leader</td>" in idle
     assert "is disabled and cannot sign in" in idle
     helper = row(body, "helper@workspace.example")
-    assert "Ministry DUID 4" in helper
-    assert "No login rule gives this person the Ministry leader role." in helper
+    assert "Ministry DUID 4" in helper and RETIRED in helper
     assert 'href="/admin/users"' in body
     contexts = views()
     # One audit row for the one successful view, and none for the refused query
@@ -170,8 +178,10 @@ def seeded_service(tmp_path, settings, real_limiter):
     return service
 
 
-def test_chairperson_suspension_matches_what_a_sign_in_receives(seeded_service, google):
-    """The page and the evaluator agree, through the real overlay tables."""
+def test_chairperson_seeds_on_the_page_match_a_sign_in(seeded_service, google):
+    """The page and the evaluator agree, whatever the overlay tables say: a
+    seeded rule's Ministry leader role is held (2026-10-10) and no seeded
+    assignment gives a Ministry (#922)."""
     store = seeded_service.store
     chairs = {
         email: identity(email)
@@ -184,22 +194,18 @@ def test_chairperson_suspension_matches_what_a_sign_in_receives(seeded_service, 
         granted = {
             email: current_principal(store, user.pk) for email, user in chairs.items()
         }
-    assert granted["confirmed@example.org"].ministries == frozenset({9})
-    assert not granted["missing@example.org"].roles
-    confirmed = row(body, "confirmed@example.org")
-    assert "suspended" not in confirmed
-    assert "Ministry DUID 9 (Parish source Chairperson)" in confirmed
-    assert "<td>Ministry leader</td>" in confirmed
-    missing = row(body, "missing@example.org")
-    assert "The Ministry leader role is suspended" in missing
-    assert "Ministry DUID 4 (Parish source Chairperson; suspended)" in missing
-    assert "<td>None</td>" in missing
+    for email, duid in (("confirmed@example.org", 9), ("missing@example.org", 4)):
+        assert granted[email].roles == {"ministry_leader"}
+        assert not granted[email].ministries
+        shown = row(body, email)
+        assert RETIRED in shown and "<td>Ministry leader</td>" in shown
+        assert f"Ministry DUID {duid} (Parish source Chairperson; suspended)" in shown
 
 
 @pytest.mark.parametrize("role", ["staff", "ministry_leader"])
 def test_portal_users_are_not_exposed_to_other_roles(auth_service, google, role):
     """Who else holds access is an Administrator-only disclosure."""
-    add_rules(auth_service.store, address("reader@example.org", roles=(role,)))
+    grant_role(auth_service.store, "reader@example.org", role)
     google[0]["email"] = "reader@example.org"
     browser, login = signed_in()
     # The sign-in itself succeeds, so the 403 is the capability's alone.
