@@ -60,14 +60,16 @@ code; no secret is built into it. Later releases keep that visibility.
 
 The image is rebuilt from the tagged commit at release time, so the bytes the
 hosts pull are not the image CI tested (#392 L4). After the push, the image
-job pulls the pushed digest back from GHCR and runs it as the
+job runs the pushed digest, referenced by digest as a host pulls it, as the
 [deployment runbook](stewardship-deployment-runbook.md) runs offline
 commands (no network, read-only, every capability dropped, as `10001:10001`):
 `--version` must print the tag's version, `collect-static` must fill a
 private tmpfs (it configures Django and imports every application, so a
 missing module or broken dependency fails here), and the bundled `pg_dump`
 must be PostgreSQL 18. It takes seconds and is limited to five minutes. It
-needs no secret, database or network service.
+needs no secret, database or network service. The runner already holds the
+image it built, so pulling the digest only confirms that GHCR serves it; the
+bytes run are the pushed bytes either way.
 
 The job then signs build provenance for that digest with
 `actions/attest-build-provenance` (#392 M2): the attestation records the
@@ -80,7 +82,11 @@ the image's. Only this job holds `id-token: write` and `attestations: write`.
 The digest artifact is uploaded only after both steps pass, so a failed
 smoke run or attestation leaves no GitHub Release naming the image; the
 pushed `:<version>` and `:<commit>` tags remain in GHCR, unreferenced, as
-after any failed release run. Fix the cause and release a new version.
+after any failed release run. Fix the cause and release a new version. When
+the failure was transient (a GHCR or Sigstore outage, say), re-running the
+failed jobs instead is fine, but it rebuilds and pushes a new digest after
+`release.sh` has already refused: take that digest from the release notes and
+run the verification below by hand before deploying it.
 
 Before deploying, verify the attestation:
 

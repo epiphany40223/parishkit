@@ -231,13 +231,15 @@ jobs:
           echo "digest=${digest#*@}" >> "$GITHUB_OUTPUT"
 
       # A rebuild at release time is not the image CI tested (#392 L4), so
-      # run the pushed digest, pulled back from GHCR as a host pulls it, the
+      # run the pushed digest, referenced by digest as a host pulls it, the
       # way the runbook runs offline commands: no network, read-only, no
-      # capabilities. collect-static configures Django and imports every
-      # app, so a missing module or broken dependency fails here; the
-      # bundled pg_dump must be the server's major version (backups use it).
-      # A failure stops the job before the attestation and the digest
-      # artifact, so no GitHub Release names the image.
+      # capabilities. The runner already holds the bytes, so the pull only
+      # confirms that GHCR serves that digest. collect-static configures
+      # Django and imports every app, so a missing module or broken
+      # dependency fails here; the bundled pg_dump must be the server's
+      # major version (backups use it). A failure stops the job before the
+      # attestation and the digest artifact, so no GitHub Release names the
+      # image.
       - name: Smoke-test the pushed image
         timeout-minutes: 5
         env:
