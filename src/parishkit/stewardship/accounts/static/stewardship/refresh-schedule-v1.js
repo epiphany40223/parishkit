@@ -156,7 +156,8 @@
 
   // The last pointer position on the screen, so a redraw can keep what is
   // under the pointer in place (#736). A touch or pen lifts away when it
-  // ends, and a mouse that leaves the window points at nothing.
+  // ends or is taken over by a pan (pointercancel), and a mouse that leaves
+  // the window points at nothing.
   let pointer = null;
   const track = (event) => { pointer = {x: event.clientX, y: event.clientY}; };
   document.addEventListener("pointermove", track, {passive: true});
@@ -164,25 +165,44 @@
   document.addEventListener("pointerup", (event) => {
     if (event.pointerType !== "mouse") pointer = null;
   });
+  document.addEventListener("pointercancel", () => { pointer = null; });
   document.documentElement.addEventListener("pointerleave", () => { pointer = null; });
 
-  // Keep one control where it is on the screen while ``change`` redraws or
+  // What under the pointer a redraw should keep in place, as something the
+  // redraw does not replace: a row (its messages are redrawn inside it) or
+  // a check part (its contents are replaced, it stays). Blank space between
+  // or beside rows points at a container whose top never moves, so take the
+  // first row at or below the pointer instead.
+  const pointedAt = () => {
+    const pointed = pointer && document.elementFromPoint(pointer.x, pointer.y);
+    if (!pointed || !form.contains(pointed)) return null;
+    const row = pointed.closest("[data-schedule-row]");
+    if (row) return row;
+    if (pointed === form || pointed.querySelector("[data-schedule-row]")) {
+      return SCOPES.flatMap(rowList).find((each) => each.getBoundingClientRect().bottom >= pointer.y) || null;
+    }
+    return pointed.closest("[data-schedule-part]") || pointed;
+  };
+
+  // Keep one thing where it is on the screen while ``change`` redraws or
   // replaces things above it, scrolling by the amount it moved. Each row
   // keeps room for one line of messages (ui-v1.css), so most messages move
-  // nothing; this covers longer ones and replaced rows. The control is
-  // ``anchor`` when given, else the one under the pointer within the form
-  // (the rule #736 is about), else the focused one (the one being edited,
-  // or Add after a Remove).
+  // nothing; this covers longer ones and replaced rows. The first of these
+  // still on the page afterwards is kept: ``anchor`` when given (the button
+  // just chosen), else what is under the pointer within the form (the rule
+  // #736 is about), else the focused control (the one being edited, or Add
+  // after a Remove).
   const keepInPlace = (change, anchor) => {
-    const pointed = pointer && document.elementFromPoint(pointer.x, pointer.y);
     const focused = document.activeElement;
-    const target = anchor
-      || (pointed && form.contains(pointed) ? pointed : null)
-      || (focused && focused !== document.body && form.contains(focused) ? focused : null);
-    const before = target ? target.getBoundingClientRect().top : 0;
+    const candidates = [anchor, pointedAt(),
+      focused && focused !== document.body && form.contains(focused) ? focused : null]
+      .filter(Boolean).map((element) => ({element, before: element.getBoundingClientRect().top}));
     change();
-    if (!target || !target.isConnected) return;
-    const shift = target.getBoundingClientRect().top - before;
+    const kept = candidates.find((candidate) => candidate.element.isConnected);
+    if (!kept) return;
+    // Rounded: WebKit scrolls by whole pixels and drops the fraction, which
+    // would leave up to a pixel of movement; rounding leaves at most half.
+    const shift = Math.round(kept.element.getBoundingClientRect().top - kept.before);
     if (shift) window.scrollBy(0, shift);
   };
 
