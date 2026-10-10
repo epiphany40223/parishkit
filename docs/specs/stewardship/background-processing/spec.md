@@ -2169,12 +2169,13 @@ sets (the Administrator chooses it; there is no preset time), send:
   each stage's Families compared with invited ("Link followed" noting that
   it includes mail-scanner prefetches) and "Submitted more than once", after
   the campaign totals, with no caption. The digest leaves out the other two
-  figures reported beside the funnel ("already responded" and "submitted
-  without a delivered invitation"); the
+  figures reported beside the funnel ("Invitations not sent (already
+  responded)" and "Submitted without a delivered invitation"); the
   [Response dashboard](../reports/spec.md#response-funnel) and
   `pk-admin report responses` still show them
   ([#969](https://github.com/epiphany40223/parishkit/issues/969)). The email
-  shows rows with share bars; the saved report page a table. The compiling worker counts it and the page counts it again from
+  shows rows with share bars; the saved report page a table. The compiling
+  worker counts it and the page counts it again from
   the same durable timestamps, so the two agree unless the engagement record
   is backfilled later. The saved page of a digest sent before the funnel
   existed also shows it (or the Testing note), although that email did not;

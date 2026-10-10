@@ -223,5 +223,6 @@ def test_the_saved_report_shows_the_response_funnel(
     assert "includes mail-scanner prefetches" in text and "40%" in text
     assert "Submitted more than once" in text
     assert "already responded" not in text and "Families at each stage" not in text
+    assert "without a delivered invitation" not in text
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []

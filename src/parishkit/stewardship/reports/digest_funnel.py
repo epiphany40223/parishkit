@@ -4,9 +4,9 @@ The digest states every figure as of the end of its report day (#721), so
 its funnel is the same five stages as the Response dashboard
 (``response_metrics``), counted at that instant, with one of the dashboard's
 side figures. The Administrator trimmed the digest (#969): it has no caption
-and leaves out "already responded" and "submitted without a delivered
-invitation", which stay on the dashboard and in ``pk-admin report
-responses``. The funnel reads
+and leaves out "Invitations not sent (already responded)" and "Submitted
+without a delivered invitation", which stay on the dashboard and in
+``pk-admin report responses``. The funnel reads
 durable timestamps only, so counting it again later gives the same numbers:
 the compiling worker counts it for the email and the saved report page
 counts it again when it is opened, the way both read the ParishSoft data age
