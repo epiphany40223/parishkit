@@ -1,7 +1,6 @@
 """Admin/Staff live reports with exact fact selection and response-owned guards."""
 
 from contextlib import ExitStack
-from io import BytesIO
 from urllib.parse import urlencode
 from uuid import uuid4
 
@@ -28,7 +27,7 @@ from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.security import private_response
 from parishkit.stewardship.web.tables import paginate
 
-from .charts import render_participation
+from .charts import participation_png
 from .daily_digest import statistics_cards
 from .digest_presentation import participation_context
 from .documents import participation_document
@@ -186,9 +185,7 @@ def participation(request, campaign_id, *, fact_set_id=None):
                         browser_timezone=query.timezone,
                         requested_at=facts.created_at,
                     )
-                    output = BytesIO()
-                    render_participation(document, output, format="png")
-                    payload = output.getvalue()
+                    payload = participation_png(document)
                 else:
                     selected = stack.enter_context(
                         guarded_participation(
