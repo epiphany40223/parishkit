@@ -3370,6 +3370,18 @@ progress says so. Only the send the progress page is showing links to it
 another send still in progress, such as an invitation still sending when a
 reminder falls due, says In progress without the link.
 
+**Layout.** The table has seven columns, so it fits a laptop screen beside
+the Admin menu
+([#931](https://github.com/epiphany40223/parishkit/issues/931)). **When**
+comes first and lists the scheduled time, the first email, the latest
+result and the duration as labelled lines. **Email** names the send, with
+its mode, a later schedule change and In progress as muted lines under the
+name. **Total**, **Sent**, **Failed** and **Not sure it arrived** follow,
+then **Not in the total**, a labelled list of Cancelled, Not needed,
+Couldn't be emailed, Skipped: Reminder WorkGroup and Held. Times and counts
+never wrap; labels wrap only between words. On a phone the table scrolls
+inside its own region and the page never scrolls sideways.
+
 **Links to Outgoing mail.** Sent, Failed, Not sure it arrived and Cancelled
 link to Outgoing mail filtered to that send and the matching email state
 (Delivered, Failed, Not sure it arrived and Not sent (cancelled)). The send
