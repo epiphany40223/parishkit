@@ -143,7 +143,9 @@ continue validates, saves and opens the next applicable page, or redisplays
 the page with its errors), a short introduction, and plain-language help for
 every field. Revisiting a page shows its saved values; a credential page never
 shows the secret but says that one is saved (with its public scope, such as
-the ParishSoft organization), lets it be kept by leaving the key empty, and
+the ParishSoft organization), lets it be kept by leaving the key empty
+(unless it was entered for settings changed since, or the ParishSoft
+organization ID is changed, when the key is required again), and
 explains that it can be replaced until setup finishes and afterwards from
 Integrations. A page whose prerequisites are unmet explains what is missing
 and links the step that fixes it, keeping the HTTP status of the underlying
