@@ -572,6 +572,17 @@ def confirm_schedule(caller, service, campaign_id, *, token, context):
 
 # The longest cancellation reason: the abort journal's column.
 REASON_LIMIT = 1024
+# ``config request cancel``'s refusal of a change still validating whose
+# candidate was never prepared: no new machinery rescues it (#944).
+UNPREPARED = {
+    "field": "request",
+    "code": "invalid",
+    "message": (
+        "This change's new settings were never prepared, so there is nothing "
+        "to cancel yet. The configuration installer's log says what stops it; "
+        "once that is fixed, the installer applies the change or refuses it."
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -598,7 +609,12 @@ def cancel_end_change(caller, service, request_id, *, reason, context):
     immutable ``CampaignConfigurationAbort`` with ``reason`` and the
     command's ``admin_cmd_config_request_cancel`` event. The journal's own
     trigger refuses a change that applied, has not started (``staged``) or
-    whose base is no longer applied (``stale_version``). The configuration
+    whose base is no longer applied (``stale_version``). So does this
+    command, more plainly, for a change already journaled with another
+    reason (``stale_version``) and for one still ``validating`` whose
+    candidate was never prepared (``invalid``, with ``UNPREPARED``'s
+    message): that one has written nothing to undo, and only fixing what
+    stops the installer moves it. The configuration
     installer then restores the previous YAML and records the request as
     failed, before any other request; nothing else is undone.
 
@@ -610,6 +626,7 @@ def cancel_end_change(caller, service, request_id, *, reason, context):
     """
     from django.db import IntegrityError, connection, transaction
 
+    from .accounts.configuration_models import AppliedConfigurationVersion
     from .accounts.configuration_requests import _checkpoint, _status
     from .accounts.request_models import ConfigurationChangeRequest
     from .accounts.runtime_models import SystemConfiguration
@@ -656,6 +673,25 @@ def cancel_end_change(caller, service, request_id, *, reason, context):
             return True
         if status.state in {"staged", "applied", "failed", "cancelled"}:
             raise StaleRecordError("This change can no longer be cancelled here.")
+        if abort is not None:
+            # Journaled already (by another cancellation or the installer's
+            # own refusal) with another reason, and not yet restored: the
+            # journal is immutable, so say so rather than let journal_abort's
+            # invariant surface as an internal error.
+            raise StaleRecordError(
+                "This change is already being cancelled; config request show "
+                "follows it."
+            )
+        if not AppliedConfigurationVersion.objects.filter(
+            pk=request.candidate_version_id,
+            digest=request.candidate_digest,
+            predecessor_id=request.base_id,
+        ).exists():
+            # Stuck validating before its candidate was prepared: the journal
+            # (and its restore) needs a prepared candidate, and nothing was
+            # written yet that needs undoing. Refused as ``invalid`` because
+            # only that code carries a message, and this one says what to do.
+            raise InvalidChange([UNPREPARED])
         campaign = Campaign.objects.select_for_update().get(pk=intent.campaign_id)
         admit_end_edit("abort_configuration", campaign, runtime, intent)
         journal_abort(
@@ -685,7 +721,7 @@ def cancel_end_change(caller, service, request_id, *, reason, context):
             actor,
             StaleRecordError("This change can no longer be cancelled."),
         )
-    except (NotAvailable, StaleRecordError, PermissionError) as error:
+    except (NotAvailable, StaleRecordError, PermissionError, InvalidChange) as error:
         _ended_or_raise(caller, service, actor, error)
     context["committed"] = True
     return ConfigCancel(cancelled=created, request=config_request(status).to_document())

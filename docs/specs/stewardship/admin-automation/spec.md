@@ -1848,10 +1848,21 @@ configuration installer then restores the previous YAML and records the
 request as failed (`invalid_candidate`) before anything else. A change still
 `staged` is cancelled outright, but only by the Administrator who made it;
 another's, or one that applied or failed, is `stale_version`. Repeating the
-same cancellation returns `cancelled: false` and records nothing. Like every
+same cancellation returns `cancelled: false` and records nothing; one with a
+different reason, while the first is still being restored, is
+`stale_version`, since the journal is immutable. Like every
 command it admits only while the YAML and database agree, so it serves a
 change stuck before its YAML switch; a refusal after the switch is the
 installer's own, journaled automatically.
+
+The command cannot rescue a change stuck in `validating` before its
+candidate was prepared, such as one whose every installer pass fails in
+validation before preparation. The journal requires a prepared candidate,
+and no other cancellation path exists, so the command answers `invalid`
+with a `request` field message saying that nothing was prepared and that the
+configuration installer's log says what stops it. Nothing was written that
+needs undoing; once the operator fixes that failure, the installer's next
+pass applies the change or refuses it in preflight.
 
 ### Production transition and withdrawal
 
