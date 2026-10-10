@@ -532,11 +532,11 @@ confirmation dialog shows a refusal below its buttons
 ([row actions](#row-actions-and-confirmation)); the theme always reserves the
 scrollbar's space ([page help](#page-help)); `data-complete-hint="reserve"`
 on a complete-gate hint keeps its one line's height while empty instead of
-hiding it (open #959); a field that a choice makes inapplicable stays in
+hiding it (#959); a field that a choice makes inapplicable stays in
 place, greyed, rather than disappearing, through `data-enabled-when` (open
 #959) or `data-locked-when` (open #957) ([conditional
 fields](#conditional-fields)). **Precedent.** #736 and its review
-(Administrator, 2026-10-08), #563, open #957, open #959.
+(Administrator, 2026-10-08), #563, open #957, #959.
 
 ### Prerequisite gates
 
@@ -548,15 +548,15 @@ button that is available but refuses afterwards wastes a round trip and reads
 as an error; a button greyed out with no reason reads as broken. **Shared
 code.** `ui-v1.js`: `data-require-complete` with `data-complete-hint` and
 `data-missing-hint`, and `data-complete-hint="reserve"` to keep the hint's
-line while it is empty (open #959); `data-required-when` and
+line while it is empty (#959); `data-required-when` and
 `data-required-when-shown`; `data-enabled-when` and `data-locked-when`
 ([conditional fields](#conditional-fields));
 the acknowledgment gate (`data-acknowledgment-gated`); the time-entry gate;
 the change gate `data-require-change` (#924); the shared `holdButton` /
 `releaseButton` pair and `GATE_MARKS` list (#924), so gates never release a
 button another gate still holds; the `pageshow` re-check;
-`test_campaign_setup_gates.py`, `test_prerequisite_gates.py` (open #946).
-**Precedent.** #553, #563 (and its slices, such as open #946), #921 / #924.
+`test_campaign_setup_gates.py`, `test_prerequisite_gates.py` (#946).
+**Precedent.** #553, #563 (and its slices, such as #946), #921 / #924.
 
 This includes a table's bulk action buttons: while they are unavailable,
 their reason is visible text in a reserved line beside or below them, so
@@ -634,7 +634,7 @@ saves nothing. **Why.** A summary at the top of a long page, or an error found
 only on Save, sends the reader hunting. **Shared code.** `ui-v1.js` field
 errors (`data-field-error`, `clearFieldError`), `ui-v1.css` error styles;
 live no-save checks such as `refresh_schedule_check` in
-`accounts/integration_views.py` (open #920). **Precedent.** #592, #562, open #920.
+`accounts/integration_views.py` (#920). **Precedent.** #592, #562, #920.
 
 A field error is shown at that field: its message sits directly beside it,
 and the field is marked in error (`aria-invalid="true"`, described by the
@@ -705,7 +705,7 @@ a form look longer than it is. **Shared code.** `ui-v1.js`: `data-show-when`,
 and after every in-place swap. Where hiding a field would move the controls
 around it, two gates keep it in place instead:
 
-- `data-enabled-when="name=value"` (open #959) works like `data-show-when`
+- `data-enabled-when="name=value"` (#959) works like `data-show-when`
   but never hides: while the rule does not hold, the field stays, disabled
   (greyed and not sent). It is re-checked on `pageshow` and after in-place
   filter syncs. First use: System logs' level boxes while Sign-in activity is
@@ -717,7 +717,7 @@ around it, two gates keep it in place instead:
   ticked.
 
 The two overlap, and are to be merged into one shared gate once both have
-landed. **Precedent.** #563, #736, open #957, open #959.
+landed. **Precedent.** #563, #736, open #957, #959.
 
 ### Single-campaign interim
 
@@ -1192,8 +1192,8 @@ into a spreadsheet; staff moving between pages should not re-learn each one.
 **Shared code.** `test_admin_table_columns.py` refuses a cell that prints a
 DUID label with a value (#941). **Precedent.** #932 (Administrator,
 2026-10-09, corrected 2026-10-10 to "most relevant column first", and the
-2026-10-10 rule that the Family name and DUID columns both sort), #941,
-open #950.
+2026-10-10 rule that the Family name and DUID columns both sort), #941
+and #950.
 
 The guard test reads every Admin template, components included. In each
 `<td>` and each `<th>` whose attributes include `scope="row"`, it refuses a
