@@ -43,7 +43,9 @@ from .policy_schema import normalized_email
 # The route path, and the key namespace the web Valkey ACL already grants.
 PATH = "/admin/local/sign-in"
 NAMESPACE = "stewardship:auth:v1"
-TOKEN_SECONDS = 120
+# Fifteen minutes (#954): long enough to switch to the browser and paste, short
+# enough that a link left in terminal scrollback still lapses.
+TOKEN_SECONDS = 900
 # A local subject can never collide with Google's numeric subjects.
 SUBJECT_PREFIX = "local-test:"
 # secrets.token_urlsafe(32) is 256 random bits as exactly 43 URL-safe characters.
@@ -66,7 +68,7 @@ def token_key(token, namespace=NAMESPACE):
 def issue_token(client, email, epoch, *, namespace=NAMESPACE):
     """Store the email and the current revocation epoch under a fresh token.
 
-    The token is the only secret; the store holds its hash with a 120-second
+    The token is the only secret; the store holds its hash with a 15-minute
     expiry. The epoch travels with the token so the identity core can refuse
     a link minted before an operator recovery, as it refuses stale OAuth
     state. ``NX`` makes a hash collision fail loudly instead of overwriting.

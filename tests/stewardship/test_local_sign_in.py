@@ -213,7 +213,7 @@ def test_issue_and_consume_round_trip_through_the_lua_script():
     client.set.assert_called_once_with(
         local_sign_in.token_key(token),
         '{"email":"a@example.test","recovery_epoch":"initial"}',
-        ex=120,
+        ex=15 * 60,
         nx=True,
     )
     client.eval.return_value = client.set.call_args.args[1].encode()
@@ -298,7 +298,7 @@ def test_command_mints_the_link_for_local(monkeypatch):
             {"email": "admin@example.test", "recovery_epoch": "epoch-7"},
             separators=(",", ":"),
         ),
-        ex=120,
+        ex=900,
         nx=True,
     )
     client.connection_pool.disconnect.assert_called_once_with()
@@ -359,7 +359,10 @@ def test_login_page_hides_google_sign_in_only_in_local():
         "<code>tools/stewardship-local.sh sign-in --email you@example.org</code>"
         in local
     )
-    assert "works once, within two minutes" in local
+    assert "works once, within 15 minutes" in local
+    assert "within 15 minutes of being printed" in render_to_string(
+        "stewardship/local-sign-in.html", {}
+    )
     assert "Family campaign portal" in local
     other = render_to_string("stewardship/login.html", {})
     assert "Sign in with Google" in other

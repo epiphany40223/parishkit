@@ -179,7 +179,7 @@ normal mode (offset zero, no preload).
 The wizard needs an Admin sign-in, which in LOCAL is the local test sign-in
 (OPS-10.08): `tools/stewardship-local.sh sign-in --email admin@example.test`
 (the bootstrap Administrator, `PARISHKIT_LOCAL_ADMIN_EMAIL`) prints a one-time
-link, valid for two minutes, to open in the browser. The wizard's credential
+link, valid for 15 minutes, to open in the browser. The wizard's credential
 step takes the values `up` printed: the fake ParishSoft API key and
 organization (OPS-10.06) and the mail-catcher document as the Workspace
 credential (OPS-10.05). Those two credentials are installed by the real
