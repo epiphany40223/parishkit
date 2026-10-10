@@ -235,13 +235,16 @@ def test_terminal_cleanup_requires_explicit_retry_and_can_recover(staged):
         correlation_id=uuid4(),
         admit=cleanup.admit_cleanup,
     )
+    # No service creates a branding cleanup retry (only the scheduler queues
+    # this type, #389), so the explicit retry is made as the schema owner;
+    # the worker then runs it under its own login.
+    with work_transaction():
+        retried = retry_failed(**command)
+        assert retry_failed(**command) == retried
     with task_login(ServiceRole.WORKER):
-        with work_transaction():
-            retried = retry_failed(**command)
-            assert retry_failed(**command) == retried
         assert execute_hint(retried.run_id, **arguments(media))
-        with work_transaction():
-            assert retry_failed(**command).run_id == retried.run_id
+    with work_transaction():
+        assert retry_failed(**command).run_id == retried.run_id
     row.refresh_from_db()
     assert row.state == "scrubbed" and produce() == ()
 

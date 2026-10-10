@@ -120,8 +120,11 @@ def test_worker_can_claim_progress_complete_and_record_private_safe_audit(tmp_pa
     """Verified metadata effects and their triggers need no broader web identity."""
     _, campaign, _ = draft_campaign(tmp_path)
     handler = source_handler(campaign)
-    with task_login(ServiceRole.WORKER, exact=True):
+    # Only the scheduler creates branding cleanup (#389), as the producer
+    # test above does; the worker claims and runs what it queued.
+    with task_login(ServiceRole.SCHEDULER, exact=True):
         task = create_task(handler)
+    with task_login(ServiceRole.WORKER, exact=True):
         execution = claim_hint(
             task.run_id,
             queue=WorkQueue.GENERAL,
