@@ -90,11 +90,10 @@ would exceed 100 files or 200 MB in total, so two concurrent uploads cannot
 both pass.
 
 The table, its triggers and the [reference view](#current-content) are
-part of the fresh-install schema baseline, which must land before the
+part of the fresh-install schema baseline, which landed before the
 [v1 schema freeze](../../../plans/stewardship/v1-launch.md#production-readiness-activation-and-schema-freeze).
-The validation deployment receives them through self-verifying in-place SQL,
-as the [pre-production policy](../operations/spec.md#pre-production-development-policy)
-allows.
+Any later change to them follows the
+[post-launch schema policy](../operations/spec.md#post-launch-schema-policy).
 
 Hosted files are not part of the YAML configuration. They are uploaded data,
 like artwork bytes, and a configuration round-trip would add versioning the
@@ -475,9 +474,10 @@ from Family pages and emails.") opens the About panel, following the Admin
   the page redirects back with "Uploaded *name* as `{{ file.slug }}`".
 - **Usage line**: "12 of 100 files, 35.2 MB of 200 MB used."
 - **File table**, built on the shared Admin table component with its
-  selection column and **Delete selected** bulk action. It adopts #203's
-  column sorting when that lands; until then rows are sorted by placeholder
-  name. The columns are:
+  selection column and **Delete selected** bulk action. Its headings sort
+  the whole library on the server (Name, Placeholder, Type, Size, Uploaded,
+  and Used in by its number of uses), by placeholder name until a heading is
+  chosen. The columns are:
   - Preview: a 48-pixel thumbnail for images, loaded from the file's public
     link; a type label for documents.
   - Name: the original file name, which opens the file in a new tab.

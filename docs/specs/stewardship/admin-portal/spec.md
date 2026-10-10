@@ -437,7 +437,9 @@ the upgrade finishes as it was confirmed: completion still accepts its
 one-campaign shape, so its campaign and Family codes are created as before,
 and Create the campaign never appears. In the
 [local environment](../local-environment/spec.md#operator-script), resuming the
-browser wizard behaves the same way.
+browser wizard behaves the same way. This paragraph describes the release
+that removes the wizard's campaign pages (#786); until it ships, every
+attempt still stages its first campaign, as the status note above says.
 
 Restore is an operator command performed before bootstrap/wizard. A restored,
 valid configured database skips initial setup after version/migration and
@@ -470,10 +472,13 @@ prominent non-dismissible error banner saying in plain language that debug
 logging must be off in Production, because debug logs can hold personal data,
 and that the operator turns it off by recreating the application containers
 with the variable `0` or unset. It is a warning only: no process refuses to
-start with the switch on. Once [System health](#system-health) lands
-(ADM-13), the banner links that page, where an Administrator can turn debug
-logging off without the operator, and the banner stays until every service
-reports it off.
+start with the switch on. The banner reads only the web process's own
+setting. For Administrators it links the debug logging panel of
+[System health](#system-health), which shows every service's setting. Turning
+debug logging off from that page, after which the banner stays until every
+service reports it off, comes with
+[turn off debug logging](#turn-off-debug-logging) (ADM-13 PR 6, not built
+yet); until then the banner asks for the operator.
 
 Every Admin page also shows a critical-problems banner while CRITICAL
 operational events from the last 24 hours are unacknowledged. It names each
@@ -552,7 +557,12 @@ meaning. Until the rest of the URL work lands, other pages (the export and
 emailed report pages, NAV-12) keep their
 "Current URL", and so does every other section of this spec and the other
 stewardship specs that name an Admin URL; those follow-up issues update them
-with the code.
+with the code. Until Emailed reports exists (NAV-14), the menu keeps a
+**Send a weekly report now** entry in Responses and reports, after the
+directory, so that action stays reachable. Of the remaining ADM-12 pull
+requests, only Find a Family (NAV-19) has landed; NAV-12 to NAV-18 are
+listed in the
+[ADM-12 checklist](../../../tasks/stewardship/admin-portal.md#adm-12-admin-navigation-overhaul).
 
 The Admin portal serves one current campaign. The system moves to a single
 campaign after this campaign (#145), so navigation already assumes it: there
@@ -705,10 +715,7 @@ however far down the directory lists it; the rest follow in the directory's
 order ([#712](https://github.com/epiphany40223/parishkit/issues/712)). Only the
 box ranks this way: the directory and its exports keep their own order. The box
 reads only the directory's first page, then looks the exact Family up and reads
-it alone, so a Family without a campaign record keeps its place, and until the
-search matches envelope numbers
-([#664](https://github.com/epiphany40223/parishkit/issues/664)) a Family whose
-envelope number alone equals the text is not listed. A Family without a
+it alone, so a Family without a campaign record keeps its place. A Family without a
 campaign record is listed without a link, as in the directory. Each search
 is audited as a directory view (that a search was used, and the row counts),
 never its text. A search the
@@ -794,6 +801,13 @@ Ministry follow-up ([Menu groups](#menu-groups)): one query reads both, only
 when the viewer's menu offers either entry as a link, once per request.
 
 #### Home page
+
+Status: the **Next steps** list and the **Today** line below are NAV-18
+(ADM-12.21), not built yet. Today Home shows its heading, the System health
+problems, the campaign and ParishSoft status panels (with the off-site backup
+line and the next planned Family mailing), My Ministries, the security events,
+automation notices, Ministry catalog changes, Family participation, the
+unreachable-Family count and recent failed background tasks.
 
 Home is a starting point, not only a status page. Its heading is "Home"; the
 parish name and the current campaign's name and state are its data line. Below
@@ -883,7 +897,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `index` | Home | Menu: Home | Administrator, Staff, Ministry leader | Campaign administration | `/admin/` | (same) | Heading becomes Home; parish and campaign shown as the data line. |
 | `configuration_request` | Change status | Settings page the change came from (else Home) | Administrator | Configuration change status; Configuration change | `/admin/changes/<request>/` | (same; old address redirects) |  |
 | `campaign_settings` | Campaign settings | Menu: Campaign settings | Administrator | (same) | `/admin/campaign/settings/` | (same; old address redirects) |  |
-| `campaign_create` | Create the campaign | Home | Administrator | (new, #142) | `/admin/campaign/create/` | (same) | Offered on Home only while the deployment has never had a campaign; refused once one exists. Not linked from a change's status page. |
+| `campaign_create` | Create the campaign | Home | Administrator | (new, #142) | `/admin/campaign/create/` | (same) | Not built yet (#786). Offered on Home only while the deployment has never had a campaign; refused once one exists. Not linked from a change's status page. |
 | `campaign_clone` | Copy campaign | Campaign settings | Administrator | Clone archived campaign | `/admin/campaign/copy/` | (same; old address redirects) | Decision 18: until #145 removes it, Campaign settings shows Copy campaign greyed out, not an action, with the tip "Disabled; will be removed with the single-campaign change (#145)". The server refuses the clone action. |
 | `content_history` | Content history | Campaign settings | Administrator | Retained campaign content | `/admin/campaign/content/history/` | (same; old address redirects) |  |
 | `content_history_revision` | Earlier version | Content history | Administrator | Retained campaign content; Revision | `/admin/campaign/content/history/<revision>/` | (same; old address redirects) |  |
@@ -1049,7 +1063,12 @@ Admin URLs follow the menu, so the address says where the reader is
   which campaign is current. Likewise a page for one record (an export, a
   digest snapshot, a cleanup request) refuses a record whose campaign is not
   current. Sent digest emails, bookmarks and the operator runbooks link the
-  old forms. A test lists every old pattern with its target.
+  old forms. A test lists every old pattern with its target. The
+  Administrator has since decided to drop these old addresses, so each
+  answers 404, keeping only Family-facing addresses and any address operator
+  tools or guides still use
+  ([#864](https://github.com/epiphany40223/parishkit/issues/864)); until that
+  lands they redirect as described here.
 
 #### Navigation rules
 
@@ -1731,10 +1750,10 @@ rule that those rules describe (see also
 | Ministry follow-up | Contact attempt time | Native time control for now |
 | Logs, reports | Date filters | Dates only, no time of day |
 
-The Ministry follow-up contact attempt keeps its native time control until
-its in-place save work
-([#592](https://github.com/epiphany40223/parishkit/pull/592)) has merged; it
-then moves to this entry as a follow-up. The planned
+The Ministry follow-up contact attempt still uses its native time control.
+Its in-place save work
+([#592](https://github.com/epiphany40223/parishkit/pull/592)), which it was
+waiting for, has merged, so moving it to this entry is an open follow-up. The planned
 [refresh schedule editor](#parishsoft-refresh-schedule-settings)
 ([#632](https://github.com/epiphany40223/parishkit/issues/632)) replaces the
 "At these times" list and uses this entry for its rule and exception times.
@@ -1814,7 +1833,7 @@ components, follow in later slices of #732.
 
 ## Background indicators
 
-Admins have two always-visible indicators:
+Administrators have two always-visible indicators:
 
 - **Families on the form now**: count of Family sessions with a heartbeat
   within the last 90 seconds, that is, Families with the form open in their
@@ -2138,6 +2157,14 @@ words, no cron text, and every refused or skipped time explained where it
 appears. It follows the [in-place controls](#in-place-controls) and
 conditional-field rules: nothing on the page reloads it.
 
+Status: the scheduler side is built (steps 2a and 2b of the
+[delivery plan](../../../plans/stewardship/refresh-schedule.md#delivery-plan));
+this page is step 4 and is not built yet. Today the ParishSoft settings page
+offers a full-refresh frequency, an "At these times" list of up to eight
+parish-local times and a quick-update choice (`accounts/integration_forms.py`).
+A schedule stored with rules is kept as it is, and that page then omits the
+three fields, since only this editor will write rules from the web.
+
 **Time zone.** Schedule times are entered and shown in the parish's time
 zone, a recorded exception to the browser-local rule
 ([#558](https://github.com/epiphany40223/parishkit/issues/558)): a recurring
@@ -2404,9 +2431,8 @@ assignments before confirmation.
 ### ParishSoft Ministry catalog changes
 
 Ministries are keyed by ParishSoft DUID, and only a full refresh re-reads the
-Ministry catalog; the 15-minute updates copy it unchanged (see the refresh
-cadence in
-[background processing](../background-processing/spec.md)). The system never
+Ministry catalog; quick updates copy it unchanged (see the
+[delta cycle](../background-processing/spec.md#delta-cycle)). The system never
 changes a campaign's Ministry selections because the catalog changed. This
 section covers telling Administrators about catalog changes and changing a
 live campaign's Ministries
@@ -2428,7 +2454,7 @@ a DUID with names cleaned by the display rule above:
 - **renamed**: in both, with the name before and after.
 
 A first load has no base and records nothing; a snapshot with no Ministry
-differences records nothing. A 15-minute update copies its base's catalog, so
+differences records nothing. A quick update copies its base's catalog, so
 it is not compared at all, which keeps the comparison off the global work lock
 for those runs. Each list keeps at most 50 entries, plus the full count. Like
 the change counts, the comparison is display-only: if it fails, staging omits
@@ -2615,6 +2641,12 @@ schedule definitions/revisions, occurrences, and outbox rows; rechecks state and
 provider uncertainty; and commits the new end date together with every selected
 schedule change. Any failure rolls back the complete edit.
 
+Status: the storage and guards for this edit are built, but no page or
+command offers it yet. Once go-live locks the dates, the date editor refuses
+any date change, so a live campaign's end date cannot be moved from the portal
+([#912](https://github.com/epiphany40223/parishkit/issues/912); see the
+[campaign data model](../data/spec.md#campaign)).
+
 ### Default content
 
 Pages and emails start with built-in, parish-neutral default text.
@@ -2654,6 +2686,13 @@ Campaign setup menu entries stay greyed "No current campaign" until then). It
 is not a multi-campaign control: once any campaign exists it is not shown,
 and the server refuses it, as it refuses Copy campaign and successor drafts
 until #145 and the close-out wizard (#527).
+
+Status: this section, including its guided steps, is not built yet
+([#786](https://github.com/epiphany40223/parishkit/issues/786)). The back end
+that lets setup finish without a campaign is built but switched off
+(`SYSTEM_ONLY_SETUP` in `accounts/setup_preview.py`), so setup still creates
+the campaign, as the
+[first-Admin wizard](#bootstrap-and-first-admin-wizard)'s status note says.
 
 **Admission.** Create the campaign follows the
 [draft-creation rules](#campaign-configuration) above, with three further
@@ -3480,8 +3519,9 @@ Outgoing mail, a restore review that begins while it renders withholds it.
 
 ### Family portal maintenance
 
-An Administrator may close the Family portal for maintenance from System →
-Family portal availability, for example while fixing a data problem, and
+An Administrator may close the Family portal for maintenance from Mail and
+Family portal → Family portal availability, for example while fixing a data
+problem, and
 reopen it later. Changing the switch requires fresh authentication and a CSRF
 token, and each change is recorded in the audit log
 (`family_maintenance_started` or `family_maintenance_ended`); the newest such
@@ -3518,6 +3558,15 @@ reminders continue unless an Administrator also uses [Live delivery
 pause](#live-delivery-pause), which the page links to.
 
 ### Reopen and archive
+
+Status: reopen, archive, unarchive, [Return to
+Testing](#return-to-testing-after-archive) and [campaign
+purge](#campaign-purge) are cut from v1
+([v1 launch scope](../../../plans/stewardship/v1-launch.md#cut-from-v1),
+items 1 and 2) and are not built; no Admin page or command offers them. The
+close-out wizard that brings them back is
+[#527](https://github.com/epiphany40223/parishkit/issues/527). These sections
+keep the intended design.
 
 Extending a closed campaign into the future can reopen it only through a
 readiness workflow equivalent to Production transition, excluding the
@@ -3799,10 +3848,11 @@ Repeated clicks return/link to the existing queued run.
 
 The refresh page and the "Run a full refresh now" button say that a full
 refresh re-reads everything (including Ministry rosters and giving) and usually
-takes a few minutes, while the automatic 15-minute updates read only the
+takes a few minutes, while the automatic quick updates read only the
 Families ParishSoft reports as changed. A refresh run's background task page,
 and its row in the background-work list, name the run as a "Full refresh" or a
-"15-minute update" from its request kind, and describe the current phase in
+"15-minute update" from its request kind (whatever the quick-update cadence),
+and describe the current phase in
 words ("Downloading from ParishSoft", "Saving the downloaded records",
 "Checking the new data", "Making the new data current"). The download phase has
 no count, so while a refresh is downloading the page says so instead of a bare
@@ -3947,6 +3997,10 @@ contact attempt that reaches the server without a usable zone (a page opened
 before this rule, for example) is refused in place like the other correctable
 refusals, keeping the typed values and asking the person to save again.
 
+Status: the two paragraphs below (manual census resolution and the
+**Entered in ParishSoft** tick) are not built yet; they belong to
+[#528](https://github.com/epiphany40223/parishkit/issues/528) (ADM-09).
+
 Manual census items may be marked resolved externally or ignored by Admin or
 Staff, with notes, on the
 [Census changes](../reports/spec.md#pending-census-changes) worklist.
@@ -3987,9 +4041,18 @@ text below follows them.
 
 Work package
 [ADM-13](../../../plans/stewardship/admin-portal.md#adm-13-system-health-page)
-delivers it. Until ADM-13 lands, the runbook steps listed under
+delivers it. Status: the read-only page has landed (PR 1 and PR 2a–2b of the
+[ADM-13 checklist](../../../tasks/stewardship/admin-portal.md#adm-13-system-health-page)):
+the problems list, the six panels, the status fragment, Home's problem lines,
+Families the form cannot open and the `system health` command. None of the
+four actions is built yet (PR 3 to PR 6), so no panel offers a button; each
+problem sentence names the runbook step instead, and the steps listed under
 [runbook steps the page replaces](#runbook-steps-the-page-replaces) remain
-the way to do these things.
+the way to do these things. Some panel details arrive with those pull
+requests too: the daily limit's 24-hour count (PR 2c), the last backup's
+size and version and the requested backups (PR 3), a halt's kind (PR 4), the
+example Families of a refused change (PR 5) and the debug-off switch
+(PR 6).
 
 ### System health page
 
@@ -4333,12 +4396,11 @@ checks.
   and
   [fresh-gated actions](../admin-automation/spec.md#fresh-gated-actions-from-the-command-line):
   automation may run all four.
-- **Schema order with ADM-11:** each action's SQL guard is written without
-  the automation clause, because `stewardship_automation_fresh_v1` exists
-  only from ADM-11 PR 5. ADM-11 PR 5's migration amends every ADM-13 guard
-  already installed to accept it, and an ADM-13 guard installed after ADM-11
-  PR 5 includes it from the start. Until then, each command is a pending
-  exemption in the action inventory.
+- **Schema order with ADM-11:** ADM-11 PR 5, which added
+  `stewardship_automation_fresh_v1`, has landed, and no ADM-13 action was
+  built before it, so its migration amended no ADM-13 guard. Each action's SQL
+  guard accepts `stewardship_automation_fresh_v1` from the start, and its
+  route and command land with it.
 - **Notifications:** the page, the logs and the audit event tell other
   Administrators. No action sends email or Slack notices
   ([decision 7](#system-health-decisions)); automation events also get the
@@ -4946,7 +5008,7 @@ Only Admins access the combined log screen. It supports:
   them sort. The count stops at 10,000 entries per log, and paging reaches at
   most 10,000 entries deep in either order; past that the page suggests a
   narrower date range or the other order; and
-- text or structured JSONL export of the filtered result.
+- CSV or JSON Lines export of the filtered result (below).
 
 Ministry filtering takes a Ministry DUID and matches an entry whose detail
 names it as `ministry_duid` or in any sorted Ministry list, so it includes both
@@ -4984,6 +5046,9 @@ reason/recipient routing, report execution/export, errors, Family access,
 submission changes, workflow changes, publication, and purge are recorded.
 
 ## Campaign purge
+
+Status: not built in v1; see the status note under
+[reopen and archive](#reopen-and-archive).
 
 Campaign purge is available only to Admins through `/admin/operations/purge/`.
 It cannot be invoked by ordinary deletion, API, or console command.
