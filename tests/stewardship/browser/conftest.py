@@ -83,6 +83,7 @@ from .chart_components import components as chart_components
 from .delivery_components import components as delivery_components
 from .digest_components import components as digest_components
 from .directory_components import components as directory_components
+from .emailed_components import components as emailed_components
 from .family_timeline_components import components as family_timeline_components
 from .financial_components import components as financial_components
 from .find_family_components import POSTS as FIND_FAMILY_POSTS
@@ -2082,6 +2083,7 @@ def component_origin():
             ),
         )
     responses.update(digest_components(context, admin))
+    responses.update(emailed_components(context, admin))
     responses.update(report_components(context, admin))
     responses.update(information_components(context, admin))
     responses.update(log_components(context, admin))

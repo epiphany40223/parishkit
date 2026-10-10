@@ -335,6 +335,7 @@ EXPECTED = {
     # Exports and emailed reports (NAV-12): each new page's slashless form.
     # Their old addresses have none (#864).
     f"/admin/reports/exports/{T}": f"/admin/reports/exports/{T}/",
+    "/admin/reports/emailed": "/admin/reports/emailed/",
     "/admin/reports/emailed/weekly/new": "/admin/reports/emailed/weekly/new/",
     f"/admin/reports/emailed/weekly/{T}": f"/admin/reports/emailed/weekly/{T}/",
     f"/admin/reports/emailed/weekly/{T}/items/{T}": (

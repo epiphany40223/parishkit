@@ -187,15 +187,17 @@ PAGES = {
     "information_queue": Page("reports", _("Additional information")),
     "information_item": Page("reports", _("Information request"), "information_queue"),
     "report_export": Page("reports", _("Report export"), "reports"),
-    "weekly_digest_manual": Page("reports", _("Send a weekly report now")),
-    # The emailed reports stand alone under the group until NAV-14 gives
-    # them the Emailed reports page; the reports root is Participation now,
-    # which they do not belong under.
-    "weekly_digest_snapshot": Page("reports", _("Weekly report")),
+    # The reports sent by email, listed on Emailed reports (ADM-12.17), and
+    # Send a weekly report now, its Administrator action.
+    "emailed_reports": Page("reports", _("Emailed reports")),
+    "weekly_digest_manual": Page(
+        "reports", _("Send a weekly report now"), "emailed_reports"
+    ),
+    "weekly_digest_snapshot": Page("reports", _("Weekly report"), "emailed_reports"),
     "weekly_digest_item": Page(
         "reports", _("Weekly report item"), "weekly_digest_snapshot"
     ),
-    "daily_digest_snapshot": Page("reports", _("Daily report")),
+    "daily_digest_snapshot": Page("reports", _("Daily report"), "emailed_reports"),
     "ministry_report": Page("reports", _("Ministry requests")),
     "ministry_joiners": Page("reports", _("Members joining"), "ministry_report"),
     "ministry_leavers": Page("reports", _("Members leaving"), "ministry_report"),
@@ -463,9 +465,8 @@ MENU = (
     Entry("ministry_report", Capability.MINISTRY_REPORT, MINISTRY, scoped=True),
     Entry("ministry_followup", Capability.MINISTRY_FOLLOWUP, MINISTRY, scoped=True),
     Entry("family_directory", Capability.FAMILY_CODES, _campaign),
-    # Moves to the Emailed reports page with NAV-14; until then it keeps its
-    # menu entry so it stays reachable.
-    Entry("weekly_digest_manual", _ADMIN, _campaign),
+    # Staff see its daily reports; Send a weekly report now is on the page.
+    Entry("emailed_reports", Capability.CAMPAIGN_REPORT),
     # Parish data
     Entry("parish_settings", _ADMIN),
     Entry("branding_settings", _ADMIN),
