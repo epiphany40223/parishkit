@@ -57,9 +57,9 @@ ACCESS = {
     ),
     "ministry_domains": _(
         "Domains whose accounts may sign in as Ministry leaders, one per line. "
-        "Ministry leaders come from the ParishSoft Ministry roles listed in "
-        "Campaign settings, so this domain grants no Ministry access. A domain "
-        "never grants Administrator access."
+        "A Ministry leader sees only the Ministries where they hold one of the "
+        "ParishSoft Ministry roles listed in Campaign settings. A domain never "
+        "grants Administrator access."
     ),
     "staff_addresses": _(
         "Individual email addresses that get Staff access, one per "
@@ -68,9 +68,8 @@ ACCESS = {
     ),
     "ministry_addresses": _(
         "Individual addresses that may sign in as Ministry leaders, one per line. "
-        "Ministry leaders come from the ParishSoft Ministry roles listed in "
-        "Campaign settings, so this list grants no Ministry access; a "
-        "ParishSoft leader needs no address here."
+        "Each sees only the Ministries where they hold one of the ParishSoft "
+        "Ministry roles listed in Campaign settings."
     ),
     "admin_addresses": _(
         "People who get full Administrator access, one per line. Administrators "
