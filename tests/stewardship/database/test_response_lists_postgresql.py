@@ -41,6 +41,9 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 BLANK_MAILING, ENVELOPE_ZERO = 11, 12
 
+# The paused Download button, drawn disabled by the server (#921).
+PAUSED_CSV = '<button type="submit" disabled data-server-disabled>Download</button>'
+
 
 @pytest.fixture
 def quality_funnel(monkeypatch, request):
@@ -233,7 +236,7 @@ def test_lists_and_downloads_for_admin_and_staff(
         response, body = get(admin, reverse("admin:response_list", args=["submitted"]))
         assert response.status_code == 200
         assert b"Downloads are paused" in body
-        assert b'<button type="submit" disabled>Download</button>' in body
+        assert PAUSED_CSV.encode() in body
     events = AuditEvent.objects.filter(subject_id=harness.campaign.pk)
     assert events.filter(event_type="response_submitted_list_viewed").count() == 3
     assert events.filter(event_type="response_data_quality_list_viewed").count() == 2

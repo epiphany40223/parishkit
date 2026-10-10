@@ -188,6 +188,9 @@ def test_restored_campaign_modules_update_a_save_gate(page, component_origin):
         }"""
     )
     save = page.get_by_role("button", name="Review changes")
+    # Review also waits for a change from the saved settings (#921), which
+    # this edit makes, so only the complete gate decides below.
+    page.get_by_label("Campaign name").fill("Renamed campaign")
     restore(page, "#id_financial_enabled", "box => { box.checked = true; }")
     assert save.is_disabled()
     restore(page, "#id_financial_enabled", "box => { box.checked = false; }")

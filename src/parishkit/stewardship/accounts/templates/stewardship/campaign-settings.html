@@ -15,10 +15,10 @@
 {% if editable %}
 {% if form.ministry.value %}<p><a href="{% url 'admin:talent_settings' %}">{% translate "Edit Member talents" %}</a></p>{% endif %}
 {% if form.financial_enabled.value %}<p><a href="{% url 'admin:share_settings' %}">{% translate "Edit Share options" %}</a></p>{% endif %}
-{% comment %}Review and apply happen in place, below the form (#532).{% endcomment %}<form id="settings-form" method="post" action="#settings-review" class="panel" data-in-place data-table-sync data-in-place-message="{% translate 'Review ready.' %}" data-campaign-form data-require-complete>
+{% comment %}Review and apply happen in place, below the form (#532).{% endcomment %}<form id="settings-form" method="post" action="#settings-review" class="panel" data-in-place data-table-sync data-in-place-message="{% translate 'Review ready.' %}" data-require-change="base_digest" data-campaign-form data-require-complete>
 {% csrf_token %}<input type="hidden" name="action" value="preview">
 {% include 'stewardship/campaign-fields.html' %}
-{% comment %}The hint sits after the button so its line never moves a control above it (#563).{% endcomment %}{% button type="submit" aria-describedby="settings-complete-hint" %}{% translate "Review changes" %}{% endbutton %}<p class="help" id="settings-complete-hint" data-complete-hint hidden></p>
+{% comment %}The complete hint sits after the button so its line never moves a control above it (#563).{% endcomment %}{% include 'stewardship/components/review-changes-button.html' with describedby="settings-complete-hint" %}<p class="help" id="settings-complete-hint" data-complete-hint hidden></p>
 </form>
 <div id="settings-review" data-in-place-region>{% include 'stewardship/settings-review.html' %}</div>
 {% else %}

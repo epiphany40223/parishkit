@@ -472,6 +472,10 @@ td > :last-child { margin-bottom: 0; }
 /* The note keeps its space while idle, so showing it never re-wraps the cell
    and moves the row's button under the pointer (#736). */
 .schedule-editing-idle { visibility: hidden; }
+/* Why Review changes is unavailable while nothing has changed (#921): the
+   line keeps its space while idle, so it never moves the page (#736). */
+.unchanged-hint { margin-inline-start: .5rem; }
+.unchanged-hint[data-idle] { visibility: hidden; }
 /* The chosen email under a schedule's email list (#446). */
 .email-summary { margin-block-start: .35rem; }
 .email-summary p { margin-block: .2rem; }
