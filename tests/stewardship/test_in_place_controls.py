@@ -120,7 +120,12 @@ def test_presence_refresh_refreshes_the_list_in_place():
 # The in-place settings pages (#532) draw their review region around
 # settings-review.html, whose Apply names it, and around the change status a
 # confirmed change shows, whose follow-up link names it too.
-SETTINGS_PAGES = ("parish-settings.html", "campaign-settings.html")
+SETTINGS_PAGES = (
+    "parish-settings.html",
+    "campaign-settings.html",
+    "share-settings.html",
+    "talent-settings.html",
+)
 HOSTED = {
     "integration-summary.html": ("integration-settings.html",),
     "settings-review.html": SETTINGS_PAGES,
@@ -405,3 +410,14 @@ def test_review_button_hint_follows_it_and_keeps_its_space():
     assert "Change a setting" not in worded
     css = (TEMPLATES.parents[1] / "static/stewardship/ui-v1.css").read_text()
     assert ".unchanged-hint[data-idle] { visibility: hidden; }" in css
+
+
+@pytest.mark.parametrize("page", ["share-settings.html", "talent-settings.html"])
+def test_option_lists_word_their_review_hint(page):
+    """Share options and Member talents say "option", not "setting", in the
+    hint after their Review changes button (#921)."""
+    text = (TEMPLATES / page).read_text()
+    form = re.search(r'<form id="settings-form"[^>]*>', text).group(0)
+    assert 'data-require-change="base_digest"' in form
+    assert 'translate "Change an option to review it." as option_hint' in text
+    assert "review-changes-button.html' with hint=option_hint" in text

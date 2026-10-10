@@ -279,6 +279,21 @@
       // the region above them changes height.
       const sideways = new Map([...region.querySelectorAll(".table-scroll")]
         .map((node, index) => [scrollKey(node, index), node.scrollLeft]));
+      // Anchoring cannot help at the foot of the page, where a shorter status
+      // (Applied is shorter than its running indicator) shortens the page and
+      // the browser pulls everything above down. A region inside a
+      // [data-keep-height] one (a settings page's review region, ui-v1.js)
+      // therefore keeps the height of that one the reader's place needs
+      // (#736): enough that the page's foot stays at or below the viewport's
+      // bottom edge (a copy of ui-v1.js's heldHeight; see it for why).
+      const keep = region.closest("[data-keep-height]");
+      if (keep) {
+        const root = document.documentElement;
+        const height = keep.getBoundingClientRect().height;
+        const below = window.scrollY + root.clientHeight - (root.scrollHeight - height);
+        const need = Math.min(height, below);
+        keep.style.minHeight = need > 0 ? `${need}px` : "";
+      }
       region.replaceChildren(...[...fresh.childNodes].map((node) => document.importNode(node, true)));
       // Mirror the fresh region's attributes (pending, state markers such as
       // data-export-state) so the page and its tests see the current state.

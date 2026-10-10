@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import pytest
 
+from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.campaigns.lifecycle import Action
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.deployment import ServiceRole
@@ -12,11 +13,11 @@ from parishkit.stewardship.responses.service import default_talent_options
 from ..campaign_factory import campaign
 from ..test_share_forms import data_for
 from .auth_builders import signed_in
-from .campaign_builders import add_draft, command
+from .campaign_builders import add_draft, change, command
 from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_background_grants_postgresql import task_login
-from .test_campaign_views_postgresql import apply, post
-from .test_parish_views_postgresql import token
+from .test_campaign_views_postgresql import apply, post, requested
+from .test_parish_views_postgresql import digest, region, token
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -102,3 +103,101 @@ def test_census_only_campaign_has_no_talent_controls(auth_service, google):
     add_draft(store, store.active(), uuid4())
     browser, _ = signed_in()
     assert browser.get("/admin/campaign/talents/").status_code == 409
+
+
+def test_talents_review_apply_and_status_stay_on_the_page(auth_service, google):
+    """Member talents reviews, applies and follows a change in place (#750).
+
+    The review shows the order and labels before and after under the form,
+    which is redrawn with the values sent; Apply answers with the page,
+    whose review region shows the change's status, polled from Change
+    status's passive read, and then the applied list.
+    """
+    store = auth_service.store
+    row, previous, path = setup(store)
+    browser, _ = signed_in()
+    data = data_for(previous) | {
+        "base_digest": store.active().digest,
+        "options-0-label": "Artist",
+    }
+    review = post(browser, path, data)
+    shown = region(review.content)
+    assert "Review your changes" in shown and "Proposed order and labels" in shown
+    assert "Artist" in shown and "Painter" in shown
+    assert b'id="settings-editor" data-in-place-region' in review.content
+    assert b'value="Artist"' in review.content
+    response = post(browser, path, {"action": "confirm", "preview": token(review)})
+    request_id = requested(response)
+    assert response["Location"] == f"{path}?request={request_id}#settings-review"
+    # Reading the change's status (the page's own quiet refresh once it is
+    # applied) is passive: it never renews idle time, as Change status.
+    activity = PortalSession.objects.get().last_activity_at
+    page = browser.get(response["Location"])
+    assert PortalSession.objects.get().last_activity_at == activity
+    assert flow_steps(page.content) == (STEPS, "Apply")
+    assert "?in_place=talent_settings" in region(page.content)
+    apply(store, response)
+    assert "Applied: your change is saved" in region(
+        browser.get(response["Location"]).content
+    )
+    row.refresh_from_db()
+    assert row.active_configuration.values["talent_options"][0]["label"] == "Artist"
+
+
+def test_talent_review_refusals_render_in_the_review_region(auth_service, google):
+    """A refused Member talents Review is the page again, explained in its
+    review region with no Apply (#750): nothing changed (400), and a page
+    changed elsewhere (409), which keeps the version it was loaded at so the
+    Administrator reloads first."""
+    store = auth_service.store
+    _, previous, path = setup(store)
+    browser, _ = signed_in()
+    data = data_for(previous) | {"base_digest": store.active().digest}
+    unchanged = post(browser, path, data)
+    assert unchanged.status_code == 400
+    assert "No talents have changed." in region(unchanged.content)
+    assert b"Apply changes" not in unchanged.content
+    edited = data | {"options-0-label": "Changed", "base_digest": "a" * 64}
+    stale = post(browser, path, edited)
+    assert stale.status_code == 409
+    assert "This page changed in another tab or session." in region(stale.content)
+    assert digest(stale) == "a" * 64
+    assert b"Apply changes" not in stale.content
+
+
+def test_a_refused_talent_apply_is_explained_in_place(auth_service, google):
+    """A Member talents confirmation refused because the list changed
+    elsewhere applies nothing and explains itself in the review region; its
+    page draws the current list at the current version (#750, #768)."""
+    store = auth_service.store
+    row, previous, path = setup(store)
+    browser, _ = signed_in()
+    data = data_for(previous) | {
+        "base_digest": store.active().digest,
+        "options-0-label": "Reviewed label",
+    }
+    proposal = token(post(browser, path, data))
+    other = [dict(option) for option in previous]
+    other[0]["label"] = "Changed elsewhere"
+    change(
+        store,
+        store.active(),
+        uuid4(),
+        [
+            {
+                "operation": "update",
+                "section": "campaigns",
+                "id": str(row.pk),
+                "values": {"talent_options": other},
+            }
+        ],
+    )
+    refused = post(browser, path, {"action": "confirm", "preview": proposal})
+    assert refused.status_code == 409
+    assert "This preview is out of date." in region(refused.content)
+    assert b'value="Changed elsewhere"' in refused.content
+    assert digest(refused) == store.active().digest
+    row.refresh_from_db()
+    assert row.active_configuration.values["talent_options"][0]["label"] == (
+        "Changed elsewhere"
+    )
