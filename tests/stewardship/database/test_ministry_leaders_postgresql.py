@@ -473,16 +473,92 @@ def history(harness):
     return duids
 
 
+def leader_scope_plans(user_id):
+    """The plans of every statement one scope read runs, as auto_explain's JSON.
+
+    Run as the owner (LOAD needs a superuser) on a new backend, so each
+    statement inside the definer functions is planned afresh, as on a
+    request. auto_explain's LOG lines reach the client as notices.
+    """
+    connection.close()
+    notices = []
+    with connection.cursor() as cursor:
+        connection.connection.add_notice_handler(
+            lambda notice: notices.append(notice.message_primary)
+        )
+        cursor.execute("LOAD 'auto_explain'")
+        for setting in (
+            "auto_explain.log_min_duration=0",
+            "auto_explain.log_analyze=on",
+            "auto_explain.log_timing=off",
+            "auto_explain.log_nested_statements=on",
+            "auto_explain.log_format=json",
+            "client_min_messages=log",
+        ):
+            cursor.execute(f"SET {setting}")
+        cursor.execute(
+            "SELECT public.stewardship_ministry_leader_scope_v1(%s)", [user_id]
+        )
+    # Leave no session settings behind for the next test.
+    connection.close()
+    return [
+        json.loads(text.split("plan:", 1)[1])["Plan"]
+        for text in notices
+        if "plan:" in text
+    ]
+
+
+def roster_rows_parsed_to_match(plans):
+    """Retained roster rows a condition on their JSON is evaluated for.
+
+    Each scan of stewardship_source_roster whose own filter, or the join it
+    feeds (through any Hash, Sort or Materialize), compares the row's
+    ``canonical`` JSON parses every row it reads to do so; a scan that is
+    joined on its key first parses nothing here.
+    """
+    passing = {"Hash", "Sort", "Incremental Sort", "Materialize", "Memoize"}
+    conditions = ("Filter", "Hash Cond", "Merge Cond", "Join Filter")
+    parsed = 0
+
+    def visit(node, parents):
+        nonlocal parsed
+        if node.get("Relation Name") == "stewardship_source_roster":
+            read = node["Actual Rows"] + node.get("Rows Removed by Filter", 0)
+            checked = [node]
+            for parent in reversed(parents):
+                checked.append(parent)
+                if parent["Node Type"] not in passing:
+                    break
+            if any(
+                "canonical" in str(item.get(key, ""))
+                for item in checked
+                for key in conditions
+            ):
+                parsed += read * node["Actual Loops"]
+        for child in node.get("Plans", []):
+            visit(child, [*parents, node])
+
+    for plan in plans:
+        visit(plan, [])
+    return parsed
+
+
 def test_scope_cost_on_a_history_sized_roster(response_service):
-    """The first scope read on a fresh connection stays cheap.
+    """A scope read parses only the current snapshot's roster rows.
 
     Production's web runs with CONN_MAX_AGE 0, so every request opens a new
     connection and plans the leader query afresh, and an Admin page reads the
-    leader list at least twice. Each timed call here is the first on its own
-    new connection, against history() (#939's review measured the earlier
-    definition, which parsed every retained roster row, at 38 ms with 12,000
-    rows; this one reads only the current snapshot's). The bound is generous
-    for a loaded CI host; the numbers are reported.
+    leader list at least twice. #939's review found the earlier definition
+    matched role names against the parsed JSON of every retained roster row
+    before keeping the current snapshot's. history() keeps three snapshots
+    (about 13,500 roster rows, 4,500 current). Both definitions read every
+    retained row (a sequential scan is cheap), so neither the rows read nor
+    wall-clock time (38 ms for the old definition, on a loaded CI host
+    anything) tells them apart; what does is how many rows are parsed to
+    match. The plans auto_explain reports for a fresh scope read must
+    evaluate a JSON condition on no more roster rows than the current
+    snapshot holds. The first call on each of three fresh web connections
+    is timed and reported for information only.
     """
     harness = response_service
     duids = history(harness)
@@ -493,9 +569,21 @@ def test_scope_cost_on_a_history_sized_roster(response_service):
             "SELECT count(*) FROM stewardship_source_roster "
             "WHERE canonical::jsonb->>'ministryRoleName' IS NOT NULL"
         )
-        assert cursor.fetchone()[0] >= 13500
+        retained = cursor.fetchone()[0]
+        cursor.execute(
+            "SELECT count(*) FROM stewardship_snapshot_roster rm "
+            "JOIN stewardship_source_current pointer "
+            "ON pointer.snapshot_id=rm.snapshot_id WHERE pointer.singleton"
+        )
+        current = cursor.fetchone()[0]
+        assert retained >= 13500 and current * 3 <= retained
         cursor.execute("ANALYZE")
     target = user("m10@example.org").pk
+    plans = leader_scope_plans(target)
+    assert any("stewardship_source_roster" in json.dumps(plan) for plan in plans), (
+        "auto_explain reported no plan that reads the roster"
+    )
+    parsed = roster_rows_parsed_to_match(plans)
     timings = []
     with task_login(ServiceRole.WEB, reconnect=True):
         for _ in range(3):
@@ -512,11 +600,11 @@ def test_scope_cost_on_a_history_sized_roster(response_service):
     timings.sort()
     print(
         "stewardship_ministry_leader_scope_v1, first call on a fresh connection: "
-        f"{timings[0] * 1000:.1f} ms fastest, {timings[1] * 1000:.1f} ms median"
+        f"{timings[0] * 1000:.1f} ms fastest, {timings[1] * 1000:.1f} ms median; "
+        f"{parsed:.0f} roster rows parsed to match, {current} current, "
+        f"{retained} retained"
     )
-    # The fastest call: reading every retained snapshot slows every call,
-    # while a loaded test host only delays some of them.
-    assert timings[0] < 0.1
+    assert parsed <= current
 
 
 def test_a_draft_campaign_leads_and_one_without_ministries_does_not(
