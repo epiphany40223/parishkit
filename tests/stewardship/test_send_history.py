@@ -184,15 +184,22 @@ def row(*, emails=None, key=None, live=False, current=True, earlier=False, **val
 
 
 def test_each_outcome_links_to_exactly_its_send_and_state():
-    """Sent, failed, uncertain and cancelled each carry the send and its state."""
+    """Sent, failed, not sure and cancelled each carry the send and its state.
+
+    The history table names each count (row.sent, row.failed, ...), so a
+    reordered ``outcomes`` can never put a count under the wrong heading.
+    """
     sent = row()
     outcomes = {outcome.state: outcome for outcome in sent.outcomes}
-    assert list(outcomes) == [
-        "delivered",
-        "permanent_failure",
-        "delivery_unknown",
-        "cancelled",
-    ]
+    assert {
+        name: getattr(sent, name).state
+        for name in ("sent", "failed", "not_sure", "cancelled")
+    } == {
+        "sent": "delivered",
+        "failed": "permanent_failure",
+        "not_sure": "delivery_unknown",
+        "cancelled": "cancelled",
+    }
     for state, outcome in outcomes.items():
         assert parse_qs(outcome.query) == {
             "send": [f"{INVITATION}:{FIRST}:production:1"],

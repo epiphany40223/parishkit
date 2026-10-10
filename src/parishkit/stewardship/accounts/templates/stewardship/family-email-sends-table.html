@@ -37,9 +37,11 @@
       {% if row.listed.replaced %}<span class="cell-detail">{% translate "Schedule changed later" %}</span>{% endif %}
       {% if row.send.active %}<span class="cell-detail">{% if row.live %}<a href="{% url 'admin:family_email_progress' %}">{% translate "In progress: watch it live" %}</a>{% else %}{% translate "In progress" %}{% endif %} ({% if row.send.total is None %}{% translate "total not known yet" %}{% else %}{% blocktranslate with remaining=row.send.counts.remaining|number %}{{ remaining }} to send{% endblocktranslate %}{% endif %})</span>{% endif %}</th>
     <td class="numeric nowrap">{% if row.send.total is None %}{% translate "Not known yet" %}{% else %}{{ row.send.total|number }}{% endif %}</td>
-    {% for outcome in row.outcomes|slice:":3" %}<td class="numeric nowrap">{% include "stewardship/family-email-send-outcome.html" %}</td>{% endfor %}
+    <td class="numeric nowrap">{% include "stewardship/family-email-send-outcome.html" with outcome=row.sent %}</td>
+    <td class="numeric nowrap">{% include "stewardship/family-email-send-outcome.html" with outcome=row.failed %}</td>
+    <td class="numeric nowrap">{% include "stewardship/family-email-send-outcome.html" with outcome=row.not_sure %}</td>
     <td><dl class="cell-pairs cell-counts">
-      <dt>{% translate "Cancelled" %}</dt><dd>{% with outcome=row.outcomes|last %}{% include "stewardship/family-email-send-outcome.html" %}{% endwith %}</dd>
+      <dt>{% translate "Cancelled" %}</dt><dd>{% include "stewardship/family-email-send-outcome.html" with outcome=row.cancelled %}</dd>
       <dt>{% translate "Not needed" %}</dt><dd>{{ row.send.counts.not_needed|number }}</dd>
       <dt>{% translate "Couldn't be emailed" %}</dt><dd>{{ row.send.counts.unreachable|number }}</dd>
       <dt>{% translate "Skipped: Reminder WorkGroup" %}</dt><dd>{{ row.send.counts.workgroup|number }}</dd>
