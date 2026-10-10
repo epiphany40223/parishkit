@@ -18,7 +18,10 @@ each step of the view renders:
 Every page draws the Make changes / Review / Apply indicator at its step, so
 a test can see the indicator follow along. Campaign settings is served the
 same way at ``CAMPAIGN`` (the editor) and ``CAMPAIGN_REVIEW`` (its review),
-so a test can check its module scripts survive an in-place review.
+so a test can check its module scripts survive an in-place review. A live
+campaign's Ministry leader roles form (#922) is served at ``LEADERS``, with
+its review at ``LEADERS_REVIEW``; Apply's answer names the change at
+``LEADERS_PENDING``.
 """
 
 from types import SimpleNamespace
@@ -28,7 +31,10 @@ from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts import setup_help
 from parishkit.stewardship.accounts.admin_editing import review_region
-from parishkit.stewardship.accounts.campaign_forms import CampaignForm
+from parishkit.stewardship.accounts.campaign_forms import (
+    CampaignSettingsForm,
+    LeaderRolesForm,
+)
 from parishkit.stewardship.accounts.parish_views import TIMEZONE_NOTE, ParishForm
 
 SETTINGS = "/settings-in-place"
@@ -40,6 +46,12 @@ PENDING = f"{SETTINGS}?request={REQUEST}"
 SETTLED = f"{SETTINGS}?request={REQUEST}&settled=1"
 CAMPAIGN = "/campaign-in-place"
 CAMPAIGN_REVIEW = "/campaign-in-place-review"
+LEADERS = "/campaign-leaders-in-place"
+LEADERS_REVIEW = "/campaign-leaders-in-place-review"
+LEADERS_PENDING = f"{LEADERS}?request={REQUEST}"
+# The role labels the current rosters use, and the roles in effect.
+ROLE_CHOICES = [(name, name) for name in ("Chairperson", "Member", "Staff")]
+DEFAULT_ROLES = ["Chairperson", "Staff"]
 CAMPAIGN_VALUES = {
     "name": "Sample campaign",
     "timezone": "America/New_York",
@@ -51,6 +63,7 @@ CAMPAIGN_VALUES = {
 # The confirmation's answer: back to this page, naming the change.
 POSTS = {
     SETTINGS: (303, PENDING, ""),
+    LEADERS: (303, LEADERS_PENDING, ""),
     # A Review answered with a redirect to another page, which does not draw
     # the review region (Campaign settings' dates-only change, #532).
     "/settings-in-place-elsewhere": (303, "/in-place-other", ""),
@@ -119,11 +132,13 @@ def components(context, admin):
     def campaign(data, step, **region):
         """Campaign settings at ``step``, its form bound to ``data`` if given."""
         form = setup_help.apply(
-            CampaignForm(
+            CampaignSettingsForm(
                 data,
-                initial=CAMPAIGN_VALUES,
+                initial=CAMPAIGN_VALUES | {"ministry_leader_roles": DEFAULT_ROLES},
                 ministries=[("4", "Community outreach")],
                 funds=[("9", "Offertory")],
+                leader_choices=ROLE_CHOICES,
+                leader_roles=DEFAULT_ROLES,
             ),
             setup_help.ADMIN_CAMPAIGN,
             replace=True,
@@ -142,6 +157,55 @@ def components(context, admin):
                     },
                     "editable": True,
                     "form": form,
+                }
+                | review_region("campaign_settings", None, **region),
+            ),
+        )
+
+    def leaders(step, **region):
+        """A live campaign's page at ``step``: settings read-only, leader roles
+        in their own form with the review region under it (#922)."""
+        form = setup_help.apply(
+            CampaignSettingsForm(
+                None,
+                initial=CAMPAIGN_VALUES
+                | {"ministry": True, "ministry_leader_roles": DEFAULT_ROLES},
+                ministries=[("4", "Community outreach")],
+                funds=[("9", "Offertory")],
+                leader_choices=ROLE_CHOICES,
+                leader_roles=DEFAULT_ROLES,
+            ),
+            setup_help.ADMIN_CAMPAIGN,
+            replace=True,
+        )
+        # As the view does, the read-only settings leave the roles to their
+        # own form.
+        form.fields.pop("ministry_leader_roles")
+        leader_form = setup_help.apply(
+            LeaderRolesForm(
+                initial={
+                    "ministry_leader_roles": DEFAULT_ROLES,
+                    "base_digest": "a" * 64,
+                },
+                roles=ROLE_CHOICES,
+            ),
+            {},
+        )
+        return (
+            "text/html",
+            render_to_string(
+                "stewardship/campaign-settings.html",
+                context
+                | {
+                    "admin_chrome": admin | {"flow_steps": _steps(step)},
+                    "campaign": {
+                        "pk": REQUEST,
+                        "state": "active",
+                        "active_configuration": {"name": "Sample campaign"},
+                    },
+                    "editable": False,
+                    "form": form,
+                    "leader_form": leader_form,
                 }
                 | review_region("campaign_settings", None, **region),
             ),
@@ -182,6 +246,22 @@ def components(context, admin):
         ),
         SETTLED: page(editor("b" * 64), 2, receipt=applied),
         CAMPAIGN: campaign(None, 0),
+        LEADERS: leaders(0),
+        LEADERS_REVIEW: leaders(
+            1,
+            review={
+                "changes": [
+                    {
+                        "label": "Ministry leader roles",
+                        "before": "Chairperson, Staff",
+                        "after": "Chairperson",
+                    }
+                ],
+                "notes": [],
+                "preview": "synthetic-signed-intent",
+            },
+        ),
+        LEADERS_PENDING: leaders(2, receipt=pending),
         CAMPAIGN_REVIEW: campaign(
             None,
             1,

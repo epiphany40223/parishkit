@@ -690,7 +690,7 @@ Notes on the groups:
   domain rules and exact-address rules, with their roles), **Ministry
   assignments** (Ministry assignments for people a domain rule admits) and
   **Chairpersons** (suspended Chairperson assignments awaiting review, and
-  [Chairperson suggestions](#chairperson-suggestions-and-assignments) from
+  [Chairperson suggestions](#ministry-leaders-from-parishsoft) from
   ParishSoft). Each review started on one of them returns to it.
 - Emailed reports, Ministry assignments and Chairpersons are new pages: #520
   and #521 add their registry entries and views.
@@ -2435,14 +2435,13 @@ that set; see
 [Changing a live campaign's Ministries](#changing-a-live-campaigns-ministries). Historical administrative views retain their recorded inputs;
 current parishioner pages and previews use the applied visibility policy.
 
-For [Chairperson suggestions and assignments](#chairperson-suggestions-and-assignments),
-an active Ministry means one present in the current catalog and locally active.
-Applying an activity change reevaluates suggestions and seeded assignment
-overlays against the current source in the configuration-activation transaction,
-using the same suspension/reactivation and review rules as source promotion.
-It does not delete authoritative grants or alter manual Ministry assignments,
-Staff roles or Admin roles. The impact preview identifies affected seeded
-assignments before confirmation.
+For [Ministry leaders](../data/spec.md#ministry-leaders), an active Ministry
+means one present in the current catalog and locally active, so marking a
+Ministry inactive removes it from its leaders' scope on their next request.
+It does not alter Staff or Admin roles. The retained Chairperson suggestions
+and seeded assignment overlays are still reevaluated in the
+configuration-activation transaction, but grant nothing
+([Ministry leaders from ParishSoft](#ministry-leaders-from-parishsoft)).
 
 ### ParishSoft Ministry catalog changes
 
@@ -2606,6 +2605,7 @@ The campaign editor includes:
   dates;
 - financial period and explicit current/comparison fund multi-select;
 - campaign Ministry multi-select, initially all active Ministries;
+- Ministry leader roles (see [Ministry leader roles](#ministry-leader-roles));
 - editable/reorderable share options with stable IDs and placeholders;
 - editable/reorderable Member talents (see [Member talents](#member-talents));
 - initial and repeatable reminder date/time, subject, and templates;
@@ -2635,9 +2635,10 @@ The UI labels structural settings and their Production-readiness lock trigger.
 After a `draft` campaign moves to `scheduled` or directly to `active`, the
 server rejects structural mutations even if a stale browser exposes controls.
 They unlock only through the guarded pre-start withdrawal below; an `active`
-campaign never unlocks them. The one exception is the Ministry selections
+campaign never unlocks them. The exceptions are the Ministry selections
 (see
-[Changing a live campaign's Ministries](#changing-a-live-campaigns-ministries)). The campaign timezone is initialized from the
+[Changing a live campaign's Ministries](#changing-a-live-campaigns-ministries))
+and the [Ministry leader roles](#ministry-leader-roles). The campaign timezone is initialized from the
 current Parish timezone, is editable in `draft`, and is one of these structural
 settings. Scheduled, active, closed, and archived pages display it read-only.
 Content and future schedules remain versioned/editable under the
@@ -2662,6 +2663,26 @@ command offers it yet. Once go-live locks the dates, the date editor refuses
 any date change, so a live campaign's end date cannot be moved from the portal
 ([#912](https://github.com/epiphany40223/parishkit/issues/912); see the
 [campaign data model](../data/spec.md#campaign)).
+
+### Ministry leader roles
+
+Campaign settings shows the campaign's Ministry leader roles with its
+Ministry selections, only while Ministry stewardship is on (#922). They are
+checkboxes, one per role label the current ParishSoft rosters use, plus any
+saved name no roster uses now; with no saved value the default roles
+(Chairperson and Staff) are ticked. The help says, in plain words, that
+people with any of these ParishSoft Ministry roles can sign in and see their
+Ministry's reports and follow-up with no sign-in rule, using an email address
+their ParishSoft Member record lists. At least one role is required. Leaving
+the roles in effect unchanged writes nothing, so a campaign keeps following
+the default until someone changes it.
+
+A draft changes them with its other settings. A live (scheduled, active or
+closed) campaign that asks about Ministries shows them in their own small
+form, the only campaign setting there besides the Ministry selections link;
+its review and apply happen [in place](#in-place-controls) under that form,
+as the draft's do. Who leads which Ministry, and why, is in the
+[data specification](../data/spec.md#ministry-leaders).
 
 ### Default content
 
@@ -3920,48 +3941,21 @@ address-over-domain behavior. After activation, removing roles takes effect on
 the next request. The last-Administrator and actor-still-authorized guards are
 rechecked transactionally at request creation and activation.
 
-### Chairperson suggestions and assignments
+### Ministry leaders from ParishSoft
 
-After every source promotion, active Members with current Chairperson roles in
-active Ministries are matched to valid normalized Member emails. Suggestions
-show name, DUID, email, Ministry, whether contact is publishable, current login
-rule, and current assignment.
+Ministry leaders are not entered in the Admin portal (Administrator decision,
+2026-10-09, #922). Anyone holding one of the campaign's
+[Ministry leader roles](#ministry-leader-roles) in a Ministry in ParishSoft
+leads it, and signs in with Google using an email address their ParishSoft
+Member record lists; no sign-in rule is needed. Sign-in rules still decide
+who is an Administrator or Staff. The
+[data specification](../data/spec.md#ministry-leaders) defines the rule. A
+change in ParishSoft reaches the portal with the next full refresh.
 
-Selecting suggestions creates/updates an exact address override with Ministry
-leader role and explicit Ministry assignments. If the address inherited domain
-roles, those roles are preselected because the exact rule replaces them.
-Admins confirm before applying the resulting YAML configuration request.
-Duplicate emails/Members/Ministries are grouped and ambiguities shown, never
-silently guessed.
-
-The user/assignment UI shows rule and role-grant provenance from the
-[authorization data model](../data/spec.md#administration-user-and-policy),
-including whether a Ministry-leader grant is independently configured or
-subject to chair-seed suppression. It never infers origin from the current
-checkboxes. A **Keep role independently** action for a seeded Ministry-leader
-grant explicitly records a manual origin through the ordinary role-change
-configuration request, with the same no-reauthentication policy and audit.
-It does not create a Ministry assignment or broaden row scope. Unrelated
-autosaves preserve provenance, and a role removal removes all its grant origins.
-
-An assignments editor supports manual additions/removals through the same YAML
-configuration-request path. Losing a current Chairperson role immediately
-suspends a `chair-seed` assignment as derived runtime state during source
-promotion, removes its Ministry row scope on the next request, and creates a
-persistent Admin review task/notification. Existing sessions are not trusted to
-retain cached scope. The runtime authorization overlay applies the data model's
-explicit rule/grant provenance predicate without rewriting its applied YAML
-rule or changing Staff, Admin,
-or independently configured roles. Permanently removing that configured role
-requires an applied configuration request.
-
-The suspended list shows prior Member/Ministry/source evidence, suspension
-time, current source state, affected user/session, and role effects. An Admin
-may revoke/delete the assignment or explicitly restore it as `manual` after
-confirmation and an entered reason through an applied configuration request;
-restoration never silently rewrites the source. If the same active Chairperson
-relationship returns before a decision, the seed reactivates automatically and
-closes the task with an audit event.
+The Ministry leader role on sign-in rules, Ministry assignments and the
+Chairperson suggestion, confirmation and review flows remain from the earlier
+model until they are removed (#922). They grant nothing: the Portal users page
+says so beside each such role and assignment.
 
 ## Manual ParishSoft refresh
 

@@ -113,13 +113,15 @@ def validate_installation(document, *, request_id=None):
             raise ConfigError("Historical campaign configuration cannot be edited.")
         # Campaign artwork (#248) is presentation, so it stays editable live,
         # and so does the Reminder WorkGroup (#861): staff mark Families in
-        # ParishSoft while the campaign runs.
+        # ParishSoft while the campaign runs. So are the Ministry leader roles
+        # (#922): which ParishSoft roles lead may change while it runs.
         editable = {
             "name",
             "year_label",
             "content_versions",
             "artwork",
             "reminder_workgroup",
+            "ministry_leader_roles",
         }
         if intent and intent.campaign_id == row.pk:
             editable.add("end_date")

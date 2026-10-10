@@ -24,9 +24,10 @@ from parishkit.stewardship.reports.ministries import (
 from .. import configuration_factory
 from ..campaign_factory import campaign as campaign_record
 from ..census_factory import member
-from ..policy_factory import address, assignment
+from ..policy_factory import address
 from .auth_builders import signed_in
 from .campaign_builders import add_draft, change, close_campaign
+from .leader_builders import with_leaders
 from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
 from .test_information_followup_postgresql import search
@@ -40,7 +41,8 @@ from .test_ministry_responses_postgresql import (
 from .test_policy_postgresql import user
 from .test_report_workspace_postgresql import read
 from .test_response_http_postgresql import answers_for, load_form
-from .test_source_families_postgresql import prepare, promote
+from .test_source_families_postgresql import prepare as stage
+from .test_source_families_postgresql import promote
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -50,9 +52,38 @@ pytestmark = pytest.mark.django_db(transaction=True)
 EMPTY = b"There is no current campaign report for you to view."
 
 
+# The Ministry leaders (#922) every promotion in this module keeps: one Staff
+# role holder per Ministry scope the tests read with, and the address the
+# sign-in tests use.
+LEADERS = {
+    "leader-9@example.org": [9],
+    "leader-4@example.org": [4],
+    "leader@example.org": [9],
+    "head@leaders.example": [9],
+    "leader-4-9@example.org": [4, 9],
+}
+
+
+def prepare(data, leaders=LEADERS):
+    """Stage ``data`` with these leader Members, as ParishSoft lists them."""
+    return stage(with_leaders(data, leaders))
+
+
+def drop_leader(harness, email="leader@example.org"):
+    """Promote the source again without this leader's Member, as ParishSoft
+    would after the role or the Member is removed (#922)."""
+    snapshot, claim = prepare(
+        ministry_source(),
+        {key: value for key, value in LEADERS.items() if key != email},
+    )
+    promote(snapshot, claim, harness.campaign, harness.rings)
+
+
 def setup(harness):
     """Create live requests only after selected Ministries survive activation."""
     start(harness)
+    snapshot, claim = prepare(ministry_source())
+    promote(snapshot, claim, harness.campaign, harness.rings)
     harness = activate_response_service(harness)
     form = load_form(harness)
     answers = answers_for(form)
@@ -71,27 +102,32 @@ def actor(harness, roles, scope):
 
     The report reads its scope in SQL from the actor
     (stewardship_ministry_scope_v1, #389 L3), so a Principal invented in
-    Python alone reads nothing. This applies an exact-address rule with the
-    roles and a manual assignment per Ministry, then signs the user up.
+    Python alone reads nothing. A Ministry leader is the address of the
+    leader Member setup() promoted for that scope (#922); a leader of a
+    Ministry no Member here leads is an address ParishSoft lists nowhere, so
+    it leads nothing. Anyone else gets an exact-address rule with the roles.
     """
     key = (harness.campaign.pk, tuple(sorted(roles)), tuple(sorted(scope)))
     if key not in _ACTORS:
-        email = "report-{}-{}@example.org".format(
-            "-".join(key[1]), "-".join(map(str, key[2])) or "none"
-        )
-        store = harness.service.store
-        change(
-            store,
-            store.active(),
-            uuid4(),
-            [
-                {"operation": "add", "section": "login_rules", **record}
-                for record in (
-                    address(email, roles=roles),
-                    *(assignment(email, ministry=duid) for duid in scope),
-                )
-            ],
-        )
+        if scope:
+            assert set(roles) == {"ministry_leader"}
+            email = "leader-{}@example.org".format("-".join(map(str, key[2])))
+            assert LEADERS.get(email, list(key[2])) == list(key[2])
+        else:
+            email = "report-{}-none@example.org".format("-".join(key[1]))
+            store = harness.service.store
+            change(
+                store,
+                store.active(),
+                uuid4(),
+                [
+                    {
+                        "operation": "add",
+                        "section": "login_rules",
+                        **address(email, roles=roles),
+                    }
+                ],
+            )
         _ACTORS[key] = user(email).pk
     return Principal(_ACTORS[key], frozenset(roles), frozenset(scope))
 
@@ -162,21 +198,7 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
 ):
     """Real Google policy and source promotion change visibility without copied PII."""
     harness = setup(response_service)
-    store = harness.service.store
-    rule = address("leader@example.org", roles=("ministry_leader",))
-    assigned = assignment(ministry=9)
-    assert (
-        change(
-            store,
-            store.active(),
-            uuid4(),
-            [
-                {"operation": "add", "section": "login_rules", **record}
-                for record in (rule, assigned)
-            ],
-        ).state
-        == "applied"
-    )
+    # leader@example.org leads Food pantry (9) in ParishSoft: no rule (#922).
     google[0]["email"] = "leader@example.org"
     browser, _ = signed_in()
     root = reverse("admin:ministry_report")
@@ -293,17 +315,11 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
     moved = page(harness, ministry=9)["rows"][0]
     assert moved["member_name"] == "Unavailable Member" and not moved["emails"]
     assert not moved["phones"] and not moved["address_lines"] and moved["age"] is None
-    assert (
-        change(
-            store,
-            store.active(),
-            uuid4(),
-            [
-                {"operation": "remove", "section": "login_rules", "id": assigned["id"]},
-            ],
-        ).state
-        == "applied"
+    # ParishSoft no longer lists the leader's role: refused on the next request.
+    snapshot, claim = prepare(
+        data, {"leader-9@example.org": [9], "leader-4@example.org": [4]}
     )
+    promote(snapshot, claim, harness.campaign, harness.rings)
     assert search(browser, route, {"ministry": "9"})[0].status_code == 403
 
 
@@ -331,7 +347,10 @@ def test_a_get_of_joining_or_leaving_returns_to_the_ministry_report(
 def test_testing_hidden_proposed_and_resolved_intent(response_service):
     """Live reporting retains hidden intent and local identities, not rehearsals."""
     harness = response_service
-    form = start(harness)
+    start(harness)
+    snapshot, claim = prepare(ministry_source())
+    promote(snapshot, claim, harness.campaign, harness.rings)
+    form = load_form(harness)
     answers = answers_for(form)
     answers["ministries"]["members"]["3"]["join"] = [9]
     respond(harness, form, answers)
@@ -383,7 +402,10 @@ def test_testing_hidden_proposed_and_resolved_intent(response_service):
     hidden = page(harness, activity="inactive")["summaries"]
     assert len(hidden) == 1 and hidden[0]["duid"] == 9 and hidden[0]["joining"] == 2
     assert page(harness, ministry=9, activity="active")["rows"] == []
-    assert page(harness, **leader)["total"] == 2
+    # An inactive Ministry has no leaders (#922); Staff still read it.
+    with pytest.raises(PermissionError):
+        page(harness, **leader)
+    assert page(harness, ministry=9)["total"] == 2
     data = ministry_source()
     data.ministry_type_memberships[9]["membership"] = [
         {
@@ -396,10 +418,10 @@ def test_testing_hidden_proposed_and_resolved_intent(response_service):
     ]
     snapshot, claim = prepare(data)
     promote(snapshot, claim, harness.campaign, harness.rings)
-    summary = page(harness, **leader)["summaries"][0]
+    summary = page(harness, activity="inactive")["summaries"][0]
     assert summary["completed"] == summary["unresolved"] == 1
     assert summary["joining"] == 2 and "50" in summary["progress"]
-    resolved = page(harness, **leader, state="resolved")["rows"]
+    resolved = page(harness, ministry=9, state="resolved")["rows"]
     assert len(resolved) == 1 and resolved[0]["outcome_label"] == "Joined ministry"
 
 
@@ -443,9 +465,9 @@ def test_only_the_current_campaign_is_reported_within_each_scope(
     """An earlier campaign is gone; the current one still honors each scope.
 
     Until the single-campaign change (#145) reports show the current campaign
-    only (navigation rule 10). A leader whose assignment covers only the
-    archived campaign is refused the current campaign's Ministry requests,
-    and the retired root and chooser redirect there (NAV-11).
+    only (navigation rule 10). A ParishSoft leader of a Ministry only the
+    archived campaign asked about leads nothing now, so is refused at sign-in
+    (#922), and the retired root and chooser redirect there (NAV-11).
     """
     from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
     from parishkit.stewardship.campaigns.lifecycle import Action
@@ -458,6 +480,8 @@ def test_only_the_current_campaign_is_reported_within_each_scope(
 
     harness = response_service
     start(harness)
+    snapshot, claim = prepare(ministry_source())
+    promote(snapshot, claim, harness.campaign, harness.rings)
     harness = activate_response_service(harness)
     store = harness.service.store
     actor = uuid4()
@@ -485,42 +509,22 @@ def test_only_the_current_campaign_is_reported_within_each_scope(
         ),
     )
     assert result.state == "applied"
-    rule = address("leader@example.org", roles=("ministry_leader",))
-    assigned = assignment(ministry=9)
-    assert (
-        change(
-            store,
-            store.active(),
-            uuid4(),
-            [
-                {"operation": "add", "section": "login_rules", **record}
-                for record in (rule, assigned)
-            ],
-        ).state
-        == "applied"
-    )
+    # leader@example.org leads Food pantry (9) in ParishSoft (promoted at the
+    # start), which the current campaign (the successor) does not ask about.
     google[0]["email"] = "leader@example.org"
-    browser, _ = signed_in()
+    assert signed_in()[1].status_code == 403
     # The archived campaign's old address, and Ministry requests, which now
     # always means the current campaign (the successor).
     archived = f"/admin/reports/{harness.campaign.pk}/ministries/"
     current = reverse("admin:ministry_report")
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        # The retired root and chooser open Ministry requests (NAV-11).
-        for old in ("/admin/ministry-reports/", "/admin/ministry-reports/campaigns/"):
-            response = browser.get(old)
-            assert response.status_code == 301 and response["Location"] == current
-        # The leader's only assigned Ministry is in the archived campaign.
-        assert read(browser, archived)[0].status_code == 410
-        # The current campaign holds none of the leader's Ministries, so
-        # Ministry requests shows the "no campaign" page (NAV-11).
-        response, body = read(browser, current)
-        assert response.status_code == 200 and EMPTY in body
-        assert b"Unassigned campaign" not in body
     google[0]["email"] = "admin@example.org"
     google[0]["sub"] = "synthetic-admin-subject"
     admin, _ = signed_in()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        # The retired root and chooser open Ministry requests (NAV-11).
+        for old in ("/admin/ministry-reports/", "/admin/ministry-reports/campaigns/"):
+            response = admin.get(old)
+            assert response.status_code == 301 and response["Location"] == current
         response, body = read(admin, current)
         assert response.status_code == 200 and b"Choir" in body
         assert b"2,147,483,648" not in body and b"9,223,372,036,854,775,807" not in body
@@ -554,7 +558,6 @@ def test_only_the_current_campaign_is_reported_within_each_scope(
                 response.status_code == 200
                 and b"No matching authorized Ministries" in body
             )
-            assert EMPTY in read(browser, current)[1]
     assert (
         change(
             store,

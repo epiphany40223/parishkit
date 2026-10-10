@@ -443,7 +443,7 @@ def actor_authorized(request, *, lock):
     or a system producer, is admitted by its own boundary and is not judged
     here; offline roles install such requests alone and need no such grant.
     """
-    from .policy import Capability, Principal, allows, confirmed_seeded, resolve_roles
+    from .policy import Capability, Principal, allows, resolve_roles
 
     if request.actor_id is None:
         return True
@@ -465,9 +465,9 @@ def actor_authorized(request, *, lock):
         if record["values"].get("email") == email
         or record["values"].get("domain") == email.rsplit("@", 1)[1]
     ]
-    roles, ministries = resolve_roles(
-        email, hosted_domain, records, confirmed_seeded(request.base, email=email)
-    )
+    # Managing users needs Administrator, which only a login rule grants, so
+    # the role-derived Ministry scope (#922) cannot matter here.
+    roles, ministries = resolve_roles(email, hosted_domain, records)
     return allows(
         Principal(request.actor_id, roles, ministries), Capability.MANAGE_USERS
     )

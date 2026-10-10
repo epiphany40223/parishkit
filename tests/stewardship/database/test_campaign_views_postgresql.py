@@ -1,5 +1,6 @@
 """Draft editor uses real Google sessions, YAML requests, SQL guards and source."""
 
+import re
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID, uuid4
 
@@ -44,6 +45,9 @@ def fields(store, row=None, **changes):
         )
         | changes
     )
+    # A browser posts the ticked Ministry leader roles (#922); the default
+    # ones are ticked until someone changes them.
+    values.setdefault("ministry_leader_roles", ["Chairperson", "Staff"])
     return {
         name: ("on" if value is True else value)
         for name, value in values.items()
@@ -291,7 +295,7 @@ def test_financial_and_ministry_catalogs_work_under_real_web_grants(
         name: ("on" if value is True else value)
         for name, value in values.items()
         if value is not False and value is not None
-    } | {"action": "preview"}
+    } | {"action": "preview", "ministry_leader_roles": ["Chairperson", "Staff"]}
     with task_login(ServiceRole.WEB):
         assert browser.get(url(current)).status_code == 200
         proposal = token(post(browser, url(current), values))
@@ -530,3 +534,115 @@ def test_a_pending_campaign_change_keeps_its_reviewed_version(auth_service, goog
     assert digest(reloaded) == store.active().digest
     again = post(browser, url(row), fields(store, row, name="After reload"))
     assert again.status_code == 200 and "Review your changes" in region(again.content)
+
+
+def live_ministry_campaign(store):
+    """A live campaign that asks about Ministries."""
+    add_draft(store, store.active(), uuid4())
+    row = Campaign.objects.get()
+    result = change(
+        store,
+        store.active(),
+        uuid4(),
+        [
+            {
+                "operation": "update",
+                "section": "campaigns",
+                "id": str(row.pk),
+                "values": {"modules": ["census", "ministry"]},
+            }
+        ],
+    )
+    assert result.state == "applied"
+    command(Campaign.objects.get(), uuid4(), Action.ACTIVATE)
+    return Campaign.objects.get()
+
+
+def leader_post(browser, row, roles, *, version):
+    """The live leader-role form's Review, as a browser posts it."""
+    return post(
+        browser,
+        url(row),
+        {
+            "action": "preview",
+            "editor": "leader_roles",
+            "ministry_leader_roles": roles,
+            "base_digest": version,
+        },
+    )
+
+
+def test_a_live_campaign_changes_its_leader_roles_in_place(auth_service, google):
+    """A live campaign keeps one editable leader-role form (#922), reviewed and
+    applied in place under it; every other setting stays read-only.
+    """
+    store = auth_service.store
+    row = live_ministry_campaign(store)
+    browser, _ = signed_in()
+    page = browser.get(url(row))
+    body = page.content.decode()
+    assert "read-only" in body
+    assert 'name="editor" value="leader_roles"' in body
+    assert body.count('id="leader_ministry_leader_roles_0"') == 1
+    assert "can sign in and see their Ministry" in body
+    for role in ("Chairperson", "Staff"):
+        assert re.search(
+            rf'value="{role}"[^>]*id="leader_ministry_leader_roles_\d+"[^>]*checked',
+            body,
+        ), role
+    version = digest(page)
+    for roles, message in (
+        ([], "Choose at least one role."),
+        (["Chairperson", "Staff"], "No settings have changed."),
+        (["Pastor"], "Select a valid choice"),
+    ):
+        refused = leader_post(browser, row, roles, version=version)
+        assert refused.status_code == 400 and message in refused.content.decode()
+    review = leader_post(browser, row, ["Chairperson"], version=version)
+    shown = region(review.content)
+    assert "Ministry leader roles" in shown and "Chairperson, Staff" in shown
+    response = post(browser, url(row), {"action": "confirm", "preview": token(review)})
+    assert response["Location"].endswith("#settings-review")
+    apply(store, response)
+    row.refresh_from_db()
+    assert row.active_configuration.values["ministry_leader_roles"] == ["Chairperson"]
+    # The other settings stay locked whatever the browser posts.
+    assert post(browser, url(row), fields(store, row, name="Locked")).status_code == 409
+
+
+def test_a_draft_changes_its_leader_roles_with_its_other_settings(auth_service, google):
+    """A draft edits the roles in its own form, with Ministry stewardship (#922)."""
+    store = auth_service.store
+    add_draft(store, store.active(), uuid4())
+    row = Campaign.objects.get()
+    browser, _ = signed_in()
+    body = browser.get(url(row)).content.decode()
+    assert 'id="id_ministry_leader_roles_0"' in body
+    assert 'name="editor"' not in body
+    review = post(
+        browser,
+        url(row),
+        fields(store, row, ministry=True, ministry_leader_roles=["Staff"]),
+    )
+    assert "Ministry leader roles" in region(review.content)
+    confirmed = post(browser, url(row), {"action": "confirm", "preview": token(review)})
+    apply(store, confirmed)
+    row.refresh_from_db()
+    assert row.active_configuration.values["ministry_leader_roles"] == ["Staff"]
+    # A draft cannot use the live form.
+    refused = leader_post(browser, row, ["Chairperson"], version=store.active().digest)
+    assert refused.status_code == 409
+
+
+def test_a_live_campaign_without_ministries_has_no_leader_roles(auth_service, google):
+    """No leader-role form, and none accepted, when the campaign has no Ministries."""
+    store = auth_service.store
+    add_draft(store, store.active(), uuid4())
+    row = Campaign.objects.get()
+    assert "ministry" not in row.active_configuration.values["modules"]
+    command(row, uuid4(), Action.ACTIVATE)
+    browser, _ = signed_in()
+    page = browser.get(url(row))
+    assert 'name="editor"' not in page.content.decode()
+    refused = leader_post(browser, row, ["Staff"], version=digest(page))
+    assert refused.status_code == 409
