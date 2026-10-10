@@ -1242,7 +1242,7 @@ orders offers that selection's sort orders on the columns they order and its
 page sizes; its other columns do not sort, since the schema owns those
 orders. In v1 that covers:
 
-- the active parishioner family directory (Family and DUID, 50 rows; Family code would need
+- the active parishioner family directory (Family and Family DUID, 50 rows; Family code would need
   every code decrypted per view);
 - Financial stewardship detail (Family, Annual pledge and latest response);
 - the Additional information queue (Family and Submitted);
@@ -1353,6 +1353,75 @@ changes.
 - **Server checks** are those of the action itself: the dialog only asks, and
   the server validates every chosen row and refuses the whole request when
   any one cannot be acted on.
+
+#### Table column order
+
+Admin tables put their columns in one order, so a reader moving between pages
+finds the same column in the same place
+([#932](https://github.com/epiphany40223/parishkit/issues/932)). The most
+relevant column comes first: the thing the reader looks a row up by. A table
+skips the columns it does not have; the rest keep this relative order:
+
+1. The selection checkbox, when the table has bulk actions.
+2. The row's subject, first:
+   - **Family tables** (worklists and reports whose rows are Families or
+     records about one Family: responses, pledges, requests, census changes,
+     sessions): the Family name, as the row header unless another column
+     names the row, linked to the Family's page where the table already links
+     it; then **Family DUID** in its own column under exactly that heading;
+     then Envelope number, when shown.
+   - **Member tables** (rows are Members): the Member name as the row header,
+     then **Member DUID** in its own column, then the Member's Family and
+     Family DUID.
+   - **Ministry tables**: the Ministry name, then **Ministry DUID**.
+   - **Configuration and account tables** (Portal users rules, Automation
+     access sessions, Hosted files, Ministries, Background tasks, Dates and
+     mail schedules, Pages and emails): the identifying name or address, for
+     example the domain or email address on Portal users.
+3. A Member within a Family table (Census changes' Who), then its Member
+   DUID.
+4. Everything else: status, values, counts, notes and dates, in the order
+   that reads best for the table. Several event dates keep the order the
+   events happen (Invitation delivered, then Link followed; First submitted,
+   then Last submitted).
+5. The [actions column](#row-actions-and-confirmation), last.
+
+**Event and log tables** keep the date first, because each row is the event
+itself: System logs (Time), the Family timeline (When), Family email history,
+Outgoing mail and Background task history.
+
+**Family names.** Every Admin table that names a Family names it the same
+way as the
+[active parishioner family directory](../reports/spec.md#active-parishioner-family-directory):
+the surname, then the active heads of household, "Squyres, Jeff and Tracy".
+Pages build it from the ParishSoft snapshot their rows were read from, with
+the one shared helper (`family_heads_name`, through `snapshot_family_names`);
+a Family missing from that snapshot keeps the name its report read. Where an
+installed SQL selection searches and orders the rows, it still searches and
+orders by the surname, which leads that name.
+
+**Sorting.** A table that shows a Family name and a Family DUID sorts on both.
+A new DUID column sorts in place where the page sorts its rows in Python;
+where an installed SQL selection orders the rows (see
+[Admin tables](#admin-tables)), it does not sort until that selection gains
+the order in a forward migration. Financial stewardship and the Additional
+information queue are such tables today: their Family DUID columns wait for
+a migration slice of
+[#932](https://github.com/epiphany40223/parishkit/issues/932).
+
+A DUID is never printed in the same cell as its name ("Name, DUID 1234"):
+a combined cell cannot be sorted or scanned by DUID, reads awkwardly with a
+screen reader and copies badly into a spreadsheet. A template guard test
+reads every Admin template, components included. In each `<td>` and each
+`<th>` whose attributes include `scope="row"`, it refuses a DUID label
+followed by a printed value, and a printed `*duid` variable beside any other
+printed value (values inside tag attributes or `<option>` choices do not
+count). It allows only the tables not yet split, which it lists by name
+with the exact number of such cells each holds.
+
+Downloads keep their own documented columns until #932 reorders them; the
+postal mail-merge file never changes order (see
+[mailing columns](../reports/spec.md#mailing-columns)).
 
 ### In-place controls
 
@@ -1810,10 +1879,11 @@ Administrators have two always-visible indicators:
 - **Families on the form now**: count of Family sessions with a heartbeat
   within the last 90 seconds, that is, Families with the form open in their
   browser; a Family that signed in but closed the form is not counted. Detail
-  lists the Family name as on the active parishioner family directory (surname, then the
-  active heads of household, e.g. "Squyres, Jeff and Tracy"), DUID, start
-  time, last activity, and form section; it never shows answers or
-  credentials.
+  lists, in the [column order](#table-column-order) for Admin tables, the
+  Family name as on the active parishioner family directory (surname, then
+  the active heads of household, e.g. "Squyres, Jeff and Tracy"), Family
+  DUID, the sign-in time, last activity, when the form was last seen open and
+  the form section; it never shows answers or credentials.
 - **Background work**: count/state of queued and running task runs. Detail shows
   type, initiator, start/heartbeat, phase, processed/total counts and percent,
   sanitized status, and links to completed/failed records. A distinct Admin-only

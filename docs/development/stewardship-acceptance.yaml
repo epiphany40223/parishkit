@@ -66,6 +66,7 @@ sections:
     "Navigation decisions": [ADM-03, ADM-12]
     "Admin tables": [ADM-03]
     "Row actions and confirmation": [ADM-03]
+    "Table column order": [ADM-03]
     "In-place controls": [ADM-03]
     "Page help": [ADM-03]
     "Time entry": [ADM-03]
