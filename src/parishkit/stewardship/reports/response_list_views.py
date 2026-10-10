@@ -1,4 +1,4 @@
-"""Admin/Staff pages and CSV downloads of the response lists (#477, PR 5).
+"""Admin/Staff pages and downloads of the response lists (#477, PR 5).
 
 ``reports/responses/<list>/`` shows one list of Families behind
 the response funnel (``response_lists``) at the database's current instant,
@@ -6,8 +6,9 @@ as a shared Admin table (web/tables.py) that sorts, filters and pages in
 place. A name, DUID or envelope-number search (#849) is posted to the same
 page in a CSRF-protected body, never put in a URL; while one is applied the
 table is a POST table, whose controls carry it as hidden fields. ``.../csv/``
-downloads the complete filtered list, in the page's order,
-rendered on request on the web connection (see ``_respond``). Admission, the
+downloads the complete filtered list, in the page's order, as CSV, XLSX or
+PDF (#850; the route predates the other two formats), rendered on request on
+the web connection (see ``_respond``). Admission, the
 campaign read guard, the role recheck inside it and the audit follow the
 response dashboard (``response_dashboard``); a download also needs
 ``REPORT_EXPORT`` and is refused while the campaign's purge gate is closed.
@@ -36,6 +37,7 @@ from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.contracts import (
     ErrorCode,
     FieldError,
@@ -52,12 +54,14 @@ from .export_views import SAFE_FAILURES
 from .read_admission import admit_report_read
 from .response_dashboard import DashboardQuery, rehearsal_epoch
 from .response_lists import (
+    FORMATS,
     LISTS,
     ListQuery,
     cells,
     current_snapshot,
     downloads_paused,
-    list_csv,
+    list_details,
+    list_file,
     read_list,
 )
 from .response_metrics import ResponseScope
@@ -199,6 +203,11 @@ def page_context(campaign, spec, query, table, as_of, **options):
         "filter_action": list_url,
         "export_action": reverse("admin:response_list_export", args=[key]),
         "export_timezones": sorted(timezone_names()),
+        # CSV first, the default; the labels are the formats' own names.
+        "export_formats": tuple((name, name.upper()) for name in FORMATS),
+        "can_download": not (
+            options.get("paused", False) or no_rehearsal or not table.count
+        ),
         "show_choices": spec.choices if len(spec.choices) > 1 else (),
         # The download keeps the page's filter, search and order; refreshed in
         # place, the export form's hidden fields follow them (data-table-sync).
@@ -223,14 +232,18 @@ def _respond(request, campaign_id, key, *, export):
     A page is a GET whose closed choices travel in the query string, or a
     CSRF-protected POST carrying them and a search, which never enters a
     URL; a POST with anything in its query string is refused. A download is
-    a CSRF-protected POST carrying the same choices plus a time zone.
+    a CSRF-protected POST carrying the same choices plus a time zone and a
+    format (CSV, XLSX or PDF; CSV when none is sent).
 
     The download is not a stored export file: it is built in memory on the
     web connection, as the System logs download is, and read under the
     interactive campaign read guard, like the page (data spec, "Campaign read
     guards"). It never uses the dedicated download pool, whose login
     (``DOWNLOAD_READ_TABLES``) reads no campaign data. Its response carries
-    the shared download headers.
+    the shared download headers. The largest list (about 1,100 Families,
+    some 34 pages) renders as PDF in about 8 seconds on a development
+    machine, within the read guard's 60-second deadline (#850 measured it
+    before choosing this over the stored export lifecycle).
     """
     spec = LISTS.get(key)
     if spec is None:
@@ -247,11 +260,14 @@ def _respond(request, campaign_id, key, *, export):
                 parameters = request.POST.copy()
                 parameters.pop("csrfmiddlewaretoken", None)
                 query, values = ListQuery.parse(
-                    spec, parameters, extra={"timezone"}, private=True
+                    spec, parameters, extra={"timezone", "format"}, private=True
                 )
                 zone = values.pop("timezone", "UTC")
-                if values.keys() - {"sort"} or (
-                    zone != "UTC" and zone not in timezone_names()
+                file_format = values.pop("format", "csv")
+                if (
+                    values.keys() - {"sort"}
+                    or (zone != "UTC" and zone not in timezone_names())
+                    or file_format not in FORMATS
                 ):
                     raise ValueError("Invalid response list download.")
                 values["size"] = "all"
@@ -307,6 +323,40 @@ def _respond(request, campaign_id, key, *, export):
             if export and downloads_paused(campaign_id):
                 raise DownloadsPaused
 
+        def _download(campaign, spec, query, table, as_of):
+            """The download's bytes, in the parish's date format.
+
+            Rendered eagerly in the view, when ``campaign_response`` opens
+            the content under the read guard. The parish's date format is
+            lent explicitly so the file never depends on the request's date
+            format middleware still being active around that call.
+            """
+            parish = (
+                SystemConfiguration.objects.select_related(
+                    "active_configuration__parish"
+                )
+                .get()
+                .active_configuration.parish
+            )
+            details = list_details(
+                spec,
+                query,
+                parish=parish.name,
+                campaign=campaign.active_configuration.name,
+                as_of=as_of,
+                zone=ZoneInfo(zone),
+                count=table.count,
+            )
+            with dates.using(parish.date_format):
+                return list_file(
+                    spec,
+                    table.rows,
+                    ZoneInfo(zone),
+                    file_format,
+                    details=details,
+                    as_of=as_of,
+                )
+
         def content():
             """Read the list once under the guard and render the page or file."""
             nonlocal count, snapshot
@@ -325,7 +375,7 @@ def _respond(request, campaign_id, key, *, export):
             # A POST table's controls carry the search as hidden fields.
             table = paginate(rows, values, carry=query.posted(), sorting=spec.sorting)
             if export:
-                return iter((list_csv(spec, table.rows, ZoneInfo(zone)),))
+                return iter((_download(campaign, spec, query, table, as_of),))
             context = page_context(
                 campaign,
                 spec,
@@ -348,7 +398,7 @@ def _respond(request, campaign_id, key, *, export):
             authorize=authorize,
             open_content=content,
             on_close=finish,
-            **({"content_type": "text/csv"} if export else {}),
+            **({"content_type": FORMATS[file_format]} if export else {}),
         )
         # Admission refused before streaming (busy or closing): the Admin
         # report error page, as the other campaign reports answer.
@@ -358,7 +408,8 @@ def _respond(request, campaign_id, key, *, export):
         if export and handed_off:
             stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%SZ")
             for name, value in download_headers(
-                f"stewardship-responses-{key}-{stamp}.csv", content_type="text/csv"
+                f"stewardship-responses-{key}-{stamp}.{file_format}",
+                content_type=FORMATS[file_format],
             ).items():
                 response[name] = value
         return response
@@ -389,5 +440,5 @@ def response_list(request, campaign_id, key):
 
 @require_POST
 def response_list_export(request, campaign_id, key):
-    """The complete filtered list as CSV, in the order the page shows it."""
+    """The complete filtered list as CSV, XLSX or PDF, in the page's order."""
     return _respond(request, campaign_id, key, export=True)

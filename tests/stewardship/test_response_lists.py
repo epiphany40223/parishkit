@@ -1,4 +1,4 @@
-"""The response lists' choices, rows, sorting, CSV and page, without a database.
+"""The response lists' choices, rows, sorting, files and page, without a database.
 
 The funnel rows are the response-metrics test rows (#477); the views'
 admission, read guard, purge gate and audit are covered against PostgreSQL
@@ -28,6 +28,8 @@ from parishkit.stewardship.reports.response_lists import (
     candidates,
     list_counts,
     list_csv,
+    list_details,
+    list_file,
     listed,
 )
 from parishkit.stewardship.reports.response_metrics import (
@@ -325,7 +327,7 @@ def test_page_shows_the_table_filter_and_download():
         f'action="{BASE}submitted/csv/">' in page
     )
     assert '<input type="hidden" name="sort" value="submitted">' in page
-    assert "CSV of the 3 Families on this list.</p>" in page
+    assert "The file holds the 3 Families on this list.</p>" in page
     assert "Sensitive parish report" in page
     assert "Downloads are paused" not in page
     # No inline script or style under the CSP.
@@ -355,7 +357,7 @@ def test_page_keeps_filter_in_links_and_download():
         f'href="{BASE}not-opened/?show=followed&amp;sort=-family#table" '
         'data-in-place="mode-production" data-in-place-filters'
     ) in resorted
-    assert "CSV of the 1 Family on this list, with the filter chosen." in page
+    assert "The file holds the 1 Family on this list, with the filter chosen." in page
 
 
 def test_search_makes_a_private_post_table():
@@ -375,7 +377,9 @@ def test_search_makes_a_private_post_table():
         "data-page-address hidden></a>"
     ) in page
     assert f'href="{BASE}submitted/?size=25&amp;sort=family#table"' in page
-    assert "CSV of the 1 Family on this list that matches the search.</p>" in page
+    assert (
+        "The file holds the 1 Family on this list that matches the search.</p>" in page
+    )
     export = page[page.index('id="table-export"') :]
     assert '<input type="hidden" name="search" value="Adams">' in export
     # Nothing found says so, and nothing can be downloaded.
@@ -407,12 +411,12 @@ def test_staff_and_paused_and_empty_testing_pages():
     assert "mode=testing" not in staff
     paused = render(paused=True)
     assert "Downloads are paused while this campaign is prepared for purge." in paused
-    assert '<button type="submit" disabled>Download CSV</button>' in paused
+    assert '<button type="submit" disabled>Download</button>' in paused
     empty = render(query=ListQuery("testing"), rows=False, values={"sort": "family"})
     assert "no Testing responses to show" in empty
     assert "<table" not in empty
     assert "Nothing to download" in empty
-    assert '<button type="submit" disabled>Download CSV</button>' in empty
+    assert '<button type="submit" disabled>Download</button>' in empty
     # Its switch back to Production keeps the chosen order and lands on the
     # table; each switch is an in-place link (#519).
     production = f'<a href="{BASE}submitted/?sort=family#table" data-in-place='
@@ -428,9 +432,9 @@ def test_empty_list_says_so():
     page = render(rows=[])
     assert "No Families on this list." in page
     assert "Nothing to download: no Families are on this list." in page
-    assert '<button type="submit" disabled>Download CSV</button>' in page
+    assert '<button type="submit" disabled>Download</button>' in page
     # A list without a filter does not mention one.
-    assert "CSV of the 1 Family on this list.</p>" in render("more-than-once")
+    assert "The file holds the 1 Family on this list.</p>" in render("more-than-once")
 
 
 def test_dashboard_links_each_list_with_its_count(monkeypatch):
@@ -471,3 +475,194 @@ def test_breadcrumb_names_the_list():
     assert context["breadcrumb_label"] == (
         "Invited Families that never opened the form"
     )
+
+
+def details_of(key, query=None, count=3):
+    """The report details a download of ``key`` carries (``list_details``)."""
+    return list_details(
+        LISTS[key],
+        query or ListQuery(),
+        parish="Sample parish",
+        campaign="Sample campaign",
+        as_of=START + timedelta(days=1),
+        zone=NEW_YORK,
+        count=count,
+    )
+
+
+def test_xlsx_has_the_csv_rows_as_native_cells_and_the_details():
+    """Same headings and rows as the CSV; times, counts native; text literal."""
+    from openpyxl import load_workbook
+
+    spec = LISTS["submitted"]
+    rows = rows_of("submitted")
+    query = ListQuery(search="Adams")
+    body = list_file(
+        spec,
+        rows,
+        NEW_YORK,
+        "xlsx",
+        details=details_of("submitted", query),
+        as_of=START + timedelta(days=1),
+    )
+    book = load_workbook(io.BytesIO(body))
+    try:
+        sheet = book["Families"]
+        table = [[cell.value for cell in row] for row in sheet.iter_rows()]
+        csv_rows = list(
+            csv.reader(io.StringIO(list_csv(spec, rows, NEW_YORK).decode("utf-8")))
+        )
+        assert table[0] == csv_rows[0]
+        assert len(table) == len(csv_rows)
+        first = ROWS[0].submitted_at.astimezone(NEW_YORK).replace(tzinfo=None)
+        # A native date and time in the chosen zone; identifiers as text; the
+        # count a number; a missing envelope number a truly empty cell.
+        assert table[1] == [first, "Adams, Ann", "1", "101", 2]
+        assert sheet.cell(2, 1).is_date
+        # "=Baker, Bob" is literal text, never a formula.
+        assert sheet.cell(3, 2).data_type == "s"
+        assert table[2][1] == "=Baker, Bob"
+        assert table[3][3] is None
+        information = {
+            row[0].value: row[1].value for row in book["Report information"].iter_rows()
+        }
+    finally:
+        book.close()
+    assert information["Report"] == "Families that submitted"
+    assert information["Campaign"] == "Sample campaign"
+    assert information["Responses"] == "Production"
+    assert information["Display time zone"] == "America/New_York"
+    assert information["Counted at"] == (START + timedelta(days=1)).astimezone(
+        NEW_YORK
+    ).replace(tzinfo=None)
+    assert information["Families in this file"] == "3"
+    # Whether a search was applied, never its text (#849).
+    assert information["Search applied"] == "Yes"
+    assert "Adams" not in repr(sorted(map(str, information.values())))
+    assert information["Privacy"] == response_lists.PRIVACY
+
+
+def test_file_text_is_neutralized_in_every_format():
+    """A control character pasted into ParishSoft cannot break XLSX or PDF."""
+    from openpyxl import load_workbook
+
+    spec = LISTS["submitted"]
+    row = rows_of("submitted")[0]
+    odd = replace(row, facts=FamilyFacts("Tab\x0bName", 7, "x"))
+    book = load_workbook(
+        io.BytesIO(
+            list_file(
+                spec, [odd], NEW_YORK, "xlsx", details=details_of("submitted", count=1)
+            )
+        )
+    )
+    try:
+        assert book["Families"].cell(2, 2).value == "Tab\\u000bName"
+    finally:
+        book.close()
+    document = []
+    original = response_lists.draw_pages
+
+    def capture(*args, **kwargs):
+        """Keep the drawn pages, then draw them for real."""
+        document.append((args, kwargs))
+        return original(*args, **kwargs)
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(response_lists, "draw_pages", capture)
+        body = list_file(
+            spec,
+            [odd],
+            NEW_YORK,
+            "pdf",
+            details=details_of("submitted", count=1),
+            as_of=START,
+        )
+    assert body.startswith(b"%PDF")
+    (_, _, pages), _ = document[0]
+    assert any("Tab\\u000bName" in line for page in pages for line in page)
+    assert csv_cell_text(list_csv(spec, [odd], NEW_YORK)) == "Tab\x0bName"
+
+
+def csv_cell_text(body):
+    """The Family cell of a one-row CSV."""
+    return list(csv.reader(io.StringIO(body.decode("utf-8"))))[1][1]
+
+
+def test_pdf_reads_as_the_page_with_its_details_on_every_page():
+    """Missing values in the page's words; counts grouped; details in the header."""
+    drawn = {}
+
+    def capture(document, output, pages, **kwargs):
+        """Record what the PDF draws instead of drawing it."""
+        drawn.update(kwargs, document=document, pages=pages)
+        return len(pages)
+
+    spec = LISTS["started"]
+    query = ListQuery(show="opened")
+    with pytest.MonkeyPatch.context() as patch, using("us_long"):
+        patch.setattr(response_lists, "draw_pages", capture)
+        list_file(
+            spec,
+            rows_of("started", "opened"),
+            NEW_YORK,
+            "pdf",
+            details=details_of("started", query, count=1),
+            as_of=START,
+        )
+    document = drawn["document"]
+    assert document.headings == tuple(str(c.heading) for c in spec.columns)
+    opened, progressed, family, duid, envelope = document.rows[0]
+    # Got past the first step is not reached yet: the page's "Not yet".
+    assert progressed == "Not yet"
+    assert family == "Diaz, Dee" and duid == "4" and envelope == "0"
+    assert opened.startswith("Oct ") and "UTC" not in opened
+    subtitle, counts = drawn["header"]
+    assert "Sample parish · Sample campaign · Counted at October 4, 2026" in subtitle
+    assert subtitle.endswith("Times in America/New_York")
+    assert (
+        counts
+        == "1 Family in this file. Production responses. Show: Opened the form only."
+    )
+    assert drawn["footer"] == response_lists.PRIVACY
+    assert drawn["heading"].startswith("Form opened")
+
+
+def test_pdf_columns_fit_the_page_and_their_headings():
+    """Every list's PDF row fits a landscape page; no heading is cut."""
+    for spec in LISTS.values():
+        widths = [response_lists.PDF_WIDTHS[c.key] for c in spec.columns]
+        assert sum(widths) + 2 * (len(widths) - 1) <= response_lists.PDF_LINE
+        for column, width in zip(spec.columns, widths, strict=True):
+            assert len(str(column.heading)) <= width, column.key
+
+
+def test_counts_group_in_the_pdf_and_stay_numbers_in_xlsx():
+    """A count over a thousand reads "1,234" in the PDF; XLSX keeps the int."""
+    spec = LISTS["more-than-once"]
+    count = spec.columns[0]
+    assert response_lists.pdf_text(count, 1234, NEW_YORK) == "1,234"
+    assert response_lists.xlsx_value(count, 1234, NEW_YORK) == 1234
+    envelope = spec.columns[-1]
+    assert response_lists.pdf_text(envelope, 4711, NEW_YORK) == "4711"
+    assert response_lists.xlsx_value(envelope, 4711, NEW_YORK) == "4711"
+    assert response_lists.pdf_text(envelope, None, NEW_YORK) == ""
+    assert response_lists.xlsx_value(envelope, None, NEW_YORK) is None
+
+
+def test_an_unknown_format_is_refused():
+    """Only CSV, XLSX and PDF render."""
+    with pytest.raises(ValueError):
+        list_file(LISTS["submitted"], [], NEW_YORK, "docx")
+
+
+def test_page_offers_each_format_with_one_download_button():
+    """The format is a choice beside the time zone; the button never changes."""
+    page = render()
+    export = page[page.index('id="table-export"') :]
+    assert (
+        '<select id="list-format" name="format"><option value="csv">CSV</option>'
+        '<option value="xlsx">XLSX</option><option value="pdf">PDF</option></select>'
+    ) in export
+    assert export.index('id="list-format"') < export.index('id="list-timezone"')
+    assert '<button type="submit">Download</button>' in export

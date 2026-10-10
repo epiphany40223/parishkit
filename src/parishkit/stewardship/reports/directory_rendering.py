@@ -5,6 +5,9 @@ in a spreadsheet or a word processor's mail merge. XLSX has the same sheet
 plus the shared "Report information" sheet. PDF puts the report details in
 each page's header and footer: a table for the Family-code directory, and
 one address block per Family for the postal mail merge.
+
+The fixed-width table pages (``table_lines``, ``fill_pages`` and
+``draw_pages``) are shared with the response lists' PDF (response_lists).
 """
 
 import csv
@@ -51,9 +54,19 @@ def _cell_lines(value, width):
     return wrap(text, width=width, break_long_words=True) or [""]
 
 
-def table_lines(document):
-    """Fixed-width table rows (with wrapped cells) for the Family-code PDF."""
-    widths = [COLUMN_WIDTHS[heading] for heading in document.headings]
+def table_heading(headings, widths=COLUMN_WIDTHS):
+    """The bold heading line above a fixed-width table's rows."""
+    return "  ".join(name.ljust(widths[name]) for name in headings).rstrip()
+
+
+def table_lines(document, widths=COLUMN_WIDTHS):
+    """Fixed-width table rows (with wrapped cells) for a table PDF.
+
+    ``widths`` maps each heading to its column's width in characters; the
+    Family-code directory's are the default. Each row is one block of lines,
+    as tall as its longest wrapped cell.
+    """
+    widths = [widths[heading] for heading in document.headings]
     for row in document.rows:
         cells = [
             _cell_lines(value, width) for value, width in zip(row, widths, strict=True)
@@ -88,7 +101,7 @@ def address_blocks(document):
         )
 
 
-def _pages(blocks):
+def fill_pages(blocks):
     """Fill pages with whole blocks (a table row or an address block).
 
     A block taller than a page (a Family with very many phone numbers) is
@@ -113,24 +126,10 @@ def _place(page, block):
 
 def directory_pdf(document, output):
     """Draw every page with the report details in its header and footer."""
-    from matplotlib.backends.backend_pdf import PdfPages
-    from matplotlib.figure import Figure
-    from matplotlib.font_manager import FontProperties
-
-    from .charts import rendering_style
-
     blocks = list(
         address_blocks(document) if document.postal else table_lines(document)
     )
-    pages = list(_pages(blocks))
     details = dict(document.metadata)
-    heading = (
-        None
-        if document.postal
-        else "  ".join(
-            name.ljust(COLUMN_WIDTHS[name]) for name in document.headings
-        ).rstrip()
-    )
     subtitle = " · ".join(
         (
             details["Parish"],
@@ -153,6 +152,33 @@ def directory_pdf(document, output):
             f"; {details[UNADDRESSED_DETAIL]} with no usable mailing address "
             "(address left blank)"
         )
+    return draw_pages(
+        document,
+        output,
+        list(fill_pages(blocks)),
+        header=(subtitle, f"{counts}. Filters: {details['Filters applied']}"),
+        heading=None if document.postal else table_heading(document.headings),
+        footer=details["Privacy"],
+        note=details.get("Testing mode"),
+    )
+
+
+def draw_pages(document, output, pages, *, header, heading, footer, note=None):
+    """Draw already filled pages (``fill_pages``) as a landscape PDF.
+
+    Every page repeats the document's title, the two ``header`` lines, the
+    table ``heading`` (None for address blocks) and the ``footer`` (the
+    sensitive-data line), with an optional small ``note`` above the footer
+    and "Page n of m". Header and note text is escaped for the PDF's font
+    (``visible_text``); the page lines already were, cell by cell. Returns
+    the page count.
+    """
+    from matplotlib.backends.backend_pdf import PdfPages
+    from matplotlib.figure import Figure
+    from matplotlib.font_manager import FontProperties
+
+    from .charts import rendering_style
+
     font = FontProperties(fname=pdf_font()[0])
     with (
         rendering_style(),
@@ -169,13 +195,8 @@ def directory_pdf(document, output):
             figure = Figure(figsize=(11, 8.5), facecolor="white")
             try:
                 figure.text(0.05, 0.95, document.title, fontsize=13)
-                figure.text(0.05, 0.925, visible_text(subtitle), fontsize=9)
-                figure.text(
-                    0.05,
-                    0.905,
-                    visible_text(f"{counts}. Filters: {details['Filters applied']}"),
-                    fontsize=9,
-                )
+                for offset, line in zip((0.925, 0.905), header, strict=True):
+                    figure.text(0.05, offset, visible_text(line), fontsize=9)
                 top = 0.87
                 if heading is not None:
                     figure.text(
@@ -197,11 +218,9 @@ def directory_pdf(document, output):
                         fontproperties=font,
                         va="top",
                     )
-                figure.text(0.05, 0.04, details["Privacy"], fontsize=9)
-                if "Testing mode" in details:
-                    figure.text(
-                        0.05, 0.065, visible_text(details["Testing mode"]), fontsize=8
-                    )
+                figure.text(0.05, 0.04, footer, fontsize=9)
+                if note:
+                    figure.text(0.05, 0.065, visible_text(note), fontsize=8)
                 figure.text(
                     0.95,
                     0.04,
