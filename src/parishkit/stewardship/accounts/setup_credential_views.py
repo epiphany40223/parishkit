@@ -84,18 +84,34 @@ KEEP_ERRORS = {
 }
 
 
+# What the complete gate's hint says while the secret field is empty (#563).
+MISSING = {
+    "parishsoft": _("Paste the ParishSoft API key to continue."),
+    "google_workspace": _("Paste the service-account JSON key to continue."),
+    "slack": _("Paste the Slack bot token to continue."),
+}
+
+
 class SetupCredentialForm(CredentialForm):
     """Reuse the write-only widget; this attempt/version replaces a live intent.
 
     API keys and bot tokens are single-line secrets, so they use a password
     input that never redisplays its value; the Google service-account key is
     multi-line JSON and keeps the write-only text area. When a credential is
-    already saved the secret field may be left empty to keep it.
+    already saved and still current, the secret field may be left empty to
+    keep it. A saved one that is ``stale`` (entered for settings changed
+    since) must be entered again, so the field is required with the same
+    message the keep check gives. While a current ParishSoft key is kept, the
+    page script requires the key only once the organization ID differs from
+    ``organization``, the saved one (#563); the server's keep check is the
+    authority either way.
     """
 
     intent = None
 
-    def __init__(self, target, *args, saved=False, **kwargs):
+    def __init__(
+        self, target, *args, saved=False, stale=False, organization=None, **kwargs
+    ):
         """Only ParishSoft accepts an explicit organization; other scope is staged."""
         super().__init__(*args, **kwargs)
         if target == "parishsoft":
@@ -103,6 +119,13 @@ class SetupCredentialForm(CredentialForm):
                 label=_("Expected ParishSoft organization ID"),
                 min_value=1,
                 max_value=2**31 - 1,
+                widget=forms.NumberInput(
+                    attrs={
+                        "data-missing-hint": _(
+                            "Enter the ParishSoft organization ID, a whole number."
+                        )
+                    }
+                ),
             )
         candidate = self.fields["candidate"]
         if target in {"parishsoft", "slack"}:
@@ -117,7 +140,16 @@ class SetupCredentialForm(CredentialForm):
             # PasswordInput is built after the field, so restore maxlength.
             candidate.widget.attrs.update(candidate.widget_attrs(candidate.widget))
         candidate.label = FIELD_LABELS[target]
-        candidate.required = not saved
+        candidate.required = not saved or stale
+        candidate.widget.attrs["data-missing-hint"] = MISSING[target]
+        if saved and stale:
+            candidate.error_messages["required"] = KEEP_ERRORS["stale"]
+            candidate.widget.attrs["data-missing-hint"] = KEEP_ERRORS["stale"]
+        elif saved and organization is not None:
+            candidate.widget.attrs |= {
+                "data-required-when": f"organization_id!={organization}",
+                "data-missing-hint": KEEP_ERRORS["organization"],
+            }
         setup_help.apply(self, setup_help.CREDENTIALS[target], replace=True)
 
 
@@ -160,13 +192,20 @@ def setup_credential(request, target):
         current = saved is not None and step is not None and step.state == "done"
         organization = saved.settings.get("organization_id") if saved else None
         initial = {"organization_id": organization} if organization else {}
+        # A stale saved key must be entered again. A blocked step keeps the
+        # field as it was: its Save is unavailable and the server answers
+        # with the prerequisite, not with a missing key.
+        options = {
+            "saved": saved is not None,
+            "stale": saved is not None and not current and not blocked,
+            "organization": organization,
+            "initial": initial,
+        }
         if request.method == "POST":
             version = expected_version(request.POST.get("version"))
             if version != draft.status.version:
                 raise StaleRecordError("Reload this setup form.")
-            form = SetupCredentialForm(
-                target, request.POST, saved=saved is not None, initial=initial
-            )
+            form = SetupCredentialForm(target, request.POST, **options)
             if form.is_valid() and blocked:
                 form.add_error(None, blocked[0])
             elif form.is_valid() and not form.cleaned_data["candidate"]:
@@ -207,7 +246,7 @@ def setup_credential(request, target):
                     del candidate
             status = 400
         else:
-            form = SetupCredentialForm(target, saved=saved is not None, initial=initial)
+            form = SetupCredentialForm(target, **options)
             status = 200
         response = render(
             request,

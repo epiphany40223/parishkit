@@ -20,6 +20,7 @@ from parishkit.stewardship.accounts import setup_help
 from parishkit.stewardship.accounts import setup_progress_views as progress_views
 from parishkit.stewardship.accounts.backup_key import KeyStatus
 from parishkit.stewardship.accounts.branding_views import LogoForm
+from parishkit.stewardship.accounts.campaign_family_test_views import FamilyTestForm
 from parishkit.stewardship.accounts.campaign_forms import CampaignForm
 from parishkit.stewardship.accounts.campaign_mail_views import CampaignMailForm
 from parishkit.stewardship.accounts.campaign_views import REMOVES_SHARE_OPTIONS
@@ -1536,6 +1537,69 @@ def component_origin():
                 "label": "ParishSoft",
                 "step_label": "ParishSoft connection",
                 "saved": True,
+            },
+        ),
+        # A current ParishSoft key may be kept; changing the organization
+        # needs the key again (#563).
+        (
+            "/setup-credential-kept",
+            "setup-credential",
+            {
+                "draft": setup_draft,
+                "form": SetupCredentialForm(
+                    "parishsoft",
+                    saved=True,
+                    organization=4321,
+                    initial={"organization_id": 4321},
+                ),
+                "target": "parishsoft",
+                "label": "ParishSoft",
+                "step_label": "ParishSoft connection",
+                "saved": True,
+                "current": True,
+                "organization": 4321,
+            },
+        ),
+        # Check waits for a DUID; a review over the allowance shows Send
+        # unavailable with its reason (#563).
+        (
+            "/family-tests-check",
+            "campaign-mail-families",
+            {
+                "campaign": SimpleNamespace(
+                    active_configuration=SimpleNamespace(name="Annual census")
+                ),
+                "subject": "Welcome",
+                "testing_recipient": "testing@example.org",
+                "epoch_ready": True,
+                "available": 1,
+                "form": FamilyTestForm(),
+                "families": [
+                    {"name": "Sample Family", "duid": 1234, "label": "Eligible"},
+                    {"name": "Other Family", "duid": 5678, "label": "Eligible"},
+                ],
+                "confirm": True,
+                "sendable": False,
+                "unavailable": "Only 1 more Family test may be requested now.",
+                "fresh": True,
+                "refresh_url": "/family-tests-check",
+                "sample_url": "/campaign-mail",
+            },
+        ),
+        # A step whose earlier step is not done: Save is unavailable (#563).
+        (
+            "/setup-credential-blocked",
+            "setup-credential",
+            {
+                "draft": setup_draft,
+                "form": SetupCredentialForm("google_workspace"),
+                "target": "google_workspace",
+                "label": "Google Workspace",
+                "step_label": "Google Workspace connection",
+                "prerequisite": (
+                    "Not available yet: Save the outgoing email settings first.",
+                    "/admin/setup/mail",
+                ),
             },
         ),
         (

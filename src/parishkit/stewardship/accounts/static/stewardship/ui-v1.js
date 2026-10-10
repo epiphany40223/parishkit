@@ -2198,18 +2198,34 @@
   //     empty value on a field) makes those controls required while shown;
   //   - data-required-when="name=value" makes a field required while the
   //     form's control "name" has that value (notes for the outcome Other);
+  //     "name!=value" while it has any other value (the ParishSoft key in
+  //     setup, once the organization ID differs from the saved one);
   //   - data-require-one on a group of checkboxes needs at least one ticked
   //     (the System logs Show choices, #601): while none is, each box is
   //     marked invalid with the group's data-missing-hint.
   // The hint is the first missing control's data-missing-hint, or that of
   // the nearest element around it. As with acknowledgments below, real
   // disabled is used and only buttons this gate disabled are re-enabled.
+  //
+  // A number field's rule compares numbers, as the server reads them, so
+  // "04321" matches a saved 4321; an empty number field matches no number.
+  // While the rule's own control is missing or invalid (an emptied
+  // organization ID), the rule waits: that control's hint comes first.
+  const sameValue = (control, value) => (control instanceof HTMLInputElement
+    && control.type === "number" && value !== ""
+    ? control.value.trim() !== "" && Number(control.value) === Number(value)
+    : ruleValue(control) === value);
   const requiredWhen = (form) => {
     form.querySelectorAll("[data-required-when]").forEach((node) => {
-      const [name, value] = node.dataset.requiredWhen.split("=");
+      const rule = node.dataset.requiredWhen;
+      const negated = rule.includes("!=");
+      const [name, value] = rule.split(negated ? "!=" : "=");
       const control = form.elements.namedItem(name);
-      // A hidden (disabled) control's leftover value does not count.
-      node.required = Boolean(control) && !control.disabled && ruleValue(control) === value;
+      // A hidden (disabled) control's leftover value does not count. A radio
+      // group (RadioNodeList) has no validity of its own.
+      node.required = Boolean(control) && !control.disabled
+        && control.validity?.valid !== false
+        && sameValue(control, value) !== negated;
     });
   };
   const requireOne = (form) => {
