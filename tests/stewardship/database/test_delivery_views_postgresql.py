@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 from django.db import connection, transaction
 from django.db.models import F
+from django.test.utils import CaptureQueriesContext
 from django.utils.html import escape
 
 from parishkit.stewardship.accounts.models import PortalSession, PortalUser
@@ -16,12 +17,14 @@ from parishkit.stewardship.family_delivery import (
     FamilyDeliveryResult,
     FamilyDeliveryStatus,
 )
+from parishkit.stewardship.jobs import delivery_views
+from parishkit.stewardship.jobs.delivery_reads import read_listing, with_family_names
 from parishkit.stewardship.jobs.delivery_states import DeliveryAction
 from parishkit.stewardship.jobs.family_mail_dispatch import (
     begin_submission,
     finish_submission,
 )
-from parishkit.stewardship.jobs.outbox_models import OutboxEvent
+from parishkit.stewardship.jobs.outbox_models import OutboxEvent, OutboxMessage
 from parishkit.stewardship.jobs.outbox_storage import change_message
 from parishkit.stewardship.jobs.recipient_models import RecipientRefusalResolution
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
@@ -32,6 +35,8 @@ from .auth_builders import signed_in
 from .campaign_builders import campaign_clock, change
 from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
+from .test_daily_digest_dispatch_postgresql import allocated as daily_allocated
+from .test_daily_digest_planning_postgresql import INSTANT as DIGEST_INSTANT
 from .test_family_mail_dispatch_postgresql import claim, prepare
 from .test_family_mail_preparation_postgresql import family_mail  # noqa: F401
 from .test_recipient_suppressions_postgresql import refused, remember
@@ -124,7 +129,12 @@ def test_uncertainty_warns_once_and_admin_metadata_never_discloses_payload(
 
 
 @pytest.mark.parametrize("role", ["staff", "ministry_leader"])
-def test_delivery_pages_and_warning_are_admin_only(family_mail, google, role):  # noqa: F811
+def test_delivery_pages_and_warning_are_admin_only(
+    family_mail,  # noqa: F811
+    google,
+    role,
+    monkeypatch,
+):
     """Neither direct UUID navigation nor raw page chrome grants Ministry access."""
     message = uncertain(family_mail)
     store = family_mail.service.store
@@ -143,6 +153,9 @@ def test_delivery_pages_and_warning_are_admin_only(family_mail, google, role):  
     google[0]["email"] = "reader@example.org"
     browser, _ = signed_in()
     name = family_name(message).encode()
+    # The role check comes first: a refused viewer never reads a snapshot.
+    names = []
+    monkeypatch.setattr(delivery_views, "with_family_names", names.append)
     for path in (
         "/admin/mail/outgoing/",
         f"/admin/mail/outgoing/{message.pk}/",
@@ -152,6 +165,7 @@ def test_delivery_pages_and_warning_are_admin_only(family_mail, google, role):  
         assert response.status_code == 403
         # Outgoing mail's Family names (#931) are the page's, not the error's.
         assert name not in response.content
+    assert names == []
     assert b"data-delivery-warning" not in browser.get("/admin/").content
 
 
@@ -171,7 +185,7 @@ def test_outgoing_mail_names_each_family_beside_its_duid(family_mail, google):  
     assert name and name != "Family"
     browser, _ = signed_in()
     with task_login(ServiceRole.WEB, exact=True):
-        response = browser.get("/admin/mail/outgoing/", {"sort": "-recipient"})
+        response = browser.get("/admin/mail/outgoing/", {"sort": "-duid"})
     assert response.status_code == 200
     html = response.content.decode()
     assert (
@@ -185,6 +199,49 @@ def test_outgoing_mail_names_each_family_beside_its_duid(family_mail, google):  
     assert "Family DUID" in heading
     # The name is only shown, never searched: the filter stays exact.
     assert browser.get("/admin/mail/outgoing/", {"q": name}).status_code == 400
+    # Family DUID's sort token is duid; the older recipient is not kept.
+    assert browser.get("/admin/mail/outgoing/", {"sort": "recipient"}).status_code == (
+        400
+    )
+
+
+def test_outgoing_mail_names_reports_and_families_no_longer_in_the_data(
+    family_mail,  # noqa: F811
+    google,
+):
+    """#931: an Administrator digest is an Administrator report, and a Family
+    the latest ParishSoft data no longer has is said so, through the real
+    snapshot read, which takes at most three queries however many rows."""
+    message = uncertain(family_mail)
+    with campaign_clock(DIGEST_INSTANT):
+        daily_allocated(family_mail)
+    digest = OutboxMessage.objects.get(purpose="daily_digest")
+    browser, _ = signed_in()
+    with task_login(ServiceRole.WEB, exact=True):
+        response = browser.get("/admin/mail/outgoing/")
+    assert response.status_code == 200
+    html = response.content.decode()
+    assert (
+        f'<th scope="row"><a href="/admin/mail/outgoing/{digest.pk}/">'
+        "Administrator report</a></th>"
+    ) in html
+    assert escape(family_name(message)) in html
+
+    # The listed rows, plus one whose Family DUID the snapshot lacks.
+    rows = read_listing({})["rows"]
+    duid = FamilyCampaign.objects.get(pk=message.family_id).family_duid
+    gone = next(row for row in rows if row["id"] == message.pk) | {
+        "id": uuid4(),
+        "family__family_duid": duid + 1_000_000,
+    }
+    with CaptureQueriesContext(connection) as queries:
+        named = with_family_names([*rows, gone])
+    assert len(queries) <= 3
+    assert {row["id"]: row["family_name"] for row in named} == {
+        message.pk: family_name(message),
+        digest.pk: None,
+        gone["id"]: None,
+    }
 
 
 @pytest.mark.parametrize(

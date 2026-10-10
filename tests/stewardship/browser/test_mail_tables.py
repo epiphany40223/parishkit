@@ -61,9 +61,13 @@ def test_a_phone_scrolls_the_table_not_the_page(
 
 @pytest.mark.parametrize("path", [OUTGOING, HISTORY])
 def test_a_desktop_never_wraps_dates(page, component_origin, axe_source, path):
-    """At 1280 px every date and time cell reads on one line."""
+    """At 1280 px the table fits beside the Admin menu without scrolling, and
+    every date and time cell reads on one line."""
     table = open_at(page, component_origin, path, 1280)
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    assert page.locator(".table-scroll").evaluate(
+        "node => node.scrollWidth <= node.clientWidth"
+    )
     assert table.locator("tbody time").count() >= 3
     assert table.evaluate(WRAPPED_TIMES) == []
     # Cells wrap only between words: no heading breaks inside a word, so
@@ -78,13 +82,12 @@ def test_a_desktop_never_wraps_dates(page, component_origin, axe_source, path):
 
 
 def test_outgoing_mail_shows_the_family_name_and_duid_apart(page, component_origin):
-    """Dates lead (#932's order); the name opens the email; the DUID is its
+    """When leads (#932's order); the name opens the email; the DUID is its
     own sortable column, and the name column does not sort."""
     table = open_at(page, component_origin, OUTGOING, 1280)
     headings = table.locator("thead th")
     assert [text.split("\n")[0].strip() for text in headings.all_inner_texts()] == [
-        "Created",
-        "Last changed",
+        "When",
         "Family",
         "Family DUID",
         "Purpose",
@@ -92,21 +95,40 @@ def test_outgoing_mail_shows_the_family_name_and_duid_apart(page, component_orig
         "State",
         "Provider attempts",
     ]
-    assert headings.nth(2).locator(".sort-link").count() == 0
-    assert headings.nth(3).locator(".sort-link").count() == 1
+    assert "sort=created" in headings.nth(0).locator(".sort-link").get_attribute("href")
+    assert headings.nth(1).locator(".sort-link").count() == 0
+    assert "sort=duid" in headings.nth(2).locator(".sort-link").get_attribute("href")
     rows = table.locator("tbody tr")
     assert [rows.nth(i).locator("th").inner_text() for i in range(3)] == [
         "Castellanos, Maximiliana and Bartholomew",
         "Not in current ParishSoft data",
         "Administrator report",
     ]
-    # The DUID cell follows the two times.
-    assert [rows.nth(i).locator("td").nth(2).inner_text() for i in range(3)] == [
+    # The DUID cell follows the When cell.
+    assert [rows.nth(i).locator("td").nth(1).inner_text() for i in range(3)] == [
         "12345",
         "4021",
         "—",
     ]
-    assert rows.nth(0).locator("td").first.locator("time").count() == 1
+    # When: the creation time, then a muted "Changed" and the last change,
+    # each on its own line.
+    when = rows.nth(0).locator("td").first
+    lines = when.locator(".cell-line")
+    assert lines.count() == 2
+    assert lines.nth(0).locator("time").count() == 1
+    assert lines.nth(1).locator("time").count() == 1
+    label = lines.nth(1).locator(".cell-detail")
+    assert label.inner_text() == "Changed"
+    assert label.evaluate("node => getComputedStyle(node).display") == "inline"
+    assert len(lines.nth(1).evaluate("node => [...node.getClientRects()]")) == 1
+    muted = label.evaluate("node => getComputedStyle(node).color")
+    assert muted != when.locator("time").first.evaluate(
+        "node => getComputedStyle(node).color"
+    )
+    # A Family the latest data no longer has reads in the same muted color.
+    gone = rows.nth(1).locator("th .cell-detail")
+    assert gone.inner_text() == "Not in current ParishSoft data"
+    assert gone.evaluate("node => getComputedStyle(node).color") == muted
     assert (
         rows.nth(0)
         .get_by_role("link", name="Castellanos, Maximiliana and Bartholomew")
