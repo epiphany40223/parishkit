@@ -1071,7 +1071,11 @@ shows more than the queue would.
 The sorted summary has Ministry name/DUID, join-request count, leave-request
 count, unresolved count, and follow-up progress. The summary sorts by Ministry
 name or Ministry DUID, and each list by Member name, Member DUID or request
-date ([Admin tables](../admin-portal/spec.md#admin-tables)). Counts use latest live request
+date ([Admin tables](../admin-portal/spec.md#admin-tables)). A Member the Family
+added on the form, with no DUID yet, reads "New Member" in the Member DUID
+column, with "New household member added on the form (not yet in ParishSoft)"
+as its tooltip; the Talents report uses the same words.
+Counts use latest live request
 state while retaining links to superseded/history views.
 
 Each Ministry links to:
@@ -1276,7 +1280,7 @@ Families who cannot attend Mass or prayer services (see
 [Family portal](../parishioner-portal/spec.md#talents-and-cannot-participate)).
 Testing responses are excluded. The Members table shows each listed Member's
 DUID in its own sortable column; a Member the Family added on the form has none
-yet, reads "New Member" and sorts last. Filters are
+yet, reads "New Member" (as in the Ministry report) and sorts last. Filters are
 a name or Family DUID search and one choice of everything, cannot participate,
 cannot attend, or a single talent; a summary counts each. The filtered result
 downloads immediately as CSV (Members, then Families) or XLSX (one sheet each),

@@ -33,7 +33,7 @@
 <caption>{% if collects_talents %}{% translate "Members with talents or limitations" %}{% else %}{% translate "Members who cannot participate in ministries" %}{% endif %}</caption><thead><tr>{% translate "Member" as heading %}{% sort_heading members_table "member" heading %}{% translate "Member DUID" as heading %}{% sort_heading members_table "member_duid" heading "numeric" %}{% translate "Family" as heading %}{% sort_heading members_table "family" heading %}{% if collects_talents %}{% translate "Talents" as heading %}{% sort_heading members_table "talents" heading %}{% endif %}{% translate "Cannot participate in ministries" as heading %}{% sort_heading members_table "cannot_serve" heading %}{% translate "Latest response" as heading %}{% sort_heading members_table "latest" heading %}</tr></thead><tbody>
 {% for row in members_table.rows %}<tr>
 <th scope="row">{{ row.member_name }}{% if row.proposed %}<br>{% translate "Proposed household member" %}{% endif %}</th>
-{% if row.member_duid %}<td class="numeric">{{ row.member_duid|duid }}</td>{% else %}<td>{% translate "New Member" %}</td>{% endif %}
+{% if row.member_duid %}<td class="numeric">{{ row.member_duid|duid }}</td>{% else %}<td><span title="{% translate 'New household member added on the form (not yet in ParishSoft)' %}">{% translate "New Member" %}</span></td>{% endif %}
 <td>{{ row.family_name }}<br>{% translate "DUID" %} {{ row.family_duid }}</td>
 {% if collects_talents %}<td>{% for talent in row.talents %}{{ talent }}{% if not forloop.last %}<br>{% endif %}{% empty %}{% translate "None" %}{% endfor %}</td>{% endif %}
 <td>{% if row.cannot_serve %}{% translate "Yes" %}{% endif %}</td>
