@@ -440,9 +440,9 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   status line: if it brings back a new key change in progress (another
   Administrator started one), the settings form and notes below it keep the
   state the page was loaded with until the next load.
-- **In-place review (#532).** Parish settings and Campaign settings review,
-  apply and follow a change on the page itself, not on separate Review and
-  Change status pages. The settings form is a `form[data-in-place]` marked
+- **In-place review (#532, #750).** Parish settings, Campaign settings,
+  Share options and Campaign Ministries review, apply and follow a change on
+  the page itself, not on separate Review and Change status pages. The settings form is a `form[data-in-place]` marked
   `data-table-sync`: its answer fills the review region under it, while the
   form keeps the reader's typing and every script bound to it and takes only
   its hidden fields (the version it edits) from the answer. The review shows
@@ -456,7 +456,7 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   says to review again. Confirmation answers with the
   page again, naming the request (`?request=<id>#settings-review`), and the
   region shows the change's live status, polled from Change status's passive
-  read (named with `in_place`, which only these two pages may be). Once the
+  read (named with `in_place`, which only the in-place pages may be). Once the
   change is applied, that read carries a hidden follow-up link marked
   `data-in-place` and `data-in-place-quiet`, which the status script clicks,
   so the page refreshes in place without moving focus and the form starts
@@ -513,10 +513,19 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   waits for a change like the other settings forms (#921), with the hint
   "Change an option to review it."; a form redrawn at the same version keeps
   the saved list it is compared with, and the list an applied change is
-  redrawn with (its fresh blank row included) is the saved one. Parish and Campaign
-  settings' forms are never redrawn; until the change is applied, Apply's
-  answer hands them the version it was reviewed at. The other editors keep
-  their review and Change status pages until issue 750 reaches them.
+  redrawn with (its fresh blank row included) is the saved one. Campaign
+  Ministries (#750), a live campaign's Ministry selections, works as Parish
+  and Campaign settings do: its form is `data-table-sync`, its review
+  (the Ministries to add and remove, with what each touches, and the
+  Families with a form open now) fills the review region, and its Review
+  changes waits for a change with the hint "Change a Ministry selection to
+  review it." Once its campaign can no longer change them (closed, or held by
+  background work), an in-place Review, Apply or follow-up says so in the
+  review region, beside the change's status when there is one; a plain load
+  shows the refusal page. Parish and Campaign settings' and Campaign
+  Ministries' forms are never redrawn; until the change is applied, Apply's
+  answer hands them the version it was reviewed at. The other editors keep their review and
+  Change status pages until issue 750 reaches them.
 
 ### No layout shift
 
@@ -708,10 +717,10 @@ running indicator with a plain final "Status unavailable" message
 (`template[data-live-refused]`, `live-status-v1.js`), and a table's Delete
 dialog says the change was saved but its status can't be checked (#952).
 
-Current state, to be made consistent: only Parish settings and Campaign
-settings review, apply and follow the change in place
-([in-place review](#in-place-controls), #532); every other editor still uses
-its separate Review and Change status pages.
+Current state, to be made consistent: Parish settings, Campaign settings, Share
+options and Campaign Ministries review, apply and follow the change in place
+([in-place review](#in-place-controls), #532, #750); every other editor still
+uses its separate Review and Change status pages.
 
 ### Conditional fields
 

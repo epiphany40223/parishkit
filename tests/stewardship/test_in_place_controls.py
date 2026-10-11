@@ -124,6 +124,7 @@ SETTINGS_PAGES = (
     "parish-settings.html",
     "campaign-settings.html",
     "share-settings.html",
+    "campaign-ministries.html",
 )
 HOSTED = {
     "integration-summary.html": ("integration-settings.html",),
