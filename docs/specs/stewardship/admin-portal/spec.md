@@ -4032,6 +4032,24 @@ summary: each section gives a count and links the existing page that lists
 and fixes those problems. Every detail page stays as it is, and Outgoing
 mail keeps its "Review refused addresses" link.
 
+The Administrator settled the page's open questions on 2026-10-11
+([#1011](https://github.com/epiphany40223/parishkit/issues/1011)), and the
+rest of this section follows those decisions:
+
+1. The page name is **Data to fix in ParishSoft**.
+2. It is the last entry of the Parish data menu group, not an entry under
+   Responses and reports.
+3. The sections run: Families the form cannot open, refused email
+   addresses, Families no mail can reach, census and roster changes to
+   enter.
+4. "No mail can reach" means no usable email **and** no usable mailing
+   address (Home's definition); postal-only Families are not counted.
+5. A role sees only the sections whose detail page it can open, so Staff
+   see sections 3 and 4; Staff get no counts for sections 1 and 2.
+6. The menu entry carries no count.
+7. Home does not link the page for now; this is revisited with NAV-18's
+   Next steps.
+
 ### Data to fix page
 
 - **Name:** **Data to fix in ParishSoft**, used by the menu entry, heading,
