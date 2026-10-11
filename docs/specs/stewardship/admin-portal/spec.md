@@ -5458,7 +5458,7 @@ A list of live Admin sessions is a later slice of #953.
 
 ### Activity groups
 
-The Activity choice offers three more groups after Sign-in activity, in this
+The Activity choice offers six more groups after Sign-in activity, in this
 order ([#953](https://github.com/epiphany40223/parishkit/issues/953)). Each
 group is a closed list of types kept in one place, `audit.log_rows.ACTIVITY_TYPES`,
 which `pk-admin logs --activity` shares. Every member is a type the system
@@ -5466,9 +5466,9 @@ writes: an audit `Action`, a directly written audit type, a trigger-built type
 whose closed states `audit.log_descriptions.BUILT_TYPES` lists, or an operational
 entry on the log-writer manifest. Every written type is either in a group or
 in `audit.log_rows.UNGROUPED`, listed under the reason it is left out (for
-example page views, exports, Family portal activity, the campaign lifecycle
-and Production steps, and background-work health and task steps (`task_*`)
-shared by every kind of work). A unit test requires the groups and
+example page views, staff follow-up, the campaign lifecycle and Production
+steps, and background-work health and task steps (`task_*`) shared by every
+kind of work). A unit test requires the groups and
 `UNGROUPED` together to be exactly the written types, so a newly written type
 fails until it is placed. PostgreSQL tests compare each `BUILT_TYPES` list
 with the installed CHECK constraints or functions closing it (`campaign_*`
@@ -5518,6 +5518,30 @@ every `'<prefix>_'||` an installed audit-writing function builds to be a
   `source_provider_failed`, `source_credential_failed`,
   `source_tenant_mismatch`, `source_destructive_change`,
   `source_refresh_held`).
+- **Reports and downloads** (`downloads`, audit records only): reports and
+  exports requested, made, cancelled or downloaded (`export_requested`,
+  `export_cancelled`, `export_downloaded`, every `*_exported`,
+  `weekly_manual_requested`), and the same from the command line
+  (`admin_cmd_export_*`, `admin_cmd_digest_weekly_request`). Opening a report
+  page (`*_viewed`) downloads nothing and is in no group.
+- **Security events** (`security`, audit records only): a settings change that
+  widened access or replaced the backup encryption key
+  (`policy_security_event`, also in Configuration changes, the one type in two
+  groups) and its acknowledgement (`security_event_acknowledged`), automation
+  sessions (`automation_session_approved`, `automation_session_refused`,
+  `automation_session_ended`, `automation_fresh_gate`), restored access
+  (`operator_admin_recovered`, `limiter_recovered`) and the installation's
+  own encryption keys (`credential_key_activated`, `credential_keys_retired`,
+  `credential_cipher_batch_migrated`). Sign-in refusals stay in Sign-in
+  activity, and acknowledging critical or automation notices stays in no
+  group.
+- **Family portal activity** (`family_portal`, audit records only): Families
+  signing in and out and their sessions ending (`family_login`,
+  `family_logout`, `family_session_ended`), responses (`family_submission`,
+  `campaign_first_submission`), invalid links (`family_link_invalid`), Family
+  links prepared or replaced (`family_tokens_*`, `family_link_rotated`,
+  `family_link_population_extended`) and the portal closed for maintenance
+  (`family_maintenance_started`, `family_maintenance_ended`).
 
 Time limits are not in ParishSoft refreshes: `task_timed_out` and the other
 timeout types are shared by every kind of background work, so a type list
@@ -5527,10 +5551,12 @@ not the task it retried. Types written only to
 the process log, such as `go_live_refresh_held` and
 `refresh_lead_window_conflict`, never reach this page and are in no group.
 
-Sign-in activity and Configuration changes are audit records only, and behave
-as [Sign-in activity](#sign-in-activity) describes: the level boxes are greyed
-and Apply waits for Audit record. Family mail and ParishSoft refreshes hold
-operational entries too, so the level boxes stay available and the Show
+Every group but Family mail and ParishSoft refreshes is audit records only,
+and behaves as [Sign-in activity](#sign-in-activity) describes: the level
+boxes are greyed and Apply waits for Audit record. Which groups hold
+operational entries is named in `audit.log_rows.OPERATIONAL_ACTIVITIES`, and a
+unit test compares it with the groups' members on the log-writer manifest.
+Family mail and ParishSoft refreshes hold operational entries too, so the level boxes stay available and the Show
 choices apply to their operational members as to any entry
 (`data-enabled-when` and `data-required-when` list alternatives,
 [conditional fields](../ui-conventions/spec.md#conditional-fields)). Every
