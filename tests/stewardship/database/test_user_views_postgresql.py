@@ -499,6 +499,30 @@ def test_the_definer_answers_only_a_live_administrator_session(converted):
     assert lookups().count() == 1
 
 
+def test_a_session_from_before_a_recovery_is_refused(converted):
+    """An offline recovery after the session began ends its lookups.
+
+    The recovery epoch sessions.py checks, done in SQL: the row stays
+    unrevoked here (the recovery's own trigger would revoke it), so only the
+    definer's recovery check refuses it.
+    """
+    _store, _browser = converted
+    key = live_key()
+    with unguarded(), connection.cursor() as cursor:
+        cursor.execute(
+            "INSERT INTO stewardship_admin_revocation "
+            "(id, created_at, actor_id, correlation_id, activation_id) "
+            "VALUES (%s, clock_timestamp(), NULL, %s, %s)",
+            [uuid4(), uuid4(), uuid4()],
+        )
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        pytest.raises(DatabaseError, match="live Administrator session"),
+    ):
+        member_names(key, "x@example.org")
+    assert lookups().count() == 0
+
+
 def test_a_staff_session_is_refused(auth_service, google):
     """Staff has a live Admin session but is not an Administrator."""
     grant_role(auth_service.store, "reader@example.org", "staff")
