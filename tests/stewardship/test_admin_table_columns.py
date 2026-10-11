@@ -8,7 +8,8 @@ copies badly into a spreadsheet, so this guard refuses one in any Admin
 template, except the tables a later slice of #932 (or the issue named) still
 has to split. A second check reads each table's column headings: every DUID
 heading is "Family DUID", "Member DUID" or "Ministry DUID" and sits right
-after the name it identifies.
+after the name it identifies. A third holds the shared ``numeric`` class on
+every DUID heading and every cell that prints only a DUID.
 """
 
 import re
@@ -55,10 +56,9 @@ HEADING = re.compile(
 )
 LABEL = re.compile(r'\{% translate "([^"]+)" %\}')
 # Each DUID heading and the name headings it may follow. Census changes'
-# Member column is headed Who; Go-live's Family column still reads "Family
-# name" (#932 inventory).
+# Member column is headed Who.
 NAMED_BY = {
-    "Family DUID": {"Family", "Family name"},
+    "Family DUID": {"Family"},
     "Member DUID": {"Member", "Who"},
     "Ministry DUID": {"Ministry"},
 }
@@ -67,6 +67,47 @@ APART = {
     ("source-form.html", "Member DUID"): "UX conventions: the name may be the "
     "refused value, so Families the form cannot open shows no Member name",
 }
+
+
+# A sort heading's label, then the markup up to the next label or the row's
+# end. In it, the sort_heading tags given that label (``heading``) and the
+# plain headings that print it are the label's column headings (the
+# Ministry report picks one of the two); a loop's own headings are not.
+LABELLED_HEADING = re.compile(
+    r'\{% translate "([^"]+)" as heading %\}(.*?)'
+    r'(?=\{% translate "[^"]+" as heading %\}|</tr>|</thead>|\Z)',
+    re.DOTALL,
+)
+SORT_TAG = re.compile(r"\{% sort_heading \S+ \"[^\"]+\" heading\b[^%]*%\}")
+REPEATED = re.compile(r"<th\b[^>]*>\{\{ heading \}\}")
+# A plain DUID column heading, and its attributes.
+PLAIN_DUID = re.compile(
+    r'<th\b([^>]*)>\{% translate "(?:Family|Member|Ministry) DUID" %\}'
+)
+# A cell that prints only a DUID (a ``*duid`` variable, optionally through
+# the ``duid`` filter), and its attributes.
+LONE_DUID = re.compile(r"<td\b([^>]*)>\{\{\s*[\w.]*duid\s*(?:\|\s*duid\s*)?\}\}</td>")
+
+
+def unaligned(text):
+    """Each DUID heading or lone-DUID cell in ``text`` without ``numeric``.
+
+    A sort heading names its classes as the tag's last argument, a plain
+    heading or cell in its ``class`` attribute; either way the word
+    "numeric" must be there.
+    """
+    found = []
+    for match in LABELLED_HEADING.finditer(text):
+        if "DUID" in match.group(1):
+            tags = SORT_TAG.findall(match.group(2)) + REPEATED.findall(match.group(2))
+            found += [tag for tag in tags if "numeric" not in tag]
+    for pattern in (PLAIN_DUID, LONE_DUID):
+        found += [
+            match.group(0)
+            for match in pattern.finditer(text)
+            if "numeric" not in match.group(1)
+        ]
+    return found
 
 
 def combined(cell):
@@ -132,6 +173,46 @@ def test_each_duid_heading_follows_its_name(path):
                 continue
             assert label in NAMED_BY, labels
             assert index and labels[index - 1] in NAMED_BY[label], labels
+
+
+@pytest.mark.parametrize(
+    "path",
+    sorted(TEMPLATES.rglob("*.html")),
+    ids=lambda path: path.relative_to(TEMPLATES).as_posix(),
+)
+def test_duid_headings_and_cells_are_numeric(path):
+    """Every DUID heading and lone-DUID cell carries the shared ``numeric``
+    class, so DUIDs line up as numbers in every table (UX conventions)."""
+    assert unaligned(path.read_text(encoding="utf-8")) == []
+
+
+@pytest.mark.parametrize(
+    ("text", "found"),
+    [
+        ('{% translate "Family DUID" as heading %}{% sort_heading t "d" heading %}', 1),
+        (
+            '{% translate "Family DUID" as heading %}'
+            '{% sort_heading t "d" heading "numeric" %}',
+            0,
+        ),
+        (
+            '{% translate "Ministry DUID" as heading %}{% if one %}<th scope="col">'
+            '{{ heading }}</th>{% else %}{% sort_heading t "d" heading "numeric" %}'
+            '{% endif %}<th scope="col">{% translate "Joining" %}</th></tr>',
+            1,
+        ),
+        ('{% translate "Family" as heading %}{% sort_heading t "f" heading %}', 0),
+        ('<th scope="col">{% translate "Member DUID" %}</th>', 1),
+        ('<th scope="col" class="numeric">{% translate "Member DUID" %}</th>', 0),
+        ("<td>{{ row.family_duid|duid }}</td>", 1),
+        ("<td>{{ row.member_duid }}</td>", 1),
+        ('<td class="numeric nowrap">{{ refusal.family_duid|duid }}</td>', 0),
+        ("<td>{{ row.name }}</td>", 0),
+    ],
+)
+def test_guard_finds_unaligned_duids(text, found):
+    """The alignment check catches each unaligned form and spares the rest."""
+    assert len(unaligned(text)) == found
 
 
 @pytest.mark.parametrize(

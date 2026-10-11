@@ -23,13 +23,13 @@ def test_long_family_names_fit_the_page(page, component_origin, width):
 
 
 def test_the_name_heading_sorts_in_place(page, component_origin):
-    """Family name sorts A-Z, then Z-A, in place; the page never reloads."""
+    """Family sorts A-Z, then Z-A, in place; the page never reloads."""
     page.goto(component_origin + PATH)
     page.evaluate(MARK)
     region = page.locator("#table")
-    region.get_by_role("link", name="Family name (sort ascending)").click()
+    region.get_by_role("link", name="Family (sort ascending)").click()
     has_attribute(sort_heading(page, "name"), "aria-sort", "ascending")
     has_text(page.locator(NAMES).nth(1), "Abbott, Christopher and Mary-Katherine")
-    region.get_by_role("link", name="Family name (sort descending)").click()
+    region.get_by_role("link", name="Family (sort descending)").click()
     has_text(page.locator(NAMES).first, "Squyres, Tracy and Jeff")
     assert page.evaluate(MARKED) == "kept"

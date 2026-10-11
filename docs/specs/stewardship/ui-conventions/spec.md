@@ -1246,8 +1246,9 @@ lists by name with the exact number of such cells each holds. Every DUID
 column heading and every cell that holds only a DUID carries the shared
 `numeric` class, so DUIDs line up as numbers wherever a table aligns them; a
 cell that holds words instead (such as "New Member" with its note) does not.
-A second guard test checks this, except in the tables a later slice of #932
-aligns.
+A guard test in the same file checks every Admin template for this: a DUID
+sort heading passes `numeric`, and a plain DUID heading or a cell that prints
+only a DUID has it in its `class`.
 
 The same file also reads every table's column headings: each heading that
 names a DUID is one of the three above and comes right after its name's
