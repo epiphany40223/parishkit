@@ -303,6 +303,12 @@ def test_messages_above_the_edited_control_do_not_move_it(page, component_origin
         page.evaluate("window.scrollY") + top(field) - 300,
     )
     assert page.evaluate("window.scrollY") > message.bounding_box()["height"]
+    # The reader points at the field they edit. Without this the pointer is
+    # left to chance: headless Chromium on Linux sometimes sends a
+    # pointermove at (0, 0) while the page loads, and the editor then rightly
+    # keeps what is at the top of the screen in place instead of the field
+    # (#1012).
+    field.hover()
     # Measured once typed, before the check answers (it waits for a pause).
     field.fill("23:30")
     before = top(field)
