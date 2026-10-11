@@ -9,7 +9,8 @@
 <p><a href="{% url 'admin:hosted_files' %}">{% translate "Return to Hosted files" %}</a></p>
 {% else %}
 <p>{% translate "The file's link stays the same; only the name used in placeholders changes." %}</p>
-<form method="post" class="panel">{% csrf_token %}{{ form.as_div }}
-{% button type="submit" %}{% translate "Change name" %}{% endbutton %} <a href="{% url 'admin:hosted_files' %}">{% translate "Cancel" %}</a></form>
+<form method="post" class="panel" data-require-complete data-missing-hint="{% translate 'Type the new placeholder name.' %}">{% csrf_token %}{{ form.as_div }}
+{% button type="submit" aria-describedby="hosted-file-rename-hint" %}{% translate "Change name" %}{% endbutton %} <a href="{% url 'admin:hosted_files' %}">{% translate "Cancel" %}</a>
+<p class="help" id="hosted-file-rename-hint" data-complete-hint="reserve"></p></form>
 {% endif %}
 {% endblock %}

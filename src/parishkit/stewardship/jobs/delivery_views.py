@@ -361,6 +361,15 @@ def _available():
         raise ObjectDoesNotExist("Delivery pages are withheld.")
 
 
+# The retry offered_actions (delivery_reads) gives each retryable state.
+RETRY_ACTIONS = {
+    "delivery_unknown": "resend",
+    "permanent_failure": "retry_failed",
+    "pending": "retry_unsent",
+    "retry_wait": "retry_unsent",
+}
+
+
 @require_safe
 def delivery_detail(request, message_id):
     """Immutable attempt metadata is distinct from the latest Task execution."""
@@ -388,6 +397,11 @@ def delivery_detail(request, message_id):
             task=data["task"],
             notes=data["notes"],
             retry_unavailable=data["retry_unavailable"],
+            # The retry the page would offer, shown unavailable with why
+            # while the resend admission refuses it (#563).
+            retry_label=ACTION_LABELS[RETRY_ACTIONS[delivery["state"]]]
+            if data["retry_unavailable"]
+            else None,
             decisions=any(action != "note" for action in data["actions"]),
             commands=[
                 dict(action=action, label=ACTION_LABELS[action], id=uuid4())

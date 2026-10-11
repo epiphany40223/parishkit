@@ -580,7 +580,13 @@ def test_cancel_go_live_blocking_message_links_the_pages_it_names():
     assert f'<a href="{controls}">Pause and resume mail</a>' in html
     assert f'<a href="{outgoing}">Outgoing mail</a>' in html
     assert "<h1>Cancel go-live</h1>" in html
-    assert "Confirm cancelling go-live" not in html
+    # Confirm is shown unavailable, named by the blocking message (#563),
+    # with no form that could post it.
+    assert 'value="confirm"' not in html
+    assert (
+        'disabled aria-describedby="withdrawal-blocked">Confirm cancelling go-live'
+        in html
+    )
 
 
 @pytest.mark.parametrize("key", sorted(SETUP))

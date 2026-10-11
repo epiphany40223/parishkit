@@ -97,7 +97,12 @@ def test_dates_are_days_in_the_browser_zone(
 def test_dates_wait_for_a_known_browser_zone(
     page, component_origin, path, note_id, hint_id, ministry, reported
 ):
-    """Without a zone Apply waits, with a plain hint, only while a date is set."""
+    """Without a zone Apply waits, with a plain hint, only while a date is set.
+
+    The hint's line is reserved (data-complete-hint="reserve", #563): it is
+    always in the layout and only empty when Apply is available, so the hint
+    appearing never moves what follows it (UX conventions, no layout shift).
+    """
     # Init scripts run before the page's own and are not subject to its CSP.
     page.add_init_script(
         """{
@@ -110,7 +115,7 @@ def test_dates_wait_for_a_known_browser_zone(
     page.goto(component_origin + path)
     apply = page.get_by_role("button", name="Apply filters")
     hint = page.locator(f"#{hint_id}")
-    assert apply.is_enabled() and not hint.is_visible()
+    assert apply.is_enabled() and hint.is_visible() and hint.inner_text() == ""
     assert page.locator("#table-filters [name=zone]").input_value() == ""
     assert not page.locator(f"#{note_id}").is_visible()
     for label in ("Submitted on or after", "Submitted on or before"):
@@ -120,7 +125,7 @@ def test_dates_wait_for_a_known_browser_zone(
         assert apply.is_disabled()
         has_text(hint, ZONE_HINT)
         field.fill("")
-        assert apply.is_enabled() and not hint.is_visible()
+        assert apply.is_enabled() and hint.is_visible() and hint.inner_text() == ""
 
 
 @pytest.mark.parametrize(

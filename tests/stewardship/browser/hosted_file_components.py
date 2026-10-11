@@ -32,6 +32,19 @@ REFUSAL = "A chosen file is now used by a page, an email or unsent mail."
 POSTS = {}
 
 
+def limited_form():
+    """An upload form whose file may be at most 2,000 bytes (#563)."""
+    form = UploadForm()
+    form.fields["file"].widget.attrs |= {
+        "data-max-bytes": 2000,
+        "data-max-bytes-message": ROOM,
+    }
+    return form
+
+
+ROOM = "This file is larger than the room left in the library."
+
+
 def components(context, admin):
     """The library with one used document and one unused image."""
 
@@ -143,6 +156,21 @@ def components(context, admin):
         BULK: page(rows, f"{BULK}-deleted"),
         f"{BULK}-deleted": page([guide], f"{BULK}-deleted"),
         REFUSED: page(rows, REFUSED, action=f"{DELETE}?refused"),
+        # A library with 2,000 bytes of room, and a full one (#563).
+        f"{LIBRARY}-limits": (
+            "text/html",
+            render_to_string(
+                "stewardship/hosted-files.html",
+                library | {"form": limited_form(), "refresh_url": f"{LIBRARY}-limits"},
+            ),
+        ),
+        f"{LIBRARY}-full": (
+            "text/html",
+            render_to_string(
+                "stewardship/hosted-files.html",
+                library | {"library_full": True, "refresh_url": f"{LIBRARY}-full"},
+            ),
+        ),
         by_name: (
             "text/html",
             render_to_string(

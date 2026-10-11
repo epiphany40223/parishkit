@@ -37,7 +37,8 @@ Admin evidence already recorded.{% endcomment %}
   <p>{% translate "Automatic retries have stopped. The mail service cannot tell us whether this email arrived, and sending it again could give the recipient a second copy. Check other evidence first, such as the sending mailbox's Sent folder or asking the recipient, then choose one of the actions below." %}</p>
 </aside>
 {% endif %}
-{% if commands and retry_unavailable %}<p class="notice">{% translate "Retry is not available right now. It needs the campaign to be open, campaign email not paused, up-to-date ParishSoft data, and no other email already covering this one." %}</p>{% endif %}
+{% if commands and retry_unavailable %}<p class="notice" id="retry-unavailable">{% translate "Retry is not available right now. It needs the campaign to be open, campaign email not paused, up-to-date ParishSoft data, and no other email already covering this one." %}</p>
+{# The retry stays in view, unavailable and named by that reason (#563). #}<p>{% button type="button" disabled=True aria-describedby="retry-unavailable" %}{{ retry_label }}{% endbutton %}</p>{% endif %}
 {% comment %}The forms show only when a decision is available (#1015): the
 "Resolve this email" section when an action other than a bare evidence note
 is offered; otherwise, when only the note is, a closed disclosure, since a

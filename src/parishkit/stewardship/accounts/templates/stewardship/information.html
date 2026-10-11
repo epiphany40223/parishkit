@@ -9,7 +9,7 @@
 <p>{% translate "Family DUID is the Family's ID number in ParishSoft, shown in its own column so you can copy it." %}</p>{% endaboutpage %}
 <p>{{ metadata.name }}</p>
 <p><a href="{% url 'admin:participation' %}">{% translate "Participation" %}</a></p>
-{% if not mutable %}<p class="notice">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so follow-up edits are unavailable until it finishes or is cancelled; going live can take days. You can still read the requests and their history." %}</p>{% endif %}
+{% if not mutable %}<p class="notice" id="information-locked">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so follow-up edits are unavailable until it finishes or is cancelled; going live can take days. You can still read the requests and their history." %}</p>{% endif %}
 {% if item %}
 <div id="information-item" data-in-place-region>
 <h2>{{ item.family_name }} — {% translate "Family DUID" %} {{ item.family_duid|duid }}</h2>
@@ -27,9 +27,9 @@
 <label><input type="checkbox" name="followed_up" value="yes"{% if item.followed_up_at %} checked{% endif %}> {% translate "Follow-up completed" %}</label>
 {% if item.followed_up_at %}<div data-show-when="followed_up!=yes" data-required-when-shown="confirm_clear" data-missing-hint="{% translate 'Tick the confirmation to reopen this follow-up.' %}"><label><input type="checkbox" name="confirm_clear" value="yes"> {% translate "If clearing completion, I confirm that this work should be reopened. The previous completion stays in history." %}</label></div>{% endif %}
 <label for="staff-notes">{% translate "Staff notes" %}</label><textarea id="staff-notes" name="notes" maxlength="5000" rows="6">{{ item.notes }}</textarea>
-<div class="actions">{% button type="submit" id="information-save" aria-describedby="information-save-hint" %}{% translate "Save follow-up" %}{% endbutton %}
+<div class="actions">{% button type="submit" id="information-save" aria-describedby=mutable|yesno:"information-save-hint,information-save-hint information-locked" %}{% translate "Save follow-up" %}{% endbutton %}
 {# Save and next answers with the next item's page, which replaces this panel in place (data-in-place-moves, #534). The two branches differ only in that attribute (the button tag takes no conditional attribute name). #}
-{% translate 'Follow-up saved.' as saved_message %}{% if next_id %}{% button type="submit" id="information-save-next" variant="secondary" name="then" value="next" data-in-place-moves data-in-place-message=saved_message aria-describedby="information-save-hint information-next-help" %}{% translate "Save and next" %}{% endbutton %}{% else %}{% button type="submit" id="information-save-next" variant="secondary" name="then" value="next" data-in-place-native data-in-place-message=saved_message aria-describedby="information-save-hint information-next-help" %}{% translate "Save and next" %}{% endbutton %}{% endif %}</div>
+{% translate 'Follow-up saved.' as saved_message %}{% if next_id %}{% button type="submit" id="information-save-next" variant="secondary" name="then" value="next" data-in-place-moves data-in-place-message=saved_message aria-describedby=mutable|yesno:"information-save-hint information-next-help,information-save-hint information-next-help information-locked" %}{% translate "Save and next" %}{% endbutton %}{% else %}{% button type="submit" id="information-save-next" variant="secondary" name="then" value="next" data-in-place-native data-in-place-message=saved_message aria-describedby=mutable|yesno:"information-save-hint information-next-help,information-save-hint information-next-help information-locked" %}{% translate "Save and next" %}{% endbutton %}{% endif %}</div>
 <p class="help" id="information-next-help">{% if next_id %}{% translate "Save and next saves this request and opens the next request in your Additional information list whose follow-up isn't completed." %}{% else %}{% translate "No requests needing follow-up come after this one in your Additional information list, so Save and next saves it and returns to the list." %}{% endif %}</p>
 <p class="help" id="information-save-hint" data-complete-hint hidden></p></fieldset></form>
 {# The history pages in place by itself (data-in-place-only), so it never replaces the form above or what the reader has typed; a Save still refreshes the whole panel (#519). #}
@@ -49,7 +49,7 @@
 {% else %}
 {# The remembered view's address, which ui-v1.js puts in the address bar after an in-place filter, sort or page change (#534). #}
 {% if queue_token %}<span hidden data-queue-address="{% url 'admin:information_queue' %}?queue={{ queue_token }}"></span>{% endif %}
-<form id="table-filters" data-table-sync method="post" action="{% url 'admin:information_queue' %}" data-require-complete data-missing-hint="{% translate 'Correct the filters to apply them.' %}">{% csrf_token %}
+{% comment %}The complete gate holds Apply while a filter is malformed or out of order (#563), its hint in a reserved line after the button so nothing moves; the server still checks each.{% endcomment %}<form id="table-filters" data-table-sync method="post" action="{% url 'admin:information_queue' %}" data-require-complete data-missing-hint="{% translate 'Correct the filters to apply them.' %}">{% csrf_token %}
 {% comment %}The browser's time zone, filled by ui-v1.js (#558): the server places the submitted dates in it. Without a known zone the dates are marked invalid, so Apply waits while a date is entered.{% endcomment %}<input type="hidden" name="zone" value="{{ query.zone }}" data-browser-zone data-zone-missing-hint="{% translate "Your browser didn't report a time zone, so these dates can't be used. Clear the dates, or check your computer's time zone setting." %}">
 <label for="info-search">{% translate "Search Family name, DUID, submitted text or Staff notes" %}</label><input id="info-search" name="search" maxlength="200" value="{{ query.search }}">
 <label for="disposition">{% translate "Request history" %}</label><select id="disposition" name="disposition">
@@ -60,11 +60,11 @@
 <label for="needed">{% translate "Follow-up needed" %}</label><select id="needed" name="needed"><option value="any">{% translate "Any" %}</option><option value="yes"{% if query.needed == 'yes' %} selected{% endif %}>{% translate "Yes" %}</option><option value="no"{% if query.needed == 'no' %} selected{% endif %}>{% translate "No" %}</option></select>
 <label for="completed">{% translate "Follow-up completed" %}</label><select id="completed" name="completed"><option value="any">{% translate "Any" %}</option><option value="yes"{% if query.completed == 'yes' %} selected{% endif %}>{% translate "Yes" %}</option><option value="no"{% if query.completed == 'no' %} selected{% endif %}>{% translate "No" %}</option></select>
 <div data-missing-hint="{% translate 'Enter a whole date, or clear it.' %}"><label for="start">{% translate "Submitted on or after" %}</label><input id="start" type="date" name="start" value="{{ query.start }}" aria-describedby="information-zone-help" data-browser-zone-field></div>
-<div data-missing-hint="{% translate 'Enter a whole date, or clear it.' %}"><label for="end">{% translate "Submitted on or before" %}</label><input id="end" type="date" name="end" value="{{ query.end }}" aria-describedby="information-zone-help" data-browser-zone-field></div>
+<div data-missing-hint="{% translate 'Enter a whole date, or clear it.' %}"><label for="end">{% translate "Submitted on or before" %}</label><input id="end" type="date" name="end" value="{{ query.end }}" data-not-before="start" data-missing-hint="{% translate 'Enter a Submitted on or before date no earlier than Submitted on or after, or clear it.' %}" data-order-hint="{% translate 'Enter a Submitted on or before date no earlier than Submitted on or after, or clear it.' %}" aria-describedby="information-zone-help" data-browser-zone-field></div>
 <p class="help" id="information-zone-help" data-browser-zone-note hidden>{% translate "The dates are days in this computer's time zone:" %} <span data-browser-zone-name></span>.</p>
 {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
 {% button type="submit" aria-describedby="information-filter-hint" %}{% translate "Apply filters" %}{% endbutton %}
-<p class="help" id="information-filter-hint" data-complete-hint hidden></p></form>
+<p class="help" id="information-filter-hint" data-complete-hint="reserve"></p></form>
 <p id="information-matching" data-table-sync>{% translate "Matching requests:" %} {{ total|number }}.</p>
 <section aria-labelledby="information-export-heading">
 <h2 id="information-export-heading">{% translate "Export complete results" %}</h2>
@@ -77,7 +77,7 @@
 <label for="information-format">{% translate "Export format" %}</label><select id="information-format" name="format"><option value="csv">CSV</option><option value="xlsx">XLSX</option><option value="pdf">PDF</option></select>{% include 'stewardship/export-dates-help.html' %}
 <div class="label-row"><label for="information-export-timezone" id="information-export-timezone-label">{% translate "Export timezone" %}</label>{% translate "Your browser's time zone is selected when your browser allows it; otherwise UTC is selected. You can change it before exporting." as tip %}{% include "stewardship/components/toggletip.html" with tip_id="information-export-timezone-tip" tip_label_id="information-export-timezone-label" tip_text=tip %}</div><select id="information-export-timezone" name="browser_timezone" data-information-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
 <label><input type="checkbox" name="history" value="yes"> {% translate "Include complete Staff workflow history" %}</label>
-{% button type="submit" %}{% translate "Queue complete export" %}{% endbutton %}</fieldset></form></section>
+{% button type="submit" aria-describedby=mutable|yesno:",information-locked" %}{% translate "Queue complete export" %}{% endbutton %}</fieldset></form></section>
 <script src="{% static 'stewardship/information-export-v1.js' %}" defer></script>
 <div id="{{ table.anchor }}" data-table-region>
 {% translate "Information result pages" as navigator_label %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
