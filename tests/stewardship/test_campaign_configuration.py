@@ -12,6 +12,8 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.configuration_schema import validator_for
 from parishkit.stewardship.accounts.request_patch import build_candidate
 from parishkit.stewardship.campaigns.configuration import (
+    REMINDER_WORKGROUP_NAME,
+    REMINDER_WORKGROUP_SLUG,
     ROLE_NAME_LIMIT,
     campaign_values,
     leader_role_key,
@@ -329,6 +331,14 @@ def test_reminder_workgroup_name_is_bounded_trimmed_text(value):
     """The optional Reminder WorkGroup (#861) is a trimmed name, else absent."""
     with pytest.raises(ConfigError):
         campaign_values(campaign(reminder_workgroup=value)["values"])
+
+
+def test_reminder_workgroup_displayed_name_and_slug():
+    """The displayed name (#1061) is not the retired one, and its slug is a
+    plain lowercase, hyphenated URL segment and CLI subcommand name."""
+    assert "Reminder WorkGroup" not in REMINDER_WORKGROUP_NAME
+    assert re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", REMINDER_WORKGROUP_SLUG)
+    assert REMINDER_WORKGROUP_SLUG == "no-reminders-workgroup"
 
 
 def test_reminder_workgroup_is_set_and_cleared_by_patch():

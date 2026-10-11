@@ -44,7 +44,7 @@
       <dt>{% translate "Cancelled" %}</dt><dd>{% include "stewardship/family-email-send-outcome.html" with outcome=row.cancelled %}</dd>
       <dt>{% translate "Not needed" %}</dt><dd>{{ row.send.counts.not_needed|number }}</dd>
       <dt>{% translate "Couldn't be emailed" %}</dt><dd>{{ row.send.counts.unreachable|number }}</dd>
-      <dt>{% translate "Skipped: Reminder WorkGroup" %}</dt><dd>{{ row.send.counts.workgroup|number }}</dd>
+      <dt>{% reminder_workgroup_name as workgroup %}{% blocktranslate %}Skipped: {{ workgroup }}{% endblocktranslate %}</dt><dd>{{ row.send.counts.workgroup|number }}</dd>
       <dt>{% translate "Held" %}</dt><dd>{{ row.send.counts.waiting|number }}</dd>
     </dl></td>
   </tr>{% empty %}<tr><td colspan="7">{% translate "No invitation or reminder has been sent in this campaign yet." %}</td></tr>{% endfor %}
