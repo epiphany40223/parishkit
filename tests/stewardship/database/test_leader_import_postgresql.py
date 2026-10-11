@@ -331,12 +331,15 @@ def test_the_page_lists_the_leaders_below_the_users(deployment):
     assert "Ministry leader" in region
     # Leaders with no usable address are counted in a muted line.
     assert "1 ParishSoft Ministry leader has no email address" in region
-    # The bulk bar: Import selected waits for a tick, its visible reason in a
-    # reserved line; Import all is available.
+    # The bulk bar: Import selected waits for a tick, its visible reason in
+    # the shared bar's reserved line (table-selection.html, which ui-v1.js
+    # fills from the table's hint); Import all is available.
     assert re.search(r"data-bulk-action[^>]*>Import selected", region)
     assert (
-        'id="leaders-import-reason" data-selection-reason>Select at least one' in region
+        'data-missing-hint="Select at least one leader to use Import selected."'
+        in region
     )
+    assert 'data-selection-hint id="leaders-import-reason"' in region
     assert re.search(r'value="all"\s*>Import all', region)
     # Server sorting with its own prefix, and only its own tokens.
     by_email = leaders_region(page(browser, USERS + "?leaders_sort=-email"))
@@ -446,7 +449,8 @@ def test_import_all_and_nothing_left(deployment):
         r"\s*>Import all",
         region,
     )
-    assert "Nothing to import" in region
+    # The shared reason line carries the empty-table reason.
+    assert 'data-empty-hint="Nothing to import:' in region
     with web():
         response = post(browser, IMPORT, {"scope": "all"})
     text = response.content.decode()

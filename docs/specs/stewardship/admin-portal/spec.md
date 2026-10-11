@@ -3838,10 +3838,11 @@ Import never changes an existing user, never grants more than Ministry
 leader, and so raises no security alert; the last-Administrator guard is
 unaffected. Each imported Name stays editable on that user's Edit page.
 
-The bulk bar follows the [shared pattern](../ui-conventions/spec.md#admin-tables):
-while no row is ticked, "Select at least one leader to import." is visible
-text in a reserved line under the buttons; with no row at all, both buttons
-are unavailable and that line says there is nothing to import. One change
+The bulk bar is the [shared one](../ui-conventions/spec.md#admin-tables):
+while no row is ticked, its reserved reason line under the buttons says
+"Select at least one leader to use Import selected."; with no row at all,
+both buttons are unavailable and the same line says there is nothing to
+import. One change
 adds at most 100 users, the limit of one configuration request; when more
 are chosen, the review imports the first 100 by Name and says how many
 remain for another import. Posted addresses only choose among the rows the
