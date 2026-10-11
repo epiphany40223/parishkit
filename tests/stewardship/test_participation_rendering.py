@@ -168,6 +168,16 @@ def test_png_plot_box_is_the_hit_test_layout(email):
             (layout["left"], layout["right"], layout["bottom"], layout["top"])
         )
         assert tuple(figure.get_size_inches() * figure.dpi) == (1440, 840)
+        # The legend and note sit where they did before #926, too.
+        [legend] = figure.legends
+        anchor = legend.get_bbox_to_anchor().transformed(figure.transFigure.inverted())
+        assert (anchor.x0, anchor.y0) == pytest.approx((0.5, 0.99 if email else 0.805))
+        assert legend.get_texts()[0].get_fontsize() == (11 if email else 8)
+        assert legend.get_frame_on() is not email
+        note = figure.texts[-2 if not email else -1]
+        assert note.get_position() == pytest.approx((0.09, 0.055))
+        texts = [text.get_text() for text in figure.texts]
+        assert (f"{RENDERER_VERSION} · Page 1" in texts) is not email
 
 
 def test_family_axis_top_uses_the_larger_series_and_skips_gaps():

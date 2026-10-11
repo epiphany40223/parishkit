@@ -65,8 +65,10 @@ def pdf_layout(frame):
 
     The legend row sits at the top of the body. Under the plot there is room
     for the rotated date ticks, the axis label and the gap note, which sits
-    on the body's last line. The left and right margins hold the two value
-    axes' tick labels and titles.
+    on the body's last line. The left and right sides are only a first
+    guess: ``_fit_to_margins`` then moves them so the value axes' tick
+    labels and titles and the first rotated date end exactly at the page
+    margins, however wide the numbers are.
     """
 
     def down(points):
@@ -88,6 +90,30 @@ def pdf_layout(frame):
         furniture=False,
         zone_label=True,
     )
+
+
+def _fit_to_margins(figure):
+    """Move the PDF plot's sides so everything it draws meets the margins.
+
+    The widths of the value axes' tick labels (a $10,000,000 pledge total,
+    a 4-digit Family count) and of the first rotated date label are only
+    known once drawn, so measure the axes' full extents and shift the plot
+    box by the overflow or slack on each side. The figure is at 72 dpi, so
+    pixels are PDF points. A second pass settles the small change in the
+    first date label's offset when the plot width changes.
+    """
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+
+    renderer = FigureCanvasAgg(figure).get_renderer()
+    width = pdf_design.PAGE_WIDTH
+    for _ in range(2):
+        left = min(axes.get_tightbbox(renderer).x0 for axes in figure.axes)
+        right = max(axes.get_tightbbox(renderer).x1 for axes in figure.axes)
+        params = figure.subplotpars
+        figure.subplots_adjust(
+            left=params.left + (pdf_design.MARGIN - left) / width,
+            right=params.right + (width - pdf_design.MARGIN - right) / width,
+        )
 
 
 def pdf_frame(document):
@@ -160,9 +186,11 @@ def participation_figure(document, *, email=False, pdf=False):
 
     with rendering_style():
         if pdf:
+            # 72 dpi, the PDF's own resolution, so measured extents are
+            # points and match the saved page.
             figure = Figure(
                 figsize=(pdf_design.PAGE_WIDTH / 72, pdf_design.PAGE_HEIGHT / 72),
-                dpi=120,
+                dpi=72,
                 facecolor="white",
             )
         else:
@@ -175,6 +203,8 @@ def participation_figure(document, *, email=False, pdf=False):
             else:
                 layout = EMAIL_LAYOUT if email else PAGE_LAYOUT
             _draw(figure, document, layout)
+            if pdf:
+                _fit_to_margins(figure)
             yield figure
         finally:
             figure.clear()
