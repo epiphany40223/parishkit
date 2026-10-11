@@ -676,7 +676,7 @@ button unavailable until every visible required field is complete, with a
 short hint by the button saying what is missing (`data-require-complete` in
 the page script; first used by
 [Ministry follow-up](../admin-portal/spec.md#follow-up-workflows), #553). Fields required only in
-some states are required only while shown. A required text field holding
+some states are required only while shown (not hidden or greyed). A required text field holding
 only spaces counts as empty, as the server trims it: the reason for
 cancelling go-live and the evidence notes on Mail delivery and delivery
 refusal pages use this gate, as does the typed "Production" confirmation
@@ -762,7 +762,7 @@ server can check (an outcome that doesn't fit the request, for example)
 clears from its field, with its message, on the first edit of that field,
 since the server checks again on save; an error that marks two fields (a
 date and a time) clears from both when either is edited. A field that a
-choice hides is not sent, so its marks clear too. Leaving a field without
+choice hides or greys is not sent, so its marks clear too. Leaving a field without
 changing it clears nothing. The summary loses the item for a field that
 clears, and goes once it lists nothing. This applies to every Admin form,
 Django-rendered ones included, through the shared page script.
@@ -802,8 +802,8 @@ uses its separate Review and Change status pages.
 ### Conditional fields
 
 **Rule.** A field is shown only when it is relevant to the choices already
-made, and is required only while shown. A hidden field is not sent, and its
-errors clear. **Why.** Fields that do not apply invite wrong answers and make
+made, and is required only while shown. A hidden or greyed field is not
+sent, and its errors clear. **Why.** Fields that do not apply invite wrong answers and make
 a form look longer than it is. **Shared code.** `ui-v1.js`: `data-show-when`,
 `data-required-when`, `data-required-when-shown`; re-applied on `pageshow`
 and after every in-place swap. Where hiding a field would move the controls
@@ -838,7 +838,9 @@ around it, two gates keep it in place instead:
 
 The two overlap, and are to be merged into one shared gate once both have
 landed. The Ministry follow-up request form greys its outcome and contact
-details with `data-enabled-when` (#1014). **Precedent.** #563, #736,
+details with `data-enabled-when` (#1014); as with #959, a greyed field keeps
+what it shows, unsent, and its tip says when it is available and that a
+greyed value is not saved. **Precedent.** #563, #736,
 open #957, #959, #1014.
 
 ### Single-campaign interim
