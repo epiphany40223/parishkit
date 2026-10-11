@@ -513,7 +513,15 @@ personal-data pattern and the acknowledgement),
 `tests/stewardship/database/test_admin_digest_cli_postgresql.py` (each
 report against its page, the pages' events, read-only sessions, a failed
 read, the database's refusal of unresolved prior work, keyed repeats) and
-the unchanged digest view suites. 8e adds the Family-level exports that
+the unchanged digest view suites. A follow-up adds `digest list`, the
+Emailed reports page's lists through its own `emailed_views.listing`, with
+no schema change; proven by `tests/stewardship/test_admin_digests.py`
+(golden documents, a reader who is not an Administrator),
+`tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py`,
+`tests/stewardship/database/test_admin_digest_list_cli_postgresql.py` (the
+page's reports, read-only and ended sessions, no event, `--requested`, no
+current campaign) and the unchanged Emailed reports page suite. 8e adds the Family-level exports that
 create an export record without the Family keys (`export financial`,
 `export information`, `export ministry`, `export ministry-packet`),
 through the export forms' own services; proven by

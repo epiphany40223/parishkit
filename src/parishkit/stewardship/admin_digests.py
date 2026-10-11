@@ -21,6 +21,12 @@ request. Its key is the page's ``command_id``: repeating it returns the
 original request. The page asks the reader to tick that a manual report
 may repeat items already reported; the command asks for the same
 acknowledgement at the confirmation prompt, or takes ``--yes``.
+
+``digest list`` is the Emailed reports page (``emailed_views.listing``):
+the current campaign's retained daily and, for an Administrator, weekly
+reports, by id and date only, so the other digest commands can be pointed
+at them. It admits passively as the page does and, as the page's read,
+records no event.
 """
 
 from dataclasses import dataclass
@@ -93,6 +99,27 @@ class WeeklyRequest(ReadModel):
     created: bool
     request_key: UUID
     task: dict
+
+
+@dataclass(frozen=True)
+class DigestList(ReadModel):
+    """The Emailed reports page's lists: report ids and dates only.
+
+    ``daily`` and ``weekly`` are the newest ``shown`` reports, newest first;
+    ``weekly`` is None for a reader who is not an Administrator, who sees
+    the daily list only, as on the page. ``weekly_request_available`` is
+    whether the campaign has the Weekly Admin digest schedule that
+    ``digest weekly-request`` needs. ``requested`` is the ``--requested``
+    manual request's ``task_id`` and, once captured, ``report_id``; None
+    when not asked for, or when the key is not a current-campaign request.
+    """
+
+    campaign_id: UUID | None
+    daily: list
+    weekly: list | None
+    weekly_request_available: bool
+    requested: dict | None
+    shown: int
 
 
 def acknowledgement():
@@ -258,6 +285,75 @@ def read_digest(caller, service, snapshot_id, *, kind, page):
                     views.record_view(actor, snapshot_id, campaign_id, Outcome.FAILED)
                 except (DatabaseError, StorageInvariantError) as error:
                     emit_failure(error, event=Event.REPORT_AUDIT_FAILED)
+
+    return _held(step)
+
+
+# --------------------------------------------------------------- digest list
+
+
+def list_model(campaign_id, lists, *, administrator):
+    """The command's projection of the page's ``listing``: ids and dates only.
+
+    The page's ``pk`` becomes ``snapshot_id``; a weekly row's
+    ``preparation_id`` (the manual request's key) is left out, as the page
+    shows only whether the report was ``manual``.
+    """
+    from .reports.emailed_views import SHOWN
+
+    return DigestList(
+        campaign_id=campaign_id,
+        daily=[
+            {
+                "snapshot_id": row["pk"],
+                "through_date": row["through_date"],
+                "covered_dates": row["covered_dates"],
+                "observed_at": row["observed_at"],
+            }
+            for row in lists["daily"]
+        ],
+        weekly=[
+            {
+                "snapshot_id": row["pk"],
+                "manual": row["manual"],
+                "observed_at": row["observed_at"],
+            }
+            for row in lists["weekly"]
+        ]
+        if administrator
+        else None,
+        weekly_request_available=lists["weekly_schedule"],
+        requested=lists["requested"],
+        shown=SHOWN,
+    )
+
+
+def read_list(caller, service, *, requested):
+    """``digest list``: the Emailed reports page's lists, as the page reads them.
+
+    Admits passively with the page's admission (report readers, any
+    session scope), reads the page's ``listing`` for the current campaign
+    (None, and empty lists, when there is none) and rechecks the session
+    before anything is reported. ``requested`` is a manual request key or
+    None. The page's read records no event, so neither does this. Like the
+    page's ``.get()``, a missing configuration row fails closed: its
+    ``ObjectDoesNotExist`` is ``not_available``, never empty lists.
+    """
+    from .accounts.runtime_models import SystemConfiguration
+    from .reports.emailed_views import listing
+    from .reports.export_views import _principal
+
+    def step():
+        """Admit, read the page's lists and recheck."""
+        actor = _admit(caller, service, _principal)
+        administrator = "administrator" in actor.roles
+        # .get(), as the page: a missing row must not read as "no campaign".
+        campaign_id = SystemConfiguration.objects.values_list(
+            "current_campaign_id", flat=True
+        ).get()
+        lists = listing(campaign_id, administrator=administrator, requested=requested)
+        _recheck(caller, service.store, actor)
+        return list_model(campaign_id, lists, administrator=administrator)
 
     return _held(step)
 

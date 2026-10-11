@@ -41,18 +41,16 @@ from .weekly_models import WeeklyDigestSnapshot, WeeklyManualRequest
 SHOWN = 60
 
 
-def _requested(request, campaign_id):
-    """The weekly report request named by ``?requested=``, or None.
+def _requested(value, campaign_id):
+    """The current campaign's manual weekly request ``value``, or None.
 
-    Only a request for the current campaign is shown. Returns a dict with its
-    background task and, once captured, the report it produced. Any other
-    query string is refused by the caller.
+    ``value`` is the request's key: a UUID, or the page's ``?requested=``
+    text, which raises ValueError when malformed. Returns a dict with its
+    background task and, once captured, the report it produced; a key that
+    is not a request of ``campaign_id`` answers None.
     """
-    value = request.GET.get("requested")
-    if value is None:
-        return None
     manual = (
-        WeeklyManualRequest.objects.filter(pk=UUID(value), campaign_id=campaign_id)
+        WeeklyManualRequest.objects.filter(pk=UUID(str(value)), campaign_id=campaign_id)
         .values("pk", "task_id")
         .first()
     )
@@ -64,6 +62,53 @@ def _requested(request, campaign_id):
         .first()
     )
     return {"task_id": manual["task_id"], "report_id": report}
+
+
+def listing(campaign_id, *, administrator, requested=None):
+    """The page's lists for ``campaign_id``, without a request (ADM-11).
+
+    Shared by the page and ``pk-admin digest list``. ``daily`` is the newest
+    ready daily reports; ``weekly`` (Administrators only, else empty) the
+    newest weekly reports, each marked ``manual`` when an Administrator
+    requested it; ``requested`` the manual request named by ``requested``
+    (see ``_requested``), Administrators only; ``weekly_schedule`` whether
+    Send a weekly report now is available. With no campaign every list is
+    empty.
+    """
+    if campaign_id is None:
+        return {"daily": [], "weekly": [], "requested": None, "weekly_schedule": False}
+    ready = DailyDigestReady.objects.values_list("snapshot_id", flat=True)
+    daily = list(
+        DailyDigestSnapshot.objects.filter(campaign_id=campaign_id, pk__in=ready)
+        .order_by("-observed_at", "-id")
+        .values("pk", "through_date", "covered_dates", "observed_at")[:SHOWN]
+    )
+    if not administrator:
+        return {
+            "daily": daily,
+            "weekly": [],
+            "requested": None,
+            "weekly_schedule": False,
+        }
+    manual = set(
+        WeeklyManualRequest.objects.filter(campaign_id=campaign_id).values_list(
+            "pk", flat=True
+        )
+    )
+    weekly = [
+        row | {"manual": row["preparation_id"] in manual}
+        for row in WeeklyDigestSnapshot.objects.filter(campaign_id=campaign_id)
+        .order_by("-observed_at", "-id")
+        .values("pk", "preparation_id", "observed_at")[:SHOWN]
+    ]
+    return {
+        "daily": daily,
+        "weekly": weekly,
+        "requested": None if requested is None else _requested(requested, campaign_id),
+        # Send a weekly report now sends an extra Weekly Admin digest, so it
+        # is unavailable until that schedule exists (its page refuses too).
+        "weekly_schedule": _has_weekly_schedule(campaign_id),
+    }
 
 
 @require_GET
@@ -81,38 +126,10 @@ def emailed_reports(request):
         campaign_id = SystemConfiguration.objects.values_list(
             "current_campaign_id", flat=True
         ).get()
-        ready = DailyDigestReady.objects.values_list("snapshot_id", flat=True)
-        daily = (
-            list(
-                DailyDigestSnapshot.objects.filter(
-                    campaign_id=campaign_id, pk__in=ready
-                )
-                .order_by("-observed_at", "-id")
-                .values("pk", "through_date", "covered_dates", "observed_at")[:SHOWN]
-            )
-            if campaign_id
-            else []
-        )
-        weekly = []
-        if administrator and campaign_id:
-            manual = set(
-                WeeklyManualRequest.objects.filter(campaign_id=campaign_id).values_list(
-                    "pk", flat=True
-                )
-            )
-            weekly = [
-                row | {"manual": row["preparation_id"] in manual}
-                for row in WeeklyDigestSnapshot.objects.filter(campaign_id=campaign_id)
-                .order_by("-observed_at", "-id")
-                .values("pk", "preparation_id", "observed_at")[:SHOWN]
-            ]
-        requested = (
-            _requested(request, campaign_id) if administrator and campaign_id else None
-        )
-        # Send a weekly report now sends an extra Weekly Admin digest, so it
-        # is unavailable until that schedule exists (its page refuses too).
-        weekly_schedule = bool(
-            administrator and campaign_id and _has_weekly_schedule(campaign_id)
+        lists = listing(
+            campaign_id,
+            administrator=administrator,
+            requested=request.GET.get("requested"),
         )
         response = render(
             request,
@@ -120,10 +137,7 @@ def emailed_reports(request):
             {
                 "campaign_id": campaign_id,
                 "administrator": administrator,
-                "daily": daily,
-                "weekly": weekly,
-                "requested": requested,
-                "weekly_schedule": weekly_schedule,
+                **lists,
                 "shown": SHOWN,
             },
         )

@@ -1614,7 +1614,8 @@ signatures:
   `export_views.download_with_grant` (`prepare_download`), and the status
   read with its stored file's receipt (`export_services.export_state`).
 - **PR 8c to 8g:** report reads and the Family-level exports from the
-  report and export views.
+  report and export views; for `digest list`, the Emailed reports page's
+  lists as `emailed_views.listing`.
 - **PR 9a:** `delivery_views.preparation_retry` and
   `export_views.retry_cleanup_command`, with the delivery views' admission and
   command scope (`jobs.task_retries`).
@@ -2081,7 +2082,7 @@ file is regenerated from the retained capture, in its original format.
 | `daily_digest_snapshot` | `digest daily SNAPSHOT_ID` (PR 8d) |
 | `weekly_digest_snapshot`, `weekly_digest_item` | `digest weekly SNAPSHOT_ID`: each item's identifier and states; an item's text stays on the page (PR 8d) |
 | `weekly_digest_manual` | `digest weekly-request` (PR 8d) |
-| `emailed_reports` | `digest list`: the Emailed reports page's lists (PR 8) |
+| `emailed_reports` | `digest list [--requested KEY]`: the Emailed reports page's lists, ids and dates only (PR 8d follow-up) |
 | `logs`, `logs_export` | `logs list`, `logs export` (PR 8a) |
 
 `logs list` and `logs export` read through `audit.log_reads`, the functions
@@ -2144,7 +2145,16 @@ page's 409), the same `weekly_manual_requested` event and task, and
 `admin_cmd_digest_weekly_request` when it creates the request. The page's
 ticked acknowledgement is asked at the
 [prompt](#command-line-confirmation) (or given by `--yes`); without it the
-command exits 4 (`confirmation_required`). The
+command exits 4 (`confirmation_required`). `digest list` is the Emailed
+reports page: through the page's own `emailed_views.listing`, the current
+campaign's newest ready daily reports and, for an Administrator, weekly
+reports (`weekly` is null for any other reader, who sees only the daily
+list on the page), by snapshot id and date only, whether
+`digest weekly-request` is available, and with `--requested` the page's
+`?requested=` request (its task and, once captured, its report). It admits
+as the page does (any session) and, as the page's read, records no event.
+Leaving out the weekly row's request key and a null `weekly` are defaults,
+pending Administrator confirmation. The
 [operator guide](../../../guides/stewardship-admin-automation.md#digests)
 lists the fields.
 
@@ -2773,7 +2783,7 @@ exactly the commands that exist.
   **PR 8b:** the export lifecycle with streamed fetch (including the
   wrapper's `export fetch` and its tests). **PR 8c:** the aggregate report
   reads. **PR 8d:** digests (`digest daily`, `digest weekly`,
-  `digest weekly-request`). **PR 8e:** the Family-level exports that
+  `digest weekly-request`, and later `digest list`). **PR 8e:** the Family-level exports that
   create an export record without the Family keys (`export financial`,
   `export information`, `export ministry`, `export ministry-packet`).
   **PR 8f:** the Family directory's exports (`export directory`, `export

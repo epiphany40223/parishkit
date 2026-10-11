@@ -1,10 +1,10 @@
 """The digest commands' documents and plumbing (ADM-11 PR 8d).
 
-Pure tests: the golden documents of ``digest daily``, ``digest weekly`` and
-``digest weekly-request``, built through the projections the commands use
-from stand-ins for the pages' reads, with the personal-data pattern applied
-at every depth; the catalog entries; and the manual request's
-acknowledgement. The commands against a real database are in
+Pure tests: the golden documents of ``digest list``, ``digest daily``,
+``digest weekly`` and ``digest weekly-request``, built through the
+projections the commands use from stand-ins for the pages' reads, with the
+personal-data pattern applied at every depth; the catalog entries; and the
+manual request's acknowledgement. The commands against a real database are in
 database/test_admin_digest_cli_postgresql.py.
 """
 
@@ -119,7 +119,49 @@ def request():
     )
 
 
+def listed(*, administrator=True):
+    """The Emailed reports lists, as the page's ``listing`` gives them."""
+    lists = {
+        "daily": [
+            {
+                "pk": SNAPSHOT,
+                "through_date": date(2054, 10, 4),
+                "covered_dates": ["2054-10-04"],
+                "observed_at": NOW,
+            }
+        ],
+        "weekly": [
+            {"pk": SNAPSHOT, "preparation_id": KEY, "manual": True, "observed_at": NOW}
+        ]
+        if administrator
+        else [],
+        "requested": {"task_id": TASK, "report_id": None} if administrator else None,
+        "weekly_schedule": administrator,
+    }
+    return admin_digests.list_model(CAMPAIGN, lists, administrator=administrator)
+
+
 GOLDEN = {
+    "digest list": (
+        listed,
+        {
+            "campaign_id": str(CAMPAIGN),
+            "daily": [
+                {
+                    "snapshot_id": str(SNAPSHOT),
+                    "through_date": "2054-10-04",
+                    "covered_dates": ["2054-10-04"],
+                    "observed_at": ISO,
+                }
+            ],
+            "weekly": [
+                {"snapshot_id": str(SNAPSHOT), "manual": True, "observed_at": ISO}
+            ],
+            "weekly_request_available": True,
+            "requested": {"task_id": str(TASK), "report_id": None},
+            "shown": 60,
+        },
+    ),
     "digest daily": (
         daily,
         {
@@ -214,10 +256,18 @@ def test_no_member_or_value_is_personal_data(command):
     assert "@" not in text and "Private" not in text, command
 
 
+def test_a_reader_who_is_not_an_administrator_has_no_weekly_list():
+    """As the page shows Staff the daily list only: ``weekly`` is None."""
+    document = listed(administrator=False).to_document()
+    assert document["weekly"] is None and document["requested"] is None
+    assert len(document["daily"]) == 1 and not document["weekly_request_available"]
+
+
 def test_every_digest_command_has_its_models_fields():
     """Each 8d command's catalog fields are its model's, in PR 8."""
     entries = {entry["name"]: entry for entry in admin_cli.catalog()}
     models = {
+        "digest list": admin_digests.DigestList,
         "digest daily": admin_digests.DailyDigest,
         "digest weekly": admin_digests.WeeklyDigest,
         "digest weekly-request": admin_digests.WeeklyRequest,
@@ -285,6 +335,8 @@ def test_the_manual_request_needs_the_acknowledgement(monkeypatch):
         ["digest", "daily", "not-a-uuid"],
         ["digest", "daily", str(SNAPSHOT), "--page", "2"],
         ["digest", "weekly"],
+        ["digest", "list", "--requested", "not-a-uuid"],
+        ["digest", "list", str(SNAPSHOT)],
     ],
 )
 def test_malformed_digest_commands_are_usage_errors(argv):
