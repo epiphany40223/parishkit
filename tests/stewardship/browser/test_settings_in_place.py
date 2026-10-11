@@ -17,6 +17,9 @@ from .settings_components import (
     LEADERS,
     LEADERS_PENDING,
     LEADERS_REVIEW,
+    MINISTRIES,
+    MINISTRIES_PENDING,
+    MINISTRIES_REVIEW,
     PENDING,
     REFUSED,
     REQUEST,
@@ -40,6 +43,9 @@ FOCUSED = "selector => document.activeElement === document.querySelector(selecto
 DIGEST = "#settings-form input[name=base_digest]"
 # The settings form's top edge in the viewport, to show it did not move.
 FORM_TOP = "document.getElementById('settings-form').getBoundingClientRect().top"
+# Its top edge in the document: focus may scroll the window to a review
+# below it, but nothing may move the form within the page.
+FORM_PLACE = f"{FORM_TOP} + window.scrollY"
 
 
 def answer_reviews(page, origin, fixture=REVIEW, status=200, address=SETTINGS):
@@ -311,6 +317,48 @@ def test_a_live_campaigns_leader_roles_are_reviewed_and_applied_in_place(
     assert end_region.inner_text().strip() == ""
     assert not roles.get_by_label("Staff").is_checked()
     assert page.evaluate(MARKED) == "kept"
+
+
+def test_campaign_ministries_are_reviewed_and_applied_in_place(page, component_origin):
+    """A live campaign's Ministry selections (#750): Review changes waits for
+    a change, Review shows the impact under the form and takes focus, and
+    Apply shows the change's status there. Nothing reloads, the form never
+    moves and keeps the reader's selections, and the indicator follows."""
+    reviews = answer_reviews(
+        page, component_origin, MINISTRIES_REVIEW, address=MINISTRIES
+    )
+    posts = count_requests(page, "POST", MINISTRIES)
+    page.goto(component_origin + MINISTRIES)
+    page.evaluate(MARK)
+    hint = "Change a Ministry selection to review it."
+    expect_review(page, enabled=False, hint=hint)
+    selections = page.get_by_label("Included Ministries")
+    selections.select_option(["4"])
+    expect_review(page, enabled=True, hint=hint)
+    top = page.evaluate(FORM_PLACE)
+    page.get_by_role("button", name="Review changes").click()
+    visible(page.get_by_role("heading", name="Review your changes"))
+    assert len(reviews) == 1
+    assert "ministry_duids=4" in reviews[0]
+    assert "ministry_duids=9" not in reviews[0]
+    assert page.evaluate(FOCUSED, "#settings-review-title")
+    panel = page.locator("#settings-review")
+    assert "Ministries to remove" in panel.inner_text()
+    assert "Food pantry" in panel.inner_text()
+    assert current_step(page) == "Review"
+    assert page.url == component_origin + MINISTRIES
+    assert page.evaluate(FORM_PLACE) == top
+    page.get_by_role("button", name="Apply changes").click()
+    visible(panel.get_by_role("heading", name="Change status"))
+    assert page.evaluate(FOCUSED, "#settings-review-status-title")
+    assert current_step(page) == "Apply"
+    assert page.url == f"{component_origin}{MINISTRIES_PENDING}#settings-review"
+    assert page.evaluate(FORM_PLACE) == top
+    assert selections.evaluate(
+        "select => [...select.selectedOptions].map(option => option.value)"
+    ) == ["4"]
+    assert page.evaluate(MARKED) == "kept"
+    assert len(posts) == 2
 
 
 def test_parish_settings_review_waits_for_a_change(page, component_origin):

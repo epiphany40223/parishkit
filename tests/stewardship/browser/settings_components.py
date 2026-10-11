@@ -37,7 +37,9 @@ served at ``LIVE_END`` (the editor, whose Apply leads to
 ``LIVE_END_REFUSING`` shows a change whose polled status settles as refused
 (#944). The end date's live check (#944) is answered, by date, with one of
 ``END_CHECKS``' answers (the real check fragment): none, a past date, a date
-before the start, or mail the date would strand.
+before the start, or mail the date would strand. A live campaign's Campaign
+Ministries (#750) is served at ``MINISTRIES`` (the editor, whose Apply leads
+to ``MINISTRIES_PENDING``) and ``MINISTRIES_REVIEW`` (its impact review).
 """
 
 from datetime import date
@@ -57,6 +59,9 @@ from parishkit.stewardship.accounts.campaign_forms import (
     CampaignForm,
     CampaignSettingsForm,
     LeaderRolesForm,
+)
+from parishkit.stewardship.accounts.campaign_ministry_views import (
+    LiveMinistriesForm,
 )
 from parishkit.stewardship.accounts.parish_views import TIMEZONE_NOTE, ParishForm
 from parishkit.stewardship.accounts.share_forms import (
@@ -89,6 +94,11 @@ LEADERS_END_REVIEW = "/campaign-leaders-in-place-end-review"
 ROLE_CHOICES = [(name, name) for name in ("Chairperson", "Member", "Staff")]
 DEFAULT_ROLES = ["Chairperson", "Staff"]
 LIVE_END = "/campaign-end-in-place"
+MINISTRIES = "/campaign-ministries-in-place"
+MINISTRIES_REVIEW = "/campaign-ministries-in-place-review"
+MINISTRIES_PENDING = f"{MINISTRIES}?request={REQUEST}"
+# A live campaign's offered Ministries; both are selected.
+MINISTRY_CHOICES = [("4", "Community outreach"), ("9", "Food pantry")]
 LIVE_END_REVIEW = "/campaign-end-in-place-review"
 LIVE_END_REFUSED = "/campaign-end-in-place-refused"
 LIVE_END_PENDING = f"{LIVE_END}?request={REQUEST}"
@@ -126,6 +136,7 @@ POSTS = {
     LEADERS: (303, LEADERS_PENDING, ""),
     SHARE: (303, SHARE_PENDING, ""),
     LIVE_END: (303, LIVE_END_PENDING, ""),
+    MINISTRIES: (303, MINISTRIES_PENDING, ""),
     # A Review answered with a redirect to another page, which does not draw
     # the review region (Campaign settings' dates-only change, #532).
     "/settings-in-place-elsewhere": (303, "/in-place-other", ""),
@@ -283,6 +294,31 @@ def components(context, admin):
                     "review_in": review_in,
                 }
                 | review_region("campaign_settings", None, **region),
+            ),
+        )
+
+    def ministries(step, **region):
+        """A live campaign's Campaign Ministries at ``step`` (#750), both
+        offered Ministries selected, with ``region``'s review context."""
+        form = LiveMinistriesForm(
+            initial={"ministry_duids": ["4", "9"], "base_digest": "a" * 64},
+            ministries=MINISTRY_CHOICES,
+        )
+        return (
+            "text/html",
+            render_to_string(
+                "stewardship/campaign-ministries.html",
+                context
+                | {
+                    "admin_chrome": admin | {"flow_steps": _steps(step)},
+                    "campaign": {
+                        "pk": REQUEST,
+                        "state": "active",
+                        "active_configuration": {"name": "Sample campaign"},
+                    },
+                    "form": form,
+                }
+                | review_region("campaign_ministries", None, **region),
             ),
         )
 
@@ -455,6 +491,21 @@ def components(context, admin):
                 "preview": "synthetic-signed-intent",
             },
         ),
+        MINISTRIES: ministries(0),
+        MINISTRIES_REVIEW: ministries(
+            1,
+            review={
+                "template": "stewardship/campaign-ministries-review.html",
+                "notes": [],
+                "added": [],
+                "removed": [
+                    {"name": "Food pantry", "duid": 9, "answers": 1, "open": 1}
+                ],
+                "open_forms": 3,
+                "preview": "synthetic-signed-intent",
+            },
+        ),
+        MINISTRIES_PENDING: ministries(2, receipt=pending),
         SHARE: share(None, 0),
         SHARE_REVIEW: share(
             sent,
