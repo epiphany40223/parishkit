@@ -3,9 +3,11 @@
 One table whose rows stay one line (a long address or Name is cut short with
 an ellipsis and shown whole in its title), sorted on the server in place;
 Delete through the shared dialog, then an in-place redraw; New user's Email
-lookup filling the Name from ParishSoft without overwriting a typed one; and
-the only Administrator's lower roles unavailable with the reason. Pages and
-POST answers are user_components'.
+lookup filling the Name from ParishSoft without overwriting a typed one; the
+reader's own row without Delete and their own lower roles unavailable, with
+the reason; Last successful sign-in in the compact parish format; and a
+change whose status can no longer be read settling at once. Pages and POST
+answers are user_components'.
 """
 
 import json
@@ -17,12 +19,15 @@ from .test_components import axe_violations
 from .user_components import (
     EDIT,
     EDIT_ONLY,
+    EDIT_OWN,
     LIST,
+    LIST_PENDING,
     LONG_EMAIL,
     LONG_NAME,
     NAMES,
     NEW,
     NEW_TAKEN,
+    PENDING,
     SINGLE,
     SUGGESTED,
 )
@@ -31,7 +36,7 @@ from .waits import eventually, has_attribute, hidden, visible
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
-PAGES = (LIST, SINGLE, NEW, EDIT, EDIT_ONLY, "/user-review")
+PAGES = (LIST, SINGLE, NEW, EDIT, EDIT_ONLY, EDIT_OWN, "/user-review")
 # Whether the user form's Review is held unavailable.
 REVIEW_HELD = "document.querySelector('#user-entry-form button[type=submit]').disabled"
 
@@ -90,28 +95,44 @@ def test_rows_are_one_line_with_ellipsis_and_tooltips(page, component_origin):
         assert (
             cell.evaluate("node => getComputedStyle(node).textOverflow") == "ellipsis"
         )
-    # Edit is a link to the user's own page; the Administrator can be deleted
-    # because another one remains.
+    # Edit is a link to the user's own page. The reader's own row has no
+    # Delete even though another Administrator remains; the other one has.
     admin = rows(page).nth(1)
     assert (
         admin.get_by_role("link", name="Edit admin@example.org")
         .get_attribute("href")
         .startswith("/admin/users/")
     )
-    visible(admin.get_by_role("button", name="Delete admin@example.org"))
-    # One identity: Sign-in activity posts it to System logs, never in a URL.
-    activity = admin.get_by_role(
-        "button", name="Sign-in activity for admin@example.org"
+    assert admin.get_by_role("button", name="Delete admin@example.org").count() == 0
+    visible(rows(page).nth(3).get_by_role("button", name="Delete second@example.org"))
+    visible(page.get_by_text("you can't delete yourself", exact=False))
+    # No row has a Sign-in activity control (Administrator, 2026-10-11); the
+    # link above the table opens System logs.
+    assert (
+        page.locator("table.users-table").get_by_text("Sign-in activity").count() == 0
     )
-    form = activity.locator("xpath=ancestor::form")
-    assert form.get_attribute("method") == "post"
-    assert form.get_attribute("action") == "/admin/system/logs/"
-    # Several identities: Sign-in activity opens Edit user, which lists each.
-    leader = rows(page).nth(2)
-    link = leader.get_by_role("link", name="Sign-in activity for leader@example.org")
-    assert link.get_attribute("href").endswith("/edit/#user-sign-in-activity")
+    assert page.locator("table.users-table form").count() == 0
+    visible(page.get_by_role("link", name="See sign-in activity in System logs"))
     # Never signed in.
     assert "Never" in rows(page).nth(3).inner_text()
+
+
+def test_last_sign_in_uses_the_compact_parish_format(page, component_origin):
+    """The compact parish format in the browser's zone, as dense tables show it.
+
+    The page fixture's browser is in Los Angeles; the sign-in was 15:04 UTC,
+    and the default parish style is US long (Administrator, 2026-10-11).
+    """
+    page.goto(component_origin + LIST)
+    cell = page.locator("table.users-table time[data-local-instant]").first
+    assert cell.get_attribute("data-compact") is not None
+    eventually(
+        page,
+        "document.querySelector('table.users-table time').textContent"
+        " === 'Sep 19, 2026 8:04 AM'",
+    )
+    # The machine-readable time stays the instant itself.
+    assert cell.get_attribute("datetime").startswith("2026-09-19T15:04")
 
 
 def test_role_heading_sorts_in_place(page, component_origin):
@@ -166,19 +187,82 @@ def test_delete_asks_names_the_user_and_redraws_in_place(
     assert not failures
 
 
-def test_the_only_administrator_has_no_delete_and_says_why(page, component_origin):
-    """The reason line is always reserved; here it holds the reason."""
+def test_the_reader_cannot_delete_or_demote_themselves(page, component_origin):
+    """Own row: no Delete; own Edit: lower roles unavailable, the reason said.
+
+    As the only Administrator, and with another Administrator present.
+    """
     page.goto(component_origin + SINGLE)
     admin = rows(page).nth(0)
     assert admin.get_by_role("button", name="Delete admin@example.org").count() == 0
     visible(admin.get_by_role("link", name="Edit admin@example.org"))
-    visible(page.get_by_text("The only Administrator can't be deleted.", exact=False))
-    page.goto(component_origin + EDIT_ONLY)
-    roles = page.get_by_role("group", name="Role")
-    assert roles.get_by_label("Administrator").is_checked()
-    assert roles.get_by_label("Staff").is_disabled()
-    assert roles.get_by_label("Ministry leader").is_disabled()
-    visible(page.get_by_text("This is the only Administrator", exact=False))
+    visible(page.get_by_text("you can't delete yourself", exact=False))
+    for path in (EDIT_ONLY, EDIT_OWN):
+        page.goto(component_origin + path)
+        roles = page.get_by_role("group", name="Role")
+        assert roles.get_by_label("Administrator").is_checked()
+        assert roles.get_by_label("Staff").is_disabled()
+        assert roles.get_by_label("Ministry leader").is_disabled()
+        reason = page.locator("#user-roles-reason")
+        assert "This is your own user" in reason.inner_text(), path
+        assert reason.get_attribute("id") in roles.get_attribute("aria-describedby")
+    # Another user's Edit page reserves the same line, empty.
+    page.goto(component_origin + EDIT)
+    assert page.locator("#user-roles-reason").inner_text() == ""
+    assert page.get_by_role("group", name="Role").get_by_label("Staff").is_enabled()
+
+
+def test_a_refused_status_read_settles_change_status(page, component_origin):
+    """A 403 status read ends the wait with a plain final status, in place."""
+    page.goto(component_origin + PENDING)
+    failures = watch(page)
+    region = page.locator("[data-live-status]")
+    assert region.get_attribute("data-live-pending") is not None
+    visible(page.get_by_text("Applying your change", exact=False))
+    page.route(
+        "**" + PENDING,
+        lambda route: route.fulfill(status=403, body="Forbidden"),
+    )
+    eventually(
+        page,
+        "!document.querySelector('[data-live-status]')"
+        ".hasAttribute('data-live-pending')",
+    )
+    visible(page.get_by_role("heading", name="Status unavailable"))
+    assert "no longer has access" in region.inner_text()
+    assert "Applying your change" not in region.inner_text()
+    assert region.get_attribute("data-live-state") == "unknown"
+    assert page.locator(".live-status-problem").is_hidden()
+    assert page.evaluate("window.notReloaded === true")
+    assert not failures
+
+
+def test_a_refused_status_read_ends_the_delete_dialogs_wait(page, component_origin):
+    """The dialog stops following a status it can no longer read, and says so."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + LIST_PENDING)
+    failures = watch(page)
+    reads = []
+
+    def status(route):
+        """The first read is the redirect's answer; the next is refused."""
+        reads.append(route.request.url)
+        if len(reads) == 1:
+            route.continue_()
+        else:
+            route.fulfill(status=403, body="Forbidden")
+
+    page.route("**" + PENDING, status)
+    page.get_by_role("button", name="Delete leader@example.org").click()
+    dialog = page.locator("dialog[data-confirm-dialog]")
+    visible(dialog)
+    dialog.get_by_role("button", name="Delete", exact=True).click()
+    error = dialog.locator("[data-confirm-error]")
+    visible(error)
+    assert "can no longer be checked" in error.inner_text()
+    assert len(reads) == 2
+    assert "leader@example.org" in emails(page)
+    assert not failures
 
 
 def test_new_user_fills_the_name_from_parishsoft(page, component_origin):

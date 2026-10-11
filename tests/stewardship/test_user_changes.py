@@ -14,6 +14,7 @@ from parishkit.stewardship.accounts.user_changes import (
     UserRefused,
     only_administrator,
     plan_changes,
+    refuse_own_demotion,
     saved_users,
 )
 from parishkit.stewardship.accounts.user_rows import ROLE_HELP, ROLE_LABELS, role_labels
@@ -120,6 +121,75 @@ def test_the_last_administrator_stays():
         [*RECORDS, second], [{"id": ADMIN["id"], "delete": True}]
     )
     assert change.operation == "remove" and change.after is None
+
+
+def test_an_administrator_never_demotes_or_deletes_their_own_user():
+    """The own-Administrator guard holds even while another Administrator stays.
+
+    Edit's refusal names the Role field and Delete's the change as a whole;
+    another Administrator's change to the same user, and the acting
+    Administrator's change to someone else, still plan.
+    """
+    second = user("second@example.org")
+    records = [*RECORDS, second]
+    own = {"own_email": "admin@example.org"}
+    assert refused([{"id": ADMIN["id"], "role": "staff"}], records, **own) == (
+        "own_administrator",
+        "role",
+        0,
+    )
+    assert refused(
+        [{"id": STAFF["id"], "name": "S"}, {"id": ADMIN["id"], "delete": True}],
+        records,
+        **own,
+    ) == ("own_administrator", None, 1)
+    # A Name change of one's own user keeps the role, so it plans.
+    (change,), _ = plan_changes(records, [{"id": ADMIN["id"], "name": "A"}], **own)
+    assert change.changed == ["name"]
+    # Another Administrator may demote or delete this one.
+    (change,), _ = plan_changes(
+        records,
+        [{"id": ADMIN["id"], "role": "staff"}],
+        own_email="second@example.org",
+    )
+    assert change.removes_administrator
+    # The own guard speaks first for the only Administrator, too.
+    assert refused([{"id": ADMIN["id"], "delete": True}], **own)[0] == (
+        "own_administrator"
+    )
+
+
+def test_a_recorded_request_repeats_the_own_administrator_guard():
+    """``refuse_own_demotion`` checks a request's patch against its base."""
+    records = [*RECORDS, user("second@example.org")]
+    for operation in (
+        {"operation": "update", "id": ADMIN["id"], "values": {"role": "staff"}},
+        {"operation": "remove", "id": ADMIN["id"]},
+    ):
+        with pytest.raises(UserRefused) as caught:
+            refuse_own_demotion(
+                records,
+                [operation | {"section": "login_rules"}],
+                "admin@example.org",
+            )
+        assert caught.value.code == "own_administrator"
+    allowed = [
+        {
+            "operation": "update",
+            "section": "login_rules",
+            "id": ADMIN["id"],
+            "values": {"name": "A"},
+        },
+        {"operation": "remove", "section": "login_rules", "id": STAFF["id"]},
+    ]
+    refuse_own_demotion(records, allowed, "admin@example.org")
+    # Another Administrator's request, and an actor with no user, pass.
+    refuse_own_demotion(
+        records,
+        [{"operation": "remove", "section": "login_rules", "id": ADMIN["id"]}],
+        "second@example.org",
+    )
+    refuse_own_demotion(records, allowed, None)
 
 
 def test_a_default_name_is_used_only_when_none_is_given():

@@ -34,6 +34,12 @@ and a missing ``name`` to the first ParishSoft name that lists the address
 only counted (personal data on the command line). A saved user named by
 ``id`` keeps every field the entry leaves out; ``delete`` removes it. Users
 the document does not name stay as they are.
+
+The commands act as the Administrator who approved the automation session,
+so the page's own-Administrator guard applies to them too: no entry may
+demote or delete that Administrator's own user (Administrator decision,
+2026-10-11). Another Administrator makes that change, on the page or with
+their own session.
 """
 
 import json
@@ -174,6 +180,7 @@ def preview_users(caller, service, *, expected_version, changes):
         LOOKUP_REFUSED,
         LookupLimited,
         UserRefused,
+        acting_email,
         clean_email,
         member_names,
         plan_changes,
@@ -225,7 +232,10 @@ def preview_users(caller, service, *, expected_version, changes):
                 raise StaleRecordError("The users changed since that version.")
             try:
                 planned, patch = plan_changes(
-                    records, entries, default_name=default_name
+                    records,
+                    entries,
+                    default_name=default_name,
+                    own_email=acting_email(actor.identity),
                 )
             except UserRefused as refused:
                 raise InvalidChange([_problem(refused)]) from None

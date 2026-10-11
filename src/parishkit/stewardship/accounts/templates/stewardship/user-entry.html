@@ -18,9 +18,10 @@ through the Name's aria-describedby), so the Role choices below never move
 under the pointer (#736).
 On Edit, Review is available only once the Name or role differs from the
 saved user (data-require-change, #921), with the reason after it.
-On Edit, the only Administrator's lower roles are unavailable, with the reason
-in the line under the roles, which is always there (#563); the server refuses
-that change anyway. The recorded Google identities of the address each get a
+On Edit, the lower roles are unavailable for the reader's own user (an
+Administrator never demotes themselves, Administrator decision 2026-10-11)
+and for the only Administrator, with the reason in the line under the roles,
+which is always there (#563); the server refuses that change anyway. The recorded Google identities of the address each get a
 Sign-in activity button (#953), posting the identity, never in an address.
 {% endcomment %}
 <h1>{% if new %}{% translate "New user" %}{% else %}{% translate "Edit user" %}{% endif %}</h1>
@@ -42,7 +43,7 @@ Sign-in activity button (#953), posting the identity, never in an address.
 <fieldset class="field user-roles" aria-describedby="user-roles-reason{% if form.role.errors %} {{ form.role.auto_id }}_error{% endif %}"><legend>{% translate "Role" %}</legend>
 {% for role in roles %}<div class="choice"><input type="radio" name="role" value="{{ role.value }}" id="{{ form.role.auto_id }}_{{ forloop.counter0 }}" aria-describedby="{{ form.role.auto_id }}_{{ forloop.counter0 }}_help"{% if form.role.value == role.value %} checked{% endif %}{% if role.locked %} disabled{% endif %}{% if form.role.errors %} aria-invalid="true"{% endif %}> <label for="{{ form.role.auto_id }}_{{ forloop.counter0 }}">{{ role.label }}</label>
 <p class="help" id="{{ form.role.auto_id }}_{{ forloop.counter0 }}_help">{{ role.help }}</p></div>{% endfor %}
-<p class="help" id="user-roles-reason">{% if locked %}{% translate "This is the only Administrator, so it must stay an Administrator. Make another user an Administrator first." %}{% endif %}</p>
+<p class="help" id="user-roles-reason">{{ locked_reason }}</p>
 <div class="field-error-line" role="status"><ul class="errorlist" id="{{ form.role.auto_id }}_error"{% if not form.role.errors %} hidden{% endif %}>{% for error in form.role.errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div></fieldset>
 <p>{% if new %}{% button type="submit" %}{% translate "Review" %}{% endbutton %}{% else %}{% button type="submit" autocomplete="off" %}{% translate "Review" %}{% endbutton %}{% endif %} <a href="{{ list_url }}">{% translate "Cancel" %}</a>{% if not new %} <span class="help unchanged-hint" data-unchanged-hint data-idle>{% translate "Change the Name or role to review it." %}</span>{% endif %}</p>
 </form>

@@ -373,6 +373,25 @@ def test_users_preview_and_confirm_change_users_as_the_page(admin, google):  # n
     )
     assert code == 1 and document["error"]["code"] == "invalid", document
     assert "users" in json.dumps(document["error"])
+    # The session acts as its Administrator, who may not demote or delete
+    # their own user even while another Administrator (leader) remains.
+    for entry in (
+        {"id": user_id(store, ADMIN), "delete": True},
+        {"id": user_id(store, ADMIN), "role": "staff"},
+    ):
+        code, document = one(
+            admin,
+            "users",
+            "preview",
+            "--expected-version",
+            store.active().digest,
+            "--changes",
+            _changes(entry),
+            secret=secret,
+        )
+        assert code == 1 and document["error"]["code"] == "invalid", document
+        assert "your own Administrator role" in json.dumps(document["error"])
+    assert users(store)[ADMIN][1] == "administrator"
 
 
 def test_users_preview_looks_up_a_new_users_name_for_a_live_session(

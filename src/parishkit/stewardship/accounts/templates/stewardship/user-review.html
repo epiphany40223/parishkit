@@ -19,7 +19,7 @@ nothing changed. A review lasts fifteen minutes, as every review does.
   </tbody>
 </table>
 {% if change.grants_administrator %}<p class="notice">{% translate "This makes the person an Administrator, who can see and change everything, including users. Every Administrator is told by email and on their Home page." %}</p>{% endif %}
-{% if self_demoted %}<p class="notice">{% translate "This removes your own Administrator role. It takes effect on your next request; another Administrator remains." %}</p>{% elif change.removes_administrator %}<p class="notice">{% translate "This person is no longer an Administrator from their next request." %}</p>{% endif %}
+{% if change.removes_administrator %}<p class="notice">{% translate "This person is no longer an Administrator from their next request." %}</p>{% endif %}
 <p>{% translate "Applying saves this change. It takes effect once the status says Applied." %}</p>
 </section>
 <form method="post" action="{{ post_url }}">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}">

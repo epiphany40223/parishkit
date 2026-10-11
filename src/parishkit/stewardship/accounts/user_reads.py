@@ -94,8 +94,8 @@ def user_list(records, identities):
     people. Rows come in address order; the caller sorts them. ``id`` is the
     user's opaque record ID, which Edit user's address and ``users preview``
     name. ``identities`` lists the recorded Google identities of the
-    address in ID order, each ``{"id", "disabled"}``, for the row's
-    sign-in activity and Edit user's disabled-identity line.
+    address in ID order, each ``{"id", "disabled"}``, which ``users list``
+    prints.
     """
     latest, known = {}, {}
     for identity in identities:

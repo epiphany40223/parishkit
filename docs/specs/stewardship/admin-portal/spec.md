@@ -3624,15 +3624,14 @@ autosaves.
 A small "See sign-in activity in System logs" link beside the page heading
 opens [sign-in activity](#sign-in-activity) on System logs, with only the
 closed link filters in its address
-([#953](https://github.com/epiphany40223/parishkit/issues/953)). Each user's
-Last successful sign-in cell also has one small "Sign-in activity" control,
-so the row stays one line (#952, settling the #968 review note). With one
-recorded Google identity at that address it opens the same view narrowed to
-that identity as its actor; the identity is a private filter, so the control
-posts it, never putting it in an address
-([Admin tables](../ui-conventions/spec.md#admin-tables)). With several, it
-opens the user's Edit page, which lists one such control per identity. A
-user with no recorded identity has none.
+([#953](https://github.com/epiphany40223/parishkit/issues/953)). The table
+rows have no sign-in activity control (Administrator, 2026-10-11, after
+pk-local review). A user's Edit page lists one small "Sign-in activity"
+control per recorded Google identity at that address, which opens the same
+view narrowed to that identity as its actor; the identity is a private
+filter, so the control posts it, never putting it in an address
+([Admin tables](../ui-conventions/spec.md#admin-tables)). A user with no
+recorded identity has none.
 
 Every deployment past initial setup holds users once the users release
 starts (startup refuses sign-in rules), so the page has no Upgrade preview
@@ -3647,8 +3646,11 @@ Email (the row header, the most relevant column), Name, Role, Last successful
 sign-in and the row actions. Email, Name, Role and Last successful sign-in
 sort on the server; Role sorts by level (Administrator first on the first
 choice), and Last successful sign-in shows the newest successful Google
-sign-in of any identity with that address, in the browser's time zone, with
-users who never signed in sorting last. The default order is Email. The table
+sign-in of any identity with that address, in the browser's time zone and
+the compact variant of the parish
+[date format](../ui-conventions/spec.md#date-format), as other dense tables
+show times (Administrator, 2026-10-11), with users who never signed in
+sorting last; it sorts by the time itself. The default order is Email. The table
 refreshes in place like every other Admin table.
 
 Each row is one line. An email or Name too long for its column is cut short
@@ -3659,8 +3661,10 @@ the Edit page shows it whole. This is a recorded exception to
 whose long text wraps instead, because the Administrator asked for one-line
 rows here (#952).
 
-Each row's actions are **Edit** and **Delete**. The row of the only
-Administrator has no Delete, a line under the table, reserved while empty,
+Each row's actions are **Edit** and **Delete**. The signed-in
+Administrator's own row has no Delete (the
+[own-Administrator guard](#user-change-checks-and-alerts)); that also covers
+the only Administrator, who is always the reader. A line under the table
 says why, and the server refuses it anyway. The table has no selection
 column: users are deleted one at a time.
 
@@ -3685,9 +3689,10 @@ fields:
   default from ParishSoft is described below.
 - **Role**: three radio buttons, Ministry leader, Staff and Administrator,
   each with one plain-language line saying what that role can see. New starts
-  with Ministry leader chosen. On the only Administrator's Edit page the
-  lower roles are unavailable, with the reason in a line under the roles
-  that is reserved while empty (#563); the server refuses that change anyway.
+  with Ministry leader chosen. On the signed-in Administrator's own Edit
+  page (and the only Administrator's) the lower roles are unavailable, with
+  the reason in a line under the roles that is reserved while empty (#563);
+  the server refuses that change anyway.
 
 **Review** shows each changed value, before and after, and **Apply** records
 one configuration change, whose status the page follows; it then returns to
@@ -3749,9 +3754,18 @@ and follows it until it is applied, as
 Every save, delete and import is checked on the server, in the transaction
 that records the request and again at activation: the actor is a current
 Administrator with the page's CSRF token, the actor is still authorized, and
-the **last-Administrator guard** holds (no change may leave no Administrator;
-an Administrator may demote or delete themselves only while another
-Administrator remains). A user change asks for no fresh Google sign-in and no
+the **last-Administrator guard** holds (no change may leave no
+Administrator), and so does the **own-Administrator guard**: no Administrator
+demotes or deletes their own user, even while another Administrator remains;
+another Administrator makes that change (Administrator decision, 2026-10-11,
+after a self-demotion left its Change status page waiting on a status read
+the demoted reader could no longer make). The change builder refuses it at
+Review and Delete, and the configuration request's own transaction refuses
+it again against the request's base. Both guards are Python's: SQL's
+activation check keeps an Administrator but cannot tell who asked, so the
+own-Administrator guard has no SQL counterpart. The `pk-admin users` commands
+act as the Administrator who approved the automation session and apply the
+same guard. A user change asks for no fresh Google sign-in and no
 dialog beyond Delete's; this is the accepted low-friction policy of the
 [identity security policy](../architecture/spec.md#identity-and-session-security).
 The audit records the actor, the target email, the Name and role before and
