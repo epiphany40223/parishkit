@@ -167,6 +167,8 @@ def test_email_without_a_decision_keeps_its_note_form_closed(page, component_ori
     disclosure = page.locator("details", has_text="Add a note to this email's history")
     assert disclosure.get_attribute("open") is None
     assert not page.locator("#evidence-note").is_visible()
+    # The summary is the form's only heading there (no h3 repeating it).
+    assert disclosure.locator("h3").count() == 0
     disclosure.locator("summary").click()
     assert page.locator("#evidence-note").is_visible()
     assert "Not sure it arrived, which" not in page.locator("main").inner_text()

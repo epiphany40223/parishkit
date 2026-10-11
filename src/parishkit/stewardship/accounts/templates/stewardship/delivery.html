@@ -22,7 +22,7 @@ Admin evidence already recorded.{% endcomment %}
 <tbody>{% for event in events %}<tr><th scope="row" class="nowrap"><time datetime="{{ event.created_at|instant }}" data-local-instant data-compact>{{ event.created_at|instant }}</time></th><td class="numeric">{{ event.attempt|number }}</td><td>{{ event|delivery_event_label }}</td><td>{{ event.state|delivery_label }}</td></tr>{% endfor %}</tbody>
 </table></div>
 {% else %}<p>{% translate "No attempt history on this page." %}</p>{% endif %}
-<nav aria-label="{% translate 'Attempt history pages' %}">{% if previous_query %}<a href="?{{ previous_query }}#delivery-history" data-in-place="page-previous" data-in-place-fallback="page-next" data-in-place-message="{% translate 'Previous page shown.' %}">{% translate "Previous page" %}</a>{% endif %} {% if next_query %}<a href="?{{ next_query }}#delivery-history" data-in-place="page-next" data-in-place-fallback="page-previous" data-in-place-message="{% translate 'Next page shown.' %}">{% translate "Next page" %}</a>{% endif %}</nav>
+<nav aria-label="{% translate 'Attempt history and evidence pages' %}">{% if previous_query %}<a href="?{{ previous_query }}#delivery-history" data-in-place="page-previous" data-in-place-fallback="page-next" data-in-place-message="{% translate 'Previous page shown.' %}">{% translate "Previous page" %}</a>{% endif %} {% if next_query %}<a href="?{{ next_query }}#delivery-history" data-in-place="page-next" data-in-place-fallback="page-previous" data-in-place-message="{% translate 'Next page shown.' %}">{% translate "Next page" %}</a>{% endif %}</nav>
 </div>
 <details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Delivery ID" %}</dt><dd>{{ delivery.id }}</dd></dl></details>
 {% if task %}<p><a href="{% url 'admin:background_task_page' task.id %}">{% translate "Latest background task" %}</a>: {{ task.state|delivery_task_label }}</p>{% endif %}
@@ -36,7 +36,8 @@ Admin evidence already recorded.{% endcomment %}
 {% comment %}The forms show only when a decision is available (#1015): the
 "Resolve this email" section when an action other than a bare evidence note
 is offered; otherwise, when only the note is, a closed disclosure, since a
-note changes nothing about the email.{% endcomment %}
+note changes nothing about the email. In the disclosure its summary is the
+form's heading, so the form draws no h3 of its own there.{% endcomment %}
 {% if decisions %}<section aria-labelledby="resolve-heading"><h2 id="resolve-heading">{% translate "Resolve this email" %}</h2>
 <p>{% translate "These actions settle a delivery that failed or may not have arrived. Each needs a short note saying why; it is saved in this email's history and is not emailed to anyone." %}</p>
 {% elif commands %}<details><summary>{% translate "Add a note to this email's history" %}</summary>
@@ -48,7 +49,7 @@ note changes nothing about the email.{% endcomment %}
   <input type="hidden" name="command_id" value="{{ command.id }}">
   <input type="hidden" name="expected_version" value="{{ delivery.version }}">
   <input type="hidden" name="action" value="{{ command.action }}">
-  <h3>{{ command.label }}</h3>
+  {% if decisions %}<h3>{{ command.label }}</h3>{% endif %}
   {% if command.action == 'note' %}<label for="evidence-note">{% translate "Note to save in this email's history" %}</label>
   <textarea id="evidence-note" name="note" maxlength="2000" required aria-describedby="help-note" data-missing-hint="{% translate 'Enter the note.' %}"></textarea>
   {% else %}<label for="evidence-{{ command.action }}">{% translate "Why are you doing this? (saved in this email's history)" %}</label>
@@ -65,6 +66,6 @@ note changes nothing about the email.{% endcomment %}
 <h2>{% translate "Admin evidence and decisions" %}</h2>
 {% for note in notes %}<section class="panel"><p>{{ note.action|delivery_label }} · <time datetime="{{ note.created_at|instant }}" data-local-instant>{{ note.created_at|instant }}</time></p><p>{{ note.evidence_note }}</p></section>
 {% empty %}<p>{% translate "No Admin evidence on this page." %}</p>{% endfor %}
-<nav aria-label="{% translate 'Admin evidence pages' %}">{% if previous_query %}<a href="?{{ previous_query }}#delivery-evidence" data-in-place="evidence-previous" data-in-place-fallback="evidence-next" data-in-place-message="{% translate 'Previous page shown.' %}">{% translate "Previous page" %}</a>{% endif %} {% if next_query %}<a href="?{{ next_query }}#delivery-evidence" data-in-place="evidence-next" data-in-place-fallback="evidence-previous" data-in-place-message="{% translate 'Next page shown.' %}">{% translate "Next page" %}</a>{% endif %}</nav>
+<nav aria-label="{% translate 'Evidence and attempt history pages' %}">{% if previous_query %}<a href="?{{ previous_query }}#delivery-evidence" data-in-place="evidence-previous" data-in-place-fallback="evidence-next" data-in-place-message="{% translate 'Previous page shown.' %}">{% translate "Previous page" %}</a>{% endif %} {% if next_query %}<a href="?{{ next_query }}#delivery-evidence" data-in-place="evidence-next" data-in-place-fallback="evidence-previous" data-in-place-message="{% translate 'Next page shown.' %}">{% translate "Next page" %}</a>{% endif %}</nav>
 </div>
 {% endblock %}

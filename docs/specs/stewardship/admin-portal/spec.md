@@ -3396,15 +3396,18 @@ in the order the Administrator asked for
    sent": it is stored with the command, copied into the email's immutable
    event history, shown under Admin evidence and decisions, and never
    emailed to anyone. An uncertain email's "Not sure it arrived" notice, and
-   the note when a retry is unavailable, sit just above the section, beside
-   the actions they caution about. When the only thing offered is the evidence note (nothing to
+   the note when a retry is unavailable, sit just above the section (or,
+   without one, just above the evidence note's disclosure described next),
+   beside the actions they caution about. When the only thing offered is the evidence note (nothing to
    decide, such as a delivered email), the section is not shown; the note
-   form waits in a closed "Add a note to this email's history" disclosure.
+   form waits in a closed "Add a note to this email's history" disclosure,
+   whose summary is the form's only heading.
 8. **Admin evidence and decisions**: the notes and resolutions recorded on
    the email, newest first.
 
 The attempt history and the Admin evidence share one page window, as
-before. Each list ends with Previous page and Next page links that act
+before. Each list ends with Previous page and Next page links, named for
+both lists ("Attempt history and evidence pages"), that act
 [in place](../ui-conventions/spec.md#in-place-controls) and refresh both
 lists; the resolution forms sit between the two regions, so a note being
 typed survives paging. No schema change.

@@ -253,9 +253,13 @@ def test_outgoing_mail_names_each_family_beside_its_duid(family_mail, google):  
     places = [
         own.index(label)
         for label in (
-            "Attempt history",
-            "Technical details",
-            "Admin evidence and decisions",
+            f"<h1>Initial invitation to {escape(name)}</h1>",
+            "<p>Initial invitation · ",
+            f"Family: {escape(name)} · Family DUID: {duid}",
+            '<h2 id="attempt-history-heading">Attempt history</h2>',
+            "<summary>Technical details</summary>",
+            "Latest background task</a>",
+            "<h2>Admin evidence and decisions</h2>",
         )
     ]
     assert places == sorted(places)
