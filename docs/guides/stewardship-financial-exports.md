@@ -15,7 +15,8 @@ corrections and delivery evidence.
 Admin and Staff queue a complete export of the
 [financial stewardship detail](stewardship-financial-report.md) from the report
 page: every Family matching the applied filters and sort, not the visible page,
-with the same columns and the whole-result summary as report metadata. The
+with the same columns in every format. The XLSX and PDF also carry the
+whole-result summary as report information; the CSV is the table alone. The
 capture is immutable and taken once; retries and regeneration render that
 capture, so a later submission or source promotion never changes a file.
 

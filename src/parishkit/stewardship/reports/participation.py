@@ -22,6 +22,20 @@ from parishkit.stewardship.web.presentation import out_of
 from .inputs import validate_day
 
 SCOPE_LABELS = {"historical": "Historical as of day", "current": "Current population"}
+# The CSV's and XLSX's columns: (``participation_table`` key, heading). Both
+# formats carry exactly these, in this order, under the page's plain names
+# where the page has the column (#966); no internal generation, watermark or
+# UUID columns. The pledge column follows only when financial is enabled.
+COLUMNS = (
+    ("date", "Campaign date"),
+    ("scope", "Population"),
+    ("first_responses", "First submissions"),
+    ("cumulative_responses", "Families that have responded"),
+    ("cohort_denominator", "Families in population"),
+    ("participation", "Cumulative participation"),
+    ("source_as_of", "Source as of"),
+)
+PLEDGE_COLUMN = ("pledge_usd", "Cumulative annual pledges (USD)")
 
 
 def _label(value):
@@ -171,11 +185,9 @@ class ParticipationDocument:
         """Localize instants only; graph calendar dates stay in campaign time."""
         source = dates.format_instant(self.source_as_of, self.browser_timezone)
         requested = dates.format_instant(self.requested_at, self.browser_timezone)
-        return (
-            f"Source #{self.source_generation:,} as of {source}; "
-            f"submission cutoff {self.submission_watermark:,}\n"
-            f"Requested {requested} ({self.browser_timezone})"
-        )
+        # No source generation or submission cutoff number: they are
+        # internal sequence values, not something a reader can use (#966).
+        return f"Source as of {source}\nRequested {requested} ({self.browser_timezone})"
 
 
 def participation_table(document):
@@ -197,7 +209,6 @@ def participation_table(document):
                 day.cohort_denominator if day.population_available else None
             ),
             "participation": day.participation,
-            "source_generation": day.source_generation,
             "source_as_of": (
                 day.source_as_of.astimezone(UTC).isoformat()
                 if day.source_as_of is not None
@@ -212,48 +223,35 @@ def participation_table(document):
     return tuple(rows)
 
 
+def participation_columns(document):
+    """The (key, heading) columns the CSV and the XLSX both carry."""
+    return COLUMNS + ((PLEDGE_COLUMN,) if document.financial_enabled else ())
+
+
 def participation_csv(document, output):
-    """Write complete exact values with repeated pinned metadata, never page slices."""
+    """Write every daily row under the shared columns, never page slices.
+
+    Exactly the table: report details live in the XLSX "Report information"
+    sheet, never as repeated CSV columns (#966). Times are ISO 8601 with
+    their offset, in the requester's display time zone.
+    """
     rows = participation_table(document)
     zone = ZoneInfo(document.browser_timezone)
-    headings = [
-        "date",
-        "scope",
-        "first_responses",
-        "cumulative_responses",
-        "cohort_denominator",
-        "participation",
-        "source_generation",
-        "source_as_of",
-    ]
-    if document.financial_enabled:
-        headings.append("pledge_usd")
-    metadata = {
-        "campaign_id": document.campaign_id,
-        "fact_set_id": document.fact_set_id,
-        "campaign_timezone": document.campaign_timezone,
-        "browser_timezone": document.browser_timezone,
-        "input_source_generation": document.source_generation,
-        "input_source_as_of": document.source_as_of.astimezone(zone),
-        "submission_watermark": document.submission_watermark,
-        "requested_at": document.requested_at.astimezone(zone),
-    }
+    columns = participation_columns(document)
     # A newline-neutral wrapper gives canonical CRLF on every developer host.
     # Detach it so this function never closes the caller-owned artifact stream.
     wrapper = io.TextIOWrapper(output, encoding="utf-8", newline="", write_through=True)
     try:
         writer = csv.writer(wrapper, lineterminator="\r\n")
-        writer.writerow(headings + list(metadata))
-        trailer = [csv_cell(value) for value in metadata.values()]
+        writer.writerow([heading for _, heading in columns])
         for row in rows:
-            # ISO timestamps in the stated browser_timezone, like the metadata.
             if row["source_as_of"] is not None:
                 row = row | {
                     "source_as_of": datetime.fromisoformat(
                         row["source_as_of"]
                     ).astimezone(zone)
                 }
-            writer.writerow([csv_cell(row[key]) for key in headings] + trailer)
+            writer.writerow([csv_cell(row[key]) for key, _ in columns])
         wrapper.flush()
     finally:
         wrapper.detach()

@@ -301,14 +301,14 @@ def test_native_information_exports_use_real_worker_and_guarded_downloads(
             response, body = search(browser, export_action(job_route, "download"), {})
             assert response.status_code == 200
             assert body.startswith(
-                {"csv": b"Row type,", "xlsx": b"PK", "pdf": b"%PDF"}[format]
+                {"csv": b"Family,", "xlsx": b"PK", "pdf": b"%PDF"}[format]
             )
             assert "additional_information." + format in response["Content-Disposition"]
             if format == "csv":
                 assert b"Complete exported Family request" in body
                 # The file names the Family as the page does (#932), from the
                 # snapshot its capture read; CSV quotes the comma.
-                assert b',"' + name + b'",' in body
+                assert b'\r\n"' + name + b'",' in body
     harness, form, answers, _ = revisit(harness)
     answers["additional_information"] = (
         "A later Family request must not replace the export"

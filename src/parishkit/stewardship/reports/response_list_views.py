@@ -43,7 +43,7 @@ from parishkit.stewardship.web.contracts import (
     FieldError,
     validation_response,
 )
-from parishkit.stewardship.web.exports import download_headers
+from parishkit.stewardship.web.exports import download_headers, page_download
 from parishkit.stewardship.web.refusals import Refusal
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.responses import campaign_response
@@ -438,6 +438,7 @@ def response_list(request, campaign_id, key):
     return _respond(request, campaign_id, key, export=False)
 
 
+@page_download("response_list")
 @require_POST
 def response_list_export(request, campaign_id, key):
     """The complete filtered list as CSV, XLSX or PDF, in the page's order."""

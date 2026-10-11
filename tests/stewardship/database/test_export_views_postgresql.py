@@ -187,7 +187,11 @@ def test_complete_download_holds_guard_and_streams_with_private_headers(
             )
             assert "X-Accel-Redirect" not in response
             assert b"".join(response.streaming_content).startswith(
-                {"csv": b"date,scope,", "png": b"\x89PNG", "pdf": b"%PDF"}[format]
+                {
+                    "csv": b"Campaign date,Population,",
+                    "png": b"\x89PNG",
+                    "pdf": b"%PDF",
+                }[format]
             )
             response.close()
         # Another browser never downloads it, even knowing its address.

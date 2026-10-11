@@ -23,7 +23,7 @@ from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.jobs.ownership import database_now
 from parishkit.stewardship.web.contracts import MESSAGES, ErrorCode
 from parishkit.stewardship.web.dates import UnknownZone
-from parishkit.stewardship.web.exports import download_headers
+from parishkit.stewardship.web.exports import download_headers, page_download
 
 from .log_reads import (
     EXPORT_FORMATS,
@@ -165,6 +165,7 @@ def logs(request):
         return _error(ErrorCode.INVALID, 400)
 
 
+@page_download("system_logs")
 @require_http_methods(["POST"])
 def export_logs(request):
     """Download the filtered log, newest first, bounded to EXPORT_LIMIT entries.

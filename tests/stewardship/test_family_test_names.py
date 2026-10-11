@@ -1,10 +1,11 @@
 """The chosen-Family test names export's file and access (#817).
 
 Pure tests: the CSV the worker writes from a retained capture (every
-reviewed DUID in order, its provenance, and a name that looks like a
-spreadsheet formula kept as text), and that only the page's configure
-capability may read the export. The command and the SQL guards against a
-real database are in database/test_admin_test_families_cli_postgresql.py.
+reviewed DUID in order and a name that looks like a spreadsheet formula
+kept as text), the report information the XLSX and PDF state, and that
+only the page's configure capability may read the export. The command
+and the SQL guards against a real database are in
+database/test_admin_test_families_cli_postgresql.py.
 """
 
 import csv
@@ -53,21 +54,23 @@ def request(rows, *, row_count=None):
 
 
 def test_the_file_lists_every_reviewed_family_in_order():
-    """DUID and name per row; metadata says what was captured and when."""
+    """DUID and name per row, and nothing else (#966); the report
+    information (for the XLSX and PDF) says what was captured and when,
+    with no internal references."""
     rows = [(1234, "Squyres, Tracy and Jeff"), (99, ""), (5, "=HYPERLINK(1)")]
     document = names_document(request(rows))
     assert document.item_count == 3
+    metadata = dict(document.metadata)
+    assert metadata["Report"] == "Chosen-Family test names"
+    assert metadata["Families"] == "3"
+    assert not {"Email revision", "Campaign reference"} & set(metadata)
+    # Instants are in the export's time zone.
+    assert metadata["Captured at"].isoformat().startswith("2054-10-06T11:30")
     output = io.BytesIO()
     render_information(document, output, format="csv")
     lines = list(csv.reader(io.StringIO(output.getvalue().decode())))
-    assert lines[0][:2] == ["Family DUID", "Family name"]
-    metadata = dict(zip(lines[0][2:], lines[1][2:], strict=True))
-    assert metadata["Report"] == "Chosen-Family test names"
-    assert metadata["Email revision"] == str(REVISION)
-    assert metadata["Families"] == "3"
-    # Instants are in the export's time zone.
-    assert metadata["Captured at"].startswith("2054-10-06 11:30")
-    assert [line[:2] for line in lines[2:]] == [
+    assert lines[0] == ["Family DUID", "Family name"]
+    assert lines[1:] == [
         ["1234", "Squyres, Tracy and Jeff"],
         ["99", ""],
         # A name that looks like a formula stays text, as every export's.
@@ -114,7 +117,7 @@ def test_only_the_configure_capability_reads_the_names(monkeypatch, roles, allow
 
 def test_xlsx_and_pdf_carry_the_csvs_columns():
     """One column set in every format (#966): the XLSX sheet is the CSV's
-    table, and each PDF card holds exactly a row's DUID and name."""
+    whole table, and each PDF card holds exactly a row's DUID and name."""
     from openpyxl import load_workbook
 
     from parishkit.stewardship.reports.family_test_names import FORMATS, HEADINGS
@@ -127,8 +130,7 @@ def test_xlsx_and_pdf_carry_the_csvs_columns():
     document = names_document(request(rows))
     output = io.BytesIO()
     render_information(document, output, format="csv")
-    table = [line[:2] for line in csv.reader(io.StringIO(output.getvalue().decode()))]
-    del table[1]  # the CSV's report-information row
+    table = list(csv.reader(io.StringIO(output.getvalue().decode())))
     output = io.BytesIO()
     render_information(document, output, format="xlsx")
     book = load_workbook(io.BytesIO(output.getvalue()))

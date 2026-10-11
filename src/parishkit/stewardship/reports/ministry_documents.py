@@ -43,6 +43,32 @@ def activity(item):
     return label
 
 
+def new_member_labels(items):
+    """The Member DUID label of each Member added on the form, by proposed id.
+
+    A Member added on the form has no DUID yet; the page says "New Member"
+    and keeps its proposed id in Technical details, which a file leaves out
+    (#966). Two New Members with the same name would then give identical
+    rows, so those get "New Member 1", "New Member 2", ... in form order:
+    proposed id order, the order the Family form lists them once saved and
+    the order their requests are recorded in. A New Member's rows (for
+    example its earlier requests) share one label, and every format renders
+    the one document, so the label is the same in the CSV, XLSX and PDF.
+    """
+    by_name = {}
+    for item in items:
+        if item["proposed_id"] and not item["member_duid"]:
+            by_name.setdefault(item["member_name"], set()).add(item["proposed_id"])
+    labels = {}
+    for proposed_ids in by_name.values():
+        ordered = sorted(proposed_ids)
+        for number, proposed_id in enumerate(ordered, 1):
+            labels[proposed_id] = (
+                f"New Member {number}" if len(ordered) > 1 else "New Member"
+            )
+    return labels
+
+
 def ministry_document(payload, parameters, *, parish_name, requested_at, timezone):
     """Use captured counts, age, publication flags and ordered complete results."""
     zone = ZoneInfo(timezone)
@@ -68,9 +94,6 @@ def ministry_document(payload, parameters, *, parish_name, requested_at, timezon
         ("Report", title),
         ("Parish", parish_name),
         ("Campaign", source["name"]),
-        ("Campaign reference", source["id"]),
-        ("Source reference", source["source_id"]),
-        ("Source generation", f"{source['source_generation']:,}"),
         ("Source as of", instant(source["source_as_of"])),
         ("Captured at", instant(source["observed_at"])),
         ("Requested at", instant(requested_at)),
@@ -132,7 +155,6 @@ def ministry_document(payload, parameters, *, parish_name, requested_at, timezon
         headings = (
             "Member",
             "Member DUID",
-            "Proposed Member reference",
             "Ministry DUID",
             "Submitted",
             "State",
@@ -143,11 +165,13 @@ def ministry_document(payload, parameters, *, parish_name, requested_at, timezon
             if action == "join"
             else ("Current Ministry role",)
         )
+        new_members = new_member_labels(selected)
         for item in selected:
             common = (
                 item["member_name"],
-                str(item["member_duid"]) if item["member_duid"] else "",
-                item["proposed_id"] or "",
+                str(item["member_duid"])
+                if item["member_duid"]
+                else new_members.get(item["proposed_id"], ""),
                 str(item["ministry_duid"]),
                 instant(item["submitted_at"]),
                 STATE_LABELS[item["state"]],

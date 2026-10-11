@@ -81,4 +81,6 @@ def current_campaign(view):
 
     wrapped.__name__ = getattr(view, "__name__", "view")
     wrapped.__doc__ = view.__doc__
+    # Keep the view's markers, such as ``page_download`` (web.exports).
+    wrapped.__dict__.update(view.__dict__)
     return wrapped
