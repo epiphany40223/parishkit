@@ -31,7 +31,7 @@ Sign-in activity button (#953), posting the identity, never in an address.
 {{ form.non_field_errors }}
 <div class="field">{% if new %}<label for="{{ form.email.auto_id }}">{{ form.email.label }}</label>
 {{ form.email }}
-<div class="field-error-line" role="status"><ul class="errorlist" id="{{ form.email.auto_id }}_error" data-email-error{% if not form.email.errors %} hidden{% endif %}>{% for error in form.email.errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div>
+<div class="field-error-line" role="status"><ul class="errorlist" id="{{ form.email.auto_id }}_error" data-email-error{% if not form.email.errors %} hidden{% endif %}>{% for error in form.email.errors %}<li title="{{ error }}">{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div>
 {% else %}<p class="field-label" id="user-email-label">{% translate "Email" %}</p>
 <p class="user-email" aria-labelledby="user-email-label"><span class="cell-ellipsis" title="{{ user.email }}">{{ user.email }}</span></p>
 <p class="help">{% translate "To change the address, delete this user and add the new address as a new user." %}</p>

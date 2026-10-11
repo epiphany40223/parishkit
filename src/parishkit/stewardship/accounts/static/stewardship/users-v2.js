@@ -41,6 +41,7 @@
     line.hidden = false;
     const item = line.querySelector("li") || line.appendChild(document.createElement("li"));
     item.textContent = words;
+    item.title = words;
     email.setAttribute("aria-invalid", "true");
     email.setAttribute("data-field-error", "client");
     const ids = (email.getAttribute("aria-describedby") || "").split(/\s+/)

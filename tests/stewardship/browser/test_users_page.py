@@ -421,9 +421,19 @@ def test_role_choices_never_move_while_the_lookup_answers(
     help_says(page, "No ParishSoft Member")
     unmoved("no names")
     lookups.ask("staff@example.org")
-    lookups.answer(200, {"error": "This address is already a user.", "names": []})
+    # Longer than the real message, so it would wrap at 320 px in every
+    # browser font: the error line must stay one line high (#736).
+    lookups.answer(
+        200,
+        {
+            "error": "This address is already a user, so add a different address.",
+            "names": [],
+        },
+    )
     visible(page.locator("[data-email-error]"))
     unmoved("already a user")
+    error = page.locator("[data-email-error] li")
+    assert error.get_attribute("title") == error.text_content()
     lookups.ask("busy@example.org")
     lookups.answer(429, {"error": None, "names": []})
     help_says(page, "Couldn't look up")
