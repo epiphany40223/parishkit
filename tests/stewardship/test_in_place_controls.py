@@ -508,3 +508,14 @@ def test_a_table_page_keeps_its_view_through_a_change():
     # Another in-place page carries nothing but the change.
     plain = in_place_follow(read | {"in_place": "parish_settings"}, "x")
     assert urlsplit(plain).query == "request=x"
+
+
+def test_ministries_view_fields_are_the_carried_view():
+    """The view Ministries validates is exactly the view a change carries,
+    including every shared table parameter, from one list."""
+    from parishkit.stewardship.accounts.admin_editing import IN_PLACE_VIEWS
+    from parishkit.stewardship.accounts.ministry_views import VIEW_FIELDS
+    from parishkit.stewardship.web.tables import table_parameters
+
+    assert set(IN_PLACE_VIEWS["ministries"]) == VIEW_FIELDS
+    assert {"q", "state", *table_parameters()} == VIEW_FIELDS

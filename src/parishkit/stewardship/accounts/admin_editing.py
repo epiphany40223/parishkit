@@ -39,6 +39,7 @@ from parishkit.stewardship.web.refusals import (
     gone_response,
     load_preview,
 )
+from parishkit.stewardship.web.tables import table_parameters
 
 from . import admin_navigation
 from .configuration_installation import coherent_configuration
@@ -67,7 +68,7 @@ IN_PLACE_PAGES = frozenset(
 # (#750): its filters, sort and page, so the quiet refresh once the change
 # is applied shows the table the Administrator was looking at. The page
 # validates them on every load, as it does any other address.
-IN_PLACE_VIEWS = {"ministries": ("q", "state", "page", "size", "sort")}
+IN_PLACE_VIEWS = {"ministries": ("q", "state", *sorted(table_parameters()))}
 
 
 def principal(
