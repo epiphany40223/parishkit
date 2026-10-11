@@ -121,7 +121,7 @@ def test_report_lists_limitations_and_filters(response_service):
 
 
 def test_native_page_and_downloads(response_service, google, settings):
-    """The page filters by CSRF POST; CSV and XLSX carry the same rows.
+    """The page filters by CSRF POST; CSV, XLSX and PDF carry the same rows.
 
     Read with the real restricted web and download logins
     (``restricted_download_pool``): the download pool's login reads no
@@ -180,9 +180,11 @@ def test_native_page_and_downloads(response_service, google, settings):
         assert response["Content-Type"] == "text/csv"
         assert response["Cache-Control"] == "no-store"
         assert "stewardship-limitations-" in response["Content-Disposition"]
-        assert b"Organ" not in body and b"Cannot attend Mass" in body
+        assert b"Organ" not in body
+        # The Families table has the page's columns: no Cannot attend Mass.
+        assert b"\r\nFamily,Family DUID,Latest response\r\n" in body
         assert body.startswith(
-            b"Family,Family DUID,Member,Cannot participate in ministries,"
+            b"Member,Family,Family DUID,Cannot participate in ministries,"
             b"Latest response\r\n"
         )
         response, body = search(browser, export, {"format": "xlsx", "timezone": "UTC"})
@@ -191,14 +193,20 @@ def test_native_page_and_downloads(response_service, google, settings):
         book = load_workbook(io.BytesIO(body))
         assert book.sheetnames == ["Members", "Families"]
         assert [cell.value for cell in book["Members"][1]] == [
+            "Member",
             "Family",
             "Family DUID",
-            "Member",
             "Cannot participate in ministries",
             "Latest response",
         ]
         assert book["Members"]["D2"].value == "Yes"
-        assert search(browser, export, {"format": "pdf"})[0].status_code == 400
+        # The PDF is offered too (#966), named and typed as one.
+        response, body = search(browser, export, {"format": "pdf", "timezone": "UTC"})
+        assert response.status_code == 200
+        assert response["Content-Type"] == "application/pdf"
+        assert response["Content-Disposition"].endswith(".pdf")
+        assert body.startswith(b"%PDF-")
+        assert search(browser, export, {"format": "png"})[0].status_code == 400
         # The re-posted forms carry the Show choice.
         response, body = search(browser, route, {"members_sort": "-latest"})
         assert response.status_code == 200 and b'name="show" value="any"' in body
