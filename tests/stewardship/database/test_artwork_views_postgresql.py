@@ -26,6 +26,7 @@ from .test_background_grants_postgresql import task_login
 from .test_branding_views_postgresql import post, preview_token
 from .test_campaign_views_postgresql import apply
 from .test_content_views_postgresql import values as content_values
+from .test_parish_views_postgresql import region
 
 pytestmark = pytest.mark.django_db(transaction=True)
 ORIGIN = "https://parish.example.org"
@@ -63,6 +64,28 @@ def artwork(row):
     return row.active_configuration.values.get("artwork", {})
 
 
+def address(response):
+    """Where a redirect leads, without its region fragment."""
+    assert response.status_code == 302, response.content
+    return response["Location"].split("#")[0]
+
+
+def confirmed(browser, review_path):
+    """Review at ``review_path`` (Campaign images naming the change, #750) and
+    confirm it there; the answer is Campaign images naming the request."""
+    review = browser.get(review_path)
+    assert flow_steps(review.content) == (STEPS, "Review")
+    # The review and its Apply are in the page's review region.
+    assert "Apply changes" in region(review.content)
+    token = preview_token(review)
+    response = post(browser, review_path, {"action": "confirm", "preview": token})
+    assert address(response).startswith("/admin/campaign/images/?request=")
+    assert response["Location"].endswith("#settings-review")
+    # Where the one-time review was, for checks after it is confirmed.
+    response.review_path = review_path
+    return response
+
+
 def select(browser, service, path, slot, upload):
     """Upload, review and confirm one slot as the web role; returns the receipt."""
     with task_login(ServiceRole.WEB):
@@ -71,26 +94,15 @@ def select(browser, service, path, slot, upload):
             f"{path}{slot}/",
             {"base_digest": service.store.active().digest, "image": upload},
         )
-        assert staged.status_code == 302, staged.content
-        preview = staged["Location"]
-        review = browser.get(preview)
-        assert flow_steps(review.content) == (STEPS, "Review")
-        token = preview_token(review)
-        response = post(browser, preview, {"action": "confirm", "preview": token})
-        # Where the one-time review was, for checks after it is confirmed.
-        response.review_path = preview
-        return response
+        # The upload answers with Campaign images naming the staged image.
+        assert address(staged).startswith(f"{path}?review={slot}&bundle=")
+        return confirmed(browser, address(staged))
 
 
 def remove(browser, path, slot):
     """Review and confirm removing one slot's image."""
     with task_login(ServiceRole.WEB):
-        review = browser.get(f"{path}{slot}/removal/")
-        assert flow_steps(review.content) == (STEPS, "Review")
-        token = preview_token(review)
-        return post(
-            browser, f"{path}{slot}/removal/", {"action": "confirm", "preview": token}
-        )
+        return confirmed(browser, f"{path}?remove={slot}")
 
 
 def test_images_belong_to_the_campaign_publish_and_clear(auth_service, google, media):
@@ -103,10 +115,17 @@ def test_images_belong_to_the_campaign_publish_and_clear(auth_service, google, m
     assert flow_steps(page.content) == (STEPS, "Make changes")
     accepted = select(browser, auth_service, path, "banner", image(1625, 345))
     apply(store, accepted)
-    # The staged image's review refuses once confirmed, so the change's
-    # status names it without a link and returns to Campaign images (#196).
-    status = browser.get(accepted["Location"]).content
-    assert b"<li><span>Review campaign image</span></li>" in status
+    # Campaign images follows the change in place (#750): Applied in its
+    # review region, the new image among the slots.
+    followed = browser.get(address(accepted))
+    assert flow_steps(followed.content) == (STEPS, "Apply")
+    assert "Applied: your change is saved" in region(followed.content)
+    assert b"No image is set." in followed.content
+    assert followed.content.count(b"Current image") == 1
+    # Change status itself still returns to Campaign images (#196).
+    status = browser.get(
+        "/admin/changes/" + address(accepted).rsplit("=", 1)[1] + "/"
+    ).content
     assert f'<a href="{path}">Return to Campaign images</a>'.encode() in status
     # That review no longer opens now its image is chosen.
     assert browser.get(accepted.review_path).status_code != 200
@@ -133,13 +152,11 @@ def test_images_belong_to_the_campaign_publish_and_clear(auth_service, google, m
     assert not unpinned_bundles().filter(pk=banner.bundle_id).exists()
     removed = remove(browser, path, "financial")
     apply(store, removed)
-    # The removal review now refuses (nothing left to remove): named, not
-    # linked, and Return goes to Campaign images (#196).
-    assert browser.get(f"{path}financial/removal/").status_code != 200
-    status = browser.get(removed["Location"]).content
-    assert flow_steps(status) == (STEPS, "Apply")
-    assert b"<li><span>Remove campaign image</span></li>" in status
-    assert f'<a href="{path}">Return to Campaign images</a>'.encode() in status
+    # The removal review now refuses (nothing left to remove).
+    assert browser.get(f"{path}?remove=financial").status_code != 200
+    followed = browser.get(address(removed))
+    assert flow_steps(followed.content) == (STEPS, "Apply")
+    assert "Applied: your change is saved" in region(followed.content)
     apply(store, remove(browser, path, "banner"))
     # With no image left, the optional value is absent, not empty.
     assert artwork(row) == {}
@@ -166,11 +183,13 @@ def test_a_slot_refuses_the_wrong_image_kind(auth_service, google, media, monkey
             f"{path}member/",
             {"base_digest": store.active().digest, "image": image(90, 90)},
         )
-        assert staged.status_code == 302, staged.content
-        bundle = staged["Location"].rstrip("/").rsplit("/", 1)[-1]
+        bundle = address(staged).rsplit("=", 1)[-1]
         # The same staged icon is not an image for the banner slot.
-        assert browser.get(f"{path}banner/{bundle}/").status_code == 404
-        assert browser.get(f"{path}unknown/{bundle}/").status_code == 404
+        assert browser.get(f"{path}?review=banner&bundle={bundle}").status_code == 404
+        assert browser.get(f"{path}?review=unknown&bundle={bundle}").status_code == 404
+        # Only the change, or the request, the page names may be read.
+        assert browser.get(f"{path}?review=member").status_code == 400
+        assert browser.get(f"{path}?remove=member&extra=1").status_code == 400
     section = BrandingAsset.objects.get(bundle_id=bundle)
     patch = [
         {
@@ -206,7 +225,65 @@ def test_upload_rejects_non_images(auth_service, google, media):
         )
     assert result.status_code == 400
     assert b"Choose a supported, bounded static image:" in result.content
+    # Summarized in the review region too, linked to the slot's field (#750).
+    assert 'href="#id_banner_image"' in region(result.content)
     assert not BrandingAsset.objects.exists()
+
+
+def change_parish(store):
+    """Apply an unrelated settings change, as another Administrator might."""
+    parish = store.active().document()["sections"]["parish"][0]
+    patch = [
+        {
+            "operation": "update",
+            "section": "parish",
+            "id": parish["id"],
+            "values": {"name": "Changed parish"},
+        }
+    ]
+    assert change(store, store.active(), uuid4(), patch).state == "applied"
+
+
+def test_a_refused_apply_is_explained_in_place(auth_service, google, media):
+    """An Apply refused because the settings changed since the review is the
+    page again, explained in its review region (#750): an upload staged
+    against the old settings, and a removal whose preview is out of date."""
+    store = auth_service.store
+    row, path = draft(store)
+    browser, _ = signed_in()
+    with task_login(ServiceRole.WEB):
+        staged = post(
+            browser,
+            f"{path}welcome/",
+            {"base_digest": store.active().digest, "image": image(90, 90)},
+        )
+        review_path = address(staged)
+        upload_token = preview_token(browser.get(review_path))
+    set_banner(store, row.pk)
+    with task_login(ServiceRole.WEB):
+        removal_token = preview_token(browser.get(f"{path}?remove=banner"))
+    change_parish(store)
+    with task_login(ServiceRole.WEB):
+        refused = post(
+            browser, review_path, {"action": "confirm", "preview": upload_token}
+        )
+        assert refused.status_code == 409
+        assert "Upload the image again." in region(refused.content)
+        refused = post(
+            browser,
+            f"{path}?remove=banner",
+            {"action": "confirm", "preview": removal_token},
+        )
+        assert refused.status_code == 409
+        assert "This preview is out of date." in region(refused.content)
+        # Apply posts only to an address naming the change.
+        assert (
+            post(
+                browser, path, {"action": "confirm", "preview": removal_token}
+            ).status_code
+            == 400
+        )
+    assert set(artwork(row)["images"]) == {"banner"}
 
 
 def test_each_family_email_chooses_whether_to_show_the_banner(auth_service, google):

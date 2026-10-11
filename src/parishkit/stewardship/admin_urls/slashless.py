@@ -52,8 +52,6 @@ SLASHLESS = (
     ("campaign/content/<str:kind>/<str:slot>/<uuid:revision_id>", "content_revision"),
     ("campaign/images", "artwork_settings"),
     ("campaign/images/<slug:slot>", "artwork_upload"),
-    ("campaign/images/<slug:slot>/removal", "artwork_remove"),
-    ("campaign/images/<slug:slot>/<uuid:bundle_id>", "artwork_preview"),
     ("campaign/schedules", "schedule_settings"),
     ("campaign/schedules/addition", "schedule_new"),
     ("campaign/schedules/<uuid:schedule_id>", "schedule_edit"),

@@ -7,11 +7,22 @@ private staging, and a selection becomes live only through a confirmed
 configuration request. The banner heads the Family emails and welcome page;
 each icon sits above the heading of its Family page. Artwork stays editable
 while the campaign is live because it is presentation, not structure.
+
+Review, apply and the change's status happen on Campaign images itself
+(#750), in its review region under the slots: a successful upload stages
+the image and answers with the page naming it (``?review=<slot>&bundle=<id>``),
+Remove this image names the slot (``?remove=<slot>``), and Apply posts the
+signed preview to that same address, whose query says which change it is.
+The answer is the page again naming the request (``?request=<id>``), whose
+status the region follows until the change settles and the page refreshes
+itself quietly with the new current image.
 """
 
-from uuid import uuid4
+from urllib.parse import urlencode
+from uuid import UUID, uuid4
 
 from django import forms
+from django.db import transaction
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
 from django.urls import reverse
@@ -23,13 +34,17 @@ from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.content import MAX_IMAGE_BYTES, prepare_artwork
 from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.refusals import UserFacingStale
 
 from . import admin_navigation
 from .admin_editing import (
+    REVIEW_REGION,
     confirm,
     editable_configuration,
     form_action,
     principal,
+    requested_status,
+    review_region,
     sign_preview,
 )
 from .authentication import runtime
@@ -135,8 +150,15 @@ def _check_candidate(service, configuration, patch, actor):
     validate_installation(candidate.candidate.document(), actor_id=actor.identity)
 
 
-def _page(request, service, configuration, campaign, forms_by_slot, *, status=200):
-    """Render every slot with its current image and its own upload form."""
+def _page(
+    request, service, configuration, campaign, forms_by_slot, *, status=200, **region
+):
+    """Render every slot with its current image and upload form, and the review.
+
+    ``region`` is ``review_region``'s ``review``, ``receipt`` or ``refusal``
+    for the review region under the slots; the step indicator follows it
+    through edit, review and apply (#196), all on this page.
+    """
     current = campaign.active_configuration.values.get("artwork", {}).get("images", {})
     assets = {
         str(asset.pk): asset
@@ -155,36 +177,197 @@ def _page(request, service, configuration, campaign, forms_by_slot, *, status=20
         }
         for slot in ARTWORK_SLOTS
     ]
-    # Choosing an image is the first step of edit, review, apply (#196).
-    admin_navigation.place(request, flow="change", step="edit")
+    step = "review" if region.get("review") else "edit"
+    if region.get("receipt"):
+        step = "apply"
+    admin_navigation.place(request, flow="change", step=step)
     response = render(
         request,
         "stewardship/artwork-settings.html",
-        {"slots": slots, "campaign": campaign},
+        {
+            "slots": slots,
+            "campaign": campaign,
+            # A refused upload's errors are summarized in the review region
+            # too, linked to the slot's field, where focus then goes.
+            **review_region(
+                "artwork_settings",
+                next(iter(forms_by_slot.values()), None),
+                **region,
+            ),
+        },
         status=status,
     )
-    if status == 400:
+    if status != 200:
         response.stewardship_safe_error = True
     return _checked(request, service, response)
 
 
-@require_http_methods(["GET", "HEAD"])
+def _change(parameters):
+    """The change the page's query names: ``("image", slot, bundle)``,
+    ``("remove", slot, None)`` or None, with the request it names, if any.
+
+    The query is nothing, ``request`` alone (Apply's answer), ``review`` and
+    ``bundle`` together (a staged upload) or ``remove`` alone; anything else
+    is refused.
+    """
+    selected = filters(parameters, allowed={"review", "bundle", "remove", "request"})
+    names = set(selected)
+    if names == {"review", "bundle"}:
+        return ("image", _slot(selected["review"]), UUID(selected["bundle"])), None
+    if names == {"remove"}:
+        return ("remove", _slot(selected["remove"]), None), None
+    if names <= {"request"}:
+        return None, selected.get("request")
+    raise ValueError("Invalid campaign image query.")
+
+
+def _salt(campaign_id, change):
+    """The signed preview's salt, bound to the campaign, slot and change."""
+    kind, slot, bundle_id = change
+    # The salts the separate review pages used, so the tokens keep their meaning.
+    return (
+        SALT
+        + str(campaign_id)
+        + slot
+        + ("remove" if kind == "remove" else str(bundle_id))
+    )
+
+
+def _review(request, service, actor, configuration, campaign, change):
+    """Review one staged image or one removal; nothing is requested yet.
+
+    Returns ``review_region``'s ``review``: the image (or the removal) and
+    the signed preview Apply posts.
+    """
+    kind, slot, bundle_id = change
+    if kind == "remove":
+        images = campaign.active_configuration.values.get("artwork", {}).get(
+            "images", {}
+        )
+        if slot not in images:
+            raise LookupError("That slot has no image to remove.")
+        patch, asset = _image_patch(campaign, slot, None), None
+    else:
+        row, assets = staged_bundle(request, service, bundle_id)
+        if len(assets) != 1 or assets[0].label != _kind(slot):
+            raise LookupError("This upload is not an image for that slot.")
+        asset = assets[0]
+        read_variant(media_root(), row.pk, file_receipt(asset))
+        patch = _image_patch(campaign, slot, str(asset.pk))
+    _check_candidate(service, configuration, patch, actor)
+    return {
+        # Drawn inside settings-review.html, above its Apply.
+        "template": "stewardship/artwork-review.html",
+        "notes": [],
+        "removing": kind == "remove",
+        "asset": asset,
+        "label": SLOT_LABELS[slot],
+        "preview": sign_preview(
+            actor=actor,
+            configuration=configuration,
+            patch=patch,
+            salt=_salt(campaign.pk, change),
+        ),
+    }
+
+
+def _scope(request, change):
+    """Confirmation's current scope: a staged image must still be this
+    session's (or already published, for an exact retry); a removal needs
+    only the editable configuration."""
+    kind, slot, bundle_id = change
+
+    def scope(service):
+        """Permit exact receipt retries after selection, not stale new edits."""
+        if kind == "image":
+            asset = BrandingAsset.objects.filter(
+                bundle_id=bundle_id, label=_kind(slot)
+            ).first()
+            if asset is None or not _retained(asset):
+                staged_bundle(request, service, bundle_id)
+        return editable_configuration(service), None
+
+    return scope
+
+
+@require_http_methods(["GET", "HEAD", "POST"])
 def artwork_settings(request, campaign_id):
-    """List the campaign image slots and what each currently shows."""
+    """List the slots, review a staged image or a removal, and apply it.
+
+    Every step happens on this page (#750). A refused Apply (an out-of-date
+    preview, an upload that expired) is the page again (status 409) with
+    the explanation in its review region.
+    """
     try:
         service = runtime()
-        principal(request, service)
+        # Reading a change's status (the page's own quiet refresh once it is
+        # applied) is passive, as Change status is: it never renews idle time.
+        actor = principal(
+            request,
+            service,
+            passive=request.method != "POST" and "request" in request.GET,
+        )
+        change, requested = _change(request.GET)
+        region, status = {}, 200
+        if request.method == "POST":
+            if change is None or form_action(request.POST, preview_fields=set()) != (
+                "confirm"
+            ):
+                raise ValueError("Confirm a reviewed campaign image change.")
+            try:
+                return _checked(
+                    request,
+                    service,
+                    confirm(
+                        request,
+                        service,
+                        actor,
+                        salt=_salt(campaign_id, change),
+                        current_scope=_scope(request, change),
+                        in_place=True,
+                    ),
+                )
+            except UserFacingStale as error:
+                region, status = {"refusal": error.refusal}, 409
+            except StaleRecordError:
+                # A staged upload is tied to the settings it was uploaded
+                # against and to this sign-in, and expires after a day.
+                region, status = (
+                    {
+                        "message": _(
+                            "This upload expired, or the settings changed after it "
+                            "was uploaded, so it was not used. Upload the image again."
+                        )
+                    },
+                    409,
+                )
         configuration = editable_configuration(service)
-        filters(request.GET, allowed=set())
         campaign = _campaign(configuration, campaign_id)
-        return _page(request, service, configuration, campaign, {})
+        if request.method != "POST":
+            if change is not None:
+                region["review"] = _review(
+                    request, service, actor, configuration, campaign, change
+                )
+            elif requested is not None:
+                with transaction.atomic():
+                    region["receipt"] = requested_status(
+                        request, service, actor, request.GET
+                    )
+        return _page(
+            request, service, configuration, campaign, {}, status=status, **region
+        )
     except ERRORS as error:
         return _error(error)
 
 
 @require_http_methods(["POST"])
 def artwork_upload(request, campaign_id, slot):
-    """Normalize and stage one image; nothing changes until it is confirmed."""
+    """Normalize and stage one image; nothing changes until it is confirmed.
+
+    A staged image answers with Campaign images naming it, whose review
+    region shows it with Apply (#750); a refused upload is the page again
+    with the slot's field error.
+    """
     try:
         slot = _slot(slot)
         service = runtime()
@@ -219,117 +402,16 @@ def artwork_upload(request, campaign_id, slot):
                     graphics,
                     base_digest=form.cleaned_data["base_digest"],
                 )
+                query = urlencode({"review": slot, "bundle": identifier})
                 return _checked(
                     request,
                     service,
                     HttpResponseRedirect(
-                        reverse("admin:artwork_preview", args=[slot, identifier])
+                        f"{reverse('admin:artwork_settings')}?{query}#{REVIEW_REGION}"
                     ),
                 )
         return _page(
             request, service, configuration, campaign, {slot: form}, status=400
         )
-    except ERRORS as error:
-        return _error(error)
-
-
-@require_http_methods(["GET", "HEAD", "POST"])
-def artwork_preview(request, campaign_id, slot, bundle_id):
-    """Show one staged image and confirm it as that slot's selection."""
-    try:
-        slot = _slot(slot)
-        service = runtime()
-        actor = principal(request, service)
-        salt = SALT + str(campaign_id) + slot + str(bundle_id)
-        if request.method == "POST":
-            if form_action(request.POST, preview_fields=set()) != "confirm":
-                raise ValueError("Confirm the prepared campaign image preview.")
-
-            def scope(service):
-                """Permit exact receipt retries after selection, not stale new edits."""
-                asset = BrandingAsset.objects.filter(
-                    bundle_id=bundle_id, label=_kind(slot)
-                ).first()
-                if asset is None or not _retained(asset):
-                    staged_bundle(request, service, bundle_id)
-                return editable_configuration(service), None
-
-            response = confirm(request, service, actor, salt=salt, current_scope=scope)
-        else:
-            filters(request.GET, allowed=set())
-            configuration = editable_configuration(service)
-            campaign = _campaign(configuration, campaign_id)
-            row, assets = staged_bundle(request, service, bundle_id)
-            if len(assets) != 1 or assets[0].label != _kind(slot):
-                raise LookupError("This upload is not an image for that slot.")
-            read_variant(media_root(), row.pk, file_receipt(assets[0]))
-            patch = _image_patch(campaign, slot, str(assets[0].pk))
-            _check_candidate(service, configuration, patch, actor)
-            admin_navigation.place(request, flow="change", step="review")
-            response = render(
-                request,
-                "stewardship/artwork-preview.html",
-                {
-                    "asset": assets[0],
-                    "label": SLOT_LABELS[slot],
-                    "campaign": campaign,
-                    "preview": sign_preview(
-                        actor=actor,
-                        configuration=configuration,
-                        patch=patch,
-                        salt=salt,
-                    ),
-                },
-            )
-        return _checked(request, service, response)
-    except ERRORS as error:
-        return _error(error)
-
-
-@require_http_methods(["GET", "HEAD", "POST"])
-def artwork_remove(request, campaign_id, slot):
-    """Review and confirm removing one slot's image; the page then shows none."""
-    try:
-        slot = _slot(slot)
-        service = runtime()
-        actor = principal(request, service)
-        salt = SALT + str(campaign_id) + slot + "remove"
-        if request.method == "POST":
-            if form_action(request.POST, preview_fields=set()) != "confirm":
-                raise ValueError("Confirm removing the campaign image.")
-            response = confirm(
-                request,
-                service,
-                actor,
-                salt=salt,
-                current_scope=lambda service: (editable_configuration(service), None),
-            )
-        else:
-            filters(request.GET, allowed=set())
-            configuration = editable_configuration(service)
-            campaign = _campaign(configuration, campaign_id)
-            images = campaign.active_configuration.values.get("artwork", {}).get(
-                "images", {}
-            )
-            if slot not in images:
-                raise LookupError("That slot has no image to remove.")
-            patch = _image_patch(campaign, slot, None)
-            _check_candidate(service, configuration, patch, actor)
-            admin_navigation.place(request, flow="change", step="review")
-            response = render(
-                request,
-                "stewardship/artwork-remove.html",
-                {
-                    "label": SLOT_LABELS[slot],
-                    "campaign": campaign,
-                    "preview": sign_preview(
-                        actor=actor,
-                        configuration=configuration,
-                        patch=patch,
-                        salt=salt,
-                    ),
-                },
-            )
-        return _checked(request, service, response)
     except ERRORS as error:
         return _error(error)
