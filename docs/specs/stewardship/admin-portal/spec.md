@@ -2923,9 +2923,13 @@ were being handed to the provider at the backup, which the delivery warning
 settles after release. Each send offers "Assume these were sent" and "Send
 these again"; each shows the exact count and asks for a short note before the
 confirm (unavailable until the note is written), and a count that changed in
-the meantime settles nothing. "Send these again" is refused, with nothing
-changed, when a later reminder already reached one of the send's Families or
-is on its way, since it would arrive out of order. Counts name only emails
+the meantime settles nothing. "Send these again" is unavailable, with its
+reason beside it, and a posted one is refused with nothing changed, when
+another restore's undecided or assumed-sent hold still keeps one of the
+send's emails back (a resend would send nothing) or a later reminder already
+reached one of its Families or is on its way (it would arrive out of order).
+A refused release says why: emails that still need a hold, or a purge or
+campaign change still running. Counts name only emails
 that would be sent now; holds of Families that cannot be emailed, reminders
 waiting for an undecided invitation, and invitations only a deliverability
 change would retry are shown apart. "Release the site" stays unavailable, with
