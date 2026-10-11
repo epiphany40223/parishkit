@@ -674,13 +674,15 @@
   // table-selection.html). Row selection is per page: Select all and the
   // header checkbox choose every enabled row checkbox shown, and bulk action
   // buttons stay disabled until something is chosen. While nothing is, the
-  // buttons say why (the table's data-missing-hint, or a generic line) via
-  // aria-describedby and a title (#563). The hint element stays visually
-  // hidden: a line that appeared and vanished with the first tick shifted
-  // the page under the pointer, so the explanation never takes space. The back/
-  // forward cache can restore ticks without a change event, so every table's
-  // state is worked out again on pageshow. The server still validates every
-  // submitted selection.
+  // reason line table-selection.html puts below the buttons
+  // (data-selection-hint) shows the table's data-missing-hint, or a generic
+  // line, as visible text, and the buttons name it in aria-describedby
+  // (Administrator decision B2, 2026-10-10; #879). The line never leaves the
+  // layout: once a row is ticked its text is only made invisible
+  // (data-cleared), so nothing below or beside it moves (#563, #736). The
+  // back/forward cache can restore ticks without a change event, so every
+  // table's state is worked out again on pageshow. The server still
+  // validates every submitted selection.
   let selectionUpdates = []; // {scope, update} for each wired table
   let selectionHints = 0; // numbers each hint's id
   const wireSelection = (scope) => {
@@ -690,17 +692,11 @@
     const button = scope.querySelector("[data-select-all-button]");
     const count = scope.querySelector("[data-selected-count]");
     const actions = [...scope.querySelectorAll("[data-bulk-action]")];
-    let hint = null;
-    if (actions.length) {
-      // Always visually hidden (never toggled), so it never shifts layout.
-      hint = document.createElement("span");
-      hint.className = "visually-hidden";
+    const hint = actions.length ? scope.querySelector("[data-selection-hint]") : null;
+    if (hint) {
       selectionHints += 1;
       hint.id = `selection-hint-${selectionHints}`;
-      hint.setAttribute("data-selection-hint", "");
       hint.textContent = scope.dataset.missingHint || "Select at least one row first.";
-      const last = actions[actions.length - 1];
-      (last.closest(".bulk-bar") || last).after(hint);
     }
     const update = () => {
       const all = rows();
@@ -717,6 +713,7 @@
       if (count) count.textContent = chosen ? `${chosen} selected` : "";
       // With no rows at all the table itself says it is empty.
       const explain = Boolean(hint) && !chosen && all.length > 0;
+      hint?.toggleAttribute("data-cleared", !explain);
       actions.forEach((node) => {
         node.disabled = !chosen;
         const described = (node.getAttribute("aria-describedby") || "").split(/\s+/)
@@ -724,15 +721,6 @@
         if (explain) described.push(hint.id);
         if (described.length) node.setAttribute("aria-describedby", described.join(" "));
         else node.removeAttribute("aria-describedby");
-        // A hover tooltip for sighted readers; only a title this code set is
-        // removed again, so a template's own title survives.
-        if (explain && !node.title) {
-          node.title = hint.textContent;
-          node.dataset.selectionTitle = "";
-        } else if (!explain && "selectionTitle" in node.dataset) {
-          node.removeAttribute("title");
-          delete node.dataset.selectionTitle;
-        }
       });
     };
     const choose = (checked) => {
