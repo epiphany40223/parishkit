@@ -2,10 +2,11 @@
 
 Below the users table: a selection column, Name, Member DUID, Email,
 Ministries led (a short list, the whole list in its tooltip) and Role. The
-bulk bar follows #879 with its reason as visible text in a reserved line
-(Administrator decision B2): ticking a row enables Import selected and
-clears the reason without moving anything. With nobody to import, both
-buttons are unavailable with the reason. Import selected posts only the
+bulk bar is the shared one (table-selection.html, #879), its reason visible
+text in a reserved line (Administrator decision B2): ticking a row enables
+Import selected and hides the reason without moving anything. With nobody
+to import, both buttons are unavailable and the same line gives the
+empty-table reason. Import selected posts only the
 ticked addresses, and the answer is the Import Ministry leaders review.
 Pages and POST answers are user_components'.
 """
@@ -99,7 +100,7 @@ def test_ticking_a_row_enables_import_selected_without_moving_anything(
     reason = page.locator(REASON)
     eventually(page, f"document.querySelector('{REASON}').textContent.trim() !== ''")
     assert selected.is_disabled() and everyone.is_enabled()
-    assert reason.inner_text() == "Select at least one leader to import."
+    assert reason.inner_text() == "Select at least one leader to use Import selected."
     # Visible, not a visually hidden hint, and named by the button.
     assert reason.is_visible() and reason.bounding_box()["width"] > 1
     assert "leaders-import-reason" in selected.get_attribute("aria-describedby")
@@ -112,7 +113,9 @@ def test_ticking_a_row_enables_import_selected_without_moving_anything(
     eventually(
         page, "!document.querySelector('#leaders-table [data-bulk-action]').disabled"
     )
-    assert reason.inner_text().strip() == ""
+    # The shared line (table-selection.html) only hides its text.
+    assert not reason.is_visible()
+    assert reason.get_attribute("data-cleared") is not None
     assert abs(reason.bounding_box()["height"] - height) <= 1
     assert boxes(page) == before
     assert "leaders-import-reason" not in (
@@ -125,7 +128,7 @@ def test_ticking_a_row_enables_import_selected_without_moving_anything(
     eventually(
         page, "document.querySelector('#leaders-table [data-bulk-action]').disabled"
     )
-    assert reason.inner_text() == "Select at least one leader to import."
+    assert reason.inner_text() == "Select at least one leader to use Import selected."
     assert boxes(page) == before
 
 
@@ -139,6 +142,14 @@ def test_nothing_to_import_says_why(page, component_origin):
     eventually(
         page,
         f"document.querySelector('{REASON}').textContent.includes('Nothing to import')",
+    )
+    # Visible text, also named by Import selected, which the script disabled.
+    assert page.locator(REASON).is_visible()
+    assert "leaders-import-reason" in (
+        page.get_by_role("button", name="Import selected").get_attribute(
+            "aria-describedby"
+        )
+        or ""
     )
     visible(page.get_by_text("No ParishSoft Ministry leader is waiting for a user."))
 
