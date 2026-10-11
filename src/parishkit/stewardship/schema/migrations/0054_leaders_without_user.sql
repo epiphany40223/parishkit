@@ -30,7 +30,10 @@
 -- user_leaders_listed audit event (the Administrator and the number of
 -- rows, never an address). Against a compromised web login that can pass a
 -- live Administrator's session key (#995), what it discloses is exactly
--- what the page shows the Administrator.
+-- what the page shows the Administrator. Unlike 0053's Name lookup it has
+-- no rate cap, deliberately: one call already returns every row, so
+-- repeating it discloses nothing more. The audit event per call and
+-- hashing the session keys (#995) are the protections.
 --
 -- Who is a leader copies 0042's definition: an active Member of an active
 -- Family (a non-parishioner Family included; an inactive Member never)
