@@ -6,8 +6,9 @@ reads hosted-domain rules. Its DO block refuses an unconverted configuration,
 so the offline upgrade converts first (``upgrade-users``) on the schema
 ``migrate --users-upgrade-base`` leaves, and Admin-access recovery must work
 in every state of that upgrade (D2). The test database is a fresh install,
-so the swap is already applied; a pending swap is made by removing its
-``django_migrations`` row for the length of one test.
+so the swap is already applied; a pending swap is made for the length of one
+test by removing its ``django_migrations`` row and reinstalling the real
+pre-swap bodies of the functions it replaces (``swap_pending``).
 """
 
 import json
@@ -86,39 +87,49 @@ def check_passes():
 
 
 def test_sign_in_reads_only_users_and_every_administrator_keeps_access(tmp_path):
-    """Before the conversion only address rules admit; after it, every user does.
+    """Every Administrator, and the domain colleague, keeps access through the swap.
 
-    The hosted-domain colleague who signed in before is refused by session
-    admission, export authorization and the Ministry scope until the
-    conversion makes them a Staff user; both Administrators are admitted as
-    Administrators before and after it.
+    Before the conversion and during it (converted, swap still pending) the
+    pre-swap SQL runs, as `migrate --users-upgrade-base` leaves it: the
+    hosted-domain colleague who signed in is admitted through the domain
+    rule, then as the Staff user the conversion makes. After the swap the
+    new SQL admits that user too. Both Administrators are Administrators in
+    every state. The new bodies alone, on an unconverted configuration (a
+    state the swap's check never commits), grant nothing from a domain rule.
     """
     store, _, _ = initialized(tmp_path, rules())
     portals = {email: identity(email) for email in (*ADMINS, "signed@example.org")}
     colleague = portals["signed@example.org"]
-    # Before the conversion: the domain rule grants nothing in SQL.
+
+    def admitted(*, staff_scope):
+        """Admin session, export and Ministry scope for every portal user."""
+        for email, portal in portals.items():
+            assert forge(portal.pk).principal_id == portal.pk, email
+            assert authorized(portal) is True, email
+            assert authorized(portal, admin_only=True) is (email in ADMINS), email
+        assert json.loads(ministry_scope(colleague)) == {
+            "capability": "ministry_report",
+            "operational": staff_scope,
+            "ministries": [],
+        }
+
+    # The new bodies: the domain rule grants nothing in SQL.
     with refused():
         forge(colleague.pk)
     assert authorized(colleague) is False
     assert ministry_scope(colleague) is None
-    for email in ADMINS:
-        assert forge(portals[email].pk).principal_id == portals[email].pk
-        assert authorized(portals[email], admin_only=True) is True
-    assert upgrade.upgrade_users(store, **arguments()).state == "applied"
-    assert active_users(store)["signed@example.org"] == ("signed", "staff")
-    # After it: the converted colleague is a Staff user everywhere, and every
-    # Administrator before the conversion is still one.
-    assert forge(colleague.pk).principal_id == colleague.pk
-    assert authorized(colleague) is True
-    assert authorized(colleague, admin_only=True) is False
-    assert json.loads(ministry_scope(colleague)) == {
-        "capability": "ministry_report",
-        "operational": True,
-        "ministries": [],
-    }
-    for email in ADMINS:
-        assert forge(portals[email].pk).principal_id == portals[email].pk
-        assert authorized(portals[email], admin_only=True) is True
+    with swap_pending():
+        assert all(reads_domain_rules(name) for name in REPLACED)
+        # Before the conversion, on the pre-swap SQL: the domain rule
+        # (Ministry leader and Staff) admits the colleague.
+        admitted(staff_scope=True)
+        assert upgrade.upgrade_users(store, **arguments()).state == "applied"
+        assert active_users(store)["signed@example.org"] == ("signed", "staff")
+        # Converted, swap still pending: the same SQL reads the users.
+        admitted(staff_scope=True)
+    # After the swap: the new SQL admits every user the same way.
+    assert not any(reads_domain_rules(name) for name in REPLACED)
+    admitted(staff_scope=True)
 
 
 def test_the_swap_refuses_an_unconverted_configuration(tmp_path):
@@ -162,82 +173,44 @@ def test_the_swap_refuses_an_unconverted_configuration(tmp_path):
     check_passes()
 
 
-def old_definitions():
-    """Each replaced function's definition before the swap, by name.
+# The three replaced functions whose earlier bodies are in no frozen
+# migration, frozen as a test fixture from the baseline before the swap.
+PRE_SWAP = Path(__file__).with_name("pre_users_swap_functions.sql")
+REPLACED = (
+    "stewardship_portal_session_admission_v1",
+    "stewardship_export_authorized_v1",
+    "stewardship_ministry_scope_v1",
+    "stewardship_ministry_leader_scope_v1",
+    "stewardship_policy_activation_v1",
+)
 
-    The Ministry scope and the leader scope come from migration 0042, whose
-    text is the latest before 0052. The other three are only in the
-    baseline, which now carries the new bodies, so they are rebuilt here:
-    the session guard and export authorization exactly as before 0052, and
-    policy activation with its hosted-domain rule loop put back.
+
+def old_definitions():
+    """Each replaced function's real definition before the swap, by name.
+
+    The Ministry scope and the leader scope (SECURITY DEFINER in its own
+    text) come from migration 0042, the latest frozen file before 0052 that
+    defines them. The session guard, export authorization and policy
+    activation come from the frozen fixture copied from the baseline before
+    0052 replaced them; nothing between created or replaced any of the five.
     """
-    earlier = (
+    sources = (
         MIGRATIONS / "migrations/0042_ministry_leaders_from_roles.sql"
-    ).read_text(encoding="utf-8")
+    ).read_text(encoding="utf-8") + PRE_SWAP.read_text(encoding="utf-8")
     definitions = {}
-    for name in (
-        "stewardship_ministry_leader_scope_v1",
-        "stewardship_ministry_scope_v1",
-    ):
+    for name in REPLACED:
         match = re.search(
             rf"^CREATE (?:OR REPLACE )?FUNCTION public\.{name}\(.*?\$\$;$",
-            earlier,
+            sources,
             re.S | re.M,
         )
         definitions[name] = match.group(0).replace(
             "CREATE FUNCTION", "CREATE OR REPLACE FUNCTION", 1
         )
-    join = (
-        "        LEFT JOIN stewardship_domain_rule d ON d.configuration_id="
-        "r.active_configuration_id\n"
-        "            AND d.domain=lower(u.hosted_domain) AND "
-        "d.domain=split_part(lower(u.email),'@',2)\n"
-    )
-    for name, after in (
-        (
-            "stewardship_portal_session_admission_v1",
-            "            AND a.email=lower(u.email)\n",
-        ),
-        (
-            "stewardship_export_authorized_v1",
-            "            AND a.email=lower(u.email)\n",
-        ),
-    ):
-        match = re.search(
-            rf"^CREATE OR REPLACE FUNCTION public\.{name}\(.*?\$\$;$", SWAP, re.S | re.M
-        )
-        text = match.group(0).replace(after, after + join, 1)
-        definitions[name] = text.replace(
-            "coalesce(a.roles,'[]'::jsonb)", "coalesce(a.roles,d.roles,'[]'::jsonb)"
-        )
-    match = re.search(
-        r"^CREATE OR REPLACE FUNCTION public\.stewardship_policy_activation_v1\("
-        r".*?\$\$;$",
-        SWAP,
-        re.S | re.M,
-    )
-    definitions["stewardship_policy_activation_v1"] = match.group(0).replace(
-        "        WHERE configuration_id = NEW.configuration_id\n    LOOP\n",
-        "        WHERE configuration_id = NEW.configuration_id\n"
-        "        UNION ALL\n"
-        "        SELECT record_id, domain, roles\n"
-        "        FROM public.stewardship_domain_rule\n"
-        "        WHERE configuration_id = NEW.configuration_id\n    LOOP\n",
-        1,
-    )
     return definitions
 
 
-@pytest.mark.parametrize(
-    "name",
-    [
-        "stewardship_portal_session_admission_v1",
-        "stewardship_export_authorized_v1",
-        "stewardship_ministry_scope_v1",
-        "stewardship_ministry_leader_scope_v1",
-        "stewardship_policy_activation_v1",
-    ],
-)
+@pytest.mark.parametrize("name", REPLACED)
 def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
     """With any one function still reading hosted domains, the swap refuses.
 
@@ -268,29 +241,44 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 
 @contextmanager
 def swap_pending():
-    """Make the users swap look unapplied, as `migrate --users-upgrade-base` leaves it.
+    """Put the database in the state `migrate --users-upgrade-base` leaves.
 
-    Only its ``django_migrations`` row is removed (the functions stay
-    swapped, which no check here reads), and it is restored afterwards: a
-    transactional test's flush never touches that table.
+    The swap's ``django_migrations`` row is removed and the five functions
+    it replaces get their real earlier bodies back (``old_definitions``),
+    so sign-in, export authorization and recovery run on the SQL a
+    production database has between the base migration and the full one.
+    Afterwards the swap's own statements (everything before its closing
+    check) and its row are put back: a transactional test's flush touches
+    neither function bodies nor that table, so later tests would otherwise
+    see this state.
     """
     app, name = USERS_SWAP
-    with connection.cursor() as cursor:
+    with transaction.atomic(), connection.cursor() as cursor:
         cursor.execute(
             "DELETE FROM django_migrations WHERE app=%s AND name=%s RETURNING applied",
             [app, name],
         )
         (applied,) = cursor.fetchone()
+        for definition in old_definitions().values():
+            cursor.execute(definition)
     try:
         yield
     finally:
-        with connection.cursor() as cursor:
+        with transaction.atomic(), connection.cursor() as cursor:
             cursor.execute("RESET SESSION AUTHORIZATION")
+            cursor.execute(SWAP[: SWAP.index("DO $check$")])
             cursor.execute(
                 "INSERT INTO django_migrations (app, name, applied) "
                 "VALUES (%s, %s, %s)",
                 [app, name, applied],
             )
+
+
+def reads_domain_rules(name):
+    """Whether the installed body of one replaced function names domain rules."""
+    return "stewardship_domain_rule" in scalar(
+        "SELECT prosrc FROM pg_proc WHERE oid=%s::regproc", [f"public.{name}"]
+    )
 
 
 def test_only_the_swap_closure_may_be_pending_for_recovery():
@@ -374,39 +362,66 @@ def recover(configuration, deployment, email):
 def test_recovery_works_before_during_and_after_the_conversion(tmp_path, monkeypatch):
     """D2: recovery and the upgrade run with the swap pending, and after it.
 
-    With only the swap pending, as the upgrade's base migration leaves the
-    database, recover-admin adds an Administrator rule; upgrade-users then
-    converts with that Administrator confirmed too; recovery still runs on
-    the converted configuration before the swap and, once it is applied,
-    after it. Every Administrator recovered on the way can open an Admin
-    session through the swapped SQL guard.
+    With only the swap pending and the pre-swap SQL installed, as the
+    upgrade's base migration leaves the database, recover-admin adds an
+    Administrator rule, which opens an Admin session at once; upgrade-users
+    then converts with that Administrator confirmed too; recovery still runs
+    on the converted configuration before the swap, and every Administrator
+    so far opens an Admin session through the pre-swap guard. Once the swap
+    is applied recovery still runs, and every Administrator recovered on the
+    way opens an Admin session through the swapped guard.
     """
     store, _, _ = initialized(tmp_path, rules())
     deployment = str(SystemConfiguration.objects.get().pk)
     configuration = offline_commands(monkeypatch, store)
-    with swap_pending(), task_login(ServiceRole.ADMIN_RECOVERY):
-        # Before the conversion, with only the swap pending.
-        preview = operator_commands.preview_recovery_command(
-            configuration, deployment_id=deployment, target_email="early@example.org"
+
+    portals = {}
+
+    def sessions(*emails):
+        """Each address is an Administrator user who can open an Admin session."""
+        users = active_users(store)
+        for email in emails:
+            assert users[email][1] == "administrator", email
+            if email not in portals:
+                portals[email] = identity(email, signed_in=False)
+            assert forge(portals[email].pk).principal_id == portals[email].pk, email
+
+    with swap_pending():
+        with task_login(ServiceRole.ADMIN_RECOVERY):
+            # Before the conversion, with only the swap pending.
+            preview = operator_commands.preview_recovery_command(
+                configuration,
+                deployment_id=deployment,
+                target_email="early@example.org",
+            )
+            assert preview["recovery_preview"]
+            assert recover(configuration, deployment, "early@example.org")[
+                "recovery_applied"
+            ]
+        # The just-recovered Administrator signs in on the pre-swap SQL.
+        early = portals["early@example.org"] = identity(
+            "early@example.org", signed_in=False
         )
-        assert preview["recovery_preview"]
-        assert recover(configuration, deployment, "early@example.org")[
-            "recovery_applied"
-        ]
-        result = operator_commands.upgrade_users_command(
-            configuration,
-            deployment_id=deployment,
-            preview=False,
-            operation_id=str(uuid4()),
-            operator_name="Test operator",
-            reason="Users revamp",
-            confirmed_administrators=",".join(sorted([*ADMINS, "early@example.org"])),
-        )
-        assert result["users_upgrade_applied"] is True
-        # Converted, swap still pending: recovery writes a users form.
-        assert recover(configuration, deployment, "middle@example.org")[
-            "recovery_applied"
-        ]
+        assert forge(early.pk).principal_id == early.pk
+        with task_login(ServiceRole.ADMIN_RECOVERY):
+            result = operator_commands.upgrade_users_command(
+                configuration,
+                deployment_id=deployment,
+                preview=False,
+                operation_id=str(uuid4()),
+                operator_name="Test operator",
+                reason="Users revamp",
+                confirmed_administrators=",".join(
+                    sorted([*ADMINS, "early@example.org"])
+                ),
+            )
+            assert result["users_upgrade_applied"] is True
+            # Converted, swap still pending: recovery writes a users form.
+            assert recover(configuration, deployment, "middle@example.org")[
+                "recovery_applied"
+            ]
+        # The pre-swap SQL admits every Administrator of the users form.
+        sessions(*ADMINS, "early@example.org", "middle@example.org")
     # The swap applied (the full migration ran): recovery still runs.
     with task_login(ServiceRole.ADMIN_RECOVERY):
         assert recover(configuration, deployment, "late@example.org")[
@@ -422,13 +437,4 @@ def test_recovery_works_before_during_and_after_the_conversion(tmp_path, monkeyp
             reason="Users revamp",
             confirmed_administrators="admin@example.org",
         ) == {"users_upgrade_applied": False, "already_users": True}
-    users = active_users(store)
-    for email in (
-        *ADMINS,
-        "early@example.org",
-        "middle@example.org",
-        "late@example.org",
-    ):
-        assert users[email][1] == "administrator", email
-        portal = identity(email, signed_in=False)
-        assert forge(portal.pk).principal_id == portal.pk
+    sessions(*ADMINS, "early@example.org", "middle@example.org", "late@example.org")
