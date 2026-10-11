@@ -85,6 +85,8 @@ from .automation_components import POSTS as AUTOMATION_POSTS
 from .automation_components import SLOW_GETS as AUTOMATION_SLOW_GETS
 from .automation_components import canonical
 from .automation_components import components as automation_components
+from .branding_components import POSTS as BRANDING_POSTS
+from .branding_components import components as branding_components
 from .census_components import components as census_components
 from .chart_components import components as chart_components
 from .delivery_components import POSTS as DELIVERY_POSTS
@@ -588,10 +590,20 @@ def component_origin():
                 "assets": [branding_asset],
             },
         ),
+        # Parish logos with its upload's review in place (#750).
         (
             "/branding-preview",
-            "branding-preview",
-            {"assets": [branding_asset], "preview": "synthetic-preview"},
+            "branding-settings",
+            {
+                "form": LogoForm(initial={"base_digest": "a" * 64}),
+                "assets": [branding_asset],
+                "review": {
+                    "template": "stewardship/branding-review.html",
+                    "notes": [],
+                    "assets": [branding_asset],
+                    "preview": "synthetic-preview",
+                },
+            },
         ),
         (
             "/integrations",
@@ -2275,6 +2287,7 @@ def component_origin():
     responses.update(system_health_components(context, admin))
     responses.update(hosted_file_components(context, admin))
     responses.update(artwork_components(context, admin))
+    responses.update(branding_components(context, admin))
     responses.update(limitations_components(context, admin))
     responses.update(census_components(context, admin))
     responses.update(workgroup_components(context, admin))
@@ -2307,6 +2320,7 @@ def component_origin():
         | USER_POSTS
         | WORKGROUP_POSTS
         | ARTWORK_POSTS
+        | BRANDING_POSTS
         | {
             f"{IN_PLACE_FORM}/refuse": (400, None, responses["/in-place-refused"][1]),
             f"{IN_PLACE_FORM}/invalid": (200, None, responses["/in-place-invalid"][1]),

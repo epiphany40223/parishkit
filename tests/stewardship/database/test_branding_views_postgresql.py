@@ -22,6 +22,7 @@ from .auth_builders import signed_in
 from .campaign_builders import change
 from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_background_grants_postgresql import task_login
+from .test_parish_views_postgresql import region
 
 pytestmark = pytest.mark.django_db(transaction=True)
 URL = "/admin/parish/logos/"
@@ -53,12 +54,15 @@ def post(browser, url, values):
 
 
 def stage(browser, service):
-    """Upload once and follow the owner-only preview route actually returned."""
+    """Upload once and return the owner-only review address actually returned:
+    Parish logos naming the staged logos (#750), without its region fragment."""
     result = post(
         browser, URL, {"base_digest": service.store.active().digest, "logo": upload()}
     )
     assert result.status_code == 302, result.content
-    return result["Location"]
+    location, fragment = result["Location"].split("#")
+    assert location.startswith(f"{URL}?review=") and fragment == "settings-review"
+    return location
 
 
 def preview_token(response):
@@ -80,6 +84,9 @@ def test_logo_becomes_public_only_after_yaml_activation(auth_service, google, me
         preview = stage(browser, auth_service)
         page = browser.get(preview)
         assert flow_steps(page.content) == (STEPS, "Review")
+        # Reviewed in place (#750): every size and Apply in the review region.
+        assert "Apply changes" in region(page.content)
+        assert region(page.content).count("<figure>") == 4
         token = preview_token(page)
         assert b"private-original" not in page.content
         assets = list(BrandingAsset.objects.order_by("label"))
@@ -92,9 +99,10 @@ def test_logo_becomes_public_only_after_yaml_activation(auth_service, google, me
         result = post(browser, preview, {"action": "confirm", "preview": token})
         assert result.status_code == 302, result.content
     assert auth_service.store.active() == old
-    request = ConfigurationChangeRequest.objects.get(
-        pk=result["Location"].rstrip("/").rsplit("/", 1)[-1]
-    )
+    # Apply answers with Parish logos naming the change, not Change status.
+    location = result["Location"].split("#")[0]
+    assert location.startswith(f"{URL}?request=")
+    request = ConfigurationChangeRequest.objects.get(pk=location.rsplit("=", 1)[1])
     with task_login(ServiceRole.CONFIG_INSTALLER):
         assert (
             install_request(
@@ -102,11 +110,15 @@ def test_logo_becomes_public_only_after_yaml_activation(auth_service, google, me
             ).state
             == "applied"
         )
-    # The one-time logo review is named but not linked; Return goes to the
-    # logos page (#196).
-    status = browser.get(result["Location"]).content
-    assert b"<li><span>Review parish logos</span></li>" in status
+    # The page follows the change in place: Applied, and the new logos.
+    followed = browser.get(location)
+    assert flow_steps(followed.content) == (STEPS, "Apply")
+    assert "Applied: your change is saved" in region(followed.content)
+    assert b'<img src="/branding/' in followed.content
+    # Change status itself still returns to Parish logos (#196).
+    status = browser.get(f"/admin/changes/{request.pk}/").content
     assert f'<a href="{URL}">Return to Parish logos</a>'.encode() in status
+    # The one-time review no longer opens once its logos are chosen.
     assert browser.get(preview).status_code != 200
     for asset in assets:
         response = browser.get(f"/branding/{asset.pk}.png")
@@ -192,8 +204,52 @@ def test_bad_uploads_never_create_durable_bundles(auth_service, google, media, k
         403 if kind == "csrf" else 409 if kind == "stale" else 400
     )
     assert b"<script>private" not in response.content
+    # Explained in place, in the review region (#750).
+    if kind == "stale":
+        assert "This page changed in another tab or session." in region(
+            response.content
+        )
+    elif kind == "signature":
+        assert 'href="#id_logo"' in region(response.content)
     assert not BrandingBundle.objects.exists()
     assert not BrandingAsset.objects.exists()
+
+
+def test_a_refused_apply_is_explained_in_place(auth_service, google, media):
+    """Logos staged against settings that changed since are refused when
+    applied, in the review region (#750); Apply needs a staged address."""
+    browser, _ = signed_in()
+    store = auth_service.store
+    with task_login(ServiceRole.WEB):
+        preview = stage(browser, auth_service)
+        token = preview_token(browser.get(preview))
+    parish = store.active().document()["sections"]["parish"][0]
+    patch = [
+        {
+            "operation": "update",
+            "section": "parish",
+            "id": parish["id"],
+            "values": {"name": "Changed parish"},
+        }
+    ]
+    assert change(store, store.active(), uuid4(), patch).state == "applied"
+    with task_login(ServiceRole.WEB):
+        refused = post(browser, preview, {"action": "confirm", "preview": token})
+        assert refused.status_code == 409
+        assert "Upload the logo again." in region(refused.content)
+        # Apply posts only to the address naming its staged logos.
+        for elsewhere in (URL, f"{URL}?review={uuid4()}"):
+            assert (
+                post(
+                    browser, elsewhere, {"action": "confirm", "preview": token}
+                ).status_code
+                == 400
+            )
+        assert browser.get(f"{URL}?review=x").status_code == 400
+        assert browser.get(f"{URL}?review={uuid4()}&request=x").status_code == 400
+    assert not ConfigurationChangeRequest.objects.filter(
+        patch__0__section="parish", patch__0__values__has_key="branding"
+    ).exists()
 
 
 @pytest.mark.parametrize("role", ["staff", "ministry_leader"])

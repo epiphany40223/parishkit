@@ -586,6 +586,15 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   with that explanation in the review region. Each upload form has an id,
   so a file chosen while the quiet refresh redraws it is said not to be
   kept.
+- **In-place review: Parish logos (#750).** Parish logos has no settings
+  form: its upload form (`data-in-place`, multipart, a region of its own)
+  answers with the page naming the staged logos (`?review=<bundle>`), whose
+  review region under the form shows every generated size with Apply, which
+  posts to that address. The current logos are a region of their own below
+  the review region, so the quiet refresh once a change is applied shows
+  the new ones without moving the form or the review. A refused upload's
+  field error shows in the form and, linked to that field, in the review
+  region, which takes focus; a stale upload or Apply is refused there too.
 
 ### No layout shift
 

@@ -831,8 +831,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `weekly_digest_item` | Weekly report item | Weekly report | Administrator | Weekly information report (one item); Weekly summary item | `/admin/reports/emailed/weekly/<snapshot>/items/<item>/` | (same) | Links the live Additional information request. |
 | `daily_digest_snapshot` | Daily report | Emailed reports | Administrator, Staff | (report document title) daily report | `/admin/reports/emailed/daily/<snapshot>/` | (same) | Its old address, which daily report emails sent before NAV-12 link, is gone, with no redirect (#864). |
 | `parish_settings` | Parish settings | Menu: Parish settings | Administrator | (same) | `/admin/parish/settings/` | (same) | Hand-written Administration link removed. |
-| `branding_settings` | Parish logos | Menu: Parish logos | Administrator | (same) | `/admin/parish/logos/` | (same) |  |
-| `branding_preview` | Review parish logos | Parish logos | Administrator | Logo preview | `/admin/parish/logos/<bundle>/` | (same) |  |
+| `branding_settings` | Parish logos | Menu: Parish logos | Administrator | (same) | `/admin/parish/logos/` | (same) | Uploads, the review of staged logos (`?review=<bundle>`) and Apply all happen here (#750); the old Review parish logos address is gone. |
 | `ministries` | Ministries | Menu: Ministries | Administrator | Ministry activity | `/admin/parish/ministries/` | (same) |  |
 | `campaign_ministries` | Campaign Ministries | Ministries | Administrator | Change campaign Ministries | `/admin/parish/ministries/campaign/` | (same) | Moves under Ministries, which links it while the campaign is live; its Return link goes to Ministries. Campaign settings keeps a link. |
 | `hosted_files` | Hosted files | Menu: Hosted files | Administrator | (same) | `/admin/parish/files/` | (same) |  |
@@ -1015,7 +1014,7 @@ the integration the key belongs to, never under each other, because only the
 Administrator who saved a key may read its status. Some pages are named in
 trails but never linked, and "Return to" skips them: those that only answer a
 POST (the Import Ministry leaders review); one-time reviews that refuse once their change is
-confirmed (Copy campaign and the logo review); and Finish
+confirmed (Copy campaign); and Finish
 switching, which still opens afterward but needs a fresh Google sign-in and has
 nothing left to do. A menu page is linked in a trail or "Return to" only while
 the viewer's menu entry for it is available, so a page whose entry is
@@ -1325,7 +1324,14 @@ timezone when one exists.
 
 Logo management previews every generated size. Uploads remain staged until the
 YAML version referencing their immutable branding version is applied;
-historical email/page previews retain their campaign version.
+historical email/page previews retain their campaign version. The upload's
+review, Apply and the change's status happen
+[in place](../ui-conventions/spec.md#in-place-controls) under the upload
+form (#750): an upload answers with Parish logos naming the staged logos
+(`?review=<bundle>`), Apply posts to that address, and the current logos,
+below the review region, refresh once the change is applied. An upload
+from a page whose settings changed elsewhere, and an Apply of logos that
+expired or were staged against settings changed since, are refused there.
 
 Campaign images (Campaign navigation) hold the current campaign's theme
 artwork: five optional slots, a wide banner and one small icon each for the
