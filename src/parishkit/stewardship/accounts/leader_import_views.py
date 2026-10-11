@@ -17,12 +17,14 @@ the Member DUID and the role are never taken from the form.
 
 from uuid import uuid4
 
+from django.db import DatabaseError
 from django.shortcuts import render
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_POST
 
 from parishkit.stewardship.campaigns.work_locks import read_transaction
+from parishkit.stewardship.observability import debug_swallowed
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.refusals import UserFacingError, unexpected_fields
@@ -34,6 +36,7 @@ from .authentication import runtime
 from .leader_import import (
     LEADER_SORTING,
     SKIP_REASONS,
+    LeadersRefused,
     plan_import,
     read_leaders,
     table_rows,
@@ -57,13 +60,22 @@ def leaders_context(request, paging, carry):
     Reads the leaders through the definer (which records its own audit
     event), then pages and sorts them. Call it outside any read-only
     snapshot: the definer writes. A refused session raises
-    ``LeadersRefused`` (a ``PermissionError``), and a database failure
-    propagates, so the page fails closed rather than showing a partial
+    ``LeadersRefused`` (a ``PermissionError``), so the page fails closed.
+    Any other database failure (the definer runs in its own savepoint, so
+    the connection stays usable) only sets ``leaders_unavailable``: the
+    leaders section then says it could not read the list, and the users
+    table above it stays usable (#952 review). It never shows a partial
     list. ``carry`` keeps the users table's own place in this table's links.
     An unknown sort is refused before anything is read.
     """
     LEADER_SORTING.parse(paging, PREFIX)
-    leaders = read_leaders(request.session.session_key)
+    try:
+        leaders = read_leaders(request.session.session_key)
+    except LeadersRefused:
+        raise
+    except DatabaseError:
+        debug_swallowed("leaders without a user unavailable")
+        return {"leaders": None, "leaders_unavailable": True}
     table = paginate(
         table_rows(leaders),
         paging,
