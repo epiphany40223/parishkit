@@ -3075,6 +3075,7 @@
   };
   const CONFIRM_UNAVAILABLE = "This was not done: the server can't do it right now. Try again in a moment.";
   const CONFIRM_UNREACHABLE = "The server could not be reached. Reload the page to check whether this was done.";
+  const CONFIRM_STATUS_LOST = "The change was saved, but its status can no longer be checked: your sign-in ended or your account no longer has access. Reload the page to see the list.";
   const fillIn = (text, values) => String(text || "").replace(/\{(\w+)\}/g,
     (whole, key) => (key in values ? String(values[key]) : whole));
   const pause = (ms) => new Promise((resolve) => { window.setTimeout(resolve, ms); });
@@ -3247,10 +3248,18 @@
         return;
       }
       await pause(CONFIRM_POLL_MS);
+      let next;
       try {
-        const next = await read(statusUrl, {method: "GET"});
-        if (next.response.ok) status = changeStatus(next.text) || status;
-      } catch { /* keep waiting until the deadline */ }
+        next = await read(statusUrl, {method: "GET"});
+      } catch { continue; /* keep waiting until the deadline */ }
+      if ([401, 403, 404].includes(next.response.status) || next.response.redirected) {
+        // Signed out or no longer allowed to read the status (such as after
+        // a change that removed the reader's own access): waiting cannot
+        // help, so say so at once (#952).
+        refuseConfirm(state, CONFIRM_STATUS_LOST);
+        return;
+      }
+      if (next.response.ok) status = changeStatus(next.text) || status;
     }
     if (status && status.state !== "applied") {
       refuseConfirm(state, status.text || "The change was not applied. Nothing was changed.",

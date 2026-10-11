@@ -881,10 +881,7 @@ before #952.
 
 Signing in to the Admin portal needs a user of Ministry leader, Staff or
 Administrator (Administrator decision, 2026-10-10, made with the Portal Users
-revamp); a ParishSoft role alone admits no one. Until the users code of
-[#952](https://github.com/epiphany40223/parishkit/issues/952) lands, the code
-still admits by login rule as an interim: a login rule granting one of those
-roles stands in for the user. ParishSoft decides only which Ministries such a
+revamp); a ParishSoft role alone admits no one. ParishSoft decides only which Ministries such a
 person leads: a person leads a Ministry for the current campaign when an active
 Member of an active Family holds one of the campaign's Ministry leader roles on
 that Ministry's current roster in the promoted ParishSoft data, and the person

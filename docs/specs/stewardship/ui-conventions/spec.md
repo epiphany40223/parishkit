@@ -693,6 +693,13 @@ filters only. **Precedent.** #532 (in-place review), #523
 ([preview lifetimes](../admin-portal/spec.md#preview-lifetimes)), #882 (New and
 Edit pages follow it).
 
+A status that can no longer be read never looks as if it were still
+waiting. When the follow-up's status read is refused (the sign-in ended, or
+the change removed the reader's own access), Change status replaces its
+running indicator with a plain final "Status unavailable" message
+(`template[data-live-refused]`, `live-status-v1.js`), and a table's Delete
+dialog says the change was saved but its status can't be checked (#952).
+
 Current state, to be made consistent: only Parish settings and Campaign
 settings review, apply and follow the change in place
 ([in-place review](#in-place-controls), #532); every other editor still uses
@@ -1059,8 +1066,8 @@ campaign reports) keep them in POST state: their navigator and headings are
 small CSRF-protected forms that carry the filters as hidden fields, so no
 private value reaches a URL. System logs also accept a link carrying only its
 non-private filters ([Logs](../admin-portal/spec.md#logs)). A control on
-another page that opens such a report narrowed by a private value (a Users
-row's "Sign-in activity", narrowed to one Google identity) is a link-styled
+another page that opens such a report narrowed by a private value (Edit
+user's "Sign-in activity", narrowed to one Google identity) is a link-styled
 button posting a small CSRF form with that value as a hidden field, never a
 link carrying it. A report whose rows an installed SQL selection
 orders offers that selection's sort orders on the columns they order and its
@@ -1163,9 +1170,10 @@ A table whose rows can be acted on follows one pattern
 ([#879](https://github.com/epiphany40223/parishkit/issues/879)), built once
 and shared. Its users so far are
 [Dates and mail schedules](../admin-portal/spec.md#dates-and-mail-schedules), the
-[Hosted files](../hosted-files/spec.md#admin-page) library and the live
+[Hosted files](../hosted-files/spec.md#admin-page) library, the live
 sessions of
-[Automation access](../admin-automation/spec.md#revocation-and-listing); the
+[Automation access](../admin-automation/spec.md#revocation-and-listing) and
+[Users](../admin-portal/spec.md#users-table); the
 other Admin tables with per-row actions move to it in later changes, as the
 inventory on #879 lists.
 

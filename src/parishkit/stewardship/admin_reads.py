@@ -1077,10 +1077,13 @@ class UsersList(ReadModel):
     ``form`` is ``users`` once the configuration holds users, else
     ``sign_in_rules``: before the users upgrade the users are the
     exact-address rules that grant a role, each with its highest role and a
-    null ``name`` (``user_reads.user_list``).
+    null ``name`` (``user_reads.user_list``). ``version`` is the applied
+    configuration's digest, which ``users preview --expected-version``
+    takes; each user's ``id`` is what its change document names.
     """
 
     form: str
+    version: str
     sort: str
     users: list
 
@@ -1105,8 +1108,9 @@ class UsersUpgradePreview(ReadModel):
 def _read_users(caller, service, read, *, audit):
     """Admit as the Portal users page, read its snapshot, recheck and audit.
 
-    ``read(document, records)`` runs inside the page's read-only snapshot
-    and returns the model and the number of rows it holds, which the page's
+    ``read(document, records, version)`` runs inside the page's read-only
+    snapshot (``version`` is the applied configuration's digest) and
+    returns the model and the number of rows it holds, which the page's
     view event (``portal_users_viewed``) records, never an address or role;
     a None model is ``not_available``.
     """
@@ -1121,7 +1125,11 @@ def _read_users(caller, service, read, *, audit):
         with read_transaction():
             configuration = editable_configuration(service)
             document = configuration.active_configuration.canonical_document
-            model, count = read(document, document["sections"].get("login_rules", []))
+            model, count = read(
+                document,
+                document["sections"].get("login_rules", []),
+                configuration.active_configuration.digest,
+            )
         with transaction.atomic():
             # As the task reads: the session is rechecked before anything is
             # reported, including that there is nothing to preview.
@@ -1146,13 +1154,13 @@ def read_users(caller, service, sort=None, *, audit=True):
 
     token = USER_SORTING.parse({} if sort is None else {"sort": sort})
 
-    def read(document, records):
+    def read(document, records, version):
         """The users of this snapshot, sorted."""
         rows = USER_SORTING.sort_rows(
             user_list(records, policy_identities(records)), token
         )
         form = "users" if uses_users(document) else "sign_in_rules"
-        return UsersList(form=form, sort=token, users=rows), len(rows)
+        return UsersList(form=form, version=version, sort=token, users=rows), len(rows)
 
     return _read_users(caller, service, read, audit=audit)
 
@@ -1165,7 +1173,7 @@ def read_users_upgrade(caller, service, *, audit=True):
     """
     from .accounts.users_upgrade import document_preview
 
-    def read(document, records):
+    def read(document, records, version):
         """The preview of converting this snapshot's sign-in rules."""
         preview = document_preview(document)
         if preview["already_users"]:

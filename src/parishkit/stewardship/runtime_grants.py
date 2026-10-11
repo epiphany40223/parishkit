@@ -284,6 +284,36 @@ LEADER_SCOPE_FUNCTION = "stewardship_ministry_leader_scope_v1(uuid)"
 # addresses, never the rest of a Member's contact record.
 PORTAL_IDENTITIES_FUNCTION = "stewardship_portal_identities_v1()"
 MEMBER_NAMES_FUNCTION = "stewardship_member_names_v1()"
+# The New user page's Name default (#952 slice 5): the ordered names of the
+# current ParishSoft Members listing one typed address. Web learns only the
+# names, never another contact field. The definer refuses unless the
+# caller's Admin session is live and its user an Administrator now, but web
+# can read raw Admin session keys (stewardship_portal_session.session_id is
+# the Django session key), so against a compromised web login what holds is
+# the cap of 60 lookups an hour for each Administrator and an audit event
+# per lookup. Hashing the session keys is #995.
+MEMBER_NAMES_FOR_FUNCTION = "stewardship_member_names_for_v1(text, text, uuid)"
+# Each definer routine above that a migration in the users swap's closure
+# creates (#952), with that migration. `migrate --users-upgrade-base` leaves
+# the closure pending, and database-grants runs on that base before the
+# conversion, so it grants such a routine only once its migration is
+# applied (``pending_functions``). A test proves this lists every registry
+# routine the closure's migrations create.
+CLOSURE_FUNCTIONS = {
+    MEMBER_NAMES_FOR_FUNCTION: ("stewardship_accounts", "0014_user_name_lookup"),
+}
+
+
+def pending_functions(applied):
+    """The registry routines whose creating migration is not in ``applied``.
+
+    ``applied`` is the ``(app, name)`` pairs of ``django_migrations``.
+    """
+    return frozenset(
+        function
+        for function, migration in CLOSURE_FUNCTIONS.items()
+        if migration not in applied
+    )
 
 
 def runtime_functions(role, *, target=None):
@@ -299,7 +329,8 @@ def runtime_functions(role, *, target=None):
     the general worker and the download login read a user's role-derived
     Ministry scope (#922). The offline admin-recovery login reads recorded
     identities and Member names for the users upgrade (#952), and web reads
-    them for that upgrade's read-only preview.
+    them for that upgrade's read-only preview, and one typed address's Member
+    names for the New user page's Name default.
     """
     role = _identity_role(role, target)
     if role is ServiceRole.CREDENTIAL_INSTALLER:
@@ -315,6 +346,7 @@ def runtime_functions(role, *, target=None):
                 LEADER_SCOPE_FUNCTION,
                 PORTAL_IDENTITIES_FUNCTION,
                 MEMBER_NAMES_FUNCTION,
+                MEMBER_NAMES_FOR_FUNCTION,
             },
             ServiceRole.CONFIG_INSTALLER: {MINISTRY_CATALOG_FUNCTION},
             ServiceRole.WORKER: {

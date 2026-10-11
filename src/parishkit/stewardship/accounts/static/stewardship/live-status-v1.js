@@ -34,6 +34,12 @@
 // data-live-announce sentence instead, which is copied into the page's
 // [data-live-announcer] element only when that sentence changes.
 //
+// A pending region may hold a template[data-live-refused]: when a status
+// read is refused (signed out, or no longer allowed, such as after a change
+// that removed the reader's own access), its content replaces the region as
+// a settled final status, so the page never looks as if it were still
+// waiting (#952). Without one, the refusal is said under the region.
+//
 // A region may also set data-live-give-up="<ms>" (at most 3 hours) to
 // replace the one-hour limit; the limit then counts from the last poll that
 // brought new content, so a long send watched from well before it starts
@@ -373,6 +379,14 @@
         if (stopped || gone()) return;
         if ([401, 403, 404].includes(response.status) || response.redirected) {
           // Signed out or no longer allowed: retrying cannot help.
+          const settled = region.querySelector("template[data-live-refused]");
+          if (settled) {
+            region.replaceChildren(settled.content.cloneNode(true));
+            region.removeAttribute("data-live-pending");
+            region.setAttribute("data-live-state", "unknown");
+            stop("");
+            return;
+          }
           stop("Couldn't check status. Refresh the page or sign in again.");
           return;
         }

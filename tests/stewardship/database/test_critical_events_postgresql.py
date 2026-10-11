@@ -19,8 +19,7 @@ from ..log_samples import sample as log_sample
 from ..policy_factory import address
 from .auth_builders import signed_in
 from .test_security_events_postgresql import home, signed_in_as
-from .test_user_rule_views_postgresql import web
-from .test_user_views_postgresql import add_rules
+from .user_builders import add_rules, web
 
 pytestmark = pytest.mark.django_db(transaction=True)
 ROUTE = "/admin/critical-events/acknowledge"

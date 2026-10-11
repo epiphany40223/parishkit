@@ -24,18 +24,20 @@ from parishkit.stewardship.admin_urls import (
     reports,
     slashless,
     system,
+    users,
 )
 from parishkit.stewardship.reports.daily_digest import DailyDigestDocument
 from parishkit.stewardship.reports.weekly_digest import WeeklyDigestDocument
 
 # Menu groups whose URLs follow the scheme so far, by URL segment.
-MOVED = {"system", "parish", "mail", "campaign", "reports"}
+MOVED = {"system", "parish", "mail", "campaign", "reports", "users"}
 GROUPS = (
     system.patterns
     + parish.patterns
     + mail.patterns
     + campaign.patterns
     + reports.patterns
+    + users.patterns
 )
 # Route segments that would be a GET target naming an action.
 VERBS = {
@@ -58,7 +60,14 @@ VERBS = {
 }
 # Segments the spec's placement table names on purpose: Send a weekly report
 # now is the form for a new weekly report (``emailed/weekly/new/``).
-SPEC_NAMED = {"weekly_digest_manual": {"new"}}
+# The Users pages (#952) are New user (``users/new/``), its Name lookup under
+# it, and Edit user (``users/<user>/edit/``), as the placement table names.
+SPEC_NAMED = {
+    "weekly_digest_manual": {"new"},
+    "user_new": {"new"},
+    "user_name_suggestions": {"new"},
+    "user_edit": {"edit"},
+}
 # JSON reads that scripts poll; they keep their old addresses (decision 8).
 POLLED = {"background_counts", "background_tasks", "background_task"}
 TASK = UUID(int=7)
@@ -248,6 +257,10 @@ SLASHLESS_EXPECTED = {
     f"/admin/mail/refusals/{T}": f"/admin/mail/refusals/{T}/",
     "/admin/mail/family-portal": "/admin/mail/family-portal/",
     "/admin/mail/presence": "/admin/mail/presence/",
+    # Users (#952): the page, New user and Edit user.
+    "/admin/users": "/admin/users/",
+    "/admin/users/new": "/admin/users/new/",
+    f"/admin/users/{T}/edit": f"/admin/users/{T}/edit/",
     "/admin/users/automation": "/admin/users/automation/",
     "/admin/users/automation/approval": "/admin/users/automation/approval/",
     # Responses and reports pages without their trailing slash (NAV-11).
@@ -321,6 +334,11 @@ OLD_ADDRESSES = (
     "/admin/reports/campaigns/",
     "/admin/ministry-reports/",
     "/admin/ministry-reports/campaigns/",
+    # Portal users' sign-in rule review and autosave (#952).
+    "/admin/users/rules",
+    "/admin/users/rules/apply",
+    "/admin/users/rules/base",
+    f"/admin/users/rules/requests/{T}",
 )
 
 
@@ -343,8 +361,9 @@ def test_every_slashless_form_is_listed_once_and_expected():
 
 # Form actions posted only from their own page's script, at the reversed URL,
 # have no slashless form (slashless.SLASHLESS's rule): Delete scheduled emails
-# answers only the list's confirmation dialog (#878).
-POSTED_ONLY = {"schedule_delete"}
+# answers only the list's confirmation dialog (#878), as Delete user does
+# (#952).
+POSTED_ONLY = {"schedule_delete", "user_delete"}
 
 
 def test_every_moved_page_has_its_slashless_form():
