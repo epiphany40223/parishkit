@@ -226,7 +226,7 @@ def test_participation_census_and_limitations_workbooks_share_the_style():
     sheet = book["Census changes"]
     assert tuple(cell.value for cell in sheet[1]) == HEADINGS
     assert_styled_table(sheet, first_column=True)
-    shaped = shape_result(limitations_result({}, {}))
+    shaped = shape_result(limitations_result())
     book = load_workbook(io.BytesIO(limitations_xlsx(shaped, ZoneInfo("UTC"))))
     for title in ("Members", "Families"):
         assert_styled_table(book[title], first_column=True)
