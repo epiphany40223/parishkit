@@ -41,11 +41,14 @@ from .directories import (
     CHECKS,
     DIRECTORY_SORTING,
     FIND_MINIMUM,
+    MODES,
     PAGE_SIZE,
     REACH,
     REASONS,
     RESPONSES,
     DirectoryQuery,
+    NoRehearsal,
+    admit_mode,
     directory_page,
     find_families,
     response_columns,
@@ -57,6 +60,7 @@ from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .read_admission import admit_report_read
 from .report_paging import carried_filters, clamp_query, pop_page_size
+from .response_dashboard import rehearsal_epoch
 
 
 def _principal(request, store, *, read_only=False):
@@ -74,10 +78,13 @@ def _principal(request, store, *, read_only=False):
 # Closed, non-private values a link may carry (GET): the reach presets (such
 # as "no campaign mail can reach"), the mailing-columns preset and, for the
 # response dashboard's "Lists of Families" links (#933), the Response and
-# ParishSoft data to check choices, the response columns and the sort. Each
-# is a closed vocabulary ``DirectoryQuery.parse`` checks; search text and
-# exact codes stay POST only.
-LINK_PRESETS = frozenset({"reach", "mailing", "response", "responses", "check", "sort"})
+# ParishSoft data to check choices, the response columns, the sort and the
+# mode (Testing links are admitted for Administrators only). Each is a
+# closed vocabulary ``DirectoryQuery.parse`` checks; search text and exact
+# codes stay POST only.
+LINK_PRESETS = frozenset(
+    {"reach", "mailing", "response", "responses", "check", "sort", "mode"}
+)
 
 
 def page_address(report_url, query, *, postal):
@@ -98,7 +105,7 @@ def page_address(report_url, query, *, postal):
     defaults = DirectoryQuery()
     values = {
         key: getattr(query, key)
-        for key in ("response", "responses", "check", "sort", "reach")
+        for key in ("response", "responses", "check", "sort", "reach", "mode")
         if getattr(query, key) != getattr(defaults, key)
     }
     if postal:
@@ -146,13 +153,21 @@ def _audit(principal, campaign_id, *, postal, outcome, count, total, query):
         )
 
 
-def _error(campaign_id, *, status):
-    """Render fixed recovery text without reflecting private input or DB failures."""
+def _error(campaign_id, *, status, no_rehearsal=False):
+    """Render fixed recovery text without reflecting private input or DB failures.
+
+    ``no_rehearsal`` (a 409) says Testing responses were asked for after the
+    campaign's rehearsal ended, so there are none to list (#933).
+    """
     debug_swallowed("report request refused")
     response = HttpResponse(
         render_to_string(
             "stewardship/directory-error.html",
-            {"campaign_id": campaign_id, "status": status},
+            {
+                "campaign_id": campaign_id,
+                "status": status,
+                "no_rehearsal": no_rehearsal,
+            },
         ),
         status=status,
         headers={"Cache-Control": "no-store"},
@@ -173,14 +188,17 @@ def _mailing_rows(rows):
         row["addressee"] = head_names(row["heads"]) or row["family_name"]
 
 
-def _column_count(postal, dates, counts, checks):
+def _column_count(postal, dates, counts, checks, *, testing=False):
     """How many columns the table has, for its "No matching Families." row.
 
     Family, Family DUID, Envelope number, Family code, Campaign email
-    deliverable, Responded and Contact details always; the response columns,
-    What to check and the two mailing columns when shown.
+    deliverable and Contact details always; Responded in Production only
+    (it reads live responses, so a Testing view leaves it out rather than
+    mix modes, #933); the response columns, What to check and the two
+    mailing columns when shown.
     """
-    return 7 + len(dates) + len(counts) + int(checks) + (2 if postal else 0)
+    fixed = 6 if testing else 7
+    return fixed + len(dates) + len(counts) + int(checks) + (2 if postal else 0)
 
 
 @require_http_methods(["GET", "POST"])
@@ -205,6 +223,7 @@ def directory(request, campaign_id):
         # The selection pages 50 rows at a time, so that is the only size.
         pop_page_size(parameters, (PAGE_SIZE,), default=PAGE_SIZE)
         query = DirectoryQuery.parse(parameters)
+        admit_mode(principal, query.mode)
         admit_report_read(campaign_id)
         _audit(
             principal,
@@ -241,6 +260,7 @@ def directory(request, campaign_id):
             current = _principal(request, service.store, read_only=True)
             if current.identity != principal.identity:
                 raise PermissionError("Directory access changed.")
+            admit_mode(current, query.mode)
             admit_report_read(campaign_id)
 
         def content():
@@ -270,6 +290,12 @@ def directory(request, campaign_id):
             except PermissionError:
                 mutable = False
             testing = testing_codes_context(campaign_id, principal)
+            # The Production / Testing rehearsal choice (#933) is offered
+            # only to an Administrator, and only while the campaign has a
+            # rehearsal to read (or is already showing one).
+            can_test = "administrator" in principal.roles and (
+                query.mode == "testing" or rehearsal_epoch(campaign_id) is not None
+            )
             report_url = reverse("admin:family_directory")
             # The response columns the Response choice shows (#933):
             # Submissions follows the envelope number and the dates follow
@@ -310,10 +336,17 @@ def directory(request, campaign_id):
                     "reaches": REACH,
                     "responses": RESPONSES,
                     "checks": CHECKS,
+                    "modes": MODES,
+                    "can_test": can_test,
+                    "testing_responses": query.mode == "testing",
                     "date_columns": dates,
                     "count_columns": counts,
                     "column_count": _column_count(
-                        postal, dates, counts, query.check != "any"
+                        postal,
+                        dates,
+                        counts,
+                        query.check != "any",
+                        testing=query.mode == "testing",
                     ),
                     # Where Back from an Open form tab returns (#529): this
                     # page, with its filters, sort and page.
@@ -329,8 +362,11 @@ def directory(request, campaign_id):
                         counts=counts,
                         checks=query.check != "any",
                     ),
+                    # In Testing the link keeps the mode it was drawn in.
                     "unreachable_url": reverse("admin:family_directory")
-                    + "?reach=neither",
+                    + "?reach=neither"
+                    + ("&mode=testing" if query.mode == "testing" else ""),
+                    "rehearsal": report.get("rehearsal"),
                     "mutable": mutable,
                     "request_key": uuid4(),
                     "export_timezones": sorted(timezone_names()),
@@ -361,6 +397,8 @@ def directory(request, campaign_id):
         return denial()
     except (*SAFE_FAILURES, StorageInvariantError, CryptographicError, UnicodeError):
         return _error(campaign_id, status=503)
+    except NoRehearsal:
+        return _error(campaign_id, status=409, no_rehearsal=True)
     except ValueError:
         return _error(campaign_id, status=400)
     finally:

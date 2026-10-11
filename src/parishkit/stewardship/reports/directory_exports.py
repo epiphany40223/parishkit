@@ -11,7 +11,7 @@ from parishkit.stewardship.campaigns.work_locks import export_transaction
 from parishkit.stewardship.jobs.storage import enqueue
 from parishkit.stewardship.schema_primitives import timezone_names
 
-from .directories import DirectoryQuery, selection_parameters
+from .directories import DirectoryQuery, admit_mode, selection_parameters
 from .export_models import DirectoryExportSnapshot, ExportRequest
 from .export_services import (
     FAMILY_CODE_REPORTS,
@@ -25,14 +25,18 @@ from .export_services import (
 REPORTS = FAMILY_CODE_REPORTS
 
 
-def admit_directory(store, user_id, campaign_id):
+def admit_directory(store, user_id, campaign_id, *, mode="production"):
     """The directory export's admission: the codes capability and campaign gates.
 
     The service's own check, inside its export lock; the command line's
     repeat of a bound request key runs it too (``admin_family_exports``).
+    ``mode`` is the selection's: Testing rehearsal responses are for
+    Administrators only, as on the page (#933).
     """
-    if not allows(authorize(store, user_id), Capability.FAMILY_CODES):
+    principal = authorize(store, user_id)
+    if not allows(principal, Capability.FAMILY_CODES):
         raise PermissionError("This export is unavailable.")
+    admit_mode(principal, mode)
     admit_campaign(campaign_id, mutating=True)
     return True
 
@@ -49,6 +53,7 @@ def create_directory_export(
     postal=None,
     mac=None,
     snapshot=None,
+    rehearsal=None,
 ):
     """Capture all matches once; regeneration reuses the trusted retained snapshot.
 
@@ -81,16 +86,23 @@ def create_directory_export(
     ):
         raise ValueError("Directory export requires typed filters and kind.")
 
+    # A regeneration keeps its capture's mode (absent before #933: Production).
+    mode = (
+        query.mode
+        if snapshot is None
+        else snapshot.parameters.get("mode", "production")
+    )
+
     def admit(*args):
         """Owning work and enqueue both check current requester and campaign gates."""
-        return admit_directory(store, user_id, campaign_id)
+        return admit_directory(store, user_id, campaign_id, mode=mode)
 
     with export_transaction(campaign_id):
         admit()
         if snapshot is None:
             with key_set_lock(mac):
                 parameters = selection_parameters(
-                    campaign_id, query, postal=postal, mac=mac
+                    campaign_id, query, postal=postal, mac=mac, rehearsal=rehearsal
                 )
         else:
             parameters = snapshot.parameters

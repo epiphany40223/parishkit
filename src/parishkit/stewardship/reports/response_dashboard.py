@@ -50,7 +50,7 @@ from parishkit.stewardship.web.security import private_response
 from .chart_specs import STAGE_LABELS, activity_chart, funnel_chart, share
 from .export_views import SAFE_FAILURES
 from .read_admission import admit_report_read
-from .response_lists import LISTS, ListQuery, list_counts
+from .response_lists import LISTS, list_counts
 from .response_metrics import (
     GRAINS,
     MODES,
@@ -182,13 +182,15 @@ def untitled(chart):
 def list_url(query, key):
     """Where the panel's link to the list ``key`` leads in the mode shown.
 
-    Production opens the active parishioner family directory with the list's
-    presets (#933). The directory reads Production only, so a Testing view
-    keeps linking to the response list's own Testing view.
+    The active parishioner family directory with the list's presets (#933),
+    plus ``mode=testing`` in a Testing view (shown to Administrators only,
+    as the directory's Testing switch is), so the directory reads the same
+    rehearsal and lists the Families behind the count shown.
     """
+    presets = DIRECTORY_PRESETS[key]
     if query.mode != "production":
-        return ListQuery(query.mode).url(key)
-    return reverse("admin:family_directory") + "?" + urlencode(DIRECTORY_PRESETS[key])
+        presets = presets | {"mode": query.mode}
+    return reverse("admin:family_directory") + "?" + urlencode(presets)
 
 
 def family_lists(query, metrics):
