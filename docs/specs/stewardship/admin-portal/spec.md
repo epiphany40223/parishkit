@@ -4097,14 +4097,21 @@ Ministry report) does not match it, while Unresolved and Any status do. Past
 history entries keep the assignment they recorded. The data model keeps the unused column and state, as described in
 the [data specification](../data/spec.md#follow-up-records).
 
-The request form shows only the fields that apply. The outcome appears only
-for Resolved, which requires one; Closed: no response always records the
-outcome No response, and open statuses have none. A contact attempt's date,
-time and "What happened" appear only once a channel is chosen; the date and
-time are then required and the description is optional. Notes are optional
-except for the outcome Other, which the data model requires. Hidden fields are
-disabled and not sent, and Save stays unavailable, with a short hint saying
-what is missing, until every visible required field is complete. Fields
+The request form is compact
+([#1014](https://github.com/epiphany40223/parishkit/issues/1014)): on a
+desktop screen Status and Outcome share one row, and How, Date and Time
+share another, while Notes and "What happened" span the form; at phone width
+every field takes its own row. The form enables only the fields that apply,
+and the others stay in place, greyed, so a choice never moves the fields
+after it ([no layout shift](../ui-conventions/spec.md#no-layout-shift)). The
+outcome is available only for Resolved, which requires one; Closed: no
+response always records the outcome No response, and open statuses have none.
+A contact attempt's date, time and "What happened" are available only once a
+channel is chosen; the date and time are then required and the description is
+optional, as the How field's tip says. Notes are optional except for the
+outcome Other, which the data model requires. Greyed fields are disabled and
+not sent, and Save stays unavailable, with a short hint saying what is
+missing, until every available required field is complete. Fields
 re-evaluate whenever the browser restores the page or its values (going back
 to it). The Admin portal requires JavaScript
 ([#565](https://github.com/epiphany40223/parishkit/issues/565)), so there is

@@ -19,7 +19,7 @@ from .information_components import ITEM as INFORMATION_ITEM
 from .information_components import SAVED as INFORMATION_SAVED
 from .information_components import UPDATE as INFORMATION_UPDATE
 from .test_in_place import MARK, MARKED, VIEWPORT, count_requests, scroll_below
-from .waits import has_text, hidden, visible
+from .waits import available, greyed, has_text, hidden, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -80,21 +80,21 @@ def test_followup_save_is_in_place(page, component_origin):
     )
     assert page.url == component_origin + FOLLOWUP_SAVED + "#followup-item"
     assert posts == [component_origin + FOLLOWUP_UPDATE]
-    # The swapped-in form still shows only the fields that apply, and Save
+    # The swapped-in form still enables only the fields that apply, and Save
     # still waits for them.
     save = page.locator(FOLLOWUP_SAVE)
     page.get_by_label("How").select_option("phone")
-    visible(page.locator("#contact-date"))
+    available(page.locator("#contact-date"))
     assert save.is_disabled()
     has_text(
         page.locator("#followup-save-hint"),
         "Enter the date and time of the contact attempt to save.",
     )
     page.get_by_label("How").select_option("")
-    hidden(page.locator("#contact-date"))
+    greyed(page.locator("#contact-date"))
     assert save.is_enabled()
     page.get_by_label("Status").select_option("resolved")
-    visible(page.get_by_label("Outcome", exact=True))
+    available(page.get_by_label("Outcome", exact=True))
     assert save.is_disabled()
 
 
@@ -174,7 +174,7 @@ def test_followup_refusal_is_swapped_into_the_request(page, component_origin):
     assert save.is_disabled()
     has_text(page.locator("#followup-save-hint"), "Choose an outcome to save.")
     page.get_by_label("Status").select_option("in_progress")
-    hidden(outcome)
+    greyed(outcome)
     assert save.is_enabled()
 
 
@@ -225,7 +225,10 @@ def test_future_contact_is_flagged_as_it_is_typed(page, component_origin):
     contact_marked(page, False)
     date.fill("2099-01-01")
     contact_marked(page, True)
-    assert date.evaluate("node => getComputedStyle(node).borderTopWidth") == "2px"
+    # The error border's second pixel is an inset shadow, so the mark does
+    # not grow the field and move what follows it (#1014).
+    assert date.evaluate("node => getComputedStyle(node).borderTopWidth") == "1px"
+    assert "inset" in date.evaluate("node => getComputedStyle(node).boxShadow")
     assert save.is_disabled()
     has_text(hint, FUTURE)
     # Today with no time yet is not in the future; the time is still needed.
@@ -327,14 +330,18 @@ def test_server_future_refusal_is_shown_at_its_fields(page, component_origin):
     # The zone note (#558) still describes each, then (for Time) its
     # time-entry reading line (#398), then the error.
     for field, described in (
-        ("#contact-date", "contact-zone-help contact-error"),
-        ("#contact-time", "contact-zone-help contact-time_reading contact-error"),
+        ("#contact-date", "contact-zone-help contact-details-help contact-error"),
+        (
+            "#contact-time",
+            "contact-zone-help contact-details-help contact-time_reading contact-error",
+        ),
     ):
         assert page.locator(field).get_attribute("aria-describedby") == described
-    # The error follows the Time field's reading line and its live region.
-    assert (
-        page.evaluate("document.querySelector('#contact-time ~ .errorlist').id")
-        == "contact-error"
+    # The error follows the row holding Date and Time, on its own reserved
+    # line, so showing it moves nothing (#1014).
+    assert page.evaluate(
+        """() => document.querySelector('#contact-time').closest('.field-row')
+            .nextElementSibling.matches('.field-error-line:has(> #contact-error)')"""
     )
     assert (
         page.evaluate("document.querySelector('#contact-time').nextElementSibling.id")
@@ -467,12 +474,12 @@ def test_hiding_the_contact_group_clears_its_marks(page, component_origin):
     page.get_by_label("How").select_option("phone")
     contact_marked(page, False)
     assert page.locator(FOLLOWUP_SAVE).is_enabled()
-    # A future value hidden and shown again is checked again at once, with
+    # A future value greyed and enabled again is checked again at once, with
     # its own hint, so Save never changes under a press.
     page.locator("#contact-date").fill("2099-01-01")
     contact_marked(page, True)
     page.get_by_label("How").select_option("")
-    hidden(page.locator("#contact-date"))
+    greyed(page.locator("#contact-date"))
     assert page.locator(FOLLOWUP_SAVE).is_enabled()
     page.get_by_label("How").select_option("phone")
     contact_marked(page, True)
@@ -512,11 +519,15 @@ def test_server_only_error_clears_when_its_field_is_edited(page, component_origi
     message = page.locator("#followup-outcome-error")
     has_text(message, "Left ministry doesn't apply to a request to join.")
     assert outcome.get_attribute("aria-invalid") == "true"
-    assert outcome.get_attribute("aria-describedby") == "followup-outcome-error"
+    # Outcome's tip (#1014) still describes it, before the error.
+    assert (
+        outcome.get_attribute("aria-describedby")
+        == "followup-outcome-tip followup-outcome-error"
+    )
     assert outcome.evaluate("node => getComputedStyle(node).borderTopWidth") == "2px"
     outcome.select_option("joined")
     assert outcome.get_attribute("aria-invalid") == "false"
-    assert outcome.get_attribute("aria-describedby") is None
+    assert outcome.get_attribute("aria-describedby") == "followup-outcome-tip"
     hidden(message)
     assert page.locator("[data-error-summary]").count() == 0
 

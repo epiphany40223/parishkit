@@ -15,7 +15,7 @@ import pytest
 from . import followup_components as followup
 from . import information_components as information
 from .test_in_place import MARK, MARKED, VIEWPORT, count_requests, scroll_below
-from .waits import has_text, hidden, visible
+from .waits import greyed, has_text, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -93,7 +93,7 @@ def test_save_and_next_waits_for_a_valid_save(page, component_origin):
         "Enter the date and time of the contact attempt to save.",
     )
     page.get_by_label("How").select_option("")
-    hidden(page.locator("#contact-date"))
+    greyed(page.locator("#contact-date"))
     assert save.is_enabled() and advance.is_enabled()
 
 
