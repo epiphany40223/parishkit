@@ -155,14 +155,18 @@ def catalog_entries(configuration, campaign):
         subjects = [row["values"]["subject"] for row in rows]
         revisions = [
             {
+                "id": row["id"],
                 "subject": row["values"]["subject"],
                 # The start of the ID tells apart two emails of one type
                 # with the same subject, as on the schedules' email list.
-                "short_id": row["id"][:8]
-                if subjects.count(row["values"]["subject"]) > 1
-                else None,
+                "short_id": short_id,
+                # How the row's actions and the Delete dialog name it.
+                "name": f"{subject} ({short_id})" if short_id else subject,
                 "excerpt": excerpt(values.get("text")),
                 "used_by": usage.get(row["id"], []),
+                # Only an email no schedule sends can be deleted (#879), and
+                # the confirmation email is a single entry, never deleted.
+                "deletable": slot in KINDS and not usage.get(row["id"]),
                 "state": _content_state({"values": values}),
                 "resave": stale_markup(values),
                 "test_url": reverse("admin:campaign_mail", args=[row["id"]]),
@@ -172,6 +176,8 @@ def catalog_entries(configuration, campaign):
                 ),
             }
             for row in rows
+            for subject in [row["values"]["subject"]]
+            for short_id in [row["id"][:8] if subjects.count(subject) > 1 else None]
             # The confirmation email is listed with any retired closing note
             # folded in, as receipts send it (#260).
             for values in [
@@ -188,6 +194,8 @@ def catalog_entries(configuration, campaign):
             revisions.append(
                 {
                     "subject": folded["subject"],
+                    "name": folded["subject"],
+                    "deletable": False,
                     "state": _content_state({"values": folded}),
                     "resave": stale_markup(folded),
                     "test_url": None,
@@ -197,6 +205,14 @@ def catalog_entries(configuration, campaign):
         emails.append(
             {
                 "label": label,
+                # Element IDs of the table's form, Delete dialog and heading
+                # (where focus goes when the row that opened it is gone).
+                "form_id": f"email-{slot}-actions",
+                "dialog_id": f"email-{slot}-delete",
+                "heading_id": f"email-{slot}-title",
+                # The table offers selection and Delete selected only when
+                # some row can be deleted.
+                "deletable": any(revision["deletable"] for revision in revisions),
                 "singleton": slot == "confirmation",
                 # Only schedulable mail has schedules that send it.
                 "scheduled": slot in KINDS,
@@ -240,12 +256,24 @@ def resave_recommended(configuration, campaign):
 
 
 def _catalog(request, configuration, campaign):
-    """List named page slots and independent email revisions for per-mail selection."""
+    """List named page slots and independent email revisions for per-mail selection.
+
+    The email tables are action tables (#879): their Delete dialogs post the
+    applied configuration's digest to ``content_delete``, and the page
+    redraws them in place from its own address once the change is applied.
+    """
     pages, emails = catalog_entries(configuration, campaign)
     return render(
         request,
         "stewardship/content-catalog.html",
-        {"campaign": campaign, "pages": pages, "emails": emails},
+        {
+            "campaign": campaign,
+            "pages": pages,
+            "emails": emails,
+            "base_digest": configuration.active_configuration.digest,
+            "delete_url": reverse("admin:content_delete"),
+            "refresh_url": request.path,
+        },
     )
 
 

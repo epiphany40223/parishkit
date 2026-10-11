@@ -119,6 +119,13 @@ PAGES = {
     "content_catalog": Page("campaign", _("Pages and emails")),
     "content_edit": Page("campaign", _("Edit page or email"), "content_catalog"),
     "content_revision": Page("campaign", _("Content revision"), "content_catalog"),
+    # Answers only the email tables' confirmation dialog, with a change's status.
+    "content_delete": Page(
+        "campaign",
+        _("Delete email templates"),
+        "content_catalog",
+        linkable=False,
+    ),
     # Retained content can belong to an earlier campaign, which the editing
     # catalog refuses, so its trail runs through Campaign settings instead.
     "content_history": Page("campaign", _("Content history"), "campaign_settings"),

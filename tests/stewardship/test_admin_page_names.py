@@ -125,9 +125,10 @@ OBJECT_NAMED = {
 # report takes the title saved with the emailed report.
 VIEW_NAMED = {"reports", "daily_digest_snapshot"}
 # Delete scheduled emails and Delete user answer their list's dialog with a
-# change's status page, and Delete hosted files the library's dialog with a
-# redirect or a refusal (#879), never a page of their own.
-NOT_PAGES = {"schedule_delete", "user_delete", "hosted_file_delete"}
+# change's status page, as does Delete email templates for Pages and emails'
+# tables, and Delete hosted files the library's dialog with a redirect or a
+# refusal (#879), never a page of their own.
+NOT_PAGES = {"schedule_delete", "user_delete", "hosted_file_delete", "content_delete"}
 # Pages whose new name waits for a later slice, with that slice. None is
 # left: Portal users became Users with #952.
 PENDING = {}
