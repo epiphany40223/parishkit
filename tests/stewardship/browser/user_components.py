@@ -11,10 +11,17 @@ The browser checks need no database:
   the server does: a redirect to the change's status page, here already
   Applied, after which the dialog redraws the table from ``LIST``'s refresh
   address, without the Ministry leader.
-- ``SINGLE``: only the Administrator, who has no Delete.
+- ``SINGLE``: only the Administrator, who has no Delete, and no ParishSoft
+  Ministry leader waiting for a user, so both Import buttons are
+  unavailable with the reason.
 - ``PENDING``: a change's status page still applying, for the follow-up's
   refused status read; ``LIST_PENDING`` is ``LIST`` whose Delete posts to
   ``DELETE_PENDING``, which redirects there.
+- ``LIST``'s second table lists ``LEADERS``, three ParishSoft Ministry
+  leaders without a user (#952 slice 6), and counts two with no email. Its
+  Import selected and Import all post to ``IMPORT``, which answers with
+  ``LEADER_REVIEW``, the Import Ministry leaders review of two of them with
+  one skipped.
 - ``NEW``: New user. Its Email lookup posts to ``NAMES``, which answers two
   ParishSoft names; ``NEW_TAKEN``'s posts to ``NAMES_TAKEN``, which answers
   that the address is already a user. Review posts to ``REVIEW_POST``, which
@@ -34,6 +41,12 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from django.template.loader import render_to_string
 
+from parishkit.stewardship.accounts.leader_import import (
+    LEADER_SORTING,
+    SKIP_REASONS,
+    ministries_label,
+)
+from parishkit.stewardship.accounts.leader_import_views import PREFIX as LEADER_PREFIX
 from parishkit.stewardship.accounts.user_changes import plan_changes, saved_users
 from parishkit.stewardship.accounts.user_reads import USER_SORTING, user_list
 from parishkit.stewardship.accounts.user_views import (
@@ -66,6 +79,8 @@ EDIT_ONLY = "/user-edit-only"
 EDIT_OWN = "/user-edit-own"
 # The signed-in Administrator the pages are drawn for.
 READER = "admin@example.org"
+IMPORT = "/users/leaders/import"
+LEADER_REVIEW = "/user-leader-review"
 LONG_EMAIL = "a-very-long-address-for-the-parish-office-staff@stewardship.example.org"
 LONG_NAME = "Montgomery-Fitzwilliam, Bartholomew Alexander Christopher"
 SUGGESTED = ["Smith, Ann", "Smith, Bob"]
@@ -76,6 +91,30 @@ SECOND = user("second@example.org", "administrator", "Second, Sal")
 STAFF = user(LONG_EMAIL, "staff", LONG_NAME)
 LEADER = user("leader@example.org", "ministry_leader", "Leader, Lee")
 MOMENT = datetime(2026, 9, 19, 15, 4, tzinfo=UTC)
+
+
+def leader_row(email, name, duid, ministries):
+    """One leaders-table row as ``leader_import.table_rows`` shapes it."""
+    return {
+        "email": email,
+        "name": name,
+        "member_duid": duid,
+        "ministries": list(range(1, len(ministries) + 1)),
+        "ministry_names": ministries,
+        "ministries_label": ministries_label(ministries),
+    }
+
+
+LEADERS = [
+    leader_row("ann.jones@example.org", "Jones, Ann", 901, ["Choir"]),
+    leader_row(
+        "bob.smith@example.org",
+        "Smith, Bob",
+        902,
+        ["Choir", "Food pantry", "Lectors", "Ushers", "Youth ministry"],
+    ),
+    leader_row("cy.young@example.org", "Young, Cy", 903, ["Ushers"]),
+]
 
 
 def identity(email, number=0, *, login=None, disabled=False):
@@ -105,9 +144,17 @@ class Request:
         self.path = path
 
 
-def _list(values, records, *, sort="email", refresh=LIST, delete=DELETE):
-    """The Users page for ``records``, sorted by ``sort``."""
+def _list(
+    values, records, *, sort="email", refresh=LIST, delete=DELETE, leaders=LEADERS
+):
+    """The Users page for ``records``, sorted by ``sort``, with ``leaders``."""
     rows = user_list(records, IDENTITIES)
+    leader_table = paginate(
+        leaders,
+        {f"{LEADER_PREFIX}sort": "name"},
+        prefix=LEADER_PREFIX,
+        sorting=LEADER_SORTING,
+    )
     table = paginate(
         table_rows(rows, saved_users(records), READER),
         {f"{PREFIX}sort": sort},
@@ -126,6 +173,9 @@ def _list(values, records, *, sort="email", refresh=LIST, delete=DELETE):
                 "new_url": NEW,
                 "delete_url": delete,
                 "delete_reason": OWN_DELETE,
+                "leaders": leader_table,
+                "leaders_unreachable": 2 if leaders else 0,
+                "import_url": IMPORT,
             },
         ),
     )
@@ -183,6 +233,25 @@ def components(context, admin):
             "list_url": LIST,
         },
     )
+    leader_review = render_to_string(
+        "stewardship/user-leader-import.html",
+        values
+        | {
+            "added": LEADERS[:2],
+            "skipped": [
+                {
+                    "email": "cy.young@example.org",
+                    "reason": "user",
+                    "reason_label": SKIP_REASONS["user"],
+                }
+            ],
+            "remaining": 0,
+            "limit": 100,
+            "preview": "synthetic-preview",
+            "post_url": LIST,
+            "list_url": LIST,
+        },
+    )
     status = render_to_string(
         "stewardship/configuration-request.html",
         values | {"receipt": {"request_id": uuid4(), "state": "applied"}},
@@ -197,7 +266,8 @@ def components(context, admin):
         f"{LIST}?users_size=50&users_sort=-role": _list(values, records, sort="-role"),
         f"{LIST}?users_size=50&users_sort=email": _list(values, records),
         DELETED: _list(values, [ADMIN, SECOND, STAFF], refresh=DELETED),
-        SINGLE: _list(values, [ADMIN], refresh=SINGLE),
+        SINGLE: _list(values, [ADMIN], refresh=SINGLE, leaders=[]),
+        LEADER_REVIEW: ("text/html", leader_review),
         NEW: _entry(values, records),
         NEW_TAKEN: _entry(values, records, names_url=NAMES_TAKEN),
         EDIT: _entry(values, records, record=LEADER, post=EDIT),
@@ -225,6 +295,7 @@ def components(context, admin):
                 ),
             ),
             REVIEW_POST: (200, None, review),
+            IMPORT: (200, None, leader_review),
         }
     )
     return responses

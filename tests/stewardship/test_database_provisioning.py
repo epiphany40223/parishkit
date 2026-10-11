@@ -12,6 +12,7 @@ from parishkit.stewardship.accounts.key_files import write_private
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.runtime_grants import (
     CLOSURE_FUNCTIONS,
+    LEADERS_WITHOUT_USER_FUNCTION,
     MEMBER_NAMES_FOR_FUNCTION,
 )
 from parishkit.stewardship.runtime_identities import database_identities
@@ -294,12 +295,13 @@ def test_grants_wait_for_the_users_swap_closures_functions(
     _, statements = grant_statements(
         tmp_path, monkeypatch, CLOSURE_FUNCTIONS.values() if applied else ()
     )
-    named = [s for s in statements if MEMBER_NAMES_FOR_FUNCTION in s]
-    assert len(named) == (1 if applied else 0)
+    for function in (MEMBER_NAMES_FOR_FUNCTION, LEADERS_WITHOUT_USER_FUNCTION):
+        named = [s for s in statements if function in s]
+        assert len(named) == (1 if applied else 0), function
     # Everything else is granted either way.
     assert len(statements) == len(
         grant_statements(tmp_path, monkeypatch, CLOSURE_FUNCTIONS.values())[1]
-    ) - (0 if applied else 1)
+    ) - (0 if applied else len(CLOSURE_FUNCTIONS))
 
 
 @pytest.mark.parametrize("installed", ["current", "older", "missing"])

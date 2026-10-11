@@ -1152,6 +1152,9 @@ when the hint clears (Administrator decision, 2026-10-10;
 never moves a control under the pointer: the hint's line is reserved, and the
 count and Select all button sit after the action buttons and keep reserved
 widths, so their changing text cannot push them or rewrap the bar (#563).
+With no rows at all the line is blank, since the table says it is empty,
+unless the table gives an empty-table reason (such as why there is nothing
+to import), which the line then shows and the unavailable buttons name.
 The shared `table-selection.html` include and its `ui-v1.js` wiring give
 every such table this behavior. The server validates every submitted
 selection.
