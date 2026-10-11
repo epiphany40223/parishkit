@@ -259,6 +259,7 @@ SLASHLESS_EXPECTED = {
     f"/admin/mail/refusals/{T}": f"/admin/mail/refusals/{T}/",
     "/admin/mail/family-portal": "/admin/mail/family-portal/",
     "/admin/mail/presence": "/admin/mail/presence/",
+    "/admin/mail/held-emails": "/admin/mail/held-emails/",
     # Users (#952): the page, New user and Edit user.
     "/admin/users": "/admin/users/",
     "/admin/users/new": "/admin/users/new/",

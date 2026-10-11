@@ -108,6 +108,7 @@ SLASHLESS = (
     ("mail/refusals/<uuid:refusal_id>", "delivery_refusal"),
     ("mail/family-portal", "family_portal"),
     ("mail/presence", "presence"),
+    ("mail/held-emails", "held_emails"),
     ("users", "users"),
     ("users/new", "user_new"),
     ("users/<uuid:user_id>/edit", "user_edit"),

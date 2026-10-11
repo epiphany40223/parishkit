@@ -139,6 +139,20 @@ def summary(actor, configuration, now, *, home=False):
         result["ministry_catalog"] = catalog_notice(
             configuration, campaign, now, promoted=refreshed_at is not None
         )
+        # A hold exists only after a restore, which leaves its id on the
+        # runtime row already loaded; a deployment never restored skips the
+        # query, so Home's query budget is unchanged for it.
+        if home and campaign is not None and configuration.restore_id is not None:
+            from parishkit.stewardship.campaigns.restore_review import (
+                undecided_emails,
+            )
+
+            # Held emails a restore left undecided at release (#757) are
+            # never sent, and a held invitation keeps its Family's
+            # reminders back, so Home links to Held emails until each is
+            # decided. One count, of emails (two restores can hold one), on
+            # Home only: the command line's status read leaves it out.
+            result["held_emails"] = undecided_emails(campaign.pk)
     if allows(actor, Capability.SYSTEM_LOGS):
         from parishkit.stewardship.system_health import home_problems
 

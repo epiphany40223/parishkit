@@ -810,6 +810,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `delivery_refusal` | Refused address | Refused addresses | Administrator | Verify refused address | `/admin/mail/refusals/<refusal>/` | (same) |  |
 | `family_portal` | Family portal availability | Menu: Family portal availability | Administrator | (same) | `/admin/mail/family-portal/` | (same) |  |
 | `presence` | Families on the form now | Menu: Families on the form now | Administrator | (same) | `/admin/mail/presence/` | (same) | The header's count is still polled at `/admin/presence?format=count` (decision 8); any other read of that address is 404. |
+| `held_emails` | Held emails | Reached from: Home | Administrator | (new, #757) | `/admin/mail/held-emails/` | (same) | Not a menu entry: Home links to it while a held email is undecided. Its trail is Home › Mail and Family portal. See [restore release](#restore-release). |
 | `response_dashboard` | Response dashboard | Menu: Response dashboard | Administrator, Staff | (same) | `/admin/reports/responses/` | (same) |  |
 | `response_list` | _list name_ | Response dashboard | Administrator, Staff | (new, #477) | `/admin/reports/responses/<key>/` | (same) | Object-named (exception): each list behind a dashboard count is named after that list. Its download (`<key>/csv/`: CSV, XLSX or PDF, #850; the address predates the other two formats) is a non-page action. |
 | `reports` | Participation | Menu: Participation | Administrator, Staff | (redirects) Participation and campaign statistics; 'Campaign reports' only when no campaign exists; Campaign reports | `/admin/reports/` | (same) | Not a group root: redirects to Participation, or to Ministry requests for a viewer who may not open Participation (a Ministry leader). |
@@ -2903,8 +2904,8 @@ reminder removed since, because it would arrive out of order; that hold can
 only be assumed sent. The decision guard enforces this for every login,
 including a decision the web login inserts directly. If a later reminder
 reaches the Family after "send again" was decided, the Family dispatch check
-never sends the earlier one. The Admin page for these decisions is still to
-come. Besides the listing, the web login may insert a hold row directly; the
+never sends the earlier one. The Held emails page below takes these
+decisions. Besides the listing, the web login may insert a hold row directly; the
 hold guard admits one only during a review and for its current restore, and a
 hold only keeps mail back.
 
@@ -2959,7 +2960,35 @@ sign-in) is drawn after the controls of its own panel, so nothing moves under
 the pointer ([UX conventions](../ui-conventions/spec.md#no-layout-shift)).
 Times are browser-local, the due times in the held-email table in the
 [table-cell form](../ui-conventions/spec.md#date-format). After release the
-page is gone; a page for deciding the remaining holds is #757.
+page is gone, and the Held emails page decides the remaining holds.
+
+**The Held emails page.** After release, holds nobody decided stay in force.
+While any hold of the current campaign is undecided, Home shows an
+Administrator how many emails are held, says that a held invitation also stops
+that Family's reminders, and links to Held emails (`/admin/mail/held-emails/`;
+not a menu entry, because it matters only after a restore; its trail is Home ›
+Mail and Family portal). The page lists every restore's holds of the current
+campaign by send, with the Restore review page's table, previews, notes,
+exact-count check and "Send these again" rules, and it settles every
+restore's undecided holds of the chosen send at once. Its counts and Home's
+are of emails: an email two restores hold counts once, and only "Assume these
+were sent" settles it, as the decision guard requires. A decision is refused,
+with nothing changed, when the send's undecided holds changed since its
+preview or another restore happened since (even one that kept the count the
+same). A "send again" is sent by the
+ordinary planner with the restored link, coalesced with any reminder then due;
+the page itself sends nothing. It says how many emailable Families an undecided
+invitation keeps from getting reminders, keeps a send listed once it is
+decided, and draws every outcome and refusal (with the step-up) after the
+table, so nothing moves under the pointer. Cancel returns focus to the send's
+button that opened the preview; after a confirm that button is unavailable
+(the send is decided), so focus moves to the list's heading and the outcome is
+announced. With no hold for the current
+campaign it says so. During a review it redirects to the Restore review page,
+and a decision whose preview came from before a review began settles nothing.
+Holds of another campaign are not shown: they cannot be decided. The command
+line does not take these decisions (the guard admits only a fresh browser
+sign-in).
 
 ### Live delivery pause
 

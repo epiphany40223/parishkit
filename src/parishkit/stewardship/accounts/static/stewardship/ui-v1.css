@@ -360,6 +360,8 @@ input[data-time-entry=list] { max-width: 24rem; }
    never moves the table under the pointer. */
 .action-status { min-height: 3.2em; min-height: 2lh; margin-block: .5rem; font-weight: 600; }
 .action-status > p { margin: 0; }
+/* A status line that wraps to two lines on a phone keeps both (#757). */
+.reserve-lines-2 { min-height: 3.2em; min-height: 2lh; }
 select:not([multiple]):not([size]) { max-width: 26rem; }
 select[multiple], select[size] { max-width: 40rem; }
 textarea { max-width: 56rem; }

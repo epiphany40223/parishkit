@@ -1753,6 +1753,7 @@ checks that every other ledger route is named here.
 | `campaign_root`, `mail_root`, `parish_root` | Permanent: a menu group's root URL, which only redirects to the group's first open entry; that entry covers it |
 | `login`, `logout`, `session_status`, `session_renew` | Permanent: browser sign-in and session chrome; `login start`, `login wait`, `logout`, `whoami`, `sessions` and `commands` cover the automation side (PR 2) |
 | `maintenance` | Permanent: the status page the access gate shows |
+| `held_emails` ([#757](https://github.com/epiphany40223/parishkit/issues/757)) | Permanent: held-email decisions need a fresh Google sign-in in the browser, which the decision guard checks (migration 0017) |
 | `automation_access`, `automation_approval`, `automation_sessions` (revoke) and `automation_notices` (acknowledgement) (new) | Permanent: these pages are the human side of the interface (PR 2); `sessions` takes the page's filter and sort for one's own sessions (#621) |
 | `response_dashboard` ([#517](https://github.com/epiphany40223/parishkit/issues/517)) | `report responses` with counts (PR 8c) |
 | `response_list`, `response_list_export` | Family-level rows, so export only: `export responses` (PR 8h) |
