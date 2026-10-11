@@ -388,6 +388,15 @@ def pending_tables(applied):
     return frozenset(
         table for table, migration in CLOSURE_TABLES.items() if migration not in applied
     )
+# The campaign comparison report's figures that read each Family's own rows
+# (#1018): web learns only their aggregates, never a kept archive Family's id.
+COMPARISON_FUNCTION = (
+    "stewardship_campaign_comparison_v1(uuid, date, timestamp with time zone, "
+    "numeric[], uuid)"
+)
+ARCHIVE_RENEWAL_FUNCTION = (
+    "stewardship_campaign_archive_renewal_v1(uuid, uuid, integer)"
+)
 
 
 def runtime_functions(role, *, target=None):
@@ -407,7 +416,8 @@ def runtime_functions(role, *, target=None):
     identities and Member names for the users upgrade (#952), and web reads
     them for that upgrade's read-only preview, one typed address's Member
     names for the New user page's Name default, and the ParishSoft Ministry
-    leaders who are no user yet for the Users page's import.
+    leaders who are no user yet for the Users page's import. Web reads the
+    campaign comparison report's aggregates (#1018).
     """
     role = _identity_role(role, target)
     if role is ServiceRole.CREDENTIAL_INSTALLER:
@@ -426,6 +436,8 @@ def runtime_functions(role, *, target=None):
                 MEMBER_NAMES_FOR_FUNCTION,
                 LEADERS_WITHOUT_USER_FUNCTION,
                 RECIPIENTS_FUNCTION,
+                COMPARISON_FUNCTION,
+                ARCHIVE_RENEWAL_FUNCTION,
             },
             ServiceRole.CONFIG_INSTALLER: {MINISTRY_CATALOG_FUNCTION},
             ServiceRole.WORKER: {
