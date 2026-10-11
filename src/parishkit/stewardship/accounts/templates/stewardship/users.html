@@ -25,7 +25,8 @@ time zone (data-compact, date-format-v1.js), as other dense tables do
 {% aboutpage "users" %}<p>{% if local_environment %}{% translate "Everyone who may sign in to the Admin portal. Each user is one email address with a Name and one role; an address that is not a user can't sign in." %}{% else %}{% translate "Everyone who may sign in to the Admin portal with Google. Each user is one email address with a Name and one role; an address that is not a user can't sign in." %}{% endif %}</p>
 <p>{% translate "Roles are levels, and each includes everything below it. A Ministry leader sees only the Ministries they lead in ParishSoft. Staff also see every Ministry. An Administrator can see and change everything, including this page." %}</p>
 <p>{% translate "New user adds someone; Edit changes a user's Name or role. Either shows what would change before you apply it, and nothing takes effect until the status says Applied. Delete asks first; the person can no longer sign in, and their open sessions end on their next request. To change an address, delete the user and add the new address." %}</p>
-<p>{% translate "A successful sign-in is one that was allowed and opened a session; a refused attempt is not counted. Times are shown in your computer's time zone." %}</p>{% endaboutpage %}
+<p>{% translate "A successful sign-in is one that was allowed and opened a session; a refused attempt is not counted. Times are shown in your computer's time zone." %}</p>
+<p>{% translate "Below the users, ParishSoft Ministry leaders without a user lists the people who lead one of this campaign's Ministries in ParishSoft but can't sign in yet. Import selected or Import all shows them as new Ministry leader users before anything is saved; anyone who became a user meanwhile is skipped. Import never changes an existing user." %}</p>{% endaboutpage %}
 <p id="users-sign-in-activity"><a href="{% url 'admin:logs' %}?applied=yes&amp;audit=yes&amp;activity=sign_in">{% translate "See sign-in activity in System logs" %}</a></p>
 <p>{% button href=new_url %}{% translate "New user" %}{% endbutton %}</p>
 {% translate "User pages" as navigator_label %}{% translate "Users" as caption %}
@@ -58,5 +59,59 @@ time zone (data-compact, date-format-v1.js), as other dense tables do
 <p class="help" id="users-delete-reason">{{ delete_reason }}</p>
 {% translate "Delete {name}?" as title_one %}{% translate "Delete {count} users?" as title_many %}{% translate "This person can no longer sign in to the Admin portal, and their open sessions end on their next request. The address can be added again later as a new user." as body %}{% translate "Delete" as accept %}
 {% include "stewardship/components/confirm-dialog.html" with dialog_id="user-delete" form_id="user-actions" fallback="users-table-title" title_one=title_one title_many=title_many body=body accept=accept done_one=_("Deleted {name}.") done_many=_("Deleted {count} users.") %}
+</section>
+{% comment %}
+ParishSoft Ministry leaders without a user (#952 slice 6;
+leader_import_views.leaders_context, admin-portal spec "ParishSoft Ministry
+leaders without a user"). A second table region, which ui-v1.js redraws with
+the users table. Its form posts the ticked addresses (or all of them) to the
+Import Ministry leaders review; the names, Member DUIDs and roles are never
+taken from it. The bulk bar is the shared one (table-selection.html, #879):
+Import selected is a data-bulk-action, and while nothing is ticked the shared
+reason line under the buttons says why as visible text, so ticking a row
+moves nothing. With no rows at all, both buttons are unavailable and the same
+line gives the empty-table reason (empty_hint), which Import all names
+(hint_id). If the leaders cannot be read, the section says so instead and the
+users table above stays usable. Leaders with no usable email are only
+counted, in a muted line.
+{% endcomment %}
+{% translate "Leader pages" as leader_navigator_label %}
+<section id="{{ leaders.anchor|default:'leaders-table' }}" class="panel" data-table-region data-refresh-url="{{ refresh_url }}" aria-labelledby="leaders-table-title">
+<h2 id="leaders-table-title" tabindex="-1">{% translate "ParishSoft Ministry leaders without a user" %}</h2>
+<p class="help">{% translate "People ParishSoft lists as leaders of this campaign's Ministries who can't sign in yet. Importing makes each one a user with the role Ministry leader named as the Member column shows; you can change the Name later with Edit." %}</p>
+{% if leaders_unavailable %}<p class="notice notice-error" id="leaders-unavailable">{% translate "The ParishSoft Ministry leaders could not be read just now, so none can be imported. The users above are not affected. Reload the page to try again." %}</p>{% else %}
+{% include "stewardship/table-navigator.html" with table=leaders label=leader_navigator_label %}
+<form method="post" action="{{ import_url }}" id="leader-import" data-select-table data-missing-hint="{% translate 'Select at least one leader to use Import selected.' %}">{% csrf_token %}
+  <div class="bulk-bar">
+    {% button type="submit" variant="secondary" name="scope" value="selected" data-bulk-action %}{% translate "Import selected" %}{% endbutton %}
+    {% if leaders.count %}{% button type="submit" variant="secondary" name="scope" value="all" %}{% translate "Import all" %}{% endbutton %}{% else %}{% button type="submit" variant="secondary" name="scope" value="all" disabled=True aria-describedby="leaders-import-reason" %}{% translate "Import all" %}{% endbutton %}{% endif %}
+    {% translate "Nothing to import: every ParishSoft Ministry leader with an email address is already a user." as leaders_empty_hint %}{% include "stewardship/table-selection.html" with hint_id="leaders-import-reason" empty_hint=leaders_empty_hint %}
+  </div>
+  <div class="table-scroll" tabindex="0" role="region" aria-labelledby="leaders-table-caption">
+  <table class="data-table leaders-table">
+    <caption id="leaders-table-caption" class="visually-hidden">{% translate "ParishSoft Ministry leaders without a user" %}</caption>
+    <thead><tr>
+      <th scope="col" class="select-col"><input type="checkbox" data-select-all aria-label="{% translate 'Select every leader on this page' %}"></th>
+      {% translate "Member" as heading %}{% sort_heading leaders "name" heading %}
+      {% translate "Member DUID" as heading %}{% sort_heading leaders "member_duid" heading "numeric" %}
+      {% translate "Email" as heading %}{% sort_heading leaders "email" heading %}
+      <th scope="col">{% translate "Ministries led" %}</th>
+      <th scope="col">{% translate "Role" %}</th>
+    </tr></thead>
+    <tbody>
+    {% for row in leaders.rows %}<tr>
+      <td class="select-col"><input type="checkbox" name="email" value="{{ row.email }}" data-select-row aria-label="{% blocktranslate with name=row.name email=row.email %}Select {{ name }} ({{ email }}){% endblocktranslate %}"></td>
+      <th scope="row"><span class="cell-ellipsis" title="{{ row.name }}">{{ row.name }}</span></th>
+      <td class="numeric">{{ row.member_duid|default_if_none:"" }}</td>
+      <td><span class="cell-ellipsis" title="{{ row.email }}">{{ row.email }}</span></td>
+      <td><span class="cell-ellipsis" title="{{ row.ministry_names|join:', ' }}">{{ row.ministries_label }}</span></td>
+      <td class="nowrap">{% translate "Ministry leader" %}</td>
+    </tr>{% empty %}<tr><td colspan="6">{% translate "No ParishSoft Ministry leader is waiting for a user." %}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+</form>
+{% include "stewardship/table-navigator.html" with table=leaders label=leader_navigator_label %}
+{% if leaders_unreachable %}<p class="help" id="leaders-unreachable">{% blocktranslate count count=leaders_unreachable %}{{ count }} ParishSoft Ministry leader has no email address in ParishSoft, so can't sign in and isn't listed.{% plural %}{{ count }} ParishSoft Ministry leaders have no email address in ParishSoft, so can't sign in and aren't listed.{% endblocktranslate %}</p>{% endif %}{% endif %}
 </section>
 {% endblock %}

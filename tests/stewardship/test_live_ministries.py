@@ -74,7 +74,8 @@ def test_only_the_config_installer_may_read_the_catalog_function():
     # Web also reads the 24-hour Family mail count for System health (ADM-13),
     # checks a secret request's automation sign-in (ADM-11 PR 5) and reads a
     # user's role-derived Ministry scope (#922), the users upgrade
-    # preview's identities and Member names, and New user's Name lookup (#952).
+    # preview's identities and Member names, New user's Name lookup and the
+    # Users page's ParishSoft leaders without a user (#952).
     assert runtime_functions(ServiceRole.WEB) == {
         FAMILY_LOGIN_FUNCTION,
         "stewardship_family_daily_sends_v1()",
@@ -83,6 +84,7 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         "stewardship_portal_identities_v1()",
         "stewardship_member_names_v1()",
         "stewardship_member_names_for_v1(text, text, uuid)",
+        "stewardship_leaders_without_user_v1(text, uuid)",
     }
     # The worker's definer routines purge ended Admin sessions (ADM-11),
     # count an export's read-guard stops (#386) and read a user's

@@ -32,9 +32,9 @@ MULTI_SELECT_HELP = _(
 LEADER_ROLES_HELP = _(
     "A Ministry leader sees the reports and follow-up of each Ministry where "
     "they hold one of these ParishSoft Ministry roles, matched by an email "
-    "address their ParishSoft Member record lists. Signing in still needs a "
-    "sign-in rule. Choose at least one role; changes take effect on their "
-    "next page."
+    "address their ParishSoft Member record lists. To sign in, a leader also "
+    "needs a user; import leaders on the Users page. Choose at least one "
+    "role; changes take effect on their next page."
 )
 # The campaign-overlap confirmation renders through this field template so it
 # can be shown only while the entered dates overlap (see overlap_attributes).
