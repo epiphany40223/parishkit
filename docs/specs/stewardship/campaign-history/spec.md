@@ -292,31 +292,33 @@ Parish data menu group (a parish record, not part of one campaign; see
 imported campaigns, newest year first: Year, Campaign, Final or Partial, Day
 1, Days, Families responded, Annual pledges, Active Families (with ≈ for an
 estimate), Family rows kept (Yes/No), Imported (local time, by whom), and a
-Remove row action. Below it, **Add archive files** takes one or more `.xlsx`
-files and a **Keep Family rows** checkbox, ticked by default, whose field tip
+Remove row action. Below it, **Add an archive file** takes one `.xlsx` file
+and a **Keep Family rows** checkbox, ticked by default, whose field tip
 says the rows are needed for the renewal figure and never leave the Admin
 portal. The About this page panel explains the archive files, where they come
-from and the privacy rule.
+from and the privacy rule, and that a file of the full 20 MB needs about
+6 Mbit/s of upload speed (a typical 2 MB file needs well under 1 Mbit/s).
+Several years are added one file at a time.
 The slice that adds this page, and the one that adds the report, add their
 rows to the admin-portal [menu groups](../admin-portal/spec.md#menu-groups)
 table and its page-name placement table.
 
-Adding files follows [Review, Apply and Change
+Adding a file follows [Review, Apply and Change
 status](../ui-conventions/spec.md#review-apply-and-change-status):
 
-1. **Review** uploads the files and validates each one (below). It shows one
-   card per file: the year, campaign name, final or partial, day-1 date,
+1. **Review** uploads the file and validates it (below). It shows a card:
+   the year, campaign name, final or partial, day-1 date,
    last day, Families responded, annual pledges, the active-Family count with
    its provenance, the metadata notes that the report's data notes will show,
    and what Apply will do (Add, Replace year N, or Already imported). A
-   refused file shows its problems instead and is left out of Apply. Review
+   refused file shows its problems instead and offers no Apply. Review
    is unavailable until a file is chosen ([prerequisite
    gates](../ui-conventions/spec.md#prerequisite-gates)).
-2. **Apply** stores every accepted file in one transaction per file and
-   updates the table [in place](../ui-conventions/spec.md#in-place-controls).
-   Replacing a year needs its own acknowledgement checkbox on the card ("This
-   replaces the 2025 figures already imported"), so Apply stays unavailable
-   until each replacement is acknowledged.
+2. **Apply** stores the file in one transaction and updates the table
+   [in place](../ui-conventions/spec.md#in-place-controls). Replacing a
+   year needs an acknowledgement checkbox on the card ("This replaces the
+   2025 figures already imported"), so Apply stays unavailable until it is
+   ticked.
 
 **Remove** is a [row action with
 confirmation](../ui-conventions/spec.md#row-actions-and-confirmation): it
@@ -340,20 +342,47 @@ entry](../operations/spec.md#observability-and-health), under the new
 timeout name `archive_check`, naming the limit and the elapsed time. The
 `archive-check` command runs the same helper.
 
-**Request size.** One Review takes at most 8 files and 40 MB in all; each
-file is at most 20 MB. The Review route,
-`/admin/parish/past-campaigns/review/`, is the second route allowed a body
-larger than the ingress default: Caddy admits up to 41 MB there (the
-[ingress body limits](../operations/spec.md#production-ingress-and-tls),
-set in `runtime_ingress.py` beside the hosted-file upload route).
+**The upload route.** One Review request carries one file, at most 20 MB.
+`POST /admin/parish/past-campaigns/review/` is the second route allowed a
+body larger than the ingress default: Caddy admits up to 21 MB there (the
+file plus form overhead; see [production
+ingress](../operations/spec.md#production-ingress-and-tls), set in
+`runtime_ingress.py` beside the hosted-file upload route). The view
+follows the hosted-file upload's protections and adds two:
+
+- it accepts POST only, and refuses a missing `Content-Length` or one over
+  21 MB before reading any of the body;
+- before anything reads the body (`request.POST` or `request.FILES`), it
+  checks the user's role (an Administrator with `CONFIGURE` and
+  `FINANCIAL_DETAIL`) and the CSRF token, which the page script sends in
+  the `X-CSRFToken` request header (the Admin portal [requires
+  JavaScript](../ui-conventions/spec.md#javascript-requirement)), so an
+  unauthorized request never makes the server read or spool 21 MB;
+- it then takes a deployment-wide, non-blocking lock for archive Reviews;
+  while another Review holds it, the request is refused at once with "Another
+  archive is being checked; try again in a minute". One archive at a time
+  bounds this route's spool in the web container's `/tmp` tmpfs to one
+  21 MB file, where Django's upload settings spool files over 5 MB, as for
+  hosted files;
+- the proxy's 30-second body-read timeout is shared by every route and stays
+  unchanged, so a 20 MB file needs about 6 Mbit/s of upload speed, which
+  the About panel says.
+
+The whole request fits well inside the web server's 370-second request
+timeout (`runtime_budget.server_timeout_seconds`): at most 30 seconds to
+receive the body, at most 60 seconds in the helper, and one short
+transaction that inserts the pending rows (a few hundred day, band and
+Family rows).
 
 The checks, in order:
 
 1. **Size and package.** The file size; the zip directory's declared sizes
    as an early refusal only (they can lie); then every part is read once as
    a stream that counts the bytes actually decompressed and stops at 100 MB
-   for one part or 300 MB in all, and at a compression ratio above 100 to
-   1. The hosted-files OOXML checks and the part allowlist above apply.
+   for one part or 300 MB in all, and, for each part once it has
+   decompressed more than 1 MB, at more than 100 decompressed bytes per
+   compressed byte of that part (the converted files' highest is about 15,
+   in the Ministry answers sheet). The hosted-files OOXML checks and the part allowlist above apply.
    Every XML part is refused if it contains a document type declaration or
    an entity declaration, checked on that stream before any XML parser sees
    the part. Worksheets are then parsed in streaming read-only mode, never
@@ -361,15 +390,17 @@ The checks, in order:
    files are about 2 MB, 35 MB uncompressed and 100,000 rows each, most of
    them Ministry answers.)
 2. **Schema.** The first sheet is `README`; `metadata` has the required keys
-   and no key the declared version does not define; `schema` and the major
+   and every other key is one the reader's version defines, except that a
+   file declaring a later minor version (1.x) may carry keys that version
+   added, which are ignored and never stored; `schema` and the major
    version match; every data sheet exists with its header row exactly as
    above.
 3. **Cells.** Every cell has its column's type, range and enumeration; no
    formula cells; required cells are not blank; the conditional rules in the
    column tables hold (such as `annual_pledge` against `pledge_status`, and
    `installment_source` against `installment_amount`).
-4. **Consistency.** Each rule below holds for every one of the eight
-   converted 2020–2027 files.
+4. **Consistency.** Each rule below holds for every one of the seven
+   converted 2020–2026 files.
    - `daily` runs from day 1 with no gap to the day of
      `campaign_last_submission_date`; each `local_date` matches its day;
      `cumulative_families` is the running sum of `first_submissions`;
@@ -649,18 +680,41 @@ from).
 pledging Families, the total they pledged and its share of the total
 pledged. Per year: the first quartile, median and third quartile of the
 annual pledge, beside the mean. Quartiles use the inclusive method
-(Excel's `QUARTILE.INC`), so a spreadsheet reproduces them. Amounts are
+(Excel's `QUARTILE.INC`): for the n pledges sorted ascending as x₁ … xₙ and
+p = 0.25, 0.5 or 0.75, h = (n − 1)·p + 1, and the quartile is
+x⌊h⌋ + (h − ⌊h⌋)·(x⌊h⌋₊₁ − x⌊h⌋), all in exact decimal arithmetic, then
+rounded to the cent half up (`ROUND_HALF_UP`, as Excel's `ROUND` does).
+Excel computes in binary floating point, so it may differ from the stored
+value by a cent in rare cases. Amounts are
 nominal dollars with no inflation adjustment, and the report says so.
 
 **Small-count protection.** In anything that leaves the Admin portal (the
-PDF, CSV and XLSX downloads and the digest), a band with fewer than 5
-Families shows "fewer than 5" in place of its count and share, and no total
-or share of total. If exactly one band of a year is withheld, the total and
-share of total of the band next to it (the next lower band, or the next
-higher one for the lowest band) are also withheld, so the withheld total
-cannot be worked out by subtracting the others from the year's total. A year with fewer than 5 pledging
-Families shows no quartiles there. The Admin portal page itself shows every
-figure, since only Administrators and Staff open it.
+PDF, CSV and XLSX downloads, the digest and command output), a band with
+fewer than 5 Families shows "fewer than 5" in place of its count and share,
+and no total or share of total. When any band of a year is withheld, that
+year's outside outputs also withhold:
+
+- the count, share and total of the band next to it (the next lower band,
+  or the next higher one for the lowest band), so neither the withheld
+  count nor its total can be worked out from the year's totals by
+  subtraction;
+- the year's number of pledging Families and every average pledge of that
+  year, at any day, since the year's total pledged divided by the average
+  gives that number; and
+- the bands' shares of pledging Families, since a visible count divided by
+  its share gives it too.
+
+The year's total pledged and its shares of the total stay, because without
+the counts they reveal no band's count. A year with fewer than 5 pledging
+Families shows no quartiles and no bands there.
+
+**The current campaign stays inside the portal.** Its distribution and
+quartiles change day by day, and the difference between two days could
+expose one Family's pledge. They therefore appear only on the Admin portal
+page. Outside the portal (downloads, digest, command output) distributions
+and quartiles are shown only for final imported years. The Admin portal
+page itself shows every figure, since only Administrators and Staff open
+it.
 
 ### Page layout
 
@@ -785,7 +839,9 @@ importing them.
 | Situation | Behavior |
 | --- | --- |
 | File not an `.xlsx`, too large, macro-bearing, with a part off the allowlist or an external relationship, or unreadable | Refused at Review with the reason; nothing stored |
-| More than 8 files or 40 MB in one Review | The whole Review is refused before any file is checked |
+| More than one file, no `Content-Length`, or a body over 21 MB | Refused before the body is read |
+| No role or CSRF header | Refused before the body is read |
+| Another archive Review in progress | Refused at once; try again shortly |
 | Decompression limit, compression ratio, document type or entity declaration | Refused as unsafe to read |
 | The helper exceeds its memory limit | Refused as too large to check |
 | Wrong schema, version, sheet or header | Refused naming the sheet and the expected header, never the text found |
@@ -796,7 +852,7 @@ importing them.
 | Current campaign's year | Refused with the reason |
 | Two Applies race | One wins; the other is refused as stale |
 | Preview expired | Refused as stale; Review again |
-| Apply fails part-way | That file's transaction rolls back; files applied before it stay |
+| Apply fails part-way | The transaction rolls back; nothing is stored |
 | Fact set not ready | Last ready fact set with the Updating notice |
 | No last year, no active count, no Family rows | The affected figure shows "—" with its reason |
 | Financial module off | Pledge figures, charts and columns are left out |
@@ -821,8 +877,10 @@ committed.
   zip whose directory understates a part's size (stopped while reading);
   a high compression ratio; a document type and an entity declaration in
   a worksheet and in `sharedStrings.xml`; the helper's time and memory
-  limits, each leaving its timeout entry; and the 8-file and 40 MB Review
-  caps. A synthetic workbook saved again by LibreOffice in CI passes the
+  limits, each leaving its timeout entry; the route's POST-only rule, its
+  refusal of a missing or oversize `Content-Length`, a missing role and a
+  missing CSRF header before the body is read (asserting the body stream
+  is untouched), the one-at-a-time lock, and one file per request. A synthetic workbook saved again by LibreOffice in CI passes the
   allowlist.
 - **Cell types:** whole-valued float integers accepted and digit text
   refused; numeric cells in text columns; money with three decimals refused
@@ -864,9 +922,12 @@ committed.
   band, inclusive quartiles against hand-computed values, the band-set
   version recorded and a mixed-version comparison refused, and the
   small-count protection in every output that leaves the portal (a band of
-  4 shows "fewer than 5" and no total, the next lower band's totals withheld
-  when it is the only withheld band, no quartiles under 5 pledging Families)
-  while the page shows every figure.
+  4 shows "fewer than 5" and no total, its neighbour's count and total
+  withheld, the year's pledging-Family count, averages and shares of
+  pledging Families left out, no quartiles or bands under 5 pledging
+  Families, and no current-campaign distribution or quartiles outside the
+  portal) while the page shows every figure; quartiles in exact decimals,
+  rounded half up, against hand-computed values.
 - **Pages:** role access (Staff see the report, not Past campaigns; Ministry
   leaders see neither), Review/Apply in place, the replacement
   acknowledgement gate, the Compare on day control without reload, the
