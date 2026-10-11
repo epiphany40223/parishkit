@@ -217,7 +217,8 @@ def test_recovery_wrappers_refuse_wrong_identity_and_nonapplied_receipt(
         operator_commands, "configure_operator_database", lambda _: None
     )
     monkeypatch.setattr(
-        "parishkit.stewardship.runtime_database.admit_offline_database", lambda _: None
+        "parishkit.stewardship.runtime_database.admit_offline_database",
+        lambda _, **__: None,
     )
     monkeypatch.setattr(
         "parishkit.stewardship.accounts.operator_recovery.recover_admin",
@@ -291,9 +292,11 @@ def test_migration_safety_branches_precede_success(tmp_path, monkeypatch, case):
     monkeypatch.setattr("django.db.connection", database)
     loader = MagicMock()
     loader.applied_migrations = loader.disk_migrations = {}
+    schema_checks = []
     monkeypatch.setattr("django.db.migrations.loader.MigrationLoader", lambda _: loader)
     monkeypatch.setattr(
-        "parishkit.stewardship.runtime_database.require_current_schema", lambda: None
+        "parishkit.stewardship.runtime_database.require_current_schema",
+        lambda **kwargs: schema_checks.append(kwargs),
     )
     monkeypatch.setattr(
         "parishkit.stewardship.runtime_database.require_role_capacity", lambda _: None
@@ -310,6 +313,9 @@ def test_migration_safety_branches_precede_success(tmp_path, monkeypatch, case):
     assert migrate.call_count == int(
         case in {"missing-policy", "valid", "configured-backed"}
     )
+    # The ordinary migration checks for a fully current schema.
+    if case in {"valid", "configured-backed"}:
+        assert schema_checks == [{"users_swap_pending": False}]
     # The identity query applies every isolation check but ownership.
     from parishkit.stewardship.database_provisioning import ISOLATION_DRIFT, OWNERSHIP
 
@@ -317,3 +323,80 @@ def test_migration_safety_branches_precede_success(tmp_path, monkeypatch, case):
     query = cursor.execute.call_args_list[0].args[0]
     for name, check in ISOLATION_DRIFT.items():
         assert (check in query) is (name != OWNERSHIP)
+
+
+def test_users_upgrade_base_stops_before_the_swap_and_never_unapplies():
+    """Every app's leaf, except the users swap's closure, which waits (#952).
+
+    The real migration graph, read from disk: with everything but the swap
+    applied the accounts target is the swap's parent and every other app
+    goes to its leaf; once the swap is applied (a repeated upgrade) the
+    targets are the leaves, the full migration.
+    """
+    from django.db.migrations.loader import MigrationLoader
+
+    from parishkit.stewardship.runtime_database import USERS_SWAP, users_swap_closure
+
+    loader = MigrationLoader(None, ignore_no_migrations=True)
+    graph = loader.graph
+    closure = users_swap_closure(graph)
+    assert USERS_SWAP in closure
+    leaves = sorted(graph.leaf_nodes())
+    loader.applied_migrations = {key: None for key in graph.nodes if key not in closure}
+    targets = operator_commands.users_upgrade_targets(loader)
+    assert USERS_SWAP not in targets and not set(targets) & closure
+    parents = [
+        key for key in graph.node_map[USERS_SWAP].parents if key[0] == USERS_SWAP[0]
+    ]
+    assert parents and parents[0] in targets
+    assert {key[0] for key in targets} == {key[0] for key in leaves}
+    loader.applied_migrations = {key: None for key in graph.nodes}
+    assert operator_commands.users_upgrade_targets(loader) == leaves
+
+
+def test_migrate_to_the_users_upgrade_base_admits_only_the_swap_pending(
+    tmp_path, monkeypatch
+):
+    """--users-upgrade-base migrates to each target and checks the schema so."""
+    from dataclasses import replace
+    from unittest.mock import MagicMock
+
+    from .bootstrap_factory import bootstrap_fixture
+
+    configuration, _ = bootstrap_fixture(tmp_path)
+    configuration = replace(configuration, service_role=ServiceRole.MIGRATION)
+    monkeypatch.setattr(
+        operator_commands, "admit_offline_service", lambda _: ServiceRole.MIGRATION
+    )
+    monkeypatch.setattr(
+        operator_commands, "configure_operator_database", lambda _: None
+    )
+    database = MagicMock()
+    database.cursor.return_value.__enter__.return_value.fetchone.side_effect = [
+        ("pk_stewardship_migration",) * 2 + (False,) * 7,
+        (None,),
+        (4,),
+    ]
+    monkeypatch.setattr("django.db.connection", database)
+    loader = MagicMock()
+    loader.applied_migrations = loader.disk_migrations = {}
+    monkeypatch.setattr("django.db.migrations.loader.MigrationLoader", lambda _: loader)
+    schema_checks = []
+    monkeypatch.setattr(
+        "parishkit.stewardship.runtime_database.require_current_schema",
+        lambda **kwargs: schema_checks.append(kwargs),
+    )
+    monkeypatch.setattr(
+        "parishkit.stewardship.runtime_database.require_role_capacity", lambda _: None
+    )
+    targets = [("stewardship_accounts", "0012_users_requests"), ("other", "0002_x")]
+    monkeypatch.setattr(operator_commands, "users_upgrade_targets", lambda _: targets)
+    migrate = MagicMock()
+    monkeypatch.setattr("django.core.management.call_command", migrate)
+    assert operator_commands.migrate_command(
+        configuration, users_upgrade_base=True
+    ) == {"migrations_current": True}
+    assert [call.args for call in migrate.call_args_list] == [
+        ("migrate", *target) for target in targets
+    ]
+    assert schema_checks == [{"users_swap_pending": True}]

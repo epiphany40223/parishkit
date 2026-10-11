@@ -145,16 +145,22 @@ def test_the_only_administrator_settles_an_expansion_alone(auth_service, google)
     applied(
         store,
         browser,
-        proposal(store, kind="domain", identity="partner.example", roles=["staff"]),
+        proposal(
+            store,
+            kind="address",
+            identity="partner@example.org",
+            roles=["administrator"],
+        ),
     )
-    event = PolicySecurityEvent.objects.get(target="partner.example")
-    assert event.kind == "domain_created" and event.recipients == ["admin@example.org"]
+    event = PolicySecurityEvent.objects.get(target="partner@example.org")
+    assert event.kind == "administrator_granted"
+    assert event.recipients == ["admin@example.org"]
     page = home(browser)
-    assert PANEL in page and "Hosted-domain rule created" in page
+    assert PANEL in page and "partner@example.org" in page
     assert offered(page, event)
     assert acknowledge(browser, event.pk).status_code == 302
     page = home(browser)
-    assert not offered(page, event) and "partner.example" not in page
+    assert not offered(page, event) and "partner@example.org" not in page
     # The deployment's root activation recorded the first Administrator's own
     # grant with nobody to await; that event is settled by any acknowledgement.
     root = PolicySecurityEvent.objects.get(target="admin@example.org")
@@ -166,7 +172,7 @@ def test_the_only_administrator_settles_an_expansion_alone(auth_service, google)
     add_rules(store, address("later@example.org"))
     later = signed_in_as(google, "later@example.org", "later-subject")
     page = home(later)
-    assert not offered(page, event) and "partner.example" not in page
+    assert not offered(page, event)
     assert not offered(page, root)
 
 

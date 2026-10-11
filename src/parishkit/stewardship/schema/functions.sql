@@ -4046,35 +4046,22 @@ BEGIN
     SELECT COALESCE(jsonb_agg(email ORDER BY email), '[]'::jsonb) INTO recipients
     FROM public.stewardship_address_rule
     WHERE configuration_id = NEW.predecessor_id AND roles ? 'administrator';
+    -- Users (#952): sign-in is by address only, so hosted-domain rules
+    -- grant nothing and are not read.
     FOR entry IN
-        SELECT record_id, 'address' AS kind, email AS target, roles
+        SELECT record_id, email AS target, roles
         FROM public.stewardship_address_rule
-        WHERE configuration_id = NEW.configuration_id
-        UNION ALL
-        SELECT record_id, 'domain', domain, roles
-        FROM public.stewardship_domain_rule
         WHERE configuration_id = NEW.configuration_id
     LOOP
         prior := NULL;
         alert_kind := NULL;
-        IF entry.kind = 'address' THEN
-            SELECT roles INTO prior FROM public.stewardship_address_rule
-            WHERE configuration_id = NEW.predecessor_id AND email = entry.target;
-            IF entry.roles ? 'administrator'
-               AND NOT COALESCE(prior ? 'administrator', false) THEN
-                alert_kind := 'administrator_granted';
-            END IF;
-        ELSE
-            SELECT roles INTO prior FROM public.stewardship_domain_rule
-            WHERE configuration_id = NEW.predecessor_id AND domain = entry.target;
-            IF prior IS NULL THEN
-                alert_kind := 'domain_created';
-            ELSIF entry.roles ? 'staff' AND NOT prior ? 'staff' THEN
-                alert_kind := 'domain_staff_granted';
-            END IF;
+        SELECT roles INTO prior FROM public.stewardship_address_rule
+        WHERE configuration_id = NEW.predecessor_id AND email = entry.target;
+        IF entry.roles ? 'administrator'
+           AND NOT COALESCE(prior ? 'administrator', false) THEN
+            alert_kind := 'administrator_granted';
         END IF;
-        -- A new domain or any additional exact/domain role broadens access.
-        -- Removing an exact denial may expose a domain grant, checked below.
+        -- Any additional role broadens access.
         expanded := expanded OR NOT entry.roles <@ COALESCE(prior, '[]'::jsonb);
         IF alert_kind IS NOT NULL THEN
             event_id := gen_random_uuid();
@@ -4143,17 +4130,6 @@ BEGIN
                 'policy_security_event', event_id);
         END IF;
     END IF;
-    expanded := expanded OR EXISTS (
-        SELECT 1 FROM public.stewardship_address_rule previous_rule
-        JOIN public.stewardship_domain_rule domain
-          ON domain.configuration_id = NEW.configuration_id
-         AND domain.domain = split_part(previous_rule.email, '@', 2)
-        WHERE previous_rule.configuration_id = NEW.predecessor_id
-          AND NOT domain.roles <@ previous_rule.roles
-          AND NOT EXISTS (SELECT 1 FROM public.stewardship_address_rule current
-                          WHERE current.configuration_id = NEW.configuration_id
-                            AND current.email = previous_rule.email)
-    );
     -- New manual scope or an independent manual Minister origin may unsuppress
     -- a seeded login without changing any configured role-name array.
     expanded := expanded OR EXISTS (
@@ -4416,8 +4392,8 @@ BEGIN
     -- cannot be minted by a web logic bug that SQL can see. The absolute
     -- limit is ADMIN_ABSOLUTE (12 hours, accounts/session_policy.py); an
     -- authority rotation copies the older row's earlier deadline. The
-    -- principal must be a live PortalUser whose current address or domain
-    -- rule grants at least one Admin role (the same projection as
+    -- principal must be a live PortalUser whose current user (#952; an
+    -- address rule) grants at least one Admin role (the same projection as
     -- stewardship_export_authorized_v1). Python may grant fewer roles than
     -- the rule names, never more.
     IF NEW.expires_at > statement_timestamp() + interval '12 hours'
@@ -4428,10 +4404,8 @@ BEGIN
         CROSS JOIN stewardship_system_configuration r
         LEFT JOIN stewardship_address_rule a ON a.configuration_id=r.active_configuration_id
             AND a.email=lower(u.email)
-        LEFT JOIN stewardship_domain_rule d ON d.configuration_id=r.active_configuration_id
-            AND d.domain=lower(u.hosted_domain) AND d.domain=split_part(lower(u.email),'@',2)
         WHERE u.id=NEW.principal_id AND NOT u.disabled
-            AND coalesce(a.roles,d.roles,'[]'::jsonb) ?| ARRAY['administrator','staff','ministry_leader'])
+            AND coalesce(a.roles,'[]'::jsonb) ?| ARRAY['administrator','staff','ministry_leader'])
     THEN
         RAISE EXCEPTION 'Admin session requires a current authorized principal and bounded lifetime'
             USING ERRCODE='23514';

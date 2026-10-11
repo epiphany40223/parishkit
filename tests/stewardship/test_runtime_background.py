@@ -333,9 +333,8 @@ def test_mail_runtime_requires_working_key_except_for_coherent_bootstrap(
         restore_review_required=False,
         current_campaign_id=None,
         active_configuration=SimpleNamespace(
-            validation_schema=(
-                "bootstrap-policy-v1" if bootstrap else "campaign-content-v5"
-            )
+            # A configured deployment holds users since #952 slice 4.
+            validation_schema=("bootstrap-policy-v1" if bootstrap else "users-v10")
         ),
     )
     monkeypatch.setattr(
@@ -474,9 +473,8 @@ def test_only_bootstrap_worker_can_omit_installed_source_key(
         restore_review_required=False,
         current_campaign_id=None,
         active_configuration=SimpleNamespace(
-            validation_schema="bootstrap-policy-v1"
-            if bootstrap
-            else "campaign-content-v5"
+            # A configured deployment holds users since #952 slice 4.
+            validation_schema="bootstrap-policy-v1" if bootstrap else "users-v10"
         ),
     )
     monkeypatch.setattr(

@@ -12,7 +12,7 @@ from parishkit.stewardship.accounts import user_views
 from parishkit.stewardship.accounts.authentication import AuthRuntime
 from parishkit.stewardship.accounts.policy import current_principal
 from parishkit.stewardship.accounts.policy_models import AssignmentOverlay, PortalUser
-from parishkit.stewardship.audit.models import AuditContext
+from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.deployment import ServiceRole
 
 from ..policy_factory import address, assignment, domain
@@ -83,6 +83,18 @@ def identity(email, *, hosted=None, disabled=False):
     )
 
 
+def signed_in_before(email, *, hosted):
+    """A Google identity that signed in to the Admin portal before the users swap.
+
+    Sign-in reads only users since #952 slice 4, so a hosted-domain
+    colleague's earlier sign-in is recorded as that sign-in left it: the
+    identity and its admin_login audit event.
+    """
+    portal = identity(email, hosted=hosted)
+    AuditEvent.objects.create(event_type="admin_login", actor_id=portal.pk)
+    return portal
+
+
 def test_administrator_reviews_rules_provenance_and_warnings(auth_service, google):
     """Real grants, real policy: every table row and warning, and a clean audit."""
     # Only rules an Administrator can really add: Chairperson-seeded authority
@@ -103,9 +115,9 @@ def test_administrator_reviews_rules_provenance_and_warnings(auth_service, googl
     google[0].update(email="blocked@example.org", sub="blocked-subject")
     assert signed_in()[1].status_code == 403
     assert PortalUser.objects.filter(email="blocked@example.org").exists()
-    # A colleague with no exact rule really signs in through the domain rule.
-    google[0].update(email="colleague@example.org", sub="colleague-subject")
-    assert signed_in()[1].status_code == 302
+    # A colleague with no exact rule signed in through the domain rule before
+    # the users swap (#952).
+    signed_in_before("colleague@example.org", hosted="example.org")
     identity("idle@example.org", disabled=True)
     google[0].update(email="admin@example.org", sub="synthetic-google-subject")
     browser, login = signed_in()
