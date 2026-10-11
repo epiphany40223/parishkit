@@ -55,8 +55,19 @@ from .sessions import FreshAuthenticationRequired, authenticated_admin, require_
 # only to one of them.
 REVIEW_REGION = "settings-review"
 IN_PLACE_PAGES = frozenset(
-    {"parish_settings", "campaign_settings", "share_settings", "campaign_ministries"}
+    {
+        "parish_settings",
+        "campaign_settings",
+        "share_settings",
+        "campaign_ministries",
+        "ministries",
+    }
 )
+# The view parameters an in-place page with a table keeps through a change
+# (#750): its filters, sort and page, so the quiet refresh once the change
+# is applied shows the table the Administrator was looking at. The page
+# validates them on every load, as it does any other address.
+IN_PLACE_VIEWS = {"ministries": ("q", "state", "page", "size", "sort")}
 
 
 def principal(
@@ -169,6 +180,7 @@ def confirm(
     attach=None,
     fresh=False,
     in_place=False,
+    view=None,
 ):
     """Admit one exact intent from the page; redirect to its request status.
 
@@ -177,7 +189,8 @@ def confirm(
     for a recent Google sign-in again under the work lock (#547). An
     ``in_place`` editor (#532) is answered with itself instead, naming the
     request, so its review region follows the change where the Administrator
-    already is.
+    already is; ``view`` is the page's own view parameters (its table's
+    filters, sort and page), kept in that answer's address.
     """
     receipt = confirm_intent(
         request,
@@ -194,10 +207,8 @@ def confirm(
     )
     admin_navigation.remember_origin(request, receipt.request_id)
     if in_place:
-        return HttpResponseRedirect(
-            f"{request.path}?{urlencode({'request': receipt.request_id})}"
-            f"#{REVIEW_REGION}"
-        )
+        query = urlencode({**(view or {}), "request": receipt.request_id})
+        return HttpResponseRedirect(f"{request.path}?{query}#{REVIEW_REGION}")
     return HttpResponseRedirect(
         reverse("admin:configuration_request", args=[receipt.request_id])
     )
@@ -298,6 +309,7 @@ def review_region(
     refusal=None,
     message=None,
     link=None,
+    view=None,
 ):
     """Template context for an in-place settings page's review region (#532).
 
@@ -310,7 +322,8 @@ def review_region(
     draws its own content (an ordered list's before and after) in place of
     the changed settings. ``link`` (``{"url", "label"}``) follows the errors
     when the page names where to resolve them, as a live end-date review does
-    for mail (#912).
+    for mail (#912). ``view`` is the page's own view parameters (see
+    ``IN_PLACE_VIEWS``), which the status read hands on to the follow-up.
     """
     if message is not None:
         errors = [{"field_id": None, "message": message}]
@@ -330,7 +343,7 @@ def review_region(
         status_url = (
             reverse("admin:configuration_request", args=[receipt.request_id])
             + "?"
-            + urlencode({"in_place": page})
+            + urlencode({"in_place": page, **(view or {})})
         )
     return {
         "review": review,
@@ -355,8 +368,15 @@ def in_place_follow(parameters, request_id):
     page = parameters.get("in_place")
     if page not in IN_PLACE_PAGES:
         return None
-    # The template adds the review region's fragment.
-    return reverse(f"admin:{page}") + "?" + urlencode({"request": request_id})
+    # A page with a table keeps the view it was showing (IN_PLACE_VIEWS);
+    # only the parameters it names are ever carried. The template adds the
+    # review region's fragment.
+    view = {
+        name: parameters[name]
+        for name in IN_PLACE_VIEWS.get(page, ())
+        if name in parameters
+    }
+    return reverse(f"admin:{page}") + "?" + urlencode({**view, "request": request_id})
 
 
 def confirm_intent(
