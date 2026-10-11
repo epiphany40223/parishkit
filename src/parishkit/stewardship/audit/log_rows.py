@@ -132,8 +132,9 @@ EVENTS = tuple(sorted({item.value for item in Action} | {item.value for item in 
 #   applied, refused (``config_request_failed``) or cancelled, and what an
 #   applied change did to access; mail schedules and live campaign changes;
 #   portal users and their roles, asked for on the Users page or confirmed
-#   from the command line (and the operator's one-time conversion of
-#   sign-in rules into users); hosted files; stored key replacements (and each
+#   from the command line, including ParishSoft Ministry leaders imported
+#   as users (and the operator's one-time conversion of sign-in rules into
+#   users); hosted files; stored key replacements (and each
 #   process acknowledging the new key); and initial setup, from starting it
 #   and entering its credentials, through its test email and Slack message,
 #   to locking it or letting it expire.
@@ -172,6 +173,9 @@ ACTIVITY_TYPES = {
         "roles_applied",
         "user_change_requested",
         "admin_cmd_users_confirm",
+        "user_leaders_import_requested",
+        "user_leader_imported",
+        "admin_cmd_users_import_leaders",
         "operator_users_upgraded",
         "hosted_file_uploaded",
         "hosted_file_slug_changed",
@@ -259,6 +263,7 @@ UNGROUPED_REASONS = {
         "system_health_viewed",
         "system_logs_viewed",
         "talents_report_viewed",
+        "user_leaders_listed",
         "user_names_looked_up",
         "weekly_digest_viewed",
     ),
