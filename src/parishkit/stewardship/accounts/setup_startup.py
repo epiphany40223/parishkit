@@ -9,10 +9,12 @@ the finalization owner separately requires the live original prepared attempt.
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 
+from .bootstrap_schema import BOOTSTRAP_SCHEMAS
 from .configuration_models import AppliedConfigurationVersion
 from .request_admission import intake_base
 from .request_models import ConfigurationRequestCheckpoint
 from .runtime_models import ConfigurationActivation, SystemConfiguration
+from .setup_configuration import REQUEST_SCHEMAS as SETUP_REQUEST_SCHEMAS
 from .setup_models import SetupConfigurationIntent
 
 
@@ -35,7 +37,7 @@ def initial_setup_hold(store, *, projections=True):
             or runtime.mode != "testing"
             or runtime.restore_review_required
             or runtime.current_campaign_id is not None
-            or runtime.active_configuration.validation_schema != "bootstrap-policy-v1"
+            or runtime.active_configuration.validation_schema not in BOOTSTRAP_SCHEMAS
         ):
             raise ConfigError("Initial setup recovery authority is unavailable.")
         intent = (
@@ -44,7 +46,7 @@ def initial_setup_hold(store, *, projections=True):
                 request__candidate_version_id=selected.version_id,
                 request__candidate_digest=selected.digest,
                 request__base_id=runtime.active_configuration_id,
-                request__request_schema="initial-setup-patch-v7",
+                request__request_schema__in=SETUP_REQUEST_SCHEMAS,
                 attempt__base_id=runtime.active_configuration_id,
                 attempt__state__in=("frozen", "expired"),
             )

@@ -9,11 +9,15 @@ import pytest
 from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.bootstrap_schema import bootstrap_version
 from parishkit.stewardship.accounts.request_patch import build_candidate
-from parishkit.stewardship.accounts.setup_configuration import REQUEST_SCHEMA
+from parishkit.stewardship.accounts.setup_configuration import (
+    REQUEST_SCHEMA,
+    USERS_REQUEST_SCHEMA,
+    request_schema_for,
+)
 
 from .campaign_factory import campaign
 from .configuration_factory import configuration_document, configuration_version
-from .policy_factory import address
+from .policy_factory import address, legacy_bootstrap_document, user
 
 
 def setup_patch():
@@ -41,14 +45,45 @@ def setup_patch():
     ]
 
 
-def build(base, patch, candidate_id=None):
-    """Exercise explicit dispatch without admitting ordinary request persistence."""
+def build(base, patch, candidate_id=None, request_schema=None):
+    """Exercise explicit dispatch without admitting ordinary request persistence.
+
+    The format defaults to the base's own: users over a users bootstrap
+    (#993), v7 over an older exact-address one.
+    """
     return build_candidate(
         base,
         patch,
         candidate_id=candidate_id or uuid4(),
-        request_schema=REQUEST_SCHEMA,
+        request_schema=request_schema or request_schema_for(base),
     )
+
+
+def legacy_bootstrap():
+    """A root exact-address bootstrap, as written before #993."""
+    return configuration_version(legacy_bootstrap_document())
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_each_setup_format_needs_its_own_bootstrap_form(legacy):
+    """Users setup over a users bootstrap ends in users-v10; v7 keeps rules.
+
+    Neither format accepts the other bootstrap form, so no setup converts
+    sign-in rules into users or the reverse.
+    """
+    from parishkit.stewardship.accounts.configuration_schema import schema_for
+
+    base = legacy_bootstrap() if legacy else bootstrap_version(uuid4(), "a@example.org")
+    own = request_schema_for(base)
+    assert own == (REQUEST_SCHEMA if legacy else USERS_REQUEST_SCHEMA)
+    candidate = build(base, setup_patch()).candidate.document()
+    kinds = {row["values"]["kind"] for row in candidate["sections"]["login_rules"]}
+    assert kinds == ({"address"} if legacy else {"user"})
+    if not legacy:
+        assert schema_for(candidate) == "users-v10"
+    other = USERS_REQUEST_SCHEMA if legacy else REQUEST_SCHEMA
+    with pytest.raises(ConfigError):
+        build(base, setup_patch(), request_schema=other)
 
 
 def test_setup_intent_is_canonical_additive_and_detached():
@@ -92,19 +127,28 @@ def test_setup_cannot_modify_or_replace_an_existing_admin(action):
         build(base, setup_patch() + [operation])
 
 
-def test_setup_preserves_recovered_bootstrap_admins_too():
+@pytest.mark.parametrize("legacy", [False, True])
+def test_setup_preserves_recovered_bootstrap_admins_too(legacy):
     """A valid bootstrap successor need not be the original singleton root."""
     from parishkit.stewardship.accounts.authority import parse_version
     from parishkit.stewardship.accounts.bootstrap_schema import (
         validate_bootstrap_sections,
+        validate_users_bootstrap_sections,
     )
 
-    root = bootstrap_version(uuid4(), "admin@example.org")
+    root = legacy_bootstrap() if legacy else bootstrap_version(uuid4(), "a@example.org")
     document = root.document()
     document["version_id"] = str(uuid4())
     document["predecessor_digest"] = root.digest
-    document["sections"]["login_rules"].append(address("recovery@example.org"))
-    base = parse_version(document, validate_sections=validate_bootstrap_sections)
+    document["sections"]["login_rules"].append(
+        address("recovery@example.org") if legacy else user("recovery@example.org")
+    )
+    base = parse_version(
+        document,
+        validate_sections=(
+            validate_bootstrap_sections if legacy else validate_users_bootstrap_sections
+        ),
+    )
     assert (
         build(base, setup_patch()).candidate.document()["sections"]["login_rules"]
         == (base.document()["sections"]["login_rules"])

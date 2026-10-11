@@ -68,12 +68,12 @@ def authority_mismatch(selected, active_digest, message, *, active_schema=None):
     bootstrap configuration for the whole final ParishSoft load, by design,
     so a mismatch over the bootstrap is the setup hold, not a brief change.
     """
-    from .bootstrap_schema import BOOTSTRAP_SCHEMA
+    from .bootstrap_schema import BOOTSTRAP_SCHEMAS
 
     if (
         selected is not None
         and active_digest is not None
-        and active_schema != BOOTSTRAP_SCHEMA
+        and active_schema not in BOOTSTRAP_SCHEMAS
         and selected.digest != active_digest
         and selected.predecessor_digest == active_digest
     ):

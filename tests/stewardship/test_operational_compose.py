@@ -340,10 +340,15 @@ def test_complete_foundation_bootstrap_and_online_exclusion(
             "Replacement@Example.org",
         )
         proposed = json.loads(preview.stdout)["recovery_preview"]
+        # Bootstrap writes users (#998), so the preview is in the users form:
+        # its roles are the cumulative set the projection and the security
+        # alert record, and a new user's Name defaults to the local part.
+        assert proposed["form"] == "users"
         assert proposed["current_admin_rules"] == ["admin@example.org"]
         assert proposed["target_email"] == "replacement@example.org"
         assert proposed["before_roles"] == []
-        assert proposed["after_roles"] == ["administrator"]
+        assert proposed["after_roles"] == ["administrator", "ministry_leader", "staff"]
+        assert proposed["name"] == "replacement"
         assert proposed["parish_name"] is None
         # No online process holds the interlock yet: this must be the configured
         # upgrade hold, not the later online/offline mutual-exclusion assertion.

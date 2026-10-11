@@ -23,6 +23,7 @@ from parishkit.stewardship.accounts.setup_cancellation import (
     cancel_finalizing_setup,
     cancellation_status,
 )
+from parishkit.stewardship.accounts.setup_configuration import request_schema_for
 from parishkit.stewardship.accounts.setup_installation import abort_setup_configuration
 from parishkit.stewardship.accounts.setup_models import (
     SetupAttempt,
@@ -99,7 +100,7 @@ def values(service, attempt):
         actor_id=attempt.owner_id,
         correlation_id=uuid4(),
         request_key=uuid4(),
-        request_schema="initial-setup-patch-v7",
+        request_schema=request_schema_for(service.store.active()),
         base_id=attempt.base_id,
         patch=candidate.patch(),
         payload_fingerprint=candidate.payload_fingerprint,

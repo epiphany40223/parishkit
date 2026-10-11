@@ -207,7 +207,7 @@ def test_failed_binding_insert_rolls_back_request_and_freeze(
     assert SetupAttempt.objects.get(pk=attempt.attempt_id).state == "collecting"
     assert not SetupConfigurationIntent.objects.exists()
     assert not ConfigurationChangeRequest.objects.filter(
-        request_schema="initial-setup-patch-v7"
+        request_schema__in=["initial-setup-patch-v7", "initial-setup-users-v10"]
     ).exists()
 
 

@@ -195,6 +195,9 @@ FROZEN = {
     "0054_leaders_without_user.sql": (
         "3ffad84560e252d0f0cfa6c7aac0fced64a6c7c14537af2ef2b596779c000076"
     ),
+    "0055_setup_users.sql": (
+        "aa178a20f0feb29f3428f28dda8c106bf6d1d7d9e615c26e62d9e18ed9fe9cc3"
+    ),
 }
 
 
@@ -470,3 +473,21 @@ def test_the_pre_swap_fixture_is_the_baseline_before_the_swap():
         ).hexdigest()
     assert found == PRE_SWAP_BASELINE
     assert text.count("CREATE OR REPLACE FUNCTION") == len(PRE_SWAP_BASELINE)
+
+
+# The pre-0055 bodies the setup-users database tests reinstall
+# (tests/stewardship/database/pre_setup_users_functions.sql), copied byte for
+# byte from the fresh-install baseline at c55a0b92d, the head migration 0055
+# (#993) was written on. Pinned so an edit to the fixture fails here.
+PRE_SETUP_USERS_FIXTURE = (
+    ROOT / "tests/stewardship/database/pre_setup_users_functions.sql"
+)
+PRE_SETUP_USERS_DIGEST = (
+    "3c0c2a8aad5d5c2e98681c04c3f79103721793041a393d787805e9f0ccbc30d2"
+)
+
+
+def test_the_pre_setup_users_fixture_is_unchanged():
+    """The setup-users tests prove 0055's check on exactly the earlier bodies."""
+    digest = hashlib.sha256(PRE_SETUP_USERS_FIXTURE.read_bytes()).hexdigest()
+    assert digest == PRE_SETUP_USERS_DIGEST

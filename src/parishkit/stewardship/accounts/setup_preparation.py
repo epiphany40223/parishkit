@@ -17,6 +17,7 @@ from .provider_models import ProviderValidationContext
 from .request_admission import check_historical_additions
 from .request_patch import build_candidate
 from .secret_models import CredentialConsumerAcknowledgement
+from .setup_configuration import REQUEST_SCHEMAS as SETUP_REQUEST_SCHEMAS
 from .setup_credential_installation import ready_live
 from .setup_install_models import SetupCredentialInstallation, SetupPreparationReceipt
 from .setup_readiness_models import SetupReadinessBinding
@@ -78,7 +79,7 @@ def prepare_setup_configuration(materializer):
     admit_configuration_database()
     materializer._check()
     request = materializer.request
-    if request is None or request.request_schema != "initial-setup-patch-v7":
+    if request is None or request.request_schema not in SETUP_REQUEST_SCHEMAS:
         raise ConfigError("Only initial setup may prepare without activation.")
     candidate = build_candidate(
         materializer.store.read_version(request.base_id),
