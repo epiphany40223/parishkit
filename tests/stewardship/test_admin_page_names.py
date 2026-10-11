@@ -78,7 +78,8 @@ TEMPLATES = {
     "hosted_file_rename": "hosted-file-rename.html",
     "source_refresh": "source-refresh.html",
     "users": "users.html",
-    "user_rules": "user-rule-preview.html",
+    "user_new": "user-entry.html",
+    "user_edit": "user-entry.html",
     "automation_access": "automation-access.html",
     "automation_approval": "automation-approval.html",
     "system_health": "system-health.html",
@@ -123,15 +124,13 @@ OBJECT_NAMED = {
 # campaign" page named after the report opened (checked below), and a daily
 # report takes the title saved with the emailed report.
 VIEW_NAMED = {"reports", "daily_digest_snapshot"}
-# A sign-in rule change's status answers JSON only (the spec: not a page),
-# Delete scheduled emails answers the list's dialog with a change's status
-# page, and Delete hosted files the library's dialog with a redirect or a
-# refusal (#879), never a page of their own.
-NOT_PAGES = {"rule_request", "schedule_delete", "hosted_file_delete"}
-# Pages whose new name waits for a later slice, with that slice. Portal users
-# becomes Sign-in rules when NAV-15 splits it; renaming the combined page now
-# would mislabel its Ministry assignment and Chairperson tables.
-PENDING = {"users": "NAV-15"}
+# Delete scheduled emails and Delete user answer their list's dialog with a
+# change's status page, and Delete hosted files the library's dialog with a
+# redirect or a refusal (#879), never a page of their own.
+NOT_PAGES = {"schedule_delete", "user_delete", "hosted_file_delete"}
+# Pages whose new name waits for a later slice, with that slice. None is
+# left: Portal users became Users with #952.
+PENDING = {}
 
 # Each setup wizard step's template, by stepper key: its heading is the
 # stepper's label. The data-entry and connection steps share templates whose
@@ -160,6 +159,7 @@ REVIEWS = (
     "content-preview.html",
     "content-settings.html",
     "schedule-preview.html",
+    "user-review.html",
 )
 
 TRANSLATED = re.compile(r'{% translate "([^"]+)" %}')

@@ -13,13 +13,15 @@ pre-swap bodies of the functions it replaces (``swap_pending``).
 
 import json
 import re
-from contextlib import contextmanager
+import sys
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 from django.db import DatabaseError, connection, transaction
+from psycopg import sql as psycopg_sql
 
 from parishkit.config import ConfigError
 from parishkit.stewardship import operator_commands, runtime_database
@@ -243,7 +245,8 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 def swap_pending():
     """Put the database in the state `migrate --users-upgrade-base` leaves.
 
-    The swap's ``django_migrations`` row is removed and the five functions
+    The ``django_migrations`` rows of the swap and of every migration that
+    depends on it are removed and the five functions
     it replaces get their real earlier bodies back (``old_definitions``),
     so sign-in, export authorization and recovery run on the SQL a
     production database has between the base migration and the full one.
@@ -252,13 +255,24 @@ def swap_pending():
     neither function bodies nor that table, so later tests would otherwise
     see this state.
     """
-    app, name = USERS_SWAP
+    from django.db.migrations.loader import MigrationLoader
+
+    # The swap and every later migration that depends on it are pending
+    # then (a later one, such as 0053's Name lookup, keeps its objects:
+    # nothing here reads them).
+    closure = sorted(
+        runtime_database.users_swap_closure(MigrationLoader(connection).graph)
+    )
+    removed = []
     with transaction.atomic(), connection.cursor() as cursor:
-        cursor.execute(
-            "DELETE FROM django_migrations WHERE app=%s AND name=%s RETURNING applied",
-            [app, name],
-        )
-        (applied,) = cursor.fetchone()
+        for app, name in closure:
+            cursor.execute(
+                "DELETE FROM django_migrations WHERE app=%s AND name=%s "
+                "RETURNING applied",
+                [app, name],
+            )
+            removed.extend((app, name, applied) for (applied,) in cursor.fetchall())
+        assert USERS_SWAP in {(app, name) for app, name, _ in removed}
         for definition in old_definitions().values():
             cursor.execute(definition)
     try:
@@ -267,11 +281,270 @@ def swap_pending():
         with transaction.atomic(), connection.cursor() as cursor:
             cursor.execute("RESET SESSION AUTHORIZATION")
             cursor.execute(SWAP[: SWAP.index("DO $check$")])
+            for app, name, applied in removed:
+                # A test that ran the full migration recorded the row again.
+                cursor.execute(
+                    "INSERT INTO django_migrations (app, name, applied) "
+                    "SELECT %s, %s, %s WHERE NOT EXISTS (SELECT 1 FROM "
+                    "django_migrations WHERE app=%s AND name=%s)",
+                    [app, name, applied, app, name],
+                )
+
+
+@contextmanager
+def closure_functions_absent():
+    """Drop each routine the swap's closure creates, as the base lacks them.
+
+    ``swap_pending`` keeps them (nothing there reads them), but
+    database-grants on the users upgrade's base must not name them (#952).
+    Afterwards each is installed again from its migration's frozen file,
+    unless a full migration in the test already did.
+    """
+    from django.db.migrations.loader import MigrationLoader
+
+    from parishkit.stewardship.runtime_grants import CLOSURE_FUNCTIONS
+
+    migrations = MigrationLoader(connection).disk_migrations
+    with connection.cursor() as cursor:
+        for function in CLOSURE_FUNCTIONS:
+            cursor.execute(f"DROP FUNCTION public.{function}")
+    try:
+        yield
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute("RESET SESSION AUTHORIZATION")
+            for function, key in CLOSURE_FUNCTIONS.items():
+                cursor.execute("SELECT to_regprocedure(%s)", [f"public.{function}"])
+                if cursor.fetchone()[0] is None:
+                    module = sys.modules[migrations[key].__module__]
+                    cursor.execute(Path(module.FROZEN_SQL).read_text(encoding="utf-8"))
+
+
+@contextmanager
+def provisioned_logins(monkeypatch):
+    """Every runtime login, empty, and the real database-grants to fill them.
+
+    Yields a function that runs ``provision_grants`` on this test's own
+    connection as the operator would. Its operator, marker and role checks
+    are stubbed (the Docker provisioning test covers them); the grants
+    themselves, the writer-guard check and the existing-grant checks run
+    for real. The logins are dropped afterwards.
+    """
+    from parishkit.stewardship import database_provisioning as provisioning
+    from parishkit.stewardship.runtime_identities import database_identities
+
+    logins = [
+        (login, role)
+        for _, login, role, _ in database_identities()
+        if role is not ServiceRole.MIGRATION
+    ]
+    with connection.cursor() as cursor:
+        for login, role in logins:
+            name = psycopg_sql.Identifier(login)
             cursor.execute(
-                "INSERT INTO django_migrations (app, name, applied) "
-                "VALUES (%s, %s, %s)",
-                [app, name, applied],
+                psycopg_sql.SQL("CREATE ROLE {} LOGIN NOINHERIT").format(name)
             )
+            cursor.execute(
+                psycopg_sql.SQL("GRANT USAGE ON SCHEMA public TO {}").format(name)
+            )
+            if role is ServiceRole.BACKUP_WORKER:
+                cursor.execute(
+                    psycopg_sql.SQL("GRANT pg_read_all_data TO {}").format(name)
+                )
+    for name in ("_password", "_admit_operator", "role_limit"):
+        monkeypatch.setattr(provisioning, name, lambda *a, **k: None)
+    monkeypatch.setattr(provisioning, "_check_role", lambda *a, **k: True)
+    connection.ensure_connection()
+    monkeypatch.setattr(
+        provisioning, "_connection", lambda *a: nullcontext(connection.connection)
+    )
+    configuration = SimpleNamespace(postgres=SimpleNamespace(password_file=None))
+
+    def grants():
+        """Run database-grants as the operator; its result."""
+        with connection.cursor() as cursor:
+            cursor.execute("RESET SESSION AUTHORIZATION")
+        return provisioning.provision_grants(configuration, uuid4())
+
+    try:
+        yield grants
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute("RESET SESSION AUTHORIZATION")
+            for login, _ in logins:
+                name = psycopg_sql.Identifier(login)
+                cursor.execute(psycopg_sql.SQL("DROP OWNED BY {}").format(name))
+                cursor.execute(psycopg_sql.SQL("DROP ROLE {}").format(name))
+
+
+def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypatch):
+    """The users upgrade's order: base grants, conversion, migration, grants.
+
+    On the base (the swap's closure pending, the routines it adds absent)
+    database-grants succeeds without them; the conversion runs as the
+    admin-recovery login with exactly the grants it gave; the full
+    migration then installs the swap and the Name lookup, and the grants
+    again give web the lookup (#952).
+    """
+    from django.core.management import call_command
+
+    from parishkit.stewardship.runtime_grants import (
+        CLOSURE_FUNCTIONS,
+        MEMBER_NAMES_FOR_FUNCTION,
+    )
+
+    lookup = f"public.{MEMBER_NAMES_FOR_FUNCTION}"
+    store, _, _ = initialized(tmp_path, rules())
+    deployment = str(SystemConfiguration.objects.get().pk)
+    configuration = offline_commands(monkeypatch, store)
+    with (
+        provisioned_logins(monkeypatch) as grants,
+        swap_pending(),
+        closure_functions_absent(),
+    ):
+        assert scalar("SELECT to_regprocedure(%s)", [lookup]) is None
+        assert grants() == {"database_grants_provisioned": True}
+        with connection.cursor() as cursor:
+            cursor.execute("SET SESSION AUTHORIZATION pk_stewardship_admin_recovery")
+        result = operator_commands.upgrade_users_command(
+            configuration,
+            deployment_id=deployment,
+            preview=False,
+            operation_id=str(uuid4()),
+            operator_name="Test operator",
+            reason="Users revamp",
+            confirmed_administrators=",".join(ADMINS),
+        )
+        assert result["users_upgrade_applied"] is True
+        with connection.cursor() as cursor:
+            cursor.execute("RESET SESSION AUTHORIZATION")
+        call_command("migrate", interactive=False, verbosity=0)
+        runtime_database.require_current_schema()
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT app, name FROM django_migrations")
+            assert set(CLOSURE_FUNCTIONS.values()) <= set(cursor.fetchall())
+        assert grants() == {"database_grants_provisioned": True}
+        assert scalar(
+            "SELECT has_function_privilege('pk_stewardship_web', %s, 'EXECUTE')",
+            [lookup],
+        )
+
+
+def catalog(cursor):
+    """Every routine and relation in ``public``, by oid, with how to name it.
+
+    Routines (functions and procedures, every overload) are named by their
+    full ``regprocedure`` signature; relations (tables, views, sequences
+    and the rest) by kind and name.
+    """
+    cursor.execute(
+        "SELECT oid, oid::regprocedure::text FROM pg_proc "
+        "WHERE pronamespace='public'::regnamespace"
+    )
+    routines = dict(cursor.fetchall())
+    cursor.execute(
+        "SELECT oid, relkind::text || ' ' || relname FROM pg_class "
+        "WHERE relnamespace='public'::regnamespace"
+    )
+    return routines, dict(cursor.fetchall())
+
+
+def test_closure_functions_list_every_granted_routine_the_swap_closure_adds(
+    tmp_path,
+):
+    """No grant names an object only the users swap's closure creates, unlisted.
+
+    A scratch database is migrated as ``migrate --users-upgrade-base`` would
+    (every app to its target before the swap), then through each closure
+    migration in order, and the catalog is diffed after each step, so
+    whatever SQL spelling a migration uses (quoting, an unqualified name,
+    IF NOT EXISTS, an overload, a view or a procedure) the objects it adds
+    are what PostgreSQL reports. A granted routine among them must be in
+    CLOSURE_FUNCTIONS with the migration that adds it, so database-grants
+    waits for it on the base (#952); a granted table or view has no such
+    wait, so none may be among them. Registry names are resolved by the
+    database too, so type spellings need not match.
+    """
+    import psycopg
+    from django.db.migrations.loader import MigrationLoader
+
+    from parishkit.stewardship.operator_commands import users_upgrade_targets
+    from parishkit.stewardship.runtime_grants import (
+        CLOSURE_FUNCTIONS,
+        MEMBER_NAMES_FOR_FUNCTION,
+        runtime_functions,
+        runtime_grants,
+    )
+    from parishkit.stewardship.runtime_identities import database_identities
+
+    from .test_upgrade_parity_postgresql import (
+        ROOT,
+        SETTINGS,
+        database_parameters,
+        drop_database,
+        migrate,
+    )
+
+    loader = MigrationLoader(None, ignore_no_migrations=True)
+    closure = runtime_database.users_swap_closure(loader.graph)
+    # The closure in an order that applies each migration after its parents.
+    steps = []
+    for leaf in sorted(loader.graph.leaf_nodes()):
+        steps += [
+            key
+            for key in loader.graph.forwards_plan(leaf)
+            if key in closure and key not in steps
+        ]
+    assert USERS_SWAP in steps and set(CLOSURE_FUNCTIONS.values()) <= closure
+    settings_directory = tmp_path / "settings"
+    settings_directory.mkdir()
+    (settings_directory / "upgrade_parity_settings.py").write_text(SETTINGS)
+    source = ROOT / "src"
+    scratch = f"{connection.settings_dict['NAME']}_closure"
+    with psycopg.connect(
+        **database_parameters(connection.settings_dict["NAME"]), autocommit=True
+    ) as maintenance:
+        drop_database(maintenance, scratch)
+        maintenance.execute(f'CREATE DATABASE "{scratch}"')
+        try:
+            for target in users_upgrade_targets(loader):
+                migrate(source, settings_directory, scratch, "base", target)
+            added_routines, added_relations = {}, {}
+            with psycopg.connect(**database_parameters(scratch)) as database:
+                routines, relations = catalog(database.cursor())
+                database.rollback()
+                for key in steps:
+                    migrate(source, settings_directory, scratch, "closure", key)
+                    after_routines, after_relations = catalog(database.cursor())
+                    database.rollback()
+                    for oid in after_routines.keys() - routines.keys():
+                        added_routines[oid] = (after_routines[oid], key)
+                    for oid in after_relations.keys() - relations.keys():
+                        added_relations[oid] = (after_relations[oid], key)
+                    routines, relations = after_routines, after_relations
+
+                def resolve(kind, name):
+                    """The oid the registry's name resolves to, or None."""
+                    cursor = database.cursor()
+                    cursor.execute(f"SELECT {kind}(%s)::oid", [f"public.{name}"])
+                    return cursor.fetchone()[0]
+
+                lookup = resolve("to_regprocedure", MEMBER_NAMES_FOR_FUNCTION)
+                assert lookup in added_routines
+                for _, _, role, target in database_identities():
+                    if role is ServiceRole.MIGRATION:
+                        continue
+                    for function in runtime_functions(role, target=target):
+                        oid = resolve("to_regprocedure", function)
+                        assert oid is not None, function
+                        key = added_routines.get(oid, (None, None))[1]
+                        assert CLOSURE_FUNCTIONS.get(function) == key, function
+                    tables, columns = runtime_grants(role, target=target)
+                    for table in tables.keys() | columns.keys():
+                        oid = resolve("to_regclass", table)
+                        assert oid not in added_relations, added_relations[oid]
+        finally:
+            drop_database(maintenance, scratch)
 
 
 def reads_domain_rules(name):

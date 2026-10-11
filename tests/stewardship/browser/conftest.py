@@ -133,6 +133,7 @@ from .settings_components import components as settings_components
 from .source_form_components import components as source_form_components
 from .step_up_components import components as step_up_components
 from .system_health_components import components as system_health_components
+from .user_components import POSTS as USER_POSTS
 from .user_components import components as user_components
 from .weekly_components import components as weekly_components
 
@@ -2291,6 +2292,7 @@ def component_origin():
         | SETTINGS_POSTS
         | SCHEDULE_LIST_POSTS
         | HOSTED_FILE_POSTS
+        | USER_POSTS
         | {
             f"{IN_PLACE_FORM}/refuse": (400, None, responses["/in-place-refused"][1]),
             f"{IN_PLACE_FORM}/invalid": (200, None, responses["/in-place-invalid"][1]),
@@ -2312,7 +2314,7 @@ def component_origin():
         ("digest-v1.js", "application/javascript"),
         ("report-v1.js", "application/javascript"),
         ("information-export-v1.js", "application/javascript"),
-        ("users-v1.js", "application/javascript"),
+        ("users-v2.js", "application/javascript"),
         ("phone-v1.js", "application/javascript"),
         ("live-status-v1.js", "application/javascript"),
         ("refresh-schedule-v1.js", "application/javascript"),

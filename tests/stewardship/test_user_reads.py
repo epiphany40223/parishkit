@@ -1,8 +1,8 @@
 """The Portal users reads behind the page and ``pk-admin users`` (#952 slice 2).
 
-``users list`` prints each user's email, Name, role and newest sign-in with
-the Users table's sort, in either policy form. The Upgrade preview panel
-shapes the users upgrade's own preview, Administrators first.
+``users list`` prints, and the Users table shows, each user's ID, email,
+Name, role, newest sign-in and recorded identities with the Users table's
+sort, in either policy form.
 """
 
 from datetime import UTC, datetime
@@ -10,14 +10,7 @@ from uuid import uuid4
 
 import pytest
 
-from parishkit.stewardship.accounts.user_reads import (
-    UPGRADE_SORTING,
-    USER_SORTING,
-    upgrade_panel,
-    upgrade_rows,
-    user_list,
-)
-from parishkit.stewardship.accounts.users_upgrade import Identity, plan_upgrade
+from parishkit.stewardship.accounts.user_reads import USER_SORTING, user_list
 
 from .policy_factory import address, assignment, domain
 
@@ -33,48 +26,62 @@ def user(email, role, name):
     }
 
 
-def seen(email, last_login):
+def seen(email, last_login, *, disabled=False):
     """One recorded identity as ``policy_identities`` returns it."""
     return {
         "id": uuid4(),
         "email": email,
         "hosted_domain": None,
-        "disabled": False,
+        "disabled": disabled,
         "last_login": last_login,
     }
 
 
 def test_rules_form_lists_granting_address_rules_with_their_highest_role():
     """Before the upgrade, an exact-address rule granting a role is a user."""
-    records = [
+    staff, admin = (
         address("staff@example.org", ("ministry_leader", "staff")),
         address("admin@example.org"),
+    )
+    records = [
+        staff,
+        admin,
         # A deny rule, a domain rule and an assignment are not users.
         address("denied@example.org", ()),
         domain("example.org", ("staff",)),
         assignment("staff@example.org"),
     ]
-    rows = user_list(
-        records,
-        [
-            # Several identities of one address: the newest sign-in counts.
-            seen("staff@example.org", EARLY),
-            seen("staff@example.org", LATE),
-            seen("staff@example.org", None),
-        ],
-    )
+    identities = [
+        # Several identities of one address: the newest sign-in counts.
+        seen("staff@example.org", EARLY),
+        seen("staff@example.org", LATE),
+        seen("staff@example.org", None, disabled=True),
+    ]
+    rows = user_list(records, identities)
     assert rows == [
         {
+            "id": admin["id"],
             "email": "admin@example.org",
             "name": None,
             "role": "administrator",
             "last_login": None,
+            "identities": [],
         },
         {
+            "id": staff["id"],
             "email": "staff@example.org",
             "name": None,
             "role": "staff",
             "last_login": LATE,
+            # Every recorded identity of the address, in ID order, for the
+            # row's sign-in activity and Edit user's disabled line.
+            "identities": sorted(
+                (
+                    {"id": str(item["id"]), "disabled": item["disabled"]}
+                    for item in identities
+                ),
+                key=lambda item: item["id"],
+            ),
         },
     ]
 
@@ -132,70 +139,3 @@ def test_users_sort_as_the_users_table():
     assert order("name") == ["a", "b", "c"]
     with pytest.raises(ValueError):
         USER_SORTING.parse({"sort": "warnings"})
-
-
-def _plan():
-    """A sample preview: two Administrators, a domain rule, a deny rule."""
-    records = [
-        address("admin@example.org"),
-        address("second@example.org", ("administrator", "staff")),
-        address("denied@example.org", ()),
-        domain("example.org", ("ministry_leader", "staff")),
-    ]
-    identities = [
-        Identity("helper@example.org", "example.org", False, True),
-        Identity("never@example.org", "example.org", False, False),
-        Identity("off@example.org", "example.org", True, True),
-        Identity("denied@example.org", "example.org", False, True),
-    ]
-    names = {"helper@example.org": ["Helper, Hal"]}
-    return {"already_users": False} | plan_upgrade(records, identities, names)
-
-
-def test_upgrade_rows_name_the_rule_each_user_comes_from():
-    """Each converted user says whether an address or a domain rule gave it."""
-    rows = {row["email"]: row for row in upgrade_rows(_plan())}
-    assert set(rows) == {
-        "admin@example.org",
-        "second@example.org",
-        "helper@example.org",
-    }
-    assert rows["helper@example.org"]["name"] == "Helper, Hal"
-    assert rows["helper@example.org"]["role"] == "staff"
-    assert rows["helper@example.org"]["source"] == {
-        "kind": "domain",
-        "domain": "example.org",
-    }
-    assert rows["helper@example.org"]["source_label"] == (
-        "Hosted-domain rule example.org"
-    )
-    second = rows["second@example.org"]
-    assert second["source"]["kind"] == "address"
-    assert [str(label) for label in second["source"]["roles"]] == [
-        "Administrator",
-        "Staff",
-    ]
-    assert str(second["role_label"]) == "Administrator"
-    # The preview table sorts like the Users table, Administrators first.
-    ordered = UPGRADE_SORTING.sort_rows(list(rows.values()), "-role")
-    assert [row["email"] for row in ordered][-1] == "helper@example.org"
-
-
-def test_upgrade_panel_lists_administrators_first_and_what_is_dropped():
-    """The panel names the kept Administrators exactly, and nothing is hidden."""
-    panel = upgrade_panel(_plan())
-    assert panel["administrators"] == ["admin@example.org", "second@example.org"]
-    assert [
-        (rule["domain"], rule["count"], str(rule["role"]))
-        for rule in panel["domain_rules"]
-    ] == [("example.org", 1, "Staff")]
-    assert panel["dropped"] == [
-        {"email": "denied@example.org", "overrides_identity": True, "name": "denied"}
-    ]
-    assert panel["never_signed_in"] == ["never@example.org"]
-    assert panel["disabled"] == ["off@example.org"]
-
-
-def test_no_panel_once_the_configuration_holds_users():
-    """A configuration already in the users form has nothing to preview."""
-    assert upgrade_panel({"already_users": True}) is None
