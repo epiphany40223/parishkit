@@ -15,7 +15,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from django.db import DatabaseError, IntegrityError, connection, transaction
+from django.db import DatabaseError, connection, transaction
 
 from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.archive import imports
@@ -309,44 +309,102 @@ def test_racing_applies_have_one_winner(administrator, monkeypatch):
     assert CampaignArchive.objects.filter(state="active").count() == 1
 
 
+GUARDED = "23514"
+UNGRANTED = "42501"
+# Each guard's own words, so a check constraint (also 23514) cannot pass
+# for a guard.
+ARCHIVE_UPDATE = "only becomes active, then removed"
+ARCHIVE_DELETE = "kept until removed"
+CHILD_CHANGE = "kept until their archive goes"
+CHILD_INSERT = "added only to its preview"
+
+
+def refusal_of(call):
+    """The SQLSTATE and message of the database error ``call()`` raises."""
+    with pytest.raises(DatabaseError) as caught, transaction.atomic():
+        call()
+    cause = caught.value.__cause__
+    return cause.sqlstate, str(cause)
+
+
+def executing(statement, parameters):
+    """A call that runs one statement on the current connection."""
+
+    def call():
+        with connection.cursor() as cursor:
+            cursor.execute(statement, parameters)
+
+    return call
+
+
 def test_guards_refuse_every_other_change(administrator):
-    """As the web login: no other update, delete or insert gets through."""
+    """The guards refuse each change, on a login whose grants allow it.
+
+    Each statement runs on the owning login, which holds every grant, so
+    only the guard can refuse it (SQLSTATE 23514 with the guard's words);
+    then on the web login, where a column it is not granted is refused by
+    the grants (42501) before any guard runs.
+    """
     store, actor = administrator
     review = as_web(imports.review, store, actor, workbook(2045))
     archive = review.archive
     as_web(imports.apply, store, actor, archive.pk)
+    # (statement, parameters, the guard's words, the web login's SQLSTATE)
     statements = [
         # An active archive's figures, state or attribution never change.
         (
             "UPDATE stewardship_campaign_archive SET version=version+1,"
             " active_families=1 WHERE id=%s",
             [archive.pk],
+            ARCHIVE_UPDATE,
+            UNGRANTED,
         ),
         (
             "UPDATE stewardship_campaign_archive SET version=version+1,"
             " state='pending', imported_by_id=NULL, imported_at=NULL WHERE id=%s",
             [archive.pk],
+            ARCHIVE_UPDATE,
+            GUARDED,
         ),
         # Removal without a new version, or by someone who is no Administrator.
         (
             "UPDATE stewardship_campaign_archive SET state='removed',"
             " removed_by_id=%s, removed_at=now() WHERE id=%s",
             [actor, archive.pk],
+            ARCHIVE_UPDATE,
+            GUARDED,
         ),
         (
             "UPDATE stewardship_campaign_archive SET version=version+1,"
             " state='removed', removed_by_id=%s, removed_at=now() WHERE id=%s",
             [uuid4(), archive.pk],
+            ARCHIVE_UPDATE,
+            GUARDED,
         ),
-        ("DELETE FROM stewardship_campaign_archive WHERE id=%s", [archive.pk]),
+        (
+            "DELETE FROM stewardship_campaign_archive WHERE id=%s",
+            [archive.pk],
+            ARCHIVE_DELETE,
+            GUARDED,
+        ),
         (
             "DELETE FROM stewardship_campaign_archive_day WHERE archive_id=%s",
             [archive.pk],
+            CHILD_CHANGE,
+            GUARDED,
+        ),
+        (
+            "DELETE FROM stewardship_campaign_archive_family WHERE archive_id=%s",
+            [archive.pk],
+            CHILD_CHANGE,
+            GUARDED,
         ),
         (
             "UPDATE stewardship_campaign_archive_band SET families=families+1"
             " WHERE archive_id=%s",
             [archive.pk],
+            CHILD_CHANGE,
+            UNGRANTED,
         ),
         # Rows are added only to one's own preview.
         (
@@ -356,22 +414,21 @@ def test_guards_refuse_every_other_change(administrator):
             " VALUES (gen_random_uuid(),now(),%s,gen_random_uuid(),%s,"
             "'parishsoft_duid',99,1)",
             [actor, archive.pk],
+            CHILD_INSERT,
+            GUARDED,
         ),
     ]
-    for statement, parameters in statements:
-        with (
-            pytest.raises((IntegrityError, DatabaseError)),
-            task_login(ServiceRole.WEB, exact=True, reconnect=True),
-            transaction.atomic(),
-            connection.cursor() as cursor,
-        ):
-            cursor.execute(statement, parameters)
+    for statement, parameters, words, web in statements:
+        code, message = refusal_of(executing(statement, parameters))
+        assert (code, words in message) == (GUARDED, True), statement
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            code, message = refusal_of(executing(statement, parameters))
+        assert code == web, statement
+        if web == GUARDED:
+            assert words in message, statement
+
     # A pending archive is started only by a current Administrator.
-    with (
-        pytest.raises((IntegrityError, DatabaseError)),
-        task_login(ServiceRole.WEB, exact=True, reconnect=True),
-        transaction.atomic(),
-    ):
+    def start():
         CampaignArchive.objects.create(
             **{
                 field.attname: getattr(archive, field.attname)
@@ -389,6 +446,10 @@ def test_guards_refuse_every_other_change(administrator):
             }
             | {"actor_id": uuid4()}
         )
+
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        code, message = refusal_of(start)
+    assert code == GUARDED and "starts as a preview" in message
     archive.refresh_from_db()
     assert archive.state == "active" and archive.version == 2
 
