@@ -61,7 +61,7 @@ def refresh_fields(refresh):
 
 @dataclass(frozen=True)
 class RefreshStatus(ReadModel):
-    """The Source refresh page's read.
+    """The Refresh from ParishSoft page's read.
 
     ``running`` is whether a refresh runs now; ``waiting`` whether a full
     refresh waits that a new request may join. ``source`` holds the same
@@ -87,7 +87,7 @@ def refresh_status_model(values, now):
 
 
 def read_refresh_status(caller, service):
-    """``refresh status``: the Source refresh page's read, for any session.
+    """``refresh status``: the Refresh from ParishSoft page's read, for any session.
 
     It admits passively with the page's ``CONFIGURE`` capability and records
     no audit event, as the page's view records none. A restore under review
@@ -147,7 +147,7 @@ def _admit_start(caller, store, *, final=False):
 
 
 def start_refresh(caller, service, *, request_key, context):
-    """``refresh start``: the Source refresh page's confirmation.
+    """``refresh start``: the Refresh from ParishSoft page's confirmation.
 
     A request that joins a full refresh already waiting is not an error: it
     returns that run's root, as the page's redirect does. A key already bound

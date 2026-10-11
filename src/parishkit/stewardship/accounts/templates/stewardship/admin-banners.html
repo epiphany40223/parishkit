@@ -6,7 +6,7 @@
 {% if admin_chrome.testing %}
 <aside class="{% if admin_chrome.admin %}notice testing-banner{% else %}testing-indicator{% endif %}" aria-label="{% translate 'Testing mode' %}">
   <strong>{% translate "Testing mode" %}</strong>
-  {% if admin_chrome.admin %}<p>{% translate "All outgoing email is redirected to:" %} {{ admin_chrome.testing_recipient }}. <a href="{% url 'admin:parish_settings' %}#testing-mode">{% translate "Mode configuration" %}</a></p>{% endif %}
+  {% if admin_chrome.admin %}<p>{% translate "All outgoing email is redirected to:" %} {{ admin_chrome.testing_recipient }}. <a href="{% url 'admin:parish_settings' %}#testing-mode">{% translate "Operating mode" %}</a></p>{% endif %}
 </aside>
 {% endif %}
 {% if admin_chrome.debug_in_production %}<aside class="notice notice-error" aria-labelledby="debug-in-production-title" data-debug-in-production>
