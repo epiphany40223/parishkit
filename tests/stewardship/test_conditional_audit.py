@@ -55,10 +55,14 @@ def test_the_mail_message_page_shows_retry_unavailable_with_why():
             "delivery": {"id": uuid4(), "state": "permanent_failure", "version": 1},
             "commands": [{"action": "note", "label": "Save evidence note", "id": 1}],
             "retry_unavailable": True,
+            "decisions": True,
             "retry_label": "Retry failed delivery",
         },
     )
     assert 'id="retry-unavailable"' in html
+    # In the Resolve this email section, after the offered forms.
+    section = html[html.index('id="resolve-heading"') :]
+    assert section.index("Save evidence note") < section.index("retry-unavailable")
     assert (
         'disabled aria-describedby="retry-unavailable">Retry failed delivery</button>'
         in html

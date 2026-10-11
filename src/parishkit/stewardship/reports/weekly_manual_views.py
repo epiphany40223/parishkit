@@ -58,14 +58,14 @@ def _has_weekly_schedule(campaign_id):
 
 # The guard's "resolved prior work" term (weekly_manual.sql), read on GET so
 # a digest still being prepared or delivered shows the button unavailable
-# with why, instead of a refusal after submit (#563). The epoch is the
-# campaign's Testing rehearsal, as the guard reads it; the guard itself
-# still decides every submission.
+# with why, instead of a refusal after submit (#563). The epoch is read
+# exactly as the guard reads it: the campaign's one credentials row (unique
+# per campaign), in Testing mode only. The guard still decides every
+# submission.
 _UNRESOLVED = (
     "SELECT stewardship_weekly_digest_unresolved_v1(d.id, %(mode)s, "
     "(SELECT CASE WHEN %(mode)s='testing' THEN k.rehearsal_epoch_id END "
-    "FROM stewardship_campaign_credentials k "
-    "WHERE k.campaign_id=d.campaign_id AND NOT k.go_live_gate ORDER BY k.id LIMIT 1)) "
+    "FROM stewardship_campaign_credentials k WHERE k.campaign_id=d.campaign_id)) "
     "FROM stewardship_schedule_definition d WHERE d.campaign_id=%(campaign)s "
     "AND d.kind='weekly_digest' AND d.current_revision_id IS NOT NULL"
 )

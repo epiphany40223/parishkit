@@ -9,8 +9,9 @@
 <p><a href="{% url 'admin:hosted_files' %}">{% translate "Return to Hosted files" %}</a></p>
 {% else %}
 <p>{% translate "The file's link stays the same; only the name used in placeholders changes." %}</p>
-<form method="post" class="panel" data-require-complete data-missing-hint="{% translate 'Type the new placeholder name.' %}">{% csrf_token %}{{ form.as_div }}
+{% comment %}Change name waits for a name that differs from the one drawn (data-require-change; the unsent hidden field below is only its version marker, found by id) and that fits the placeholder rule (data-require-complete); each says why after the button (#563).{% endcomment %}<form method="post" class="panel" id="hosted-file-rename" data-require-complete data-require-change="hosted-file-current">{% csrf_token %}<input type="hidden" id="hosted-file-current" value="{{ file.slug }}">{{ form.as_div }}
 {% button type="submit" aria-describedby="hosted-file-rename-hint" %}{% translate "Change name" %}{% endbutton %} <a href="{% url 'admin:hosted_files' %}">{% translate "Cancel" %}</a>
-<p class="help" id="hosted-file-rename-hint" data-complete-hint="reserve"></p></form>
+<p class="help" data-unchanged-hint data-idle>{% translate "Type a different placeholder name to change it." %}</p>
+<p class="help" id="hosted-file-rename-hint" data-complete-hint hidden></p></form>
 {% endif %}
 {% endblock %}

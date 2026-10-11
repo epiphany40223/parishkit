@@ -2565,6 +2565,10 @@
       && !node.closest("[hidden]")
       && (node.hasAttribute("data-client-error") || !node.validity.valid || blank(node)));
     const hint = form.querySelector("[data-complete-hint]");
+    // An empty required field may say what to type (data-empty-hint) where
+    // its data-missing-hint describes the format (a placeholder name, #563).
+    const empty = missing && missing.dataset.emptyHint
+      && (missing.validity.valueMissing || blank(missing));
     if (hint) {
       // A hint marked data-complete-hint="reserve" stays in the layout and
       // only empties, keeping its line's height (ui-v1.css), so it appearing
@@ -2576,6 +2580,7 @@
           // An unreadable time entry says why itself (#398).
           || (missing.matches("[data-time-entry]") && missing.validity.customError
             && missing.validationMessage)
+          || (empty && missing.dataset.emptyHint)
           || missing.closest("[data-missing-hint]")?.dataset.missingHint
           || "Fill in the required fields to save.")
         : "";
@@ -2759,13 +2764,6 @@
     const pad = (number) => String(number).padStart(2, "0");
     return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
   };
-  // Date and amount order (#563). A Through or To date marked
-  // data-not-before="<start input id>" takes the start's value as its min,
-  // so the browser itself finds an end before the start (rangeUnderflow):
-  // the field is marked on blur, and a data-require-complete form holds its
-  // button with the end's data-missing-hint. The server still checks the
-  // order. Set at load, after a swap, on pageshow (before the gates), and
-  // whenever the start changes.
   // File size (#563). A file input marked data-max-bytes refuses a chosen
   // file larger than that many bytes at once, with the field's
   // data-max-bytes-message: the field is marked invalid, and a
@@ -2804,33 +2802,40 @@
       patternChecks.push({field, check});
     });
   };
-  let notBeforeChecks = []; // {end, check} for each wired end date
-  const wireNotBefore = (root) => {
-    within(root, "input[data-not-before]").forEach((end) => {
-      const start = document.getElementById(end.dataset.notBefore);
-      if (!(start instanceof HTMLInputElement)) return;
-      // A text amount (the Financial report's pledge range) has no min, so
-      // the same order is a custom validity, set only while both values
-      // match their own pattern (a malformed value says so itself).
-      const amounts = end.type !== "date";
-      const check = () => {
-        if (amounts) {
-          const ordered = !start.value || !end.value || start.validity.patternMismatch
-            || end.validity.patternMismatch || Number(end.value) >= Number(start.value);
-          end.setCustomValidity(ordered ? "" : (end.dataset.missingHint || "Out of order."));
-        } else if (start.value) end.min = start.value;
-        else end.removeAttribute("min");
-      };
-      // On the fields themselves, so the order is set before the form's own
-      // listeners (the complete gate) run for the same event.
-      [start, ...(amounts ? [end] : [])].forEach((node) => {
-        node.addEventListener("input", check);
-        node.addEventListener("change", check);
-      });
-      check();
-      notBeforeChecks.push({end, check});
-    });
+  // Date and amount order (#563). A Through or To date marked
+  // data-not-before="<start input id>" takes the start's value as its min,
+  // so the browser itself finds an end before the start (rangeUnderflow):
+  // the field is marked on blur, and a data-require-complete form holds its
+  // button with the end's data-missing-hint. The server still checks the
+  // order. Set at load, after a swap, on pageshow (before the gates), and
+  // whenever the start changes.
+  // A text amount (the Financial report's pledge range) has no min, so
+  // the same order is a custom validity, set only while both values match
+  // their own pattern (a malformed value says so itself).
+  const checkNotBefore = (end) => {
+    const start = document.getElementById(end.dataset.notBefore);
+    if (!(start instanceof HTMLInputElement)) return;
+    if (end.type !== "date") {
+      const ordered = !start.value || !end.value || start.validity.patternMismatch
+        || end.validity.patternMismatch || Number(end.value) >= Number(start.value);
+      end.setCustomValidity(ordered ? "" : (end.dataset.missingHint || "Out of order."));
+    } else if (start.value) end.min = start.value;
+    else end.removeAttribute("min");
   };
+  const wireNotBefore = (root) => within(root, "input[data-not-before]").forEach(checkNotBefore);
+  // One listener for every page, in the capture phase, so the order is set
+  // before the form's own listeners (the complete gate) see the same event,
+  // and a start field kept across in-place swaps never gathers a listener
+  // per swap: it finds its ends by id each time.
+  ["input", "change"].forEach((type) => document.addEventListener(type, (event) => {
+    const field = event.target;
+    if (!(field instanceof HTMLInputElement)) return;
+    if (field.hasAttribute("data-not-before")) checkNotBefore(field);
+    if (field.id) {
+      document.querySelectorAll(`input[data-not-before="${CSS.escape(field.id)}"]`)
+        .forEach(checkNotBefore);
+    }
+  }, true));
   let notFutureChecks = []; // {date, check} for each wired date input
   const wireNotFuture = (root) => {
     within(root, "input[data-not-future]").forEach((date) => {
@@ -3036,7 +3041,6 @@
     lockedUpdates = lockedUpdates.filter(({node}) => node.isConnected);
     completeForms = completeForms.filter((form) => form.isConnected);
     notFutureChecks = notFutureChecks.filter(({date}) => date.isConnected);
-    notBeforeChecks = notBeforeChecks.filter(({end}) => end.isConnected);
     patternChecks = patternChecks.filter(({field}) => field.isConnected);
     liveChecks = liveChecks.filter(({form}) => form.isConnected);
     wireShowWhen(root);
@@ -3049,11 +3053,17 @@
     wireLiveCheck(root);
   };
   wireConditional(document);
-  document.addEventListener("parishkit:swap", (event) => wireConditional(event.target));
+  document.addEventListener("parishkit:swap", (event) => {
+    wireConditional(event.target);
+    // A swapped part of a gated form (Hosted files' Upload line, #563) brings
+    // fresh buttons: the form's gate holds them again at once.
+    const form = event.target.parentElement?.closest("form[data-require-complete]");
+    if (form) gateComplete(form);
+  });
   window.addEventListener("pageshow", () => {
     showWhenUpdates.forEach(({update}) => update());
     lockedUpdates.forEach(({update}) => update());
-    notBeforeChecks.forEach(({check}) => check());
+    document.querySelectorAll("input[data-not-before]").forEach(checkNotBefore);
     patternChecks.forEach(({check}) => check());
     completeForms.forEach(gateComplete);
     notFutureChecks.forEach(({check}) => check());

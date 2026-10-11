@@ -9,7 +9,7 @@
 <p>{% translate "Family DUID is the Family's ID number in ParishSoft, shown in its own column so you can copy it." %}</p>{% endaboutpage %}
 <p>{{ metadata.name }}</p>
 <p><a href="{% url 'admin:participation' %}">{% translate "Participation" %}</a></p>
-{% if not mutable %}<p class="notice" id="information-locked">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so follow-up edits are unavailable until it finishes or is cancelled; going live can take days. You can still read the requests and their history." %}</p>{% endif %}
+{% if not mutable %}<p class="notice" id="information-locked">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so follow-up edits and new exports are unavailable until it finishes or is cancelled; going live can take days. You can still read the requests and their history." %}</p>{% endif %}
 {% if item %}
 <div id="information-item" data-in-place-region>
 <h2>{{ item.family_name }} — {% translate "Family DUID" %} {{ item.family_duid|duid }}</h2>

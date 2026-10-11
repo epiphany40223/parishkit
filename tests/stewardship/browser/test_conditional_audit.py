@@ -208,3 +208,78 @@ def test_go_live_steps_show_unavailable_with_why(
     assert control.is_disabled()
     described = control.get_attribute("aria-describedby")
     assert page.locator(f"#{described}").inner_text() == reason
+
+
+def test_upload_choices_survive_the_table_redrawing(page, component_origin):
+    """A chosen file and a typed name stay through an in-place sort and a
+    deletion: only Upload's own line redraws with the table, and the gate
+    holds or releases the fresh button at once."""
+    failures = []
+    page.on("pageerror", lambda error: failures.append(str(error)))
+    page.goto(component_origin + "/hosted-files")
+    page.evaluate("window.notReloaded = true")
+    field = page.locator('input[type="file"]')
+    slug = page.locator('input[name="slug"]')
+    upload = page.get_by_role("button", name="Upload", exact=True)
+    field.set_input_files(
+        {"name": "guide.pdf", "mimeType": "application/pdf", "buffer": b"x" * 100}
+    )
+    slug.fill("kept-name")
+    assert upload.is_enabled()
+
+    def kept():
+        """The reader's choices are still in the form, and Upload is ready."""
+        assert field.evaluate("node => node.files.length") == 1
+        assert slug.input_value() == "kept-name"
+        assert page.get_by_role("button", name="Upload", exact=True).is_enabled()
+        assert page.evaluate("window.notReloaded === true")
+
+    # Mark Upload's line, to show the deletion did redraw it.
+    page.evaluate(
+        "document.getElementById('hosted-file-upload-action').dataset.old = 1"
+    )
+    page.get_by_role("button", name="Delete parish-picnic").click()
+    with page.expect_response(lambda response: "one-deleted" in response.url):
+        page.locator("dialog#hosted-file-delete").get_by_role(
+            "button", name="Delete", exact=True
+        ).click()
+    page.wait_for_function(
+        "document.querySelectorAll('table.hosted-files tbody tr').length === 2"
+    )
+    kept()
+    assert page.evaluate(
+        "!document.getElementById('hosted-file-upload-action').dataset.old"
+    )
+    page.get_by_role("link", name="Name (sort ascending)").click()
+    page.wait_for_function(
+        "document.querySelector('table.hosted-files th[aria-sort=\"ascending\"]')"
+    )
+    kept()
+    # With the file cleared, the redrawn button is held again with its hint.
+    field.set_input_files([])
+    assert page.get_by_role("button", name="Upload", exact=True).is_disabled()
+    assert failures == []
+
+
+def test_rename_waits_for_a_new_valid_name(page, component_origin):
+    """Change name waits while the name is the current one, says what to type
+    while it is empty, and gives the placeholder rule while it is malformed."""
+    page.goto(component_origin + "/hosted-file-rename")
+    change = page.get_by_role("button", name="Change name")
+    name = page.locator('input[name="slug"]')
+    unchanged = page.locator("[data-unchanged-hint]")
+    hint = page.locator("#hosted-file-rename-hint")
+    assert change.is_disabled()
+    assert unchanged.inner_text() == "Type a different placeholder name to change it."
+    name.fill("")
+    waits_with(change, hint, "Type the new placeholder name.")
+    name.fill("Bad Name")
+    waits_with(
+        change,
+        hint,
+        "Use lowercase letters, digits and single hyphens, up to 64 characters.",
+    )
+    name.fill("parish-map-2026")
+    assert change.is_enabled()
+    name.fill("parish-map")
+    assert change.is_disabled()

@@ -17,7 +17,11 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 
 from parishkit.stewardship.accounts.hosted_file_uses import Use
-from parishkit.stewardship.accounts.hosted_file_views import LIBRARY_SORTING, UploadForm
+from parishkit.stewardship.accounts.hosted_file_views import (
+    LIBRARY_SORTING,
+    RenameForm,
+    UploadForm,
+)
 from parishkit.stewardship.accounts.hosted_files import placeholder
 from parishkit.stewardship.web.tables import paginate
 
@@ -162,6 +166,21 @@ def components(context, admin):
             render_to_string(
                 "stewardship/hosted-files.html",
                 library | {"form": limited_form(), "refresh_url": f"{LIBRARY}-limits"},
+            ),
+        ),
+        "/hosted-file-rename": (
+            "text/html",
+            render_to_string(
+                "stewardship/hosted-file-rename.html",
+                context
+                | {
+                    "admin_chrome": admin,
+                    "file": SimpleNamespace(
+                        slug="parish-map", original_name="parish-map.pdf"
+                    ),
+                    "uses": [],
+                    "form": RenameForm(initial={"slug": "parish-map"}),
+                },
             ),
         ),
         f"{LIBRARY}-full": (

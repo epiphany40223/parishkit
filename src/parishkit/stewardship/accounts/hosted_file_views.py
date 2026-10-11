@@ -173,6 +173,7 @@ class RenameForm(forms.Form):
                 "spellcheck": "false",
                 "pattern": SLUG_INPUT,
                 "data-missing-hint": REFUSALS["slug_invalid"],
+                "data-empty-hint": gettext_lazy("Type the new placeholder name."),
             }
         ),
         help_text=gettext_lazy("Lowercase letters, digits and hyphens."),

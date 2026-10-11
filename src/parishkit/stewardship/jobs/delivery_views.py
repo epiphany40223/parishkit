@@ -402,7 +402,10 @@ def delivery_detail(request, message_id):
             retry_label=ACTION_LABELS[RETRY_ACTIONS[delivery["state"]]]
             if data["retry_unavailable"]
             else None,
-            decisions=any(action != "note" for action in data["actions"]),
+            # An unavailable retry is a decision too: it is shown, greyed,
+            # in the "Resolve this email" section where it would sit (#563).
+            decisions=data["retry_unavailable"]
+            or any(action != "note" for action in data["actions"]),
             commands=[
                 dict(action=action, label=ACTION_LABELS[action], id=uuid4())
                 for action in data["actions"]
