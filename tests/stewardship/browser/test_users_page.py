@@ -20,6 +20,7 @@ from .user_components import (
     LIST,
     LONG_EMAIL,
     LONG_NAME,
+    NAMES,
     NEW,
     NEW_TAKEN,
     SINGLE,
@@ -252,3 +253,93 @@ def test_edit_shows_the_address_and_each_identity(page, component_origin):
     section = page.locator("#user-sign-in-activity")
     assert section.get_by_role("button").count() == 2
     assert page.get_by_label("Name", exact=True).input_value() == "Leader, Lee"
+
+
+class HeldLookups:
+    """New user's lookup answers, held until the test releases each one.
+
+    Each POST to the lookup is kept unanswered, so the page shows its
+    "Looking up" state, until ``answer`` fulfills the oldest one.
+    """
+
+    def __init__(self, page):
+        """Intercept the page's lookup POSTs."""
+        self.page, self.routes = page, []
+        page.route("**" + NAMES, lambda route: self.routes.append(route))
+
+    def ask(self, email):
+        """Leave Email holding ``email``, and wait for its held request."""
+        held = len(self.routes)
+        field = self.page.get_by_label("Email", exact=True)
+        field.fill(email)
+        field.press("Tab")
+        deadline = 50
+        while len(self.routes) == held and deadline:
+            self.page.wait_for_timeout(100)
+            deadline -= 1
+        assert len(self.routes) > held, "the lookup was not sent"
+
+    def answer(self, status, body):
+        """Answer the oldest held lookup with ``status`` and JSON ``body``."""
+        self.routes.pop(0).fulfill(
+            status=status, content_type="application/json", body=json.dumps(body)
+        )
+
+
+def help_says(page, start):
+    """Wait until the Name's help line starts with ``start``."""
+    eventually(
+        page,
+        "document.querySelector('[data-names-help]').textContent.startsWith("
+        + json.dumps(start)
+        + ")",
+    )
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_role_choices_never_move_while_the_lookup_answers(
+    page, component_origin, width
+):
+    """Waiting, many names, none, an error and a failure: Role stays put (#736)."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + NEW)
+    failures = watch(page)
+    roles = page.get_by_role("group", name="Role")
+    help_line = page.locator("[data-names-help]")
+    place = roles.bounding_box()
+    height = help_line.bounding_box()["height"]
+
+    def unmoved(state):
+        """The Role fieldset and the help line's height are as they were."""
+        now = roles.bounding_box()
+        assert (now["x"], now["y"]) == (place["x"], place["y"]), state
+        assert help_line.bounding_box()["height"] == height, state
+        # The whole words are in the title, whatever the line can show.
+        assert help_line.get_attribute("title") == help_line.text_content(), state
+
+    lookups = HeldLookups(page)
+    lookups.ask("ann@example.org")
+    help_says(page, "Looking up")
+    unmoved("waiting")
+    many = [f"Montgomery-Fitzwilliam {number}, Bartholomew" for number in range(8)]
+    lookups.answer(200, {"error": None, "names": many})
+    help_says(page, "Suggested from ParishSoft")
+    unmoved("many names")
+    # A long answer is cut short with an ellipsis, never wrapped.
+    assert help_line.evaluate("node => node.scrollWidth > node.clientWidth")
+    assert help_line.evaluate("node => getComputedStyle(node).textOverflow") == (
+        "ellipsis"
+    )
+    lookups.ask("nobody@example.org")
+    lookups.answer(200, {"error": None, "names": []})
+    help_says(page, "No ParishSoft Member")
+    unmoved("no names")
+    lookups.ask("staff@example.org")
+    lookups.answer(200, {"error": "This address is already a user.", "names": []})
+    visible(page.locator("[data-email-error]"))
+    unmoved("already a user")
+    lookups.ask("busy@example.org")
+    lookups.answer(429, {"error": None, "names": []})
+    help_says(page, "Couldn't look up")
+    unmoved("refused")
+    assert not failures
