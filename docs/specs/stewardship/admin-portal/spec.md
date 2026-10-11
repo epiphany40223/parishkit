@@ -803,7 +803,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `family_email_progress` | Family email progress | Menu: Family email progress | Administrator | (same) | `/admin/mail/family-progress/` | (same) |  |
 | `family_email_sends` | Family email history | Menu: Family email history | Administrator | Family email sends | `/admin/mail/family-history/` | (same) |  |
 | `deliveries` | Outgoing mail | Menu: Outgoing mail | Administrator | (same) | `/admin/mail/outgoing/` | (same) |  |
-| `delivery` | Mail message | Outgoing mail | Administrator | Mail delivery; Message | `/admin/mail/outgoing/<message>/` | (same) |  |
+| `delivery` | _email type and Family name_ | Outgoing mail | Administrator | Mail delivery; Message | `/admin/mail/outgoing/<message>/` | (same) | Object-named (exception, [#1015](https://github.com/epiphany40223/parishkit/issues/1015)): the heading names the email, such as "Initial invitation to Morgan, Henry"; the menu and trail say Mail message and the browser title only the email type. See [Mail message page](#mail-message-page). |
 | `delivery_refusals` | Refused addresses | Outgoing mail | Administrator | (same) | `/admin/mail/refusals/` | (same) |  |
 | `delivery_refusal` | Refused address | Refused addresses | Administrator | Verify refused address | `/admin/mail/refusals/<refusal>/` | (same) |  |
 | `family_portal` | Family portal availability | Menu: Family portal availability | Administrator | (same) | `/admin/mail/family-portal/` | (same) |  |
@@ -3251,15 +3251,8 @@ columns follow the Admin tables' shared order
 Family, Family DUID, Purpose, Mode, State and Provider attempts. The
 command line's `--sort` takes the same tokens and also `created`, when the
 email was created. The table fits a 1280-pixel-wide screen beside the
-Admin menu without scrolling. Each email's own page shows its history,
-its attempts as one table of short rows, one per recorded change, newest
-first, with When leading as in any log, then the attempt number, what
-happened and the resulting state (#934); and it offers the resolutions its
-state allows (an evidence note, confirming delivery or that it was not
-sent, a retry, or a duplicate-risk resend), each with a required note, as
-the
-[delivery workflow](../background-processing/spec.md#family-invitations-and-reminders)
-defines.
+Admin menu without scrolling. Each email's own page is the
+[Mail message page](#mail-message-page).
 
 An email whose delivery recorded a [refused address](#refused-addresses)
 that is still unresolved is marked in its State cell, on a second line,
@@ -3366,6 +3359,72 @@ The bulk actions are page-only for now; the shared functions in
 [Admin automation](../admin-automation/spec.md) command if one is added.
 No schema change: they insert the same resolution rows the per-email page
 inserts.
+
+#### Mail message page
+
+An email's own page (`/admin/mail/outgoing/<message>/`) reads top to bottom
+in the order the Administrator asked for
+([#1015](https://github.com/epiphany40223/parishkit/issues/1015)):
+
+1. **Heading.** The page is
+   [object-named](#navigation-rules): its heading names the email by its
+   type and its Family, such as "Initial invitation to Morgan, Henry". The
+   name is the Family's heads, surname first, from the latest ParishSoft
+   data, read as Outgoing mail reads it (the shared
+   [Family name rule](../ui-conventions/spec.md#family-and-member-names)).
+   An Administrator report, or a Family that data no longer has, is named
+   by its type alone. The browser title is the type alone, so browser
+   history does not keep the Family's name, as on the
+   [Family timeline](../reports/spec.md#family-timeline).
+2. **Type, mode and state** on one line under the heading, such as
+   "Initial invitation · Production · Not sure it arrived".
+3. **Family.** The Family's name and its Family DUID ("Not in current
+   ParishSoft data" when the name is unknown), or "Administrator report".
+   When the email's delivery recorded
+   [refused addresses](#refused-addresses) that are still unresolved, they
+   follow, each once and linking its newest refusal's page. The page shows
+   no other recipient address: the web login never reads an email's
+   recipient lists, which stay with its rendering (see
+   [Why sends are waiting](#why-sends-are-waiting)); showing every
+   recipient would need a new read path
+   ([#1024](https://github.com/epiphany40223/parishkit/issues/1024)).
+4. **Attempt history**: one table of short rows, one per recorded change,
+   newest first, with When leading as in any log, then the attempt number,
+   what happened and the resulting state (#934).
+5. **Technical details** (the delivery ID), closed, as the
+   [page help](../ui-conventions/spec.md#page-help) convention places
+   internal identifiers.
+6. **Latest background task**, linking its page, with its state.
+7. **Resolve this email**, shown only when a decision is available: the
+   resolutions the email's state allows (confirming delivery from external
+   evidence, recording that the provider did not send it, a retry, or a
+   duplicate-risk resend), as the
+   [delivery workflow](../background-processing/spec.md#family-invitations-and-reminders)
+   defines, together with **Save evidence note**. One plain sentence says
+   what the actions do. Each needs a note, labelled "Why are you doing
+   this? (saved in this email's history)" ("Note to save in this email's
+   history" for the evidence note), such as "Gmail Sent folder shows it was
+   sent": it is stored with the command, copied into the email's immutable
+   event history, shown under Admin evidence and decisions, and never
+   emailed to anyone. An uncertain email's "Not sure it arrived" notice, and
+   the note when a retry is unavailable, sit just above the section (or,
+   without one, just above the evidence note's disclosure described next),
+   beside the actions they caution about. When the only thing offered is the evidence note (nothing to
+   decide, such as a delivered email), the section is not shown; the note
+   form waits in a closed "Add a note to this email's history" disclosure,
+   whose summary is the form's only heading.
+8. **Admin evidence and decisions**: the notes and resolutions recorded on
+   the email, newest first.
+
+The attempt history and the Admin evidence share one page window, as
+before. Each list ends with Previous page and Next page links, named for
+both lists ("Attempt history and evidence pages"), that act
+[in place](../ui-conventions/spec.md#in-place-controls) and refresh both
+lists; the resolution forms sit between the two regions, so a note being
+typed survives paging. Paging the attempt history can change its height
+and so move the forms and the evidence list below it: a recorded exception
+to [no layout shift](../ui-conventions/spec.md#no-layout-shift)
+(Administrator, 2026-10-11). No schema change.
 
 #### Refused addresses
 
