@@ -1164,7 +1164,9 @@ added on the form reads "New Member" in the Member DUID column, and the
 proposed Member's reference stays on the page's technical details. When two
 Members added on the form share a name, they read "New Member 1", "New
 Member 2" and so on in form order, so their rows stay distinct in every
-format.
+format. Form order is the order the Family form lists those Members once
+saved: ascending proposed Member reference, whatever the list's sort, with
+every request of one Member sharing its label.
 
 Each list opens by a POST from its Ministry's form on the summary. A GET of
 either list's address (typed, bookmarked, refreshed or reached with Back)
@@ -1205,7 +1207,9 @@ each latest effective `join` or `leave` MinistryRequest in that Ministry,
 including resolved/cancelled history only when the requester selects the
 history option. Rows contain:
 
-- Member name and DUID;
+- Member name and DUID, where a Member added on the form reads "New Member"
+  (or "New Member N"), numbered by the same rule as the
+  [lists](#ministry-change-summary) but within each Ministry's packet rows;
 - authorized Member email address(es);
 - recorded email-contact date, blank if none;
 - authorized Member phone number(s);

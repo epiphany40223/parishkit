@@ -330,19 +330,42 @@ def case_ministry_leave(monkeypatch):
     return shared_case(monkeypatch, ministry(action="leave", count=1))
 
 
+NEW_MEMBER = dict(
+    member_duid=None,
+    proposed_id="00000000-0000-4000-8000-000000000099",
+    entity_kind="proposed_member",
+)
+
+
+def xlsx_values(body):
+    """Every cell value of a workbook, as one string, for absence checks."""
+    book = load_workbook(io.BytesIO(body))
+    try:
+        return str([list(sheet.iter_rows(values_only=True)) for sheet in book])
+    finally:
+        book.close()
+
+
 def case_packet(monkeypatch):
     """The multi-Ministry follow-up packet: one table per Ministry."""
     sections = [
         dict(duid=9, name="Choir", chairs=["Pat Lee"], rows=[member()]),
         dict(duid=10, name="Ushers", chairs=[], rows=[member(member_duid=7)]),
+        # A Member added on the form: "New Member", never its proposed id.
+        dict(duid=11, name="Greeters", chairs=[], rows=[member(**NEW_MEMBER)]),
     ]
     document = packet(sections)
-    headers = csv_headers(
-        render(render_packet, document, "csv"), first=document.headings[0]
-    )
+    body = render(render_packet, document, "csv")
+    headers = csv_headers(body, first=document.headings[0])
     assert len(headers) == len(sections)
-    sheets, labels = xlsx_headers(render(render_packet, document, "xlsx"))
+    xlsx = render(render_packet, document, "xlsx")
+    sheets, labels = xlsx_headers(xlsx)
     seen = pdf_capture(monkeypatch, lambda: render(render_packet, document, "pdf"))
+    proposed = NEW_MEMBER["proposed_id"]
+    assert ",New Member," in body.decode() and proposed not in body.decode()
+    assert proposed not in xlsx_values(xlsx)
+    assert "=Example Member (New Member)" in [card.title for card in seen["cards"]]
+    assert proposed not in str(seen["cards"])
     # A packet prints blank fields as write-in lines, so every column shows.
     pdf, extra = card_columns(seen["cards"], list(document.headings))
     assert not extra, extra

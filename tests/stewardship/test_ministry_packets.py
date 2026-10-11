@@ -202,7 +202,7 @@ def test_contact_dates_prefill_in_the_display_zone_and_privacy_holds():
         "",
         "",
     )
-    assert second[1] == "" and second[2] == "Leave"
+    assert second[1] == "New Member" and second[2] == "Leave"
     assert second[4] == second[6] == "Not published" and second[7] == date(2026, 9, 19)
     assert dict(document.sections[0].details)["Chairs"] == "Pat Lee, Sam Roe"
     assert dict(document.sections[0].details)["Stewardship period"] == (
@@ -369,6 +369,92 @@ def test_pdf_starts_each_ministry_on_a_new_page_and_keeps_all_text():
     assert rendered(document, "pdf").startswith(b"%PDF")
     with pytest.raises(ValueError):
         render_packet(document, io.BytesIO(), format="zip")
+
+
+def test_new_members_read_new_member_in_every_format():
+    """A Member added on the form reads "New Member" in its DUID cell (#966).
+
+    As in the single-Ministry lists, two same-named New Members in one
+    Ministry read "New Member 1" and "New Member 2" in form (saved, sorted
+    proposed id) order, whatever the row order, and each Member's rows share
+    its label; numbering is per Ministry, over that Ministry's packet
+    rows. The CSV, XLSX and PDF carry the same labels and no proposed id.
+    """
+    first = "00000000-0000-4000-8000-000000000011"
+    second = "00000000-0000-4000-8000-000000000022"
+    other = "00000000-0000-4000-8000-000000000033"
+
+    def new(name, proposed, **values):
+        """One request for a Member added on the form."""
+        return item(
+            member_name=name,
+            member_duid=None,
+            proposed_id=proposed,
+            entity_kind="proposed_member",
+            **values,
+        )
+
+    sections = [
+        dict(
+            duid=9,
+            name="Choir",
+            chairs=[],
+            rows=[
+                new("Pat Doe", second),
+                new("Pat Doe", first),
+                new("Pat Doe", second, action="leave"),
+                new("Lee Roe", other),
+                item(),
+            ],
+        ),
+        # Alone in this Ministry, so plain "New Member", as its list reads.
+        dict(duid=10, name="Ushers", chairs=[], rows=[new("Pat Doe", first)]),
+    ]
+    document = packet(sections)
+    duid = HEADINGS.index("Member DUID")
+    choir = ["New Member 2", "New Member 1", "New Member 2", "New Member", "12345"]
+    labels = [choir, ["New Member"]]
+    assert [[row[duid] for row in s.rows] for s in document.sections] == labels
+
+    text = rendered(document, "csv").decode()
+    rows = list(csv.reader(io.StringIO(text)))
+    starts = [index for index, row in enumerate(rows) if row == list(HEADINGS)]
+    assert [
+        [row[duid] for row in rows[start + 1 : start + 1 + len(expected)]]
+        for start, expected in zip(starts, labels, strict=True)
+    ] == labels
+
+    book = load_workbook(io.BytesIO(rendered(document, "xlsx")))
+    try:
+        cells = [
+            [row[duid] for row in book[name].iter_rows(min_row=9, values_only=True)]
+            for name in ("Choir", "Ushers")
+        ]
+        values = [
+            value
+            for sheet in book.worksheets
+            for row in sheet.iter_rows(values_only=True)
+            for value in row
+        ]
+    finally:
+        book.close()
+    assert cells == labels
+
+    titles = [
+        record.title for record in packet_records(document) if record.style == "card"
+    ]
+    assert titles == [
+        "Pat Doe (New Member 2)",
+        "Pat Doe (New Member 1)",
+        "Pat Doe (New Member 2)",
+        "Lee Roe (New Member)",
+        "=Example Member (DUID 12345)",
+        "Pat Doe (New Member)",
+    ]
+    assert rendered(document, "pdf").startswith(b"%PDF")
+    for proposed in (first, second, other):
+        assert proposed not in text and proposed not in str(values)
+        assert proposed not in str(list(packet_records(document)))
 
 
 def test_every_packet_format_states_the_privacy_line():
