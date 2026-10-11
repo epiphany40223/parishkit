@@ -1213,7 +1213,9 @@ column and a DUID column, both sort. **Why.** A combined cell cannot be
 sorted or scanned by DUID, reads badly with a screen reader and copies badly
 into a spreadsheet; staff moving between pages should not re-learn each one.
 **Shared code.** `test_admin_table_columns.py` refuses a cell that prints a
-DUID label with a value (#941). **Precedent.** #932 (Administrator,
+DUID label with a value (#941), and checks that every DUID heading is
+"Family DUID", "Member DUID" or "Ministry DUID" and follows the name it
+identifies. **Precedent.** #932 (Administrator,
 2026-10-09, corrected 2026-10-10 to "most relevant column first", and the
 2026-10-10 rule that the Family name and DUID columns both sort), #941
 and #950.
@@ -1229,6 +1231,12 @@ column heading and every cell that holds only a DUID carries the shared
 cell that holds words instead (such as "New Member" with its note) does not.
 A second guard test checks this, except in the tables a later slice of #932
 aligns.
+
+The same file also reads every table's column headings: each heading that
+names a DUID is one of the three above and comes right after its name's
+heading (Family, Member or Ministry; Census changes heads its Member column
+Who). The one DUID column apart from its name is the recorded exception
+below.
 
 Recorded exception: Families the form cannot open shows a Member DUID with
 no Member name on purpose: the name itself may be the value the form
