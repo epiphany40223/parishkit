@@ -826,6 +826,14 @@ because `web` was already stopped when it began, a failure before its
 retarget starts nothing and leaves the maintenance page up rather than
 starting services that would refuse the schema.
 
+Every step-4 command of the script runs under a time limit (30 minutes for
+each migration, 15 for the conversion, 10 for the preview and each
+`database-grants`). A command that exceeds it is killed, and the log
+records a `TIMEOUT:` line naming it with its limit and elapsed time; the
+run stops with the maintenance page up. Check that the killed command's
+one-off container has stopped (`docker compose ps`) before repeating the
+run.
+
 If the conversion refuses (a list that differs from the preview's, or SQL's
 last-Administrator guard), the configuration keeps its sign-in rules, the
 swap is not installed and the services stay down. `recover-admin` and

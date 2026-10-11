@@ -492,8 +492,16 @@ def run_host(
         'echo "curl $*" >>"$FAKE_LOG"; [ -z "$FAKE_ORIGIN_FAIL" ] || exit 7; '
         'printf "HTTP/2 200\\r\\nserver: gunicorn\\r\\n"',
     )
-    # coreutils timeout is Linux-only here; the stand-in just runs the command.
-    executable_stub(bin_dir, "timeout", 'shift; exec "$@"')
+    # coreutils timeout is Linux-only here; the stand-in skips its options
+    # and runs the command, unless the command contains FAKE_TIMEOUT: then
+    # it answers as an expired limit does, without running it.
+    executable_stub(
+        bin_dir,
+        "timeout",
+        'if [ -n "$FAKE_TIMEOUT" ] && [[ "$*" == *"$FAKE_TIMEOUT"* ]]; then '
+        'echo "timeout $*" >>"$FAKE_LOG"; exit 124; fi; '
+        'while [[ $1 == -* ]]; do shift; done; shift; exec "$@"',
+    )
     state = tmp_path / "state"
     logs = tmp_path / "logs"
     log = tmp_path / "docker.log"
@@ -1293,7 +1301,8 @@ def test_the_laptop_half_passes_the_users_inputs_only_when_set(tmp_path):
 
 # Each way a users-release run can stop in step 4 with the base migration
 # applied (only the users swap pending): the first run's FAKE_* switches,
-# environment and exit status, and what its output says.
+# environment and exit status (a killed command's own, under `set -e`), and
+# what its output says.
 STOPPED_IN_STEP_4 = {
     "without the users inputs": (
         dict(migrate_fail=True),
@@ -1312,6 +1321,12 @@ STOPPED_IN_STEP_4 = {
         USERS,
         1,
         "Migration 0052 refused",
+    ),
+    "an interruption after the base migration": (
+        dict(timeout=" upgrade-users "),
+        USERS,
+        124,
+        "TIMEOUT: the users upgrade preview killed after",
     ),
 }
 
@@ -1400,3 +1415,56 @@ def test_a_normal_run_still_restarts_what_it_stopped(tmp_path):
     assert "web is not running" not in output
     assert "restarting the background services" in output
     assert any(" up --detach --wait worker" in call for call in calls)
+
+
+@pytest.mark.parametrize(
+    ("fragment", "what", "limit", "status"),
+    [
+        (
+            "--users-upgrade-base",
+            "the migration to the users upgrade's base",
+            1800,
+            124,
+        ),
+        ("database-grants", "database-grants", 600, 124),
+        (" upgrade-users ", "the users upgrade preview", 600, 124),
+        ("--operation-id", "the users upgrade", 900, 1),
+    ],
+)
+def test_each_step_4_command_runs_under_a_logged_time_limit(
+    tmp_path, fragment, what, limit, status
+):
+    """A killed step-4 command is logged with its limit; the page stays up."""
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        noop="f",
+        status=status,
+        schema_change="1",
+        env=USERS,
+        timeout=fragment,
+    )
+    killed = next(call for call in calls if call.startswith("timeout "))
+    assert killed.startswith(f"timeout --kill-after=30 {limit} docker compose ")
+    assert f"TIMEOUT: {what} killed after " in output
+    assert f"(limit {limit}s)" in output
+    assert "caddy serves the maintenance page" in output
+    assert not any(" up --detach " in call for call in calls)
+    # The kill is in the run's persistent log as well.
+    log = next((tmp_path / "logs").glob("stewardship-upgrade-*.log")).read_text()
+    assert f"TIMEOUT: {what} killed after " in log
+
+
+def test_the_final_migration_runs_under_a_logged_time_limit(tmp_path):
+    """The full migration of every schema-change run is limited the same way."""
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        noop="f",
+        status=1,
+        schema_change="1",
+        timeout="-T migration",
+    )
+    assert any(call.startswith("timeout --kill-after=30 1800 ") for call in calls)
+    assert "TIMEOUT: the migration killed after " in output
+    assert "caddy serves the maintenance page" in output
