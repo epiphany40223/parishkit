@@ -1161,7 +1161,10 @@ last in either direction. The CSV, XLSX and PDF of a list carry the same
 columns as each other, with no internal references
 ([#966](https://github.com/epiphany40223/parishkit/issues/966)): a Member
 added on the form reads "New Member" in the Member DUID column, and the
-proposed Member's reference stays on the page's technical details.
+proposed Member's reference stays on the page's technical details. When two
+Members added on the form share a name, they read "New Member 1", "New
+Member 2" and so on in form order, so their rows stay distinct in every
+format.
 
 Each list opens by a POST from its Ministry's form on the summary. A GET of
 either list's address (typed, bookmarked, refreshed or reached with Back)
