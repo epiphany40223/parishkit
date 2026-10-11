@@ -839,7 +839,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `hosted_file_delete` | Delete hosted files | Hosted files | Administrator | (same) | `/admin/parish/files/deletion/` (POST only) | (same) | The table's confirmation dialog posts here (#879); it answers with a redirect or a refusal, never a page. |
 | `hosted_file_rename` | Change placeholder name | Hosted files | Administrator | (same) | `/admin/parish/files/<file>/name/` | (same) |  |
 | `source_refresh` | Refresh from ParishSoft | Menu: Refresh from ParishSoft | Administrator | ParishSoft refresh | `/admin/parish/parishsoft-refresh/` | (same) |  |
-| `parishsoft_fixes` | Data to fix in ParishSoft | Menu: Data to fix in ParishSoft | Administrator, Staff | (new, #1011) | (none) | `/admin/parish/data-to-fix/` | Not built yet ([Data to fix in ParishSoft](#data-to-fix-in-parishsoft)). Breadcrumb parent Home. |
+| `parishsoft_fixes` | Data to fix in ParishSoft | Menu: Data to fix in ParishSoft | Administrator, Staff | (new, #1011) | (none) | `/admin/parish/data-to-fix/` | New page ([Data to fix in ParishSoft](#data-to-fix-in-parishsoft), #1011); no parent page, so its trail is Home, Parish data, as for the other Parish data entries. |
 | `users` | Users | Menu: Users | Administrator | Portal users; Sign-in rules | `/admin/users` | `/admin/users/` | One table of users (#952), which replaces the planned split into Sign-in rules, Ministry assignments and Chairpersons (decision 13). |
 | `user_new` | New user | Users | Administrator | (new, #952) | (none) | `/admin/users/new/` | Its review applies through Users. |
 | `user_edit` | Edit user | Users | Administrator | (new, #952) | (none) | `/admin/users/<user>/edit/` | The New page filled in; `<user>` is the user's stable ID. |
@@ -4022,7 +4022,7 @@ transitions, retries and outcome stay.
 
 ## Data to fix in ParishSoft
 
-Status: not built yet
+Status: built
 ([#1011](https://github.com/epiphany40223/parishkit/issues/1011)). The
 Administrator decided on 2026-10-11, in the
 [#935](https://github.com/epiphany40223/parishkit/issues/935) follow-up,
@@ -4059,8 +4059,9 @@ rest of this section follows those decisions:
   were read from, in browser-local time.
 - **Where:** the last entry of the Parish data
   [menu group](#menu-groups), after Refresh from ParishSoft, at
-  `/admin/parish/data-to-fix/` (URL name `parishsoft_fixes`). Its
-  breadcrumb parent is Home. It is last so `/admin/parish/` still opens
+  `/admin/parish/data-to-fix/` (URL name `parishsoft_fixes`). Like the
+  other Parish data menu entries it has no parent page: its trail is Home,
+  Parish data, then the page. It is last so `/admin/parish/` still opens
   Parish settings for an Administrator. Staff, who see no other Parish data
   entry, see the group with this one entry, and `/admin/parish/` opens this
   page for them.
@@ -4135,22 +4136,27 @@ Notes on the sections:
   with its link greyed out as an
   [unavailable menu entry](#stable-menu-shape) is when its detail page
   would refuse the visit too. The other sections still show. A failed read
-  is logged with its section and the page is not an error page.
+  is logged as a `report_shaping_failed` warning whose shaping step names
+  the section (`data_to_fix_<section>`), and the page is not an error
+  page.
 - **Zero.** A section at zero keeps its block and its link and says what
   that means ("No refused addresses: campaign email reaches every address
   it has tried"). When every shown section is zero, the data line adds
   "Nothing to fix right now". An empty section never disappears, so the
   page keeps one shape for a role.
-- **Audit.** A view records one audit event with the section counts the
-  viewer saw, never a name, address or value, as the detail pages' view
-  events do.
+- **Audit.** A view records one `data_to_fix_viewed` event whose count is
+  the total of the section counts the viewer saw, never a name, address or
+  value, as the detail pages' view events do. It is one total rather than
+  a count per section because the audit context's fields are a closed list
+  mirrored in SQL; a count per section would need a schema change.
 
 ### Data to fix command and downloads
 
 - **Command line** ([#463](https://github.com/epiphany40223/parishkit/issues/463)):
   `pk-admin report data-to-fix` mirrors the page through its own functions,
   admitting as the page does with any session scope. It prints
-  `campaign_id` and one key per section the session's role may see
+  `campaign_id` and, under `sections`, one key per section the session's
+  role may see
   (`form_cannot_open`, `refused_addresses`, `unreachable_families`,
   `census_changes`, and later `roster_changes`), each with its count (and
   `families` for refused addresses) or `unavailable` with the page's

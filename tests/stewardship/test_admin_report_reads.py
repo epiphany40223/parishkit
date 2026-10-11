@@ -15,7 +15,12 @@ from uuid import UUID
 
 import pytest
 
-from parishkit.stewardship import admin_cli, admin_report_reads, admin_source_form
+from parishkit.stewardship import (
+    admin_cli,
+    admin_data_to_fix,
+    admin_report_reads,
+    admin_source_form,
+)
 from parishkit.stewardship.jobs.send_history import SendKey
 from parishkit.stewardship.reports.money import MoneyAmount
 
@@ -477,12 +482,15 @@ def test_every_report_command_has_its_models_fields():
         # System health's list (#774), not a campaign report: ``report
         # list`` does not offer it.
         "report source-form": admin_source_form.SourceFormReport,
+        # Data to fix in ParishSoft (#1011), a Parish data page, likewise.
+        "report data-to-fix": admin_data_to_fix.DataToFixReport,
     }
     reports = {spec.name for spec in admin_cli.COMMANDS if spec.name[:7] == "report "}
     assert reports == set(models)
     assert set(admin_report_reads.REPORT_COMMANDS.values()) == reports - {
         "report list",
         "report source-form",
+        "report data-to-fix",
     }
     for name, model in models.items():
         assert entries[name]["result_fields"] == list(model.field_names()), name

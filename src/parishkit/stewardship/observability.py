@@ -193,6 +193,11 @@ SHAPING_STEPS = frozenset(
         "source_changes",
         # A full refresh's Ministry catalog differences (#342).
         "ministry_catalog",
+        # One Data to fix in ParishSoft section's page-load count (#1011).
+        "data_to_fix_form_cannot_open",
+        "data_to_fix_refused_addresses",
+        "data_to_fix_unreachable_families",
+        "data_to_fix_census_changes",
     }
 )
 DRIVE_FAILURES = frozenset(
