@@ -260,6 +260,10 @@ TIMEOUT_LIMITS = frozenset(
         # ``pk-stewardship restore-compare`` killed pg_restore while it
         # loaded a dump into its scratch database (#608); process log only.
         "restore_compare_load",
+        # The archive workbook check's helper was killed at its time limit
+        # (#1018); process log only until the import registers the durable
+        # timeout kind.
+        "archive_check",
         # The scheduler's web liveness probe (#392 L1, jobs.web_health): one
         # request's socket timeout, or a probe thread still running past
         # its limit.
