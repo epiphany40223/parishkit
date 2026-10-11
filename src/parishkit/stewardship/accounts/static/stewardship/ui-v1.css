@@ -516,7 +516,15 @@ td > :last-child { margin-bottom: 0; }
 .status-badge-on { background: var(--accent-soft); border-color: #b9d7d2; color: var(--accent-strong); }
 .bulk-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; margin-block: 1rem .5rem; }
 .bulk-bar button { margin: 0; }
-.bulk-count { color: var(--muted); font-weight: 600; }
+/* The shared bulk bar (table-selection.html) never changes size as rows are
+   ticked (#563, #736, #879): the count reserves room for "100 selected" (no
+   page shows more rows), the Select all button room for "Clear selection",
+   and the reason line below the buttons stays in the layout, only made
+   invisible (data-cleared) while a selection exists. */
+.bulk-count { color: var(--muted); font-weight: 600; min-width: 12ch; min-height: 1.6em; min-height: 1lh; }
+.bulk-bar [data-select-all-button] { min-width: calc(15ch + 2.5rem + 2 * var(--button-border-width)); }
+.bulk-hint { flex-basis: 100%; margin: 0; min-height: 1.6em; min-height: 1lh; }
+.bulk-hint[data-cleared] { visibility: hidden; }
 main nav.table-nav { justify-content: space-between; margin-block: .75rem; font-size: .925rem; }
 .table-nav .table-count { margin: 0; }
 main nav.table-nav form { gap: .5rem .75rem; }
