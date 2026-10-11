@@ -7,6 +7,7 @@ role, deny rules are dropped, and disabled or never-signed-in identities are
 not converted.
 """
 
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -473,7 +474,9 @@ def test_upgrade_users_command_previews_only_until_enabled(monkeypatch):
         "admit_offline_service",
         lambda configuration: ServiceRole.ADMIN_RECOVERY,
     )
-    assert operator_commands.USERS_UPGRADE_ENABLED is False
+    from parishkit.stewardship.accounts import users_schema
+
+    assert users_schema.USERS_ENABLED is False
     with pytest.raises(ConfigError, match="previews the users upgrade only"):
         operator_commands.upgrade_users_command(
             object(),
@@ -522,3 +525,36 @@ def test_only_admin_recovery_and_web_read_identities_and_member_names():
         "download",
     ):
         assert not runtime_functions(role) & upgrade
+
+
+SETUP = dict(mode="testing", current_campaign_id=None, restore_review_required=False)
+
+
+@pytest.mark.parametrize(
+    ("schema", "state", "refused"),
+    [
+        ("source-cadence-v8", SETUP, True),
+        ("campaign-content-v5", SETUP, True),
+        (users_schema.SCHEMA, SETUP, False),
+        (users_schema.SCHEMA, SETUP | {"mode": "production"}, False),
+        # Setup is exempt until the setup wizard writes users.
+        ("bootstrap-policy-v1", SETUP, False),
+        # Only a deployment really still in setup, as initial_setup_hold
+        # judges it, is exempt.
+        ("bootstrap-policy-v1", SETUP | {"mode": "production"}, True),
+        ("bootstrap-policy-v1", SETUP | {"current_campaign_id": "c"}, True),
+        ("bootstrap-policy-v1", SETUP | {"restore_review_required": True}, True),
+    ],
+)
+def test_startup_refuses_sign_in_rules_once_users_ship(schema, state, refused):
+    """Off in this release; on, only a users (or setup) configuration starts."""
+    runtime = SimpleNamespace(
+        active_configuration=SimpleNamespace(validation_schema=schema), **state
+    )
+    assert users_schema.USERS_ENABLED is False
+    users_schema.require_users_form(runtime)
+    if refused:
+        with pytest.raises(ConfigError, match="run upgrade-users first"):
+            users_schema.require_users_form(runtime, enabled=True)
+    else:
+        users_schema.require_users_form(runtime, enabled=True)

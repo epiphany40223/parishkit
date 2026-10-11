@@ -13,7 +13,7 @@ from uuid import UUID
 from parishkit.config import ConfigError
 
 from .policy_schema import normalized_domain, normalized_email
-from .users_schema import record_roles
+from .users_schema import ROLE_LEVELS, record_roles
 
 
 class Capability(StrEnum):
@@ -132,8 +132,40 @@ def leader_scope(user_id):
     return frozenset(json.loads(value) if isinstance(value, str) else value)
 
 
+# The roles are levels (#952): each holds every capability of the role
+# below it, plus its own. A Ministry leader's capabilities apply only within
+# the Ministries it leads; Staff and Administrators see every Ministry.
+LEADER_CAPABILITIES = frozenset(
+    {
+        Capability.MINISTRY_REPORT,
+        Capability.MINISTRY_FOLLOWUP,
+        Capability.REPORT_EXPORT,
+    }
+)
+STAFF_CAPABILITIES = LEADER_CAPABILITIES | {
+    Capability.FAMILY_CODES,
+    Capability.CAMPAIGN_REPORT,
+    Capability.FINANCIAL_DETAIL,
+    Capability.ADDITIONAL_FOLLOWUP,
+    Capability.MANUAL_CENSUS,
+    Capability.VIEW_CENSUS,
+}
+
+
+def role_level(roles):
+    """The highest of the ladder's roles held, or None for none (#952)."""
+    held = [role for role in ROLE_LEVELS if role in roles]
+    return held[-1] if held else None
+
+
 def allows(principal, capability, *, ministry_id=None, family_id=None):
-    """Deny unknown capabilities and enforce object scope independently of roles."""
+    """Deny unknown capabilities and enforce object scope independently of roles.
+
+    An administration principal is judged by its highest role alone: an
+    Administrator may do everything, Staff its capabilities, which include
+    a Ministry leader's everywhere, and a Ministry leader its own only within
+    a Ministry it leads.
+    """
     if not isinstance(principal, Principal) or not isinstance(capability, Capability):
         return False
     if principal.family_id is not None:
@@ -144,31 +176,17 @@ def allows(principal, capability, *, ministry_id=None, family_id=None):
         }
     if capability in {Capability.FAMILY_READ, Capability.FAMILY_SUBMIT}:
         return False
-    if "administrator" in principal.roles:
+    level = role_level(principal.roles)
+    if level == "administrator":
         return True
-    if "staff" in principal.roles:
-        return capability in {
-            Capability.FAMILY_CODES,
-            Capability.REPORT_EXPORT,
-            Capability.CAMPAIGN_REPORT,
-            Capability.MINISTRY_REPORT,
-            Capability.FINANCIAL_DETAIL,
-            Capability.ADDITIONAL_FOLLOWUP,
-            Capability.MINISTRY_FOLLOWUP,
-            Capability.MANUAL_CENSUS,
-            Capability.VIEW_CENSUS,
-        }
+    if level == "staff":
+        return capability in STAFF_CAPABILITIES
     return (
-        "ministry_leader" in principal.roles
+        level == "ministry_leader"
         and type(ministry_id) is int
         and 1 <= ministry_id <= 2**63 - 1
         and ministry_id in principal.ministries
-        and capability
-        in {
-            Capability.MINISTRY_REPORT,
-            Capability.MINISTRY_FOLLOWUP,
-            Capability.REPORT_EXPORT,
-        }
+        and capability in LEADER_CAPABILITIES
     )
 
 

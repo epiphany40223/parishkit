@@ -164,10 +164,12 @@ def record_request(
     _own_transaction()
     from .chair_confirmation import REQUEST_SCHEMA as CHAIR_REQUEST_SCHEMA
     from .source_cadence_schema import CREDENTIAL_SCHEMA
+    from .users_schema import CREDENTIAL_SCHEMA as USERS_CREDENTIAL_SCHEMA
 
     if request_schema is not None and request_schema not in {
         CREDENTIAL_REQUEST_SCHEMA,
         CREDENTIAL_SCHEMA,
+        USERS_CREDENTIAL_SCHEMA,
         CHAIR_REQUEST_SCHEMA,
     }:
         raise ConfigError("Unsupported explicit configuration request schema.")

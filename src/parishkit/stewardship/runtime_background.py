@@ -313,6 +313,12 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
         active = initial_setup_hold(
             store, projections=role is not ServiceRole.MAIL_DISPATCH
         )
+    if active is not None:
+        from .accounts.users_schema import require_users_form
+
+        # Once users ship, no worker or scheduler runs on unconverted
+        # sign-in rules (#952).
+        require_users_form(active)
     if (
         role is ServiceRole.WORKER
         and "parishsoft" not in loaded

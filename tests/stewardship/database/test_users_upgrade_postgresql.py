@@ -206,14 +206,12 @@ def test_the_operator_must_confirm_exactly_the_administrators(tmp_path, administ
     assert store.active().digest == version.digest
 
 
-def test_sql_refuses_an_upgrade_that_drops_an_administrator(tmp_path, monkeypatch):
-    """Even with Python's checks bypassed, the activation guard keeps every Admin.
+def refuse_in_sql(monkeypatch):
+    """Let one demoted Administrator past Python, so only SQL refuses (#952).
 
-    The plan demotes one Administrator and the request builder is replaced by
-    one that does not check; SQL's stewardship_users_form_v1 still refuses,
-    and the deployment stays on its sign-in rules.
+    The plan demotes the second Administrator and the request builder is
+    replaced by one that does not check, so Python and SQL disagree.
     """
-    store, version, _ = initialized(tmp_path, rules())
     plan = upgrade.plan_upgrade
 
     def demoting(records, identities, names):
@@ -244,17 +242,225 @@ def test_sql_refuses_an_upgrade_that_drops_an_administrator(tmp_path, monkeypatc
         "BUILDERS",
         dict(request_patch.BUILDERS) | {UPGRADE_REQUEST_SCHEMA: unchecked},
     )
-    with pytest.raises(IntegrityError, match="must keep every Administrator"):
-        upgrade.upgrade_users(store, **arguments(ADMINS[:1]))
-    # The YAML manifest already names the refused candidate while the
-    # database keeps the sign-in rules, so the deployment is incoherent and
-    # no service starts on it: the upgrade fails closed.
-    with pytest.raises(ConfigError):
-        coherent_configuration(store)
-    runtime = SystemConfiguration.objects.get()
+
+
+def test_sql_refuses_an_upgrade_that_drops_an_administrator(tmp_path, monkeypatch):
+    """Even with Python's checks bypassed, the activation guard keeps every Admin.
+
+    SQL's stewardship_users_form_v1 refuses, the refusal is recorded as the
+    request's failure, and the base manifest is selected again (migration
+    0051): the deployment stays coherent on its sign-in rules, so offline
+    Admin-access recovery still runs, and the upgrade itself fails closed.
+    """
+    from parishkit.stewardship.accounts.operator_recovery import recover_admin
+
+    from .test_recovery_postgresql import arguments as recovery_arguments
+
+    store, version, _ = initialized(tmp_path, rules())
+    refuse_in_sql(monkeypatch)
+    result = upgrade.upgrade_users(store, **arguments(ADMINS[:1]))
+    assert (result.state, result.failure_code) == ("failed", "invalid_candidate")
+    runtime = coherent_configuration(store)
     assert runtime.active_configuration.validation_schema == "foundation-policy-v2"
     assert runtime.active_configuration_id == version.version_id
+    assert store.active().digest == version.digest
     assert not AuditEvent.objects.filter(event_type="operator_users_upgraded").exists()
+    # The failed receipt is terminal for its operation.
+    request = ConfigurationChangeRequest.objects.get(pk=result.request_id)
+    assert (
+        upgrade.upgrade_users(
+            store, **arguments(ADMINS[:1], operation_id=request.request_key)
+        )
+        == result
+    )
+    assert recover_admin(store, **recovery_arguments()).state == "applied"
+
+
+def test_recovery_runs_with_a_refused_upgrade_still_selected(tmp_path, monkeypatch):
+    """A crash between the recorded refusal and the restore cannot lock anyone out.
+
+    The manifest is put back on the refused candidate, as a crash right
+    after the refusal committed would leave it: nothing is coherent, yet the
+    recovery preview reads the base and recovery itself restores the base
+    first, then applies. Another disagreement still refuses. All of it runs
+    as the real admin-recovery login.
+    """
+    from parishkit.stewardship.accounts.operator_recovery import (
+        recover_admin,
+        recovery_preview,
+        recovery_runtime,
+    )
+    from parishkit.stewardship.accounts.request_admission import intake_base
+
+    from .test_recovery_postgresql import arguments as recovery_arguments
+
+    store, version, _ = initialized(tmp_path, rules())
+    refuse_in_sql(monkeypatch)
+    with task_login(ServiceRole.ADMIN_RECOVERY):
+        admit()
+        result = upgrade.upgrade_users(store, **arguments(ADMINS[:1]))
+        request = ConfigurationChangeRequest.objects.get(pk=result.request_id)
+        store.select(store.read_version(request.candidate_version_id))
+        with pytest.raises(ConfigError):
+            coherent_configuration(store)
+        runtime = recovery_runtime(store)
+        assert runtime.active_configuration_id == version.version_id
+        _, base = intake_base(runtime.active_configuration.digest)
+        preview = recovery_preview(base, runtime.pk, "replacement@example.org")
+        assert preview["current_admin_rules"] == ADMINS
+        previews = []
+        applied = recover_admin(
+            store, **recovery_arguments(), before_apply=previews.append
+        )
+        assert applied.state == "applied" and previews[0]["form"] == "sign_in_rules"
+        active = coherent_configuration(store).active_configuration
+        assert active.predecessor_id == version.version_id
+        # Only a refused request's candidate is tolerated: any other
+        # selection still refuses, as the installer protocol must resolve it
+        # first.
+        store.select(store.read_version(version.version_id))
+        with pytest.raises(ConfigError):
+            recovery_runtime(store)
+
+
+class Crash(BaseException):
+    """A process death: nothing in the installer may catch or record it."""
+
+
+def abort_activation(monkeypatch, failure):
+    """Make the upgrade's activation transaction abort with ``failure``.
+
+    ``failure`` runs inside the activation, in place of the users
+    conversion, so the transaction rolls back with the candidate selected.
+    """
+    from parishkit.stewardship.accounts.configuration_installation import (
+        DatabaseMaterializer,
+    )
+
+    monkeypatch.setattr(
+        DatabaseMaterializer,
+        "_apply_upgrade",
+        lambda self, runtime, selected: failure(),
+    )
+
+
+def statements(sql):
+    """A failure that runs SQL statements inside the activation."""
+
+    def run():
+        """Execute each statement on the activation's connection."""
+        with connection.cursor() as cursor:
+            for each in sql:
+                cursor.execute(each)
+
+    return run
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        # A raise other than 23514: division by zero (22012).
+        ["SELECT 1/0"],
+        # A statement timeout (57014).
+        ["SET LOCAL statement_timeout = '10ms'", "SELECT pg_sleep(1)"],
+    ],
+)
+def test_an_unrefused_activation_abort_restores_the_base(tmp_path, monkeypatch, sql):
+    """Any other abort fails the upgrade and selects the base again (#952).
+
+    The manifest already names the candidate when the activation aborts, so
+    without this the deployment stays incoherent and recovery cannot run.
+    """
+    from parishkit.stewardship.accounts.operator_recovery import recover_admin
+
+    from .test_recovery_postgresql import arguments as recovery_arguments
+
+    store, version, _ = initialized(tmp_path, rules())
+    admin = identity("admin@example.org")
+    abort_activation(monkeypatch, statements(sql))
+    with task_login(ServiceRole.ADMIN_RECOVERY):
+        admit()
+        result = upgrade.upgrade_users(store, **arguments())
+        assert (result.state, result.failure_code) == ("failed", "invalid_candidate")
+        runtime = coherent_configuration(store)
+        assert runtime.active_configuration_id == version.version_id
+        assert store.active().digest == version.digest
+        assert recover_admin(store, **recovery_arguments()).state == "applied"
+    assert forge(admin.pk).principal_id == admin.pk
+
+
+def test_recovery_undoes_an_upgrade_interrupted_before_activation(
+    tmp_path, monkeypatch
+):
+    """A crash after the YAML switch leaves recovery able to run (#952).
+
+    The activation dies without recording anything, as a process death or
+    a lost connection would leave it: the request stays yaml_activated with
+    its candidate selected over the unchanged base. A new upgrade says to
+    resume or recover; recovery, as the real admin-recovery login, fails
+    the upgrade, restores the base and applies, and the Administrator keeps
+    access.
+    """
+    from parishkit.stewardship.accounts.configuration_requests import _status
+    from parishkit.stewardship.accounts.operator_recovery import (
+        recover_admin,
+        recovery_runtime,
+    )
+
+    from .test_recovery_postgresql import arguments as recovery_arguments
+
+    store, version, _ = initialized(tmp_path, rules())
+    admin = identity("admin@example.org")
+
+    def crash():
+        """Die inside the activation transaction."""
+        raise Crash
+
+    abort_activation(monkeypatch, crash)
+    with task_login(ServiceRole.ADMIN_RECOVERY):
+        admit()
+        kwargs = arguments()
+        with pytest.raises(Crash):
+            upgrade.upgrade_users(store, **kwargs)
+        request = ConfigurationChangeRequest.objects.get(
+            authority="operator_upgrade", request_key=kwargs["operation_id"]
+        )
+        assert _status(request).state == "yaml_activated"
+        assert store.active().version_id == request.candidate_version_id
+        with pytest.raises(ConfigError):
+            coherent_configuration(store)
+        with pytest.raises(ConfigError, match="resume it, or recover-admin"):
+            upgrade.upgrade_users(store, **arguments())
+        assert recovery_runtime(store).active_configuration_id == version.version_id
+        recovery = recover_admin(store, **recovery_arguments())
+        assert recovery.state == "applied"
+        status = _status(request)
+        assert (status.state, status.failure_code) == ("failed", "invalid_candidate")
+        active = coherent_configuration(store).active_configuration
+        assert active.predecessor_id == version.version_id
+        assert active.validation_schema == "foundation-policy-v2"
+        # The failed receipt is terminal for its operation.
+        assert upgrade.upgrade_users(store, **kwargs).state == "failed"
+    assert forge(admin.pk).principal_id == admin.pk
+
+
+def test_an_interrupted_upgrade_resumes(tmp_path, monkeypatch):
+    """The other way out: the same operation ID finishes the upgrade."""
+    store, _, _ = initialized(tmp_path, rules())
+
+    def crash():
+        """Die inside the activation transaction."""
+        raise Crash
+
+    with monkeypatch.context() as patch:
+        abort_activation(patch, crash)
+        kwargs = arguments()
+        with pytest.raises(Crash):
+            upgrade.upgrade_users(store, **kwargs)
+    assert upgrade.upgrade_users(store, **kwargs).state == "applied"
+    assert coherent_configuration(store).active_configuration.validation_schema == (
+        SCHEMA
+    )
 
 
 def test_sql_refuses_an_ordinary_activation_into_the_users_form(tmp_path, monkeypatch):

@@ -655,7 +655,11 @@ Administrator may override.
       uses (recorded identities, and the ParishSoft Member names of only the
       active rules' and recorded identities' addresses, with no address
       argument, so it is no lookup for any other address); the command
-      then activates the converted configuration. SQL's activation guard
+      then activates the converted configuration. A compromised web
+      database login can still insert a portal user (a recorded Google
+      identity) for any address and then read that address's names. That is
+      weaker than its existing ability to match an Admin rule, and each guess
+      is recorded. SQL's activation guard
       refuses it, and any other activation into the users form, unless every
       address that held Administrator keeps an Administrator user.
    3. **Swap functions:** the second migration replaces the SQL functions.
@@ -669,7 +673,22 @@ Administrator may override.
    YAML/database mismatch, which the existing installer protocol must recover
    first, or the last-Administrator guard), the services stay down: the
    deployment fails closed and never runs the new SQL functions on an
-   unconverted configuration. An interrupted run resumes by operation ID. The
+   unconverted configuration. An interrupted run resumes by operation ID.
+   When SQL's activation guard refuses the conversion after the YAML manifest
+   already names it, the refusal is recorded as the request's failure in the
+   activation transaction and the installer selects the base manifest again,
+   as for any other refused activation (#952 slice 3). The configuration
+   stays coherent on its sign-in rules, so
+   [offline Admin-access recovery](#offline-admin-access-recovery) still
+   runs; a failed receipt is terminal, so a new attempt needs a new
+   operation ID. Any other abort of that activation transaction (a
+   deadlock, a statement timeout, any error other than SQL's refusal) is
+   recorded and restored the same way: the upgrade runs offline, so a retry
+   would only fail again. A crash or lost connection between the YAML switch
+   and the activation records nothing; `upgrade-users` then refuses a new
+   operation with an instruction to resume the interrupted one by its
+   operation ID or to run `recover-admin`, which records that upgrade failed
+   and selects its base again before it begins. The
    scripted upgrade and the deployment runbook gain this step in the code
    slice.
 
@@ -730,10 +749,20 @@ rules. Under the fail-forward policy, a problem is fixed in a new release; only
 a catastrophic failure restores the pre-upgrade backup, the database and the
 YAML configuration manifest together, plus the previous release.
 
-Bootstrap (`bootstrap --admin-email`) and
-[offline Admin-access recovery](#offline-admin-access-recovery) write and
-preview Administrator users in the same form; their Name is optional and
-defaults to the email's local part.
+Once the configuration holds users,
+[offline Admin-access recovery](#offline-admin-access-recovery) writes and
+previews Administrator users in the same form; the Name is optional
+(`--name`) and defaults to the email's local part. A users configuration
+has its own request formats (`users-patch-v10` for Admin edits,
+`integration-credential-users-v10` for a credential update and
+`operator-recovery-users-v10` for recovery; #952 slice 3), each keeping every
+rule of its `source-cadence-v8` counterpart with the users list in place of
+the sign-in rules. Bootstrap (`bootstrap --admin-email`) writes an
+Administrator user too, with the code slice that changes the setup wizard:
+the bootstrap configuration is the wizard's base, and its access step and SQL
+setup guards still expect an exact-address rule. Until then the users
+release's startup refusal of sign-in rules exempts a deployment still in
+initial setup.
 
 ### Offline bootstrap profile
 
@@ -796,6 +825,13 @@ authorization; bootstrap retains its empty-deployment-only behavior.
 Require an initialized, supported database and matching active YAML/database
 configuration. An unresolved configuration installation or mismatch must be
 recovered through the existing installer protocol first, never overwritten.
+One mismatch is that protocol's own unfinished step and never blocks
+recovery: a manifest naming the candidate of a request whose activation was
+refused and recorded as failed (such as a users upgrade SQL refused), over
+that request's base. Another is a users upgrade interrupted between its YAML
+switch and its activation, the database still on its base: recovery records
+that upgrade failed. In both cases recovery selects the base manifest again
+before it begins, and its preview shows that base (#952).
 The command displays deployment/parish identity, current Administrator users,
 the exact normalized target email, and a minimal diff. Require a named
 operator, reason, and explicit confirmation of deployment identity and target
@@ -803,7 +839,10 @@ email; unattended invocation must supply equivalent explicit confirmations,
 never default to yes. The permitted patch only raises the
 [user](../admin-portal/spec.md#portal-user-management) with that address to
 Administrator, or creates that user as an Administrator when absent (its Name
-is `--name` when given, otherwise the email's local part). Preserve every
+is `--name` when given, otherwise the email's local part). An existing user
+keeps its Name, so a different `--name` is refused, by the preview as by
+recovery itself; a resumed operation previews the Name its stored request
+gives. Preserve every
 other user, all existing Administrators, and all unrelated configuration.
 Account rebinding, removal, or general configuration edits are not accepted;
 removal of an obsolete Admin is a later normal authenticated action.
