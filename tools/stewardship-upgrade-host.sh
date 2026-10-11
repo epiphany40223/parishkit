@@ -71,6 +71,8 @@ logdir=${STEWARDSHIP_LOG_DIR:-/var/log}
 log=$logdir/stewardship-$mode-$(date -u +%Y%m%dT%H%M%SZ).log
 exec > >(tee -a "$log") 2>&1
 tee_pid=$!
+# The log, reachable from inside a pipeline whose output is filtered.
+exec 3>&2
 echo "Log: $log"
 
 # What a failure means depends on how far the run got: before web stops,
@@ -115,8 +117,9 @@ finish() {
                 fi ;;
         esac
     fi
-    # Let tee flush the last lines before ssh exits.
-    exec >&- 2>&-
+    # Let tee flush the last lines before ssh exits (fd 3 is its copy of
+    # stderr, which `limited` writes to).
+    exec >&- 2>&- 3>&-
     wait "$tee_pid" 2>/dev/null || true
     exit "$rc"
 }
@@ -174,6 +177,24 @@ step() {
 quiet() {
     # Compose progress lines add nothing to an upgrade log.
     grep -vE ' (Creat|Start|Stop|Wait|Running|Healthy|Recreat)' || true
+}
+limited() {
+    # limited SECONDS WHAT COMMAND...: run COMMAND, killing it (TERM, then
+    # KILL 30 s later) once SECONDS have passed. A kill is logged with what
+    # ran, the limit and the elapsed time on fd 3, the run's log, since the
+    # caller usually filters this function's output through `tail`. Returns
+    # the command's status (124 or 137 after a kill), so the caller stops.
+    local limit=$1 what=$2 started rc=0 elapsed
+    shift 2
+    started=$(date -u +%s)
+    timeout --kill-after=30 "$limit" "$@" || rc=$?
+    elapsed=$(( $(date -u +%s) - started ))
+    if [ "$rc" -eq 124 ] || { [ "$rc" -eq 137 ] && [ "$elapsed" -ge "$limit" ]; }; then
+        echo "TIMEOUT: $what killed after ${elapsed}s (limit ${limit}s). The maintenance page" >&3
+        echo "    stays up; make sure its one-off container has stopped (docker compose ps)" >&3
+        echo "    before repeating the run." >&3
+    fi
+    return "$rc"
 }
 
 # The project keeps whichever Compose file it already runs under; an upgrade
@@ -487,9 +508,13 @@ if [ "$mode" = upgrade ]; then
         echo "    skipped: the upgrade check answered t (schema and grants already match)"
     else
         echo "    running migration and grants: the check answered: $(head -3 <<<"$answer")"
+        # Every step-4 command runs under a time limit (`limited`): a
+        # migration or conversion that hangs is killed, the kill is logged
+        # and the run stops with the maintenance page up (phase offline).
+        # The limits are far above any expected run (seconds to minutes).
         grants() {
             # database-grants as the operator-only provisioning profile.
-            "${dc[@]}" run --rm -T database-provision database-grants \
+            limited 600 "database-grants" "${dc[@]}" run --rm -T database-provision database-grants \
                 --config "$services/database-provision.yaml" --confirm-deployment "$uuid" 2>&1 | tail -1
         }
         if [ "$users_upgrade" = 1 ]; then
@@ -500,13 +525,14 @@ if [ "$mode" = upgrade ]; then
             recovery=(run --rm -T admin-recovery upgrade-users
                 --config "$services/admin-recovery.yaml" --confirm-deployment "$uuid")
             step "4. Migration to the users upgrade's base"
-            "${dc[@]}" run --rm -T migration migrate \
+            limited 1800 "the migration to the users upgrade's base" "${dc[@]}" run --rm -T migration migrate \
                 --config "$services/migration.yaml" --users-upgrade-base 2>&1 | tail -1
             grants
             step "4. Users upgrade preview"
-            "${dc[@]}" "${recovery[@]}" --preview 2>&1 | tail -1
+            limited 600 "the users upgrade preview" "${dc[@]}" "${recovery[@]}" --preview 2>&1 | tail -1
             step "4. Users upgrade (operation $STEWARDSHIP_USERS_OPERATION)"
-            if ! "${dc[@]}" "${recovery[@]}" --operation-id "$STEWARDSHIP_USERS_OPERATION" \
+            if ! limited 900 "the users upgrade" "${dc[@]}" "${recovery[@]}" \
+                --operation-id "$STEWARDSHIP_USERS_OPERATION" \
                 --operator-name "$STEWARDSHIP_USERS_OPERATOR" --reason "$STEWARDSHIP_USERS_REASON" \
                 --confirm-administrators "$STEWARDSHIP_USERS_ADMINISTRATORS" 2>&1 | tail -1; then
                 echo "The users upgrade did not complete: the new sign-in functions were not installed" >&2
@@ -518,7 +544,7 @@ if [ "$mode" = upgrade ]; then
             fi
             step "4. Migration after the users upgrade"
         fi
-        if ! "${dc[@]}" run --rm -T migration 2>&1 | tail -1; then
+        if ! limited 1800 "the migration" "${dc[@]}" run --rm -T migration 2>&1 | tail -1; then
             if [ "$users_upgrade" = 0 ]; then
                 # A release whose swap refuses an unconverted configuration
                 # stops here; nothing of the swap was committed.
