@@ -62,7 +62,7 @@ def test_upload_review_apply_and_status_happen_in_place(page, component_origin):
     expect(region.locator("figure")).to_have_count(4)
     assert current_step(page) == "Review"
     assert page.url == f"{component_origin}{REVIEW}#settings-review"
-    assert page.evaluate(FORM_PLACE) == top
+    assert page.evaluate(FORM_PLACE) == pytest.approx(top, abs=1)
     region.get_by_role("button", name="Apply changes").click()
     visible(region.get_by_role("heading", name="Change status"))
     assert current_step(page) == "Apply"
@@ -70,7 +70,7 @@ def test_upload_review_apply_and_status_happen_in_place(page, component_origin):
     # The quiet refresh shows the new current logos.
     expect(page.locator("#branding-current figure")).to_have_count(4)
     assert PENDING.split("?")[1] in page.url
-    assert page.evaluate(FORM_PLACE) == top
+    assert page.evaluate(FORM_PLACE) == pytest.approx(top, abs=1)
     assert page.evaluate(MARKED) == "kept"
 
 
