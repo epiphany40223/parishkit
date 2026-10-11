@@ -335,7 +335,7 @@ def test_names_reach_only_the_exported_file(admin, family_test, reports_root):  
     text = body.decode()
     # Exactly the table, as the XLSX and PDF (#966): no metadata columns.
     rows = list(csv.reader(io.StringIO(text)))
-    assert rows == [["Family DUID", "Family name"], ["1", names[1]], ["999999", ""]]
+    assert rows == [["Family", "Family DUID"], [names[1], "1"], ["", "999999"]]
 
     # An expired file is regenerated from the retained capture.
     expire_publication(made)
@@ -389,7 +389,7 @@ def test_names_export_in_xlsx_and_pdf(admin, family_test, reports_root):  # noqa
         if fmt == "xlsx":
             sheet = load_workbook(io.BytesIO(body)).worksheets[0]
             rows = list(sheet.iter_rows(values_only=True))
-            assert rows == [HEADINGS, ("1", names[1])]
+            assert rows == [HEADINGS, (names[1], "1")]
         else:
             assert body.startswith(b"%PDF-")
     assert names_trail() == (2, 2, 2)

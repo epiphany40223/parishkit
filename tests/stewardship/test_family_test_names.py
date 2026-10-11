@@ -54,7 +54,8 @@ def request(rows, *, row_count=None):
 
 
 def test_the_file_lists_every_reviewed_family_in_order():
-    """DUID and name per row, and nothing else (#966); the report
+    """Name and DUID per row, as the page's Reviewed Families table orders
+    them (#932), and nothing else (#966); the report
     information (for the XLSX and PDF) says what was captured and when,
     with no internal references."""
     rows = [(1234, "Squyres, Tracy and Jeff"), (99, ""), (5, "=HYPERLINK(1)")]
@@ -69,12 +70,12 @@ def test_the_file_lists_every_reviewed_family_in_order():
     output = io.BytesIO()
     render_information(document, output, format="csv")
     lines = list(csv.reader(io.StringIO(output.getvalue().decode())))
-    assert lines[0] == ["Family DUID", "Family name"]
+    assert lines[0] == ["Family", "Family DUID"]
     assert lines[1:] == [
-        ["1234", "Squyres, Tracy and Jeff"],
-        ["99", ""],
+        ["Squyres, Tracy and Jeff", "1234"],
+        ["", "99"],
         # A name that looks like a formula stays text, as every export's.
-        ["5", "'=HYPERLINK(1)"],
+        ["'=HYPERLINK(1)", "5"],
     ]
 
 
@@ -117,7 +118,7 @@ def test_only_the_configure_capability_reads_the_names(monkeypatch, roles, allow
 
 def test_xlsx_and_pdf_carry_the_csvs_columns():
     """One column set in every format (#966): the XLSX sheet is the CSV's
-    whole table, and each PDF card holds exactly a row's DUID and name."""
+    whole table, and each PDF card holds exactly a row's name and DUID."""
     from openpyxl import load_workbook
 
     from parishkit.stewardship.reports.family_test_names import FORMATS, HEADINGS

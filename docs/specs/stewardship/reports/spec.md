@@ -1312,7 +1312,18 @@ in the installed selection's order
 by Ministry DUID, and a list by Member DUID with a Member added on the form
 last in either direction. The CSV, XLSX and PDF of a list carry the same
 columns as each other, with no internal references
-([#966](https://github.com/epiphany40223/parishkit/issues/966)): a Member
+([#966](https://github.com/epiphany40223/parishkit/issues/966)), in the
+page's order: Member, Member DUID, Status, Outcome, the contact details or
+current role, and Submitted last. The page's combined cells are split into
+their parts with the page's own words ("Status and outcome" is Status and
+Outcome; "Contact and demographics" is Gender, Age, Email, Phones and Known
+primary Family address), as the
+[downloaded files](../ui-conventions/spec.md#downloaded-files) convention
+allows. A list is always one Ministry's, so its
+Ministry name and Ministry DUID head the file in its report information, as
+they head the page's list, rather than repeat on every row
+([#932](https://github.com/epiphany40223/parishkit/issues/932)); the
+summary's download keeps both as its leading columns. A Member
 added on the form reads "New Member" in the Member DUID column, and the
 proposed Member's reference stays on the page's technical details. When two
 Members added on the form share a name, they read "New Member 1", "New
@@ -1460,11 +1471,12 @@ downloads as CSV, XLSX or PDF, every format with the page's values
 ([downloaded files](../ui-conventions/spec.md#downloaded-files)), audited with
 a count like the other report downloads. The PDF is the shared table, its
 Submitted time in the parish's date format; CSV and XLSX give it in ISO 8601.
-The files keep their earlier columns in their earlier order, so a spreadsheet
-that reads columns by position keeps working: Family first, Submitted after
-Status, then the page's Member DUID as a new last column, worded as on the
-page (the DUID, "New Member", or blank for a household change)
-([#932](https://github.com/epiphany40223/parishkit/issues/932)).
+The files have the page's columns in the page's order: Family, Family DUID,
+Who, then Member DUID worded as on the page (the DUID, "New Member", or blank
+for a household change), and Submitted last
+([#932](https://github.com/epiphany40223/parishkit/issues/932)). Member DUID
+used to be the files' last column; a spreadsheet that reads the columns by
+position needs updating.
 
 The read-only page and its downloads are enough for staff to apply every
 change by hand if publication is not ready; that is why it comes first.

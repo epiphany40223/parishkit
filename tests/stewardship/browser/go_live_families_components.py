@@ -2,7 +2,7 @@
 production template.
 
 Families are named "Surname, heads" (#932), so the long names are the point:
-the table must still fit the page, and the Family name heading sorts it in
+the table must still fit the page, and the Family heading sorts it in
 place. The served pages stand in for the server's ordering.
 """
 
@@ -28,7 +28,7 @@ ROWS = [
 
 
 def components(context, admin):
-    """The list by DUID (the default), and by Family name Z-A."""
+    """The list by DUID (the default), and by Family Z-A."""
 
     def page(rows, sort):
         """Render the list in ``sort``'s order."""

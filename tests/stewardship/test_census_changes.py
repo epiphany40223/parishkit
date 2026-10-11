@@ -2,7 +2,9 @@
 
 import csv
 import io
+import re
 from datetime import UTC, datetime
+from html import unescape
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -212,21 +214,22 @@ def test_parse_refuses_values_outside_the_closed_choices(values):
         CensusQuery.parse(values)
 
 
-def test_csv_keeps_its_own_column_order_in_the_chosen_zone():
-    """The download keeps its own column order, times in the chosen zone,
-    with Member DUID appended last so positional readers keep working."""
+def test_csv_follows_the_page_column_order_in_the_chosen_zone():
+    """The download has the page's columns in the page's order (#932):
+    Member DUID right after Who, Submitted last, times in the chosen zone."""
     result = select(rows(), CensusQuery(), administrator=False)
     text = census_csv(result, ZoneInfo("America/Chicago")).decode()
     table = list(csv.reader(io.StringIO(text)))
     assert tuple(table[0]) == HEADINGS
-    assert HEADINGS[-2:] == ("Submitted", "Member DUID")
-    assert table[1][2] == "Pat Sample" and table[1][-2] == "2054-10-05T09:30:00-05:00"
+    assert HEADINGS[2:4] == ("Who", "Member DUID")
+    assert HEADINGS[-1] == "Submitted"
+    assert table[1][2] == "Pat Sample" and table[1][-1] == "2054-10-05T09:30:00-05:00"
     assert len(table) == 4
 
 
 def test_downloads_word_member_duid_as_the_page_does():
-    """CSV and XLSX end with the Member DUID: the DUID, "New Member" for a
-    Member added on the form, and blank for a household change (#932)."""
+    """CSV and XLSX give Member DUID right after Who: the DUID, "New Member"
+    for a Member added on the form, and blank for a household change (#932)."""
 
     proposed = row(
         id="2",
@@ -240,10 +243,10 @@ def test_downloads_word_member_duid_as_the_page_does():
     result = {"rows": [shape(item) for item in (row(), proposed, family)]}
     zone = ZoneInfo("UTC")
     table = list(csv.reader(io.StringIO(census_csv(result, zone).decode())))
-    assert [line[-1] for line in table] == ["Member DUID", "41", "New Member", ""]
+    assert [line[3] for line in table] == ["Member DUID", "41", "New Member", ""]
     sheet = load_workbook(io.BytesIO(census_xlsx(result, zone)))["Census changes"]
-    column = sheet.max_column
-    assert column == len(HEADINGS)
+    assert sheet.max_column == len(HEADINGS)
+    column = HEADINGS.index("Member DUID") + 1
     assert [sheet.cell(line, column).value for line in range(1, 4)] == [
         "Member DUID",
         "41",
@@ -294,6 +297,20 @@ def test_member_duid_column_sorts_with_blank_rows_after_members():
     assert [item["id"] for item in down] == ["b", "a", "c"]
 
 
+def page_headings(html):
+    """The rendered page table's column headings, as a reader sees them.
+
+    A sort heading's arrow and its hidden "(sort ascending)" text are not
+    part of the heading's name, so they are dropped with every other tag.
+    """
+    head = re.search(r"<thead>(.*?)</thead>", html, re.DOTALL).group(1)
+    cells = re.findall(r"<th\b[^>]*>(.*?)</th>", head, re.DOTALL)
+    hidden = re.compile(r'<span class="(?:sort-indicator|visually-hidden)".*?</span>')
+    return [
+        unescape(re.sub(r"<[^>]*>", "", hidden.sub("", cell))).strip() for cell in cells
+    ]
+
+
 def test_page_shows_member_duid_beside_who():
     """Who is followed by its own Member DUID column; a New Member says so."""
     from django.template.loader import render_to_string
@@ -336,6 +353,8 @@ def test_page_shows_member_duid_beside_who():
     ]
     positions = [html.index(f">{heading}<") for heading in headings]
     assert positions == sorted(positions)
+    # The downloads have exactly the page's columns, in its order (#932).
+    assert page_headings(html) == list(HEADINGS)
     assert '<td class="numeric">41</td>' in html
     assert '<td class="numeric">New Member</td>' in html
 

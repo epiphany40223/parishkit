@@ -1246,8 +1246,9 @@ lists by name with the exact number of such cells each holds. Every DUID
 column heading and every cell that holds only a DUID carries the shared
 `numeric` class, so DUIDs line up as numbers wherever a table aligns them; a
 cell that holds words instead (such as "New Member" with its note) does not.
-A second guard test checks this, except in the tables a later slice of #932
-aligns.
+A guard test in the same file checks every Admin template for this: a DUID
+sort heading passes `numeric`, and a plain DUID heading or a cell that prints
+only a DUID has it in its `class`.
 
 The same file also reads every table's column headings: each heading that
 names a DUID is one of the three above and comes right after its name's
@@ -1350,6 +1351,17 @@ money, headers) are in the reports'
 [shared report behavior](../reports/spec.md#shared-report-behavior).
 **Precedent.** #926, #929, and the Administrator's decisions of 2026-10-10
 on [#958](https://github.com/epiphany40223/parishkit/pull/958).
+
+A download may split one combined page cell into its parts, because a
+spreadsheet needs one value per cell to sort, filter or merge on: the parts
+take the cell's place, in the order the page shows them, each headed with the
+page's own words for it (the cell's heading or the label the page shows
+beside that part). The Ministry report's lists are the first case: the page's
+"Status and outcome" cell is Status and Outcome in the files, and "Contact and
+demographics" is Gender, Age, Email, Phones and Known primary Family address
+([Ministry change summary](../reports/spec.md#ministry-change-summary))
+(Administrator decision, 2026-10-11, on
+[#932](https://github.com/epiphany40223/parishkit/issues/932)).
 
 Recorded exceptions to the rule above:
 

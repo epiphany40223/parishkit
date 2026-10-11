@@ -128,9 +128,9 @@ def test_native_page_and_downloads(response_service, google, settings):
         assert "stewardship-census-changes-" in response["Content-Disposition"]
         assert b"Requested" in body and b"How it reaches ParishSoft" in body
         table = list(csv.reader(io.StringIO(body.decode())))
-        # Member DUID is appended last, so positional readers keep working.
-        assert table[0][-2:] == ["Submitted", "Member DUID"]
-        assert any(values[-1] == "3" for values in table[1:])
+        # The page's order (#932): Member DUID right after Who, Submitted last.
+        assert table[0][2:4] == ["Who", "Member DUID"] and table[0][-1] == "Submitted"
+        assert any(values[3] == "3" for values in table[1:])
         response, body = search(
             browser, export, {"format": "xlsx", "timezone": "UTC", "status": "all"}
         )
@@ -143,7 +143,7 @@ def test_native_page_and_downloads(response_service, google, settings):
         ]
         # One column set and the same rows in both files (#966).
         assert sheet == table
-        assert "Requested" in [values[5] for values in sheet[1:]]
+        assert "Requested" in [values[6] for values in sheet[1:]]
         response, body = search(
             browser, export, {"format": "pdf", "timezone": "UTC", "status": "all"}
         )

@@ -40,7 +40,8 @@ from .export_services import (
 )
 
 REPORT = "family_test_names"
-HEADINGS = ("Family DUID", "Family name")
+# The page's Reviewed Families columns, names and order (#932).
+HEADINGS = ("Family", "Family DUID")
 # Every data export offers CSV, XLSX and PDF (#966).
 FORMATS = ("csv", "xlsx", "pdf")
 
@@ -204,8 +205,9 @@ def campaign_name(request):
 def names_document(request):
     """The retained capture of one export, with its provenance as metadata.
 
-    Every row is the Family's DUID and the name the review showed ("" for a
-    DUID the source does not know, as the page shows none).
+    Every row is the name the review showed ("" for a DUID the source does
+    not know, as the page shows none) and the Family's DUID, in the page's
+    order.
     """
     snapshot = request.family_test_names_snapshot
     zone = ZoneInfo(request.browser_timezone)
@@ -229,7 +231,7 @@ def names_document(request):
     )
     return FamilyTestNamesDocument(
         metadata,
-        tuple((str(row["duid"]), row["name"]) for row in rows),
+        tuple((row["name"], str(row["duid"])) for row in rows),
         snapshot.row_count,
         request.created_at,
     )

@@ -2080,7 +2080,9 @@ keyed by the preview's request key, through the shared
 is the preview's with `export`, the export's `export status` document (it is
 null without `--names`). The file is CSV (the default), XLSX or PDF
 (`--format`, [#966](https://github.com/epiphany40223/parishkit/issues/966)),
-each with the same Family DUID and Family name columns. `--names` and
+each with Family then Family DUID, in the page's order (the page's Reviewed
+Families table also shows each Family's status)
+([#932](https://github.com/epiphany40223/parishkit/issues/932)). `--names` and
 `--timezone` go together, and `--format` needs `--names` (`usage`
 otherwise); without `--request-key` the new key is written to standard error
 first. Unlike the plain review, it changes state: it admits as a form post

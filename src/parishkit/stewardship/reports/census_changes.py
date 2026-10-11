@@ -74,13 +74,13 @@ STATUS_CHOICES = ("open", *[key for key in STATUSES if key not in HISTORY], "all
 ROUTES = ("any", "automatic", "by_hand")
 KINDS = ("any", "contact", "moved", "deceased", "new_member")
 EARLIEST, LATEST = date(2000, 1, 1), date(2999, 12, 31)
-# The download's columns. Member DUID is the page's column after Who, but
-# here it is appended last (#932), so a reader that finds the other columns
-# by position keeps working.
+# The download's columns: the page's columns, names and order (#932), so
+# Member DUID sits right after Who in every format.
 HEADINGS = (
     "Family",
     "Family DUID",
     "Who",
+    "Member DUID",
     "What changed",
     "ParishSoft now",
     "Family's answer",
@@ -88,7 +88,6 @@ HEADINGS = (
     "How it reaches ParishSoft",
     "Status",
     "Submitted",
-    "Member DUID",
 )
 # Relative PDF column widths, in percent of the page's body width. A
 # compact time ("Sep 30, 2026 12:04 PM") and the longest status ("Being
@@ -98,6 +97,7 @@ PDF_WEIGHTS = {
     "Family": 8,
     "Family DUID": 7,
     "Who": 9,
+    "Member DUID": 8,
     "What changed": 8,
     "ParishSoft now": 9,
     "Family's answer": 9,
@@ -105,7 +105,6 @@ PDF_WEIGHTS = {
     "How it reaches ParishSoft": 7,
     "Status": 12,
     "Submitted": 16,
-    "Member DUID": 8,
 }
 PRIVACY = "Sensitive parish report. Share only with authorized recipients."
 
@@ -466,6 +465,7 @@ def export_rows(result, zone, *, time_text=iso_time):
             row["family_name"],
             str(row["family_duid"]),
             row["who"],
+            export_member_duid(row),
             row["label"],
             row["parishsoft_now"],
             row["family_answer"],
@@ -473,14 +473,13 @@ def export_rows(result, zone, *, time_text=iso_time):
             row["route_label"],
             row["status_label"],
             time_text(row["submitted_at"].astimezone(zone)),
-            export_member_duid(row),
         )
         for row in result["rows"]
     ]
 
 
 def census_csv(result, zone):
-    """One CSV of the filtered rows: the page's columns, Member DUID last."""
+    """One CSV of the filtered rows: the page's columns in the page's order."""
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\r\n")
     writer.writerow(HEADINGS)
