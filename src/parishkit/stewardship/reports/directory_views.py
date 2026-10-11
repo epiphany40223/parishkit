@@ -11,6 +11,7 @@ to the page's own filters, so the reach the reader chose comes back when the
 mailing columns are turned off; the audit records the reach applied.
 """
 
+from urllib.parse import urlencode
 from uuid import uuid4
 
 from django.core.exceptions import ObjectDoesNotExist
@@ -70,8 +71,38 @@ def _principal(request, store, *, read_only=False):
 
 
 # Closed, non-private values a link may carry (GET): the reach presets (such
-# as "no campaign mail can reach") and the mailing-columns preset.
-LINK_PRESETS = frozenset({"reach", "mailing"})
+# as "no campaign mail can reach"), the mailing-columns preset and, for the
+# response dashboard's "Lists of Families" links (#933), the Response and
+# ParishSoft data to check choices, the response columns and the sort. Each
+# is a closed vocabulary ``DirectoryQuery.parse`` checks; search text and
+# exact codes stay POST only.
+LINK_PRESETS = frozenset({"reach", "mailing", "response", "responses", "check", "sort"})
+
+
+def page_address(report_url, query, *, postal):
+    """The address bar after an in-place answer (``data-page-address``, #536).
+
+    A preset link leaves its query in the address bar, so without this a
+    Reload or Back after a filter change would silently bring the preset
+    back. ui-v1.js replaces the address with this one after each in-place
+    POST answer. When the filters are link-safe (no search and no exact
+    code) it is the page with the closed ``LINK_PRESETS`` values that differ
+    from the defaults, in the order the dashboard's links use, so a reload
+    keeps them (on the first page: the page number is not a preset).
+    Otherwise it is the bare page, since search text and codes never enter
+    a URL and the other filters alone would be a different list.
+    """
+    if query.search or query.exact_code:
+        return report_url
+    defaults = DirectoryQuery()
+    values = {
+        key: getattr(query, key)
+        for key in ("response", "responses", "check", "sort", "reach")
+        if getattr(query, key) != getattr(defaults, key)
+    }
+    if postal:
+        values["mailing"] = "yes"
+    return report_url + ("?" + urlencode(values) if values else "")
 
 
 def mailing_option(parameters):
@@ -159,9 +190,10 @@ def directory(request, campaign_id):
         service = runtime()
         principal = _principal(request, service.store)
         # Filters are private POST state. The exceptions are the closed link
-        # presets (?reach=neither, ?mailing=yes), which carry no private value
-        # and let other pages link to "Families no campaign mail can reach"
-        # and to the mailing columns.
+        # presets (LINK_PRESETS, such as ?reach=neither or ?mailing=yes),
+        # which carry no private value and let other pages link to "Families
+        # no campaign mail can reach", the mailing columns and the response
+        # dashboard's lists of Families.
         if request.GET and (
             request.method != "GET" or not set(request.GET) <= LINK_PRESETS
         ):
@@ -259,6 +291,7 @@ def directory(request, campaign_id):
                     "query_fields": query.form_values()
                     | {"mailing": "yes" if postal else "no"},
                     "report_url": report_url,
+                    "page_address": page_address(report_url, query, postal=postal),
                     "table": report_table(
                         report["rows"],
                         number=query.page,
