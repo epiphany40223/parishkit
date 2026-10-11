@@ -1,5 +1,11 @@
 # Stewardship login-rule autosave queue
 
+> **Retired (role autosave).** The [Users page](../specs/stewardship/admin-portal/spec.md#portal-user-management)
+> of [#952](https://github.com/epiphany40223/parishkit/issues/952) (slice 5)
+> replaced the role checkboxes' autosave: one users table, New and Edit user with Review and
+> Apply, and Delete through the shared dialog. This guide records the
+> earlier design and is kept for its history.
+
 This guide records the ninth slice of
 [ADM-07](../tasks/stewardship/admin-portal.md#adm-07-user-rules-and-ministry-assignments):
 the autosave queue the

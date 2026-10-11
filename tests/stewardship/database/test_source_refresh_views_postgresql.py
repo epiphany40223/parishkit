@@ -26,7 +26,7 @@ from .test_source_families_postgresql import (
     source_singletons,  # noqa: F401
 )
 from .test_source_requests_postgresql import claim
-from .test_user_views_postgresql import add_rules
+from .user_builders import add_rules
 
 pytestmark = pytest.mark.django_db(transaction=True)
 URL = "/admin/parish/parishsoft-refresh/"

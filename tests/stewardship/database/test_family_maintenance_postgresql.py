@@ -9,7 +9,7 @@ from parishkit.stewardship.audit.models import AuditEvent
 from .auth_builders import signed_in
 from .leader_builders import grant_role
 from .test_security_events_postgresql import home
-from .test_user_rule_views_postgresql import web
+from .user_builders import web
 
 pytestmark = pytest.mark.django_db(transaction=True)
 ROUTE = "/admin/mail/family-portal/"

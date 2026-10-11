@@ -241,12 +241,12 @@ PAGES = {
     # change was confirmed on when this sign-in remembers it.
     "configuration_request": Page(None, _("Change status")),
     # Users
-    # Keeps its name until NAV-15 (#796) reworks it into Sign-in rules.
-    "users": Page("users", _("Portal users")),
-    # Only the review of a change started on Portal users (a POST from that
-    # page) renders at these routes, so trails name them but never link them.
-    "user_rules": Page("users", _("Review sign-in rules"), "users", linkable=False),
-    "rule_request": Page("users", _("Rule change"), "user_rules"),
+    # One table of users (#952), with New and Edit user under it.
+    "users": Page("users", _("Users")),
+    "user_new": Page("users", _("New user"), "users"),
+    "user_edit": Page("users", _("Edit user"), "users"),
+    # Answers only the table's confirmation dialog, with a change's status.
+    "user_delete": Page("users", _("Delete user"), "users", linkable=False),
     # The Administrator's own automation sessions (ADM-11), and the approval
     # of a pending one, which the command line links to.
     "automation_access": Page("users", _("Automation access")),
@@ -564,9 +564,9 @@ NON_PAGES = frozenset(
         "retry_export_cleanup",
         "retry_family_preparation",
         "retry_weekly_digest",
-        "rule_apply",
-        "rule_base",
         "security_event_acknowledge",
+        # New user's in-place Email check and Name suggestions (#952), JSON.
+        "user_name_suggestions",
         "session_renew",
         "session_status",
         "setup",

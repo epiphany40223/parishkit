@@ -1,5 +1,11 @@
 # Portal users review
 
+> **Retired (Portal users page).** The [Users page](../specs/stewardship/admin-portal/spec.md#portal-user-management)
+> of [#952](https://github.com/epiphany40223/parishkit/issues/952) (slice 5)
+> replaced the Portal users page and its rule tables: one users table, New and Edit user with Review and
+> Apply, and Delete through the shared dialog. This guide records the
+> earlier design and is kept for its history.
+
 This Phase 5 increment begins at verified main `1070fd28`. It is the first slice
 of [ADM-07](../plans/stewardship/admin-portal.md#adm-07-user-rules-and-ministry-assignments):
 a read-only Administrator page showing who may sign in to the portal and why.

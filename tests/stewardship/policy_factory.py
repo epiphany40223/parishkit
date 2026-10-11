@@ -39,3 +39,16 @@ def assignment(email="leader@example.org", ministry=123, *, seeded=False):
             "operation_id": str(uuid4()),
         },
     }
+
+
+def user(email="admin@example.org", role="administrator", name=None):
+    """One users-form record (#952): an address, a Name and one role."""
+    return {
+        "id": str(uuid4()),
+        "values": {
+            "kind": "user",
+            "email": email,
+            "name": email.split("@", 1)[0] if name is None else name,
+            "role": role,
+        },
+    }

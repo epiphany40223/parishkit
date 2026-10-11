@@ -1,104 +1,62 @@
-{% extends 'stewardship/admin-base.html' %}{% load static i18n stewardship %}
-{% block title %}{% translate "Portal users" %}{% endblock %}
-{% block head %}<script src="{% static 'stewardship/users-v1.js' %}" defer></script>{% endblock %}
-{% block content %}
-<h1>{% translate "Portal users" %}</h1>
-{% comment %}Deliberately minimal (#953): #952 redesigns this page. Only the closed link filters travel, never an address (System logs' LINK_FIELDS).{% endcomment %}<p id="users-sign-in-activity"><a href="{% url 'admin:logs' %}?applied=yes&amp;audit=yes&amp;activity=sign_in">{% translate "See sign-in activity in System logs" %}</a></p>
-{% if upgrade %}<p id="users-upgrade-link"><a href="#upgrade-preview">{% translate "See the users upgrade preview" %}</a></p>{% endif %}
-<div data-rule-autosave data-apply-url="{% url 'admin:rule_apply' %}" data-request-url="{% url 'admin:rule_request' request_id='00000000-0000-4000-8000-000000000000' %}" data-base-url="{% url 'admin:rule_base' %}" data-base-digest="{{ base_digest }}"></div>
-{% if local_environment %}<p>{% translate "Who may sign in to this portal, and why. This page shows the applied login rules. An Administrator changes a rule from its row: the change is shown back for review and saved only when you confirm it. An exact address always replaces its domain rule for that person." %}</p>
-<p>{% translate "A successful sign-in is one that was allowed and opened a session. A sign-in attempt that policy then refused is not counted. Times use your browser timezone when available; UTC is the fallback." %}</p>{% else %}<p>{% translate "Who may sign in to this portal with Google, and why. This page shows the applied login rules. An Administrator changes a rule from its row: the change is shown back for review and saved only when you confirm it. An exact address always replaces its domain rule for that person." %}</p>
-<p>{% translate "A successful sign-in is one that was allowed and opened a session. A Google sign-in attempt that policy then refused is not counted. Times use your browser timezone when available; UTC is the fallback." %}</p>{% endif %}
-
-<h2 id="domain-rules">{% translate "Google Workspace hosted-domain rules" %}</h2>
-<p>{% translate "A domain rule matches only a sign-in whose Google account presents that signed hosted-domain claim. An email address that merely ends with the domain never matches, so personal or consumer accounts must be authorized by exact address. A domain rule can never grant Administrator." %}</p>
-{% comment %}Every table here keeps only its anchor id, so a full load lands on
-it, and none re-sorts in place (#478): the domain and address tables carry the
-autosave role forms users-v1.js wires once at load, and a page where one table
-swaps in place while another loads in full would lose the in-place choice.
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Users" %}{% endblock %}
+{% block content %}{% comment %}
+The Users page (#952; user_views.users, admin-portal spec "Portal user
+management"). New user above one table of users; each row is one line, a long
+email or Name cut short with an ellipsis and shown whole in its title (the
+#952 exception to "Table fit and row height"). The table is an action table
+(#879): its region (id table.anchor) holds the navigators, the delete form,
+the table and the confirmation dialog, and is what ui-v1.js redraws from
+data-refresh-url (this page's address, sort and page included) once a
+deletion is applied. The delete form holds only its CSRF token and the
+applied version: users are deleted one at a time, so there is no selection
+column. The reader's own row has no Delete (an Administrator never deletes
+themselves, Administrator decision 2026-10-11), and neither has the only
+Administrator's, who is always the reader; the line under the table says
+why, and the server refuses it anyway.
+The rows have no Sign-in activity control (Administrator, 2026-10-11): the
+link above the table opens all sign-in activity in System logs, and Edit user
+lists one button per recorded Google identity (#953).
+Last successful sign-in uses the compact parish date format in the browser's
+time zone (data-compact, date-format-v1.js), as other dense tables do
+(Administrator, 2026-10-11); the server sorts by the timestamp itself.
 {% endcomment %}
-<div id="{{ domain_table.anchor }}">
-{% translate "Hosted-domain rule pages" as domain_label %}{% include "stewardship/table-navigator.html" with table=domain_table label=domain_label %}
-<div class="table-scroll" tabindex="0" role="region" aria-labelledby="domain-rules"><table class="data-table">
-<caption>{% translate "Hosted-domain rules" %}</caption><thead><tr>{% translate "Domain" as heading %}{% sort_heading domain_table "domain" heading %}{% translate "Roles" as heading %}{% sort_heading domain_table "roles" heading %}{% translate "Recorded Google accounts this rule authorizes" as heading %}{% sort_heading domain_table "authorized" heading %}{% translate "Last successful sign-in" as heading %}{% sort_heading domain_table "last_login" heading %}{% translate "Warnings" as heading %}{% sort_heading domain_table "warnings" heading %}<th scope="col">{% translate "Change" %}</th></tr></thead><tbody>
-{% for row in domain_table.rows %}<tr>
-<th scope="row">{{ row.domain }}</th>
-<td>{% for role in row.roles %}{{ role }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
-<td>{{ row.authorized|number }}</td>
-<td>{% if row.last_login %}<time datetime="{{ row.last_login|date:'c' }}" data-local-instant>{{ row.last_login|date:'c' }}</time>{% else %}{% translate "None on record" %}{% endif %}</td>
-<td>{% if row.warnings %}<ul>{% for warning in row.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>{% else %}{% translate "None" %}{% endif %}</td>
-<td><form method="post" action="{% url 'admin:user_rules' %}" data-rule-row>{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="kind" value="domain"><input type="hidden" name="identity" value="{{ row.domain }}">
-<fieldset><legend>{% blocktranslate with domain=row.domain %}Roles for {{ domain }}{% endblocktranslate %}</legend>
-{% for key,label in roles %}<label><input type="checkbox" name="roles" value="{{ key }}"{% if key in row.configured %} checked{% endif %}{% if key == 'administrator' %} disabled{% endif %}> {{ label }}</label> {% endfor %}
-{% button type="submit" name="operation" value="set" %}{% translate "Review role change" %}{% endbutton %} {% button type="submit" name="operation" value="remove" %}{% translate "Review removal" %}{% endbutton %}</fieldset></form></td></tr>
-{% empty %}<tr><td colspan="6">{% translate "No hosted-domain rules." %}</td></tr>{% endfor %}</tbody></table></div>
-{% include "stewardship/table-navigator.html" with table=domain_table label=domain_label %}
+<h1>{% translate "Users" %}</h1>
+{% aboutpage "users" %}<p>{% if local_environment %}{% translate "Everyone who may sign in to the Admin portal. Each user is one email address with a Name and one role; an address that is not a user can't sign in." %}{% else %}{% translate "Everyone who may sign in to the Admin portal with Google. Each user is one email address with a Name and one role; an address that is not a user can't sign in." %}{% endif %}</p>
+<p>{% translate "Roles are levels, and each includes everything below it. A Ministry leader sees only the Ministries they lead in ParishSoft. Staff also see every Ministry. An Administrator can see and change everything, including this page." %}</p>
+<p>{% translate "New user adds someone; Edit changes a user's Name or role. Either shows what would change before you apply it, and nothing takes effect until the status says Applied. Delete asks first; the person can no longer sign in, and their open sessions end on their next request. To change an address, delete the user and add the new address." %}</p>
+<p>{% translate "A successful sign-in is one that was allowed and opened a session; a refused attempt is not counted. Times are shown in your computer's time zone." %}</p>{% endaboutpage %}
+<p id="users-sign-in-activity"><a href="{% url 'admin:logs' %}?applied=yes&amp;audit=yes&amp;activity=sign_in">{% translate "See sign-in activity in System logs" %}</a></p>
+<p>{% button href=new_url %}{% translate "New user" %}{% endbutton %}</p>
+{% translate "User pages" as navigator_label %}{% translate "Users" as caption %}
+<section id="{{ table.anchor }}" class="panel" data-table-region data-refresh-url="{{ refresh_url }}" aria-labelledby="users-table-title">
+<h2 id="users-table-title" tabindex="-1">{% translate "Users" %}</h2>
+{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
+<form method="post" action="{{ delete_url }}" id="user-actions" data-row-actions>{% csrf_token %}<input type="hidden" name="base_digest" value="{{ base_digest }}"></form>
+<div class="table-scroll" tabindex="0" role="region" aria-labelledby="users-table-caption">
+<table class="data-table users-table">
+  <caption id="users-table-caption" class="visually-hidden">{{ caption }}</caption>
+  <thead><tr>
+    {% translate "Email" as heading %}{% sort_heading table "email" heading %}
+    {% translate "Name" as heading %}{% sort_heading table "name" heading %}
+    {% translate "Role" as heading %}{% sort_heading table "role" heading %}
+    {% translate "Last successful sign-in" as heading %}{% sort_heading table "last_login" heading %}
+    <th scope="col">{% translate "Actions" %}</th>
+  </tr></thead>
+  <tbody>
+  {% for row in table.rows %}<tr>
+    <th scope="row"><span class="cell-ellipsis" title="{{ row.email }}">{{ row.email }}</span></th>
+    <td><span class="cell-ellipsis" title="{{ row.name }}">{{ row.name }}</span></td>
+    <td class="nowrap">{{ row.role_label }}</td>
+    <td class="nowrap">{% if row.last_login %}<time datetime="{{ row.last_login|instant }}" data-local-instant data-compact>{{ row.last_login|instant }}</time>{% else %}{% translate "Never" %}{% endif %}</td>
+    {% if row.deletable %}{% table_actions name=row.email edit=row.edit_url delete=row.id confirm="user-delete" field="user_id" confirm_name=row.confirm_name %}{% else %}{% table_actions name=row.email edit=row.edit_url %}{% endif %}
+  </tr>{% empty %}<tr><td colspan="5">{% translate "No users." %}</td></tr>{% endfor %}
+  </tbody>
+</table>
 </div>
-{% comment %}A domain rule needs a domain and at least one role (the server refuses an empty one); Review waits for both, with a hint (#563).{% endcomment %}<form method="post" action="{% url 'admin:user_rules' %}" data-require-complete>{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="kind" value="domain"><input type="hidden" name="operation" value="set">
-<fieldset><legend>{% translate "Add a hosted-domain rule" %}</legend>
-<label for="new-domain">{% translate "Hosted domain" %}</label> <input id="new-domain" type="text" name="identity" maxlength="253" required inputmode="url" autocomplete="off" data-missing-hint="{% translate 'Enter the hosted domain to review the rule.' %}">
-<span data-require-one data-missing-hint="{% translate 'Tick at least one role for the domain.' %}">{% for key,label in roles %}{% if key != 'administrator' %}<label><input type="checkbox" name="roles" value="{{ key }}"> {{ label }}</label> {% endif %}{% endfor %}</span>
-{% button type="submit" aria-describedby="new-domain-hint" %}{% translate "Review new domain rule" %}{% endbutton %}<p class="help" id="new-domain-hint" data-complete-hint hidden></p></fieldset></form>
-
-<h2 id="address-rules">{% translate "Exact-address rules" %}</h2>
-<p>{% translate "Roles granted now are what current policy gives this address. Administrator includes Staff and Ministry leader. A Ministry leader sees the Ministries of their ParishSoft Ministry roles, set on Campaign settings. Whether a particular Google identity may sign in at all is separate: a disabled identity is refused whatever its address is granted, and a warning says so. Ticking no role at all is an explicit deny." %}</p>
-<div id="{{ address_table.anchor }}">
-{% translate "Exact-address rule pages" as address_label %}{% include "stewardship/table-navigator.html" with table=address_table label=address_label %}
-<div class="table-scroll" tabindex="0" role="region" aria-labelledby="address-rules"><table class="data-table">
-<caption>{% translate "Exact-address rules" %}</caption><thead><tr>{% translate "Address" as heading %}{% sort_heading address_table "email" heading %}{% translate "Rule origin" as heading %}{% sort_heading address_table "origin" heading %}{% translate "Configured roles and each grant's origin" as heading %}{% sort_heading address_table "configured" heading %}{% translate "Roles granted now" as heading %}{% sort_heading address_table "granted" heading %}{% translate "Last successful sign-in" as heading %}{% sort_heading address_table "last_login" heading %}{% translate "Warnings" as heading %}{% sort_heading address_table "warnings" heading %}<th scope="col">{% translate "Change" %}</th></tr></thead><tbody>
-{% for row in address_table.rows %}<tr>
-<th scope="row">{{ row.email }}</th>
-<td>{{ row.origin }}</td>
-<td>{% if row.deny %}<strong>{% translate "Explicit deny" %}</strong><br>{% translate "This address may not sign in, whatever its domain rule allows." %}{% else %}{% for grant in row.grants %}{{ grant.role }}{% if grant.origins %} ({% for origin in grant.origins %}{{ origin }}{% if not forloop.last %}; {% endif %}{% endfor %}){% endif %}{% if not forloop.last %}<br>{% endif %}{% endfor %}{% endif %}</td>
-<td>{% for role in row.granted %}{{ role }}{% if not forloop.last %}, {% endif %}{% empty %}{% translate "None" %}{% endfor %}</td>
-<td>{% if row.last_login %}<time datetime="{{ row.last_login|date:'c' }}" data-local-instant>{{ row.last_login|date:'c' }}</time>{% else %}{% translate "None on record" %}{% endif %}
-{% comment %}Each recorded Google identity's sign-in activity, refusals included (#953), on System logs. Deliberately minimal, because #952 redesigns this page. The account id is a private filter, so it travels only in this CSRF POST body, never in an address (System logs' LINK_FIELDS).{% endcomment %}{% for account in row.accounts %}<form method="post" action="{% url 'admin:logs' %}" class="inline-form">{% csrf_token %}<input type="hidden" name="applied" value="yes"><input type="hidden" name="audit" value="yes"><input type="hidden" name="activity" value="sign_in"><input type="hidden" name="actor" value="{{ account }}">{% if row.accounts|length > 1 %}{% blocktranslate with email=row.email number=forloop.counter asvar account_label %}Sign-in activity for {{ email }}, Google account {{ number }}{% endblocktranslate %}{% else %}{% blocktranslate with email=row.email asvar account_label %}Sign-in activity for {{ email }}{% endblocktranslate %}{% endif %}{% button type="submit" variant="link" aria-label=account_label title=account_label %}{% if row.accounts|length > 1 %}{% blocktranslate with number=forloop.counter %}Sign-in activity (account {{ number }}){% endblocktranslate %}{% else %}{% translate "Sign-in activity" %}{% endif %}{% endbutton %}</form>{% endfor %}</td>
-<td>{% if row.warnings %}<ul>{% for warning in row.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>{% else %}{% translate "None" %}{% endif %}</td>
-<td><form method="post" action="{% url 'admin:user_rules' %}" data-rule-row>{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="kind" value="address"><input type="hidden" name="identity" value="{{ row.email }}">
-<fieldset><legend>{% blocktranslate with email=row.email %}Roles for {{ email }}{% endblocktranslate %}</legend>
-{% for key,label in roles %}<label><input type="checkbox" name="roles" value="{{ key }}"{% if key in row.configured %} checked{% endif %}> {{ label }}</label> {% endfor %}
-{% button type="submit" name="operation" value="set" %}{% translate "Review role change" %}{% endbutton %} {% button type="submit" name="operation" value="remove" %}{% translate "Review removal" %}{% endbutton %}</fieldset></form></td></tr>
-{% empty %}<tr><td colspan="7">{% translate "No exact-address rules." %}</td></tr>{% endfor %}</tbody></table></div>
-{% include "stewardship/table-navigator.html" with table=address_table label=address_label %}
-</div>
-<form method="post" action="{% url 'admin:user_rules' %}">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="kind" value="address"><input type="hidden" name="operation" value="set">
-<fieldset><legend>{% translate "Add an exact-address rule" %}</legend>
-<label for="new-address">{% translate "Email address" %}</label> <input id="new-address" name="identity" type="email" maxlength="254" required autocomplete="off">
-{% for key,label in roles %}<label><input type="checkbox" name="roles" value="{{ key }}"> {{ label }}</label> {% endfor %}
-{% button type="submit" %}{% translate "Review new address rule" %}{% endbutton %}</fieldset></form>
-
-{% if upgrade %}{% comment %}The read-only users upgrade preview (#952, operations "Users upgrade from sign-in rules"): the same document_preview the offline conversion and pk-admin users preview-upgrade print. Gone once the configuration holds users. Like the tables above, its table re-sorts by a full load (#478).{% endcomment %}
-<section id="upgrade-preview" aria-labelledby="upgrade-preview-heading">
-<h2 id="upgrade-preview-heading">{% translate "Upgrade preview" %}</h2>
-<p>{% translate "A coming release replaces these sign-in rules with one list of users, each with one role. This preview shows what that upgrade would do with today's rules. It changes nothing." %}</p>
-<p>{% translate "Anyone you expect who is not listed under Users after the upgrade will not be able to sign in. Add an exact-address rule for them before the upgrade." %}</p>
-<h3 id="upgrade-administrators">{% translate "Administrators kept" %}</h3>
-<p>{% blocktranslate count counter=upgrade.administrators|length %}This address keeps Administrator. Whoever runs the upgrade must confirm this exact list.{% plural %}These {{ counter }} addresses keep Administrator. Whoever runs the upgrade must confirm this exact list.{% endblocktranslate %}</p>
-<ul aria-labelledby="upgrade-administrators">{% for email in upgrade.administrators %}<li>{{ email }}</li>{% endfor %}</ul>
-<h3 id="upgrade-users">{% translate "Users after the upgrade" %}</h3>
-<div id="{{ upgrade_table.anchor }}">
-{% translate "Users after the upgrade pages" as upgrade_label %}{% include "stewardship/table-navigator.html" with table=upgrade_table label=upgrade_label %}
-<div class="table-scroll" tabindex="0" role="region" aria-labelledby="upgrade-users"><table class="data-table">
-<caption>{% translate "Users after the upgrade" %}</caption><thead><tr>{% translate "Email" as heading %}{% sort_heading upgrade_table "email" heading %}{% translate "Name" as heading %}{% sort_heading upgrade_table "name" heading %}{% translate "Role" as heading %}{% sort_heading upgrade_table "role" heading %}{% translate "Comes from" as heading %}{% sort_heading upgrade_table "source" heading %}</tr></thead><tbody>
-{% for row in upgrade_table.rows %}<tr>
-<th scope="row">{{ row.email }}</th>
-<td>{{ row.name }}</td>
-<td>{{ row.role_label }}</td>
-<td>{% if row.source.kind == "address" %}{% blocktranslate with roles=row.source.roles|join:", " %}Exact-address rule ({{ roles }}){% endblocktranslate %}{% else %}{{ row.source_label }}{% endif %}</td></tr>
-{% empty %}<tr><td colspan="4">{% translate "No users. Add an exact-address rule for each person who should keep signing in." %}</td></tr>{% endfor %}</tbody></table></div>
-{% include "stewardship/table-navigator.html" with table=upgrade_table label=upgrade_label %}
-</div>
-<h3 id="upgrade-domains">{% translate "Hosted-domain rules" %}</h3>
-<p>{% translate "Hosted-domain rules go away. Each person a rule lets in who has signed in before becomes a user with the rule's highest role." %}</p>
-<ul aria-labelledby="upgrade-domains">{% for rule in upgrade.domain_rules %}<li>{% blocktranslate with domain=rule.domain roles=rule.roles|join:", " role=rule.role count counter=rule.count %}{{ domain }} ({{ roles }}): {{ counter }} person becomes a {{ role }} user.{% plural %}{{ domain }} ({{ roles }}): {{ counter }} people become {{ role }} users.{% endblocktranslate %}</li>{% empty %}<li>{% translate "None." %}</li>{% endfor %}</ul>
-<h3 id="upgrade-denied">{% translate "Deny rules dropped" %}</h3>
-<p>{% translate "An address with no user cannot sign in, so deny rules are no longer needed." %}</p>
-<ul aria-labelledby="upgrade-denied">{% for rule in upgrade.dropped %}<li>{{ rule.email }} ({{ rule.name }}): {% if rule.overrides_identity %}{% translate "it refuses a recorded Google account today, which stays refused." %}{% else %}{% translate "no recorded Google account uses this address." %}{% endif %}</li>{% empty %}<li>{% translate "None." %}</li>{% endfor %}</ul>
-<h3 id="upgrade-not-kept">{% translate "Not carried over" %}</h3>
-<p id="upgrade-never">{% translate "Recorded Google accounts a hosted-domain rule lets in that never signed in:" %}</p>
-<ul aria-labelledby="upgrade-never">{% for email in upgrade.never_signed_in %}<li>{{ email }}</li>{% empty %}<li>{% translate "None." %}</li>{% endfor %}</ul>
-<p id="upgrade-disabled">{% translate "Disabled Google accounts a hosted-domain rule would let in:" %}</p>
-<ul aria-labelledby="upgrade-disabled">{% for email in upgrade.disabled %}<li>{{ email }}</li>{% empty %}<li>{% translate "None." %}</li>{% endfor %}</ul>
-</section>{% endif %}
-
+{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
+<p class="help" id="users-delete-reason">{{ delete_reason }}</p>
+{% translate "Delete {name}?" as title_one %}{% translate "Delete {count} users?" as title_many %}{% translate "This person can no longer sign in to the Admin portal, and their open sessions end on their next request. The address can be added again later as a new user." as body %}{% translate "Delete" as accept %}
+{% include "stewardship/components/confirm-dialog.html" with dialog_id="user-delete" form_id="user-actions" fallback="users-table-title" title_one=title_one title_many=title_many body=body accept=accept done_one=_("Deleted {name}.") done_many=_("Deleted {count} users.") %}
+</section>
 {% endblock %}
