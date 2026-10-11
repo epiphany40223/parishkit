@@ -114,12 +114,18 @@ def test_logo_becomes_public_only_after_yaml_activation(auth_service, google, me
     followed = browser.get(location)
     assert flow_steps(followed.content) == (STEPS, "Apply")
     assert "Applied: your change is saved" in region(followed.content)
-    assert b'<img src="/branding/' in followed.content
+    # The current logos are the four just applied.
+    for asset in assets:
+        assert f'<img src="/branding/{asset.pk}.png"'.encode() in followed.content
     # Change status itself still returns to Parish logos (#196).
     status = browser.get(f"/admin/changes/{request.pk}/").content
     assert f'<a href="{URL}">Return to Parish logos</a>'.encode() in status
-    # The one-time review no longer opens once its logos are chosen.
-    assert browser.get(preview).status_code != 200
+    # The one-time review no longer opens once its logos are chosen: the
+    # page explains it where the review would be.
+    reloaded = browser.get(preview)
+    assert reloaded.status_code == 409
+    assert "can no longer be reviewed" in region(reloaded.content)
+    assert b'name="preview"' not in reloaded.content
     for asset in assets:
         response = browser.get(f"/branding/{asset.pk}.png")
         assert response.status_code == 200
@@ -146,7 +152,9 @@ def test_other_login_cannot_preview_an_unapplied_upload(auth_service, google, me
     preview = stage(browser, auth_service)
     asset = BrandingAsset.objects.first()
     another, _ = signed_in()
-    assert another.get(preview).status_code == 404
+    elsewhere = another.get(preview)
+    assert elsewhere.status_code == 404
+    assert "can no longer be reviewed" in region(elsewhere.content)
     assert another.get(f"{URL}assets/{asset.pk}.png").status_code == 404
     assert another.get(f"/branding/{asset.pk}.png").status_code == 404
 
@@ -163,13 +171,20 @@ def test_preview_refuses_a_changed_yaml_base(
     original = branding_views.editable_configuration
 
     def changed_after_verification(service):
-        """Change only the subsequent external read, after the coherent SQL check."""
+        """Change only the next external read, after the coherent SQL check.
+
+        The race is one read: the page that then explains the refusal in
+        its review region (#750) reads the store as it really is.
+        """
         result = original(service)
-        monkeypatch.setattr(
-            service.store,
-            "active",
-            lambda: None if missing else SimpleNamespace(digest="f" * 64),
-        )
+        active = service.store.active
+
+        def raced():
+            """The changed (or missing) version, once."""
+            monkeypatch.setattr(service.store, "active", active)
+            return None if missing else SimpleNamespace(digest="f" * 64)
+
+        monkeypatch.setattr(service.store, "active", raced)
         return result
 
     monkeypatch.setattr(
@@ -178,6 +193,7 @@ def test_preview_refuses_a_changed_yaml_base(
     with task_login(ServiceRole.WEB):
         response = browser.get(preview)
     assert response.status_code == 409
+    assert "can no longer be reviewed" in region(response.content)
     assert b'name="preview"' not in response.content
     assert not ConfigurationChangeRequest.objects.exists()
 
@@ -237,6 +253,18 @@ def test_a_refused_apply_is_explained_in_place(auth_service, google, media):
         refused = post(browser, preview, {"action": "confirm", "preview": token})
         assert refused.status_code == 409
         assert "Upload the logo again." in region(refused.content)
+        # The form and the current logos are redrawn at the current version,
+        # though Apply's answer otherwise takes only the review region, so
+        # the next upload is accepted.
+        body = refused.content.decode()
+        assert 'id="branding-upload" data-in-place-region data-in-place-always' in body
+        assert "data-in-place-region data-in-place-always aria-labelledby" in body
+        assert f'name="base_digest" value="{store.active().digest}"' in body
+        # Reloading the review explains it in place too.
+        reloaded = browser.get(preview)
+        assert reloaded.status_code == 409
+        assert "can no longer be reviewed" in region(reloaded.content)
+        assert stage(browser, auth_service).startswith(f"{URL}?review=")
         # Apply posts only to the address naming its staged logos.
         for elsewhere in (URL, f"{URL}?review={uuid4()}"):
             assert (

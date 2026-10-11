@@ -45,6 +45,8 @@ def test_upload_review_apply_and_status_happen_in_place(page, component_origin):
     Apply shows the change's status there, and once applied the page
     refreshes itself quietly with the new current logos below. Nothing
     reloads, the form never moves, and the indicator follows each step."""
+    from playwright.sync_api import expect
+
     page.goto(component_origin + PAGE)
     page.evaluate(MARK)
     # The current logos sit below the review region, so logos appearing
@@ -57,7 +59,7 @@ def test_upload_review_apply_and_status_happen_in_place(page, component_origin):
     region = page.locator("#settings-review")
     visible(region.get_by_role("heading", name="Review your changes"))
     assert page.evaluate(FOCUSED, "#settings-review-title")
-    assert region.locator("figure").count() == 4
+    expect(region.locator("figure")).to_have_count(4)
     assert current_step(page) == "Review"
     assert page.url == f"{component_origin}{REVIEW}#settings-review"
     assert page.evaluate(FORM_PLACE) == top
@@ -66,7 +68,7 @@ def test_upload_review_apply_and_status_happen_in_place(page, component_origin):
     assert current_step(page) == "Apply"
     visible(region.get_by_role("heading", name="Applied: your change is saved"))
     # The quiet refresh shows the new current logos.
-    assert page.locator("#branding-current figure").count() == 4
+    expect(page.locator("#branding-current figure")).to_have_count(4)
     assert PENDING.split("?")[1] in page.url
     assert page.evaluate(FORM_PLACE) == top
     assert page.evaluate(MARKED) == "kept"

@@ -223,12 +223,13 @@ def _scope(request, bundle_id):
     return scope
 
 
-def _page(request, service, configuration, form, *, status=200, **region):
+def _page(request, service, configuration, form, *, status=200, redraw=False, **region):
     """Render the upload form, its review region and the current logos.
 
     ``region`` is ``review_region``'s ``review``, ``receipt``, ``refusal`` or
     ``message``; the step indicator follows it through edit, review and
-    apply (#196), all on this page.
+    apply (#196), all on this page. ``redraw`` marks the form and the
+    current logos to be redrawn even by Apply's answer.
     """
     current = configuration.active_configuration.parish
     assets = BrandingAsset.objects.filter(
@@ -249,6 +250,10 @@ def _page(request, service, configuration, form, *, status=200, **region):
         {
             "form": form,
             "assets": assets,
+            # A refused Apply's answer redraws the form and the current
+            # logos at the current version (data-in-place-always), though
+            # Apply's answer otherwise takes only the review region.
+            "redraw": redraw,
             # A refused upload's errors are summarized in the review region
             # too, linked to its field, where focus then goes.
             **review_region("branding_settings", form, **region),
@@ -258,6 +263,27 @@ def _page(request, service, configuration, form, *, status=200, **region):
     if status != 200:
         response.stewardship_safe_error = True
     return _checked(request, service, response)
+
+
+# Why staged logos cannot be used: they expired after a day, belong to
+# another sign-in, were already applied, or the settings changed since.
+EXPIRED = _(
+    "These logos expired, or the settings changed after they were uploaded, "
+    "so they were not used. Upload the logo again."
+)
+UNREVIEWABLE = _(
+    "These uploaded logos can no longer be reviewed: they were already "
+    "applied, expired after a day, or the settings changed since they were "
+    "uploaded. Upload the logo again."
+)
+
+
+def _unreviewable(error):
+    """The review region's values and status for staged logos that cannot
+    be reviewed (a reload of an old review address): the page itself, with
+    the explanation where the review would be. An unknown or another
+    sign-in's upload is 404; an expired, applied or stale one 409."""
+    return {"message": UNREVIEWABLE}, 404 if isinstance(error, LookupError) else 409
 
 
 @require_http_methods(["GET", "HEAD", "POST"])
@@ -303,20 +329,11 @@ def branding_settings(request):
                     ),
                 )
             except UserFacingStale as error:
-                region, status = {"refusal": error.refusal}, 409
+                region, status = {"refusal": error.refusal, "redraw": True}, 409
             except StaleRecordError:
                 # Staged logos are tied to the settings they were uploaded
                 # against and to this sign-in, and expire after a day.
-                region, status = (
-                    {
-                        "message": _(
-                            "These logos expired, or the settings changed after they "
-                            "were uploaded, so they were not used. Upload the logo "
-                            "again."
-                        )
-                    },
-                    409,
-                )
+                region, status = {"message": EXPIRED, "redraw": True}, 409
         elif request.method == "POST":
             try:
                 redirect, form = _upload(request, service)
@@ -328,22 +345,26 @@ def branding_settings(request):
                 if redirect is not None:
                     return _checked(request, service, redirect)
                 status = 400
-        # The staged upload is read first, then the configuration it is
-        # reviewed against (as the separate review page did).
-        staged = (
-            staged_bundle(request, service, bundle_id)
-            if request.method != "POST" and bundle_id is not None
-            else None
-        )
+        if request.method != "POST" and "request" in selected:
+            # The change's status is read first, as on Parish settings.
+            with transaction.atomic():
+                region["receipt"] = requested_status(
+                    request, service, actor, request.GET
+                )
+        staged = None
+        if request.method != "POST" and bundle_id is not None:
+            # The staged upload is read before the configuration it is
+            # reviewed against (as the separate review page did).
+            try:
+                staged = staged_bundle(request, service, bundle_id)
+            except (StaleRecordError, LookupError, ConfigError) as error:
+                region, status = _unreviewable(error)
         configuration = editable_configuration(service)
-        if request.method != "POST":
-            if staged is not None:
+        if staged is not None:
+            try:
                 region["review"] = _review(service, actor, configuration, staged)
-            elif "request" in selected:
-                with transaction.atomic():
-                    region["receipt"] = requested_status(
-                        request, service, actor, request.GET
-                    )
+            except StaleRecordError as error:
+                region, status = _unreviewable(error)
         form = form or LogoForm(
             initial={"base_digest": configuration.active_configuration.digest}
         )
