@@ -869,7 +869,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `chrome` | (shared header and banners) | Every page | Administrator, Staff, Ministry leader | Every Admin page (header and banners) | `/admin/*` | (same) | Acknowledge stays on the current page (#519). |
 | `login` | Administration sign-in | (outside the menu) | Anyone | (same) | `/admin/login` | `/admin/login/` |  |
 | `local_sign_in` | Local test sign-in | (outside the menu) | Anyone | (same) | `/admin/local/sign-in` | `/admin/local/sign-in/` | LOCAL only. |
-| `maintenance` | The system is temporarily unavailable | (outside the menu) | Administrator, Staff, Ministry leader | (same) | `/admin/maintenance` | `/admin/maintenance/` | Decision 12: restore-review dead end. |
+| `maintenance` | Restore review | (outside the menu) | Administrator | The site is being restored (Staff, Ministry leader) | `/admin/maintenance` | `/admin/maintenance/` | Decision 12: the [restore review page](#restore-release) (#537). Staff and Ministry leaders see a plain notice. |
 | `availability_setup` | The system is not configured yet | (outside the menu) | Administrator, Staff, Ministry leader | (same) | (any Admin URL before setup completes, non-Administrator) | (any Admin URL before setup completes) |  |
 | `error_page` | _error title_ | (outside the menu) | Administrator, Staff, Ministry leader | _error title_ (e.g. Check your entries, This information changed, Access unavailable, Page unavailable, Page not found, Confirm it's you) | (any Admin URL that fails) | (same) | Object-named (exception); offers a way back to the page or Home. |
 | `setup` | Initial setup | Setup stepper | Administrator | (same) | `/admin/setup` | `/admin/setup/` |  |
@@ -950,8 +950,8 @@ registry and the rendered pages.
    configured yet, and error pages) shows a breadcrumb whose parent crumb is a
    link the viewer may open, or a "Return to" link when the parent cannot be
    linked. An error page offers a way back to the page the reader came from,
-   or to Home; the maintenance and not-configured pages offer sign-out (the
-   restore-review case is #537). Templates do not hand-write back links that
+   or to Home; the Restore review, maintenance and not-configured pages
+   offer sign-out. Templates do not hand-write back links that
    repeat the trail.
 4. **One name.** A menu entry's page heading equals its menu label; a child
    page's heading equals its breadcrumb label; the browser title starts with
@@ -1083,7 +1083,8 @@ follows them.
     deployment has never had a campaign (#142; before #142 it was the setup
     wizard's First campaign step).
 12. **Should the restore-review maintenance page get a way forward?** Yes, in
-    its own issue: #537 (as proposed).
+    its own issue: #537 (as proposed); it is the
+    [Restore review page](#restore-release).
 13. **Split Portal users into separate entries?** Superseded by the Users
     revamp (Administrator, 2026-10-10,
     [#952](https://github.com/epiphany40223/parishkit/issues/952)): sign-in
@@ -2907,8 +2908,41 @@ other high-impact actions; the session and sign-in instant are recorded with
 the decision. Like the backup request guard, the SQL check proves a live,
 recent session row, not that a real Google round trip happened: a compromised
 web process could present one. Listing held emails needs no fresh sign-in,
-because a hold only keeps mail back. The page that shows what was restored, lists the held emails by
-send, and offers settlement and release is #537's second part.
+because a hold only keeps mail back.
+
+**The Restore review page.** During a review the access gate sends an
+Administrator to the Restore review page (`/admin/maintenance`); Staff and
+Ministry leaders see a plain "The site is being restored" notice, and Families
+the neutral maintenance page. The page shows when the backup was taken and when
+it was restored, what may be lost between the two (Family responses, Staff and
+Administrator changes, sent emails, ParishSoft refreshes), and the current
+campaign. In Production it finds the held emails on request and lists them by
+send (the invitation and each reminder, by due date) with how many are not
+decided, assumed sent, or to be sent again. It also counts the emails that
+were being handed to the provider at the backup, which the delivery warning
+settles after release. Each send offers "Assume these were sent" and "Send
+these again"; each shows the exact count and asks for a short note before the
+confirm (unavailable until the note is written), and a count that changed in
+the meantime settles nothing. "Send these again" is unavailable, with its
+reason beside it, and a posted one is refused with nothing changed, when
+another restore's undecided or assumed-sent hold still keeps one of the
+send's emails back (a resend would send nothing) or a later reminder already
+reached one of its Families or is on its way (it would arrive out of order).
+A refused release says why: emails that still need a hold, or a purge or
+campaign change still running. Counts name only emails
+that would be sent now; holds of Families that cannot be emailed, reminders
+waiting for an undecided invitation, and invitations only a deliverability
+change would retry are shown apart. "Release the site" stays unavailable, with
+its reason beside it, until no email still needs a hold. Its preview says what
+Families get as things stand (open, mail paused, not yet open, Testing or
+closed), how many held emails stay held, and how many Families' reminders an
+undecided invitation keeps back, then releases and ends on Home. Every control
+acts in place, and a step's outcome or refusal (with the step-up for a stale
+sign-in) is drawn after the controls of its own panel, so nothing moves under
+the pointer ([UX conventions](../ui-conventions/spec.md#no-layout-shift)).
+Times are browser-local, the due times in the held-email table in the compact
+format. After release the page is gone; a page for deciding the remaining
+holds is #757.
 
 ### Live delivery pause
 
@@ -5185,7 +5219,7 @@ or cannot do them at all:
   must not become control of the server.
 - **Restore and the restore drill.** They need the backup private key,
   which is never on the server, and they stop the services the portal runs
-  on. The restore review page that follows a restore is #537.
+  on. The [Restore review page](#restore-release) follows a restore.
 - **Backup keys:** making the key pair, opening backups, answering the key
   challenge (`backup-keygen`, `backup-open`, `backup-prove`) and installing
   the first public key. Replacing the public key is already a portal action.
