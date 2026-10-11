@@ -1574,25 +1574,25 @@ Both tables name each Family as the
 does (surname, then heads), on the page and in the downloads.
 The Members table follows the same
 [column order](../admin-portal/spec.md#table-column-order): Member (the row
-header), Family, Family DUID, Cannot participate and Latest response, each
-sortable. It has no Member DUID column yet: the installed selection does not
-return the Member's key, so adding one needs a forward migration
-([#932](https://github.com/epiphany40223/parishkit/issues/932)). Testing
-responses are excluded. Filters are a name or Family DUID search and a Show
-choice (`show`) of everything, cannot participate or cannot attend; any other
+header), Member DUID, Family, Family DUID, Cannot participate and Latest
+response, each sortable
+([#932](https://github.com/epiphany40223/parishkit/issues/932)). A proposed
+Member has no DUID yet, so that cell is empty and sorts after the others.
+Testing responses are excluded. Filters are a name or Family DUID search and
+a Show choice (`show`) of everything, cannot participate or cannot attend; any other
 value is refused. A summary counts each. Talents that older responses
 recorded are never shown: no talent column, count or filter appears on the
 page or in the downloads, and no Member is listed only for such talents. The
 report reads through `stewardship_limitations_report_v1`, which migration
-0056 installed in place of the former talent report and which takes the
-same `search` and `show` values.
+0056 installed in place of the former talent report; it takes the same
+`search` and `show` values and returns each Member row's Member DUID.
 
 The filtered result downloads immediately as CSV (Members, then Families),
 XLSX (one sheet each) or PDF (one table each under the page's table heading,
 the Families table starting on a new page, in the shared page frame with
 both counts), in a chosen display timezone. Each table has its page table's
-columns, names and order: Member, Family, Family DUID, Cannot participate in
-ministries and Latest response for Members, and Family, Family DUID and
+columns, names and order: Member, Member DUID, Family, Family DUID, Cannot
+participate in ministries and Latest response for Members, and Family, Family DUID and
 Latest response for Families (every listed Family cannot attend, so, as on
 the page, no column repeats it). Every format carries these columns and rows
 ([downloaded files](../ui-conventions/spec.md#downloaded-files)); the PDF

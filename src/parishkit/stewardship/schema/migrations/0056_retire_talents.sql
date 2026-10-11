@@ -17,8 +17,9 @@
 --                                     lookup and the talent text checks go
 --   stewardship_talent_defaults_v1    dropped: only that lookup called it
 --   stewardship_limitations_report_v1 new: the Limitations report, the
---                                     former talent report without talents;
---                                     its filter is `show` ('any',
+--                                     former talent report without talents
+--                                     and with each Member row's Member DUID
+--                                     (#932); its filter is `show` ('any',
 --                                     'cannot_serve' or 'cannot_attend')
 --   stewardship_talent_report_v1      dropped: the application calls the
 --                                     Limitations report instead
@@ -116,7 +117,9 @@ DROP FUNCTION IF EXISTS public.stewardship_talent_defaults_v1();
 -- vocabulary: `search` (name or Family DUID text, at most 200 characters)
 -- and `show` ('any', 'cannot_serve' or 'cannot_attend'). The selection,
 -- names and order are the former talent report's; stored talents are
--- neither listed nor counted.
+-- neither listed nor counted. Each Member row also carries its Member DUID
+-- (the entry's key; NULL for a proposed Member, whose key is the form's
+-- local identity), so the Members table can show it (#932).
 CREATE FUNCTION public.stewardship_limitations_report_v1(campaign_uuid uuid, parameters jsonb)
 RETURNS jsonb LANGUAGE plpgsql STABLE
 -- JIT off, as in every report function (#277).
@@ -199,6 +202,8 @@ SELECT CASE WHEN x.id IS NULL THEN jsonb_build_object('unavailable',true)
     'members',coalesce((SELECT jsonb_agg(jsonb_build_object(
             'family_name',family_name,'family_duid',family_duid,
             'member_name',member_name,'proposed',grp='proposed_members',
+            'member_duid',CASE WHEN grp='members' AND member_key ~ '^[0-9]{1,18}$'
+                THEN member_key::bigint END,
             'cannot_serve',true,'submitted_at',submitted_at)
         ORDER BY lower(family_name),family_duid,lower(member_name),member_key)
         FROM matching_members),'[]'::jsonb),
@@ -249,6 +254,7 @@ BEGIN
              AND prorettype='jsonb'::regtype
              AND proconfig @> ARRAY['jit=off','search_path=pg_catalog, public, pg_temp']
              AND prosrc LIKE '%parameters->>''show'' NOT IN (''any'',''cannot_serve'',''cannot_attend'')%'
+             AND prosrc LIKE '%''member_duid'',CASE WHEN grp=''members''%'
              AND prosrc NOT LIKE '%talent%') THEN
         RAISE EXCEPTION 'stewardship_limitations_report_v1 is not installed as declared';
     END IF;
