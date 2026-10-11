@@ -20,6 +20,7 @@ from parishkit.stewardship.web.presentation import phone as format_phone
 
 from .information_rendering import FORMAT_NOTE, visible_text, xlsx_cell
 from .ministries import NOT_IN_CAMPAIGN, OUTCOMES, STATE_LABELS
+from .ministry_documents import new_member_labels
 
 TITLE = "Ministry follow-up packet"
 # The spreadsheet format's per-cell character limit. The library truncates
@@ -109,6 +110,33 @@ def packet_document(payload, parameters, *, parish_name, requested_at, timezone)
     # period's start year, else the campaign start year. The captured metadata
     # carries exactly the keys that rule reads.
     year = campaign_year(source)
+
+    def rows(items):
+        """One Ministry's rows, as its single-Ministry list labels them.
+
+        A Member added on the form has no DUID yet, so its DUID cell reads
+        "New Member" (or "New Member N" when two share a name), numbered
+        within the Ministry exactly as that Ministry's join/leave list is
+        (#966). Every format renders these same strings.
+        """
+        new_members = new_member_labels(items)
+        return tuple(
+            (
+                item["member_name"],
+                str(item["member_duid"])
+                if item["member_duid"]
+                else new_members.get(item["proposed_id"], ""),
+                "Join" if item["action"] == "join" else "Leave",
+                STATE_LABELS[item["state"]],
+                contacts(item, "email"),
+                contacted(item["email_contact_at"]),
+                contacts(item, "phone"),
+                contacted(item["phone_contact_at"]),
+                outcome(item),
+            )
+            for item in items
+        )
+
     sections = tuple(
         PacketSection(
             name=entry["name"],
@@ -127,20 +155,7 @@ def packet_document(payload, parameters, *, parish_name, requested_at, timezone)
                 ("Stewardship year", year),
                 ("Stewardship period", period),
             ),
-            rows=tuple(
-                (
-                    item["member_name"],
-                    str(item["member_duid"]) if item["member_duid"] else "",
-                    "Join" if item["action"] == "join" else "Leave",
-                    STATE_LABELS[item["state"]],
-                    contacts(item, "email"),
-                    contacted(item["email_contact_at"]),
-                    contacts(item, "phone"),
-                    contacted(item["phone_contact_at"]),
-                    outcome(item),
-                )
-                for item in entry["rows"]
-            ),
+            rows=rows(entry["rows"]),
         )
         for entry in payload["sections"]
     )
