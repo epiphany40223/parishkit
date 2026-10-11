@@ -58,6 +58,8 @@ def _text(value):
 MEMBER_SORTING = Sorting.by_column(
     {
         "member": lambda row: _text(row["member_name"]),
+        # A proposed Member has no DUID; those rows sort after the others.
+        "member_duid": lambda row: (row["member_duid"] is None, row["member_duid"]),
         "family": lambda row: (_text(row["family_name"]), row["family_duid"]),
         "duid": lambda row: row["family_duid"],
         "cannot_serve": lambda row: bool(row["cannot_serve"]),

@@ -2,10 +2,9 @@
 
 Lists Members who cannot participate in ministries, and Families who cannot
 attend Mass or prayer services. The report was "Talents and limitations"
-until talents were retired (#970). Its SQL
-(``stewardship_talent_report_v1``) is unchanged, so it still takes a
-``talent`` parameter and returns stored talents; this module passes only
-the limitation words and leaves the stored talents out of every row.
+until talents were retired (#970); its SQL is
+``stewardship_limitations_report_v1`` (migration 0056), which neither lists
+nor counts the talents older submissions recorded.
 """
 
 import csv
@@ -30,11 +29,13 @@ from .information_rendering import xlsx_cell
 # The Show menu's choices: everything, or one of the two limitations.
 SHOW_WORDS = frozenset({"any", "cannot_serve", "cannot_attend"})
 # Each download table has its page table's columns, names and order (#932,
-# #966): the Members table leads with the Member, as on the page, and the
-# Families table has no "Cannot attend Mass" column, as on the page, whose
-# table heading says what it lists (every listed Family cannot attend).
+# #966): the Members table leads with the Member and Member DUID, as on the
+# page, and the Families table has no "Cannot attend Mass" column, as on the
+# page, whose table heading says what it lists (every listed Family cannot
+# attend).
 MEMBER_HEADINGS = (
     "Member",
+    "Member DUID",
     "Family",
     "Family DUID",
     "Cannot participate in ministries",
@@ -50,6 +51,7 @@ PDF_WEIGHTS = {
     "Family": 10,
     "Family DUID": 5,
     "Member": 9,
+    "Member DUID": 5,
     "Cannot participate in ministries": 6,
     "Latest response": 8,
 }
@@ -77,12 +79,8 @@ class LimitationsQuery:
         return query
 
     def form_values(self):
-        """Values for CSRF-protected re-submission and downloads."""
+        """Values for re-submission and downloads, and the SQL's parameters."""
         return {"search": self.search, "show": self.show}
-
-    def sql_parameters(self):
-        """The report function's closed parameters (its filter is ``talent``)."""
-        return {"search": self.search, "talent": self.show}
 
 
 def limitations_report(campaign_id, query, principal):
@@ -91,8 +89,8 @@ def limitations_report(campaign_id, query, principal):
         raise PermissionError("The Limitations report is unavailable.")
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT stewardship_talent_report_v1(%s,%s::jsonb)::text",
-            [campaign_id, json.dumps(query.sql_parameters())],
+            "SELECT stewardship_limitations_report_v1(%s,%s::jsonb)::text",
+            [campaign_id, json.dumps(query.form_values())],
         )
         value = cursor.fetchone()
     if value is None or value[0] is None:
@@ -108,21 +106,9 @@ def limitations_report(campaign_id, query, principal):
 
 
 def shape_result(result):
-    """Keep only the limitations, with parsed times, for page and files.
-
-    The SQL also lists Members who chose talents before #970 and counts
-    those talents; both are dropped, so only Members who cannot participate
-    remain, and no row or summary carries stored talents.
-    """
-    result["members"] = [row for row in result["members"] if row["cannot_serve"]]
+    """Parse each row's response time for the page and the files."""
     for row in result["members"] + result["families"]:
-        row.pop("talents", None)
         row["submitted_at"] = datetime.fromisoformat(row["submitted_at"])
-    summary = result["summary"]
-    result["summary"] = {
-        "cannot_serve": summary["cannot_serve"],
-        "cannot_attend": summary["cannot_attend"],
-    }
     return result
 
 
@@ -146,6 +132,8 @@ def export_tables(result, zone, *, time_text=iso_time):
     members = [
         (
             row["member_name"] + (" (proposed)" if row["proposed"] else ""),
+            # A proposed Member has no DUID yet, so its cell is empty.
+            "" if row["member_duid"] is None else str(row["member_duid"]),
             row["family_name"],
             str(row["family_duid"]),
             "Yes",
