@@ -8,14 +8,17 @@ and the page's ``?requested=`` request. As the page's read, it records no
 event.
 """
 
+from dataclasses import replace
 from uuid import uuid4
 
 import pytest
 from django.urls import reverse
 
+from parishkit.stewardship import admin_digests
 from parishkit.stewardship.accounts import automation_sessions as automation
 from parishkit.stewardship.accounts.automation_models import AutomationSession
 from parishkit.stewardship.accounts.policy import current_principal
+from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.weekly_models import (
@@ -106,6 +109,7 @@ def test_the_daily_list_matches_the_page_and_records_nothing(
 
 def test_weekly_reports_and_a_requested_report(
     live_response_service,
+    monkeypatch,
     google,
     cli,  # noqa: F811
 ):
@@ -144,6 +148,54 @@ def test_weekly_reports_and_a_requested_report(
         # Another key names nothing, as on the page.
         code, document = run("digest", "list", "--requested", str(uuid4()))
         assert code == 0 and document["result"]["requested"] is None
+
+        # A Staff reader sees the daily list only, as on the page: ``weekly``
+        # is null, with no request and no Send a weekly report now, even with
+        # this weekly report, schedule and request in the database. Pairing
+        # needs an Administrator, so the command's own admission is the
+        # only stand-in: it returns the session's principal as Staff.
+        real = admin_digests._admit
+
+        def as_staff(*arguments):
+            """The real admission, its principal holding only Staff."""
+            return replace(real(*arguments), roles=frozenset({"staff"}))
+
+        monkeypatch.setattr(admin_digests, "_admit", as_staff)
+        code, document = run("digest", "list", "--requested", str(key))
+        assert code == 0, document
+        staff = document["result"]
+        assert staff["weekly"] is None and staff["requested"] is None
+        assert not staff["weekly_request_available"]
+        # The same campaign and daily list as the Administrator's.
+        assert staff["campaign_id"] == result["campaign_id"]
+        assert staff["daily"] == result["daily"]
+
+
+def test_a_missing_configuration_row_fails_closed(auth_service, google, monkeypatch):
+    """No configuration row is ``not_available``, never "no campaign".
+
+    The page's ``.get()`` denies a reader then; the command's must not read
+    the missing row as an empty campaign. The guards keep the row from being
+    deleted, so its read alone is made to find none.
+    """
+    commands = runner(auth_service, monkeypatch)
+    _, secret, _ = paired(commands.service)
+    manager = SystemConfiguration.objects
+    real = manager.values_list
+    reads = []
+
+    def missing(*fields, **options):
+        """The current campaign's read finds no row; any other is real."""
+        if fields == ("current_campaign_id",):
+            reads.append(fields)
+            return manager.none().values_list(*fields, **options)
+        return real(*fields, **options)
+
+    monkeypatch.setattr(manager, "values_list", missing)
+    code, document, _ = commands("digest", "list", secret=secret)
+    assert reads, "the command did not read the configuration row"
+    assert code == 1 and document["error"]["code"] == "not_available", document
+    assert "result" not in document
 
 
 def test_no_current_campaign(auth_service, google, monkeypatch):

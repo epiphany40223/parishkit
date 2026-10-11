@@ -335,7 +335,9 @@ def read_list(caller, service, *, requested):
     session scope), reads the page's ``listing`` for the current campaign
     (None, and empty lists, when there is none) and rechecks the session
     before anything is reported. ``requested`` is a manual request key or
-    None. The page's read records no event, so neither does this.
+    None. The page's read records no event, so neither does this. Like the
+    page's ``.get()``, a missing configuration row fails closed: its
+    ``ObjectDoesNotExist`` is ``not_available``, never empty lists.
     """
     from .accounts.runtime_models import SystemConfiguration
     from .reports.emailed_views import listing
@@ -345,9 +347,10 @@ def read_list(caller, service, *, requested):
         """Admit, read the page's lists and recheck."""
         actor = _admit(caller, service, _principal)
         administrator = "administrator" in actor.roles
+        # .get(), as the page: a missing row must not read as "no campaign".
         campaign_id = SystemConfiguration.objects.values_list(
             "current_campaign_id", flat=True
-        ).first()
+        ).get()
         lists = listing(campaign_id, administrator=administrator, requested=requested)
         _recheck(caller, service.store, actor)
         return list_model(campaign_id, lists, administrator=administrator)
