@@ -10,6 +10,7 @@ from threading import Event
 
 from parishkit.config import ConfigError
 
+from .accounts.bootstrap_schema import BOOTSTRAP_SCHEMAS
 from .accounts.cryptography import independent_keyrings
 from .accounts.key_files import parse_keyring, read_private
 from .deployment import ServiceRole
@@ -327,7 +328,7 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
             or active.mode != "testing"
             or active.restore_review_required
             or active.current_campaign_id is not None
-            or active.active_configuration.validation_schema != "bootstrap-policy-v1"
+            or active.active_configuration.validation_schema not in BOOTSTRAP_SCHEMAS
         )
     ):
         raise ConfigError("An installed ParishSoft credential is required.")
@@ -340,7 +341,7 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
             or active.mode != "testing"
             or active.restore_review_required
             or active.current_campaign_id is not None
-            or active.active_configuration.validation_schema != "bootstrap-policy-v1"
+            or active.active_configuration.validation_schema not in BOOTSTRAP_SCHEMAS
         ):
             raise ConfigError("An installed Workspace credential is required.")
         from .accounts.setup_mail import TASK_TYPE as SETUP_MAIL
