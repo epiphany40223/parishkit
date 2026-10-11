@@ -1772,6 +1772,12 @@ days from today:
   A kept off-quarter-hour time is marked in the cell it falls in. The grid
   is read-only. Below 600 pixels wide it scrolls sideways inside its own
   box, with the day labels fixed, so the page itself never scrolls sideways.
+  The hour labels are in the refresh schedule's time zone, like the list.
+  Each shading has its own pattern, named in a legend under the grid that
+  lists only the shadings shown; hovering over a marked or shaded cell names
+  its quarter hour and what is in it. Where clocks go forward, the hour that
+  does not exist is shaded too. The grid is one image whose text alternative
+  points to the list, which gives the same refresh times in words.
 - **A list** of the same days for keyboard and screen-reader use, one
   collapsible section per day (today open, the others closed, each heading
   giving the day's counts): each day's refreshes with their kind, and every
