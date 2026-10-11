@@ -21,12 +21,15 @@ Checked here, as the restricted web login:
   the code list and its response instants.
 """
 
+import html
 import json
+import re
 from datetime import timedelta
 from uuid import uuid4
 
 import pytest
 from django.db import DatabaseError, connection, transaction
+from django.urls import reverse
 
 from parishkit.stewardship.accounts.sessions import database_now
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
@@ -50,12 +53,15 @@ from parishkit.stewardship.reports.response_metrics import MODES
 from parishkit.stewardship.source.leases import release_source
 from parishkit.stewardship.source.snapshots import promote_snapshot
 
+from ..policy_factory import address
 from . import test_response_metrics_postgresql as metrics_tests
-from .campaign_builders import campaign_clock, complete_empty_catchup
+from .auth_builders import signed_in
+from .campaign_builders import campaign_clock, change, complete_empty_catchup
 from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
 from .test_directories_postgresql import page
 from .test_policy_postgresql import user
+from .test_report_workspace_postgresql import read as read_page
 from .test_response_lists_postgresql import (  # noqa: F401
     BLANK_MAILING,
     ENVELOPE_ZERO,
@@ -223,6 +229,7 @@ def legacy_duids(harness, response):
 def test_directory_response_filters_follow_the_dashboard_rows(
     quality_funnel,  # noqa: F811
     monkeypatch,
+    google,
 ):
     """Every Response choice lists the dashboard's Families, as the lists did."""
     harness, epoch = quality_funnel
@@ -311,6 +318,7 @@ def test_directory_response_filters_follow_the_dashboard_rows(
     assert legacy_duids(harness, "no") == [1, 12, 13]
     assert page(harness)["metadata"]["counted_at"] is None
     assert page(harness)["total"] == 5
+    dashboard_links_open_the_directory(harness, google)
 
     # The response columns carry the funnel instants and sort both ways,
     # missing values last; the default order is still by name.
@@ -448,6 +456,62 @@ def test_directory_response_filters_follow_the_dashboard_rows(
     assert unrecorded["family_id"] is None and unrecorded["active"] is True
     assert 30 not in duids(page(harness, response="not-invited"))
     assert page(harness, response="not-invited")["total"] == 0
+
+
+def dashboard_links_open_the_directory(harness, google):
+    """The dashboard's Production list links open matching directory pages.
+
+    Each "Lists of Families" link is a directory link preset in a GET (#933),
+    for an Administrator and for Staff, and the page it opens counts the
+    Families the dashboard says it does; the data-check link (no count on
+    the dashboard) lists the two problems. Each page's data-page-address is
+    its own link. A preset with a value outside its vocabulary, repeated,
+    or with search text is still refused; a valid sort of a column the link
+    does not show opens the page in name order.
+    """
+    directory = reverse("admin:family_directory")
+    browser, _ = signed_in()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        links = follow_dashboard_links(browser)
+        for refused in (
+            "?response=maybe",
+            "?response=submitted&search=x",
+            "?response=submitted&response=submitted",
+            "?page=2",
+        ):
+            response = read_page(browser, directory + refused)[0]
+            assert response.status_code == 400, refused
+        response, body = read_page(browser, directory + "?sort=submitted_desc")
+        assert response.status_code == 200
+        assert f'href="{directory}" data-page-address'.encode() in body
+    # Staff (FAMILY_CODES and CAMPAIGN_REPORT) follow the same links.
+    store = harness.service.store
+    staff = address("staff@example.org", roles=("staff",))
+    patch = [{"operation": "add", "section": "login_rules", **staff}]
+    assert change(store, store.active(), uuid4(), patch).state == "applied"
+    google[0].update(email="staff@example.org", sub="synthetic-staff")
+    browser, login = signed_in()
+    assert login.status_code == 302
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        assert follow_dashboard_links(browser) == links
+
+
+def follow_dashboard_links(browser):
+    """Follow each dashboard list link; return the (link, count) pairs."""
+    directory = reverse("admin:family_directory")
+    dashboard = read_page(browser, reverse("admin:response_dashboard"))[1]
+    panel = dashboard.decode().split('id="lists-heading"')[1]
+    panel = panel.split("</section>")[0]
+    links = re.findall(r'<li><a href="([^"]+)">[^<]*</a>(?:: (\d+))?', panel)
+    assert [count for _, count in links] == ["2", "1", "2", "1", ""]
+    for href, count in links:
+        assert html.unescape(href).startswith(directory + "?")
+        response, body = read_page(browser, html.unescape(href))
+        assert response.status_code == 200, href
+        assert f"Matching Families: {count or 2}.".encode() in body, href
+        # The address bar's replacement is the link itself (#536).
+        assert f'href="{href}" data-page-address'.encode() in body, href
+    return links
 
 
 @pytest.mark.parametrize(
