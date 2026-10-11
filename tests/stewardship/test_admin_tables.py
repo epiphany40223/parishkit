@@ -383,7 +383,8 @@ def test_never_signed_in_users_sort_after_the_latest_sign_in():
     """Portal users' "Last successful sign-in" opens on real sign-ins."""
     from datetime import UTC, datetime
 
-    from parishkit.stewardship.accounts.user_views import ADDRESS_SORTING, ADDRESSES
+    from parishkit.stewardship.accounts.user_reads import USER_SORTING
+    from parishkit.stewardship.accounts.user_views import PREFIX
 
     rows = [
         {"email": "never@example.org", "last_login": None},
@@ -395,7 +396,7 @@ def test_never_signed_in_users_sort_after_the_latest_sign_in():
         ("last_login", ["old", "new"]),
     ):
         table = paginate(
-            rows, {f"{ADDRESSES}sort": token}, prefix=ADDRESSES, sorting=ADDRESS_SORTING
+            rows, {f"{PREFIX}sort": token}, prefix=PREFIX, sorting=USER_SORTING
         )
         emails = [row["email"].split("@")[0] for row in table.rows]
         assert emails == [*expected, "never"]

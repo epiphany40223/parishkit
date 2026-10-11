@@ -1,14 +1,14 @@
-"""``pk-admin users list`` and ``users preview-upgrade`` (#952 slice 2).
+"""``pk-admin users`` list, preview-upgrade, preview and confirm (#952).
 
 Process admission is replaced by the test's own Django assembly, as in
 test_admin_status_cli_postgresql.py; everything after it is the real command
-line on the restricted web login with exactly its grants, including the two
-upgrade definers web now reads. The Portal users page's Upgrade preview panel
-reads the same preview, so the two are compared here.
+line on the restricted web login with exactly its grants, including the
+upgrade definers web reads. ``users preview`` and ``users confirm`` change
+users through the Users page's own code (slice 5).
 """
 
 import json
-import re
+from uuid import UUID, uuid4
 
 import pytest
 from django.db import DatabaseError, connection, transaction
@@ -24,7 +24,7 @@ from .auth_builders import unguarded
 from .automation_builders import paired
 from .test_admin_status_cli_postgresql import admin, one, views  # noqa: F401
 from .test_background_grants_postgresql import task_login
-from .test_user_views_postgresql import add_rules, identity, signed_in_before
+from .user_builders import add_rules, identity, signed_in_before
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -67,12 +67,16 @@ def test_users_list_prints_each_user_sorted_as_the_page(admin, google):  # noqa:
     # Deny and domain rules are not users; the domain colleague is in the
     # upgrade preview instead.
     assert set(users) == {ADMIN, "second@example.org", "leader@example.org"}
-    assert users["leader@example.org"] == {
+    leader = users["leader@example.org"]
+    assert leader == {
+        "id": leader["id"],
         "email": "leader@example.org",
         "name": None,
         "role": "ministry_leader",
         "last_login": None,
+        "identities": [],
     }
+    assert result["version"] == admin.service.store.active().digest
     # The Administrator signed in to approve the session.
     assert users[ADMIN]["last_login"] is not None
     assert users["second@example.org"]["role"] == "administrator"
@@ -91,10 +95,10 @@ def test_users_list_prints_each_user_sorted_as_the_page(admin, google):  # noqa:
     assert views("portal_users_viewed") == before + 2
 
 
-def test_preview_upgrade_matches_the_page_panel(admin, google):  # noqa: F811
-    """A read-only session previews; the page's panel lists the same people."""
+def test_preview_upgrade_lists_what_the_upgrade_does(admin, google):  # noqa: F811
+    """A read-only session previews exactly what the conversion writes."""
     sample(admin.service, google)
-    browser, secret, _ = paired(admin.service, scope="read-only")
+    _browser, secret, _ = paired(admin.service, scope="read-only")
     before = views("portal_users_viewed")
     code, document = one(admin, "users", "preview-upgrade", secret=secret)
     assert code == 0 and document["ok"], document
@@ -123,20 +127,6 @@ def test_preview_upgrade_matches_the_page_panel(admin, google):  # noqa: F811
         {"email": "blocked@example.org", "overrides_identity": False, "name": "blocked"}
     ]
     assert views("portal_users_viewed") == before + 1
-    # The page's panel, under the web login with exactly its grants.
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        response = browser.get("/admin/users")
-    assert response.status_code == 200
-    body = response.content.decode()
-    panel = body[body.index('<section id="upgrade-preview"') :]
-    kept = re.search(
-        r'<ul aria-labelledby="upgrade-administrators">(.*?)</ul>', panel, re.S
-    )
-    assert re.findall(r"<li>([^<]+)</li>", kept.group(1)) == result["administrators"]
-    for row in result["users"]:
-        assert f'<th scope="row">{row["email"]}</th>' in panel
-    assert "idle@example.org" in panel and "blocked@example.org (blocked)" in panel
-    assert '<a href="#upgrade-preview">' in body
 
 
 def test_preview_upgrade_is_unavailable_once_users_exist(
@@ -272,3 +262,114 @@ def test_staff_and_ministry_leaders_are_refused_both_reads(
         assert code != 0 and not document["ok"], document
         assert "users" not in document.get("result", {}), document
     assert views("portal_users_viewed") == before
+
+
+def _changes(*entries):
+    """A ``users preview`` change document."""
+    return json.dumps({"users": list(entries)})
+
+
+def test_users_preview_and_confirm_change_users_as_the_page(admin, google):  # noqa: F811
+    """Add, change and delete users from the command line, through the page's code.
+
+    The preview prints each user's Name and role before and after and
+    changes nothing; confirming records the request with the command's and
+    the page's audit events. Granting Administrator is high impact: it leaves
+    the automation policy-change notice and the usual security event.
+    """
+    from parishkit.stewardship.accounts.automation_models import AutomationNotice
+    from parishkit.stewardship.accounts.configuration_installation import (
+        install_request,
+    )
+    from parishkit.stewardship.accounts.policy_models import PolicySecurityEvent
+    from parishkit.stewardship.audit.models import AuditEvent
+
+    from .user_builders import convert, user_id, users
+
+    _, secret = sample(admin.service, google)
+    store = admin.service.store
+    convert(store)
+    code, listed = one(admin, "users", "list", secret=secret)
+    assert code == 0 and listed["result"]["form"] == "users", listed
+    version = listed["result"]["version"]
+    leader = user_id(store, "leader@example.org")
+    second = user_id(store, "second@example.org")
+    changes = _changes(
+        {"email": "New@Example.org", "name": "New, Nell"},
+        {"id": leader, "role": "administrator"},
+        {"id": second, "delete": True},
+    )
+    code, document = one(
+        admin,
+        "users",
+        "preview",
+        "--expected-version",
+        version,
+        "--changes",
+        changes,
+        secret=secret,
+    )
+    assert code == 0 and document["ok"], document
+    result = document["result"]
+    assert set(result) == set(admin_cli.BY_NAME["users preview"].result_fields)
+    assert result["high_impact"] is True
+    by_email = {change["email"]: change for change in result["changes"]}
+    assert by_email["new@example.org"]["after"] == {
+        "name": "New, Nell",
+        "role": "ministry_leader",
+    }
+    assert by_email["new@example.org"]["other_names"] == 0
+    assert by_email["leader@example.org"]["after"]["role"] == "administrator"
+    assert by_email["second@example.org"]["operation"] == "remove"
+    # Nothing changed yet.
+    assert "new@example.org" not in users(store)
+    code, document = one(
+        admin,
+        "users",
+        "confirm",
+        "--token",
+        result["preview"]["token"],
+        secret=secret,
+    )
+    assert code == 0 and document["ok"] and document["result"]["created"], document
+    request_id = document["result"]["request"]["request_id"]
+    receipt = install_request(
+        store, request_id=UUID(request_id), correlation_id=uuid4()
+    )
+    assert receipt.state == "applied"
+    assert users(store)["new@example.org"] == ("New, Nell", "ministry_leader")
+    assert users(store)["leader@example.org"][1] == "administrator"
+    assert "second@example.org" not in users(store)
+    for event_type in ("admin_cmd_users_confirm", "user_change_requested"):
+        assert AuditEvent.objects.filter(event_type=event_type).count() == 1
+    assert AutomationNotice.objects.filter(kind="policy_change").count() == 1
+    assert PolicySecurityEvent.objects.filter(
+        target="leader@example.org", kind="administrator_granted"
+    ).exists()
+    # A stale version, and a change that leaves no Administrator, are refused.
+    code, document = one(
+        admin,
+        "users",
+        "preview",
+        "--expected-version",
+        version,
+        "--changes",
+        _changes({"id": leader, "name": "Lee"}),
+        secret=secret,
+    )
+    assert code != 0 and document["error"]["code"] == "stale_version", document
+    code, document = one(
+        admin,
+        "users",
+        "preview",
+        "--expected-version",
+        store.active().digest,
+        "--changes",
+        _changes(
+            {"id": user_id(store, ADMIN), "delete": True},
+            {"id": user_id(store, "leader@example.org"), "role": "staff"},
+        ),
+        secret=secret,
+    )
+    assert code == 1 and document["error"]["code"] == "invalid", document
+    assert "users" in json.dumps(document["error"])

@@ -11,8 +11,7 @@ from .test_bootstrap_postgresql import bootstrapped  # noqa: F401
 from .test_runtime_auth_grants_postgresql import web_login
 from .test_security_events_postgresql import home, signed_in_as
 from .test_setup_views_postgresql import setup_http  # noqa: F401
-from .test_user_rule_views_postgresql import web
-from .test_user_views_postgresql import add_rules
+from .user_builders import add_rules, web
 
 pytestmark = pytest.mark.django_db(transaction=True)
 BANNER = "Debug logging is on in Production"

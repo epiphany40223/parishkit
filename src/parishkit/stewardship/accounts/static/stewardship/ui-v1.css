@@ -931,3 +931,18 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 .schedule-time-full { font-weight: 600; }
 .schedule-save { align-items: flex-start; }
 .schedule-status { flex: 1 1 18rem; margin: 0; min-height: 2lh; }
+/* The Users page (#952). Each row is one line: a long email or Name is cut
+   short with an ellipsis and shown whole in its title (the recorded
+   exception to "Table fit and row height"); the text stays whole for screen
+   readers and copying. A narrow screen scrolls the table in its region.
+   The reason line under the table and under Edit user's roles is reserved
+   while empty, so the reason appearing never moves a control (#736). On
+   Edit user, each role's plain-language line sits under its radio button. */
+.cell-ellipsis { display: block; max-width: 18rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.users-table th, .users-table td { white-space: nowrap; vertical-align: middle; }
+#users-only-administrator, #user-roles-reason { min-height: 1.6em; min-height: 1lh; }
+.user-entry .field-label { margin-bottom: .25rem; font-weight: 600; }
+.user-entry .user-email { margin-top: 0; }
+.user-roles .choice { margin-block: .5rem; }
+.user-roles .choice label { display: inline; font-weight: 600; }
+.user-roles .choice .help { margin: .1rem 0 0 1.75rem; }

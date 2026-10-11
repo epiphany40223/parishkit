@@ -317,12 +317,12 @@ def test_an_unplaced_configuration_change_returns_home():
     }
 
 
-def test_a_rule_change_returns_to_portal_users_not_the_post_only_review():
-    """The rule review cannot be opened by a link, so Return goes to users."""
-    placed = navigation.Placement(parent="user_rules", flow="change", step="apply")
+def test_a_user_deletion_returns_to_users_not_the_post_only_action():
+    """Delete user cannot be opened by a link, so Return goes to Users (#952)."""
+    placed = navigation.Placement(parent="user_delete", flow="change", step="apply")
     match = _match("configuration_request", request_id=uuid4())
     _, trail = navigation.build(match, _items(), placed)
-    assert trail[-2] == {"label": navigation.PAGES["user_rules"].label, "url": None}
+    assert trail[-2] == {"label": navigation.PAGES["user_delete"].label, "url": None}
     assert navigation.back(match, placed)["url"] == reverse("admin:users")
 
 

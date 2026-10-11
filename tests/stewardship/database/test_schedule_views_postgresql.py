@@ -389,7 +389,7 @@ def test_read_pages_never_wait_behind_the_work_lock(auth_service, google):
         try:
             for url in (
                 "/admin/",
-                "/admin/users",
+                "/admin/users/automation/",
                 path,
                 "/admin/campaign/settings/",
                 "/admin/campaign/content/",
