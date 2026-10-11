@@ -2166,15 +2166,21 @@ sets (the Administrator chooses it; there is no preset time), send:
 - in a Production digest, the
   [response funnel](../reports/spec.md#response-funnel) at the end of the
   report day ([#477](https://github.com/epiphany40223/parishkit/issues/477)):
-  each stage's Families compared with invited ("Link followed" noting that
-  it includes mail-scanner prefetches) and "Submitted more than once", after
-  the campaign totals, with no caption. The digest leaves out the other two
-  figures reported beside the funnel ("Invitations not sent (already
-  responded)" and "Submitted without a delivered invitation"); the
+  each stage's Families compared with the first stage, which the digest
+  names "Email invites sent" (the dashboard's "Invited": Families whose
+  invitation email was delivered, so fewer than the campaign totals'
+  Families when some have no usable email address), and "Submitted more
+  than once" with its share of Submitted, which its percentage names ("2%
+  of Submitted"), after the campaign totals, with no caption. The digest
+  leaves out the "Link followed" stage
+  ([#1016](https://github.com/epiphany40223/parishkit/issues/1016)) and the
+  other two figures reported beside the funnel ("Invitations not sent
+  (already responded)" and "Submitted without a delivered invitation"); the
   [Response dashboard](../reports/spec.md#response-funnel) and
   `pk-admin report responses` still show them
   ([#969](https://github.com/epiphany40223/parishkit/issues/969)). The email
-  shows rows with share bars; the saved report page a table. The compiling
+  shows every stage and figure as a row with a share bar; the saved report
+  page shows the stages as a table and the figure with its share. The compiling
   worker counts it and the page counts it again from
   the same durable timestamps, so the two agree unless the engagement record
   is backfilled later. The saved page of a digest sent before the funnel
@@ -2190,8 +2196,11 @@ The report day is the schedule slot's local date: the campaign day before the
 scheduled send. A late, retried or recovery send never moves it. Every figure
 in the email, its table and its chart comes from the report day's end-of-day
 row of one exact ready `CampaignDailyFactSet`, so the text always matches the
-chart's last point. One plain line states this, for example "All figures are
-as of the end of October 6, 2026 (EDT)." The zone abbreviation is the one in
+chart's last point. One plain line states this, for example "All data is as
+of the end of October 6, 2026 (EDT)." It is body text in the body's size and
+colour, not small muted print
+([#1016](https://github.com/epiphany40223/parishkit/issues/1016)). The zone
+abbreviation is the one in
 force at the end of the report day (EST after daylight saving time ends). The
 email's day-by-day table is captioned "Day by day". Live population figures
 (Members, eligible or deliverable email, comparison pledges) are not in the
@@ -2221,7 +2230,10 @@ appended. The default subject
 "Annual campaign — daily report, October 6, 2026 (Example Parish)". The body has no title
 or name line; it starts with the as-of line, the only place that names the
 time zone (a recovery digest starts it with the dates it covers). Any
-Administrator-written intro stays above the report. **Campaign totals** follow, one line per
+Administrator-written intro stays above the report. The default intro is
+"Here is yesterday’s report."; it no longer says that Testing responses are
+never included, and content saved from an earlier default keeps its text
+until the Administrator resets it to the default. **Campaign totals** follow, one line per
 figure: its label, a bar drawn with table cells (so it shows in every mail
 program, with images off too), and the exact value, for example "Families
 that have responded — 10 out of 93 (10.8%)". Families that have responded are

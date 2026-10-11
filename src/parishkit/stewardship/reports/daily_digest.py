@@ -131,8 +131,7 @@ class DailyDigestDocument:
         zone = ZoneInfo(self.participation.campaign_timezone)
         abbreviation = datetime.combine(local_date, time.max, zone).tzname()
         return (
-            f"All figures are as of the end of {format_date(local_date)} "
-            f"({abbreviation})."
+            f"All data is as of the end of {format_date(local_date)} ({abbreviation})."
         )
 
     @property
@@ -360,8 +359,9 @@ def funnel_html(document, plain):
     """The response funnel section of the email, or "" when there is none.
 
     One row per stage like the campaign totals: the stage (with its note),
-    a bar of its share of Invited, and its count and share; then the
-    figures reported beside it (``figure_rows``). A Testing digest says
+    a bar of its share of email invites sent, and its count and share; then
+    the figures reported beside it (``figure_rows``), drawn the same way
+    against their own whole, which their share names. A Testing digest says
     where the funnel is.
     """
     if document.funnel is None:
@@ -370,32 +370,28 @@ def funnel_html(document, plain):
         return ""
     metrics = document.funnel
     invited = metrics.stage("invited")
+    rows = [
+        (f"{label} ({note.lower()})" if note else label, count, invited, portion)
+        for label, count, portion, note in stage_rows(metrics)
+    ]
+    figures = figure_rows(metrics)
     html = f"<h2{_style('heading')}>Response funnel</h2>"
-    html += (
-        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-        f'border="0"{_style("rows")}><tbody>'
-    )
-    for label, count, portion, note in stage_rows(metrics):
-        detail = f" ({note.lower()})" if note else ""
+    # The stages, then the side figures as their own table so they read as
+    # a group; every row has the same three cells.
+    for group in (rows, figures):
         html += (
-            f'<tr><td width="34%"{_style("label")}>{plain(label)}{plain(detail)}</td>'
-            f'<td width="40%"{_style("bar")}>{bar(count, invited)}</td>'
-            f'<td width="26%" align="right"{_style("value")}>'
-            f"<strong>{plain(f'{count:,}')}</strong>{plain(f' ({portion})')}</td></tr>"
+            '<table role="presentation" width="100%" cellpadding="0" '
+            f'cellspacing="0" border="0"{_style("rows")}><tbody>'
         )
-    html += "</tbody></table>"
-    # The side figures as one small table, so they read as a group.
-    html += (
-        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-        f'border="0"{_style("rows")}><tbody>'
-    )
-    html += "".join(
-        f'<tr><td width="74%"{_style("label")}>{plain(label)}</td>'
-        f'<td width="26%" align="right"{_style("value")}>{plain(f"{count:,}")}</td>'
-        "</tr>"
-        for label, count in figure_rows(metrics)
-    )
-    html += "</tbody></table>"
+        html += "".join(
+            f'<tr><td width="34%"{_style("label")}>{plain(label)}</td>'
+            f'<td width="40%"{_style("bar")}>{bar(count, whole)}</td>'
+            f'<td width="26%" align="right"{_style("value")}>'
+            f"<strong>{plain(f'{count:,}')}</strong>{plain(f' ({portion})')}"
+            "</td></tr>"
+            for label, count, whole, portion in group
+        )
+        html += "</tbody></table>"
     return html
 
 
@@ -469,7 +465,8 @@ def _render_daily_digest(document, *, public_origin):
         """Escape a text node; canonical HTML leaves quotes literal there."""
         return escape(value, quote=False)
 
-    html = f"<p{_style('caption')}>{plain(as_of)}</p>"
+    # Prominent (#1016): body size and colour, not the muted caption style.
+    html = f"<p{_style('as-of')}>{plain(as_of)}</p>"
     html += f"<h2{_style('heading')}>Campaign totals</h2>"
     html += (
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
