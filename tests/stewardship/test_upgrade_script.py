@@ -232,7 +232,9 @@ def test_the_optional_variables_reach_the_host(tmp_path):
 # answers; FAKE_RETARGET_FAIL makes `retarget-image` fail with nothing
 # written; FAKE_RESTART_WORKER brings the worker back the moment web stops
 # (the runbook's "restarted meanwhile" case); FAKE_SERVICES_AFTER is the
-# service list the re-rendered Compose file has after a retarget.
+# service list the re-rendered Compose file has after a retarget;
+# FAKE_MIGRATE_FAIL makes the full migration fail (as the users swap does on
+# an unconverted configuration) and FAKE_USERS_FAIL the users conversion.
 # `retarget-image` rewrites compose.json and the three role documents as
 # the real command would, so the final checks read what the run itself
 # wrote. For the local mode: FAKE_OFFSITE is the off-site state the backup
@@ -334,7 +336,12 @@ case "$*" in
                 >"$(dirname "$FAKE_COMPOSE")/$role.yaml"
         done
         touch "$FAKE_STATE/retargeted" ;;
-    *" run --rm -T migration") echo "migrated" ;;
+    *" run --rm -T migration")
+        [ -z "$FAKE_MIGRATE_FAIL" ] || { echo "Migration 0052 refused" >&2; exit 1; }
+        echo "migrated" ;;
+    *" upgrade-users "*"--operation-id "*)
+        [ -z "$FAKE_USERS_FAIL" ] || { echo "upgrade refused" >&2; exit 1; }
+        echo '{"users_upgrade_applied": true}' ;;
     *"database-grants"*) echo "granted" ;;
     *"exec -T caddy sha256sum"*) sha256sum "$FAKE_CADDYFILE" ;;
     *"pk-stewardship health"*) [ -z "$FAKE_WEB_FAIL" ] || exit 1 ;;
@@ -1104,3 +1111,148 @@ def test_production_mode_never_reads_the_rehearsal_choices(tmp_path):
     retarget = calls[first(calls, " retarget-image ")]
     assert "BULK_FAMILY_SEND" not in retarget and "LATENCY" not in retarget
     assert "latency" not in output and f"Upgraded to {TARGET} in" in output
+
+
+# ---------------------------------------------------------------------------
+# The users upgrade (#952 slice 4): the conversion between two migrations.
+
+USERS = {
+    "STEWARDSHIP_USERS_OPERATION": "11111111-2222-4333-8444-555555555555",
+    "STEWARDSHIP_USERS_OPERATOR": "Test Operator",
+    "STEWARDSHIP_USERS_REASON": "Users revamp release",
+    "STEWARDSHIP_USERS_ADMINISTRATORS": "first@example.test,second@example.test",
+}
+
+
+def test_the_users_upgrade_converts_between_the_two_migrations(tmp_path):
+    """Base migration, grants, preview, conversion, migration, grants, then web."""
+    calls, output, _ = run_host(
+        tmp_path, "upgrade", noop="f", schema_change="1", env=USERS
+    )
+    base = first(calls, "migration migrate --config ")
+    assert calls[base].endswith(
+        "run --rm -T migration migrate --config "
+        f"{tmp_path}/root/config/services/migration.yaml --users-upgrade-base"
+    )
+    grants = [i for i, call in enumerate(calls) if "database-grants" in call]
+    preview = first(calls, " upgrade-users ")
+    convert = first(calls, "--operation-id ")
+    full = next(
+        i for i, call in enumerate(calls) if call.endswith("run --rm -T migration")
+    )
+    assert first(calls, " retarget-image ") < base < grants[0] < preview < convert
+    assert convert < full < grants[1] < first(calls, "up --detach --wait web")
+    assert len(grants) == 2
+    assert calls[preview].endswith(
+        f"--config {tmp_path}/root/config/services/admin-recovery.yaml "
+        f"--confirm-deployment {UUID} --preview"
+    )
+    # The operator's inputs reach the command exactly, one argument each.
+    assert calls[convert].endswith(
+        f"--confirm-deployment {UUID} "
+        "--operation-id 11111111-2222-4333-8444-555555555555 "
+        "--operator-name Test Operator --reason Users revamp release "
+        "--confirm-administrators first@example.test,second@example.test"
+    )
+    assert "users upgrade: operation 11111111-2222-4333-8444-555555555555, " in output
+    assert "keeping 2 confirmed Administrators" in output
+    # No address is printed by the script itself.
+    assert "first@example.test" not in output.replace(calls[convert], "")
+    # Already current: the decisive check's t skips all of it.
+    calls, output, _ = run_host(
+        tmp_path / "current",
+        "upgrade",
+        noop="f",
+        noop_later="t",
+        schema_change="1",
+        env=USERS,
+    )
+    assert not any("upgrade-users" in call or " migration" in call for call in calls)
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        ({"STEWARDSHIP_USERS_REASON": ""}, "needs all four"),
+        ({"STEWARDSHIP_USERS_OPERATION": "not-a-uuid"}, "lowercase UUID"),
+        (
+            {"STEWARDSHIP_USERS_ADMINISTRATORS": "a@example.test, b@example.test"},
+            "comma-separated addresses",
+        ),
+        ({"STEWARDSHIP_USERS_ADMINISTRATORS": "nobody"}, "comma-separated addresses"),
+    ],
+)
+def test_users_upgrade_inputs_are_refused_before_anything_stops(
+    tmp_path, change, message
+):
+    """Partial or malformed inputs end the run while the site is still up."""
+    calls, output, _ = run_host(
+        tmp_path, "upgrade", noop="f", status=1, schema_change="1", env=USERS | change
+    )
+    assert message in output
+    assert "Failed before anything stopped; nothing changed" in output
+    assert not any(" stop " in call for call in calls)
+
+
+def test_users_upgrade_needs_the_override_and_never_rolls_back(tmp_path):
+    """The conversion migrates, so it needs the override; a rollback refuses it."""
+    calls, output, _ = run_host(tmp_path, "upgrade", noop="f", status=1, env=USERS)
+    assert "needs the schema-change override as well" in output
+    assert not any(" stop " in call for call in calls)
+    calls, output, _ = run_host(
+        tmp_path / "rollback", "rollback", noop="f", status=1, env=USERS
+    )
+    assert "A rollback never converts" in output
+    assert not any(" stop " in call for call in calls)
+
+
+def test_a_refused_conversion_stops_before_the_swap_with_web_down(tmp_path):
+    """No full migration, no web; the message names recovery and the repeat."""
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        noop="f",
+        status=1,
+        schema_change="1",
+        users_fail=True,
+        env=USERS,
+    )
+    assert "The users upgrade did not apply" in output
+    assert "Admin-access recovery works" in output
+    assert "caddy serves the maintenance page" in output
+    assert not any(call.endswith("run --rm -T migration") for call in calls)
+    assert not any("up --detach --wait web" in call for call in calls)
+
+
+def test_a_release_needing_the_conversion_without_it_stops_at_its_swap(tmp_path):
+    """Without the inputs the swap's refusal ends the run and says what to do."""
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        noop="f",
+        status=1,
+        schema_change="1",
+        migrate_fail=True,
+    )
+    assert "repeat the run with the" in output and "STEWARDSHIP_USERS_*" in output
+    assert "caddy serves the maintenance page" in output
+    assert not any("upgrade-users" in call for call in calls)
+    assert not any("database-grants" in call for call in calls)
+    assert not any("up --detach --wait web" in call for call in calls)
+
+
+def test_the_laptop_half_passes_the_users_inputs_only_when_set(tmp_path):
+    """An env prefix, %q-quoted, before the host half; refused for a rollback."""
+    result, calls, _ = run_local(tmp_path, env=USERS)
+    assert result.returncode == 0, result.stderr
+    assert (
+        'cat > "$f" && env '
+        "STEWARDSHIP_USERS_OPERATION=11111111-2222-4333-8444-555555555555 "
+        "STEWARDSHIP_USERS_OPERATOR=Test\\ Operator "
+        "STEWARDSHIP_USERS_REASON=Users\\ revamp\\ release "
+        "STEWARDSHIP_USERS_ADMINISTRATORS=first@example.test\\,second@example.test "
+        'bash "$f" '
+    ) in calls[0]
+    result, calls, _ = run_local(tmp_path / "rollback", "--rollback", env=USERS)
+    assert result.returncode == 1 and calls == []
+    assert "A rollback never converts" in result.stderr

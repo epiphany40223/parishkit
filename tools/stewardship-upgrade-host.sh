@@ -38,6 +38,21 @@
 #     for the bulk switch. A rollback never renders the latency (the
 #     previous release may not know the setting, and its loader would refuse
 #     it after web had stopped). Production mode never reads either variable.
+#
+# In both modes, the release that converts sign-in rules to users (#952)
+# needs the offline conversion between two migrations (operations
+# specification, "Users upgrade from sign-in rules"). The operator supplies
+# it through four variables, all or none, on an upgrade only:
+# STEWARDSHIP_USERS_OPERATION (a new UUID; the same one resumes an
+# interrupted run), STEWARDSHIP_USERS_OPERATOR and STEWARDSHIP_USERS_REASON
+# (who and why, recorded on the conversion) and
+# STEWARDSHIP_USERS_ADMINISTRATORS (the comma-separated Administrators the
+# preview lists, which the conversion must keep). With them, step 4 migrates
+# to the users upgrade's base, applies the grants, prints the preview,
+# converts, and only then migrates the rest and applies the grants again.
+# Without them, a release that needs the conversion stops at its migration
+# (the swap refuses an unconverted configuration) with the maintenance page
+# up, and the run is repeated with them. No address is ever written here.
 
 set -euo pipefail
 # shellcheck disable=SC2034 # REPO is validated by the laptop half; kept for the fixed argument order
@@ -250,6 +265,26 @@ if [ "$profile" = local ]; then
     fi
 fi
 
+# The users conversion's inputs (#952; header above), checked before anything
+# stops. Production passes them through the laptop half's environment
+# prefix, local mode through the VM half's.
+users_upgrade=0
+if [ -n "${STEWARDSHIP_USERS_OPERATION-}${STEWARDSHIP_USERS_OPERATOR-}${STEWARDSHIP_USERS_REASON-}${STEWARDSHIP_USERS_ADMINISTRATORS-}" ]; then
+    [ "$mode" = upgrade ] ||
+        { echo "A rollback never converts; unset the STEWARDSHIP_USERS_* variables. Refusing." >&2; exit 1; }
+    [ -n "${STEWARDSHIP_USERS_OPERATION-}" ] && [ -n "${STEWARDSHIP_USERS_OPERATOR-}" ] &&
+        [ -n "${STEWARDSHIP_USERS_REASON-}" ] && [ -n "${STEWARDSHIP_USERS_ADMINISTRATORS-}" ] ||
+        { echo "The users upgrade needs all four STEWARDSHIP_USERS_* variables; refusing." >&2; exit 1; }
+    [[ $STEWARDSHIP_USERS_OPERATION =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] ||
+        { echo "STEWARDSHIP_USERS_OPERATION must be a lowercase UUID; refusing." >&2; exit 1; }
+    [[ $STEWARDSHIP_USERS_ADMINISTRATORS =~ ^[^,[:space:]@]+@[^,[:space:]@]+(,[^,[:space:]@]+@[^,[:space:]@]+)*$ ]] ||
+        { echo "STEWARDSHIP_USERS_ADMINISTRATORS must be comma-separated addresses, no spaces; refusing." >&2; exit 1; }
+    [ "$schema_change" = 1 ] ||
+        { echo "The users upgrade migrates; it needs the schema-change override as well. Refusing." >&2; exit 1; }
+    users_upgrade=1
+    echo "    users upgrade: operation $STEWARDSHIP_USERS_OPERATION, keeping $(tr ',' '\n' <<<"$STEWARDSHIP_USERS_ADMINISTRATORS" | wc -l | tr -d ' ') confirmed Administrators"
+fi
+
 # Step 1: everything that needs only the target image, while the site is up.
 if [ "$profile" = local ]; then
     # The LOCAL image was built inside the VM a moment ago (checked above);
@@ -430,9 +465,46 @@ if [ "$mode" = upgrade ]; then
         echo "    skipped: the upgrade check answered t (schema and grants already match)"
     else
         echo "    running migration and grants: the check answered: $(head -3 <<<"$answer")"
-        "${dc[@]}" run --rm -T migration 2>&1 | tail -1
-        "${dc[@]}" run --rm -T database-provision database-grants \
-            --config "$services/database-provision.yaml" --confirm-deployment "$uuid" 2>&1 | tail -1
+        grants() {
+            # database-grants as the operator-only provisioning profile.
+            "${dc[@]}" run --rm -T database-provision database-grants \
+                --config "$services/database-provision.yaml" --confirm-deployment "$uuid" 2>&1 | tail -1
+        }
+        if [ "$users_upgrade" = 1 ]; then
+            # The users upgrade's fixed order (#952): every migration but the
+            # swap, the grants its conversion reads with, the preview, the
+            # conversion, and then the rest. The admin-recovery commands run
+            # on that base, so Admin-access recovery works at every step.
+            recovery=(run --rm -T admin-recovery upgrade-users
+                --config "$services/admin-recovery.yaml" --confirm-deployment "$uuid")
+            step "4. Migration to the users upgrade's base"
+            "${dc[@]}" run --rm -T migration migrate \
+                --config "$services/migration.yaml" --users-upgrade-base 2>&1 | tail -1
+            grants
+            step "4. Users upgrade preview"
+            "${dc[@]}" "${recovery[@]}" --preview 2>&1 | tail -1
+            step "4. Users upgrade (operation $STEWARDSHIP_USERS_OPERATION)"
+            if ! "${dc[@]}" "${recovery[@]}" --operation-id "$STEWARDSHIP_USERS_OPERATION" \
+                --operator-name "$STEWARDSHIP_USERS_OPERATOR" --reason "$STEWARDSHIP_USERS_REASON" \
+                --confirm-administrators "$STEWARDSHIP_USERS_ADMINISTRATORS" 2>&1 | tail -1; then
+                echo "The users upgrade did not apply; the configuration keeps its sign-in rules" >&2
+                echo "and the new sign-in functions were not installed. Admin-access recovery works" >&2
+                echo "on this schema (runbook, Users upgrade). Repeat the run with the same operation" >&2
+                echo "to resume it, or with a new one after a refusal." >&2
+                exit 1
+            fi
+            step "4. Migration after the users upgrade"
+        fi
+        if ! "${dc[@]}" run --rm -T migration 2>&1 | tail -1; then
+            if [ "$users_upgrade" = 0 ]; then
+                # A release whose swap refuses an unconverted configuration
+                # stops here; nothing of the swap was committed.
+                echo "If the release notes announce the users upgrade, repeat the run with the" >&2
+                echo "STEWARDSHIP_USERS_* variables (runbook, Users upgrade)." >&2
+            fi
+            exit 1
+        fi
+        grants
     fi
 else
     step "4. Migration: not repeated by a rollback"
