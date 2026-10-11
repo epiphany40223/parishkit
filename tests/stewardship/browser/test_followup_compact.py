@@ -7,7 +7,7 @@ phone width every field takes its own row.
 
 import pytest
 
-from .waits import visible
+from .waits import hidden, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "webkit"], indirect=True
@@ -17,7 +17,7 @@ FORM = "#followup-item form"
 # The form's height at 1280 px, with every field shown. Before #1014 it was
 # about 1,295 px once Resolved and a contact channel were chosen (700 px
 # with those fields hidden); with the short fields side by side it is about
-# 830 px, whatever is chosen.
+# 825 px, whatever is chosen.
 MAX_HEIGHT = 860
 # Page coordinates of every label and visible control in the form, so a
 # scroll does not count as a layout change.
@@ -107,6 +107,15 @@ def test_followup_form_moves_nothing_while_editing(page, component_origin):
         """Type a past date."""
         page.locator("#contact-date").fill("2020-01-15")
 
+    def future():
+        """Type a future date, which shows the contact message on its
+        reserved line, then a past date again, which clears it."""
+        page.locator("#contact-date").fill("2099-01-01")
+        visible(page.locator("#contact-error"))
+        assert page.evaluate(LAYOUT) == before
+        page.locator("#contact-date").fill("2020-01-15")
+        hidden(page.locator("#contact-error"))
+
     def time():
         """Type a time, which shows its reading."""
         page.locator("#contact-time").fill("9:30 am")
@@ -128,7 +137,7 @@ def test_followup_form_moves_nothing_while_editing(page, component_origin):
         assert page.evaluate(LAYOUT) == before
         page.keyboard.press("Escape")
 
-    for step in (resolve, choose_outcome, channel, date, time, notes, tip):
+    for step in (resolve, choose_outcome, channel, date, future, time, notes, tip):
         steady(step)
     assert page.get_by_role("button", name="Save follow-up").is_enabled()
 

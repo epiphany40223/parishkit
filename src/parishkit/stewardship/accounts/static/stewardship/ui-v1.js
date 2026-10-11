@@ -2559,14 +2559,14 @@
   // A field marked data-show-when="name=value" is shown only while the form's
   // control called "name" has that value, e.g. the daily refresh time only
   // for the once-a-day frequency; "name!=value" shows it for every other
-  // value, e.g. a contact attempt's date only once a channel is chosen, or
-  // the confirmation to reopen information follow-up only once "Follow-up
-  // completed" is unticked. On a field the mark hides its enclosing div; on a
-  // div (a group of fields) it hides that div and every control inside it. Hidden fields are disabled so they are not
-  // sent, and the server ignores whatever does not apply in any case. A
-  // browser can restore form values
-  // without a change event (the back/forward cache, or autofill after load),
-  // so every rule is applied again on pageshow, not only at load.
+  // value, e.g. the confirmation to reopen information follow-up only once
+  // "Follow-up completed" is unticked. On a field the mark hides its
+  // enclosing div; on a div (a group of fields) it hides that div and every
+  // control inside it. Hidden fields are disabled so they are not sent, and
+  // the server ignores whatever does not apply in any case. A browser can
+  // restore form values without a change event (the back/forward cache, or
+  // autofill after load), so every rule is applied again on pageshow, not
+  // only at load.
   //
   // data-enabled-when takes the same rule but never hides: the field stays
   // where it is, disabled (greyed and not sent) while the rule does not

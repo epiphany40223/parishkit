@@ -225,7 +225,10 @@ def test_future_contact_is_flagged_as_it_is_typed(page, component_origin):
     contact_marked(page, False)
     date.fill("2099-01-01")
     contact_marked(page, True)
-    assert date.evaluate("node => getComputedStyle(node).borderTopWidth") == "2px"
+    # The error border's second pixel is an inset shadow, so the mark does
+    # not grow the field and move what follows it (#1014).
+    assert date.evaluate("node => getComputedStyle(node).borderTopWidth") == "1px"
+    assert "inset" in date.evaluate("node => getComputedStyle(node).boxShadow")
     assert save.is_disabled()
     has_text(hint, FUTURE)
     # Today with no time yet is not in the future; the time is still needed.
@@ -327,8 +330,11 @@ def test_server_future_refusal_is_shown_at_its_fields(page, component_origin):
     # The zone note (#558) still describes each, then (for Time) its
     # time-entry reading line (#398), then the error.
     for field, described in (
-        ("#contact-date", "contact-zone-help contact-error"),
-        ("#contact-time", "contact-zone-help contact-time_reading contact-error"),
+        ("#contact-date", "contact-zone-help contact-details-help contact-error"),
+        (
+            "#contact-time",
+            "contact-zone-help contact-details-help contact-time_reading contact-error",
+        ),
     ):
         assert page.locator(field).get_attribute("aria-describedby") == described
     # The error follows the row holding Date and Time, on its own reserved
@@ -513,11 +519,15 @@ def test_server_only_error_clears_when_its_field_is_edited(page, component_origi
     message = page.locator("#followup-outcome-error")
     has_text(message, "Left ministry doesn't apply to a request to join.")
     assert outcome.get_attribute("aria-invalid") == "true"
-    assert outcome.get_attribute("aria-describedby") == "followup-outcome-error"
+    # Outcome's tip (#1014) still describes it, before the error.
+    assert (
+        outcome.get_attribute("aria-describedby")
+        == "followup-outcome-tip followup-outcome-error"
+    )
     assert outcome.evaluate("node => getComputedStyle(node).borderTopWidth") == "2px"
     outcome.select_option("joined")
     assert outcome.get_attribute("aria-invalid") == "false"
-    assert outcome.get_attribute("aria-describedby") is None
+    assert outcome.get_attribute("aria-describedby") == "followup-outcome-tip"
     hidden(message)
     assert page.locator("[data-error-summary]").count() == 0
 

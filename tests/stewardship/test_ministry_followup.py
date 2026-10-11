@@ -439,8 +439,15 @@ def test_refused_fields_are_marked_at_the_field(code):
         if name in error["fields"]:
             contact = name.startswith("contact")
             target = "contact-error" if contact else f"{element}-error"
-            # The contact fields keep their zone note (#558) before the error.
-            described = f"contact-zone-help {target}" if contact else target
+            # The contact fields keep their zone note (#558) and How's tip
+            # (#1014) before the error; Outcome keeps its tip (#1014).
+            described = (
+                f"contact-zone-help contact-details-help {target}"
+                if contact
+                else f"followup-outcome-tip {target}"
+                if name == "outcome"
+                else target
+            )
             assert f'aria-invalid="true" aria-describedby="{described}"' in tag
             assert re.search(
                 rf'<ul class="errorlist" id="{target}"[^>]*><li>{message}</li></ul>',

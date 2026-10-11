@@ -320,7 +320,10 @@ def test_followup_contact_time_round_trips_in_browser_time(
         visible(note.get_by_text(f"time zone: {zone}.", exact=False))
         assert page.locator("[name=contact_zone]").input_value() == zone
         date = page.get_by_label("Date", exact=True)
-        assert date.get_attribute("aria-describedby") == "contact-zone-help"
+        assert (
+            date.get_attribute("aria-describedby")
+            == "contact-zone-help contact-details-help"
+        )
         page.get_by_label("Date", exact=True).fill("2026-09-19")
         page.get_by_label("Time", exact=True).fill(typed)
         page.route("**/record/", lambda route: route.fulfill(body="Saved"))
@@ -364,8 +367,8 @@ def test_followup_contact_waits_for_a_known_browser_zone(
     assert page.locator("[name=contact_zone]").input_value() == ""
     # Time is also described by its time-entry reading line (#398).
     for label, described in (
-        ("Date", "followup-save-hint"),
-        ("Time", "followup-save-hint contact-time_reading"),
+        ("Date", "followup-save-hint contact-details-help"),
+        ("Time", "followup-save-hint contact-details-help contact-time_reading"),
     ):
         field = page.get_by_label(label, exact=True)
         assert field.get_attribute("aria-describedby") == described
