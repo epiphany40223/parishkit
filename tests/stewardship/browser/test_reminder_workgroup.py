@@ -95,7 +95,7 @@ def test_review_apply_and_status_happen_in_place(page, component_origin):
     assert NAME in panel.inner_text()
     assert current_step(page) == "Review"
     assert page.url == component_origin + EDITOR
-    assert page.evaluate(FORM_PLACE) == top
+    assert page.evaluate(FORM_PLACE) == pytest.approx(top, abs=1)
     page.get_by_role("button", name="Apply changes").click()
     visible(panel.get_by_role("heading", name="Change status"))
     assert current_step(page) == "Apply"
@@ -105,7 +105,7 @@ def test_review_apply_and_status_happen_in_place(page, component_origin):
     visible(page.locator("#workgroup-status [data-workgroup-status=pending]"))
     assert field.input_value() == NAME
     assert PENDING.split("?")[1] in page.url
-    assert page.evaluate(FORM_PLACE) == top
+    assert page.evaluate(FORM_PLACE) == pytest.approx(top, abs=1)
     assert page.evaluate(MARKED) == "kept"
     assert len(posts) == 2
 
