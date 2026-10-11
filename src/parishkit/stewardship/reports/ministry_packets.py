@@ -112,12 +112,13 @@ def packet_document(payload, parameters, *, parish_name, requested_at, timezone)
     year = campaign_year(source)
 
     def rows(items):
-        """One Ministry's rows, as its single-Ministry list labels them.
+        """One Ministry's rows, labelled by the single-Ministry lists' rule.
 
         A Member added on the form has no DUID yet, so its DUID cell reads
         "New Member" (or "New Member N" when two share a name), numbered
-        within the Ministry exactly as that Ministry's join/leave list is
-        (#966). Every format renders these same strings.
+        by the same rule as the join/leave lists but over this Ministry's
+        packet rows, which can mix joins, leaves and history (#966). Every
+        format renders these same strings.
         """
         new_members = new_member_labels(items)
         return tuple(

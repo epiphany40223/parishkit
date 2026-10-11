@@ -1208,8 +1208,8 @@ including resolved/cancelled history only when the requester selects the
 history option. Rows contain:
 
 - Member name and DUID, where a Member added on the form reads "New Member"
-  (or "New Member N"), numbered within each Ministry as that Ministry's
-  [list](#ministry-change-summary) numbers them;
+  (or "New Member N"), numbered by the same rule as the
+  [lists](#ministry-change-summary) but within each Ministry's packet rows;
 - authorized Member email address(es);
 - recorded email-contact date, blank if none;
 - authorized Member phone number(s);

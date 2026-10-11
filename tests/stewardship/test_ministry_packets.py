@@ -377,8 +377,8 @@ def test_new_members_read_new_member_in_every_format():
     As in the single-Ministry lists, two same-named New Members in one
     Ministry read "New Member 1" and "New Member 2" in form (saved, sorted
     proposed id) order, whatever the row order, and each Member's rows share
-    its label; numbering is per Ministry, as that Ministry's list numbers
-    them. The CSV, XLSX and PDF carry the same labels and no proposed id.
+    its label; numbering is per Ministry, over that Ministry's packet
+    rows. The CSV, XLSX and PDF carry the same labels and no proposed id.
     """
     first = "00000000-0000-4000-8000-000000000011"
     second = "00000000-0000-4000-8000-000000000022"
