@@ -60,13 +60,14 @@ from .admin_editing import (
     sign_preview,
 )
 from .authentication import runtime
-from .limiting import LimiterUnavailable
+from .limiting import Counter, LimiterUnavailable
 from .policy import Capability
 from .policy_models import PortalUser
 from .request_patch import build_candidate
 from .user_changes import (
     DEFAULT_ROLE,
     MESSAGES,
+    LookupLimited,
     UserRefused,
     clean_email,
     member_names,
@@ -92,6 +93,10 @@ ERRORS = (
     StaleRecordError,
     signing.BadSignature,
 )
+# New user's Name lookups the page admits for one Administrator in a minute
+# (#952 review), ahead of the lookup definer's 60 an hour (migration 0053).
+LOOKUP_LIMIT = 20
+LOOKUP_SECONDS = 60
 # Only one of these refusals concerns the change as a whole; the rest are a
 # field's (``UserRefused.field``).
 LAST_ADMINISTRATOR = _(
@@ -589,6 +594,33 @@ def user_delete(request):
         return error_response(error)
 
 
+def _lookup_delay(service, actor):
+    """Count one Name lookup against the Administrator's per-minute window.
+
+    The page's own limit, ahead of the definer's hourly one: a lookup that
+    would be the ``LOOKUP_LIMIT``th within ``LOOKUP_SECONDS`` for this
+    Administrator answers 429 with the seconds to wait. An unavailable
+    limiter raises ``LimiterUnavailable`` (503): the lookup fails closed,
+    never unlimited. Call it outside any transaction, as the limiter needs.
+    """
+    limiter = service.limiter
+    counter = Counter(
+        "admin_user_names",
+        limiter.fingerprint("user_names", str(actor.identity)),
+        LOOKUP_LIMIT,
+        LOOKUP_SECONDS,
+    )
+    return limiter.counters([counter], failure=True)
+
+
+def _lookup_limited(retry):
+    """New user's lookup refused for now; the page asks the reader to type."""
+    response = JsonResponse({"error": None, "names": []}, status=429)
+    response["Retry-After"] = str(min(3600, max(1, int(retry))))
+    response["Cache-Control"] = "no-store"
+    return response
+
+
 @require_POST
 def user_name_suggestions(request):
     """Check New user's Email in place, and suggest Names from ParishSoft.
@@ -597,7 +629,10 @@ def user_name_suggestions(request):
     is JSON: ``error``, the address's problem in the page's words (not an
     address, or already a user) or null, and ``names``, the distinct Names
     of the current ParishSoft Members that list it, best first. It saves
-    nothing; its audit event counts the names found, never the address.
+    nothing but the lookup's audit event, which the definer records itself
+    with the count of names found, never the address. Two limits apply: the
+    page's per-minute window (``_lookup_delay``) and the definer's 60 an
+    hour for each Administrator; either answers 429.
     """
     try:
         service = runtime()
@@ -610,22 +645,23 @@ def user_name_suggestions(request):
             email = clean_email(request.POST["email"])
         except UserRefused as refused:
             error = refused.message
-        with transaction.atomic():
-            if error is None:
-                _configuration, records = _users(service)
-                if email in {
-                    values["email"] for values in saved_users(records).values()
-                }:
-                    error = MESSAGES["email_taken"]
-                else:
-                    names = member_names(email)
-                    record_action(
-                        Action.USER_NAMES_LOOKED_UP,
-                        actor_kind=ActorKind.PORTAL_USER,
-                        actor_id=actor.identity,
-                        context={"outcome": Outcome.SUCCEEDED, "count": len(names)},
-                    )
-            _recheck(request, service, actor)
+        if error is None:
+            delay = _lookup_delay(service, actor)
+            if delay:
+                return _lookup_limited(delay)
+        try:
+            with transaction.atomic():
+                if error is None:
+                    _configuration, records = _users(service)
+                    if email in {
+                        values["email"] for values in saved_users(records).values()
+                    }:
+                        error = MESSAGES["email_taken"]
+                    else:
+                        names = member_names(request.session.session_key, email)
+                _recheck(request, service, actor)
+        except LookupLimited:
+            return _lookup_limited(LOOKUP_SECONDS)
         response = JsonResponse(
             {"error": None if error is None else str(error), "names": names}
         )

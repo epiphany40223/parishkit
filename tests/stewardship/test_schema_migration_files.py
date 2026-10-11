@@ -190,7 +190,7 @@ FROZEN = {
         "188e28a1640c83a8621ff08d2141624eb605dd72adcd494cc85ef6c9b5448a25"
     ),
     "0053_user_name_lookup.sql": (
-        "f51b81d9f96b695bcf4f4b8c008b3a14fcfda610fb5e3318e098afeafc7ccc5f"
+        "9fcdb898fc846a9819ee63dae138d0b5df12d77ab82be4fdd5272d1c713ec6fb"
     ),
 }
 
