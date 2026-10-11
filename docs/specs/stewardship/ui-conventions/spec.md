@@ -540,10 +540,16 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   Review activation or Review inactivation again (the review's
   `data-stale-note`). A selection that would change nothing ("already
   active") is refused in the region, as is an empty or oversized one.
-  Selection is per page, so paging, sorting or filtering the table draws a
-  page with nothing ticked and an empty review region: the review (or a
-  settled status) of the earlier selection goes with it, and since nothing
-  typed was lost, no "were not kept" line is shown. The page's view (its
+  Paging, sorting or filtering the table draws an empty review region, so
+  the review (or a settled status) of the earlier selection goes with it.
+  Every redrawn selection table keeps the ticks of the rows it still shows
+  (selection is per page, so a row on another page loses its tick). For
+  every selection table (Ministries, Hosted files and Schedule settings
+  alike), `ui-v1.js` shows the "were not kept" line only when an answer the
+  reader did not choose as a table view (the quiet refresh once a change is
+  applied) drops a ticked row because it is no longer listed; a re-sort,
+  page or filter they chose says nothing. Select all / Clear selection
+  withdraws a review on any page that has one. The page's view (its
   filters, sort and page; `admin_editing.IN_PLACE_VIEWS`) is kept in Apply's
   answer, handed through Change status's read and carried by the quiet
   follow-up, so the refreshed table is the one the Administrator was

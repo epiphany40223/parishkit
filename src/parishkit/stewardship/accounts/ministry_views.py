@@ -29,10 +29,11 @@ from parishkit.stewardship.source.version_models import SnapshotMinistry
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.refusals import UserFacingStale
-from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
+from parishkit.stewardship.web.tables import Sorting, paginate
 
 from . import admin_navigation
 from .admin_editing import (
+    IN_PLACE_VIEWS,
     confirm,
     editable_configuration,
     error_response,
@@ -334,8 +335,9 @@ def _scope(service):
     return configuration, current.snapshot_id
 
 
-# The Ministries page's own view: its filters, sort and page.
-VIEW_FIELDS = frozenset({"q", "state", *table_parameters()})
+# The Ministries page's own view: its filters, sort and page, which a change
+# keeps (one list, admin_editing.IN_PLACE_VIEWS).
+VIEW_FIELDS = frozenset(IN_PLACE_VIEWS["ministries"])
 
 
 @require_http_methods(["GET", "HEAD", "POST"])

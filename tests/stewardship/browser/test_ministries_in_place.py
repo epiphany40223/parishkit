@@ -15,10 +15,11 @@ from .settings_components import (
     MINISTRY_TABLE_PAGE2,
     MINISTRY_TABLE_PENDING,
     MINISTRY_TABLE_REVIEW,
+    MINISTRY_TABLE_STATUS,
 )
 from .test_in_place import MARK, MARKED, count_requests
 from .test_settings_in_place import FOCUSED, answer_reviews, current_step
-from .waits import visible
+from .waits import painted, recorded, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -168,4 +169,41 @@ def test_paging_after_ticking_clears_the_review_without_a_lost_edits_note(
     visible(row(page, 26))
     assert page.locator("#settings-review").inner_text().strip() == ""
     assert page.locator("[data-edits-lost]").count() == 0
+    assert page.evaluate(MARKED) == "kept"
+
+
+@pytest.mark.parametrize("ticked", [2, 25])
+def test_the_refresh_after_apply_keeps_ticks_or_says_they_went(
+    page, component_origin, ticked
+):
+    """The quiet refresh once the change is applied redraws the table with
+    the new Activity and keeps the ticks of every row it still shows, so a
+    row ticked while the change applied stays ticked and nothing is said.
+    A ticked row the refresh no longer shows (it left the catalog) is gone,
+    and that is said, in the review region under the table, which never
+    moves (#750)."""
+    held = []
+    page.route(
+        lambda url: url.split("?")[0] == component_origin + MINISTRY_TABLE_STATUS,
+        lambda route: held.append(route),
+    )
+    review_first(page, component_origin)
+    page.get_by_role("button", name="Apply changes").click()
+    visible(page.get_by_role("heading", name="Change status"))
+    recorded(page, held, 1)
+    row(page, ticked).check()
+    top = page.evaluate(TABLE_PLACE)
+    held[0].continue_()
+    visible(page.get_by_role("heading", name="Applied: your change is saved"))
+    first = page.locator("tr", has=row(page, 1))
+    assert "Inactive" in first.inner_text()
+    lost = page.locator("#settings-review").get_by_text("were not kept")
+    if ticked == 2:
+        assert row(page, 2).is_checked()
+        painted(page)
+        assert lost.count() == 0
+    else:
+        assert row(page, 25).count() == 0
+        visible(lost)
+    assert page.evaluate(TABLE_PLACE) == top
     assert page.evaluate(MARKED) == "kept"
