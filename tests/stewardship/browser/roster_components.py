@@ -83,6 +83,8 @@ def components(context, admin):
                     "table": replace(table, action=PATH),
                     "show": show,
                     "show_choices": SHOW.items(),
+                    "ministry": "",
+                    "ministries": [{"duid": 9, "name": "Food pantry"}],
                     "changed": changed,
                     "tick_fields": table.page_fields(table.number),
                     "mutable": True,
@@ -101,8 +103,8 @@ def components(context, admin):
     del marked[-2]
     _, after_all = page(marked, {"size": "25"}, show="all")
     _, stale = page(rows, {"size": "25"}, changed=True)
-    # The Show filter's own GET: the select, then its kept size and sort.
-    shown = urlencode([("show", "all"), *first.view_fields])
+    # The Show filter's own GET: the selects, then its kept size and sort.
+    shown = urlencode([("show", "all"), ("ministry", ""), *first.view_fields])
     return {
         PATH: served,
         f"{PATH}?{first.next_query}": second,

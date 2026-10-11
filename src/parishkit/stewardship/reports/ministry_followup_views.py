@@ -776,7 +776,7 @@ def roster(request, campaign_id, request_id):
     from .ministry_roster_views import SHOW
     from .ministry_roster_views import SORTING as ROSTER_SORTING
 
-    view_fields = {"show", *table_parameters()}
+    view_fields = {"show", "ministry", *table_parameters()}
 
     def work(store, actor):
         """Validate the closed form, record the tick and name the answer."""
@@ -796,10 +796,14 @@ def roster(request, campaign_id, request_id):
         if values.get("entered") not in {"yes", "no"} or back not in {"item", "roster"}:
             raise ValueError("Invalid roster tick.")
         view = {key: values[key] for key in sorted(view_fields) if key in values}
-        if view.get("show", "todo") not in SHOW:
+        if view.get("show", "todo") not in SHOW or (
+            view.get("ministry") and not valid_ministry(view["ministry"])
+        ):
             raise ValueError("Invalid roster list choice.")
         # Refuse a bad sort, page or size now, as the list itself would.
-        paging = {key: value for key, value in view.items() if key != "show"}
+        paging = {
+            key: value for key, value in view.items() if key not in {"show", "ministry"}
+        }
         paginate([], paging, sorting=ROSTER_SORTING)
         token = queue_token(values.get("queue", ""))
         _in_campaign(campaign_id, [request_id])

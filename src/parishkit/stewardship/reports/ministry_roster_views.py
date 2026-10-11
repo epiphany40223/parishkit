@@ -59,7 +59,7 @@ from parishkit.stewardship.workflows.roster import (
 
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
-from .ministry_followup import FollowupQuery, followup_page
+from .ministry_followup import FollowupQuery, followup_page, valid_ministry
 from .read_admission import admit_report_read
 
 FORMATS = {
@@ -84,6 +84,7 @@ HEADINGS = (
     "Request",
     "Resolved",
     "Resolved by",
+    "Replaced by a later response",
     "Entered in ParishSoft",
     "Entered by",
     "Entered at",
@@ -92,21 +93,23 @@ HEADINGS = (
 # DUID, "Not yet" and "Leave" stay on one line, and a compact time keeps its
 # date on one line and its time on the next; names and addresses wrap.
 PDF_WEIGHTS = {
-    "Member": 10,
+    "Member": 9,
     "Member DUID": 7,
-    "Family": 10,
+    "Family": 8,
     "Family DUID": 7,
-    "Ministry": 10,
+    "Ministry": 9,
     "Ministry DUID": 7,
     "Request": 6,
     "Resolved": 10,
-    "Resolved by": 9,
+    "Resolved by": 8,
+    "Replaced by a later response": 6,
     "Entered in ParishSoft": 7,
-    "Entered by": 7,
+    "Entered by": 6,
     "Entered at": 10,
 }
 PRIVACY = "Sensitive parish report. Share only with authorized recipients."
 NEW_MEMBER = "New Member"
+FORMER = "Former portal user"
 
 
 def _text(value):
@@ -147,7 +150,7 @@ def _principal(request, store, *, read_only=False):
     return principal
 
 
-def roster_rows(campaign_id, principal, show):
+def roster_rows(campaign_id, principal, show, ministry=""):
     """Every resolved roster change, with its names, DUIDs, resolver and tick.
 
     Every request is read (``history="all"``), not only each Member and
@@ -155,8 +158,9 @@ def roster_rows(campaign_id, principal, show):
     a join or leave it still asks for, and the resolved one would otherwise
     vanish from the list before anyone entered it. Eligibility keeps only
     resolved roster outcomes with no resolution source, so a superseded or
-    cancelled request never appears. Returns the shown rows and the
-    selection's result (for its metadata).
+    cancelled request never appears. ``ministry`` (a DUID as text, or "")
+    keeps one Ministry's changes. Returns the shown rows and the selection's
+    result (for its metadata and its Ministries).
     """
     result = followup_page(
         campaign_id,
@@ -181,7 +185,12 @@ def roster_rows(campaign_id, principal, show):
     names = _family_names({row["family_duid"] for row in rows})
     for row in rows:
         row["family_name"] = names.get(row["family_duid"], "")
-    shown = [row for row in rows if show == "all" or not row["roster_entered"]]
+    shown = [
+        row
+        for row in rows
+        if (show == "all" or not row["roster_entered"])
+        and (not ministry or str(row["ministry_duid"]) == ministry)
+    ]
     return shown, result
 
 
@@ -218,7 +227,9 @@ def _resolvers(request_ids):
             "pk", "email"
         )
     )
-    return {key: emails.get(actor, "") for key, actor in latest.items()}
+    # A resolver whose portal user is gone is named as the other worklists
+    # name one.
+    return {key: emails.get(actor, FORMER) for key, actor in latest.items()}
 
 
 def iso_time(moment):
@@ -249,6 +260,8 @@ def export_rows(rows, zone, *, time_text=iso_time):
             "Join" if row["action"] == "join" else "Leave",
             instant(row["resolved_at"]),
             row["resolved_by"],
+            # A Family answered again after this change was resolved.
+            "Yes" if row.get("latest") is False else "",
             "Yes" if row["roster_entered"] else "Not yet",
             row["roster_by"] if row["roster_entered"] else "",
             instant(row["roster_at"]) if row["roster_entered"] else "",
@@ -346,7 +359,7 @@ def _choices(parameters, *, export):
     A page's GET also accepts ``changed=1``, the tick view's one-time answer
     that someone else changed a mark first.
     """
-    allowed = {"show"} | (
+    allowed = {"show", "ministry"} | (
         {"format", "timezone", "csrfmiddlewaretoken"}
         if export
         else table_parameters() | {"changed"}
@@ -354,16 +367,21 @@ def _choices(parameters, *, export):
     values = filters(parameters, allowed=allowed)
     show = values.pop("show", "todo")
     changed = values.pop("changed", None)
-    if show not in SHOW or changed not in {None, "1"}:
+    ministry = values.pop("ministry", "")
+    if (
+        show not in SHOW
+        or changed not in {None, "1"}
+        or (ministry and not valid_ministry(ministry))
+    ):
         raise ValueError("Invalid roster list choice.")
     if export:
         fmt, zone = values.get("format", "csv"), values.get("timezone", "UTC")
         if fmt not in FORMATS or (zone != "UTC" and zone not in timezone_names()):
             raise ValueError("Invalid roster export choice.")
-        return show, {"format": fmt, "zone": ZoneInfo(zone)}
+        return show, {"format": fmt, "zone": ZoneInfo(zone), "ministry": ministry}
     # Refuse a bad sort, page or size now, as a 400, not while rendering.
     paginate([], values, sorting=SORTING)
-    return show, {"paging": values, "changed": changed == "1"}
+    return show, {"paging": values, "changed": changed == "1", "ministry": ministry}
 
 
 def _respond(request, campaign_id, *, export, parameters, render):
@@ -413,7 +431,7 @@ def _respond(request, campaign_id, *, export, parameters, render):
         def content():
             """Only detached authorized data reaches the template or file."""
             nonlocal count
-            rows, result = roster_rows(campaign_id, principal, show)
+            rows, result = roster_rows(campaign_id, principal, show, extra["ministry"])
             count = len(rows)
             return iter((render(rows, result, show, extra),))
 
@@ -468,7 +486,9 @@ def page(request, campaign_id):
     def render(rows, result, show, extra):
         """The native page."""
         action = reverse("admin:ministry_roster")
-        table = paginate(rows, extra["paging"], carry=[("show", show)], sorting=SORTING)
+        ministry = extra["ministry"]
+        carry = [("show", show)] + ([("ministry", ministry)] if ministry else [])
+        table = paginate(rows, extra["paging"], carry=carry, sorting=SORTING)
         mutable = True
         try:
             admit_campaign(campaign_id, mutating=True)
@@ -482,6 +502,9 @@ def page(request, campaign_id):
                 "table": replace(table, action=action),
                 "show": show,
                 "show_choices": SHOW.items(),
+                "ministry": ministry,
+                # The Ministry filter's choices: the Ministries the list reads.
+                "ministries": result["ministries"],
                 "changed": extra["changed"],
                 "tick_fields": table.page_fields(table.number),
                 "mutable": mutable,

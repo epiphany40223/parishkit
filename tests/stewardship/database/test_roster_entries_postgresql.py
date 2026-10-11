@@ -184,6 +184,13 @@ def test_pages_list_tick_and_download_the_roster_changes(
         assert response.status_code == 200 and b"<td>Not yet</td>" in body
         assert b"Mark entered in ParishSoft" in body and b"Family DUID" in body
         assert get(browser, route + "?show=bad")[0].status_code == 400
+        # The Ministry filter keeps one Ministry's changes; a malformed one
+        # is refused.
+        _, body = get(browser, route + "?ministry=9")
+        assert f"follow-up/{join.pk}/".encode() in body
+        _, body = get(browser, route + "?ministry=8")
+        assert b"No roster changes to enter." in body
+        assert get(browser, route + "?ministry=x")[0].status_code == 400
         assert get(browser, route + "?sort=id")[0].status_code == 400
         tick_url = f"/admin/reports/ministries/follow-up/{join.pk}/roster/"
         response, _ = search(
@@ -242,7 +249,7 @@ def test_pages_list_tick_and_download_the_roster_changes(
         )
         sheet = load_workbook(io.BytesIO(body))["Roster changes"]
         assert sheet["I1"].value == "Resolved by"
-        assert sheet["I2"].value == "admin@example.org" and sheet["J2"].value == "Yes"
+        assert sheet["I2"].value == "admin@example.org" and sheet["K2"].value == "Yes"
         response, body = search(
             browser, export, {"format": "pdf", "timezone": "UTC", "show": "all"}
         )
@@ -335,9 +342,9 @@ def test_a_resubmitted_family_keeps_its_resolved_change_on_the_list(
     route = "/admin/reports/ministries/follow-up/roster/"
     _, body = get(browser, route)
     assert f"follow-up/{join.pk}/".encode() in body
-    assert b"Replaced by a later Family response; still to enter" in body
+    assert b"Replaced by a later response" in body and b"<td>Yes</td>" in body
     _, body = search(browser, route + "exports/", {"format": "csv", "timezone": "UTC"})
-    assert b"Food pantry" in body
+    assert b"Food pantry" in body and b",Yes,Not yet," in body
 
 
 def test_staff_tick_a_leave_but_not_a_source_resolved_request(response_service):

@@ -83,7 +83,9 @@ def roster_marks(request_ids):
             "entered": row["entered"],
             "sequence": row["sequence"],
             "at": row["created_at"],
-            "by": emails.get(row["actor_id"], ""),
+            # A marker whose portal user is gone, named as the other
+            # worklists name one.
+            "by": emails.get(row["actor_id"], "Former portal user"),
         }
         for row in rows
     }

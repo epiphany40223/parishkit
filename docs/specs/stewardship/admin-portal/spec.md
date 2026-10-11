@@ -4387,8 +4387,11 @@ page and on [Roster changes to enter](#roster-changes-to-enter); who and when
 are kept as history. A request resolved because the ParishSoft roster already
 shows the change (it has a resolution source) needs no tick and shows
 *Already in ParishSoft*. Ministry leaders see the tick, read-only, on their
-own Ministries' requests and in the follow-up queue's Status column, and
-never see Roster changes to enter. A resolved request is a closed outcome
+own Ministries' requests; the follow-up queue's Status column says only
+"Entered" or "Not yet entered", one line, with who and when on the request's
+page. Ministry leaders never see Roster changes to enter: their per-Ministry
+view of the same changes is the follow-up queue filtered by their Ministry
+and Status *Resolved*, which shows each request's mark. A resolved request is a closed outcome
 that a later Family response never replaces (a new request for the same
 change is a separate request), so the tick stays with the request it was
 made on. The tick is not a field on the request: each set or clear is an
@@ -4402,23 +4405,29 @@ ParishSoft, and this tick only records that a person did.
 Administrators and Staff, linked from Ministry follow-up, which is its
 breadcrumb parent) is the list staff work from. It lists the resolved joins
 and leaves with no resolution source that are not yet ticked, or, with
-**Show** set to all, every one of them, to find and clear a mistaken mark.
-Its columns follow the
+**Show** set to all, every one of them, to find and clear a mistaken mark,
+and **Ministry** narrows it to one Ministry (a closed DUID value, no schema
+change). Its columns follow the
 [table column order](../ui-conventions/spec.md#table-column-order): Member,
 Member DUID ("New Member" for a Member added on the form), Family, Family
 DUID, Ministry, Ministry DUID, Request (Join or Leave), Resolved, Resolved by,
-Entered in ParishSoft (Yes or Not yet), Entered by and Entered at, with the
-tick last; times are browser-local in the compact date format. Every named
-column sorts in place, and Show, sorting and paging travel in the address,
+Replaced by a later response (Yes when the Family answered again after the
+change was resolved), Entered in ParishSoft (Yes or Not yet), Entered by and
+Entered at, with the tick last; a resolver or marker whose portal user is
+gone shows as "Former portal user"; times are browser-local in the compact date format. Every named
+column sorts in place, and Show, Ministry, sorting and paging travel in the
+address,
 since nothing on the list is private search text. A resolved change stays
 listed after the Family answers again (marked as replaced by a later
 response), since it still has to be entered. A tick there keeps the list's
-Show, sort and page; a tick someone else changed first leaves the list as
-it is with a notice, which is what the page announces.
+Show, Ministry, sort and page; a tick someone else changed first leaves the
+list as it is with a notice, which is what the page announces; the notice's
+two lines are kept while empty
+([no layout shift](../ui-conventions/spec.md#no-layout-shift)).
 
 Its CSV, XLSX and PDF downloads carry the page's columns, without the tick
 ([downloaded files](../ui-conventions/spec.md#downloaded-files)), for every
-row of the chosen Show, in the browser's time zone (the PDF in the parish's
+row of the chosen Show and Ministry, in the browser's time zone (the PDF in the parish's
 compact date format). The view and each download are audited as counts.
 
 The [Ministry change summary](../reports/spec.md#ministry-change-summary)

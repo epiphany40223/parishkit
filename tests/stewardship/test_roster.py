@@ -35,6 +35,7 @@ def roster_row(**values):
         "action": "join",
         "resolved_at": WHEN,
         "resolved_by": "admin@example.org",
+        "latest": True,
         "roster_entered": True,
         "roster_by": "staff@example.org",
         "roster_at": WHEN,
@@ -76,7 +77,12 @@ def test_download_words_a_new_member_and_an_unentered_change_as_the_page():
     line = dict(zip(HEADINGS, list(csv.reader(io.StringIO(text)))[1], strict=True))
     assert line["Member DUID"] == "New Member"
     assert line["Entered in ParishSoft"] == "Not yet"
+    assert line["Replaced by a later response"] == ""
     assert line["Entered by"] == "" and line["Entered at"] == ""
+    # A Family that answered again after the change was resolved.
+    replaced = roster_csv([roster_row(latest=False)], ZoneInfo("UTC")).decode()
+    line = dict(zip(HEADINGS, list(csv.reader(io.StringIO(replaced)))[1], strict=True))
+    assert line["Replaced by a later response"] == "Yes"
 
 
 def test_csv_xlsx_and_pdf_carry_the_same_columns_and_rows():
@@ -149,3 +155,21 @@ def test_every_named_column_sorts_both_ways():
         assert [row["id"] for row in SORTING.sort_rows(rows, f"-{key}")] == list(
             reversed(expected)
         ), key
+
+
+def test_queue_status_cell_says_one_short_line():
+    """The follow-up queue's Status cell says only Entered or Not yet
+    entered; who and when are on the request page."""
+    from django.template.loader import render_to_string
+
+    def cell(**values):
+        """The tick as the queue's Status cell draws it."""
+        row = roster_row(roster_eligible=True, source_resolved=False) | values
+        return render_to_string(
+            "stewardship/roster-tick.html",
+            {"row": row, "can_tick": False, "compact": True},
+        ).strip()
+
+    assert cell() == "<br>Entered"
+    assert cell(roster_entered=False) == "<br>Not yet entered"
+    assert "staff@example.org" not in cell()
