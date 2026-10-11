@@ -7,7 +7,6 @@ explain a "—" with a keyboard-reachable toggletip.
 """
 
 import pytest
-from playwright.sync_api import expect
 
 from .test_components import axe_violations
 
@@ -16,6 +15,13 @@ pytestmark = pytest.mark.parametrize(
 )
 
 PAGES = ["/campaign-comparison", "/campaign-comparison-empty"]
+
+
+def expect(locator):
+    """Load the optional browser assertion library only after explicit opt-in."""
+    from playwright.sync_api import expect as browser_expect
+
+    return browser_expect(locator)
 
 
 @pytest.mark.parametrize("path", PAGES)
