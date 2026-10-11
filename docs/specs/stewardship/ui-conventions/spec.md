@@ -595,6 +595,13 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   the new ones without moving the form or the review. A refused upload's
   field error shows in the form and, linked to that field, in the review
   region, which takes focus; a stale upload or Apply is refused there too.
+  A refused Apply's answer marks the form and the current logos
+  `data-in-place-always`, so both are redrawn at the current version and
+  the next upload is accepted. Loading the address of logos that can no
+  longer be reviewed (already applied, expired, another sign-in's, or
+  staged against settings changed since) shows the page with that
+  explanation in the review region. The form has an id, so a file chosen
+  while the quiet refresh redraws it is said not to be kept.
 
 ### No layout shift
 
