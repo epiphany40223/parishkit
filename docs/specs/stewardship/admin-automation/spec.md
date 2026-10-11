@@ -1812,10 +1812,10 @@ none.
 | `content_catalog`, `content_edit`, `content_revision`, `content_history`, `content_history_revision`, `content_plain_text` | `content list`, `content show`, `content preview`, `content confirm`, `content history` (PR 10) |
 | `parish_settings`, `ministries` | `parish`, `ministries` (PR 10) |
 | `hosted_files`, `hosted_file_delete`, `hosted_file_rename` | `files list`, `files delete`, `files rename` ([#463](https://github.com/epiphany40223/parishkit/issues/463)) |
-| `artwork_settings`, `artwork_remove` | `artwork show`, `artwork remove` (PR 10) |
+| `artwork_settings` (its upload and removal reviews, #750) | `artwork show`, `artwork remove` (PR 10) |
 | `branding_settings`: **Confirm new logos** | `branding show`, `branding confirm --expected-version …`, a configuration request for logos already uploaded (PR 10) |
 | `hosted_file_upload`, `artwork_upload`, `branding_settings` uploads | Pending: file uploads; a later PR may accept `--file` |
-| `artwork_preview`, `branding_preview`, `branding_asset` | Permanent: image previews and bytes for the browser |
+| `branding_preview`, `branding_asset` | Permanent: image previews and bytes for the browser |
 
 Every configuration change still becomes a configuration request that the
 configuration installer applies; the command reports the request outcome as
