@@ -52,8 +52,10 @@ EXPORT_FORMATS = {
 # and answered with the page's unavailable message instead.
 READ_SECONDS = DEFAULT_LIMITS.interactive_seconds
 # The download's columns: JSON Lines keys (a program-readable format, so
-# snake_case), each with the plain CSV and XLSX heading in the page's words,
-# its column headings and its identifier filter labels (#966). The
+# snake_case), each with its plain CSV and XLSX heading (#966): the page's
+# column headings and identifier filter labels where it has them, and
+# Source for an entry's kind (operational or audit), which the page shows
+# only as the level icon. The
 # cross-link identifiers stay, the recorded exception to leaving internal
 # identifiers out of downloads (Administrator decision, 2026-10-11).
 EXPORT_HEADINGS = {

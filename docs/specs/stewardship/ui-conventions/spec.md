@@ -1361,7 +1361,7 @@ Recorded exceptions to the rule above:
   troubleshooting record and only the Administrator can download it
   (Administrator decision, 2026-10-11, on
   [#966](https://github.com/epiphany40223/parishkit/issues/966)). Its CSV
-  and XLSX headings are still plain names in the page's words; JSON Lines
+  and XLSX headings are still plain names; JSON Lines
   keeps program keys.
 - **Postal mail merge PDF:** a sheet of address labels holding the mailing
   columns (addressee, address, Family, DUID and Family code), not the

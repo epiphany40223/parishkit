@@ -552,7 +552,7 @@ def test_log_csv_and_xlsx_carry_the_same_columns_and_cells():
         ["" if value is None else value for value in values]
         for values in book.active.iter_rows(values_only=True)
     ]
-    # Plain headings in the page's words (#966); JSON Lines keeps its keys.
+    # Plain headings, not program keys (#966); JSON Lines keeps its keys.
     assert table[0] == sheet[0] == list(log_reads.EXPORT_HEADINGS.values())
     assert table[0] == [
         "Time",

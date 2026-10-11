@@ -5032,7 +5032,8 @@ integration; report owners supply the durable non-sensitive event metadata.
 In v1 a log export is a bounded download from the log screen: CSV, XLSX or
 JSON Lines of the entries matching the screen's filters, newest first, at most
 the newest 10,000, with the same reviewed detail the screen shows. CSV and XLSX
-carry the same columns under plain headings in the screen's words: Time,
+carry the same columns under plain headings, in the screen's words where it
+has them (Source names an entry's kind, operational or audit): Time,
 Source, Level, Type, Actor, Actor identifier, Correlation identifier,
 Campaign identifier, Subject identifier and Recorded detail (#966). JSON
 Lines keys each entry by the same fields in snake_case (`time`, `source`,

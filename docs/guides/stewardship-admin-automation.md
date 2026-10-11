@@ -1379,3 +1379,12 @@ error, as `logs export` does; the wrapper refuses to write it to a terminal.
   `talents_report_viewed`, the event its page records. No other command
   changes, and the only readers are Administrator-run assistants; a script
   that ran `report talents` now gets a `usage` error (exit 2).
+- `pk-admin/1` (#966): a deliberate change, kept on version 1.
+  `logs export --format csv` and `--format xlsx` write the page's file,
+  whose column headings are now plain names (`Time`, `Source`, `Level`,
+  `Type`, `Actor`, `Actor identifier`, `Correlation identifier`,
+  `Campaign identifier`, `Subject identifier`, `Recorded detail`) in the
+  same order; they were the snake_case keys. JSON Lines keys are
+  unchanged, as are the command's options and its document. The only
+  readers are Administrator-run assistants; a script that reads the CSV by
+  heading must use the new names.
