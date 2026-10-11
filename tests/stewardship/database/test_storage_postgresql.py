@@ -646,7 +646,8 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
 
     time_retention_contracts = {
         # An imported campaign archive's rows (#1018) go only with a pending
-        # preview (housekeeping) or a removed import; nothing else.
+        # preview (housekeeping) or a removed import, locking the archive so
+        # a racing Apply cannot strip an active one; nothing else.
         **dict.fromkeys(
             (
                 "stewardship_campaign_archive_day",
@@ -654,7 +655,8 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
                 "stewardship_campaign_archive_family",
             ),
             "BEGINIFTG_OP='DELETE'ANDEXISTS(SELECT1FROMpublic.stewardship_campaign_archivea"
-            "WHEREa.id=OLD.archive_idANDa.stateIN('pending','removed'))THENRETURNOLD;"
+            "WHEREa.id=OLD.archive_idANDa.stateIN('pending','removed')FORSHARE)"
+            "THENRETURNOLD;"
             "ENDIF;RAISEEXCEPTION",
         ),
         "stewardship_source_slot_decision": (

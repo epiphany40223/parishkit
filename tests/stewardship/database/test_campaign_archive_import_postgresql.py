@@ -309,6 +309,127 @@ def test_racing_applies_have_one_winner(administrator, monkeypatch):
     assert CampaignArchive.objects.filter(state="active").count() == 1
 
 
+def test_housekeeping_skips_a_preview_an_apply_holds(administrator, monkeypatch):
+    """An Apply at the edge of a preview's lifetime keeps the preview's rows.
+
+    The Apply locks the preview and makes it active; while its transaction
+    is open, another Review's housekeeping finds the preview expired. It
+    must skip the locked row, not delete the rows of what is about to be an
+    active import.
+    """
+    store, actor = administrator
+    preview = as_web(imports.review, store, actor, workbook(2038)).archive
+    days = CampaignArchiveDay.objects.filter(archive=preview).count()
+    families = CampaignArchiveFamily.objects.filter(archive=preview).count()
+    assert days and families
+    holding, release = threading.Event(), threading.Event()
+    real_audit = imports._audit
+    outcomes = {}
+
+    def slow_audit(action, *args):
+        """Hold the Apply's transaction open after it made the preview active."""
+        real_audit(action, *args)
+        if threading.current_thread().name == "apply":
+            holding.set()
+            release.wait(10)
+
+    monkeypatch.setattr(imports, "_audit", slow_audit)
+
+    def run(name, call, *args):
+        """Run one service call on this thread's own (web) connection."""
+        try:
+            outcomes[name] = call(store, actor, *args)
+        except Exception as error:
+            outcomes[name] = error
+        finally:
+            connection.close()
+
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        applying = threading.Thread(
+            target=run, args=("apply", imports.apply, preview.pk), name="apply"
+        )
+        applying.start()
+        assert holding.wait(10)
+        # Every preview now counts as expired for the next Review.
+        monkeypatch.setattr(imports, "PREVIEW_SECONDS", 0)
+        reviewing = threading.Thread(
+            target=run, args=("review", imports.review, workbook(2037)), name="review"
+        )
+        reviewing.start()
+        reviewing.join(5)
+        # Housekeeping skipped the locked preview instead of waiting on it.
+        assert not reviewing.is_alive()
+        release.set()
+        applying.join(10)
+    assert outcomes["apply"].outcome == "imported", outcomes
+    assert isinstance(outcomes["review"], imports.Review), outcomes
+    preview.refresh_from_db()
+    assert preview.state == "active"
+    assert CampaignArchiveDay.objects.filter(archive=preview).count() == days
+    assert CampaignArchiveFamily.objects.filter(archive=preview).count() == families
+
+
+def test_a_child_delete_waits_for_the_apply_and_is_refused(administrator, monkeypatch):
+    """The child guard locks the archive, so a racing delete cannot strip it.
+
+    A direct delete of a preview's rows, while an Apply holds the preview,
+    waits for the Apply and then finds the archive active: refused.
+    """
+    store, actor = administrator
+    preview = as_web(imports.review, store, actor, workbook(2036)).archive
+    days = CampaignArchiveDay.objects.filter(archive=preview).count()
+    holding, release = threading.Event(), threading.Event()
+    real_audit = imports._audit
+    outcomes = {}
+
+    def slow_audit(action, *args):
+        """Hold the Apply's transaction open after it made the preview active."""
+        real_audit(action, *args)
+        if threading.current_thread().name == "apply":
+            holding.set()
+            release.wait(10)
+
+    monkeypatch.setattr(imports, "_audit", slow_audit)
+
+    def apply():
+        """The Apply, on its own (web) connection."""
+        try:
+            outcomes["apply"] = imports.apply(store, actor, preview.pk)
+        finally:
+            connection.close()
+
+    def delete():
+        """The racing delete of the preview's day rows."""
+        try:
+            outcomes["delete"] = refusal_of(
+                executing(
+                    "DELETE FROM stewardship_campaign_archive_day WHERE archive_id=%s",
+                    [preview.pk],
+                )
+            )
+        except BaseException as error:
+            outcomes["delete"] = error
+        finally:
+            connection.close()
+
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        applying = threading.Thread(target=apply, name="apply")
+        applying.start()
+        assert holding.wait(10)
+        deleting = threading.Thread(target=delete, name="delete")
+        deleting.start()
+        deleting.join(2)
+        # The delete waits on the Apply's lock.
+        assert deleting.is_alive()
+        release.set()
+        applying.join(10)
+        deleting.join(10)
+    assert outcomes["apply"].outcome == "imported"
+    code, message = outcomes["delete"]
+    assert code == GUARDED and CHILD_CHANGE in message
+    assert CampaignArchiveDay.objects.filter(archive=preview).count() == days
+
+
 GUARDED = "23514"
 UNGRANTED = "42501"
 # Each guard's own words, so a check constraint (also 23514) cannot pass

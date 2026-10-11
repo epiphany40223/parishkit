@@ -24,9 +24,9 @@ this; SQL checks the actor again (``stewardship_export_authorized_v1``) and
 admits only these state changes. Racing Applies are settled by the
 one-active-row indexes: the loser is stale. Review is one at a time across
 the deployment (a non-blocking advisory lock), since each holds a workbook
-and a helper process. A preview lives fifteen minutes; each Review and Apply
-first deletes expired previews, which is the housekeeping the trigger
-admits.
+and a helper process. A preview lives fifteen minutes; each Review first
+deletes expired previews, which is the housekeeping the trigger admits,
+skipping any an Apply holds.
 
 Audit events (``campaign_archive_previewed``, ``…_imported``,
 ``…_replaced`` and ``…_removed``) carry the year, the file's SHA-256, the
@@ -287,13 +287,24 @@ def _archive_context(archive, outcome, **extra):
 
 
 def _housekeeping(now):
-    """Delete expired previews, children first, as the trigger admits."""
+    """Delete expired previews, children first, as the trigger admits.
+
+    Each expired preview is locked first, skipping any another transaction
+    holds: an Apply that locked a preview at the edge of its lifetime may
+    be making it active, and deleting its rows then would leave an active
+    import without them. ``FOR UPDATE`` re-reads a row an Apply committed
+    meanwhile, so the ``pending`` filter drops it. A skipped preview goes at
+    a later Review. (The child guard also locks the archive ``FOR SHARE``
+    before admitting a delete, so a delete that raced anyway is refused.)
+    """
     from parishkit.stewardship.reports.archive_models import CampaignArchive
 
     expired = list(
-        CampaignArchive.objects.filter(
+        CampaignArchive.objects.select_for_update(skip_locked=True)
+        .filter(
             state="pending", created_at__lt=now - timedelta(seconds=PREVIEW_SECONDS)
-        ).values_list("pk", flat=True)
+        )
+        .values_list("pk", flat=True)
     )
     if expired:
         _delete_pending(expired)

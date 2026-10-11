@@ -974,8 +974,11 @@ linked to #1018 (the last one closes part (b)).
    years can be loaded by the operator the same day. The ingress route
    exception for Review moves to slice 4, with the upload route it serves.
    As built: a preview's `preview.token` is its pending archive row,
-   bound to the Administrator who reviewed it; each Review and Apply first
-   deletes expired previews (the housekeeping the trigger admits); and a
+   bound to the Administrator who reviewed it; each Review first deletes
+   expired previews (the housekeeping the trigger admits), skipping any an
+   Apply holds, and the child rows' guard locks their archive before
+   admitting a delete, so an Apply and housekeeping never split an import
+   from its rows; and a
    Review killed at its time limit leaves a `helper_timed_out` entry naming
    `archive_check` and the helper `archive_check_worker`. The command line
    needs no page route yet: the route-parity ledger lists the `history`

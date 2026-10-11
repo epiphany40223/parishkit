@@ -34,9 +34,10 @@
 -- (removed by one), each advancing the version by one and changing nothing
 -- else; the times are the database's. It admits a DELETE only of a pending
 -- row (expired-preview housekeeping). The child rows' guard admits a DELETE
--- only while their archive is pending or removed, and no UPDATE; a child
--- row is inserted only under a pending archive, by the Administrator who
--- previewed it.
+-- only while their archive is pending or removed (locking it FOR SHARE, so
+-- a racing Apply cannot leave an import without its rows), and no UPDATE;
+-- a child row is inserted only under a pending archive, by the
+-- Administrator who previewed it.
 --
 -- stewardship_safe_context_v1 is replaced with 0050's body plus three
 -- action keys (archive_year, archive_days and archive_family_rows, counts),
@@ -111,11 +112,15 @@ BEGIN
     RETURN NEW;
 END $$;
 
+-- A child delete locks its archive FOR SHARE: an Apply holding the archive
+-- (pending, about to become active) makes the delete wait, and the re-read
+-- after it commits finds the archive active, so the delete is refused
+-- rather than leaving an active import without its rows.
 CREATE FUNCTION public.stewardship_campaign_archive_child_guard_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 BEGIN
     IF TG_OP='DELETE' AND EXISTS(SELECT 1 FROM public.stewardship_campaign_archive a
-           WHERE a.id=OLD.archive_id AND a.state IN ('pending','removed')) THEN RETURN OLD; END IF;
+           WHERE a.id=OLD.archive_id AND a.state IN ('pending','removed') FOR SHARE) THEN RETURN OLD; END IF;
     RAISE EXCEPTION 'Imported campaign archive rows are kept until their archive goes' USING ERRCODE='23514';
 END $$;
 
@@ -370,7 +375,9 @@ BEGIN
        OR NOT EXISTS(SELECT 1 FROM pg_proc WHERE proname='stewardship_campaign_archive_guard_v1'
                AND prosrc LIKE '%OLD.state=''pending'' AND NEW.state=''active''%'
                AND prosrc LIKE '%OLD.state=''active'' AND NEW.state=''removed''%'
-               AND prosrc LIKE '%NEW.version<>OLD.version+1%') THEN
+               AND prosrc LIKE '%NEW.version<>OLD.version+1%')
+       OR NOT EXISTS(SELECT 1 FROM pg_proc WHERE proname='stewardship_campaign_archive_child_guard_v1'
+               AND prosrc LIKE '%(''pending'',''removed'') FOR SHARE)%') THEN
         RAISE EXCEPTION 'The campaign archive guards lack their checks';
     END IF;
     -- The context allowlist admits the import's audit and timeout values,
