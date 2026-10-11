@@ -950,6 +950,46 @@ Members, 72 Ministries, 300 leaders and three retained snapshots, the first
 read on a fresh connection takes a few tens of milliseconds, and a test
 bounds it.
 
+#### Ministry leader changes
+
+Because Ministry scope is derived on every request, a full refresh or a
+settings change can widen or narrow what a signed-in Ministry leader sees with
+no other record. Each change that can move it records a count-only audit event
+instead (#1034). A source promotion, and a configuration activation (a change
+to the campaign's leader roles, its Ministries or their Ministry activity),
+reads the current source snapshot, configuration and campaign just before its
+change and, just after it in the same transaction, calls the SECURITY DEFINER
+`stewardship_ministry_leader_changes_v1`. That function compares the
+(address, Ministry) pairs sign-in grants now with those at the earlier
+pointers and, when any differ, writes one `ministry_leaders_changed` audit
+event itself: `count` is the pairs gained and `matching_count` the pairs lost,
+so a leader's changed address counts once each way. A promotion's event also
+carries the promoted `snapshot_id`; its subject is the refresh task, and an
+activation's is the configuration request. The event commits or rolls back
+with the change. A refresh or activation that changes no pair records
+nothing.
+
+The function returns nothing: no address, name, Member DUID or count reaches
+the calling login, so a login that stages changes and rolls them back learns
+nothing from it, and the configuration installer cannot read the audit log.
+Which people gained or lost a Ministry is in the retained ParishSoft snapshots
+while they exist. Since migration 0070 the definition of who leads what is
+`stewardship_ministry_leaders_at_v1(configuration, campaign, snapshot)`, which
+no login may execute; `stewardship_ministry_leaders_v1()` is a thin wrapper
+over it at the current pointers, so the earlier and current sides cannot
+drift. The recorder refuses every session but the worker's (promotion and
+setup completion), the configuration installer's and the schema owner's, and
+`database-grants` gives EXECUTE to those two logins alone. Other logins that
+activate a configuration (bootstrap, offline Admin-access recovery) record
+nothing. Recording is best-effort: a failure is logged and the promotion or
+activation goes on, except a SQL time limit, which fails the attempt like any
+other statement in it. Inside a promotion the count is one more statement
+under the promotion's own statement limit (`PROMOTION_STATEMENT_SECONDS`, 120
+seconds), so a pathologically slow count fails that promotion attempt, which
+retries; a normal count takes tens of milliseconds. System logs list the event
+in the [ParishSoft refreshes](../admin-portal/spec.md#activity-groups)
+Activity group.
+
 ### Submission
 
 Every final click creates an immutable `Submission` version containing:

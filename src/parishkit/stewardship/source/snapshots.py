@@ -363,6 +363,14 @@ def promote_snapshot(snapshot_id, claim, *, admit, reconcile):
             raise InvalidSourcePayload(
                 "Source promotion requires a ready current-base snapshot."
             )
+        from parishkit.stewardship.campaigns.leader_changes import (
+            leader_pointers,
+            record_leader_changes,
+        )
+
+        # The pointers Ministry leadership derives from, read before the
+        # source pointer moves, for the count-only audit below (#1034).
+        leaders = leader_pointers()
         snapshot.generation = current.generation + 1
         snapshot.promoted_at = _now()
         snapshot.state = "promoted"
@@ -389,6 +397,14 @@ def promote_snapshot(snapshot_id, claim, *, admit, reconcile):
                 "source_fingerprint": snapshot.content_digest,
                 "outcome": Outcome.SUCCEEDED,
             },
+        )
+        # One count-only event when the new snapshot changes who leads which
+        # Ministry; best-effort, so it never fails the promotion (#1034).
+        record_leader_changes(
+            leaders,
+            actor_id=claim.worker_id,
+            subject_id=claim.task_id,
+            promoted_snapshot=snapshot.pk,
         )
         # Long derived work cannot publish after its owner silently expires.
         verify_source(claim)

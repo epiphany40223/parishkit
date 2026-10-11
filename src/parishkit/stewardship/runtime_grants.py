@@ -293,6 +293,14 @@ TASK_EVENT_PRUNE_FUNCTION = "stewardship_task_event_prune_v1(integer, integer, i
 # export and retry checks, and a download's fresh authorization) learns only
 # the scope, never the Member contact data that decides it.
 LEADER_SCOPE_FUNCTION = "stewardship_ministry_leader_scope_v1(uuid)"
+# Records a count-only audit event when a change moved who leads which
+# Ministry (#1034): source promotion (worker) and configuration activation
+# (installer) call it after their change. It writes the event itself and
+# returns nothing, so neither login reads an address, a Member DUID or even
+# the counts; it also refuses any other session.
+LEADER_CHANGES_FUNCTION = (
+    "stewardship_ministry_leader_changes_v1(uuid, uuid, uuid, uuid, uuid, uuid, uuid)"
+)
 # The offline users upgrade (#952) reads each recorded Google identity and
 # whether it ever signed in, and the ParishSoft Member names of the addresses
 # it names (a new user's default Name), without audit-log or source grants.
@@ -358,6 +366,8 @@ CLOSURE_FUNCTIONS = {
         "stewardship_jobs",
         "0024_mail_message_address_outcomes",
     ),
+    # Ministry leader changes (0070, #1034) follow 0069.
+    LEADER_CHANGES_FUNCTION: ("stewardship_accounts", "0018_leader_changes"),
 }
 
 
@@ -423,7 +433,9 @@ def runtime_functions(role, *, target=None):
     Web and the parishsoft, google_workspace and slack credential installers
     check a secret request's automation sign-in instant (ADM-11 PR 5). Web,
     the general worker and the download login read a user's role-derived
-    Ministry scope (#922). The offline admin-recovery login reads recorded
+    Ministry scope (#922); the general worker and the configuration
+    installer record the Ministry leader pairs a promotion or an activation
+    gained and lost (#1034). The offline admin-recovery login reads recorded
     identities and Member names for the users upgrade (#952), and web reads
     them for that upgrade's read-only preview, one typed address's Member
     names for the New user page's Name default, and the ParishSoft Ministry
@@ -451,12 +463,16 @@ def runtime_functions(role, *, target=None):
                 ARCHIVE_RENEWAL_FUNCTION,
                 RECIPIENT_OUTCOMES_FUNCTION,
             },
-            ServiceRole.CONFIG_INSTALLER: {MINISTRY_CATALOG_FUNCTION},
+            ServiceRole.CONFIG_INSTALLER: {
+                MINISTRY_CATALOG_FUNCTION,
+                LEADER_CHANGES_FUNCTION,
+            },
             ServiceRole.WORKER: {
                 SESSION_PURGE_FUNCTION,
                 READ_GUARD_KILLS_FUNCTION,
                 TASK_EVENT_PRUNE_FUNCTION,
                 LEADER_SCOPE_FUNCTION,
+                LEADER_CHANGES_FUNCTION,
             },
             "download": {LEADER_SCOPE_FUNCTION},
             ServiceRole.ADMIN_RECOVERY: {

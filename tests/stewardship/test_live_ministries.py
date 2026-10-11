@@ -63,13 +63,17 @@ def test_only_the_config_installer_may_read_the_catalog_function():
     from parishkit.stewardship.runtime_grants import (
         AUTOMATION_FRESH_FUNCTION,
         FAMILY_LOGIN_FUNCTION,
+        LEADER_CHANGES_FUNCTION,
         LEADER_SCOPE_FUNCTION,
         MINISTRY_CATALOG_FUNCTION,
         runtime_functions,
     )
 
+    # The installer and the worker also count the Ministry leader pairs
+    # an activation or a promotion gained and lost (#1034).
     assert runtime_functions(ServiceRole.CONFIG_INSTALLER) == {
-        MINISTRY_CATALOG_FUNCTION
+        MINISTRY_CATALOG_FUNCTION,
+        LEADER_CHANGES_FUNCTION,
     }
     # Web also reads the 24-hour Family mail count for System health (ADM-13),
     # checks a secret request's automation sign-in (ADM-11 PR 5) and reads a
@@ -101,6 +105,7 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         "stewardship_read_guard_kills_v1(uuid)",
         "stewardship_task_event_prune_v1(integer, integer, integer)",
         LEADER_SCOPE_FUNCTION,
+        LEADER_CHANGES_FUNCTION,
     }
     assert runtime_functions("download") == {LEADER_SCOPE_FUNCTION}
     for role in (ServiceRole.SCHEDULER, ServiceRole.MAIL_DISPATCH):
