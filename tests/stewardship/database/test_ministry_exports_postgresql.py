@@ -145,7 +145,7 @@ def test_capture_scope_and_revocation(response_service, google):
         document = load_document(leaving)
         assert document.rows[0][-1] == "Chairperson"
         # No Assignee column since follow-up assignment was removed (#552).
-        assert len(document.headings) == 8 and "Assignee" not in document.headings
+        assert len(document.headings) == 7 and "Assignee" not in document.headings
         assert "Email" not in document.headings and "Phones" not in document.headings
         for format in ("csv", "xlsx", "pdf"):
             output = io.BytesIO()

@@ -538,31 +538,20 @@ def _draw_row(canvas, table, y, cells, fill, *, heading=False):
 # --- Record cards ---------------------------------------------------------
 #
 # Field/value reports (additional information, financial, Ministry, Family
-# test names, packets) print one card per record. The PDF is the readable
-# view: CSV and XLSX stay the complete audit files, so a card leaves out the
-# internal references and blank fields a reader cannot use, titles itself
-# with the record's name, DUID and status, and nests workflow history under
-# its item (``row_records``). The report-information card leads with count
-# tiles and states only what the page header and footer do not
+# test names, packets) print one card per record. A card shows the same
+# columns as the CSV and XLSX (#966; none of them carries internal
+# references): it titles itself with the record's name, DUID and status,
+# leaves out blank fields, and nests workflow history under its item
+# (``row_records``). The report-information card leads with count tiles
+# and states only what the page header and footer do not
 # (``report_record``). Every value a card does show is drawn in full.
 
-# Fields a PDF card never shows: internal references, row versions and
-# notes for software, not readers. CSV and XLSX keep every one of them.
+# Report details the report-information card has left out since #929: the
+# time zones (the page stamp names the display zone) and the
+# digest-resolution note. These are report details, never table columns,
+# so a card still shows every column.
 HIDDEN_FIELDS = frozenset(
-    {
-        "Row type",
-        "Campaign reference",
-        "Source reference",
-        "Source generation",
-        "Version",
-        "Response reference",
-        "Proposed Member reference",
-        "Email revision",
-        "Family version",
-        "Digest resolution",
-        "Display timezone",
-        "Campaign date-filter timezone",
-    }
+    {"Display timezone", "Campaign date-filter timezone", "Digest resolution"}
 )
 # Report details the page frame already shows on every page (the parish and
 # campaign line, the title, the privacy and Testing-mode footer lines).
@@ -791,24 +780,20 @@ def _identity(values):
 
 
 def detail_record(pairs, *, style="card", new_page=False, keep_blank=False):
-    """One card from (label, value) pairs: titled, internal fields left out."""
+    """One card from (label, value) pairs, titled by its name, DUID and status."""
     values = dict(pairs)
     name_field, duid_field, tag_field = _identity(values)
     name = str(values.get(name_field) or "") if name_field else ""
     duid = str(values.get(duid_field) or "") if duid_field else ""
-    if name and duid:
-        title = f"{name} (DUID {duid})"
-    else:
-        title = name or (f"DUID {duid}" if duid else "")
+    # A DUID cell can hold words instead ("New Member" for a Member added
+    # on the form), which read on their own without the "DUID" label.
+    tag = f"DUID {duid}" if duid.isdigit() else duid
+    title = f"{name} ({tag})" if name and tag else name or tag
     used = {name_field, duid_field, tag_field}
     return Record(
         title=title,
         tag=str(values.get(tag_field) or "") if tag_field else "",
-        fields=tuple(
-            (label, value)
-            for label, value in pairs
-            if label not in used and label not in HIDDEN_FIELDS
-        ),
+        fields=tuple((label, value) for label, value in pairs if label not in used),
         style=style,
         new_page=new_page,
         keep_blank=keep_blank,
@@ -827,17 +812,18 @@ def _revision(pairs, used):
         if part
     )
     heading = f"Earlier workflow{f' · changed {changed}' if changed else ''}"
-    skip = used | HIDDEN_FIELDS | REPEATED_FIELDS | set(CHANGE_FIELDS)
+    skip = used | REPEATED_FIELDS | set(CHANGE_FIELDS)
     return heading, tuple(pair for pair in pairs if pair[0] not in skip)
 
 
 def row_records(headings, rows, *, keep_blank=False):
     """One card per record row, built lazily (one record held at a time).
 
-    A row whose ``Row type`` is not ``Item`` (an earlier workflow) nests
-    under the card before it, its item. A row continuing the previous record
-    (the same name and DUID with a "(continued)" value, as financial share
-    wording does) adds its fields to that card.
+    A row with a ``Changed at`` time (an earlier workflow; an item row
+    leaves it blank) nests under the card before it, its item. A row
+    continuing the previous record (the same name and DUID with a
+    "(continued)" value, as financial share wording does) adds its fields
+    to that card.
     """
     from .financial_documents import CONTINUED
 
@@ -846,7 +832,7 @@ def row_records(headings, rows, *, keep_blank=False):
         pairs = tuple(zip(headings, row, strict=True))
         values = dict(pairs)
         record = detail_record(pairs, keep_blank=keep_blank)
-        if current is not None and values.get("Row type", "Item") != "Item":
+        if current is not None and values.get("Changed at"):
             used = set(_identity(values))
             current = replace(
                 current, children=(*current.children, _revision(pairs, used))

@@ -170,8 +170,12 @@ def test_retained_audit_scope_has_no_private_values(context, valid):
             sanitize(ContextKind.ACTION, context)
 
 
-def document(*, action="join", count=52, **extra):
-    """Closed payload mirrors SQL capture, with hostile values and hidden contacts."""
+def document(*, action="join", count=52, members=None, **extra):
+    """Closed payload mirrors SQL capture, with hostile values and hidden contacts.
+
+    ``members``, when given, is one dict of overrides per row instead of
+    ``count`` copies of one row.
+    """
     moment = datetime(2026, 9, 19, 15, tzinfo=UTC)
     row = (
         dict(
@@ -203,9 +207,11 @@ def document(*, action="join", count=52, **extra):
         completed=3,
         requests=4,
     )
+    rows = [row] * count if members is None else [row | item for item in members]
+    count = len(rows)
     payload = dict(
         total=count,
-        rows=[row] * count,
+        rows=rows,
         summaries=[summary] * (count if action == "summary" else 1),
         metadata=dict(
             name="Campaign",
@@ -235,10 +241,17 @@ def test_complete_columns_and_csv_privacy(action):
     output = io.BytesIO()
     render_information(report, output, format="csv")
     rows = list(csv.reader(io.StringIO(output.getvalue().decode())))
-    assert len(rows) == 54
+    # Exactly the table (#966): headings, then one row per result.
+    assert len(rows) == 53 and tuple(rows[0]) == report.headings
     assert "hidden" not in output.getvalue().decode()
     assert "Birth date" not in report.headings
-    assert rows[1][rows[0].index("Requested at")] == "2026-09-19 11:00:00-04:00"
+    assert not {"Proposed Member reference", "Campaign reference"} & {
+        *report.headings,
+        *dict(report.metadata),
+    }
+    assert dict(report.metadata)["Requested at"].isoformat() == (
+        "2026-09-19T11:00:00-04:00"
+    )
     assert report.sheet_name == (
         "Ministry summary" if action == "summary" else "Ministry requests"
     )
@@ -311,3 +324,74 @@ def test_retained_scope_requires_all_current_assignments(
         scope_authorized(actor, {"operational": operational, "ministries": list(scope)})
         is expected
     )
+
+
+@pytest.mark.parametrize("action", ["join", "leave"])
+def test_a_member_added_on_the_form_reads_new_member(action):
+    """No proposed Member reference in any format (#966): a Member added on
+    the form reads "New Member" in its DUID column, as on the page, and the
+    PDF card is titled with the name and those words."""
+    from parishkit.stewardship.reports.information_rendering import (
+        information_records,
+    )
+
+    proposed = "00000000-0000-4000-8000-000000000077"
+    report = document(
+        action=action,
+        count=1,
+        member_name="New Person",
+        member_duid=None,
+        proposed_id=proposed,
+    )
+    assert report.rows[0][report.headings.index("Member DUID")] == "New Member"
+    assert proposed not in report.rows[0]
+    _, card = information_records(report)
+    assert card.title == "New Person (New Member)"
+
+
+@pytest.mark.parametrize("action", ["join", "leave"])
+def test_same_named_new_members_are_numbered_in_form_order(action):
+    """Two New Members with one name get distinct rows (#966).
+
+    They read "New Member 1" and "New Member 2" in form (proposed id)
+    order, whatever the report's sort; each Member's rows share its label;
+    a differently named New Member keeps the plain "New Member"; and every
+    format carries the same labels with no proposed id.
+    """
+    first = "00000000-0000-4000-8000-000000000011"
+    second = "00000000-0000-4000-8000-000000000022"
+    other = "00000000-0000-4000-8000-000000000033"
+    members = [
+        dict(member_name=name, member_duid=None, proposed_id=proposed)
+        for proposed, name in (
+            (second, "Pat Doe"),
+            (first, "Pat Doe"),
+            (second, "Pat Doe"),
+            (other, "Lee Roe"),
+        )
+    ]
+    report = document(action=action, members=members)
+    column = report.headings.index("Member DUID")
+    labels = ["New Member 2", "New Member 1", "New Member 2", "New Member"]
+    assert [row[column] for row in report.rows] == labels
+    output = io.BytesIO()
+    render_information(report, output, format="csv")
+    text = output.getvalue().decode()
+    assert [row[column] for row in list(csv.reader(io.StringIO(text)))[1:]] == labels
+    output = io.BytesIO()
+    render_information(report, output, format="xlsx")
+    book = load_workbook(io.BytesIO(output.getvalue()))
+    try:
+        sheet = book[report.sheet_name]
+        cells = [row[column] for row in sheet.iter_rows(min_row=2, values_only=True)]
+    finally:
+        book.close()
+    assert cells == labels
+    titles = [card.title for card in list(information_records(report))[1:]]
+    assert titles == [
+        "Pat Doe (New Member 2)",
+        "Pat Doe (New Member 1)",
+        "Pat Doe (New Member 2)",
+        "Lee Roe (New Member)",
+    ]
+    assert first not in text and second not in text and other not in text

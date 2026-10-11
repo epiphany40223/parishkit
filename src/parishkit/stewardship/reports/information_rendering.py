@@ -17,6 +17,27 @@ from .money import MoneyAmount
 MONEY_FORMAT = '"$"#,##0.00'
 # Excel keeps only 15 significant digits; a longer amount would round silently.
 EXCEL_DIGITS = 15
+# Internal references no download carries in any format (#966): row
+# versions, reference UUIDs and generations mean nothing to a reader, and
+# troubleshooting uses the page's Technical details and the audit log. The
+# export guard test checks every export's columns and report information
+# against this list; System logs is the recorded exception.
+INTERNAL_FIELDS = frozenset(
+    {
+        "Row type",
+        "Version",
+        "Campaign reference",
+        "Source reference",
+        "Source generation",
+        "Response reference",
+        "Proposed Member reference",
+        "Email revision",
+        "Family version",
+        "Campaign UUID",
+        "Fact generation UUID",
+        "Submission cutoff",
+    }
+)
 FORMAT_NOTE = (
     "Unsupported characters use Unicode escapes (\\uXXXX or \\UXXXXXXXX); "
     "literal backslashes are doubled. CSV retains the original Unicode text."
@@ -128,17 +149,18 @@ def xlsx_cell(sheet, row, column, value):
 
 
 def information_csv(document, output):
-    """Emit a typed metadata row even for an empty result; never lose provenance."""
+    """One header row and one row per record: exactly the table.
+
+    Every format carries the same columns (#966): the report information
+    lives in the XLSX "Report information" sheet and the PDF's report card,
+    never as extra CSV columns or rows.
+    """
     wrapper = io.TextIOWrapper(output, encoding="utf-8", newline="", write_through=True)
     try:
         writer = csv.writer(wrapper, lineterminator="\r\n")
-        writer.writerow((*document.headings, *(key for key, _ in document.metadata)))
-        trailer = tuple(csv_cell_value(value) for _, value in document.metadata)
-        writer.writerow(
-            ("Report metadata", *("" for _ in document.headings[1:]), *trailer)
-        )
+        writer.writerow(document.headings)
         for row in document.rows:
-            writer.writerow((*(csv_cell_value(value) for value in row), *trailer))
+            writer.writerow(tuple(csv_cell_value(value) for value in row))
         wrapper.flush()
     finally:
         wrapper.detach()
@@ -184,9 +206,9 @@ def information_xlsx(document, output):
 def information_records(document):
     """The report-information card, then one card per record (lazily).
 
-    A field/value card avoids compressing seventeen columns into unreadable
-    widths. The PDF is the readable view: it leaves out internal references
-    and blank fields, which CSV and XLSX keep (``pdf_design.row_records``).
+    A field/value card avoids compressing many columns into unreadable
+    widths. A card shows the same columns as the CSV and XLSX, leaving out
+    only blank fields (``pdf_design.row_records``).
     """
     from .pdf_design import report_record, row_records
 

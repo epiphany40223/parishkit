@@ -245,7 +245,7 @@ def test_create_follows_the_pages_form_and_repeats_safely(cli, http_scenario):  
     # The worker renders it; the command downloads it.
     run_export(setup, export)
     code, body, document = download(export.pk, secret)
-    assert code == 0 and body.startswith(b"date,scope,")
+    assert code == 0 and body.startswith(b"Campaign date,Population,")
     assert hashlib.sha256(body).hexdigest() == document["result"]["sha256"]
 
 

@@ -1154,7 +1154,12 @@ This general rule lives in the [UX conventions](../ui-conventions/spec.md#table-
 which have precedence for it. Downloads follow the page's column order
 except where a report's section says otherwise; the postal mail-merge file
 never changes order
-(see [mailing columns](../reports/spec.md#mailing-columns)).
+(see [mailing columns](../reports/spec.md#mailing-columns)). Every format
+of one download (CSV, XLSX and PDF) carries the same columns, with no
+internal references
+([downloaded files](../ui-conventions/spec.md#downloaded-files)); a CSV is
+exactly that table, its report details being in the XLSX and PDF (see the
+reports' [shared report behavior](../reports/spec.md#shared-report-behavior)).
 
 ### In-place controls
 

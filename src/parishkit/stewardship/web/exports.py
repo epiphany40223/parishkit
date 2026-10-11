@@ -6,6 +6,30 @@ from urllib.parse import quote
 
 from . import dates
 
+# Every synchronous page download: a view that writes a CSV, XLSX or PDF
+# straight from its page instead of through the export worker. The name is
+# the download's case in the one-column-set guard (#966,
+# tests/stewardship/test_export_columns.py), which fails until every
+# registered name is checked there or listed as a documented exception.
+PAGE_DOWNLOADS = {}
+
+
+def page_download(name):
+    """Register a page-download view under ``name`` and mark it.
+
+    The ``page_download`` attribute lets the guard find the view among the
+    URL patterns, so a route to an unregistered download view is caught too.
+    """
+
+    def register(view):
+        """Record ``view`` once under ``name``."""
+        if PAGE_DOWNLOADS.setdefault(name, view) is not view:
+            raise ValueError(f"Page download {name!r} is already registered.")
+        view.page_download = name
+        return view
+
+    return register
+
 
 def csv_cell(value):
     """Neutralize spreadsheet formulas, including control/whitespace prefixes.

@@ -217,8 +217,6 @@ def names_document(request):
         ("Parish", request.configuration.parish.name),
         # Named like every other report's, so the PDF eyebrow shows it.
         ("Campaign", campaign_name(request)),
-        ("Campaign reference", str(request.campaign_id)),
-        ("Email revision", snapshot.parameters["revision"]),
         ("Captured at", snapshot.created_at.astimezone(zone)),
         ("Requested at", request.created_at.astimezone(zone)),
         ("Display timezone", request.browser_timezone),
