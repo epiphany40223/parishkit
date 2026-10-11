@@ -2,12 +2,12 @@
 
 The answer is recorded alongside the Ministry page, in a per-Member entry
 that also holds a ``talents`` map. The Family form no longer asks for
-talents (#970): every campaign resolves to no talent options, so each new
-entry's map is empty, though a form opened before then may still send a
-configured talent, which is stored and never shown. Older submissions keep
-the talents they recorded.
-``DEFAULT_TALENTS`` stays because the installed SQL guard's
-``stewardship_talent_defaults_v1()`` still lists the same options.
+talents (#970) and sends only ``cannot_serve``, so each new entry is stored
+with an empty map. A form opened before then may still send a configured
+talent, which is validated, stored and never shown. Older submissions keep
+the talents they recorded. ``DEFAULT_TALENTS`` stays because the installed
+SQL guard's ``stewardship_talent_defaults_v1()`` still lists the same
+options, and the form definition digest still hashes the configured list.
 """
 
 from .census import clean_text
@@ -34,7 +34,7 @@ class InvalidServiceAnswers(ValueError):
     def __init__(self, fields):
         """Keep private free text out of exception strings."""
         self.fields = dict(fields)
-        super().__init__("Please review the talents and ministry choices.")
+        super().__init__("Please review the ministry choices.")
 
 
 def configured_talent_options(configuration):
@@ -58,16 +58,6 @@ def configured_talent_options(configuration):
     return tuple(ShareOption(**value) for value in values)
 
 
-def talent_options(configuration):
-    """No campaign offers talents any more (#970), whatever its configuration.
-
-    An older campaign's ``talent_options`` value stays as inert history. With
-    no options offered, the Family form shows no Talents question and sends
-    an empty talents map.
-    """
-    return ()
-
-
 def _talents(value, options):
     """Normalize one Member's selections like financial share methods.
 
@@ -87,24 +77,27 @@ def _talents(value, options):
 
 
 def validate_service_answers(payload, ministries, inputs, options):
-    """Validate talents and the Ministry lock against validated Ministry answers.
+    """Validate the Ministry lock (and any stale talents) against Ministry answers.
 
     ``ministries`` is the already-normalized Ministry section; this section
-    may only name its Member identities, and omitted ones default to "no
-    talents, can participate". A Member who cannot
-    participate must stop every current Ministry and join none; the browser
-    enforces the same rule, and the database guard checks it again.
+    may only name its Member identities, and omitted ones default to "can
+    participate". A Member who cannot participate must stop every current
+    Ministry and join none; the browser enforces the same rule, and the
+    database guard checks it again. ``options`` are the configured talents a
+    form opened before #970 may still send. The current form sends no
+    ``talents`` key, and every stored entry gets the map (empty unless a
+    stale form sent one), the shape the database guard requires.
     """
     if inputs is None:
         if type(payload) is not dict or payload:
             raise InvalidServiceAnswers({"service": "This section is not enabled."})
         return {}
-    # An empty section, or an omitted Member, means "no talents and can
-    # participate"; the result always lists every Ministry identity.
+    # An empty section, or an omitted Member, means "can participate"; the
+    # result always lists every Ministry identity.
     if payload == {}:
         payload = {"members": {}, "proposed_members": {}}
     if type(payload) is not dict or set(payload) != {"members", "proposed_members"}:
-        raise InvalidServiceAnswers({"service": "Review the talents section."})
+        raise InvalidServiceAnswers({"service": "Review the ministry answers."})
     current = {str(member): list(values) for member, values in inputs.memberships}
     errors, result = {}, {"members": {}, "proposed_members": {}}
     for group in ("members", "proposed_members"):
@@ -113,16 +106,16 @@ def validate_service_answers(payload, ministries, inputs, options):
             errors[f"service.{group}"] = "Review the current household choices."
             continue
         for identifier in sorted(ministries[group]):
-            entry = entries.get(identifier, {"cannot_serve": False, "talents": {}})
+            entry = entries.get(identifier, {"cannot_serve": False})
             path = f"service.{group}.{identifier}"
             if (
                 type(entry) is not dict
-                or set(entry) != {"cannot_serve", "talents"}
+                or set(entry) - {"talents"} != {"cannot_serve"}
                 or type(entry["cannot_serve"]) is not bool
             ):
-                errors[path] = "Review this person's talents."
+                errors[path] = "Review this person's ministry answer."
                 continue
-            talents = _talents(entry["talents"], options)
+            talents = _talents(entry.get("talents", {}), options)
             if talents is None:
                 errors[f"{path}.talents"] = "Choose only the offered talents."
                 continue

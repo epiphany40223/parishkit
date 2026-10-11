@@ -341,14 +341,16 @@ joins any Ministry. This answer is recorded with the response and is never
 written to ParishSoft.
 
 The form no longer asks for talents
-([#970](https://github.com/epiphany40223/parishkit/issues/970)). Each
-Member's answer is stored beside an empty `talents` map, which the database
-guard accepts. A response from before then keeps the talents it recorded,
-read-only, with no page that shows them, and a revisit prefills none. A
-form opened before the change may still send talents from the campaign's
-configured list; the response is accepted and stores them, read-only and
-unreported, so no Family loses an answer mid-campaign. An unknown or
-malformed talent is refused. The parish's "time, talent and treasure"
+([#970](https://github.com/epiphany40223/parishkit/issues/970)). It sends
+each Member's "cannot participate" answer alone, and the server stores it
+beside an empty `talents` map, the shape the database guard requires. A
+response from before then keeps the talents it recorded, read-only, with no
+page that shows them, and a revisit prefills none. A form opened before the
+change may still send talents from the campaign's configured list; the
+response is accepted and stores them, read-only and unreported, so no
+Family loses an answer mid-campaign. An unknown or malformed talent is
+refused. For such a tab's script, the form data the server sends still
+carries an empty list of talent choices, which the current script ignores. The parish's "time, talent and treasure"
 wording in the default content is stewardship language, not this question,
 and stays.
 

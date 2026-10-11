@@ -41,7 +41,6 @@ from .merge import KnownValue
 from .ministry_requests import ministry_presentation
 from .models import Submission
 from .page_content import family_page_slots, public_substitutions, render_pages
-from .service import TALENT_TEXT_LIMIT
 
 
 def form_presentation(form):
@@ -179,7 +178,7 @@ def form_presentation(form):
         "members": members,
         "proposed_members": proposed,
         "ministries": ministries,
-        "service": _service_presentation(ministries, form.inputs.talent_options, prior),
+        "service": _service_presentation(ministries, prior),
         "cannot_attend": bool(prior and prior.answers.get("cannot_attend")),
         "financial": financial_presentation(
             form.inputs.financial, prior, parish_name=form.inputs.parish_name
@@ -221,39 +220,28 @@ def form_presentation(form):
     }
 
 
-def _service_presentation(ministries, options, prior):
-    """Talents and "cannot participate" for each Member on the Ministry page.
+def _service_presentation(ministries, prior):
+    """ "Cannot participate" for each Member on the Ministry page.
 
     Kept apart from the Ministry entries (whose shape is the Ministry answer)
-    but keyed by the same identities. Prior answers prefill only options still
-    offered; a removed talent is dropped, since no follow-up depends on it.
+    but keyed by the same identities. Stored talents (#970) are never shown.
     """
     if ministries is None:
         return None
-    # Free text survives only while its option still takes free text; a
-    # parish that turns it off drops old notes rather than having the next
-    # Submit rejected for text the Family can no longer see or edit.
-    offered = {option.id: option.free_text for option in options}
     previous = (prior.answers.get("service") or {}) if prior else {}
-    result = {
-        "talent_options": [
-            {"id": option.id, "label": option.label, "free_text": option.free_text}
-            for option in options
-        ],
-        "talent_text_limit": TALENT_TEXT_LIMIT,
-    }
+    # A tab loaded before #970 runs the old family-v1.js, which reads this
+    # list whenever it takes a refreshed form; it must stay an empty list
+    # until no such tab can remain open.
+    result = {"talent_options": []}
     for group in ("members", "proposed_members"):
-        result[group] = {}
-        for key in ministries[group]:
-            old = (previous.get(group) or {}).get(key) or {}
-            result[group][key] = {
-                "cannot_serve": bool(old.get("cannot_serve")),
-                "talents": {
-                    talent: text if offered[talent] else ""
-                    for talent, text in (old.get("talents") or {}).items()
-                    if talent in offered
-                },
+        result[group] = {
+            key: {
+                "cannot_serve": bool(
+                    ((previous.get(group) or {}).get(key) or {}).get("cannot_serve")
+                )
             }
+            for key in ministries[group]
+        }
     return result
 
 
