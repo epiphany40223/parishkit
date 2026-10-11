@@ -542,6 +542,14 @@ or `data-locked-when` (open #957) ([conditional
 fields](#conditional-fields)). **Precedent.** #736 and its review
 (Administrator, 2026-10-08), #563, open #957, #959.
 
+Recorded exception (Administrator, 2026-10-11, on
+[#1015](https://github.com/epiphany40223/parishkit/issues/1015)): on the
+[Mail message page](../admin-portal/spec.md#mail-message-page), the
+attempt history sits above the resolution forms, so paging it with the
+upper pager can change its height and move the forms and the evidence list
+below it. The Administrator accepted this so the page reads in the order
+asked for.
+
 ### Prerequisite gates
 
 **Rule.** A button is unavailable until its prerequisites are met and there
