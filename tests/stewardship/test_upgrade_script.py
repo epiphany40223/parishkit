@@ -372,6 +372,24 @@ case "$*" in
         if [ -n "$FAKE_MIGRATE_FAIL" ]; then
             touch "$FAKE_STATE/swap_pending"
             echo "Migration 0052 refused" >&2
+            if [ -n "$FAKE_MIGRATE_TRACEBACK" ]; then
+                above="The above exception was the direct cause"
+                above+=" of the following exception:"
+                # An uncaught psycopg error, chained as Django raises it,
+                # whose frames, message and DETAIL carry a row's values.
+                printf '%s\n' "Traceback (most recent call last):" \
+                    '  File "/app/x.py", line 1, in <module>' \
+                    "    cursor.execute(sql, ['secret-param@example.org'])" \
+                    'psycopg.errors.UniqueViolation: duplicate key value' \
+                    'DETAIL:  Key (email)=(secret-detail@example.org) exists.' \
+                    "" "$above" \
+                    "" "Traceback (most recent call last):" \
+                    '  File "/app/y.py", line 2, in <module>' \
+                    'django.db.utils.IntegrityError: duplicate key value' \
+                    'DETAIL:  Key (email)=(secret-chained@example.org) exists.' \
+                    "ERROR: IntegrityError (SQLSTATE 23505)" \
+                    "  DETAIL:  secret-loose@example.org" >&2
+            fi
             exit 1
         fi
         rm -f "$FAKE_STATE/swap_pending"
@@ -1524,6 +1542,38 @@ def test_a_failed_step_4_command_prints_and_logs_its_full_output(tmp_path):
     # A command that succeeds still prints only its last line.
     assert "    | migrated to the base" not in output
     assert "migrated to the base" in output
+
+
+def test_a_failed_migration_withholds_database_values_from_the_log(tmp_path):
+    """A traceback's frames, message and DETAIL never reach the output or log.
+
+    Each traceback is reduced to its exception's class; a DETAIL line
+    outside one is withheld too. The lines around them are kept.
+    """
+    _, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        noop="f",
+        status=1,
+        schema_change="1",
+        migrate_fail=True,
+        env={"FAKE_MIGRATE_TRACEBACK": "1"},
+    )
+    log = next((tmp_path / "logs").glob("stewardship-upgrade-*.log")).read_text()
+    for text in (output, log):
+        assert "secret" not in text and "duplicate key" not in text
+        assert (
+            "    | Migration 0052 refused\n"
+            "    | Traceback withheld (it may carry database values)\n"
+            "    | Exception class: psycopg.errors.UniqueViolation\n"
+            "    | The above exception was the direct cause"
+            " of the following exception:\n"
+            "    | \n"
+            "    | Traceback withheld (it may carry database values)\n"
+            "    | Exception class: django.db.utils.IntegrityError\n"
+            "    | ERROR: IntegrityError (SQLSTATE 23505)\n"
+            "    | DETAIL withheld\n"
+        ) in text
 
 
 def test_the_final_migration_runs_under_a_logged_time_limit(tmp_path):

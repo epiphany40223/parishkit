@@ -217,13 +217,33 @@ stop_oneoff() {
         echo "    one-off container $name was already gone ($1)"
     fi
 }
+withhold_values() {
+    # Copy a failed command's output, withholding what may carry database
+    # values such as addresses: a PostgreSQL DETAIL line, and each Python
+    # traceback's frames and message, of which only the exception's class
+    # is kept (up to a following chained traceback or ERROR: line). The
+    # operator commands print only a reviewed line, an exception class and
+    # a SQLSTATE; this guards whatever escapes them.
+    awk '
+        /^Traceback \(most recent call last\):/ {
+            tb = 1; print "Traceback withheld (it may carry database values)"; next
+        }
+        tb == 1 && /^[ \t]/ { next }
+        tb == 1 { sub(/:.*/, ""); print "Exception class: " $0; tb = 2; next }
+        tb == 2 && /^(The above exception|During handling of the above exception|ERROR: )/ { tb = 0 }
+        tb == 2 { next }
+        /^[ \t]*DETAIL:/ { print "DETAIL withheld"; next }
+        { print }
+    '
+}
 oneoff() {
     # oneoff SECONDS WHAT STEP SERVICE [ARGS...]: `docker compose run` one
     # SERVICE container named after this run and STEP, killing it (TERM,
     # then KILL 30 s later) once SECONDS have passed. Prints the command's
     # last output line, or on a failure all of its output (into the run's
-    # log too), since the last line alone may be empty or a generic
-    # refusal that hides the cause. The client runs in the background and
+    # log too) less what may carry database values (`withhold_values`),
+    # since the last line alone may be empty or a generic refusal that
+    # hides the cause. The client runs in the background and
     # the shell waits for it, so a signal's trap runs at once rather than
     # after the command. On an expired limit (124, or 137 at the limit) the kill is
     # logged on fd 3, the run's log, with what ran, the limit and the
@@ -250,7 +270,7 @@ oneoff() {
         tail -1 "$work/oneoff.out"
     else
         echo "FAILED: $what exited with status $rc; its full output:" >&2
-        sed 's/^/    | /' "$work/oneoff.out" >&2
+        withhold_values <"$work/oneoff.out" | sed 's/^/    | /' >&2
     fi
     return "$rc"
 }
