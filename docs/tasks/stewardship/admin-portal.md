@@ -309,7 +309,7 @@ Specification: [Admin automation interface](../../specs/stewardship/admin-automa
 - [x] ADM-11.05 — PR 4: add schedule preview and confirm and configuration request status.
 - [x] ADM-11.06 — PR 5: let fresh-gated SQL guards and checks accept full-scope automation sessions (migration) and add the confirmation prompt.
 - [x] ADM-11.07 — PR 6: add refresh and Testing send commands.
-- [ ] ADM-11.08 — PR 7: add delivery control and Family portal maintenance commands.
+- [ ] ADM-11.08 — PR 7: add delivery control (7b) and Family portal maintenance (7a) commands.
 - [ ] ADM-11.09 — PR 8: add report, export, digest and log commands.
 - [x] ADM-11.10 — PR 9: add task retry, delivery and refusal commands.
 - [ ] ADM-11.11 — PR 10: add the remaining configuration commands, including secret replacement.
@@ -553,6 +553,19 @@ prompt; proven by `tests/stewardship/test_admin_operations.py`,
 refused prompt changes nothing, a typed `yes`, a double invoke, the page's
 form with the same key, stale versions, unchanged credentials and the
 read-only refusal).
+ADM-11.08 lands in two parts. 7a adds `portal maintenance show` and
+`portal maintenance set` (fresh-gated, always prompts) in
+`parishkit.stewardship.admin_portal`, through the page's own
+`family_maintenance` functions, with no schema change; proven by
+`tests/stewardship/test_admin_cli.py` (catalog flags and the event),
+`tests/stewardship/test_pk_admin.py` (the `PROMPTING` list),
+`tests/stewardship/test_admin_route_parity.py` and
+`tests/stewardship/database/test_admin_portal_cli_postgresql.py` (a refused
+prompt changes nothing; `yes` closes with the page's event, the command
+event, the fresh-gate event and notice; Families then see the maintenance
+page; the page and the command line reopen each other's change; a no-op
+`stale_version`; bad notes `invalid` before the prompt; read-only and ended
+sessions). 7b (pause, resume and closed-campaign resolution) follows.
 
 ## ADM-12: Admin navigation overhaul
 

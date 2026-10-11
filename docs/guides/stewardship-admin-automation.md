@@ -599,6 +599,41 @@ token made on the page works here and the other way round; sending it again
 sends nothing more. An old preview, a Family that can no longer be tested,
 or too many tests in progress is exit 1 (`stale_version`): preview again.
 
+## Family portal maintenance
+
+`portal maintenance show` and `portal maintenance set` are **Family portal
+availability**: whether Families can use the portal, and its Close and
+Reopen buttons. Any session may run `show`; `set` needs a full-scope
+session.
+
+```sh
+pk-admin portal maintenance show
+pk-admin portal maintenance set --state closed --message "We expect to be back by 3 PM."
+pk-admin portal maintenance set --state open
+```
+
+| Field | What it holds |
+| --- | --- |
+| `closed` | Whether the Family portal is closed for maintenance |
+| `since` | When it was closed (null while open) |
+| `message` | The note Families see while it is closed (empty when there is none) |
+| `closed_by_id` | The id of the Administrator who closed it (null while open) |
+
+`--message` (or `-`, to read it from standard input, with `--yes`) goes
+only with `--state closed`. It follows the page's rules: at most 500
+characters and no email address; anything else is exit 1 (`invalid`)
+before any prompt. Leave out personal details: the note is also kept in
+System logs. `set` always shows what it is about to do, including the
+page's reminders (wait about 10 seconds after closing before changing
+data; closing does not stop email), and waits for `yes` (or takes
+`--yes`). The session stands in for the page's recent Google sign-in, so
+the dashboard shows an automation notice, and System logs show
+`automation_fresh_gate` and `admin_cmd_portal_maintenance_set` beside the
+page's own `family_maintenance_started` or `family_maintenance_ended`. The
+result is the new state, as `show` prints it. Asking for the state the
+portal is already in changes nothing and is exit 1 (`stale_version`): read
+it again with `show`.
+
 ## Task retries
 
 `task retry` is the **Retry** button of a failed task on Background work,
@@ -1220,3 +1255,5 @@ error, as `logs export` does; the wrapper refuses to write it to a terminal.
 - `pk-admin/1` (#1004): additive. Each `delivery list` row has
   `refused`, the email's unresolved refused-address count that Outgoing
   mail shows. `delivery show` is unchanged.
+- `pk-admin/1` (ADM-11 PR 7a): additive. `portal maintenance show` and
+  `portal maintenance set` (fresh-gated, always prompts).

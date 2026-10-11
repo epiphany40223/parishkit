@@ -99,6 +99,14 @@ def current_state(*, cached=True):
     return state
 
 
+class AlreadySet(ValueError):
+    """The switch is already in the requested state; nothing was recorded.
+
+    A ``ValueError``, so the page refuses it as before; the command line
+    reports it as a stale read (ADM-11 PR 7a).
+    """
+
+
 def clean_message(value):
     """Validate the optional note shown to Families (bounded, no addresses)."""
     text = " ".join(str(value or "").split())
@@ -118,7 +126,7 @@ def set_closed(actor, *, closed, message=""):
         # leave one note silently replaced by the other.
         list(SystemConfiguration.objects.select_for_update().values_list("pk"))
         if current_state(cached=False).closed == closed:
-            raise ValueError("The Family portal is already in that state.")
+            raise AlreadySet("The Family portal is already in that state.")
         record_action(
             Action.FAMILY_MAINTENANCE_STARTED
             if closed

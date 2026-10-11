@@ -1072,20 +1072,24 @@ YES_ONLY = frozenset({"config request cancel"})
 def test_the_prompting_list_names_every_prompting_command():
     """PROMPTING is the catalog's prompting commands, less the --yes-only ones.
 
-    The wrapper matches ``AREA_VERB`` (the first two words), so a prompting
-    command missing from the list could never be answered at a terminal.
+    Each entry is the command's full name joined by ``_``; the wrapper matches
+    the first two or three words, so a prompting command missing from the
+    list could never be answered at a terminal, and a read command sharing
+    its first two words (``portal maintenance show``) is not mistaken for it.
     """
     from parishkit.stewardship import admin_cli
 
     [listed] = re.findall(r'^PROMPTING="([^"]*)"$', WRAPPER.read_text(), re.M)
     prompting = {
-        "_".join(spec.name.split()[:2])
+        "_".join(spec.name.split())
         for spec in admin_cli.COMMANDS
         if spec.prompts and spec.name not in YES_ONLY
     }
     assert set(listed.split()) == prompting
     assert {"test_sample", "test_families"} <= prompting
     assert prompting >= {"delivery_resend", "delivery_refusal-clear"}
+    assert "portal_maintenance_set" in prompting
+    assert "portal_maintenance" not in prompting
 
 
 def test_export_download_is_never_written_to_a_terminal(host):
