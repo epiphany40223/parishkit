@@ -286,8 +286,10 @@ def campaign_ministries(request, campaign_id):
 
     Review, apply and the change's status all happen on this page (#750). A
     stale page or an out-of-date preview is refused in place: the page again
-    (status 409) with the explanation in its review region. The only query
-    is ``request``, naming the change Apply just made.
+    (status 409) with the explanation in its review region, as is a campaign
+    whose Ministries can no longer change here (closed, or held by
+    background work) when the answer is in place. The only query is
+    ``request``, naming the change Apply just made.
     """
     try:
         service = runtime()
@@ -342,7 +344,19 @@ def campaign_ministries(request, campaign_id):
                 digest = receipt_base(request, receipt)
             state = _state(service)
             configuration, campaigns, source, held = state[:4]
-            campaign = _live_campaign(configuration, campaigns, held, campaign_id)
+            try:
+                campaign = _live_campaign(configuration, campaigns, held, campaign_id)
+            except UserFacingStale as error:
+                # A plain load keeps the full refusal page. An in-place
+                # answer (a Review, an Apply, the quiet follow-up after
+                # Apply) explains it in the review region instead, beside
+                # the change's status when there is one, so the page the
+                # reader is on stays where it is. The form keeps the
+                # version it was drawn at, so nothing can be reviewed.
+                if request.method != "POST" and receipt is None:
+                    raise
+                campaign = next(row for row in campaigns if row.pk == campaign_id)
+                refusal = refusal or error.refusal
             values = campaign.active_configuration.values
             ministries, _funds = _catalog(configuration, source, values)
             ministries = _addable(ministries, source, values["ministry_duids"])
@@ -358,7 +372,13 @@ def campaign_ministries(request, campaign_id):
             )
             if refusal is not None:
                 response = _page(
-                    request, configuration, campaign, form, status=409, refusal=refusal
+                    request,
+                    configuration,
+                    campaign,
+                    form,
+                    status=409,
+                    refusal=refusal,
+                    receipt=receipt,
                 )
             elif action == "preview":
                 try:

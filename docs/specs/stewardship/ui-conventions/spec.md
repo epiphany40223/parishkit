@@ -440,9 +440,9 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   status line: if it brings back a new key change in progress (another
   Administrator started one), the settings form and notes below it keep the
   state the page was loaded with until the next load.
-- **In-place review (#532).** Parish settings and Campaign settings review,
-  apply and follow a change on the page itself, not on separate Review and
-  Change status pages. The settings form is a `form[data-in-place]` marked
+- **In-place review (#532, #750).** Parish settings, Campaign settings,
+  Share options and Campaign Ministries review, apply and follow a change on
+  the page itself, not on separate Review and Change status pages. The settings form is a `form[data-in-place]` marked
   `data-table-sync`: its answer fills the review region under it, while the
   form keeps the reader's typing and every script bound to it and takes only
   its hidden fields (the version it edits) from the answer. The review shows
@@ -519,9 +519,12 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   (the Ministries to add and remove, with what each touches, and the
   Families with a form open now) fills the review region, and its Review
   changes waits for a change with the hint "Change a Ministry selection to
-  review it." Parish and Campaign settings' and Campaign Ministries' forms
-  are never redrawn; until the change is applied, Apply's answer hands them
-  the version it was reviewed at. The other editors keep their review and
+  review it." Once its campaign can no longer change them (closed, or held by
+  background work), an in-place Review, Apply or follow-up says so in the
+  review region, beside the change's status when there is one; a plain load
+  shows the refusal page. Parish and Campaign settings' and Campaign
+  Ministries' forms are never redrawn; until the change is applied, Apply's
+  answer hands them the version it was reviewed at. The other editors keep their review and
   Change status pages until issue 750 reaches them.
 
 ### No layout shift

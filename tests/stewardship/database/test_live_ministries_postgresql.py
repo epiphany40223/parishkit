@@ -24,6 +24,7 @@ from parishkit.stewardship.workflows.models import MinistryRequest
 from .auth_builders import signed_in
 from .campaign_builders import campaign_clock, change, close_campaign, command
 from .test_background_grants_postgresql import task_login
+from .test_campaign_views_postgresql import requested
 from .test_ministry_followup_postgresql import read as followup
 from .test_ministry_packets_postgresql import packet, sections
 from .test_ministry_reports_postgresql import actor, page, setup
@@ -329,6 +330,9 @@ def test_editor_previews_impact_and_audits_the_change(response_service, google):
         },
     )
     assert refused.status_code == 400
+    # Its summary names the field, in the review region (#750).
+    summary = unescape(region(refused.content))
+    assert "Included Ministries: Select a valid choice." in summary
 
 
 def test_editor_refuses_in_place_at_the_readers_version(response_service, google):
@@ -363,6 +367,40 @@ def test_editor_refuses_in_place_at_the_readers_version(response_service, google
     assert selected(harness) == [4]
     # Only the change Apply names may be read from the address.
     assert browser.get(url + "?extra=1").status_code == 400
+
+
+def test_a_closed_campaign_is_refused_in_place(response_service, google):
+    """Once the campaign closes, an in-place Review and the quiet follow-up
+    after Apply explain it in the review region (#750), the follow-up beside
+    the change's status; a plain load still shows the refusal page."""
+    harness = setup(response_service)
+    browser, _ = signed_in()
+    url = reverse("admin:campaign_ministries")
+    loaded = digest(browser.get(url))
+    data = {"action": "preview", "ministry_duids": "4", "base_digest": loaded}
+    token = re.search(
+        r'name="preview" value="([^"]+)"', post(browser, url, data).content.decode()
+    )
+    confirmed = post(
+        browser, url, {"action": "confirm", "preview": unescape(token.group(1))}
+    )
+    request = ConfigurationChangeRequest.objects.get(pk=requested(confirmed))
+    install_request(
+        harness.service.store, request_id=request.pk, correlation_id=uuid4()
+    )
+    close_campaign(harness.campaign, uuid4())
+    locked = "This campaign's Ministries can't be changed here right now."
+    review = post(browser, url, data | {"ministry_duids": "9"})
+    assert review.status_code == 409
+    assert locked in unescape(region(review.content))
+    # The form keeps the version it was posted at: nothing can be reviewed.
+    assert digest(review) == loaded
+    follow = browser.get(confirmed["Location"], headers={"X-Requested-With": "fetch"})
+    shown = unescape(region(follow.content))
+    assert locked in shown and "Applied: your change is saved" in shown
+    plain = browser.get(url)
+    assert plain.status_code == 409
+    assert b'id="settings-review"' not in plain.content
 
 
 def installed(harness, duids):
