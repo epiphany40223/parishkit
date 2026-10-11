@@ -391,9 +391,11 @@ users_upgrade=0
 if [ -n "${STEWARDSHIP_USERS_OPERATION-}${STEWARDSHIP_USERS_OPERATOR-}${STEWARDSHIP_USERS_REASON-}${STEWARDSHIP_USERS_ADMINISTRATORS-}" ]; then
     [ "$mode" = upgrade ] ||
         { echo "A rollback never converts; unset the STEWARDSHIP_USERS_* variables. Refusing." >&2; exit 1; }
-    [ -n "${STEWARDSHIP_USERS_OPERATION-}" ] && [ -n "${STEWARDSHIP_USERS_OPERATOR-}" ] &&
-        [ -n "${STEWARDSHIP_USERS_REASON-}" ] && [ -n "${STEWARDSHIP_USERS_ADMINISTRATORS-}" ] ||
-        { echo "The users upgrade needs all four STEWARDSHIP_USERS_* variables; refusing." >&2; exit 1; }
+    if [ -z "${STEWARDSHIP_USERS_OPERATION-}" ] || [ -z "${STEWARDSHIP_USERS_OPERATOR-}" ] ||
+        [ -z "${STEWARDSHIP_USERS_REASON-}" ] || [ -z "${STEWARDSHIP_USERS_ADMINISTRATORS-}" ]; then
+        echo "The users upgrade needs all four STEWARDSHIP_USERS_* variables; refusing." >&2
+        exit 1
+    fi
     [[ $STEWARDSHIP_USERS_OPERATION =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] ||
         { echo "STEWARDSHIP_USERS_OPERATION must be a lowercase UUID; refusing." >&2; exit 1; }
     [[ $STEWARDSHIP_USERS_ADMINISTRATORS =~ ^[^,[:space:]@]+@[^,[:space:]@]+(,[^,[:space:]@]+@[^,[:space:]@]+)*$ ]] ||
