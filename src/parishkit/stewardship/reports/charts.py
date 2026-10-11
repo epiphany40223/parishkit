@@ -3,15 +3,21 @@
 Matplotlib access is serialized process-locally, uses no pyplot figure registry,
 and resets style under that lock. Rendering is deterministic for the pinned
 runtime/fonts and input document, not promised byte-identical across upgrades.
+
+The plot is the same in every file. Its page furniture differs: the page PNG
+draws its own titles and footer, the daily email's PNG has none (#720), and
+the PDF is a US Letter page in the shared report frame (#926).
 """
 
 from contextlib import contextmanager
 from functools import lru_cache
 from io import BytesIO
 from threading import RLock
+from typing import NamedTuple
 
 from parishkit.stewardship.web.dates import current, format_date
 
+from . import pdf_design
 from .participation import ParticipationDocument
 
 _RENDER_LOCK = RLock()
@@ -21,10 +27,80 @@ RENDERER_VERSION = "participation-v2"
 # The daily email's drawing (#720), named in its PNG's Creator text so the
 # saved report page can tell which drawing a retained digest holds.
 EMAIL_RENDERER_VERSION = "participation-email-v1"
+# The PDF's drawing: the plot inside the shared report page frame (#926).
+PDF_RENDERER_VERSION = "participation-pdf-v1"
 PLOT_LAYOUT = {"left": 0.09, "right": 0.89, "top": 0.74, "bottom": 0.29}
 # The daily email's drawing has no page title or footer, so its plot fills
 # the image (#720). The saved report page hit-tests whichever one it shows.
 EMAIL_PLOT_LAYOUT = {"left": 0.09, "right": 0.89, "top": 0.90, "bottom": 0.17}
+
+
+class ChartLayout(NamedTuple):
+    """Where one drawing puts its plot, legend and note (figure fractions).
+
+    ``furniture`` draws the page PNG's own parish, campaign and title lines
+    and its renderer footer; the email has none, and the PDF's shared frame
+    draws its own. ``zone_label`` names the campaign time zone on the date
+    axis (the email's as-of line names it instead).
+    """
+
+    plot: dict
+    legend_top: float
+    legend_size: float
+    legend_frame: bool
+    note: tuple[float, float]
+    furniture: bool
+    zone_label: bool
+
+
+PAGE_LAYOUT = ChartLayout(PLOT_LAYOUT, 0.805, 8, True, (0.09, 0.055), True, True)
+# Without the page title the email's legend sits at the very top.
+EMAIL_LAYOUT = ChartLayout(
+    EMAIL_PLOT_LAYOUT, 0.99, 11, False, (0.09, 0.055), False, False
+)
+
+
+def pdf_layout(frame):
+    """The PDF's chart layout inside the shared page frame's body (#926).
+
+    The legend row sits at the top of the body. Under the plot there is room
+    for the rotated date ticks, the axis label and the gap note, which sits
+    on the body's last line. The left and right margins hold the two value
+    axes' tick labels and titles.
+    """
+
+    def down(points):
+        """A figure fraction for a distance in points from the page top."""
+        return 1 - points / pdf_design.PAGE_HEIGHT
+
+    width = pdf_design.PAGE_WIDTH
+    return ChartLayout(
+        plot={
+            "left": (pdf_design.MARGIN + 54) / width,
+            "right": (width - pdf_design.MARGIN - 70) / width,
+            "top": down(frame.body_top + 34),
+            "bottom": down(frame.body_bottom - 78),
+        },
+        legend_top=down(frame.body_top + 4),
+        legend_size=8,
+        legend_frame=False,
+        note=(pdf_design.MARGIN / width, down(frame.body_bottom - 2)),
+        furniture=False,
+        zone_label=True,
+    )
+
+
+def pdf_frame(document):
+    """The shared report page frame for the chart PDF (#926).
+
+    It names the parish, campaign and population scope like the page PNG.
+    Unlike the other report PDFs it states no capture or request time: the
+    chart's provenance travels in the file's metadata instead (#575).
+    """
+    return pdf_design.PdfFrame(
+        title=f"Family participation — {document.scope_label}",
+        eyebrow=f"{document.parish_name} · {document.campaign_name}",
+    )
 
 
 def family_axis_top(days):
@@ -70,39 +146,55 @@ def rendering_style():
 
 
 @contextmanager
-def participation_figure(document, *, email=False):
+def participation_figure(document, *, email=False, pdf=False):
     """Own plotting state until consumption ends; callers cannot leak a figure.
 
     ``email`` drops the page furniture (parish and campaign names, the scope
     title and the renderer footer) that the daily email already states in its
     text (#720), and lets the plot fill the image (``EMAIL_PLOT_LAYOUT``).
+    ``pdf`` draws a US Letter page: the shared report frame around the plot.
     """
     if not isinstance(document, ParticipationDocument):
         raise TypeError("Rendering requires an immutable participation document.")
     from matplotlib.figure import Figure
 
     with rendering_style():
-        figure = Figure(figsize=(12, 7), dpi=120, facecolor="white")
+        if pdf:
+            figure = Figure(
+                figsize=(pdf_design.PAGE_WIDTH / 72, pdf_design.PAGE_HEIGHT / 72),
+                dpi=120,
+                facecolor="white",
+            )
+        else:
+            figure = Figure(figsize=(12, 7), dpi=120, facecolor="white")
         try:
-            _draw(figure, document, email=email)
+            if pdf:
+                frame = pdf_frame(document)
+                frame.draw(pdf_design.Canvas(figure), 1, 1)
+                layout = pdf_layout(frame)
+            else:
+                layout = EMAIL_LAYOUT if email else PAGE_LAYOUT
+            _draw(figure, document, layout)
             yield figure
         finally:
             figure.clear()
 
 
-def _draw(figure, document, *, email=False):
+def _draw(figure, document, layout):
     """Separate units and line patterns; floats are only plot coordinates."""
     from matplotlib.ticker import FuncFormatter, MaxNLocator
 
     axes = figure.add_subplot(111)
-    figure.subplots_adjust(**(EMAIL_PLOT_LAYOUT if email else PLOT_LAYOUT))
-    if not email:
+    figure.subplots_adjust(**layout.plot)
+    if layout.furniture:
         figure.text(0.5, 0.96, document.parish_name, ha="center", fontsize=14)
         figure.text(0.5, 0.915, document.campaign_name, ha="center", fontsize=12)
         axes.set_title(f"Family participation — {document.scope_label}", pad=38)
     # The email's as-of line names the zone once (#720); the page names it here.
     axes.set_xlabel(
-        "Campaign date" if email else f"Campaign date ({document.campaign_timezone})"
+        f"Campaign date ({document.campaign_timezone})"
+        if layout.zone_label
+        else "Campaign date"
     )
     axes.set_ylabel("Families (count)")
     # Round 1/2/5 steps (10, 20, 50, ...) read more easily than 30 or 25.
@@ -205,11 +297,10 @@ def _draw(figure, document, *, email=False):
         handles,
         labels,
         loc="upper center",
-        # Without the page title the email's legend sits at the very top.
-        bbox_to_anchor=(0.5, 0.99 if email else 0.805),
+        bbox_to_anchor=(0.5, layout.legend_top),
         ncol=3,
-        fontsize=11 if email else 8,
-        frameon=not email,
+        fontsize=layout.legend_size,
+        frameon=layout.legend_frame,
     )
     unavailable = any(
         not day.population_available
@@ -217,8 +308,8 @@ def _draw(figure, document, *, email=False):
         for day in document.days
     )
     note = "Missing observations are gaps, not zero." if unavailable else ""
-    figure.text(0.09, 0.055, note, fontsize=8)
-    if not email:
+    figure.text(*layout.note, note, fontsize=8)
+    if layout.furniture:
         figure.text(0.89, 0.035, f"{RENDERER_VERSION} · Page 1", fontsize=7, ha="right")
 
 
@@ -230,14 +321,20 @@ def provenance_text(document):
 def render_participation(document, output, *, format, email=False):
     """Write a fixed-layout artifact without host clock or random PDF metadata.
 
-    ``email`` selects the daily email's drawing (see ``participation_figure``).
+    ``email`` selects the daily email's PNG drawing (see
+    ``participation_figure``); a PDF is always the framed report page.
     """
     if format not in {"png", "pdf"}:
         raise ValueError("Participation charts support PNG or PDF.")
-    with participation_figure(document, email=email) as figure:
+    pdf = format == "pdf"
+    with participation_figure(document, email=email and not pdf, pdf=pdf) as figure:
         metadata = {
             "Title": "Family participation",
-            "Creator": EMAIL_RENDERER_VERSION if email else RENDERER_VERSION,
+            "Creator": PDF_RENDERER_VERSION
+            if pdf
+            else EMAIL_RENDERER_VERSION
+            if email
+            else RENDERER_VERSION,
         }
         # The image no longer draws the source snapshot and request time; the
         # file keeps them as metadata instead (Administrator decision, #575).

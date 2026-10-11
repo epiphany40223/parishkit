@@ -153,6 +153,23 @@ def test_family_axis_fits_the_counts_without_drawing_provenance():
     assert RENDERER_VERSION == "participation-v2"
 
 
+@pytest.mark.parametrize("email", [False, True])
+def test_png_plot_box_is_the_hit_test_layout(email):
+    """The PNGs keep the plot box the saved digest page hit-tests (#720).
+
+    Only the PDF moved into the shared report frame (#926); the page and
+    email PNGs still draw their plot exactly where ``PLOT_LAYOUT`` and
+    ``EMAIL_PLOT_LAYOUT`` say, at 1440 x 840 pixels.
+    """
+    layout = charts.EMAIL_PLOT_LAYOUT if email else charts.PLOT_LAYOUT
+    with participation_figure(document(), email=email) as figure:
+        box = figure.axes[0].get_position()
+        assert (box.x0, box.x1, box.y0, box.y1) == pytest.approx(
+            (layout["left"], layout["right"], layout["bottom"], layout["top"])
+        )
+        assert tuple(figure.get_size_inches() * figure.dpi) == (1440, 840)
+
+
 def test_family_axis_top_uses_the_larger_series_and_skips_gaps():
     """Daily or cumulative, whichever is larger; unavailable days are ignored."""
     days = document().days

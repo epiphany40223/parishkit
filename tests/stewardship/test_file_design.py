@@ -8,6 +8,7 @@ while each format's own tests keep pinning the values.
 import io
 import random
 import re
+from dataclasses import replace
 from datetime import UTC, datetime
 from functools import partial
 from types import SimpleNamespace
@@ -16,7 +17,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from openpyxl import Workbook, load_workbook
 
-from parishkit.stewardship.reports import pdf_design, xlsx_design
+from parishkit.stewardship.reports import charts, pdf_design, xlsx_design
 from parishkit.stewardship.reports.census_changes import HEADINGS, census_xlsx
 from parishkit.stewardship.reports.directory_documents import TESTING_NOTE
 from parishkit.stewardship.reports.directory_rendering import (
@@ -579,3 +580,58 @@ def test_filters_read_as_plain_words():
         == "Action: join · Search: Lee"
     )
     assert pdf_design.humanize_filters("not json") == "not json"
+
+
+def test_participation_chart_pdf_is_one_framed_page():
+    """The chart PDF is a Letter page in the shared frame (#926).
+
+    The frame names the parish, campaign and scope and numbers the page, but
+    states no request or capture time: the chart's provenance stays in the
+    file's metadata (#575). Everything the chart draws (axes, tick labels,
+    axis titles, legend and the gap note) sits inside the frame's body.
+    """
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+
+    value = participation()
+    # One missing day, so the gap note is drawn too.
+    missing = replace(
+        value.days[0],
+        first_responses=0,
+        cumulative_responses=0,
+        cohort_denominator=0,
+        source_generation=None,
+        source_as_of=None,
+        population_available=False,
+        pledge_available=False,
+        pledge_total=None,
+    )
+    value = replace(value, days=(missing, *value.days[1:]))
+    frame = charts.pdf_frame(value)
+    output = io.BytesIO()
+    charts.render_participation(value, output, format="pdf")
+    data = output.getvalue()
+    assert len(re.findall(rb"/Type /Page\b", data)) == 1
+    assert b"/MediaBox [ 0 0 792 612 ]" in data
+    assert f"/Creator ({charts.PDF_RENDERER_VERSION})".encode() in data
+    with charts.participation_figure(value, pdf=True) as figure:
+        drawn = [text.get_text() for text in figure.texts]
+        assert "Family participation — Historical as of day" in drawn
+        assert "EXAMPLE PARISH · ANNUAL STEWARDSHIP" in drawn
+        assert "Page 1 of 1" in drawn
+        assert "Missing observations are gaps, not zero." in drawn
+        assert charts.RENDERER_VERSION not in " ".join(drawn)
+        assert not any(
+            word in text for text in drawn for word in ("Requested", "Captured")
+        )
+        renderer = FigureCanvasAgg(figure).get_renderer()
+        scale = 72 / figure.dpi
+        note = next(t for t in figure.texts if t.get_text().startswith("Missing"))
+        for artist in (*figure.axes, *figure.legends, note):
+            box = artist.get_window_extent(renderer)
+            if hasattr(artist, "get_tightbbox"):
+                box = artist.get_tightbbox(renderer)
+            top = pdf_design.PAGE_HEIGHT - box.y1 * scale
+            bottom = pdf_design.PAGE_HEIGHT - box.y0 * scale
+            assert frame.body_top <= top and bottom <= frame.body_bottom, artist
+            assert box.x0 * scale >= pdf_design.MARGIN, artist
+            assert box.x1 * scale <= pdf_design.PAGE_WIDTH - pdf_design.MARGIN
