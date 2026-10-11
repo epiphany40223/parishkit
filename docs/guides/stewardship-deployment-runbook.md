@@ -846,11 +846,17 @@ refuses a changed schema.
 
 Every step-4 command of the script runs under a time limit (30 minutes for
 each migration, 15 for the conversion, 10 for the preview and each
-`database-grants`). A command that exceeds it is killed, and the log
-records a `TIMEOUT:` line naming it with its limit and elapsed time; the
-run stops with the maintenance page up. Check that the killed command's
-one-off container has stopped (`docker compose ps`) before repeating the
-run.
+`database-grants`), in a one-off container named after the project, the
+run and the step (`PROJECT-upgrade-TIME-PID-STEP`). A command that exceeds
+it is killed, and the log records a `TIMEOUT:` line naming it with its
+limit and elapsed time; the script then kills and removes that container by
+name (`docker kill`, `docker rm --force`) and logs it, since stopping the
+`docker compose run` client alone leaves the container running. The run
+stops with the maintenance page up. Ctrl-C or a kill of the host half does
+the same with an `INTERRUPTED:` line in the log. A dropped ssh session
+delivers no signal: the running command finishes or reaches its limit, and
+the run ends at its next output. Before repeating a run that ended any
+other way, check that no one-off container is left (`docker ps`).
 
 If the conversion refuses (a list that differs from the preview's, or SQL's
 last-Administrator guard), the configuration keeps its sign-in rules, the

@@ -13,8 +13,11 @@ with the proof that a Production invocation is unchanged by it.
 
 import json
 import os
+import re
 import shutil
+import signal
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -255,6 +258,8 @@ def test_the_optional_variables_reach_the_host(tmp_path):
 # images' own refusals are out of scope.
 FAKE_DOCKER = r"""
 echo "$*" >>"$FAKE_LOG"
+# FAKE_HANG: a call containing it hangs, as a stuck one-off's client does.
+if [ -n "$FAKE_HANG" ] && [[ "$*" == *"$FAKE_HANG"* ]]; then exec /bin/sleep 60; fi
 stopped="$FAKE_STATE/stopped"
 touch "$stopped"
 all=(postgres valkey web worker scheduler mail-dispatch caddy)
@@ -460,6 +465,7 @@ def run_host(
     image=None,
     env=None,
     again=False,
+    interrupt=None,
     **fake,
 ):
     """Run the host half against the stand-ins.
@@ -478,6 +484,8 @@ def run_host(
     `env` adds to the script's environment. `again` repeats a run in the
     same `tmp_path`, keeping the runtime root and the stand-in's state as
     the earlier run left them (the other layout arguments are then unused).
+    `interrupt` is `(fragment, signal)`: once a docker call containing the
+    fragment is recorded, the script is sent the signal.
     """
     if shutil.which("jq") is None or shutil.which("sha256sum") is None:
         # The runner has both; only the in-image run (which does not see
@@ -527,7 +535,7 @@ def run_host(
     trailing = [] if profile is None else [profile, str(build)]
     override = str(services / "compose.faketime.json") if clock == "fake" else ""
     calls_before = len(log.read_text().splitlines())
-    result = subprocess.run(
+    process = subprocess.Popen(
         [
             "bash",
             str(HOST),
@@ -556,11 +564,27 @@ def run_host(
             **(env or {}),
         },
         text=True,
-        capture_output=True,
-        timeout=60,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
     )
-    output = result.stdout + result.stderr
-    assert result.returncode == status, output
+    try:
+        if interrupt is not None:
+            fragment, signum = interrupt
+            deadline = time.monotonic() + 30
+            while not any(
+                fragment in call for call in log.read_text().splitlines()[calls_before:]
+            ):
+                assert process.poll() is None, "the run ended before the fragment"
+                assert time.monotonic() < deadline, "the fragment was never called"
+                time.sleep(0.05)
+            process.send_signal(signum)
+        stdout, stderr = process.communicate(timeout=60)
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.communicate()
+    output = stdout + stderr
+    assert process.returncode == status, output
     # The whole log is also kept on the host, named after the mode (a usage
     # error ends before the log opens). A repeated run in the same second
     # appends to the earlier run's file.
@@ -1462,6 +1486,10 @@ def test_each_step_4_command_runs_under_a_logged_time_limit(
     assert killed.startswith(f"timeout --kill-after=30 {limit} docker compose ")
     assert f"TIMEOUT: {what} killed after " in output
     assert f"(limit {limit}s)" in output
+    # The one-off container itself is killed and removed by its name.
+    name = one_off_name(killed)
+    assert calls.index(f"kill {name}") < calls.index(f"rm --force {name}")
+    assert f"one-off container {name} killed and removed (time limit)" in output
     assert "caddy serves the maintenance page" in output
     assert not any(" up --detach " in call for call in calls)
     # The kill is in the run's persistent log as well.
@@ -1482,6 +1510,55 @@ def test_the_final_migration_runs_under_a_logged_time_limit(tmp_path):
     assert any(call.startswith("timeout --kill-after=30 1800 ") for call in calls)
     assert "TIMEOUT: the migration killed after " in output
     assert "caddy serves the maintenance page" in output
+
+
+def one_off_name(call):
+    """The --name a recorded `docker compose run` call gave its container."""
+    return re.search(r" run --name (\S+) --rm -T ", call).group(1)
+
+
+def test_each_step_4_one_off_container_has_its_own_name(tmp_path):
+    """Named after the project, mode, run and step; no two alike."""
+    calls, _, _ = run_host(tmp_path, "upgrade", noop="f", schema_change="1", env=USERS)
+    names = [one_off_name(call) for call in calls if " run --name " in call]
+    assert len(names) == 6 == len(set(names))
+    assert all(
+        re.fullmatch(r"stewardship-upgrade-\d{8}T\d{6}Z-\d+-[a-z-]+", n) for n in names
+    )
+    assert [name.rsplit("-", 1)[-1] for name in names[:1]] == ["migration"]
+
+
+@pytest.mark.parametrize(
+    ("signum", "name"), [(signal.SIGTERM, "TERM"), (signal.SIGINT, "INT")]
+)
+def test_a_signal_kills_and_removes_the_running_one_off_container(
+    tmp_path, signum, name
+):
+    """Ctrl-C or kill during a step-4 command reaches its container.
+
+    The client is waited for in the background, so the trap runs at once;
+    it kills and removes the named container, logs both, and the run ends
+    with the maintenance page up.
+    """
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        noop="f",
+        status=128 + signum,
+        schema_change="1",
+        env=USERS,
+        hang="--users-upgrade-base",
+        interrupt=("--users-upgrade-base", signum),
+    )
+    hung = next(call for call in calls if "--users-upgrade-base" in call)
+    container = one_off_name(hung)
+    assert calls.index(f"kill {container}") < calls.index(f"rm --force {container}")
+    assert not any(" up --detach " in call for call in calls)
+    assert not any("database-grants" in call for call in calls)
+    log = next((tmp_path / "logs").glob("stewardship-upgrade-*.log")).read_text()
+    assert f"INTERRUPTED: SIG{name} received in phase offline" in log
+    assert f"one-off container {container} killed and removed (SIG{name})" in log
+    assert "caddy serves the maintenance page" in log
 
 
 @pytest.mark.parametrize(

@@ -706,7 +706,9 @@ Administrator may override.
    them. A repeat after a base migration that stopped partway, which leaves
    migrations outside the swap pending, reuses the first run's step-1
    backup as its restore point (`backup --users-upgrade-resume`, within the
-   24 hours `migrate` requires) and logs that it did. The
+   24 hours `migrate` requires) and logs that it did; each step-4 command
+   runs in a named one-off container that a time limit or a signal kills
+   and removes by name. The
    [deployment runbook](../../../guides/stewardship-deployment-runbook.md#users-upgrade-952)
    gives the commands.
 
