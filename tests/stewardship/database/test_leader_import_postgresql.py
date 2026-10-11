@@ -350,6 +350,35 @@ def test_the_page_lists_the_leaders_below_the_users(deployment):
     assert listed().count() == 2
 
 
+def test_a_failed_leaders_read_leaves_the_users_table_usable(deployment, monkeypatch):
+    """A database failure reading the leaders only puts a notice in their section.
+
+    The stand-in fails a real statement in its own savepoint, as
+    ``read_leaders`` runs the definer, so the page's later audit and recheck
+    still use the same connection.
+    """
+    from parishkit.stewardship.accounts import leader_import_views
+
+    def failing(_session_key):
+        with transaction.atomic(), connection.cursor() as cursor:
+            cursor.execute("SELECT 1/0")
+
+    monkeypatch.setattr(leader_import_views, "read_leaders", failing)
+    _store, browser = deployment
+    body = page(browser)
+    # The users table is drawn as usual, with its own actions.
+    users_region = body[body.index('<section id="users-table"') :]
+    assert "staff@example.org" in users_region[: users_region.index("</section>")]
+    assert "New user" in body
+    region = leaders_region(body)
+    assert 'id="leaders-unavailable"' in region
+    assert "could not be read just now" in region
+    assert 'id="leader-import"' not in region and "Import all" not in region
+    assert listed().count() == 0
+    # The view itself is still audited.
+    assert AuditEvent.objects.filter(event_type="portal_users_viewed").exists()
+
+
 def test_import_selected_reviews_and_applies_one_change(deployment):
     """Two leaders become Ministry leader users in one audited change."""
     store, browser = deployment
