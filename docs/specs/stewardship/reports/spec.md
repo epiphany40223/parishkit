@@ -18,6 +18,10 @@ decisions](../admin-portal/spec.md#navigation-decisions) 10, 15 and 19:
 reports show the current campaign and the selector links stay greyed out until
 the single-campaign change (#145). Exports keep their own identifiers.
 
+The comparison of the current campaign with past campaigns, and the archive
+workbook it imports, are specified in
+[campaign history and comparison](../campaign-history/spec.md).
+
 ## Shared report behavior
 
 Every report has a title, purpose/help text, active filters, source/data-as-of

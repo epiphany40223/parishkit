@@ -1795,5 +1795,11 @@ The three exceptions are:
 - an Admin-approved campaign purge removes campaign-owned live detail through
   the guarded web workflow while retaining only a non-sensitive tombstone.
 
+Imported past-campaign records (the aggregates of each archive workbook and,
+optionally, the identifiers the renewal figure needs) are parish records,
+outside every campaign's purge, kept until an Administrator removes the
+year; removal keeps a non-sensitive tombstone (see
+[campaign history](../campaign-history/spec.md#what-is-stored)).
+
 No foreign-key cascade may accidentally remove shared parish/integration
 configuration, another campaign, current Portal users, or backup metadata.
