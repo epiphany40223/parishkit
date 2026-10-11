@@ -714,7 +714,10 @@ Administrator may override.
    never unapplies one: once the swap is applied, it is the full migration.
    `database-grants` then gives the conversion its read functions,
    `upgrade-users` previews and converts, and the full `migrate` and
-   `database-grants` follow. The scripted upgrade
+   `database-grants` follow. A function that a migration depending on the
+   swap creates is granted only once that migration is applied, as the
+   applied migrations record it, so the grants on the base skip it and the
+   final grants add it. The scripted upgrade
    (`tools/stewardship-upgrade-host.sh`) runs exactly this in its step 4
    when the operator supplies the conversion's inputs (operation ID,
    operator, reason and the confirmed Administrators, all four or none, never

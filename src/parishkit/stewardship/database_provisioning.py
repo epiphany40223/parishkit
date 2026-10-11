@@ -431,8 +431,14 @@ def provision_roles(configuration, deployment_id):
 
 
 def provision_grants(configuration, deployment_id):
-    """Grant only the explicit foundation registry after its migrations exist."""
-    from .runtime_grants import runtime_functions, runtime_grants
+    """Grant only the explicit foundation registry after its migrations exist.
+
+    On the users upgrade's base (#952), the swap and what depends on it are
+    still pending, so a definer routine one of those migrations creates is
+    not granted yet (``pending_functions``); the grants after the full
+    migration add it.
+    """
+    from .runtime_grants import pending_functions, runtime_functions, runtime_grants
 
     if not isinstance(deployment_id, UUID):
         raise ConfigError("Database provisioning requires a deployment UUID.")
@@ -447,6 +453,8 @@ def provision_grants(configuration, deployment_id):
     ):
         _admit_operator(cursor, configuration, marker, initial=False)
         _admit_writer_guard(cursor)
+        cursor.execute("SELECT app,name FROM public.django_migrations")
+        pending = pending_functions(set(cursor.fetchall()))
         for _, login, role, target in database_identities():
             if not _check_role(
                 cursor,
@@ -487,7 +495,7 @@ def provision_grants(configuration, deployment_id):
                         )
                     )
             # Signatures are fixed registry constants, never caller input.
-            for function in sorted(runtime_functions(role, target=target)):
+            for function in sorted(runtime_functions(role, target=target) - pending):
                 cursor.execute(
                     sql.SQL("GRANT EXECUTE ON FUNCTION public.{} TO {}").format(
                         sql.SQL(function), sql.Identifier(login)

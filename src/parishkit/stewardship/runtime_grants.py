@@ -293,6 +293,27 @@ MEMBER_NAMES_FUNCTION = "stewardship_member_names_v1()"
 # the cap of 60 lookups an hour for each Administrator and an audit event
 # per lookup. Hashing the session keys is #995.
 MEMBER_NAMES_FOR_FUNCTION = "stewardship_member_names_for_v1(text, text, uuid)"
+# Each definer routine above that a migration in the users swap's closure
+# creates (#952), with that migration. `migrate --users-upgrade-base` leaves
+# the closure pending, and database-grants runs on that base before the
+# conversion, so it grants such a routine only once its migration is
+# applied (``pending_functions``). A test proves this lists every registry
+# routine the closure's frozen SQL creates.
+CLOSURE_FUNCTIONS = {
+    MEMBER_NAMES_FOR_FUNCTION: ("stewardship_accounts", "0014_user_name_lookup"),
+}
+
+
+def pending_functions(applied):
+    """The registry routines whose creating migration is not in ``applied``.
+
+    ``applied`` is the ``(app, name)`` pairs of ``django_migrations``.
+    """
+    return frozenset(
+        function
+        for function, migration in CLOSURE_FUNCTIONS.items()
+        if migration not in applied
+    )
 
 
 def runtime_functions(role, *, target=None):
