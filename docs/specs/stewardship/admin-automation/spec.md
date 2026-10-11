@@ -1603,8 +1603,12 @@ signatures:
   (`request_manual_refresh`, `read_refresh_page`).
 - **PR 6b:** the sample test page's list as `campaign_mail.recent_tests`.
 - **PR 6c:** chosen-Family tests (`campaign_family_test`).
-- **PR 7:** `delivery_control_commands` onto the caller; the maintenance
-  switch from `family_maintenance_views`.
+- **PR 7:** `delivery_control_commands` onto the caller (PR 7b). The
+  maintenance switch (PR 7a) needed none: `family_maintenance.current_state`
+  and `set_closed` were already request-free, and the command adds the
+  fresh gate in its own transaction; `set_closed` raises `AlreadySet` (a
+  `ValueError`, so the page is unchanged) for a no-op, which the command
+  reports as `stale_version`.
 - **PR 8a:** the log reads and export from `log_views` (`audit.log_reads`).
 - **PR 8b:** the download's grant consumption and guarded read from
   `export_views.download_with_grant` (`prepare_download`), and the status
@@ -1937,8 +1941,24 @@ PR 12 (default, pending Administrator confirmation).
 | --- | --- |
 | `family_email_progress`, `family_email_progress_status` | `send progress --watch` (PR 3a) |
 | `family_email_sends` | `send history` (PR 3a) |
-| `delivery_control` | `send pause-preview`, `send resume-preview`, `send resolve-preview`, `send confirm --token …` (PR 7) |
-| `family_portal` | `portal maintenance show`, `portal maintenance set` (PR 7; the switch has no version, so the command sets the requested state as the page does) |
+| `delivery_control` | `send pause-preview`, `send resume-preview`, `send resolve-preview`, `send confirm --token …` (PR 7b) |
+| `family_portal` | `portal maintenance show` (any session; no event, as the page's read records none), `portal maintenance set --state closed\|open [--message TEXT\|-]` (PR 7a; see below) |
+
+`portal maintenance show` returns `closed`, `since`, `message` (the
+Administrator's own note Families see) and `closed_by_id`, the closing
+Administrator's id rather than the email address the page shows.
+`portal maintenance set` needs a full-scope session and is
+[fresh-gated](#fresh-gated-actions-from-the-command-line): it checks the
+note with the page's `clean_message` first (`invalid`, with no prompt),
+always asks at the [prompt](#command-line-confirmation) with the page's
+notices, then, in one transaction, passes `require_fresh` (the
+`automation_fresh_gate` event and notice), calls the page's `set_closed`
+(`family_maintenance_started` or `family_maintenance_ended`, the
+Administrator as actor) and records `admin_cmd_portal_maintenance_set`. It
+returns the switch as `show` does. The switch has no version, so the
+command sets the requested state as the page does; the state it already
+has is the page's refusal, reported as `stale_version` with nothing
+recorded, which is also what a repeat after exit 6 sees.
 
 There is no separate "cancel" action today. Stopping a send is the delivery
 pause, and closing work is the closed-campaign resolution. See
@@ -2710,7 +2730,7 @@ carry the schema changes, and PR 10 handles secrets; all three get
 security-focused reviews, and none is deployed to Production without the
 Administrator's approval of that deploy.
 
-On `main`, PR 0 to PR 6, PR 8a to PR 8f and PR 9 have landed; PR 7, PR 8g,
+On `main`, PR 0 to PR 6, PR 7a, PR 8a to PR 8f and PR 9 have landed; PR 7b, PR 8g,
 PR 10, PR 11 and PR 12 have not, so their commands are pending exemptions in
 the [action inventory](#action-inventory), and the
 [ADM-11 checklist](../../../tasks/stewardship/admin-portal.md#adm-11-admin-automation-interface)
@@ -2746,8 +2766,9 @@ exactly the commands that exist.
   `test sample`, at the prompt. **PR 6c:** `test families-preview`,
   `test families` and `test status`, after PR 5; the preview's `--names`
   export followed PR 8b (#817).
-- **PR 7, delivery controls:** pause, resume, closed-campaign resolution and
-  Family portal maintenance.
+- **PR 7, delivery controls,** in two parts. **PR 7a:** Family portal
+  maintenance (`portal maintenance show` and `portal maintenance set`).
+  **PR 7b:** pause, resume and closed-campaign resolution.
 - **PR 8, reports and exports,** in five parts. **PR 8a:** the log commands.
   **PR 8b:** the export lifecycle with streamed fetch (including the
   wrapper's `export fetch` and its tests). **PR 8c:** the aggregate report

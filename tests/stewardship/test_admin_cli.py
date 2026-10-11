@@ -72,6 +72,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "config request cancel",
     }
     refresh = {"refresh start", "refresh status"}
+    portal = {"portal maintenance show", "portal maintenance set"}
     tests = {
         "test sample-preview",
         "test sample",
@@ -120,7 +121,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "export postal",
     }
     assert set(entries) == (
-        session | reads | changes | refresh | tests | operations | reports
+        session | reads | changes | refresh | tests | portal | operations | reports
     )
     for entry in entries.values():
         names = {option["name"] for option in entry["options"]}
@@ -133,6 +134,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
             if name in changes
             else 6
             if name in refresh | tests
+            else 7
+            if name in portal
             else 9
             if name in operations
             else 8
@@ -145,6 +148,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
             name
             in {
                 "test families",
+                "portal maintenance set",
                 "export regenerate",
                 "export financial",
                 "export directory",
@@ -193,6 +197,27 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert review["result_fields"][-1] == "export"
     status = entries["test status"]
     assert status["scope"] == "read_only" and status["audit_event"] is None
+    # The Family portal switch (PR 7a): any session reads it; changing it is
+    # fresh-gated on the page, so it needs a full session and always asks.
+    show, switch = entries["portal maintenance show"], entries["portal maintenance set"]
+    assert show["scope"] == "read_only" and not show["changes_state"]
+    assert show["audit_event"] is None and not show["prompts"]
+    assert switch["scope"] == "full" and switch["changes_state"] and switch["prompts"]
+    assert switch["audit_event"] == "admin_cmd_portal_maintenance_set"
+    assert (
+        show["result_fields"]
+        == switch["result_fields"]
+        == [
+            "closed",
+            "since",
+            "message",
+            "closed_by_id",
+        ]
+    )
+    options = {option["name"]: option for option in switch["options"]}
+    assert options["--state"]["required"]
+    assert options["--state"]["choices"] == ["closed", "open"]
+    assert not options["--message"]["required"]
     # The manual weekly report asks for the page's acknowledgement (PR 8d).
     assert entries["digest weekly-request"]["prompts"]
     for name in reads:
@@ -408,6 +433,7 @@ def test_every_state_change_has_a_registered_described_event():
         # test families-preview's --names export (#817).
         "admin_cmd_export_family_test_names",
         "admin_cmd_test_families",
+        "admin_cmd_portal_maintenance_set",
         "admin_cmd_task_retry",
         "admin_cmd_delivery_resolve",
         "admin_cmd_delivery_resend",

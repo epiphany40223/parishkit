@@ -172,11 +172,10 @@ LEDGER = {
     "family_email_progress_status": command("send progress"),
     "family_email_sends": command("send history"),
     "delivery_control": pending(
-        "PR 7", "send pause-preview", "send resume-preview", "send confirm"
+        "PR 7b", "send pause-preview", "send resume-preview", "send confirm"
     ),
-    "family_portal": pending(
-        "PR 7", "portal maintenance show", "portal maintenance set"
-    ),
+    # The Family portal switch (PR 7a); the delivery controls above are PR 7b.
+    "family_portal": command("portal maintenance show", "portal maintenance set"),
     # Testing sends.
     "campaign_mail": command("test sample-preview", "test sample"),
     # The names the page shows: test families-preview --names exports
