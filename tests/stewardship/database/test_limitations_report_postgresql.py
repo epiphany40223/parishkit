@@ -124,6 +124,8 @@ def test_report_lists_limitations_and_filters(response_service):
     row = result["members"][0]
     assert "talents" not in row
     assert row["cannot_serve"] is True and row["member_name"]
+    # The Member's DUID comes from the SQL (#932); Member 3 is the fixture's.
+    assert row["member_duid"] == 3 and row["proposed"] is False
     # Both tables name the Family as every Admin table does (#932).
     family = result["families"][0]
     assert ", " in row["family_name"] and family["family_name"] == row["family_name"]
@@ -210,7 +212,7 @@ def test_native_page_and_downloads(response_service, google, settings):
         # The Families table has the page's columns: no Cannot attend Mass.
         assert b"\r\nFamily,Family DUID,Latest response\r\n" in body
         assert body.startswith(
-            b"Member,Family,Family DUID,Cannot participate in ministries,"
+            b"Member,Member DUID,Family,Family DUID,Cannot participate in ministries,"
             b"Latest response\r\n"
         )
         response, body = search(browser, export, {"format": "xlsx", "timezone": "UTC"})
@@ -220,12 +222,14 @@ def test_native_page_and_downloads(response_service, google, settings):
         assert book.sheetnames == ["Members", "Families"]
         assert [cell.value for cell in book["Members"][1]] == [
             "Member",
+            "Member DUID",
             "Family",
             "Family DUID",
             "Cannot participate in ministries",
             "Latest response",
         ]
-        assert book["Members"]["D2"].value == "Yes"
+        assert book["Members"]["B2"].value == "3"
+        assert book["Members"]["E2"].value == "Yes"
         # The PDF is offered too (#966), named and typed as one.
         response, body = search(browser, export, {"format": "pdf", "timezone": "UTC"})
         assert response.status_code == 200
