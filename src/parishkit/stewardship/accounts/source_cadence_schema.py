@@ -13,6 +13,8 @@ from parishkit.stewardship.source.cadence import (
 )
 from parishkit.stewardship.source.refresh_rules import spacing_conflicts, valid_shape
 
+from .content_trust import is_carried_schedule
+
 SCHEMA = "source-cadence-v8"
 REQUEST_SCHEMA = "source-cadence-patch-v8"
 RECOVERY_SCHEMA = "operator-recovery-cadence-v8"
@@ -78,7 +80,9 @@ def _validate_rules_schedule(settings):
     Only the shape: the rules' closed fields; daily full times with listed
     quick times (``delta_refresh`` "times") or none ("off"); no time in both
     lists; at most ``MAX_DAILY_TIMES`` in all; and every two times at least
-    15 minutes apart around the clock. Whether the lists are what the rules
+    15 minutes apart around the clock. A new or changed schedule meets the
+    editor's row caps; a stored or carried one keeps the older bound
+    (``is_carried_schedule``, #936). Whether the lists are what the rules
     produce, and the quarter-hour rule for new times, are the settings form's
     and the command line's shared check (``refresh_rules.check_schedule``);
     a stored document is never re-derived.
@@ -88,7 +92,7 @@ def _validate_rules_schedule(settings):
     quick = settings.get("quick_refresh_times", [])
     delta = settings.get("delta_refresh")
     if (
-        not valid_shape(rules)
+        not valid_shape(rules, stored=is_carried_schedule(rules))
         or settings.get("full_refresh", "daily") != "daily"
         or full is None
         or "nightly_time" not in settings

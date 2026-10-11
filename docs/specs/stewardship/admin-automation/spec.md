@@ -2432,8 +2432,12 @@ The refresh schedule is given to `integration set --target parishsoft` as
 document in the stored `refresh_rules` shape (rules, skips and the skip
 switch), never the derived time lists. The command derives the lists and
 runs the page's validator, with the same kept off-quarter-hour times, and a
-refusal carries each problem with the page's words. Its preview lists the
-same differences the page's review does. `integration schedule-preview`
+refusal carries each problem with the page's words. A new or changed
+schedule has at most 64 rules and 16 skips, the
+[schedule editor](../admin-portal/spec.md#schedule-editor)'s caps; one past
+them is refused like any other malformed schedule, without echoing it
+([#936](https://github.com/epiphany40223/parishkit/issues/936)).
+Its preview lists the same differences the page's review does. `integration schedule-preview`
 takes the same option for a proposed schedule, or reads the applied one
 without it, and its JSON document carries the page's seven days, cost and
 freshness. Both follow the ParishSoft settings page's

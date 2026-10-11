@@ -3,6 +3,8 @@
 import pytest
 
 from parishkit.stewardship.source.refresh_rules import (
+    MAX_RULES,
+    MAX_SKIPS,
     Problem,
     check_schedule,
     converted_rules,
@@ -161,7 +163,6 @@ def test_the_96_time_maximum_is_every_quarter_hour():
         rules(at("full", "02:00"), skips=[{"at": "10:00", "to": "11:00"}]),
         rules(at("full", "02:00"), skip="yes"),
         rules(at("full", "02:00")) | {"extra": 1},
-        rules(*[at("full", "02:00")] * 97),
     ],
 )
 def test_only_the_closed_rule_shape_is_valid(value):
@@ -169,6 +170,37 @@ def test_only_the_closed_rule_shape_is_valid(value):
     assert not valid_shape(value)
     with pytest.raises(ValueError):
         daily_times(value)
+
+
+def test_the_row_caps_are_the_editors():
+    """One cap (#936): exactly 64 rules and 16 skips are a valid shape, the
+    editor's caps too, so any stored document can be saved back from the page."""
+    from parishkit.stewardship.accounts.refresh_schedule_forms import (
+        RULE_ROWS,
+        SKIP_ROWS,
+    )
+
+    assert (MAX_RULES, MAX_SKIPS) == (RULE_ROWS, SKIP_ROWS) == (64, 16)
+    full = rules(
+        *[at("full", "02:00")] * MAX_RULES, skips=[{"at": "10:00"}] * MAX_SKIPS
+    )
+    assert valid_shape(full)
+    for past in (
+        rules(*[at("full", "02:00")] * (MAX_RULES + 1)),
+        rules(at("full", "02:00"), skips=[{"at": "10:00"}] * (MAX_SKIPS + 1)),
+    ):
+        assert not valid_shape(past)
+        assert valid_shape(past, stored=True)
+
+
+def test_a_stored_schedule_keeps_the_older_row_bound():
+    """A document stored before #936 (96 rows of each kind) still reads and
+    computes its times; one more row is refused even then."""
+    stored = rules(*[at("full", "02:00")] * 96, skips=[{"at": "10:00"}] * 96)
+    assert not valid_shape(stored)
+    assert valid_shape(stored, stored=True)
+    assert daily_times(stored).full == ("02:00",)
+    assert not valid_shape(rules(*[at("full", "02:00")] * 97), stored=True)
 
 
 def test_a_rule_whose_last_time_equals_its_start_gives_one_time():

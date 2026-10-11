@@ -6,14 +6,18 @@ from uuid import uuid4
 import pytest
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.accounts.authority import AuthorityStore, parse_version
 from parishkit.stewardship.accounts.configuration_schema import (
     schema_for,
+    validate_sections,
     validator_for,
 )
+from parishkit.stewardship.accounts.content_trust import records_of, trusted_content
 from parishkit.stewardship.accounts.integration_selection import (
     authentication_scope,
     integration_records,
 )
+from parishkit.stewardship.accounts.refresh_schedule_forms import RULE_ROWS
 from parishkit.stewardship.accounts.request_patch import (
     build_candidate,
     credential_request_schema,
@@ -261,6 +265,28 @@ def test_a_schedule_saved_with_its_rules_is_public_cadence():
     ) == {"organization_id": 12345}
 
 
+def with_rows(kind, past=0):
+    """A rule schedule with the editor's count of rules or skips (#936),
+    plus ``past`` more.
+
+    The extra rows repeat existing ones, so the stored lists are unchanged
+    and only the row count can be wrong. ``rules_schedule`` has exactly one
+    skip, so repeating its skips gives the wanted count.
+    """
+    from parishkit.stewardship.accounts.refresh_schedule_forms import (
+        RULE_ROWS,
+        SKIP_ROWS,
+    )
+
+    rules = rules_schedule()["refresh_rules"]
+    if kind == "rules":
+        extra = RULE_ROWS + past - len(rules["rules"])
+        rules = rules | {"rules": rules["rules"] + [rules["rules"][0]] * extra}
+    else:
+        rules = rules | {"skips": rules["skips"] * (SKIP_ROWS + past)}
+    return rules_schedule(refresh_rules=rules)
+
+
 @pytest.mark.parametrize(
     "settings",
     [
@@ -276,6 +302,9 @@ def test_a_schedule_saved_with_its_rules_is_public_cadence():
         rules_schedule(quick_refresh_times=[]),
         # Two times less than 15 minutes apart, around midnight too.
         rules_schedule(nightly_time="00:00", full_refresh_times=["00:00", "23:50"]),
+        # More rows than the editor can save back (#936).
+        with_rows("rules", past=1),
+        with_rows("skips", past=1),
     ],
 )
 def test_malformed_rule_schedules_fail_before_persistence(settings):
@@ -283,6 +312,18 @@ def test_malformed_rule_schedules_fail_before_persistence(settings):
     base = base_version()
     with pytest.raises(ConfigError):
         build_candidate(base, schedule_patch(base, **settings), candidate_id=uuid4())
+
+
+@pytest.mark.parametrize("kind", ["rules", "skips"])
+def test_a_rule_schedule_at_the_row_cap_is_stored(kind):
+    """Exactly the editor's cap of rules or skips is accepted (#936)."""
+    base = base_version()
+    settings = with_rows(kind)
+    candidate = build_candidate(
+        base, schedule_patch(base, **settings), candidate_id=uuid4()
+    ).candidate
+    stored = candidate.document()["sections"]["integrations"][0]["values"]["settings"]
+    assert stored["refresh_rules"] == settings["refresh_rules"]
 
 
 def test_skipping_refreshes_around_family_emails_is_stored():
@@ -295,3 +336,66 @@ def test_skipping_refreshes_around_family_emails_is_stored():
     ).candidate
     stored = candidate.document()["sections"]["integrations"][0]["values"]["settings"]
     assert stored["refresh_rules"]["skip_around_family_emails"] is True
+
+
+def stored_past_the_cap():
+    """A version stored before #936, with 96 rules: the older bound.
+
+    Today's candidate path refuses it, so it is built at the cap and its
+    schedule widened, then parsed under full trust as a stored version is.
+    """
+    from parishkit.stewardship.source.refresh_rules import MAX_STORED_ROWS
+
+    base = base_version()
+    document = build_candidate(
+        base, schedule_patch(base, **with_rows("rules")), candidate_id=uuid4()
+    ).candidate.document()
+    wide = with_rows("rules", past=MAX_STORED_ROWS - 64)["refresh_rules"]
+    settings = document["sections"]["integrations"][0]["values"]["settings"]
+    settings["refresh_rules"] = wide
+    with pytest.raises(ConfigError):
+        parse_version(document, validate_sections=validator_for(SCHEMA))
+    with trusted_content():
+        return parse_version(document, validate_sections=validator_for(SCHEMA))
+
+
+def test_a_stored_version_past_the_cap_still_loads(tmp_path):
+    """Reading back a stored version, as the active manifest and history
+    verification do, keeps the older row bound (#936)."""
+    version = stored_past_the_cap()
+    store = AuthorityStore(tmp_path, validate_sections)
+    store.write_version(version)
+    assert store.read_version(version.version_id) == version
+
+
+def test_a_carried_schedule_past_the_cap_does_not_block_later_changes():
+    """An unchanged schedule over the cap rides along with another change,
+    and the applied predecessor's trust accepts it; changing the schedule
+    while still over the cap is refused (#936)."""
+    version = stored_past_the_cap()
+    parish = version.document()["sections"]["parish"][0]
+    patch = [
+        {
+            "section": "parish",
+            "operation": "update",
+            "id": parish["id"],
+            "values": {"name": "Renamed Example Parish"},
+        }
+    ]
+    successor = build_candidate(version, patch, candidate_id=uuid4()).candidate
+    with trusted_content(records_of(version.document())):
+        assert (
+            parse_version(successor.document(), validate_sections=validator_for(SCHEMA))
+            == successor
+        )
+    # 95 rules: past the editor's cap but within the stored bound, so only
+    # losing the carried trust refuses it.
+    stored = version.document()["sections"]["integrations"][0]["values"]
+    changed = stored["settings"]["refresh_rules"]
+    changed = changed | {"rules": changed["rules"][:-1]}
+    assert RULE_ROWS < len(changed["rules"]) < 96
+    settings = rules_schedule(refresh_rules=changed)
+    with pytest.raises(ConfigError):
+        build_candidate(
+            version, schedule_patch(version, **settings), candidate_id=uuid4()
+        )
