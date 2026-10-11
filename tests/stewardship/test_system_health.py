@@ -208,6 +208,8 @@ def health(**values):
             "planning_held": False,
             "retry_waiting": 0,
             "next_retry_at": None,
+            "daily_sent": 0,
+            "daily_limit": 1600,
             "incidents": {},
             "refresh": FullRefreshStatus(NOW, None, False),
             "refused_at": None,
@@ -317,6 +319,7 @@ def test_the_status_region_states_problems_and_panels_in_words():
         paused_at=NOW,
         retry_waiting=3,
         next_retry_at=NOW,
+        daily_sent=1612,
         refused_at=NOW,
         refused_counts=(
             DropCount("email_eligible_families", 1084, 612, 25, True),
@@ -343,6 +346,11 @@ def test_the_status_region_states_problems_and_panels_in_words():
     assert "Paused by admin@example.org" in body
     assert "Reason: Fixing a typo" in body
     assert "3 Family emails wait to retry" in body
+    # The 24-hour count is shown with the limit it is compared with (2c).
+    assert (
+        "Emails went to 1,612 recipients in the last 24 hours. Family "
+        "invitations, reminders and Family tests stop at 1,600." in body
+    )
     assert "?state=retry_wait" in body
     assert "All services run version 1.4.2." in body
     assert "stewardship-deployment-runbook.md" not in body  # no sender is stopped
@@ -357,7 +365,23 @@ def test_the_status_region_states_problems_and_panels_in_words():
     )
     assert "Everything is working" in healthy
     assert "Nothing is holding Family email back." in healthy
+    # Shown even when nothing waits, so the Administrator sees the limit coming.
+    assert "Emails went to 0 recipients in the last 24 hours." in healthy
     assert "Debug logging is off in every service that reports." in healthy
+    one = render_to_string(
+        "stewardship/system-health-status.html",
+        {"health": health(daily_sent=1), "pause": None, "poll_interval": 10000},
+    )
+    assert "Emails went to 1 recipient in the last 24 hours." in one
+
+
+def test_the_daily_limit_shown_is_where_family_mail_stops():
+    """The page's limit is the mail sender's: at it Family mail stops, below not."""
+    from parishkit.stewardship.jobs.family_mail_dispatch import over_daily_limit
+
+    limit = health().daily_limit
+    assert over_daily_limit("initial", limit) is True
+    assert over_daily_limit("initial", limit - 1) is False
 
 
 def test_a_stopped_mail_sender_links_the_deployment_runbook():

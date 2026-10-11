@@ -1,9 +1,10 @@
 """The System health page under the real web login (ADM-13 PR 2, #530).
 
 The page and its polled fragment read the service status records, open
-incidents, waiting retries, the refused load's drop counts and the applied
-migrations through the restricted web login, record one audited view per page
-open (never per poll), and stay Administrator-only.
+incidents, waiting retries, the 24-hour send count, the refused load's drop
+counts and the applied migrations through the restricted web login, record
+one audited view per page open (never per poll), and stay
+Administrator-only.
 """
 
 import json
@@ -127,6 +128,11 @@ def test_problems_come_from_status_rows_incidents_and_retries(auth_service, goog
     assert "The ParishSoft refresh worker has not reported since" in body
     assert "Copying backups off-site has failed since" in body
     assert "Running (2 processes)" in body
+    # The 24-hour count comes through its definer function, inside the
+    # page's read-only snapshot, under the web login (ADM-13 PR 2c);
+    # test_mail_daily_limit_postgresql keeps it equal to the mail sender's.
+    assert (found.daily_sent, found.daily_limit) == (0, 1600)
+    assert "Emails went to 0 recipients in the last 24 hours." in body
     # The polled fragment is never audited.
     assert views() == []
 

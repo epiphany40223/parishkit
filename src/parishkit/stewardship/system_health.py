@@ -7,8 +7,9 @@ ParishSoft refresh, backups, debug logging and version). It reads one
 read-only snapshot, takes no lock (in particular not the work-order lock that
 sending takes) and reads only small rows and indexed counts: the service
 status records, open incidents, the refresh outcomes that Home already reads,
-the newest backup and off-site copy, the waiting retries and the applied
-migrations. It never calls ParishSoft, Google or Slack.
+the newest backup and off-site copy, the waiting retries, the 24-hour send
+count (through its definer function) and the applied migrations. It never
+calls ParishSoft, Google or Slack.
 
 ``SystemHealth`` is the read model; ``to_document()`` is its defined
 projection (states, counts, stored enumeration values and instants, never
@@ -466,7 +467,10 @@ class SystemHealth(ReadModel):
     ``backup_key_matches`` is None when no backup key is configured or no
     backup has finished. ``delivery_paused`` is Production's live delivery
     pause; ``send_active`` and ``planning_held`` come from Family email
-    progress.
+    progress. ``daily_sent`` is the 24-hour recipient count the mail
+    senders compare with the daily limit, and ``daily_limit`` the share of
+    it Family invitations, reminders and Family tests may use (ADM-13 PR
+    2c).
     """
 
     checked_at: datetime
@@ -482,6 +486,8 @@ class SystemHealth(ReadModel):
     planning_held: bool
     retry_waiting: int
     next_retry_at: datetime | None
+    daily_sent: int
+    daily_limit: int
     incidents: dict
     refresh: object
     refused_at: datetime | None
@@ -853,6 +859,11 @@ def read_health(store):
     from .accounts.sessions import database_now
     from .campaigns.models import Campaign
     from .campaigns.work_locks import read_transaction
+    from .jobs.family_mail_dispatch import (
+        DAILY_SEND_LIMIT,
+        RESERVED_SENDS,
+        daily_sends,
+    )
     from .jobs.send_reads import read_progress
     from .source.refresh_status import full_refresh_status, refresh_schedule
 
@@ -875,6 +886,7 @@ def read_health(store):
         refused_at, refused_counts = _refused(refresh.succeeded_at)
         backup_at, key_matches = _backup(configuration)
         retry_waiting, next_retry_at = _retries()
+        daily_sent = daily_sends()
         progress = read_progress()
         send = None if progress is None else progress["send"]
         production = configuration.mode == "production"
@@ -907,6 +919,11 @@ def read_health(store):
         planning_held=bool(send and send.active and send.counts.held),
         retry_waiting=retry_waiting,
         next_retry_at=next_retry_at,
+        daily_sent=daily_sent,
+        # The share Family invitations, reminders and tests may use: the daily
+        # limit less the sends kept for receipts, reports and alerts, as
+        # family_mail_dispatch.over_daily_limit compares it.
+        daily_limit=DAILY_SEND_LIMIT - RESERVED_SENDS,
         incidents=incidents,
         refresh=refresh,
         refused_at=refused_at,

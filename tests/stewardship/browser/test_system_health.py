@@ -64,6 +64,8 @@ def test_the_page_follows_problems_ending_and_announces_only_the_change(
     assert region.get_attribute("data-live-pending") is not None
     visible(page.get_by_text("Mail sender 1 has stopped all Family email"))
     visible(page.get_by_role("rowheader", name="Families with an email address"))
+    # The 24-hour count, with the limit it is compared with (ADM-13 PR 2c).
+    visible(page.get_by_text("Emails went to 1,612 recipients in the last 24 hours."))
     assert page.locator(ANNOUNCER).text_content() == ""
     page.locator("details.technical-details summary").click()
     # A mouse click focuses a link in the region (Chromium and Firefox); it
@@ -87,6 +89,8 @@ def test_the_page_follows_problems_ending_and_announces_only_the_change(
     )
     assert page.locator(ANNOUNCER).text_content() == "Everything is working."
     visible(page.get_by_text("Nothing is holding Family email back."))
+    # The count stays shown when nothing waits, and follows the poll.
+    visible(page.get_by_text("Emails went to 240 recipients in the last 24 hours."))
     # The page never reloaded: the open Technical details outside the region
     # stayed open, and the page still polls.
     assert page.locator("details.technical-details").get_attribute("open") is not None
