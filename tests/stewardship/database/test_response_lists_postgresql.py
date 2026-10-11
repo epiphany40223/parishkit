@@ -335,9 +335,11 @@ def test_lists_and_downloads_for_admin_and_staff(
             )[0].status_code
             == 403
         )
-        # The dashboard links each list with its length.
+        # The dashboard links each list with its length; the link opens the
+        # directory's preset (#933).
         _, body = get(browser, base)
-        assert (reverse("admin:response_list", args=["submitted"])).encode() in body
+        preset = "?response=submitted&amp;responses=yes&amp;sort=submitted"
+        assert (reverse("admin:family_directory") + preset).encode() in body
         assert b"Families that submitted</a>: 0" in body
 
 

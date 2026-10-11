@@ -1,6 +1,7 @@
 """Private directory parsing and native rendering without service startup."""
 
 from datetime import UTC, datetime
+from urllib.parse import urlencode
 from uuid import uuid4
 
 import pytest
@@ -556,3 +557,35 @@ def test_mail_merge_always_lists_by_postal_mail_only(reach):
     listed = selection_parameters(campaign, query, postal=False, mac=None)
     assert postal["filters"] == listed["filters"] | {"reach": "mail"}
     assert listed["filters"]["reach"] == reach and postal["postal"]
+
+
+def test_page_address_keeps_only_link_safe_presets():
+    """The address bar after an in-place answer carries closed presets only.
+
+    A preset link's query would otherwise stay in the address bar, so a
+    Reload or Back would bring it back after the reader changed a filter
+    (#933). Search text or an exact code makes it the bare page; the page
+    number is never carried.
+    """
+    from parishkit.stewardship.reports.directory_views import (
+        LINK_PRESETS,
+        page_address,
+    )
+    from parishkit.stewardship.reports.response_dashboard import DIRECTORY_PRESETS
+
+    route = reverse("admin:family_directory")
+    assert page_address(route, DirectoryQuery(), postal=False) == route
+    # Each dashboard link's own query comes back unchanged.
+    for preset in DIRECTORY_PRESETS.values():
+        query = DirectoryQuery.parse(QueryDict(urlencode(preset)))
+        address = page_address(route, query, postal=False)
+        assert QueryDict(address.partition("?")[2]).dict() == preset
+    query = DirectoryQuery(response="started", reach="mail", page=3)
+    address = page_address(route, query, postal=True)
+    assert address == route + "?response=started&reach=mail&mailing=yes"
+    assert set(QueryDict(address.partition("?")[2])) <= LINK_PRESETS
+    for private in (
+        DirectoryQuery(response="started", search="Adams"),
+        DirectoryQuery(response="started", exact_code="ABCDEFGH"),
+    ):
+        assert page_address(route, private, postal=True) == route
