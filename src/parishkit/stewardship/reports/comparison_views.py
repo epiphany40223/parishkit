@@ -71,7 +71,11 @@ def page_context(comparison, principal):
         "distributions": distribution_rows(comparison, BAND_EDGES)
         if comparison.financial
         else [],
-        "average_years": years_label(comparison.imported),
+        # The years the tiles' averages cover: those with a value on day N
+        # (a partial year after its last day is left out).
+        "average_years": years_label(
+            [year for year in comparison.imported if year.at_day is not None]
+        ),
         "can_import": allows(principal, Capability.CONFIGURE)
         and allows(principal, Capability.FINANCIAL_DETAIL),
     }

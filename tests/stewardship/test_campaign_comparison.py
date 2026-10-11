@@ -395,3 +395,22 @@ def test_tiles_leave_pledges_out_without_the_financial_module():
     """Without Financial stewardship there is no pledge tile."""
     found = replace(comparison([]), financial=False)
     assert {tile["key"] for tile in tiles(found)} == {"families", "percent", "renewal"}
+
+
+def test_the_data_line_names_the_years_the_averages_cover():
+    """A partial year without a day-N value is left out of the named years."""
+    from parishkit.stewardship.accounts.policy import Principal
+    from parishkit.stewardship.reports.comparison_views import page_context
+
+    found = comparison(
+        [
+            year(2054, day(3, 30)),
+            year(2053, day(3, 20)),
+            year(2052, None, end=day(2, 5), final=False),
+        ]
+    )
+    principal = Principal(uuid4(), frozenset({"staff"}), frozenset())
+    context = page_context(found, principal)
+    assert context["average_years"] == "2053–2054"
+    assert context["tiles"][0]["lines"][1].startswith("2053–2054 average")
+    assert not context["can_import"]
