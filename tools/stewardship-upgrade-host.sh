@@ -120,12 +120,30 @@ finish() {
         esac
     fi
     # Let tee flush the last lines before ssh exits (fd 3 is its copy of
-    # stderr, which `limited` writes to).
+    # stderr, which `oneoff` writes to).
     exec >&- 2>&- 3>&-
     wait "$tee_pid" 2>/dev/null || true
     exit "$rc"
 }
 trap finish EXIT
+# A signal (Ctrl-C or kill on the host; SIGPIPE once a dropped ssh session
+# has taken tee's output away) ends the run like a failure, but first kills
+# and removes the one-off container a step-4 command left running (`oneoff`
+# below): stopping the `docker compose run` client alone leaves it running.
+# Its lines go straight to the log file, since the terminal may be gone.
+interrupted() {
+    # interrupted NAME NUMBER: the trap of one signal; exits 128+NUMBER.
+    trap '' INT TERM HUP PIPE
+    {
+        echo "INTERRUPTED: SIG$1 received in phase $phase"
+        stop_oneoff "SIG$1"
+    } >>"$log" 2>&1
+    exit $((128 + $2))
+}
+trap 'interrupted INT 2' INT
+trap 'interrupted TERM 15' TERM
+trap 'interrupted HUP 1' HUP
+trap 'interrupted PIPE 13' PIPE
 
 # The generated Compose files pass this through to every application service.
 # Production starts every service with debug logging off; local mode keeps
@@ -180,22 +198,53 @@ quiet() {
     # Compose progress lines add nothing to an upgrade log.
     grep -vE ' (Creat|Start|Stop|Wait|Running|Healthy|Recreat)' || true
 }
-limited() {
-    # limited SECONDS WHAT COMMAND...: run COMMAND, killing it (TERM, then
-    # KILL 30 s later) once SECONDS have passed. A kill is logged with what
-    # ran, the limit and the elapsed time on fd 3, the run's log, since the
-    # caller usually filters this function's output through `tail`. Returns
-    # the command's status (124 or 137 after a kill), so the caller stops.
+# Each one-off container `oneoff` starts is named after this run and its
+# step, so a kill can reach the container itself by name.
+oneoff_prefix="$project-$mode-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+oneoff_name=""
+oneoff_pid=""
+stop_oneoff() {
+    # stop_oneoff WHY: kill and remove the running one-off container (and
+    # its `docker compose run` client), if there is one, saying so.
+    local name=$oneoff_name
+    [ -n "$name" ] || return 0
+    oneoff_name=""
+    [ -z "$oneoff_pid" ] || kill "$oneoff_pid" 2>/dev/null || true
+    docker kill "$name" >/dev/null 2>&1 || true
+    if docker rm --force "$name" >/dev/null 2>&1; then
+        echo "    one-off container $name killed and removed ($1)"
+    else
+        echo "    one-off container $name was already gone ($1)"
+    fi
+}
+oneoff() {
+    # oneoff SECONDS WHAT STEP SERVICE [ARGS...]: `docker compose run` one
+    # SERVICE container named after this run and STEP, killing it (TERM,
+    # then KILL 30 s later) once SECONDS have passed. Prints the command's
+    # last output line. The client runs in the background and the shell
+    # waits for it, so a signal's trap runs at once rather than after the
+    # command. On an expired limit (124, or 137 at the limit) the kill is
+    # logged on fd 3, the run's log, with what ran, the limit and the
+    # elapsed time, and the container is killed and removed by name, since
+    # killing the client leaves it running. Returns the command's status
+    # (124 or 137 after a kill), so the caller stops.
     local limit=$1 what=$2 started rc=0 elapsed
-    shift 2
+    oneoff_name=$oneoff_prefix-$3
+    shift 3
     started=$(date -u +%s)
-    timeout --kill-after=30 "$limit" "$@" || rc=$?
+    timeout --kill-after=30 "$limit" "${dc[@]}" run --name "$oneoff_name" --rm -T "$@" \
+        </dev/null >"$work/oneoff.out" 2>&1 &
+    oneoff_pid=$!
+    wait "$oneoff_pid" || rc=$?
+    oneoff_pid=""
     elapsed=$(( $(date -u +%s) - started ))
     if [ "$rc" -eq 124 ] || { [ "$rc" -eq 137 ] && [ "$elapsed" -ge "$limit" ]; }; then
         echo "TIMEOUT: $what killed after ${elapsed}s (limit ${limit}s). The maintenance page" >&3
-        echo "    stays up; make sure its one-off container has stopped (docker compose ps)" >&3
-        echo "    before repeating the run." >&3
+        echo "    stays up." >&3
+        stop_oneoff "time limit" >&3
     fi
+    oneoff_name=""
+    tail -1 "$work/oneoff.out"
     return "$rc"
 }
 
@@ -534,33 +583,34 @@ if [ "$mode" = upgrade ]; then
         echo "    skipped: the upgrade check answered t (schema and grants already match)"
     else
         echo "    running migration and grants: the check answered: $(head -3 <<<"$answer")"
-        # Every step-4 command runs under a time limit (`limited`): a
-        # migration or conversion that hangs is killed, the kill is logged
-        # and the run stops with the maintenance page up (phase offline).
-        # The limits are far above any expected run (seconds to minutes).
+        # Every step-4 command runs under a time limit in a named one-off
+        # container (`oneoff`): a migration or conversion that hangs is
+        # killed, container and all, the kill is logged and the run stops
+        # with the maintenance page up (phase offline). The limits are far
+        # above any expected run (seconds to minutes).
         grants() {
-            # database-grants as the operator-only provisioning profile.
-            limited 600 "database-grants" "${dc[@]}" run --rm -T database-provision database-grants \
-                --config "$services/database-provision.yaml" --confirm-deployment "$uuid" 2>&1 | tail -1
+            # grants STEP: database-grants as the operator-only provisioning profile.
+            oneoff 600 "database-grants" "$1" database-provision database-grants \
+                --config "$services/database-provision.yaml" --confirm-deployment "$uuid"
         }
         if [ "$users_upgrade" = 1 ]; then
             # The users upgrade's fixed order (#952): every migration but the
             # swap, the grants its conversion reads with, the preview, the
             # conversion, and then the rest. The admin-recovery commands run
             # on that base, so Admin-access recovery works at every step.
-            recovery=(run --rm -T admin-recovery upgrade-users
+            recovery=(admin-recovery upgrade-users
                 --config "$services/admin-recovery.yaml" --confirm-deployment "$uuid")
             step "4. Migration to the users upgrade's base"
-            limited 1800 "the migration to the users upgrade's base" "${dc[@]}" run --rm -T migration migrate \
-                --config "$services/migration.yaml" --users-upgrade-base 2>&1 | tail -1
-            grants
+            oneoff 1800 "the migration to the users upgrade's base" base-migration migration migrate \
+                --config "$services/migration.yaml" --users-upgrade-base
+            grants base-grants
             step "4. Users upgrade preview"
-            limited 600 "the users upgrade preview" "${dc[@]}" "${recovery[@]}" --preview 2>&1 | tail -1
+            oneoff 600 "the users upgrade preview" users-preview "${recovery[@]}" --preview
             step "4. Users upgrade (operation $STEWARDSHIP_USERS_OPERATION)"
-            if ! limited 900 "the users upgrade" "${dc[@]}" "${recovery[@]}" \
+            if ! oneoff 900 "the users upgrade" users-upgrade "${recovery[@]}" \
                 --operation-id "$STEWARDSHIP_USERS_OPERATION" \
                 --operator-name "$STEWARDSHIP_USERS_OPERATOR" --reason "$STEWARDSHIP_USERS_REASON" \
-                --confirm-administrators "$STEWARDSHIP_USERS_ADMINISTRATORS" 2>&1 | tail -1; then
+                --confirm-administrators "$STEWARDSHIP_USERS_ADMINISTRATORS"; then
                 echo "The users upgrade did not complete: the new sign-in functions were not installed" >&2
                 echo "and, unless the conversion activated before it stopped, the configuration keeps" >&2
                 echo "its sign-in rules. Admin-access recovery works on this schema (runbook, Users" >&2
@@ -570,7 +620,7 @@ if [ "$mode" = upgrade ]; then
             fi
             step "4. Migration after the users upgrade"
         fi
-        if ! limited 1800 "the migration" "${dc[@]}" run --rm -T migration 2>&1 | tail -1; then
+        if ! oneoff 1800 "the migration" migration migration; then
             if [ "$users_upgrade" = 0 ]; then
                 # A release whose swap refuses an unconverted configuration
                 # stops here; nothing of the swap was committed.
@@ -579,7 +629,7 @@ if [ "$mode" = upgrade ]; then
             fi
             exit 1
         fi
-        grants
+        grants grants
     fi
 else
     step "4. Migration: not repeated by a rollback"
