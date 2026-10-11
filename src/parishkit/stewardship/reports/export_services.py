@@ -78,6 +78,9 @@ def authorize(store, user_id, *, request=None):
         # Codes need the directory page's own capability too, so a requester
         # who loses it can no longer download or regenerate an earlier export.
         permitted = permitted and allows(principal, Capability.FAMILY_CODES)
+        # Testing rehearsal responses are for Administrators only (#933).
+        if directory_mode(request) == "testing":
+            permitted = permitted and "administrator" in principal.roles
     elif isinstance(request, ExportRequest) and request.report == "family_test_names":
         # Real Family names from a chosen-Family test review (#817) need that
         # page's own capability, which only an Administrator holds.
@@ -101,6 +104,11 @@ def admit_campaign(campaign_id, *, mutating):
             raise PermissionError("Campaign reporting is currently unavailable.")
 
 
+def directory_mode(request):
+    """A directory export's response mode; captures before #933 are Production."""
+    return (request.parameters or {}).get("mode", "production")
+
+
 def audit(action, request, actor_id, *, outcome, count=None):
     """Retain non-sensitive result scope once, without copying filters or rows.
 
@@ -117,6 +125,9 @@ def audit(action, request, actor_id, *, outcome, count=None):
     if count is not None:
         context["count"] = count
     # Exact-generation requests share this helper but have no Ministry payload.
+    # A directory export names whose responses it holds (#933).
+    if isinstance(request, ExportRequest) and request.report in FAMILY_CODE_REPORTS:
+        context["report_mode"] = directory_mode(request)
     if isinstance(request, ExportRequest) and request.report == "ministry":
         context.update(
             ministry_duids=request.authorization_scope["result_ministries"],

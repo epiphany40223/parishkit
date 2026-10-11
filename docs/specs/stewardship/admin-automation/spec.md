@@ -2284,6 +2284,18 @@ Family code, which would put a name or a code in the shell's history. Both
 are [fresh-gated](#fresh-gated-actions-from-the-command-line), as
 `export financial` is: each asks at the prompt, then calls `require_fresh`
 inside its export lock, for a repeated key too, as the page does.
+`--filter mode=testing` exports the campaign's Testing rehearsal, as the
+directory's [Testing switch](../reports/spec.md#response-filters) does
+([#933](https://github.com/epiphany40223/parishkit/issues/933)): the
+Response choice and response columns read the rehearsal active when the
+command runs, since there is no page whose rehearsal it could pin, and the
+file and its audit say Testing. Testing is for Administrators only, as on
+the page. Command-line sessions are Administrator sessions, so a user who is
+no longer an Administrator has no usable session (exit 5); the export
+service also refuses a non-Administrator, so a Staff member could not
+export Testing through it even if one could reach it. With no active
+rehearsal the command is `stale_version` (the page's 409) and nothing is
+made.
 The exact daily export commands (PR 8h) are the Participation page's
 exact-export form and its status page, through the page's own services
 (`reports.exact_services`): `export exact create` freezes the current

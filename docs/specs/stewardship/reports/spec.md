@@ -607,12 +607,12 @@ shares and the page says so in one sentence. A **Lists of Families** panel
 links to the Families behind each of the [response lists](#response-lists),
 with the number of Families on it (counted from the same read; the list of
 ParishSoft data to check has no number here, since counting it needs the
-ParishSoft read). In Production each link opens the
+ParishSoft read). Each link opens the
 [active parishioner family directory](#active-parishioner-family-directory)
 with that list's closed [link presets](#response-filters)
 ([#933](https://github.com/epiphany40223/parishkit/issues/933)), so the page it
-opens has the number shown. In Testing the links still open the response
-lists' Testing views, since the directory reads Production only. The page
+opens has the number shown; in Testing the links add `mode=testing`, so the
+directory reads the same rehearsal ([Testing switch](#response-filters)). The page
 shows counts only, never a Family's name or identifier, and sends
 `Cache-Control: no-store`.
 
@@ -660,8 +660,9 @@ per-Family rows as the [funnel](#response-funnel):
 The [active parishioner family directory's Response filters](#response-filters)
 now reproduce every list, with Family codes, contact details and the queued
 export ([#933](https://github.com/epiphany40223/parishkit/issues/933)), and
-the [dashboard](#response-dashboard)'s Production links open the directory.
-The list pages stay, for the Testing view, until a later change removes them.
+the [dashboard](#response-dashboard)'s links open the directory, in Production
+and Testing. The list pages stay, no longer linked from the dashboard, until a
+later change removes them.
 
 Each of the first four lists has exactly the Families its count on the
 [response dashboard](#response-dashboard) counts, with the instants the
@@ -1293,7 +1294,7 @@ shown: when Include response columns is off, or the chosen Response does not
 show that column, the order falls back to Family (by name), for the page, the
 export and the audit entry alike.
 
-The [response dashboard](#response-dashboard)'s Production **Lists of
+The [response dashboard](#response-dashboard)'s **Lists of
 Families** links open this page with closed link presets in the URL, one per
 response list. The four funnel lists' links turn on Include response columns,
 so the page shows that list's response columns in its default order; the
@@ -1312,6 +1313,42 @@ The ParishSoft data to check link lists the directory's own population, so
 it can also include an active Family with no campaign record, which the old
 `data-quality` list left out (see
 [ParishSoft data to check](#response-filters) above); this is intended.
+A Testing dashboard's links are the same presets followed by `&mode=testing`.
+
+**Testing switch.** Administrators get a **Responses shown** select in the
+filter bar: Production (the default) or Testing rehearsal, with its
+explanation in its toggletip. It is drawn only for an Administrator and only
+while the campaign has an active rehearsal (or the page already shows one);
+Staff and an Administrator with no rehearsal never see it, as on the
+[response dashboard](#response-dashboard). Like the other filters it applies
+with Apply filters, in place, and `mode` is one of the closed link presets,
+so the address bar after an in-place answer includes `mode=testing` while
+Testing is shown. Testing rehearsal reads the campaign's active rehearsal
+epoch for the Response choice, the response columns, their sort orders and
+Counted at; everything else (the population, Family codes, contact details,
+email availability, reach and data checks) is the same in both modes. A
+result never mixes modes: the **Responded** column, which reads live
+responses, is left out in Testing rehearsal, and a visible notice says the
+response choices use the rehearsal only. A Staff member asking for
+`mode=testing` (link or form) is refused (403), and a Testing view asked
+for after the rehearsal ended gets a refusal (409) saying there is no active
+rehearsal, never a Production view. A Testing page's export form carries
+the rehearsal epoch the page read, and the export's selection pins that
+epoch: if it is no longer the campaign's active rehearsal when the export
+is queued, the export is refused (409) and nothing is made, so the file
+never holds a later rehearsal than the page showed. The
+[command line](../admin-automation/spec.md#reports-and-exports) has no page,
+so it reads the rehearsal active when it runs. A Testing export is admitted
+for Administrators only (queuing, downloading, retrying and regenerating
+alike) and its columns are the Production file's. Its XLSX and PDF report
+details add **Responses shown: Testing rehearsal**; a CSV has no report
+details, so the downloaded file's name says it instead
+(`family_directory-testing.csv`, `postal_outreach-testing.csv`, and the same
+for XLSX and PDF). Each directory view's audit entry and every directory export's
+lifecycle audit entry record `report_mode` (`production` or `testing`; an
+export captured before the switch is Production). A Production selection's
+parameters keep their earlier shape, without a mode, so a request key bound
+before the switch still matches its repeat.
 
 Each value must be in its filter's closed vocabulary, as in the form; an
 unknown value, a repeated parameter or any other parameter is refused (400).
@@ -1330,13 +1367,12 @@ search is cleared, as on the response lists.
 The selection is `stewardship_directory_report_v2` (migration 0050). It reads
 the funnel through `stewardship_family_response_v1`, so the directory and the
 dashboard share one definition. Version 1 stays installed and unused. The
-selection also takes an optional mode and rehearsal epoch so a Testing view
-can read one rehearsal's funnel; the page reads Production only until the
-Testing switch is added. An export's captured parameters keep the Response,
+selection also takes an optional mode and rehearsal epoch, which the
+Testing switch above uses to read one rehearsal's funnel. An export's captured parameters keep the Response,
 data check and response columns choices, and its report details add
 **Responses counted at** and name each applied choice. Each view is audited
 with the closed values `directory_response`, `directory_data_check`,
-`directory_response_columns` and `directory_sort` (older entries' `yes` and
+`directory_response_columns`, `directory_sort` and `report_mode` (older entries' `yes` and
 `no` Response values still read correctly), never a name or search text.
 The selection itself still accepts v1's `yes` and `no` Response values, read
 as Submitted and Not submitted for active Families only, so the previous

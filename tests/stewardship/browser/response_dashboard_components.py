@@ -57,6 +57,12 @@ def components(context, admin):
     pages = {
         "/response-dashboard": (DashboardQuery(), dashboard_metrics()),
         "/response-dashboard-testing": (DashboardQuery("testing"), None),
+        # A Testing view during a rehearsal: its list links open the
+        # directory's presets with mode=testing (#933).
+        "/response-dashboard-rehearsal": (
+            DashboardQuery("testing"),
+            dashboard_metrics(),
+        ),
         # A campaign with nothing yet: no Families' activity, with and
         # without send markers.
         "/response-dashboard-empty": (

@@ -19,7 +19,7 @@ from parishkit.stewardship.accounts.sessions import (
 )
 from parishkit.stewardship.storage import StorageInvariantError
 
-from .directories import DirectoryQuery
+from .directories import DirectoryQuery, NoRehearsal
 from .directory_exports import create_directory_export
 from .directory_views import _error, _principal, mailing_option
 from .export_services import ExportRequestBound
@@ -53,6 +53,10 @@ def create(request, campaign_id):
                 admin_navigation.PAGES["family_directory"].label,
             )
         fields = {"format", "browser_timezone", "request_key"}
+        # A Testing page's form names the rehearsal it showed (#933), so the
+        # export reads that one or is refused (409), never a later one.
+        if parameters.get("mode") == "testing":
+            fields.add("rehearsal")
         query_fields = set(DirectoryQuery.__dataclass_fields__) - {"page"}
         if (
             request.GET
@@ -61,6 +65,7 @@ def create(request, campaign_id):
         ):
             raise ValueError("Invalid directory export fields.")
         values = {field: parameters.pop(field)[0] for field in fields}
+        rehearsal = UUID(values["rehearsal"]) if "rehearsal" in values else None
         result = create_directory_export(
             service.store,
             principal.identity,
@@ -71,6 +76,7 @@ def create(request, campaign_id):
             browser_timezone=values["browser_timezone"],
             request_key=UUID(values["request_key"]),
             mac=family_runtime().mac,
+            rehearsal=rehearsal,
         )
         return _redirect(result.pk)
     except (PermissionError, ObjectDoesNotExist):
@@ -79,5 +85,7 @@ def create(request, campaign_id):
         return _error(campaign_id, status=503)
     except ExportRequestBound:
         return _error(campaign_id, status=409)
+    except NoRehearsal:
+        return _error(campaign_id, status=409, no_rehearsal=True)
     except ValueError:
         return _error(campaign_id, status=400)
