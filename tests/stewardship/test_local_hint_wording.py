@@ -21,10 +21,10 @@ from parishkit.stewardship.accounts.integration_forms import (
 )
 from parishkit.stewardship.accounts.setup_credential_views import SetupCredentialForm
 from parishkit.stewardship.accounts.setup_forms import SetupAccessForm
-from parishkit.stewardship.accounts.user_rows import ROLE_LABELS
-from parishkit.stewardship.accounts.user_rules import ROLE_ORDER
-from parishkit.stewardship.accounts.user_views import TABLES, user_tables
+from parishkit.stewardship.accounts.user_reads import USER_SORTING
+from parishkit.stewardship.accounts.user_views import PREFIX
 from parishkit.stewardship.deployment import DeploymentProfile
+from parishkit.stewardship.web.tables import paginate
 
 NOW = datetime(2026, 10, 6, 12, tzinfo=UTC)
 CONTEXT = {
@@ -170,18 +170,14 @@ def pages():
         "users": (
             "stewardship/users.html",
             {
-                **user_tables({}, {name: [] for name in TABLES}),
+                "table": paginate([], {}, prefix=PREFIX, sorting=USER_SORTING),
                 "base_digest": "0" * 64,
-                "roles": [(role, ROLE_LABELS[role]) for role in ROLE_ORDER],
+                "refresh_url": "/admin/users/",
+                "new_url": "/admin/users/new/",
+                "delete_url": "/admin/users/deletion/",
             },
-            (
-                "Who may sign in to this portal with Google, and why.",
-                "A Google sign-in attempt that policy then refused is not counted.",
-            ),
-            (
-                "Who may sign in to this portal, and why.",
-                "A sign-in attempt that policy then refused is not counted.",
-            ),
+            ("Everyone who may sign in to the Admin portal with Google.",),
+            ("Everyone who may sign in to the Admin portal.",),
         ),
     }
 
@@ -191,11 +187,10 @@ NAMES = sorted(pages())
 # Provider text such as "Google Workspace", "Gmail" or "Google Drive" stays:
 # it is true in every profile and contains none of these.
 SIGN_IN_PHRASES = ("with google", "google sign-in", "google account")
-# The Users page goes on to explain how domain rules match a Google account's
-# hosted-domain claim. That is true in every profile (it is why a LOCAL
-# sign-in only matches exact addresses), so only the part before the
-# domain-rules section is checked there.
-CHECKED_BEFORE = {"users": 'id="domain-rules"'}
+# A page whose later text is true in every profile is checked only before
+# that marker. None needs one since the Users page (#952) dropped its
+# hosted-domain rules.
+CHECKED_BEFORE = {}
 
 
 def flatten(html):
