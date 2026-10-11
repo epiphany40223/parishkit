@@ -110,6 +110,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "report talents",
         "report information",
         "report ministry",
+        "digest list",
         "digest daily",
         "digest weekly",
         "digest weekly-request",
@@ -220,6 +221,20 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert not options["--message"]["required"]
     # The manual weekly report asks for the page's acknowledgement (PR 8d).
     assert entries["digest weekly-request"]["prompts"]
+    # The Emailed reports list: any session, and no event, as the page's GET.
+    listed = entries["digest list"]
+    assert listed["scope"] == "read_only" and not listed["changes_state"]
+    assert listed["audit_event"] is None and not listed["prompts"]
+    assert listed["result_fields"] == [
+        "campaign_id",
+        "daily",
+        "weekly",
+        "weekly_request_available",
+        "requested",
+        "shown",
+    ]
+    options = {option["name"]: option for option in listed["options"]}
+    assert not options["--requested"]["required"]
     for name in reads:
         # Read-only status: any session, no state change, the page's event.
         assert entries[name]["scope"] == "read_only", name

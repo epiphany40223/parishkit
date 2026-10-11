@@ -1517,6 +1517,13 @@ def report_ministry(args, preamble, runtime, context):
     )
 
 
+def digest_list(args, preamble, runtime, context):
+    """The Emailed reports page's lists of retained reports (ADM-11)."""
+    from .admin_digests import read_list
+
+    return read_list(context["caller"], runtime, requested=args.requested)
+
+
 def digest_daily(args, preamble, runtime, context):
     """A retained daily report, as its page reads it (PR 8d)."""
     from .admin_digests import read_digest
@@ -2210,6 +2217,16 @@ def _snapshot_option(parser):
     parser.add_argument("snapshot_id", type=_uuid, metavar="SNAPSHOT_ID")
 
 
+def _digest_list_options(parser):
+    """Options of ``digest list``: the page's ``?requested=`` request key."""
+    parser.add_argument(
+        "--requested",
+        type=_uuid,
+        metavar="REQUEST_KEY",
+        help="a digest weekly-request key: its task and, once ready, its report",
+    )
+
+
 def _digest_weekly_options(parser):
     """Options of ``digest weekly``: the retained report and a page of items."""
     _snapshot_option(parser)
@@ -2810,7 +2827,7 @@ def _report_specs():
     (``admin_digests``) and PR 8e the Family-level exports
     (``admin_family_exports``).
     """
-    from .admin_digests import DailyDigest, WeeklyDigest, WeeklyRequest
+    from .admin_digests import DailyDigest, DigestList, WeeklyDigest, WeeklyRequest
     from .admin_exports import ExportChange, ExportDownload, ExportStatus
     from .admin_report_reads import (
         FinancialReport,
@@ -2992,7 +3009,19 @@ def _report_specs():
             fresh_gated=True,
             prompts=True,
         ),
-        # The digests (PR 8d, ``admin_digests``).
+        # The digests (PR 8d, ``admin_digests``), and the Emailed reports
+        # page that lists them.
+        CommandSpec(
+            "digest list",
+            "List the retained daily and weekly reports, as Emailed reports.",
+            digest_list,
+            "read_only",
+            False,
+            DigestList.field_names(),
+            8,
+            options=(_digest_list_options,),
+            audit_event=None,
+        ),
         CommandSpec(
             "digest daily",
             "Show a retained daily report's figures.",

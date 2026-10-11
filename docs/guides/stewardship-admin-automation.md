@@ -919,10 +919,26 @@ as opening it. A session of any scope (read-only included) may read them;
 a weekly report needs an Administrator, as its page does.
 
 ```sh
+pk-admin digest list
 pk-admin digest daily SNAPSHOT_ID
 pk-admin digest weekly SNAPSHOT_ID --page 2
 pk-admin digest weekly-request --yes
+pk-admin digest list --requested REQUEST_KEY
 ```
+
+- `digest list` is the **Emailed reports** page: where to find each
+  `SNAPSHOT_ID`. It prints the current `campaign_id`; `daily`, the newest
+  ready daily reports (`snapshot_id`, `through_date`, `covered_dates`,
+  `observed_at`); `weekly`, the newest weekly reports (`snapshot_id`,
+  `manual`, `observed_at`; null for a reader who is not an Administrator);
+  `weekly_request_available`, whether the campaign has the weekly report
+  schedule `digest weekly-request` needs; and `shown`, how many of each
+  list it shows at most (60), newest first. With `--requested` and a
+  `digest weekly-request` key, `requested` holds that request's `task_id`
+  and, once the report is ready, its `report_id` (null until then); a key
+  that is not a request of the current campaign gives null. With no
+  current campaign the lists are empty. Like the page, it records no
+  event.
 
 - `digest daily` prints the saved figures: `participation` (the figures'
   `fact_set_id`, source and dates), `statistics` (the active Families,
@@ -1257,3 +1273,6 @@ error, as `logs export` does; the wrapper refuses to write it to a terminal.
   mail shows. `delivery show` is unchanged.
 - `pk-admin/1` (ADM-11 PR 7a): additive. `portal maintenance show` and
   `portal maintenance set` (fresh-gated, always prompts).
+- `pk-admin/1` (ADM-11 PR 8d follow-up): additive. `digest list
+  [--requested KEY]`, the Emailed reports page's lists (any session, no
+  event).

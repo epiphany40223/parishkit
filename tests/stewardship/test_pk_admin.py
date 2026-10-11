@@ -1434,16 +1434,24 @@ def test_an_interrupted_prompt_leaves_no_writer_at_the_terminal(host, tmp_path):
         os.killpg(process.pid, signal.SIGINT)
         process.communicate(timeout=20)
         assert process.returncode == 130
-        # Nothing of the run is left in its process group.
-        for _ in range(50):
+        # Nothing of the run is left in its process group: poll until the
+        # group is gone (ProcessLookupError). On macOS, a group whose last
+        # members are still exiting (zombies not yet reaped) answers EPERM
+        # rather than ESRCH, so PermissionError means "still there" and the
+        # poll goes on; only ProcessLookupError proves the writer is gone.
+        deadline = time.monotonic() + 10
+        while True:
             try:
                 os.killpg(process.pid, 0)
             except ProcessLookupError:
                 break
+            except PermissionError:
+                pass
+            if time.monotonic() > deadline:
+                with contextlib.suppress(ProcessLookupError, PermissionError):
+                    os.killpg(process.pid, signal.SIGKILL)
+                pytest.fail("a process of the run (the input writer) was left behind")
             time.sleep(0.1)
-        else:
-            os.killpg(process.pid, signal.SIGKILL)
-            pytest.fail("a process of the run (the input writer) was left behind")
     finally:
         os.close(terminal)
         os.close(controller)
