@@ -12,8 +12,7 @@
 -- and migration 0047's names definer answers only for the active rules' and
 -- recorded identities' addresses, which a new user's address usually is
 -- not. Answering any typed address is a names oracle, so the definer itself
--- enforces who may ask and how often, whatever the web code does. This
--- file:
+-- limits and records every lookup, whatever the web code does. This file:
 --
 --   adds stewardship_member_names_for_v1(text, text, uuid)
 --                                            the ordered, distinct names of
@@ -25,14 +24,23 @@
 -- The caller passes its Admin session's key (the Django session key the
 -- stewardship_portal_session row names), the address and its correlation
 -- ID. The definer refuses (SQLSTATE 42501) unless that session is live (not
--- revoked, before its deadline and within the 60-minute idle limit, as
--- accounts/session_policy.py says) and its user is an Administrator now
--- (stewardship_export_authorized_v1 with admin_only). It then refuses
+-- revoked, before its deadline, within the 60-minute idle limit, as
+-- accounts/session_policy.py says, and begun after the latest offline
+-- Admin-access recovery, as accounts/sessions.py's recovery epoch and
+-- stewardship_automation_live_v1 require) and its user is an Administrator
+-- now (stewardship_export_authorized_v1 with admin_only). It then refuses
 -- (SQLSTATE 53400) when that Administrator already has 60
 -- user_names_looked_up audit events in the last hour; a per-Administrator
 -- transaction lock makes concurrent calls count one another. Otherwise it
 -- records one user_names_looked_up audit event (the Administrator, and how
 -- many names it returns, never the address) and returns the names.
+--
+-- What this holds against a compromised web database login: only the
+-- per-Administrator cap (60 lookups an hour for each Administrator) and an
+-- audit event for each lookup. The session check does not keep that login
+-- out: stewardship_portal_session.session_id is the raw Django session key,
+-- and web can SELECT it (and django_session), so it can pass any live
+-- Administrator session's key. Storing the keys hashed is #995.
 --
 -- The names are 0047's stewardship_member_names_v1 with its set of wanted
 -- addresses replaced by the one argument, matched trimmed and
@@ -55,12 +63,17 @@ DECLARE
     names jsonb;
     event uuid := gen_random_uuid();
 BEGIN
-    -- Who asks: a live Admin session whose user is an Administrator now.
+    -- Who asks: a live Admin session whose user is an Administrator now. A
+    -- session begun before the latest recovery is refused as sessions.py's
+    -- recovery epoch refuses it: the command line has no later recheck
+    -- before the lookup's audit event and names are committed.
     SELECT login.principal_id INTO actor
     FROM public.stewardship_portal_session login
     WHERE login.session_id=admin_session AND login.revoked_at IS NULL
       AND login.expires_at>clock_timestamp()
-      AND login.last_activity_at>clock_timestamp()-interval '60 minutes';
+      AND login.last_activity_at>clock_timestamp()-interval '60 minutes'
+      AND NOT EXISTS (SELECT 1 FROM public.stewardship_admin_revocation r
+                      WHERE r.created_at>login.created_at);
     IF actor IS NULL OR correlation IS NULL
        OR NOT public.stewardship_export_authorized_v1(actor, true) THEN
         RAISE EXCEPTION 'Name lookup requires a live Administrator session'
@@ -139,8 +152,8 @@ REVOKE ALL ON FUNCTION public.stewardship_member_names_for_v1(text, text, uuid) 
 DO $check$
 BEGIN
     -- The one definer: SECURITY DEFINER, the fixed search_path, no EXECUTE
-    -- for PUBLIC, its three arguments and jsonb answer, the session and
-    -- Administrator check, the hourly limit, the audit event, matching the
+    -- for PUBLIC, its three arguments and jsonb answer, the session,
+    -- recovery and Administrator checks, the hourly limit, the audit event, matching the
     -- address trimmed and case-insensitively, and no other overload.
     IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
             WHERE n.nspname='public' AND p.proname='stewardship_member_names_for_v1'
@@ -151,6 +164,7 @@ BEGIN
                   ='admin_session text, address text, correlation uuid'
               AND pg_get_function_result(p.oid)='jsonb'
               AND p.prosrc LIKE '%WHERE login.session_id=admin_session AND login.revoked_at IS NULL%'
+              AND p.prosrc LIKE '%WHERE r.created_at>login.created_at);%'
               AND p.prosrc LIKE '%OR NOT public.stewardship_export_authorized_v1(actor, true) THEN%'
               AND p.prosrc LIKE '%IF recent>=60 THEN%'
               AND p.prosrc LIKE '%VALUES(event,clock_timestamp(),actor,correlation,''user_names_looked_up'',NULL,''deployment'');%'

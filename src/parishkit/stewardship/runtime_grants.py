@@ -286,9 +286,12 @@ PORTAL_IDENTITIES_FUNCTION = "stewardship_portal_identities_v1()"
 MEMBER_NAMES_FUNCTION = "stewardship_member_names_v1()"
 # The New user page's Name default (#952 slice 5): the ordered names of the
 # current ParishSoft Members listing one typed address. Web learns only the
-# names, never another contact field. The definer itself refuses unless the
-# caller's Admin session is live and its user an Administrator now, allows
-# 60 lookups an hour for each Administrator and audits every lookup.
+# names, never another contact field. The definer refuses unless the
+# caller's Admin session is live and its user an Administrator now, but web
+# can read raw Admin session keys (stewardship_portal_session.session_id is
+# the Django session key), so against a compromised web login what holds is
+# the cap of 60 lookups an hour for each Administrator and an audit event
+# per lookup. Hashing the session keys is #995.
 MEMBER_NAMES_FOR_FUNCTION = "stewardship_member_names_for_v1(text, text, uuid)"
 
 

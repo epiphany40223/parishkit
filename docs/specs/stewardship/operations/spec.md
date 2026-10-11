@@ -661,15 +661,21 @@ Administrator may override.
       weaker than its existing ability to match an Admin rule, and each guess
       is recorded. New user's
       [Name from ParishSoft](../admin-portal/spec.md#name-from-parishsoft)
-      lookup (migration 0053) answers any typed address, so its definer does
-      not trust the web code: it answers only for an Admin session key that
-      names a live session whose user is an Administrator at that moment,
-      records its own audit event for each lookup (that Administrator and the
-      number of names returned, never the address) and refuses a 61st lookup
-      by one Administrator within an hour, counted from those events. A
-      compromised web login that holds a live Administrator session's key can
-      therefore read at most 60 addresses' names an hour for each
-      Administrator, each traced to that Administrator. The page also limits
+      lookup (migration 0053) answers any typed address. Its definer answers
+      only for an Admin session key that names a live session (begun after
+      the latest Admin-access recovery) whose user is an Administrator at
+      that moment, records its own audit event for each lookup (that
+      Administrator and the number of names returned, never the address)
+      and refuses a 61st lookup by one Administrator within an hour, counted
+      from those events. The session check does not stop a compromised web
+      database login: `stewardship_portal_session.session_id` is the raw
+      Django session key, and web can read it and `django_session`, so it can
+      present any live Administrator session's key. What holds against it is
+      the per-Administrator cap and the audit: at most 60 addresses' names an
+      hour for each Administrator with a live session, each lookup traced to
+      that Administrator. Storing the session keys hashed is
+      [#995](https://github.com/epiphany40223/parishkit/issues/995). The page
+      also limits
       each Administrator's lookups per minute and refuses them while the
       limiter is unavailable. SQL's activation guard
       refuses it, and any other activation into the users form, unless every
