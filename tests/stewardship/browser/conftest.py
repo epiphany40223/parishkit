@@ -89,6 +89,7 @@ from .branding_components import POSTS as BRANDING_POSTS
 from .branding_components import components as branding_components
 from .census_components import components as census_components
 from .chart_components import components as chart_components
+from .data_to_fix_components import components as data_to_fix_components
 from .delivery_components import POSTS as DELIVERY_POSTS
 from .delivery_components import components as delivery_components
 from .digest_components import components as digest_components
@@ -2269,6 +2270,7 @@ def component_origin():
     responses.update(ministry_components(context, admin))
     responses.update(followup_components(context, admin))
     responses.update(source_form_components(context, admin))
+    responses.update(data_to_fix_components(context, admin))
     responses.update(go_live_families_components(context, admin))
     responses.update(financial_components(context, admin))
     responses.update(weekly_components(context, admin))

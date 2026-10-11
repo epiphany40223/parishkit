@@ -948,6 +948,7 @@ pk-admin report information --disposition all --needed yes
 pk-admin report ministry
 pk-admin report ministry --ministry 9 --requests join --state unresolved
 pk-admin report source-form
+pk-admin report data-to-fix
 ```
 
 | Command | The page | What it prints |
@@ -994,6 +995,21 @@ value. It records the page's "viewed" event with the number of Families
 listed. A check that cannot run now (no ParishSoft data yet, or a restore
 under review) is exit 3 (`unavailable`): try again later. The host's
 `pk-stewardship source-form-check` runs the same check.
+
+`report data-to-fix` prints the counts on **Data to fix in ParishSoft**,
+the summary of the data problems that are fixed in ParishSoft. Like the
+page, Administrators and Staff may run it, from a session of any scope;
+each sees only the sections whose list they may open (Staff:
+`unreachable_families` and `census_changes`). It prints the current
+`campaign_id` (null without one) and `sections`, one member per section:
+`form_cannot_open`, `refused_addresses`, `unreachable_families` and
+`census_changes`. Each is `{"count": N}` (refused addresses add
+`families`, how many Families the addresses belong to), or
+`{"unavailable": "…"}` with the page's reason when that section cannot
+count now, such as no current campaign or a campaign without the census.
+A section that cannot count never fails the command. It prints counts
+only, never a name or address, and records the page's "viewed" event with
+the total it printed. A restore under review is exit 3 (`unavailable`).
 
 ## Digests
 
@@ -1529,3 +1545,6 @@ pk-admin users import-leaders --confirm --token -
   no event), `export exact cancel` and `export exact retry` (full scope;
   their events), the Participation page's exact export and its status
   page's buttons.
+- `pk-admin/1` (#1011): additive. `report data-to-fix`, Data to fix in
+  ParishSoft's section counts (any session, Administrators and Staff, the
+  page's event).
