@@ -32,6 +32,8 @@ pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
 PAGES = (LIST, SINGLE, NEW, EDIT, EDIT_ONLY, "/user-review")
+# Whether the user form's Review is held unavailable.
+REVIEW_HELD = "document.querySelector('#user-entry-form button[type=submit]').disabled"
 
 
 def rows(page):
@@ -387,3 +389,22 @@ def test_a_filled_name_is_cleared_when_the_address_has_none(page, component_orig
     help_says(page, "No ParishSoft Member")
     assert name.input_value() == "Typed, Name"
     assert not failures
+
+
+def test_edit_review_waits_for_a_change(page, component_origin):
+    """Edit user's Review is unavailable until the Name or role changes (#921)."""
+    page.goto(component_origin + EDIT)
+    review = page.get_by_role("button", name="Review")
+    hint = page.locator("[data-unchanged-hint]")
+    eventually(page, REVIEW_HELD)
+    visible(hint)
+    name = page.get_by_label("Name", exact=True)
+    name.fill("Leader, Lee B")
+    eventually(page, REVIEW_HELD, False)
+    assert hint.evaluate("node => getComputedStyle(node).visibility") == "hidden"
+    # Back to the saved Name: unavailable again.
+    name.fill("Leader, Lee")
+    eventually(page, REVIEW_HELD)
+    page.get_by_role("group", name="Role").get_by_label("Staff").check()
+    eventually(page, REVIEW_HELD, False)
+    assert review.is_enabled()
