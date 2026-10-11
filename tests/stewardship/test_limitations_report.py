@@ -7,15 +7,18 @@ out of the page and its downloads.
 
 import csv
 import io
-from datetime import UTC
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 import pytest
 from openpyxl import load_workbook
 
+from parishkit.stewardship.reports import pdf_design
 from parishkit.stewardship.reports.limitations import (
+    PDF_WEIGHTS,
     LimitationsQuery,
     limitations_csv,
+    limitations_pdf,
     limitations_xlsx,
     shape_result,
 )
@@ -24,9 +27,9 @@ from parishkit.stewardship.responses.service import DEFAULT_TALENTS
 PAINTER = DEFAULT_TALENTS[0].id
 WHEN = "2026-10-05T14:00:00+00:00"
 MEMBER_HEADINGS = [
+    "Member",
     "Family",
     "Family DUID",
-    "Member",
     "Cannot participate in ministries",
     "Latest response",
 ]
@@ -78,11 +81,14 @@ def test_stored_talents_are_left_out_and_only_limitations_listed():
 
 
 def test_downloads_keep_the_limitations_columns():
-    """CSV and XLSX keep the limitations-only columns the report had (#970)."""
+    """CSV and XLSX keep the limitations-only columns the report had (#970).
+
+    The Members table leads with the Member, in the page's order (#932, #966).
+    """
     shaped = shape_result(result({PAINTER: ""}, {PAINTER: 1}))
     rows = list(csv.reader(io.StringIO(limitations_csv(shaped, UTC).decode())))
     assert rows[0] == MEMBER_HEADINGS
-    assert rows[1] == ["Example", "10", "Alex Example", "Yes", WHEN]
+    assert rows[1] == ["Alex Example", "Example", "10", "Yes", WHEN]
     assert rows[2] == [] and rows[3] == FAMILY_HEADINGS
     assert rows[4] == ["Example", "10", "Yes", WHEN]
     book = load_workbook(io.BytesIO(limitations_xlsx(shaped, ZoneInfo("UTC"))))
@@ -90,14 +96,60 @@ def test_downloads_keep_the_limitations_columns():
     assert [cell.value for cell in book["Families"][1]] == FAMILY_HEADINGS
 
 
+def test_pdf_prints_both_tables_with_the_csv_columns_and_rows(monkeypatch):
+    """The PDF (#966) is the CSV's two tables, Members then Families.
+
+    Each table has the CSV's headings and values, only Latest response
+    worded in the parish's date format; the Families table starts on its
+    own page, and one frame names the parish, campaign and both counts.
+    """
+    zone = ZoneInfo("America/Chicago")
+    raw = result({}, {})
+    raw["members"][0]["member_name"] = "=cmd"
+    shaped = shape_result(raw)
+    drawn, original = [], pdf_design.table_pages
+
+    def capture(table, rows, frame):
+        """Keep each table and its rows, then lay them out."""
+        rows = list(rows)
+        drawn.append((table, rows, frame))
+        return original(table, rows, frame)
+
+    monkeypatch.setattr(pdf_design, "table_pages", capture)
+    body = limitations_pdf(
+        shaped,
+        zone,
+        parish="Example Parish",
+        campaign="Stewardship 2055",
+        as_of=datetime.fromisoformat(WHEN),
+    )
+    # Two pages: the Families table does not share the Members' page.
+    assert body.startswith(b"%PDF-") and b"/Count 2" in body
+    csv_rows = list(csv.reader(io.StringIO(limitations_csv(shaped, zone).decode())))
+    (members, member_rows, frame), (families, family_rows, _) = drawn
+    assert list(members.headings) == csv_rows[0] == MEMBER_HEADINGS
+    assert list(families.headings) == csv_rows[3] == FAMILY_HEADINGS
+    # The formula-like name prints as typed; the CSV guards it.
+    assert member_rows[0][:4] == ("=cmd", "Example", "10", "Yes")
+    assert member_rows[0][4] == family_rows[0][3] == "Oct 5, 2026 9:00 AM"
+    assert family_rows[0][:3] == ("Example", "10", "Yes")
+    assert frame.eyebrow == "Example Parish · Stewardship 2055"
+    assert frame.details == (
+        "1 Member cannot participate in ministries; 1 Family cannot attend Mass.",
+    )
+    assert set(PDF_WEIGHTS) == {*MEMBER_HEADINGS, *FAMILY_HEADINGS}
+    for table in (members, families):
+        assert sum(table.widths) == pytest.approx(pdf_design.BODY_WIDTH)
+
+
 def test_exports_keep_formula_text_literal():
     """A parish-typed name such as =cmd is never a spreadsheet formula."""
     shaped = shape_result(result({}, {}))
     shaped["members"][0]["member_name"] = "=cmd"
     rows = list(csv.reader(io.StringIO(limitations_csv(shaped, UTC).decode())))
-    assert rows[1][2] == "'=cmd"
+    assert rows[1][0] == "'=cmd"
     book = load_workbook(io.BytesIO(limitations_xlsx(shaped, ZoneInfo("UTC"))))
-    value = book["Members"]["C2"]
+    value = book["Members"]["A2"]
     assert value.data_type == "s" and value.value == "=cmd"
 
 
@@ -112,7 +164,7 @@ def test_xlsx_escapes_control_characters_in_source_names():
     raw["families"][0]["family_name"] = "Example\x0b"
     shaped = shape_result(raw)
     book = load_workbook(io.BytesIO(limitations_xlsx(shaped, ZoneInfo("UTC"))))
-    member = book["Members"]["C2"]
+    member = book["Members"]["A2"]
     assert member.data_type == "s" and member.value == "Alex\\u000bExample"
     assert book["Families"]["A2"].value == "Example\\u000b"
 
