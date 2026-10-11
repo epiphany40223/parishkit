@@ -9,9 +9,10 @@ response Staff typed in from the Family's own. Now it is a two-step hand-off:
    signed-in Admin's session and capabilities, the Production mode, the
    current campaign and the Family, then stores a hand-off in Valkey under
    the SHA-256 of a fresh 256-bit secret, valid for ``HANDOFF_SECONDS``, and
-   audits ``family_form_opened``. Its response, opened in a new tab, posts
-   the secret to the Family namespace at once (``open-form-v1.js``). The
-   secret travels only in that POST body: never in a URL, log or audit.
+   audits ``family_form_opened`` (a signed-in Admin's refusal is audited too,
+   as denied). Its response, opened in a new tab, posts the secret to the
+   Family namespace at once (``open-form-v1.js``). The secret travels only in
+   that POST body: never in a URL, log or audit.
 2. ``assisted`` (Family namespace) takes the hand-off with one atomic
    get-and-delete, so it is single-use and cannot be replayed to start a
    Family session later. It checks that the Admin's session is still live and
@@ -29,6 +30,7 @@ import hmac
 import json
 import re
 import secrets
+from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID
 
 from django.conf import settings
@@ -36,7 +38,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
-from django.urls import reverse
+from django.urls import Resolver404, resolve, reverse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from redis.exceptions import RedisError
@@ -131,6 +133,48 @@ def may_open(principal):
     )
 
 
+def _return_url(request, family_id):
+    """Where Back from the Family form leads: the page Open form was clicked on.
+
+    The form posts that page's address as ``next``. Only two pages are
+    accepted: the Family directory, with its query so its filters, sort and
+    page survive, and this Family's own timeline. Anything else (another
+    host or scheme, a protocol-relative or backslash path, an unknown or
+    other Admin page, another Family's timeline) falls back to the timeline,
+    so ``next`` can never redirect anywhere else.
+    """
+    timeline = reverse("admin:family_timeline", args=[family_id])
+    value = request.POST.get("next", "")
+    if not isinstance(value, str) or "\\" in value or value.startswith("//"):
+        return timeline
+    parts = urlsplit(value)
+    if parts.scheme or parts.netloc or not parts.path.startswith("/admin/"):
+        return timeline
+    try:
+        match = resolve(parts.path)
+    except Resolver404:
+        return timeline
+    if match.view_name == "admin:family_directory":
+        return urlunsplit(("", "", parts.path, parts.query, ""))
+    return timeline
+
+
+def _refuse_open(principal, family_id):
+    """Audit a signed-in Admin's refused Open form as a denied opening.
+
+    Called inside ``open_form``'s transaction. It names the Admin and the
+    Family asked for, deployment-owned (the refusal may come before any
+    campaign is known), and never a reason, as the page gives none.
+    """
+    record_action(
+        Action.FAMILY_FORM_OPENED,
+        actor_kind=ActorKind.PORTAL_USER,
+        actor_id=principal.identity,
+        subject_id=family_id,
+        context={"outcome": Outcome.DENIED},
+    )
+
+
 def _refusal(request, *, status=403):
     """Render the plain Admin refusal for ``request``."""
     response = render(request, "stewardship/open-form-refused.html", status=status)
@@ -153,7 +197,10 @@ def open_form(request, campaign_id, family_id):
         service = runtime()
         with transaction.atomic():
             principal = authenticated_admin(request, store=service.store, activity=True)
-            if principal is None or not may_open(principal):
+            if principal is None:
+                return _refusal(request)
+            if not may_open(principal):
+                _refuse_open(principal, family_id)
                 return _refusal(request)
             system = SystemConfiguration.objects.select_related(
                 "active_configuration__parish"
@@ -168,6 +215,7 @@ def open_form(request, campaign_id, family_id):
                     code_ciphertext__isnull=False,
                 ).exists()
             ):
+                _refuse_open(principal, family_id)
                 return _refusal(request)
             binding = secrets.token_urlsafe(32)
             secret = start(
@@ -197,8 +245,9 @@ def open_form(request, campaign_id, family_id):
             {
                 "secret": secret,
                 "action": reverse("family:assisted"),
-                # Where Back leads from the Family form (see open-form-v1.js).
-                "return_url": reverse("admin:family_timeline", args=[family_id]),
+                # Where Back leads from the Family form (see open-form-v1.js):
+                # the page Open form was clicked on, if it is an allowed one.
+                "return_url": _return_url(request, family_id),
             },
         )
         response["Cache-Control"] = "no-store"

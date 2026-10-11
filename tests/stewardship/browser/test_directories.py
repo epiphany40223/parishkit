@@ -203,6 +203,35 @@ def test_open_form_posts_a_hand_off(page, component_origin):
     assert posts == []
 
 
+def test_open_form_lands_on_the_family_form_in_a_new_tab(page, component_origin):
+    """Clicking Open form opens a tab that posts its hand-off and lands on
+    the Family form (#529, open-form-v1.js), with the directory's address as
+    where Back returns."""
+    page.goto(component_origin + "/family-directory")
+    form = page.locator("form[data-open-form]")
+    assert (
+        form.locator("input[name=next]").get_attribute("value") == "/family-directory"
+    )
+    posts = []
+    page.context.on(
+        "request",
+        lambda sent: sent.method == "POST" and posts.append((sent.url, sent.post_data)),
+    )
+    with page.context.expect_page() as opened:
+        form.get_by_role("button", name="Open form", exact=False).click()
+    tab = opened.value
+    tab.wait_for_url(component_origin + "/family/")
+    assert tab.get_by_role("heading", name="Family form").count() == 1
+    sent = [url.removeprefix(component_origin) for url, _ in posts]
+    assert sent == [
+        f"/admin/reports/families/{UUID(int=81)}/open-form/",
+        "/family/assisted",
+    ]
+    # The hand-off travels in the POST body, never in a URL.
+    assert posts[1][1] == "handoff=" + "A" * 43
+    tab.close()
+
+
 @pytest.mark.parametrize("width", [320, 1280])
 def test_contact_details_show_each_heads_email(
     page, component_origin, axe_source, width

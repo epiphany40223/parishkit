@@ -365,14 +365,18 @@ def _issue_family(
             mark(request, row_id, assisted_by)
         # "Link followed" for the response funnel (#477): durable, unlike the
         # session row, which cleanup removes an hour after the last activity.
-        record_engagement_best_effort(
-            family_id=family_id,
-            mode=engagement_mode(mode),
-            rehearsal_epoch_id=epoch if mode == "testing" else None,
-            actor_id=family_id,
-            seen_at=now,
-            link_at=now,
-        )
+        # An Open form sign-in (#529) is Staff, not the Family following its
+        # link, so it records no engagement here; the form it then opens is
+        # still recorded as opened, as any form issuance is.
+        if assisted_by is None:
+            record_engagement_best_effort(
+                family_id=family_id,
+                mode=engagement_mode(mode),
+                rehearsal_epoch_id=epoch if mode == "testing" else None,
+                actor_id=family_id,
+                seen_at=now,
+                link_at=now,
+            )
         rotate_token(request)
         return True
 

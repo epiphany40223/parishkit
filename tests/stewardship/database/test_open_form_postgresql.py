@@ -9,8 +9,10 @@ by Staff on the timeline, the directory and the submitted list, never with
 the Admin's name. Requests run as the restricted web login.
 """
 
+import html
 import re
 from dataclasses import replace
+from uuid import uuid4
 
 import pytest
 from django.test import Client
@@ -22,6 +24,7 @@ from parishkit.stewardship.campaigns.credential_models import (
     FamilyCampaign,
     FamilySession,
 )
+from parishkit.stewardship.campaigns.engagement_models import FamilyEngagement
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.responses.models import Submission
 
@@ -34,6 +37,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 ORIGIN = {"HTTP_ORIGIN": "http://testserver"}
 HANDOFF = re.compile(rb'name="handoff" value="([A-Za-z0-9_-]{43})"')
+RETURN = re.compile(rb'data-return="([^"]*)"')
 
 
 def respond(harness):
@@ -53,15 +57,17 @@ def as_web(callable_, *args, **kwargs):
         return callable_(*args, **kwargs)
 
 
-def open_form(browser, family):
+def open_form(browser, family, next=None):
     """POST Open form as the browser's Admin; the response and its secret.
 
     The route takes the current campaign (NAV-12), so only the Family is in it.
+    ``next`` is the address of the page the button was on, when given.
     """
+    fields = {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value}
+    if next is not None:
+        fields["next"] = next
     response = as_web(
-        browser.post,
-        f"/admin/reports/families/{family}/open-form/",
-        {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value},
+        browser.post, f"/admin/reports/families/{family}/open-form/", fields
     )
     found = HANDOFF.search(response.content)
     return response, found.group(1).decode() if found else None
@@ -116,12 +122,16 @@ def test_open_form_marks_the_response_as_entered_by_staff(
     assert set(FamilySession.objects.values_list("pk", flat=True)) == before
 
     # The real hand-off: signed in as the Family, marked as opened by Staff.
+    # Staff signing in is not the Family following its link, so the Family's
+    # engagement (first link, last seen) is left exactly as it was.
+    engagement = list(FamilyEngagement.objects.filter(family=family).values())
     redeemed = redeem(admin, secret)
     assert redeemed.status_code == 302 and redeemed["Location"] == "/family/"
     session = FamilySession.objects.exclude(pk__in=before).get()
     assert session.family_id == family.pk and session.revoked_at is None
     assisted = AuditEvent.objects.get(event_type="family_assisted_login")
     assert assisted.subject_id == session.pk and assisted.actor_id == admin_id
+    assert list(FamilyEngagement.objects.filter(family=family).values()) == engagement
     # Replaying the same hand-off starts nothing.
     sessions = FamilySession.objects.count()
     assert redeem(admin, secret).status_code == 403
@@ -175,15 +185,17 @@ def test_a_hand_off_needs_a_live_admin_session(live_response_service, google):
 def test_open_form_is_refused_outside_its_scope(live_response_service, google):
     """An unknown Family gets the plain refusal. The route takes the current
     campaign itself (NAV-12), so no other campaign can be named."""
-    from uuid import uuid4
-
     harness = live_response_service
     family = FamilyCampaign.objects.get(campaign=harness.campaign, family_duid=1)
     admin, _ = signed_in()
-    response, secret = open_form(admin, uuid4())
+    unknown = uuid4()
+    response, secret = open_form(admin, unknown)
     assert response.status_code == 403 and secret is None
     assert b"Open form not available" in response.content
-    assert not AuditEvent.objects.filter(event_type="family_form_opened")
+    # The refusal is audited as denied, naming the Admin and what was asked.
+    refused = AuditEvent.objects.get(event_type="family_form_opened")
+    assert refused.subject_id == unknown and refused.actor_id is not None
+    assert refused.auditcontext.context == {"outcome": "denied"}
     # A GET is not a hand-off.
     response = as_web(
         admin.get,
@@ -220,7 +232,9 @@ def test_open_form_is_refused_in_testing(response_service, google):
     admin, _ = signed_in()
     response, secret = open_form(admin, family.pk)
     assert response.status_code == 403 and secret is None
-    assert not AuditEvent.objects.filter(event_type="family_form_opened")
+    refused = AuditEvent.objects.get(event_type="family_form_opened")
+    assert refused.subject_id == family.pk
+    assert refused.auditcontext.context == {"outcome": "denied"}
 
 
 def test_a_family_no_longer_admitted_is_not_signed_in(live_response_service, google):
@@ -238,3 +252,32 @@ def test_a_family_no_longer_admitted_is_not_signed_in(live_response_service, goo
     assert redeem(admin, secret).status_code == 403
     assert FamilySession.objects.count() == sessions
     assert not AuditEvent.objects.filter(event_type="family_assisted_login")
+
+
+def test_back_returns_to_the_page_open_form_was_clicked_on(
+    live_response_service, google
+):
+    """``next`` names where Back returns: the directory, with its query, or
+    the Family's timeline; nothing else, so it is never an open redirect."""
+    harness = live_response_service
+    family = FamilyCampaign.objects.get(campaign=harness.campaign, family_duid=1)
+    admin, _ = signed_in()
+    timeline = f"/admin/reports/families/{family.pk}/"
+    directory = "/admin/reports/families/?search=Lee&page=2"
+    cases = {
+        None: timeline,
+        directory: directory,
+        timeline: timeline,
+        "https://evil.example/admin/reports/families/": timeline,
+        "//evil.example/admin/reports/families/": timeline,
+        "/\\evil.example/admin/reports/families/": timeline,
+        "javascript:alert(1)": timeline,
+        "/admin/reports/": timeline,
+        f"/admin/reports/families/{uuid4()}/": timeline,
+        "/admin/nowhere/": timeline,
+    }
+    for given, expected in cases.items():
+        response, secret = open_form(admin, family.pk, next=given)
+        assert response.status_code == 200 and secret, given
+        found = RETURN.search(response.content).group(1).decode()
+        assert html.unescape(found) == expected, given

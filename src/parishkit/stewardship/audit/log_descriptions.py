@@ -1111,6 +1111,11 @@ def field_value(key, value):
 # Sentences for one type with a particular recorded outcome, where that
 # outcome means something the type's own sentence does not cover.
 OUTCOME_DESCRIPTIONS = {
+    ("family_form_opened", "denied"): _(
+        "Open form was refused for a Family: the Admin's role, the system mode "
+        "or the Family's place in the current campaign did not allow it, so "
+        "no Family form was opened."
+    ),
     ("configuration_digest_mismatch", "changed"): _(
         "A backup was sealed to a different encryption key than the backup "
         "before it. Unless the server operator installed a new key on "

@@ -3,9 +3,10 @@
 // tab. The visible button does the same if this script cannot run first.
 //
 // Before posting, the tab's history entry for this page (the result of the
-// Open form POST) is replaced by the Family's timeline address, so Back from
-// the Family form returns to the timeline instead of re-posting Open form,
-// which would start a new hand-off.
+// Open form POST) is replaced by the address of the page Open form was
+// clicked on (the Family directory or the Family's timeline, as the server
+// allows), so Back from the Family form returns there instead of re-posting
+// Open form, which would start a new hand-off.
 (() => {
   "use strict";
   const form = document.querySelector("[data-open-form-handoff]");
