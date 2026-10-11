@@ -5446,16 +5446,36 @@ BEGIN
            SELECT 1 FROM stewardship_schedule_occurrence o WHERE o.id=NEW.recovery_occurrence_id
            AND o.definition_id=h.definition_id AND o.mode=h.mode AND o.target=h.target AND o.slot=h.slot AND o.state='pending'
        )) OR (NEW.state<>'resend_authorized' AND NEW.recovery_occurrence_id IS NOT NULL)
-       -- Decisions belong to the review: once it is released (gate off with a
-       -- release stamped), nothing is decided until a later page (#757).
-       OR EXISTS(SELECT 1 FROM stewardship_system_configuration released
-           WHERE NOT released.restore_review_required AND released.restore_released_at IS NOT NULL)
+       -- An undecided hold is still decided after release (#757), but only
+       -- for the current campaign: the planner never acts on another
+       -- campaign's holds, so a decision there would mean nothing.
+       OR NOT EXISTS(SELECT 1 FROM stewardship_schedule_definition held
+           JOIN stewardship_system_configuration current_runtime ON current_runtime.current_campaign_id=held.campaign_id
+           WHERE held.id=h.definition_id)
        -- Another (earlier restore's) hold still keeps this email back, so a
        -- resend would silently do nothing: settle that one first.
        OR (NEW.state='resend_authorized' AND EXISTS(SELECT 1 FROM stewardship_restore_delivery_hold other
            WHERE other.id<>h.id AND other.definition_id=h.definition_id AND other.mode=h.mode
              AND other.target=h.target AND other.slot=h.slot AND other.state IN ('unreviewed','assumed_delivered'))) THEN
         RAISE EXCEPTION 'Invalid restore hold review or resend binding' USING ERRCODE='23514'; END IF;
+    -- "Send again" on a held reminder is refused once a later reminder for
+    -- the same Family (removed since or not) was delivered, is on its way or
+    -- its delivery is unknown: it would arrive out of order (#757). The
+    -- Family dispatch check refuses the same thing at send time.
+    IF NEW.state='resend_authorized' AND EXISTS(SELECT 1 FROM stewardship_schedule_definition earlier
+        JOIN stewardship_schedule_revision earlier_revision ON earlier_revision.id=earlier.current_revision_id
+        JOIN stewardship_schedule_definition later_definition ON later_definition.campaign_id=earlier.campaign_id
+        JOIN stewardship_schedule_occurrence later ON later.definition_id=later_definition.id
+        WHERE earlier.id=h.definition_id AND earlier.kind='reminder' AND later_definition.kind='reminder'
+          AND later_definition.id<>earlier.id AND later.mode=h.mode AND later.target=h.target
+          AND later.due_at>earlier_revision.due_at
+          AND (EXISTS(SELECT 1 FROM stewardship_outbox_message later_message
+                  WHERE later_message.id=later.outbox_id
+                    AND later_message.state IN ('submitting','delivery_unknown','delivered'))
+              OR EXISTS(SELECT 1 FROM stewardship_schedule_fulfillment later_sent
+                  WHERE later_sent.occurrence_id=later.id AND later_sent.disposition='delivered'))) THEN
+        RAISE EXCEPTION 'A later reminder reached this Family or is on its way; assume this one sent'
+            USING ERRCODE='23514'; END IF;
     -- Settling a held email is an Administrator's decision made within five
     -- minutes of a Google sign-in (migration 0017, #537).
     IF NOT public.stewardship_restore_decision_admitted_v1(NEW.actor_id,NEW.session_id,NEW.authenticated_at) THEN
