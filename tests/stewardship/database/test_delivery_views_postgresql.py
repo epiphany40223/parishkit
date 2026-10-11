@@ -825,18 +825,33 @@ def test_mail_message_page_shows_only_the_recipient_addresses(
         page = browser.get(f"/admin/mail/outgoing/{message.pk}/")
     assert page.status_code == 200
     html = page.content.decode()
+    # Each address the email was sent to is followed by its latest attempt's
+    # outcome (#806): this email's provider could not say whether it
+    # arrived. In Production that is the To: line; in Testing mode, the
+    # Testing line.
+    production = render.routed_recipients == render.intended_recipients
+    suffix = " (not sure it arrived)"
     line = (
         '<p id="email-recipients">To: '
-        + ", ".join(escape(value) for value in render.intended_recipients)
+        + ", ".join(
+            escape(value) + (suffix if production else "")
+            for value in render.intended_recipients
+        )
         + "</p>"
     )
     assert line in html
     assert html.index("Family DUID:") < html.index(line) < html.index("Attempt history")
     assert render.subject not in html
-    # Routed elsewhere only in Testing mode; this email's lists agree.
+    # Routed elsewhere only in Testing mode.
     assert (render.routed_recipients != render.intended_recipients) == (
         'id="email-routed"' in html
     )
+    if not production:
+        assert (
+            '<p id="email-routed">Testing mode sends it to: '
+            + ", ".join(escape(value) + suffix for value in render.routed_recipients)
+            + "</p>"
+        ) in html
     PortalUser.objects.filter(pk=admin).update(disabled=True, version=F("version") + 1)
     assert recipients_as(ServiceRole.WEB, message.pk, admin) == "42501"
 

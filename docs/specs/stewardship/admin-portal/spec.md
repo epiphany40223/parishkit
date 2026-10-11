@@ -3473,6 +3473,24 @@ in the order the Administrator asked for
    a definer function that refuses any caller but an Administrator (see
    [outbox recipient reads](../data/spec.md#outbox-recipient-reads)).
    Viewing the page is audited as before.
+   Each address the email was sent to is followed by what the latest
+   attempt of that rendering recorded for it
+   ([#806](https://github.com/epiphany40223/parishkit/issues/806)):
+   "delivered", "refused for now", "refused permanently", "not sure it
+   arrived" or "not delivered". In Production these follow the To:
+   addresses; in Testing mode they follow the Testing recipient, the
+   address the email was really sent to. One email goes to all its
+   addresses at once, and the provider can accept it for some and refuse
+   others, so when an accepted attempt reached only some of them the line
+   "Delivered to 1 of 2 addresses." follows, adding, when one was refused
+   for now, that such an address is not sent this email again. Before the
+   rendering's first finished attempt, or when its evidence does not
+   validate, no outcome is shown. The outcomes come from the attempt's
+   validated delivery evidence through a second definer function with the
+   same caller checks (see
+   [outbox recipient reads](../data/spec.md#outbox-recipient-reads)).
+   Resending to an address refused for now, setting a flaky address aside
+   and reporting a bounce are later slices of #806.
 4. **Attempt history**: one table of short rows, one per recorded change,
    newest first, with When leading as in any log, then the attempt number,
    what happened and the resulting state (#934).
