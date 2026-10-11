@@ -839,7 +839,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `hosted_file_delete` | Delete hosted files | Hosted files | Administrator | (same) | `/admin/parish/files/deletion/` (POST only) | (same) | The table's confirmation dialog posts here (#879); it answers with a redirect or a refusal, never a page. |
 | `hosted_file_rename` | Change placeholder name | Hosted files | Administrator | (same) | `/admin/parish/files/<file>/name/` | (same) |  |
 | `source_refresh` | Refresh from ParishSoft | Menu: Refresh from ParishSoft | Administrator | ParishSoft refresh | `/admin/parish/parishsoft-refresh/` | (same) |  |
-| `parishsoft_fixes` | Data to fix in ParishSoft | Menu: Data to fix in ParishSoft | Administrator, Staff | (new, #1011) | (none) | `/admin/parish/data-to-fix/` | New page ([Data to fix in ParishSoft](#data-to-fix-in-parishsoft), #1011); no parent page. |
+| `parishsoft_fixes` | Data to fix in ParishSoft | Menu: Data to fix in ParishSoft | Administrator, Staff | (new, #1011) | (none) | `/admin/parish/data-to-fix/` | New page ([Data to fix in ParishSoft](#data-to-fix-in-parishsoft), #1011); no parent page, so its trail is Home, Parish data, as for the other Parish data entries. |
 | `users` | Users | Menu: Users | Administrator | Portal users; Sign-in rules | `/admin/users` | `/admin/users/` | One table of users (#952), which replaces the planned split into Sign-in rules, Ministry assignments and Chairpersons (decision 13). |
 | `user_new` | New user | Users | Administrator | (new, #952) | (none) | `/admin/users/new/` | Its review applies through Users. |
 | `user_edit` | Edit user | Users | Administrator | (new, #952) | (none) | `/admin/users/<user>/edit/` | The New page filled in; `<user>` is the user's stable ID. |
@@ -4059,8 +4059,9 @@ rest of this section follows those decisions:
   were read from, in browser-local time.
 - **Where:** the last entry of the Parish data
   [menu group](#menu-groups), after Refresh from ParishSoft, at
-  `/admin/parish/data-to-fix/` (URL name `parishsoft_fixes`). Its
-  breadcrumb parent is Home. It is last so `/admin/parish/` still opens
+  `/admin/parish/data-to-fix/` (URL name `parishsoft_fixes`). Like the
+  other Parish data menu entries it has no parent page: its trail is Home,
+  Parish data, then the page. It is last so `/admin/parish/` still opens
   Parish settings for an Administrator. Staff, who see no other Parish data
   entry, see the group with this one entry, and `/admin/parish/` opens this
   page for them.

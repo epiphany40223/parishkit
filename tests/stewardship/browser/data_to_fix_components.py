@@ -36,7 +36,7 @@ ANSWERS = {
     "form_cannot_open": {"count": 2},
     "refused_addresses": {"count": 3, "families": 2},
     "unreachable_families": {"count": 0},
-    "census_changes": {"reason": "This campaign does not include the census"},
+    "census_changes": {"reason": "This campaign does not include the census."},
 }
 
 
