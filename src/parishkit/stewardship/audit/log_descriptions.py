@@ -10,11 +10,18 @@ Every type the application itself defines (the audit ``Action`` and operational
 ``Event`` vocabularies, plus the audit types written directly by Python owners
 and SQL triggers, listed in ``DIRECT_AUDIT_TYPES``) has a sentence; a guard test
 enforces that. Types built from a prefix and a state, such as
-``config_request_applied``, are explained by ``PREFIXES``.
+``config_request_applied``, are explained by ``PREFIXES``; ``BUILT_TYPES``
+closes the states of the prefixes System logs' Activity groups list.
 """
 
 from django.utils.text import format_lazy
 from django.utils.translation import gettext_lazy as _
+
+from parishkit.stewardship.accounts.setup_delivery_models import SETUP_MAIL_STATES
+from parishkit.stewardship.accounts.setup_notification_models import (
+    SETUP_SLACK_STATES,
+)
+from parishkit.stewardship.jobs.models import TASK_ACTIONS
 
 DESCRIPTIONS = {
     # Background work: the worker claims a task, reports progress, finishes.
@@ -702,7 +709,174 @@ PREFIXES = (
     ("secret_request_", _("A key replacement request moved to a new step")),
     ("campaign_mail_", _("A campaign email batch moved to a new step")),
     ("campaign_", _("A campaign was changed")),
+    # Each outgoing email's own steps (stewardship_outbox_history_v1), the
+    # Administrator's decisions on uncertain or failed emails and on emails
+    # held when a campaign closed, and test emails to chosen Families (#953).
+    ("outbox_", _("An outgoing email moved to a new step")),
+    ("delivery_resolution_", _("An Administrator resolved an outgoing email")),
+    ("delivery_held_", _("An Administrator decided on emails held at campaign close")),
+    ("family_mail_test_", _("A test email to a chosen Family moved to a new step")),
+    # Initial setup's test email and Slack message, and each Production
+    # cleanup and activation request (#953).
+    ("setup_mail_", _("The setup test email moved to a new step")),
+    ("setup_slack_", _("The setup test Slack message moved to a new step")),
+    (
+        "production_",
+        _("A Production cleanup or activation request moved to a new step"),
+    ),
+    # Each step of a background task (stewardship_task_history_v1).
+    ("task_", _("A background task moved to a new step")),
 )
+
+# The closed second halves of every trigger-built audit type (#953): for
+# each prefix, where the database closes the list (each CHECK constraint,
+# or function that refuses or builds any other value, that a trigger
+# building the prefix reads) and the values they allow together. A list
+# whose constraint is generated from a Python constant (the setup mail and
+# Slack states, ``TASK_ACTIONS``) uses that constant. PostgreSQL tests
+# compare each list with the installed database, and require every
+# ``'<prefix>_'||`` an installed audit-writing function builds to be a key
+# here. So a group can never name a type no trigger writes, and a new
+# prefix, state or action must be placed in a ``log_rows.ACTIVITY_TYPES``
+# group or in ``log_rows.UNGROUPED`` before the tests pass.
+BUILT_TYPES = {
+    "config_request_": (
+        (("constraint", "config_checkpoint_installer_states"),),
+        (
+            "staged",
+            "validating",
+            "prepared",
+            "yaml_activated",
+            "applied",
+            "failed",
+            "cancelled",
+        ),
+    ),
+    "secret_request_": (
+        (("constraint", "secret_checkpoint_state"),),
+        (
+            "staged",
+            "testing",
+            "installing",
+            "awaiting_ack",
+            "cleanup_pending",
+            "cancelled",
+            "expired",
+            "failed",
+            "applied",
+        ),
+    ),
+    "outbox_": (
+        (("constraint", "outbox_action"),),
+        (
+            "created",
+            "prepared",
+            "hold",
+            "release_hold",
+            "submit",
+            "accept",
+            "retry_unaccepted",
+            "fail_unaccepted",
+            "mark_unknown",
+            "cancel_unsent",
+            "retry_failed",
+            "authorize_resend",
+            "retry_idempotent",
+        ),
+    ),
+    "delivery_resolution_": (
+        (("constraint", "delivery_resolution_action"),),
+        ("note", "accept", "resend", "retry_failed", "retry_unsent", "confirm_unsent"),
+    ),
+    # The decision a closed campaign's held-email command carries.
+    "delivery_held_": (
+        (("function", "stewardship_delivery_control_guard_v1"),),
+        ("release", "cancel", "clear"),
+    ),
+    "family_mail_test_": (
+        (("constraint", "family_mail_test_known_state"),),
+        ("queued", "prepared", "cancelled", "failed"),
+    ),
+    "campaign_mail_": (
+        (("constraint", "campaign_mail_known_state"),),
+        (
+            "queued",
+            "submitting",
+            "accepted",
+            "not_sent",
+            "delivery_unknown",
+            "cancelled",
+        ),
+    ),
+    # Two triggers build this prefix: the delivery controls (pause, resume
+    # and the first live email or response) and the campaign's lifecycle
+    # transitions (activate through unarchive).
+    "campaign_": (
+        (
+            ("function", "stewardship_control_guard_v1"),
+            ("function", "stewardship_campaign_transition_v1"),
+        ),
+        (
+            "pause",
+            "resume",
+            "first_delivery",
+            "first_submission",
+            "activate",
+            "start",
+            "close",
+            "withdraw",
+            "reopen",
+            "archive",
+            "unarchive",
+        ),
+    ),
+    # Each step of a Production cleanup and activation request.
+    "production_": (
+        (("constraint", "production_known_action"),),
+        (
+            "created",
+            "start",
+            "recover",
+            "checkpoint",
+            "retry_later",
+            "fail",
+            "recovery_fail",
+            "retry_failed",
+            "complete",
+            "activate",
+            "cancel",
+        ),
+    ),
+    # Initial setup's test email: each state, plus ``scrubbed`` when its
+    # stored credential is cleared (stewardship_setup_mail_audit_v1).
+    "setup_mail_": (
+        (
+            ("constraint", "setup_mail_known_state"),
+            ("function", "stewardship_setup_mail_audit_v1"),
+        ),
+        (*SETUP_MAIL_STATES, "scrubbed"),
+    ),
+    # Initial setup's test Slack message (stewardship_setup_slack_audit_v1).
+    "setup_slack_": (
+        (("constraint", "setup_slack_known_state"),),
+        SETUP_SLACK_STATES,
+    ),
+    # Each step of a background task (stewardship_task_history_v1).
+    "task_": ((("constraint", "task_known_action"),), TASK_ACTIONS),
+}
+
+
+def built_types(prefix, *values):
+    """Trigger-built types: ``prefix`` with each of ``values``, or every one.
+
+    Refuses a value the database does not allow for that prefix, so a group
+    cannot name a type that is never written.
+    """
+    allowed = BUILT_TYPES[prefix][1]
+    if not set(values) <= set(allowed):
+        raise ValueError(f"Not a {prefix} type: {sorted(set(values) - set(allowed))}")
+    return tuple(prefix + value for value in values or allowed)
+
 
 # Who, in words, when the actor is not a portal user the page can name. Audit
 # contexts record this kind; operational entries do not.

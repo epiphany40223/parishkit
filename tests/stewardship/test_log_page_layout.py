@@ -395,10 +395,18 @@ def test_the_activity_choice_offers_sign_in_activity_in_plain_words():
         r'<select id="log-activity" name="activity">(.*?)</select>', plain
     )
     assert select is not None
-    assert re.findall(r'<option value="([^"]*)"', select.group(1)) == ["", "sign_in"]
+    assert re.findall(r'<option value="([^"]*)"', select.group(1)) == [
+        "",
+        "sign_in",
+        "configuration",
+        "family_mail",
+        "parishsoft",
+    ]
     assert '<option value="" selected>All activity</option>' in plain
     chosen = _render(LogQuery.parse({"activity": "sign_in"}))
     assert '<option value="sign_in" selected>Sign-in activity</option>' in chosen
+    mail = _render(LogQuery.parse({"activity": "family_mail"}))
+    assert '<option value="family_mail" selected>Family mail</option>' in mail
     assert '<label for="log-activity" id="log-activity-label">Activity</label>' in plain
     # The control sits in the filter bar before the type, so nothing appears
     # or moves when it is chosen.
@@ -422,13 +430,16 @@ def test_same_actor_keeps_the_sign_in_activity_choice():
     [
         ({"applied": "yes", "info": "yes", "activity": "sign_in"}, True),
         ({"applied": "yes", "audit": "yes", "activity": "sign_in"}, False),
+        ({"applied": "yes", "info": "yes", "activity": "configuration"}, True),
+        # A group with operational entries can list them without audits.
+        ({"applied": "yes", "info": "yes", "activity": "parishsoft"}, False),
     ],
 )
-def test_sign_in_activity_without_audit_says_why(values, activity_note):
-    """Sign-in activity is audit records, so with Audit record unticked the
-    empty table says to tick it."""
+def test_audit_only_activity_without_audit_says_why(values, activity_note):
+    """An audit-only group is audit records, so with Audit record unticked
+    the empty table says to tick it."""
     html = _render(LogQuery.parse(values), rows=[])
-    note = "Sign-in activity is made of audit records; tick Audit record."
+    note = "This activity is made of audit records only; tick Audit record."
     empty = re.search(r'<td colspan="6">(.*?)</td>', html).group(1)
     assert (note in empty) is activity_note
     assert ("clearing the activity, type" in html) is not activity_note
@@ -446,22 +457,23 @@ def test_the_link_and_download_carry_the_activity_choice():
     assert '<input type="hidden" name="activity" value="sign_in">' in export
 
 
-def test_sign_in_activity_greys_the_levels_and_waits_for_audit():
-    """While Sign-in activity is chosen (#953) the five level boxes stay in
-    place but are disabled (data-enabled-when), and Apply waits for Audit
-    record (data-required-when), its label naming why."""
+def test_audit_only_activity_greys_the_levels_and_waits_for_audit():
+    """While an audit-only group is chosen (#953) the five level boxes stay
+    in place but are disabled (data-enabled-when), and Apply waits for Audit
+    record (data-required-when), its label naming why. The groups with
+    operational entries keep the levels."""
     labels = _choices(_render())
     marks = {re.search(r'name="(\w+)"', label).group(1): label for label in labels}
     for level in ("debug", "info", "warning", "error", "critical"):
-        assert 'data-enabled-when="activity="' in marks[level], level
+        assert 'data-enabled-when="activity=|family_mail|parishsoft"' in marks[level]
         assert "data-required-when" not in marks[level]
     audit = marks["audit"]
-    assert 'data-required-when="activity=sign_in"' in audit
+    assert 'data-required-when="activity=configuration|sign_in"' in audit
     assert "data-enabled-when" not in audit
     html = _render()
     label = re.search(
         r'<label data-missing-hint="([^"]*)"><input[^>]*name="audit"', html
     )
     assert label.group(1) == (
-        "Sign-in activity is made of audit records; tick Audit record."
+        "This activity is made of audit records only; tick Audit record."
     )

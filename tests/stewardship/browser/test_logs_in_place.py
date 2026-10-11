@@ -279,7 +279,7 @@ def test_sign_in_activity_applies_in_place(page, component_origin):
     audit.uncheck()
     assert apply.is_disabled()
     assert hint.text_content() == (
-        "Sign-in activity is made of audit records; tick Audit record."
+        "This activity is made of audit records only; tick Audit record."
     )
     # The hint's line was reserved, so the table did not move (#953).
     assert page.evaluate(TABLE_TOP) == top
@@ -357,3 +357,58 @@ def test_a_cross_link_clearing_the_activity_gives_the_levels_back(
     for kind in ("info", "warning", "error", "audit"):
         assert sent[kind] == ["yes"], kind
     assert sent.get("activity", [""]) == [""]
+
+
+def test_activity_groups_grey_the_levels_only_when_audit_only(page, component_origin):
+    """Configuration changes is audit records only (#953), so, like Sign-in
+    activity, it greys the five level boxes and Apply waits for Audit
+    record. Family mail and ParishSoft refreshes hold operational entries
+    too, so the levels stay enabled and Apply needs no audit tick. Switching
+    groups moves nothing. Apply then sends the group with the ticked levels
+    and lists its entries in place, the address carrying the choice."""
+    page.set_viewport_size(VIEWPORT)
+    page.goto(component_origin + LIVE)
+    page.evaluate(MARK)
+    levels = ("debug", "info", "warning", "error", "critical")
+
+    def enabled():
+        """Whether each level box is enabled, in the filter row's order."""
+        return [
+            page.locator(f"#table-filters input[name={level}]").is_enabled()
+            for level in levels
+        ]
+
+    activity = page.get_by_label("Activity", exact=True)
+    audit = page.get_by_label("Audit record", exact=True)
+    apply = page.get_by_role("button", name="Apply filters")
+    hint = page.locator("#log-filter-hint")
+    before = page.evaluate(BOXES)
+    top = page.evaluate(TABLE_TOP)
+    activity.select_option("configuration")
+    assert enabled() == [False] * 5
+    audit.uncheck()
+    assert apply.is_disabled()
+    assert hint.text_content() == (
+        "This activity is made of audit records only; tick Audit record."
+    )
+    for group in ("family_mail", "parishsoft"):
+        activity.select_option(group)
+        assert enabled() == [True] * 5, group
+        # The ticked levels count, so Apply needs no audit tick.
+        assert apply.is_enabled() and hint.text_content() == "", group
+    assert page.evaluate(BOXES) == before and page.evaluate(TABLE_TOP) == top
+    answer_with(page, component_origin, "/logs-parishsoft")
+    with page.expect_request(lambda request: request.method == "POST") as request:
+        apply.click()
+    sent = posted(request.value)
+    assert sent["activity"] == ["parishsoft"] and "audit" not in sent
+    assert {"info", "warning", "error"} <= set(sent)
+    visible(page.locator("#table").get_by_text(COUNT).first)
+    assert page.evaluate(MARKED) == "kept"
+    assert activity.input_value() == "parishsoft"
+    assert enabled() == [True] * 5
+    eventually(
+        page,
+        "() => window.location.search",
+        "?activity=parishsoft&applied=yes&info=yes&warning=yes&error=yes",
+    )

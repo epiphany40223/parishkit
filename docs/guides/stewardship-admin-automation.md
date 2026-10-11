@@ -860,14 +860,19 @@ pk-admin logs list --correlation CORRELATION_ID
 pk-admin logs list --show error --show critical --start 2026-10-01 --zone America/New_York
 pk-admin logs list --through THROUGH --page 2
 pk-admin logs list --activity sign_in --show audit
+pk-admin logs list --activity parishsoft
 (umask 077; pk-admin logs export --show audit --format jsonl > logs.jsonl)
 ```
 
 The filters are the page's: `--show` (`debug`, `info`, `warning`, `error`,
 `critical` or `audit`, repeated for more; without it, every level but debug
 plus audit records, as the page first shows), `--activity` (the page's
-Activity choice; `sign_in` lists every Admin portal sign-in event together,
-audit records only, so keep `audit` among the `--show` kinds), `--event`
+Activity choice: `sign_in` lists every Admin portal sign-in event together
+and `configuration` every settings, schedule, user, file and key change,
+both audit records only, so keep `audit` among the `--show` kinds;
+`family_mail` lists outgoing email steps, resolutions, pauses, tests and
+mail provider failures, and `parishsoft` ParishSoft refreshes, quick updates,
+failures and holds, both with operational entries too), `--event`
 (one type, exactly), `--actor`, `--correlation`, `--campaign` and
 `--subject` (UUIDs; a campaign or subject keeps only audit records),
 `--text` (the page's search phrase,

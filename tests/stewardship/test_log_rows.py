@@ -1,15 +1,29 @@
 """Database-free log filter grammar, display whitelist and time-ordered merge."""
 
+import re
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
 from django.utils.datastructures import MultiValueDict
 
+from parishkit.stewardship.audit import log_rows
+from parishkit.stewardship.audit.log_descriptions import (
+    BUILT_TYPES,
+    DESCRIPTIONS,
+    DIRECT_AUDIT_TYPES,
+    PREFIXES,
+    built_types,
+)
 from parishkit.stewardship.audit.log_rows import (
+    ACTIVITY_TYPES,
     DETAIL_FIELDS,
     EVENTS,
     LEVELS,
+    OPERATIONAL_ACTIVITIES,
+    UNGROUPED,
+    UNGROUPED_REASONS,
     LogQuery,
     NothingShown,
     audit_row,
@@ -17,7 +31,11 @@ from parishkit.stewardship.audit.log_rows import (
     merge,
     operational_row,
 )
+from parishkit.stewardship.audit.schemas import Action
+from parishkit.stewardship.observability import Event
 from parishkit.stewardship.web.dates import UnknownZone
+
+from .test_log_writer_manifest import RAW_WRITERS, WRITERS
 
 NOW = datetime(2026, 9, 20, 12, 0, 0, 123456, tzinfo=UTC)
 IDENTIFIER = "1abcdef0-0000-4000-8000-000000000000"
@@ -406,3 +424,160 @@ def test_sign_in_activity_is_a_closed_link_filter():
     for refused in ("signin", "admin_login", "SIGN_IN", " sign_in"):
         with pytest.raises(ValueError):
             LogQuery.parse({"activity": refused})
+
+
+def _written_types():
+    """Every type something writes to the two logs System logs reads.
+
+    Audit: the ``Action`` vocabulary, the directly written types (whose
+    guard compares them with the source) and every trigger-built type
+    ``BUILT_TYPES`` closes. Operational: an ``Event`` on the log-writer
+    manifest, or inserted by a schema-owned SQL writer (which the writer
+    allow-list does not limit).
+    """
+    audit = {item.value for item in Action} | DIRECT_AUDIT_TYPES
+    audit |= {
+        prefix + value
+        for prefix, (_, values) in BUILT_TYPES.items()
+        for value in values
+    }
+    manifest = set()
+    for entries in (*WRITERS.values(), *RAW_WRITERS.values()):
+        for _logins, _schema, events, _levels in entries:
+            manifest |= {getattr(event, "value", event) for event in events}
+    schema = Path(log_rows.__file__).parents[1] / "schema"
+    # The event follows the level in each SQL writer's VALUES list.
+    written = re.compile(
+        r"INSERT INTO (?:public\.)?stewardship_operational_log\b[^;]*?"
+        r"'(?:DEBUG|INFO|WARNING|ERROR|CRITICAL)'\s*,\s*'([a-z][a-z0-9_]*)'",
+        re.S,
+    )
+    for path in schema.rglob("*.sql"):
+        manifest |= set(written.findall(path.read_text()))
+    return audit, manifest & {item.value for item in Event}
+
+
+def test_every_activity_member_is_written_and_explained():
+    """No Activity group (#953) names a type nothing writes, or one the page
+    cannot explain in words; operational members are on the writer
+    manifest, and the groups with them are exactly the ones that list
+    operational entries."""
+    audit, operational = _written_types()
+    for key, types in ACTIVITY_TYPES.items():
+        assert len(set(types)) == len(types), key
+        unwritten = set(types) - audit - operational
+        assert not unwritten, (key, sorted(unwritten))
+        for event in types:
+            assert event in DESCRIPTIONS or any(
+                event.startswith(prefix) for prefix, _ in PREFIXES
+            ), event
+        assert (key in OPERATIONAL_ACTIVITIES) is bool(set(types) & operational), key
+    assert sorted(OPERATIONAL_ACTIVITIES) == ["family_mail", "parishsoft"]
+    # The manifest scan cannot pass vacuously.
+    assert {"mail_provider_failed", "source_refresh_held"} <= operational
+
+
+def test_every_written_type_is_grouped_or_ungrouped_with_a_reason():
+    """The Activity groups (#953) and ``UNGROUPED`` together are exactly the
+    written types, without overlap: a newly written type fails here until
+    it joins a group or is listed, with its reason, as left out."""
+    audit, operational = _written_types()
+    grouped = [event for types in ACTIVITY_TYPES.values() for event in types]
+    listed = [event for types in UNGROUPED_REASONS.values() for event in types]
+    assert len(set(listed)) == len(listed)
+    assert set(listed) == UNGROUPED
+    assert not set(grouped) & UNGROUPED, sorted(set(grouped) & UNGROUPED)
+    written = audit | operational
+    assert not written - set(grouped) - UNGROUPED, sorted(
+        written - set(grouped) - UNGROUPED
+    )
+    assert not UNGROUPED - written, sorted(UNGROUPED - written)
+    assert all(reason.strip() for reason in UNGROUPED_REASONS)
+    # The campaign transitions and Production steps are covered by the
+    # closed lists, so their prefixes cannot hide a new action.
+    assert {"campaign_activate", "campaign_close", "campaign_reopen"} <= UNGROUPED
+    assert {"production_created", "production_activate"} <= UNGROUPED
+    # Every background task step is shared by every kind of work.
+    assert {"task_created", "task_explicit_retry", "task_recovery_cancel"} <= UNGROUPED
+    # Not written to either log: startup process log only.
+    assert "authentication_limits_weakened" not in written
+
+
+@pytest.mark.parametrize(
+    ("key", "members", "outsiders", "audit_only"),
+    [
+        (
+            "configuration",
+            {
+                "config_request_applied",
+                "config_request_failed",
+                "roles_applied",
+                "setup_started",
+                "setup_frozen",
+                "setup_expired",
+                "setup_credential_staged",
+                "setup_credential_scrubbed",
+                "setup_mail_accepted",
+                "setup_mail_scrubbed",
+                "setup_slack_not_sent",
+                "credential_consumer_acknowledged",
+            },
+            {
+                "admin_login",
+                "task_claim",
+                "outbox_submit",
+                "source_promoted",
+                "credential_keys_retired",
+                "admin_cmd_task_retry",
+            },
+            True,
+        ),
+        (
+            "family_mail",
+            {
+                "outbox_submit",
+                "outbox_mark_unknown",
+                "delivery_resolution_resend",
+                "recipient_refusal_cleared",
+                "mail_provider_failed",
+                "delivery_unknown",
+            },
+            {
+                "config_request_applied",
+                "source_refresh_held",
+                "task_timed_out",
+                "campaign_first_submission",
+            },
+            False,
+        ),
+        (
+            "parishsoft",
+            {"source_promoted", "source_fallback_requested", "source_refresh_held"},
+            {"task_timed_out", "go_live_refresh_held", "source_compacted"},
+            False,
+        ),
+    ],
+)
+def test_activity_groups_are_closed_link_filters(key, members, outsiders, audit_only):
+    """Each group lists its own types and none of another's; it travels in
+    a link and an export, and says whether it is audit records only."""
+    query = LogQuery.parse({"activity": key})
+    assert members <= set(query.activity_types)
+    assert not outsiders & set(query.activity_types)
+    assert query.activity_audit_only is audit_only
+    assert query.link_values() == {"activity": key}
+    assert query.form_values() == {"activity": key}
+    assert not LogQuery().activity_audit_only
+    assert LogQuery.parse({"activity": "sign_in"}).activity_audit_only
+
+
+def test_built_types_refuse_a_value_the_database_does_not_allow():
+    """A group names trigger-built types only through their closed list."""
+    assert built_types("campaign_", "pause") == ("campaign_pause",)
+    assert built_types("delivery_held_") == (
+        "delivery_held_release",
+        "delivery_held_cancel",
+        "delivery_held_clear",
+    )
+    with pytest.raises(ValueError):
+        built_types("campaign_", "suspend")
