@@ -3927,6 +3927,22 @@ status/outcome, contact-attempt entry, notes, history, and links to the
 Member's authorized report detail. It never exposes financial or unrelated
 Family data.
 
+The queue's columns follow the shared
+[table column order](../ui-conventions/spec.md#table-column-order)
+([#932](https://github.com/epiphany40223/parishkit/issues/932)): Member (the
+row header, linking to the request), Member DUID, Ministry, Ministry DUID,
+Request (Join or Leave), Status, Submitted and Last contact. A Member added
+on the form is not in ParishSoft yet, so their Member DUID reads "New
+Member". The installed selection orders the rows and returns each request's
+Ministry DUID but not its Member key, so the page reads the Member keys of
+the rows shown in one query by request id; a schema change was not needed.
+Member, Ministry and Submitted sort through the selection's own orders; the
+two DUID columns, Request, Status and Last contact do not, since the
+selection has no order for them. A long Member or Ministry name is cut short
+with an ellipsis on one line and shown whole in its title. Member names read
+"first last", as the selection builds them for its search and order (as on
+the Ministry report); "Last, first" waits for a selection change.
+
 Ministry follow-up has no assignment (Administrator decision, 2026-10-04,
 [#552](https://github.com/epiphany40223/parishkit/issues/552)): each
 Ministry's leader contacts the parishioners who asked to join or leave it,

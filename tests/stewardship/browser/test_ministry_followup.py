@@ -381,11 +381,52 @@ def test_followup_contact_waits_for_a_known_browser_zone(
 def test_followup_sort_heading_posts_privately(page, component_origin):
     """A heading re-sorts the queue by POST, keeping private filters."""
     page.goto(component_origin + "/followup-queue")
-    heading = page.get_by_role("columnheader", name="Request")
+    heading = page.get_by_role("columnheader", name="Submitted")
     assert heading.get_attribute("aria-sort") == "descending"
     page.route("**/follow-up/", lambda route: route.fulfill(body="Sorted"))
+    # "Member" alone would also match the Member DUID heading.
+    member = page.locator("th[data-sort-column='member']")
     with page.expect_request(lambda request: request.method == "POST") as sent:
-        page.get_by_role("columnheader", name="Member").get_by_role("button").click()
+        member.get_by_role("button").click()
     body = sent.value.post_data
     assert "sort=name" in body and "search=Example" in body
     assert "ministry=9" in body and "?" not in sent.value.url
+
+
+def test_followup_columns_follow_the_shared_order(page, component_origin):
+    """The queue's columns follow the shared order (#932): the Member leads,
+    each DUID has its own column (a Member added on the form reads New
+    Member), and the submitted time has its own column after the request.
+    A long Ministry name is cut short with an ellipsis on one line, shown
+    whole in its title, and never widens the page."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + "/followup-all")
+    headings = page.locator("thead th").all_inner_texts()
+    # A sort heading's text also holds its button's arrow and hint lines.
+    assert [text.split("\n")[0].strip() for text in headings] == [
+        "Member",
+        "Member DUID",
+        "Ministry",
+        "Ministry DUID",
+        "Request",
+        "Status",
+        "Submitted",
+        "Last contact",
+    ]
+    rows = page.locator("tbody tr")
+    first, second = (rows.nth(n).locator("th, td") for n in (0, 1))
+    assert first.nth(0).inner_text() == "Example <Member>"
+    assert first.nth(1).inner_text() == "12345"
+    assert first.nth(3).inner_text() == "9"
+    assert second.nth(1).inner_text() == "New Member"
+    assert second.nth(3).inner_text() == "11"
+    name = second.nth(2).locator(".cell-ellipsis")
+    assert name.get_attribute("title").endswith("<end>")
+    assert name.evaluate(
+        "e => e.scrollWidth > e.clientWidth"
+        " && getComputedStyle(e).textOverflow === 'ellipsis'"
+        # One line: under two font sizes tall, whatever the line height.
+        " && e.getBoundingClientRect().height"
+        " < 2 * parseFloat(getComputedStyle(e).fontSize)"
+    )
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")

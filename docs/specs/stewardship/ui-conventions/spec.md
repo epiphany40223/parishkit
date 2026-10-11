@@ -1060,7 +1060,7 @@ orders. In v1 that covers:
 - the Additional information queue (Family, Family DUID and Submitted);
 - the Ministry report (Ministry and Ministry DUID; Member, Member DUID and
   Submitted in one Ministry's view);
-- the Ministry follow-up queue (Request, Member and Ministry).
+- the Ministry follow-up queue (Member, Ministry and Submitted).
 
 Extending those vocabularies is a schema change; the DUID sorts of the
 financial, Additional information and Ministry tables came with one
@@ -1213,7 +1213,9 @@ column and a DUID column, both sort. **Why.** A combined cell cannot be
 sorted or scanned by DUID, reads badly with a screen reader and copies badly
 into a spreadsheet; staff moving between pages should not re-learn each one.
 **Shared code.** `test_admin_table_columns.py` refuses a cell that prints a
-DUID label with a value (#941). **Precedent.** #932 (Administrator,
+DUID label with a value (#941), and checks that every DUID heading is
+"Family DUID", "Member DUID" or "Ministry DUID" and follows the name it
+identifies. **Precedent.** #932 (Administrator,
 2026-10-09, corrected 2026-10-10 to "most relevant column first", and the
 2026-10-10 rule that the Family name and DUID columns both sort), #941
 and #950.
@@ -1229,6 +1231,12 @@ column heading and every cell that holds only a DUID carries the shared
 cell that holds words instead (such as "New Member" with its note) does not.
 A second guard test checks this, except in the tables a later slice of #932
 aligns.
+
+The same file also reads every table's column headings: each heading that
+names a DUID is one of the three above and comes right after its name's
+heading (Family, Member or Ministry; Census changes heads its Member column
+Who). The one DUID column apart from its name is the recorded exception
+below.
 
 Recorded exception: Families the form cannot open shows a Member DUID with
 no Member name on purpose: the name itself may be the value the form
@@ -1295,6 +1303,10 @@ Administrator asked for one-line rows on #952). A long email or Name is cut
 off with "…"; the full value stays the cell's text, appears in a `title`
 tooltip, and is shown whole on the user's Edit page
 ([Users table](../admin-portal/spec.md#users-table), #952, #963).
+The Ministry follow-up queue does the same for a long Member or Ministry
+name, with the shared `cell-ellipsis` class, so a long Ministry name never
+makes its row several lines tall
+([Follow-up workflows](../admin-portal/spec.md#follow-up-workflows), #932).
 
 ## Downloaded files
 

@@ -96,6 +96,7 @@ def components(context, admin):
         ministry_duid=9,
         ministry_name="Example <Ministry>",
         member_name="Example <Member>",
+        member_duid=12345,
         action="join",
         state="new",
         state_label=STATES["new"],
@@ -170,6 +171,16 @@ def components(context, admin):
         contact_notes="Kept <reply>",
     )
     unfiltered = FollowupQuery()
+    # A Member added on the form has no DUID yet (#932), here in a Ministry
+    # with a name too long for its column, since removed from the campaign.
+    proposed = row | dict(
+        id=str(UUID(int=100)),
+        member_duid=None,
+        member_name="Proposed <Member>",
+        ministry_duid=11,
+        ministry_name="Hospitality and welcome ministry for the " * 3 + "<end>",
+        in_campaign=False,
+    )
     closed = row | dict(
         open=False,
         state="resolved",
@@ -190,7 +201,8 @@ def components(context, admin):
         "/followup-all": values
         | dict(
             query=unfiltered,
-            table=_table([row], unfiltered, 51, campaign),
+            rows=[row, proposed],
+            table=_table([row, proposed], unfiltered, 51, campaign),
         ),
         "/followup-empty": values
         | dict(rows=[], total=0, table=_table([], query, 0, campaign)),

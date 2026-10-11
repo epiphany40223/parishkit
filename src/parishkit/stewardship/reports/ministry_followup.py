@@ -15,6 +15,7 @@ from parishkit.stewardship.web.contracts import PageWindow, filters
 from parishkit.stewardship.web.tables import PAGE_SIZES, Sorting
 from parishkit.stewardship.workflows.models import (
     RESOLVED_OUTCOMES,
+    MinistryRequest,
     MinistryWorkflowRevision,
 )
 
@@ -25,12 +26,13 @@ PAGE_SIZE = 50
 # The installed selection (schema/ministry_followup.sql) orders and pages the
 # queue, so a heading can only choose one of its existing sort values; the
 # schema is frozen for v1. Member and Ministry sort A-Z only (the selection
-# has no Z-A order for them), and Request sorts by submission time. Status
-# and Last contact are not sortable: the selection has no order for them.
+# has no Z-A order for them), and Submitted sorts by submission time. The
+# DUID columns, Request, Status and Last contact are not sortable: the
+# selection has no order for them (#932).
 SORTING = Sorting(
     {
-        "newest": ("request", True),
-        "oldest": ("request", False),
+        "newest": ("submitted", True),
+        "oldest": ("submitted", False),
         "name": ("member", False),
         "ministry": ("ministry", False),
     },
@@ -244,6 +246,27 @@ def my_ministries(campaign_id, principal):
     return {"ministries": ministries}
 
 
+def member_duids(rows):
+    """Add each row's ``member_duid``: the Member's DUID, or None.
+
+    The installed selection returns each request's id and entity kind but
+    not its Member key, so the keys of the rows shown are read in one
+    primary-key query (#932); a schema change was not needed for a column.
+    The ids come from the scoped selection, so nothing outside the reader's
+    scope is read. A Member added on the form (``proposed_member``) has no
+    DUID yet, so the page shows "New Member" instead.
+    """
+    keys = {
+        str(pk): key
+        for pk, key in MinistryRequest.objects.filter(
+            pk__in=[row["id"] for row in rows], entity_kind="member"
+        ).values_list("pk", "entity_key")
+    }
+    for row in rows:
+        key = keys.get(row["id"])
+        row["member_duid"] = int(key) if key else None
+
+
 def followup_page(campaign_id, query, principal, *, request_id=None):
     """Read one coherent page under the response guard's freshly resolved actor.
 
@@ -293,6 +316,8 @@ def followup_page(campaign_id, query, principal, *, request_id=None):
             "last_contact_at",
         ):
             row[field] = datetime.fromisoformat(row[field]) if row[field] else None
+    if result["rows"]:
+        member_duids(result["rows"])
     # JSON carries instants as text, and Django's date filter renders text as
     # nothing at all rather than failing. Only this one is displayed.
     result["metadata"]["source_as_of"] = datetime.fromisoformat(
