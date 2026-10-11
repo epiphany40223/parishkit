@@ -147,6 +147,17 @@ EVENTS = tuple(sorted({item.value for item in Action} | {item.value for item in 
 #   rejected, replaced or fallen back to a full reload, their failures and
 #   holds. Timeouts are left out: every kind of background work shares their
 #   types, so a type list cannot pick a refresh's (#953 comment).
+# - Reports and downloads: requesting, making, cancelling or downloading a
+#   report or export, by hand or from the command line. Opening a report
+#   page is not a download and stays ungrouped.
+# - Security events: access a settings change widened (also a
+#   configuration change: the one type in two groups) and its
+#   acknowledgement, automation sessions that let the command line act as
+#   an Administrator, restoring Administrator access or sign-in limiting,
+#   and the installation's own encryption keys.
+# - Family portal activity: Families signing in, out and responding,
+#   invalid links, preparing and replacing Family links, and closing the
+#   Family portal for maintenance.
 ACTIVITY_TYPES = {
     "sign_in": (
         "admin_login",
@@ -228,6 +239,69 @@ ACTIVITY_TYPES = {
         "source_destructive_change",
         "source_refresh_held",
     ),
+    "downloads": (
+        *(
+            "admin_cmd_export_" + verb
+            for verb in (
+                "cancel",
+                "create",
+                "directory",
+                "exact_cancel",
+                "exact_create",
+                "exact_retry",
+                "family_test_names",
+                "financial",
+                "information",
+                "ministry",
+                "ministry_packet",
+                "postal",
+                "regenerate",
+                "retry",
+            )
+        ),
+        "admin_cmd_digest_weekly_request",
+        "weekly_manual_requested",
+        "export_requested",
+        "export_cancelled",
+        "export_downloaded",
+        "census_changes_exported",
+        "response_data_quality_list_exported",
+        "response_not_opened_list_exported",
+        "response_repeat_list_exported",
+        "response_started_list_exported",
+        "response_submitted_list_exported",
+        "talents_report_exported",
+        "system_logs_exported",
+    ),
+    "security": (
+        "policy_security_event",
+        "security_event_acknowledged",
+        "automation_session_approved",
+        "automation_session_refused",
+        "automation_session_ended",
+        "automation_fresh_gate",
+        "operator_admin_recovered",
+        "limiter_recovered",
+        "credential_key_activated",
+        "credential_keys_retired",
+        "credential_cipher_batch_migrated",
+    ),
+    "family_portal": (
+        "family_login",
+        "family_logout",
+        "family_session_ended",
+        "family_submission",
+        *built_types("campaign_", "first_submission"),
+        "family_link_invalid",
+        "family_link_rotated",
+        "family_link_population_extended",
+        "family_tokens_preparing",
+        "family_tokens_ready",
+        "family_tokens_cancelled",
+        "family_maintenance_started",
+        "family_maintenance_ended",
+        "admin_cmd_portal_maintenance_set",
+    ),
 }
 # Written types no Activity group lists, under the reason each is left
 # out. A reader still finds them with the type search. Together with the
@@ -268,60 +342,10 @@ UNGROUPED_REASONS = {
         "user_names_looked_up",
         "weekly_digest_viewed",
     ),
-    "Requesting, making or downloading a report or export": (
-        *(
-            "admin_cmd_export_" + verb
-            for verb in (
-                "cancel",
-                "create",
-                "directory",
-                "exact_cancel",
-                "exact_create",
-                "exact_retry",
-                "family_test_names",
-                "financial",
-                "information",
-                "ministry",
-                "ministry_packet",
-                "postal",
-                "regenerate",
-                "retry",
-            )
-        ),
-        "admin_cmd_digest_weekly_request",
-        "weekly_manual_requested",
-        "export_requested",
-        "export_cancelled",
-        "export_downloaded",
-        "census_changes_exported",
-        "response_data_quality_list_exported",
-        "response_not_opened_list_exported",
-        "response_repeat_list_exported",
-        "response_started_list_exported",
-        "response_submitted_list_exported",
-        "talents_report_exported",
-        "system_logs_exported",
-    ),
     "Staff follow-up on Family requests, not a setting": (
         "chair_review_decided",
         "information_updated",
         "ministry_request_updated",
-    ),
-    "Families' own access and responses, and closing their portal": (
-        "family_login",
-        "family_logout",
-        "family_session_ended",
-        "family_submission",
-        "family_link_invalid",
-        "family_link_rotated",
-        "family_link_population_extended",
-        "family_tokens_preparing",
-        "family_tokens_ready",
-        "family_tokens_cancelled",
-        "family_maintenance_started",
-        "family_maintenance_ended",
-        "admin_cmd_portal_maintenance_set",
-        *built_types("campaign_", "first_submission"),
     ),
     "The campaign's lifecycle and going live; no group covers them yet": (
         *built_types(
@@ -347,30 +371,11 @@ UNGROUPED_REASONS = {
         "restore_review_started",
         "restore_review_released",
     ),
-    "Command-line automation sessions; each command records its own type": (
-        "automation_session_approved",
-        "automation_session_refused",
-        "automation_session_ended",
-        "automation_notices_acknowledged",
-        "automation_fresh_gate",
-    ),
     "Acknowledging a notice or confirming another, separately recorded action": (
-        "security_event_acknowledged",
         "critical_events_acknowledged",
+        "automation_notices_acknowledged",
         "credential_result_dismissed",
         "destructive_confirmation",
-    ),
-    # A stored key replacement (Configuration changes) changes a provider
-    # credential through the portal; these rotate the installation's own
-    # encryption keys on the host.
-    "Rotating the installation's encryption keys on the host": (
-        "credential_key_activated",
-        "credential_keys_retired",
-        "credential_cipher_batch_migrated",
-    ),
-    "Recovering the service: sign-in limiting, or Administrator access": (
-        "limiter_recovered",
-        "operator_admin_recovered",
     ),
     "One-time data upgrades": (
         "family_mac_backfilled",
@@ -431,6 +436,9 @@ ACTIVITY_LABELS = (
     ("configuration", _("Configuration changes")),
     ("family_mail", _("Family mail")),
     ("parishsoft", _("ParishSoft refreshes")),
+    ("downloads", _("Reports and downloads")),
+    ("security", _("Security events")),
+    ("family_portal", _("Family portal activity")),
 )
 # A type is searched as an exact identifier, never as free text: the same shape
 # the audit table's own check constraint enforces on every stored type.
