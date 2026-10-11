@@ -155,7 +155,7 @@ def command(monkeypatch, capsys):
     The backup itself records a run as the real one does.
     """
 
-    def run_backup(configuration, *, record, recipient):
+    def run_backup(configuration, *, record, migrations, recipient):
         """Record one run, as the real backup does."""
         with transaction.atomic():
             started = now()
@@ -280,7 +280,7 @@ def test_a_failed_backup_fails_its_request(command, monkeypatch):
     """The request records the failure's category; the command exits 2."""
     request = owner_request()
 
-    def broken(configuration, *, record, recipient):
+    def broken(configuration, *, record, migrations, recipient):
         """The dump failed."""
         raise DatabaseError("dump failed")
 
