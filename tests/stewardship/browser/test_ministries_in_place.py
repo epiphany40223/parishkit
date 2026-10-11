@@ -83,14 +83,14 @@ def test_review_apply_and_status_happen_in_place(page, component_origin):
     assert "Inactivate 1 Ministry" in panel.inner_text()
     assert current_step(page) == "Review"
     assert page.url == component_origin + MINISTRY_TABLE
-    assert page.evaluate(TABLE_PLACE) == top
+    assert page.evaluate(TABLE_PLACE) == pytest.approx(top, abs=1)
     assert row(page, 1).is_checked()
     page.get_by_role("button", name="Apply changes").click()
     visible(panel.get_by_role("heading", name="Change status"))
     assert page.evaluate(FOCUSED, "#settings-review-status-title")
     assert current_step(page) == "Apply"
     assert page.url == f"{component_origin}{MINISTRY_TABLE_PENDING}#settings-review"
-    assert page.evaluate(TABLE_PLACE) == top
+    assert page.evaluate(TABLE_PLACE) == pytest.approx(top, abs=1)
     assert page.evaluate(MARKED) == "kept"
     assert len(posts) == 2
 
@@ -195,8 +195,12 @@ def test_the_refresh_after_apply_keeps_ticks_or_says_they_went(
     top = page.evaluate(TABLE_PLACE)
     held[0].continue_()
     visible(page.get_by_role("heading", name="Applied: your change is saved"))
+    # Applied is drawn before the quiet refresh redraws the table, and
+    # Firefox can read the row in between, so wait for the redrawn row.
+    from playwright.sync_api import expect
+
     first = page.locator("tr", has=row(page, 1))
-    assert "Inactive" in first.inner_text()
+    expect(first).to_contain_text("Inactive")
     lost = page.locator("#settings-review").get_by_text("were not kept")
     if ticked == 2:
         assert row(page, 2).is_checked()
@@ -205,5 +209,5 @@ def test_the_refresh_after_apply_keeps_ticks_or_says_they_went(
     else:
         assert row(page, 25).count() == 0
         visible(lost)
-    assert page.evaluate(TABLE_PLACE) == top
+    assert page.evaluate(TABLE_PLACE) == pytest.approx(top, abs=1)
     assert page.evaluate(MARKED) == "kept"

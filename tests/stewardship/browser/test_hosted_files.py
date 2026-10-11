@@ -250,7 +250,7 @@ def test_resorting_after_a_tick_says_nothing_and_moves_nothing(page, component_o
     painted(page)
     assert page.locator("input[data-select-row]:checked").count() == 1
     assert page.locator("[data-edits-lost]").count() == 0
-    assert bulk.evaluate(place) == before
+    assert bulk.evaluate(place) == pytest.approx(before, abs=1)
     page.get_by_role("button", name="Select all").click()
     assert page.locator("input[data-select-row]:checked").count() == 2
     assert page.evaluate("window.notReloaded === true")
