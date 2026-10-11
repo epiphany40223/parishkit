@@ -155,8 +155,14 @@ def _build_v4_candidate(base, patch, *, candidate_id):
     return result
 
 
-def _build_v5_candidate(base, patch, *, candidate_id, schema=CONTENT_SCHEMA):
-    """Add immutable content while retaining policy, campaign and Ministry fences."""
+def _build_v5_candidate(
+    base, patch, *, candidate_id, schema=CONTENT_SCHEMA, policy_change=None
+):
+    """Add immutable content while retaining policy, campaign and Ministry fences.
+
+    ``policy_change`` replaces the sign-in rules' change check for the users
+    form (#952), whose list has its own; every other fence is the same.
+    """
     from parishkit.stewardship.campaigns.configuration import validate_campaign_change
 
     from .policy_schema import validate_policy_change
@@ -177,7 +183,7 @@ def _build_v5_candidate(base, patch, *, candidate_id, schema=CONTENT_SCHEMA):
         },
     )
     old, new = base.document(), result.candidate.document()
-    validate_policy_change(
+    (policy_change or validate_policy_change)(
         old["sections"].get("login_rules", []),
         new["sections"].get("login_rules", []),
     )
@@ -501,12 +507,79 @@ def _build_credential_cadence_candidate(base, patch, *, candidate_id):
 
 
 def credential_request_schema(document):
-    """Select the new receipt parser only for configuration containing cadence."""
+    """Select the newest receipt parser the configuration's form needs.
+
+    A users configuration (#952) has its own; otherwise the cadence parser
+    only for configuration containing cadence.
+    """
+    if users.uses_users(document):
+        return users.CREDENTIAL_SCHEMA
     return (
         cadence.CREDENTIAL_SCHEMA
         if cadence.uses_cadence(document)
         else CREDENTIAL_REQUEST_SCHEMA
     )
+
+
+def _build_users_candidate(base, patch, *, candidate_id):
+    """Ordinary Admin edits of a users configuration (#952 slice 3).
+
+    Every fence of the cadence format holds, with the users list's own change
+    rule in place of the sign-in rules' provenance rules: a user keeps its
+    address. The base must already be in the users form, as ``_build_records``
+    revalidates it under the users schema; only the offline upgrade converts.
+    """
+    return _build_v5_candidate(
+        base,
+        patch,
+        candidate_id=candidate_id,
+        schema=users.SCHEMA,
+        policy_change=users.validate_user_change,
+    )
+
+
+def _build_users_credential_candidate(base, patch, *, candidate_id):
+    """Fingerprint-only selection over a users configuration (#952)."""
+    return _build_credential_candidate(
+        base, patch, candidate_id=candidate_id, schema=users.SCHEMA
+    )
+
+
+def _build_users_recovery_candidate(base, patch, *, candidate_id):
+    """Offline Admin-access recovery over a users configuration (#952).
+
+    Exactly one operation: it adds a new Administrator user, or raises one
+    existing user who is not yet an Administrator to Administrator and
+    changes nothing else about them. Every other user and every other
+    section stays as it was.
+    """
+    result = _build_records(
+        base,
+        patch,
+        candidate_id=candidate_id,
+        schema=users.SCHEMA,
+        sections={"login_rules"},
+    )
+    if len(patch) != 1 or patch[0]["operation"] not in {"add", "update"}:
+        _invalid()
+    identifier = patch[0]["id"]
+    old = next(
+        (
+            item["values"]
+            for item in base.document()["sections"]["login_rules"]
+            if item["id"] == identifier
+        ),
+        None,
+    )
+    if patch[0]["values"].get("role") != "administrator" or (
+        old is not None
+        and (
+            old["role"] == "administrator"
+            or patch[0]["values"] != {"role": "administrator"}
+        )
+    ):
+        _invalid()
+    return result
 
 
 def _build_chair_seed_candidate(base, patch, *, candidate_id):
@@ -633,6 +706,9 @@ BUILDERS = MappingProxyType(
         "operator-recovery-bootstrap-v1": _build_recovery_bootstrap_candidate,
         CHAIR_REQUEST_SCHEMA: _build_chair_seed_candidate,
         users.UPGRADE_REQUEST_SCHEMA: _build_users_upgrade_candidate,
+        users.REQUEST_SCHEMA: _build_users_candidate,
+        users.CREDENTIAL_SCHEMA: _build_users_credential_candidate,
+        users.RECOVERY_SCHEMA: _build_users_recovery_candidate,
     }
 )
 
@@ -650,6 +726,10 @@ def build_candidate(base, patch, *, candidate_id, request_schema=None):
 
 def default_schema(base, patch):
     """Choose a new intent schema while keeping every stored retry discriminator."""
+    # A users configuration (#952) has one format for every ordinary edit.
+    # Only the base decides: no patch converts sign-in rules into users.
+    if isinstance(base, ConfigurationVersion) and users.uses_users(base.document()):
+        return users.REQUEST_SCHEMA
     if (
         isinstance(base, ConfigurationVersion) and cadence.uses_cadence(base.document())
     ) or (
