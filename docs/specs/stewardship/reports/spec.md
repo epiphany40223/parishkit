@@ -598,11 +598,17 @@ in the [About this page](../ui-conventions/spec.md#page-help) panel after the
 data. Each chart is named by its panel's heading rather than a title drawn
 inside it. Until an invitation has been delivered the tiles leave out their
 shares and the page says so in one sentence. A **Lists of Families** panel
-links to each of the [response lists](#response-lists) in the mode shown,
+links to the Families behind each of the [response lists](#response-lists),
 with the number of Families on it (counted from the same read; the list of
 ParishSoft data to check has no number here, since counting it needs the
-ParishSoft read). The page shows counts only, never a Family's name or
-identifier, and sends `Cache-Control: no-store`.
+ParishSoft read). In Production each link opens the
+[active parishioner family directory](#active-parishioner-family-directory)
+with that list's closed [link presets](#response-filters)
+([#933](https://github.com/epiphany40223/parishkit/issues/933)), so the page it
+opens has the number shown. In Testing the links still open the response
+lists' Testing views, since the directory reads Production only. The page
+shows counts only, never a Family's name or identifier, and sends
+`Cache-Control: no-store`.
 
 The URL carries only two closed choices. `mode` is `production` (the default)
 or `testing`: Production reads live responses and Production mail; Testing
@@ -647,8 +653,9 @@ per-Family rows as the [funnel](#response-funnel):
 
 The [active parishioner family directory's Response filters](#response-filters)
 now reproduce every list, with Family codes, contact details and the queued
-export ([#933](https://github.com/epiphany40223/parishkit/issues/933)). The
-list pages stay until a later change removes them.
+export ([#933](https://github.com/epiphany40223/parishkit/issues/933)), and
+the [dashboard](#response-dashboard)'s Production links open the directory.
+The list pages stay, for the Testing view, until a later change removes them.
 
 Each of the first four lists has exactly the Families its count on the
 [response dashboard](#response-dashboard) counts, with the instants the
@@ -995,8 +1002,10 @@ Filters include how campaign mail can reach a Family: by deliverable email, by
 postal mail only (no deliverable email but a usable mailing address: a street
 line and a city, plus a state or postal code), or neither. A one-click
 "Can't be reached by email or mail" preset opens the page filtered to
-neither. It and the mailing-columns preset (`?mailing=yes`) are the only
-values accepted in a link, since neither carries a private value. The page
+neither. It, the mailing-columns preset (`?mailing=yes`) and the
+[response presets](#response-filters) (`response`, `responses`, `check` and
+`sort`) are the only values accepted in a link, since none carries a private
+value; search text and exact codes stay in the POST body. The page
 with mailing columns (which never lists those Families) and the Admin home
 page show how many active Families across the campaign no campaign mail can
 reach, linking to that list.
@@ -1183,6 +1192,40 @@ response column orders the rows only while it is
 shown: when Include response columns is off, or the chosen Response does not
 show that column, the order falls back to Family (by name), for the page, the
 export and the audit entry alike.
+
+The [response dashboard](#response-dashboard)'s Production **Lists of
+Families** links open this page with closed link presets in the URL, one per
+response list. The four funnel lists' links turn on Include response columns,
+so the page shows that list's response columns in its default order; the
+ParishSoft data to check link shows the What to check column instead:
+
+| List | Link presets |
+| --- | --- |
+| `submitted` | `?response=submitted&responses=yes&sort=submitted` (First submitted, earliest first) |
+| `started` | `?response=started&responses=yes` |
+| `not-opened` | `?response=never-opened&responses=yes` |
+| `more-than-once` | `?response=more-than-once&responses=yes&sort=submissions_desc` (most submissions first) |
+| `data-quality` | `?check=anything` |
+
+The four funnel lists' links list exactly the Families the dashboard counts.
+The ParishSoft data to check link lists the directory's own population, so
+it can also include an active Family with no campaign record, which the old
+`data-quality` list left out (see
+[ParishSoft data to check](#response-filters) above); this is intended.
+
+Each value must be in its filter's closed vocabulary, as in the form; an
+unknown value, a repeated parameter or any other parameter is refused (400).
+A valid `sort` whose column the link does not show (a response column without
+`responses=yes`, or one the chosen Response does not show) is not refused:
+the page opens (200) in Family name order, as the form does. The presets only
+open the page: the next filter change, sort or page is the usual private
+POST to the page's address without a query string. After each in-place
+answer the address bar shows the view's own address (the page's
+`data-page-address`, as on [System logs](#system-logs)): the page with the
+closed link presets now applied when no search text or exact code is, and
+the bare page otherwise, never with a page number. So Reload, or Back from
+another page, never brings back the preset the page was opened with; a
+search is cleared, as on the response lists.
 
 The selection is `stewardship_directory_report_v2` (migration 0050). It reads
 the funnel through `stewardship_family_response_v1`, so the directory and the

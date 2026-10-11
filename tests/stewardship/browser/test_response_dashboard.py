@@ -150,3 +150,58 @@ def test_switches_refresh_the_dashboard_in_place(page, component_origin):
     assert page.evaluate("document.activeElement.dataset.inPlace") == "mode-testing"
     assert page.locator("[data-chart]").count() == 0
     assert_clean(page, errors)
+
+
+@pytest.mark.parametrize(
+    ("title", "response", "check", "columns"),
+    [
+        ("Families that submitted", "submitted", "any", ["Submissions"]),
+        (
+            "Invited Families that never opened the form",
+            "never-opened",
+            "any",
+            ["Invitation delivered", "Link followed"],
+        ),
+        ("ParishSoft data to check", "any", "anything", ["What to check"]),
+    ],
+)
+def test_lists_of_families_open_the_directory_presets(
+    page, component_origin, title, response, check, columns
+):
+    """A Production list link opens the directory with that list's choices.
+
+    The link carries only closed presets (#933); the directory shows them
+    chosen, with the list's columns, and a further filter change posts
+    privately to the directory's own address, with no query string. The
+    answer's data-page-address then replaces the preset in the address bar
+    (#536), so Reload or Back cannot bring the preset back: here the answer
+    has a search applied, so the address is the bare page.
+    """
+    from playwright.sync_api import expect
+
+    errors = watch(page)
+    page.goto(component_origin + PATH)
+    page.get_by_role("link", name=title, exact=True).click()
+    expect(page.get_by_label("Response", exact=True)).to_have_value(response)
+    assert page.get_by_label("ParishSoft data to check").input_value() == check
+    assert page.get_by_label("Include response columns").is_checked() is (
+        response != "any"
+    )
+    headings = [
+        text.split("\n")[0].strip()
+        for text in page.locator("table thead th").all_inner_texts()
+    ]
+    assert all(column in headings for column in columns), headings
+    preset = page.url
+    assert "?" in preset
+    answer = page.request.get(component_origin + "/family-directory").text()
+    page.route(
+        "**/families/",
+        lambda route: route.fulfill(body=answer, content_type="text/html"),
+    )
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("button", name="Apply filters").click()
+    assert f"response={response}" in sent.value.post_data
+    assert "?" not in sent.value.url
+    expect(page).to_have_url(preset.partition("?")[0])
+    assert_clean(page, errors)
