@@ -24,6 +24,8 @@ from parishkit.stewardship.jobs.send_progress_views import (
 )
 from parishkit.stewardship.jobs.task_wording import phase_words
 from parishkit.stewardship.jobs.views import EVENT_SORTING
+from parishkit.stewardship.source.data_age import Connection
+from parishkit.stewardship.source.refresh_status import FullRefreshStatus
 from parishkit.stewardship.web.contracts import PageWindow
 from parishkit.stewardship.web.tables import window_table
 
@@ -45,8 +47,19 @@ DISMISS = reverse("admin:dismiss_credential_result", args=["parishsoft"])
 TASK_RUN = UUID(int=869)
 TASK_PAGE = reverse("admin:background_task_page", args=[TASK_RUN])
 TASK_STATUS = reverse("admin:background_task_status", args=[TASK_RUN])
-# The fixture server's answer to Dismiss (status, Location, body).
-POSTS = {DISMISS: (303, INTEGRATION + "?dismissed=1", "")}
+# Refresh from ParishSoft, which shows the run it requested (#521). The real
+# view redirects Refresh now back to the page itself and remembers the run in
+# the session; the static fixture server cannot remember, so its redirect
+# adds a query that stands in for the session (the same path, so the answer
+# is still this page to ui-v1.js).
+REFRESH = reverse("admin:source_refresh")
+REFRESH_REQUESTED = REFRESH + "?run=requested"
+# The fixture server's answers to Dismiss and Refresh now (status, Location,
+# body).
+POSTS = {
+    DISMISS: (303, INTEGRATION + "?dismissed=1", ""),
+    REFRESH: (303, REFRESH_REQUESTED + "#refresh-run", ""),
+}
 
 
 def components(context, admin):
@@ -122,6 +135,38 @@ def components(context, admin):
         """A ParishSoft refresh's task page (or its polled status fragment) in
         ``state``, with one history row per (action, state, phase, current)
         of ``steps``, out of 4,000 records."""
+        template = "background-task-status" if fragment else "background-task"
+        return render_to_string(
+            f"stewardship/{template}.html", refresh_values(state, steps)
+        )
+
+    def refresh_page(state=None, steps=(), *, minutes=30):
+        """Refresh from ParishSoft with data ``minutes`` old, showing the run
+        this sign-in requested in ``state`` when there is one, as the view
+        draws it from the task's own values."""
+        run = (
+            refresh_values(state, steps) | {"run_task_id": TASK_RUN} if state else page
+        )
+        return render_to_string(
+            "stewardship/source-refresh.html",
+            run
+            | {
+                "full_refresh": FullRefreshStatus(
+                    now,
+                    None,
+                    False,
+                    full_started_at=now - timedelta(minutes=minutes),
+                    data_as_of=now - timedelta(minutes=minutes),
+                    connection=Connection("working", now),
+                ),
+                "pending": {"running": False, "waiting": False},
+                "request_key": UUID(int=521 + minutes),
+                "lateness_minutes": 30,
+            },
+        )
+
+    def refresh_values(state, steps):
+        """The task page's values for a refresh in ``state`` with ``steps``."""
 
         def progress(phase, current):
             """A progress record as task_page builds it, worded for a refresh."""
@@ -174,8 +219,7 @@ def components(context, admin):
                 sort=EVENT_SORTING.default,
             ),
         }
-        template = "background-task-status" if fragment else "background-task"
-        return render_to_string(f"stewardship/{template}.html", values)
+        return values
 
     # A refresh part-way through its download, then finished: the bar and
     # the history table must both end on the last step.
@@ -215,5 +259,8 @@ def components(context, admin):
         "/live-task-finished-status": refresh_task(
             "succeeded", finished, fragment=True
         ),
+        REFRESH: refresh_page(),
+        REFRESH_REQUESTED: refresh_page("queued", running[:1]),
+        "/live-refresh-finished": refresh_page("succeeded", finished, minutes=1),
     }
     return {path: ("text/html", body) for path, body in pages.items()}

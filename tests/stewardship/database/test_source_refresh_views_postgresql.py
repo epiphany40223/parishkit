@@ -1,15 +1,21 @@
 """The manual refresh page under the real web role: confirmed, keyed, coalesced."""
 
+import re
+from importlib import import_module
 from uuid import uuid4
 
 import pytest
+from django.conf import settings
 from django.db.models import F
+from django.template.loader import render_to_string
 from django.test import Client
 from django.utils import timezone
 
 from parishkit.stewardship.accounts import refresh_views
 from parishkit.stewardship.accounts.models import PortalSession
+from parishkit.stewardship.accounts.policy import Capability
 from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.jobs import views as job_views
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.source.refresh_models import (
     SourceRefreshCommand,
@@ -49,10 +55,15 @@ def post(browser, key):
 
 
 def run_of(response):
-    """The task root the confirmation leads to."""
+    """The task root the confirmation remembers for this sign-in.
+
+    The confirmation stays on the refresh page (navigation rule 5, #521):
+    it redirects back to the page's run region, never to the task page, and
+    remembers the run in the session, never in the URL.
+    """
     assert response.status_code == 302, response.content
-    assert response["Location"].startswith("/admin/system/background/")
-    return response["Location"].rstrip("/").rsplit("/", 1)[-1]
+    assert response["Location"] == URL + "#refresh-run"
+    return response.wsgi_request.session[refresh_views.RUN_KEY]
 
 
 @pytest.mark.usefixtures("source_singletons")
@@ -75,7 +86,18 @@ def test_a_manual_refresh_is_confirmed_keyed_and_coalesced(auth_service, google)
         # The same key replays; a new key while the run waits coalesces.
         assert run_of(post(browser, key)) == root
         assert run_of(post(browser, uuid4())) == root
-        assert "already waiting" in browser.get(URL).content.decode()
+        page = browser.get(URL).content.decode()
+        assert "already waiting" in page
+        # The page shows the remembered run's live status, polling its
+        # passive status fragment, and links its Background task page; the
+        # breadcrumb is the way back, so there is no Cancel link.
+        assert 'data-live-status="task"' in page and "data-live-pending" in page
+        assert (
+            f'data-live-url="/admin/system/background/{root}/status/?view=refresh"'
+            in page
+        )
+        assert f'<a href="/admin/system/background/{root}/">' in page
+        assert ">Cancel<" not in page
         # The run's page and the task list both say which kind of refresh
         # this is, and the refresh page explains full vs quick updates.
         task_page = browser.get(f"/admin/system/background/{root}/").content.decode()
@@ -196,3 +218,147 @@ def test_only_an_administrator_may_request_a_refresh(auth_service, google, monke
         assert reader.get(URL).status_code == 403
         assert post(reader, uuid4()).status_code == 403
     assert not SourceRefreshRequest.objects.exists()
+
+
+@pytest.mark.usefixtures("source_singletons")
+def test_a_run_that_cannot_be_read_is_forgotten(auth_service, google):
+    """A remembered run the reader can no longer read (here, one that does
+    not exist) is dropped from the session, and the page shows no run."""
+    publish(source())
+    browser, login = signed_in()
+    assert login.status_code == 302
+    with web():
+        requested = post(browser, uuid4())
+    run_of(requested)
+    # The sign-in's own session store, as the Admin session cookie names it.
+    store = import_module(settings.SESSION_ENGINE).SessionStore(
+        requested.wsgi_request.session.session_key
+    )
+    store[refresh_views.RUN_KEY] = str(uuid4())
+    store.save()
+    with web():
+        page = browser.get(URL)
+    assert page.status_code == 200
+    body = page.content.decode()
+    assert "Refresh now" in body and 'data-live-status="task"' not in body
+    assert refresh_views.RUN_KEY not in page.wsgi_request.session
+
+
+def requested(browser):
+    """Request a refresh from the page; return the response and its run."""
+    with web():
+        response = post(browser, uuid4())
+    return response, run_of(response)
+
+
+def shown(browser):
+    """The refresh page as this sign-in sees it, and its session."""
+    with web():
+        page = browser.get(URL)
+    assert page.status_code == 200
+    return page.content.decode(), page.wsgi_request.session
+
+
+@pytest.mark.usefixtures("source_singletons")
+def test_a_reader_without_background_work_forgets_the_run(
+    auth_service, google, monkeypatch
+):
+    """A reader who may no longer read background work (the task read's
+    403) sees the page without the run, which is forgotten."""
+    publish(source())
+    browser, login = signed_in()
+    assert login.status_code == 302
+    requested(browser)
+    real = job_views.allows
+
+    def without_background_work(principal, capability):
+        """Every capability as before, except reading background work."""
+        return capability != Capability.BACKGROUND_WORK and real(principal, capability)
+
+    monkeypatch.setattr(job_views, "allows", without_background_work)
+    body, session = shown(browser)
+    assert "Refresh now" in body and 'data-live-status="task"' not in body
+    assert refresh_views.RUN_KEY not in session
+
+
+@pytest.mark.usefixtures("source_singletons")
+def test_a_restore_review_keeps_the_run_for_later(auth_service, google, monkeypatch):
+    """While a restore review makes the task read unavailable (503), the
+    page shows no run but keeps it: the outage is not the run's fault."""
+    publish(source())
+    browser, login = signed_in()
+    assert login.status_code == 302
+    _, root = requested(browser)
+
+    class UnderReview:
+        """The task read's view of the system: a restore review is pending."""
+
+        class objects:
+            @staticmethod
+            def first():
+                """The one system configuration row, awaiting restore review."""
+                return type("Row", (), {"restore_review_required": True})()
+
+    with monkeypatch.context() as patched:
+        patched.setattr(job_views, "SystemConfiguration", UnderReview)
+        body, session = shown(browser)
+    assert 'data-live-status="task"' not in body
+    assert session[refresh_views.RUN_KEY] == root
+    # Once the read is available again, the same run is shown.
+    body, _ = shown(browser)
+    assert f'data-live-url="/admin/system/background/{root}/status/?view=refresh"' in (
+        body
+    )
+
+
+@pytest.mark.usefixtures("source_singletons")
+def test_the_one_click_refresh_lands_on_the_refresh_page(auth_service, google):
+    """Home's and the ParishSoft page's "Run a full refresh now" form posts
+    its fields to the refresh action and lands on the page's run region,
+    remembering the run, never on the task page (#521)."""
+    publish(source())
+    browser, login = signed_in()
+    assert login.status_code == 302
+    key = uuid4()
+    form = render_to_string(
+        "stewardship/full-refresh-action.html",
+        {"can_refresh": True, "refresh_key": key, "csrf_token": "x"},
+    )
+    assert f'action="{URL}"' in form and f'value="{key}"' in form
+    with web():
+        response = browser.post(
+            URL,
+            {
+                "request_key": str(key),
+                "csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value,
+            },
+        )
+    root = run_of(response)
+    assert str(SourceRefreshRequest.objects.get().task_root_id) == root
+    body, _ = shown(browser)
+    assert f'<a href="/admin/system/background/{root}/">' in body
+
+
+@pytest.mark.usefixtures("source_singletons")
+def test_a_second_request_joins_the_remembered_run(auth_service, google):
+    """Pressing Refresh now again, with the fresh key the page drew, while
+    the run waits joins it: the session keeps the same run, the page shows
+    it, and only one task exists. Its status poll takes the page's view."""
+    publish(source())
+    browser, login = signed_in()
+    assert login.status_code == 302
+    _, root = requested(browser)
+    body, _ = shown(browser)
+    fresh = re.search(r'name="request_key" value="([0-9a-f-]{36})"', body).group(1)
+    with web():
+        again = post(browser, fresh)
+    assert run_of(again) == root
+    body, session = shown(browser)
+    assert session[refresh_views.RUN_KEY] == root
+    assert f'<a href="/admin/system/background/{root}/">' in body
+    assert TaskRun.objects.filter(task_type=TASK_TYPE).count() == 1
+    assert SourceRefreshCommand.objects.count() == 2
+    with web():
+        status = browser.get(f"/admin/system/background/{root}/status/?view=refresh")
+    assert status.status_code == 200
+    assert 'data-live-status="task"' in status.content.decode()
