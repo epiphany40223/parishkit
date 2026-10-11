@@ -556,6 +556,56 @@ def test_every_written_type_is_grouped_or_ungrouped_with_a_reason():
             {"task_timed_out", "go_live_refresh_held", "source_compacted"},
             False,
         ),
+        (
+            "downloads",
+            {
+                "export_requested",
+                "export_downloaded",
+                "admin_cmd_export_postal",
+                "admin_cmd_digest_weekly_request",
+                "system_logs_exported",
+            },
+            {"system_logs_viewed", "family_codes_viewed", "admin_cmd_task_retry"},
+            True,
+        ),
+        (
+            "security",
+            {
+                "policy_security_event",
+                "security_event_acknowledged",
+                "automation_session_refused",
+                "automation_fresh_gate",
+                "operator_admin_recovered",
+                "limiter_recovered",
+                "credential_key_activated",
+            },
+            {
+                "admin_login_refused",
+                "roles_applied",
+                "critical_events_acknowledged",
+                "automation_notices_acknowledged",
+                "restore_review_started",
+            },
+            True,
+        ),
+        (
+            "family_portal",
+            {
+                "family_login",
+                "family_submission",
+                "campaign_first_submission",
+                "family_link_invalid",
+                "family_tokens_ready",
+                "family_maintenance_started",
+            },
+            {
+                "information_updated",
+                "family_mac_backfilled",
+                "family_engagement_failed",
+                "family_codes_viewed",
+            },
+            True,
+        ),
     ],
 )
 def test_activity_groups_are_closed_link_filters(key, members, outsiders, audit_only):
@@ -581,3 +631,22 @@ def test_built_types_refuse_a_value_the_database_does_not_allow():
     )
     with pytest.raises(ValueError):
         built_types("campaign_", "suspend")
+
+
+def test_only_widened_access_is_in_two_activity_groups():
+    """A settings change that widened access is both a configuration change
+    and a security event (#953); every other type is in one group at most,
+    so no group quietly becomes a copy of another."""
+    seen = {}
+    for key, types in ACTIVITY_TYPES.items():
+        for event in types:
+            seen.setdefault(event, []).append(key)
+    shared = {event: keys for event, keys in seen.items() if len(keys) > 1}
+    assert shared == {"policy_security_event": ["configuration", "security"]}
+
+
+def test_activity_labels_name_every_group_once():
+    """The filter bar offers All activity and then every group, each once."""
+    keys = [key for key, _label in log_rows.ACTIVITY_LABELS]
+    assert keys[0] == "" and sorted(keys[1:]) == sorted(ACTIVITY_TYPES)
+    assert len(set(keys)) == len(keys)
