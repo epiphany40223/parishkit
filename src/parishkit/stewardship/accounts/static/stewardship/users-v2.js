@@ -14,6 +14,9 @@
 //     Administrator has typed one (a Name this script filled is replaced by
 //     a later lookup), the rest are offered in the Name's datalist, and the
 //     Name's help line, which is always there, says what was found.
+// The help line is one line high whatever it says (a long answer is cut
+// short with an ellipsis and shown whole in its title), so the Role choices
+// never move (#736).
 // Only the latest answer is used. The server checks everything again on
 // Review, so a lookup that fails only says so and changes nothing else.
 (() => {
@@ -41,15 +44,20 @@
       .filter((id) => id && id !== line.id);
     email.setAttribute("aria-describedby", [...ids, line.id].join(" "));
   };
+  // Say one state of the lookup in the help line, whole in its title too.
+  const say = (words) => {
+    help.textContent = words;
+    help.title = words;
+  };
   const suggest = (names) => {
     list.replaceChildren(...names.map((value) => {
       const option = document.createElement("option");
       option.value = value;
       return option;
     }));
-    help.textContent = names.length
+    say(names.length
       ? form.dataset.namesFound.replace("{names}", names.join("; "))
-      : form.dataset.namesNone;
+      : form.dataset.namesNone);
     // Never over a Name the Administrator typed; a Name filled in for an
     // earlier address is replaced.
     if (names.length && (!name.value.trim() || name.value === filled)) {
@@ -63,7 +71,7 @@
     asked = value;
     latest += 1;
     const mine = latest;
-    help.textContent = form.dataset.namesWaiting;
+    say(form.dataset.namesWaiting);
     const body = new URLSearchParams({csrfmiddlewaretoken: csrf.value, email: value});
     try {
       const response = await fetch(form.dataset.namesUrl, {
@@ -78,7 +86,7 @@
       if (answer.error) {
         mark(answer.error);
         list.replaceChildren();
-        help.textContent = form.dataset.namesNone;
+        say(form.dataset.namesNone);
         return;
       }
       suggest(Array.isArray(answer.names) ? answer.names.map(String) : []);
@@ -86,7 +94,7 @@
       if (mine !== latest) return;
       // Asking again for the same address may work later.
       asked = null;
-      help.textContent = form.dataset.namesFailed;
+      say(form.dataset.namesFailed);
     }
   };
   email.addEventListener("change", lookUp);
