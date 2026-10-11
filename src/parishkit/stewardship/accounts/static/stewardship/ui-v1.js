@@ -1745,6 +1745,14 @@
   };
   document.addEventListener("input", withdrawReview);
   document.addEventListener("change", withdrawReview);
+  // A table's Select all / Clear selection button ticks its rows from
+  // script, which fires no change event, so it withdraws a review of the
+  // row selection itself (Ministries, #750).
+  document.addEventListener("click", (event) => {
+    if (event.target instanceof Element && event.target.closest("[data-select-all-button]")) {
+      withdrawReview(event);
+    }
+  });
   document.addEventListener("parishkit:swap", (event) => {
     if (!(event.target instanceof Element)) return;
     // Regions are swapped in page order, so a form's own region (above its
@@ -1753,6 +1761,10 @@
       const edited = editedSince.get(fresh.id);
       if (!edited || edited.isConnected) return;
       editedSince.delete(fresh.id);
+      // A table's row selection is per page: a re-sorted or re-paged table
+      // starts with nothing ticked, as it always has, so nothing typed is
+      // lost and nothing needs saying (Ministries, #750).
+      if (fresh.matches("[data-select-table]")) return;
       // The line goes at the top of the region the form's action names (its
       // review region, below it), never above the form: a line added there
       // would move the form under the reader's caret (#736). That region may

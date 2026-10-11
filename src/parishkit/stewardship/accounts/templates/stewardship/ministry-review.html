@@ -1,0 +1,13 @@
+{% load i18n stewardship %}{% comment %}
+  A Ministry activity change under review, drawn inside settings-review.html
+  on Ministries (#750): the Ministries that change, those already in the
+  chosen state (left alone), and, when activating, the selected Ministries
+  activation does not add to the current campaign. The review region's own
+  heading, notes and Apply surround it.
+{% endcomment %}<section><h3>{% if review.new_active %}{% blocktranslate count counter=review.changing|length %}Activate {{ counter }} Ministry{% plural %}Activate {{ counter }} Ministries{% endblocktranslate %}{% else %}{% blocktranslate count counter=review.changing|length %}Inactivate {{ counter }} Ministry{% plural %}Inactivate {{ counter }} Ministries{% endblocktranslate %}{% endif %}</h3>
+<ul>{% for ministry in review.changing %}<li>{{ ministry.name }} ({% translate "DUID" %} {{ ministry.duid }}): {% if ministry.active %}{% translate "Active" %}{% else %}{% translate "Inactive" %}{% endif %} → {% if review.new_active %}{% translate "Active" %}{% else %}{% translate "Inactive" %}{% endif %}</li>{% endfor %}</ul>
+{% if not review.new_active %}<p>{% translate "An inactive Ministry has no Ministry leaders: the people with a leader role in it no longer see its reports or follow-up until it is active again. Administrators and Staff still do." %}</p>{% endif %}
+{% if review.unchanged %}<p>{% if review.new_active %}{% translate "Already active, left as they are:" %}{% else %}{% translate "Already inactive, left as they are:" %}{% endif %} {% for ministry in review.unchanged %}{{ ministry.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+{% if review.not_included %}<div class="notice" role="note"><p>{% translate "Activation doesn’t add Ministries to the campaign. These are not in the current campaign:" %} {% for ministry in review.not_included %}{{ ministry.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+<p>{% translate "To include them, use" %} <a href="{{ review.campaign_link.url }}">{{ review.campaign_link.label }}</a>.</p></div>{% endif %}
+<p>{% translate "No participation records or earlier campaign responses will be deleted. Campaign Ministry selection is unchanged." %}</p></section>

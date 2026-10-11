@@ -526,6 +526,28 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   Ministries' forms are never redrawn; until the change is applied, Apply's
   answer hands them the version it was reviewed at. The other editors keep their review and
   Change status pages until issue 750 reaches them.
+- **In-place review of a table selection (#750).** Ministries reviews,
+  applies and follows an activity change in place too, in the review region
+  under its table (so a review appearing never moves the table or its bulk
+  buttons). Its form is the table's row selection
+  (`form#ministry-selection[data-select-table]`), not a settings form:
+  Review activation and Review inactivation send the ticked rows, and the
+  answer replaces only the review region and the step indicator
+  (`data-in-place-only="flow-steps"`), so the ticks, page and sort stay.
+  Ticking or unticking a row, the header checkbox, or Select all / Clear
+  selection (which ticks rows from script, so it withdraws the review
+  itself) withdraws a shown review, whose last line then says to choose
+  Review activation or Review inactivation again (the review's
+  `data-stale-note`). A selection that would change nothing ("already
+  active") is refused in the region, as is an empty or oversized one.
+  Selection is per page, so paging, sorting or filtering the table draws a
+  page with nothing ticked and an empty review region: the review (or a
+  settled status) of the earlier selection goes with it, and since nothing
+  typed was lost, no "were not kept" line is shown. The page's view (its
+  filters, sort and page; `admin_editing.IN_PLACE_VIEWS`) is kept in Apply's
+  answer, handed through Change status's read and carried by the quiet
+  follow-up, so the refreshed table is the one the Administrator was
+  looking at.
 
 ### No layout shift
 
