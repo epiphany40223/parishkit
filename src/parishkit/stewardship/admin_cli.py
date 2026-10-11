@@ -43,7 +43,8 @@ export`` (PR 8a, in ``admin_reports``), the export lifecycle (PR 8b, in
 ``admin_report_reads``), the digests (PR 8d, in ``admin_digests``), the
 Family-level exports (PR 8e, in ``admin_family_exports``), the Family
 portal maintenance switch (PR 7a, in ``admin_portal``), ``report
-source-form`` (in ``admin_source_form``) and ``files list``, ``files
+source-form`` (in ``admin_source_form``), ``report data-to-fix`` (in
+``admin_data_to_fix``) and ``files list``, ``files
 delete`` and ``files rename`` (PR 10, in ``admin_hosted_files``). A
 command that streams a file (``logs export`` and
 ``export download --stream``) writes the file's bytes, and nothing else, to
@@ -1616,6 +1617,13 @@ def report_source_form(args, preamble, runtime, context):
     return read_source_form(context["caller"], runtime)
 
 
+def report_data_to_fix(args, preamble, runtime, context):
+    """Data to fix in ParishSoft's section counts, counts only (#1011)."""
+    from .admin_data_to_fix import read_data_to_fix
+
+    return read_data_to_fix(context["caller"], runtime)
+
+
 def digest_list(args, preamble, runtime, context):
     """The Emailed reports page's lists of retained reports (ADM-11)."""
     from .admin_digests import read_list
@@ -3138,6 +3146,7 @@ def _report_specs():
     (``admin_digests``) and PR 8e the Family-level exports
     (``admin_family_exports``).
     """
+    from .admin_data_to_fix import DataToFixReport
     from .admin_digests import DailyDigest, DigestList, WeeklyDigest, WeeklyRequest
     from .admin_exact_exports import ExactChange, ExactStatus
     from .admin_exports import ExportChange, ExportDownload, ExportStatus
@@ -3501,6 +3510,18 @@ def _report_specs():
             SourceFormReport.field_names(),
             8,
             audit_event="source_form_viewed",
+        ),
+        # Data to fix in ParishSoft (#1011): section counts only, for the
+        # sections the reader's role may see, as the page.
+        CommandSpec(
+            "report data-to-fix",
+            "Count the data problems to fix in ParishSoft, by kind.",
+            report_data_to_fix,
+            "read_only",
+            False,
+            DataToFixReport.field_names(),
+            8,
+            audit_event="data_to_fix_viewed",
         ),
     )
 

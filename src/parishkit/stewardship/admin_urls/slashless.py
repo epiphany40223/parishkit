@@ -33,6 +33,7 @@ SLASHLESS = (
     ("parish/files/deletion", "hosted_file_delete"),
     ("parish/files/<uuid:file_id>/name", "hosted_file_rename"),
     ("parish/parishsoft-refresh", "source_refresh"),
+    ("parish/data-to-fix", "parishsoft_fixes"),
     ("changes/<uuid:request_id>", "configuration_request"),
     # The group roots, like /admin/system above.
     ("campaign", "campaign_root"),
