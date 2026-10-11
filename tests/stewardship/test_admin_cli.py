@@ -189,6 +189,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert options["--family"]["required"]
     assert not options["--names"]["takes_value"]
     assert not options["--timezone"]["required"]
+    assert options["--format"]["choices"] == ["csv", "xlsx", "pdf"]
     assert review["result_fields"][-1] == "export"
     status = entries["test status"]
     assert status["scope"] == "read_only" and status["audit_event"] is None
@@ -294,7 +295,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert listing["audit_event"] == "system_logs_viewed"
     assert export["audit_event"] == "system_logs_exported"
     options = {option["name"]: option for option in export["options"]}
-    assert options["--format"]["choices"] == ["csv", "jsonl"]
+    assert options["--format"]["choices"] == ["csv", "xlsx", "jsonl"]
     assert "--through" not in options and "--page" not in options
     # The export lifecycle: status is any session's passive read with
     # --watch and no view event; every other command needs a full-scope

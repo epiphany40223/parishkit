@@ -1,4 +1,4 @@
-"""Admin/Staff Census changes worklist, with CSV and XLSX downloads (#528).
+"""Admin/Staff Census changes worklist, with CSV, XLSX and PDF downloads (#528).
 
 The page and its downloads follow the Talents and limitations report
 (``talent_views``): filters, sorting and paging travel in CSRF-protected
@@ -22,12 +22,14 @@ from django.views.decorators.http import require_http_methods
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
-from parishkit.stewardship.accounts.sessions import authenticated_admin
+from parishkit.stewardship.accounts.sessions import authenticated_admin, database_now
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
+from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.exports import download_headers
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
@@ -40,6 +42,7 @@ from .census_changes import (
     CensusQuery,
     census_changes,
     census_csv,
+    census_pdf,
     census_xlsx,
 )
 from .export_views import SAFE_FAILURES
@@ -48,6 +51,7 @@ from .read_admission import admit_report_read
 FORMATS = {
     "csv": "text/csv",
     "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "pdf": "application/pdf",
 }
 # The filter's choices, in order, with their plain labels.
 STATUS_LABELS = {
@@ -308,10 +312,35 @@ def report(request, campaign_id):
 
 @require_http_methods(["POST"])
 def export(request, campaign_id):
-    """Download the filtered list as CSV or XLSX, rendered on request."""
+    """Download the filtered list as CSV, XLSX or PDF, rendered on request."""
 
     def render(result, query, extra):
-        """The chosen file format, with times in the chosen timezone."""
+        """The chosen file format, with times in the chosen timezone.
+
+        The PDF also names the parish and campaign in its page header and
+        dates itself in the parish's date format, lent explicitly so the
+        file never depends on the request's date middleware (as the
+        response lists' downloads do).
+        """
+        if extra["format"] == "pdf":
+            parish = (
+                SystemConfiguration.objects.select_related(
+                    "active_configuration__parish"
+                )
+                .get()
+                .active_configuration.parish
+            )
+            campaign = Campaign.objects.select_related("active_configuration").get(
+                pk=campaign_id
+            )
+            with dates.using(parish.date_format):
+                return census_pdf(
+                    result,
+                    extra["zone"],
+                    parish=parish.name,
+                    campaign=campaign.active_configuration.name,
+                    as_of=database_now(),
+                )
         if extra["format"] == "xlsx":
             return census_xlsx(result, extra["zone"])
         return census_csv(result, extra["zone"])

@@ -110,3 +110,38 @@ def test_only_the_configure_capability_reads_the_names(monkeypatch, roles, allow
     else:
         with pytest.raises(PermissionError):
             export_services.authorize(None, REQUESTER, request=export)
+
+
+def test_xlsx_and_pdf_carry_the_csvs_columns():
+    """One column set in every format (#966): the XLSX sheet is the CSV's
+    table, and each PDF card holds exactly a row's DUID and name."""
+    from openpyxl import load_workbook
+
+    from parishkit.stewardship.reports.family_test_names import FORMATS, HEADINGS
+    from parishkit.stewardship.reports.information_rendering import (
+        information_records,
+    )
+
+    assert FORMATS == ("csv", "xlsx", "pdf")
+    rows = [(1234, "Squyres, Tracy and Jeff"), (99, "")]
+    document = names_document(request(rows))
+    output = io.BytesIO()
+    render_information(document, output, format="csv")
+    table = [line[:2] for line in csv.reader(io.StringIO(output.getvalue().decode()))]
+    del table[1]  # the CSV's report-information row
+    output = io.BytesIO()
+    render_information(document, output, format="xlsx")
+    book = load_workbook(io.BytesIO(output.getvalue()))
+    sheet = [
+        ["" if value is None else value for value in values]
+        for values in book["Families"].iter_rows(values_only=True)
+    ]
+    assert sheet == table and tuple(sheet[0]) == HEADINGS
+    _, *cards = information_records(document)
+    assert [(card.title, card.fields) for card in cards] == [
+        ("Squyres, Tracy and Jeff (DUID 1234)", ()),
+        ("DUID 99", ()),
+    ]
+    output = io.BytesIO()
+    render_information(document, output, format="pdf")
+    assert output.getvalue().startswith(b"%PDF-")

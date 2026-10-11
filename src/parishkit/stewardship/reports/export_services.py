@@ -335,6 +335,7 @@ def regenerate_export(store, user_id, request_id, *, request_key):
                 families=None,
                 browser_timezone=original.browser_timezone,
                 request_key=request_key,
+                format=original.format,
                 snapshot=original.family_test_names_snapshot,
             )
         return create_export(

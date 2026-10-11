@@ -1,5 +1,6 @@
 """Census changes worklist under the real web role (#528)."""
 
+import csv
 import io
 from uuid import uuid4
 
@@ -92,8 +93,8 @@ def test_worklist_reads_proposals_with_their_status(response_service):
 
 
 def test_native_page_and_downloads(response_service, google, settings):
-    """The page filters by CSRF POST; CSV and XLSX carry the same rows, and
-    the view and download are audited."""
+    """The page filters by CSRF POST; CSV, XLSX and PDF carry the same rows
+    under the same headings, and the view and download are audited."""
     settings.STEWARDSHIP_DOWNLOAD_POOL = None  # restricted_download_pool sets it
     harness = response_service
     start(harness)
@@ -126,21 +127,31 @@ def test_native_page_and_downloads(response_service, google, settings):
         assert response.status_code == 200 and response["Content-Type"] == "text/csv"
         assert "stewardship-census-changes-" in response["Content-Disposition"]
         assert b"Requested" in body and b"How it reaches ParishSoft" in body
+        table = list(csv.reader(io.StringIO(body.decode())))
         # Member DUID is appended last, so positional readers keep working.
-        lines = body.decode().splitlines()
-        assert lines[0].endswith(",Submitted,Member DUID")
-        assert any(line.endswith(",3") for line in lines[1:])
+        assert table[0][-2:] == ["Submitted", "Member DUID"]
+        assert any(values[-1] == "3" for values in table[1:])
         response, body = search(
             browser, export, {"format": "xlsx", "timezone": "UTC", "status": "all"}
         )
         assert response.status_code == 200
         book = load_workbook(io.BytesIO(body))
         assert book.sheetnames == ["Census changes"]
-        answers = [cell.value for cell in book["Census changes"]["F"][1:]]
-        assert "Requested" in answers
-        duids = [cell.value for cell in book["Census changes"]["K"]]
-        assert duids[0] == "Member DUID" and "3" in duids
-        assert search(browser, export, {"format": "pdf"})[0].status_code == 400
+        sheet = [
+            ["" if value is None else value for value in values]
+            for values in book["Census changes"].iter_rows(values_only=True)
+        ]
+        # One column set and the same rows in both files (#966).
+        assert sheet == table
+        assert "Requested" in [values[5] for values in sheet[1:]]
+        response, body = search(
+            browser, export, {"format": "pdf", "timezone": "UTC", "status": "all"}
+        )
+        assert response.status_code == 200
+        assert response["Content-Type"] == "application/pdf"
+        assert ".pdf" in response["Content-Disposition"]
+        assert body.startswith(b"%PDF-")
+        assert search(browser, export, {"format": "png"})[0].status_code == 400
     assert AuditEvent.objects.filter(event_type="census_changes_viewed").exists()
     assert AuditEvent.objects.filter(event_type="census_changes_exported").exists()
     contexts = [

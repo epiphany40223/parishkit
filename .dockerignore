@@ -73,6 +73,7 @@
 !src/parishkit/stewardship/schema/migrations/0046_restore_begin_keeps_review.sql
 !src/parishkit/stewardship/schema/migrations/0047_portal_users.sql
 !src/parishkit/stewardship/schema/migrations/0048_restore_holds_after_release.sql
+!src/parishkit/stewardship/schema/migrations/0049_family_test_names_formats.sql
 !src/parishkit/stewardship/schema/due_work_health.sql
 !src/parishkit/stewardship/schema/family_dispatch.sql
 !src/parishkit/stewardship/schema/production.sql

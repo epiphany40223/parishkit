@@ -5,8 +5,10 @@ the Administrator recognizes the Families before real Family data goes to
 the Testing recipient. The command line prints only the DUIDs; ``pk-admin
 test families-preview --names`` instead captures the names the review read
 (``FamilyTestNamesSnapshot``) and requests a ``family_test_names`` export
-of them through the shared export lifecycle. The worker renders the CSV and
-``export fetch`` downloads it, so the names reach nothing but the file.
+of them through the shared export lifecycle. The worker renders the CSV,
+XLSX or PDF (``information_rendering``, as the other captured reports; all
+three carry the same columns, #966) and ``export fetch`` downloads it, so
+the names reach nothing but the file.
 
 The capture is the review's own: the caller passes the names the page's
 ``prepare`` read (``snapshot_family_names``) in the review's transaction,
@@ -39,6 +41,8 @@ from .export_services import (
 
 REPORT = "family_test_names"
 HEADINGS = ("Family DUID", "Family name")
+# Every data export offers CSV, XLSX and PDF (#966).
+FORMATS = ("csv", "xlsx", "pdf")
 
 
 def parameters_for(revision_id, duids):
@@ -55,13 +59,15 @@ def create_family_test_names_export(
     families,
     browser_timezone,
     request_key,
+    format="csv",
     snapshot=None,
 ):
-    """Capture the reviewed names once and request their CSV export.
+    """Capture the reviewed names once and request their export as ``format``.
 
-    ``families`` is the review's ``(duid, name)`` pairs in its order. A
-    repeated ``request_key`` returns the export it made when the selection
-    (revision, DUIDs, time zone) is the same, and is refused
+    ``families`` is the review's ``(duid, name)`` pairs in its order;
+    ``format`` is one of ``FORMATS``. A repeated ``request_key`` returns the
+    export it made when the selection (revision, DUIDs, format, time zone)
+    is the same, and is refused
     (``ExportRequestBound``) otherwise; the names are not compared, as a
     renamed Family is the same one. ``snapshot`` is the retained capture
     for regeneration (with ``families`` None), never a caller's input. The
@@ -75,6 +81,8 @@ def create_family_test_names_export(
         raise ValueError("Export identities must be canonical UUIDs.")
     if type(browser_timezone) is not str or browser_timezone not in timezone_names():
         raise ValueError("Export timezone must be an IANA name.")
+    if format not in FORMATS:
+        raise ValueError("Unsupported names export format.")
     if snapshot is None:
         families = tuple(families or ())
         if not families:
@@ -116,7 +124,7 @@ def create_family_test_names_export(
                 REPORT,
                 campaign_id,
                 parameters,
-                "csv",
+                format,
                 browser_timezone,
                 None if snapshot is None else snapshot.pk,
             ):
@@ -155,7 +163,7 @@ def create_family_test_names_export(
             family_test_names_snapshot=snapshot,
             configuration_id=configuration_id,
             report=REPORT,
-            format="csv",
+            format=format,
             browser_timezone=browser_timezone,
             parameters=parameters,
             authorization_scope={"capability": Capability.CAMPAIGN_REPORT.value},
@@ -174,7 +182,7 @@ def create_family_test_names_export(
 
 @dataclass(frozen=True, repr=False)
 class FamilyTestNamesDocument:
-    """The captured names as the shared CSV writer renders them."""
+    """The captured names as the shared CSV, XLSX and PDF writers render them."""
 
     metadata: tuple[tuple[str, str], ...]
     rows: tuple[tuple[str, ...], ...]
