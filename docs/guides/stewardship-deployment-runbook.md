@@ -856,7 +856,9 @@ stops with the maintenance page up. Ctrl-C or a kill of the host half does
 the same with an `INTERRUPTED:` line in the log. A dropped ssh session
 delivers no signal: the running command finishes or reaches its limit, and
 the run ends at its next output. Before repeating a run that ended any
-other way, check that no one-off container is left (`docker ps`).
+other way, check that no one-off container is left (`docker ps`). A step-4
+command that fails has all of its output printed and logged after a
+`FAILED:` line, not only its last line.
 
 If the conversion refuses (a list that differs from the preview's, or SQL's
 last-Administrator guard), the configuration keeps its sign-in rules, the
