@@ -1,16 +1,16 @@
 """Limitations report under the real web role (#247, #970).
 
-The report was "Talents and limitations". Responses submitted before talents
-were retired keep their stored talents; ``submit_live`` stores one such
-response as a form opened before #970 would send it (the configured default
-talents are still accepted), and the report must leave those talents out.
+The report was "Talents and limitations". ``submit_live`` sends talents as a
+form opened before #970 would; they are dropped, not stored. Responses
+submitted before then keep their stored talents (``store_old_talents``
+recreates one), and the report must neither list nor count them.
 """
 
 import io
 from uuid import uuid4
 
 import pytest
-from django.db import transaction
+from django.db import connection, transaction
 from django.urls import reverse
 from openpyxl import load_workbook
 
@@ -45,7 +45,7 @@ PAINTER, OTHER = DEFAULT_TALENTS[0].id, DEFAULT_TALENTS[-1].id
 
 
 def submit_live(harness, *, cannot_serve=False):
-    """One live response with stored talents (as before #970) and limitations."""
+    """One live response with limitations, sent with talents as before #970."""
     with web_login():
         form = load_form(harness)
         answers = answers_for(form)
@@ -62,6 +62,28 @@ def submit_live(harness, *, cannot_serve=False):
         if cannot_serve:
             answers["ministries"]["members"]["3"] = {"join": [], "leave": [4]}
         return respond(harness, form, answers)
+
+
+def store_old_talents(submission, member, cannot_serve):
+    """Rewrite one stored Member entry as a response from before #970 held it.
+
+    The guard refuses talents on every new insert since migration 0056, and
+    submissions are immutable, so the test turns triggers off for this one
+    statement, as only a response recorded before then could look.
+    """
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute("SET LOCAL session_replication_role = replica")
+        cursor.execute(
+            "UPDATE stewardship_submission SET answers=jsonb_set(answers,"
+            "ARRAY['service','members',%s],%s::jsonb) WHERE id=%s",
+            [
+                member,
+                f'{{"cannot_serve": {str(cannot_serve).lower()}, '
+                f'"talents": {{"{PAINTER}": "", "{OTHER}": "Organ"}}}}',
+                submission.pk,
+            ],
+        )
+        cursor.execute("SET LOCAL session_replication_role = origin")
 
 
 def report(harness, principal=STAFF, **values):
@@ -88,16 +110,22 @@ def test_report_lists_limitations_and_filters(response_service):
     start(harness)
     harness = activate_response_service(harness)
     submission = submit_live(harness, cannot_serve=True)
-    # The stored answer keeps its talents (#970); the report never shows them.
-    assert submission.answers["service"]["members"]["3"]["talents"] == {
-        PAINTER: "",
-        OTHER: "Organ",
-    }
+    # Talents a form opened before #970 sends are dropped, not stored.
+    assert submission.answers["service"]["members"]["3"]["talents"] == {}
+    # A response from before then keeps its talents; the report ignores them,
+    # and lists no Member only for a talent.
+    store_old_talents(submission, "3", False)
+    old = report(harness)
+    assert old["members"] == [] and len(old["families"]) == 1
+    assert old["summary"] == {"cannot_serve": 0, "cannot_attend": 1}
+    store_old_talents(submission, "3", True)
     result = report(harness)
     assert len(result["members"]) == 1 and len(result["families"]) == 1
     row = result["members"][0]
     assert "talents" not in row
     assert row["cannot_serve"] is True and row["member_name"]
+    # The Member's DUID comes from the SQL (#932); Member 3 is the fixture's.
+    assert row["member_duid"] == 3 and row["proposed"] is False
     # Both tables name the Family as every Admin table does (#932).
     family = result["families"][0]
     assert ", " in row["family_name"] and family["family_name"] == row["family_name"]
@@ -184,7 +212,7 @@ def test_native_page_and_downloads(response_service, google, settings):
         # The Families table has the page's columns: no Cannot attend Mass.
         assert b"\r\nFamily,Family DUID,Latest response\r\n" in body
         assert body.startswith(
-            b"Member,Family,Family DUID,Cannot participate in ministries,"
+            b"Member,Member DUID,Family,Family DUID,Cannot participate in ministries,"
             b"Latest response\r\n"
         )
         response, body = search(browser, export, {"format": "xlsx", "timezone": "UTC"})
@@ -194,12 +222,14 @@ def test_native_page_and_downloads(response_service, google, settings):
         assert book.sheetnames == ["Members", "Families"]
         assert [cell.value for cell in book["Members"][1]] == [
             "Member",
+            "Member DUID",
             "Family",
             "Family DUID",
             "Cannot participate in ministries",
             "Latest response",
         ]
-        assert book["Members"]["D2"].value == "Yes"
+        assert book["Members"]["B2"].value == "3"
+        assert book["Members"]["E2"].value == "Yes"
         # The PDF is offered too (#966), named and typed as one.
         response, body = search(browser, export, {"format": "pdf", "timezone": "UTC"})
         assert response.status_code == 200
