@@ -693,6 +693,13 @@ filters only. **Precedent.** #532 (in-place review), #523
 ([preview lifetimes](../admin-portal/spec.md#preview-lifetimes)), #882 (New and
 Edit pages follow it).
 
+A status that can no longer be read never looks as if it were still
+waiting. When the follow-up's status read is refused (the sign-in ended, or
+the change removed the reader's own access), Change status replaces its
+running indicator with a plain final "Status unavailable" message
+(`template[data-live-refused]`, `live-status-v1.js`), and a table's Delete
+dialog says the change was saved but its status can't be checked (#952).
+
 Current state, to be made consistent: only Parish settings and Campaign
 settings review, apply and follow the change in place
 ([in-place review](#in-place-controls), #532); every other editor still uses
