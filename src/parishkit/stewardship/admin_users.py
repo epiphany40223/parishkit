@@ -42,7 +42,7 @@ from dataclasses import dataclass
 from django.db import DatabaseError
 
 from .admin_changes import InvalidChange
-from .admin_reads import ReadModel, _held, _recheck, config_request
+from .admin_reads import ReadModel, Unavailable, _held, _recheck, config_request
 
 TOKEN_LIMIT = 256_000
 CHANGES_LIMIT = 256_000
@@ -152,13 +152,39 @@ def preview_users(caller, service, *, expected_version, changes):
     from .accounts.admin_editing import sign_preview
     from .accounts.policy import Capability
     from .accounts.request_patch import build_candidate
-    from .accounts.user_changes import UserRefused, member_names, plan_changes
+    from .accounts.user_changes import (
+        LookupLimited,
+        UserRefused,
+        clean_email,
+        member_names,
+        plan_changes,
+    )
     from .accounts.user_views import SALT, _users
     from .campaigns.work_locks import read_transaction
     from .storage import StaleRecordError
 
     actor = _admit(caller, service)
     entries = parse_users(changes)
+    # Each added user without a Name gets the page's ParishSoft default. The
+    # lookup definer writes its own audit event and counts against this
+    # Administrator's hourly limit, so it runs here, before the read-only
+    # snapshot below, under this command's own session.
+    found = {}
+    for entry in entries:
+        if "id" in entry or entry.get("name") is not None:
+            continue
+        try:
+            email = clean_email(entry.get("email"))
+        except UserRefused:
+            continue  # plan_changes reports it at its entry.
+        if email not in found:
+            try:
+                found[email] = member_names(caller.session.session_key, email)
+            except LookupLimited:
+                raise Unavailable(
+                    "Too many ParishSoft Name lookups this hour; give each new "
+                    "user a name, or try again later."
+                ) from None
 
     def step():
         """Plan, validate and sign in one snapshot, as the page's Review does."""
@@ -166,7 +192,7 @@ def preview_users(caller, service, *, expected_version, changes):
 
         def default_name(email):
             """The page's ParishSoft default, counting the names not used."""
-            names = member_names(email)
+            names = found.get(email, [])
             others[email] = max(len(names) - 1, 0)
             return names[0] if names else None
 

@@ -659,7 +659,19 @@ Administrator may override.
       database login can still insert a portal user (a recorded Google
       identity) for any address and then read that address's names. That is
       weaker than its existing ability to match an Admin rule, and each guess
-      is recorded. SQL's activation guard
+      is recorded. New user's
+      [Name from ParishSoft](../admin-portal/spec.md#name-from-parishsoft)
+      lookup (migration 0053) answers any typed address, so its definer does
+      not trust the web code: it answers only for an Admin session key that
+      names a live session whose user is an Administrator at that moment,
+      records its own audit event for each lookup (that Administrator and the
+      number of names returned, never the address) and refuses a 61st lookup
+      by one Administrator within an hour, counted from those events. A
+      compromised web login that holds a live Administrator session's key can
+      therefore read at most 60 addresses' names an hour for each
+      Administrator, each traced to that Administrator. The page also limits
+      each Administrator's lookups per minute and refuses them while the
+      limiter is unavailable. SQL's activation guard
       refuses it, and any other activation into the users form, unless every
       address that held Administrator keeps an Administrator user.
    3. **Swap functions:** the second migration replaces the SQL functions.

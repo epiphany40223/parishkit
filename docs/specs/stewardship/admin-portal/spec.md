@@ -3707,7 +3707,14 @@ only the count of names found. The same answer says when the address is not
 one email address or is already a user, shown at the Email field. The web
 login reads the names through one SECURITY DEFINER function
 (`stewardship_member_names_for_v1`, migration 0053), which returns only
-names, never another contact field.
+names, never another contact field. The function enforces its own rules: it
+answers only for the caller's live Admin session whose user is an
+Administrator now, records the lookup's audit event itself, and refuses an
+Administrator's 61st lookup within an hour. The page also refuses an
+Administrator's 20th lookup within a minute, and every lookup while the
+rate limiter is unavailable; a refused lookup says the names couldn't be
+looked up, and the Name is typed instead
+([residual risk](../operations/spec.md#users-upgrade-from-sign-in-rules)).
 
 - **No match:** Name stays empty and required.
 - **One name:** Name is filled in, and stays editable.

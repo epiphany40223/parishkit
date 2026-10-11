@@ -2,9 +2,11 @@
 
 Its SQL is the frozen file ``schema/migrations/0053_user_name_lookup.sql``,
 read whole and never parsed. It adds one SECURITY DEFINER function,
-``stewardship_member_names_for_v1(text)``: the ordered, distinct names of the
-current ParishSoft Members whose contact record lists one address, which the
-New user page offers as the Name's default. It ends with a DO block that
+``stewardship_member_names_for_v1(text, text, uuid)``: the ordered, distinct
+names of the current ParishSoft Members whose contact record lists one
+address, which the New user page offers as the Name's default. It answers
+only a live Administrator session, at most 60 times an hour for each
+Administrator, and records an audit event for each lookup. It ends with a DO block that
 refuses to commit unless the function is installed as declared. No model
 changes, so there is no state operation. Reversing needs its own forward
 migration, so, like the baseline, it has no reverse operation.
