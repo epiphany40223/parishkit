@@ -38,7 +38,7 @@ _COMMAND_OPTIONS = {
     "prepare-development": {"runtime_root"},
     "bootstrap": {"config", "phase", "deployment_id", "admin_email"},
     "migrate": {"config", "users_upgrade_base"},
-    "backup": {"config"},
+    "backup": {"config", "users_upgrade_resume"},
     "backup-keygen": {"destination"},
     "backup-open": {"key", "input", "destination"},
     "backup-prove": {"key", "input"},
@@ -261,6 +261,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         help=(
             "migrate only: stop before the users swap, so database-grants and "
             "upgrade-users can run before the full migration (#952)"
+        ),
+    )
+    parser.add_argument(
+        "--users-upgrade-resume",
+        action="store_true",
+        default=None,
+        help=(
+            "backup only: when a users upgrade's base migration stopped "
+            "partway, report the run's recent pre-upgrade backup instead (#952)"
         ),
     )
     parser.add_argument(

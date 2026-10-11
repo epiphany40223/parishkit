@@ -52,7 +52,9 @@
 # converts, and only then migrates the rest and applies the grants again.
 # Without them, a release that needs the conversion stops at its migration
 # (the swap refuses an unconverted configuration) with the maintenance page
-# up, and the run is repeated with them. No address is ever written here.
+# up, and the run is repeated with them. A repeat after a base migration
+# that stopped partway reuses the first run's backup (step 1). No address
+# is ever written here.
 
 set -euo pipefail
 # shellcheck disable=SC2034 # REPO is validated by the laptop half; kept for the fixed argument order
@@ -420,7 +422,19 @@ phase=background
 [ -z "$background" ] || "${dc[@]}" stop $background 2>&1 | quiet
 
 step "1. Backup (required) and its off-host copy"
-backup=$("${dc[@]}" run --rm -T backup-worker 2>&1 | grep -v '"DEBUG"' | tail -1 || true)
+# A repeated users upgrade (#952) whose earlier run already retargeted to
+# this image may find that run's base migration stopped partway, with
+# migrations outside the swap pending, which the backup refuses. Asked to
+# resume, the backup then reports that run's step-1 backup (recent, the
+# restore point of this upgrade) instead of taking one; in any other state
+# it backs up as usual. The worker runs the image the documents name, so
+# the option is passed only once they name this one.
+backup_args=()
+if [ "$users_upgrade" = 1 ] && [ "$resumed" = 1 ] && [ "$previous" = "$image" ]; then
+    backup_args=(backup --config "$services/backup-worker.yaml" --users-upgrade-resume)
+fi
+backup=$("${dc[@]}" run --rm -T backup-worker ${backup_args[@]+"${backup_args[@]}"} 2>&1 |
+    grep -v '"DEBUG"' | tail -1 || true)
 echo "    $backup"
 echo "$(date -u +%FT%TZ) $backup" >>"$logdir/stewardship-backup.log"
 # LOCAL refuses every off-host target, so its backup reports the copy as
@@ -433,9 +447,21 @@ offsite_ok=0
 case "$profile:$offsite" in
     production:uploaded | local:uploaded | local:not_configured) offsite_ok=1 ;;
 esac
-if [ "$(jq -r '.backup_recorded' <<<"$backup" 2>/dev/null)" != true ] || [ "$offsite_ok" -ne 1 ]; then
+recorded=$(jq -r '.backup_recorded' <<<"$backup" 2>/dev/null || true)
+if [ "$recorded" != true ] && [ "${#backup_args[@]}" -gt 0 ] &&
+    [ "$(jq -r '.backup_reused' <<<"$backup" 2>/dev/null || true)" = true ]; then
+    # Recorded in stewardship-backup.log (above) and said here.
+    echo "    REUSED BACKUP: the earlier run's base migration stopped partway; its backup of"
+    echo "    $(jq -r '.reused_backup.completed_at' <<<"$backup") (manifest $(jq -r '.reused_backup.manifest_digest' <<<"$backup")) stays this upgrade's restore point"
+    recorded=true
+fi
+if [ "$recorded" != true ] || [ "$offsite_ok" -ne 1 ]; then
     # The EXIT trap restarts the background services (phase background).
     echo "The backup did not complete with its off-host copy; abandoning the $mode." >&2
+    if [ "$resumed" = 1 ] && [ "$users_upgrade" = 0 ]; then
+        echo "If an earlier run of the users release stopped in its step 4, repeat it with the" >&2
+        echo "STEWARDSHIP_USERS_* variables (runbook, Users upgrade)." >&2
+    fi
     exit 1
 fi
 

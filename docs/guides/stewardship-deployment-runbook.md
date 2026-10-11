@@ -818,13 +818,31 @@ maintenance page up and nothing of the swap committed; repeat it with them.
 The local environment's `deploy --schema-change` passes the same variables.
 
 Every stop in this step 4 (no inputs, a refused conversion, a failed final
-migration, an interruption) leaves only the swap pending, which every
-online service refuses, so the maintenance page stays up until a repeated
-run finishes. The repeat runs from step 1: its backup admits a database
-with only the swap pending (that set restores exactly this state), and
+migration, a failed `database-grants`, an interruption) leaves only the
+swap pending, which every online service refuses, so the maintenance page
+stays up until a repeated run finishes. The repeat runs from step 1: its
+backup admits a database with only the swap pending (that set restores
+exactly this state; `restore-check` reports it as `swap_pending`, see the
+[backup runbook](stewardship-backup-runbook.md#restore-for-real)), and
 because `web` was already stopped when it began, a failure before its
 retarget starts nothing and leaves the maintenance page up rather than
 starting services that would refuse the schema.
+
+A base migration that stopped partway (a failure or its time limit) leaves
+migrations outside the swap pending too, which no backup admits. Repeat
+the run the same way, with the same digest and the `STEWARDSHIP_USERS_*`
+variables, within 24 hours of the first run's backup: its step-1 backup
+then finds that state and reports the first run's backup instead of taking
+one (`backup --users-upgrade-resume`). That backup, taken before anything
+changed, stays the upgrade's restore point (with the previous release); the
+run prints `REUSED BACKUP:` with its time and manifest digest, and
+`stewardship-backup.log` records the line. Only the scripted repeat passes
+that option, and only when the documents already name the release, so a
+first run always backs up. Without the variables, or after 24 hours, the
+backup refuses and the maintenance page stays up: fail forward with a
+repeat within the window, or roll back by restoring the pre-upgrade backup
+with the previous release ([Rollback](#rollback)); an image-only rollback
+refuses a changed schema.
 
 Every step-4 command of the script runs under a time limit (30 minutes for
 each migration, 15 for the conversion, 10 for the preview and each
