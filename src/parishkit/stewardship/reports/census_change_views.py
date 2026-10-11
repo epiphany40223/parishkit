@@ -1,7 +1,7 @@
 """Admin/Staff Census changes worklist, with CSV, XLSX and PDF downloads (#528).
 
 The page and its downloads follow the Limitations report
-(``talent_views``): filters, sorting and paging travel in CSRF-protected
+(``limitation_views``): filters, sorting and paging travel in CSRF-protected
 POST bodies, so search text never reaches an address; the table pages and
 sorts in place; a download is the filtered list rendered in memory, in the
 timezone the page chose (this browser's); and every view and download is
@@ -194,7 +194,7 @@ def _respond(request, campaign_id, *, export, render):
     ``render(result, query, extra)`` returns the bytes. Both the page and a
     download read on the web connection under the interactive campaign read
     guard; a download is rendered in memory, not a stored export file, as
-    the Limitations report's is (see ``talent_views._respond``).
+    the Limitations report's is (see ``limitation_views._respond``).
     """
     finish, handed_off = None, False
     action = Action.CENSUS_CHANGES_EXPORTED if export else Action.CENSUS_CHANGES_VIEWED

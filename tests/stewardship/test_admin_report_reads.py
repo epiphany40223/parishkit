@@ -160,11 +160,11 @@ def financial():
 
 
 def limitations():
-    """``talents_report``'s shaped result: the summary and a Member row."""
+    """``limitations_report``'s shaped result: the summary and a Member row."""
     return admin_report_reads.limitations_model(
         CAMPAIGN,
         {
-            "summary": {"members": 1, "cannot_serve": 1, "cannot_attend": 1},
+            "summary": {"cannot_serve": 1, "cannot_attend": 1},
             "members": [{"member_name": "Private Member"}],
         },
     )

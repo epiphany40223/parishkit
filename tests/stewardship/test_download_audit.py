@@ -32,10 +32,10 @@ from parishkit.stewardship.audit.schemas import (
     Outcome,
     sanitize,
 )
+from parishkit.stewardship.reports.limitation_views import audit_choices
+from parishkit.stewardship.reports.limitations import SHOW_WORDS, LimitationsQuery
 from parishkit.stewardship.reports.response_lists import LISTS, ListQuery
 from parishkit.stewardship.reports.response_metrics import MODES
-from parishkit.stewardship.reports.talent_views import TALENT_WORDS, audit_choices
-from parishkit.stewardship.reports.talents import TalentQuery
 
 ROOT = Path(__file__).resolve().parents[2]
 SNAPSHOT = "00000000-0000-0000-0000-000000000001"
@@ -91,11 +91,12 @@ def test_report_filters_are_exactly_the_reports_choices():
     """The closed vocabulary follows the reports' own menus, no more.
 
     Submitted's retired Show values (#860) stay, since earlier events
-    recorded them, though the list itself now refuses them.
+    recorded them, though the list itself now refuses them. So does the
+    Limitations report's ``option`` (a talent filter, retired with #970).
     """
     shows = {choice.value for spec in LISTS.values() for choice in spec.choices}
     shows |= {"invited", "uninvited"}
-    assert shows | TALENT_WORDS | {"option"} == REPORT_FILTERS
+    assert shows | SHOW_WORDS | {"option"} == REPORT_FILTERS
     assert set(MODES) == REPORT_MODES
 
 
@@ -142,18 +143,28 @@ def test_response_list_audit_choices():
     assert "snapshot_id" not in audit_choices(query, None)
 
 
-def test_talent_audit_choices_never_keep_the_search_text():
-    query = TalentQuery.parse({"search": "Smith", "talent": OPTION})
+def test_limitations_audit_choices_never_keep_the_search_text():
+    query = LimitationsQuery.parse({"search": "Smith", "show": "cannot_attend"})
     context = audit_choices(query, None)
-    assert context == {
-        "search_used": True,
-        "report_filter": "option",
-        "talent_option_id": UUID(OPTION),
-    }
+    assert context == {"search_used": True, "report_filter": "cannot_attend"}
     assert "Smith" not in str(sanitize(ContextKind.ACTION, context))
-    plain = audit_choices(TalentQuery.parse({"talent": "cannot_serve"}), uuid4())
+    plain = audit_choices(LimitationsQuery.parse({"show": "cannot_serve"}), uuid4())
     assert plain["report_filter"] == "cannot_serve" and not plain["search_used"]
     assert "talent_option_id" not in plain and "snapshot_id" in plain
+
+
+def test_talent_filter_rows_from_before_970_still_read():
+    """Rows that recorded a talent filter stay valid and worded (#970)."""
+    context = {"report_filter": "option", "talent_option_id": UUID(OPTION)}
+    assert sanitize(ContextKind.ACTION, context) == {
+        "report_filter": "option",
+        "talent_option_id": OPTION,
+    }
+    rows = detail_labels([("report_filter", "option"), ("talent_option_id", OPTION)])
+    assert [(str(key), str(value)) for key, value in rows] == [
+        ("Filter chosen", "One talent"),
+        ("Talent chosen (its settings id)", OPTION),
+    ]
 
 
 def test_system_logs_show_the_choices_in_words():

@@ -32,6 +32,7 @@ from ..reports import (
     financial_views,
     information_export_views,
     information_views,
+    limitation_views,
     ministry_export_views,
     ministry_followup_views,
     response_dashboard,
@@ -41,7 +42,6 @@ from ..reports import (
     workspace_views,
 )
 from ..reports import ministry_views as ministry_report_views
-from ..reports import talent_views as talent_report_views
 from ..web.admin_routes import current_campaign
 
 
@@ -85,10 +85,10 @@ patterns = [
         financial_export_views.create,
         "financial_export",
     ),
-    _page("reports/limitations/", talent_report_views.report, "limitations_report"),
+    _page("reports/limitations/", limitation_views.report, "limitations_report"),
     _page(
         "reports/limitations/exports/",
-        talent_report_views.export,
+        limitation_views.export,
         "limitations_export",
     ),
     _page("reports/census/", census_change_views.report, "census_changes"),

@@ -30,6 +30,7 @@ from parishkit.stewardship.reports.information_rendering import (
     information_records,
     information_xlsx,
 )
+from parishkit.stewardship.reports.limitations import limitations_xlsx, shape_result
 from parishkit.stewardship.reports.ministry_packets import packet_records, render_packet
 from parishkit.stewardship.reports.response_lists import (
     LISTS,
@@ -38,7 +39,6 @@ from parishkit.stewardship.reports.response_lists import (
     list_file,
 )
 from parishkit.stewardship.reports.spreadsheets import participation_xlsx
-from parishkit.stewardship.reports.talents import shape_result, talents_xlsx
 
 from .test_directory_rendering import document as directory
 from .test_directory_rendering import item as family
@@ -225,8 +225,8 @@ def test_participation_census_and_limitations_workbooks_share_the_style():
     sheet = book["Census changes"]
     assert tuple(cell.value for cell in sheet[1]) == HEADINGS
     assert_styled_table(sheet, first_column=True)
-    shaped = shape_result(limitations_result({}, {}), configuration={"modules": []})
-    book = load_workbook(io.BytesIO(talents_xlsx(shaped, ZoneInfo("UTC"))))
+    shaped = shape_result(limitations_result({}, {}))
+    book = load_workbook(io.BytesIO(limitations_xlsx(shaped, ZoneInfo("UTC"))))
     for title in ("Members", "Families"):
         assert_styled_table(book[title], first_column=True)
 

@@ -13,7 +13,7 @@
 </dl></div>
 <form id="table-filters" data-table-sync method="post" action="{% url 'admin:limitations_report' %}">{% csrf_token %}
 <label for="limitations-search">{% translate "Search name or Family DUID" %}</label><input id="limitations-search" name="search" maxlength="200" value="{{ query.search }}">
-<label for="limitations-filter">{% translate "Show" %}</label><select id="limitations-filter" name="talent"><option value="any">{% translate "Everything" %}</option><option value="cannot_serve"{% if query.talent == 'cannot_serve' %} selected{% endif %}>{% translate "Cannot participate in ministries" %}</option><option value="cannot_attend"{% if query.talent == 'cannot_attend' %} selected{% endif %}>{% translate "Families that cannot attend Mass" %}</option></select>
+<label for="limitations-filter">{% translate "Show" %}</label><select id="limitations-filter" name="show"><option value="any">{% translate "Everything" %}</option><option value="cannot_serve"{% if query.show == 'cannot_serve' %} selected{% endif %}>{% translate "Cannot participate in ministries" %}</option><option value="cannot_attend"{% if query.show == 'cannot_attend' %} selected{% endif %}>{% translate "Families that cannot attend Mass" %}</option></select>
 {% for name, value in members_table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}{% for name, value in families_table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
 {% button type="submit" %}{% translate "Apply filters" %}{% endbutton %}</form>
 <section aria-labelledby="limitations-export-heading">

@@ -12,8 +12,8 @@ from uuid import UUID
 from django.template.loader import render_to_string
 from django.urls import reverse
 
-from parishkit.stewardship.reports.talent_views import tables
-from parishkit.stewardship.reports.talents import TalentQuery
+from parishkit.stewardship.reports.limitation_views import tables
+from parishkit.stewardship.reports.limitations import LimitationsQuery
 
 CAMPAIGN = UUID(int=90)
 # The report page's own path: what every heading, navigator and filter form
@@ -26,14 +26,7 @@ def components(context, admin):
     when = datetime(2026, 9, 20, 12, tzinfo=UTC)
     result = {
         "metadata": {"name": "Sample campaign"},
-        "summary": {
-            "members": 2,
-            "cannot_serve": 2,
-            "cannot_attend": 2,
-            "talents": [],
-        },
-        "collects_talents": False,
-        "talent_choices": [],
+        "summary": {"cannot_serve": 2, "cannot_attend": 2},
         # Default order is by Family: Baker's member before Carter's. By
         # Member name the order reverses.
         "members": [
@@ -42,7 +35,6 @@ def components(context, admin):
                 "family_name": "Baker",
                 "family_duid": 2,
                 "proposed": False,
-                "talents": [],
                 "cannot_serve": True,
                 "submitted_at": when,
             },
@@ -51,7 +43,6 @@ def components(context, admin):
                 "family_name": "Carter",
                 "family_duid": 1,
                 "proposed": True,
-                "talents": [],
                 "cannot_serve": True,
                 "submitted_at": when,
             },
@@ -61,7 +52,7 @@ def components(context, admin):
             {"family_name": "Carter", "family_duid": 1, "submitted_at": when},
         ],
     }
-    query = TalentQuery()
+    query = LimitationsQuery()
 
     def page(paging, data=result, chosen=query):
         """Render the report with both tables sorted as ``paging`` says,
@@ -98,11 +89,10 @@ def components(context, admin):
             {},
             result
             | {
-                "summary": result["summary"]
-                | {"members": 1, "cannot_serve": 1, "cannot_attend": 1},
+                "summary": {"cannot_serve": 1, "cannot_attend": 1},
                 "members": result["members"][1:],
                 "families": result["families"][1:],
             },
-            TalentQuery(talent="cannot_serve"),
+            LimitationsQuery(show="cannot_serve"),
         ),
     }

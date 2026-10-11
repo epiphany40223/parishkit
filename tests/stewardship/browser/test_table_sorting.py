@@ -632,7 +632,7 @@ def test_limitations_filter_updates_both_tables_and_the_summary(page, component_
     page.get_by_label("Show", exact=True).select_option("cannot_serve")
     with page.expect_request(lambda request: request.method == "POST") as sent:
         page.get_by_role("button", name="Apply filters").click()
-    assert "talent=cannot_serve" in sent.value.post_data
+    assert "show=cannot_serve" in sent.value.post_data
     has_text(
         page.get_by_role("status").filter(has_text="Member pages"),
         "Member pages: Showing 1–1 of 1 · Page 1 of 1. "

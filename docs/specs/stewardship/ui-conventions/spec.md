@@ -1358,8 +1358,8 @@ one, and fails until a new one has a case there or a recorded exception. The pos
 labels holding the mailing columns, not the Family heads and head emails;
 whether to record that as an exception is open on #966. The Limitations
 report (formerly Talents and limitations,
-[#970](https://github.com/epiphany40223/parishkit/issues/970)) is outside
-the guard and has no PDF.
+[#970](https://github.com/epiphany40223/parishkit/issues/970)) has no PDF;
+the guard checks its CSV and XLSX Members and Families tables.
 
 ## Family portal
 

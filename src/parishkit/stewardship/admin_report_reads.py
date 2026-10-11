@@ -12,7 +12,7 @@ functions the page itself uses, and prints counts and aggregates only:
   ``response_metrics``);
 - ``report financial`` and ``report limitations`` are the summaries of the
   financial detail and Limitations reports (``financial_page``,
-  ``talents_report``), without their Family and Member rows;
+  ``limitations_report``), without their Family and Member rows;
 - ``report information`` is the information queue's matching count
   (``information_page``);
 - ``report ministry`` is the Ministry summary (``ministry_page``), or with
@@ -762,7 +762,7 @@ def read_financial(caller, service):
 
 
 def limitations_model(campaign_id, result):
-    """The command's projection of ``talents_report``'s summary."""
+    """The command's projection of ``limitations_report``'s summary."""
     summary = result["summary"]
     return LimitationsReport(
         campaign_id=campaign_id,
@@ -774,32 +774,29 @@ def limitations_model(campaign_id, result):
 def read_limitations(caller, service):
     """``report limitations``: the Limitations report's summary (#970).
 
-    Reads the page's ``talents_report`` without filters (``TalentQuery()``,
-    offered as the page offers it) and prints its summary only. Records the
+    Reads the page's ``limitations_report`` without filters
+    (``LimitationsQuery()``) and prints its summary only. Records the
     page's ``talents_report_viewed`` once the read ends, with ``count`` 0
     (no Member or Family row is displayed) and the page's ``audit_choices``:
-    the offered filter and, when it held still during the read, the
+    the default filter and, when it held still during the read, the
     ParishSoft snapshot the report read.
     """
     from .audit.schemas import Action
     from .campaigns.models import Campaign
+    from .reports.limitation_views import _audit, _principal, audit_choices
+    from .reports.limitations import LimitationsQuery, limitations_report
     from .reports.response_lists import current_snapshot
-    from .reports.talent_views import _audit, _principal, audit_choices
-    from .reports.talents import TalentQuery, talents_report
 
     def read(guard, actor, campaign_id):
-        """The page's read, with the page's offered (default) filters."""
-        campaign = Campaign.objects.select_related("active_configuration").get(
-            pk=campaign_id
-        )
-        configuration = campaign.active_configuration.values
-        shown = TalentQuery().offered(configuration)
+        """The page's read, with the page's default filters."""
+        Campaign.objects.only("pk").get(pk=campaign_id)
+        query = LimitationsQuery()
         # As the page: the snapshot is named only when no refresh promoted
         # another between the statements of the read.
         before = current_snapshot()
-        result = talents_report(campaign_id, shown, actor, configuration=configuration)
+        result = limitations_report(campaign_id, query, actor)
         snapshot = before if current_snapshot() == before else None
-        return limitations_model(campaign_id, result), audit_choices(shown, snapshot)
+        return limitations_model(campaign_id, result), audit_choices(query, snapshot)
 
     return _report(
         caller,
@@ -812,7 +809,7 @@ def read_limitations(caller, service):
             campaign_id,
             outcome,
             0,
-            values or audit_choices(TalentQuery(), None),
+            values or audit_choices(LimitationsQuery(), None),
         ),
         shaping=True,
     )
