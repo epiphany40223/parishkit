@@ -322,6 +322,7 @@ ACTIVITY_TYPES = {
 UNGROUPED_REASONS = {
     "Opening a page or report, or looking something up, reads; it changes nothing": (
         "background_viewed",
+        "campaign_comparison_viewed",
         "census_changes_viewed",
         "daily_digest_viewed",
         "dashboard_viewed",

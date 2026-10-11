@@ -75,6 +75,7 @@ SLASHLESS = (
     ("reports/responses", "response_dashboard"),
     ("reports/responses/<slug:key>", "response_list"),
     ("reports/participation", "participation"),
+    ("reports/comparison", "campaign_comparison"),
     ("reports/financial", "financial_report"),
     ("reports/limitations", "limitations_report"),
     ("reports/census", "census_changes"),

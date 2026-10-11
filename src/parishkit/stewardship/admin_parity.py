@@ -196,6 +196,8 @@ LEDGER = {
     # rows behind them are the Family-level exports (PR 8e and 8f).
     "reports": command("report list"),
     "participation": command("report participation"),
+    # The Campaign comparison page (#1018): its figures for a day.
+    "campaign_comparison": command("report comparison"),
     "participation_chart": permanent(IMAGES),
     "daily_digest_chart": permanent(IMAGES),
     "daily_digest_download": permanent(IMAGES),

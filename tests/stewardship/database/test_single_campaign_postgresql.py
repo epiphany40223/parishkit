@@ -65,6 +65,7 @@ def test_access_is_checked_before_the_current_campaign(auth_service, google, rol
         browser, _ = signed_in()
     for name in (
         "participation",
+        "campaign_comparison",
         "financial_report",
         "response_dashboard",
         "limitations_report",

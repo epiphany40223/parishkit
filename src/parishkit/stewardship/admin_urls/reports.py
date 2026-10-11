@@ -21,6 +21,7 @@ from django.urls import path
 from ..accounts import assisted_entry
 from ..reports import (
     census_change_views,
+    comparison_views,
     digest_views,
     directory_export_views,
     directory_views,
@@ -81,6 +82,8 @@ patterns = [
         exact_ui.create,
         "report_exact_create",
     ),
+    # Past campaigns compared with the current one (#1018).
+    _page("reports/comparison/", comparison_views.report, "campaign_comparison"),
     _page("reports/financial/", financial_views.report, "financial_report"),
     _page(
         "reports/financial/exports/",
