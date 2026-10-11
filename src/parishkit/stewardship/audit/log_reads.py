@@ -51,18 +51,24 @@ EXPORT_FORMATS = {
 # broad search could otherwise hold a web worker; it is stopped, recorded
 # and answered with the page's unavailable message instead.
 READ_SECONDS = DEFAULT_LIMITS.interactive_seconds
-EXPORT_COLUMNS = (
-    "time",
-    "source",
-    "level",
-    "type",
-    "actor_email",
-    "actor_id",
-    "correlation_id",
-    "campaign_id",
-    "subject_id",
-    "details",
-)
+# The download's columns: JSON Lines keys (a program-readable format, so
+# snake_case), each with the plain CSV and XLSX heading in the page's words,
+# its column headings and its identifier filter labels (#966). The
+# cross-link identifiers stay, the recorded exception to leaving internal
+# identifiers out of downloads (Administrator decision, 2026-10-11).
+EXPORT_HEADINGS = {
+    "time": "Time",
+    "source": "Source",
+    "level": "Level",
+    "type": "Type",
+    "actor_email": "Actor",
+    "actor_id": "Actor identifier",
+    "correlation_id": "Correlation identifier",
+    "campaign_id": "Campaign identifier",
+    "subject_id": "Subject identifier",
+    "details": "Recorded detail",
+}
+EXPORT_COLUMNS = tuple(EXPORT_HEADINGS)
 OPERATIONAL_FIELDS = (
     "id",
     "created_at",
@@ -318,11 +324,13 @@ def export_file_name(fmt, now):
 def export_body(rows, fmt, zone):
     """Serialize the reviewed display rows as bytes; nothing beyond the page.
 
-    CSV and XLSX carry the same ``EXPORT_COLUMNS``, with the details
-    flattened to one ``key=value; ...`` cell; JSON Lines keeps the details
-    as an object. The cross-link identifiers stay in every format, the
-    recorded exception to leaving internal identifiers out of downloads
-    (UX conventions spec, "Downloaded files").
+    CSV and XLSX carry the same ``EXPORT_COLUMNS`` under their plain
+    ``EXPORT_HEADINGS``, with the details flattened to one
+    ``key=value; ...`` cell; JSON Lines keys each record by
+    ``EXPORT_COLUMNS`` and keeps the details as an object. The cross-link
+    identifiers stay in every format, the recorded exception to leaving
+    internal identifiers out of downloads (UX conventions spec,
+    "Downloaded files").
     """
     records = [
         {
@@ -356,9 +364,11 @@ def export_body(rows, fmt, zone):
         # Imported here to keep the web process's startup light.
         from parishkit.stewardship.reports.xlsx_design import table_workbook
 
-        return table_workbook(EXPORT_COLUMNS, table, sheet_title="System logs")
+        return table_workbook(
+            tuple(EXPORT_HEADINGS.values()), table, sheet_title="System logs"
+        )
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\r\n")
-    writer.writerow(EXPORT_COLUMNS)
+    writer.writerow(EXPORT_HEADINGS.values())
     writer.writerows([csv_cell(value) for value in values] for values in table)
     return buffer.getvalue().encode("utf-8")

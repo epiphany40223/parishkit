@@ -610,7 +610,7 @@ def test_export_downloads_filtered_entries_as_csv_or_json_lines(auth_service, go
     assert response["Content-Type"] == "text/csv"
     assert "attachment" in response["Content-Disposition"]
     lines = response.content.decode().splitlines()
-    assert lines[0].startswith("time,source,level,type,actor_email")
+    assert lines[0].startswith("Time,Source,Level,Type,Actor,Actor identifier")
     assert any(",ERROR,task_failed," in line for line in lines)
     assert not any(",WARNING," in line for line in lines)
     jsonl = export(
@@ -1203,7 +1203,7 @@ def test_activity_groups_list_their_own_audit_and_operational_types(
         # Both downloads hold exactly the page's entries.
         csv_file = export(browser, every | {"activity": "parishsoft"})
         rows = list(csv.DictReader(io.StringIO(csv_file.content.decode())))
-        assert [row["type"] for row in rows] == expected
+        assert [row["Type"] for row in rows] == expected
         lines = export(browser, every | {"activity": "parishsoft", "format": "jsonl"})
         records = [json.loads(line) for line in lines.content.decode().splitlines()]
         assert [record["type"] for record in records] == expected
