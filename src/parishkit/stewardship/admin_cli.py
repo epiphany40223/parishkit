@@ -988,14 +988,17 @@ def delivery_resolve(args, preamble, runtime, context):
 
 
 def refresh_status(args, preamble, runtime, context):
-    """The Source refresh page's read: pending work and the latest refresh (PR 6a)."""
+    """The Refresh from ParishSoft page's read (PR 6a).
+
+    Pending work and the latest refresh.
+    """
     from .admin_refresh import read_refresh_status
 
     return read_refresh_status(context["caller"], runtime)
 
 
 def refresh_start(args, preamble, runtime, context):
-    """Ask for a full ParishSoft refresh as the Source refresh page does (PR 6a).
+    """Ask for a full refresh as the Refresh from ParishSoft page does (PR 6a).
 
     Without ``--request-key`` a new key is made and written to standard error
     before anything is done, so a run that crashes can be repeated with it.
@@ -2981,7 +2984,8 @@ def _refresh_specs():
     return (
         CommandSpec(
             "refresh start",
-            "Ask for a full ParishSoft refresh now, as the Source refresh page does.",
+            "Ask for a full ParishSoft refresh now, as the Refresh from ParishSoft "
+            "page does.",
             refresh_start,
             "full",
             True,
@@ -3469,7 +3473,7 @@ def _report_specs():
         ),
         CommandSpec(
             "report financial",
-            "Show the financial report's summary, without Family rows.",
+            "Show the Financial stewardship summary, without Family rows.",
             report_financial,
             "read_only",
             False,

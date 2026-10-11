@@ -162,7 +162,7 @@ DESCRIPTIONS = {
     ),
     "admin_cmd_refresh_start": _(
         "An automation session asked for a full ParishSoft refresh, as the "
-        "Source refresh page's confirmation does."
+        "Refresh from ParishSoft page's confirmation does."
     ),
     "admin_cmd_test_families": _(
         "An automation session sent a test of one email for chosen Families "
@@ -210,7 +210,7 @@ DESCRIPTIONS = {
     ),
     "admin_cmd_export_financial": _(
         "An automation session requested a financial report export, as the "
-        "Financial report's export form does."
+        "Financial stewardship page's export form does."
     ),
     "admin_cmd_export_information": _(
         "An automation session requested an additional information export, "
@@ -218,11 +218,11 @@ DESCRIPTIONS = {
     ),
     "admin_cmd_export_ministry": _(
         "An automation session requested a Ministry report export, as the "
-        "Ministry report's export form does."
+        "Ministry requests page's export form does."
     ),
     "admin_cmd_export_ministry_packet": _(
         "An automation session requested a Ministry follow-up packet, as the "
-        "Ministry report's packet form does."
+        "Ministry requests page's packet form does."
     ),
     "admin_cmd_export_directory": _(
         "An automation session requested a Family-code directory export, as "
@@ -592,7 +592,7 @@ DESCRIPTIONS = {
     "information_updated": _("Someone updated follow-up on an information change."),
     "ministry_followup_viewed": _("Someone opened the Ministry follow-up report."),
     "ministry_request_updated": _("Someone updated follow-up on a Ministry request."),
-    "financial_report_viewed": _("Someone opened the financial report."),
+    "financial_report_viewed": _("Someone opened the Financial stewardship page."),
     # The Limitations report keeps the actions it recorded as "Talents and
     # limitations" (#970), so these describe old and new rows alike.
     "talents_report_viewed": _(
@@ -635,7 +635,7 @@ DESCRIPTIONS = {
         "Someone downloaded the list of ParishSoft data to check."
     ),
     "family_timeline_viewed": _("Someone opened a Family's timeline."),
-    "portal_users_viewed": _("An Administrator opened the portal users list."),
+    "portal_users_viewed": _("An Administrator opened the Users page."),
     "user_change_requested": _(
         "An Administrator asked to add, change or delete Admin portal users."
     ),
