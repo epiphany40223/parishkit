@@ -16,6 +16,7 @@ from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.storage import StaleRecordError
 
+from .bootstrap_schema import BOOTSTRAP_SCHEMAS
 from .configuration_installation import coherent_configuration
 from .models import PortalSession
 from .policy import Capability, allows
@@ -51,7 +52,7 @@ def _admit(request, service, *, activity):
         or configuration.restore_review_required
         or configuration.mode != "testing"
         or configuration.current_campaign_id is not None
-        or configuration.active_configuration.validation_schema != "bootstrap-policy-v1"
+        or configuration.active_configuration.validation_schema not in BOOTSTRAP_SCHEMAS
     ):
         raise ConfigError("Initial setup is unavailable.")
     return actor, configuration

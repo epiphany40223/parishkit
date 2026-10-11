@@ -20,8 +20,6 @@ VALUES = {
         "online_giving_url": "",
     },
     "access": {
-        "staff_domains": ["example.org"],
-        "ministry_domains": [],
         "staff_addresses": ["staff@example.net"],
         "ministry_addresses": ["chair@example.net"],
         "admin_addresses": ["another@example.net"],
@@ -55,10 +53,12 @@ def test_public_form_round_trip_is_detached_and_canonical(step):
         ("parish", {"website": "https://parish.example.org?token=secret"}),
         ("parish", {"timezone": "Mars/Nowhere"}),
         ("parish", {"phone": "123"}),
-        ("access", {"staff_domains": ["gmail.com"]}),
-        ("access", {"ministry_domains": ["*.example.org"]}),
+        # A step saved before #993 that granted a domain must be saved again.
+        ("access", {"staff_domains": ["example.org"], "ministry_domains": []}),
+        ("access", {"staff_domains": [], "ministry_domains": ["example.org"]}),
+        ("access", {"staff_domains": "", "ministry_domains": []}),
         ("access", {"admin_addresses": ["not-an-address"]}),
-        ("access", {"staff_domains": "example.org"}),
+        ("access", {"staff_addresses": "staff@example.org"}),
         ("mail", {"sender": "not-an-address"}),
         ("slack", {"enabled": True}),
         ("slack", {"channel_id": "C123"}),
@@ -80,11 +80,18 @@ def test_extra_private_or_authority_fields_are_never_ignored(step):
 
 
 def test_identity_input_normalizes_case_duplicates_and_empty_lines():
-    """Access lists are additive; repeated spelling does not duplicate grants."""
-    form = FORMS["access"]({"staff_domains": "EXAMPLE.ORG\n\nexample.org"})
+    """Access lists are additive; repeated spelling does not duplicate users."""
+    form = FORMS["access"]({"staff_addresses": "Pat@EXAMPLE.ORG\n\npat@example.org"})
     assert form.is_valid()
-    assert form_values(form)["staff_domains"] == ["example.org"]
-    assert "admin_domains" not in form.fields
+    assert form_values(form)["staff_addresses"] == ["pat@example.org"]
+    # Sign-in is by address only (#993): no list grants a whole domain.
+    assert not {name for name in form.fields if name.endswith("_domains")}
+
+
+def test_an_access_step_saved_with_empty_domain_lists_is_still_read():
+    """A step saved before #993 with no domain listed needs no new save."""
+    values = VALUES["access"] | {"staff_domains": [], "ministry_domains": []}
+    assert validate_values("access", values) == VALUES["access"]
 
 
 def test_identity_lists_and_unknown_steps_are_bounded():

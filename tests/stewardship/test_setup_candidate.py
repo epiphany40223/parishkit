@@ -7,11 +7,17 @@ from uuid import uuid4
 import pytest
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.accounts.authority import parse_version
 from parishkit.stewardship.accounts.bootstrap_schema import bootstrap_version
+from parishkit.stewardship.accounts.configuration_schema import (
+    schema_for,
+    validate_sections,
+)
 from parishkit.stewardship.accounts.setup_candidate import (
     CandidateCredential,
     compile_candidate,
 )
+from parishkit.stewardship.accounts.setup_configuration import request_schema_for
 from parishkit.stewardship.accounts.setup_content_values import (
     CONTENT_STEPS,
     RETIRED_STEPS,
@@ -19,6 +25,7 @@ from parishkit.stewardship.accounts.setup_content_values import (
 
 from .campaign_factory import campaign, schedule
 from .content_factory import content
+from .policy_factory import legacy_bootstrap_document
 from .test_setup_forms import VALUES
 
 
@@ -55,37 +62,72 @@ def compilation():
 
 
 def test_compilation_is_stable_detached_and_preserves_bootstrap():
-    """Manual additions have real operation provenance; all selections are copied."""
+    """Setup over a users bootstrap (#993) ends in users; selections are copied.
+
+    Each listed address becomes one user with the highest role it is listed
+    under and its local part as Name; the bootstrap Administrator is carried
+    unchanged and never listed twice.
+    """
     base, args = compilation()
     sections = args["sections"]
     sections["access"]["staff_addresses"] = ["admin@example.org", "staff@example.net"]
-    sections["access"]["ministry_addresses"] = ["staff@example.net"]
-    sections["access"]["ministry_domains"] = ["example.org"]
+    sections["access"]["ministry_addresses"] = [
+        "leader@example.net",
+        "staff@example.net",
+    ]
     revision = content(str(args["attempt_id"]))
     sections["page_welcome"] = revision
     before = deepcopy(args)
     result = compile_candidate(base, **args)
     assert result == compile_candidate(base, **args)
     assert args == before
+    assert result.candidate.document()["sections"].keys() >= {"parish", "login_rules"}
+    assert schema_for(result.candidate.document()) == "users-v10"
+    assert request_schema_for(result.candidate) == "initial-setup-users-v10"
     document = result.candidate.document()["sections"]
     rules = document["login_rules"]
     assert base.document()["sections"]["login_rules"][0] in rules
-    assert len(rules) == 4
-    merged = next(
-        row["values"]
-        for row in rules
-        if row["values"].get("email") == "staff@example.net"
-    )
-    assert merged["roles"] == ["ministry_leader", "staff"]
-    assert merged["grants"] == {
-        role: {"manual": str(args["operation_id"])} for role in merged["roles"]
+    assert {row["values"]["email"]: row["values"]["role"] for row in rules} == {
+        "admin@example.org": "administrator",
+        "another@example.net": "administrator",
+        "leader@example.net": "ministry_leader",
+        "staff@example.net": "staff",
     }
+    assert {row["values"]["name"] for row in rules} >= {"leader", "staff"}
     assert document["campaigns"][0]["id"] == str(args["attempt_id"])
     assert document["campaigns"][0]["values"]["content_versions"] == {
         "welcome": revision["id"]
     }
     sections["parish"]["name"] = "Changed after compilation"
     assert "Changed after compilation" not in str(result.candidate.document())
+
+
+def test_setup_over_an_older_bootstrap_keeps_sign_in_rules():
+    """A deployment bootstrapped before #993 finishes setup in the v7 format.
+
+    Its candidate keeps exact-address rules with manual provenance, which
+    ``upgrade-users`` later converts; the access step grants no domain.
+    """
+    _, args = compilation()
+    base = parse_version(
+        legacy_bootstrap_document(), validate_sections=validate_sections
+    )
+    sections = args["sections"]
+    sections["access"]["staff_addresses"] = ["staff@example.net"]
+    sections["access"]["ministry_addresses"] = ["staff@example.net"]
+    result = compile_candidate(base, **args)
+    assert request_schema_for(base) == "initial-setup-patch-v7"
+    assert request_schema_for(result.candidate) == "initial-setup-patch-v7"
+    rules = result.candidate.document()["sections"]["login_rules"]
+    assert base.document()["sections"]["login_rules"][0] in rules
+    assert {row["values"]["kind"] for row in rules} == {"address"}
+    merged = next(
+        row["values"] for row in rules if row["values"]["email"] == "staff@example.net"
+    )
+    assert merged["roles"] == ["ministry_leader", "staff"]
+    assert merged["grants"] == {
+        role: {"manual": str(args["operation_id"])} for role in merged["roles"]
+    }
 
 
 @pytest.mark.parametrize(
@@ -249,17 +291,14 @@ def test_child_ownership_and_template_resolution_are_required(invalid):
 
 
 def test_maximum_wizard_can_compile_without_artificial_combined_record_limit():
-    """Five fifty-row access lists plus 100 schedules fit the complete intent."""
+    """Three fifty-row access lists plus 100 schedules fit the complete intent."""
     from datetime import date, timedelta
 
     base, args = compilation()
     sections = args["sections"]
     for key in sections["access"]:
         sections["access"][key] = sorted(
-            f"{key.replace('_', '')}{index}.example.org"
-            if key.endswith("domains")
-            else f"{key}{index}@example.org"
-            for index in range(50)
+            f"{key}{index}@example.org" for index in range(50)
         )
     for step in CONTENT_STEPS:
         kind, _, slot = step.partition("_")
@@ -282,4 +321,4 @@ def test_maximum_wizard_can_compile_without_artificial_combined_record_limit():
         )
     sections["schedules"]["records"] = rows
     result = compile_candidate(base, **args)
-    assert 350 < len(result.patch()) < 400
+    assert 250 < len(result.patch()) < 400
