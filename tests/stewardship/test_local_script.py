@@ -215,7 +215,7 @@ def run_local(tmp_path, *args, status="Running", env=None, stdin=""):
     base = {
         k: v
         for k, v in os.environ.items()
-        if not k.startswith("PARISHKIT_") and k != "LIMA_HOME"
+        if not k.startswith(("PARISHKIT_", "STEWARDSHIP_USERS_")) and k != "LIMA_HOME"
     }
     result = subprocess.run(
         ["bash", str(SCRIPT), *args],
@@ -426,6 +426,34 @@ def test_deploy_passes_the_rehearsal_rendering_choices(tmp_path):
     # Base 10 whatever the leading zeros: 0600 is 600, not octal 384.
     _, calls, _ = run_local(tmp_path / "zeros", "deploy", "--smtp-latency-ms", "0600")
     assert vm_commands(calls)[-1].endswith(f" 0 {HOST_REMOTE} keep 600")
+
+
+def test_deploy_passes_the_users_upgrade_inputs_to_the_vm_half(tmp_path):
+    """The STEWARDSHIP_USERS_* variables (#952) reach the host half through sudo."""
+    users = {
+        "STEWARDSHIP_USERS_OPERATION": "11111111-2222-4333-8444-555555555555",
+        "STEWARDSHIP_USERS_OPERATOR": "Test Operator",
+        "STEWARDSHIP_USERS_REASON": "Rehearsal",
+        "STEWARDSHIP_USERS_ADMINISTRATORS": "admin@example.test",
+    }
+    result, calls, _ = run_local(tmp_path, "deploy", "--schema-change", env=users)
+    assert result.returncode == 0, result.stderr
+    deploy = ssh_calls(calls)[-1]
+    assert vm_commands(calls)[-1].endswith(f" 1 {HOST_REMOTE}")
+    assert (
+        "sudo env STEWARDSHIP_USERS_OPERATION=11111111-2222-4333-8444-555555555555 "
+        "STEWARDSHIP_USERS_OPERATOR=Test\\ Operator STEWARDSHIP_USERS_REASON=Rehearsal "
+        "STEWARDSHIP_USERS_ADMINISTRATORS=admin@example.test bash "
+    ) in deploy
+    # Every other VM-half command, and a deploy without them, has no prefix.
+    assert not any("sudo env" in call for call in ssh_calls(calls)[:-1])
+    _, calls, _ = run_local(tmp_path / "plain", "deploy")
+    assert not any("sudo env" in call for call in ssh_calls(calls))
+    # A rollback never converts.
+    result, calls, _ = run_local(
+        tmp_path / "rollback", "deploy", "--rollback", env=users
+    )
+    assert result.returncode != 0 and ssh_calls(calls) == []
 
 
 def test_rehearse_checks_its_options_then_runs_the_vm_half(tmp_path):

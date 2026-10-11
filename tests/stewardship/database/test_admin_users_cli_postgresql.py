@@ -20,11 +20,11 @@ from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.deployment import ServiceRole
 
 from ..policy_factory import address, domain
-from .auth_builders import signed_in, unguarded
+from .auth_builders import unguarded
 from .automation_builders import paired
 from .test_admin_status_cli_postgresql import admin, one, views  # noqa: F401
 from .test_background_grants_postgresql import task_login
-from .test_user_views_postgresql import add_rules, identity
+from .test_user_views_postgresql import add_rules, identity, signed_in_before
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -44,9 +44,9 @@ def sample(service, google):
         address("blocked@example.org", ()),
         domain("example.org", ("ministry_leader", "staff")),
     )
-    # A colleague with no exact rule really signs in through the domain rule.
-    google[0].update(email="colleague@example.org", sub="colleague-subject")
-    assert signed_in()[1].status_code == 302
+    # A colleague with no exact rule signed in through the domain rule before
+    # the users swap (#952).
+    signed_in_before("colleague@example.org", hosted="example.org")
     identity("idle@example.org", hosted="example.org", disabled=True)
     google[0].update(email=ADMIN, sub="synthetic-google-subject")
     browser, secret, _ = paired(service)
