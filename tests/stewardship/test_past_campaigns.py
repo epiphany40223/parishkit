@@ -199,7 +199,7 @@ def test_a_file_already_imported_has_nothing_to_apply():
     assert "2025 is already imported" in text
     assert "admin@example.org" in text
     assert "disabled" in text and 'aria-describedby="archive-apply-reason"' in text
-    assert "Unavailable: this file is already imported." in text
+    assert "Unavailable: imported by admin@example.org on" in text
     blocked = card("replace", replace_blocked=True)
     assert "a partial file can't replace the final 2025 import" in blocked
     assert 'name="replace"' not in blocked

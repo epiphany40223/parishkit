@@ -129,7 +129,7 @@ def test_review_apply_replace_and_remove_in_the_page(auth_service, google):
         # The same file again: already imported, so Apply has nothing to do.
         again = text(browser.get(PAGE, query(review(browser, first))))
         assert "2054 is already imported" in again
-        assert "Unavailable: this file is already imported." in again
+        assert "Unavailable: imported by admin@example.org on" in again
         # A corrected file replaces the year only with the acknowledgement.
         corrected = query(review(browser, workbook(2054, note="Corrected")))
         assert "This replaces the 2054 figures already imported" in text(

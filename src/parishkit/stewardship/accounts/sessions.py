@@ -153,7 +153,7 @@ class NamespacedCsrfMiddleware(CsrfViewMiddleware):
 
     def process_view(self, request, callback, callback_args, callback_kwargs):
         """Mark a ``csrf_header_only`` view's request, then check as Django does."""
-        if getattr(callback, HEADER_TOKEN_ONLY, False):
+        if getattr(callback, HEADER_TOKEN_ONLY, False) is True:
             setattr(request, HEADER_TOKEN_ONLY, True)
         return super().process_view(request, callback, callback_args, callback_kwargs)
 
@@ -164,7 +164,7 @@ class NamespacedCsrfMiddleware(CsrfViewMiddleware):
         lookup left out, so it never reads the body: the namespace secret
         must exist and the X-CSRFToken header must match it.
         """
-        if not getattr(request, HEADER_TOKEN_ONLY, False):
+        if getattr(request, HEADER_TOKEN_ONLY, False) is not True:
             return super()._check_token(request)
         try:
             secret = self._get_secret(request)

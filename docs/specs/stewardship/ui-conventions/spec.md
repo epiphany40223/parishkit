@@ -677,7 +677,7 @@ Administrator decision, 2026-10-10;
 A file field marked `data-max-bytes` (with its message in
 `data-too-large`) counts as missing while the chosen file is larger, so the
 complete-before-submit gate below holds the form's button with that message
-as its hint; first used by Past campaigns' archive file (20 MB). The server
+as its hint; first used by Past campaigns' archive file (20 MiB). The server
 checks the size again.
 
 Wherever a form requires an acknowledgment checkbox (finishing setup, a test
