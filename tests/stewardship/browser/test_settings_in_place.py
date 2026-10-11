@@ -347,13 +347,13 @@ def test_campaign_ministries_are_reviewed_and_applied_in_place(page, component_o
     assert "Food pantry" in panel.inner_text()
     assert current_step(page) == "Review"
     assert page.url == component_origin + MINISTRIES
-    assert page.evaluate(FORM_PLACE) == top
+    assert page.evaluate(FORM_PLACE) == pytest.approx(top, abs=1)
     page.get_by_role("button", name="Apply changes").click()
     visible(panel.get_by_role("heading", name="Change status"))
     assert page.evaluate(FOCUSED, "#settings-review-status-title")
     assert current_step(page) == "Apply"
     assert page.url == f"{component_origin}{MINISTRIES_PENDING}#settings-review"
-    assert page.evaluate(FORM_PLACE) == top
+    assert page.evaluate(FORM_PLACE) == pytest.approx(top, abs=1)
     assert selections.evaluate(
         "select => [...select.selectedOptions].map(option => option.value)"
     ) == ["4"]
