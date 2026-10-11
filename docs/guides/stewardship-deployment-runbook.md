@@ -817,6 +817,15 @@ for a rollback. Without them, it stops at the swap's refusal with the
 maintenance page up and nothing of the swap committed; repeat it with them.
 The local environment's `deploy --schema-change` passes the same variables.
 
+Every stop in this step 4 (no inputs, a refused conversion, a failed final
+migration, an interruption) leaves only the swap pending, which every
+online service refuses, so the maintenance page stays up until a repeated
+run finishes. The repeat runs from step 1: its backup admits a database
+with only the swap pending (that set restores exactly this state), and
+because `web` was already stopped when it began, a failure before its
+retarget starts nothing and leaves the maintenance page up rather than
+starting services that would refuse the schema.
+
 If the conversion refuses (a list that differs from the preview's, or SQL's
 last-Administrator guard), the configuration keeps its sign-in rules, the
 swap is not installed and the services stay down. `recover-admin` and
