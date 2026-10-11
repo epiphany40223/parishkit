@@ -2036,14 +2036,22 @@ def component_origin():
             "ministries",
             {"table": ministries_table({}), "query": "", "state": "all"},
         ),
+        # Ministries with its review shown in place, under the table (#750).
         (
             "/ministry-preview",
-            "ministry-preview",
+            "ministries",
             {
-                "changing": [ministry],
-                "unchanged": [],
-                "new_active": False,
-                "preview": "synthetic-signed-intent",
+                "table": ministries_table({}),
+                "query": "",
+                "state": "all",
+                "review": {
+                    "template": "stewardship/ministry-review.html",
+                    "notes": [],
+                    "changing": [ministry],
+                    "unchanged": [],
+                    "new_active": False,
+                    "preview": "synthetic-signed-intent",
+                },
             },
         ),
         (

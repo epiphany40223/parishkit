@@ -12,7 +12,7 @@ import pytest
 
 from .hosted_file_components import BULK, LIBRARY, REFUSAL, REFUSED
 from .test_components import axe_violations
-from .waits import eventually, hidden, visible
+from .waits import eventually, hidden, painted, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -221,5 +221,37 @@ def test_a_refused_delete_explains_why_inside_the_dialog(page, component_origin)
     assert rows(page).count() == 3
     dialog(page).get_by_role("button", name="Cancel").click()
     hidden(dialog(page))
+    assert page.evaluate("window.notReloaded === true")
+    assert not failures
+
+
+def test_resorting_after_a_tick_says_nothing_and_moves_nothing(page, component_origin):
+    """Re-sorting the library after ticking a file keeps the tick (#750):
+    no "were not kept" line appears, Delete selected stays put, and Select
+    all still works on the redrawn table."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+
+    def library(route):
+        """The library, as a sorted GET draws it."""
+        if route.request.method != "GET":
+            route.continue_()
+            return
+        route.fulfill(response=route.fetch(url=component_origin + BULK, method="GET"))
+
+    page.route(lambda url: url.startswith(component_origin + BULK + "?"), library)
+    page.goto(component_origin + BULK)
+    failures = watch(page)
+    bulk = page.get_by_role("button", name="Delete selected")
+    place = "button => button.getBoundingClientRect().top + window.scrollY"
+    before = bulk.evaluate(place)
+    page.locator("input[data-select-row]").first.check()
+    page.locator("a.sort-link").first.click()
+    eventually(page, "() => location.search.includes('sort=')")
+    painted(page)
+    assert page.locator("input[data-select-row]:checked").count() == 1
+    assert page.locator("[data-edits-lost]").count() == 0
+    assert bulk.evaluate(place) == before
+    page.get_by_role("button", name="Select all").click()
+    assert page.locator("input[data-select-row]:checked").count() == 2
     assert page.evaluate("window.notReloaded === true")
     assert not failures
