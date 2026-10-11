@@ -6,7 +6,9 @@ prints a DUID beside another value ("Name<br>DUID 1234", "Name (DUID
 1234)", "{{ name }} {{ duid }}") cannot be sorted or scanned by DUID and
 copies badly into a spreadsheet, so this guard refuses one in any Admin
 template, except the tables a later slice of #932 (or the issue named) still
-has to split.
+has to split. A second check reads each table's column headings: every DUID
+heading is "Family DUID", "Member DUID" or "Ministry DUID" and sits right
+after the name it identifies.
 """
 
 import re
@@ -41,6 +43,31 @@ NOT_SHOWN = re.compile(r"<option\b.*?</option>|<[^>]*>", re.DOTALL)
 # remove the entry, when that work lands; the guard then holds it.
 PENDING: dict[str, tuple[int, str]] = {}
 
+# A table's headings, and each heading's text: a translated label assigned
+# for a sort heading, or a plain column heading (<th scope="col">). A plain
+# heading that prints {{ heading }} repeats the label assigned just before
+# it (the Ministry report's one-Ministry view), so it is skipped.
+THEAD = re.compile(r"<thead\b.*?</thead>", re.DOTALL)
+HEADING = re.compile(
+    r'\{% translate "([^"]+)" as heading %\}'
+    r'|<th\b[^>]*\bscope="col"[^>]*>(?!\{\{ heading \}\})(.*?)</th>',
+    re.DOTALL,
+)
+LABEL = re.compile(r'\{% translate "([^"]+)" %\}')
+# Each DUID heading and the name headings it may follow. Census changes'
+# Member column is headed Who; Go-live's Family column still reads "Family
+# name" (#932 inventory).
+NAMED_BY = {
+    "Family DUID": {"Family", "Family name"},
+    "Member DUID": {"Member", "Who"},
+    "Ministry DUID": {"Ministry"},
+}
+# DUID columns that do not follow a name, on purpose, with the reason.
+APART = {
+    ("source-form.html", "Member DUID"): "UX conventions: the name may be the "
+    "refused value, so Families the form cannot open shows no Member name",
+}
+
 
 def combined(cell):
     """Whether ``cell`` prints a DUID together with another value.
@@ -74,6 +101,59 @@ def test_no_table_cell_combines_a_name_and_a_duid(path):
     # means a new combined cell was added.
     expected = PENDING.get(name, (0, ""))[0]
     assert len(found) == expected, found
+
+
+def column_headings(text):
+    """Each table's column headings in ``text``, as lists of their labels.
+
+    A heading with no translated label (a selection checkbox) reads "".
+    """
+    tables = []
+    for head in THEAD.findall(text):
+        labels = []
+        for match in HEADING.finditer(head):
+            plain = LABEL.search(match.group(2) or "")
+            labels.append(match.group(1) or (plain.group(1) if plain else ""))
+        tables.append(labels)
+    return tables
+
+
+@pytest.mark.parametrize(
+    "path",
+    sorted(TEMPLATES.rglob("*.html")),
+    ids=lambda path: path.relative_to(TEMPLATES).as_posix(),
+)
+def test_each_duid_heading_follows_its_name(path):
+    """A DUID column is named for what it identifies and sits beside its name."""
+    name = path.relative_to(TEMPLATES).as_posix()
+    for labels in column_headings(path.read_text(encoding="utf-8")):
+        for index, label in enumerate(labels):
+            if "DUID" not in label or (name, label) in APART:
+                continue
+            assert label in NAMED_BY, labels
+            assert index and labels[index - 1] in NAMED_BY[label], labels
+
+
+@pytest.mark.parametrize(
+    ("text", "tables"),
+    [
+        (
+            '<thead><tr>{% translate "Member" as heading %}{% sort_heading t "m" '
+            'heading %}<th scope="col" class="numeric">{% translate "Member DUID" '
+            "%}</th></tr></thead>",
+            [["Member", "Member DUID"]],
+        ),
+        (
+            '<thead><tr><th scope="col"><input type="checkbox"></th>'
+            '{% translate "Ministry" as heading %}<th scope="col">{{ heading }}'
+            "</th></tr></thead>",
+            [["", "Ministry"]],
+        ),
+    ],
+)
+def test_column_headings_reads_each_heading_once(text, tables):
+    """Sort headings, plain headings and repeated labels are each read once."""
+    assert column_headings(text) == tables
 
 
 @pytest.mark.parametrize(
