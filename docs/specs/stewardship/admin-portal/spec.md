@@ -2280,6 +2280,24 @@ again; a value restored into a read-only editor is put back to its saved value.
 The first-campaign step keeps its plain list of editors, since nothing has sent
 there.
 
+The date-change review reviews and applies in the
+[review dialog](../ui-conventions/spec.md#review-dialog). **Review changes**
+is available when the page opens with proposed dates (they are a change) and
+becomes unavailable if the dates are put back to the saved ones and no
+schedule is changed; an added schedule left blank is no change. A refusal of
+the values posted (a mailing outside the new dates, a field's value) keeps
+the dialog shut: the form shows its error summary, marks each field and opens
+each schedule's editor with an error. Any other refusal (a stale page or
+another tab, sends in progress, an expired preview) shows in the dialog. The
+dialog lists the window change and each schedule's change with its affected
+work, the same review as New and Edit scheduled email; while sends block the
+change it offers no Apply. **Apply** records the change with the same signed
+preview, blocking-work recheck under the work lock, stale and two-tab checks
+and audit as before; a live campaign's end-date rules, reminder planning and
+emailed Family codes and links are unaffected by how the review is shown.
+Once the change is applied the reader returns to the list without proposed
+dates, whose status line says "Dates and mail schedules changed." and when.
+
 #### New and Edit scheduled email
 
 **New scheduled email** (`/admin/campaign/schedules/addition/`) and **Edit

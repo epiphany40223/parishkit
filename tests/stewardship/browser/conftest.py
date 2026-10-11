@@ -902,35 +902,6 @@ def component_origin():
             },
         ),
         (
-            "/schedule-preview",
-            "schedule-preview",
-            {
-                "campaign": {
-                    "pk": mail_campaign["id"],
-                    "active_configuration": mail_campaign["values"],
-                },
-                "changes": [
-                    {
-                        "label": "Reminder",
-                        "operation": "remove",
-                        "before": _describe(mail["values"], mail_campaign["values"]),
-                        "after": None,
-                        "impact": {
-                            "delivered": 1234,
-                            "blocking": 0,
-                            "occurrences": 3456,
-                            "cancellable": 2222,
-                            "outboxes": 0,
-                            "failed": 0,
-                        },
-                    }
-                ],
-                "window_changes": {},
-                "blocking": 0,
-                "preview": "synthetic-preview",
-            },
-        ),
-        (
             "/content-settings",
             "content-settings",
             {
