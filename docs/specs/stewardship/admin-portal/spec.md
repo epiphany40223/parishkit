@@ -1945,8 +1945,9 @@ exemption: while the current campaign is scheduled or active, an
 Administrator may change its Ministry selections. Campaign settings links a
 live campaign to its own Campaign Ministries page, which offers only
 the Ministry list and goes through the usual edit, review, apply flow as an
-ordinary configuration request. A closed or archived campaign's selections
-never change.
+ordinary configuration request, reviewed, applied and followed
+[in place](../ui-conventions/spec.md#in-place-controls) under its form
+(#750). A closed or archived campaign's selections never change.
 
 - **Hide** a Ministry without removing it: mark it inactive on Ministry
   activity. It disappears from every Family form; nothing else changes.

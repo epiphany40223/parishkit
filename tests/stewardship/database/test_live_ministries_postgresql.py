@@ -28,6 +28,7 @@ from .test_ministry_followup_postgresql import read as followup
 from .test_ministry_packets_postgresql import packet, sections
 from .test_ministry_reports_postgresql import actor, page, setup
 from .test_ministry_responses_postgresql import respond, revisit, start
+from .test_parish_views_postgresql import digest, region
 from .test_policy_postgresql import user
 from .test_response_http_postgresql import answers_for
 
@@ -271,15 +272,18 @@ def test_editor_previews_impact_and_audits_the_change(response_service, google):
     assert form.status_code == 200, form.content
     back = f'<a href="{reverse("admin:ministries")}">Return to Ministries</a>'
     assert back in form.content.decode()
-    digest = re.search(r'name="base_digest" value="([0-9a-f]+)"', form.content.decode())
     review = post(
         browser,
         url,
-        {"action": "preview", "ministry_duids": "4", "base_digest": digest.group(1)},
+        {"action": "preview", "ministry_duids": "4", "base_digest": digest(form)},
     )
     assert review.status_code == 200, review.content
-    body = unescape(review.content.decode())
+    # Reviewed in place (#750): the impact and Apply fill the review region
+    # under the form, which keeps the version it was posted at.
+    body = unescape(region(review.content))
     assert "Ministries to remove" in body and "Food pantry" in body
+    assert "Apply changes" in body
+    assert digest(review) == digest(form)
     # One submitted join request for Ministry 9, still awaiting follow-up.
     # The Ministry DUID has its own column (#932).
     row = '<th scope="row">Food pantry</th><td class="numeric">9</td>'
@@ -292,6 +296,8 @@ def test_editor_previews_impact_and_audits_the_change(response_service, google):
     )
     assert confirmed.status_code == 302, confirmed.content
     request = ConfigurationChangeRequest.objects.exclude(pk__in=before).get()
+    # Apply answers with this page, naming the change, not Change status.
+    assert confirmed["Location"] == f"{url}?request={request.pk}#settings-review"
     audit = AuditContext.objects.get(event__event_type="campaign_ministries_requested")
     assert audit.event.subject_id == request.pk
     assert audit.event.actor_id == request.actor_id
@@ -306,19 +312,57 @@ def test_editor_previews_impact_and_audits_the_change(response_service, google):
         harness.service.store, request_id=request.pk, correlation_id=uuid4()
     )
     assert receipt.state == "applied" and selected(harness) == [4]
+    # The page follows the change in place; a full load of that address
+    # draws the current selections at the current version.
+    status = browser.get(confirmed["Location"])
+    assert "Applied: your change is saved" in region(status.content)
+    assert digest(status) == harness.service.store.active().digest
     # Adding a Ministry that is not in the catalog is refused at review.
     form = browser.get(url)
-    digest = re.search(r'name="base_digest" value="([0-9a-f]+)"', form.content.decode())
     refused = post(
         browser,
         url,
         {
             "action": "preview",
             "ministry_duids": ["4", "123"],
-            "base_digest": digest.group(1),
+            "base_digest": digest(form),
         },
     )
     assert refused.status_code == 400
+
+
+def test_editor_refuses_in_place_at_the_readers_version(response_service, google):
+    """Nothing changed, a stale page and an out-of-date Apply are refused in
+    the review region (#750). Each keeps the version the reader's selections
+    came from, so a page changed elsewhere is refused until it is reloaded
+    and can never quietly propose undoing that change."""
+    harness = setup(response_service)
+    browser, _ = signed_in()
+    url = reverse("admin:campaign_ministries")
+    loaded = digest(browser.get(url))
+    data = {"action": "preview", "ministry_duids": ["4", "9"], "base_digest": loaded}
+    unchanged = post(browser, url, data)
+    assert unchanged.status_code == 400
+    assert "No Ministries have changed." in region(unchanged.content)
+    assert "Apply changes" not in region(unchanged.content)
+    stale = post(browser, url, data | {"base_digest": "a" * 64})
+    assert stale.status_code == 409
+    assert "This page changed in another tab or session." in region(stale.content)
+    assert digest(stale) == "a" * 64
+    review = post(browser, url, data | {"ministry_duids": "4"})
+    token = re.search(r'name="preview" value="([^"]+)"', review.content.decode())
+    # The same change lands elsewhere after the review: Apply is refused in
+    # place, and the form stays at the version the change was reviewed at.
+    assert applied(select(harness, [4]))
+    refused = post(
+        browser, url, {"action": "confirm", "preview": unescape(token.group(1))}
+    )
+    assert refused.status_code == 409
+    assert "This preview is out of date." in region(refused.content)
+    assert digest(refused) == loaded != harness.service.store.active().digest
+    assert selected(harness) == [4]
+    # Only the change Apply names may be read from the address.
+    assert browser.get(url + "?extra=1").status_code == 400
 
 
 def installed(harness, duids):

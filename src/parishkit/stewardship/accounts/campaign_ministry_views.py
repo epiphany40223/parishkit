@@ -8,6 +8,14 @@ plus an audit event naming the Administrator, the selections before and after,
 and the Ministries added and removed. Nothing here deletes or rewrites an
 answer: a removed Ministry's requests stay in reports and follow-up, marked as
 no longer in the campaign, and show unmarked again if it is added back.
+
+Review, apply and the change's status happen on the page itself (#532,
+#750), as on Campaign settings: the form is ``data-table-sync``, so an
+answer fills the review region under it while the form keeps the reader's
+selections and takes only its hidden version. A refusal keeps the version
+those selections came from (the one posted, or the one a refused Apply was
+reviewed at), so a page changed elsewhere is refused again until it is
+reloaded and can never quietly propose undoing that change.
 """
 
 from uuid import uuid4
@@ -31,8 +39,7 @@ from parishkit.stewardship.campaigns.work_locks import (
 from parishkit.stewardship.responses.models import FamilyFormBaseline
 from parishkit.stewardship.source.version_models import SnapshotMinistry
 from parishkit.stewardship.storage import StaleRecordError
-from parishkit.stewardship.web.contracts import filters
-from parishkit.stewardship.web.refusals import UserFacingStale
+from parishkit.stewardship.web.refusals import UserFacingStale, stale_page
 from parishkit.stewardship.workflows.models import MinistryRequest
 
 from . import admin_navigation
@@ -41,6 +48,10 @@ from .admin_editing import (
     error_response,
     form_action,
     principal,
+    receipt_base,
+    requested_status,
+    review_region,
+    reviewed_base,
     sign_preview,
 )
 from .authentication import runtime
@@ -150,34 +161,57 @@ def impact(campaign, duids):
     return open_forms, counts
 
 
-def _page(request, configuration, campaign, form, *, status=200):
-    """Show the live selection editor as the first step of edit, review, apply."""
-    admin_navigation.place(request, flow="change", step="edit")
+def _page(request, configuration, campaign, form, *, status=200, **region):
+    """Show the live selection editor with its in-place review region.
+
+    ``region`` is ``review_region``'s ``review``, ``receipt``, ``refusal`` or
+    ``message``; the step indicator follows it through edit, review and
+    apply (#196), all on this page.
+    """
+    step = "review" if region.get("review") else "edit"
+    if region.get("receipt"):
+        step = "apply"
+    admin_navigation.place(request, flow="change", step=step)
     response = render(
         request,
         "stewardship/campaign-ministries.html",
-        {"configuration": configuration, "campaign": campaign, "form": form},
+        {
+            "configuration": configuration,
+            "campaign": campaign,
+            "form": form,
+            **review_region("campaign_ministries", form, **region),
+        },
         status=status,
     )
-    if status == 400:
+    if status != 200:
         response.stewardship_safe_error = True
     return response
 
 
 def _preview(request, service, actor, state, campaign, form):
-    """Review the exact change and its impact; nothing is requested yet."""
+    """Review the exact change and its impact; nothing is requested yet.
+
+    A stale page raises ``UserFacingStale``, which the caller shows in the
+    review region; other refusals are the page again with their summary.
+    """
     configuration, fingerprint = state[0], state[-1]
     if not form.is_valid():
         return _page(request, configuration, campaign, form, status=400)
     if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:
-        raise StaleRecordError("Reload the Ministries before changing them.")
+        raise stale_page()
     before = sorted(campaign.active_configuration.values["ministry_duids"])
     after = form.cleaned_data["ministry_duids"]
     added = sorted(set(after) - set(before))
     removed = sorted(set(before) - set(after))
     if not added and not removed:
-        form.add_error(None, _("No Ministries have changed."))
-        return _page(request, configuration, campaign, form, status=400)
+        return _page(
+            request,
+            configuration,
+            campaign,
+            form,
+            status=400,
+            message=_("No Ministries have changed."),
+        )
     # The choices offer only the current selections and the active Ministries
     # ParishSoft still lists (_addable), so the form has already
     # refused any other addition; the installer and SQL check it again.
@@ -191,7 +225,7 @@ def _preview(request, service, actor, state, campaign, form):
     ]
     base = service.store.active()
     if base is None or base.digest != configuration.active_configuration.digest:
-        raise StaleRecordError("The applied configuration changed.")
+        raise stale_page()
     build_candidate(base, patch, candidate_id=uuid4())
     names = dict(form.fields["ministry_duids"].choices)
     open_forms, counts = impact(campaign, added + removed)
@@ -203,31 +237,29 @@ def _preview(request, service, actor, state, campaign, form):
             for duid in duids
         ]
 
-    admin_navigation.place(request, flow="change", step="review")
-    return render(
-        request,
-        "stewardship/campaign-ministries-preview.html",
-        {
-            "campaign": campaign,
-            "added": rows(added),
-            "removed": rows(removed),
-            "open_forms": open_forms,
-            "preview": sign_preview(
-                actor=actor,
-                configuration=configuration,
-                patch=patch,
-                salt=SALT,
-                snapshot=fingerprint,
-                extra={
-                    "campaign_id": str(campaign.pk),
-                    "before": before,
-                    "after": after,
-                    "added": added,
-                    "removed": removed,
-                },
-            ),
-        },
-    )
+    review = {
+        # Drawn inside settings-review.html, above its Apply.
+        "template": "stewardship/campaign-ministries-review.html",
+        "notes": [],
+        "added": rows(added),
+        "removed": rows(removed),
+        "open_forms": open_forms,
+        "preview": sign_preview(
+            actor=actor,
+            configuration=configuration,
+            patch=patch,
+            salt=SALT,
+            snapshot=fingerprint,
+            extra={
+                "campaign_id": str(campaign.pk),
+                "before": before,
+                "after": after,
+                "added": added,
+                "removed": removed,
+            },
+        ),
+    }
+    return _page(request, configuration, campaign, form, review=review)
 
 
 def _audit(request, extra):
@@ -250,10 +282,23 @@ def _audit(request, extra):
 
 @require_http_methods(["GET", "HEAD", "POST"])
 def campaign_ministries(request, campaign_id):
-    """Read, review and request a live campaign's Ministry selection change."""
+    """Read, review and request a live campaign's Ministry selection change.
+
+    Review, apply and the change's status all happen on this page (#750). A
+    stale page or an out-of-date preview is refused in place: the page again
+    (status 409) with the explanation in its review region. The only query
+    is ``request``, naming the change Apply just made.
+    """
     try:
         service = runtime()
-        actor = principal(request, service)
+        # Reading a change's status (the page's own quiet refresh once it is
+        # applied) is passive, as Change status is: it never renews idle time.
+        actor = principal(
+            request,
+            service,
+            passive=request.method != "POST" and "request" in request.GET,
+        )
+        action, refusal, digest = None, None, None
         if request.method == "POST":
             action = form_action(
                 request.POST,
@@ -261,23 +306,40 @@ def campaign_ministries(request, campaign_id):
                 multiple_fields={"ministry_duids"},
             )
             if action == "confirm":
-                response = confirm(
-                    request,
-                    service,
-                    actor,
-                    salt=SALT,
-                    current_scope=_scope,
-                    attach=_audit,
-                )
-                response["Cache-Control"] = "no-store"
-                return response
-        else:
-            filters(request.GET, allowed=set())
+                try:
+                    response = confirm(
+                        request,
+                        service,
+                        actor,
+                        salt=SALT,
+                        current_scope=_scope,
+                        attach=_audit,
+                        in_place=True,
+                    )
+                    response["Cache-Control"] = "no-store"
+                    return response
+                except UserFacingStale as error:
+                    # Drawn below with the form kept at the version the
+                    # change was reviewed at, so a page changed elsewhere
+                    # needs a reload before the next Review
+                    # (admin_editing.reviewed_base).
+                    refusal = error.refusal
+                    digest = reviewed_base(request.POST, SALT)
         with (
             read_transaction()
             if request.method in {"GET", "HEAD"}
             else work_transaction()
         ):
+            receipt = (
+                requested_status(request, service, actor, request.GET)
+                if request.method != "POST"
+                else None
+            )
+            if receipt is not None:
+                # In place, the form keeps the reader's selections
+                # (admin_editing.receipt_base); a full load uses the current
+                # version, matching the current selections it draws.
+                digest = receipt_base(request, receipt)
             state = _state(service)
             configuration, campaigns, source, held = state[:4]
             campaign = _live_campaign(configuration, campaigns, held, campaign_id)
@@ -285,18 +347,36 @@ def campaign_ministries(request, campaign_id):
             ministries, _funds = _catalog(configuration, source, values)
             ministries = _addable(ministries, source, values["ministry_duids"])
             form = LiveMinistriesForm(
-                request.POST if request.method == "POST" else None,
+                request.POST if action == "preview" else None,
                 initial={
                     "ministry_duids": [str(duid) for duid in values["ministry_duids"]],
-                    "base_digest": configuration.active_configuration.digest,
+                    "base_digest": configuration.active_configuration.digest
+                    if digest is None
+                    else digest,
                 },
                 ministries=ministries,
             )
-            response = (
-                _preview(request, service, actor, state, campaign, form)
-                if request.method == "POST"
-                else _page(request, configuration, campaign, form)
-            )
+            if refusal is not None:
+                response = _page(
+                    request, configuration, campaign, form, status=409, refusal=refusal
+                )
+            elif action == "preview":
+                try:
+                    response = _preview(request, service, actor, state, campaign, form)
+                except UserFacingStale as error:
+                    # The bound form keeps the version that was posted.
+                    response = _page(
+                        request,
+                        configuration,
+                        campaign,
+                        form,
+                        status=409,
+                        refusal=error.refusal,
+                    )
+            else:
+                response = _page(
+                    request, configuration, campaign, form, receipt=receipt
+                )
         # Recheck access after the observation ends, so a GET's read-only
         # snapshot cannot hide a revocation committed while it rendered.
         if not allows(
