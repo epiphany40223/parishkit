@@ -5232,7 +5232,9 @@ every `'<prefix>_'||` an installed audit-writing function builds to be a
   `admin_cmd_config_request_cancel`, `campaign_ministries_requested`,
   `campaign_end_date_requested`), portal users and their roles
   (`roles_applied`, the Users page's `user_change_requested`, the command
-  line's `admin_cmd_users_confirm`, and the operator's one-time conversion
+  line's `admin_cmd_users_confirm`, ParishSoft Ministry leaders imported as
+  users (`user_leaders_import_requested`, `user_leader_imported`,
+  `admin_cmd_users_import_leaders`), and the operator's one-time conversion
   of sign-in rules into users, `operator_users_upgraded`), hosted files (`hosted_file_*`), stored key
   replacements
   (`secret_replacement_requested`, `secret_request_*`,
