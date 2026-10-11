@@ -5,6 +5,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from django.template.loader import render_to_string
 
+from parishkit.stewardship.accounts.user_reads import upgrade_panel, upgrade_rows
 from parishkit.stewardship.accounts.user_rows import (
     ROLE_LABELS,
     AppliedPolicy,
@@ -13,6 +14,7 @@ from parishkit.stewardship.accounts.user_rows import (
 )
 from parishkit.stewardship.accounts.user_rules import ROLE_ORDER
 from parishkit.stewardship.accounts.user_views import user_tables
+from parishkit.stewardship.accounts.users_upgrade import Identity, plan_upgrade
 
 from ..policy_factory import address, assignment, domain
 
@@ -58,9 +60,30 @@ def components(context, admin):
         identity("consumer@workspace.example", login=None),
     ]
 
+    # Only one sample address is a ParishSoft Member; the rest default to
+    # their local part, as the conversion names them.
+    names = {"helper@workspace.example": ["Helper, Hal"]}
+
     def page(rules, known):
-        """Render exactly the context the view builds."""
+        """Render exactly the context the view builds.
+
+        The Upgrade preview is the real plan over the same rules and
+        identities, as ``users_upgrade.document_preview`` reads them.
+        """
         policy = AppliedPolicy(rules, known)
+        preview = {"already_users": False} | plan_upgrade(
+            rules,
+            [
+                Identity(
+                    item["email"],
+                    item["hosted_domain"],
+                    item["disabled"],
+                    item["last_login"] is not None,
+                )
+                for item in known
+            ],
+            names,
+        )
         return render_to_string(
             "stewardship/users.html",
             context
@@ -71,10 +94,12 @@ def components(context, admin):
                     {
                         "domain_table": domain_rows(policy),
                         "address_table": address_rows(policy),
+                        "upgrade_table": upgrade_rows(preview),
                     },
                 ),
                 "base_digest": "0" * 64,
                 "roles": [(role, ROLE_LABELS[role]) for role in ROLE_ORDER],
+                "upgrade": upgrade_panel(preview),
             },
         )
 
