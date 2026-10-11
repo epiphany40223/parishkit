@@ -61,6 +61,7 @@ from parishkit.stewardship.observability import (
 )
 from parishkit.stewardship.web.tables import Sorting
 
+from .admin_session_store import stored_key
 from .automation_models import (
     SCOPES,
     AutomationLogin,
@@ -612,7 +613,7 @@ def refuse_web_session(session_store):
     with transaction.atomic():
         row = (
             PortalSession.objects.select_for_update()
-            .filter(session_id=session_store.session_key)
+            .filter(session_id=stored_key(session_store))
             .first()
         )
         if row is not None:

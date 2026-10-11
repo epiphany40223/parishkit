@@ -190,10 +190,11 @@ class AdminCaller:
         )
         caller.automation_session = row
         if authenticated_admin(caller, store=store) is None:
+            from .admin_session_store import stored_key
             from .models import PortalSession
 
             close_command_session(
-                PortalSession.objects.filter(session_id=session.session_key).first()
+                PortalSession.objects.filter(session_id=stored_key(session)).first()
             )
             raise SessionUnusable("session_ended")
         return caller

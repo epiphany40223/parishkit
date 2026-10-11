@@ -191,10 +191,10 @@ def test_waiting_withdrawal_rechecks_start_and_boundary_winner(scheduled):
     from concurrent.futures import ThreadPoolExecutor
     from queue import Queue
 
-    from django.contrib.sessions.backends.db import SessionStore
     from django.db import connection
     from django.test import RequestFactory
 
+    from parishkit.stewardship.accounts.admin_session_store import SessionStore
     from parishkit.stewardship.campaigns.boundary_production import produce_boundaries
     from parishkit.stewardship.campaigns.work_locks import work_transaction
     from parishkit.stewardship.deployment import ServiceRole
