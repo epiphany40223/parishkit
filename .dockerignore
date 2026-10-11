@@ -78,6 +78,7 @@
 !src/parishkit/stewardship/schema/migrations/0051_users_requests.sql
 !src/parishkit/stewardship/schema/migrations/0052_users_swap.sql
 !src/parishkit/stewardship/schema/migrations/0053_user_name_lookup.sql
+!src/parishkit/stewardship/schema/migrations/0054_leaders_without_user.sql
 !src/parishkit/stewardship/schema/due_work_health.sql
 !src/parishkit/stewardship/schema/family_dispatch.sql
 !src/parishkit/stewardship/schema/production.sql
