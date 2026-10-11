@@ -147,13 +147,6 @@ PAGES = {
     # A POST-only re-render of Campaign images with the upload's error, so it
     # shares that page's name.
     "artwork_upload": Page("campaign", _("Campaign images"), "artwork_settings"),
-    # Each reviews one staged or current image and refuses once confirmed.
-    "artwork_preview": Page(
-        "campaign", _("Review campaign image"), "artwork_settings", linkable=False
-    ),
-    "artwork_remove": Page(
-        "campaign", _("Remove campaign image"), "artwork_settings", linkable=False
-    ),
     "reminder_workgroup": Page("campaign", _("Reminder WorkGroup")),
     "go_live": Page("campaign", _("Go-live readiness")),
     "go_live_families": Page("campaign", _("Testing submissions"), "go_live"),

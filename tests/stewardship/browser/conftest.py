@@ -79,6 +79,8 @@ from ..campaign_factory import campaign, financial, schedule
 from ..content_factory import content
 from ..test_schedule_forms import data_for
 from ..test_setup_final_steps import wizard as final_wizard
+from .artwork_components import POSTS as ARTWORK_POSTS
+from .artwork_components import components as artwork_components
 from .automation_components import POSTS as AUTOMATION_POSTS
 from .automation_components import SLOW_GETS as AUTOMATION_SLOW_GETS
 from .automation_components import canonical
@@ -2272,6 +2274,7 @@ def component_origin():
     responses.update(send_history_components(context, admin))
     responses.update(system_health_components(context, admin))
     responses.update(hosted_file_components(context, admin))
+    responses.update(artwork_components(context, admin))
     responses.update(limitations_components(context, admin))
     responses.update(census_components(context, admin))
     responses.update(workgroup_components(context, admin))
@@ -2303,6 +2306,7 @@ def component_origin():
         | HOSTED_FILE_POSTS
         | USER_POSTS
         | WORKGROUP_POSTS
+        | ARTWORK_POSTS
         | {
             f"{IN_PLACE_FORM}/refuse": (400, None, responses["/in-place-refused"][1]),
             f"{IN_PLACE_FORM}/invalid": (200, None, responses["/in-place-invalid"][1]),

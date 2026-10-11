@@ -142,12 +142,11 @@ LEDGER = {
     "hosted_files": command("files list"),
     "hosted_file_delete": command("files delete"),
     "hosted_file_rename": command("files rename"),
-    "artwork_settings": pending("PR 10", "artwork show"),
-    "artwork_remove": pending("PR 10", "artwork remove"),
+    # Reviews and removals happen on the page itself (#750).
+    "artwork_settings": pending("PR 10", "artwork show", "artwork remove"),
     "branding_settings": pending("PR 10", "branding show", "branding confirm"),
     "hosted_file_upload": permanent(UPLOAD),
     "artwork_upload": permanent(UPLOAD),
-    "artwork_preview": permanent(IMAGES),
     "branding_preview": permanent(IMAGES),
     "branding_asset": permanent(IMAGES),
     # Production transition and withdrawal.
