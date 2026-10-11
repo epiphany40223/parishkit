@@ -895,7 +895,7 @@ def test_refused_save_resubmits_and_a_stale_refusal_is_a_conflict(
         # The outcome is marked in error, its message beside it (#592).
         assert (
             b'<select id="followup-outcome" name="outcome" aria-invalid="true"'
-            b' aria-describedby="followup-outcome-error">'
+            b' aria-describedby="followup-outcome-tip followup-outcome-error">'
         ) in body
         assert (
             b'<ul class="errorlist" id="followup-outcome-error">'
@@ -993,8 +993,8 @@ def test_contact_refusals_mark_their_fields(response_service, google):
         for field in marked:
             tag = re.search(rf'<input id="{field}"[^>]*>', page)[0]
             assert (
-                'aria-invalid="true" aria-describedby="contact-zone-help contact-error"'
-                in tag
+                'aria-invalid="true" aria-describedby="contact-zone-help '
+                'contact-details-help contact-error"' in tag
             )
         for field in unmarked:
             assert (
