@@ -521,7 +521,19 @@ no schema change; proven by `tests/stewardship/test_admin_digests.py`
 `tests/stewardship/test_admin_route_parity.py`,
 `tests/stewardship/database/test_admin_digest_list_cli_postgresql.py` (the
 page's reports, read-only and ended sessions, no event, `--requested`, no
-current campaign) and the unchanged Emailed reports page suite. 8e adds the Family-level exports that
+current campaign) and the unchanged Emailed reports page suite. Another
+follow-up adds `report source-form`, System health's Families the form
+cannot open (#774) by DUID, through the page's own admission and
+`blocked_families`, with no schema change; proven by
+`tests/stewardship/test_admin_source_form.py` (the golden document without
+the Family name, the catalog entry),
+`tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py`,
+`tests/stewardship/database/test_admin_source_form_cli_postgresql.py` (the
+page's findings by DUID, read-only and ended sessions, the page's event, a
+Staff reader denied, a check that cannot run, no current campaign, a
+missing configuration row) and the unchanged source form page suite. 8e
+adds the Family-level exports that
 create an export record without the Family keys (`export financial`,
 `export information`, `export ministry`, `export ministry-packet`),
 through the export forms' own services; proven by

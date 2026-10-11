@@ -262,7 +262,8 @@ LEDGER = {
     "parish_root": permanent(GROUP_ROOT),
     "system_health": command("system health"),
     "system_health_status": command("system health"),
-    "source_form": pending("PR 8", "report source-form"),
+    # Families the form cannot open (#774): counts and DUIDs only.
+    "source_form": command("report source-form"),
     # Operations.
     "background": command("task list"),
     "background_tasks": command("task list"),

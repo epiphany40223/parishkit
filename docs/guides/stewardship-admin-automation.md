@@ -862,8 +862,9 @@ nothing for `export fetch` to fetch.
 ## Reports
 
 The `report` commands read the campaign report pages and print their
-counts and totals. They never print a Family's or Member's name, DUID,
-contact details or answers; for those rows, use the page or an export. A
+counts and totals. They never print a Family's or Member's name, DUID
+(except `report source-form`, below), contact details or answers; for
+those rows, use the page or an export. A
 session of any scope (read-only included) may run them, and each records the same "viewed" events in System
 logs as opening the page does. Each reads the current campaign, as the
 report pages do, and prints its `campaign_id`.
@@ -877,6 +878,7 @@ pk-admin report talents
 pk-admin report information --disposition all --needed yes
 pk-admin report ministry
 pk-admin report ministry --ministry 9 --requests join --state unresolved
+pk-admin report source-form
 ```
 
 | Command | The page | What it prints |
@@ -908,6 +910,21 @@ No command takes a search: searches match names. A report the campaign does
 not include (Financial or Ministry stewardship), or no current campaign, is
 exit 1 (`not_available`). In System logs, where the page's event counts
 the rows it showed, the command's counts 0: it shows none.
+
+`report source-form` is the one report that prints DUIDs: it is System
+health's **Families the form cannot open** list, the Families whose
+ParishSoft data keeps the Family form from opening, so that each can be
+corrected in ParishSoft. Like the page, it needs an Administrator; a
+session of any scope may run it. It prints the current `campaign_id`
+(null without a current campaign, with counts of 0 and no rows),
+`eligible` (the portal-eligible Families checked), `families` (how many
+cannot open the form) and `rows`, one per problem: `family_duid`,
+`member_duid` (null when the Member record itself is unusable) and `field`,
+in the page's words. It never prints the Family's name or the refused
+value. It records the page's "viewed" event with the number of Families
+listed. A check that cannot run now (no ParishSoft data yet, or a restore
+under review) is exit 3 (`unavailable`): try again later. The host's
+`pk-stewardship source-form-check` runs the same check.
 
 ## Digests
 
@@ -1276,3 +1293,6 @@ error, as `logs export` does; the wrapper refuses to write it to a terminal.
 - `pk-admin/1` (ADM-11 PR 8d follow-up): additive. `digest list
   [--requested KEY]`, the Emailed reports page's lists (any session, no
   event).
+- `pk-admin/1` (#463): additive. `report source-form`, System health's
+  Families the form cannot open, by DUID (any session, Administrators
+  only, the page's event).
