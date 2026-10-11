@@ -89,6 +89,8 @@ from .branding_components import POSTS as BRANDING_POSTS
 from .branding_components import components as branding_components
 from .census_components import components as census_components
 from .chart_components import components as chart_components
+from .content_catalog_components import POSTS as CONTENT_CATALOG_POSTS
+from .content_catalog_components import components as content_catalog_components
 from .data_to_fix_components import components as data_to_fix_components
 from .delivery_components import POSTS as DELIVERY_POSTS
 from .delivery_components import components as delivery_components
@@ -919,67 +921,6 @@ def component_origin():
                 "window_changes": {},
                 "blocking": 0,
                 "preview": "synthetic-preview",
-            },
-        ),
-        (
-            # Pages and emails (#446): a reminder email two schedules send,
-            # and an unused one with the same subject that offers Remove.
-            "/content-catalog",
-            "content-catalog",
-            {
-                "campaign": {
-                    "pk": mail_campaign["id"],
-                    "active_configuration": mail_campaign["values"],
-                },
-                "pages": [
-                    {"label": "Welcome", "url": "/content-edit", "state": "custom"}
-                ],
-                "emails": [
-                    {
-                        "label": "Reminder",
-                        "singleton": False,
-                        "scheduled": True,
-                        "url": "/content-edit",
-                        "revisions": [
-                            {
-                                "subject": "Please respond",
-                                "short_id": "1a2b3c4d",
-                                "excerpt": "Welcome to {{ parish_name }}.",
-                                "used_by": ["Reminder 1", "Reminder 2"],
-                                "state": "custom",
-                                "test_url": "/campaign-mail",
-                                "url": "/content-edit/used",
-                            },
-                            {
-                                "subject": "Please respond",
-                                "short_id": "5e6f7a8b",
-                                "excerpt": "A second reminder for the parish, "
-                                "with a much longer first line of text.",
-                                "used_by": [],
-                                "state": "default",
-                                "test_url": "/campaign-mail",
-                                "url": "/content-edit/spare",
-                            },
-                        ],
-                    },
-                    {
-                        "label": "Confirmation email",
-                        "singleton": True,
-                        "scheduled": False,
-                        "url": "/content-edit",
-                        "revisions": [
-                            {
-                                "subject": "Thank you",
-                                "short_id": None,
-                                "excerpt": "Thank you for responding.",
-                                "used_by": [],
-                                "state": "default",
-                                "test_url": None,
-                                "url": "/content-edit",
-                            }
-                        ],
-                    },
-                ],
             },
         ),
         (
@@ -2294,6 +2235,7 @@ def component_origin():
     responses.update(census_components(context, admin))
     responses.update(workgroup_components(context, admin))
     responses.update(schedule_list_components(context, admin))
+    responses.update(content_catalog_components(context, admin))
     responses.update(in_place_components(context, admin))
     responses.update(live_status_components(context, admin))
     responses.update(settings_components(context, admin))
@@ -2323,6 +2265,7 @@ def component_origin():
         | WORKGROUP_POSTS
         | ARTWORK_POSTS
         | BRANDING_POSTS
+        | CONTENT_CATALOG_POSTS
         | {
             f"{IN_PLACE_FORM}/refuse": (400, None, responses["/in-place-refused"][1]),
             f"{IN_PLACE_FORM}/invalid": (200, None, responses["/in-place-invalid"][1]),
