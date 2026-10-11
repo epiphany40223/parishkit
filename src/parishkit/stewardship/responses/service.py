@@ -3,16 +3,17 @@
 The answer is recorded alongside the Ministry page, in a per-Member entry
 that also holds a ``talents`` map. The Family form no longer asks for
 talents (#970) and sends only ``cannot_serve``, so each new entry is stored
-with an empty map. A form opened before then may still send a configured
-talent, which is validated, stored and never shown. Older submissions keep
-the talents they recorded. ``DEFAULT_TALENTS`` stays because the installed
-SQL guard's ``stewardship_talent_defaults_v1()`` still lists the same
-options, and the form definition digest still hashes the configured list.
+with an empty map, the only map the database guard accepts since migration
+0056. A form opened before then may still send talents; they are dropped,
+not stored. Older submissions keep the talents they recorded. The talent
+list below stays only because the form definition digest still hashes it.
 """
 
-from .census import clean_text
 from .financial import ShareOption
 
+# The retired talent text limit and default list (#970) stay only as inputs
+# to the form definition digest (see configured_talent_options), so neither
+# may change: a different digest would refuse forms issued earlier.
 TALENT_TEXT_LIMIT = 200
 
 # Fixed identities: a configuration without an explicit list resolves to these
@@ -29,7 +30,7 @@ DEFAULT_TALENTS = (
 
 
 class InvalidServiceAnswers(ValueError):
-    """Static messages keyed by trusted paths; never echo talent text."""
+    """Static messages keyed by trusted paths; never echo submitted text."""
 
     def __init__(self, fields):
         """Keep private free text out of exception strings."""
@@ -44,11 +45,8 @@ def configured_talent_options(configuration):
     still hashes this list exactly as before: a Family's form issued earlier
     keeps its stored definition digest, and a different digest for the same
     configuration would refuse that Family's submission as unverifiable.
-    Submissions are also validated against it, so a talent sent from a form
-    opened before #970 is still stored rather than refusing the whole
-    response; malformed or unknown values are still refused. Only
-    Ministry-enabled campaigns name talents; a never-edited list resolves to
-    ``DEFAULT_TALENTS``. Never use this to offer talents.
+    Only Ministry-enabled campaigns name talents; a never-edited list
+    resolves to ``DEFAULT_TALENTS``. Never use this to offer talents.
     """
     if "ministry" not in configuration["modules"]:
         return ()
@@ -58,35 +56,18 @@ def configured_talent_options(configuration):
     return tuple(ShareOption(**value) for value in values)
 
 
-def _talents(value, options):
-    """Normalize one Member's selections like financial share methods.
-
-    A free-text option (such as "Other") requires its text; any other
-    option must carry an empty string. Unlike share methods none is required.
-    """
-    allowed = {option.id: option for option in options}
-    if type(value) is not dict or not set(value) <= allowed.keys():
-        return None
-    result = {}
-    for key in sorted(value):
-        text = clean_text(value[key], TALENT_TEXT_LIMIT)
-        if text is None or bool(text) != allowed[key].free_text:
-            return None
-        result[key] = text
-    return result
-
-
-def validate_service_answers(payload, ministries, inputs, options):
-    """Validate the Ministry lock (and any stale talents) against Ministry answers.
+def validate_service_answers(payload, ministries, inputs):
+    """Validate the Ministry lock against the Ministry answers.
 
     ``ministries`` is the already-normalized Ministry section; this section
     may only name its Member identities, and omitted ones default to "can
     participate". A Member who cannot participate must stop every current
     Ministry and join none; the browser enforces the same rule, and the
-    database guard checks it again. ``options`` are the configured talents a
-    form opened before #970 may still send. The current form sends no
-    ``talents`` key, and every stored entry gets the map (empty unless a
-    stale form sent one), the shape the database guard requires.
+    database guard checks it again. The current form sends no ``talents``
+    key. A form opened before #970 may send a talents map: it is accepted
+    so that Family's response is not lost, and dropped, because no one reads
+    talents any more. Every stored entry gets an empty map, the shape the
+    database guard requires.
     """
     if inputs is None:
         if type(payload) is not dict or payload:
@@ -112,12 +93,9 @@ def validate_service_answers(payload, ministries, inputs, options):
                 type(entry) is not dict
                 or set(entry) - {"talents"} != {"cannot_serve"}
                 or type(entry["cannot_serve"]) is not bool
+                or type(entry.get("talents", {})) is not dict
             ):
                 errors[path] = "Review this person's ministry answer."
-                continue
-            talents = _talents(entry.get("talents", {}), options)
-            if talents is None:
-                errors[f"{path}.talents"] = "Choose only the offered talents."
                 continue
             choices = ministries[group][identifier]
             if entry["cannot_serve"] and (
@@ -131,7 +109,7 @@ def validate_service_answers(payload, ministries, inputs, options):
                 continue
             result[group][identifier] = {
                 "cannot_serve": entry["cannot_serve"],
-                "talents": talents,
+                "talents": {},
             }
     if errors:
         raise InvalidServiceAnswers(errors)
