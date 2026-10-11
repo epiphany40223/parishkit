@@ -578,7 +578,14 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   moves the review region below the slots. A stale upload (the page's
   settings changed elsewhere) is refused in the region too; a stale Apply
   says to upload the image again, or for a removal, to choose Remove this
-  image again.
+  image again. A refused Apply's answer marks the slots
+  `data-in-place-always`, so their forms are redrawn at the current
+  version and the next upload is accepted. Loading an address whose change
+  can no longer be reviewed (an image already applied, expired, another
+  sign-in's or stale; a slot with nothing left to remove) shows the page
+  with that explanation in the review region. Each upload form has an id,
+  so a file chosen while the quiet refresh redraws it is said not to be
+  kept.
 
 ### No layout shift
 
