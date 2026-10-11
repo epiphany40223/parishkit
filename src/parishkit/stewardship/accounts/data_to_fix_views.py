@@ -33,16 +33,19 @@ from django.views.decorators.http import require_safe
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.read_guards import CampaignReadGuard
-from parishkit.stewardship.jobs.delivery_views import (
-    UNAVAILABLE,
-    _database_error,
-    _error,
-)
+from parishkit.stewardship.jobs.delivery_views import UNAVAILABLE
+from parishkit.stewardship.load_check import LoadCheckRefused
 from parishkit.stewardship.observability import Event, emit_failure
-from parishkit.stewardship.web.contracts import ErrorCode, filters
+from parishkit.stewardship.web.contracts import (
+    ErrorCode,
+    FieldError,
+    filters,
+    validation_response,
+)
+from parishkit.stewardship.web.report_errors import report_unavailable
 
 from . import admin_navigation
-from .authentication import runtime
+from .authentication import denial, runtime
 from .policy import Capability, allows
 from .runtime_models import SystemConfiguration
 from .sessions import authenticated_admin
@@ -148,14 +151,19 @@ def _guarded(campaign_id, read, *, admit=None):
 
 
 def _form_cannot_open(principal, campaign_id):
-    """System health's count of Families the form cannot open."""
+    """System health's count of Families the form cannot open.
+
+    Before any ParishSoft data is promoted the scan refuses to run
+    (``LoadCheckRefused``); that is not a failure, so the section says
+    there is nothing to count yet, as the unreachable count does.
+    """
     from parishkit.stewardship.reports.source_form import blocked_families
 
-    return {
-        "count": _guarded(campaign_id, lambda: blocked_families(campaign_id))[
-            "families"
-        ]
-    }
+    try:
+        found = _guarded(campaign_id, lambda: blocked_families(campaign_id))
+    except LoadCheckRefused:
+        return {"reason": NO_SOURCE}
+    return {"count": found["families"]}
 
 
 def _refused_addresses(principal, campaign_id):
@@ -209,6 +217,12 @@ READS = {
 }
 
 
+def _sentence(text):
+    """A reason as a sentence on the page: the menu's tips have no final stop."""
+    text = str(text)
+    return text if text.endswith(".") else f"{text}."
+
+
 def _read_one(section, principal, configuration, campaign):
     """One section's count, or why it has none; never raises for a read.
 
@@ -222,10 +236,10 @@ def _read_one(section, principal, configuration, campaign):
     state = admin_navigation.MenuState(campaign, configuration.mode)
     blocked = section.reason(state) if section.reason else None
     if blocked:
-        return {"reason": blocked, "available": False}
+        return {"reason": _sentence(blocked), "available": False}
     if campaign is None and section.key != "refused_addresses":
         # The source-form list opens without a campaign and says so.
-        return {"reason": NO_CAMPAIGN, "available": True}
+        return {"reason": _sentence(NO_CAMPAIGN), "available": True}
     try:
         found = READS[section.key](principal, campaign and campaign.pk)
     except Exception as error:
@@ -321,7 +335,7 @@ def data_to_fix(request):
         actor = _principal(request, service.store)
         found = current(service.store)
         if found is None:
-            return _error(ErrorCode.UNAVAILABLE, 503)
+            return report_unavailable()
         configuration, campaign = found
         rows = read_sections(actor, configuration, campaign)
         response = render(
@@ -344,15 +358,17 @@ def data_to_fix(request):
             if SystemConfiguration.objects.filter(
                 restore_review_required=True
             ).exists():
-                return _error(ErrorCode.UNAVAILABLE, 503)
+                return report_unavailable()
             audit(fresh, Outcome.SUCCEEDED, total(rows))
         response["Cache-Control"] = "no-store"
         return response
+    # Answered as the report pages answer (ui-conventions, request errors):
+    # the shared denial, and the report error page for an outage or a bad
+    # address, never Outgoing mail's error page, whose links Staff cannot
+    # open.
     except PermissionError:
-        return _error(ErrorCode.DENIED, 403)
-    except DatabaseError as error:
-        return _database_error(error)
-    except (*UNAVAILABLE, ObjectDoesNotExist):
-        return _error(ErrorCode.UNAVAILABLE, 503)
+        return denial()
+    except (DatabaseError, *UNAVAILABLE, ObjectDoesNotExist):
+        return report_unavailable()
     except ValueError:
-        return _error(ErrorCode.INVALID, 400)
+        return validation_response([FieldError(ErrorCode.INVALID)], status=400)
