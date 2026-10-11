@@ -243,7 +243,8 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 def swap_pending():
     """Put the database in the state `migrate --users-upgrade-base` leaves.
 
-    The swap's ``django_migrations`` row is removed and the five functions
+    The ``django_migrations`` rows of the swap and of every migration that
+    depends on it are removed and the five functions
     it replaces get their real earlier bodies back (``old_definitions``),
     so sign-in, export authorization and recovery run on the SQL a
     production database has between the base migration and the full one.
@@ -252,13 +253,24 @@ def swap_pending():
     neither function bodies nor that table, so later tests would otherwise
     see this state.
     """
-    app, name = USERS_SWAP
+    from django.db.migrations.loader import MigrationLoader
+
+    # The swap and every later migration that depends on it are pending
+    # then (a later one, such as 0053's Name lookup, keeps its objects:
+    # nothing here reads them).
+    closure = sorted(
+        runtime_database.users_swap_closure(MigrationLoader(connection).graph)
+    )
+    removed = []
     with transaction.atomic(), connection.cursor() as cursor:
-        cursor.execute(
-            "DELETE FROM django_migrations WHERE app=%s AND name=%s RETURNING applied",
-            [app, name],
-        )
-        (applied,) = cursor.fetchone()
+        for app, name in closure:
+            cursor.execute(
+                "DELETE FROM django_migrations WHERE app=%s AND name=%s "
+                "RETURNING applied",
+                [app, name],
+            )
+            removed.extend((app, name, applied) for (applied,) in cursor.fetchall())
+        assert USERS_SWAP in {(app, name) for app, name, _ in removed}
         for definition in old_definitions().values():
             cursor.execute(definition)
     try:
@@ -267,11 +279,12 @@ def swap_pending():
         with transaction.atomic(), connection.cursor() as cursor:
             cursor.execute("RESET SESSION AUTHORIZATION")
             cursor.execute(SWAP[: SWAP.index("DO $check$")])
-            cursor.execute(
-                "INSERT INTO django_migrations (app, name, applied) "
-                "VALUES (%s, %s, %s)",
-                [app, name, applied],
-            )
+            for row in removed:
+                cursor.execute(
+                    "INSERT INTO django_migrations (app, name, applied) "
+                    "VALUES (%s, %s, %s)",
+                    list(row),
+                )
 
 
 def reads_domain_rules(name):
