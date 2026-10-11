@@ -140,11 +140,13 @@ abbreviation, such as "October 10, 2026 at 9:15 PM EDT"
 Pages and emails move to these rules one
 group at a time in the #558 PRs; the Ministry follow-up contact attempt is the
 first ([Admin portal](../admin-portal/spec.md#follow-up-workflows)), the System
-logs date filters the second ([Admin portal](../admin-portal/spec.md#logs)), and
+logs date filters the second ([Admin portal](../admin-portal/spec.md#logs)),
 New and Edit scheduled email the third ([Admin
-portal](../admin-portal/spec.md#new-and-edit-scheduled-email)).
+portal](../admin-portal/spec.md#new-and-edit-scheduled-email)), and the
+submitted-date filters of the Additional information and Ministry reports the
+fourth ([Reports](../reports/spec.md#additional-information)).
 Until a page's PR lands, it keeps its current zone, including the campaign zone
-for the other schedule pages, campaign dates and report day buckets. One field is a recorded
+for the other schedule pages and campaign dates. One field is a recorded
 exception that stays in the parish's time zone after every #558 PR: the
 ParishSoft full-refresh times (Administrator decision). A refresh schedule is
 a recurring wall-clock schedule: the parish's own daylight-saving changes

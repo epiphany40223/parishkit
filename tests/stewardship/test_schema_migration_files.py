@@ -222,6 +222,9 @@ FROZEN = {
     "0063_timeline_exports.sql": (
         "c99c24710b46e3de1fccebd3c4f4a921315cb2f4b4ba53f31bf44c119b8dbf46"
     ),
+    "0064_report_local_days.sql": (
+        "85da90b9c2df3eebaba5ea9bd2ce048fb9fadbe70d6bf8d0113c0fe2a11c1511"
+    ),
 }
 
 
