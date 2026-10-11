@@ -225,8 +225,92 @@ def recipient_changed(current):
     return changed
 
 
-def _backup(config):
-    """Run one backup set in the admitted backup profile and record it."""
+def reusable_upgrade_backup():
+    """The pre-upgrade backup a repeated users-upgrade deploy reuses, or None.
+
+    A deploy of the users release (#952) whose ``migrate
+    --users-upgrade-base`` stopped partway (a failure, a time limit) leaves
+    migrations outside the users swap pending, which this image's backup
+    refuses, so the repeated run's step-1 backup could never run. That
+    state can only come from the earlier run of this same upgrade: every
+    online service refuses a pending migration, so nothing but that
+    migration has written to the database since the earlier run's step-1
+    backup, which therefore is still its restore point (with the previous
+    release, as for any failed schema upgrade).
+
+    Returns that backup's facts when, and only when: nothing applied is
+    unknown to this image; the users swap is still pending; something
+    outside its closure is pending too (only the swap pending means a fresh
+    backup runs, as before); everything pending is the swap's closure or
+    the base migration's plan (``users_upgrade_targets`` admits the graph);
+    and the newest backup is within the window ``migrate`` itself requires,
+    so the repeated base migration is admitted on it. Its off-site state is
+    the recorded copy of that very set.
+    """
+    from django.db import connection
+    from django.db.migrations.executor import MigrationExecutor
+
+    from .backup import recent_backup_recorded
+    from .backup_offsite import destination
+    from .jobs.backup_models import BackupRun, BackupUpload
+    from .operator_commands import users_upgrade_targets
+    from .runtime_database import USERS_SWAP, users_swap_closure
+
+    executor = MigrationExecutor(connection)
+    loader = executor.loader
+    loader.check_consistent_history(connection)
+    if set(loader.applied_migrations) - set(loader.disk_migrations):
+        return None
+    if USERS_SWAP in loader.applied_migrations:
+        return None
+    closure = users_swap_closure(loader.graph)
+    plan = executor.migration_plan(loader.graph.leaf_nodes())
+    pending = {(migration.app_label, migration.name) for migration, _ in plan}
+    base = pending - closure
+    if not closure or not base:
+        return None
+    # Refuses a graph whose base no single migrate target per app reaches.
+    users_upgrade_targets(loader)
+    with connection.cursor() as cursor:
+        if not recent_backup_recorded(cursor):
+            return None
+    # Only the columns read here: a half-migrated database may have
+    # changed others, which a whole-row read would trip over.
+    run = (
+        BackupRun.objects.order_by("-completed_at")
+        .values("completed_at", "manifest_digest", "application_version")
+        .first()
+    )
+    copied = BackupUpload.objects.filter(
+        state="uploaded", manifest_digest=run["manifest_digest"]
+    ).exists()
+    if copied:
+        offsite = "uploaded"
+    elif destination() is None:
+        offsite = "not_configured"
+    else:
+        offsite = "not_uploaded"
+    return {
+        "backup_recorded": False,
+        "backup_reused": True,
+        "reused_backup": {
+            "completed_at": run["completed_at"].isoformat(),
+            "manifest_digest": run["manifest_digest"],
+            "application_version": run["application_version"],
+        },
+        "pending_base_migrations": len(base),
+        "offsite": {"state": offsite},
+    }
+
+
+def _backup(config, *, users_upgrade_resume=False):
+    """Run one backup set in the admitted backup profile and record it.
+
+    ``users_upgrade_resume`` (the scripted upgrade's repeated users-upgrade
+    run only) reports the earlier run's backup instead when the users
+    upgrade's base migration stopped partway (``reusable_upgrade_backup``);
+    in every other state it backs up as usual.
+    """
     from .backup import configured_recipient, run_backup
     from .backup_boundaries import admit_backup_service
     from .operator_commands import configure_operator_database
@@ -245,6 +329,12 @@ def _backup(config):
         from .runtime_database import require_current_schema
 
         _admit_backup_identity()
+        if users_upgrade_resume:
+            reused = reusable_upgrade_backup()
+            if reused is not None:
+                # The scripted upgrade logs this line in the run's log and
+                # in stewardship-backup.log, as it does every backup's.
+                return reused
         # The users upgrade (#952) may leave only the users swap pending: a
         # deploy that stopped after its base migration (no conversion
         # inputs, a refused conversion, a failed final migration, an
@@ -320,7 +410,9 @@ def execute_backup_command(args):
         elif args.command == "backup-prove":
             result = _prove(args.key, args.input)
         else:
-            result = _backup(args.config)
+            result = _backup(
+                args.config, users_upgrade_resume=bool(args.users_upgrade_resume)
+            )
     except Exception as error:
         emit_failure(error, event=Event.STARTUP_REJECTED)
         print(

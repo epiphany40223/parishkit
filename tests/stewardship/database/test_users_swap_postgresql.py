@@ -624,3 +624,110 @@ def test_a_swap_pending_backup_restores_into_the_same_state(
             assert forge(portal.pk).principal_id == portal.pk
     # The test database itself is back with the swap applied.
     runtime_database.require_current_schema()
+
+
+@contextmanager
+def base_partly_applied():
+    """Swap pending and one migration outside its closure pending too.
+
+    The state a `migrate --users-upgrade-base` that stopped partway (a
+    failure, a time limit) leaves: the newest migration of another app is
+    not yet recorded. Its row is put back afterwards.
+    """
+    from django.db.migrations.loader import MigrationLoader
+
+    other = next(
+        key
+        for key in sorted(MigrationLoader(connection).graph.leaf_nodes())
+        if key[0] != USERS_SWAP[0]
+    )
+    with swap_pending():
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM django_migrations WHERE app=%s AND name=%s "
+                "RETURNING applied",
+                list(other),
+            )
+            (applied,) = cursor.fetchone()
+        try:
+            yield
+        finally:
+            with connection.cursor() as cursor:
+                cursor.execute("RESET SESSION AUTHORIZATION")
+                cursor.execute(
+                    "INSERT INTO django_migrations (app, name, applied) "
+                    "VALUES (%s, %s, %s)",
+                    [*other, applied],
+                )
+
+
+def test_a_resumed_users_upgrade_reuses_the_earlier_runs_backup(
+    tmp_path, monkeypatch, capsys
+):
+    """A base migration that stopped partway: the repeat reuses the backup.
+
+    With migrations outside the swap pending, `backup` refuses as before;
+    `backup --users-upgrade-resume` reports the newest recorded backup (the
+    earlier run's step 1, within migrate's 24-hour window) instead of
+    taking one, with that set's own off-site state. Without such a backup it
+    still refuses; with only the swap pending it backs up as usual.
+    """
+    from datetime import timedelta
+
+    from parishkit.stewardship.cli import main
+    from parishkit.stewardship.jobs.backup_models import BackupUpload
+
+    from .test_backup_postgresql import FACTS, backup_login, recorded
+
+    initialized(tmp_path, rules())
+    taken = []
+
+    def run_backup(configuration, *, record, migrations, recipient):
+        """Record one fresh run; the reuse path never reaches this."""
+        taken.append(sorted(migrations))
+        record(started_at=scalar("SELECT statement_timestamp()"), **FACTS)
+        return {
+            "database": {"plaintext_bytes": 1},
+            "files": {"plaintext_bytes": 1},
+            "recipient_fingerprint": FACTS["recipient_fingerprint"],
+        }
+
+    def backup(*flags):
+        """Run the command as the backup login; its exit code and JSON."""
+        with backup_login():
+            code = main(["backup", "--config", "unused", *flags])
+        out = capsys.readouterr().out
+        return code, json.loads(out) if out else None
+
+    backup_command(monkeypatch, run_backup)
+    resume = "--users-upgrade-resume"
+    with base_partly_applied():
+        # No recent backup: nothing to reuse, so it refuses either way.
+        recorded(age=timedelta(hours=25), manifest_digest="d" * 64)
+        assert backup(resume) == (2, None)
+        # The earlier run's step-1 backup, copied off-site.
+        recorded(manifest_digest="e" * 64)
+        assert backup() == (2, None)
+        code, report = backup(resume)
+        assert code == 0
+        assert report["backup_recorded"] is False
+        assert report["backup_reused"] is True
+        assert report["reused_backup"]["manifest_digest"] == "e" * 64
+        assert report["pending_base_migrations"] == 1
+        # No off-site destination in this configuration and no copy row.
+        assert report["offsite"] == {"state": "not_configured"}
+        with transaction.atomic():
+            BackupUpload.objects.create(
+                state="uploaded",
+                set_name="20261010T000000Z",
+                manifest_digest="e" * 64,
+                folder_id="f" * 20,
+            )
+        assert backup(resume)[1]["offsite"] == {"state": "uploaded"}
+        assert taken == []
+    with swap_pending():
+        # Only the swap pending: a fresh backup, flag or not.
+        code, report = backup(resume)
+        assert (code, report["backup_recorded"]) == (0, True)
+        assert "backup_reused" not in report
+    assert len(taken) == 1

@@ -315,10 +315,19 @@ case "$*" in
         echo x >>"$FAKE_STATE/checks"
         if [ -n "$FAKE_NOOP_LATER" ] && [ "$(wc -l <"$FAKE_STATE/checks")" -gt 1 ]
         then echo "$FAKE_NOOP_LATER"; else echo "$FAKE_NOOP"; fi ;;
-    *" run --rm -T backup-worker")
+    *" run --rm -T backup-worker"|*" run --rm -T backup-worker backup --config "*)
         echo '{"level":"DEBUG"}'
         if [ -n "$FAKE_BACKUP_GARBAGE" ]; then echo "ERROR: backup refused; no JSON"
         elif [ -n "$FAKE_BACKUP_FAIL" ]; then json failed
+        elif [ -e "$FAKE_STATE/base_partial" ]; then
+            # Migrations outside the swap pending: only the resume reuses
+            # the earlier run's backup; a plain backup refuses.
+            if [ "$last" = --users-upgrade-resume ]; then
+                echo '{"backup_recorded": false, "backup_reused": true,' \
+                    '"reused_backup": {"completed_at": "2026-10-10T04:00:00+00:00",' \
+                    '"manifest_digest": "'"$(printf 'e%.0s' {1..64})"'"},' \
+                    '"offsite": {"state": "'"${FAKE_OFFSITE:-uploaded}"'"}}'
+            else echo "ERROR: backup refused or incomplete"; fi
         else json "${FAKE_OFFSITE:-uploaded}"; fi ;;
     *" retarget-image --config "*)
         [ -z "$FAKE_RETARGET_FAIL" ] || { echo "retarget refused" >&2; exit 1; }
@@ -344,10 +353,17 @@ case "$*" in
                 >"$(dirname "$FAKE_COMPOSE")/$role.yaml"
         done
         touch "$FAKE_STATE/retargeted" ;;
-    *" run --rm -T migration migrate --config "*" --users-upgrade-base")
+    *" --rm -T migration migrate --config "*" --users-upgrade-base")
+        if [ -n "$FAKE_BASE_FAIL" ]; then
+            # Stopped partway: migrations outside the swap still pending.
+            touch "$FAKE_STATE/base_partial"
+            echo "Migration refused partway" >&2
+            exit 1
+        fi
+        rm -f "$FAKE_STATE/base_partial"
         touch "$FAKE_STATE/swap_pending"
         echo "migrated to the base" ;;
-    *" run --rm -T migration")
+    *" --rm -T migration")
         if [ -n "$FAKE_MIGRATE_FAIL" ]; then
             touch "$FAKE_STATE/swap_pending"
             echo "Migration 0052 refused" >&2
@@ -358,7 +374,9 @@ case "$*" in
     *" upgrade-users "*"--operation-id "*)
         [ -z "$FAKE_USERS_FAIL" ] || { echo "upgrade refused" >&2; exit 1; }
         echo '{"users_upgrade_applied": true}' ;;
-    *"database-grants"*) echo "granted" ;;
+    *"database-grants"*)
+        [ -z "$FAKE_GRANTS_FAIL" ] || { echo "grants refused" >&2; exit 1; }
+        echo "granted" ;;
     *"exec -T caddy sha256sum"*) sha256sum "$FAKE_CADDYFILE" ;;
     *"pk-stewardship health"*) [ -z "$FAKE_WEB_FAIL" ] || exit 1 ;;
     *"ps --all --format json")
@@ -624,7 +642,7 @@ def test_an_upgrade_with_the_override_runs_migration_and_grants(tmp_path):
     """With the override, both commands run after the retarget, before web."""
     calls, output, _ = run_host(tmp_path, "upgrade", noop="f", schema_change="1")
     retarget = first(calls, " retarget-image ")
-    migration = first(calls, "run --rm -T migration")
+    migration = first(calls, "--rm -T migration")
     assert retarget < migration < first(calls, "database-grants")
     assert migration < first(calls, "up --detach --wait web")
     assert "running migration and grants: the check answered: f" in output
@@ -1172,15 +1190,13 @@ def test_the_users_upgrade_converts_between_the_two_migrations(tmp_path):
     )
     base = first(calls, "migration migrate --config ")
     assert calls[base].endswith(
-        "run --rm -T migration migrate --config "
+        "--rm -T migration migrate --config "
         f"{tmp_path}/root/config/services/migration.yaml --users-upgrade-base"
     )
     grants = [i for i, call in enumerate(calls) if "database-grants" in call]
     preview = first(calls, " upgrade-users ")
     convert = first(calls, "--operation-id ")
-    full = next(
-        i for i, call in enumerate(calls) if call.endswith("run --rm -T migration")
-    )
+    full = next(i for i, call in enumerate(calls) if call.endswith("--rm -T migration"))
     assert first(calls, " retarget-image ") < base < grants[0] < preview < convert
     assert convert < full < grants[1] < first(calls, "up --detach --wait web")
     assert len(grants) == 2
@@ -1261,7 +1277,7 @@ def test_a_refused_conversion_stops_before_the_swap_with_web_down(tmp_path):
     assert "The users upgrade did not complete" in output
     assert "Admin-access recovery works" in output
     assert "caddy serves the maintenance page" in output
-    assert not any(call.endswith("run --rm -T migration") for call in calls)
+    assert not any(call.endswith("--rm -T migration") for call in calls)
     assert not any("up --detach --wait web" in call for call in calls)
 
 
@@ -1366,9 +1382,7 @@ def test_a_repeated_run_finishes_the_users_upgrade_after_step_4_stopped(tmp_path
     assert "(same digest: re-running the upgrade)" in output
     backup = first(calls, "backup-worker")
     convert = first(calls, "--operation-id ")
-    full = next(
-        i for i, call in enumerate(calls) if call.endswith("run --rm -T migration")
-    )
+    full = next(i for i, call in enumerate(calls) if call.endswith("--rm -T migration"))
     assert backup < first(calls, " retarget-image ") < convert < full
     assert full < first(calls, " up --detach ")
     assert not (tmp_path / "state" / "refused").exists()
@@ -1468,3 +1482,67 @@ def test_the_final_migration_runs_under_a_logged_time_limit(tmp_path):
     assert any(call.startswith("timeout --kill-after=30 1800 ") for call in calls)
     assert "TIMEOUT: the migration killed after " in output
     assert "caddy serves the maintenance page" in output
+
+
+@pytest.mark.parametrize(
+    ("fake", "reused"),
+    [(dict(base_fail=True), True), (dict(grants_fail=True), False)],
+    ids=["base migration stopped partway", "grants failed after it"],
+)
+def test_a_repeat_finishes_after_the_base_migration_or_its_grants_failed(
+    tmp_path, fake, reused
+):
+    """Both failure points of the base step are resumed by repeating the run.
+
+    A base migration stopped partway leaves migrations outside the swap
+    pending, which a plain backup refuses: the repeat (same digest, web
+    down, the users inputs) asks the backup to resume, which reports the
+    first run's backup as the restore point; the run says so, records the
+    line in stewardship-backup.log, and converts and migrates. After a
+    grants failure only the swap is pending, so the same request takes a
+    fresh backup. Repeating without the users inputs refuses at the backup
+    and says to pass them.
+    """
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        noop="f",
+        status=1,
+        schema_change="1",
+        env=USERS,
+        **fake,
+    )
+    assert "caddy serves the maintenance page" in output
+    assert not any("upgrade-users" in call for call in calls)
+    if reused:
+        calls, output, _ = run_host(
+            tmp_path, "upgrade", noop="f", status=1, schema_change="1", again=True
+        )
+        assert any(call.endswith(" run --rm -T backup-worker") for call in calls)
+        assert "repeat it with the" in output and "STEWARDSHIP_USERS_*" in output
+        assert not any(" up --detach " in call for call in calls)
+    calls, output, _ = run_host(
+        tmp_path, "upgrade", noop="f", schema_change="1", env=USERS, again=True
+    )
+    backup = first(calls, "backup-worker")
+    assert calls[backup].endswith(
+        f"run --rm -T backup-worker backup --config "
+        f"{tmp_path}/root/config/services/backup-worker.yaml --users-upgrade-resume"
+    )
+    assert ("REUSED BACKUP" in output) is reused
+    recorded = (tmp_path / "logs" / "stewardship-backup.log").read_text()
+    assert ('"backup_reused": true' in recorded) is reused
+    if reused:
+        assert "2026-10-10T04:00:00+00:00 (manifest " + "e" * 64 in output
+    base = first(calls, "--users-upgrade-base")
+    convert = first(calls, "--operation-id ")
+    full = next(i for i, call in enumerate(calls) if call.endswith("--rm -T migration"))
+    assert backup < base < convert < full < first(calls, " up --detach ")
+    assert f"Upgraded to {TARGET} in" in output
+
+
+def test_a_first_run_never_asks_the_backup_to_resume(tmp_path):
+    """The resume option is only for a repeat whose documents name this image."""
+    calls, _, _ = run_host(tmp_path, "upgrade", noop="f", schema_change="1", env=USERS)
+    assert any(call.endswith(" run --rm -T backup-worker") for call in calls)
+    assert not any("--users-upgrade-resume" in call for call in calls)
