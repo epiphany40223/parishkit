@@ -595,7 +595,18 @@ proven by `tests/stewardship/test_admin_cli.py` (catalog flags, no event),
 page's rows sorted by placeholder name for a read-only session, an image's
 tag and size, a use, a missing stored copy, no event, a Staff reader
 denied, an ended session, no media root `unavailable`) and the unchanged
-hosted files page suite. `files delete` and `files rename` follow.
+hosted files page suite. The second adds `files delete` and `files
+rename`, the page's row actions, through its own `delete_many` and
+`rename` (each gains a `record` callback for the command's event), with
+no schema change; proven by `tests/stewardship/test_admin_cli.py` (catalog
+flags, described events), `tests/stewardship/test_pk_admin.py` (the
+`PROMPTING` list), `tests/stewardship/test_admin_route_parity.py` and
+`tests/stewardship/database/test_admin_files_change_cli_postgresql.py`
+(deletion at the prompt and with `--yes`, several files, an already
+deleted ID, a file in use refused before the prompt with nothing deleted,
+renaming with the link unchanged, the current name recording nothing, an
+invalid or taken name, a missing file, read-only and Staff sessions
+refused, an ended session) and the unchanged hosted files page suite.
 
 ## ADM-12: Admin navigation overhaul
 

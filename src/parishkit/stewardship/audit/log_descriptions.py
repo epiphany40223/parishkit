@@ -157,6 +157,14 @@ DESCRIPTIONS = {
         "An automation session closed or reopened the Family portal for "
         "maintenance, as the Family portal availability page does."
     ),
+    "admin_cmd_files_delete": _(
+        "An automation session deleted unused hosted files, as the Hosted "
+        "files page's Delete does."
+    ),
+    "admin_cmd_files_rename": _(
+        "An automation session changed an unused hosted file's placeholder "
+        "name, as the Hosted files page's Edit does."
+    ),
     "admin_cmd_test_sample": _(
         "An automation session sent a sample test email to the Testing "
         "recipient, as the Preview and test email page does."
