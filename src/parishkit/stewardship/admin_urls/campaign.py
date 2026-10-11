@@ -20,6 +20,7 @@ from ..accounts import (
     campaign_views,
     clone_views,
     confirmation_views,
+    content_delete_views,
     content_history,
     content_views,
     go_live_views,
@@ -50,6 +51,13 @@ patterns = [
     ),
     _page("campaign/copy/", clone_views.campaign_clone, "campaign_clone"),
     _page("campaign/content/", content_views.content_settings, "content_catalog"),
+    # Delete for the email template tables' confirmation dialog (#879),
+    # POST only, like schedule deletion.
+    _page(
+        "campaign/content/deletion/",
+        content_delete_views.content_delete,
+        "content_delete",
+    ),
     # History before the editor: "history/<revision>/" also has two segments.
     _page(
         "campaign/content/history/",
