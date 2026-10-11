@@ -247,6 +247,11 @@ PAGES = {
     "user_edit": Page("users", _("Edit user"), "users"),
     # Answers only the table's confirmation dialog, with a change's status.
     "user_delete": Page("users", _("Delete user"), "users", linkable=False),
+    # Answers only the leaders table's Import selected and Import all with
+    # the review of the chosen ParishSoft Ministry leaders (#952 slice 6).
+    "user_leader_import": Page(
+        "users", _("Import Ministry leaders"), "users", linkable=False
+    ),
     # The Administrator's own automation sessions (ADM-11), and the approval
     # of a pending one, which the command line links to.
     "automation_access": Page("users", _("Automation access")),

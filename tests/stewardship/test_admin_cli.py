@@ -124,8 +124,14 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "export postal",
     }
     # The users commands (#952), in the users group (PR 11): the reads of
-    # slice 2 and the changes of slice 5.
-    users = {"users list", "users preview-upgrade", "users preview", "users confirm"}
+    # slice 2, the changes of slice 5 and the leaders import of slice 6.
+    users = {
+        "users list",
+        "users preview-upgrade",
+        "users preview",
+        "users confirm",
+        "users import-leaders",
+    }
     assert set(entries) == (
         session
         | reads
@@ -536,6 +542,7 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_export_postal",
         "admin_cmd_digest_weekly_request",
         "admin_cmd_users_confirm",
+        "admin_cmd_users_import_leaders",
     ]
     for event in events:
         assert Action(event) and event in DESCRIPTIONS, event

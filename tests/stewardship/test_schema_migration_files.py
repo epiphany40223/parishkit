@@ -192,6 +192,9 @@ FROZEN = {
     "0053_user_name_lookup.sql": (
         "8d830c804f525ae5753343dde91e3bc69d08081c3cd716c47d57e220b099dcf2"
     ),
+    "0054_leaders_without_user.sql": (
+        "3ffad84560e252d0f0cfa6c7aac0fced64a6c7c14537af2ef2b596779c000076"
+    ),
 }
 
 
