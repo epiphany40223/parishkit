@@ -27,11 +27,11 @@ UPGRADE_REQUEST_SCHEMA = "operator-upgrade-users-v10"
 REQUEST_SCHEMA = "users-patch-v10"
 CREDENTIAL_SCHEMA = "integration-credential-users-v10"
 RECOVERY_SCHEMA = "operator-recovery-users-v10"
-# The release that swaps the SQL sign-in functions and brings the Users page
-# (#952 slice 4) sets this. Until then the conversion only previews, and
-# startup still accepts a configuration of sign-in rules; once it is set,
-# web, workers and scheduler refuse to start on one (``require_users_form``).
-USERS_ENABLED = False
+# Set by the release that swaps the SQL sign-in functions and brings the
+# Users page (#952 slices 4 and 5, shipped together): web, workers and
+# scheduler refuse to start on a configuration of sign-in rules
+# (``require_users_form``), which the offline ``upgrade-users`` converts.
+USERS_ENABLED = True
 # Lowest first: each role includes every role before it.
 ROLE_LEVELS = ("ministry_leader", "staff", "administrator")
 NAME_LIMIT = 200

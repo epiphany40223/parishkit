@@ -84,10 +84,15 @@ def test_non_admin_cannot_enter_setup_or_maintenance_workflows(
 
 
 @pytest.mark.parametrize("signed_domain", [None, "wrong.example", "example.org"])
-def test_http_hosted_domain_grants_require_signed_matching_domain(
+def test_http_hosted_domain_rules_admit_no_one_after_the_users_swap(
     auth_service, google, signed_domain
 ):
-    """An email suffix alone does not grant Staff through the actual Google callback."""
+    """A hosted-domain rule grants nothing through the actual Google callback.
+
+    An email suffix alone never did; since the users swap (#952 slice 4) the
+    SQL session guard reads only users, so even a signed matching domain is
+    refused there, whatever a sign-in-rules configuration still says.
+    """
     rule = domain()
     change(
         auth_service.store,
@@ -99,13 +104,9 @@ def test_http_hosted_domain_grants_require_signed_matching_domain(
     google[0].pop("hd", None)
     if signed_domain is not None:
         google[0]["hd"] = signed_domain
-    browser, response = signed_in()
-    if signed_domain == "example.org":
-        assert response.status_code == 302
-        assert browser.get("/admin/").status_code == 200
-    else:
-        assert response.status_code == 403
-        assert not PortalSession.objects.exists()
+    _, response = signed_in()
+    assert response.status_code == 403
+    assert not PortalSession.objects.exists()
 
 
 def test_current_marker_changes_and_invalid_marker_results_fail_closed(

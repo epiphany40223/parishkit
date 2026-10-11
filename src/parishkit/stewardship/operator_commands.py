@@ -75,11 +75,16 @@ def bootstrap_command(configuration, *, phase, deployment_id, admin_email):
     }
 
 
-def migrate_command(configuration):
+def migrate_command(configuration, *, users_upgrade_base=False):
     """Run first-deployment migrations once, never race online or imply upgrade safety.
 
     Configured-deployment upgrades remain held until OPS-05 supplies verified
     backup evidence; directly invoking migrate must not bypass that future owner.
+
+    ``users_upgrade_base`` (#952 slice 4) applies every pending migration
+    except the users swap and what depends on it: the base on which
+    database-grants and the offline ``upgrade-users`` conversion run before
+    the full migration, whose swap refuses an unconverted configuration.
     """
     from django.core.management import call_command
     from django.db import connection
@@ -132,11 +137,15 @@ def migrate_command(configuration):
         if set(loader.applied_migrations) - set(loader.disk_migrations):
             raise ConfigError("This application cannot migrate a newer database.")
         lease.check()
-        call_command("migrate", interactive=False, verbosity=0)
+        if users_upgrade_base:
+            for app, name in users_upgrade_targets(loader):
+                call_command("migrate", app, name, interactive=False, verbosity=0)
+        else:
+            call_command("migrate", interactive=False, verbosity=0)
         lease.check()
         from .runtime_database import require_current_schema
 
-        require_current_schema()
+        require_current_schema(users_swap_pending=users_upgrade_base)
         # This command has proved there is no configured deployment and holds
         # offline exclusion. Establish the selected initial budget through the
         # existing version/active-download SQL guard, never by disabling it.
@@ -154,6 +163,34 @@ def migrate_command(configuration):
                 raise ConfigError("Initial download capacity was not established.")
         connection.close()
     return {"migrations_current": True}
+
+
+def users_upgrade_targets(loader):
+    """The per-app migrate targets that stop just before the users swap (#952).
+
+    Each app's leaf is its target, unless the leaf is the users swap or
+    depends on it; then the target is that app's newest migration outside
+    the swap's closure, and an app with none is left alone. A target never
+    unapplies anything: once the swap is applied (a repeated upgrade), or
+    when this image has no swap, every leaf is the target, which is the full
+    migration. Before that, nothing in the swap's closure can be applied.
+    """
+    from .runtime_database import USERS_SWAP, users_swap_closure
+
+    graph = loader.graph
+    closure = (
+        set()
+        if USERS_SWAP in loader.applied_migrations
+        else (users_swap_closure(graph))
+    )
+    targets = []
+    for node in sorted(graph.leaf_nodes()):
+        while node is not None and node in closure:
+            parents = [key for key in graph.node_map[node].parents if key[0] == node[0]]
+            node = parents[0] if parents else None
+        if node is not None:
+            targets.append(node)
+    return targets
 
 
 def recover_admin_command(
@@ -181,7 +218,8 @@ def recover_admin_command(
     from .accounts.operator_recovery import recover_admin
     from .runtime_database import admit_offline_database
 
-    admit_offline_database(configuration)
+    # Recovery also runs with only the users swap pending (#952 slice 4).
+    admit_offline_database(configuration, users_swap_pending=True)
     store = AuthorityStore(configuration.paths["authority"], validate_sections)
     result = recover_admin(
         store,
@@ -229,7 +267,7 @@ def preview_recovery_command(configuration, *, deployment_id, target_email, name
         from .accounts.request_admission import intake_base
         from .runtime_database import admit_offline_database
 
-        admit_offline_database(configuration)
+        admit_offline_database(configuration, users_swap_pending=True)
         runtime = recovery_runtime(
             AuthorityStore(configuration.paths["authority"], validate_sections)
         )
@@ -258,7 +296,8 @@ def upgrade_users_command(
     The preview changes nothing. The conversion needs a named operator and
     reason, a new operation ID (a repeat resumes it) and the exact list of
     Administrators the preview shows, comma-separated; the preview is printed
-    first. It refuses unless the release enables it.
+    first. It runs on the schema `migrate --users-upgrade-base` leaves, before
+    the users swap, as well as on a current one.
     """
     if admit_offline_service(configuration) is not ServiceRole.ADMIN_RECOVERY:
         raise ConfigError("The users upgrade requires the admin-recovery profile.")
@@ -276,7 +315,9 @@ def upgrade_users_command(
             from .accounts.users_upgrade import upgrade_preview, upgrade_runtime
             from .runtime_database import admit_offline_database
 
-            admit_offline_database(configuration, users_upgrade=True)
+            admit_offline_database(
+                configuration, users_upgrade=True, users_swap_pending=True
+            )
             runtime = upgrade_runtime(
                 AuthorityStore(configuration.paths["authority"], validate_sections)
             )
@@ -284,15 +325,6 @@ def upgrade_users_command(
                 raise ConfigError("The confirmed deployment does not match.")
             _, version = intake_base(runtime.active_configuration.digest)
             return {"users_upgrade_preview": upgrade_preview(version)}
-    from .accounts.users_schema import USERS_ENABLED
-
-    # The conversion is enabled (users_schema.USERS_ENABLED) in the release
-    # that also brings the Users page and swaps the SQL sign-in functions
-    # (#952 slices 4 and 5). Until then this command only previews: this
-    # release can edit a users configuration, but its SQL sign-in functions
-    # and its Portal users page still expect sign-in rules.
-    if not USERS_ENABLED:
-        raise ConfigError("This release previews the users upgrade only.")
     if not isinstance(confirmed_administrators, str):
         raise ConfigError("Confirm the Administrators the upgrade keeps.")
     configure_operator_database(configuration)
@@ -301,7 +333,7 @@ def upgrade_users_command(
     from .accounts.users_upgrade import upgrade_users
     from .runtime_database import admit_offline_database
 
-    admit_offline_database(configuration, users_upgrade=True)
+    admit_offline_database(configuration, users_upgrade=True, users_swap_pending=True)
     result = upgrade_users(
         AuthorityStore(configuration.paths["authority"], validate_sections),
         deployment_id=_uuid(deployment_id),
@@ -427,7 +459,9 @@ def execute_operator(args):
                 admin_email=args.admin_email,
             )
         elif args.command == "migrate":
-            result = migrate_command(configuration)
+            result = migrate_command(
+                configuration, users_upgrade_base=bool(args.users_upgrade_base)
+            )
         elif args.command in {"database-roles", "database-grants"}:
             from .database_provisioning import provision_grants, provision_roles
 
