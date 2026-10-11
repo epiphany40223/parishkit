@@ -29,11 +29,13 @@ from .information_rendering import xlsx_cell
 # The Show menu's choices: everything, or one of the two limitations.
 SHOW_WORDS = frozenset({"any", "cannot_serve", "cannot_attend"})
 # Each download table has its page table's columns, names and order (#932,
-# #966): the Members table leads with the Member, as on the page, and the
-# Families table has no "Cannot attend Mass" column, as on the page, whose
-# table heading says what it lists (every listed Family cannot attend).
+# #966): the Members table leads with the Member and Member DUID, as on the
+# page, and the Families table has no "Cannot attend Mass" column, as on the
+# page, whose table heading says what it lists (every listed Family cannot
+# attend).
 MEMBER_HEADINGS = (
     "Member",
+    "Member DUID",
     "Family",
     "Family DUID",
     "Cannot participate in ministries",
@@ -49,6 +51,7 @@ PDF_WEIGHTS = {
     "Family": 10,
     "Family DUID": 5,
     "Member": 9,
+    "Member DUID": 5,
     "Cannot participate in ministries": 6,
     "Latest response": 8,
 }
@@ -129,6 +132,8 @@ def export_tables(result, zone, *, time_text=iso_time):
     members = [
         (
             row["member_name"] + (" (proposed)" if row["proposed"] else ""),
+            # A proposed Member has no DUID yet, so its cell is empty.
+            "" if row["member_duid"] is None else str(row["member_duid"]),
             row["family_name"],
             str(row["family_duid"]),
             "Yes",
