@@ -607,7 +607,9 @@ sequence with the commands that exist.
    revocation step. `migration` runs first and commits, so if
    `database-grants` refuses after a successful migration, start neither
    image: recover with the database-restore [rollback](#rollback) (or,
-   before the freeze, by reinstalling).
+   before the freeze, by reinstalling). For the release whose notes announce
+   the users upgrade, run this step as [Users upgrade](#users-upgrade-952)
+   says.
 5. **Refresh the static files.** `caddy` serves the packaged JavaScript and
    stylesheets from `cache/static`, which `collect-static` fills once and
    never overwrites, so a release that changes or adds a static file would
@@ -778,6 +780,54 @@ by the script's stand-in tests so far; #460 tracks their rehearsal. For a
 release that announces a schema or grant change, run the script with
 `STEWARDSHIP_SCHEMA_CHANGE=1` and watch step 4, or take the manual steps
 above.
+
+### Users upgrade (#952)
+
+The release that turns sign-in rules into users converts the configuration
+offline between two migrations, in the order the operations specification's
+[users upgrade](../specs/stewardship/operations/spec.md#users-upgrade-from-sign-in-rules)
+fixes. Its last migration refuses an unconverted configuration, so step 4
+becomes, with every online service stopped:
+
+1. `run --rm migration migrate --config MIGRATION_CONFIG --users-upgrade-base`:
+   every migration except the swap and what depends on it.
+2. `run --rm database-provision database-grants --config PROVISION_CONFIG --confirm-deployment UUID`.
+3. `run --rm admin-recovery upgrade-users --config RECOVERY_CONFIG --confirm-deployment UUID --preview`:
+   read the Administrators it lists. Before the release, the Portal users
+   page's Upgrade preview and `pk-admin users preview-upgrade` showed the
+   same list, so any missing address was already added.
+4. `run --rm admin-recovery upgrade-users --config RECOVERY_CONFIG --confirm-deployment UUID --operation-id NEW_UUID --operator-name NAME --reason REASON --confirm-administrators ADDRESSES`,
+   with `ADDRESSES` exactly the preview's list, comma-separated.
+5. `run --rm migration` and `database-grants` again, as step 4 always does.
+
+The configuration files are the services' own under `config/services/`
+(`migration.yaml`, `database-provision.yaml`, `admin-recovery.yaml`). The
+scripted upgrade runs these five when given the conversion's inputs, all
+four or none, with `STEWARDSHIP_SCHEMA_CHANGE=1`:
+
+```sh
+STEWARDSHIP_USERS_OPERATION=NEW_UUID STEWARDSHIP_USERS_OPERATOR='NAME' \
+STEWARDSHIP_USERS_REASON='REASON' STEWARDSHIP_USERS_ADMINISTRATORS=ADDRESSES \
+STEWARDSHIP_SCHEMA_CHANGE=1 STEWARDSHIP_HOST=HOST STEWARDSHIP_UUID=UUID \
+STEWARDSHIP_IMAGE=IMAGE@sha256:DIGEST tools/stewardship-upgrade.sh
+```
+
+It refuses before anything stops when they are partial or malformed, and
+for a rollback. Without them, it stops at the swap's refusal with the
+maintenance page up and nothing of the swap committed; repeat it with them.
+The local environment's `deploy --schema-change` passes the same variables.
+
+If the conversion refuses (a list that differs from the preview's, or SQL's
+last-Administrator guard), the configuration keeps its sign-in rules, the
+swap is not installed and the services stay down. `recover-admin` and
+`preview-admin-recovery` work on this schema, before and after the
+conversion, as [Admin-access recovery](stewardship-runtime.md#offline-work-and-upgrade-boundary)
+describes, so add or restore the missing Administrator and repeat the
+conversion with a new operation ID (a refused one is terminal). An
+interrupted run resumes with the same operation ID. Once the conversion has
+activated, the previous release cannot run on the configuration: fail
+forward, or restore the pre-upgrade backup together with the previous
+release.
 
 ### Family engagement backfill (#477)
 

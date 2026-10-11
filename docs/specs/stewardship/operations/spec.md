@@ -688,20 +688,34 @@ Administrator may override.
    and the activation records nothing; `upgrade-users` then refuses a new
    operation with an instruction to resume the interrupted one by its
    operation ID or to run `recover-admin`, which records that upgrade failed
-   and selects its base again before it begins. The
-   scripted upgrade and the deployment runbook gain this step in the code
-   slice.
+   and selects its base again before it begins.
 
-   The scripted upgrade (`tools/stewardship-upgrade-host.sh`) cannot run this
-   order yet: its step 4 migrates to the newest migration and then applies
-   the grants, so it would reach the function swap before any conversion.
-   Either the release that swaps the functions also adds a targeted
-   migration to the release's first migration and a conversion step between
-   the grants and the swap, or the first migration and its two read
-   functions ship in an earlier release than the swap, so that the earlier
-   deploy has already migrated past them and applied their grants. Offline
-   Admin-access recovery never depends on those grants: only
-   `upgrade-users` requires them, and it refuses with an instruction to run
+   The order runs as one offline step of the deploy (#952 slice 4).
+   `pk-stewardship migrate --users-upgrade-base` applies every pending
+   migration except the swap and any migration that depends on it, and
+   never unapplies one: once the swap is applied, it is the full migration.
+   `database-grants` then gives the conversion its read functions,
+   `upgrade-users` previews and converts, and the full `migrate` and
+   `database-grants` follow. The scripted upgrade
+   (`tools/stewardship-upgrade-host.sh`) runs exactly this in its step 4
+   when the operator supplies the conversion's inputs (operation ID,
+   operator, reason and the confirmed Administrators, all four or none, never
+   for a rollback); without them, a release whose swap refuses the
+   unconverted configuration stops at its migration with the maintenance
+   page up, nothing of the swap committed, and the run is repeated with
+   them. The
+   [deployment runbook](../../../guides/stewardship-deployment-runbook.md#users-upgrade-952)
+   gives the commands.
+
+   **Recovery in every state.** `upgrade-users`, `recover-admin` and
+   `preview-admin-recovery` admit a database whose only pending migrations
+   are the swap and its dependents, as well as a current one, so
+   [offline Admin-access recovery](#offline-admin-access-recovery) works
+   before the conversion, after a refused or interrupted one (above), after
+   it with the swap still pending, and after the swap. Every other command
+   and service still requires the current schema. Offline Admin-access
+   recovery never depends on the conversion's grants: only `upgrade-users`
+   requires them, and it refuses with an instruction to run
    `database-grants` when they are missing.
 
    Considered and rejected: shipping the new SQL functions with a domain-join
@@ -718,14 +732,24 @@ Administrator may override.
      ([data model](../data/spec.md#administration-user-and-policy)); both are
      empty only on the immutable rows of configurations activated before the
      upgrade;
-   - the second replaces the SQL functions that join `stewardship_domain_rule`
-     (session admission, Ministry scope, export authorization, and the policy
-     projection and completeness functions) so they read only the users
+   - the second replaces the SQL functions that decide access by joining
+     `stewardship_domain_rule` (session admission, export authorization,
+     Ministry scope, the role-derived leader scope and policy activation's
+     security alerts and denial-namespace reset) so they read only the users
      projection. Each replacement starts from its latest prior definition with
-     only that change, keeps its attributes, and the file ends with the
-     self-verifying `DO` block;
-   - if the Ministry leaders function of migration 0042 (PR #939) is not
-     callable by the web login, the second migration grants it to that login;
+     only that change, keeps its attributes (the leader scope stays SECURITY
+     DEFINER), and the file ends with the self-verifying `DO` block, which
+     also refuses unless the active configuration is in the users form. A
+     database with no active configuration (a fresh install) and a deployment
+     still in initial setup, judged as startup judges it, have nothing to
+     convert and pass. The policy projection and completeness triggers stay
+     as they are: they validate rows and grant nothing, and initial setup
+     still writes an exact-address rule until the setup wizard writes users;
+     the cleanup migration removes their hosted-domain branches with the
+     tables;
+   - the Ministry leaders function of migration 0042 (PR #939) needs no
+     migration to become callable by the web login: EXECUTE is a
+     `database-grants` entry, added with the leaders import if it needs it;
    - nothing writes `stewardship_domain_rule` or `stewardship_address_grant`
      any more.
 
