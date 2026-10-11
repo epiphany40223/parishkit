@@ -40,6 +40,13 @@ served at ``LIVE_END`` (the editor, whose Apply leads to
 before the start, or mail the date would strand. A live campaign's Campaign
 Ministries (#750) is served at ``MINISTRIES`` (the editor, whose Apply leads
 to ``MINISTRIES_PENDING``) and ``MINISTRIES_REVIEW`` (its impact review).
+Ministries' row selection (#750) is served at ``MINISTRY_TABLE`` (page 1
+of 30 Ministries, 25 to a page, whose Apply leads to
+``MINISTRY_TABLE_PENDING``), ``MINISTRY_TABLE_REVIEW`` (its review of
+inactivating Ministry 1) and ``MINISTRY_TABLE_PAGE2`` (the table's second
+page, as a GET draws it). The pending change polls ``MINISTRY_TABLE_STATUS``,
+which answers Applied and follows to ``MINISTRY_TABLE_SETTLED``, the page
+refreshed with Ministry 01 inactive and Ministry 25 gone from the catalog.
 """
 
 from datetime import date
@@ -63,12 +70,14 @@ from parishkit.stewardship.accounts.campaign_forms import (
 from parishkit.stewardship.accounts.campaign_ministry_views import (
     LiveMinistriesForm,
 )
+from parishkit.stewardship.accounts.ministry_views import CATALOG_SORTING
 from parishkit.stewardship.accounts.parish_views import TIMEZONE_NOTE, ParishForm
 from parishkit.stewardship.accounts.share_forms import (
     ShareOptions,
     default_share_options,
 )
 from parishkit.stewardship.web.refusals import Refusal
+from parishkit.stewardship.web.tables import paginate
 
 SETTINGS = "/settings-in-place"
 REVIEW = "/settings-in-place-review"
@@ -99,6 +108,17 @@ MINISTRIES_REVIEW = "/campaign-ministries-in-place-review"
 MINISTRIES_PENDING = f"{MINISTRIES}?request={REQUEST}"
 # A live campaign's offered Ministries; both are selected.
 MINISTRY_CHOICES = [("4", "Community outreach"), ("9", "Food pantry")]
+MINISTRY_TABLE = "/ministries-in-place"
+MINISTRY_TABLE_REVIEW = "/ministries-in-place-review"
+MINISTRY_TABLE_PAGE2 = "/ministries-in-place-page-2"
+MINISTRY_TABLE_PENDING = f"{MINISTRY_TABLE}?request={REQUEST}"
+MINISTRY_TABLE_STATUS = "/ministries-in-place-status"
+MINISTRY_TABLE_SETTLED = f"{MINISTRY_TABLE}?request={REQUEST}&settled=1"
+# Thirty active Ministries, so the table has a second page.
+MINISTRY_ROWS = [
+    {"duid": duid, "name": f"Ministry {duid:02d}", "active": True, "included": True}
+    for duid in range(1, 31)
+]
 LIVE_END_REVIEW = "/campaign-end-in-place-review"
 LIVE_END_REFUSED = "/campaign-end-in-place-refused"
 LIVE_END_PENDING = f"{LIVE_END}?request={REQUEST}"
@@ -137,6 +157,7 @@ POSTS = {
     SHARE: (303, SHARE_PENDING, ""),
     LIVE_END: (303, LIVE_END_PENDING, ""),
     MINISTRIES: (303, MINISTRIES_PENDING, ""),
+    MINISTRY_TABLE: (303, MINISTRY_TABLE_PENDING, ""),
     # A Review answered with a redirect to another page, which does not draw
     # the review region (Campaign settings' dates-only change, #532).
     "/settings-in-place-elsewhere": (303, "/in-place-other", ""),
@@ -319,6 +340,33 @@ def components(context, admin):
                     "form": form,
                 }
                 | review_region("campaign_ministries", None, **region),
+            ),
+        )
+
+    def ministry_table(step, page="1", rows=MINISTRY_ROWS, **region):
+        """Ministries at ``step``: ``page`` of ``rows``, 25 to a page, with
+        ``region``'s review context under it (#750)."""
+        values = review_region("ministries", None, **region)
+        if region.get("receipt"):
+            # The fixture server serves Ministries' Change status here.
+            values["status_url"] = MINISTRY_TABLE_STATUS
+        return (
+            "text/html",
+            render_to_string(
+                "stewardship/ministries.html",
+                context
+                | {
+                    "admin_chrome": admin | {"flow_steps": _steps(step)},
+                    "table": paginate(
+                        rows,
+                        {"size": "25", "page": page},
+                        carry=(("q", ""), ("state", "all")),
+                        sorting=CATALOG_SORTING,
+                    ),
+                    "query": "",
+                    "state": "all",
+                }
+                | values,
             ),
         )
 
@@ -506,6 +554,42 @@ def components(context, admin):
             },
         ),
         MINISTRIES_PENDING: ministries(2, receipt=pending),
+        MINISTRY_TABLE: ministry_table(0),
+        MINISTRY_TABLE_REVIEW: ministry_table(
+            1,
+            review={
+                "template": "stewardship/ministry-review.html",
+                "notes": [],
+                "changing": MINISTRY_ROWS[:1],
+                "unchanged": [],
+                "not_included": [],
+                "new_active": False,
+                "preview": "synthetic-signed-intent",
+            },
+        ),
+        MINISTRY_TABLE_PAGE2: ministry_table(0, page="2"),
+        MINISTRY_TABLE_PENDING: ministry_table(2, receipt=pending),
+        MINISTRY_TABLE_STATUS: (
+            "text/html",
+            render_to_string(
+                "stewardship/configuration-request.html",
+                context
+                | {
+                    "admin_chrome": admin,
+                    "receipt": applied,
+                    "follow_url": MINISTRY_TABLE_SETTLED,
+                },
+            ),
+        ),
+        MINISTRY_TABLE_SETTLED: ministry_table(
+            2,
+            # Ministry 25 left the catalog meanwhile, so a tick on it goes.
+            rows=[
+                dict(MINISTRY_ROWS[0], active=False),
+                *(row for row in MINISTRY_ROWS[1:] if row["duid"] != 25),
+            ],
+            receipt=applied,
+        ),
         SHARE: share(None, 0),
         SHARE_REVIEW: share(
             sent,

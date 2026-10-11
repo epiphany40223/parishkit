@@ -918,6 +918,11 @@
   // in-place review's heading, #532) takes focus after a successful answer
   // instead of the control, since that is what the reader acts on next.
   const REGIONS = "[data-in-place-region][id], [data-table-region][id]";
+  // The control whose answer is being swapped in, while refreshRegions swaps
+  // it (synchronously), so a parishkit:swap listener can tell the reader's
+  // own table choice (a sort heading, Previous or Next, the filters) from
+  // any other answer, such as the quiet refresh after Apply. Null otherwise.
+  let swappingFor = null;
   const isRegion = (node) => Boolean(node && node.matches(REGIONS));
   // A checkbox that submits its own in-place form when it changes (#621).
   const SUBMIT_ON_CHANGE = "form[data-in-place] input[type=checkbox][data-submit-on-change]";
@@ -1497,17 +1502,22 @@
     const only = anywhere || Boolean(owner?.hasAttribute("data-in-place-only"));
     const alsoSwapped = anywhere ? []
       : (owner?.getAttribute("data-in-place-only") || "").split(/\s+/).filter(Boolean);
-    document.querySelectorAll(REGIONS).forEach((other) => {
-      const copy = parsed.getElementById(other.id);
-      // An answer may mark one of its regions data-in-place-always: it is
-      // taken even then (a settings form, once the change it applied has
-      // already settled, is redrawn at the version that change made).
-      if (only && other !== region && !alsoSwapped.includes(other.id)
-          && !(!anywhere && isRegion(copy) && copy.hasAttribute("data-in-place-always"))) {
-        return;
-      }
-      if (isRegion(copy)) swapRegion(other, copy);
-    });
+    swappingFor = control instanceof Element ? control : null;
+    try {
+      document.querySelectorAll(REGIONS).forEach((other) => {
+        const copy = parsed.getElementById(other.id);
+        // An answer may mark one of its regions data-in-place-always: it is
+        // taken even then (a settings form, once the change it applied has
+        // already settled, is redrawn at the version that change made).
+        if (only && other !== region && !alsoSwapped.includes(other.id)
+            && !(!anywhere && isRegion(copy) && copy.hasAttribute("data-in-place-always"))) {
+          return;
+        }
+        if (isRegion(copy)) swapRegion(other, copy);
+      });
+    } finally {
+      swappingFor = null;
+    }
     if (!anywhere) syncControls(parsed);
     if (owner?.hasAttribute("data-in-place-filters")) syncFilters(parsed);
     // Every swap and the synced hidden version are in place: a Review that
@@ -1745,6 +1755,14 @@
   };
   document.addEventListener("input", withdrawReview);
   document.addEventListener("change", withdrawReview);
+  // A table's Select all / Clear selection button ticks its rows from
+  // script, which fires no change event, so it withdraws a review of the
+  // row selection itself (Ministries, #750).
+  document.addEventListener("click", (event) => {
+    if (event.target instanceof Element && event.target.closest("[data-select-all-button]")) {
+      withdrawReview(event);
+    }
+  });
   document.addEventListener("parishkit:swap", (event) => {
     if (!(event.target instanceof Element)) return;
     // Regions are swapped in page order, so a form's own region (above its
@@ -1753,6 +1771,19 @@
       const edited = editedSince.get(fresh.id);
       if (!edited || edited.isConnected) return;
       editedSince.delete(fresh.id);
+      // A selection table (Ministries, Hosted files, Schedule settings) is
+      // redrawn with the ticks of every row it still shows (swapRegion), and
+      // its selection is per page. When the reader re-sorts, re-pages or
+      // re-filters it, a tick on a row no longer shown goes as they asked,
+      // so nothing needs saying (#750). Any other answer (the quiet refresh
+      // once a change is applied) says so only if a ticked row is gone.
+      if (fresh.matches("[data-select-table]")) {
+        if (swappingFor?.closest("[data-table-region], form#table-filters")) return;
+        const shown = new Set([...fresh.querySelectorAll("input[data-select-row]")]
+          .map((box) => box.value));
+        const ticked = [...edited.querySelectorAll("input[data-select-row]:checked")];
+        if (ticked.every((box) => shown.has(box.value))) return;
+      }
       // The line goes at the top of the region the form's action names (its
       // review region, below it), never above the form: a line added there
       // would move the form under the reader's caret (#736). That region may

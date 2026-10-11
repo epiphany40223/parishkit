@@ -155,7 +155,6 @@ SETUP_SHARED = ("setup-step.html", "setup-credential.html")
 # their "Return to" links are checked with the pages'.
 REVIEWS = (
     "integration-preview.html",
-    "ministry-preview.html",
     "clone-preview.html",
     "content-preview.html",
     "content-settings.html",
