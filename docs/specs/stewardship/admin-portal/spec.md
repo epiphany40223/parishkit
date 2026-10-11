@@ -1171,6 +1171,16 @@ reports' [shared report behavior](../reports/spec.md#shared-report-behavior)).
 This general rule lives in the [UX conventions](../ui-conventions/spec.md#in-place-controls),
 which have precedence for it.
 
+### Review dialog
+
+This general rule lives in the [UX conventions](../ui-conventions/spec.md#review-dialog),
+which have precedence for it: every Admin editor below reviews and applies
+its change in one shared modal dialog (Administrator decision, 2026-10-11,
+[#750](https://github.com/epiphany40223/parishkit/issues/750)), with the
+setup wizard and Integrations' slow key install as its recorded exceptions.
+Where a section below says a page reviews on a separate page or in place
+under its form, that is its current state until #750 converts it.
+
 ### Page help
 
 This general rule lives in the [UX conventions](../ui-conventions/spec.md#page-help),
@@ -1307,8 +1317,10 @@ shows **Applying**, **Applied**, or a safe validation/error result; it never say
 Saved while only PostgreSQL or only YAML has changed. The dedicated installer
 and fail-closed mismatch recovery are defined by the
 [configuration architecture](../architecture/spec.md#configuration-and-secrets).
-Parish settings shows its review, Apply and that status
-[in place](../ui-conventions/spec.md#in-place-controls) under its form.
+Every editor in this section reviews and applies through the
+[review dialog](../ui-conventions/spec.md#review-dialog). Parish settings, until #750 converts it, shows its review, Apply and
+that status [in place](../ui-conventions/spec.md#in-place-controls) under its
+form.
 
 Outgoing email settings (the setup mail step and the post-setup outgoing
 email integration) include an optional From name: a single line of at most 100
@@ -1804,7 +1816,8 @@ searching and filtering by name, DUID and status, in a shared
 [Admin table](../ui-conventions/spec.md#admin-tables).
 Admins select one or more Ministries and activate or inactivate them together.
 Saves use the ordinary versioned YAML configuration-request workflow, with
-optimistic concurrency, an impact preview and audit; one bulk change is one
+optimistic concurrency, an impact preview (shown in the
+[review dialog](../ui-conventions/spec.md#review-dialog)) and audit; one bulk change is one
 request of at most 100 Ministries, applied atomically, and selected Ministries
 already in the requested state are listed and left alone. A pending save is
 not presented as applied.
@@ -1945,7 +1958,7 @@ exemption: while the current campaign is scheduled or active, an
 Administrator may change its Ministry selections. Campaign settings links a
 live campaign to its own Campaign Ministries page, which offers only
 the Ministry list and goes through the usual edit, review, apply flow as an
-ordinary configuration request. A closed or archived campaign's selections
+ordinary configuration request, reviewed in the [review dialog](../ui-conventions/spec.md#review-dialog). A closed or archived campaign's selections
 never change.
 
 - **Hide** a Ministry without removing it: mark it inactive on Ministry
@@ -2026,8 +2039,10 @@ complete an exceptional purge and cleanup, and only then create its successor.
 The server checks all conditions in the draft-creation transaction; stale or
 direct requests cannot bypass them.
 
-Campaign settings reviews and applies its changes
-[in place](../ui-conventions/spec.md#in-place-controls) under its form, as Parish settings does.
+Every editor in this section reviews and applies through the
+[review dialog](../ui-conventions/spec.md#review-dialog). Campaign settings, until #750 converts it, reviews and applies its
+changes [in place](../ui-conventions/spec.md#in-place-controls) under its
+form, as Parish settings does.
 Its Review changes button, like Save and continue on the wizard's First
 campaign step, stays unavailable, with the hint described under
 [Bootstrap and first-Admin wizard](#bootstrap-and-first-admin-wizard),
@@ -2230,7 +2245,8 @@ there.
 **New scheduled email** (`/admin/campaign/schedules/addition/`) and **Edit
 scheduled email** (`/admin/campaign/schedules/<schedule>/`, opened by a row's
 Edit) are one page: the mail type, send date, send time, day of the week and
-Email to send of one schedule, with the rules above. Edit opens it filled in
+Email to send of one schedule, with the rules above. Its review and Apply follow the
+[review dialog](../ui-conventions/spec.md#review-dialog). Edit opens it filled in
 from the saved schedule, whose mail type is fixed; a schedule that is unknown or
 read-only is refused there too, even from an old link (a GET or a POST).
 
@@ -3762,7 +3778,8 @@ fields:
 
 **Review** shows each changed value, before and after, and **Apply** records
 one configuration change, whose status the page follows; it then returns to
-Users. A review with nothing changed says so and records nothing. An unknown
+Users. Review and Apply follow the [review dialog](../ui-conventions/spec.md#review-dialog): Review is unavailable
+until a value changes, so no review ever says that nothing changed. An unknown
 `<user>` (for example, one deleted meanwhile) is refused, even from an old
 link.
 
