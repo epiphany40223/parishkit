@@ -238,8 +238,9 @@ def current_series(document, start, last, financial):
     The day-by-day charts draw these: Families responded, the cohort
     denominator and, with Financial stewardship, the pledge total, each the
     participation graph's own figure. A day whose population is unavailable
-    is left out (the line has a gap there), and a day without a pledge total
-    has none.
+    is left out of the series; the charts draw it as a null point, so the
+    line breaks there and the table shows "—" (``comparison_charts.
+    year_points``). A day without a pledge total has none.
     """
     days = []
     for fact in document.days:

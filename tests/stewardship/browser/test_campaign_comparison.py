@@ -135,12 +135,12 @@ def test_charts_show_each_year_and_their_exact_values(page, component_origin):
     assert summary.inner_text() == (
         "Families responded by campaign day, day 1 being each campaign's first "
         "invitation day. On day 12: 2027 (so far) 270; 2026 (last year) 240; "
-        "2024–2026 average 230."
+        "2025–2026 average 230."
     )
     texts = families.locator("svg text").all_text_contents()
     # The grey years are labelled at their lines' ends; the day is marked.
     assert "2025" in texts and "2024" in texts and "Day 12" in texts
-    for name in ("2027 (so far)", "2026 (last year)", "2024–2026 average"):
+    for name in ("2027 (so far)", "2026 (last year)", "Prior-years average"):
         assert name in texts
     # Pointing at a day names the year, day, date and value (the chart's
     # own points, not its legend's symbols).
@@ -157,7 +157,7 @@ def test_charts_show_each_year_and_their_exact_values(page, component_origin):
         "Day",
         "2027 (so far)",
         "2026 (last year)",
-        "2024–2026 average",
+        "Prior-years average",
         "2024 (partial)",
         "2025",
     ]

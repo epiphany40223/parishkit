@@ -54,6 +54,13 @@ HEIGHT = 260
 # more than one line of the 11-pixel label font.
 LABEL_GAP = 13
 LABEL_FONT = 11
+# The "Day N" label hangs from the plot's top (2 pixels down, one line of
+# the label font); end labels are centered at least half a gap below it.
+DAY_LABEL_FLOOR = 2 + LABEL_FONT + 2 + LABEL_GAP / 2
+# The average line's name in the legend and the table. The years it
+# averages vary by day (a partial year leaves it after its last day), so
+# the name names none; the summary names the years of the comparison day.
+AVERAGE_NAME = "Prior-years average"
 # Each line's role: its color, width and dash pattern. The dash patterns
 # tell the lines apart without color (spec, "Chart engine").
 CURRENT, LAST, AVERAGE, OTHER = "current", "last", "average", "other"
@@ -193,6 +200,8 @@ def plotted(measure, value):
     Rounded well past what a pixel can show, so the embedded JSON stays
     short; the tooltips and tables carry the exact text.
     """
+    if value is None:
+        return None  # A gap: Vega breaks the line there.
     if measure.kind == "percent":
         return round(float(value) / 100, 6)
     return round(float(value), 4)
@@ -215,13 +224,15 @@ def nice_top(largest):
     return largest  # pragma: no cover - the loop always returns
 
 
-def spread(positions, height=HEIGHT, gap=LABEL_GAP):
+def spread(positions, height=HEIGHT, gap=LABEL_GAP, floor=None):
     """Pixel positions moved apart so no two are closer than ``gap``.
 
     ``positions`` are label centers measured down from the plot's top. Each
     label keeps its order; a label too close to the one above it moves
     down, and when the last one then falls below the plot, the stack moves
-    up again, staying inside ``[gap / 2, height]`` while it fits there.
+    up again, staying inside ``[floor, height]`` while it fits there.
+    ``floor`` defaults to half a gap (a label just inside the top); a chart
+    with a "Day N" label passes ``DAY_LABEL_FLOOR``, so no end label meets it.
     Returns the new positions in the input's order.
     """
     order = sorted(range(len(positions)), key=lambda index: positions[index])
@@ -232,7 +243,7 @@ def spread(positions, height=HEIGHT, gap=LABEL_GAP):
         placed[-1] = height
         for index in range(len(placed) - 2, -1, -1):
             placed[index] = min(placed[index], placed[index + 1] - gap)
-    floor = gap / 2
+    floor = gap / 2 if floor is None else floor
     if placed and placed[0] < floor:
         placed[0] = floor
         for index in range(1, len(placed)):
@@ -261,17 +272,25 @@ class Line:
 def year_points(measure, year, last_day):
     """A year's (day, value, carried) points for one measure.
 
+    A day with no value between two that have one is (day, None, False).
     A final imported year whose daily rows end before ``last_day`` is
     carried flat to it, since its final figures stand from then on (spec,
     "Alignment by campaign day"); a partial year and the current campaign
     end at their last known day.
     """
-    points = [
-        (day.day, value, False)
+    known = {
+        day.day: value
         for day in year.series
         if (value := measure.value(day)) is not None
-    ]
-    if points and not year.current and year.final and points[-1][0] < last_day:
+    }
+    if not known:
+        return []
+    # A day without a figure between two that have one (the current
+    # campaign's day whose population was unavailable) is a null point, so
+    # the line breaks there rather than drawing a straight line across it,
+    # and the table shows "—" for it.
+    points = [(day, known.get(day), False) for day in range(min(known), max(known) + 1)]
+    if not year.current and year.final and points[-1][0] < last_day:
         points.append((last_day, points[-1][1], True))
     return points
 
@@ -305,6 +324,16 @@ def average_points(measure, imported, last_day):
     return points
 
 
+def covered(measure, imported, day):
+    """The imported years with a value on ``day`` (a final year's carried)."""
+    found = []
+    for year in imported:
+        days = [d.day for d in year.series if measure.value(d) is not None]
+        if days and (day in days or (year.final and day > max(days))):
+            found.append(year)
+    return found
+
+
 def lines(measure, comparison):
     """The chart's lines, drawn bottom to top: others, average, last, current."""
     years = ([comparison.current] if comparison.current else []) + list(
@@ -327,8 +356,9 @@ def lines(measure, comparison):
         )
     averaged = average_points(measure, comparison.imported, last_day)
     if averaged:
-        label = f"{years_label(comparison.imported)} average"
-        highlighted.append(Line(AVERAGE, "average", label, label, tuple(averaged), {}))
+        highlighted.append(
+            Line(AVERAGE, "average", AVERAGE_NAME, AVERAGE_NAME, tuple(averaged), {})
+        )
     if comparison.last_year is not None:
         year = comparison.last_year
         highlighted.append(
@@ -390,13 +420,17 @@ def legend_scale(drawn, index):
     return {"domain": list(seen), "range": list(seen.values())}
 
 
-def end_labels(measure, drawn, top):
-    """The grey years' labels at their lines' ends, spaced so none overlap."""
+def end_labels(measure, drawn, top, *, day_label=False):
+    """The grey years' labels at their lines' ends, spaced so none overlap.
+
+    With a "Day N" label (``day_label``) they stay below it as well: a
+    partial year's label sits inside the plot, where the rule may be.
+    """
     ends = [line for line in drawn if line.role == OTHER]
     wanted = [
         HEIGHT * (1 - plotted(measure, line.points[-1][1]) / top) for line in ends
     ]
-    placed = spread(wanted)
+    placed = spread(wanted, floor=DAY_LABEL_FLOOR if day_label else None)
     return [
         {
             "day": line.points[-1][0],
@@ -434,8 +468,13 @@ def day_summary(measure, comparison, drawn):
     parts = []
     for line in reversed(drawn):  # current first, as the legend
         found = value_on(line, day) if line.role != OTHER else None
-        if found is not None:
-            parts.append(f"{line.legend} {point_text(measure, *found)}")
+        if found is None or found[0] is None:
+            continue
+        name = line.legend
+        if line.role == AVERAGE:
+            # Named like the tiles: the years with a value on this day.
+            name = f"{years_label(covered(measure, comparison.imported, day))} average"
+        parts.append(f"{name} {point_text(measure, *found)}")
     if not parts:
         return text + "."
     return f"{text}. On day {number(day)}: " + "; ".join(parts) + "."
@@ -466,7 +505,7 @@ def day_chart(measure, comparison):
     # Every point once, at the top level: each line layer filters its role,
     # and the tooltip points take them all.
     rows = [row for line in drawn for row in line_rows(measure, line)]
-    largest = max(row["value"] for row in rows)
+    largest = max(row["value"] for row in rows if row["value"] is not None)
     top = nice_top(largest)
     y = {
         "field": "value",
@@ -513,7 +552,12 @@ def day_chart(measure, comparison):
         layers.append(
             {
                 "transform": [{"filter": {"field": "role", "equal": role}}],
-                "mark": {"type": "line", "interpolate": "linear"},
+                # A null value breaks the line instead of being skipped.
+                "mark": {
+                    "type": "line",
+                    "interpolate": "linear",
+                    "invalid": "break-paths-filter-domains",
+                },
                 "encoding": {
                     "x": {"field": "day", "type": "quantitative"},
                     "y": y,
@@ -522,7 +566,7 @@ def day_chart(measure, comparison):
                 },
             }
         )
-    labels = end_labels(measure, drawn, top)
+    labels = end_labels(measure, drawn, top, day_label=comparison.day is not None)
     if labels:
         layers.append(
             {

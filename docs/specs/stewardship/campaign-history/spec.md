@@ -1061,7 +1061,11 @@ linked to #1018 (the last one closes part (b)).
    as its figures (no schema change). A final year shorter than the longest
    is drawn flat to the last day, its points there marked "(final)", and
    the average counts it there, as the tiles do; a partial year's line
-   stops at its last day. The chart engine's colors are the portal's design
+   stops at its last day. The average line is named "Prior-years
+   average" in the legend and table, since the years it averages vary by
+   day; each chart's summary names the years averaged on day N, as the
+   tiles do. A day of the current campaign whose population is unavailable
+   breaks its line and shows "—" in the table. The chart engine's colors are the portal's design
    tokens (accent, gold, ink and the control border for the grey years);
    the portal has one light theme, so a browser in dark mode gets the same
    colors on white. Lessons of the published infographic at phone width:

@@ -174,7 +174,7 @@ def test_day_charts_style_each_role_and_carry_final_years():
     assert domain == [
         "2055 (so far)",
         "2054 (last year)",
-        "2052–2054 average",
+        "Prior-years average",
         "Other years",
     ]
     assert scale["color"]["scale"]["range"] == [
@@ -273,12 +273,75 @@ def test_day_summary_and_table_read_every_value():
         "Day",
         "2055 (so far)",
         "2054 (last year)",
-        "2052–2054 average",
+        "Prior-years average",
         "2052",
         "2053 (partial)",
     )
     assert table.rows[3] == ("4", "—", "40", "32", "24 (final)", "—")
     assert len(table.rows) == 5
+
+
+def test_the_summary_names_the_years_averaged_on_the_day():
+    """Like the tiles: a partial year past its last day is not averaged."""
+    built = comparison()
+    measure = charts.MEASURES[0]
+    assert [y.year for y in charts.covered(measure, built.imported, 2)] == [
+        2054,
+        2053,
+        2052,
+    ]
+    # Day 4: 2053 (partial, two days) is out; 2052 (final, three) carried.
+    assert [y.year for y in charts.covered(measure, built.imported, 4)] == [
+        2054,
+        2052,
+    ]
+    built = comparison(
+        imported=(
+            year(2054, series([10, 20, 30], pledged=100)),
+            year(2052, series([5, 10], pledged=100), final=False),
+        )
+    )
+    summary = chart_by_key(charts.day_charts(built), "families").summary
+    assert summary.endswith("2054 (last year) 30; 2054 average 30.")
+
+
+def test_a_day_without_figures_breaks_the_line():
+    """A missing day inside a line is a null point and "—" in the table."""
+    days = series([12, 24, 36])
+    current = year(2055, (days[0], days[2]), final=False, current=True)
+    built = comparison(current=current)
+    families = chart_by_key(charts.day_charts(built), "families")
+    rows = rows_of(families.spec, "current")
+    assert [(row["day"], row["value"], row["shown"]) for row in rows] == [
+        (1, 12, "12"),
+        (2, None, "—"),
+        (3, 36, "36"),
+    ]
+    line = [x for x in families.spec["layer"] if x["mark"]["type"] == "line"][0]
+    assert line["mark"]["invalid"] == "break-paths-filter-domains"
+    assert families.table.rows[1][1] == "—"
+    # The summary still reads day 3's value.
+    assert "2055 (so far) 36" in families.summary
+
+
+def test_end_labels_stay_below_the_day_label():
+    """A label at the top moves below the "Day N" label's line."""
+    assert charts.spread([0], floor=charts.DAY_LABEL_FLOOR) == [charts.DAY_LABEL_FLOOR]
+    built = comparison(
+        imported=(
+            year(2054, series([10, 20, 30])),
+            year(2053, series([10, 40]), final=False),
+        )
+    )
+    spec = chart_by_key(charts.day_charts(built), "families").spec
+    (labels,) = [
+        layer["data"]["values"]
+        for layer in spec["layer"]
+        if layer["mark"]["type"] == "text" and layer["mark"].get("dx") == 4
+    ]
+    top = spec["layer"][0]["encoding"]["y"]["scale"]["domain"][1]
+    (label,) = labels
+    assert charts.HEIGHT * (1 - label["value"] / top) >= charts.DAY_LABEL_FLOOR - 1e-6
 
 
 def test_no_complete_day_draws_the_imported_years_without_a_rule():
