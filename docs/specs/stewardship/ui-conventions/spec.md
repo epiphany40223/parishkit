@@ -565,9 +565,8 @@ button another gate still holds; the `pageshow` re-check;
 This includes a table's bulk action buttons: while they are unavailable,
 their reason is visible text in a reserved line beside or below them, so
 ticking a row never moves anything ([Admin tables](#admin-tables);
-Administrator decision, 2026-10-10). The existing bulk bars still give it as
-a visually hidden hint with a tooltip until they change under
-[#879](https://github.com/epiphany40223/parishkit/issues/879).
+Administrator decision, 2026-10-10;
+[#879](https://github.com/epiphany40223/parishkit/issues/879)).
 
 Wherever a form requires an acknowledgment checkbox (finishing setup, a test
 that may already have arrived, chosen-Family tests, Testing cleanup,
@@ -1123,14 +1122,15 @@ Select all button choose every row on the current page; the bar above the
 table shows how many rows are selected and enables its action buttons only
 while at least one is. While none is, a short visible hint in a reserved
 line beside or below the action buttons says what to select, and the buttons
-name it (`aria-describedby`); the line keeps its height when the hint clears
-(Administrator decision, 2026-10-10; the existing bars move from a visually
-hidden hint and tooltip under
+name it (`aria-describedby`), with no tooltip; the line keeps its height
+when the hint clears (Administrator decision, 2026-10-10;
 [#879](https://github.com/epiphany40223/parishkit/issues/879)). Ticking a row
 never moves a control under the pointer: the hint's line is reserved, and the
-count and Select all button sit
-after the action buttons, so their changing text cannot push them (#563). The
-server validates every submitted selection.
+count and Select all button sit after the action buttons and keep reserved
+widths, so their changing text cannot push them or rewrap the bar (#563).
+The shared `table-selection.html` include and its `ui-v1.js` wiring give
+every such table this behavior. The server validates every submitted
+selection.
 
 ### Row actions and confirmation
 

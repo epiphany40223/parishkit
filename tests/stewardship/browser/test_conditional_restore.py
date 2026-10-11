@@ -4,7 +4,7 @@ A browser can bring a page back from its back/forward cache, or restore form
 values after load, without the change events the page scripts listen for.
 Each test sets a value the way a restore does (no event), sends the
 ``pageshow`` a restored page receives, and checks that the page agrees with
-the value: bulk actions and their hidden hint, campaign modules, the overlap
+the value: bulk actions and their reason line, campaign modules, the overlap
 confirmation and mail schedule rows.
 """
 
@@ -23,16 +23,6 @@ def restore(page, selector, script):
     """Change a control without events, as a restore does, then show the page."""
     page.locator(selector).first.evaluate(script)
     page.evaluate(RESTORE)
-
-
-def takes_no_space(note):
-    """Assert the hint is visually hidden (a 1px clip), not shown as a line.
-
-    Playwright counts a ``.visually-hidden`` element as visible, so this
-    checks its box instead.
-    """
-    box = note.bounding_box()
-    assert box and box["width"] <= 1 and box["height"] <= 1, box
 
 
 def page_y(locator):
@@ -55,10 +45,11 @@ def page_x(locator):
 
 
 def explained(action, hint):
-    """Whether the disabled action is described by the hidden hint."""
-    hint_id = action.page.locator("[data-selection-hint]").first.get_attribute("id")
+    """Whether the disabled action is described by the visible reason line."""
+    note = action.page.locator("[data-selection-hint]").first
+    hint_id = note.get_attribute("id")
     return hint_id in (action.get_attribute("aria-describedby") or "").split() and (
-        action.get_attribute("title") == hint
+        note.is_visible() and note.text_content() == hint
     )
 
 
@@ -72,10 +63,11 @@ def explained(action, hint):
 def test_bulk_actions_say_what_to_select_and_follow_restored_ticks(
     page, component_origin, path, button, hint
 ):
-    """The hidden hint names the missing selection; restored ticks enable it.
+    """The reason line names the missing selection; restored ticks enable it.
 
-    The hint never takes space (the Administrator found a line that came and
-    went jarring), so the action button stays put as rows are ticked.
+    The line keeps its space when the reason clears (the Administrator found
+    a line that came and went jarring), so the action button stays put as
+    rows are ticked (test_bulk_bar.py checks the layout in detail).
     """
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
@@ -83,7 +75,6 @@ def test_bulk_actions_say_what_to_select_and_follow_restored_ticks(
     action = page.get_by_role("button", name=button)
     note = page.locator("[data-selection-hint]")
     assert note.text_content() == hint
-    takes_no_space(note)
     assert action.is_disabled()
     assert explained(action, hint)
     box = page.locator("input[data-select-row]").first
@@ -105,7 +96,6 @@ def test_bulk_actions_say_what_to_select_and_follow_restored_ticks(
     assert explained(action, hint)
     assert page_y(box) == place
     assert (page_x(action), page_y(action)) == spot
-    takes_no_space(note)
     # A tick restored from history, without a change event, counts.
     restore(page, "input[data-select-row]", "box => { box.checked = true; }")
     assert action.is_enabled()
@@ -115,7 +105,6 @@ def test_bulk_actions_say_what_to_select_and_follow_restored_ticks(
     restore(page, "input[data-select-row]", "box => { box.checked = false; }")
     assert action.is_disabled()
     assert explained(action, hint)
-    takes_no_space(note)
     assert not failures
 
 
