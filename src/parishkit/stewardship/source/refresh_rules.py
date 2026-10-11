@@ -37,9 +37,24 @@ SINGLE_RULE = frozenset({"kind", "at"})
 RANGE_RULE = frozenset({"kind", "every", "from", "to"})
 SINGLE_SKIP = frozenset({"at"})
 RANGE_SKIP = frozenset({"from", "to"})
-# A bound on rows of each kind, so a stored document stays small: more rules
-# or skips than daily times could never all matter.
-MAX_ROWS = MAX_DAILY_TIMES
+# The one cap on rows of each kind for a schedule being authored or changed
+# (#936), shared by the settings page's editor and the configuration check
+# behind the command line and imports (valid_shape). The editor posts every
+# row's fields with the page's other settings, and the whole request must
+# stay within the server's DATA_UPLOAD_MAX_NUMBER_FIELDS (500), or it is
+# refused before any form reads it: 64 rules and 16 skips post at most
+# 64 * 6 + 16 * 4 + 9 = 457 editor names (refresh_schedule_forms
+# .posted_names; a test pins the sum). One cap means any schedule saved
+# since can be shown and saved back from the page. More rules never matter:
+# "every" rules give any number of times. A converted (upgraded) schedule
+# always fits: it has at most MAX_LEGACY_FULL_TIMES "Full at" rows, one quick
+# rule and a few "Quick at" rows for covered times, and no skips.
+MAX_RULES = 64
+MAX_SKIPS = 16
+# The bound before #936: a stored, carried or historical document may hold
+# up to this many rows of each kind and still reads, so a version accepted
+# then never makes the configuration unloadable (``valid_shape(stored=True)``).
+MAX_STORED_ROWS = MAX_DAILY_TIMES
 
 
 def minutes(value):
@@ -85,21 +100,27 @@ def _skip_ok(skip):
     )
 
 
-def valid_shape(value):
+def valid_shape(value, *, stored=False):
     """Whether ``value`` is a ``refresh_rules`` document of the closed shape.
 
     ``rules`` (at least one) and ``skips`` are lists of rows of the closed
-    forms above; ``skip_around_family_emails`` is a boolean. Whether the
-    rules produce the stored lists is ``check_schedule``'s question.
+    forms above; ``skip_around_family_emails`` is a boolean. A schedule
+    being authored or changed has at most ``MAX_RULES`` rules and
+    ``MAX_SKIPS`` skips; a ``stored`` one (already accepted, read back or
+    carried unchanged) keeps the older ``MAX_STORED_ROWS`` bound. Whether
+    the rules produce the stored lists is ``check_schedule``'s question.
     """
+    most_rules, most_skips = (
+        (MAX_STORED_ROWS, MAX_STORED_ROWS) if stored else (MAX_RULES, MAX_SKIPS)
+    )
     return (
         type(value) is dict
         and value.keys() == FIELDS
         and type(value["rules"]) is list
-        and 1 <= len(value["rules"]) <= MAX_ROWS
+        and 1 <= len(value["rules"]) <= most_rules
         and all(_rule_ok(rule) for rule in value["rules"])
         and type(value["skips"]) is list
-        and len(value["skips"]) <= MAX_ROWS
+        and len(value["skips"]) <= most_skips
         and all(_skip_ok(skip) for skip in value["skips"])
         and type(value["skip_around_family_emails"]) is bool
     )
@@ -146,9 +167,10 @@ def daily_times(refresh_rules):
     """Apply the rules, single times, skips, precedence and coverage, in order.
 
     ``refresh_rules`` must have the closed shape (``valid_shape``); anything
-    else raises ``ValueError``.
+    else raises ``ValueError``. Stored schedules are read under their older
+    row bound, so the scheduler, preview and page never fail on one.
     """
-    if not valid_shape(refresh_rules):
+    if not valid_shape(refresh_rules, stored=True):
         raise ValueError("Refresh rules require the closed rule shape.")
     full, quick = set(), set()
     # The largest step of any range rule that generated each quick time; a

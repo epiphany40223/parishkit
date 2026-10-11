@@ -1061,12 +1061,19 @@ every earlier document stays valid:
 - `full_refresh`: `daily`;
 - `refresh_rules`: the rules, single times, exceptions and the skip setting
   as the Administrator entered them, so the page can show and edit them.
-  It has exactly three fields: `rules`, a list of one to 96 rows, each
+  It has exactly three fields: `rules`, a list of one to 64 rows, each
   either `{"kind", "at"}` or `{"kind", "every", "from", "to"}` (`kind` is
   `full` or `quick`, `every` one of the rule intervals in minutes, and `to`
-  at or after `from`); `skips`, a list of up to 96 rows, each `{"at"}` or
+  at or after `from`); `skips`, a list of up to 16 rows, each `{"at"}` or
   `{"from", "to"}` with `to` after `from`; and `skip_around_family_emails`,
-  a boolean.
+  a boolean. The row counts are the
+  [schedule editor](../admin-portal/spec.md#schedule-editor)'s caps, one
+  limit for every path that authors or changes a schedule (the page, the
+  command line, imports), so a schedule saved since can be saved back from
+  the page ([#936](https://github.com/epiphany40223/parishkit/issues/936)).
+  A schedule already stored, or carried unchanged into a new version, keeps
+  the earlier bound of 96 rows of each kind, so a version accepted before
+  the caps never makes the configuration unreadable or blocks later changes.
 
 The v8 schema checks only the shape: canonical `HH:MM` times, sorted and
 unique lists, the nightly time as the earliest full time, no time in both

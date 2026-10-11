@@ -5,6 +5,7 @@ import pytest
 from parishkit.config import ConfigError
 from parishkit.stewardship.accounts import content_schema
 from parishkit.stewardship.accounts.content_trust import (
+    is_carried_schedule,
     is_trusted,
     records_of,
     trusted_content,
@@ -59,3 +60,23 @@ def test_trust_scope_is_restored_after_use():
     with trusted_content():
         assert is_trusted(record)
     assert not is_trusted(record)
+
+
+def test_a_schedule_is_carried_only_when_trusted_or_unchanged():
+    """The refresh schedule's older row bound (#936): never in strict mode,
+    always under full trust, and by exact fingerprint otherwise."""
+    schedule = {"rules": [{"kind": "full", "at": "02:00"}], "skips": []}
+    document = {
+        "sections": {
+            "integrations": [
+                {"id": "i", "values": {"settings": {"refresh_rules": schedule}}}
+            ]
+        }
+    }
+    other = schedule | {"skips": [{"at": "10:00"}]}
+    assert not is_carried_schedule(schedule)
+    with trusted_content():
+        assert is_carried_schedule(other)
+    with trusted_content(records_of(document)):
+        assert is_carried_schedule(dict(schedule))
+        assert not is_carried_schedule(other)

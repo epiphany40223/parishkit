@@ -37,6 +37,8 @@ from django.utils.translation import gettext_lazy as _
 from parishkit.stewardship.source.cadence import MAX_DAILY_TIMES, refresh_settings
 from parishkit.stewardship.source.refresh_rules import (
     DAY,
+    MAX_RULES,
+    MAX_SKIPS,
     SPACING,
     STEPS,
     _skipped,
@@ -58,22 +60,12 @@ SWITCH = "skip_around_family_emails"
 MANAGEMENT = ("TOTAL_FORMS", "INITIAL_FORMS", "MIN_NUM_FORMS", "MAX_NUM_FORMS")
 RULE_FIELDS = ("kind", "shape", "every", "start", "last", "at")
 SKIP_FIELDS = ("shape", "at", "start", "last")
-# The editor's own row caps, below the stored document's bound (refresh_rules.MAX_ROWS):
-# every row's fields are posted with the page's other settings, and the
-# whole request must stay within the server's DATA_UPLOAD_MAX_NUMBER_FIELDS
-# (500), or it is refused before any form reads it. 64 rules and 16 skips
-# post at most 64 * 6 + 16 * 4 + 9 = 457 editor names (posted_names), with
-# room for the token, the action and the page's other settings; a test pins
-# the sum. More rules than 64 never matter: "every" rules give any number of
-# times. Raising these to MAX_ROWS (96) is not safe: 96 rules alone post
-# 576 names. The page shows a stored document in full and saves it back, so
-# these caps must not go below what stored documents hold: this page saves
-# at most these, and a converted schedule has far fewer rows (at most
-# MAX_LEGACY_FULL_TIMES full times plus a few rules). A document stored
-# with more rows by another path (valid_shape allows MAX_ROWS) could not be
-# saved back from this page.
-RULE_ROWS = 64
-SKIP_ROWS = 16
+# The editor's row caps are the stored document's (refresh_rules.MAX_RULES
+# and MAX_SKIPS, which explain the bound), so the page can show any schedule
+# saved since #936 in full and save it back. One stored earlier with more
+# rows still reads (MAX_STORED_ROWS), but must be shortened to be saved here.
+RULE_ROWS = MAX_RULES
+SKIP_ROWS = MAX_SKIPS
 
 # "every [15 minutes]", "every [hour]", "every [2 hours]": the rule intervals
 # refresh_rules.STEPS allows, worded to read as a sentence in the row.
