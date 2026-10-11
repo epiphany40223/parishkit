@@ -34,6 +34,17 @@ nonzero status when it is unavailable. See the
 [Compose guide](../../docs/development/stewardship-compose.md) for invocation
 examples, prerequisites, and unfinished service boundaries.
 
+`archive-check <file>…` validates campaign archive workbooks offline with
+the same reader the Past campaigns import uses (see the
+[campaign history spec](../../docs/specs/stewardship/campaign-history/spec.md#validation)).
+It needs no configuration, database or session. Each file is checked in an
+isolated helper process (60-second and 1 GiB limits) and gets one JSON line:
+its summary (counts, totals and dates; no note text and no Family row) or
+its located problems, which name cells and rules but never the values
+found. It exits `0` when every file is valid and `3` when any is refused.
+The files hold Family-level giving: keep them in the parish's restricted
+archive.
+
 ## Supported options
 
 The scaffold accepts only implemented options. Unsupported shared flags such
