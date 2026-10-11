@@ -455,6 +455,24 @@ def restore_begin_command(configuration, *, backup_at, reason):
     }
 
 
+def _failure_summary(error):
+    """Name an operator failure without any value it may carry.
+
+    The exception's class and, for a database error (or one raised from
+    it, as Django wraps psycopg's), its SQLSTATE say what failed. Neither
+    ``str(error)`` nor a PostgreSQL DETAIL is printed, since they can hold
+    parameter or row values such as addresses. A ConfigError's message is
+    a reviewed sentence, so it is shown whole.
+    """
+    summary = type(error).__name__
+    if isinstance(error, ConfigError):
+        summary += f": {error}"
+    sqlstate = getattr(error.__cause__ or error, "sqlstate", None)
+    if sqlstate:
+        summary += f" (SQLSTATE {sqlstate})"
+    return summary
+
+
 def execute_operator(args):
     """Report reviewed status fields only; arbitrary exception messages stay private."""
     import sys
@@ -546,6 +564,7 @@ def execute_operator(args):
             "permissions, interlock and database readiness",
             file=sys.stderr,
         )
+        print(f"ERROR: {_failure_summary(error)}", file=sys.stderr)
         return 2
     print(json.dumps(result, sort_keys=True))
     return 0
