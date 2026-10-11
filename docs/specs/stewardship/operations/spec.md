@@ -714,7 +714,8 @@ Administrator may override.
    before the conversion, after a refused or interrupted one (above), after
    it with the swap still pending, and after the swap. The `backup` command
    admits that state too, so a repeated deploy's step-1 backup runs
-   and its set restores exactly that state. Every other command and service
+   and its set restores exactly that state (`restore-check` reports such a
+   set as `swap_pending`, below). Every other command and service
    still requires the current schema. Offline Admin-access
    recovery never depends on the conversion's grants: only `upgrade-users`
    requires them, and it refuses with an instruction to run
@@ -1071,7 +1072,11 @@ In v1 the application/schema compatibility check is the read-only
 before anything is restored: it compares the set's migration set (from its
 manifest, or for older sets from its decrypted dump's `django_migrations`
 rows) with the image's migration files, exits 0 on an exact match and 3 on
-a mismatch, and names the set's own image to use (see the backup runbook's
+a mismatch, and names the set's own image to use. A set whose only gap is
+the users swap and its dependents (#952) is no mismatch: it exits 4,
+`swap_pending`, and restores under this image into the state between the
+[users upgrade](#users-upgrade-from-sign-in-rules)'s two migrations (see
+the backup runbook's
 [Restore for real](../../../guides/stewardship-backup-runbook.md#restore-for-real)).
 When the Administrator considers restoring a set onto a release with another
 schema, `pk-stewardship restore-compare` reports, value-free, how the set's
