@@ -30,7 +30,7 @@ from parishkit.stewardship.observability import Event, debug_swallowed, emit_fai
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web import dates
-from parishkit.stewardship.web.exports import download_headers
+from parishkit.stewardship.web.exports import download_headers, page_download
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
 
@@ -310,6 +310,7 @@ def report(request, campaign_id):
     return _respond(request, campaign_id, export=False, render=render)
 
 
+@page_download("census_changes")
 @require_http_methods(["POST"])
 def export(request, campaign_id):
     """Download the filtered list as CSV, XLSX or PDF, rendered on request."""

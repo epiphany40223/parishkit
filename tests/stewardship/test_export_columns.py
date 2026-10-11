@@ -12,20 +12,28 @@ in each of its formats from one document and compares the columns:
 
 It also checks that no heading or report-information label is in the
 shared internal-field list, and that every export kind the export worker
-accepts has a case here, so a new export cannot skip the guard. Talents is
-left out (#970 removes it) and System logs is the recorded exception in the
-UX spec's Downloaded files section.
+accepts has a case here, so a new export cannot skip the guard. Page
+downloads (CSV, XLSX or PDF written straight from a page) come from the
+``web.exports.page_download`` registry, cross-checked against the URL
+patterns and against the modules that name a download file, so a new one
+fails here until it has a case or a documented exception. Talents is left
+out (#970 removes it) and System logs is the recorded exception in the UX
+spec's Downloaded files section.
 """
 
+import ast
 import csv
 import io
 import re
 from dataclasses import replace
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
+from django.urls import get_resolver
 from openpyxl import load_workbook
 
+import parishkit.stewardship
 from parishkit.stewardship.reports import family_test_names, pdf_design
 from parishkit.stewardship.reports.census_changes import (
     CensusQuery,
@@ -47,6 +55,7 @@ from parishkit.stewardship.reports.ministry_packets import render_packet
 from parishkit.stewardship.reports.participation import participation_csv
 from parishkit.stewardship.reports.response_lists import LISTS, list_file
 from parishkit.stewardship.reports.spreadsheets import participation_xlsx
+from parishkit.stewardship.web.exports import PAGE_DOWNLOADS
 
 from .test_census_changes import SUBMITTED
 from .test_census_changes import rows as census_rows
@@ -62,9 +71,8 @@ from .test_ministry_packets import packet
 from .test_participation_rendering import document as participation
 from .test_response_lists import NEW_YORK, details_of, rows_of
 
-# The export worker's report kinds and the synchronous page downloads, each
-# with the case below that renders it. "ministry" covers its summary, both
-# lists and the multi-Ministry packet.
+# The export worker's report kinds, each with the cases below that render
+# it. "ministry" covers its summary, both lists and the multi-Ministry packet.
 WORKER_CASES = {
     "participation": ("participation",),
     "additional_information": ("additional_information",),
@@ -74,7 +82,31 @@ WORKER_CASES = {
     "financial": ("financial",),
     "family_test_names": ("family_test_names",),
 }
-PAGE_CASES = ("response_list", "census_changes")
+
+
+def routed_page_downloads(patterns):
+    """The ``page_download`` name of every routed view, through includes."""
+    names = set()
+    for pattern in patterns:
+        if hasattr(pattern, "url_patterns"):
+            names |= routed_page_downloads(pattern.url_patterns)
+        elif name := getattr(pattern.callback, "page_download", None):
+            names.add(name)
+    return names
+
+
+# Loading the URL patterns imports every routed view, which registers its
+# page download before PAGE_CASES is read from the registry.
+ROUTED_PAGE_DOWNLOADS = routed_page_downloads(get_resolver().url_patterns)
+# The synchronous page downloads (``web.exports.page_download``) this guard
+# does not render, each with its documented reason:
+# - System logs: the recorded exception in the UX spec's Downloaded files
+#   section (a log export, not a report table; JSON Lines has no columns).
+# - Talents: left out because #970 removes the report.
+PAGE_EXCEPTIONS = frozenset({"system_logs", "talents"})
+# Every other registered page download is a case below of the same name, so
+# a new page download fails the guard until it is checked or excepted.
+PAGE_CASES = tuple(sorted(set(PAGE_DOWNLOADS) - PAGE_EXCEPTIONS))
 # The postal mail merge's PDF is a sheet of address labels, not a table:
 # each card holds the mailing columns, so it is checked by value instead.
 ADDRESS_CARD_COLUMNS = (
@@ -117,15 +149,26 @@ def worker_report_kinds():
 
 
 def filled(document):
-    """The document with every blank cell given a value.
+    """The document with every blank cell given a value, except change cells.
 
     A PDF card leaves blank fields out, so a guard row has none; the CSV
-    and XLSX are rendered from the same filled document.
+    and XLSX are rendered from the same filled document. Changed at and
+    Changed by stay as they are: they are blank on an item row and set on
+    its earlier-workflow rows, and that is how the PDF nests a revision
+    under its item, so filling them would hide the real item/revision shape.
     """
+    keep = {
+        index
+        for index, heading in enumerate(document.headings)
+        if heading in pdf_design.CHANGE_FIELDS
+    }
     return replace(
         document,
         rows=tuple(
-            tuple("Filled" if value in (None, "") else value for value in row)
+            tuple(
+                "Filled" if value in (None, "") and index not in keep else value
+                for index, value in enumerate(row)
+            )
             for row in document.rows
         ),
     )
@@ -357,8 +400,10 @@ def case_census_changes(monkeypatch):
     return headers[0], headers, sheets, seen["table"], labels
 
 
+# A page download without a case maps to None, which the page-download
+# test reports by name instead of failing collection here.
 CASES = {
-    name: globals()[f"case_{name}"]
+    name: globals().get(f"case_{name}")
     for name in (
         *(name for names in WORKER_CASES.values() for name in names),
         *PAGE_CASES,
@@ -371,7 +416,58 @@ def test_every_export_kind_has_a_guard_case():
     assert worker_report_kinds() == set(WORKER_CASES)
 
 
-@pytest.mark.parametrize("name", sorted(CASES))
+def test_every_page_download_has_a_guard_case():
+    """A routed page download is registered and either checked or excepted.
+
+    The exceptions must still be registered and routed, so a stale one is
+    noticed when its download goes away.
+    """
+    assert set(PAGE_DOWNLOADS) == ROUTED_PAGE_DOWNLOADS
+    assert set(PAGE_DOWNLOADS) >= PAGE_EXCEPTIONS
+    assert not [name for name in PAGE_CASES if CASES[name] is None]
+
+
+def calls(tree, name):
+    """The calls in ``tree`` to a function named ``name``."""
+    return [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and getattr(node.func, "id", getattr(node.func, "attr", None)) == name
+    ]
+
+
+def test_every_download_writer_is_classified():
+    """Code that names a download file is a registered page download or known.
+
+    ``download_headers`` names a download file; ``campaign_response`` does so
+    when given a ``filename``. A module that does either must register its
+    page download, or be one of the known non-page writers below: the shared
+    helpers themselves, the export worker's artifact download (checked by
+    kind above) and the daily digest's PNG image (not a table).
+    """
+    known = {
+        "web/exports.py",
+        "web/responses.py",
+        "reports/export_views.py",
+        "reports/digest_views.py",
+    }
+    root = Path(parishkit.stewardship.__file__).parent
+    unclassified = []
+    for path in sorted(root.rglob("*.py")):
+        name = path.relative_to(root).as_posix()
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        writes = calls(tree, "download_headers") or [
+            call
+            for call in calls(tree, "campaign_response")
+            if any(keyword.arg == "filename" for keyword in call.keywords)
+        ]
+        if writes and name not in known and not calls(tree, "page_download"):
+            unclassified.append(name)
+    assert not unclassified
+
+
+@pytest.mark.parametrize("name", sorted(name for name in CASES if CASES[name]))
 def test_every_format_carries_the_same_columns(monkeypatch, name):
     """CSV header == XLSX header == PDF columns, with no internal field.
 
