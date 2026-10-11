@@ -237,6 +237,9 @@ FROZEN = {
     "0068_mail_message_address_outcomes.sql": (
         "6f76e80ef26948ae028524217b023adcc5faa32f1142ae620760524c77d56333"
     ),
+    "0069_member_names_last_first.sql": (
+        "fab50a02a867f282e4d8704f879a67082252e5eeb105d41989a9f98c591862f0"
+    ),
 }
 
 
