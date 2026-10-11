@@ -2670,11 +2670,22 @@
             if (item.hasAttribute("data-field-error")) clearFieldError(item);
           });
         }
-        controls.forEach((item) => { item.disabled = !shown; });
+        controls.forEach((item) => {
+          item.disabled = !shown;
+          // A hidden file field's size refusal goes with it (#1062).
+          if (!shown && item.dataset.sizeRule) {
+            item.setCustomValidity("");
+            delete item.dataset.sizeRule;
+          }
+        });
         required.forEach((item) => { item.required = shown; });
+        if (form) recheckSizes(form);
         gateComplete(form);
       };
-      control.addEventListener("change", update);
+      // A radio group (RadioNodeList, Parish logos' upload mode, #1062) is
+      // not an element: each of its buttons is listened to instead.
+      (control instanceof RadioNodeList ? [...control] : [control])
+        .forEach((item) => item.addEventListener("change", update));
       showWhenUpdates.push({node, update});
       update();
     });
@@ -3036,7 +3047,96 @@
       check();
     });
   };
+  // A file field marked data-max-bytes refuses a file over that many bytes
+  // as soon as it is chosen (Parish logos, #1062), in the server's own
+  // words: data-max-bytes-message, whose "{size}" is the chosen file's size
+  // written as the server writes it ("3.2 MB", "300 KB", rounded up). A form
+  // marked data-max-total-bytes likewise refuses files that together exceed
+  // it, at the field just chosen, with its data-max-total-message. The
+  // message goes where the server's errors for the field go: its
+  // "<id>_error" list, in a reserved line that keeps its height while empty
+  // and is a polite live region, so it is announced and moves nothing
+  // (file-size-field.html). The field is marked in error, and its custom
+  // validity keeps the browser from sending the form until another file is
+  // chosen.
+  // The reverse proxy refuses a request body over 6 MB before the page
+  // could explain why, so this check is what keeps such a refusal on the
+  // form; the server still checks every upload. The check runs after the
+  // change's other listeners (setTimeout), since the shared field-error
+  // wiring clears a mark on every edit.
+  const fileSize = (bytes) => (bytes >= 1048576
+    ? `${Math.ceil(bytes * 10 / 1048576) / 10} MB`
+    : `${Math.ceil(bytes / 1024).toLocaleString("en-US")} KB`);
+  // Each field's check (edited: whether it is the field just changed); a
+  // change to any file field re-checks its form's others, so a total that
+  // fits again releases the field that was refused for it.
+  const sizeChecks = new WeakMap(); // form -> [check]
+  const wireMaxBytes = (root) => {
+    within(root, "input[type=file][data-max-bytes]").forEach((input) => {
+      const errorId = `${input.id}_error`;
+      const check = (edited) => {
+        if (!input.isConnected) return;
+        const form = input.form;
+        // A hidden (disabled) field is not sent, so its file is not judged.
+        const file = !input.disabled && input.files && input.files[0];
+        const limit = form && Number(form.dataset.maxTotalBytes || 0);
+        const total = limit
+          ? [...form.querySelectorAll("input[type=file]")]
+            .filter((node) => !node.disabled && node.files && node.files[0])
+            .reduce((sum, node) => sum + node.files[0].size, 0)
+          : 0;
+        let message = "";
+        let rule = "";
+        if (file && file.size > Number(input.dataset.maxBytes)) {
+          message = input.dataset.maxBytesMessage.replace("{size}", fileSize(file.size));
+          rule = "own";
+        } else if (file && limit && total > limit
+          && (edited || input.dataset.sizeRule === "total")) {
+          message = form.dataset.maxTotalMessage.replace("{size}", fileSize(total));
+          rule = "total";
+        }
+        input.setCustomValidity(message);
+        let error = document.getElementById(errorId);
+        if (!message) {
+          if (input.dataset.sizeRule && input.hasAttribute("data-field-error")) {
+            clearFieldError(input);
+          }
+          delete input.dataset.sizeRule;
+          return;
+        }
+        input.dataset.sizeRule = rule;
+        if (!error) {
+          error = document.createElement("ul");
+          error.className = "errorlist";
+          error.id = errorId;
+          input.after(error);
+        }
+        error.hidden = false;
+        error.replaceChildren(Object.assign(document.createElement("li"), {textContent: message}));
+        const ids = (input.getAttribute("aria-describedby") || "").split(/\s+/)
+          .filter((id) => id && id !== errorId);
+        input.setAttribute("aria-describedby", [...ids, errorId].join(" "));
+        input.setAttribute("aria-invalid", "true");
+        input.setAttribute("data-field-error", "client");
+      };
+      const form = input.form;
+      if (!form) return;
+      if (!sizeChecks.has(form)) sizeChecks.set(form, []);
+      sizeChecks.get(form).push(check);
+      input.addEventListener("change", () => window.setTimeout(() => {
+        sizeChecks.get(form).forEach((other) => other(other === check));
+      }, 0));
+    });
+  };
+  // Check a form's file sizes again, none as the one just changed: a field
+  // that a choice hid or showed (data-show-when) changes which files count,
+  // and a field shown again must show any refusal its file still has rather
+  // than be held silently invalid.
+  const recheckSizes = (form) => {
+    (sizeChecks.get(form) || []).forEach((check) => check(false));
+  };
   const wireConditional = (root) => {
+    wireMaxBytes(root);
     showWhenUpdates = showWhenUpdates.filter(({node}) => node.isConnected);
     lockedUpdates = lockedUpdates.filter(({node}) => node.isConnected);
     completeForms = completeForms.filter((form) => form.isConnected);

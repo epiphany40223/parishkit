@@ -1342,6 +1342,33 @@ below the review region, refresh once the change is applied. An upload
 from a page whose settings changed elsewhere, and an Apply of logos that
 expired or were staged against settings changed since, are refused there.
 
+Parish logos take either one image, resized into all four sizes (the
+default, unchanged), or each size uploaded separately (#1062): the large
+logo, the menu logo beside the parish name on both portals, the icon and
+the favicon in the browser tab on both portals. Each size states its
+formats and limits beside its field and is refused, naming the size, the
+rule and what the file was, when it breaks them:
+
+| Size | Formats | Refused when |
+| --- | --- | --- |
+| Large logo | PNG, JPEG, WebP | Over 5 MB, over 16 megapixels, animated, or under 256 pixels on the longer side |
+| Menu logo | PNG, JPEG, WebP | Over 1 MB, over 2,048 pixels on a side, wider than 4:1, taller than wide, or under 64 pixels tall |
+| Icon | PNG | Over 1 MB, not square within 10%, or under 128 pixels on a side |
+| Favicon | PNG | Over 256 KB, not square within 10%, under 16 or over 512 pixels on a side |
+
+The files chosen together are at most 5 MB, so the request stays within
+the ingress body limit; the page refuses a file over its size's limit, or
+over that total, as soon as it is chosen. Nothing is staged unless every
+chosen file is accepted. A size left empty keeps its current image, copied
+unchanged into the new bundle, or, when no image of that size is stored and
+readable, is generated from the large logo uploaded with it (otherwise it
+is refused). An upload from a page whose settings changed elsewhere is
+refused before the current logos are read.
+Every accepted size is normalized like a generated one and fitted within
+the same output size (large 1,024, menu and icon 128, favicon 32 pixels),
+never enlarged. The review names every size and says whether this upload
+changes it. The setup wizard's Parish logo step keeps the one-image upload.
+
 Campaign images (Campaign navigation) hold the current campaign's theme
 artwork: five optional slots, a wide banner and one small icon each for the
 Family welcome, Member, financial and closing pages. The banner appears only at

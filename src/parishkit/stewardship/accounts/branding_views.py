@@ -35,7 +35,7 @@ from parishkit.stewardship.web.contracts import (
 )
 from parishkit.stewardship.web.refusals import UserFacingStale, stale_page
 
-from . import admin_navigation
+from . import admin_navigation, field_tips
 from .admin_editing import (
     REVIEW_REGION,
     confirm,
@@ -50,6 +50,16 @@ from .admin_editing import (
 from .authentication import runtime
 from .branding_files import read_variant
 from .branding_models import BrandingAsset
+from .branding_slots import (
+    MAX_TOTAL_BYTES,
+    SLOTS,
+    MissingSlot,
+    changed_sizes,
+    check_slot,
+    complete_bundle,
+    file_size,
+    missing_message,
+)
 from .branding_staging import file_receipt, stage_branding, staged_bundle
 from .branding_validation import campaign_artwork_retained, validate_installation
 from .configuration_installation import coherent_configuration
@@ -106,6 +116,137 @@ class LogoForm(forms.Form):
         return value
 
 
+ONE, EACH = "one", "each"
+# A file field with the page's size check and a reserved error line.
+SIZE_FIELD_TEMPLATE = "stewardship/file-size-field.html"
+# One image over its limit, in the server's and the page's words (ui-v1.js
+# fills in "{size}" as file_size writes it).
+LOGO_TOO_LARGE = _("Parish logo: the file is {size}; the limit is 5 MB.")
+
+
+class LogoUploadForm(LogoForm):
+    """Parish logos' upload: one image for every size, or each size apart.
+
+    ``mode`` chooses (#1062): "one" is ``LogoForm``'s single upload, exactly
+    as before; "each" takes up to four files, one per size, each checked
+    against its own rules (``branding_slots``). The page shows only the
+    chosen mode's fields (data-show-when); the hidden ones are disabled, not
+    sent, and in any case ignored here. A post without ``mode`` is one
+    image, as every upload was before. The setup wizard keeps ``LogoForm``.
+    """
+
+    mode = forms.ChoiceField(
+        label=_("Upload"),
+        choices=[
+            (ONE, _("One image for all sizes")),
+            (EACH, _("Each size separately")),
+        ],
+        widget=forms.RadioSelect,
+        required=False,
+        initial=ONE,
+    )
+    field_order = ["mode", "logo", *SLOTS]
+    # The browser's check of the files chosen together (ui-v1.js), in the
+    # words of clean()'s own refusal; "{size}" is their total.
+    max_total_bytes = MAX_TOTAL_BYTES
+    max_total_message = _(
+        "Together the chosen files are {size}; one upload can carry at most "
+        "5 MB. Upload the larger sizes on their own."
+    )
+
+    def __init__(self, *args, **kwargs):
+        """Add one optional file field per size, shown only in "each" mode,
+        with its one-line rule visible and the rest behind its "i" tip.
+        A post without a mode is redrawn with one image chosen, so a refused
+        one-image upload still shows its field and error."""
+        super().__init__(*args, **kwargs)
+        if self.is_bound and not self.data.get("mode"):
+            self.data = self.data.copy()
+            self.data["mode"] = ONE
+        logo = self.fields["logo"]
+        logo.required = False
+        logo.template_name = SIZE_FIELD_TEMPLATE
+        logo.widget.attrs.update(
+            {
+                "data-show-when": f"mode={ONE}",
+                "data-required-when-shown": "",
+                "data-max-bytes": MAX_IMAGE_BYTES,
+                "data-max-bytes-message": LOGO_TOO_LARGE,
+            }
+        )
+        for name, slot in SLOTS.items():
+            accept = ",".join(f"image/{item.lower()}" for item in slot.formats)
+            field = forms.FileField(
+                label=slot.title,
+                max_length=254,
+                required=False,
+                widget=forms.FileInput(
+                    attrs={
+                        "accept": accept,
+                        "data-show-when": f"mode={EACH}",
+                        # The browser refuses a file over its size's limit
+                        # before sending it (ui-v1.js), in the server's words.
+                        "data-max-bytes": slot.max_bytes,
+                        "data-max-bytes-message": _(
+                            "%(slot)s: the file is {size}; the limit is %(limit)s."
+                        )
+                        % {"slot": slot.title, "limit": file_size(slot.max_bytes)},
+                    }
+                ),
+            )
+            field_tips.add(field, slot.tip, slot.hint)
+            field.template_name = SIZE_FIELD_TEMPLATE
+            self.fields[name] = field
+        self.order_fields(self.field_order)
+
+    def clean_logo(self):
+        """The single image is checked only in one-image mode. A file over
+        the limit is refused in the words the page uses for it."""
+        if self.data["mode"] != ONE:
+            return None
+        value = self.cleaned_data.get("logo")
+        if value is None:
+            raise forms.ValidationError(self.fields["logo"].error_messages["required"])
+        if value.size > MAX_IMAGE_BYTES:
+            raise forms.ValidationError(
+                str(LOGO_TOO_LARGE).replace("{size}", file_size(value.size))
+            )
+        return super().clean_logo()
+
+    def clean_mode(self):
+        """No mode is one image, the only mode before #1062."""
+        return self.cleaned_data.get("mode") or ONE
+
+    def clean(self):
+        """In "each" mode check every chosen size against its rules, keeping
+        each normalized size in ``cleaned_data["sizes"]``; any refusal marks
+        its field, so nothing is staged unless every chosen size passes."""
+        values = super().clean()
+        if values.get("mode") != EACH:
+            return values
+        chosen = {name: values.get(name) for name in SLOTS if values.get(name)}
+        if not chosen:
+            self.add_error(
+                "large", _("Choose an image for at least one size to upload.")
+            )
+            return values
+        total = sum(item.size for item in chosen.values())
+        if total > MAX_TOTAL_BYTES:
+            self.add_error(
+                next(iter(chosen)),
+                str(self.max_total_message).replace("{size}", file_size(total)),
+            )
+            return values
+        sizes = {}
+        for name, upload in chosen.items():
+            try:
+                sizes[name] = check_slot(name, upload.read(MAX_IMAGE_BYTES + 1))
+            except forms.ValidationError as error:
+                self.add_error(name, error)
+        values["sizes"] = sizes
+        return values
+
+
 def media_root():
     """Use only admitted deployment storage, never a posted path or checkout default."""
     value = getattr(settings, "STEWARDSHIP_MEDIA_ROOT", None)
@@ -140,19 +281,35 @@ def _upload(request, service):
     ``(None, form)``, the bound form with its errors.
     """
     if (
-        set(request.POST) - {"base_digest", "csrfmiddlewaretoken"}
-        or set(request.FILES) - {"logo"}
+        set(request.POST) - {"base_digest", "csrfmiddlewaretoken", "mode"}
+        or set(request.FILES) - {"logo", *SLOTS}
         or any(len(values) != 1 for _, values in request.POST.lists())
         or any(len(values) != 1 for _, values in request.FILES.lists())
     ):
         raise ValueError("Invalid logo upload fields.")
-    form = LogoForm(request.POST, request.FILES)
+    form = LogoUploadForm(request.POST, request.FILES)
     if form.is_valid():
-        try:
-            graphics = prepare_graphics(form.cleaned_data["logo"])
-        except ValueError:
-            form.add_error("logo", _("Choose a supported, bounded static image."))
+        graphics = None
+        if form.cleaned_data["mode"] == EACH:
+            # Sizes left empty keep the current logo's image (#1062). The
+            # form's version is checked before the current logos are read,
+            # so a page whose settings changed elsewhere is refused as any
+            # other is (stage_branding checks it again under its lock).
+            active = editable_configuration(service).active_configuration
+            if active.digest != form.cleaned_data["base_digest"]:
+                raise StaleRecordError("The branding form's configuration changed.")
+            try:
+                graphics = complete_bundle(
+                    form.cleaned_data["sizes"], active.parish, media_root()
+                )
+            except MissingSlot as missing:
+                form.add_error(missing.slot, missing_message(missing.slot))
         else:
+            try:
+                graphics = prepare_graphics(form.cleaned_data["logo"])
+            except ValueError:
+                form.add_error("logo", _("Choose a supported, bounded static image."))
+        if graphics is not None:
             identifier = stage_branding(
                 request,
                 service,
@@ -194,6 +351,12 @@ def _review(service, actor, configuration, staged):
         raise StaleRecordError("The branding preview base changed.")
     candidate = build_candidate(base, patch, candidate_id=uuid4())
     validate_installation(candidate.candidate.document(), actor_id=actor.identity)
+    # Each size is named, and says whether this upload changes it (#1062):
+    # one uploaded separately changes only its own size.
+    changed = changed_sizes(assets, configuration.active_configuration.parish)
+    for asset in assets:
+        asset.title = SLOTS[asset.label].title
+        asset.changed = asset.label in changed
     return {
         # Drawn inside settings-review.html, above its Apply.
         "template": "stewardship/branding-review.html",
@@ -365,7 +528,7 @@ def branding_settings(request):
                 region["review"] = _review(service, actor, configuration, staged)
             except StaleRecordError as error:
                 region, status = _unreviewable(error)
-        form = form or LogoForm(
+        form = form or LogoUploadForm(
             initial={"base_digest": configuration.active_configuration.digest}
         )
         return _page(request, service, configuration, form, status=status, **region)
