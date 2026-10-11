@@ -13,6 +13,7 @@ from parishkit.stewardship.accounts.policy import (
     allows,
     report_columns,
     resolve_roles,
+    role_level,
 )
 from parishkit.stewardship.accounts.policy_schema import (
     normalized_domain,
@@ -362,3 +363,35 @@ def test_principal_scope_cannot_exceed_persisted_duid_range():
     """In-memory principal scopes obey the same bigint range as stored assignments."""
     with pytest.raises(ValueError):
         Principal(uuid4(), frozenset({"ministry_leader"}), frozenset({2**63}))
+
+
+def test_allows_is_a_ladder():
+    """Each role holds every capability of the role below it, plus its own."""
+    identity = uuid4()
+    ministry = 7
+
+    def granted(*roles):
+        """The capabilities these roles hold inside one led Ministry."""
+        principal = Principal(identity, frozenset(roles), frozenset({ministry}))
+        return {
+            capability
+            for capability in Capability
+            if allows(principal, capability, ministry_id=ministry)
+        }
+
+    leader, staff, administrator = (
+        granted("ministry_leader"),
+        granted("ministry_leader", "staff"),
+        granted("administrator", "ministry_leader", "staff"),
+    )
+    assert leader < staff < administrator
+    # Family capabilities belong to Family principals only.
+    assert Capability.FAMILY_READ not in administrator
+    # Only the highest role counts: Staff alone is the same as with leader.
+    assert granted("staff") == staff
+    assert granted() == set()
+    assert role_level({"staff", "ministry_leader"}) == "staff"
+    assert role_level(set()) is None
+    # A leader's capabilities stop outside the Ministries they lead.
+    principal = Principal(identity, frozenset({"ministry_leader"}), frozenset())
+    assert not allows(principal, Capability.MINISTRY_REPORT, ministry_id=ministry)

@@ -38,7 +38,12 @@ from django.db import connection, transaction
 
 from parishkit.config import ConfigError
 
-from .configuration_installation import _install_request, coherent_configuration
+from .configuration_installation import (
+    _install_request,
+    coherent_configuration,
+    interrupted_upgrade,
+    interrupted_upgrade_message,
+)
 from .configuration_requests import _own_transaction
 from .operator_recovery import _text
 from .policy_schema import normalized_email
@@ -256,6 +261,22 @@ def document_preview(document):
     return {"already_users": False} | plan
 
 
+def upgrade_runtime(store):
+    """The coherent runtime an upgrade or its preview starts from.
+
+    When an earlier upgrade stopped between its YAML switch and its
+    activation, the refusal says how to finish or undo it rather than only
+    that the configuration needs recovery.
+    """
+    try:
+        return coherent_configuration(store)
+    except ConfigError:
+        pending = interrupted_upgrade(store)
+        if pending is None:
+            raise
+        raise ConfigError(interrupted_upgrade_message(pending)) from None
+
+
 def _confirmed(addresses):
     """Normalize the operator's confirmed Administrator list, refusing repeats."""
     if not isinstance(addresses, (list, tuple)) or not addresses:
@@ -324,7 +345,7 @@ def upgrade_users(
             ) != (operator_name, reason, deployment_id):
                 raise ConfigError("Upgrade operation is bound to another intent.")
         else:
-            runtime = coherent_configuration(store)
+            runtime = upgrade_runtime(store)
             base, version = intake_base(runtime.active_configuration.digest)
             if base.validation_schema == SCHEMA:
                 return None

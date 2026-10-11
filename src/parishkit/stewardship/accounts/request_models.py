@@ -52,6 +52,9 @@ class ConfigurationChangeRequest(ImmutableRecord):
                         "integration-credential-cadence-v8",
                         "chair-seed-patch-v9",
                         "operator-upgrade-users-v10",
+                        "users-patch-v10",
+                        "integration-credential-users-v10",
+                        "operator-recovery-users-v10",
                     ]
                 ),
                 name="config_request_schema",
@@ -77,6 +80,7 @@ class ConfigurationChangeRequest(ImmutableRecord):
                             "operator-recovery-ministry-v4",
                             "operator-recovery-content-v5",
                             "operator-recovery-cadence-v8",
+                            "operator-recovery-users-v10",
                             "operator-upgrade-users-v10",
                         ]
                     )
@@ -94,6 +98,7 @@ class ConfigurationChangeRequest(ImmutableRecord):
                             "operator-recovery-ministry-v4",
                             "operator-recovery-content-v5",
                             "operator-recovery-cadence-v8",
+                            "operator-recovery-users-v10",
                         ],
                     )
                     # The offline users upgrade (#952): a named operator and
