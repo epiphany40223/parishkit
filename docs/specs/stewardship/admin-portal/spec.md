@@ -3477,7 +3477,13 @@ in the order the Administrator asked for
    attempt of that rendering recorded for it
    ([#806](https://github.com/epiphany40223/parishkit/issues/806)):
    "delivered", "refused for now", "refused permanently", "not sure it
-   arrived" or "not delivered". In Production these follow the To:
+   arrived" or "not delivered". A label never contradicts what has since
+   happened to the email: "not sure it arrived" shows only while the email
+   is still in that state (after an Administrator confirms delivery,
+   records that it was not sent, or authorizes a resend, the address shows
+   no label), and "not delivered" reads "not delivered yet" while the email
+   may still be sent (waiting to retry, or being sent again). In Production
+   these follow the To:
    addresses; in Testing mode they follow the Testing recipient, the
    address the email was really sent to. One email goes to all its
    addresses at once, and the provider can accept it for some and refuse

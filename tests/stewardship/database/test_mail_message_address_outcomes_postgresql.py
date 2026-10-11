@@ -25,6 +25,7 @@ from parishkit.stewardship.family_delivery import (
 )
 from parishkit.stewardship.jobs.delivery_states import DeliveryAction
 from parishkit.stewardship.jobs.family_mail_results import result_evidence
+from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.outbox_storage import create_message
 from parishkit.stewardship.jobs.outbox_validation import DeliveryIdentity
 
@@ -34,7 +35,7 @@ from .auth_builders import signed_in
 from .campaign_builders import change as change_policy
 from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
-from .test_outbox_postgresql import change, permit, submit
+from .test_outbox_postgresql import change, permit, provider_evidence, submit
 
 FROZEN = (
     Path(__file__).resolve().parents[3]
@@ -171,6 +172,85 @@ def test_each_address_shows_what_the_latest_attempt_recorded(response_service, g
         ("second@example.org", "unknown"),
     ]
     assert "second@example.org (not sure it arrived)" in page(browser, unsure)
+
+
+def evidence(key, status, count=2, **refused):
+    """Genuine SMTP result evidence for an attempt of the email keyed ``key``."""
+    return result_evidence(
+        FamilyDeliveryResult(status, count, **refused),
+        semantic_key=key,
+        with_stats=False,
+    )
+
+
+def test_the_latest_attempt_on_a_rendering_wins(response_service, google):
+    """An attempt refused for now leaves the email waiting to retry: its
+    addresses are "not delivered yet". The retry, on the same rendering, is
+    accepted except at one address, and only that latest attempt is shown."""
+    harness = activate_response_service(response_service)
+    browser, _ = signed_in()
+    admin = PortalUser.objects.get(email="admin@example.org").pk
+    created, key = message(harness)
+    first = submit(created)
+    task = TaskRun.objects.get(pk=first.run_id)
+    waiting = change(
+        first,
+        DeliveryAction.RETRY_UNACCEPTED,
+        retry_seconds=1,
+        evidence=evidence(key, FamilyDeliveryStatus.TRANSIENT),
+    )
+    assert outcomes_as(ServiceRole.WEB, created.message_id, admin) == [
+        (value, "not_delivered") for value in ADDRESSES
+    ]
+    assert (
+        "To: first@example.org (not delivered yet), second@example.org"
+        " (not delivered yet)</p>"
+    ) in page(browser, created.message_id)
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_sleep(1.05)")
+    second = change(
+        waiting,
+        DeliveryAction.SUBMIT,
+        run_id=task.pk,
+        task_fence=task.fence,
+        actor_id=task.worker_id,
+        provider_seconds=30,
+    )
+    assert second.attempt == 2 and second.render_id == first.render_id
+    change(
+        second,
+        DeliveryAction.ACCEPT,
+        evidence=evidence(key, FamilyDeliveryStatus.ACCEPTED, transient=(1,)),
+    )
+    assert outcomes_as(ServiceRole.WEB, created.message_id, admin) == [
+        ("first@example.org", "delivered"),
+        ("second@example.org", "refused_for_now"),
+    ]
+    html = page(browser, created.message_id)
+    assert "first@example.org (delivered), second@example.org (refused for now)" in html
+    assert "not delivered yet" not in html
+
+
+@pytest.mark.parametrize("valid", ["synthetic", "wrong_count"])
+def test_evidence_that_does_not_validate_gives_no_outcome(
+    response_service, google, valid
+):
+    """Evidence the validator refuses (not a result at all, or a result for
+    an envelope of another size) gives no rows, and the addresses no label."""
+    harness = activate_response_service(response_service)
+    browser, _ = signed_in()
+    admin = PortalUser.objects.get(email="admin@example.org").pk
+    created, key = message(harness)
+    change(
+        submit(created),
+        DeliveryAction.ACCEPT,
+        evidence=provider_evidence()
+        if valid == "synthetic"
+        else evidence(key, FamilyDeliveryStatus.ACCEPTED, count=3),
+    )
+    assert outcomes_as(ServiceRole.WEB, created.message_id, admin) == []
+    html = page(browser, created.message_id)
+    assert BARE_TO in html and 'id="email-reached"' not in html
 
 
 def test_testing_mode_outcomes_follow_the_testing_recipient(response_service, google):

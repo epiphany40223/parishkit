@@ -12,11 +12,12 @@ from parishkit.stewardship.jobs import delivery_reads
 ADDRESSES = ["first@example.org", "second@example.org"]
 
 
-def recipients(monkeypatch, rows, outcomes):
-    """``email_recipients`` over fixed recipient and outcome rows (None = refused)."""
+def recipients(monkeypatch, rows, outcomes, state="delivered"):
+    """``email_recipients`` over fixed recipient and outcome rows (None =
+    refused), for an email now in ``state``."""
     answers = iter([rows, outcomes])
     monkeypatch.setattr(delivery_reads, "_definer_rows", lambda *args: next(answers))
-    return delivery_reads.email_recipients("message", "actor")
+    return delivery_reads.email_recipients("message", "actor", state)
 
 
 def listed(intended, routed):
@@ -92,3 +93,47 @@ def test_a_refused_read_returns_none(monkeypatch):
     """Either read refused leaves the page to its final authority recheck."""
     assert recipients(monkeypatch, None, None) is None
     assert recipients(monkeypatch, listed(ADDRESSES, ADDRESSES), None) is None
+
+
+@pytest.mark.parametrize(
+    ("outcome", "state", "label"),
+    [
+        # The provider's uncertainty shows only while the email is uncertain:
+        # an Administrator's acceptance, "not sent" record or authorized
+        # resend settles it, so the address shows nothing.
+        ("unknown", "delivery_unknown", "not sure it arrived"),
+        ("unknown", "delivered", None),
+        ("unknown", "permanent_failure", None),
+        ("unknown", "pending", None),
+        # Not delivered is final only once nothing more will be sent.
+        ("not_delivered", "retry_wait", "not delivered yet"),
+        ("not_delivered", "pending", "not delivered yet"),
+        ("not_delivered", "submitting", "not delivered yet"),
+        ("not_delivered", "permanent_failure", "not delivered"),
+        ("not_delivered", "cancelled", "not delivered"),
+        # What the provider said about one address does not change.
+        ("delivered", "delivered", "delivered"),
+        ("refused_for_now", "delivered", "refused for now"),
+        ("refused_permanently", "permanent_failure", "refused permanently"),
+    ],
+)
+def test_labels_follow_the_emails_current_state(outcome, state, label):
+    """A label never contradicts what has since happened to the email."""
+    shown = delivery_reads.outcome_label(outcome, state)
+    assert (shown and str(shown)) == label
+
+
+def test_a_resolved_uncertain_email_shows_no_uncertain_label(monkeypatch):
+    """After an Administrator resolves "not sure it arrived", the addresses
+    no longer say so, and no count line appears."""
+    result = recipients(
+        monkeypatch,
+        listed(ADDRESSES, ADDRESSES),
+        [(ADDRESSES[0], "unknown"), (ADDRESSES[1], "refused_for_now")],
+        state="delivered",
+    )
+    assert labels(result["intended_rows"]) == [
+        (ADDRESSES[0], None),
+        (ADDRESSES[1], "refused for now"),
+    ]
+    assert result["reached"] is None

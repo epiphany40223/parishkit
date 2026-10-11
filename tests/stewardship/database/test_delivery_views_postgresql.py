@@ -873,7 +873,7 @@ def test_a_refused_recipient_read_leaves_the_page_to_its_recheck(
     admin = PortalUser.objects.get(email="admin@example.org").pk
     # Directly: a refused actor gives None and the transaction stays usable.
     with task_login(ServiceRole.WEB, exact=True), transaction.atomic():
-        assert email_recipients(message.pk, uuid4()) is None
+        assert email_recipients(message.pk, uuid4(), message.state) is None
         assert OutboxMessage.objects.filter(pk=message.pk).exists()
     original = delivery_views.read_detail
 
@@ -985,6 +985,10 @@ def test_delivery_forms_apply_once_with_current_session_and_csrf(
             result = browser.get(path)
             assert b"&lt;script&gt;evidence&lt;/script&gt;" in result.content
             assert b"<script>evidence</script>" not in result.content
+            # The provider's "not sure it arrived" follows the address only
+            # while the email still is; any resolution but a note settles it
+            # (#806).
+            assert (b"(not sure it arrived)" in result.content) == (action == "note")
             if action == "accept":
                 assert b"Retry is not available right now" not in result.content
             if action == "confirm_unsent":

@@ -242,6 +242,28 @@ OUTCOME_LABELS = {
     "unknown": _("not sure it arrived"),
     "not_delivered": _("not delivered"),
 }
+# The email states after which nothing more is sent for it.
+FINAL_STATES = frozenset({"delivered", "permanent_failure", "cancelled"})
+
+
+def outcome_label(outcome, state):
+    """The label to show after an address, given the email's current state.
+
+    The outcome is what the latest attempt's evidence recorded; ``state`` is
+    the email's state now, which an Administrator's resolution or a retry
+    may have moved on since. "Not sure it arrived" is shown only while the
+    email is still in that state: once an Administrator confirms delivery or
+    records that it was not sent, or a resend is authorized, the provider's
+    uncertainty no longer describes the email, so the address shows nothing.
+    "Not delivered" reads "not delivered yet" while the email may still be
+    sent (it waits for a retry or is being sent again). Returns None when
+    nothing should be shown.
+    """
+    if outcome == "unknown" and state != "delivery_unknown":
+        return None
+    if outcome == "not_delivered" and state not in FINAL_STATES:
+        return _("not delivered yet")
+    return OUTCOME_LABELS[outcome]
 
 
 def _definer_rows(sql, parameters):
@@ -265,7 +287,7 @@ def _definer_rows(sql, parameters):
         return None
 
 
-def email_recipients(message_id, actor_id):
+def email_recipients(message_id, actor_id, state):
     """One email's recipient addresses, for its Mail message page (#1024).
 
     The addresses live only in the email's rendering, which the web login
@@ -278,8 +300,9 @@ def email_recipients(message_id, actor_id):
     with no rendering yet.
 
     Each list also comes as ``intended_rows`` and ``routed_rows``: pairs of
-    an address and the label of what the latest attempt recorded for it
-    (#806, see ``address_outcomes``), or None where there is none to show.
+    an address and the label of what the latest attempt recorded for it,
+    given the email's current ``state`` (#806, see ``address_outcomes`` and
+    ``outcome_label``), or None where there is none to show.
     ``reached`` is ``(delivered, total)`` when an accepted attempt reached
     only some of its addresses, and ``refused_for_now`` says whether any
     address was refused for now.
@@ -307,7 +330,10 @@ def email_recipients(message_id, actor_id):
         # carries the outcomes; in Testing mode they follow the Testing line.
         shown = kind == "routed" or recipients["routed"] == recipients["intended"]
         recipients[kind + "_rows"] = [
-            (address, OUTCOME_LABELS[labels[address]] if shown and labels else None)
+            (
+                address,
+                outcome_label(labels[address], state) if shown and labels else None,
+            )
             for address in recipients[kind]
         ]
     # Counted over the envelope, so a repeated address counts each time.
