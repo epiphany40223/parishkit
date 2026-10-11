@@ -20,7 +20,7 @@ from PIL import Image
 from parishkit.stewardship.accounts import setup_help
 from parishkit.stewardship.accounts import setup_progress_views as progress_views
 from parishkit.stewardship.accounts.backup_key import KeyStatus
-from parishkit.stewardship.accounts.branding_views import LogoForm
+from parishkit.stewardship.accounts.branding_views import LogoUploadForm
 from parishkit.stewardship.accounts.campaign_create_views import (
     CREATES_TESTING_DRAFT,
     DEFAULT_TEXT,
@@ -600,7 +600,7 @@ def component_origin():
             "/branding-settings",
             "branding-settings",
             {
-                "form": LogoForm(initial={"base_digest": "a" * 64}),
+                "form": LogoUploadForm(initial={"base_digest": "a" * 64}),
                 "assets": [branding_asset],
             },
         ),
@@ -609,7 +609,7 @@ def component_origin():
             "/branding-preview",
             "branding-settings",
             {
-                "form": LogoForm(initial={"base_digest": "a" * 64}),
+                "form": LogoUploadForm(initial={"base_digest": "a" * 64}),
                 "assets": [branding_asset],
                 "review": {
                     "template": "stewardship/branding-review.html",

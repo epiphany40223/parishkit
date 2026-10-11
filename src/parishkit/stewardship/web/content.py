@@ -844,6 +844,77 @@ def prepare_artwork(upload, label):
     return graphics
 
 
+@dataclass(frozen=True)
+class ImageFacts:
+    """What an uploaded image is, before any slot's rule judges it (#1062).
+
+    ``format`` is the decoder's name (``PNG``, ``JPEG`` or ``WEBP``); width
+    and height are as displayed, after any EXIF rotation; ``frames`` is how
+    many frames it has (more than one is an animation).
+    """
+
+    format: str
+    width: int
+    height: int
+    frames: int
+
+
+# EXIF orientations that turn the stored image a quarter turn, so the
+# displayed width and height are the stored ones swapped.
+_QUARTER_TURNS = frozenset({5, 6, 7, 8})
+
+
+def image_facts(data):
+    """Read an upload's format, displayed size and frame count without
+    decoding its pixels; raise ValueError unless it is a readable PNG, JPEG
+    or WebP image within the decoder's own decompression-bomb bound.
+
+    Only the header is read. An image over ``MAX_IMAGE_PIXELS`` is answered
+    as soon as its size is known: reading a PNG's EXIF loads (decodes) the
+    whole image, so a small, highly compressed upload of huge dimensions
+    could otherwise take hundreds of megabytes before being refused. Its
+    rotation does not matter then, since the pixel count is the same.
+    """
+    formats = ("PNG", "JPEG", "WEBP")
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            # verify() must come straight after opening, and leaves the image
+            # unusable, so the facts are read from a second opening.
+            with Image.open(BytesIO(data), formats=formats) as probe:
+                probe.verify()
+            with Image.open(BytesIO(data), formats=formats) as probe:
+                # The JPEG decoder also opens other formats, such as MPO
+                # (multi-picture) files; only the three named are accepted.
+                if probe.format not in formats:
+                    raise ValueError
+                width, height = probe.size
+                frames = getattr(probe, "n_frames", 1)
+                if (
+                    width * height <= MAX_IMAGE_PIXELS
+                    and probe.getexif().get(0x0112) in _QUARTER_TURNS
+                ):
+                    width, height = height, width
+                return ImageFacts(probe.format, width, height, frames)
+    except (
+        OSError,
+        ValueError,
+        SyntaxError,
+        UnidentifiedImageError,
+        Image.DecompressionBombError,
+        Image.DecompressionBombWarning,
+    ):
+        raise ValueError("Upload must be a readable PNG, JPEG or WebP image.") from None
+
+
+def prepare_slot_graphic(data, label, size):
+    """Normalize one separately uploaded logo size (#1062) like any logo:
+    re-encoded from a fresh pixel buffer and fitted within ``size`` pixels
+    per side, never enlarged. The slot's own rules are checked first by the
+    caller (``branding_slots``)."""
+    return _normalized_variants(BytesIO(data), ((label, size),))[label]
+
+
 def _normalized_variants(upload, sizes):
     """Decode one bounded upload once and emit fresh PNGs fitted to each size.
 
