@@ -20,7 +20,7 @@ from parishkit.stewardship.web.tables import report_table
 SUBMITTED = datetime(2054, 10, 5, 14, 30, tzinfo=UTC)
 
 
-def ministry_page(rows, *, ministry_id=None, summaries=()):
+def ministry_page(rows, *, ministry_id=None, summaries=(), packet_choices=()):
     """Render the Ministry report as its view does, from detached rows."""
     query = MinistryQuery()
     shown = rows if ministry_id is not None else list(summaries)
@@ -35,6 +35,8 @@ def ministry_page(rows, *, ministry_id=None, summaries=()):
                 "source_generation": 1,
             },
             "summaries": list(summaries),
+            "packet_choices": list(packet_choices),
+            "packet_limit": 200,
             "rows": rows,
             "total": len(shown),
             "mutable": True,

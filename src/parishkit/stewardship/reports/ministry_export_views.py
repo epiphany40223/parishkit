@@ -3,11 +3,20 @@
 from uuid import UUID
 
 from django.core.exceptions import ObjectDoesNotExist
+from django.urls import reverse
+from django.utils.text import format_lazy
+from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_POST
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.web.contracts import (
+    ErrorCode,
+    FieldError,
+    validation_response,
+)
 from parishkit.stewardship.web.dates import UnknownZone, refuse_zoneless_dates
+from parishkit.stewardship.web.refusals import Refusal
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.security import private_response
 
@@ -23,6 +32,22 @@ BOUND = (
     "This export form was already used for a different export. Nothing new was"
     " queued. Reload the page and try again.\n"
 )
+# The packet form's help states the same limit (ministry-report.html).
+TOO_MANY = format_lazy(
+    _(
+        "A follow-up packet can include at most {limit} ticked Ministries, so "
+        "nothing was queued."
+    ),
+    limit=MAX_PACKET_MINISTRIES,
+)
+TOO_MANY_FIX = _(
+    "Tick fewer Ministries, or leave every box unticked to include all the "
+    "Ministries you are authorized for."
+)
+
+
+class TooManyMinistries(ValueError):
+    """A packet selection ticks more Ministries than one packet may hold."""
 
 
 @require_POST
@@ -96,7 +121,9 @@ def packet_selection(parameters):
     chosen = parameters.getlist("ministries")
     if not chosen:
         return None
-    if len(chosen) > MAX_PACKET_MINISTRIES or any(
+    if len(chosen) > MAX_PACKET_MINISTRIES:
+        raise TooManyMinistries("Too many Ministries for one packet.")
+    if any(
         len(value) > 10
         or not value.isascii()
         or not value.isdecimal()
@@ -140,5 +167,18 @@ def create_packet(request, campaign_id):
         return denial()
     except (*SAFE_FAILURES, StorageInvariantError):
         return report_unavailable()
+    except TooManyMinistries:
+        # Ticking past the limit is an ordinary choice, not a malformed
+        # form, so the refusal says what to do instead: a typed refusal,
+        # shown to a person as the Admin error page with a way back.
+        return validation_response(
+            [FieldError(ErrorCode.INVALID, "ministries")],
+            refusal=Refusal(
+                TOO_MANY,
+                fix=TOO_MANY_FIX,
+                link=reverse("admin:ministry_report"),
+                link_label=_("Back to Ministry requests"),
+            ),
+        )
     except ValueError:
         return private_response("Invalid Ministry packet selection.\n", status=400)

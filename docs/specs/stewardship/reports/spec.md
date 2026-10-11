@@ -1518,7 +1518,20 @@ This representation does not change current-policy checks or report columns.
 
 **Access:** same Ministry scoping as the summary.
 
-The request offers multi-select plus Select all authorized Ministries. For each
+The request offers multi-select plus Select all authorized Ministries: one
+box per Ministry, and no box ticked selects every Ministry the requester is
+authorized for. The boxes list every Ministry in the requester's
+[summary](#ministry-change-summary) scope by name, whatever page, sort or
+search the summary table shows, so a leader of many Ministries can choose a
+subset across pages; paging, sorting or searching the table keeps the ticks
+([#533](https://github.com/epiphany40223/parishkit/issues/533)). At most
+200 Ministries may be ticked for one packet, as the form's help says; more
+are refused with a message saying to tick fewer or leave every box unticked,
+which includes them all. The list is
+read through the same scoped selection as the summary (once more only when
+the page shown does not already hold the whole unfiltered summary). It shows
+only Ministry names and DUIDs, no request data, so the report-view audit
+still records the Ministries of the summary rows shown. For each
 Ministry, output its name, chair names, stewardship period/year, and one row for
 each latest effective `join` or `leave` MinistryRequest in that Ministry,
 including resolved/cancelled history only when the requester selects the
