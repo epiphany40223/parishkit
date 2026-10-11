@@ -1,9 +1,29 @@
-{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship delivery %}
-{% block title %}{% translate "Mail message" %}{% endblock %}
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship delivery %}{% comment %}One email's page (#1015). Object-named: the heading names the email by
+its type and its Family's heads ("Initial invitation to Morgan, Henry"),
+from the latest ParishSoft data as Outgoing mail reads it; the browser
+title names only the type, so browser history does not keep the Family's
+name (as on the Family timeline). The page reads top to bottom: what the
+email is and whom it was for, its attempt history, the technical details
+and latest background task, then what can be done about it and the
+Admin evidence already recorded.{% endcomment %}
+{% block title %}{{ delivery.purpose|delivery_label }}{% endblock %}
 {% block content %}
-<h1>{% translate "Mail message" %}</h1>
-<p>{% if delivery.family__family_duid %}{% translate "Family DUID:" %} {{ delivery.family__family_duid|duid }}{% else %}{% translate "Administrator report" %}{% endif %}</p>
+<h1>{% if delivery.family_name %}{% blocktranslate trimmed with purpose=delivery.purpose|delivery_label name=delivery.family_name %}{{ purpose }} to {{ name }}{% endblocktranslate %}{% else %}{{ delivery.purpose|delivery_label }}{% endif %}</h1>
 <p>{{ delivery.purpose|delivery_label }} · {{ delivery.mode|delivery_label }} · {{ delivery.state|delivery_label }}</p>
+{% if delivery.family__family_duid %}<p>{% translate "Family:" %} {% if delivery.family_name %}{{ delivery.family_name }}{% else %}<span class="help">{% translate "Not in current ParishSoft data" %}</span>{% endif %} · {% translate "Family DUID:" %} {{ delivery.family__family_duid|duid }}</p>
+{% if refused %}<p>{% translate "Refused addresses:" %} {% for refusal in refused %}<a href="{% url 'admin:delivery_refusal' refusal.id %}">{{ refusal.address }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+{% else %}<p>{% translate "Administrator report" %}</p>{% endif %}
+{# Attempts and Admin evidence share one page window: Previous and Next page refresh both regions in place (ui-v1.js, a[data-in-place], #519), whichever pager is used. The resolution forms sit between them, outside both regions, so typed evidence is kept. #}
+<div id="delivery-history" data-in-place-region>
+<h2 id="attempt-history-heading">{% translate "Attempt history" %}</h2>
+{# One table, one short row per recorded change, newest first; When leads, as in every log table, heads each row and uses the dense tables' compact date (#934, Admin tables' column order). The heading above names it on screen, so its caption is only for screen readers. #}
+{% if events %}<div class="table-scroll" tabindex="0" role="region" aria-labelledby="attempt-history-heading"><table class="data-table whole-words"><caption class="visually-hidden">{% translate "Attempt history" %}</caption>
+<thead><tr><th scope="col">{% translate "When" %}</th><th scope="col" class="numeric">{% translate "Attempt" %}</th><th scope="col">{% translate "What happened" %}</th><th scope="col">{% translate "State" %}</th></tr></thead>
+<tbody>{% for event in events %}<tr><th scope="row" class="nowrap"><time datetime="{{ event.created_at|instant }}" data-local-instant data-compact>{{ event.created_at|instant }}</time></th><td class="numeric">{{ event.attempt|number }}</td><td>{{ event|delivery_event_label }}</td><td>{{ event.state|delivery_label }}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% else %}<p>{% translate "No attempt history on this page." %}</p>{% endif %}
+<nav aria-label="{% translate 'Attempt history and evidence pages' %}">{% if previous_query %}<a href="?{{ previous_query }}#delivery-history" data-in-place="page-previous" data-in-place-fallback="page-next" data-in-place-message="{% translate 'Previous page shown.' %}">{% translate "Previous page" %}</a>{% endif %} {% if next_query %}<a href="?{{ next_query }}#delivery-history" data-in-place="page-next" data-in-place-fallback="page-previous" data-in-place-message="{% translate 'Next page shown.' %}">{% translate "Next page" %}</a>{% endif %}</nav>
+</div>
 <details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Delivery ID" %}</dt><dd>{{ delivery.id }}</dd></dl></details>
 {% if task %}<p><a href="{% url 'admin:background_task_page' task.id %}">{% translate "Latest background task" %}</a>: {{ task.state|delivery_task_label }}</p>{% endif %}
 {% if delivery.state == 'delivery_unknown' %}
@@ -12,36 +32,40 @@
   <p>{% translate "Automatic retries have stopped. The mail service cannot tell us whether this email arrived, and sending it again could give the recipient a second copy. Check other evidence first, such as the sending mailbox's Sent folder or asking the recipient, then choose one of the actions below." %}</p>
 </aside>
 {% endif %}
+{% if commands and retry_unavailable %}<p class="notice">{% translate "Retry is not available right now. It needs the campaign to be open, campaign email not paused, up-to-date ParishSoft data, and no other email already covering this one." %}</p>{% endif %}
+{% comment %}The forms show only when a decision is available (#1015): the
+"Resolve this email" section when an action other than a bare evidence note
+is offered; otherwise, when only the note is, a closed disclosure, since a
+note changes nothing about the email. In the disclosure its summary is the
+form's heading, so the form draws no h3 of its own there.{% endcomment %}
+{% if decisions %}<section aria-labelledby="resolve-heading"><h2 id="resolve-heading">{% translate "Resolve this email" %}</h2>
+<p>{% translate "These actions settle a delivery that failed or may not have arrived. Each needs a short note saying why; it is saved in this email's history and is not emailed to anyone." %}</p>
+{% elif commands %}<details><summary>{% translate "Add a note to this email's history" %}</summary>
+{% endif %}
 {% for command in commands %}
-{% if forloop.first and retry_unavailable %}<p class="notice">{% translate "Retry is not available right now. It needs the campaign to be open, campaign email not paused, up-to-date ParishSoft data, and no other email already covering this one." %}</p>{% endif %}
 {# Each form waits for a note that is more than spaces (and, for a resend, the tick), as the server requires; the hint follows the button (#563). #}
-<form method="post" action="{% url 'admin:delivery_resolve' delivery.id %}" class="panel" data-require-complete>
+<form method="post" action="{% url 'admin:delivery_resolve' delivery.id %}"{% if decisions %} class="panel"{% endif %} data-require-complete>
   {% csrf_token %}
   <input type="hidden" name="command_id" value="{{ command.id }}">
   <input type="hidden" name="expected_version" value="{{ delivery.version }}">
   <input type="hidden" name="action" value="{{ command.action }}">
-  <h2>{{ command.label }}</h2>
-  <label for="evidence-{{ command.action }}">{% translate "Evidence or reason for this decision" %}</label>
-  <textarea id="evidence-{{ command.action }}" name="note" maxlength="2000" required aria-describedby="help-{{ command.action }}{% if command.action == 'accept' %} acceptance-help{% elif command.action == 'confirm_unsent' %} unsent-help{% endif %}" data-missing-hint="{% translate 'Enter the evidence or reason for this decision.' %}"></textarea>
-  <p id="help-{{ command.action }}" class="help">{% translate "Keep evidence brief. Do not include passwords, Family links, codes, or complete provider responses." %}</p>
+  {% if decisions %}<h3>{{ command.label }}</h3>{% endif %}
+  {% if command.action == 'note' %}<label for="evidence-note">{% translate "Note to save in this email's history" %}</label>
+  <textarea id="evidence-note" name="note" maxlength="2000" required aria-describedby="help-note" data-missing-hint="{% translate 'Enter the note.' %}"></textarea>
+  {% else %}<label for="evidence-{{ command.action }}">{% translate "Why are you doing this? (saved in this email's history)" %}</label>
+  <textarea id="evidence-{{ command.action }}" name="note" maxlength="2000" required aria-describedby="help-{{ command.action }}{% if command.action == 'accept' %} acceptance-help{% elif command.action == 'confirm_unsent' %} unsent-help{% endif %}" data-missing-hint="{% translate 'Enter why you are doing this.' %}"></textarea>{% endif %}
+  <p id="help-{{ command.action }}" class="help">{% translate "Keep it brief. Do not include passwords, Family links, codes, or complete provider responses." %}</p>
   {% if command.action == 'resend' %}<label><input type="checkbox" name="duplicate_acknowledged" value="yes" required data-acknowledgment data-missing-hint="{% translate 'Tick the box to accept the duplicate risk.' %}"> {% translate "The prior attempt may already have been delivered. I accept the duplicate risk and explicitly authorize another attempt." %}</label>{% endif %}
   {% if command.action == 'accept' %}<p id="acceptance-help">{% translate "Use this only when external evidence confirms acceptance of this exact delivery, not merely because no error was reported." %}</p>{% endif %}
   {% if command.action == 'confirm_unsent' %}<p id="unsent-help">{% translate "Use this only when the provider's own log shows this exact attempt was not sent. The delivery is recorded as failed and is not resent; no recipient is suppressed." %}</p>{% endif %}
   {% button type="submit" aria-describedby="complete-hint-"|add:command.action %}{{ command.label }}{% endbutton %}<p class="help" id="complete-hint-{{ command.action }}" data-complete-hint hidden></p>
 </form>
 {% endfor %}
-{# Evidence and attempts share one page window, so both are one region; Previous and Next page refresh it in place (ui-v1.js, a[data-in-place], #519). The resolution forms above stay outside it, so typed evidence is kept. #}
-<div id="delivery-history" data-in-place-region>
+{% if decisions %}</section>{% elif commands %}</details>{% endif %}
+<div id="delivery-evidence" data-in-place-region>
 <h2>{% translate "Admin evidence and decisions" %}</h2>
 {% for note in notes %}<section class="panel"><p>{{ note.action|delivery_label }} · <time datetime="{{ note.created_at|instant }}" data-local-instant>{{ note.created_at|instant }}</time></p><p>{{ note.evidence_note }}</p></section>
 {% empty %}<p>{% translate "No Admin evidence on this page." %}</p>{% endfor %}
-<h2 id="attempt-history-heading">{% translate "Attempt history" %}</h2>
-{# One table, one short row per recorded change, newest first; When leads, as in every log table, heads each row and uses the dense tables' compact date (#934, Admin tables' column order). The heading above names it on screen, so its caption is only for screen readers. #}
-{% if events %}<div class="table-scroll" tabindex="0" role="region" aria-labelledby="attempt-history-heading"><table class="data-table whole-words"><caption class="visually-hidden">{% translate "Attempt history" %}</caption>
-<thead><tr><th scope="col">{% translate "When" %}</th><th scope="col" class="numeric">{% translate "Attempt" %}</th><th scope="col">{% translate "What happened" %}</th><th scope="col">{% translate "State" %}</th></tr></thead>
-<tbody>{% for event in events %}<tr><th scope="row" class="nowrap"><time datetime="{{ event.created_at|instant }}" data-local-instant data-compact>{{ event.created_at|instant }}</time></th><td class="numeric">{{ event.attempt|number }}</td><td>{{ event|delivery_event_label }}</td><td>{{ event.state|delivery_label }}</td></tr>{% endfor %}</tbody>
-</table></div>
-{% else %}<p>{% translate "No attempt history on this page." %}</p>{% endif %}
-<nav aria-label="{% translate 'Evidence and attempt pages' %}">{% if previous_query %}<a href="?{{ previous_query }}#delivery-history" data-in-place="page-previous" data-in-place-fallback="page-next" data-in-place-message="{% translate 'Previous page shown.' %}">{% translate "Previous page" %}</a>{% endif %} {% if next_query %}<a href="?{{ next_query }}#delivery-history" data-in-place="page-next" data-in-place-fallback="page-previous" data-in-place-message="{% translate 'Next page shown.' %}">{% translate "Next page" %}</a>{% endif %}</nav>
+<nav aria-label="{% translate 'Evidence and attempt history pages' %}">{% if previous_query %}<a href="?{{ previous_query }}#delivery-evidence" data-in-place="evidence-previous" data-in-place-fallback="evidence-next" data-in-place-message="{% translate 'Previous page shown.' %}">{% translate "Previous page" %}</a>{% endif %} {% if next_query %}<a href="?{{ next_query }}#delivery-evidence" data-in-place="evidence-next" data-in-place-fallback="evidence-previous" data-in-place-message="{% translate 'Next page shown.' %}">{% translate "Next page" %}</a>{% endif %}</nav>
 </div>
 {% endblock %}

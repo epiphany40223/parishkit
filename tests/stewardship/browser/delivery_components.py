@@ -217,6 +217,11 @@ def components(now):
     delivery = dict(
         delivery=message,
         task=task,
+        # The refused address its delivery recorded, linking its own page
+        # (#1015).
+        refused=[dict(id=REFUSAL_ID, address="head@example.org")],
+        # A decision is offered, so the "Resolve this email" section shows.
+        decisions=True,
         commands=[
             dict(id=uuid4(), action=action, label=label)
             for action, label in (
@@ -246,6 +251,19 @@ def components(now):
         ],
     )
     yield "/delivery", "delivery", delivery
+    # A delivered email offers only the evidence note: no decision, so the
+    # note form waits closed in a disclosure (#1015).
+    yield (
+        "/delivery-note-only",
+        "delivery",
+        delivery
+        | dict(
+            delivery=message | dict(state="delivered"),
+            refused=[],
+            decisions=False,
+            commands=[dict(id=uuid4(), action="note", label="Save evidence note")],
+        ),
+    )
     # A message retried after a failure: each recorded change is one short
     # row of the attempt history table, newest first (#934).
     yield (
@@ -283,7 +301,7 @@ def components(now):
             notes=[
                 dict(action="note", created_at=now, evidence_note="Earlier evidence")
             ],
-            events=[dict(attempt=1, action="send", state="pending", created_at=now)],
+            events=[dict(attempt=1, action="created", state="pending", created_at=now)],
             previous_query="page=1",
         ),
     )

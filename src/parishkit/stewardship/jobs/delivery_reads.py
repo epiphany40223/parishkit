@@ -206,6 +206,32 @@ def with_refusal_counts(rows):
     return [row | {"refused": counts.get(row["id"], 0)} for row in rows]
 
 
+def email_refusals(message_id):
+    """The unresolved refused addresses one email's delivery recorded (#1015).
+
+    The Mail message page names them, each linking its refusal's own page,
+    since the web login never reads the email's recipient list (its
+    rendering) and the refused addresses are the ones an Administrator acts
+    on. Each address is listed once, by its newest refusal: a retry refused
+    again records a second refusal of the same address, as
+    ``with_refusal_counts`` counts them. Returns ``[{"id", "address"}]`` in
+    address order; one query.
+    """
+    from .outbox_models import OutboxEvent
+
+    newest = {}
+    for row in (
+        unresolved_refusals()
+        .filter(
+            event_id__in=OutboxEvent.objects.filter(message_id=message_id).values("id")
+        )
+        .order_by("address", "-created_at", "-id")
+        .values("id", "address")
+    ):
+        newest.setdefault(row["address"], row)
+    return list(newest.values())
+
+
 def offered_actions(state, task_state, *, campaign_state, can_resolve, can_retry):
     """The resolutions a message's page offers now, in the page's order.
 
