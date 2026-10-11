@@ -9,7 +9,6 @@
 {% endcomment %}
 {% block title %}{{ label }}{% endblock %}
 {% block content %}
-<p><a href="{% url 'admin:integrations' %}">{% translate "Integrations" %}</a></p>
 <h1>{{ label }}</h1>
 {% aboutpage "backup-key" %}<p>{% translate "Every backup is encrypted with a public key before it is written. Only the matching private key, which your parish keeps off this server, can open it." %}</p>{% endaboutpage %}
 <p class="notice">{% translate "Never give this server the private key." %}</p>
