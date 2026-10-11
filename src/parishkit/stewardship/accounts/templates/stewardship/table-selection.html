@@ -17,6 +17,12 @@
   is only made invisible, so the bar keeps its height (ui-conventions,
   Administrator decision B2, 2026-10-10; #879). It re-checks all of this on
   pageshow (#563). The server validates the selection.
+
+  Optional: empty_hint is a reason the line shows instead while the table
+  has no rows at all (for example "Nothing to import: ..."); without it the
+  line stays blank then, since the table itself says it is empty. hint_id
+  gives the line a fixed id, so a button the server rendered unavailable can
+  name it in its own aria-describedby (#952).
 {% endcomment %}{% button type="button" variant="secondary" data-select-all-button hidden %}{% translate "Select all" %}{% endbutton %}
 <span class="bulk-count" data-selected-count role="status" aria-live="polite"></span>
-<p class="bulk-hint help" data-selection-hint></p>
+<p class="bulk-hint help" data-selection-hint{% if hint_id %} id="{{ hint_id }}"{% endif %}{% if empty_hint %} data-empty-hint="{{ empty_hint }}"{% endif %}></p>

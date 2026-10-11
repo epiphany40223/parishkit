@@ -293,6 +293,15 @@ MEMBER_NAMES_FUNCTION = "stewardship_member_names_v1()"
 # the cap of 60 lookups an hour for each Administrator and an audit event
 # per lookup. Hashing the session keys is #995.
 MEMBER_NAMES_FOR_FUNCTION = "stewardship_member_names_for_v1(text, text, uuid)"
+# The Users page's ParishSoft Ministry leaders without a user (#952 slice 6):
+# each leader address that is no user yet, with the Name, Member DUID and
+# Ministries the table shows, and a count of leaders with no usable address.
+# It takes no address, so it is no oracle; it answers only a live
+# Administrator session (the same check, and the same #995 caveat, as the
+# Name lookup) and audits every call with the number of rows. It has no
+# rate cap, deliberately: one call already returns everything, so repeated
+# calls disclose nothing more; the audit and #995 are the protections.
+LEADERS_WITHOUT_USER_FUNCTION = "stewardship_leaders_without_user_v1(text, uuid)"
 # Each definer routine above that a migration in the users swap's closure
 # creates (#952), with that migration. `migrate --users-upgrade-base` leaves
 # the closure pending, and database-grants runs on that base before the
@@ -301,6 +310,10 @@ MEMBER_NAMES_FOR_FUNCTION = "stewardship_member_names_for_v1(text, text, uuid)"
 # routine the closure's migrations create.
 CLOSURE_FUNCTIONS = {
     MEMBER_NAMES_FOR_FUNCTION: ("stewardship_accounts", "0014_user_name_lookup"),
+    LEADERS_WITHOUT_USER_FUNCTION: (
+        "stewardship_accounts",
+        "0015_leaders_without_user",
+    ),
 }
 
 
@@ -329,8 +342,9 @@ def runtime_functions(role, *, target=None):
     the general worker and the download login read a user's role-derived
     Ministry scope (#922). The offline admin-recovery login reads recorded
     identities and Member names for the users upgrade (#952), and web reads
-    them for that upgrade's read-only preview, and one typed address's Member
-    names for the New user page's Name default.
+    them for that upgrade's read-only preview, one typed address's Member
+    names for the New user page's Name default, and the ParishSoft Ministry
+    leaders who are no user yet for the Users page's import.
     """
     role = _identity_role(role, target)
     if role is ServiceRole.CREDENTIAL_INSTALLER:
@@ -347,6 +361,7 @@ def runtime_functions(role, *, target=None):
                 PORTAL_IDENTITIES_FUNCTION,
                 MEMBER_NAMES_FUNCTION,
                 MEMBER_NAMES_FOR_FUNCTION,
+                LEADERS_WITHOUT_USER_FUNCTION,
             },
             ServiceRole.CONFIG_INSTALLER: {MINISTRY_CATALOG_FUNCTION},
             ServiceRole.WORKER: {
