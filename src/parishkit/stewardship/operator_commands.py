@@ -174,6 +174,12 @@ def users_upgrade_targets(loader):
     unapplies anything: once the swap is applied (a repeated upgrade), or
     when this image has no swap, every leaf is the target, which is the full
     migration. Before that, nothing in the swap's closure can be applied.
+
+    Walking back from a leaf follows the one same-app parent of each
+    migration in the closure. A merge migration there has two or more, and
+    ``migrate APP NAME`` takes one target per app, so no single target
+    applies every branch outside the closure: that graph is refused rather
+    than a branch silently left pending.
     """
     from .runtime_database import USERS_SWAP, users_swap_closure
 
@@ -187,6 +193,12 @@ def users_upgrade_targets(loader):
     for node in sorted(graph.leaf_nodes()):
         while node is not None and node in closure:
             parents = [key for key in graph.node_map[node].parents if key[0] == node[0]]
+            if len(parents) > 1:
+                raise ConfigError(
+                    f"Migration {node[0]}.{node[1]} is the users swap or depends "
+                    "on it and merges several of its app's migrations; the users "
+                    "upgrade's base has no single target for that app."
+                )
             node = parents[0] if parents else None
         if node is not None:
             targets.append(node)

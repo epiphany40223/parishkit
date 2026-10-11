@@ -400,3 +400,35 @@ def test_migrate_to_the_users_upgrade_base_admits_only_the_swap_pending(
         ("migrate", *target) for target in targets
     ]
     assert schema_checks == [{"users_swap_pending": True}]
+
+
+def test_users_upgrade_base_refuses_a_merge_migration_in_the_swap_closure():
+    """No single per-app target exists below a merge, so the base refuses (#952).
+
+    A synthetic graph: the accounts app's merge migration depends on the swap
+    and on a sibling branch, so walking back from its leaf meets two
+    same-app parents. Without the merge the walk ends on the swap's parent.
+    """
+    from django.db.migrations.graph import MigrationGraph
+
+    from parishkit.config import ConfigError
+    from parishkit.stewardship.runtime_database import USERS_SWAP
+
+    app = USERS_SWAP[0]
+    base, sibling, merge = (app, "0012_base"), (app, "0012_sibling"), (app, "0014_m")
+    graph = MigrationGraph()
+    for key in (base, sibling, USERS_SWAP, merge):
+        graph.add_node(key, None)
+    graph.add_dependency(USERS_SWAP, USERS_SWAP, base)
+    graph.add_dependency(sibling, sibling, base)
+    graph.add_dependency(merge, merge, USERS_SWAP)
+    graph.add_dependency(merge, merge, sibling)
+    loader = SimpleNamespace(graph=graph, applied_migrations={base: None})
+    with pytest.raises(ConfigError, match="no single target"):
+        operator_commands.users_upgrade_targets(loader)
+    linear = MigrationGraph()
+    for key in (base, USERS_SWAP):
+        linear.add_node(key, None)
+    linear.add_dependency(USERS_SWAP, USERS_SWAP, base)
+    loader = SimpleNamespace(graph=linear, applied_migrations={base: None})
+    assert operator_commands.users_upgrade_targets(loader) == [base]
