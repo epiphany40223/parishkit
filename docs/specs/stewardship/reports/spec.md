@@ -1582,10 +1582,10 @@ responses are excluded. Filters are a name or Family DUID search and a Show
 choice (`show`) of everything, cannot participate or cannot attend; any other
 value is refused. A summary counts each. Talents that older responses
 recorded are never shown: no talent column, count or filter appears on the
-page or in the downloads, and Members listed only for such talents are left
-out. The report still reads through the installed
-`stewardship_talent_report_v1`, whose filter parameter keeps the name
-`talent`.
+page or in the downloads, and no Member is listed only for such talents. The
+report reads through `stewardship_limitations_report_v1`, which migration
+0056 installed in place of the former talent report and which takes the
+same `search` and `show` values.
 
 The filtered result downloads immediately as CSV (Members, then Families),
 XLSX (one sheet each) or PDF (one table each under the page's table heading,
