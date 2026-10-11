@@ -2,7 +2,8 @@
 
 Through real Admin sessions, the configuration installer and the campaign's
 real work counts: a New or Edit page reviews and applies exactly like the
-date-change review; Delete records one configuration change; a schedule that
+date-change review, its review a fragment for the shared review dialog
+(#750); Delete records one configuration change; a schedule that
 has started sending can be neither changed nor deleted; refusals change
 nothing. Pages post times in the browser's zone (#558); most posts here come
 from a browser in the campaign's own zone (New York), and one from Los
@@ -10,6 +11,7 @@ Angeles, three hours behind.
 """
 
 import json
+import re
 from datetime import timedelta
 from html import unescape
 from types import SimpleNamespace
@@ -198,7 +200,7 @@ def test_list_offers_new_and_row_actions_without_a_window_panel(auth_service, go
 
 
 def test_a_new_reminder_is_reviewed_then_applied_from_the_list(auth_service, google):
-    """Review and save shows the review; Apply confirms on the list."""
+    """Review changes answers the dialog's review; Apply confirms on the list."""
     store = auth_service.store
     _, emails = setup(store)
     browser, _ = signed_in()
@@ -218,8 +220,20 @@ def test_a_new_reminder_is_reviewed_then_applied_from_the_list(auth_service, goo
         ),
     )
     assert review.status_code == 200, review.content
-    assert flow_steps(review.content) == (STEPS, "Review")
-    assert f'action="{LIST}"' in review.content.decode()
+    # The dialog's fragment: no page, no form of its own; the page names
+    # where its Apply posts and where the reader returns.
+    text = review.content.decode()
+    assert "data-review-answer" in text
+    assert 'data-review-done="Scheduled email added."' in text
+    assert "<html" not in text and "<form" not in text and "<h1" not in text
+    assert "data-review-preview" in text
+    dialog = unescape(page.content.decode())
+    assert 'data-review-open="schedule-review"' in dialog
+    assert 'data-require-change="base_digest"' in dialog
+    dialog = dialog[dialog.index('<dialog id="schedule-review"') :]
+    assert f'data-review-return="{LIST}"' in dialog
+    assert 'data-review-outcome="schedules-outcome"' in dialog
+    assert f'<form method="post" action="{LIST}" data-review-apply>' in dialog
     assert ConfigurationChangeRequest.objects.count() == before
     accepted = post(browser, LIST, {"action": "confirm", "preview": token(review)})
     apply(store, accepted)
@@ -230,9 +244,16 @@ def test_a_new_reminder_is_reviewed_then_applied_from_the_list(auth_service, goo
         )
     )
     assert dates == ["2054-10-15", "2054-10-25"]
-    # The change's status page leads back to the list.
+    # The change's status page, which the dialog follows, leads back to the
+    # list, whose reserved status line the dialog ends on.
     status = browser.get(accepted["Location"]).content.decode()
     assert "Return to Dates and mail schedules" in status
+    listing = browser.get(LIST).content.decode()
+    assert re.search(
+        r'<p class="review-outcome" id="schedules-outcome" role="status" '
+        r'tabindex="-1" data-review-outcome></p>',
+        listing,
+    )
 
 
 def test_a_repeat_adds_one_ordinary_reminder_per_date(auth_service, google):
@@ -253,6 +274,7 @@ def test_a_repeat_adds_one_ordinary_reminder_per_date(auth_service, google):
     review = post(browser, NEW, data)
     assert review.status_code == 200, review.content
     assert review.content.decode().count("Reminder — Add") == 2
+    assert 'data-review-done="2 reminders added."' in review.content.decode()
     apply(store, post(browser, LIST, {"action": "confirm", "preview": token(review)}))
     assert (
         ScheduleDefinition.objects.filter(
@@ -338,11 +360,15 @@ def test_edit_is_filled_in_and_saves_only_that_schedule(auth_service, google):
     assert browser.get(f"/admin/campaign/schedules/{uuid4()}/").status_code == 404
 
 
-def test_a_save_that_changes_nothing_says_so_in_place(auth_service, google):
+def test_a_save_that_changes_nothing_is_refused_for_the_dialog(auth_service, google):
     """Edit saved as shown, or New copying a saved email, names the problem.
 
-    Neither shows the catch-all rule text, which would suggest a schedule
-    breaks a campaign rule, and neither records anything.
+    The page's change gate keeps an unchanged Edit from reaching Review
+    (#750); a request that bypasses it is a plain refusal for the review
+    dialog, not the form drawn again. A New copying a saved email breaks a
+    rule between schedules, which stays on the form. Neither shows the
+    catch-all rule text, which would suggest a schedule breaks a campaign
+    rule, and neither records anything.
     """
     store = auth_service.store
     _, emails = setup(store)
@@ -355,12 +381,19 @@ def test_a_save_that_changes_nothing_says_so_in_place(auth_service, google):
         "time": "09:00",
         "template_version": emails["reminder"]["id"],
     }
-    same = post(browser, path, entry(store, **shown))
+    same = browser.post(
+        path,
+        entry(store, **shown)
+        | {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value},
+        headers={"X-Requested-With": "fetch"},
+    )
     assert same.status_code == 400
-    page = unescape(same.content.decode())
-    assert "Nothing has changed. Change the date, time or email, then save." in page
-    assert "data-error-summary" in page
-    assert "must fit the campaign" not in page
+    assert same["Content-Type"].startswith("application/json")
+    refusal = json.loads(same.content)["refusal"]
+    assert refusal["message"] == (
+        "Nothing has changed. Change the date, time or email, then save."
+    )
+    assert refusal["fix"] == "Nothing was changed."
     copy = post(browser, NEW, entry(store, kind="reminder", **shown))
     assert copy.status_code == 400
     page = unescape(copy.content.decode())
@@ -544,7 +577,7 @@ def test_a_sending_schedule_can_be_neither_changed_nor_deleted(
     before = ConfigurationChangeRequest.objects.count()
     edit = f"/admin/campaign/schedules/{initial.pk}/"
     assert browser.get(edit).status_code == 403
-    # An old page's Review and save is refused the same way.
+    # An old page's Review changes is refused the same way.
     changed = post(
         browser,
         edit,

@@ -963,9 +963,10 @@ the flows their own sections describe; whether any of them moves to the
 dialog is decided on [#750](https://github.com/epiphany40223/parishkit/issues/750).
 
 Current state, to be converted: Users' New user, Edit user and Import
-Ministry leaders use the dialog. Parish settings, Campaign settings, Share
-options, Campaign Ministries, Ministries, No-reminders WorkGroup, Campaign
-images and Parish logos show the in-place review panel of #532 and #750
+Ministry leaders, and New and Edit scheduled email, use the dialog. Parish
+settings, Campaign settings, Share options, Campaign Ministries, Ministries,
+No-reminders WorkGroup, Campaign images and Parish logos show the in-place
+review panel of #532 and #750
 ([in-place controls](#in-place-controls)); the other editors use separate
 Review and Change status pages.
 [#750](https://github.com/epiphany40223/parishkit/issues/750) tracks the

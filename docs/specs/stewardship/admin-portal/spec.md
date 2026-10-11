@@ -2313,15 +2313,26 @@ Edit page posted with the date, time and weekday it showed keeps the saved
 values exactly, so saving it unchanged never moves the send, even when the two
 zones change their clocks at different instants. A page posted without a
 usable zone is refused with a hint to check the computer's time zone setting;
-while the browser reports none, Review and save stays unavailable and says why. **Review and save** sends
-the page to the same review as every schedule change: the server builds the
-complete set of schedules (the saved ones unchanged, plus this one added or
-changed) and validates, previews and signs it exactly as the schedule commands
-do. A refusal shows the page again with each problem at its field (or, for a
-rule between schedules, at the top). The review lists the change and its
-affected work, and **Apply all changes** records it; the reader then returns
-to Dates and mail schedules (through its status page until #750 converts
-this page). **Cancel** returns to the list without saving.
+while the browser reports none, Review changes stays unavailable and says why.
+**Review changes** is unavailable until the form differs from what it was
+drawn with (on Edit, the saved schedule as shown in the browser's zone, so a
+time typed another way that reads the same, such as "6am" for 06:00, is no
+change; on New, the blank form), with a short hint after it; there is no
+"nothing has changed" review (the server still refuses an unchanged Edit,
+only as a safeguard). It sends the page to the same review as every schedule
+change: the server builds the complete set of schedules (the saved ones
+unchanged, plus this one added or changed) and validates, previews and signs
+it exactly as the schedule commands do. A refusal of the values posted keeps
+the review dialog shut and marks the form, each problem at its field (or,
+for a rule between schedules, in the error summary); any other refusal (a
+stale page, a schedule that has run meanwhile) shows in the dialog. The
+dialog lists the change and its affected work (the same review the
+date-change review shows; a repeat lists every reminder it adds, and the
+dialog's body scrolls). While sends block the change it says so and offers
+no Apply. **Apply** records the change, with the same signed preview,
+blocking-work recheck and audit as before; reminder planning and emailed
+Family codes and links are unaffected by how the review is shown.
+**Cancel** on the page returns to the list without saving.
 
 On New, choosing Reminder offers a **Repeat** checkbox
 ([#469](https://github.com/epiphany40223/parishkit/issues/469)); other mail
@@ -2335,7 +2346,7 @@ types, the page lists every date the rule gives, with its weekday, and says
 which it will not add and why: outside the campaign dates, not after the
 initial invitation, at the same moment as a saved invitation or reminder, over
 30 reminders from one rule, or over the campaign's limit of schedules (the
-schedule form set's maximum, 100). A short summary above **Review and save**, the only live region of
+schedule form set's maximum, 100). A short summary above **Review changes**, the only live region of
 the rule, says how many reminders the rule adds, or what is still missing:
 "Enter a send time to check these dates" until the time reads, since the timed
 checks cannot run without it, and "Choose the email to send" without an email.
@@ -2348,7 +2359,7 @@ daily limit. A rule spans at most a year. Dates are calendar days and the time
 is a wall-clock time, both in the browser's zone as above, and each date is
 converted on its own, so a 9:00 AM reminder stays at 9:00 AM in that zone across
 a daylight-saving change. The page compares each date's moment with the saved
-mailings' and the campaign's first and last moments, as the server does. Review and save posts the
+mailings' and the campaign's first and last moments, as the server does. Review changes posts the
 dates that fit as ordinary reminders, each its own schedule, reviewed,
 confirmed and delivered exactly like reminders added one at a time (see [Family
 invitations and
