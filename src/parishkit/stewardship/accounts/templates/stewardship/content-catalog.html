@@ -4,35 +4,50 @@
 <h1>{% translate "Pages and emails" %}</h1>
 {% aboutpage "content-catalog" %}<p>{% translate "Each Family page and the submission receipt email has exactly one current text. Invitations, reminders and Admin digests can each have several templates; each mail schedule chooses which one it sends." %}</p>
 <p>{% translate "Applying a change saves a new copy and leaves the old one in place, so a past campaign still shows the text it actually used. Use Preview and send test to email a sample of an email template to the Testing recipient." %}</p>
-<p>{% translate "A campaign starts with default text for every page and email. You can edit any of them, or reset one to its default text, but you do not have to." %}</p>{% endaboutpage %}
+<p>{% translate "A campaign starts with default text for every page and email. You can edit any of them, or reset one to its default text, but you do not have to." %}</p>
+<p>{% translate "Each email template has Edit in its Actions column, which opens its editor. An email no schedule sends also has Delete. Delete, or Delete selected for the ticked emails, asks first, then removes them from the list; if any chosen email is sent by a schedule, nothing is deleted." %}</p>{% endaboutpage %}
 <p>{{ campaign.active_configuration.name }}</p>
 <section class="panel"><h2>{% translate "Family pages" %}</h2><ul>{% for page in pages %}<li><a href="{{ page.url }}">{{ page.label }}</a> — {% if page.state == 'default' %}{% translate "Default text" %}{% elif page.state == 'custom' %}{% translate "Customized" %}{% else %}{% translate "Empty" %}{% endif %}{% if page.resave %} — <strong>{% if page.resave.blocked %}{% translate "Can't be sent until fixed" %}{% else %}{% translate "Re-save recommended" %}{% endif %}</strong>{% endif %}</li>{% endfor %}</ul></section>
 {% comment %}
 Each mail type's emails are a short Admin table shown whole (#446): which
 saved schedules send each one (named as on Dates and mail schedules), the
-start of its text and, for one no schedule sends, Remove, which opens its
-editor at the existing reviewed "Remove this selected content" control.
-{% endcomment %}<section class="panel"><h2>{% translate "Email templates" %}</h2>{% for email in emails %}<h3>{{ email.label }}</h3>
-{% if email.revisions %}<div class="table-scroll" tabindex="0" role="region" aria-labelledby="email-table-{{ forloop.counter }}">
+start of its text, its test page and its actions. The tables are action
+tables (admin-portal spec, "Row actions and confirmation", #879): Edit opens
+the email's editor, and an email no schedule sends also has Delete and a
+selection box, so Delete or Delete selected asks in that table's dialog and
+posts to content_delete. The section (id email-templates) is the region
+ui-v1.js redraws from data-refresh-url (this page's address) once the
+deletion is applied. The server refuses to delete an email a schedule sends,
+or the confirmation email, anyway (content_delete_views).
+{% endcomment %}{% translate "Delete {name}?" as title_one %}{% translate "Delete {count} emails?" as title_many %}{% translate "Deleting removes the email from this campaign's email templates. A past campaign still shows the text it actually used." as body %}{% translate "Email already sent is never changed. If any chosen email is now sent by a schedule, nothing is deleted." as caution %}{% translate "Delete" as accept %}
+<section id="email-templates" class="panel" data-table-region data-refresh-url="{{ refresh_url }}" aria-labelledby="email-templates-title"><h2 id="email-templates-title">{% translate "Email templates" %}</h2>{% for email in emails %}<h3 id="{{ email.heading_id }}" tabindex="-1">{{ email.label }}</h3>
+{% if email.revisions %}{% if email.deletable %}<form method="post" action="{{ delete_url }}" id="{{ email.form_id }}" data-select-table data-row-actions data-missing-hint="{% translate 'Select at least one email to delete.' %}">{% csrf_token %}<input type="hidden" name="base_digest" value="{{ base_digest }}">
+<div class="bulk-bar">{% button type="button" variant="secondary" data-bulk-action data-confirm-open=email.dialog_id %}{% translate "Delete selected" %}{% endbutton %}{% include "stewardship/table-selection.html" %}</div>
+{% endif %}<div class="table-scroll" tabindex="0" role="region" aria-labelledby="email-table-{{ forloop.counter }}">
 <table class="data-table">
   <caption id="email-table-{{ forloop.counter }}" class="visually-hidden">{{ email.label }}</caption>
   <thead><tr>
+    {% if email.deletable %}<th scope="col" class="select-col"><input type="checkbox" data-select-all aria-label="{% blocktranslate with label=email.label %}Select every {{ label }} email that can be deleted{% endblocktranslate %}"></th>{% endif %}
     <th scope="col">{% translate "Email" %}</th>
     <th scope="col">{% translate "Starts with" %}</th>
     {% if email.scheduled %}<th scope="col">{% translate "Sent by" %}</th>{% endif %}
     <th scope="col">{% translate "Text" %}</th>
+    <th scope="col">{% translate "Test email" %}</th>
     <th scope="col">{% translate "Actions" %}</th>
   </tr></thead>
   <tbody>{% for revision in email.revisions %}<tr>
-    <th scope="row"><a href="{{ revision.url }}">{{ revision.subject }}</a>{% if revision.short_id %} <span class="help">({{ revision.short_id }})</span>{% endif %}</th>
+    {% if email.deletable %}<td class="select-col">{% if revision.deletable %}<input type="checkbox" name="revision_id" value="{{ revision.id }}" data-select-row data-confirm-name="{{ revision.name }}" aria-label="{% blocktranslate with name=revision.name %}Select {{ name }}{% endblocktranslate %}">{% endif %}</td>{% endif %}
+    <th scope="row">{{ revision.subject }}{% if revision.short_id %} <span class="help">({{ revision.short_id }})</span>{% endif %}</th>
     <td>{{ revision.excerpt }}</td>
     {% if email.scheduled %}<td>{% if revision.used_by %}{{ revision.used_by|join:", " }}{% else %}{% translate "No schedule" %}{% endif %}</td>{% endif %}
     <td>{% if revision.state == 'default' %}{% translate "Default text" %}{% else %}{% translate "Customized" %}{% endif %}{% if revision.resave %} — <strong>{% if revision.resave.blocked %}{% translate "Can't be sent until fixed" %}{% else %}{% translate "Re-save recommended" %}{% endif %}</strong>{% endif %}</td>
-    <td>{% if revision.test_url %}<a href="{{ revision.test_url }}">{% translate "Preview and send test" %}</a>{% endif %}{% if email.scheduled and not revision.used_by %}{% if revision.test_url %} · {% endif %}<a href="{{ revision.url }}#id_clear">{% translate "Remove" %}<span class="visually-hidden"> {{ revision.subject }}</span></a>{% endif %}</td>
+    <td>{% if revision.test_url %}<a href="{{ revision.test_url }}">{% translate "Preview and send test" %}<span class="visually-hidden"> {{ revision.name }}</span></a>{% endif %}</td>
+    {% if revision.deletable %}{% table_actions name=revision.name edit=revision.url delete=revision.id confirm=email.dialog_id field="revision_id" %}{% else %}{% table_actions name=revision.name edit=revision.url %}{% endif %}
   </tr>{% endfor %}</tbody>
 </table>
-</div>{% else %}<p>{% translate "No template yet. Select Create template to add one." %}</p>{% endif %}
+</div>{% if email.deletable %}</form>
+{% include "stewardship/components/confirm-dialog.html" with dialog_id=email.dialog_id form_id=email.form_id fallback=email.heading_id title_one=title_one title_many=title_many body=body caution=caution accept=accept done_one=_("Deleted {name}.") done_many=_("Deleted {count} emails.") %}{% endif %}{% else %}<p>{% translate "No template yet. Select Create template to add one." %}</p>{% endif %}
 <p><a href="{{ email.url }}">{% if email.singleton %}{% translate "Edit confirmation email" %}{% else %}{% translate "Create template" %}{% endif %}</a></p>{% endfor %}
-<p class="help">{% translate "An email a schedule sends can't be removed; choose another email for that schedule first. Removing one doesn't change campaigns that already used it." %}</p></section>
+<p class="help">{% translate "An email a schedule sends can't be deleted; choose another email for that schedule first. Deleting one doesn't change campaigns that already used it." %}</p></section>
 <p><a href="{% url 'admin:campaign_settings' %}">{% translate "Open Campaign settings" %}</a></p>
 {% endblock %}
