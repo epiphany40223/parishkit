@@ -11,7 +11,7 @@ of its own and changes nothing.
 
 The rows are read with one parameterised query on the web login, which may
 read the proposal, submission and source tables (``responses/grants.py``);
-filtering, sorting and wording happen here, in memory, as the talents report
+filtering, sorting and wording happen here, in memory, as the Limitations report
 does, so they are plain functions a unit test can call.
 """
 
@@ -178,7 +178,7 @@ class CensusQuery:
 
 
 # One row per proposal of this campaign's live responses. Family names come
-# from the current ParishSoft source, as in the talents report (the surname
+# from the current ParishSoft source, as in the Limitations report (the surname
 # here; ``census_changes`` adds the heads from the returned snapshot); a
 # Member's name is the Family's own corrected one first, then the parish
 # record's.

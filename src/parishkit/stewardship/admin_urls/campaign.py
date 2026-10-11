@@ -27,7 +27,6 @@ from ..accounts import (
     schedule_entry_views,
     schedule_views,
     share_views,
-    talent_views,
     withdrawal_views,
 )
 from ..accounts.group_root_views import group_root
@@ -119,7 +118,6 @@ patterns = [
         "schedule_edit",
     ),
     _page("campaign/share-options/", share_views.share_settings, "share_settings"),
-    _page("campaign/talents/", talent_views.talent_settings, "talent_settings"),
     _page(
         "campaign/reminder-workgroup/",
         reminder_workgroup_views.reminder_workgroup,

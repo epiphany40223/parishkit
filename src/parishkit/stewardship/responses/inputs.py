@@ -24,7 +24,7 @@ from .member_census import MEMBER_FIELDS, InvalidMemberSource, source_value
 from .member_requests import MAX_PROPOSED_MEMBERS, REQUEST_FIELDS
 from .merge import KnownValue
 from .ministry import MinistryInputs
-from .service import TALENT_TEXT_LIMIT, talent_options
+from .service import TALENT_TEXT_LIMIT, configured_talent_options, talent_options
 
 FORM_SCHEMA = "family-response-v1"
 PROJECTION_VERSION = "family-inputs-v9"
@@ -97,9 +97,14 @@ class CensusInputs:
     ministries: MinistryInputs | None = None
     financial: FinancialInputs | None = None
     parish_name: str = ""
-    # Resolved from configuration (defaults when never edited); already covered
-    # by definition_digest, so not repeated in the projection digest.
+    # The offered talents: none since #970. definition_digest covers the
+    # configured list, so it is not repeated in the projection digest.
     talent_options: tuple[ShareOption, ...] = ()
+    # The configured talents a submission may still carry: a form opened
+    # before #970 may send them, and refusing would lose that Family's whole
+    # response. They are stored (the SQL guard accepts them) and never shown.
+    # Also covered by definition_digest.
+    accepted_talent_options: tuple[ShareOption, ...] = ()
 
     @property
     def projection_digest(self):
@@ -162,10 +167,12 @@ def definition_digest(configuration):
             "ministry_label_limit": MAX_MINISTRY_LABEL
             if "ministry" in modules
             else None,
+            # The configured talents, though none is offered now (#970), so an
+            # unchanged configuration keeps the digest its earlier forms hold.
             "talents": {
                 "options": [
                     (option.id, option.label, option.free_text)
-                    for option in talent_options(configuration)
+                    for option in configured_talent_options(configuration)
                 ],
                 "text_limit": TALENT_TEXT_LIMIT,
             }
@@ -444,6 +451,7 @@ def census_inputs(
         financial,
         parish_name,
         talent_options(configuration),
+        configured_talent_options(configuration),
     )
     # Detect a malformed typed source before issuing a baseline, not on Submit.
     _ = result.projection_digest

@@ -220,7 +220,6 @@ SLASHLESS_EXPECTED = {
     "/admin/campaign/schedules/addition": "/admin/campaign/schedules/addition/",
     f"/admin/campaign/schedules/{T}": f"/admin/campaign/schedules/{T}/",
     "/admin/campaign/share-options": "/admin/campaign/share-options/",
-    "/admin/campaign/talents": "/admin/campaign/talents/",
     "/admin/campaign/reminder-workgroup": "/admin/campaign/reminder-workgroup/",
     f"/admin/campaign/content/test/{T}": f"/admin/campaign/content/test/{T}/",
     f"/admin/campaign/content/test/{T}/families": (
@@ -257,7 +256,7 @@ SLASHLESS_EXPECTED = {
     "/admin/reports/responses/logo": "/admin/reports/responses/logo/",
     "/admin/reports/participation": "/admin/reports/participation/",
     "/admin/reports/financial": "/admin/reports/financial/",
-    "/admin/reports/talents": "/admin/reports/talents/",
+    "/admin/reports/limitations": "/admin/reports/limitations/",
     "/admin/reports/census": "/admin/reports/census/",
     "/admin/reports/information": "/admin/reports/information/",
     f"/admin/reports/information/{T}": f"/admin/reports/information/{T}/",

@@ -1,4 +1,10 @@
-"""Talents and limitations report under the real web role (#247)."""
+"""Limitations report under the real web role (#247, #970).
+
+The report was "Talents and limitations". Responses submitted before talents
+were retired keep their stored talents; ``submit_live`` stores one such
+response by offering the old default talents while it submits, and the
+report must leave those talents out.
+"""
 
 import io
 from uuid import uuid4
@@ -13,6 +19,7 @@ from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.talents import TalentQuery, talents_report
+from parishkit.stewardship.responses import inputs
 from parishkit.stewardship.responses.service import DEFAULT_TALENTS
 from parishkit.stewardship.source.models import SourceCurrent
 
@@ -35,9 +42,11 @@ LEADER = Principal(uuid4(), frozenset({"ministry_leader"}), frozenset({4}))
 PAINTER, OTHER = DEFAULT_TALENTS[0].id, DEFAULT_TALENTS[-1].id
 
 
-def submit_live(harness, *, cannot_serve=False):
-    """One live response with a talent, "Other" text and the welcome answer."""
-    with web_login():
+def submit_live(harness, monkeypatch, *, cannot_serve=False):
+    """One live response with stored talents (as before #970) and limitations."""
+    # Offer the old defaults only while this response is loaded and submitted.
+    with monkeypatch.context() as patched, web_login():
+        patched.setattr(inputs, "talent_options", lambda values: DEFAULT_TALENTS)
         form = load_form(harness)
         answers = answers_for(form)
         answers["cannot_attend"] = True
@@ -78,25 +87,31 @@ def directory_name(duid):
     return snapshot_family_names(snapshot, [duid])[duid]
 
 
-def test_report_lists_talents_limitations_and_filters(response_service):
-    """Rows come from the effective live response, worded and filterable."""
+def test_report_lists_limitations_and_filters(response_service, monkeypatch):
+    """Rows come from the effective live response, filterable; no talents."""
     harness = response_service
     start(harness)
     harness = activate_response_service(harness)
-    submit_live(harness, cannot_serve=True)
+    submission = submit_live(harness, monkeypatch, cannot_serve=True)
+    # The stored answer keeps its talents (#970); the report never shows them.
+    assert submission.answers["service"]["members"]["3"]["talents"] == {
+        PAINTER: "",
+        OTHER: "Organ",
+    }
     result = report(harness)
+    assert result["collects_talents"] is False
     assert len(result["members"]) == 1 and len(result["families"]) == 1
     row = result["members"][0]
-    assert row["talents"] == ["Painter", "Other: Organ"]
+    assert row["talents"] == []
     assert row["cannot_serve"] is True and row["member_name"]
     # Both tables name the Family as every Admin table does (#932).
     family = result["families"][0]
     assert ", " in row["family_name"] and family["family_name"] == row["family_name"]
     assert row["family_name"] == directory_name(row["family_duid"])
     assert result["summary"]["cannot_attend"] == 1
-    assert dict(result["summary"]["talents"])["Painter"] == 1
+    assert result["summary"]["talents"] == []
+    # A retired talent filter reads as "Everything".
     assert len(report(harness, talent=PAINTER)["members"]) == 1
-    assert report(harness, talent=DEFAULT_TALENTS[1].id)["members"] == []
     only_families = report(harness, talent="cannot_attend")
     assert only_families["members"] == [] and len(only_families["families"]) == 1
     assert report(harness, search="no such name")["members"] == []
@@ -114,7 +129,7 @@ def test_report_lists_talents_limitations_and_filters(response_service):
     ]
 
 
-def test_native_page_and_downloads(response_service, google, settings):
+def test_native_page_and_downloads(response_service, google, settings, monkeypatch):
     """The page filters by CSRF POST; CSV and XLSX carry the same rows.
 
     Read with the real restricted web and download logins
@@ -126,16 +141,18 @@ def test_native_page_and_downloads(response_service, google, settings):
     harness = response_service
     start(harness)
     harness = activate_response_service(harness)
-    submit_live(harness)
-    route = reverse("admin:talents_report")
+    submit_live(harness, monkeypatch, cannot_serve=True)
+    route = reverse("admin:limitations_report")
+    assert route == "/admin/reports/limitations/"
     browser, login = signed_in()
     assert login.status_code == 302
     with restricted_download_pool(settings):
         response, body = get(browser, route)
         assert response.status_code == 200 and response["Cache-Control"] == "no-store"
-        assert b"Other: Organ" in body and b"Painter" in body
+        assert b"<h1>Limitations</h1>" in body and b"Organ" not in body
+        assert b"Painter" not in body and b"Members who cannot participate" in body
         assert get(browser, route + "?search=x")[0].status_code == 400
-        response, body = search(browser, route, {"talent": "cannot_serve"})
+        response, body = search(browser, route, {"talent": "cannot_attend"})
         assert response.status_code == 200 and b"No matching Members." in body
         assert search(browser, route, {"talent": "bad"})[0].status_code == 400
         # Shared tables (#203): every column sorts on the server, both tables
@@ -153,54 +170,70 @@ def test_native_page_and_downloads(response_service, google, settings):
         response, body = search(
             browser, route, {"talent": "any", "members_sort": "duid"}
         )
-        assert response.status_code == 200 and b"Other: Organ" in body
+        assert response.status_code == 200 and b"Organ" not in body
         assert b'name="members_sort" value="-duid"' in body
         for invalid in (
             {"members_sort": "submitted_at"},
             {"families_sort": "-talents"},
+            {"members_sort": "talents"},
             {"members_size": "7"},
             {"families_page": "x"},
         ):
             assert search(browser, route, invalid)[0].status_code == 400
-        export = reverse("admin:talents_export")
+        export = reverse("admin:limitations_export")
         response, body = search(
             browser, export, {"format": "csv", "timezone": "UTC", "talent": "any"}
         )
         assert response.status_code == 200
         assert response["Content-Type"] == "text/csv"
         assert response["Cache-Control"] == "no-store"
-        assert "stewardship-talents-" in response["Content-Disposition"]
-        assert b"Other: Organ" in body and b"Cannot attend Mass" in body
+        assert "stewardship-limitations-" in response["Content-Disposition"]
+        assert b"Organ" not in body and b"Cannot attend Mass" in body
+        assert body.startswith(
+            b"Family,Family DUID,Member,Cannot participate in ministries,"
+            b"Latest response\r\n"
+        )
         response, body = search(browser, export, {"format": "xlsx", "timezone": "UTC"})
         assert response.status_code == 200
         assert response["Content-Disposition"].endswith(".xlsx")
         book = load_workbook(io.BytesIO(body))
         assert book.sheetnames == ["Members", "Families"]
-        assert book["Members"]["D2"].value == "Painter; Other: Organ"
+        assert [cell.value for cell in book["Members"][1]] == [
+            "Family",
+            "Family DUID",
+            "Member",
+            "Cannot participate in ministries",
+            "Latest response",
+        ]
+        assert book["Members"]["D2"].value == "Yes"
         assert search(browser, export, {"format": "pdf"})[0].status_code == 400
-        # A talent filter no longer offered (here, never offered) reads as
-        # "Everything": the tables, the re-posted forms and the download.
+        # A retired talent filter reads as "Everything": the tables, the
+        # re-posted forms and the download.
         removed = str(uuid4())
         response, body = search(
             browser, route, {"talent": removed, "members_sort": "-latest"}
         )
-        assert response.status_code == 200 and b"Other: Organ" in body
+        assert response.status_code == 200 and b"No matching Members." not in body
         assert removed.encode() not in body
         assert b'name="talent" value="any"' in body
         response, body = search(
             browser, export, {"format": "csv", "timezone": "UTC", "talent": removed}
         )
-        assert response.status_code == 200 and b"Other: Organ" in body
+        assert response.status_code == 200 and b"Cannot attend Mass" in body
         _, body = get(browser, reverse("admin:participation"))
         assert route.encode() in body
         # The campaign reports page links the response dashboard too (#477).
-        assert route.replace("talents", "responses").encode() in body
+        assert route.replace("limitations", "responses").encode() in body
+        # The old address is gone, with no redirect (no legacy Admin URLs).
+        assert browser.get("/admin/reports/talents/").status_code == 404
+        assert browser.get("/admin/campaign/talents/").status_code == 404
         # A search is audited as used, never as its text (#556).
         assert search(browser, route, {"search": "Organ"})[0].status_code == 200
     assert AuditEvent.objects.filter(event_type="talents_report_viewed").exists()
     assert AuditEvent.objects.filter(event_type="talents_report_exported").exists()
     # Each records its Show choice, whether the search box was used and the
-    # ParishSoft snapshot read (#556); a removed talent reads as "any".
+    # ParishSoft snapshot read (#556); a retired talent reads as "any". The
+    # report keeps the events it recorded as Talents and limitations (#970).
     snapshot = str(SourceCurrent.objects.get().snapshot_id)
     contexts = [
         (event.event_type, event.auditcontext.context)
@@ -210,7 +243,7 @@ def test_native_page_and_downloads(response_service, google, settings):
     ]
     assert all(context["snapshot_id"] == snapshot for _, context in contexts)
     assert all("talent_option_id" not in context for _, context in contexts)
-    assert ("talents_report_viewed", "cannot_serve", False) in {
+    assert ("talents_report_viewed", "cannot_attend", False) in {
         (kind, context["report_filter"], context["search_used"])
         for kind, context in contexts
     }
@@ -232,19 +265,19 @@ def test_both_tables_sort_every_column_in_memory():
 
     from parishkit.stewardship.reports.talent_views import tables
 
-    def row(name, duid, day, talents=(), cannot=False):
+    def row(name, duid, day, cannot=False):
         """One member/family row as the selection shapes it."""
         return {
             "member_name": name,
             "family_name": name,
             "family_duid": duid,
-            "talents": list(talents),
+            "talents": [],
             "cannot_serve": cannot,
             "submitted_at": datetime(2026, 9, day, tzinfo=UTC),
         }
 
     result = {
-        "members": [row("b", 2, 1, ["Zither"]), row("A", 1, 3, [], True)],
+        "members": [row("b", 2, 1), row("A", 1, 3, True)],
         "families": [row("b", 2, 1), row("a", 1, 3)],
     }
     members, families = tables(
@@ -258,5 +291,5 @@ def test_both_tables_sort_every_column_in_memory():
     assert members.method == families.method == "post" and members.action == "/r/"
     assert ("search", "private") in members.carried
     assert ("families_sort", "-duid") in members.carried
-    members, _ = tables(result, TalentQuery(), {"members_sort": "talents"}, "/r/")
+    members, _ = tables(result, TalentQuery(), {"members_sort": "-latest"}, "/r/")
     assert [r["family_duid"] for r in members.rows] == [1, 2]

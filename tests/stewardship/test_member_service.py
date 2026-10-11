@@ -1,4 +1,4 @@
-"""Member talents and "cannot participate in any ministries" (issue #247)."""
+"""Member "cannot participate in any ministries" and retired talents (#247, #970)."""
 
 from types import SimpleNamespace
 from uuid import uuid4
@@ -14,7 +14,7 @@ from parishkit.stewardship.responses.presentation import _service_presentation
 from parishkit.stewardship.responses.service import (
     DEFAULT_TALENTS,
     InvalidServiceAnswers,
-    default_talent_options,
+    configured_talent_options,
     talent_options,
     validate_service_answers,
 )
@@ -55,11 +55,20 @@ def service(**entries):
     return result
 
 
-def test_campaign_without_a_list_uses_fixed_default_talents():
-    """Defaults resolve identically on every read, so answers stay comparable."""
+def test_no_campaign_offers_talents():
+    """Talents are retired (#970): defaults, edited and emptied lists offer none."""
+    for values in (None, [], [{"id": str(uuid4()), "label": "M", "free_text": False}]):
+        configuration = {"modules": ["ministry"]}
+        if values is not None:
+            configuration["talent_options"] = values
+        assert talent_options(configuration) == ()
+
+
+def test_campaign_without_a_list_hashes_fixed_default_talents():
+    """The digest still resolves the defaults, so issued forms still verify."""
     configuration = {"modules": ["ministry"]}
-    assert talent_options(configuration) == DEFAULT_TALENTS
-    assert [option["label"] for option in default_talent_options()] == [
+    assert configured_talent_options(configuration) == DEFAULT_TALENTS
+    assert [option.label for option in DEFAULT_TALENTS] == [
         "Painter",
         "Florist",
         "Seamstress",
@@ -69,7 +78,7 @@ def test_campaign_without_a_list_uses_fixed_default_talents():
         "Other",
     ]
     assert [option.free_text for option in DEFAULT_TALENTS] == [False] * 6 + [True]
-    assert talent_options({"modules": ["census"]}) == ()
+    assert configured_talent_options({"modules": ["census"]}) == ()
 
 
 def test_edited_talent_list_replaces_the_defaults():
@@ -79,13 +88,13 @@ def test_edited_talent_list_replaces_the_defaults():
         "modules": ["ministry"],
         "talent_options": [{"id": identifier, "label": "Musician", "free_text": False}],
     }
-    assert talent_options(configuration) == (
+    assert configured_talent_options(configuration) == (
         ShareOption(identifier, "Musician", False),
     )
 
 
-def test_talent_list_changes_the_form_definition():
-    """Editing talents must refresh open forms, like editing share methods."""
+def test_talent_list_still_shapes_the_form_definition():
+    """A stored talent list keeps its digest (#970), so issued forms verify."""
     base = campaign(modules=["ministry"], ministry_duids=[7])["values"]
     edited = base | {
         "talent_options": [
@@ -93,13 +102,57 @@ def test_talent_list_changes_the_form_definition():
         ]
     }
     assert definition_digest(base) != definition_digest(edited)
+    assert definition_digest(base) != definition_digest(base | {"talent_options": []})
+
+
+# A fixed configuration whose definition digest is pinned below.
+PINNED = {
+    "modules": ["ministry"],
+    "ministry_duids": [7, 8],
+    "content_versions": {"welcome": 1, "ministry": 2},
+    "name": "Stewardship 2027",
+    "start_date": "2026-10-03",
+    "end_date": "2026-11-15",
+    "timezone": "America/New_York",
+    "additional_information": False,
+}
+
+
+def test_definition_digest_is_pinned_across_the_talent_retirement():
+    """The digests equal those computed before #970 for the same configuration.
+
+    A Family's open form holds its definition digest; if a later change to
+    configured_talent_options (or the digest) altered it for an unchanged
+    configuration, that Family's submission would be refused as
+    unverifiable. Change these values only with a deliberate form-definition
+    change.
+    """
+    assert definition_digest(PINNED) == (
+        "fa0c1d0de638b21f2475290c888fcc9207965feb63419e4b0395f17957944b8d"
+    )
+    edited = PINNED | {
+        "talent_options": [
+            {
+                "id": "7f000000-0000-4000-8000-000000000001",
+                "label": "Musician",
+                "free_text": False,
+            }
+        ]
+    }
+    assert definition_digest(edited) == (
+        "a57514d5dd9e2f402ccb2919c38d8cbe32b4156c5956f0c80c050735bea13b63"
+    )
 
 
 def test_campaign_configuration_accepts_an_optional_talent_list():
-    """Older configurations omit it; a supplied list is validated like shares."""
+    """Older configurations hold one (#970); a stored list still validates."""
     values = campaign(modules=["ministry"], ministry_duids=[7])["values"]
     campaign_values(values)
-    campaign_values(values | {"talent_options": default_talent_options()})
+    stored = [
+        {"id": option.id, "label": option.label, "free_text": option.free_text}
+        for option in DEFAULT_TALENTS
+    ]
+    campaign_values(values | {"talent_options": stored})
     for bad in (
         [{"id": "not-a-uuid", "label": "Painter", "free_text": False}],
         [{"id": str(uuid4()), "label": "Painter"}],
@@ -225,37 +278,49 @@ def test_disabled_ministry_module_accepts_only_an_empty_section():
         validate_service_answers(service(), {}, None, ())
 
 
-def test_emptied_talent_list_offers_none_and_still_validates():
-    """An Admin-emptied list stays empty; answers carry no talents (bug fix).
-
-    "Cannot participate" still works, and a stale talent from before the
-    list was emptied is refused rather than silently stored.
-    """
-    emptied = {"modules": ["ministry"], "talent_options": []}
-    assert talent_options(emptied) == ()
+def test_no_offered_talents_still_validates():
+    """With no talents offered (#970), "Cannot participate" still works."""
     locked = {"1": {"cannot_serve": True, "talents": {}}}
     result = validate_service_answers(
         service(**locked),
         ministries(**{"1": {"join": [], "leave": [7, 8]}}),
         INPUTS,
-        (),
+        configured_talent_options({"modules": ["ministry"]}),
     )
     assert result["members"] == {
         "1": {"cannot_serve": True, "talents": {}},
         "2": {"cannot_serve": False, "talents": {}},
     }
-    with pytest.raises(InvalidServiceAnswers) as caught:
-        validate_service_answers(
-            service(**{"1": {"cannot_serve": False, "talents": {PAINTER: ""}}}),
-            ministries(),
-            INPUTS,
-            (),
-        )
-    assert set(caught.value.fields) == {"service.members.1.talents"}
 
 
-def test_prior_talents_drop_when_the_list_is_later_emptied():
-    """A saved answer with talents prefills none once no talents are offered."""
+def test_stale_talent_from_an_older_form_is_accepted():
+    """A form opened before #970 may still send a configured talent.
+
+    Refusing it would lose that Family's whole response mid-campaign, so it
+    validates against the configured list and is stored (never shown).
+    Unknown or malformed talents are still refused.
+    """
+    configured = configured_talent_options({"modules": ["ministry"]})
+    result = validate_service_answers(
+        service(**{"1": {"cannot_serve": False, "talents": {PAINTER: ""}}}),
+        ministries(),
+        INPUTS,
+        configured,
+    )
+    assert result["members"]["1"] == {"cannot_serve": False, "talents": {PAINTER: ""}}
+    for talents in ({str(uuid4()): ""}, {PAINTER: "text"}, {OTHER: ""}, [PAINTER]):
+        with pytest.raises(InvalidServiceAnswers) as caught:
+            validate_service_answers(
+                service(**{"1": {"cannot_serve": False, "talents": talents}}),
+                ministries(),
+                INPUTS,
+                configured,
+            )
+        assert set(caught.value.fields) == {"service.members.1.talents"}
+
+
+def test_prior_talents_drop_now_that_none_is_offered():
+    """A saved answer with talents prefills none (#970); the stored row keeps them."""
     prior = SimpleNamespace(
         answers={
             "service": {

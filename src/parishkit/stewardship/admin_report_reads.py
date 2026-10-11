@@ -10,8 +10,8 @@ functions the page itself uses, and prints counts and aggregates only:
   ``fact_set_id`` that ``export create --fact-set`` takes;
 - ``report responses`` is the response dashboard (``dashboard_context``'s
   ``response_metrics``);
-- ``report financial`` and ``report talents`` are the summaries of the
-  financial detail and talents reports (``financial_page``,
+- ``report financial`` and ``report limitations`` are the summaries of the
+  financial detail and Limitations reports (``financial_page``,
   ``talents_report``), without their Family and Member rows;
 - ``report information`` is the information queue's matching count
   (``information_page``);
@@ -46,7 +46,7 @@ REPORT_COMMANDS = {
     "response_dashboard": "report responses",
     "participation": "report participation",
     "financial_report": "report financial",
-    "talents_report": "report talents",
+    "limitations_report": "report limitations",
     "information_queue": "report information",
     "ministry_report": "report ministry",
 }
@@ -138,20 +138,16 @@ class FinancialReport(ReadModel):
 
 
 @dataclass(frozen=True)
-class TalentsReport(ReadModel):
-    """The talents and limitations report's summary, without its rows.
+class LimitationsReport(ReadModel):
+    """The Limitations report's summary, without its rows (#970).
 
-    ``talents`` counts Members per talent by its stored key, as the
-    campaign's talent settings list it (including a talent no longer
-    offered); ``collects_talents`` is false when the campaign offers none.
+    ``cannot_serve`` counts Members who cannot participate in ministries and
+    ``cannot_attend`` Families who cannot attend Mass or prayer services.
     """
 
     campaign_id: UUID
-    collects_talents: bool
-    members: int
     cannot_serve: int
     cannot_attend: int
-    talents: list
 
 
 @dataclass(frozen=True)
@@ -762,27 +758,21 @@ def read_financial(caller, service):
     )
 
 
-# ------------------------------------------------------------- talents
+# --------------------------------------------------------- limitations
 
 
-def talents_model(campaign_id, result):
+def limitations_model(campaign_id, result):
     """The command's projection of ``talents_report``'s summary."""
     summary = result["summary"]
-    return TalentsReport(
+    return LimitationsReport(
         campaign_id=campaign_id,
-        collects_talents=result["collects_talents"],
-        members=summary["members"],
         cannot_serve=summary["cannot_serve"],
         cannot_attend=summary["cannot_attend"],
-        talents=[
-            {"key": key, "count": count}
-            for key, count in sorted(summary["talent_counts"].items())
-        ],
     )
 
 
-def read_talents(caller, service):
-    """``report talents``: the talents and limitations report's summary.
+def read_limitations(caller, service):
+    """``report limitations``: the Limitations report's summary (#970).
 
     Reads the page's ``talents_report`` without filters (``TalentQuery()``,
     offered as the page offers it) and prints its summary only. Records the
@@ -809,7 +799,7 @@ def read_talents(caller, service):
         before = current_snapshot()
         result = talents_report(campaign_id, shown, actor, configuration=configuration)
         snapshot = before if current_snapshot() == before else None
-        return talents_model(campaign_id, result), audit_choices(shown, snapshot)
+        return limitations_model(campaign_id, result), audit_choices(shown, snapshot)
 
     return _report(
         caller,

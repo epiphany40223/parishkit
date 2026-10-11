@@ -496,8 +496,8 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   needs little or no hold, so a long review followed by Applied leaves no
   large gap. Apply still moves focus to Change status's heading, so on a
   window too short to show the whole region, focus may scroll the status
-  into view. Share options and
-  Member talents (#750) work the same way, except that their form, to which
+  into view. Share options
+  (#750) work the same way, except that their form, to which
   no script is bound, is an in-place region of its own: a Review's answer
   redraws it with the values sent and their field errors. Edits typed into
   that form since it was last sent are lost whenever an answer redraws it (a
@@ -1371,9 +1371,10 @@ System logs export above. A download written straight from its page registers
 with `web.exports.page_download`; the guard finds every registered and routed
 one, and fails until a new one has a case there or a recorded exception. The postal mail merge's PDF is a sheet of address
 labels holding the mailing columns, not the Family heads and head emails;
-whether to record that as an exception is open on #966. Talents is being
-removed under
-[#970](https://github.com/epiphany40223/parishkit/issues/970).
+whether to record that as an exception is open on #966. The Limitations
+report (formerly Talents and limitations,
+[#970](https://github.com/epiphany40223/parishkit/issues/970)) is outside
+the guard and has no PDF.
 
 ## Family portal
 

@@ -941,7 +941,7 @@ pk-admin report list
 pk-admin report participation
 pk-admin report responses --mode testing --grain day
 pk-admin report financial
-pk-admin report talents
+pk-admin report limitations
 pk-admin report information --disposition all --needed yes
 pk-admin report ministry
 pk-admin report ministry --ministry 9 --requests join --state unresolved
@@ -954,7 +954,7 @@ pk-admin report source-form
 | `report participation` | Participation | `status` (`current`, `updating` or `unavailable`), `fact_set_id` (for `export create --fact-set`), the figures' source and dates, `statistics` (the active Families, Members, email, responses and, with Financial stewardship, pledge totals, including the comparison pledges of every Family, `comparison_pledge_all`) and `days`, the daily table |
 | `report responses` | Response dashboard | `metrics`: the funnel `stages`, the three figures beside it, the `activity` buckets, the `sends` and each list's length (`lists`); null in Testing without a rehearsal |
 | `report financial` | Financial report | The summary over every pledge: `families`, `annual_total`, `frequencies`, `shares` (by share option id), `no_share`, `cannot_give` and the comparison period |
-| `report talents` | Talents and limitations | `members`, `cannot_serve`, `cannot_attend` and `talents` (by talent key) |
+| `report limitations` | Limitations | `cannot_serve` (Members who cannot participate in ministries) and `cannot_attend` (Families who cannot attend Mass or prayer services) |
 | `report information` | Additional information | `matching`: how many items match the filters |
 | `report ministry` | Ministry report | `summaries`: each Ministry's DUID (`ministry`), name, state and request counts; with `--ministry` and `--requests`, `matching` is that list's request count |
 
@@ -1210,7 +1210,7 @@ pk-admin export postal --format xlsx --timezone America/New_York
 - The file holds every matching Family's code (or mailing address). Keep
   it private and delete it once used (`pk-admin exports clean`).
 
-The one-Family timeline, the talents and response list downloads and the
+The one-Family timeline, the Limitations and response list downloads and the
 exact daily exports are not on the command line yet; use the pages.
 
 ### Fetching an export's file
@@ -1369,3 +1369,11 @@ error, as `logs export` does; the wrapper refuses to write it to a terminal.
 - `pk-admin/1` (#463): additive. `files delete` and `files rename`, the
   Hosted files page's Delete and Edit (full scope, Administrators only, no
   recent sign-in; `files delete` prompts; their events).
+- `pk-admin/1` (#970): a deliberate change, kept on version 1.
+  `report talents` is now `report limitations`, with no alias, because the
+  Family form no longer asks for talents and the report is Limitations. Its
+  document drops `collects_talents`, `members` and `talents`, and keeps
+  `campaign_id`, `cannot_serve` and `cannot_attend`. It still records
+  `talents_report_viewed`, the event its page records. No other command
+  changes, and the only readers are Administrator-run assistants; a script
+  that ran `report talents` now gets a `usage` error (exit 2).

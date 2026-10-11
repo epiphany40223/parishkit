@@ -197,9 +197,15 @@ A `Campaign` includes:
 - configurable share-option versions;
 - additional-information enabled flag;
 - daily/weekly Admin digest schedules; and
-- optional Member talent options, theme `artwork` and `reminder_workgroup`
-  (the last two are described under
+- theme `artwork` and `reminder_workgroup` (described under
   [Parish and integrations](#parish-and-integrations)).
+
+An older campaign may also hold an optional `talent_options` list. The Family
+form stopped offering talents
+([#970](https://github.com/epiphany40223/parishkit/issues/970)), so the value
+is inert history: it is still validated when present and still part of the
+Family form's definition digest, so forms issued earlier still verify, but
+nothing offers or edits it.
 
 Every configurable Campaign field above is materialized from and references the
 exact `AppliedConfigurationVersion` that defined it. Lifecycle state, global
@@ -1451,8 +1457,8 @@ disconnect, timeout, exception, and worker loss. Coordination across processes
 must not reissue capacity merely because a lease expired while its connection
 or stream is still alive. Downloads never fall back to an unguarded transfer.
 A small download rendered on request in memory from the same rows as its
-page (the [response lists](../reports/spec.md#response-lists), and Talents
-and limitations after
+page (the [response lists](../reports/spec.md#response-lists), and
+[Limitations](../reports/spec.md#limitations) after
 [#557](https://github.com/epiphany40223/parishkit/issues/557)) is not a stored
 export file: it is read under the interactive campaign read guard, with its
 60-second deadline, on the web connection, as the page itself is.

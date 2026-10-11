@@ -1,4 +1,8 @@
-"""New Family/Member answers end to end: talents, limitations and their guards."""
+"""New Family/Member answers end to end: limitations, retired talents, guards.
+
+The Family form no longer offers talents (#970), but the installed SQL guard
+still checks each stored ``talents`` map, so its cases stay.
+"""
 
 import json
 from uuid import uuid4
@@ -6,9 +10,10 @@ from uuid import uuid4
 import pytest
 from django.db import IntegrityError, connection, transaction
 
+from parishkit.stewardship.responses import inputs as form_inputs
 from parishkit.stewardship.responses.service import (
     DEFAULT_TALENTS,
-    default_talent_options,
+    configured_talent_options,
 )
 
 from .campaign_builders import change as change_configuration
@@ -25,38 +30,37 @@ PAINTER, OTHER = DEFAULT_TALENTS[0].id, DEFAULT_TALENTS[-1].id
 
 
 def test_sql_default_talents_match_the_application_defaults():
-    """Configurations without a list resolve to the same options in both places."""
+    """The guard's defaults still match the stored-data compatibility list."""
     with connection.cursor() as cursor:
         cursor.execute("SELECT stewardship_talent_defaults_v1()::text")
-        assert json.loads(cursor.fetchone()[0]) == default_talent_options()
+        assert json.loads(cursor.fetchone()[0]) == [
+            {"id": option.id, "label": option.label, "free_text": option.free_text}
+            for option in DEFAULT_TALENTS
+        ]
 
 
-def test_talents_and_limitations_round_trip_through_a_real_submission(
-    response_service,
-):
-    """The form offers talents, the answers persist, and a revisit prefills them."""
+def test_limitations_round_trip_and_no_talents_are_offered(response_service):
+    """The form offers no talents (#970); the limitations persist and prefill."""
     harness = response_service
     form = start(harness)
     assert form["cannot_attend"] is False
-    assert [row["label"] for row in form["service"]["talent_options"]][0] == "Painter"
+    assert form["service"]["talent_options"] == []
     assert form["service"]["members"]["3"] == {"cannot_serve": False, "talents": {}}
     answers = answers_for(form)
     answers["cannot_attend"] = True
     answers["service"] = {
-        "members": {
-            "3": {"cannot_serve": False, "talents": {PAINTER: "", OTHER: " Organ "}}
-        },
+        "members": {"3": {"cannot_serve": False, "talents": {}}},
         "proposed_members": {},
     }
     first = respond(harness, form, answers)
     assert first.answers["cannot_attend"] is True
     assert first.answers["service"]["members"]["3"] == {
         "cannot_serve": False,
-        "talents": {PAINTER: "", OTHER: "Organ"},
+        "talents": {},
     }
     form = revisit(harness)
     assert form["cannot_attend"] is True
-    assert form["service"]["members"]["3"]["talents"] == {PAINTER: "", OTHER: "Organ"}
+    assert form["service"]["members"]["3"]["talents"] == {}
 
 
 def test_cannot_serve_requires_leaving_every_current_ministry(response_service):
@@ -78,6 +82,46 @@ def test_cannot_serve_requires_leaving_every_current_ministry(response_service):
     answers["ministries"]["members"]["3"] = {"join": [], "leave": [4]}
     submission = respond(harness, form, answers)
     assert submission.answers["service"]["members"]["3"]["cannot_serve"] is True
+
+
+def test_a_form_opened_before_the_deploy_still_submits_talents(
+    response_service, monkeypatch
+):
+    """A baseline issued before #970 deployed keeps working with its talents.
+
+    The pre-deploy code offered the configured talents, so a Family's open
+    tab may send one. Refusing it would lose the whole response mid-campaign;
+    instead it is stored (the SQL guard accepts it) and never shown.
+    Unknown talents are still refused.
+    """
+    harness = response_service
+    # Issue the baseline as the pre-deploy code did: offering the talents.
+    monkeypatch.setattr(form_inputs, "talent_options", configured_talent_options)
+    form = start(harness)
+    assert [option["id"] for option in form["service"]["talent_options"]] == [
+        option.id for option in DEFAULT_TALENTS
+    ]
+    monkeypatch.undo()
+    answers = answers_for(form)
+    answers["service"] = {
+        "members": {"3": {"cannot_serve": False, "talents": {str(uuid4()): ""}}},
+        "proposed_members": {},
+    }
+    result = post(
+        harness.client,
+        "/family/submit",
+        {"baseline": form["baseline"], "answers": answers},
+    )
+    assert result.status_code == 422
+    assert "service.members.3.talents" in result.json()["fields"]
+    talents = {PAINTER: "", OTHER: "Organ"}
+    answers["service"]["members"]["3"]["talents"] = talents
+    submission = respond(harness, form, answers)
+    assert submission.answers["service"]["members"]["3"] == {
+        "cannot_serve": False,
+        "talents": talents,
+    }
+    assert revisit(harness)["service"]["members"]["3"]["talents"] == {}
 
 
 @pytest.mark.parametrize(
@@ -114,8 +158,8 @@ def test_sql_rejects_forged_talents_and_lock(response_service, path, value):
         )
 
 
-def test_edited_talent_list_is_offered_and_enforced(response_service):
-    """An Admin-edited list replaces the defaults for new forms."""
+def test_an_edited_talent_list_is_not_offered(response_service):
+    """A campaign's stored talent list offers nothing now (#970)."""
     harness = response_service
     start(harness)
     musician = "7f000000-0000-4000-8000-000000000001"
@@ -139,22 +183,8 @@ def test_edited_talent_list_is_offered_and_enforced(response_service):
     )
     assert result.state == "applied"
     form = revisit(harness)
-    assert [row["id"] for row in form["service"]["talent_options"]] == [musician]
-    answers = answers_for(form)
-    answers["service"] = {
-        "members": {"3": {"cannot_serve": False, "talents": {PAINTER: ""}}},
-        "proposed_members": {},
-    }
-    result = post(
-        harness.client,
-        "/family/submit",
-        {"baseline": form["baseline"], "answers": answers},
-    )
-    assert result.status_code == 422
-    answers["service"]["members"]["3"]["talents"] = {musician: ""}
-    assert respond(harness, form, answers).answers["service"]["members"]["3"][
-        "talents"
-    ] == {musician: ""}
+    assert form["service"]["talent_options"] == []
+    respond(harness, form, answers_for(form))
 
 
 def guard(submission, answers, *, modules=None):
@@ -181,12 +211,17 @@ def guard(submission, answers, *, modules=None):
 
 
 def test_sql_guard_edge_cases(response_service):
-    """Module off, a non-object section, and a proposed Member's join."""
+    """Stored talents, module off, a non-object section, a proposed join."""
     harness = response_service
     form = start(harness)
     submission = respond(harness, form, answers_for(form))
     answers = json.loads(json.dumps(submission.answers))
     guard(submission, answers)
+    # An older response's stored talents still pass the installed guard (#970).
+    stored = json.loads(json.dumps(answers))
+    stored["service"]["members"]["3"]["talents"] = {PAINTER: "", OTHER: "Organ"}
+    with transaction.atomic():
+        guard(submission, stored)
     # Without the Ministry module only an empty section is allowed.
     with transaction.atomic():
         guard(submission, answers | {"service": {}}, modules=["census"])
@@ -208,43 +243,3 @@ def test_sql_guard_edge_cases(response_service):
     forged["ministries"]["proposed_members"][local] = {"join": []}
     with transaction.atomic():
         guard(submission, forged)
-
-
-def test_turning_off_free_text_drops_the_old_note(response_service):
-    """A revisit after Other stops taking text prefills no note and submits."""
-    harness = response_service
-    form = start(harness)
-    answers = answers_for(form)
-    answers["service"] = {
-        "members": {"3": {"cannot_serve": False, "talents": {OTHER: "Organ"}}},
-        "proposed_members": {},
-    }
-    respond(harness, form, answers)
-    options = default_talent_options()
-    options[-1]["free_text"] = False
-    store = harness.service.store
-    result = change_configuration(
-        store,
-        store.active(),
-        uuid4(),
-        [
-            {
-                "operation": "update",
-                "section": "campaigns",
-                "id": str(harness.campaign.pk),
-                "values": {"talent_options": options},
-            }
-        ],
-    )
-    assert result.state == "applied"
-    form = revisit(harness)
-    assert form["service"]["members"]["3"]["talents"] == {OTHER: ""}
-    answers = answers_for(form)
-    answers["service"] = {
-        "members": {"3": form["service"]["members"]["3"]},
-        "proposed_members": {},
-    }
-    assert respond(harness, form, answers).answers["service"]["members"]["3"] == {
-        "cannot_serve": False,
-        "talents": {OTHER: ""},
-    }

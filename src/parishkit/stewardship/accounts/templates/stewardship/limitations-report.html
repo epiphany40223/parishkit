@@ -1,0 +1,50 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
+{% block title %}{% translate "Limitations" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Limitations" %}</h1>
+{% aboutpage "limitations-report" %}<p>{% translate "Members who said they cannot participate in any ministries, and Families who said they cannot attend Mass or prayer services. Each Family's current live response is used; a later submission replaces the earlier one, and Testing responses are excluded. These answers are kept here; they are never written to ParishSoft." %}</p>
+<p>{% translate "Family DUID is the Family's ID number in ParishSoft, shown in its own column so you can sort or copy it." %}</p>{% endaboutpage %}
+<p>{{ metadata.name }}</p>
+<p><a href="{% url 'admin:participation' %}">{% translate "Participation" %}</a></p>
+<div id="limitations-summary" data-table-sync><h2>{% translate "Summary" %}</h2>
+<dl>
+<dt>{% translate "Cannot participate in ministries" %}</dt><dd>{{ summary.cannot_serve|number }}</dd>
+<dt>{% translate "Families that cannot attend Mass" %}</dt><dd>{{ summary.cannot_attend|number }}</dd>
+</dl></div>
+<form id="table-filters" data-table-sync method="post" action="{% url 'admin:limitations_report' %}">{% csrf_token %}
+<label for="limitations-search">{% translate "Search name or Family DUID" %}</label><input id="limitations-search" name="search" maxlength="200" value="{{ query.search }}">
+<label for="limitations-filter">{% translate "Show" %}</label><select id="limitations-filter" name="talent"><option value="any">{% translate "Everything" %}</option><option value="cannot_serve"{% if query.talent == 'cannot_serve' %} selected{% endif %}>{% translate "Cannot participate in ministries" %}</option><option value="cannot_attend"{% if query.talent == 'cannot_attend' %} selected{% endif %}>{% translate "Families that cannot attend Mass" %}</option></select>
+{% for name, value in members_table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}{% for name, value in families_table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+{% button type="submit" %}{% translate "Apply filters" %}{% endbutton %}</form>
+<section aria-labelledby="limitations-export-heading">
+<h2 id="limitations-export-heading">{% translate "Download" %}</h2>
+<form id="table-export" data-table-sync method="post" action="{% url 'admin:limitations_export' %}">{% csrf_token %}
+{% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+<label for="limitations-format">{% translate "Format" %}</label><select id="limitations-format" name="format"><option value="csv">CSV</option><option value="xlsx">XLSX</option></select>
+<label for="limitations-timezone">{% translate "Timezone" %}</label><select id="limitations-timezone" name="timezone" data-information-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
+{% button type="submit" %}{% translate "Download with these filters" %}{% endbutton %}</form></section>
+<script src="{% static 'stewardship/information-export-v1.js' %}" defer></script>
+<h2>{% translate "Members who cannot participate in ministries" %}</h2>
+<div id="{{ members_table.anchor }}" data-table-region>
+{% translate "Member pages" as members_label %}{% include "stewardship/table-navigator.html" with table=members_table label=members_label %}
+<div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Members who cannot participate in ministries' %}"><table>
+<caption>{% translate "Members who cannot participate in ministries" %}</caption><thead><tr>{% translate "Member" as heading %}{% sort_heading members_table "member" heading %}{% translate "Family" as heading %}{% sort_heading members_table "family" heading %}{% translate "Family DUID" as heading %}{% sort_heading members_table "duid" heading "numeric" %}{% translate "Cannot participate in ministries" as heading %}{% sort_heading members_table "cannot_serve" heading %}{% translate "Latest response" as heading %}{% sort_heading members_table "latest" heading %}</tr></thead><tbody>
+{% for row in members_table.rows %}<tr>
+<th scope="row">{{ row.member_name }}{% if row.proposed %}<br>{% translate "Proposed household member" %}{% endif %}</th>
+<td>{{ row.family_name }}</td>
+<td class="numeric">{{ row.family_duid|duid }}</td>
+<td>{% if row.cannot_serve %}{% translate "Yes" %}{% endif %}</td>
+<td><time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant>{{ row.submitted_at|date:'c' }}</time></td></tr>
+{% empty %}<tr><td colspan="5">{% translate "No matching Members." %}</td></tr>{% endfor %}</tbody></table></div>
+{% include "stewardship/table-navigator.html" with table=members_table label=members_label %}
+</div>
+<h2>{% translate "Families that cannot attend Mass or prayer services" %}</h2>
+<div id="{{ families_table.anchor }}" data-table-region>
+{% translate "Family pages" as families_label %}{% include "stewardship/table-navigator.html" with table=families_table label=families_label %}
+<div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Families that cannot attend Mass or prayer services' %}"><table>
+<caption>{% translate "Families that cannot attend Mass or prayer services" %}</caption><thead><tr>{% translate "Family" as heading %}{% sort_heading families_table "family" heading %}{% translate "Family DUID" as heading %}{% sort_heading families_table "duid" heading "numeric" %}{% translate "Latest response" as heading %}{% sort_heading families_table "latest" heading %}</tr></thead><tbody>
+{% for row in families_table.rows %}<tr><th scope="row">{{ row.family_name }}</th><td class="numeric">{{ row.family_duid|duid }}</td><td><time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant>{{ row.submitted_at|date:'c' }}</time></td></tr>
+{% empty %}<tr><td colspan="3">{% translate "No matching Families." %}</td></tr>{% endfor %}</tbody></table></div>
+{% include "stewardship/table-navigator.html" with table=families_table label=families_label %}
+</div>
+{% endblock %}

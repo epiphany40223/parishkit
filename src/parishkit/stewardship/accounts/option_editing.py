@@ -1,12 +1,13 @@
-"""The ordered-option editors (Share options, Member talents), reviewed in place.
+"""The ordered-option editor (Share options), reviewed in place.
 
-Both editors edit one ordered list of labelled options on the current draft
-campaign with the same formset (``share_forms.ShareOptions``) and the same
-rules: an unlocked Testing draft only, with the module the list belongs to.
-They differ only in the values key, the module, the page and its words, which
-``OptionEditor`` names. Review, apply and the change's status happen on the
-page itself (#532, #750): the page answers its own POSTs, with the review,
-a refusal or the change's status in its review region.
+It edits one ordered list of labelled options on the current draft campaign
+with the share formset (``share_forms.ShareOptions``): an unlocked Testing
+draft only, with the module the list belongs to. ``OptionEditor`` names the
+values key, the module, the page and its words; the Member talents editor
+that once shared it was removed with talents (#970). Review, apply and the
+change's status happen on the page itself (#532, #750): the page answers its
+own POSTs, with the review, a refusal or the change's status in its review
+region.
 
 The form is an in-place region of its own (no script is bound to it), so an
 answer redraws it with the values the Administrator sent, its field errors
@@ -57,9 +58,9 @@ from .share_forms import ShareOptions, share_action
 
 @dataclass(frozen=True)
 class OptionEditor:
-    """What distinguishes one ordered-option editor from the other."""
+    """What names one ordered-option editor: its key, module, page and words."""
 
-    key: str  # the campaign values key: "share_options", "talent_options"
+    key: str  # the campaign values key: "share_options"
     module: str  # the module the list belongs to
     page: str  # the page's URL name
     template: str  # the page's template

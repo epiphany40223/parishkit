@@ -1,4 +1,0 @@
-{% load i18n stewardship %}
-<p class="help">{% translate "Talents lock when the campaign goes live." %}</p>
-{{ formset.management_form }}{{ formset.non_form_errors }}
-{% for form in formset %}<fieldset class="panel"><legend>{% translate "Talent" %} {{ forloop.counter|number }}</legend>{{ form.as_div }}</fieldset>{% endfor %}

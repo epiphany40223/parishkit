@@ -13,7 +13,6 @@
 {% if production_progress_available %}<p><a href="{% url 'admin:production_progress' %}">{% translate "Follow Production activation" %}</a></p>{% endif %}
 <p class="notice">{% translate "These settings lock when the campaign goes live or is scheduled for Production. Dates and mail schedules use this campaign's time zone, not your computer's." %}</p>
 {% if editable %}
-{% if form.ministry.value %}<p><a href="{% url 'admin:talent_settings' %}">{% translate "Edit Member talents" %}</a></p>{% endif %}
 {% if form.financial_enabled.value %}<p><a href="{% url 'admin:share_settings' %}">{% translate "Edit Share options" %}</a></p>{% endif %}
 {% comment %}Review and apply happen in place, below the form (#532).{% endcomment %}<form id="settings-form" method="post" action="#settings-review" class="panel" data-in-place data-table-sync data-in-place-message="{% translate 'Review ready.' %}" data-require-change="base_digest" data-campaign-form data-require-complete>
 {% csrf_token %}<input type="hidden" name="action" value="preview">

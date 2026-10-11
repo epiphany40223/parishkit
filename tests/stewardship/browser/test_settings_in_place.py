@@ -28,7 +28,6 @@ from .settings_components import (
     SHARE_REVIEW,
     SHARE_STATUS,
     STATUS,
-    TALENTS,
 )
 from .test_in_place import MARK, MARKED, count_requests
 from .waits import has_attribute, has_text, hidden, painted, recorded, visible
@@ -530,13 +529,12 @@ def test_typing_dropped_by_a_refused_review_is_said_to_be_lost(page, component_o
 OPTION_HINT = "Change an option to review it."
 
 
-@pytest.mark.parametrize("address", [SHARE, TALENTS])
-def test_option_lists_review_only_a_change(page, component_origin, address):
-    """Share options and Member talents keep Review changes unavailable
+def test_option_lists_review_only_a_change(page, component_origin):
+    """Share options keeps Review changes unavailable
     until the list differs from the saved one (#921): a renamed label, a
     deletion or a new row in the blank last row makes it available, undoing
     each makes it unavailable again, and a restore is noticed on pageshow."""
-    page.goto(component_origin + address)
+    page.goto(component_origin + SHARE)
     expect_review(page, enabled=False, hint=OPTION_HINT)
     # The review region, right under the button and its hint, never moves
     # (filling the last row may scroll, so this is measured in the page).

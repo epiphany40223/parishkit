@@ -231,7 +231,7 @@ def stays_put(page, locator, action, focused=None):
 
 
 def service_page(page, component_origin, *, last=False):
-    """The talents form, with long Ministry text so its controls sit low.
+    """The Member's Ministry form, with long text so its controls sit low.
 
     ``last`` drops the pages after the Member's, so it is the last page.
     """
@@ -258,21 +258,6 @@ def test_cannot_participate_keeps_the_page_still(phone, component_origin):
         page, page.get_by_label(SERVE), lambda: page.get_by_label(SERVE).uncheck()
     )
     expect(page.get_by_label(SERVE)).not_to_be_checked()
-
-
-def test_free_text_talent_keeps_the_page_still(phone, component_origin):
-    """Ticking "Other" opens its text box without moving the checkbox."""
-    page = phone
-    service_page(page, component_origin)
-    other = show(page, page.get_by_label("Other", exact=True))
-    describe = page.get_by_label("Please describe your talent")
-    stays_put(page, page.get_by_label("Other", exact=True), other.check, describe)
-    stays_put(
-        page,
-        page.get_by_label("Other", exact=True),
-        lambda: page.get_by_label("Other", exact=True).uncheck(),
-    )
-    expect(describe).to_have_count(0)
 
 
 def test_household_status_keeps_the_page_still(phone, component_origin):

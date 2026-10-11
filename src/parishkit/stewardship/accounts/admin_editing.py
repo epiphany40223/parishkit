@@ -54,9 +54,7 @@ from .sessions import FreshAuthenticationRequired, authenticated_admin, require_
 # names are the pages' URL names; Change status's in-place follow-up may lead
 # only to one of them.
 REVIEW_REGION = "settings-review"
-IN_PLACE_PAGES = frozenset(
-    {"parish_settings", "campaign_settings", "share_settings", "talent_settings"}
-)
+IN_PLACE_PAGES = frozenset({"parish_settings", "campaign_settings", "share_settings"})
 
 
 def principal(
