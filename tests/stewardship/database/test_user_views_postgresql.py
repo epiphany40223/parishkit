@@ -34,6 +34,7 @@ from .user_builders import (
     installed,
     post,
     review,
+    token,
     user_change,
     user_id,
     users,
@@ -100,12 +101,19 @@ def test_the_table_lists_users_and_audits_only_a_count(converted):
     body = page(browser)
     assert "<h1>Users</h1>" in body
     admin = row(body, "admin@example.org")
-    # The Administrator signed in through the fixture: one identity, so the
-    # row's Sign-in activity posts it to System logs, never in an address.
-    assert "data-local-instant" in admin
-    assert 'name="actor" value="' in admin and 'action="/admin/system/logs/"' in admin
+    # The Administrator signed in through the fixture; the time is drawn in
+    # the compact parish format, as other dense tables are. No row has a
+    # Sign-in activity control (Administrator, 2026-10-11): the link above
+    # the table opens System logs.
+    assert "data-local-instant data-compact" in admin
+    assert 'name="actor"' not in body and "<form" not in admin
+    assert "See sign-in activity in System logs" in body
     assert f'href="{edit(store, "admin@example.org")}"' in admin
-    assert 'data-confirm-open="user-delete"' in admin
+    # The reader's own row has no Delete, though another Administrator
+    # remains; the other Administrator's row has one.
+    assert 'data-confirm-open="user-delete"' not in admin
+    assert 'data-confirm-open="user-delete"' in row(body, "second@example.org")
+    assert "delete yourself" in body
     assert "admin (Administrator)" not in admin
     staff = row(body, "staff@example.org")
     assert '<td class="nowrap">Staff</td>' in staff and "Never" in staff
@@ -125,9 +133,9 @@ def test_the_table_lists_users_and_audits_only_a_count(converted):
         assert browser.get("/admin/users/rules").status_code == 404
 
 
-def test_the_only_administrator_note_counts_every_page(auth_service, google):
-    """The note under the table holds even when the Administrator is on another
-    page of the table, not only when its row is shown."""
+def test_the_own_row_note_counts_every_page(auth_service, google):
+    """The note under the table holds even when the reader's own row is on
+    another page of the table, not only when it is shown."""
     add_rules(
         auth_service.store,
         *(address(f"staff{number:02}@example.org", ("staff",)) for number in range(25)),
@@ -135,7 +143,7 @@ def test_the_only_administrator_note_counts_every_page(auth_service, google):
     convert(auth_service.store)
     browser, login = signed_in()
     assert login.status_code == 302
-    note = "The only Administrator can't be deleted."
+    note = "delete yourself"
     # Email descending puts admin@example.org on page 2 of 25 rows each.
     first = page(browser, USERS + "?users_sort=-email&users_size=25")
     assert "admin@example.org" not in first
@@ -257,7 +265,11 @@ def test_edit_changes_name_and_role_and_grants_administrator(converted):
 
 
 def test_the_only_administrator_cannot_be_demoted_or_deleted(auth_service, google):
-    """The guard is shown and enforced on the server for Edit and Delete."""
+    """The guard is shown and enforced on the server for Edit and Delete.
+
+    The only Administrator is always the reader, so the own-Administrator
+    words are the ones shown.
+    """
     store = auth_service.store
     add_rules(store, address("staff@example.org", ("staff",)))
     convert(store)
@@ -265,14 +277,14 @@ def test_the_only_administrator_cannot_be_demoted_or_deleted(auth_service, googl
     assert login.status_code == 302
     body = page(browser)
     assert 'data-confirm-open="user-delete"' not in row(body, "admin@example.org")
-    assert "The only Administrator can't be deleted." in body
+    assert "delete yourself" in body
     path = edit(store, "admin@example.org")
     form = page(browser, path)
     assert re.search(r'value="staff"[^>]* disabled', form)
-    assert "This is the only Administrator" in form
+    assert "This is your own user" in form
     refused = review(store, browser, path, {"name": "admin", "role": "staff"})
     assert refused.status_code == 400
-    assert "This is the only Administrator" in refused.content.decode()
+    assert "This is your own user" in refused.content.decode()
     with web():
         response = post(
             browser,
@@ -283,8 +295,105 @@ def test_the_only_administrator_cannot_be_demoted_or_deleted(auth_service, googl
             },
         )
     assert response.status_code == 400
-    assert "must stay an Administrator" in response.content.decode()
+    assert "delete yourself" in response.content.decode()
     assert users(store)["admin@example.org"] == ("admin", "administrator")
+
+
+def test_an_administrator_cannot_demote_or_delete_themselves(
+    converted, google, monkeypatch
+):
+    """Refused at Review and Delete, and again by the request's own check.
+
+    Another Administrator remains, so only the own-Administrator guard
+    applies; that other Administrator may still demote this one.
+    """
+    store, browser = converted
+    path = edit(store, "admin@example.org")
+    form = page(browser, path)
+    assert re.search(r'value="staff"[^>]* disabled', form)
+    assert re.search(r'value="ministry_leader"[^>]* disabled', form)
+    assert "This is your own user" in form
+    # Another user's Edit page leaves every role available.
+    other = page(browser, edit(store, "second@example.org"))
+    assert not re.search(r'value="staff"[^>]* disabled', other)
+    refused = review(store, browser, path, {"name": "admin", "role": "staff"})
+    assert refused.status_code == 400
+    assert "This is your own user" in refused.content.decode()
+    # A Name change of one's own user is still a change.
+    assert (
+        review(
+            store, browser, path, {"name": "Admin, A", "role": "administrator"}
+        ).status_code
+        == 200
+    )
+    with web():
+        response = post(
+            browser,
+            DELETE,
+            {
+                "base_digest": store.active().digest,
+                "user_id": user_id(store, "admin@example.org"),
+            },
+        )
+    assert response.status_code == 400
+    assert "delete yourself" in response.content.decode()
+    # A review signed without the builder's guard is still refused by the
+    # request's own check, in its transaction: nothing is recorded.
+    real = user_views.plan_changes
+    monkeypatch.setattr(
+        user_views,
+        "plan_changes",
+        lambda records, entries, **options: real(records, entries),
+    )
+    signed = token(review(store, browser, path, {"name": "admin", "role": "staff"}))
+    monkeypatch.setattr(user_views, "plan_changes", real)
+    with web():
+        applied = post(browser, USERS, {"action": "confirm", "preview": signed})
+    assert applied.status_code == 400
+    assert "remove your own Administrator role" in applied.content.decode()
+    assert not ConfigurationChangeRequest.objects.filter(
+        request_schema="users-patch-v10"
+    ).exists()
+    assert contexts("user_change_requested") == []
+    assert users(store)["admin@example.org"] == ("admin", "administrator")
+    # The other Administrator may demote this one.
+    google[0].update(email="second@example.org", sub="second-subject")
+    second, login = signed_in()
+    assert login.status_code == 302
+    user_change(store, second, path, {"name": "admin", "role": "staff"})
+    assert users(store)["admin@example.org"] == ("admin", "staff")
+
+
+def test_change_status_refuses_a_reader_who_lost_access(converted, google):
+    """The status read a demoted reader makes is refused, never left waiting.
+
+    Change status needs Administrator; the page's script turns this refusal
+    into its final "Status unavailable" (browser-tested).
+    """
+    store, browser = converted
+    signed = token(
+        review(
+            store,
+            browser,
+            edit(store, "staff@example.org"),
+            {"name": "S", "role": "staff"},
+        )
+    )
+    with web():
+        response = post(browser, USERS, {"action": "confirm", "preview": signed})
+    status = response["Location"]
+    assert "data-live-refused" in page(browser, status)
+    google[0].update(email="second@example.org", sub="second-subject")
+    second, login = signed_in()
+    assert login.status_code == 302
+    user_change(
+        store,
+        second,
+        edit(store, "admin@example.org"),
+        {"name": "admin", "role": "staff"},
+    )
+    with web():
+        assert browser.get(status).status_code in {302, 403}
 
 
 def test_delete_records_one_change_and_ends_access(converted, google):

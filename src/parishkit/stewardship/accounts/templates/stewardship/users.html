@@ -10,11 +10,16 @@ the table and the confirmation dialog, and is what ui-v1.js redraws from
 data-refresh-url (this page's address, sort and page included) once a
 deletion is applied. The delete form holds only its CSRF token and the
 applied version: users are deleted one at a time, so there is no selection
-column, and the rows' Sign-in activity forms sit in their cells, outside it.
-The only Administrator's row has no Delete; the server refuses it anyway.
-Sign-in activity (#953) posts one recorded Google identity to System logs,
-never putting it in an address; a user with several identities gets a link to
-Edit user instead, which lists one button per identity, so rows stay one line.
+column. The reader's own row has no Delete (an Administrator never deletes
+themselves, Administrator decision 2026-10-11), and neither has the only
+Administrator's, who is always the reader; the line under the table says
+why, and the server refuses it anyway.
+The rows have no Sign-in activity control (Administrator, 2026-10-11): the
+link above the table opens all sign-in activity in System logs, and Edit user
+lists one button per recorded Google identity (#953).
+Last successful sign-in uses the compact parish date format in the browser's
+time zone (data-compact, date-format-v1.js), as other dense tables do
+(Administrator, 2026-10-11); the server sorts by the timestamp itself.
 {% endcomment %}
 <h1>{% translate "Users" %}</h1>
 {% aboutpage "users" %}<p>{% if local_environment %}{% translate "Everyone who may sign in to the Admin portal. Each user is one email address with a Name and one role; an address that is not a user can't sign in." %}{% else %}{% translate "Everyone who may sign in to the Admin portal with Google. Each user is one email address with a Name and one role; an address that is not a user can't sign in." %}{% endif %}</p>
@@ -43,14 +48,14 @@ Edit user instead, which lists one button per identity, so rows stay one line.
     <th scope="row"><span class="cell-ellipsis" title="{{ row.email }}">{{ row.email }}</span></th>
     <td><span class="cell-ellipsis" title="{{ row.name }}">{{ row.name }}</span></td>
     <td class="nowrap">{{ row.role_label }}</td>
-    <td class="nowrap">{% if row.last_login %}<time datetime="{{ row.last_login|instant }}" data-local-instant>{{ row.last_login|instant }}</time>{% else %}{% translate "Never" %}{% endif %}{% if row.identities|length == 1 %}{% with account=row.identities.0 %} <form method="post" action="{% url 'admin:logs' %}" class="inline-form">{% csrf_token %}<input type="hidden" name="applied" value="yes"><input type="hidden" name="audit" value="yes"><input type="hidden" name="activity" value="sign_in"><input type="hidden" name="actor" value="{{ account.id }}">{% blocktranslate with email=row.email asvar account_label %}Sign-in activity for {{ email }}{% endblocktranslate %}{% button type="submit" variant="link" aria-label=account_label title=account_label %}{% translate "Sign-in activity" %}{% endbutton %}</form>{% endwith %}{% elif row.identities %} <a href="{{ row.edit_url }}#user-sign-in-activity" aria-label="{% blocktranslate with email=row.email %}Sign-in activity for {{ email }}{% endblocktranslate %}" title="{% translate 'This address has several sign-in accounts; Edit lists the activity of each.' %}">{% translate "Sign-in activity" %}</a>{% endif %}</td>
+    <td class="nowrap">{% if row.last_login %}<time datetime="{{ row.last_login|instant }}" data-local-instant data-compact>{{ row.last_login|instant }}</time>{% else %}{% translate "Never" %}{% endif %}</td>
     {% if row.deletable %}{% table_actions name=row.email edit=row.edit_url delete=row.id confirm="user-delete" field="user_id" confirm_name=row.confirm_name %}{% else %}{% table_actions name=row.email edit=row.edit_url %}{% endif %}
   </tr>{% empty %}<tr><td colspan="5">{% translate "No users." %}</td></tr>{% endfor %}
   </tbody>
 </table>
 </div>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
-<p class="help" id="users-only-administrator">{% if only_administrator %}{% translate "The only Administrator can't be deleted. Make another user an Administrator first." %}{% endif %}</p>
+<p class="help" id="users-delete-reason">{{ delete_reason }}</p>
 {% translate "Delete {name}?" as title_one %}{% translate "Delete {count} users?" as title_many %}{% translate "This person can no longer sign in to the Admin portal, and their open sessions end on their next request. The address can be added again later as a new user." as body %}{% translate "Delete" as accept %}
 {% include "stewardship/components/confirm-dialog.html" with dialog_id="user-delete" form_id="user-actions" fallback="users-table-title" title_one=title_one title_many=title_many body=body accept=accept done_one=_("Deleted {name}.") done_many=_("Deleted {count} users.") %}
 </section>

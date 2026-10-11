@@ -13,8 +13,10 @@ user's Name and role before and after, or refuses with a ``UserRefused``
 naming the field and a plain message, never repeating what was submitted.
 It enforces what the page promises before anything is signed: one valid,
 new address per added user (changing an address is Delete and then New), a
-1-200 character Name, one of the three roles, a real change, and the
-last-Administrator guard. The whole candidate is still validated by the
+1-200 character Name, one of the three roles, a real change, the
+last-Administrator guard, and the own-Administrator guard (the acting
+Administrator cannot demote or delete their own user; Administrator
+decision, 2026-10-11). The whole candidate is still validated by the
 ``users-v10`` schema at intake and again by SQL at activation, so this is
 the early, readable refusal, not the only one.
 """
@@ -29,6 +31,7 @@ from django.utils.translation import gettext_lazy as _
 from parishkit.config import ConfigError
 from parishkit.stewardship.observability import current_correlation
 
+from .policy_models import PortalUser
 from .policy_schema import normalized_email
 from .users_schema import NAME_LIMIT, ROLE_LEVELS, valid_name
 
@@ -61,6 +64,10 @@ MESSAGES = {
     "last_administrator": _(
         "At least one Administrator must remain. Make another user an "
         "Administrator first."
+    ),
+    "own_administrator": _(
+        "You can't remove your own Administrator role or delete yourself. "
+        "Another Administrator can make this change."
     ),
     "invalid": _("This change can't be made. Return to Users and start again."),
 }
@@ -236,7 +243,7 @@ def _updated(entry, index, users):
     }
 
 
-def plan_changes(records, entries, *, default_name=None):
+def plan_changes(records, entries, *, default_name=None, own_email=None):
     """Turn a change document's entries into ``(changes, patch)``, or refuse.
 
     ``records`` are the applied ``login_rules``; ``default_name(email)``, when
@@ -244,7 +251,9 @@ def plan_changes(records, entries, *, default_name=None):
     the page always posts one). Entries are checked in order, so the first
     problem is the one reported. A user may appear once. The result must keep
     at least one Administrator: the last-Administrator guard, which the
-    ``users-v10`` schema and SQL activation also enforce.
+    ``users-v10`` schema and SQL activation also enforce. ``own_email`` is
+    the acting Administrator's address (``acting_email``); a change that
+    demotes or deletes that user is refused (``own_administrator``).
     """
     if type(entries) is not list or not 1 <= len(entries) <= ENTRY_LIMIT:
         raise UserRefused("invalid")
@@ -260,6 +269,10 @@ def plan_changes(records, entries, *, default_name=None):
             change, operation = _updated(entry, index, users)
         else:
             change, operation = _added(entry, index, users, taken, default_name)
+        if change.email == own_email and change.removes_administrator:
+            # Edit's Role field, or the change as a whole for a Delete.
+            field = "role" if change.operation == "update" else None
+            raise UserRefused("own_administrator", field, index)
         changes.append(change)
         patch.append(operation)
     remaining = administrator_ids(users) - {
@@ -278,6 +291,45 @@ def only_administrator(users, identifier):
     either change anyway (``plan_changes``).
     """
     return administrator_ids(users) == {identifier}
+
+
+def acting_email(identity):
+    """The address of the acting Administrator's recorded Google identity.
+
+    A user is its address, so this names the acting Administrator's own user
+    (None for an identity that is not recorded, which owns no user).
+    """
+    return (
+        PortalUser.objects.filter(pk=identity).values_list("email", flat=True).first()
+    )
+
+
+def own_user_ids(users, email):
+    """The IDs of the saved users with this address: at most one."""
+    return {key for key, values in users.items() if values["email"] == email}
+
+
+def refuse_own_demotion(records, patch, email):
+    """Refuse a recorded patch that demotes or deletes the acting user.
+
+    The configuration request's own check (#952, Administrator decision,
+    2026-10-11): ``plan_changes`` already refused such a change before it
+    was signed, and this repeats the refusal against the request's base
+    ``records`` inside the transaction that records the request, so no
+    channel can record one. Raises ``UserRefused("own_administrator")``.
+    """
+    users = saved_users(records)
+    own = {
+        key
+        for key in own_user_ids(users, email)
+        if users[key]["role"] == "administrator"
+    }
+    for operation in patch:
+        if operation.get("section") != "login_rules" or operation.get("id") not in own:
+            continue
+        role = (operation.get("values") or {}).get("role", "administrator")
+        if operation.get("operation") == "remove" or role != "administrator":
+            raise UserRefused("own_administrator")
 
 
 class LookupLimited(RuntimeError):
