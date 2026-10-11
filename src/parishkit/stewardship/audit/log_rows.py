@@ -173,6 +173,8 @@ ACTIVITY_TYPES = {
         "hosted_file_uploaded",
         "hosted_file_slug_changed",
         "hosted_file_deleted",
+        "admin_cmd_files_delete",
+        "admin_cmd_files_rename",
         "secret_replacement_requested",
         *built_types("secret_request_"),
         "credential_consumer_acknowledged",
@@ -305,6 +307,7 @@ UNGROUPED_REASONS = {
         "family_tokens_cancelled",
         "family_maintenance_started",
         "family_maintenance_ended",
+        "admin_cmd_portal_maintenance_set",
         *built_types("campaign_", "first_submission"),
     ),
     "The campaign's lifecycle and going live; no group covers them yet": (
