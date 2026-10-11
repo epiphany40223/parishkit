@@ -20,6 +20,8 @@
 #                                    --smtp-latency-ms the rehearsal's modeled Gmail
 #                                    latency (both carry over when not given)
 #   deploy --rollback                image-only rollback to the image the last deploy replaced
+#                                    (deploy also passes the STEWARDSHIP_USERS_* variables
+#                                    of the users upgrade, #952, to the host half)
 #   snapshot [--seeded]              save the root as the post-setup or seeded snapshot
 #   reset [--seeded]                 restore that snapshot; with no post-setup
 #                                    snapshot, wipe the root and run `up` again
@@ -120,9 +122,11 @@ run_remote() {
     # Upload the VM half to a file and run it there as root. It is uploaded
     # rather than fed to bash's stdin so that `docker compose run` inside it
     # cannot read the rest of the script as its own input.
+    # remote_env, when a command sets it, is an `env NAME=value ...` prefix
+    # (the users upgrade's inputs on a deploy); sudo passes it to the VM half.
     local args
     args=$(printf '%q ' "$root" "$project" "$yaml" "$envfile" "$build" "$snapshots" "$@")
-    ssh_vm "f=\$(mktemp) && cat > \"\$f\" && sudo bash \"\$f\" $args; rc=\$?; rm -f \"\$f\"; exit \$rc" <"$remote"
+    ssh_vm "f=\$(mktemp) && cat > \"\$f\" && sudo ${remote_env-}bash \"\$f\" $args; rc=\$?; rm -f \"\$f\"; exit \$rc" <"$remote"
 }
 
 pack_checkout() {
@@ -235,7 +239,15 @@ case "$command" in
         # STEWARDSHIP_SCHEMA_CHANGE=1; --rollback is its --rollback.
         # --bulk and --smtp-latency-ms (BG-12's rehearsal) choose what the
         # host half renders in local mode; "keep" carries the current value.
-        schema_change=0 rollback=0 bulk=keep latency=keep
+        # The users upgrade's four STEWARDSHIP_USERS_* variables (#952) are
+        # passed through as Production's laptop half passes them; the host
+        # half validates them.
+        schema_change=0 rollback=0 bulk=keep latency=keep users_env=""
+        for name in STEWARDSHIP_USERS_OPERATION STEWARDSHIP_USERS_OPERATOR \
+            STEWARDSHIP_USERS_REASON STEWARDSHIP_USERS_ADMINISTRATORS; do
+            [ -z "${!name-}" ] || users_env+="$name=$(printf '%q' "${!name}") "
+        done
+        [ -z "$users_env" ] || users_env="env $users_env"
         while [ $# -gt 0 ]; do
             case "$1" in
                 --schema-change) schema_change=1 ;;
@@ -255,6 +267,8 @@ case "$command" in
             shift
         done
         [ "$schema_change$rollback" != 11 ] || usage
+        # A rollback never converts.
+        if [ "$rollback" = 1 ] && [ -n "$users_env" ]; then usage; fi
         # A rollback renders nothing new: it takes neither rendering flag.
         if [ "$rollback" = 1 ] && [ "$bulk$latency" != keepkeep ]; then usage; fi
         require_running
@@ -265,11 +279,14 @@ case "$command" in
             pack_checkout
             run_remote build "$tag"
             upload_host_script
+            # Only the deploy itself carries the users upgrade's inputs.
+            remote_env=$users_env
             if [ "$bulk$latency" = keepkeep ]; then
                 run_remote deploy "$tag" "$schema_change" "$host_remote"
             else
                 run_remote deploy "$tag" "$schema_change" "$host_remote" "$bulk" "$latency"
             fi
+            remote_env=""
         fi ;;
     rehearse)
         # BG-12's rehearsal on a seeded deployment (developer guide,
