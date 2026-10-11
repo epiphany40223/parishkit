@@ -115,6 +115,13 @@ class Action(StrEnum):
     # The operator's one-time engagement backfill (#477), with its counts.
     FAMILY_ENGAGEMENT_BACKFILLED = "family_engagement_backfilled"
     USERS_VIEWED = "portal_users_viewed"
+    # A Users page change recorded as a configuration request (#952): its
+    # subject is the request, whose patch names the user; ``count`` is how
+    # many users it touches.
+    USER_CHANGE_REQUESTED = "user_change_requested"
+    # New user's Name lookup (#952): ``count`` is the ParishSoft names found,
+    # never the address looked up.
+    USER_NAMES_LOOKED_UP = "user_names_looked_up"
     SECURITY_EVENT_ACKNOWLEDGED = "security_event_acknowledged"
     CRITICAL_EVENTS_ACKNOWLEDGED = "critical_events_acknowledged"
     CREDENTIAL_RESULT_DISMISSED = "credential_result_dismissed"
@@ -148,6 +155,7 @@ class Action(StrEnum):
     # change, admin_cmd_<area>_<verb>, whose subject is the automation
     # session (see the specification's "Audit attribution").
     ADMIN_CMD_SCHEDULE_CONFIRM = "admin_cmd_schedule_confirm"
+    ADMIN_CMD_USERS_CONFIRM = "admin_cmd_users_confirm"
     # The operator's cancellation of a stuck live end-date change (#944).
     ADMIN_CMD_CONFIG_REQUEST_CANCEL = "admin_cmd_config_request_cancel"
     ADMIN_CMD_TASK_RETRY = "admin_cmd_task_retry"

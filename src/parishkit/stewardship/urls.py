@@ -13,7 +13,6 @@ from .accounts import (
     family_authentication,
     hosted_file_serving,
     presence,
-    rule_autosave_views,
     security_event_views,
     session_views,
     setup_branding_views,
@@ -31,8 +30,6 @@ from .accounts import (
     setup_views,
     source_form_views,
     system_health_views,
-    user_rule_views,
-    user_views,
 )
 from .admin_urls import campaign as admin_campaign
 from .admin_urls import mail as admin_mail
@@ -40,6 +37,7 @@ from .admin_urls import parish as admin_parish
 from .admin_urls import reports as admin_reports
 from .admin_urls import slashless as admin_slashless
 from .admin_urls import system as admin_system
+from .admin_urls import users as admin_users
 from .jobs import views as job_views
 from .responses import views as response_views
 
@@ -72,6 +70,7 @@ admin_patterns = [
     *admin_mail.polled_patterns,
     *admin_campaign.patterns,
     *admin_reports.patterns,
+    *admin_users.patterns,
     *admin_slashless.patterns,
     path(
         "setup/slack-test",
@@ -87,15 +86,6 @@ admin_patterns = [
         "content/plain-text",
         content_views.plain_text_preview,
         name="content_plain_text",
-    ),
-    path("users", user_views.users, name="users"),
-    path("users/rules", user_rule_views.user_rules, name="user_rules"),
-    path("users/rules/apply", rule_autosave_views.rule_apply, name="rule_apply"),
-    path("users/rules/base", rule_autosave_views.rule_base, name="rule_base"),
-    path(
-        "users/rules/requests/<uuid:request_id>",
-        rule_autosave_views.rule_request,
-        name="rule_request",
     ),
     path(
         "security-events/<uuid:event_id>/acknowledge",

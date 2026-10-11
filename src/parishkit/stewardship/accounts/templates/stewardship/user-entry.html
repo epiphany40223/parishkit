@@ -1,0 +1,49 @@
+{% extends 'stewardship/admin-base.html' %}{% load static i18n stewardship %}
+{% block title %}{% if new %}{% translate "New user" %}{% else %}{% translate "Edit user" %}{% endif %}{% endblock %}
+{% block head %}{% if new %}<script src="{% static 'stewardship/users-v2.js' %}" defer></script>{% endif %}{% endblock %}
+{% block content %}{% comment %}
+New user and Edit user (#952; user_views._entry). One page with three fields:
+Email (typed on New, shown on Edit, where it never changes), Name and Role.
+Review posts here and shows the review, whose Apply posts to Users; a refused
+review draws this page again with each error at its field and the summary.
+Each field's error line is reserved (.field-error-line), so a message coming
+and going never moves the controls below it (no layout shift).
+On New, users-v2.js asks the server (user_name_suggestions, a CSRF POST) when
+the Administrator leaves Email: it shows the address's problem at the field,
+or fills in the first ParishSoft name (never over a typed Name), offers the
+others in the datalist and says which it found in the Name's help line, which
+is always there.
+On Edit, the only Administrator's lower roles are unavailable, with the reason
+in the line under the roles, which is always there (#563); the server refuses
+that change anyway. The recorded Google identities of the address each get a
+Sign-in activity button (#953), posting the identity, never in an address.
+{% endcomment %}
+<h1>{% if new %}{% translate "New user" %}{% else %}{% translate "Edit user" %}{% endif %}</h1>
+{% aboutpage "user-entry" %}<p>{% translate "A user is one email address with a Name and one role. The person signs in with the account of that address. The Name is a label for this portal; it is not tied to a ParishSoft Member." %}</p>
+<p>{% translate "Review shows what would change; nothing takes effect until you apply it and the status says Applied. Making someone an Administrator also tells every other Administrator." %}</p>{% endaboutpage %}
+<form method="post" action="{{ post_url }}" class="user-entry"{% if new %} data-user-entry data-names-url="{{ names_url }}" data-names-none="{% translate 'No ParishSoft Member lists this address.' %}" data-names-found="{% translate 'Suggested from ParishSoft: {names}' %}" data-names-waiting="{% translate 'Looking up ParishSoft names for this address…' %}" data-names-failed="{% translate "Couldn't look up ParishSoft names. Enter the Name yourself." %}"{% endif %}>{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}">
+{{ form.non_field_errors }}
+<div class="field">{% if new %}<label for="{{ form.email.auto_id }}">{{ form.email.label }}</label>
+{{ form.email }}
+<div class="field-error-line" role="status"><ul class="errorlist" id="{{ form.email.auto_id }}_error" data-email-error{% if not form.email.errors %} hidden{% endif %}>{% for error in form.email.errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div>
+{% else %}<p class="field-label" id="user-email-label">{% translate "Email" %}</p>
+<p class="user-email" aria-labelledby="user-email-label"><span class="cell-ellipsis" title="{{ user.email }}">{{ user.email }}</span></p>
+<p class="help">{% translate "To change the address, delete this user and add the new address as a new user." %}</p>
+{% if disabled_count %}<p class="notice notice-error" id="user-disabled-identity">{% blocktranslate count counter=disabled_count %}A recorded sign-in account for this address is disabled and can't sign in.{% plural %}{{ counter }} recorded sign-in accounts for this address are disabled and can't sign in.{% endblocktranslate %}</p>{% endif %}{% endif %}</div>
+<div class="field"><label for="{{ form.name.auto_id }}">{{ form.name.label }}</label>
+{{ form.name }}<datalist id="user-names"></datalist>
+<p class="help" id="{{ form.name.auto_id }}_help" data-names-help>{% if new %}{% translate "When you enter the email address, any ParishSoft names that list it are suggested here." %}{% else %}{% translate "A label for this portal, such as Smith, Ann." %}{% endif %}</p>
+<div class="field-error-line" role="status"><ul class="errorlist" id="{{ form.name.auto_id }}_error"{% if not form.name.errors %} hidden{% endif %}>{% for error in form.name.errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div></div>
+<fieldset class="field user-roles" aria-describedby="user-roles-reason{% if form.role.errors %} {{ form.role.auto_id }}_error{% endif %}"><legend>{% translate "Role" %}</legend>
+{% for role in roles %}<div class="choice"><input type="radio" name="role" value="{{ role.value }}" id="{{ form.role.auto_id }}_{{ forloop.counter0 }}" aria-describedby="{{ form.role.auto_id }}_{{ forloop.counter0 }}_help"{% if form.role.value == role.value %} checked{% endif %}{% if role.locked %} disabled{% endif %}{% if form.role.errors %} aria-invalid="true"{% endif %}> <label for="{{ form.role.auto_id }}_{{ forloop.counter0 }}">{{ role.label }}</label>
+<p class="help" id="{{ form.role.auto_id }}_{{ forloop.counter0 }}_help">{{ role.help }}</p></div>{% endfor %}
+<p class="help" id="user-roles-reason">{% if locked %}{% translate "This is the only Administrator, so it must stay an Administrator. Make another user an Administrator first." %}{% endif %}</p>
+<div class="field-error-line" role="status"><ul class="errorlist" id="{{ form.role.auto_id }}_error"{% if not form.role.errors %} hidden{% endif %}>{% for error in form.role.errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div></fieldset>
+<p>{% button type="submit" %}{% translate "Review" %}{% endbutton %} <a href="{{ list_url }}">{% translate "Cancel" %}</a></p>
+</form>
+{% if identities %}<section class="panel" id="user-sign-in-activity" tabindex="-1" aria-labelledby="user-sign-in-activity-title">
+<h2 id="user-sign-in-activity-title">{% translate "Sign-in activity" %}</h2>
+<p>{% blocktranslate count counter=identities|length %}This address has one recorded sign-in account.{% plural %}This address has {{ counter }} recorded sign-in accounts.{% endblocktranslate %}</p>
+<ul>{% for account in identities %}<li><form method="post" action="{% url 'admin:logs' %}" class="inline-form">{% csrf_token %}<input type="hidden" name="applied" value="yes"><input type="hidden" name="audit" value="yes"><input type="hidden" name="activity" value="sign_in"><input type="hidden" name="actor" value="{{ account.id }}">{% if identities|length > 1 %}{% blocktranslate with number=forloop.counter asvar account_label %}Sign-in activity of account {{ number }}{% endblocktranslate %}{% else %}{% translate "Sign-in activity" as account_label %}{% endif %}{% button type="submit" variant="link" %}{{ account_label }}{% endbutton %}{% if account.disabled %} <span class="status-badge">{% translate "Disabled" %}</span>{% endif %}</form></li>{% endfor %}</ul>
+</section>{% endif %}
+{% endblock %}
