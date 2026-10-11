@@ -24,7 +24,12 @@ from parishkit.stewardship.sender_name import clean_sender_name
 from parishkit.stewardship.web import dates
 
 from . import source_cadence_schema, users_schema
-from .bootstrap_schema import BOOTSTRAP_SCHEMA, validate_bootstrap_sections
+from .bootstrap_schema import (
+    BOOTSTRAP_SCHEMA,
+    USERS_BOOTSTRAP_SCHEMA,
+    validate_bootstrap_sections,
+    validate_users_bootstrap_sections,
+)
 from .content_schema import SCHEMA as CONTENT_SCHEMA
 from .content_schema import validate_content_records
 from .ministry_activity import SCHEMA as MINISTRY_SCHEMA
@@ -243,6 +248,7 @@ VALIDATORS = MappingProxyType(
         "campaign-foundation-v3": _validate_v3_sections,
         MINISTRY_SCHEMA: _validate_v4_sections,
         BOOTSTRAP_SCHEMA: validate_bootstrap_sections,
+        USERS_BOOTSTRAP_SCHEMA: validate_users_bootstrap_sections,
         CONTENT_SCHEMA: _validate_v5_sections,
         source_cadence_schema.SCHEMA: source_cadence_schema.validate_sections,
         users_schema.SCHEMA: users_schema.validate_sections,
@@ -264,13 +270,21 @@ def validate_sections(document):
 
 
 def schema_for(document):
-    """Keep legacy documents on their retained schema until new policy is present."""
+    """Keep legacy documents on their retained schema until new policy is present.
+
+    A document of login rules alone is a bootstrap, in the users form (#993)
+    when it holds users.
+    """
+    if set(document["sections"]) == {"login_rules"}:
+        return (
+            USERS_BOOTSTRAP_SCHEMA
+            if users_schema.uses_users(document)
+            else BOOTSTRAP_SCHEMA
+        )
     if users_schema.uses_users(document):
         return users_schema.SCHEMA
     if source_cadence_schema.uses_cadence(document):
         return source_cadence_schema.SCHEMA
-    if set(document["sections"]) == {"login_rules"}:
-        return BOOTSTRAP_SCHEMA
     if "content" in document["sections"]:
         return CONTENT_SCHEMA
     if document["sections"].get("ministries"):

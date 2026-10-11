@@ -20,6 +20,7 @@ from .configuration_requests import _status, check_historical_additions
 from .models import ConfigurationChangeRequest
 from .sessions import authenticated_admin, database_now
 from .setup_campaign import staged_source_result
+from .setup_configuration import request_schema_for
 from .setup_delivery_models import SetupMailDelivery
 from .setup_drafts import _owned
 from .setup_models import SetupAttempt, SetupConfigurationIntent
@@ -134,7 +135,8 @@ def freeze_setup(request, service, *, preview_token):
             patch=preview.compiled.patch(),
             actor_id=actor.identity,
             request_key=preview.request_key,
-            request_schema="initial-setup-patch-v7",
+            # Users over a users bootstrap (#993); its candidate is users too.
+            request_schema=request_schema_for(candidate),
             correlation_id=current_correlation(),
             payload_fingerprint=preview.compiled.payload_fingerprint,
             candidate_version_id=candidate.version_id,

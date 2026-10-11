@@ -4,6 +4,7 @@ from django.db.models import Exists, OuterRef, Subquery
 
 from .request_models import ConfigurationChangeRequest, ConfigurationRequestCheckpoint
 from .runtime_models import ConfigurationActivation
+from .setup_configuration import REQUEST_SCHEMAS as SETUP_REQUEST_SCHEMAS
 from .setup_models import SetupConfigurationAbort
 
 
@@ -32,7 +33,7 @@ def aborted_setup_candidates():
             final_failure=Subquery(latest.values("failure_code")[:1]),
         )
         .filter(
-            request_schema="initial-setup-patch-v7",
+            request_schema__in=SETUP_REQUEST_SCHEMAS,
             aborted=True,
             activated=False,
             final_state="failed",
