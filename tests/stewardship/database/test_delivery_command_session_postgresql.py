@@ -3,17 +3,16 @@
 # ruff: noqa: F811 -- pytest injects the imported fixture by name.
 
 from concurrent.futures import ThreadPoolExecutor
-from importlib import import_module
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-from django.conf import settings
 from django.contrib.sessions.models import Session
 from django.db import DatabaseError, connection, connections, transaction
 from django.db.models import F
 
 from parishkit.stewardship.accounts import sessions
+from parishkit.stewardship.accounts.admin_session_store import SessionStore, digest
 from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.campaigns.schedule_models import ScheduleDefinition
@@ -169,23 +168,21 @@ def test_authority_change_during_command_never_sets_rolled_back_cookie(
     assert response.status_code == 403 and not form.recorded()
     key = response.wsgi_request.session.session_key
     assert response.cookies["pk_admin"].value == key
-    assert Session.objects.filter(session_key=key).exists()
-    assert PortalSession.objects.get(session_id=key).revoked_at is None
+    assert Session.objects.filter(session_key=digest(key)).exists()
+    assert PortalSession.objects.get(session_id=digest(key)).revoked_at is None
     assert PortalSession.objects.filter(revoked_at__isnull=False).count() == 1
     assert AuditEvent.objects.filter(event_type="admin_privileges_changed").count() == 1
 
 
 def test_logout_cannot_interleave_between_command_effect_and_commit(form, monkeypatch):
     """An independent exact-Web connection demonstrably waits for session ownership."""
-    key = PortalSession.objects.get().session_id
+    key = form.browser.cookies["pk_admin"].value
     original = getattr(form.owner, form.function)
 
     def logout_with_timeout():
         """Use actual logout, bounded SQL waiting, and a separate request/session."""
         connections.close_all()
-        request = SimpleNamespace(
-            session=import_module(settings.SESSION_ENGINE).SessionStore(session_key=key)
-        )
+        request = SimpleNamespace(session=SessionStore(session_key=key))
         try:
             with transaction.atomic(), connection.cursor() as cursor:
                 cursor.execute("SET LOCAL lock_timeout='200ms'")
@@ -206,11 +203,9 @@ def test_logout_cannot_interleave_between_command_effect_and_commit(form, monkey
     monkeypatch.setattr(form.owner, form.function, pause_after_effect)
     assert submit(form).status_code == 302 and form.recorded()
     with task_login(ServiceRole.WEB, exact=True):
-        request = SimpleNamespace(
-            session=import_module(settings.SESSION_ENGINE).SessionStore(session_key=key)
-        )
+        request = SimpleNamespace(session=SessionStore(session_key=key))
         sessions.end_admin(request)
-    assert PortalSession.objects.get(session_id=key).revoked_at is not None
+    assert PortalSession.objects.get(session_id=digest(key)).revoked_at is not None
     assert form.recorded()
 
 

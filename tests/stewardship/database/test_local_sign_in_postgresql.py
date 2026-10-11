@@ -11,11 +11,11 @@ import time
 from dataclasses import replace
 
 import pytest
-from django.contrib.sessions.backends.db import SessionStore
 from django.db.models import F
 from django.test import Client
 
 from parishkit.stewardship.accounts import local_sign_in
+from parishkit.stewardship.accounts.admin_session_store import SessionStore, digest
 from parishkit.stewardship.accounts.models import PortalSession, PortalUser
 from parishkit.stewardship.accounts.sessions import revocation_epoch
 from parishkit.stewardship.audit.models import AuditEvent
@@ -141,7 +141,8 @@ def test_local_sign_in_produces_the_same_session_as_google(
         assert row.expires_at - row.last_activity_at == (
             rows[tester.pk].expires_at - rows[tester.pk].last_activity_at
         )
-    assert rows[tester.pk].session_id == local_client.cookies["pk_admin"].value
+    # Both store only the cookie key's digest (#995).
+    assert rows[tester.pk].session_id == digest(local_client.cookies["pk_admin"].value)
     # The same audit record, and both browsers are admitted Admins.
     assert list(
         AuditEvent.objects.filter(actor_id=tester.pk).values_list(

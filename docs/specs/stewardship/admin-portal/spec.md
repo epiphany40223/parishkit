@@ -3914,9 +3914,10 @@ import. If the leaders cannot be read, the section says so in place of the
 table and the users table above stays usable. Reading the leaders has no
 rate cap, unlike the [Name lookup](#name-from-parishsoft): one read already
 returns every row, so repeating it discloses nothing more;
-the audit of each read and hashing the session keys
-([#995](https://github.com/epiphany40223/parishkit/issues/995)) are the
-protections. One change
+the audit of each read and storing the session keys only as digests
+([#995](https://github.com/epiphany40223/parishkit/issues/995)), so a
+stored session value read from the database cannot be replayed to it, are
+the protections. One change
 adds at most 100 users, the limit of one configuration request; when more
 are chosen, the review imports the first 100 by Name and says how many
 remain for another import. Posted addresses only choose among the rows the

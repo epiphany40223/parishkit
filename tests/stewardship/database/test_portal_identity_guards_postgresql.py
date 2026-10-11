@@ -11,10 +11,10 @@ from datetime import timedelta
 from uuid import uuid4
 
 import pytest
-from django.contrib.sessions.backends.db import SessionStore
 from django.db import IntegrityError, connection, transaction
 from django.db.models import F
 
+from parishkit.stewardship.accounts.admin_session_store import SessionStore
 from parishkit.stewardship.accounts.models import PortalSession, PortalUser
 from parishkit.stewardship.accounts.sessions import database_now
 from parishkit.stewardship.audit.models import AuditEvent
@@ -31,7 +31,7 @@ def forge(principal_id, **values):
     store.save()
     now = database_now()
     fields = dict(
-        session_id=store.session_key,
+        session_id=store.stored_key,
         principal_id=principal_id,
         authenticated_at=now,
         last_activity_at=now,

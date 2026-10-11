@@ -12,7 +12,6 @@ from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from importlib import import_module
 
 import jwt
 from allauth.core.exceptions import ImmediateHttpResponse
@@ -54,6 +53,7 @@ from parishkit.stewardship.web.refusals import (
 )
 from parishkit.stewardship.web.security import login_denial
 
+from .admin_session_store import SessionStore as AdminSessionStore
 from .auth_incidents import record_account_refusal, record_login_rejection
 from .limiting import Counter, Limiter, LimiterUnavailable
 from .models import OAuthStateConsumption, PolicyEpoch, PortalUser
@@ -478,7 +478,7 @@ def establish_identity(
                     "Admin sign-in denied: the SQL session guard found no "
                     "current Admin rule"
                 )
-                request.session = import_module(settings.SESSION_ENGINE).SessionStore()
+                request.session = AdminSessionStore()
                 principal = None
             else:
                 rotate_token(request)
@@ -565,7 +565,7 @@ def logout(request):
 
     if request.session.get(MARKER) is not None:
         refuse_web_session(request.session)
-        request.session = import_module(settings.SESSION_ENGINE).SessionStore()
+        request.session = AdminSessionStore()
         return HttpResponseRedirect("/admin/login")
     end_admin(request)
     return HttpResponseRedirect("/admin/login")
