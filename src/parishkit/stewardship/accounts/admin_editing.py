@@ -62,6 +62,7 @@ IN_PLACE_PAGES = frozenset(
         "share_settings",
         "campaign_ministries",
         "ministries",
+        "reminder_workgroup",
     }
 )
 # The view parameters an in-place page with a table keeps through a change

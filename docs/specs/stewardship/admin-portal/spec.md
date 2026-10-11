@@ -1345,11 +1345,13 @@ WorkGroup whose Families get no Reminders, for example a second Family record
 kept for a staff member who already responded as a parishioner. It is the
 campaign's optional `reminder_workgroup` setting: one plain-language text
 field (the WorkGroup's name as ParishSoft shows it; empty turns it off),
-reviewed and applied like any other change, and editable while the campaign
-is live because staff mark Families in ParishSoft during the campaign. The
-page says what the newest refresh found: no WorkGroup set, the name not read
-yet (it takes effect at the next refresh), no ParishSoft WorkGroup by that
-name, or how many Families are in it. What the exclusion does and when it
+reviewed, applied and followed
+[in place](../ui-conventions/spec.md#in-place-controls) under its form
+(#750), and editable while the campaign is live because staff mark Families
+in ParishSoft during the campaign. Below that, the page says what the
+newest refresh found: no WorkGroup set, the name not read yet (it takes
+effect at the next refresh), no ParishSoft WorkGroup by that name, or how
+many Families are in it. What the exclusion does and when it
 applies is in the background-processing specification's
 [Reminder WorkGroup](../background-processing/spec.md#family-invitations-and-reminders)
 rules; nothing else about those Families changes.
