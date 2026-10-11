@@ -110,7 +110,9 @@ a test keeps the two in step.
   12); text cells of digits are refused.
 - **Text** columns take text cells, or number cells with a whole value read
   as their digits (`envelope_id`, `member_id`, `ministry` and
-  `ministry_code` may hold either).
+  `ministry_code` may hold either). Text, metadata values and notes
+  included, holds no C0 control character other than tab and newline (NUL
+  cannot be stored); one is a located problem.
 - **Instants** are ISO 8601 UTC text with a `Z` suffix and whole seconds,
   such as `2026-10-03T14:05:09Z`, never Excel date cells, which carry no
   time zone and are changed by locale conversions.
