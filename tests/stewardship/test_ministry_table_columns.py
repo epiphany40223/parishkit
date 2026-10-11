@@ -7,7 +7,6 @@ its own.
 """
 
 from datetime import UTC, datetime
-from types import SimpleNamespace
 
 from django.template.loader import render_to_string
 
@@ -143,15 +142,15 @@ def test_summary_puts_the_ministry_duid_in_its_own_column():
 def test_campaign_ministries_review_splits_the_ministry_duid():
     """Ministries to remove: Ministry, Ministry DUID, then the counts."""
     html = render_to_string(
-        "stewardship/campaign-ministries-preview.html",
+        "stewardship/campaign-ministries-review.html",
         {
-            "campaign": SimpleNamespace(
-                active_configuration=SimpleNamespace(name="Renewal")
-            ),
-            "added": [],
-            "removed": [{"name": "Food pantry", "duid": 9, "answers": 1, "open": 1}],
-            "open_forms": 0,
-            "preview": "token",
+            "review": {
+                "added": [],
+                "removed": [
+                    {"name": "Food pantry", "duid": 9, "answers": 1, "open": 1}
+                ],
+                "open_forms": 0,
+            },
         },
     )
     assert in_order(

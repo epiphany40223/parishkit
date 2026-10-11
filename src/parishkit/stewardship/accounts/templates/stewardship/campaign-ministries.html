@@ -1,4 +1,5 @@
-{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
+{% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
+{% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
 {% block title %}{% translate "Campaign Ministries" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Campaign Ministries" %}</h1>
@@ -7,12 +8,13 @@
 <p>{% translate "Removing a Ministry takes it off the Family form. Nothing Families already answered is deleted: their join and stop requests stay in Ministry follow-up until staff close them, and reports keep showing them, marked No longer in this campaign. Adding the Ministry back shows them again." %}</p>
 {% url 'admin:ministries' as ministries_url %}<p>{% blocktranslate %}To hide a Ministry without removing it, mark it inactive on <a href="{{ ministries_url }}">Ministries</a> instead.{% endblocktranslate %}</p>{% endaboutpage %}
 <p>{{ campaign.active_configuration.name }} — {{ campaign.state|capfirst }}</p>
-<form method="post" class="panel">{% csrf_token %}<input type="hidden" name="action" value="preview">
+{% comment %}Review and apply happen in place, below the form (#750), as on Campaign settings (#532): the form keeps the reader's selections and takes only its hidden version from each answer.{% endcomment %}<form id="settings-form" method="post" action="#settings-review" class="panel" data-in-place data-table-sync data-in-place-message="{% translate 'Review ready.' %}" data-require-change="base_digest">{% csrf_token %}<input type="hidden" name="action" value="preview">
 {{ form.non_field_errors }}{{ form.base_digest }}{{ form.base_digest.errors }}
 <fieldset id="ministry-selections"><legend>{% translate "Ministry selections" %}</legend>
 <p class="help">{% translate "Families who already submitted are not asked about an added Ministry and get no email. Removing a Ministry deletes none of their answers." %}</p>
 {{ form.ministry_duids.as_field_group }}</fieldset>
-{% button type="submit" %}{% translate "Preview changes" %}{% endbutton %}
+{% translate "Change a Ministry selection to review it." as selection_hint %}{% include 'stewardship/components/review-changes-button.html' with hint=selection_hint %}
 </form>
+<div id="settings-review" data-in-place-region data-keep-height>{% include 'stewardship/settings-review.html' %}</div>
 <p><a href="{% url 'admin:ministries' %}">{% translate "Return to Ministries" %}</a></p>
 {% endblock %}
