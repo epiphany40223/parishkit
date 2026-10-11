@@ -427,6 +427,7 @@ sections:
     "Comparison report": [RPT-03]
     "Alignment by campaign day": [RPT-02, RPT-03]
     "Metrics": [RPT-02, RPT-03]
+    "Pledge distribution": [RPT-02, RPT-03]
     "Page layout": [RPT-03, RPT-01]
     "Downloads and sharing": [RPT-01]
     "Digest section": [RPT-09, BG-08]
@@ -434,7 +435,7 @@ sections:
     "Failure handling": [RPT-03, OPS-08]
     "Tests": [OPS-09]
     "Implementation slices": [RPT-03]
-    "Open questions": [DOM-01]
+    "Administrator decisions": [DOM-01]
 scenarios:
   1:
     owners: [ADM-02, ARC-02, ARC-06, OPS-04, OPS-06]

@@ -1186,7 +1186,9 @@ the fifteen-minute backup-key proof and campaign clone seed):
 - **Fifteen minutes** for every preview made through the shared
   configuration-change path: parish, integration and setup settings, campaign
   configuration, content, mail schedules, users and access rules, Ministries,
-  logos and images, and the Preview and test email sends. The command line's
+  logos and images, the Preview and test email sends, and the
+  [past-campaign archive Review](../campaign-history/spec.md#what-is-stored).
+  The command line's
   [configuration requests](../admin-automation/spec.md#schedules-and-configuration)
   use the same fifteen minutes.
 - **Five minutes** for the delivery-critical actions, whose previews bind a

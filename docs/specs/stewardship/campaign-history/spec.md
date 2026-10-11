@@ -67,10 +67,26 @@ a test keeps the two in step.
   `stewardship-<year>-partial.xlsx` for a mid-campaign export. The name is a
   convention only; the reader trusts the `metadata` sheet, never the file
   name.
-- A plain `.xlsx` package with no macros, external links or embedded
-  objects: the reader applies the
+- A plain `.xlsx` package of cell data only. The reader applies the
   [OOXML package checks](../hosted-files/spec.md#accepted-types-and-validation)
-  of hosted files and refuses anything else.
+  of hosted files, which refuse macros, ActiveX and OLE objects, and then its
+  own stricter rule, because those checks do not cover workbook links and
+  data connections: every part must be on an allowlist, and every
+  relationship must be internal. The allowlist is the parts a spreadsheet
+  program writes for plain cell data: `[Content_Types].xml`, `_rels/.rels`,
+  `docProps/app.xml`, `docProps/core.xml`, `docProps/custom.xml`,
+  `customXml/` items, `xl/workbook.xml`, `xl/_rels/workbook.xml.rels`,
+  `xl/worksheets/sheetN.xml`, `xl/worksheets/_rels/sheetN.xml.rels` (only
+  for printer settings), `xl/printerSettings/printerSettingsN.bin`,
+  `xl/styles.xml`, `xl/theme/themeN.xml`, `xl/sharedStrings.xml` and
+  `xl/calcChain.xml`. Everything else is refused, including external
+  workbook links (`xl/externalLinks/`), data connections
+  (`xl/connections.xml`) and query tables (`xl/queryTables/`), embedded
+  objects and packages (`xl/embeddings/`), drawings, charts, images, pivot
+  tables, slicers and comments, as is any relationship with
+  `TargetMode="External"` (a hyperlink or a remote source). A file corrected
+  by hand and saved again by Excel, LibreOffice or Google Sheets stays within
+  the allowlist.
 - A reader accepts a file whose schema name matches and whose major version
   equals its own. A later minor version may add sheets, metadata keys and
   columns after the last known column of a sheet; the reader ignores those
@@ -87,6 +103,11 @@ a test keeps the two in step.
   blank row; a non-blank row after it refuses the file.
 - Cells hold literal values. A formula cell refuses the file, because its
   cached value may be stale or absent.
+- **Integers** are number cells with a whole value (a stored `12.0` reads as
+  12); text cells of digits are refused.
+- **Text** columns take text cells, or number cells with a whole value read
+  as their digits (`envelope_id`, `member_id`, `ministry` and
+  `ministry_code` may hold either).
 - **Instants** are ISO 8601 UTC text with a `Z` suffix and whole seconds,
   such as `2026-10-03T14:05:09Z`, never Excel date cells, which carry no
   time zone and are changed by locale conversions.
@@ -94,9 +115,13 @@ a test keeps the two in step.
   time zone (metadata `timezone`).
 - **Campaign day** is an integer: day 1 is `campaign_start_date`, the first
   invitation day, and day N is the local date N − 1 days later.
-- **Money** is a number cell in US dollars with at most two decimals.
-- **Booleans** are boolean cells (`TRUE`/`FALSE`); in `metadata`, where every
-  value is text, the text `TRUE` or `FALSE`.
+- **Money** is a number cell in US dollars with at most two decimals: the
+  shortest decimal text of the stored number (Python's `repr` of the
+  double) has at most two digits after the point, and the reader converts
+  that text to an exact decimal, never through binary arithmetic.
+- **Booleans** in data sheets are boolean cells (`TRUE`/`FALSE`); in
+  `metadata`, where values are text, the text `TRUE` or `FALSE` or a
+  boolean cell.
 - **Enumerations** are the lowercase words listed below.
 - **Blank means unknown or not applicable, never zero.** A zero is written
   as `0`.
@@ -123,6 +148,16 @@ column and metadata key. It has no header-row rule.
 One row per attributed Family, holding only its last submission. Rows with
 no Family identity are not here; they stay in `submissions` with
 `attributed` `FALSE`.
+
+**Last submission.** Submissions are ordered by `submitted_at`, then by
+`row_id` to break a tie. A Family's `last_submitted_at` is its latest
+attributed submission of any form. Its financial answer (`pledge_status`,
+`annual_pledge`, `frequency`, the installment, `cannot_give`) comes from
+its latest attributed submission of a form that asked the financial
+question (`combined` or `pledge`); a Family with none is `no_pledge_form`.
+Only 2020 had two forms, so in every other year both are the same
+submission. The `daily` sheet's "latest answer by the end of a day" uses the
+same ordering over submissions with `campaign_day` up to that day.
 
 | Column | Type | Rule |
 | --- | --- | --- |
@@ -291,36 +326,73 @@ file can be imported again later.
 
 ### Validation
 
-The import validates a file completely before storing anything. In order:
+The import validates a file completely before storing anything.
 
-1. **Size and package.** At most 20 MB uploaded and 300 MB uncompressed,
-   checked from the zip directory before parsing; the hosted-files OOXML
-   checks; at most 500,000 data rows in all. (The converted 2020–2026 files
-   are about 2 MB, 35 MB uncompressed and 100,000 rows each, most of them
-   Ministry answers.)
-2. **Schema.** The first sheet is `README`; `metadata` has the required keys;
-   `schema` and the major version match; every data sheet exists with its
-   header row exactly as above.
+**Where it runs.** The workbook is untrusted input, so it is read only in a
+short-lived helper process isolated like the chart engine's renderer (no
+environment, no database connection, no error text back; see
+[chart engine](../reports/spec.md#chart-engine)). The web process passes
+the bytes in and receives either the validated, typed rows or a list of
+located problems. The helper runs with a 1 GiB address-space limit and is
+killed at 60 seconds; a kill is refused as "too large to check" and leaves a
+`helper_timed_out` [durable timeout
+entry](../operations/spec.md#observability-and-health), under the new
+timeout name `archive_check`, naming the limit and the elapsed time. The
+`archive-check` command runs the same helper.
+
+**Request size.** One Review takes at most 8 files and 40 MB in all; each
+file is at most 20 MB. The Review route,
+`/admin/parish/past-campaigns/review/`, is the second route allowed a body
+larger than the ingress default: Caddy admits up to 41 MB there (the
+[ingress body limits](../operations/spec.md#production-ingress-and-tls),
+set in `runtime_ingress.py` beside the hosted-file upload route).
+
+The checks, in order:
+
+1. **Size and package.** The file size; the zip directory's declared sizes
+   as an early refusal only (they can lie); then every part is read once as
+   a stream that counts the bytes actually decompressed and stops at 100 MB
+   for one part or 300 MB in all, and at a compression ratio above 100 to
+   1. The hosted-files OOXML checks and the part allowlist above apply.
+   Every XML part is refused if it contains a document type declaration or
+   an entity declaration, checked on that stream before any XML parser sees
+   the part. Worksheets are then parsed in streaming read-only mode, never
+   loaded whole; at most 500,000 data rows in all. (The converted 2020–2026
+   files are about 2 MB, 35 MB uncompressed and 100,000 rows each, most of
+   them Ministry answers.)
+2. **Schema.** The first sheet is `README`; `metadata` has the required keys
+   and no key the declared version does not define; `schema` and the major
+   version match; every data sheet exists with its header row exactly as
+   above.
 3. **Cells.** Every cell has its column's type, range and enumeration; no
    formula cells; required cells are not blank; the conditional rules in the
    column tables hold (such as `annual_pledge` against `pledge_status`, and
    `installment_source` against `installment_amount`).
-4. **Consistency.**
+4. **Consistency.** Each rule below holds for every one of the eight
+   converted 2020–2027 files.
    - `daily` runs from day 1 with no gap to the day of
      `campaign_last_submission_date`; each `local_date` matches its day;
      `cumulative_families` is the running sum of `first_submissions`;
-     cumulative Families never decrease.
-   - The last `daily` row equals the totals recomputed from `families`:
-     `cumulative_families` = the number of `families` rows;
-     `cumulative_pledging_families` = rows with `pledge_status` `pledged`;
-     `cumulative_annual_pledged` = the sum of their `annual_pledge`, to the
-     cent.
+     each day's `first_submissions` equals the number of `families` rows
+     whose `first_campaign_day` is that day.
+   - Every `submitted_at`, `first_submitted_at` and `last_submitted_at`,
+     converted to `timezone`, gives its row's local date, and that date
+     gives its campaign day from `campaign_start_date`.
+   - Each Family's financial columns equal those of its last financial
+     submission and its `last_submitted_at` its latest attributed
+     submission, both by the [last submission](#families-sheet) rule; its
+     `submission_count` is the number of its attributed submissions; it has
+     at most one `is_last_for_family` `TRUE` row per `form`, on that form's
+     last submission.
+   - Every `daily` row's `cumulative_pledging_families` and
+     `cumulative_annual_pledged` equal the values recomputed from
+     `submissions` for that day by the same rule, to the cent; the last row
+     also equals the totals of `families` (`cumulative_families` its row
+     count, pledging Families its `pledged` rows, the pledged total their
+     sum).
    - `families` keys are unique, and each key matches its `family_id_system`
-     and `family_id`. Each Family's `last_submitted_at` is the latest
-     `submitted_at` of its attributed `submissions` rows, its
-     `submission_count` is their number, and it has at most one
-     `is_last_for_family` `TRUE` row per `form`. Every attributed
-     `submissions` and `ministry_responses` key is a `families` key.
+     and `family_id`. Every attributed `submissions` and
+     `ministry_responses` key is a `families` key.
    - `cumulative_pct_of_active` is present exactly when `active_families`
      is, and equals `cumulative_families` ÷ `active_families` within 0.0005.
      `active_families_estimate` is given only when `active_families` is
@@ -330,18 +402,30 @@ The import validates a file completely before storing anything. In order:
 5. **Year.** A file whose `campaign_year` is the current campaign's
    stewardship year is refused: the report reads the current campaign live,
    and a second copy of it would be compared with itself. The current
-   campaign's stewardship year is the one campaign-year meaning the Admin
-   pages already use (`campaign_year` in `web/presentation.py`: the
-   Campaign settings year label, else the upcoming financial period's start
-   year, else the start date's year). When that is not a single four-digit
-   year (a label such as "2026–2027"), every import is refused with that
-   reason, because "last year" cannot be resolved.
+   campaign's stewardship year is the Campaign settings year label, or,
+   without one, the start year of the campaign's upcoming financial period
+   (the year Families pledge for, as `campaign_year` in
+   `web/presentation.py` resolves it). The start-date fallback that function
+   uses for a campaign without a financial period is not used here, since it
+   names the year the campaign runs in (2026 for Stewardship 2027). When
+   neither gives a single four-digit year (no label and no financial period,
+   or a label such as "2026–2027"), every import is refused with that reason
+   and a link to Campaign settings, because "last year" cannot be resolved.
+6. **Notes.** The `note.*` values and the provenance and dedup texts are
+   shown on the Review card in full, because they become the report's data
+   notes. A value longer than 500 characters, or one containing a
+   dollar amount or a run of five or more digits (which could be a pledge or
+   an identifier), is flagged on the card for the Administrator to check
+   before Apply; it is still accepted, since those notes never leave the
+   Admin portal (see [privacy](#privacy)).
 
 Problems are listed per file, up to 50, each with its sheet, cell reference
 and rule ("families!J17: annual_pledge must be greater than zero when
 pledge_status is pledged"). A problem never repeats a cell's value, which
-may be a Family identifier or amount. The list says when more problems were
-cut off.
+may be a Family identifier or amount, nor the text it found where a header
+or metadata key was expected: a wrong header names the expected column, and
+an unknown key names only its cell ("metadata!A12: key not defined in
+version 1.0"). The list says when more problems were cut off.
 
 ### Idempotency and replacement
 
@@ -355,59 +439,86 @@ The SHA-256 of the uploaded bytes identifies the file:
   already has one is a **Replace**: Apply removes the old import (as Remove
   does) and stores the new one in the same transaction. A partial file never
   replaces a final one; Review refuses that with the reason.
+- Replace is also how an archive is corrected: for example, when a firm
+  active-Family count is found for a year that used an estimate, the
+  Administrator corrects `active_families` and `active_families_provenance`
+  in the file's `metadata` sheet and imports it again. The new checksum makes
+  it a Replace.
 - Two Applies racing for the same year or checksum are settled by the
   database's unique indexes: the loser is refused as stale and nothing
   changes.
 
 ### What is stored
 
-A forward migration adds three tables under the
+A forward migration adds four tables under the
 [post-launch schema policy](../operations/spec.md#post-launch-schema-policy),
 with one frozen SQL file named by the repository-wide sequence. They are
-parish records, not campaign records: a campaign purge never touches them
+parish records, not campaign records: a campaign purge never touches them,
+and they are kept until an Administrator removes the year
 ([retention and deletion](../data/spec.md#retention-and-deletion)).
 
-- **`stewardship_campaign_archive`**, one row per import: UUID, SHA-256,
-  cleaned original file name, size, schema version, campaign name and year,
-  final flag, `as_of`, time zone, day-1 date, last submission date, active
-  count, estimate and provenance, source system, `dedup_rule`, the Family
-  id system(s), whether Family rows were kept, the `note.*` rows and unknown
-  `count.*` rows (as a bounded JSON object, for the data notes), the
-  recomputed totals, the previewing and importing users and times, and state
-  `pending`, `active` or `removed` with who removed it and when. A trigger
-  refuses every change except `pending` → `active` and `active` →
-  `removed`; partial unique indexes keep one active row per checksum and per
-  year. `column_mapping.*`, `source_files` and `converter` are conversion
-  detail for the file's own readers and are not stored.
+- **`stewardship_campaign_archive`**, one row per import: UUID, `version`
+  (for `--expected-version`), SHA-256, cleaned original file name, size,
+  schema version, campaign name and year, final flag, `as_of`, time zone,
+  day-1 date, last submission date, active count, estimate and provenance,
+  source system, `dedup_rule`, the Family id system(s), whether Family rows
+  were kept, the `note.*` rows and unknown `count.*` rows (as a bounded JSON
+  object, for the data notes), the recomputed totals, the pledging Families'
+  first quartile, median and third quartile, the previewing and importing
+  users and times, and state `pending`, `active` or `removed` with who
+  removed it and when. `column_mapping.*`, `source_files` and `converter`
+  are conversion detail for the file's own readers and are not stored.
 - **`stewardship_campaign_archive_day`**, the `daily` sheet: archive, day,
   local date, first submissions, cumulative Families, cumulative pledging
   Families and cumulative annual pledged (`numeric(18,2)`). Percentages are
   derived when read, never stored.
+- **`stewardship_campaign_archive_band`**, the [pledge
+  distribution](#pledge-distribution) computed by the helper from the
+  `families` sheet at import: archive, band-set version, band, Families and
+  total pledged.
 - **`stewardship_campaign_archive_family`**, only when Keep Family rows is
   ticked, for Families with a `family_id` (envelope-only Families cannot be
-  matched across years): archive, `family_id_system`, `family_id`, first and
-  last campaign day, `pledge_status` and `annual_pledge`. Nothing else from
-  the Family row is kept (no envelope number, no amounts shown on the form,
-  no installments, no timestamps, no notes), and nothing from `submissions`
-  or `ministry_responses`.
+  matched across years): archive, `family_id_system`, `family_id` and
+  `first_campaign_day`, the only fields the renewal figure uses. No pledge,
+  status, envelope number, amount, timestamp or note is kept, and nothing
+  from `submissions` or `ministry_responses`.
 
-Rows are inserted once and never updated; Remove deletes the day and Family
-rows and marks the archive row removed. The uploaded bytes are not kept: the
+Every per-Family pledge figure (bands, quartiles, the daily pledge series)
+is computed in the helper from the file and stored only as an aggregate, so
+no Family's pledge is stored. The cost is that a later band-set version
+needs the year imported again.
+
+Rows are inserted once and never updated. A trigger refuses every update
+except `pending` → `active` and `active` → `removed` (each adding one to
+`version`), and refuses deletes except of a `pending` archive row and its
+children (expired-preview housekeeping) and of the day, band and Family
+rows of a row being removed. Partial unique indexes keep one active row
+per checksum and per year. Remove deletes the day, band and Family rows and
+marks the archive row removed. The uploaded bytes are not kept: the
 parish's archive folder holds the file, and the checksum identifies it.
+
 Review inserts the validated rows under a `pending` archive row, kept for
-the [preview lifetime](../admin-portal/spec.md#preview-lifetimes); Apply
-makes it `active`, and housekeeping deletes expired pending rows with their
-children. Pending rows are never read by the report.
+the fifteen-minute [preview lifetime](../admin-portal/spec.md#preview-lifetimes)
+of configuration changes; Apply makes it `active`, and housekeeping deletes
+expired pending rows with their children. Pending rows are never read by
+the report.
 
 ### Privacy
 
 - Only aggregates leave the Admin portal: report pages, digests, downloads
-  and command output carry counts, sums, averages and percentages, never a
-  Family row or identifier.
+  and command output carry counts, sums, averages, quartiles and
+  percentages, never a Family row or identifier. Downloads and digests also
+  apply the [small-count protection](#pledge-distribution).
+- The free-text `note.*`, provenance and dedup texts appear only on the
+  Admin portal page (the Review card and the report's data notes). Downloads
+  and digests say only, per year, whether its active count was measured or
+  estimated.
 - Stored Family rows are read only inside the database, by the renewal
   calculation, which returns counts.
-- The audit trail records each preview, import, replacement and removal with
-  the year, checksum, row counts and outcome, never a Family value.
+- The audit trail records `campaign_archive_previewed`,
+  `campaign_archive_imported`, `campaign_archive_replaced` and
+  `campaign_archive_removed` with the year, checksum, row counts and
+  outcome, never a Family value or note text.
 
 ## Comparison report
 
@@ -435,9 +546,13 @@ campaigns started on dates from September 11 to October 5.
   the day before today in the campaign's time zone, as the
   [daily digest's](../background-processing/spec.md#daily-campaign-digest)
   report day is. Before day 1 has ended the page shows the imported years'
-  final results only.
-- An imported year that ended before day N contributes its final values from
-  its last day onward and is marked "(final)" at that point.
+  final results only. After the current campaign's end date the comparison
+  day stays at the day of its end date.
+- A final imported year (`is_final` `TRUE`) whose `daily` sheet ends before
+  day N contributes its last day's values from then on, marked "(final)".
+  A partial imported year has no values after its last day: its `daily`
+  sheet ends at its last submission, not at its `as_of`, so a later day is
+  unknown and shows "—", and the year is left out of the average there.
 
 ### Metrics
 
@@ -447,11 +562,17 @@ and the average of all imported years:
 | Figure | Current campaign | Imported year |
 | --- | --- | --- |
 | Families responded | Cumulative responses of the fact row for day N | `cumulative_families` of day N |
-| Percent of active Families | Cumulative responses ÷ the fact row's cohort denominator | `cumulative_families` ÷ active count, or ÷ estimate (shown ≈) |
+| Percent of active Families | Cumulative responses ÷ the fact row's cohort denominator (the Families Portal-eligible at any time through that day, as on the participation graph) | `cumulative_families` ÷ `active_families` (as the archive's provenance defines it), or ÷ the estimate (shown ≈) |
 | Annual pledges | Pledge total of the fact row | `cumulative_annual_pledged` of day N |
-| Average pledge | Annual pledges ÷ pledging Families as of day N's end | `cumulative_annual_pledged` ÷ `cumulative_pledging_families` |
-| Renewal of last year's responders | Last year's responding Families (by ParishSoft DUID) with a first live response by day N's end, ÷ last year's responding Families | The same for that year against its previous year, when both kept Family rows in the same id system |
+| Average pledge | Annual pledges ÷ pledging Families as of day N's end, with the median beside it | `cumulative_annual_pledged` ÷ `cumulative_pledging_families`, with the final median beside it |
+| Renewal of last year's responders | Last year's responding Families (by ParishSoft DUID) counted among the fact row's cumulative responses for day N (so a Family must be in this campaign's cohort, as for the participation numerator), ÷ last year's responding Families | The same for that year against its previous year, when both kept Family rows in the same id system |
 
+- **The two denominators differ in kind.** This system's denominator is
+  the cohort of Families ever Portal-eligible through the day; an archive's
+  `active_families` is whatever its provenance says (for 2023–2026, the
+  Families the old system issued campaign codes to; for a file this system
+  writes, the same cohort as here). A permanent data note under the report
+  says so, and each year's provenance is listed with it.
 - **Last year** is the imported year one less than the current campaign's
   stewardship year. Without it, the "last year" lines are left out.
 - **Prior-years average** is the mean over every active imported year with a
@@ -461,31 +582,98 @@ and the average of all imported years:
 - **Estimates are marked ≈** wherever an estimated active count went into a
   figure, on the page, in tooltips, tables, downloads and the digest, with a
   data note saying which years and why.
-- Comparisons are shown as a relative change for counts and money ("+36%")
-  and as percentage points for percentages ("+4.2 points"), always with an
-  arrow and the words "more" or "fewer", so color is never the only signal.
-- Money follows [numbers and money](../ui-conventions/spec.md#numbers-and-money);
-  the tiles round to whole dollars and the table keeps cents.
-- "Pledging Families as of day N's end" and the current renewal count need a
-  read of each Family's latest live submission version committed by that
-  instant, the rule the participation graph's pledge total already follows.
-  They come from one new narrow SQL function in the same migration, not from
-  a second implementation in Python.
+- Comparisons are shown as a relative change for counts and money
+  ("12.5% more") and as percentage points for percentages ("4.2 points
+  more"), always with an arrow and the words "more" or "fewer", so color is
+  never the only signal.
+- Every number follows [numbers and
+  money](../ui-conventions/spec.md#numbers-and-money) with no exception:
+  money in dollars and cents, percentages and percentage points with one
+  decimal unless exact integers, US grouping, and an em dash for a zero
+  denominator.
+- The median beside the current campaign's average is as of day N's end;
+  an imported year's median is its final one, labelled "final", since the
+  archive stores quartiles only for its final result.
+- "Pledging Families as of day N's end", the current median and pledge
+  distribution, and the current renewal count need a read of each Family's
+  latest live submission version committed by that instant, the rule the
+  participation graph's pledge total already follows. They come from one
+  new narrow SQL function, returning aggregates only, not from a second
+  implementation in Python. It is added by its own forward migration in the
+  slice that uses it, since the import slice's migration is frozen once it
+  is released.
 - A figure that cannot be computed shows "—" with a toggletip giving the
   reason (no active count, no Family rows for last year, different id
   systems, financial module off).
+
+### Pledge distribution
+
+Pledges are heavily skewed (many small, a few large), so an average alone
+hides how giving is spread. The report compares the spread of annual pledges
+across years with fixed dollar bands and with quartiles.
+
+**Population.** Families pledging more than zero, each counted once at its
+last submission: an imported year's `families` rows with `pledge_status`
+`pledged` (its final result), and for the current campaign each Family's
+latest live submission as of the comparison day's end, labelled "so far".
+The existing version 1.0 archives support this with no format change.
+
+**Bands, version 1.** Each band includes its lower edge and excludes its
+upper edge:
+
+| Band | Annual pledge |
+| --- | --- |
+| 1 | under $250 |
+| 2 | $250 to under $500 |
+| 3 | $500 to under $1,000 |
+| 4 | $1,000 to under $1,500 |
+| 5 | $1,500 to under $2,500 |
+| 6 | $2,500 to under $5,000 |
+| 7 | $5,000 to under $10,000 |
+| 8 | $10,000 and more |
+
+The edges are round amounts, roughly evenly spaced on a logarithmic scale
+(each band about one and a half to two times the one before), and were chosen
+from the 2020–2026 archives so that every band held well over five Families
+in every year: the busiest middle range is split at $1,500 and $2,500 so no
+band dominates, and the top band starts at $10,000 because a band above
+$20,000 would hold fewer than five Families in most years. The band set is
+defined once, in the workbook module beside the format table, with this
+version number. Changing an edge is a new version: it is recorded here,
+stored band rows keep the version they were computed with, and the report
+uses one version for every year, asking for a year computed with an older
+version to be imported again (no Family's pledge is stored to recompute
+from).
+
+**Figures.** Per band and year: the number of Families, their share of
+pledging Families, the total they pledged and its share of the total
+pledged. Per year: the first quartile, median and third quartile of the
+annual pledge, beside the mean. Quartiles use the inclusive method
+(Excel's `QUARTILE.INC`), so a spreadsheet reproduces them. Amounts are
+nominal dollars with no inflation adjustment, and the report says so.
+
+**Small-count protection.** In anything that leaves the Admin portal (the
+PDF, CSV and XLSX downloads and the digest), a band with fewer than 5
+Families shows "fewer than 5" in place of its count and share, and no total
+or share of total. If exactly one band of a year is withheld, the total and
+share of total of the band next to it (the next lower band, or the next
+higher one for the lowest band) are also withheld, so the withheld total
+cannot be worked out by subtracting the others from the year's total. A year with fewer than 5 pledging
+Families shows no quartiles there. The Admin portal page itself shows every
+figure, since only Administrators and Staff open it.
 
 ### Page layout
 
 The page follows [page help](../ui-conventions/spec.md#page-help): data
 first, explanation in the About this page panel.
 
-1. **Heading and data line:** "Day 8 of Stewardship 2027 · through Saturday,
-   October 10", with the last-year and average years named ("compared with
-   2026 and the 2020–2026 average").
+1. **Heading and data line** (the figures in these examples are invented):
+   "Day 12 of Stewardship 2027 · through Wednesday, October 14", with the
+   last-year and average years named ("compared with 2026 and the
+   2020–2026 average").
 2. **Headline tiles**, one per metric above, in that order. Each shows the
-   current figure large, then two lines: "Last year on day 8: 215 (36% more)"
-   and "2020–2026 average: 197 (48% more)". The full wording sits in the
+   current figure large, then two lines: "Last year on day 12: 240 (12.5%
+   more)" and "2020–2026 average: 220 (22.7% more)". The full wording sits in the
    tile's tooltip and accessible name.
 3. **Day-by-day charts**, through the [chart
    engine](../reports/spec.md#chart-engine), one per measure, each with its
@@ -499,13 +687,22 @@ first, explanation in the About this page panel.
 4. **Final results by year:** two bar charts, Families responded and annual
    pledges, one bar per imported year plus the current campaign drawn
    lighter and labeled "so far".
-5. **Every number:** a table with one row per year (current first): year,
+5. **Pledge distribution:** a 100% stacked bar per year of pledging
+   Families by band and a second of the total pledged by band, both
+   ordered from the smallest band, with a band table (Families, share of
+   Families, total, share of total) per year and a quartile line per year
+   (first quartile, median, third quartile, mean). The section's note says
+   amounts are nominal dollars.
+6. **Every number:** a table with one row per year (current first): year,
    day 1 date, days, Families at day N, percent at day N, pledges at day N,
    average pledge at day N, renewal at day N, final Families, final percent,
-   final pledges and final average pledge.
-6. **Data notes:** for each year, its source system, the active count's
-   provenance (or the estimate's), the dedup rule and its `note.*` rows,
-   escaped and each cut to 500 characters.
+   final pledges, final average pledge, and the final first quartile, median
+   and third quartile.
+7. **Data notes:** the permanent note on the two kinds of denominator, then
+   for each year its source system, the active count's provenance (or the
+   estimate's), the dedup rule and its `note.*` rows, escaped and each cut
+   to 500 characters. These texts stay on this page (see
+   [privacy](#privacy)).
 
 A **Compare on day** control, an [in-place
 control](../ui-conventions/spec.md#in-place-controls) over the closed range 1
@@ -528,24 +725,31 @@ rule](../ui-conventions/spec.md#downloaded-files): the "Every number" table
 in all three, and the PDF adds the tiles and charts on one landscape page in
 the shared [file design](../reports/spec.md#file-design), so the
 Administrator can send leadership a single summary. Downloads hold
-aggregates only and are audited like other exports. No public or
+aggregates only, apply the [small-count
+protection](#pledge-distribution), carry each year's "measured" or
+"estimated" active count instead of the free-text notes, and record
+`campaign_comparison_exported` like other exports. No public or
 unauthenticated link exists.
 
 ### Digest section
 
-The daily and weekly Administrator digests may include a **Compared with
-past years** section, off by default and turned on per digest schedule on
+The daily Administrator digest may include a **Compared with past years**
+section, off by default and turned on for the daily digest schedule on
 [Dates and mail schedules](../admin-portal/spec.md#campaign-configuration).
 It follows the digest's #720 style: the cumulative Families chart and the
 cumulative pledges chart first (PNG through the chart engine's server
 renderer, with alt text carrying the figures), then one line per headline
 figure with its last-year and average comparisons, then a link to the
-report. Its comparison day is the digest's report day. The occurrence
-records the ids and checksums of the imported years it used together with
-its pinned fact set, so the saved digest reproduces its figures after a later
-import or removal; a year removed since then shows on the saved page as
-"removed since this report". With no imported years the section is left
-out.
+report. Its comparison day is the digest's report day, and its current
+figures come from the digest's pinned fact set. When the digest is
+compiled, the occurrence stores the section's computed aggregates (the
+figures, the chart specifications and each imported year's checksum), so
+the saved digest page shows exactly what was sent, whatever is imported or
+removed later. The section applies the [small-count
+protection](#pledge-distribution) and carries no note text. With no
+imported years the section is left out. It is the first task to use the
+chart engine's server renderer, so its slice adds that renderer's timeout
+name, as the [chart engine](../reports/spec.md#chart-engine) requires.
 
 ## Command line
 
@@ -564,20 +768,28 @@ the same checks and audit as the page.
 
 They follow [preview and confirm](../admin-automation/spec.md#preview-and-confirm)
 and [personal data on the command line](../admin-automation/spec.md#personal-data-on-the-command-line):
-output holds counts, sums and states only. Validation problems name cells,
-never their values.
+output holds counts, sums, quartiles and states only, with the
+[small-count protection](#pledge-distribution) applied, since command
+output leaves the Admin portal. `history preview` reports which notes are
+flagged but prints no note text. Validation problems name cells, never
+their values.
 
 An operator command, `pk-stewardship archive-check <file>…`, validates
 workbooks offline with the same reader and prints each file's summary or
-problems. It needs no database or session, so the Administrator can check
-converted files before importing them.
+problems (counts, totals and located problems, no note text). It needs no
+database or session, so the Administrator can check converted files before
+importing them.
 
 ## Failure handling
 
 | Situation | Behavior |
 | --- | --- |
-| File not an `.xlsx`, too large, macro-bearing, or unreadable | Refused at Review with the reason; nothing stored |
-| Wrong schema, version, sheet or header | Refused with the sheet and expected header |
+| File not an `.xlsx`, too large, macro-bearing, with a part off the allowlist or an external relationship, or unreadable | Refused at Review with the reason; nothing stored |
+| More than 8 files or 40 MB in one Review | The whole Review is refused before any file is checked |
+| Decompression limit, compression ratio, document type or entity declaration | Refused as unsafe to read |
+| The helper exceeds its memory limit | Refused as too large to check |
+| Wrong schema, version, sheet or header | Refused naming the sheet and the expected header, never the text found |
+| Current campaign's stewardship year cannot be resolved | Every import refused, linking Campaign settings |
 | Cell or consistency errors | Refused with up to 50 located problems |
 | Same checksum already imported | Already imported; Apply changes nothing |
 | Year already imported, different file | Replace, with acknowledgement; a partial never replaces a final |
@@ -603,36 +815,72 @@ committed.
 - **Reader round trip:** a written workbook reads back to the same values;
   each convention (ISO text instants, money to the cent, `TRUE`/`FALSE`,
   blank versus zero) has a case.
-- **Refusals:** one case per validation rule, including macros, formula
-  cells, a missing or reordered column, an unknown column, a later minor
-  version's extra column (accepted and ignored), a wrong major version, a
-  `daily` gap, totals that disagree with `families`, duplicate Family ids,
-  a wrong `count.*`, the current campaign's year, and a size or row limit;
-  each asserts that no cell value appears in the problem text.
+- **Package safety:** macros; an external workbook link, a data
+  connection, a query table, an embedded object, a drawing and a chart
+  (each refused by the allowlist); an external hyperlink relationship; a
+  zip whose directory understates a part's size (stopped while reading);
+  a high compression ratio; a document type and an entity declaration in
+  a worksheet and in `sharedStrings.xml`; the helper's time and memory
+  limits, each leaving its timeout entry; and the 8-file and 40 MB Review
+  caps. A synthetic workbook saved again by LibreOffice in CI passes the
+  allowlist.
+- **Cell types:** whole-valued float integers accepted and digit text
+  refused; numeric cells in text columns; money with three decimals refused
+  and binary-inexact two-decimal values accepted exactly; boolean cells and
+  `TRUE`/`FALSE` text where each is allowed.
+- **Refusals:** one case per validation rule, including formula cells, a
+  missing or reordered column, an unknown column or metadata key, a later
+  minor version's extra column (accepted and ignored), a wrong major
+  version, a `daily` gap, a `first_submissions` count that disagrees with
+  `families`, a local date or campaign day that disagrees with its instant,
+  a Family whose financial columns disagree with its last financial
+  submission (including a 2020-style two-form Family and a `submitted_at`
+  tie settled by `row_id`), a middle `daily` row whose pledges disagree with
+  `submissions`, totals that disagree with `families`, duplicate Family
+  ids, a wrong `count.*`, the current campaign's year and an unresolvable
+  one (including the start-date fallback not being used), and a row limit;
+  each asserts that no cell value, found header text or unknown key name
+  appears in the problem text.
 - **Import service (PostgreSQL):** add, already imported, replace, partial
-  refused over final, remove and re-import, racing Applies, expired preview
-  cleanup, Keep Family rows off, the immutability trigger, and a campaign
-  purge leaving the tables untouched.
+  refused over final, remove and re-import, a corrected file replacing its
+  year, racing Applies, expired preview cleanup through the trigger's
+  allowed delete, Keep Family rows off, the stored Family columns limited to
+  the renewal fields, the immutability trigger refusing other updates and
+  deletes, `version` and `--expected-version`, and a campaign purge leaving
+  the tables untouched.
 - **Migration:** the frozen file's digest, its closing `DO` block, the
   migration chain and upgrade parity, per the post-launch schema policy.
 - **Metrics:** day alignment with years of different lengths and start
-  dates; final values carried forward; the average over years present at day
+  dates; final values carried forward, and a partial year showing "—"
+  after its last day; the comparison day held at the end date once the
+  current campaign has closed; the renewal numerator limited to this
+  campaign's cohort; the average over years present at day
   N; ≈ propagation from estimates; percentage points versus relative change;
   average pledge; renewal against a DUID year, and "—" against a PDS-id year
   or a year without Family rows; current figures equal the participation
   graph's for the same day.
+- **Pledge distribution:** band edges (a pledge exactly on an edge falls in
+  the higher band), Families pledging zero left out, totals and shares per
+  band, inclusive quartiles against hand-computed values, the band-set
+  version recorded and a mixed-version comparison refused, and the
+  small-count protection in every output that leaves the portal (a band of
+  4 shows "fewer than 5" and no total, the next lower band's totals withheld
+  when it is the only withheld band, no quartiles under 5 pledging Families)
+  while the page shows every figure.
 - **Pages:** role access (Staff see the report, not Past campaigns; Ministry
   leaders see neither), Review/Apply in place, the replacement
   acknowledgement gate, the Compare on day control without reload, the
   `day` value range, `no-store`, the audit events, and the chart
   accessibility checks of the chart engine in a browser test.
 - **Downloads and digest:** the three formats carry the same columns and
-  aggregates only; a digest with the section reproduces its figures after a
-  later import and a removal.
+  aggregates only, with no note text; a saved digest page shows the stored
+  section unchanged after a later import and a removal; the chart
+  renderer's timeout name is recorded on a kill.
 - **Command line:** each command through the page's service, the catalog
   entries, and the absence of Family values in output.
-- **Human-run check, outside CI:** `archive-check` accepts the seven
-  converted 2020–2026 files, and an import of them reproduces the day-8
+- **Human-run check, outside CI:** a synthetic workbook corrected and saved
+  again in Excel and in Google Sheets passes the allowlist; `archive-check`
+  accepts the seven converted 2020–2026 files, and an import of them reproduces the day-8
   figures reported on #1018. The files are private and are never committed.
 
 ## Implementation slices
@@ -643,55 +891,68 @@ linked to #1018 (the last one closes part (b)).
 
 1. **Workbook module and offline check (first, within days).** The format
    table (taken from the one-time converter's table, which holds no data),
-   reader and validator, a minimal writer used by tests (part (a) later
-   fills it with real data), and `pk-stewardship archive-check`. No schema
+   reader and validator with the part allowlist and streaming limits, run in
+   the isolated helper process; the pledge band set and quartile
+   calculation; a minimal writer used by tests (part (a) later fills it with
+   real data); and `pk-stewardship archive-check`. No schema
    change. The Administrator can check the seven converted files at once.
-2. **Storage and command-line import.** The forward migration, the import
-   service with preview, confirm and remove, and the `pk-admin history`
-   commands. Past years can be loaded by the operator the same day.
-3. **Comparison figures.** The metric service, the SQL function for pledging
-   Families and renewal, `pk-admin report comparison`, and the report page
-   with tiles, the Every number table and data notes. Leadership gets
+2. **Storage and command-line import.** The forward migration (including
+   the pledge-distribution band rows and quartiles), the import service with
+   preview, confirm and remove, the ingress route exception for Review,
+   and the `pk-admin history` commands. Past years can be loaded by the operator the same day.
+3. **Comparison figures.** The metric service, the SQL function (in its own
+   forward migration) for pledging Families, renewal, the current median
+   and the current campaign's pledge distribution,
+   `pk-admin report comparison`, and the report page with tiles, the
+   pledge-distribution and quartile tables, the Every number table and data
+   notes. Leadership gets
    current comparisons here.
 4. **Past campaigns page.** The upload page with Review, Apply, replacement
    and Remove.
 5. **Charts and day control.** The three day-by-day charts, the final-results
-   bars and Compare on day.
-6. **Downloads.** CSV, XLSX and the one-page PDF summary.
-7. **Digest section.** The daily and weekly digest option, with its own
+   bars, the pledge-distribution stacked bars and Compare on day.
+6. **Downloads.** CSV, XLSX and the one-page PDF summary, with the
+   small-count protection.
+7. **Digest section.** The daily digest option, with its own
    forward migration if the digest occurrence needs new columns to record
    the imported years it used.
 
 Slices 4 to 7 depend on 3 but not on each other. UI slices get the
 human pk-local check that significant new UI needs.
 
-## Open questions
+## Administrator decisions
 
-The Administrator may change these defaults; the implementation proceeds with
-them until decided.
+The Administrator accepted every proposed default on October 11, 2026
+(recorded on #1018):
 
-1. **Who sees the report.** Default: Administrators and Staff, as for
-   Participation. Alternative: Administrators only.
-2. **Keep Family rows.** Default: ticked, because the renewal figure needs
-   them; only the id, first and last day, pledge status and annual pledge are
-   kept.
-3. **Keep the uploaded file.** Default: no; the parish's archive folder is
-   the file's home and the checksum identifies it.
-4. **Removal.** Default: an Administrator may remove an imported year,
-   leaving a tombstone. Alternative: imports can never be removed.
-5. **Current campaign's own archive.** Default: refused, since the report
-   reads the current campaign live.
-6. **Day 1 of the current campaign.** Default: the campaign's local start
-   date, which is the first invitation day this year. If a later campaign
-   starts before its first invitation, day 1 could instead be the first
-   Initial invitation send date.
-7. **Prior-years average.** Default: every imported year, estimates
-   included and marked ≈. Alternative: only years with a known active count,
-   or only the last five years.
-8. **Average pledge.** Default: annual pledges divided by Families pledging
-   more than zero. Alternative: divided by all responding Families.
-9. **Digest section.** Default: off; when on, in the daily digest only.
-10. **Sending to leadership.** Default: the one-page PDF download, which the
+1. **Who sees the report:** Administrators and Staff, as for Participation.
+2. **Keep Family rows:** ticked by default, for the renewal figure. The
+   default proposed keeping the id, first and last day, pledge status and
+   annual pledge; the independent review of this specification narrowed it
+   to the fields the figure uses (id system, id and first campaign day),
+   with every pledge figure computed from the file at import, which keeps
+   less and loses nothing the report shows.
+3. **Keep the uploaded file:** no; the parish's archive folder is the file's
+   home and the checksum identifies it.
+4. **Removal:** an Administrator may remove an imported year, leaving a
+   tombstone.
+5. **Current campaign's own archive:** refused, since the report reads the
+   current campaign live.
+6. **Day 1 of the current campaign:** the campaign's local start date, which
+   is the first invitation day.
+7. **Prior-years average:** every imported year, estimates included and
+   marked ≈. Estimates stay supported because a future import may also lack
+   a firm count. When a firm active-Family count is found for an estimated
+   year (2020–2022 borrow 2023's measured count today), the archive's
+   `active_families` and `active_families_provenance` are corrected and the
+   year is re-imported with [Replace](#idempotency-and-replacement); the
+   format does not change.
+8. **Average pledge:** annual pledges divided by Families pledging more than
+   zero. Because pledges are heavily skewed, the report adds the median,
+   the quartiles and the [pledge distribution](#pledge-distribution) beside
+   it (new requirement from this decision).
+9. **Digest section:** off by default; when on, in the daily digest only.
+10. **Sending to leadership:** the one-page PDF download, which the
     Administrator emails. No public link.
-11. **Upload limits.** Default: 20 MB per file, 300 MB uncompressed and
-    500,000 rows, about ten times the largest converted file.
+11. **Upload limits:** 20 MB per file, 300 MB uncompressed and 500,000 rows,
+    about ten times the largest converted file.
