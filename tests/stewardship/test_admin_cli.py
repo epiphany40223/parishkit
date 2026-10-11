@@ -73,7 +73,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
     }
     refresh = {"refresh start", "refresh status"}
     portal = {"portal maintenance show", "portal maintenance set"}
-    configuration = {"files list"}
+    configuration = {"files list", "files delete", "files rename"}
     tests = {
         "test sample-preview",
         "test sample",
@@ -259,6 +259,23 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "max_bytes",
         "files",
     ]
+    # The page's row actions (PR 10): full scope, as the page's POST; no
+    # recent sign-in on the page, so not fresh-gated; only a deletion asks.
+    removal = entries["files delete"]
+    assert removal["scope"] == "full" and removal["changes_state"]
+    assert removal["prompts"] and not removal["fresh_gated"]
+    assert not removal["request_key"] and not removal["expected_version"]
+    assert removal["audit_event"] == "admin_cmd_files_delete"
+    assert removal["arguments"] == ["FILE_ID"]
+    assert removal["result_fields"] == ["deleted", "already_deleted"]
+    renaming = entries["files rename"]
+    assert renaming["scope"] == "full" and renaming["changes_state"]
+    assert not renaming["prompts"] and not renaming["fresh_gated"]
+    assert renaming["audit_event"] == "admin_cmd_files_rename"
+    assert renaming["arguments"] == ["FILE_ID"]
+    options = {option["name"]: option for option in renaming["options"]}
+    assert options["--slug"]["required"]
+    assert renaming["result_fields"] == ["changed", "file"]
     for name in reads:
         # Read-only status: any session, no state change, the page's event.
         assert entries[name]["scope"] == "read_only", name
@@ -474,6 +491,8 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_export_family_test_names",
         "admin_cmd_test_families",
         "admin_cmd_portal_maintenance_set",
+        "admin_cmd_files_delete",
+        "admin_cmd_files_rename",
         "admin_cmd_task_retry",
         "admin_cmd_delivery_resolve",
         "admin_cmd_delivery_resend",

@@ -665,8 +665,36 @@ the page sorts by default:
 
 Anyone with a file's link can open the file, as the page says. A
 library that cannot be read now (the server's file storage is not
-configured) is exit 3 (`unavailable`). Uploading, renaming and deleting
-files stay on the page for now.
+configured) is exit 3 (`unavailable`). Uploading files stays on the page
+for now.
+
+`files delete` and `files rename` are the page's **Delete** and **Edit**.
+Each needs a full-scope session and an Administrator, and, like the page,
+no recent sign-in. Each works only on a file that nothing uses: a file in
+use is exit 1 (`invalid`), with `error.fields` naming where it is used, in
+the page's words, and nothing changes.
+
+```sh
+pk-admin files delete FILE_ID [FILE_ID ...]
+pk-admin files rename FILE_ID --slug new-name
+```
+
+`files delete` takes one to 100 file ids from `files list` and deletes them
+all or none. A deletion cannot be undone, so it names the files and asks
+you to type `yes` (or pass `--yes`). It prints `deleted` and
+`already_deleted`: an id with no file left counts as already deleted, so
+repeating a deletion is safe. A busy library is exit 3 (`unavailable`);
+retry. System logs show the page's `hosted_file_deleted` for each file and
+the command's `admin_cmd_files_delete`.
+
+`files rename` changes the file's placeholder name; its link never changes.
+It does not ask for confirmation, as the page does not. A name that is not
+lowercase letters, digits and single hyphens (up to 64 characters), or that
+another file uses, is exit 1 (`invalid`) with the page's message for the
+`slug` field; an id with no file is exit 1 (`not_available`). It prints
+`changed` and the `file`, as `files list` prints it. Renaming to the
+current name changes nothing; otherwise System logs show the page's
+`hosted_file_slug_changed` and the command's `admin_cmd_files_rename`.
 
 ## Task retries
 
@@ -1333,3 +1361,6 @@ error, as `logs export` does; the wrapper refuses to write it to a terminal.
 - `pk-admin/1` (#463): additive. `files list`, the Hosted files page's
   library and each file's uses (any session, Administrators only, no
   event).
+- `pk-admin/1` (#463): additive. `files delete` and `files rename`, the
+  Hosted files page's Delete and Edit (full scope, Administrators only, no
+  recent sign-in; `files delete` prompts; their events).
