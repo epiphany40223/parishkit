@@ -260,9 +260,49 @@ def test_complete_columns_and_csv_privacy(action):
         assert "Not published" in report.rows[0]
     elif action == "leave":
         assert "Email" not in report.headings and "Phones" not in report.headings
-        assert report.rows[0][-1] == "Volunteer"
+        assert report.rows[0][-2] == "Volunteer"
     else:
         assert report.rows[0][-1] == "3 out of 4 (75%)"
+
+
+@pytest.mark.parametrize(
+    ("action", "contact"),
+    [
+        ("join", ("Gender", "Age", "Email", "Phones", "Known primary Family address")),
+        ("leave", ("Current Ministry role",)),
+    ],
+)
+def test_lists_follow_the_page_column_order(action, contact):
+    """A list's download has the page's order (#932): Member, Member DUID,
+    status and outcome, contact details or current role, Submitted last.
+
+    The list is one Ministry's, so its name and DUID head the file (report
+    information) rather than repeat as columns, as they head the page.
+    """
+    report = document(action=action, count=1)
+    assert report.headings == (
+        "Member",
+        "Member DUID",
+        "State",
+        "Outcome",
+        *contact,
+        "Submitted",
+    )
+    assert report.rows[0][:2] == ("=Example Member", "12345")
+    assert report.rows[0][-1].isoformat() == "2026-09-19T11:00:00-04:00"
+    metadata = dict(report.metadata)
+    assert (metadata["Ministry"], metadata["Ministry DUID"]) == (
+        "Example Ministry",
+        "9",
+    )
+    assert "Ministry DUID" not in report.headings
+
+
+def test_summary_keeps_ministry_and_duid_columns():
+    """The summary's rows are Ministries, so Ministry and its DUID lead it."""
+    report = document(action="summary", count=1)
+    assert report.headings[:2] == ("Ministry", "Ministry DUID")
+    assert "Ministry DUID" not in dict(report.metadata)
 
 
 @pytest.mark.parametrize("action", ["join", "leave"])

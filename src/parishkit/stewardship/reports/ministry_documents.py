@@ -122,10 +122,17 @@ def ministry_document(payload, parameters, *, parish_name, requested_at, timezon
     )
     rows = []
     if action != "summary":
+        # A list is one Ministry's, so its name and DUID head the file, as
+        # they head the page's list, rather than repeat on every row (#932).
         metadata += (
             (
                 "Ministry",
                 "\n".join(item["name"] for item in payload["summaries"])
+                or "Unavailable for these filters",
+            ),
+            (
+                "Ministry DUID",
+                "\n".join(str(item["duid"]) for item in payload["summaries"])
                 or "Unavailable for these filters",
             ),
         )
@@ -152,19 +159,15 @@ def ministry_document(payload, parameters, *, parish_name, requested_at, timezon
                 )
             )
     else:
-        headings = (
-            "Member",
-            "Member DUID",
-            "Ministry DUID",
-            "Submitted",
-            "State",
-            "Outcome",
-        )
+        # The page's list order (#932): Member, Member DUID, status and
+        # outcome, contact details or current role, and Submitted last.
+        headings = ("Member", "Member DUID", "State", "Outcome")
         headings += (
             ("Gender", "Age", "Email", "Phones", "Known primary Family address")
             if action == "join"
             else ("Current Ministry role",)
         )
+        headings += ("Submitted",)
         new_members = new_member_labels(selected)
         for item in selected:
             common = (
@@ -172,13 +175,14 @@ def ministry_document(payload, parameters, *, parish_name, requested_at, timezon
                 str(item["member_duid"])
                 if item["member_duid"]
                 else new_members.get(item["proposed_id"], ""),
-                str(item["ministry_duid"]),
-                instant(item["submitted_at"]),
                 STATE_LABELS[item["state"]],
                 OUTCOMES.get(item["outcome"], "Not yet recorded"),
             )
+            submitted = (instant(item["submitted_at"]),)
             if action == "leave":
-                rows.append(common + (item["current_role"] or "Unavailable",))
+                rows.append(
+                    common + (item["current_role"] or "Unavailable",) + submitted
+                )
                 continue
             emails = "\n".join(
                 value["value"] for value in item["emails"] or [] if value.get("value")
@@ -201,6 +205,7 @@ def ministry_document(payload, parameters, *, parish_name, requested_at, timezon
                     else phones or "Unavailable",
                     "\n".join(address_lines(item["address"] or {})) or "Unavailable",
                 )
+                + submitted
             )
     return MinistryDocument(
         metadata,

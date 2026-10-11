@@ -1308,7 +1308,13 @@ in the installed selection's order
 by Ministry DUID, and a list by Member DUID with a Member added on the form
 last in either direction. The CSV, XLSX and PDF of a list carry the same
 columns as each other, with no internal references
-([#966](https://github.com/epiphany40223/parishkit/issues/966)): a Member
+([#966](https://github.com/epiphany40223/parishkit/issues/966)), in the
+page's order: Member, Member DUID, state, outcome, the contact details or
+current role, and Submitted last. A list is always one Ministry's, so its
+Ministry name and Ministry DUID head the file in its report information, as
+they head the page's list, rather than repeat on every row
+([#932](https://github.com/epiphany40223/parishkit/issues/932)); the
+summary's download keeps both as its leading columns. A Member
 added on the form reads "New Member" in the Member DUID column, and the
 proposed Member's reference stays on the page's technical details. When two
 Members added on the form share a name, they read "New Member 1", "New

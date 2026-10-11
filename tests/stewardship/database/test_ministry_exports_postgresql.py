@@ -143,9 +143,12 @@ def test_capture_scope_and_revocation(response_service, google):
         assert capture["rows"][0]["current_role"] == "Chairperson"
         assert capture["rows"][0]["emails"] is None
         document = load_document(leaving)
-        assert document.rows[0][-1] == "Chairperson"
+        role = document.headings.index("Current Ministry role")
+        assert document.rows[0][role] == "Chairperson"
+        # The list's Ministry heads the file, not a column (#932).
+        assert dict(document.metadata)["Ministry DUID"] == "4"
         # No Assignee column since follow-up assignment was removed (#552).
-        assert len(document.headings) == 7 and "Assignee" not in document.headings
+        assert len(document.headings) == 6 and "Assignee" not in document.headings
         assert "Email" not in document.headings and "Phones" not in document.headings
         for format in ("csv", "xlsx", "pdf"):
             output = io.BytesIO()
