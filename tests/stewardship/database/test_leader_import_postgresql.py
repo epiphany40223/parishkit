@@ -452,7 +452,10 @@ def test_import_selected_reviews_and_applies_one_change(deployment):
         )
     assert response.status_code == 200, response.content
     text = response.content.decode()
-    assert "<h1>Import Ministry leaders</h1>" in text and "2 new users" in text
+    # The review dialog's fragment (#750), never a page of its own.
+    assert "data-review-answer" in text and "2 new users" in text
+    assert "<h1" not in text and "<html" not in text and "<form" not in text
+    assert 'data-review-done="Leaders imported."' in text
     assert "Example 1, Leader" in text and "Example 0, Leader" in text
     assert "Skipped" not in text
     # Nothing changed by reviewing.

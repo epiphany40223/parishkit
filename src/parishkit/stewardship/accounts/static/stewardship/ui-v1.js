@@ -3180,19 +3180,32 @@
   const focusable = (root) => [...root.querySelectorAll(
     "a[href], button, input, select, textarea, [tabindex]:not([tabindex='-1'])")]
     .filter((node) => !node.disabled && !node.hidden && node.getClientRects().length);
-  // The open dialog's request: {dialog, opener, form, chosen, values, busy, done}.
+  // The open dialog's request: {dialog, opener, form, chosen, values, busy,
+  // done}, and for a review dialog (below) review: {apply, done} instead of
+  // chosen and values.
   let confirming = null;
   const wiredDialogs = new WeakSet();
   const wireDialog = (dialog) => {
     if (wiredDialogs.has(dialog)) return;
     wiredDialogs.add(dialog);
     // Escape asks to cancel; not while the request is in flight, since the
-    // change may already be under way.
+    // change may already be under way. The keydown is refused too: Chromium
+    // closes a dialog on a second Escape even when its cancel event was
+    // refused, unless the key itself is. Should the dialog close anyway,
+    // it opens again until the answer arrives.
+    const busy = () => confirming?.dialog === dialog && confirming.busy;
     dialog.addEventListener("cancel", (event) => {
-      if (confirming?.dialog === dialog && confirming.busy) event.preventDefault();
+      if (busy()) event.preventDefault();
+    });
+    dialog.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && busy()) event.preventDefault();
     });
     dialog.addEventListener("close", () => {
       const state = confirming?.dialog === dialog ? confirming : null;
+      if (state?.busy && !state.done) {
+        dialog.showModal();
+        return;
+      }
       confirming = null;
       if (!state || state.done) return;
       const back = state.opener.isConnected ? state.opener
@@ -3216,7 +3229,9 @@
       if (!confirming?.busy) dialog.close();
     });
     dialog.querySelector("[data-confirm-accept]")?.addEventListener("click", () => {
-      if (confirming?.dialog === dialog && !confirming.busy) acceptConfirm(confirming);
+      if (confirming?.dialog !== dialog || confirming.busy) return;
+      if (confirming.review) acceptReview(confirming);
+      else acceptConfirm(confirming);
     });
   };
   const openConfirm = (dialog, opener) => {
@@ -3301,8 +3316,18 @@
         .map((node) => node.textContent).join(" ")),
     };
   };
-  const acceptConfirm = async (state) => {
-    const {dialog, form, chosen} = state;
+  const readPage = async (url, init) => {
+    const response = await fetch(url, {...init, credentials: "same-origin",
+      headers: {"X-Requested-With": "fetch"}});
+    return {response, text: await response.text()};
+  };
+  // Post one confirmed change (url, body) from the open dialog and follow its
+  // status until it is applied. The dialog is busy from the start: Cancel
+  // and Escape do nothing until the answer. onRecorded runs once the server
+  // has recorded the change. Returns true once it is applied; otherwise
+  // refuseConfirm has said why in the dialog, and it returns false.
+  const followChange = async (state, url, body, onRecorded) => {
+    const {dialog} = state;
     state.busy = true;
     const accept = dialog.querySelector("[data-confirm-accept]");
     accept.setAttribute("aria-disabled", "true");
@@ -3310,31 +3335,19 @@
     dialog.querySelector("[data-confirm-cancel]").disabled = true;
     dialog.querySelector("[data-confirm-error]").hidden = true;
     dialog.querySelector("[data-confirm-status]").textContent = dialog.dataset.working || "Working…";
-    // The form's own fields (CSRF, base version), never its row boxes: the
-    // chosen rows are exactly the ones the dialog named.
-    const fields = new Set(chosen.map((item) => item.field));
-    const body = new URLSearchParams();
-    new FormData(form).forEach((value, name) => {
-      if (!fields.has(name) && typeof value === "string") body.append(name, value);
-    });
-    chosen.forEach((item) => body.append(item.field, item.value));
-    const read = async (url, init) => {
-      const response = await fetch(url, {...init, credentials: "same-origin",
-        headers: {"X-Requested-With": "fetch"}});
-      return {response, text: await response.text()};
-    };
     let answer;
     try {
-      answer = await read(form.action, {method: "POST", body});
+      answer = await readPage(url, {method: "POST", body});
     } catch {
       // It may have reached the server: never send it again.
       refuseConfirm(state, CONFIRM_UNREACHABLE);
-      return;
+      return false;
     }
     if (!answer.response.ok) {
       refuseConfirm(state, refusalText(answer.response.status, answer.text));
-      return;
+      return false;
     }
+    onRecorded?.();
     // Follow the change until it is applied (a passive status read).
     const statusUrl = answer.response.url;
     let status = changeStatus(answer.text);
@@ -3343,48 +3356,69 @@
       if (Date.now() >= deadline) {
         refuseConfirm(state, "The change is saved but not applied yet, so the list is unchanged for now.",
           {href: statusUrl, text: "See the change's status"});
-        return;
+        return false;
       }
       await pause(CONFIRM_POLL_MS);
       let next;
       try {
-        next = await read(statusUrl, {method: "GET"});
+        next = await readPage(statusUrl, {method: "GET"});
       } catch { continue; /* keep waiting until the deadline */ }
       if ([401, 403, 404].includes(next.response.status) || next.response.redirected) {
         // Signed out or no longer allowed to read the status (such as after
         // a change that removed the reader's own access): waiting cannot
         // help, so say so at once (#952).
         refuseConfirm(state, CONFIRM_STATUS_LOST);
-        return;
+        return false;
       }
       if (next.response.ok) status = changeStatus(next.text) || status;
     }
     if (status && status.state !== "applied") {
       refuseConfirm(state, status.text || "The change was not applied. Nothing was changed.",
         {href: statusUrl, text: "See the change's status"});
-      return;
+      return false;
     }
-    // Applied: redraw every region from the table's own address.
-    const region = form.closest(REGIONS);
-    const address = region?.dataset.refreshUrl || window.location.href;
-    let fresh;
+    return true;
+  };
+  // The page at address after an applied change, parsed, or null when it
+  // could not be read: the change is applied, so an ordinary load of the
+  // address shows it instead.
+  const freshPage = async (address) => {
     try {
-      const page = await read(address, {method: "GET"});
+      const page = await readPage(address, {method: "GET"});
       if (!page.response.ok) throw new Error("refresh refused");
-      fresh = new DOMParser().parseFromString(page.text, "text/html");
+      return new DOMParser().parseFromString(page.text, "text/html");
     } catch {
-      // The change is applied; an ordinary load shows the list.
       window.location.assign(address);
-      return;
+      return null;
     }
-    state.done = true;
-    dialog.close();
-    const fallback = dialog.dataset.confirmFallback || "";
+  };
+  // Swap every region of this page that the fresh page also has.
+  const redrawFrom = (fresh) => {
     document.querySelectorAll(REGIONS).forEach((other) => {
       const copy = fresh.getElementById(other.id);
       if (isRegion(copy)) swapRegion(other, copy);
     });
     syncControls(fresh);
+  };
+  const acceptConfirm = async (state) => {
+    const {dialog, form, chosen} = state;
+    // The form's own fields (CSRF, base version), never its row boxes: the
+    // chosen rows are exactly the ones the dialog named.
+    const fields = new Set(chosen.map((item) => item.field));
+    const body = new URLSearchParams();
+    new FormData(form).forEach((value, name) => {
+      if (!fields.has(name) && typeof value === "string") body.append(name, value);
+    });
+    chosen.forEach((item) => body.append(item.field, item.value));
+    if (!await followChange(state, form.action, body)) return;
+    // Applied: redraw every region from the table's own address.
+    const region = form.closest(REGIONS);
+    const fresh = await freshPage(region?.dataset.refreshUrl || window.location.href);
+    if (!fresh) return;
+    state.done = true;
+    dialog.close();
+    const fallback = dialog.dataset.confirmFallback || "";
+    redrawFrom(fresh);
     const target = (state.opener.isConnected && state.opener)
       || document.getElementById(fallback) || document.querySelector("main h1");
     target?.focus({preventScroll: true});
@@ -3438,6 +3472,214 @@
     // The safe choice takes focus first.
     dialog.querySelector("[data-confirm-cancel]")?.focus();
   });
+
+  // The review dialog of Admin editors (UX conventions, "Review dialog",
+  // #750): components/confirm-dialog.html with review=True, opened by a form
+  // marked data-review-open="<dialog id>" (New and Edit user, Import
+  // Ministry leaders).
+  //
+  // Review posts the form, submitter included, without a page load. Until
+  // the answer arrives the form is inert and aria-busy, and its Review
+  // button shows it is working, so nothing can be edited meanwhile. Then:
+  // - an accepted review (a fragment marked data-review-answer) fills the
+  //   dialog's body; its data-review-preview field is the signed preview
+  //   Apply posts. The dialog opens as a modal, focus on its title (never on
+  //   Apply). No preview (nobody left to import) means no Apply.
+  // - a review refused for a field's value (status 400 drawing this same
+  //   form) leaves the dialog shut: each field takes the answer's error line
+  //   and aria-invalid mark, and the answer's error summary is shown above
+  //   the page heading and focused, as on a page the server drew.
+  // - any other refusal (a stale page, a refusal in the server's words, no
+  //   answer at all) opens the dialog with the refusal below its buttons and
+  //   no Apply. The form keeps the reader's values at their version.
+  // Escape or Cancel closes the dialog, changing nothing, and focus returns
+  // to Review. Apply is the Delete dialog's (followChange): from then on the
+  // dialog cannot be dismissed until the answer; once the change is recorded
+  // Apply is hidden (its space kept, so Cancel never moves) and focus moves
+  // to the title; once applied the dialog closes, and either the page goes
+  // to the dialog's data-review-return (a New or Edit page's table) or, with
+  // none, every region is redrawn from the form's region's data-refresh-url.
+  // Either way the page's reserved status line named by
+  // data-review-outcome then says what was applied and when, and takes
+  // focus. Across a page change that line's text waits in sessionStorage,
+  // for that address only and for a minute: it is the review's short
+  // sentence and a time, never an answer, a value or a credential.
+  const REVIEW_OUTCOME = "pk-review-outcome";
+  const REVIEW_OUTCOME_MS = 60000;
+  const REVIEW_UNREACHABLE = "The server could not be reached, so nothing was reviewed. Try again in a moment.";
+  const reviewing = new WeakSet();
+  const showOutcome = (id, text) => {
+    const line = id ? document.getElementById(id) : null;
+    if (!line) return false;
+    line.textContent = text;
+    // One line high: a line cut short is whole in its title.
+    line.title = text;
+    line.focus({preventScroll: true});
+    line.scrollIntoView({block: "nearest"});
+    return true;
+  };
+  try {
+    const kept = JSON.parse(window.sessionStorage.getItem(REVIEW_OUTCOME) || "null");
+    window.sessionStorage.removeItem(REVIEW_OUTCOME);
+    if (kept && kept.path === window.location.pathname
+      && Date.now() - kept.at < REVIEW_OUTCOME_MS) showOutcome(kept.id, kept.text);
+  } catch { /* No storage: the page shows no status line. */ }
+  const clockTime = () => new Date().toLocaleTimeString([], {hour: "numeric", minute: "2-digit"});
+  // An address from an attribute, never the form's action property, which
+  // a field named "action" shadows.
+  const formUrl = (form) => new URL(form.getAttribute("action") || "", document.baseURI).href;
+  const showFieldErrors = (form, parsed) => {
+    const fresh = parsed.getElementById(form.id);
+    // Each reserved error line takes the answer's messages. Its element
+    // stays, since a page script may hold it (users-v2.js's Email line).
+    fresh.querySelectorAll(".errorlist[id]").forEach((list) => {
+      const live = form.querySelector(`#${CSS.escape(list.id)}`);
+      if (!live) return;
+      live.replaceChildren(...[...list.childNodes].map((node) => document.importNode(node, true)));
+      live.hidden = list.hidden;
+    });
+    // Each control (and a choice group's fieldset) the answer marks is
+    // marked and described the same way; the mark clears on the next edit
+    // (wireValidity). A mark the answer does not repeat is left alone.
+    // Buttons are left out: the gates keep their descriptions.
+    [...form.elements].forEach((node) => {
+      if (!node.id || isSubmit(node) || node instanceof HTMLButtonElement) return;
+      const twin = fresh.querySelector(`#${CSS.escape(node.id)}`);
+      if (!twin) return;
+      if (twin.hasAttribute("aria-describedby")) {
+        node.setAttribute("aria-describedby", twin.getAttribute("aria-describedby"));
+      }
+      if (twin.getAttribute("aria-invalid") === "true") {
+        node.setAttribute("aria-invalid", "true");
+        node.setAttribute("data-field-error", "");
+      }
+    });
+    document.querySelectorAll("[data-error-summary]").forEach((node) => {
+      if (!node.closest(REGIONS)) node.remove();
+    });
+    const summary = parsed.querySelector("[data-error-summary]");
+    if (!summary) {
+      form.querySelector("[aria-invalid=true]")?.focus();
+      return;
+    }
+    const placed = document.importNode(summary, true);
+    const heading = document.querySelector("main h1");
+    if (heading) heading.before(placed);
+    else form.before(placed);
+    wireSummaryLinks(placed.parentElement);
+    placed.focus();
+  };
+  const openReview = (dialog, form, opener, answer, refusal) => {
+    wireDialog(dialog);
+    const preview = answer?.querySelector("[data-review-preview]");
+    const token = preview?.value || "";
+    preview?.remove();
+    dialog.querySelector("[data-review-body]").replaceChildren(
+      ...(answer ? [...answer.childNodes].map((node) => document.importNode(node, true)) : []));
+    const apply = dialog.querySelector("form[data-review-apply]");
+    apply.elements.namedItem("preview").value = token;
+    const error = dialog.querySelector("[data-confirm-error]");
+    error.hidden = true;
+    error.replaceChildren();
+    dialog.querySelector("[data-confirm-status]").textContent = "";
+    dialog.querySelectorAll("[data-confirm-accept], [data-confirm-cancel]").forEach((button) => {
+      button.disabled = false;
+      button.removeAttribute("aria-disabled");
+      button.removeAttribute("data-recorded");
+      button.classList.remove("is-busy");
+    });
+    dialog.querySelector("[data-confirm-accept]").hidden = !token;
+    confirming = {dialog, opener, form, busy: false, done: false,
+      review: {apply, done: answer?.getAttribute("data-review-done") || ""}};
+    dialog.showModal();
+    if (refusal) refuseConfirm(confirming, refusal);
+    // The title first, so the reader hears what is reviewed.
+    dialog.querySelector("[data-review-title]").focus();
+  };
+  const prepareReview = async (form, dialog, submitter) => {
+    reviewing.add(form);
+    const body = new URLSearchParams(new FormData(form, submitter || undefined));
+    const opener = submitter || firstSubmit(form) || form;
+    form.setAttribute("aria-busy", "true");
+    opener.setAttribute("aria-disabled", "true");
+    opener.classList.add("is-busy");
+    busyStatus.textContent = "Working…";
+    form.inert = true;
+    let answer = null;
+    try {
+      answer = await readPage(formUrl(form), {method: "POST", body});
+    } catch { /* no answer: said in the dialog below */ }
+    form.inert = false;
+    form.removeAttribute("aria-busy");
+    opener.removeAttribute("aria-disabled");
+    opener.classList.remove("is-busy");
+    busyStatus.textContent = "";
+    reviewing.delete(form);
+    if (!answer) {
+      openReview(dialog, form, opener, null, REVIEW_UNREACHABLE);
+      return;
+    }
+    const parsed = new DOMParser().parseFromString(answer.text, "text/html");
+    const review = answer.response.ok && parsed.querySelector("[data-review-answer]");
+    if (review) {
+      // An earlier refusal's summary no longer applies.
+      document.querySelectorAll("[data-error-summary]").forEach((node) => {
+        if (!node.closest(REGIONS)) node.remove();
+      });
+      openReview(dialog, form, opener, review, null);
+    } else if (answer.response.status === 400 && form.id && parsed.getElementById(form.id)) {
+      showFieldErrors(form, parsed);
+    } else {
+      openReview(dialog, form, opener, null, refusalText(answer.response.status, answer.text));
+    }
+  };
+  document.addEventListener("submit", (event) => {
+    const form = event.target;
+    if (event.defaultPrevented || !(form instanceof HTMLFormElement)
+      || !form.matches("form[data-review-open]")) return;
+    const dialog = document.getElementById(form.dataset.reviewOpen);
+    if (!(dialog instanceof HTMLDialogElement) || !sameOrigin(formUrl(form))) return;
+    event.preventDefault();
+    // A repeat (Enter pressed twice) while a Review is prepared is ignored.
+    if (reviewing.has(form)) return;
+    prepareReview(form, dialog, event.submitter);
+  }, true);
+  const acceptReview = async (state) => {
+    const {dialog, review} = state;
+    const accept = dialog.querySelector("[data-confirm-accept]");
+    const recorded = () => {
+      // Recorded: Apply is done with, so it goes, keeping the space it had
+      // before its busy mark widened it; the status line says the rest.
+      accept.classList.remove("is-busy");
+      accept.setAttribute("data-recorded", "");
+      dialog.querySelector("[data-review-title]").focus();
+    };
+    const body = new URLSearchParams(new FormData(review.apply));
+    if (!await followChange(state, formUrl(review.apply), body, recorded)) return;
+    dialog.querySelector("[data-confirm-status]").textContent = dialog.dataset.applied || "Applied.";
+    const text = [review.done, fillIn(dialog.dataset.appliedAt || "Applied at {time}.",
+      {time: clockTime()})].filter(Boolean).join(" ");
+    const outcome = dialog.dataset.reviewOutcome || "";
+    const back = dialog.dataset.reviewReturn;
+    if (back) {
+      const target = new URL(back, document.baseURI);
+      try {
+        window.sessionStorage.setItem(REVIEW_OUTCOME, JSON.stringify(
+          {path: target.pathname, id: outcome, text, at: Date.now()}));
+      } catch { /* No storage: Users shows no status line. */ }
+      state.done = true;
+      dialog.close();
+      window.location.assign(target.href);
+      return;
+    }
+    const region = state.form.closest(REGIONS);
+    const fresh = await freshPage(region?.dataset.refreshUrl || window.location.href);
+    if (!fresh) return;
+    state.done = true;
+    dialog.close();
+    redrawFrom(fresh);
+    if (!showOutcome(outcome, text)) announce(text);
+  };
 
   // Repeating reminders (#469). expandRecurrence turns a repeat rule into
   // the calendar dates it produces. Dates are civil days, computed with UTC

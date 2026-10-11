@@ -739,3 +739,155 @@ def test_an_added_user_signs_in_with_its_role(converted, google):
     # A Ministry leader is not an Administrator: Users is refused.
     with web():
         assert leader_browser.get(USERS).status_code == 403
+
+
+def fetched(browser, path, values):
+    """Post as the review dialog's script does (``X-Requested-With: fetch``)."""
+    return browser.post(
+        path,
+        values | {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value},
+        headers={"X-Requested-With": "fetch"},
+    )
+
+
+def test_the_review_dialog_gets_a_fragment_and_follows_the_change(converted):
+    """Review answers the dialog's fragment; Apply answers Change status,
+    which the dialog follows; Users holds the status line it ends on (#750)."""
+    store, browser = converted
+    form = page(browser, NEW)
+    assert 'data-review-open="user-review"' in form
+    dialog = form[form.index('<dialog id="user-review"') :]
+    assert 'data-review-return="/admin/users/"' in dialog
+    assert 'data-review-outcome="users-outcome"' in dialog
+    assert '<form method="post" action="/admin/users/" data-review-apply>' in dialog
+    values = {"email": "dialog@example.org", "name": "Dialog, Dee", "role": "staff"}
+    with web():
+        reviewed = fetched(
+            browser,
+            NEW,
+            {"action": "preview", "base_digest": store.active().digest} | values,
+        )
+    assert reviewed.status_code == 200, reviewed.content
+    text = reviewed.content.decode()
+    assert "data-review-answer" in text and 'data-review-done="User added."' in text
+    assert "<html" not in text and "<form" not in text and "<h1" not in text
+    assert "dialog@example.org" not in users(store)
+    with web():
+        applied = fetched(
+            browser, USERS, {"action": "confirm", "preview": token(reviewed)}
+        )
+    installed(store, applied)
+    assert users(store)["dialog@example.org"] == ("Dialog, Dee", "staff")
+    assert contexts("user_change_requested") == [{"outcome": "succeeded", "count": 1}]
+    body = page(browser)
+    assert re.search(
+        r'<p class="review-outcome" id="users-outcome" role="status" '
+        r'tabindex="-1" data-review-outcome></p>',
+        body,
+    )
+    # Users' leader import opens the same dialog, applying here in place.
+    assert 'data-review-open="leader-review"' in body
+    leader = body[body.index('<dialog id="leader-review"') :]
+    assert 'data-review-return=""' in leader
+
+
+def test_a_field_error_answers_the_form_for_the_page_to_mark(converted):
+    """A refused value is the form again (400), marked, never a review."""
+    store, browser = converted
+    with web():
+        refused = fetched(
+            browser,
+            NEW,
+            {
+                "action": "preview",
+                "base_digest": store.active().digest,
+                "email": "fresh@example.org",
+                "name": "  ",
+                "role": "staff",
+            },
+        )
+    assert refused.status_code == 400
+    text = refused.content.decode()
+    assert 'id="user-entry-form"' in text and "data-review-answer" not in text
+    assert "data-error-summary" in text and 'href="#id_name"' in text
+    assert re.search(r'name="name"[^>]*aria-invalid="true"', text)
+    assert re.search(
+        r'<ul class="errorlist" id="id_name_error">\s*<li>Enter a name.', text
+    )
+
+
+def test_other_refusals_reach_the_dialog_in_the_servers_words(converted, monkeypatch):
+    """A stale page, an out-of-date preview and a self-demotion at Apply
+    answer the dialog's script with JSON; nothing is recorded."""
+    store, browser = converted
+    with web():
+        stale = fetched(
+            browser,
+            NEW,
+            {
+                "action": "preview",
+                "base_digest": "0" * 64,
+                "email": "late@example.org",
+                "name": "Late, Lou",
+                "role": "staff",
+            },
+        )
+    assert stale.status_code == 409
+    assert stale["Content-Type"].startswith("application/json")
+    assert json.loads(stale.content)["errors"][0]["code"] == "stale_version"
+    # A review made out of date by a change applied meanwhile.
+    with web():
+        early = fetched(
+            browser,
+            NEW,
+            {
+                "action": "preview",
+                "base_digest": store.active().digest,
+                "email": "late@example.org",
+                "name": "Late, Lou",
+                "role": "staff",
+            },
+        )
+    signed = token(early)
+    user_change(
+        store, browser, edit(store, "staff@example.org"), {"name": "S", "role": "staff"}
+    )
+    before = ConfigurationChangeRequest.objects.count()
+    with web():
+        late = fetched(browser, USERS, {"action": "confirm", "preview": signed})
+    assert late.status_code == 409
+    assert json.loads(late.content)["refusal"]["message"] == (
+        "This preview is out of date."
+    )
+    # A self-demotion signed without the builder's guard is refused by the
+    # request's own check, in words the dialog shows.
+    path = edit(store, "admin@example.org")
+    real = user_views.plan_changes
+    monkeypatch.setattr(
+        user_views,
+        "plan_changes",
+        lambda records, entries, **options: real(records, entries),
+    )
+    with web():
+        demoting = fetched(
+            browser,
+            path,
+            {
+                "action": "preview",
+                "base_digest": store.active().digest,
+                "name": "admin",
+                "role": "staff",
+            },
+        )
+    monkeypatch.setattr(user_views, "plan_changes", real)
+    with web():
+        refused = fetched(
+            browser, USERS, {"action": "confirm", "preview": token(demoting)}
+        )
+    assert refused.status_code == 400
+    refusal = json.loads(refused.content)["refusal"]
+    assert "remove your own Administrator role" in refusal["message"]
+    assert refusal["fix"] == "Nothing was changed."
+    assert ConfigurationChangeRequest.objects.count() == before
+    assert "late@example.org" not in users(store)
+    assert users(store)["admin@example.org"] == ("admin", "administrator")

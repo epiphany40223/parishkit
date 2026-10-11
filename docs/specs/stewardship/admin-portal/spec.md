@@ -851,7 +851,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `user_edit` | Edit user | Users | Administrator | (new, #952) | (none) | `/admin/users/<user>/edit/` | The New page filled in; `<user>` is the user's stable ID. |
 | `user_delete` | Delete user | Users | Administrator | (new, #952) | (none) | `/admin/users/deletion/` (POST only) | The table's confirmation dialog posts here. |
 | `user_name_suggestions` | (not a page) | New user | Administrator | (new, #952) | (none) | `/admin/users/new/names/` (POST only, JSON) | Read-only Name suggestions from ParishSoft. |
-| `user_leader_import` | Import Ministry leaders | Users | Administrator | (new, #952) | (none) | `/admin/users/leaders/import/` (POST only) | Review of the chosen ParishSoft Ministry leaders; applies through Users. |
+| `user_leader_import` | Import Ministry leaders | Users | Administrator | (new, #952) | (none) | `/admin/users/leaders/import/` (POST only) | Review of the chosen ParishSoft Ministry leaders, shown in the review dialog on Users; applies through Users. |
 | `user_rules` | Review sign-in rules | Portal users | Administrator | Review login rule change | `/admin/users/rules` (POST only) | (none) | Retired by #952: removed with the rule tables when Users lands; its old address is not kept (#864). |
 | `rule_request` | (not a page) | Portal users | Administrator | Rule change (status) | `/admin/users/rules/requests/<request>` (JSON) | (none) | Retired by #952 with the autosave queue; a user change's status is its Change status page. |
 | `assignments` | Review Ministry assignment | Portal users | Administrator | Assignments | `/admin/users/assignments` (POST only) | (none) | Retired by #922: removed with Ministry assignments. |
@@ -1043,14 +1043,15 @@ confirmation. The flows are: making a settings change (Make changes, Review,
 Apply) on every settings editor (campaign settings, Campaign Ministries, Copy
 campaign, pages and emails, dates and mail schedules, share options,
 campaign images, Parish settings, Parish logos, each integration,
-Ministries and Finish switching), the reviews started on Users (New user,
-Edit user and Import Ministry leaders) and every change's status
+Ministries and Finish switching), New user and Edit user (whose review
+and Apply are in the
+[review dialog](../ui-conventions/spec.md#review-dialog), so the page
+stays at Make changes) and every change's status
 page; going live (Check readiness, Testing cleanup, Family links, Confirm
 Production, Activation); sending to chosen Families (Choose Families, Review,
 Send and follow); and report exports (Choose report, Prepare file, Download). A
-locked campaign's read-only settings page is not in a flow. Those reviews show
-only Review and Apply as current: the page they start on is a list, not step 1,
-and a refused review shows its error page rather than going back to a form. An
+locked campaign's read-only settings page is not in a flow. Import Ministry
+leaders, reviewed in that dialog over Users, shows no step indicator. An
 error page never shows a step or a placed trail. Placement and steps are
 presentation only and grant nothing.
 
@@ -4030,7 +4031,8 @@ DUID and Email sort; Member is the default order.
 
 **Import selected** and **Import all** are available only while there is
 something to import (and Import selected only while a row is selected). The
-**Import Ministry leaders** review lists each chosen person as a new user
+**Import Ministry leaders** review, shown in the
+[review dialog](../ui-conventions/spec.md#review-dialog), lists each chosen person as a new user
 with the role Ministry leader and their default Name, and lists separately
 anyone skipped because they became a user meanwhile. **Apply** records one
 configuration change for the whole batch, with one audit entry naming the

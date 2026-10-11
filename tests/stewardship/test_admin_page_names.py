@@ -78,7 +78,6 @@ TEMPLATES = {
     "users": "users.html",
     "user_new": "user-entry.html",
     "user_edit": "user-entry.html",
-    "user_leader_import": "user-leader-import.html",
     "automation_access": "automation-access.html",
     "automation_approval": "automation-approval.html",
     "system_health": "system-health.html",
@@ -131,8 +130,15 @@ VIEW_NAMED = {"reports", "daily_digest_snapshot"}
 # Delete scheduled emails and Delete user answer their list's dialog with a
 # change's status page, as does Delete email templates for Pages and emails'
 # tables, and Delete hosted files the library's dialog with a redirect or a
-# refusal (#879), never a page of their own.
-NOT_PAGES = {"schedule_delete", "user_delete", "hosted_file_delete", "content_delete"}
+# refusal (#879), never a page of their own. Import Ministry leaders answers
+# Users' review dialog with the review's fragment (#750).
+NOT_PAGES = {
+    "schedule_delete",
+    "user_delete",
+    "hosted_file_delete",
+    "content_delete",
+    "user_leader_import",
+}
 # Pages whose new name waits for a later slice, with that slice. None is
 # left: Portal users became Users with #952.
 PENDING = {}
@@ -163,6 +169,7 @@ REVIEWS = (
     "content-settings.html",
     "schedule-preview.html",
     "user-review.html",
+    "user-leader-import.html",
 )
 
 TRANSLATED = re.compile(r'{% translate "([^"]+)" %}')
