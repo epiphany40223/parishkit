@@ -153,8 +153,10 @@ def _artwork(artwork):
 def campaign_values(values):
     """Validate the full draft structure and return its canonical UTC interval.
 
-    ``talent_options`` is optional: a campaign that never edited its Member
-    talents list resolves to the built-in defaults (see responses.service).
+    ``talent_options`` is optional and inert: the Member talents list a
+    campaign edited before talents were retired (#970). It is never offered,
+    but it is still validated, since the form definition digest hashes it
+    (see responses.service.configured_talent_options).
     ``reminder_workgroup`` is optional too (#861): the name of the ParishSoft
     Family WorkGroup whose Families get no Reminders; absent means none. So is
     ``ministry_leader_roles`` (#922); absent means the default role names.
@@ -234,8 +236,8 @@ def campaign_values(values):
     _options(options)
     if "financial" not in modules and options:
         invalid()
-    # Campaign-setting patches merge values, so an edited talent list survives
-    # while the Ministry module is off; it is simply unused until re-enabled.
+    # An edited talent list from before #970 stays as history; it still has
+    # to be well formed, because the form definition digest hashes it.
     if "talent_options" in values:
         _options(values["talent_options"])
     if "artwork" in values:

@@ -2151,7 +2151,7 @@ lists the fields.
 The `report` commands (PR 8c) read the current campaign's report pages
 through the functions the pages use (`guarded_participation` and the
 campaign statistics, `response_metrics`, `financial_page`,
-`talents_report`, `information_page`, `ministry_page`, and the Admin
+`limitations_report`, `information_page`, `ministry_page`, and the Admin
 menu's entries for `report list`), inside the same campaign read guard,
 and print counts, summaries, stored keys and identifiers only (see
 [personal data on the command line](#personal-data-on-the-command-line)).

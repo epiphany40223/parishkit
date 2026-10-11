@@ -10,11 +10,7 @@ from uuid import uuid4
 import pytest
 from django.db import IntegrityError, connection, transaction
 
-from parishkit.stewardship.responses import inputs as form_inputs
-from parishkit.stewardship.responses.service import (
-    DEFAULT_TALENTS,
-    configured_talent_options,
-)
+from parishkit.stewardship.responses.service import DEFAULT_TALENTS
 
 from .campaign_builders import change as change_configuration
 from .test_ministry_responses_postgresql import (
@@ -44,23 +40,25 @@ def test_limitations_round_trip_and_no_talents_are_offered(response_service):
     harness = response_service
     form = start(harness)
     assert form["cannot_attend"] is False
+    # Kept empty for a tab loaded before #970, whose script reads it.
     assert form["service"]["talent_options"] == []
-    assert form["service"]["members"]["3"] == {"cannot_serve": False, "talents": {}}
+    assert form["service"]["members"]["3"] == {"cannot_serve": False}
     answers = answers_for(form)
     answers["cannot_attend"] = True
     answers["service"] = {
-        "members": {"3": {"cannot_serve": False, "talents": {}}},
+        "members": {"3": {"cannot_serve": False}},
         "proposed_members": {},
     }
     first = respond(harness, form, answers)
     assert first.answers["cannot_attend"] is True
+    # Stored with the empty talents map the installed guard requires.
     assert first.answers["service"]["members"]["3"] == {
         "cannot_serve": False,
         "talents": {},
     }
     form = revisit(harness)
     assert form["cannot_attend"] is True
-    assert form["service"]["members"]["3"]["talents"] == {}
+    assert form["service"]["members"]["3"] == {"cannot_serve": False}
 
 
 def test_cannot_serve_requires_leaving_every_current_ministry(response_service):
@@ -69,7 +67,7 @@ def test_cannot_serve_requires_leaving_every_current_ministry(response_service):
     form = start(harness)
     answers = answers_for(form)
     answers["service"] = {
-        "members": {"3": {"cannot_serve": True, "talents": {}}},
+        "members": {"3": {"cannot_serve": True}},
         "proposed_members": {},
     }
     result = post(
@@ -84,24 +82,18 @@ def test_cannot_serve_requires_leaving_every_current_ministry(response_service):
     assert submission.answers["service"]["members"]["3"]["cannot_serve"] is True
 
 
-def test_a_form_opened_before_the_deploy_still_submits_talents(
-    response_service, monkeypatch
-):
-    """A baseline issued before #970 deployed keeps working with its talents.
+def test_a_form_opened_before_the_deploy_still_submits_talents(response_service):
+    """A tab opened before #970 deployed keeps working with its talents.
 
-    The pre-deploy code offered the configured talents, so a Family's open
-    tab may send one. Refusing it would lose the whole response mid-campaign;
-    instead it is stored (the SQL guard accepts it) and never shown.
-    Unknown talents are still refused.
+    The pre-deploy form offered the configured talents, so a Family's open
+    tab may send one. Its baseline holds the same definition digest a new one
+    does (the digest still hashes the configured list), so this sends talents
+    on a fresh baseline exactly as that tab would. Refusing them would lose
+    the whole response mid-campaign; instead they are stored (the SQL guard
+    accepts them) and never shown. Unknown talents are still refused.
     """
     harness = response_service
-    # Issue the baseline as the pre-deploy code did: offering the talents.
-    monkeypatch.setattr(form_inputs, "talent_options", configured_talent_options)
     form = start(harness)
-    assert [option["id"] for option in form["service"]["talent_options"]] == [
-        option.id for option in DEFAULT_TALENTS
-    ]
-    monkeypatch.undo()
     answers = answers_for(form)
     answers["service"] = {
         "members": {"3": {"cannot_serve": False, "talents": {str(uuid4()): ""}}},
@@ -121,7 +113,7 @@ def test_a_form_opened_before_the_deploy_still_submits_talents(
         "cannot_serve": False,
         "talents": talents,
     }
-    assert revisit(harness)["service"]["members"]["3"]["talents"] == {}
+    assert revisit(harness)["service"]["members"]["3"] == {"cannot_serve": False}
 
 
 @pytest.mark.parametrize(

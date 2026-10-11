@@ -368,10 +368,10 @@ REVIEW_DECISIONS = frozenset({"keep_role", "restore", "remove"})
 # An on-request report's system mode and filter choices (#556); mirrored in
 # stewardship_safe_context_v1. The filters are each report's own fixed
 # choices: the response lists' ``show`` keys (reports.response_lists) and
-# the Limitations report's ``talent`` words, where ``option`` stands for a
-# configured talent (recorded as ``talent_option_id``; only before talents
-# were retired in #970). A test keeps this
-# set equal to the reports' choices.
+# the Limitations report's Show words (reports.limitations.SHOW_WORDS), plus
+# ``option``, which rows recorded before talents were retired (#970) hold for
+# a talent filter, with its ``talent_option_id``. A test keeps this set equal
+# to the reports' choices.
 REPORT_MODES = frozenset({"production", "testing"})
 REPORT_FILTERS = frozenset(
     {

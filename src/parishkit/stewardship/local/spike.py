@@ -148,8 +148,9 @@ def unchanged_answers(form):
     Mirrors ``accept`` and the Review page's submit handler in
     ``family-v1.js``: every field keeps the value the form showed, a Member
     with a terminal request (moved or deceased) is sent as that request,
-    Ministry and talent choices are the form's own, and the financial answer
-    is cleared of its frequency and shares unless the pledge is above zero.
+    Ministry and "cannot participate" choices are the form's own, and the
+    financial answer is cleared of its frequency and shares unless the pledge
+    is above zero.
     A form with a financial section but no pledge answer declares $0, as the
     page requires an answer before it submits.
     """
@@ -206,16 +207,12 @@ def unchanged_answers(form):
         payload["ministries"] = {}
     service = form.get("service")
     if service and ministries:
-        defaults = {"cannot_serve": False, "talents": {}}
         payload["service"] = {
             group: {
                 key: {
                     "cannot_serve": bool(
-                        service.get(group, {}).get(key, defaults)["cannot_serve"]
-                    ),
-                    "talents": dict(
-                        service.get(group, {}).get(key, defaults)["talents"]
-                    ),
+                        service.get(group, {}).get(key, {}).get("cannot_serve")
+                    )
                 }
                 for key in payload["ministries"][group]
             }

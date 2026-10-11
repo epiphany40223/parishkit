@@ -76,7 +76,6 @@ def form(*, modules=("census", "ministry", "financial")):
         financial=SimpleNamespace(definition=SimpleNamespace(options=options))
         if "financial" in modules
         else None,
-        talent_options=(),
     )
     return SimpleNamespace(inputs=inputs, baseline=SimpleNamespace(pk="baseline"))
 
@@ -218,7 +217,6 @@ def _census_inputs(projection):
         ministries=inputs.ministries,
         financial=inputs.financial,
         parish_name="Synthetic Parish",
-        talent_options=(),
     )
 
 
