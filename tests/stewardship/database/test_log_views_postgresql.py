@@ -1207,3 +1207,76 @@ def test_activity_groups_list_their_own_audit_and_operational_types(
         lines = export(browser, every | {"activity": "parishsoft", "format": "jsonl"})
         records = [json.loads(line) for line in lines.content.decode().splitlines()]
         assert [record["type"] for record in records] == expected
+
+
+def test_reports_security_and_family_portal_groups_list_their_own_types(
+    auth_service, google
+):
+    """Reports and downloads, Security events and Family portal activity
+    (#953) are audit records only and each lists its own types, newest
+    first. A widened access record is both a configuration change and a
+    security event, the one type in two groups, and a download made from
+    this page is itself listed under Reports and downloads."""
+    browser, _ = signed_in()
+    written = [
+        "family_login",
+        "export_downloaded",
+        "policy_security_event",
+        "automation_session_approved",
+        "family_submission",
+        "campaign_first_submission",
+        "credential_keys_retired",
+        "talents_report_exported",
+        # In no group: opening a page, and acknowledging critical notices.
+        "dashboard_viewed",
+        "critical_events_acknowledged",
+    ]
+    for event in written:
+        AuditEvent.objects.create(event_type=event)
+    with schema_owner():
+        OperationalLog.objects.create(
+            level="ERROR", event=Event.TASK_FAILED.value, schema="failure", context={}
+        )
+    every = {key: "yes" for key in ("applied", "info", "error", "critical", "audit")}
+
+    def newest(activity, count):
+        """The newest ``count`` types listed for ``activity``, checking that
+        every listed entry belongs to the group and none is operational."""
+        response = post(browser, every | {"activity": activity})
+        listed = listed_types(response)
+        assert set(listed) <= set(ACTIVITY_TYPES[activity]), activity
+        assert levels(response) == [], activity
+        return listed[:count]
+
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        assert newest("downloads", 2) == [
+            "talents_report_exported",
+            "export_downloaded",
+        ]
+        assert newest("security", 3) == [
+            "credential_keys_retired",
+            "automation_session_approved",
+            "policy_security_event",
+        ]
+        assert newest("family_portal", 3) == [
+            "campaign_first_submission",
+            "family_submission",
+            "family_login",
+        ]
+        assert "policy_security_event" in newest("configuration", 50)
+        # Without Audit record the empty table says to tick it.
+        alone = post(
+            browser, {"applied": "yes", "error": "yes", "activity": "security"}
+        )
+        assert b"This activity is made of audit records only" in alone.content
+        # Downloading this page is recorded, and is a download.
+        lines = export(
+            browser, every | {"activity": "family_portal", "format": "jsonl"}
+        )
+        records = [json.loads(line) for line in lines.content.decode().splitlines()]
+        assert [record["type"] for record in records][:3] == [
+            "campaign_first_submission",
+            "family_submission",
+            "family_login",
+        ]
+        assert newest("downloads", 1) == ["system_logs_exported"]
