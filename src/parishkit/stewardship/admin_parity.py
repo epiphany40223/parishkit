@@ -344,3 +344,10 @@ LEDGER = {
     # Pages' slashless forms (the URL scheme, #525): redirects, not actions.
     **{name: permanent(SLASHLESS) for name in SLASHLESS_TARGETS},
 }
+# Commands whose page lands in a later pull request: they cover no admin:
+# route yet, so the parity test accepts them by name until the page's route
+# joins the ledger as their "command" entry. Past campaigns' import commands
+# come first (#1018 slice 2); the page itself is slice 4.
+AHEAD_OF_PAGE = frozenset(
+    {"history list", "history preview", "history confirm", "history remove"}
+)

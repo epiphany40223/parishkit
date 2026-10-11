@@ -650,6 +650,9 @@ def runtime_grants(role, *, target=None):
 
         add_digest_web_grants(tables, columns)
         add_weekly_web_grants(tables, columns)
+        from .reports.archive_grants import add_archive_web_grants
+
+        add_archive_web_grants(tables, columns)
 
         columns["stewardship_outbox_message"] = {
             "SELECT": set(METADATA_FIELDS) | {"created_at", "updated_at", "finished_at"}

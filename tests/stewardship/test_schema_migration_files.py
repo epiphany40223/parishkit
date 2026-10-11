@@ -207,6 +207,9 @@ FROZEN = {
     "0058_mail_message_recipients.sql": (
         "79dcb6c6775b88134195e00f3ad773c04cdd93466387ed996bad65f313be6b50"
     ),
+    "0059_campaign_archives.sql": (
+        "16ccf0dad1e1aaa6d767f4eaa5e3b034632968333a6cfed24aa34e297e68243d"
+    ),
 }
 
 

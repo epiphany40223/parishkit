@@ -961,8 +961,17 @@ linked to #1018 (the last one closes part (b)).
    change. The Administrator can check the seven converted files at once.
 2. **Storage and command-line import.** The forward migration (including
    the pledge-distribution band rows and quartiles), the import service with
-   preview, confirm and remove, the ingress route exception for Review,
-   and the `pk-admin history` commands. Past years can be loaded by the operator the same day.
+   preview, confirm and remove, and the `pk-admin history` commands. Past
+   years can be loaded by the operator the same day. The ingress route
+   exception for Review moves to slice 4, with the upload route it serves.
+   As built: a preview's `preview.token` is its pending archive row,
+   bound to the Administrator who reviewed it; each Review and Apply first
+   deletes expired previews (the housekeeping the trigger admits); and a
+   Review killed at its time limit leaves a `helper_timed_out` entry naming
+   `archive_check` and the helper `archive_check_worker`. The command line
+   needs no page route yet: the route-parity ledger lists the `history`
+   commands as ahead of their page (`admin_parity.AHEAD_OF_PAGE`) until
+   slice 4.
 3. **Comparison figures.** The metric service, the SQL function (in its own
    forward migration) for pledging Families, renewal, the current median
    and the current campaign's pledge distribution,

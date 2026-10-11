@@ -8,11 +8,11 @@ at 60 seconds. The helper itself applies its 1 GiB address-space limit. A
 kill or the memory limit is "too large to check"; a kill is logged with the
 reviewed timeout name ``archive_check``, its limit and the elapsed time.
 
-TODO(#1018 slice 2, the import with its migration): register
-``archive_check`` as a durable timeout kind and pass
-``provider_checks.helper_timeout_recorder`` as ``on_timeout`` from the
-import, so a kill during a Review leaves a ``helper_timed_out`` entry. The
-offline command has no database and keeps the process-log line.
+The import (``archive.imports``) passes
+``provider_checks.helper_timeout_recorder`` as ``on_timeout``, so a kill
+during a Review leaves a durable ``helper_timed_out`` entry naming
+``archive_check`` and the helper ``archive_check_worker``. The offline
+command has no database and keeps the process-log line.
 
 ``pk-stewardship archive-check <file>...`` validates workbooks offline with
 the same helper and prints one JSON line per file: the summary (counts,
