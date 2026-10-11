@@ -1,10 +1,10 @@
-{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
+{% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
+{% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
 {% block title %}{% translate "Ministries" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Ministries" %}</h1>
 {% aboutpage "ministries" %}<p>{% translate "Inactive Ministries are hidden from parishioners. Existing participation and earlier requests are preserved. A Ministry leader sees the Ministries of their ParishSoft Ministry roles listed in Campaign settings; an inactive Ministry leaves its leaders' scope until it is active again." %}</p>{% endaboutpage %}
 <p>{% translate "This page turns Ministries on or off for parishioners." %} {% if campaign_link %}{% translate "To choose which Ministries are in this campaign, use" %} <a href="{{ campaign_link.url }}">{{ campaign_link.label }}</a>.{% else %}{% translate "To choose which Ministries are in a campaign, use Campaign settings → Ministry selections." %}{% endif %}</p>
-<div id="ministry-notice" data-table-sync>{% if notice %}<p class="notice notice-error" role="alert">{{ notice }}</p>{% endif %}</div>
 <form id="table-filters" data-table-sync method="get" class="filter-bar">
   <div><label for="ministry-query">{% translate "Search by name or DUID" %}</label>
   <input id="ministry-query" name="q" value="{{ query }}" maxlength="200"></div>
@@ -20,7 +20,7 @@
 {% translate "Ministry pages" as navigator_label %}
 <div id="{{ table.anchor }}" data-table-region>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
-<form method="post" data-select-table data-missing-hint="{% translate 'Select at least one Ministry to review.' %}">
+{% comment %}Review, apply and the change's status happen in place, in the review region under the table (#750). The selection's answer replaces only that region and the step indicator (data-in-place-only), so the ticks, page and sort stay; ticking or choosing Select all again withdraws a shown review (ui-v1.js, data-review-of).{% endcomment %}<form id="ministry-selection" method="post" action="#settings-review" data-in-place data-in-place-only="flow-steps" data-in-place-message="{% translate 'Review ready.' %}" data-select-table data-missing-hint="{% translate 'Select at least one Ministry to review.' %}">
   {% csrf_token %}<input type="hidden" name="action" value="preview">
   <div class="bulk-bar">
     {% button type="submit" name="active" value="yes" data-bulk-action %}{% translate "Review activation" %}{% endbutton %}
@@ -51,4 +51,5 @@
 </form>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 </div>
+{% comment %}Under the table, so a review appearing never moves the table or its buttons (#736).{% endcomment %}<div id="settings-review" data-in-place-region data-keep-height>{% translate "You changed the selection after reviewing it. Choose Review activation or Review inactivation again to see what will change." as stale_note %}{% include 'stewardship/settings-review.html' with form_id="ministry-selection" stale_note=stale_note %}</div>
 {% endblock %}

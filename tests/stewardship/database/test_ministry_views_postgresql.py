@@ -22,6 +22,8 @@ from .auth_builders import signed_in
 from .campaign_builders import change
 from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_background_grants_postgresql import task_login
+from .test_campaign_views_postgresql import requested
+from .test_parish_views_postgresql import region
 from .test_source_families_postgresql import (
     publish,
     source_singletons,  # noqa: F401
@@ -31,10 +33,14 @@ pytestmark = pytest.mark.django_db(transaction=True)
 URL = "/admin/parish/ministries/"
 
 
-def post(browser, values):
-    """Use the real CSRF cookie for each mutation, including signed confirmation."""
+def post(browser, values, query=""):
+    """Use the real CSRF cookie for each mutation, including signed confirmation.
+
+    ``query`` is the page's view (filters, sort, page) the form posts from.
+    """
     return browser.post(
-        URL, values | {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value}
+        URL + query,
+        values | {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value},
     )
 
 
@@ -60,24 +66,33 @@ def test_admin_can_preview_apply_and_reactivate_without_optimistic_saved_claim(
     assert flow_steps(listing.content) == (STEPS, "Make changes")
     review = post(browser, {"action": "preview", "ministry_duid": "4", "active": "no"})
     assert flow_steps(review.content) == (STEPS, "Review")
+    # Reviewed in place (#750): the change and Apply fill the review region
+    # under the table.
+    shown = unescape(region(review.content))
+    assert "Inactivate 1 Ministry" in shown and "Apply changes" in shown
     token = preview(browser)
     assert not ConfigurationChangeRequest.objects.exists()
     response = post(browser, {"action": "confirm", "preview": token})
     assert response.status_code == 302
     request = ConfigurationChangeRequest.objects.get()
-    pending = browser.get(response["Location"]).content
-    assert b"Applying" in pending
-    # A pending status page reloads itself until the installer finishes.
-    assert b"data-live-pending" in pending
+    # Apply answers with this page, naming the change, not Change status.
+    assert response["Location"] == f"{URL}?request={request.pk}#settings-review"
+    pending = browser.get(response["Location"])
+    assert flow_steps(pending.content) == (STEPS, "Apply")
+    assert "Applying" in region(pending.content)
+    # The pending status polls Change status until the installer finishes.
+    assert "data-live-pending" in region(pending.content)
     assert not MinistryActivity.objects.exists()
     receipt = install_request(
         auth_service.store, request_id=request.pk, correlation_id=uuid4()
     )
     assert receipt.state == "applied"
-    applied = browser.get(response["Location"]).content
-    assert b"Applied" in applied
-    assert f'<a href="{URL}">Return to Ministries</a>'.encode() in applied
-    assert b"data-live-pending" not in applied
+    applied = region(browser.get(response["Location"]).content)
+    assert "Applied: your change is saved" in applied
+    assert "data-live-pending" not in applied
+    # Change status itself still leads back to Ministries.
+    status = browser.get(f"/admin/changes/{request.pk}/").content
+    assert f'<a href="{URL}">Return to Ministries</a>'.encode() in status
     runtime = SystemConfiguration.objects.get()
     policy = MinistryActivity.objects.get(
         configuration_id=runtime.active_configuration_id
@@ -234,7 +249,8 @@ def test_expired_or_wrong_actor_preview_cannot_create_request(
     monkeypatch.setattr(signing.time, "time", lambda: signed_at + 901)
     expired = post(browser, {"action": "confirm", "preview": token})
     assert expired.status_code == 409
-    assert "out of date" in expired.json()["refusal"]["message"]
+    # Refused in place (#750): the page again, explained in its review region.
+    assert "This preview is out of date." in region(expired.content)
     assert not ConfigurationChangeRequest.objects.exists()
 
 
@@ -337,7 +353,9 @@ def test_bulk_change_is_one_request_and_skips_unchanged_rows(auth_service, googl
     again = post(
         browser, {"action": "preview", "ministry_duid": ["4", "5"], "active": "no"}
     )
-    assert b"Nothing to change" in again.content
+    # Review only a change: nothing selected would change, said in place.
+    assert again.status_code == 400
+    assert "already inactive, so there is nothing to change" in region(again.content)
     assert b'name="preview"' not in again.content
 
 
@@ -347,4 +365,39 @@ def test_empty_selection_explains_itself(auth_service, google):
     browser, _ = signed_in()
     response = post(browser, {"action": "preview", "active": "no"})
     assert response.status_code == 400
-    assert b"Select at least one Ministry" in response.content
+    assert "Select at least one Ministry" in region(response.content)
+
+
+def test_the_table_view_is_kept_through_review_apply_and_follow_up(
+    auth_service, google
+):
+    """The filters, sort and page the Administrator was looking at (#750)
+    stay in Apply's answer, in Change status's read and in the quiet
+    follow-up once the change is applied, which draws that same view."""
+    publish(two_ministries())
+    browser, _ = signed_in()
+    query = "?q=5&state=all&size=25&sort=-duid"
+    review = post(
+        browser, {"action": "preview", "ministry_duid": "5", "active": "no"}, query
+    )
+    assert review.status_code == 200
+    assert 'name="q" value="5"' in review.content.decode()
+    token = unescape(
+        re.search(r'name="preview" value="([^"]+)"', review.content.decode()).group(1)
+    )
+    confirmed = post(browser, {"action": "confirm", "preview": token}, query)
+    request = requested(confirmed)
+    location = confirmed["Location"]
+    assert location.startswith(URL + "?q=5&state=all&size=25&sort=-duid&request=")
+    pending = browser.get(location)
+    assert pending.status_code == 200
+    status_url = unescape(
+        re.search(r'data-live-url="([^"]+)"', pending.content.decode()).group(1)
+    )
+    install_request(auth_service.store, request_id=request, correlation_id=uuid4())
+    read = browser.get(status_url).content.decode()
+    follow = unescape(re.search(r'data-live-follow[^>]*href="([^"]+)"', read).group(1))
+    assert follow.startswith(URL + "?q=5&state=all&size=25&sort=-duid&request=")
+    settled = browser.get(follow.split("#")[0]).content.decode()
+    assert "Lectors" in settled and "Choir" not in settled
+    assert "Applied: your change is saved" in settled

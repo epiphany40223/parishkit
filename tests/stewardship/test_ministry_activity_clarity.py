@@ -81,16 +81,18 @@ def test_preview_explains_that_activation_does_not_include():
     """Selected Ministries outside the campaign are named, with the way to add them."""
     rows = [ministry("Choir", 1, included=True), ministry("Ushers", 2, included=False)]
     html = render_to_string(
-        "stewardship/ministry-preview.html",
+        "stewardship/ministry-review.html",
         {
-            "changing": [],
-            "unchanged": rows,
-            "not_included": [rows[1]],
-            "campaign_link": LINK,
-            "new_active": True,
+            "review": {
+                "changing": [],
+                "unchanged": rows,
+                "not_included": [rows[1]],
+                "campaign_link": LINK,
+                "new_active": True,
+            }
         },
     )
-    assert "Nothing to change" in html
+    assert "Already active, left as they are: Choir, Ushers" in html
     assert "Activation doesn’t add Ministries to the campaign" in html
     note = html.split("These are not in the current campaign:")[1].split("</p>")[0]
     assert "Ushers" in note and "Choir" not in note
@@ -100,13 +102,15 @@ def test_preview_explains_that_activation_does_not_include():
 def test_preview_without_excluded_selection_has_no_note():
     """When every selected Ministry is already included, no note is shown."""
     html = render_to_string(
-        "stewardship/ministry-preview.html",
+        "stewardship/ministry-review.html",
         {
-            "changing": [],
-            "unchanged": [ministry("Choir", 1, included=True)],
-            "not_included": [],
-            "campaign_link": LINK,
-            "new_active": True,
+            "review": {
+                "changing": [],
+                "unchanged": [ministry("Choir", 1, included=True)],
+                "not_included": [],
+                "campaign_link": LINK,
+                "new_active": True,
+            }
         },
     )
     assert "Activation doesn’t add" not in html

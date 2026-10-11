@@ -5,11 +5,13 @@ import re
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.parse import parse_qs, urlsplit
 from uuid import UUID, uuid4
 
 import pytest
 from django.template.loader import render_to_string
 
+from parishkit.stewardship.accounts.admin_editing import in_place_follow, review_region
 from parishkit.stewardship.accounts.presence import PRESENCE_SORTING
 from parishkit.stewardship.jobs.views import TASK_SORTING
 from parishkit.stewardship.web.contracts import PageWindow
@@ -126,10 +128,13 @@ SETTINGS_PAGES = (
     "share-settings.html",
     "campaign-ministries.html",
 )
+# Ministries reviews its row selection in the same region (#750); it has
+# no settings form, so it is not one of SETTINGS_PAGES.
+REVIEW_PAGES = (*SETTINGS_PAGES, "ministries.html")
 HOSTED = {
     "integration-summary.html": ("integration-settings.html",),
-    "settings-review.html": SETTINGS_PAGES,
-    "configuration-request-status.html": SETTINGS_PAGES,
+    "settings-review.html": REVIEW_PAGES,
+    "configuration-request-status.html": REVIEW_PAGES,
     "background-task-status.html": ("background-task.html",),
     # Outgoing mail's bulk review region (#382 M4): Confirm and Continue
     # sit inside it, and the bulk panel draws it.
@@ -483,3 +488,34 @@ def test_every_campaign_settings_review_region_keeps_its_height():
     tags = re.findall(r'<div id="[\w-]+-review" data-in-place-region[^>]*>', text)
     assert len(tags) == 5
     assert all("data-keep-height" in tag for tag in tags), tags
+
+
+def test_a_table_page_keeps_its_view_through_a_change():
+    """Ministries (#750) keeps its table's filters, sort and page in Change
+    status's read and in the quiet follow-up once the change is applied;
+    only the view parameters it names are carried, and only for it."""
+    view = {"q": "choir", "state": "active", "page": "2", "sort": "-duid"}
+    receipt = SimpleNamespace(request_id="53200000-0000-4000-8000-000000000532")
+    status = review_region("ministries", receipt=receipt, view=view)["status_url"]
+    read = {key: values[0] for key, values in parse_qs(urlsplit(status).query).items()}
+    assert read == {"in_place": "ministries", **view}
+    follow = in_place_follow(read | {"next": "/elsewhere"}, receipt.request_id)
+    assert urlsplit(follow).path == "/admin/parish/ministries/"
+    assert parse_qs(urlsplit(follow).query) == {
+        **{key: [value] for key, value in view.items()},
+        "request": [receipt.request_id],
+    }
+    # Another in-place page carries nothing but the change.
+    plain = in_place_follow(read | {"in_place": "parish_settings"}, "x")
+    assert urlsplit(plain).query == "request=x"
+
+
+def test_ministries_view_fields_are_the_carried_view():
+    """The view Ministries validates is exactly the view a change carries,
+    including every shared table parameter, from one list."""
+    from parishkit.stewardship.accounts.admin_editing import IN_PLACE_VIEWS
+    from parishkit.stewardship.accounts.ministry_views import VIEW_FIELDS
+    from parishkit.stewardship.web.tables import table_parameters
+
+    assert set(IN_PLACE_VIEWS["ministries"]) == VIEW_FIELDS
+    assert {"q", "state", *table_parameters()} == VIEW_FIELDS

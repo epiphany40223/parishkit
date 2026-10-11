@@ -1,6 +1,11 @@
-"""Admin Ministry activity workflow through previewed, versioned YAML requests."""
+"""Admin Ministry activity workflow through previewed, versioned YAML requests.
 
-from uuid import uuid4
+The Ministries page lists the catalog in the shared Admin table; selecting
+rows and choosing Review activation or Review inactivation reviews one bulk
+change, applied and followed in place under the table (#750).
+"""
+
+from uuid import UUID, uuid4
 
 from django import forms
 from django.core import signing
@@ -14,20 +19,27 @@ from django.views.decorators.http import require_http_methods, require_safe
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.live_ministries import live_ministries_editable
 from parishkit.stewardship.campaigns.models import Campaign
+from parishkit.stewardship.campaigns.work_locks import (
+    read_transaction,
+    work_transaction,
+)
 from parishkit.stewardship.source.catalog_names import ministry_display_name
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.source.version_models import SnapshotMinistry
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
-from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
+from parishkit.stewardship.web.refusals import UserFacingStale
+from parishkit.stewardship.web.tables import Sorting, paginate
 
 from . import admin_navigation
 from .admin_editing import (
+    IN_PLACE_VIEWS,
     confirm,
     editable_configuration,
     error_response,
     form_action,
     in_place_follow,
+    review_region,
     sign_preview,
 )
 from .admin_editing import (
@@ -167,41 +179,47 @@ def campaign_ministries_link(configuration):
     }
 
 
-def _preview(request, service, principal):
+def _preview(request, state, principal):
     """Sign one exact bulk intent for confirmation; a preview changes nothing.
 
     Every selected Ministry not already in the requested state becomes one
     patch operation of a single configuration request, so the whole selection
     is applied (and audited) atomically or not at all. Rows already in that
-    state are reported and left alone.
+    state are reported and left alone. Returns the review region's values
+    (``review_region``'s ``review`` or a refusal ``message``) and the status
+    the page answers with: the review and its refusals are shown in place,
+    under the table (#750).
     """
-    configuration, current, activity, catalog = _state(service)
+    configuration, current, activity, catalog = state
     form = ActivityForm(request.POST, catalog=catalog)
     if not form.is_valid():
-        return _listing(
-            request,
-            configuration,
-            catalog,
-            {},
-            notice=_("Select at least one Ministry from the list, then try again."),
-            status=400,
-        )
+        return {
+            "message": _("Select at least one Ministry from the list, then try again.")
+        }, 400
     active = form.cleaned_data["active"] == "yes"
     chosen = set(form.cleaned_data["ministry_duid"])
     rows = [row for row in catalog if row["duid"] in chosen]
     changing = [row for row in rows if row["active"] != active]
+    if not changing:
+        # Review only a change (#921): nothing selected would change.
+        return {
+            "message": _(
+                "The selected Ministries are already active, so there is "
+                "nothing to change."
+            )
+            if active
+            else _(
+                "The selected Ministries are already inactive, so there is "
+                "nothing to change."
+            )
+        }, 400
     if len(changing) > MAX_CHANGES:
-        return _listing(
-            request,
-            configuration,
-            catalog,
-            {},
-            notice=_(
+        return {
+            "message": _(
                 "One change can include at most 100 Ministries. Select fewer "
                 "Ministries and apply the change in several steps."
-            ),
-            status=400,
-        )
+            )
+        }, 400
     patch = []
     for row in changing:
         previous = activity.get(row["duid"])
@@ -225,31 +243,26 @@ def _preview(request, service, principal):
                 "values": values,
             }
         )
-    token = (
-        sign_preview(
-            actor=principal,
-            configuration=configuration,
-            snapshot=current.snapshot_id,
-            patch=patch,
-            salt=SALT,
-        )
-        if patch
-        else None
-    )
     campaign_link = campaign_ministries_link(configuration)
-    admin_navigation.place(request, flow="change", step="review")
-    return render(
-        request,
-        "stewardship/ministry-preview.html",
-        {
+    return {
+        "review": {
+            # Drawn inside settings-review.html, above its Apply.
+            "template": "stewardship/ministry-review.html",
+            "notes": [],
             "changing": changing,
             "not_included": not_included(rows, active, campaign_link),
             "campaign_link": campaign_link,
             "unchanged": [row for row in rows if row["active"] == active],
             "new_active": active,
-            "preview": token,
-        },
-    )
+            "preview": sign_preview(
+                actor=principal,
+                configuration=configuration,
+                snapshot=current.snapshot_id,
+                patch=patch,
+                salt=SALT,
+            ),
+        }
+    }, 200
 
 
 # Every data column sorts on the server over the whole catalog (read in
@@ -266,8 +279,14 @@ CATALOG_SORTING = Sorting.by_column(
 )
 
 
-def _listing(request, configuration, catalog, selected, *, notice=None, status=200):
-    """Render the filtered, paged Ministry table (the shared Admin table)."""
+def _listing(request, configuration, catalog, selected, *, status=200, **region):
+    """Render the filtered, paged Ministry table and its in-place review region.
+
+    ``selected`` is the page's validated view (filters, sort and page);
+    ``region`` is ``review_region``'s ``review``, ``receipt``, ``refusal`` or
+    ``message``. The step indicator follows the region through edit, review
+    and apply (#196), all on this page.
+    """
     query, state = selected.get("q", ""), selected.get("state", "all")
     if len(query) > 200 or state not in {"all", "active", "inactive"}:
         raise ValueError("Invalid catalog filter.")
@@ -286,8 +305,10 @@ def _listing(request, configuration, catalog, selected, *, notice=None, status=2
         carry=(("q", query), ("state", state)),
         sorting=CATALOG_SORTING,
     )
-    # Choosing Ministries is the first step of edit, review, apply (#196).
-    admin_navigation.place(request, flow="change", step="edit")
+    step = "review" if region.get("review") else "edit"
+    if region.get("receipt"):
+        step = "apply"
+    admin_navigation.place(request, flow="change", step=step)
     response = render(
         request,
         "stewardship/ministries.html",
@@ -295,9 +316,11 @@ def _listing(request, configuration, catalog, selected, *, notice=None, status=2
             "table": table,
             "query": query,
             "state": state,
-            "notice": notice,
             "parish_name": configuration.active_configuration.parish.name,
             "campaign_link": campaign_ministries_link(configuration),
+            # The status read hands the view on to the quiet refresh once
+            # the change is applied (admin_editing.IN_PLACE_VIEWS).
+            **review_region("ministries", None, view=selected, **region),
         },
         status=status,
     )
@@ -312,30 +335,73 @@ def _scope(service):
     return configuration, current.snapshot_id
 
 
+# The Ministries page's own view: its filters, sort and page, which a change
+# keeps (one list, admin_editing.IN_PLACE_VIEWS).
+VIEW_FIELDS = frozenset(IN_PLACE_VIEWS["ministries"])
+
+
 @require_http_methods(["GET", "HEAD", "POST"])
 def ministry_activity(request):
-    """List/search activity, preview impact, and submit an exact versioned request."""
+    """List/search activity, then review, apply and follow a change in place.
+
+    Review, apply and the change's status all happen on this page (#750),
+    in the review region under the table: the selection form's answer
+    replaces only that region and the step indicator, so the reader's ticks,
+    page and sort stay. A refused Apply (an out-of-date preview) is the page
+    again (status 409) with the explanation there. The page's view (its
+    filters, sort and page) is kept through Apply's answer and the quiet
+    refresh once the change is applied; ``request`` names that change.
+    """
     try:
         service = runtime()
-        principal = admin_principal(request, service)
+        # Reading a change's status (the page's own quiet refresh once it is
+        # applied) is passive, as Change status is: it never renews idle time.
+        principal = admin_principal(
+            request,
+            service,
+            passive=request.method != "POST" and "request" in request.GET,
+        )
+        selected = filters(request.GET, allowed={*VIEW_FIELDS, "request"})
+        requested = selected.pop("request", None)
+        region, status = {}, 200
         if request.method == "POST":
             action = form_action(
                 request.POST,
                 preview_fields={"ministry_duid", "active"},
                 multiple_fields={"ministry_duid"},
             )
-            if action == "preview":
-                response = _preview(request, service, principal)
-            elif action == "confirm":
-                response = confirm(
-                    request, service, principal, salt=SALT, current_scope=_scope
-                )
-            else:
+            if action == "confirm":
+                try:
+                    response = confirm(
+                        request,
+                        service,
+                        principal,
+                        salt=SALT,
+                        current_scope=_scope,
+                        in_place=True,
+                        view=selected,
+                    )
+                    response["Cache-Control"] = "no-store"
+                    return response
+                except UserFacingStale as error:
+                    region, status = {"refusal": error.refusal}, 409
+            elif action != "preview":
                 raise ValueError("Unknown configuration action.")
-        else:
-            configuration, _, _, catalog = _state(service)
-            selected = filters(request.GET, allowed={"q", "state", *table_parameters()})
-            response = _listing(request, configuration, catalog, selected)
+        with (
+            read_transaction()
+            if request.method in {"GET", "HEAD"}
+            else work_transaction()
+        ):
+            state = _state(service)
+            if request.method == "POST" and not region:
+                region, status = _preview(request, state, principal)
+            elif request.method != "POST" and requested is not None:
+                region["receipt"] = configuration_receipt(
+                    request, service, UUID(requested), principal
+                )
+            response = _listing(
+                request, state[0], state[3], selected, status=status, **region
+            )
         fresh = authenticated_admin(request, store=service.store, read_only=True)
         if not allows(fresh, Capability.CONFIGURE):
             raise PermissionError("Configuration access was revoked.")
@@ -347,6 +413,7 @@ def ministry_activity(request):
         LimiterUnavailable,
         PermissionError,
         ValueError,
+        LookupError,
         InvalidPage,
         StaleRecordError,
         signing.BadSignature,

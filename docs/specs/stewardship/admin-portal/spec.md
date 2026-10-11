@@ -1807,7 +1807,9 @@ Saves use the ordinary versioned YAML configuration-request workflow, with
 optimistic concurrency, an impact preview and audit; one bulk change is one
 request of at most 100 Ministries, applied atomically, and selected Ministries
 already in the requested state are listed and left alone. A pending save is
-not presented as applied.
+not presented as applied. The review, Apply and the change's status appear
+[in place](../ui-conventions/spec.md#in-place-controls) under the table
+(#750).
 
 Activity and campaign inclusion are separate settings, and this screen changes
 only activity. It says so in one sentence and links its "In current campaign"
