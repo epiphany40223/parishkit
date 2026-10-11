@@ -473,7 +473,7 @@ Home, then these groups, each listing the entries the viewer's role may open:
 | Campaign setup | Campaign images | `/admin/campaign/images/` | Administrator | No current campaign, or it is archived |
 | Campaign setup | Dates and mail schedules | `/admin/campaign/schedules/` | Administrator | No current campaign |
 | Campaign setup | Share options | `/admin/campaign/share-options/` | Administrator | The campaign has no financial module, or it is not an unlocked Testing draft |
-| Campaign setup | Reminder WorkGroup | `/admin/campaign/reminder-workgroup/` | Administrator | No current campaign, or it is archived |
+| Campaign setup | No-reminders WorkGroup | `/admin/campaign/no-reminders-workgroup/` | Administrator | No current campaign, or it is archived |
 | Campaign setup | Go-live readiness | `/admin/campaign/go-live/` | Administrator | The campaign is not a draft (it points to Production activation) |
 | Campaign setup | Production activation | `/admin/campaign/production/` | Administrator | Production has not been confirmed for this campaign |
 | Mail and Family portal | Pause and resume mail | `/admin/mail/controls/` | Administrator | Testing mode |
@@ -791,7 +791,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `schedule_edit` | Edit scheduled email | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/<schedule>/` | (same) | The New page filled in; refuses a read-only schedule. |
 | `schedule_delete` | Delete scheduled emails | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/deletion/` (POST only) | (same) | The table's confirmation dialog posts here. |
 | `share_settings` | Share options | Menu: Share options | Administrator | How Families will share | `/admin/campaign/share-options/` | (same) | Gains a Return link and About panel. |
-| `reminder_workgroup` | Reminder WorkGroup | Menu: Reminder WorkGroup | Administrator | (new, #861) | `/admin/campaign/reminder-workgroup/` | (same) | Edit, review, apply; stays editable while live. |
+| `reminder_workgroup` | No-reminders WorkGroup | Menu: No-reminders WorkGroup | Administrator | (new, #861) | `/admin/campaign/no-reminders-workgroup/` | (same) | Edit, review, apply; stays editable while live. |
 | `go_live` | Go-live readiness | Menu: Go-live readiness | Administrator | (same) | `/admin/campaign/go-live/` | (same) |  |
 | `go_live_families` | Testing submissions | Go-live readiness | Administrator | Families with Testing submissions; Testing Families | `/admin/campaign/go-live/families/` | (same) |  |
 | `go_live_cleanup` | Testing cleanup | Go-live readiness | Administrator | Testing cleanup progress | `/admin/campaign/go-live/cleanup/<request>/` | (same) |  |
@@ -1359,10 +1359,15 @@ Artwork is presentation, not structure, so it stays editable while the campaign
 is live. Each Family email's editor (initial, reminder and confirmation) has a
 "Show the campaign banner at the top of this email" checkbox, on by default.
 
-Reminder WorkGroup (Campaign navigation, #861) names the one ParishSoft Family
-WorkGroup whose Families get no Reminders, for example a second Family record
-kept for a staff member who already responded as a parishioner. It is the
-campaign's optional `reminder_workgroup` setting: one plain-language text
+No-reminders WorkGroup (Campaign navigation, #861) names the one
+ParishSoft Family WorkGroup whose Families get no Reminders, even if they have
+not responded, for example a second Family record kept for a staff member who
+already responded as a parishioner; the page's first sentence says so. The
+displayed name (#1061, which retired "Reminder WorkGroup" because it read as
+if those Families get Reminders) comes from one constant, from which the page
+title, menu entry, URL, counts and notices are drawn. It is the
+campaign's optional `reminder_workgroup` setting (the stored key and the
+`reminder_workgroup_missing` log event keep their names): one plain-language text
 field (the WorkGroup's name as ParishSoft shows it; empty turns it off),
 reviewed, applied and followed
 [in place](../ui-conventions/spec.md#in-place-controls) under its form
@@ -1372,7 +1377,7 @@ newest refresh found: no WorkGroup set, the name not read yet (it takes
 effect at the next refresh), no ParishSoft WorkGroup by that name, or how
 many Families are in it. What the exclusion does and when it
 applies is in the background-processing specification's
-[Reminder WorkGroup](../background-processing/spec.md#family-invitations-and-reminders)
+[No-reminders WorkGroup](../background-processing/spec.md#family-invitations-and-reminders)
 rules; nothing else about those Families changes.
 
 Hosted files (Parish data) is the Administrator-only library of
@@ -3114,9 +3119,9 @@ its outbox message state, or, before preparation, by its occurrence:
 - **Couldn't be emailed**: skipped or cancelled because the Family has no
   deliverable address (`no_deliverable_recipient`) or is no longer eligible
   (`family_ineligible`).
-- **Skipped: in the ParishSoft Reminder WorkGroup** (shown when non-zero; a
+- **Skipped: in the ParishSoft No-reminders WorkGroup** (shown when non-zero; a
   column of the send history): a reminder skipped, or its unsent email
-  cancelled, because the Family is in the campaign's Reminder WorkGroup
+  cancelled, because the Family is in the campaign's No-reminders WorkGroup
   (`workgroup_excluded`, #861). Such a Family is never owed a reminder, so it
   is not remaining either.
 - **Not needed** (shown when non-zero): skipped, coalesced or cancelled for
@@ -3253,7 +3258,7 @@ result and the duration as labelled lines. **Email** names the send, with
 its mode, a later schedule change and In progress as muted lines under the
 name. **Total**, **Sent**, **Failed** and **Not sure it arrived** follow,
 then **Not in the total**, a labelled list of Cancelled, Not needed,
-Couldn't be emailed, Skipped: Reminder WorkGroup and Held. Times and counts
+Couldn't be emailed, Skipped: No-reminders WorkGroup and Held. Times and counts
 never wrap; labels wrap only between words. On a phone the table scrolls
 inside its own region and the page never scrolls sideways.
 
@@ -4633,9 +4638,9 @@ might be held back:
   two days earlier and still not removed
   ([#833](https://github.com/epiphany40223/parishkit/issues/833)). It
   resolves on the first refresh that is neither.
-- **An unknown Reminder WorkGroup** (#861): the newest refresh found no
+- **An unknown No-reminders WorkGroup** (#861): the newest refresh found no
   ParishSoft Family WorkGroup with the campaign's
-  [Reminder WorkGroup](#parish-and-integration-configuration) name, so no
+  [No-reminders WorkGroup](#parish-and-integration-configuration) name, so no
   Family's Reminders are being skipped. The notice names the setting and
   links its page; the refresh itself logs a WARNING. It is a panel notice,
   not one of the problems listed first, and it clears when a refresh finds

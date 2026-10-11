@@ -1203,7 +1203,7 @@ contract). Administrators are told that ParishSoft changes appear after the
 next full refresh or **Refresh now**.
 
 Every refresh, full and quick, also reads the campaign's
-[Reminder WorkGroup](#family-invitations-and-reminders) when the campaign
+[No-reminders WorkGroup](#family-invitations-and-reminders) when the campaign
 names one (#861): one paged list of the Family WorkGroups, then the members of
 only the WorkGroup with that name (matched ignoring case and surrounding
 spaces), recorded in the snapshot's load evidence. A refresh with no campaign,
@@ -1564,10 +1564,10 @@ Family without one receives no outbox row; its occurrence terminates as
 refusals therefore cannot create empty-recipient messages or systemic-provider
 failures, while the skipped occurrence preserves reporting and recovery state.
 
-A campaign may name a Reminder WorkGroup: a ParishSoft Family WorkGroup whose
+A campaign may name a No-reminders WorkGroup: a ParishSoft Family WorkGroup whose
 Families get no Reminders (#861; the setting is the campaign's
 [`reminder_workgroup`](../data/spec.md) value, edited on the Admin portal's
-[Reminder WorkGroup](../admin-portal/spec.md#parish-and-integration-configuration)
+[No-reminders WorkGroup](../admin-portal/spec.md#parish-and-integration-configuration)
 page). Planning (`plan_family`) treats such a Family's reminders as their own
 group and skips each one as it falls due, or as it is planned ahead in the
 lead window, with the reason `workgroup_excluded` (a response, a closed
@@ -1594,7 +1594,7 @@ Family's due reminders as `workgroup_excluded`, in the same order of reasons
 counts them as skipped, confirming the resume writes them so, and none
 coalesces into the Family's due invitation, which is still selected and sent.
 Family email progress
-counts these skips separately ("Skipped: Reminder WorkGroup"), never as owed
+counts these skips separately ("Skipped: No-reminders WorkGroup"), never as owed
 or remaining, and the Family timeline names them.
 
 ### Family schedule sweep

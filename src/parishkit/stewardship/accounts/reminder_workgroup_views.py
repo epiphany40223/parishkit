@@ -29,6 +29,7 @@ from django.views.decorators.http import require_http_methods
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.configuration import (
     REMINDER_WORKGROUP,
+    REMINDER_WORKGROUP_NAME,
     WORKGROUP_NAME_LIMIT,
 )
 from parishkit.stewardship.campaigns.models import Campaign
@@ -159,7 +160,8 @@ def _preview(request, service, actor, configuration, campaign, form):
             campaign,
             form,
             status=400,
-            message=_("The Reminder WorkGroup has not changed."),
+            message=_("The %(name)s has not changed.")
+            % {"name": _(REMINDER_WORKGROUP_NAME)},
         )
     patch = workgroup_patch(campaign, after)
     base = service.store.active()
