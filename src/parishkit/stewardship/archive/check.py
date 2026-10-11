@@ -26,6 +26,8 @@ import subprocess
 import sys
 import time
 from contextlib import suppress
+from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from threading import Event, Thread
 
@@ -35,6 +37,17 @@ from parishkit.stewardship.provider_checks import (
 )
 
 from .package import MAX_FILE_BYTES
+from .workbook import (
+    BAND_COUNT,
+    FAMILY_ID_SYSTEMS,
+    METADATA_KEYS,
+    SHEETS,
+    STORED_INTEGER_MAX,
+    STORED_MONEY_LIMIT,
+    STORED_NOTES_BYTES,
+    Kind,
+    stored_notes_bytes,
+)
 
 # A converted file checks in a few seconds; a minute means a hostile one.
 CHECK_SECONDS = 60
@@ -85,6 +98,14 @@ PROBLEM_SHAPE = {
     "sheet": (str, type(None)),
     "cell": (str, type(None)),
 }
+# The keys of a reply's daily row: the sheet's columns but its free-text
+# source (the worker drops it and the sheet row).
+DAILY_KEYS = frozenset(column.name for column in SHEETS["daily"]) - {"source"}
+BAND_KEYS = frozenset(("band", "families", "total"))
+# The id systems a kept Family row may name (the table's check constraint).
+RENEWAL_SYSTEMS = frozenset(("parishsoft_duid", "pds_fid"))
+BIGINT_MAX = 2**63 - 1
+SMALLINT_MAX = 2**15 - 1
 
 
 def _refused(problem):
@@ -165,17 +186,167 @@ def _shaped(value, shape):
 
 
 def _well_formed(document):
-    """Whether the helper's reply is a document of the agreed shape."""
+    """Whether the helper's reply is a document of the agreed shape.
+
+    A valid document is checked down to each value the import stores, against
+    the stored columns' types and limits (migration 0059), so a reply the
+    import would fail to save is "could not be checked" instead.
+    """
     if type(document) is not dict or type(document.get("valid")) is not bool:
         return False
     fields = {key: value for key, value in document.items() if key != "valid"}
     if document["valid"]:
-        return _shaped(fields, VALID_SHAPE) and all(
-            type(row) is dict for row in fields["daily"]
-        )
+        return _shaped(fields, VALID_SHAPE) and _storable(fields)
     return _shaped(fields, {"problems": list, "more_problems": int}) and all(
         _shaped(problem, PROBLEM_SHAPE) for problem in fields["problems"]
     )
+
+
+def _count(value, low=0, high=STORED_INTEGER_MAX):
+    """Whether a value is an int (never a bool) from ``low`` to ``high``."""
+    return type(value) is int and low <= value <= high
+
+
+def _amount(value):
+    """Decimal text of a stored amount (numeric(18, 2), not negative), or None."""
+    if type(value) is not str:
+        return None
+    try:
+        amount = Decimal(value)
+    except InvalidOperation:
+        return None
+    if (
+        not amount.is_finite()
+        or amount.as_tuple().exponent < -2
+        or not 0 <= amount < STORED_MONEY_LIMIT
+    ):
+        return None
+    return amount
+
+
+def _date(value, instant=False):
+    """The date (or, with ``instant``, aware datetime) an ISO text gives, or None."""
+    if type(value) is not str:
+        return None
+    try:
+        parsed = (datetime if instant else date).fromisoformat(value)
+    except ValueError:
+        return None
+    return None if instant and parsed.tzinfo is None else parsed
+
+
+def _metadata_value(key, value):
+    """Whether one metadata value has its key's type and stored limits."""
+    if value is None:
+        return key.optional
+    if key.kind is Kind.INTEGER:
+        return _count(value, key.minimum or 0, key.maximum or STORED_INTEGER_MAX)
+    if key.kind is Kind.BOOLEAN:
+        return type(value) is bool
+    if key.kind is Kind.INSTANT:
+        return _date(value, instant=True) is not None
+    if key.kind is Kind.DATE:
+        return _date(value) is not None
+    return type(value) is str and (
+        key.max_length is None or len(value) <= key.max_length
+    )
+
+
+def _storable_metadata(metadata):
+    """Every defined key with its type and limits, and nothing else."""
+    if set(metadata) != {key.name for key in METADATA_KEYS} or not all(
+        _metadata_value(key, metadata[key.name]) for key in METADATA_KEYS
+    ):
+        return False
+    start = _date(metadata["campaign_start_date"])
+    last = _date(metadata["campaign_last_submission_date"])
+    return (
+        type(metadata["schema_version"]) is str
+        and len(metadata["schema_version"]) <= 16
+        and start is not None
+        and last is not None
+        and start <= last
+    )
+
+
+def _storable_day(row):
+    """One daily row: exactly the stored columns, of their types."""
+    return (
+        type(row) is dict
+        and set(row) == DAILY_KEYS
+        and _count(row["campaign_day"], 1)
+        and _date(row["local_date"]) is not None
+        and _count(row["first_submissions"])
+        and _count(row["cumulative_families"])
+        and _count(row["cumulative_pledging_families"])
+        and row["cumulative_pledging_families"] <= row["cumulative_families"]
+        and _amount(row["cumulative_annual_pledged"]) is not None
+        and type(row["cumulative_pct_of_active"]) in (int, float)
+    )
+
+
+def _storable_band(band):
+    """One pledge band: its number, Family count and total."""
+    return (
+        type(band) is dict
+        and set(band) == BAND_KEYS
+        and _count(band["band"], 1, BAND_COUNT)
+        and _count(band["families"])
+        and _amount(band["total"]) is not None
+    )
+
+
+def _storable_renewal(triple):
+    """One kept Family row: [id system, id, first campaign day]."""
+    return (
+        type(triple) is list
+        and len(triple) == 3
+        and triple[0] in RENEWAL_SYSTEMS
+        and _count(triple[1], 1, BIGINT_MAX)
+        and _count(triple[2], 1)
+    )
+
+
+def _notes(values):
+    """Whether note.* or count.* values map text keys to text or None."""
+    return all(
+        type(key) is str and (value is None or type(value) is str)
+        for key, value in values.items()
+    )
+
+
+def _storable(fields):
+    """Whether a valid reply's values all fit what the import stores."""
+    daily, bands, renewal = fields["daily"], fields["bands"], fields["renewal_families"]
+    systems, quartiles = fields["family_id_systems"], fields["quartiles"]
+    counts = ("families", "submission_rows", "unattributed_rows", "ministry_rows")
+    if not (
+        _storable_metadata(fields["metadata"])
+        and _notes(fields["notes"])
+        and _notes(fields["other_counts"])
+        and stored_notes_bytes({**fields["notes"], **fields["other_counts"]})
+        <= STORED_NOTES_BYTES
+        and all(type(key) is str for key in fields["flagged_notes"])
+        and all(system in FAMILY_ID_SYSTEMS.values() for system in systems)
+        and len(set(systems)) == len(systems)
+        and all(_count(fields[name]) for name in counts)
+        and _count(fields["pledging_families"], 0, fields["families"])
+        and _count(fields["minor_version"])
+        and _count(fields["band_set_version"], 1, SMALLINT_MAX)
+        and _amount(fields["annual_pledged"]) is not None
+        and daily
+        and all(_storable_day(row) for row in daily)
+        and len({row["campaign_day"] for row in daily}) == len(daily)
+        and all(_storable_band(band) for band in bands)
+        and len({band["band"] for band in bands}) == len(bands)
+        and all(_storable_renewal(triple) for triple in renewal)
+        and len({(t[0], t[1]) for t in renewal}) == len(renewal)
+    ):
+        return False
+    if quartiles is None:
+        return True
+    values = [_amount(value) for value in quartiles]
+    return len(values) == 3 and None not in values and values == sorted(values)
 
 
 def _exchange(process, data, deadline):

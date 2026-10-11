@@ -21,6 +21,7 @@ live here too, beside the format, so a band-set change is one edit.
 """
 
 import bisect
+import json
 import math
 import re
 import warnings
@@ -46,6 +47,13 @@ MAX_ROWS = 500_000
 MAX_INTEGER = 10**15
 MAX_MONEY = Decimal(10**12)
 CENT = Decimal("0.01")
+# The stored columns' limits (migration 0059), so a file the reader accepts
+# never fails on save: an integer column, a numeric(18, 2) amount, and the
+# archive guard's 256 KB bound on the note.* and kept count.* values (as
+# PostgreSQL prints the JSON object). Text keys carry their own max_length.
+STORED_INTEGER_MAX = 2**31 - 1
+STORED_MONEY_LIMIT = Decimal(10**16)
+STORED_NOTES_BYTES = 256 * 1024
 PERCENT_TOLERANCE = 0.0005
 # Forms that asked the financial question; 2020's ministry form did not.
 FINANCIAL_FORMS = ("combined", "pledge")
@@ -94,6 +102,7 @@ class MetadataKey:
     optional: bool = False
     minimum: int | None = None
     maximum: int | None = None
+    max_length: int | None = None
 
 
 FREQUENCIES = ("weekly", "monthly", "quarterly", "annual", "none", "other")
@@ -377,7 +386,10 @@ METADATA_KEYS: tuple[MetadataKey, ...] = (
         "Format version; a reader refuses a major version it does not know.",
     ),
     MetadataKey(
-        "campaign_name", _T, "Such as 'Stewardship 2027'; the name is the pledge year."
+        "campaign_name",
+        _T,
+        "Such as 'Stewardship 2027'; the name is the pledge year.",
+        max_length=200,
     ),
     MetadataKey(
         "campaign_year",
@@ -396,7 +408,12 @@ METADATA_KEYS: tuple[MetadataKey, ...] = (
         _A,
         "Instant the data describes (UTC); for a final file, the last submission.",
     ),
-    MetadataKey("timezone", _T, "IANA zone used for local dates and day numbers."),
+    MetadataKey(
+        "timezone",
+        _T,
+        "IANA zone used for local dates and day numbers.",
+        max_length=64,
+    ),
     MetadataKey("campaign_start_date", _D, "Local date of day 1."),
     MetadataKey(
         "campaign_last_submission_date",
@@ -408,18 +425,28 @@ METADATA_KEYS: tuple[MetadataKey, ...] = (
         _I,
         "Active parishioner Families, the percentage denominator.",
         minimum=1,
+        maximum=STORED_INTEGER_MAX,
     ),
     MetadataKey(
         "active_families_provenance",
         _T,
         "Where active_families came from.",
+        max_length=10_000,
     ),
-    MetadataKey("source_system", _T, "The system that collected the responses."),
+    MetadataKey(
+        "source_system",
+        _T,
+        "The system that collected the responses.",
+        max_length=10_000,
+    ),
     MetadataKey("source_files", _T, "Names of the original files converted."),
     MetadataKey("converted_at", _A, "When this file was produced (UTC)."),
     MetadataKey("converter", _T, "The program that produced it."),
     MetadataKey(
-        "dedup_rule", _T, "How repeat submissions were reduced to one per Family."
+        "dedup_rule",
+        _T,
+        "How repeat submissions were reduced to one per Family.",
+        max_length=10_000,
     ),
 )
 METADATA = {key.name: key for key in METADATA_KEYS}
@@ -698,7 +725,20 @@ def _metadata_value(key, value):
             return value == "TRUE"
         raise _Bad("type", "must be TRUE or FALSE")
     column = Column(key.name, key.kind, key.description)
-    return convert(column, value)
+    typed = convert(column, value)
+    if key.max_length is not None and len(typed) > key.max_length:
+        raise _Bad("length", f"must be at most {key.max_length:,} characters")
+    return typed
+
+
+def stored_notes_bytes(notes):
+    """The size of the stored notes object as PostgreSQL prints its jsonb.
+
+    jsonb prints ``{"key": "value", ...}`` with these separators, raw UTF-8
+    and the same escapes as ``json.dumps``; key order does not change the
+    size.
+    """
+    return len(json.dumps(notes, ensure_ascii=False).encode())
 
 
 def _time_zone(text):
@@ -823,6 +863,13 @@ class _Reader:
                 continue
             text = None if _blank(value) else convert(SHEETS["metadata"][1], value)
             (notes if prefix == "note." else other_counts)[key] = text
+        if stored_notes_bytes({**notes, **other_counts}) > STORED_NOTES_BYTES:
+            self.add(
+                "notes_size",
+                "the note.* and count.* values must total at most 256 KB",
+                "metadata",
+            )
+            raise _Stop
         return Archive(
             metadata=metadata,
             minor_version=self.minor,
@@ -1541,6 +1588,10 @@ class _Consistency:
             "cumulative_pledging_families": len(pledged),
             "cumulative_annual_pledged": sum(pledged, Decimal(0)),
         }
+        # The last day's own cell is below MAX_MONEY, so a consistent file
+        # never reaches this; it keeps the stored total's bound explicit.
+        if expected["cumulative_annual_pledged"] >= STORED_MONEY_LIMIT:
+            self.add("range", "the pledged total is out of range", "families")
         for column, value in expected.items():
             if last[column] != value:
                 self.add(

@@ -400,7 +400,16 @@ The checks, in order:
 3. **Cells.** Every cell has its column's type, range and enumeration; no
    formula cells; required cells are not blank; the conditional rules in the
    column tables hold (such as `annual_pledge` against `pledge_status`, and
-   `installment_source` against `installment_amount`).
+   `installment_source` against `installment_amount`). Stored values fit
+   their columns, so an accepted file never fails on save:
+   `campaign_name` is at most 200 characters, `timezone` at most 64,
+   `active_families_provenance`, `source_system` and `dedup_rule` at most
+   10,000 each, `active_families` at most 2,147,483,647, the `note.*` and
+   kept `count.*` values at most 256 KB together (as their stored JSON
+   object), and the pledged total below $10,000,000,000,000,000 (a
+   `numeric(18, 2)` column). The isolated helper's reply is checked to the
+   same limits before anything is stored; a reply that breaks one is
+   refused as "could not be checked".
 4. **Consistency.** Each rule below holds for every one of the seven
    converted 2020–2026 files (the percentage rule once they are regenerated
    with measured counts).
