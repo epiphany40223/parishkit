@@ -674,7 +674,12 @@ Administrator may override.
       the per-Administrator cap and the audit: at most 60 addresses' names an
       hour for each Administrator with a live session, each lookup traced to
       that Administrator. Storing the session keys hashed is
-      [#995](https://github.com/epiphany40223/parishkit/issues/995). The page
+      [#995](https://github.com/epiphany40223/parishkit/issues/995). The
+      Users page's ParishSoft Ministry leaders table (migration 0054) has
+      the same session check and audit but takes no address: with a live
+      Administrator's session key, a compromised web login learns the
+      leaders without a user (names, Member DUIDs, addresses and
+      Ministries), exactly what the page shows that Administrator. The page
       also limits
       each Administrator's lookups per minute and refuses them while the
       limiter is unavailable. SQL's activation guard

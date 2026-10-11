@@ -122,6 +122,14 @@ class Action(StrEnum):
     # New user's Name lookup (#952): ``count`` is the ParishSoft names found,
     # never the address looked up.
     USER_NAMES_LOOKED_UP = "user_names_looked_up"
+    # The Users page's ParishSoft Ministry leaders without a user (#952
+    # slice 6): each read, which the definer records itself (``count`` is
+    # the rows answered, never an address); a reviewed import recorded as
+    # one configuration request (its subject; ``count`` is the users added);
+    # and each user it adds (the subject is the new user's record ID).
+    USER_LEADERS_LISTED = "user_leaders_listed"
+    USER_LEADERS_IMPORT_REQUESTED = "user_leaders_import_requested"
+    USER_LEADER_IMPORTED = "user_leader_imported"
     SECURITY_EVENT_ACKNOWLEDGED = "security_event_acknowledged"
     CRITICAL_EVENTS_ACKNOWLEDGED = "critical_events_acknowledged"
     CREDENTIAL_RESULT_DISMISSED = "credential_result_dismissed"
@@ -156,6 +164,7 @@ class Action(StrEnum):
     # session (see the specification's "Audit attribution").
     ADMIN_CMD_SCHEDULE_CONFIRM = "admin_cmd_schedule_confirm"
     ADMIN_CMD_USERS_CONFIRM = "admin_cmd_users_confirm"
+    ADMIN_CMD_USERS_IMPORT_LEADERS = "admin_cmd_users_import_leaders"
     # The operator's cancellation of a stuck live end-date change (#944).
     ADMIN_CMD_CONFIG_REQUEST_CANCEL = "admin_cmd_config_request_cancel"
     ADMIN_CMD_TASK_RETRY = "admin_cmd_task_retry"

@@ -1710,6 +1710,26 @@ def users_confirm(args, preamble, runtime, context):
     )
 
 
+def users_import_leaders(args, preamble, runtime, context):
+    """Review or confirm importing ParishSoft Ministry leaders (#952 slice 6)."""
+    from .admin_users import TOKEN_LIMIT, confirm_import, preview_import
+
+    if args.confirm:
+        if args.token is None or args.all or args.email:
+            raise UsageError("--confirm takes only --token.")
+        return confirm_import(
+            context["caller"],
+            runtime,
+            token=_input(args.token, context, TOKEN_LIMIT),
+            context=context,
+        )
+    if args.token is not None or (args.all and args.email):
+        raise UsageError("--preview takes --all or --email, not both, and no --token.")
+    return preview_import(
+        context["caller"], runtime, everyone=args.all, emails=args.email or []
+    )
+
+
 def users_preview_upgrade(args, preamble, runtime, context):
     """The read-only users upgrade preview of Portal users (#952 slice 2)."""
     from .admin_reads import read_users_upgrade
@@ -2447,6 +2467,31 @@ def _users_confirm_options(parser):
         "--token",
         required=True,
         help="preview.token from users preview, or - for standard input",
+    )
+
+
+def _users_import_options(parser):
+    """Options of ``users import-leaders``: preview whom, or confirm a review."""
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument(
+        "--preview",
+        action="store_true",
+        help="list the leaders without a user and review importing the chosen ones",
+    )
+    mode.add_argument(
+        "--confirm", action="store_true", help="apply a reviewed import (--token)"
+    )
+    parser.add_argument(
+        "--all", action="store_true", help="with --preview: import every leader listed"
+    )
+    parser.add_argument(
+        "--email",
+        action="append",
+        help="with --preview: one leader's address to import (repeatable)",
+    )
+    parser.add_argument(
+        "--token",
+        help="with --confirm: preview.token from --preview, or - for standard input",
     )
 
 
@@ -3344,10 +3389,12 @@ def _users_specs():
     ``users list`` and ``users preview-upgrade`` are passive reads any
     session may run; each records the page's view event,
     ``portal_users_viewed``. ``users preview`` and ``users confirm`` change
-    users as the Users page does (slice 5) and need a full-scope session.
+    users as the Users page does (slice 5) and need a full-scope session, as
+    does ``users import-leaders``, the page's leaders table and import
+    (slice 6).
     """
     from .admin_reads import UsersList, UsersUpgradePreview
-    from .admin_users import UsersConfirm, UsersPreview
+    from .admin_users import LeaderImport, UsersConfirm, UsersPreview
 
     return (
         CommandSpec(
@@ -3392,6 +3439,16 @@ def _users_specs():
             UsersConfirm.field_names(),
             11,
             options=(_users_confirm_options,),
+        ),
+        CommandSpec(
+            "users import-leaders",
+            "Import ParishSoft Ministry leaders as users, after a preview.",
+            users_import_leaders,
+            "full",
+            True,
+            LeaderImport.field_names(),
+            11,
+            options=(_users_import_options,),
         ),
     )
 
