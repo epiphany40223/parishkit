@@ -129,9 +129,10 @@ SETTINGS_PAGES = (
     "campaign-ministries.html",
     "reminder-workgroup.html",
 )
-# Ministries reviews its row selection in the same region (#750); it has
-# no settings form, so it is not one of SETTINGS_PAGES.
-REVIEW_PAGES = (*SETTINGS_PAGES, "ministries.html")
+# Ministries reviews its row selection, and Campaign images its uploads and
+# removals, in the same region (#750); neither has a settings form, so they
+# are not SETTINGS_PAGES.
+REVIEW_PAGES = (*SETTINGS_PAGES, "ministries.html", "artwork-settings.html")
 HOSTED = {
     "integration-summary.html": ("integration-settings.html",),
     "settings-review.html": REVIEW_PAGES,

@@ -563,6 +563,29 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   in-place region of its own, so the quiet refresh once a change is applied
   brings it up to date; it sits below the review region, so a status whose
   length changes never moves the form or the review.
+- **In-place review: Campaign images (#750).** Campaign images has no
+  settings form: each slot's upload form (`data-in-place`, multipart) and
+  its Remove this image link (`a[data-in-place]`) answer with the page
+  naming the change (`?review=<slot>&bundle=<id>` or `?remove=<slot>`), whose
+  review region under every slot shows the image (or the removal) with
+  Apply, so a review appearing never moves a slot. Apply posts to that
+  address. The slots are one in-place region, redrawn by an upload's answer
+  and by the quiet refresh once a change is applied; a refused upload's
+  field error shows in its slot and, linked to that field, in the review
+  region, which takes focus. Each slot is the same height with or without
+  an image (its image box keeps the slot's image size, its caption is one
+  line, and the removal line keeps its space), so the quiet refresh never
+  moves the review region below the slots. A stale upload (the page's
+  settings changed elsewhere) is refused in the region too; a stale Apply
+  says to upload the image again, or for a removal, to choose Remove this
+  image again. A refused Apply's answer marks the slots
+  `data-in-place-always`, so their forms are redrawn at the current
+  version and the next upload is accepted. Loading an address whose change
+  can no longer be reviewed (an image already applied, expired, another
+  sign-in's or stale; a slot with nothing left to remove) shows the page
+  with that explanation in the review region. Each upload form has an id,
+  so a file chosen while the quiet refresh redraws it is said not to be
+  kept.
 
 ### No layout shift
 

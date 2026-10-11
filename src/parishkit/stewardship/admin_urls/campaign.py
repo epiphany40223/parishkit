@@ -89,16 +89,6 @@ patterns = [
         artwork_views.artwork_upload,
         "artwork_upload",
     ),
-    _page(
-        "campaign/images/<slug:slot>/removal/",
-        artwork_views.artwork_remove,
-        "artwork_remove",
-    ),
-    _page(
-        "campaign/images/<slug:slot>/<uuid:bundle_id>/",
-        artwork_views.artwork_preview,
-        "artwork_preview",
-    ),
     _page("campaign/schedules/", schedule_views.schedule_settings, "schedule_settings"),
     # New, Edit and Delete for the scheduled emails list (#878). "addition/" and
     # "deletion/" come before the schedule's own address, which takes a UUID.

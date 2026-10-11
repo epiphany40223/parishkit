@@ -643,6 +643,15 @@ fieldset.member-section { border: 0; border-radius: 0; background: none; padding
 .family-page-icon { display: block; width: 6rem; height: auto; margin: .25rem 0 0; }
 .artwork-banner { max-width: 100%; height: auto; }
 .artwork-section { width: 6rem; height: auto; }
+/* Campaign images (#750): each slot's image box keeps its size with or
+   without an image, and the removal line keeps its space, so an applied
+   change never changes a slot's height or moves what is below it. */
+.artwork-frame { margin: 0 0 .5rem; }
+.artwork-box { display: block; position: relative; max-width: 100%; }
+.artwork-box-banner { width: 1024px; aspect-ratio: 1024 / 217; }
+.artwork-box-section { width: 6rem; aspect-ratio: 1; }
+.artwork-box > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.artwork-remove { min-height: 1.6em; min-height: 1lh; }
 .family-summary .family-name { font-size: 1.2rem; font-weight: 650; }
 .family-nav { position: sticky; bottom: 0; z-index: 1; background: var(--paper-soft, var(--paper)); padding-block: .75rem max(.75rem, env(safe-area-inset-bottom)); border-top: 1px solid var(--border); margin-top: 1.5rem; }
 .family-nav > button { margin-block: 0; }

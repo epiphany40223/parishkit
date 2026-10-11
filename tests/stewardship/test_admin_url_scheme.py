@@ -223,8 +223,6 @@ SLASHLESS_EXPECTED = {
     ),
     "/admin/campaign/images": "/admin/campaign/images/",
     "/admin/campaign/images/logo": "/admin/campaign/images/logo/",
-    "/admin/campaign/images/logo/removal": "/admin/campaign/images/logo/removal/",
-    f"/admin/campaign/images/logo/{T}": f"/admin/campaign/images/logo/{T}/",
     "/admin/campaign/schedules": "/admin/campaign/schedules/",
     "/admin/campaign/schedules/addition": "/admin/campaign/schedules/addition/",
     f"/admin/campaign/schedules/{T}": f"/admin/campaign/schedules/{T}/",
@@ -330,6 +328,10 @@ OLD_ADDRESSES = (
     f"/admin/reports/{T}/families/",
     f"/admin/reports/{T}/families/{T}/",
     f"/admin/reports/{T}/ministries/follow-up/{T}/update",
+    # Campaign images' separate review pages: reviews happen on the page
+    # itself now (#750).
+    "/admin/campaign/images/logo/removal/",
+    f"/admin/campaign/images/logo/{T}/",
     # Retired addresses that named no campaign (decisions 10 and 19).
     "/admin/reports/campaigns/",
     "/admin/ministry-reports/",
