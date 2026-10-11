@@ -8,6 +8,7 @@ from django.utils.translation import gettext_lazy as _
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.schema_primitives import typed
+from parishkit.stewardship.web.refusals import UserFacingError
 from parishkit.stewardship.web.sender_name_field import SenderNameField
 
 from . import setup_help
@@ -180,10 +181,30 @@ def _without_domains(values):
     """An access step saved with the retired domain lists, without them.
 
     Domains no longer grant sign-in, so a saved domain is refused rather than
-    silently dropped: the Admin saves the step again and lists addresses.
+    silently dropped: the Admin saves the step again and lists addresses. The
+    refusal reaches Review and Finish as a user-facing message that names the
+    access step and links to it (the step's own form no longer has a domain
+    field to mark, and the step reads its saved addresses back unchanged).
     """
     if any(values.get(name) != [] for name in LEGACY_ACCESS_FIELDS):
-        raise ValueError("Save the access step again: domains no longer grant access.")
+        # Imported here: the wizard's page list pulls in the campaign forms,
+        # which the values-only callers of this module do not otherwise need.
+        from .setup_wizard import BY_KEY
+
+        raise UserFacingError(
+            _(
+                "The “Administrative access” step was saved by an earlier "
+                "version that let whole email domains sign in. Domains no "
+                "longer grant access."
+            ),
+            fix=_(
+                "Open “Administrative access”, list each person's own email "
+                "address under Administrator, Staff or Ministry-leader email "
+                "addresses, and save the step again."
+            ),
+            link=BY_KEY["access"].url,
+            link_label=_("Go to “Administrative access”"),
+        )
     return {
         name: value
         for name, value in values.items()
