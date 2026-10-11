@@ -11,14 +11,17 @@ from datetime import timedelta
 from uuid import uuid4
 
 import pytest
+from django.db import connection, transaction
 
 from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.models import (
     RestoreDeliveryHold,
+    RestoreHoldResolution,
     ScheduleDefinition,
 )
+from parishkit.stewardship.campaigns.runtime_models import CampaignWorkGate
 from parishkit.stewardship.deployment import ServiceRole
 
 from ..policy_factory import address
@@ -26,7 +29,9 @@ from .auth_builders import signed_in, unguarded
 from .campaign_builders import campaign_clock, change
 from .test_background_grants_postgresql import task_login
 from .test_restore_review_postgresql import (
+    BACKUP,
     NOW,
+    administrator,
     begin,
     live_campaign,
     restored_occurrence,
@@ -70,7 +75,7 @@ def test_the_gate_sends_the_administrator_to_the_review(under_review):
 
 
 def test_list_settle_and_release_end_on_home(under_review):
-    """Find, assume one send, send another again, then release to Home."""
+    """Find, assume one send, refuse a stale count, then release to Home."""
     browser = under_review
     with campaign_clock(NOW), task_login(ServiceRole.WEB, exact=True, reconnect=True):
         # Nothing found yet: release is shown unavailable, with its reason.
@@ -194,6 +199,9 @@ def test_a_resend_a_later_reminder_superseded_is_refused_in_place(under_review):
     # The later reminder reached Family 3 (restored input).
     restored_occurrence(second, FamilyCampaign.objects.get(family_duid=3))
     with campaign_clock(NOW), task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        # The page shows the choice unavailable, with its reason.
+        shown = browser.get(PAGE).content.decode()
+        assert 'data-restore-resend-blocked="superseded"' in shown
         refused = post(
             browser,
             action="group-confirm",
@@ -221,3 +229,133 @@ def test_a_resend_a_later_reminder_superseded_is_refused_in_place(under_review):
         ).count()
         == count
     )
+
+
+def resend(browser, definition, count):
+    """Confirm "Send these again" for one send, with a note."""
+    return post(
+        browser,
+        action="group-confirm",
+        definition=definition,
+        group_action="resend",
+        count=str(count),
+        evidence="Not in the provider's log.",
+    )
+
+
+def test_send_these_again_authorizes_each_held_email(under_review):
+    """A reachable send settled as "Send these again" records one decision each."""
+    browser = under_review
+    with campaign_clock(NOW), task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        post(browser, action="list")
+        invitation = ScheduleDefinition.objects.get(kind="initial")
+        count = RestoreDeliveryHold.objects.filter(
+            definition=invitation, state="unreviewed"
+        ).count()
+        preview = post(
+            browser,
+            action="group-preview",
+            definition=invitation.pk,
+            group_action="resend",
+        )
+        assert b"will get a second copy" in preview.content
+        done = resend(browser, invitation.pk, count)
+    assert done.status_code == 200 and b"settled" in done.content
+    holds = RestoreDeliveryHold.objects.filter(definition=invitation)
+    assert {hold.state for hold in holds} == {"resend_authorized"}
+    assert (
+        RestoreHoldResolution.objects.filter(
+            hold__definition=invitation, state="resend_authorized"
+        ).count()
+        == count
+    )
+
+
+def test_a_resend_another_restore_holds_is_unavailable_and_refused(under_review):
+    """Another restore's undecided hold on the same email blocks "send again".
+
+    The decision guard refuses it with the shared SQLSTATE, which the page
+    used to answer as "changed" forever; it now names the reason (#537
+    review), shows the choice unavailable, and changes nothing.
+    """
+    browser = under_review
+    with campaign_clock(NOW), task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        post(browser, action="list")
+    earlier = RestoreDeliveryHold.objects.filter(definition__kind="initial").first()
+    with campaign_clock(NOW):
+        # A second restore: the first one's undecided holds keep every email
+        # back, so this one's own hold on the same email is loaded directly.
+        begin(BACKUP - timedelta(hours=1))
+        runtime = SystemConfiguration.objects.get()
+        RestoreDeliveryHold.objects.create(
+            restore_id=runtime.restore_id,
+            definition_id=earlier.definition_id,
+            mode="production",
+            target=earlier.target,
+            slot="once",
+            backup_at=runtime.restore_backup_at,
+            window_start=runtime.restore_backup_at,
+            window_end=NOW,
+            discovery="restore_inventory",
+            actor_id=administrator().principal_id,
+            correlation_id=uuid4(),
+        )
+    with campaign_clock(NOW), task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        shown = browser.get(PAGE).content.decode()
+        assert 'data-restore-resend-blocked="held_elsewhere"' in shown
+        preview = post(
+            browser,
+            action="group-preview",
+            definition=earlier.definition_id,
+            group_action="resend",
+        )
+        assert preview.status_code == 409
+        assert b"An earlier restore still holds" in preview.content
+        refused = resend(browser, earlier.definition_id, 1)
+    assert refused.status_code == 409
+    assert b"An earlier restore still holds" in refused.content
+    assert not RestoreHoldResolution.objects.exists()
+
+
+def test_release_refusals_name_their_reason(under_review):
+    """Emails still needing a hold, or work still running, are named in place.
+
+    Every release refusal of the SQL guard shares SQLSTATE 23514, so the page
+    classifies these by its own checks under the same locks, never by the
+    guard's wording.
+    """
+    browser = under_review
+    version = SystemConfiguration.objects.get().version
+    with campaign_clock(NOW), task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        # Nothing found yet: the confirm (posted directly) says so.
+        early = post(
+            browser, action="release-confirm", key=str(uuid4()), version=version
+        )
+        assert early.status_code == 409
+        assert b"8 emails still need a hold" in early.content
+        assert b'data-restore-refused="needs_holds"' in early.content
+        post(browser, action="list")
+    # A purge reservation still running (loaded as offline input).
+    campaign = SystemConfiguration.objects.get().current_campaign_id
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute("SET LOCAL session_replication_role = replica")
+        CampaignWorkGate.objects.create(
+            campaign_id=campaign,
+            request_id=uuid4(),
+            state="running",
+            correlation_id=uuid4(),
+        )
+        cursor.execute("SET LOCAL session_replication_role = origin")
+    with campaign_clock(NOW), task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        preview = post(browser, action="release-preview")
+        assert preview.status_code == 409
+        assert b'data-restore-refused="blocked"' in preview.content
+        blocked = post(
+            browser,
+            action="release-confirm",
+            key=str(uuid4()),
+            version=SystemConfiguration.objects.get().version,
+        )
+    assert blocked.status_code == 409
+    assert b'data-restore-refused="blocked"' in blocked.content
+    assert SystemConfiguration.objects.get().restore_review_required

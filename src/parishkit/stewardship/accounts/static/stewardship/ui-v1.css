@@ -338,6 +338,10 @@ input[data-time-entry=list] { max-width: 24rem; }
    ui-v1.js): one line's height while empty, so the hint coming and going
    never moves the content after it (#953, the System logs table). */
 [data-complete-hint=reserve] { min-height: 1.6em; min-height: 1lh; }
+/* A reason line that keeps one line's height while empty, so its text
+   coming or going never moves what follows (no layout shift; the Restore
+   review's held-email rows, #537). */
+.reserve-line { min-height: 1.6em; min-height: 1lh; }
 select:not([multiple]):not([size]) { max-width: 26rem; }
 select[multiple], select[size] { max-width: 40rem; }
 textarea { max-width: 56rem; }

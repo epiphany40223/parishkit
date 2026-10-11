@@ -45,7 +45,9 @@ _REFUSALS = {
     "reauthenticate": 403,
     "changed": 409,
     "blocked": 409,
+    "needs_holds": 409,
     "superseded": 409,
+    "held_elsewhere": 409,
     "invalid": 400,
 }
 
@@ -79,25 +81,28 @@ def restore_review(request):
             result = {"refused": "reauthenticate"}
         except StaleRecordError:
             result = {"refused": "changed"}
+        except review.ReleaseRefused as error:
+            # Checked in Python under the guard's locks, so named here.
+            result = {"refused": error.reason}
+        except review.ResendBlocked as error:
+            result = {"refused": error.reason}
         except IntegrityError as error:
-            # The release guard's refusal (a purge or campaign change still
-            # running) or a fresh-sign-in lapse between check and write.
+            # The guards answer every other refusal with one SQLSTATE
+            # (23514), so the page never reads their wording: the reasons a
+            # person can act on (emails still needing a hold, a purge or
+            # campaign change running, a refused resend) are checked first in
+            # Python and named above. What reaches here is a fresh sign-in
+            # that lapsed between check and write (42501), or a change that
+            # landed in between (another step, more emails to hold), which
+            # the refreshed page then shows.
             if _fresh_or_refused(error):
                 result = {"refused": "reauthenticate"}
-            elif request.POST.get("action") == "release-confirm" and (
-                "stale" not in str(error)
-            ):
-                # The release guard: a purge or campaign change still running.
-                result = {"refused": "blocked"}
             else:
-                # Another decision on the same hold won the race.
                 result = {"refused": "changed"}
         except DatabaseError as error:
             if not _fresh_or_refused(error):
                 raise
             result = {"refused": "reauthenticate"}
-        except review.SupersededResend:
-            result = {"refused": "superseded"}
         except (ValueError, TypeError, KeyError):
             result = {"refused": "invalid"}
         if result.get("released"):
@@ -151,6 +156,9 @@ def _step(request, principal, state):
         group_action = request.POST["group_action"]
         if group_action not in review.GROUP_ACTIONS or not group.count(group_action):
             raise ValueError("Nothing to settle.")
+        if group_action == "resend" and group.resend_blocked:
+            # The page shows this choice unavailable, with its reason.
+            raise review.RESEND_BLOCKS[group.resend_blocked](group.resend_blocked)
         return {"group": group, "group_action": group_action}
     if action == "group-confirm":
         group = _group(state, request.POST["definition"])
@@ -167,10 +175,14 @@ def _step(request, principal, state):
         return {"settled": settled, "group_action": request.POST["group_action"]}
     if action == "release-preview":
         # The page offers no release while an email still needs a hold; a
-        # posted preview is checked the same way (the SQL refuses too).
-        if review.holds_needed():
-            raise StaleRecordError("Emails still need a hold.")
+        # posted preview is checked the same way, as release itself is.
+        if reason := review.release_refusal():
+            raise review.ReleaseRefused(reason)
         return {"release": True, "key": uuid4()}
+    # The same named reasons before the release itself; one that arises
+    # between this read and the guard's own check is answered as "changed".
+    if reason := review.release_refusal():
+        raise review.ReleaseRefused(reason)
     review.release_review(
         request_id=UUID(request.POST["key"]),
         expected_runtime_version=int(request.POST["version"]),
