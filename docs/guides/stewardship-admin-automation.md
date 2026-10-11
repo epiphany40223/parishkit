@@ -697,6 +697,7 @@ first), `name`, `duid`, `purpose`, `mode`, `state` and `attempts`, and also
 | Field | What it holds |
 | --- | --- |
 | `deliveries`, `delivery` | Each message's `id`, `campaign_id`, `purpose`, `mode`, `state`, `version`, `attempt`, `task_id`, `created_at`, `updated_at`, `finished_at` |
+| `refused` | `delivery list`, in each of `deliveries`: how many of the email's refused addresses are still unresolved, as Outgoing mail marks it (0 for none) |
 | `state`, `send`, `page`, `size`, `sort`, `has_next`, `matching`, `matching_capped` | `delivery list`: the filters and the page of rows |
 | `task` | `delivery show`: the latest task's `id`, `state`, `version` and `retry_sequence` |
 | `actions`, `retry_unavailable` | `delivery show`: the resolutions the page offers now, and whether a retry is refused by the campaign's resend rule |
@@ -1216,3 +1217,6 @@ error, as `logs export` does; the wrapper refuses to write it to a terminal.
   records why).
 - `pk-admin/1` (#935): additive. `delivery refusals --sort name`, by the
   Family's name, as the Refused addresses page.
+- `pk-admin/1` (#1004): additive. Each `delivery list` row has
+  `refused`, the email's unresolved refused-address count that Outgoing
+  mail shows. `delivery show` is unchanged.
