@@ -17,9 +17,11 @@ from uuid import uuid4
 
 import pytest
 from django.db import DatabaseError, connection, transaction
+from django.db.models import F
 from django.urls import reverse
 from openpyxl import load_workbook
 
+from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.models import AuditContext
 from parishkit.stewardship.campaigns.read_guards import DownloadPool, ReadLimits
@@ -38,6 +40,7 @@ from parishkit.stewardship.reports.export_services import TASK_TYPE, export_stat
 from parishkit.stewardship.reports.export_tasks import export_handler
 
 from ..export_urls import export_action
+from .auth_builders import signed_in
 from .campaign_builders import campaign_clock
 from .test_admin_report_cli_postgresql import cli  # noqa: F401
 from .test_background_grants_postgresql import task_login
@@ -398,3 +401,64 @@ def test_migration_check_refuses_a_missing_part():
                 cursor.execute(change)
                 cursor.execute(check)
         cursor.execute(check)
+
+
+def test_a_ministry_leader_and_a_disabled_user_cannot_export(
+    scenario,  # noqa: F811
+    cli,  # noqa: F811
+    google,
+):
+    """Only a current Administrator or Staff member exports, by every path.
+
+    The fixture's Choir Chairperson (a Ministry leader) cannot sign in to
+    this campaign, which does not ask about Ministries, so the form never
+    reaches them, and neither the service nor the capture trigger accepts
+    them. Once the Administrator is disabled, the form and the command are
+    refused and the trigger refuses their capture: nothing is stored.
+    """
+    harness, _, browser, actor = scenario
+    imported(scenario)
+    run = cli()
+    google[0].update(email="valid@example.org", sub="chairperson-subject")
+    leader_browser, login = signed_in()
+    assert login.status_code == 403
+    leader = PortalUser.objects.get(email="valid@example.org").pk
+    fields = dict(
+        day="2", format="csv", browser_timezone="UTC", request_key=str(uuid4())
+    )
+    with day_two(harness), task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        assert post(leader_browser, ROUTE, fields).status_code in {302, 403}
+        with pytest.raises(PermissionError):
+            create_comparison_export(
+                harness.service.store,
+                leader,
+                campaign_id=harness.campaign.pk,
+                day=2,
+                format="csv",
+                browser_timezone="UTC",
+                request_key=uuid4(),
+                document=capture_row(harness, leader).document,
+            )
+        # The capture trigger's own policy refuses, not a grant or a binding.
+        with (
+            pytest.raises(DatabaseError, match="capture is unavailable"),
+            transaction.atomic(),
+        ):
+            capture_row(harness, leader).save(force_insert=True)
+    PortalUser.objects.filter(pk=actor).update(disabled=True, version=F("version") + 1)
+    with day_two(harness):
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            refused = post(browser, ROUTE, fields)
+            assert refused.status_code in {302, 403}
+            assert "/admin/reports/exports/" not in refused.get("Location", "")
+            with (
+                pytest.raises(DatabaseError, match="capture is unavailable"),
+                transaction.atomic(),
+            ):
+                capture_row(harness, actor).save(force_insert=True)
+        code, document = run(
+            "export", "comparison", "--format", "csv", "--timezone", "UTC"
+        )
+        assert code != 0 and not document["ok"], document
+    assert not ExportRequest.objects.exists()
+    assert not ComparisonExportSnapshot.objects.exists()

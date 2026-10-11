@@ -612,12 +612,27 @@ def withheld_years(comparison):
     A year with a withheld band (or fewer than 5 pledging Families) withholds
     its number of pledging Families and every average pledge outside the
     portal, at any day, since the year's total divided by its average gives
-    that number (spec, "Small-count protection").
+    that number (spec, "Small-count protection"). A final year with fewer
+    than 5 pledging Families is withheld whatever its distribution's
+    ``reason`` (an older band set), since its count alone is small enough
+    to single Families out.
     """
+
+    def small(year):
+        """A final imported year with fewer than 5 pledging Families."""
+        found = year.distribution
+        return (
+            comparison.financial
+            and not year.current
+            and year.final
+            and found is not None
+            and found.pledging < SMALL_COUNT
+        )
+
     return {
         year.year
         for year in comparison.imported
-        if outside_distribution(comparison, year)[1]
+        if small(year) or outside_distribution(comparison, year)[1]
     }
 
 

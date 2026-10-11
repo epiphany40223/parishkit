@@ -751,6 +751,17 @@ and quartiles are shown only for final imported years. The Admin portal
 page itself shows every figure, since only Administrators and Staff open
 it.
 
+The current campaign's day-level totals, counts and average pledge (with
+the comparison to past years) do leave the portal, deliberately. The
+[participation graph's](../reports/spec.md#participation-graph) downloads
+already carry its daily Families and pledge totals to the same
+Administrators and Staff, who may also see every named pledge in the
+[financial report](../reports/spec.md#financial-stewardship-detail); a
+day's total and average add nothing they cannot already read. What stays
+inside is what the distribution adds: bands, quartiles and the median,
+whose day-to-day change could isolate one Family's pledge for a reader of
+the file who has no portal access.
+
 ### Page layout
 
 The page follows [page help](../ui-conventions/spec.md#page-help): data
@@ -1103,7 +1114,9 @@ linked to #1018 (the last one closes part (b)).
    kind `campaign_comparison` in the shared export lifecycle (status page,
    download, cancel, retry, and Regenerate from the same capture, so never
    newer figures). Its SQL guard admits Administrators and Staff only, from
-   the web, and a closed document shape with no key a note could ride in.
+   the web, and only the document's closed set of keys, as defense in
+   depth; it cannot tell text from text, so keeping notes out is the web
+   capture's job.
    The request records `campaign_comparison_exported` with the day as
    `count`; download and cancel are the lifecycle's shared events.
    `pk-admin export comparison [--day N]` is the same form. All three
@@ -1123,7 +1136,8 @@ linked to #1018 (the last one closes part (b)).
    Withheld quartiles; the tiles carry no median so far. This campaign's
    own average pledge stays, as `report comparison` prints it since slice
    3: none of its bands leave the portal, so none can be worked out from
-   it.
+   it. A final year with fewer than 5 pledging Families withholds its
+   averages whatever its distribution's reason (an older band set).
 7. **Digest section.** The daily digest option, with its own
    forward migration if the digest occurrence needs new columns to record
    the imported years it used.

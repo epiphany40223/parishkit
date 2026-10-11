@@ -472,3 +472,40 @@ def test_updating_figures_say_so_in_every_file(monkeypatch):
         monkeypatch, lambda output: render_comparison(found, output, format="pdf")
     )
     assert all(any(value.startswith("Updating:") for value in drawn) for drawn in pages)
+
+
+def test_a_small_final_year_is_withheld_whatever_its_reason():
+    """A final year under 5 pledging Families withholds its averages outside.
+
+    Even when its bands cannot be shown (an older band set), its pledging
+    count alone is small enough to single Families out, so every average
+    pledge of it is withheld, and so is the prior-years average pledge.
+    A year of 5 or more with the same reason keeps its averages.
+    """
+    from parishkit.stewardship.reports.comparison import (
+        OLDER_BANDS,
+        outside_document,
+        withheld_years,
+    )
+
+    def older(pledging):
+        """An older-band-set distribution of ``pledging`` Families."""
+        return Distribution(pledging, Decimal(100 * pledging), (), None, OLDER_BANDS)
+
+    found = comparison(withheld_last=False)
+    small = year(2050, series([1, 2, 3]), distribution=older(3))
+    large = year(2049, series([5, 6, 7]), distribution=older(7))
+    found = replace(found, imported=(*found.imported[:2], small, large))
+    assert withheld_years(found) == {2050}
+    rows = {row[0]: row for row in capture(found)["rows"]}
+    columns = capture(found)["columns"]
+    average = columns.index("Average pledge on the day")
+    final = columns.index("Final average pledge")
+    assert rows["2050"][average] == WITHHELD and rows["2050"][final] == WITHHELD
+    assert rows["2049"][average] == {"money": "100.00"}
+    printed = {entry["year"]: entry for entry in outside_document(found)["years"]}
+    assert printed[2050]["at_day"]["average_pledge"] is None
+    assert printed[2049]["at_day"]["average_pledge"] == "100.00"
+    assert outside_document(found)["averages"]["average"] is None
+    lines = {tile["key"]: tile for tile in tiles(found, outside=True)}["average"]
+    assert lines["lines"][-1].endswith(WITHHELD)

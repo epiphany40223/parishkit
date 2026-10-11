@@ -20,8 +20,8 @@
 --   - creates the capture table, as Django renders ComparisonExportSnapshot,
 --     with its capture guard (insert only, from the web, by an
 --     Administrator or Staff member, for an admitted campaign under the
---     active configuration, with the document's closed shape: no key a note
---     text could ride in) and its deferred binding to an export request;
+--     active configuration, and the document's closed shape) and its
+--     deferred binding to an export request;
 --   - adds stewardship_export_request.comparison_snapshot_id with its
 --     deferrable foreign key and index;
 --   - replaces export_report_known with 0049's list (the latest; the
@@ -52,10 +52,13 @@ CREATE INDEX "comparison_export_config" ON "stewardship_comparison_export_snapsh
 -- member (the page's own access), from the web login, for a campaign that
 -- admits exports, under the active configuration. Its parameters are
 -- exactly the comparison day (a whole number from 1, or null before day 1
--- has ended), which the document repeats. The document is closed: these
--- keys and no other, so no archive note, provenance or Family value has a
--- place to ride in. Every Every number row has one cell per column, each a
--- number, text, blank, an exact amount ({"money": "1234.50"}) or a date
+-- has ended), which the document repeats. The document's shape is closed
+-- (these keys and no other), as defense in depth: a caller cannot add a
+-- field the files were not designed to hold. It cannot tell a note's text
+-- from a figure's; keeping notes and Family values out is the job of the
+-- web's capture (comparison_exports.capture). Every Every number row has
+-- one cell per column, each a number, text, blank, an exact amount
+-- ({"money": "1234.50"}) or a date
 -- ({"date": "2026-09-13"}); each tile is a label, a value and its lines;
 -- each chart a title, axis, kind, last day and lines of [day, value]
 -- points. The trigger sets the time and the row count. Rows never change.
