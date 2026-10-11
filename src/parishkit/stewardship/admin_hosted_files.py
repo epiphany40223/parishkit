@@ -259,6 +259,34 @@ def preview_deletion(caller, service, file_ids):
     return found
 
 
+def _used_meanwhile(file_ids):
+    """The after-prompt in-use refusal, one field per chosen file ID.
+
+    The page's transaction rolled back, so the uses are read again to name
+    each chosen file in use, as ``preview_deletion`` does. If none shows a
+    use now (it went away just as quickly), every chosen ID is named with
+    the page's general message, so the fields are always file IDs.
+    """
+    from django.utils.translation import gettext as _
+
+    from .accounts.hosted_file_uses import file_uses
+
+    uses = file_uses(file_ids)
+    refused = [
+        _in_use(str(value), uses[value]) for value in file_ids if uses.get(value)
+    ]
+    if refused:
+        return refused
+    message = _(
+        "A chosen file is now used by a page, an email or unsent mail, so "
+        "nothing was deleted."
+    )
+    return [
+        {"field": str(value), "code": "invalid", "message": message}
+        for value in file_ids
+    ]
+
+
 def delete_files(caller, service, file_ids, *, context):
     """``files delete``: the page's Delete and Delete selected.
 
@@ -268,8 +296,6 @@ def delete_files(caller, service, file_ids, *, context):
     every file was already gone). A file that became used meanwhile is the
     page's refusal, as ``invalid``.
     """
-    from django.utils.translation import gettext as _
-
     from .accounts.hosted_file_uses import delete_many
     from .accounts.hosted_files import HostedFileError
     from .audit.schemas import Action
@@ -283,18 +309,7 @@ def delete_files(caller, service, file_ids, *, context):
                 record=_recorder(caller, actor, Action.ADMIN_CMD_FILES_DELETE, written),
             )
         except HostedFileError:
-            raise FileRefused(
-                [
-                    {
-                        "field": "file_id",
-                        "code": "invalid",
-                        "message": _(
-                            "A chosen file is now used by a page, an email or "
-                            "unsent mail, so nothing was deleted."
-                        ),
-                    }
-                ]
-            ) from None
+            raise FileRefused(_used_meanwhile(file_ids)) from None
 
     outcomes = _changing(caller, service, context, change)
     return FileDeletion(
@@ -333,7 +348,7 @@ def rename_file(caller, service, file_id, slug, *, context):
             raise NotAvailable("The hosted file no longer exists.") from None
         except HostedFileError as refusal:
             if refusal.reason == "in_use":
-                raise FileRefused([_in_use("file_id", refusal.uses)]) from None
+                raise FileRefused([_in_use(str(file_id), refusal.uses)]) from None
             message = REFUSALS.get(refusal.reason)
             if message is None:
                 raise

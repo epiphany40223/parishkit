@@ -173,22 +173,52 @@ def test_a_file_used_meanwhile_is_the_pages_refusal(
     store = admin.service.store
     campaign, _ = draft(store)
     used = uploaded(browser, "used.pdf", samples.pdf(), slug="used")
+    free = uploaded(browser, "free.pdf", samples.pdf(), slug="free")
     pending(
         store,
         content(str(campaign.pk), slot="login_help", html="<p>{{ file.used }}</p>"),
     )
-    # The prompt's read saw the file unused.
+    # The prompt's read saw the files unused.
     monkeypatch.setattr(
         admin_hosted_files,
         "preview_deletion",
         lambda caller, service, ids: list(HostedFile.objects.filter(pk__in=ids)),
     )
-    code, document, _ = delete(admin, secret, used.pk, yes=True)
+    code, document, _ = delete(admin, secret, free.pk, used.pk, yes=True)
     assert code == 1 and document["error"]["code"] == "invalid", document
+    # The field is the file in use, by its ID, naming the use.
     [field] = document["error"]["fields"]
-    assert field["field"] == "file_id" and "nothing was deleted" in field["message"]
-    assert HostedFile.objects.filter(pk=used.pk).exists()
+    assert field["field"] == str(used.pk) and field["code"] == "invalid"
+    assert "A change that is still being applied" in field["message"]
+    assert HostedFile.objects.count() == 2
     assert events("hosted_file_deleted") == 0 and events(DELETE) == 0
+
+
+def test_a_use_gone_again_names_every_chosen_file(
+    admin,
+    media,  # noqa: F811
+    monkeypatch,
+):
+    """A use the page saw that is gone by the reread still names file IDs:
+    every chosen one, with the page's general message."""
+    from parishkit.stewardship.accounts import hosted_file_uses
+    from parishkit.stewardship.accounts.hosted_files import HostedFileError
+
+    browser, secret, _ = paired(admin.service)
+    first = uploaded(browser, "a.pdf", samples.pdf(), slug="first")
+    second = uploaded(browser, "b.pdf", samples.pdf(), slug="second")
+
+    def refuse(actor, file_ids, *, record=None):
+        """The page's refusal, as if a use came and went."""
+        raise HostedFileError("in_use")
+
+    monkeypatch.setattr(hosted_file_uses, "delete_many", refuse)
+    code, document, _ = delete(admin, secret, first.pk, second.pk, yes=True)
+    assert code == 1 and document["error"]["code"] == "invalid", document
+    fields = document["error"]["fields"]
+    assert [field["field"] for field in fields] == [str(first.pk), str(second.pk)]
+    assert all("nothing was deleted" in field["message"] for field in fields)
+    assert HostedFile.objects.count() == 2 and events(DELETE) == 0
 
 
 def test_deletion_usage_and_refused_sessions(
@@ -271,7 +301,7 @@ def test_renaming_refusals(admin, media, monkeypatch):  # noqa: F811
     code, document, _ = rename(admin, secret, used.pk, "renamed")
     assert code == 1 and document["error"]["code"] == "invalid", document
     [field] = document["error"]["fields"]
-    assert field["field"] == "file_id"
+    assert field["field"] == str(used.pk)
     assert "A change that is still being applied" in field["message"]
     for slug, words in (
         ("Bad Name", "lowercase letters"),
