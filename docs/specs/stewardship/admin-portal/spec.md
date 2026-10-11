@@ -4345,6 +4345,25 @@ Ministry report) does not match it, while Unresolved and Any status do. Past
 history entries keep the assignment they recorded. The data model keeps the unused column and state, as described in
 the [data specification](../data/spec.md#follow-up-records).
 
+The queue page is compact
+([#1064](https://github.com/epiphany40223/parishkit/issues/1064)). Its
+filters share one compact filter bar: on a laptop screen Search, Ministry
+and Request take the first row and Status, Outcome, Request history and
+Apply filters the second; at phone width each field takes its own row.
+Every row of the table is one line, per [table fit and row
+height](../ui-conventions/spec.md#table-fit-and-row-height): a cell
+holds one short value that does not wrap, so a table wider than the page
+scrolls sideways inside its own box. Request reads Join or Leave, and "Leave
+(cannot participate)" for a Member who cannot participate in any ministries,
+the whole reason being the marker's tooltip and written out on the request
+page. Status is one line, with a resolved request's outcome after a colon
+("Resolved: Joined ministry"); Closed: no response, whose outcome is always
+No response, does not repeat it. A Ministry since removed from the campaign
+carries a small "Removed" badge after its name, with "No longer in this
+campaign" as its tooltip and screen-reader text, instead of that sentence in
+the cell. Submitted and Last contact use the compact date and time of dense
+tables ([date format](../ui-conventions/spec.md#date-format)).
+
 The request form is compact
 ([#1014](https://github.com/epiphany40223/parishkit/issues/1014)): on a
 desktop screen Status and Outcome share one row, and How, Date and Time

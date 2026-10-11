@@ -1463,7 +1463,10 @@ tooltip, and is shown whole on the user's Edit page
 The Ministry follow-up queue does the same for a long Member or Ministry
 name, with the shared `cell-ellipsis` class, so a long Ministry name never
 makes its row several lines tall
-([Follow-up workflows](../admin-portal/spec.md#follow-up-workflows), #932).
+([Follow-up workflows](../admin-portal/spec.md#follow-up-workflows), #932);
+since [#1064](https://github.com/epiphany40223/parishkit/issues/1064) its
+other cells do not wrap either, so every row is one line and the table
+scrolls sideways in its own box when it is wider than the page.
 
 ## Downloaded files
 
