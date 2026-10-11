@@ -153,45 +153,6 @@ def test_campaign_configuration_accepts_an_optional_talent_list():
             campaign_values(values | {"talent_options": bad})
 
 
-def test_talents_normalize_like_share_methods():
-    """Plain talents carry no text; "Other" requires its trimmed text."""
-    result = validate_service_answers(
-        service(
-            **{"1": {"cannot_serve": False, "talents": {PAINTER: "", OTHER: " Organ "}}}
-        ),
-        ministries(),
-        INPUTS,
-        DEFAULT_TALENTS,
-    )
-    assert result["members"]["1"] == {
-        "cannot_serve": False,
-        "talents": {PAINTER: "", OTHER: "Organ"},
-    }
-
-
-@pytest.mark.parametrize(
-    "talents",
-    [
-        {PAINTER: "notes"},
-        {OTHER: "  "},
-        {OTHER: "x" * 201},
-        {"foreign-private-id": ""},
-        [PAINTER],
-    ],
-)
-def test_invalid_talents_report_only_trusted_paths(talents):
-    """Errors never echo the submitted identity or text."""
-    with pytest.raises(InvalidServiceAnswers) as caught:
-        validate_service_answers(
-            service(**{"1": {"cannot_serve": False, "talents": talents}}),
-            ministries(),
-            INPUTS,
-            DEFAULT_TALENTS,
-        )
-    assert set(caught.value.fields) == {"service.members.1.talents"}
-    assert "private" not in str(caught.value.fields)
-
-
 def test_cannot_serve_requires_stopping_every_current_ministry():
     """The lock leaves every current Ministry and joins none."""
     locked = {"1": {"cannot_serve": True}}
@@ -199,13 +160,12 @@ def test_cannot_serve_requires_stopping_every_current_ministry():
         service(**locked),
         ministries(**{"1": {"join": [], "leave": [7, 8]}}),
         INPUTS,
-        DEFAULT_TALENTS,
     )
     assert result["members"]["1"]["cannot_serve"] is True
     for choices in ({"join": [], "leave": [7]}, {"join": [9], "leave": [7, 8]}):
         with pytest.raises(InvalidServiceAnswers) as caught:
             validate_service_answers(
-                service(**locked), ministries(**{"1": choices}), INPUTS, DEFAULT_TALENTS
+                service(**locked), ministries(**{"1": choices}), INPUTS
             )
         assert set(caught.value.fields) == {"service.members.1"}
 
@@ -213,13 +173,12 @@ def test_cannot_serve_requires_stopping_every_current_ministry():
 def test_cannot_serve_with_no_current_ministries_only_forbids_joining():
     """A Member with no roster simply joins nothing."""
     locked = {"2": {"cannot_serve": True}}
-    validate_service_answers(service(**locked), ministries(), INPUTS, DEFAULT_TALENTS)
+    validate_service_answers(service(**locked), ministries(), INPUTS)
     with pytest.raises(InvalidServiceAnswers):
         validate_service_answers(
             service(**locked),
             ministries(**{"2": {"join": [7], "leave": []}}),
             INPUTS,
-            DEFAULT_TALENTS,
         )
 
 
@@ -238,6 +197,10 @@ def test_cannot_serve_with_no_current_ministries_only_forbids_joining():
             "proposed_members": {},
         },
         {"members": {"1": {"talents": {}}}, "proposed_members": {}},
+        {
+            "members": {"1": {"cannot_serve": False, "talents": [PAINTER]}},
+            "proposed_members": {},
+        },
         {"members": {"1": {}}, "proposed_members": {}},
         {
             "members": {"1": {"cannot_serve": False, "other": 1}},
@@ -247,9 +210,9 @@ def test_cannot_serve_with_no_current_ministries_only_forbids_joining():
 )
 def test_service_names_only_known_members_with_exact_fields(payload):
     """No Member may be invented, and each entry holds ``cannot_serve`` and,
-    from a form opened before #970, ``talents``; nothing else."""
+    from a form opened before #970, a ``talents`` map; nothing else."""
     with pytest.raises(InvalidServiceAnswers):
-        validate_service_answers(payload, ministries(), INPUTS, DEFAULT_TALENTS)
+        validate_service_answers(payload, ministries(), INPUTS)
 
 
 def test_omitted_members_default_to_participating():
@@ -262,17 +225,14 @@ def test_omitted_members_default_to_participating():
         "proposed_members": {},
     }
     for payload in ({}, {"members": {}, "proposed_members": {}}):
-        assert (
-            validate_service_answers(payload, ministries(), INPUTS, DEFAULT_TALENTS)
-            == expected
-        )
+        assert validate_service_answers(payload, ministries(), INPUTS) == expected
 
 
 def test_disabled_ministry_module_accepts_only_an_empty_section():
     """Without the Ministry page there is no "cannot participate" to record."""
-    assert validate_service_answers({}, {}, None, ()) == {}
+    assert validate_service_answers({}, {}, None) == {}
     with pytest.raises(InvalidServiceAnswers):
-        validate_service_answers(service(), {}, None, ())
+        validate_service_answers(service(), {}, None)
 
 
 def test_entries_without_talents_are_stored_with_an_empty_map():
@@ -283,7 +243,6 @@ def test_entries_without_talents_are_stored_with_an_empty_map():
         service(**locked),
         ministries(**{"1": {"join": [], "leave": [7, 8]}}),
         INPUTS,
-        configured_talent_options({"modules": ["ministry"]}),
     )
     assert result["members"] == {
         "1": {"cannot_serve": True, "talents": {}},
@@ -291,30 +250,29 @@ def test_entries_without_talents_are_stored_with_an_empty_map():
     }
 
 
-def test_stale_talent_from_an_older_form_is_accepted():
-    """A form opened before #970 may still send a configured talent.
+def test_stale_talents_from_an_older_form_are_dropped():
+    """A form opened before #970 may still send talents; they are not stored.
 
-    Refusing it would lose that Family's whole response mid-campaign, so it
-    validates against the configured list and is stored (never shown).
-    Unknown or malformed talents are still refused.
+    Refusing them would lose that Family's whole response mid-campaign, and
+    the database guard accepts only an empty map since migration 0056, so
+    any talents map is accepted and stored empty. A value that is not a map
+    is refused like any other malformed entry, with only the trusted path.
     """
-    configured = configured_talent_options({"modules": ["ministry"]})
-    result = validate_service_answers(
-        service(**{"1": {"cannot_serve": False, "talents": {PAINTER: ""}}}),
-        ministries(),
-        INPUTS,
-        configured,
-    )
-    assert result["members"]["1"] == {"cannot_serve": False, "talents": {PAINTER: ""}}
-    for talents in ({str(uuid4()): ""}, {PAINTER: "text"}, {OTHER: ""}, [PAINTER]):
-        with pytest.raises(InvalidServiceAnswers) as caught:
-            validate_service_answers(
-                service(**{"1": {"cannot_serve": False, "talents": talents}}),
-                ministries(),
-                INPUTS,
-                configured,
-            )
-        assert set(caught.value.fields) == {"service.members.1.talents"}
+    for talents in ({PAINTER: ""}, {OTHER: " Organ "}, {"foreign-private-id": "x"}):
+        result = validate_service_answers(
+            service(**{"1": {"cannot_serve": False, "talents": talents}}),
+            ministries(),
+            INPUTS,
+        )
+        assert result["members"]["1"] == {"cannot_serve": False, "talents": {}}
+    with pytest.raises(InvalidServiceAnswers) as caught:
+        validate_service_answers(
+            service(**{"1": {"cannot_serve": False, "talents": "private"}}),
+            ministries(),
+            INPUTS,
+        )
+    assert set(caught.value.fields) == {"service.members.1"}
+    assert "private" not in str(caught.value.fields)
 
 
 def test_prior_talents_are_never_prefilled():

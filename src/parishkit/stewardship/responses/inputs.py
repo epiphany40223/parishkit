@@ -18,7 +18,7 @@ from parishkit.stewardship.source.catalog_names import MAX_MINISTRY_LABEL
 
 from .census import ADDRESS_LIMITS, FAMILY_FIELDS, country_choices, us_regions
 from .comparison import COMPARISON_VERSION, ValueKind, canonical_value
-from .financial import FREQUENCIES, MAX_PLEDGE_CENTS, SHARE_TEXT_LIMIT, ShareOption
+from .financial import FREQUENCIES, MAX_PLEDGE_CENTS, SHARE_TEXT_LIMIT
 from .financial_inputs import FinancialInputs
 from .member_census import MEMBER_FIELDS, InvalidMemberSource, source_value
 from .member_requests import MAX_PROPOSED_MEMBERS, REQUEST_FIELDS
@@ -97,12 +97,6 @@ class CensusInputs:
     ministries: MinistryInputs | None = None
     financial: FinancialInputs | None = None
     parish_name: str = ""
-    # The configured talents a submission may still carry. The Family form no
-    # longer asks for talents (#970), but a form opened before then may send
-    # them, and refusing would lose that Family's whole response. They are
-    # stored (the SQL guard accepts them) and never shown. definition_digest
-    # covers this list, so it is not repeated in the projection digest.
-    accepted_talent_options: tuple[ShareOption, ...] = ()
 
     @property
     def projection_digest(self):
@@ -448,7 +442,6 @@ def census_inputs(
         ministries,
         financial,
         parish_name,
-        accepted_talent_options=configured_talent_options(configuration),
     )
     # Detect a malformed typed source before issuing a baseline, not on Submit.
     _ = result.projection_digest
