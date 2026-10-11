@@ -837,7 +837,9 @@ around it, two gates keep it in place instead:
   ticked.
 
 The two overlap, and are to be merged into one shared gate once both have
-landed. **Precedent.** #563, #736, open #957, #959.
+landed. The Ministry follow-up request form greys its outcome and contact
+details with `data-enabled-when` (#1014). **Precedent.** #563, #736,
+open #957, #959, #1014.
 
 ### Single-campaign interim
 
@@ -939,7 +941,11 @@ with help closed, a page's first data starts inside the browser window of a
 typical laptop (a 1366×768 screen, about 650 pixels of page after the
 browser's own toolbars). Pages with short filters meet it now; report pages
 with long filter and export forms meet it once those forms are collapsed by
-default (a #227 follow-up). The Family portal keeps its own spacing.
+default (a #227 follow-up). An edit form's short fields (a status, an outcome,
+a date and a time) likewise share a row on desktop (`.field-row` in
+`ui-v1.css`), top-aligned so a time's reading line fits under its box, while
+notes span the form; at phone width each field takes its own row (#1014). The
+Family portal keeps its own spacing.
 
 Field help longer than about one line opens from an "i" button beside the
 field's label (the shared toggletip). Only a one-line hint stays visible under

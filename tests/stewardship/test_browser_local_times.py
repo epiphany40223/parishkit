@@ -1,5 +1,6 @@
 """Dates and times typed in the browser's local time zone (#558)."""
 
+import re
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlencode
@@ -205,10 +206,11 @@ def test_follow_up_page_labels_no_utc_entry():
     """The contact fields name no fixed zone; a note names the browser's."""
     text = (TEMPLATES / "ministry-followup.html").read_text()
     assert "(UTC)" not in text
-    assert (
-        '<input type="hidden" name="contact_zone" value="{{ form.contact_zone }}" '
-        "data-browser-zone " in text
-    )
+    # The hidden zone field carries the browser's zone (its other markers,
+    # such as when it is sent, may change around it).
+    zone = re.search(r'<input type="hidden" name="contact_zone"[^>]*>', text)[0]
+    assert 'value="{{ form.contact_zone }}"' in zone
+    assert " data-browser-zone " in zone
     # The note stays hidden until the script names a known zone, and both
     # fields carry the gate marker for an unknown one.
     assert "data-browser-zone-note hidden" in text
