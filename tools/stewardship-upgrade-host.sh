@@ -221,9 +221,11 @@ oneoff() {
     # oneoff SECONDS WHAT STEP SERVICE [ARGS...]: `docker compose run` one
     # SERVICE container named after this run and STEP, killing it (TERM,
     # then KILL 30 s later) once SECONDS have passed. Prints the command's
-    # last output line. The client runs in the background and the shell
-    # waits for it, so a signal's trap runs at once rather than after the
-    # command. On an expired limit (124, or 137 at the limit) the kill is
+    # last output line, or on a failure all of its output (into the run's
+    # log too), since the last line alone may be empty or a generic
+    # refusal that hides the cause. The client runs in the background and
+    # the shell waits for it, so a signal's trap runs at once rather than
+    # after the command. On an expired limit (124, or 137 at the limit) the kill is
     # logged on fd 3, the run's log, with what ran, the limit and the
     # elapsed time, and the container is killed and removed by name, since
     # killing the client leaves it running. Returns the command's status
@@ -244,7 +246,12 @@ oneoff() {
         stop_oneoff "time limit" >&3
     fi
     oneoff_name=""
-    tail -1 "$work/oneoff.out"
+    if [ "$rc" -eq 0 ]; then
+        tail -1 "$work/oneoff.out"
+    else
+        echo "FAILED: $what exited with status $rc; its full output:" >&2
+        sed 's/^/    | /' "$work/oneoff.out" >&2
+    fi
     return "$rc"
 }
 

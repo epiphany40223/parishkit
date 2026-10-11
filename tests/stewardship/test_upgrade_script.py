@@ -380,7 +380,11 @@ case "$*" in
         [ -z "$FAKE_USERS_FAIL" ] || { echo "upgrade refused" >&2; exit 1; }
         echo '{"users_upgrade_applied": true}' ;;
     *"database-grants"*)
-        [ -z "$FAKE_GRANTS_FAIL" ] || { echo "grants refused" >&2; exit 1; }
+        if [ -n "$FAKE_GRANTS_FAIL" ]; then
+            # The cause, then an empty last line, as a real traceback ends.
+            printf '%s\n' "grants refused" "UndefinedFunction: no such function" "" >&2
+            exit 1
+        fi
         echo "granted" ;;
     *"exec -T caddy sha256sum"*) sha256sum "$FAKE_CADDYFILE" ;;
     *"pk-stewardship health"*) [ -z "$FAKE_WEB_FAIL" ] || exit 1 ;;
@@ -1495,6 +1499,31 @@ def test_each_step_4_command_runs_under_a_logged_time_limit(
     # The kill is in the run's persistent log as well.
     log = next((tmp_path / "logs").glob("stewardship-upgrade-*.log")).read_text()
     assert f"TIMEOUT: {what} killed after " in log
+
+
+def test_a_failed_step_4_command_prints_and_logs_its_full_output(tmp_path):
+    """Every output line of a failed command is shown, not just its last.
+
+    The fake grants end their output with an empty line, as a traceback
+    does, so the last line alone would hide the cause.
+    """
+    _, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        noop="f",
+        status=1,
+        schema_change="1",
+        env=USERS,
+        grants_fail=True,
+    )
+    log = next((tmp_path / "logs").glob("stewardship-upgrade-*.log")).read_text()
+    for text in (output, log):
+        assert "FAILED: database-grants exited with status 1; its full output:" in text
+        assert "    | grants refused\n    | UndefinedFunction: no such" in text
+        assert "caddy serves the maintenance page" in text
+    # A command that succeeds still prints only its last line.
+    assert "    | migrated to the base" not in output
+    assert "migrated to the base" in output
 
 
 def test_the_final_migration_runs_under_a_logged_time_limit(tmp_path):
