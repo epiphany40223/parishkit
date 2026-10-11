@@ -1,6 +1,6 @@
 """The Users page's ParishSoft Ministry leaders table in real browsers (#952 slice 6).
 
-Below the users table: a selection column, Name, Member DUID, Email,
+Below the users table: a selection column, Member, Member DUID, Email,
 Ministries led (a short list, the whole list in its tooltip) and Role. The
 bulk bar is the shared one (table-selection.html, #879), its reason visible
 text in a reserved line (Administrator decision B2): ticking a row enables
@@ -59,7 +59,7 @@ def test_the_leaders_table_and_review_are_accessible(
 
 
 def test_columns_follow_the_shared_order(page, component_origin):
-    """Selection, Name, Member DUID, Email, Ministries led, Role; Name sorted."""
+    """Selection, Member, Member DUID, Email, Ministries led, Role; Member sorted."""
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + LIST)
     # A sortable heading's text may carry its direction arrow after the name.
@@ -67,7 +67,7 @@ def test_columns_follow_the_shared_order(page, component_origin):
         text.strip().split("\n")[0].strip()
         for text in region(page).locator("thead th").all_inner_texts()
     ]
-    assert headings[1:] == ["Name", "Member DUID", "Email", "Ministries led", "Role"]
+    assert headings[1:] == ["Member", "Member DUID", "Email", "Ministries led", "Role"]
     visible(
         region(page).get_by_role("checkbox", name="Select every leader on this page")
     )
