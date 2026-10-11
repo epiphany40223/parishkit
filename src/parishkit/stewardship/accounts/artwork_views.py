@@ -34,7 +34,7 @@ from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.content import MAX_IMAGE_BYTES, prepare_artwork
 from parishkit.stewardship.web.contracts import filters
-from parishkit.stewardship.web.refusals import UserFacingStale
+from parishkit.stewardship.web.refusals import UserFacingStale, stale_page
 
 from . import admin_navigation
 from .admin_editing import (
@@ -56,6 +56,17 @@ from .branding_views import ERRORS, _checked, _error, _retained, media_root
 from .request_patch import build_candidate
 
 SALT = "stewardship-artwork-preview-v1-"
+# Why an Apply was refused because its change went stale, by change kind.
+STALE = {
+    "image": _(
+        "This upload expired, or the settings changed after it was uploaded, "
+        "so it was not used. Upload the image again."
+    ),
+    "remove": _(
+        "The settings changed after this removal was reviewed, so the image "
+        "was not removed. Choose Remove this image again."
+    ),
+}
 SLOT_LABELS = {
     "banner": _("Banner (top of the Family emails and the welcome page)"),
     "welcome": _("Welcome page icon"),
@@ -331,16 +342,9 @@ def artwork_settings(request, campaign_id):
                 region, status = {"refusal": error.refusal}, 409
             except StaleRecordError:
                 # A staged upload is tied to the settings it was uploaded
-                # against and to this sign-in, and expires after a day.
-                region, status = (
-                    {
-                        "message": _(
-                            "This upload expired, or the settings changed after it "
-                            "was uploaded, so it was not used. Upload the image again."
-                        )
-                    },
-                    409,
-                )
+                # against and to this sign-in, and expires after a day; a
+                # removal goes stale only when the settings change.
+                region, status = {"message": STALE[change[0]]}, 409
         configuration = editable_configuration(service)
         campaign = _campaign(configuration, campaign_id)
         if request.method != "POST":
@@ -395,13 +399,26 @@ def artwork_upload(request, campaign_id, slot):
                     ),
                 )
             else:
-                identifier = stage_branding(
-                    request,
-                    service,
-                    media_root(),
-                    graphics,
-                    base_digest=form.cleaned_data["base_digest"],
-                )
+                try:
+                    identifier = stage_branding(
+                        request,
+                        service,
+                        media_root(),
+                        graphics,
+                        base_digest=form.cleaned_data["base_digest"],
+                    )
+                except StaleRecordError:
+                    # The page's version is not the current one: say so in
+                    # place, as any settings page does; nothing is staged.
+                    return _page(
+                        request,
+                        service,
+                        configuration,
+                        campaign,
+                        {},
+                        status=409,
+                        refusal=stale_page().refusal,
+                    )
                 query = urlencode({"review": slot, "bundle": identifier})
                 return _checked(
                     request,

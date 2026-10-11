@@ -228,6 +228,17 @@ def test_upload_rejects_non_images(auth_service, google, media):
     # Summarized in the review region too, linked to the slot's field (#750).
     assert 'href="#id_banner_image"' in region(result.content)
     assert not BrandingAsset.objects.exists()
+    # An upload from a page whose settings changed elsewhere is refused in
+    # place too, and stages nothing.
+    with task_login(ServiceRole.WEB):
+        stale = post(
+            browser,
+            f"{path}banner/",
+            {"base_digest": "f" * 64, "image": image(1625, 345)},
+        )
+    assert stale.status_code == 409
+    assert "This page changed in another tab or session." in region(stale.content)
+    assert not BrandingAsset.objects.exists()
 
 
 def change_parish(store):
@@ -276,10 +287,26 @@ def test_a_refused_apply_is_explained_in_place(auth_service, google, media):
         )
         assert refused.status_code == 409
         assert "This preview is out of date." in region(refused.content)
-        # Apply posts only to an address naming the change.
+        # Apply posts only to an address naming the change, and a preview
+        # signed for one change is refused at another change's address.
+        for address_for_another in (
+            path,
+            f"{path}?remove=welcome",
+            f"{path}?remove=financial",
+        ):
+            assert (
+                post(
+                    browser,
+                    address_for_another,
+                    {"action": "confirm", "preview": removal_token},
+                ).status_code
+                == 400
+            )
         assert (
             post(
-                browser, path, {"action": "confirm", "preview": removal_token}
+                browser,
+                f"{path}?remove=welcome",
+                {"action": "confirm", "preview": upload_token},
             ).status_code
             == 400
         )

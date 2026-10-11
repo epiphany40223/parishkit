@@ -24,6 +24,12 @@ SLOT_PLACE = (
     "document.querySelector('.artwork-slot').getBoundingClientRect().top"
     " + window.scrollY"
 )
+# The review region's top edge in the document: the slots above it keep
+# their heights, so a slot gaining or losing its image never moves it.
+REVIEW_PLACE = (
+    "document.getElementById('settings-review').getBoundingClientRect().top"
+    " + window.scrollY"
+)
 
 
 def png():
@@ -58,12 +64,15 @@ def test_upload_review_apply_and_status_happen_in_place(page, component_origin):
     assert current_step(page) == "Review"
     assert page.url == f"{component_origin}{REVIEW}#settings-review"
     assert page.evaluate(SLOT_PLACE) == top
+    below = page.evaluate(REVIEW_PLACE)
     region.get_by_role("button", name="Apply changes").click()
     visible(region.get_by_role("heading", name="Change status"))
     assert current_step(page) == "Apply"
     visible(region.get_by_role("heading", name="Applied: your change is saved"))
-    # The quiet refresh shows the banner as the slot's current image.
+    # The quiet refresh shows the banner as the slot's current image; the
+    # slot keeps its height, so the status below did not move (#736).
     visible(banner.get_by_text("Current image"))
+    assert page.evaluate(REVIEW_PLACE) == below
     assert PENDING.split("?")[1] in page.url
     assert page.evaluate(SLOT_PLACE) == top
     assert page.evaluate(MARKED) == "kept"
