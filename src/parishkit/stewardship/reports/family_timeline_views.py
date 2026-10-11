@@ -430,7 +430,7 @@ def export(request, campaign_id, family_id):
 
     from .export_services import ExportRequestBound
     from .export_ui import _redirect
-    from .timeline_exports import create_timeline_export
+    from .timeline_exports import MODES, create_timeline_export
 
     try:
         service = runtime()
@@ -450,8 +450,12 @@ def export(request, campaign_id, family_id):
         try:
             require_fresh(request)
         except FreshAuthenticationRequired:
+            # Back to the view the form was posted from: the Testing
+            # rehearsal stays in Testing (an unknown mode is refused below,
+            # after the sign-in, so it returns to Production here).
+            mode = parameters["mode"] if parameters["mode"] in MODES else "production"
             return step_up_response(
-                timeline_url(family_id),
+                timeline_url(family_id, mode),
                 admin_navigation.PAGES["family_timeline"].label,
             )
         result = create_timeline_export(

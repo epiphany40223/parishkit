@@ -21,6 +21,8 @@ from datetime import datetime
 from typing import ClassVar
 from zoneinfo import ZoneInfo
 
+from parishkit.stewardship.web import dates
+
 HEADINGS = ("When", "What happened", "Details")
 
 
@@ -65,11 +67,23 @@ def timeline_document(
         """An optional instant in the display zone, or ``empty`` words."""
         return instant(value) if value else empty
 
+    def words(value):
+        """An instant inside a line of words, in the parish's date format.
+
+        A line that combines words and a time (as the page's Summary does) is
+        text, so its time is formatted here, in the style the export pinned
+        (``dates.using`` around the worker's load), not left as Python's
+        ISO text. A lone instant stays a value the renderer formats.
+        """
+        return dates.display_text(instant(value)) if value else ""
+
+    # The page's own words and punctuation (family-timeline.html):
+    # "Yes, <first>", and for more than one, " · N times; most recently <last>".
     submitted = (
-        f"Yes, {maybe(summary['first_submitted_at'], '')}"
+        f"Yes, {words(summary['first_submitted_at'])}"
         + (
-            f"; {summary['submissions']:,} times, most recently "
-            f"{maybe(summary['last_submitted_at'], '')}"
+            f" · {summary['submissions']:,} times; most recently "
+            f"{words(summary['last_submitted_at'])}"
             if summary["submissions"] > 1
             else ""
         )
@@ -99,7 +113,7 @@ def timeline_document(
         ("Submitted", submitted),
         (
             "Last email",
-            f"{email['name']}, {maybe(email['at'], '')}: {email['outcome']}"
+            f"{email['name']}, {words(email['at'])}: {email['outcome']}"
             if email
             else "None sent yet",
         ),
@@ -122,7 +136,7 @@ def timeline_document(
         ("Campaign email can reach this Family", family["reach"]),
         (
             "Furthest step reached",
-            f"{summary['furthest_step']}, {maybe(summary['furthest_at'], '')}"
+            f"{summary['furthest_step']}, {words(summary['furthest_at'])}"
             if summary["furthest_step"]
             else "None recorded",
         ),

@@ -242,6 +242,16 @@ def test_the_timeline_export_needs_a_fresh_sign_in(request, auth_service, google
     body = refused.content.decode()
     assert "Confirm with Google" in body and "Nothing was done" in body
     assert f'name="next" value="{page}"' in body
+    # From the Testing rehearsal view, the step-up returns to that view.
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        testing = post(
+            browser,
+            page + "exports/",
+            fields | {"mode": "testing", "request_key": str(uuid4())},
+            HTTP_ACCEPT="text/html",
+        )
+    assert testing.status_code == 403
+    assert f'name="next" value="{page}?mode=testing"' in testing.content.decode()
     assert not ExportRequest.objects.filter(report="family_timeline").exists()
     signed_in(browser)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
@@ -590,3 +600,156 @@ def test_migration_check_refuses_the_previous_definitions(old):
                 cursor.execute(statement)
             cursor.execute(check)
         cursor.execute(check)  # Rolled back to the installed definitions.
+
+
+def test_an_ended_rehearsals_export_is_made_again_not_regenerated(
+    request,
+    auth_service,
+    google,
+    cli,  # noqa: F811
+    reports_root,  # noqa: F811
+):
+    """Once its rehearsal ended, a Testing export's Regenerate is unavailable.
+
+    The status page names the reason beside a greyed-out Regenerate (and the
+    mode as the page does, "Testing rehearsal"); a posted regeneration gets
+    the same plain reason, and the command line ``not_available``. Nothing is
+    made.
+    """
+    from parishkit.stewardship.campaigns.credential_models import RehearsalEpoch
+
+    from .auth_builders import unguarded
+    from .test_export_cleanup_postgresql import expire_publication
+
+    harness, families = rehearsed_timeline(request)
+    browser, _ = signed_in()
+    run = cli()
+    code, document = run(
+        "export",
+        "family-timeline",
+        str(families[1]),
+        "--mode",
+        "testing",
+        "--format",
+        "csv",
+        "--timezone",
+        "UTC",
+        "--yes",
+    )
+    assert code == 0, document
+    made = ExportRequest.objects.get(pk=document["result"]["export"]["id"])
+    render(harness, reports_root, made.pk)
+    expire_publication(made)
+    status_page = reverse("admin:report_export", args=[made.pk])
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        _, body = get(browser, status_page)
+    assert b"Testing rehearsal" in body and b"data-regenerate-unavailable" not in body
+    # The rehearsal ends (as a new rehearsal or the return to Production does).
+    with unguarded(), connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE stewardship_rehearsal_epoch SET state='invalidated',"
+            "invalidated_at=statement_timestamp() WHERE state='active'"
+        )
+    assert not RehearsalEpoch.objects.filter(state="active").exists()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        _, body = get(browser, status_page)
+        text = body.decode()
+        assert "data-regenerate-unavailable" in text
+        assert "rehearsal this export was made in has ended" in text
+        refused = post(
+            browser,
+            reverse("admin:report_export_regenerate", args=[made.pk]),
+            {"request_key": str(uuid4())},
+            HTTP_ACCEPT="text/html",
+        )
+    assert refused.status_code == 409
+    assert b"Testing rehearsal that has ended" in refused.content
+    code, document = run(
+        "export", "regenerate", str(made.pk), "--request-key", str(uuid4()), "--yes"
+    )
+    assert code == 1 and document["error"]["code"] == "not_available", document
+    assert ExportRequest.objects.filter(report="family_timeline").count() == 1
+
+
+def test_the_command_needs_a_live_administrator_session(
+    request,
+    auth_service,
+    google,
+    cli,  # noqa: F811
+):
+    """An ended session, or one whose user is now Staff, is exit 5; nothing made.
+
+    Automation sessions are Administrator-only: a principal who becomes Staff
+    has the session ended (``role_lost``), as Staff get no export on the page.
+    """
+    from parishkit.stewardship.accounts import automation_sessions as automation
+    from parishkit.stewardship.accounts.automation_models import AutomationSession
+    from parishkit.stewardship.accounts.policy import current_principal
+
+    from .auth_builders import unguarded
+
+    _, families = rehearsed_timeline(request)
+    signed_in()
+    run = cli()
+    argv = (
+        "export",
+        "family-timeline",
+        str(families[1]),
+        "--format",
+        "csv",
+        "--timezone",
+        "UTC",
+        "--yes",
+    )
+    # The signed-in Administrator becomes Staff: the session ends.
+    with unguarded(), connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE stewardship_address_rule SET roles='[\"staff\"]'::jsonb "
+            "WHERE email='admin@example.org'"
+        )
+    code, document = run(*argv)
+    assert code == 5 and document["error"]["code"] == "session_ended", document
+    row = AutomationSession.objects.get(
+        secret_digest=automation.secret_digest(run.secret)
+    )
+    assert row.end_reason == "role_lost"
+    # A revoked session is exit 5 too.
+    with unguarded(), connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE stewardship_address_rule SET roles='[\"administrator\"]'::jsonb "
+            "WHERE email='admin@example.org'"
+        )
+    second = cli()
+    session = AutomationSession.objects.get(
+        secret_digest=automation.secret_digest(second.secret)
+    )
+    owner = current_principal(second.service.store, session.principal_id)
+    automation.revoke(session.pk, owner, reason="revoked_by_owner")
+    code, document = second(*argv)
+    assert code == 5 and document["error"]["code"] == "session_ended", document
+    assert not ExportRequest.objects.filter(report="family_timeline").exists()
+
+
+def test_migration_check_refuses_the_previous_authorization():
+    """0063's DO block fails on the authorization's previous (baseline) body.
+
+    Before 0063, ``stewardship_export_request_authorized_v1`` had no
+    family_timeline branch: it is 0063's copy without those four lines.
+    """
+    text = (MIGRATIONS / "0063_timeline_exports.sql").read_text(encoding="utf-8")
+    check = text[text.index("DO $check$") : text.index("$check$;") + len("$check$;")]
+    current = _function(text, "stewardship_export_request_authorized_v1")
+    branch = (
+        "        WHEN request.report='family_timeline' THEN\n"
+        "            -- One Family's full timeline is the page's Administrator view\n"
+        "            -- (migration 0063), for the requester as for anyone else.\n"
+        "            stewardship_export_authorized_v1(user_uuid,true)\n"
+    )
+    assert current.count(branch) == 1
+    previous = current.replace(branch, "")
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(check)
+        with pytest.raises(DatabaseError, match="Migration 0063"), transaction.atomic():
+            cursor.execute(previous)
+            cursor.execute(check)
+        cursor.execute(check)

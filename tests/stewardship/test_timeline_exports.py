@@ -20,6 +20,7 @@ from parishkit.stewardship.reports.timeline_documents import (
     HEADINGS,
     timeline_document,
 )
+from parishkit.stewardship.web import dates
 
 FAMILY = "00000000-0000-4000-8000-000000000061"
 PAYLOAD = {
@@ -78,12 +79,16 @@ def test_the_document_holds_the_family_and_every_line():
     assert metadata["Mode"] == "Production"
     assert metadata["Timeline lines"] == "2, oldest first"
     # The page's Summary panel, in the display zone.
-    assert (
-        metadata["Submitted"].startswith("Yes, ") and "2 times" in metadata["Submitted"]
+    assert metadata["Submitted"] == (
+        "Yes, October 1, 2054 at 9:05 AM EDT · 2 times; most recently "
+        "October 2, 2054 at 9:05 AM EDT"
     )
-    assert metadata["Last email"].startswith("Submission receipt, ")
-    assert metadata["Last email"].endswith(": Delivered")
-    assert metadata["Furthest step reached"].startswith("Census, ")
+    assert metadata["Last email"] == (
+        "Submission receipt, October 2, 2054 at 9:06 AM EDT: Delivered"
+    )
+    assert metadata["Furthest step reached"] == (
+        "Census, October 1, 2054 at 9:01 AM EDT"
+    )
     assert metadata["Last seen"] != "Never"
     assert built.item_count == 2 and built.headings == HEADINGS
     when, what, detail = built.rows[1]
@@ -179,3 +184,55 @@ def test_the_file_follows_its_page():
     assert labels.index("Counted at") < labels.index(page_lines[0])
     assert dict(built.metadata)["Reminders"].endswith("“No reminders”")
     assert "Reminders" not in dict(document().metadata)
+
+
+def test_summary_times_follow_the_pinned_parish_format():
+    """Times inside the Summary's lines use the style the export pinned.
+
+    The worker loads the document inside ``dates.using`` (the requesting
+    configuration's parish format), so a combined line never shows Python's
+    ISO text with microseconds and offsets.
+    """
+    with dates.using("iso"):
+        metadata = dict(document().metadata)
+    assert metadata["Submitted"] == (
+        "Yes, 2054-10-01 09:05 EDT · 2 times; most recently 2054-10-02 09:05 EDT"
+    )
+    assert (
+        metadata["Last email"] == "Submission receipt, 2054-10-02 09:06 EDT: Delivered"
+    )
+    assert metadata["Furthest step reached"] == "Census, 2054-10-01 09:01 EDT"
+    single = PAYLOAD | {"summary": PAYLOAD["summary"] | {"submissions": 1}}
+    with dates.using("iso"):
+        built = timeline_document(
+            single,
+            code=None,
+            parish_name="Sample Parish",
+            requested_at=REQUESTED,
+            timezone="America/New_York",
+        )
+    assert dict(built.metadata)["Submitted"] == "Yes, 2054-10-01 09:05 EDT"
+
+
+def test_the_pdf_report_card_holds_the_family_code(monkeypatch):
+    """The PDF carries the Family's details and code in its report card.
+
+    The CSV is the table alone; the PDF's first card is the report
+    information, so the code an Administrator may see is in the PDF too.
+    """
+    from parishkit.stewardship.reports import pdf_design
+
+    seen = {}
+    write = pdf_design.write_records
+
+    def write_records(output, frame, factory, **options):
+        """Keep the cards, then write them as usual."""
+        seen["cards"] = list(factory())
+        return write(output, frame, factory, **options)
+
+    monkeypatch.setattr(pdf_design, "write_records", write_records)
+    output = io.BytesIO()
+    render_information(document(), output, format="pdf")
+    assert output.getvalue().startswith(b"%PDF")
+    card = repr(seen["cards"][0])
+    assert "ABCD-EFGH" in card and "Family DUID" in card
