@@ -24,6 +24,7 @@ def test_access_step_offers_three_address_lists_and_no_domain(page, component_or
     ]
     # The page's about text sits in a collapsed help panel.
     text = page.locator("main").text_content()
-    assert "Each address you list becomes one user" in text
+    assert "Each address you list, under any of the three roles," in text
+    assert "becomes one user with the highest role it is listed under" in text
     assert "never to a whole domain" in text
     assert "Domains may grant" not in text
