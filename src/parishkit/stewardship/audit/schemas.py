@@ -170,6 +170,8 @@ class Action(StrEnum):
     ADMIN_CMD_EXPORT_FAMILY_TEST_NAMES = "admin_cmd_export_family_test_names"
     ADMIN_CMD_DELIVERY_RESEND = "admin_cmd_delivery_resend"
     ADMIN_CMD_DELIVERY_REFUSAL_CLEAR = "admin_cmd_delivery_refusal_clear"
+    # portal maintenance set: the Family portal switch (ADM-11 PR 7a).
+    ADMIN_CMD_PORTAL_MAINTENANCE_SET = "admin_cmd_portal_maintenance_set"
 
 
 # Closed field identifiers are operational metadata, never census values.

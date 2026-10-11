@@ -40,8 +40,9 @@ take ``--watch``. The schedule change commands (``schedule preview`` and
 commands (PR 9, in ``admin_operations``), ``logs list`` and ``logs
 export`` (PR 8a, in ``admin_reports``), the export lifecycle (PR 8b, in
 ``admin_exports``), the aggregate report reads (PR 8c, in
-``admin_report_reads``), the digests (PR 8d, in ``admin_digests``) and the
-Family-level exports (PR 8e, in ``admin_family_exports``). A
+``admin_report_reads``), the digests (PR 8d, in ``admin_digests``), the
+Family-level exports (PR 8e, in ``admin_family_exports``) and the Family
+portal maintenance switch (PR 7a, in ``admin_portal``). A
 command that streams a file (``logs export`` and
 ``export download --stream``) writes the file's bytes, and nothing else, to
 standard output, and its document to standard error. Other areas join the same
@@ -1122,6 +1123,46 @@ def families_status(args, preamble, runtime, context):
     return read_families_status(context["caller"], runtime)
 
 
+def portal_maintenance_show(args, preamble, runtime, context):
+    """Whether the Family portal is closed for maintenance, as its page (PR 7a)."""
+    from .admin_portal import read_maintenance
+
+    return read_maintenance(context["caller"], runtime)
+
+
+def portal_maintenance_set(args, preamble, runtime, context):
+    """Close or reopen the Family portal, as its page's buttons do (PR 7a).
+
+    The note is read and checked with the page's own rules first, so a bad
+    one is refused before the prompt. The page needs a recent sign-in, so
+    this always prompts, with the page's notices, before any transaction.
+    """
+    from .accounts.family_maintenance import MESSAGE_LIMIT, clean_message
+    from .admin_portal import set_maintenance
+
+    closed = args.state == "closed"
+    if args.message is not None and not closed:
+        raise UsageError("--message goes with --state closed.")
+    message = ""
+    if closed:
+        # Up to four UTF-8 bytes a character; clean_message counts characters.
+        message = clean_message(_input(args.message, context, MESSAGE_LIMIT * 4))
+    confirm(
+        context,
+        (
+            "Close the Family portal for maintenance: Families see a "
+            "temporarily unavailable page and no Family answers are saved.",
+            "After closing, wait about 10 seconds before changing any data.",
+            "Closing does not stop email; pause Family email delivery for that.",
+        )
+        if closed
+        else ("Reopen the Family portal: Families can use the form again.",),
+    )
+    return set_maintenance(
+        context["caller"], runtime, closed=closed, message=message, context=context
+    )
+
+
 def _log_filters(args):
     """The System logs page's filter fields from ``logs`` options."""
     return {
@@ -1826,6 +1867,17 @@ def _sample_test_options(parser):
         required=True,
         help="preview.token from test sample-preview, or - to read it from "
         "standard input (needs --yes)",
+    )
+
+
+def _portal_maintenance_set_options(parser):
+    """Options of ``portal maintenance set``: the state and the optional note."""
+    parser.add_argument("--state", required=True, choices=("closed", "open"))
+    parser.add_argument(
+        "--message",
+        help="with --state closed: the note Families see (at most 500 "
+        "characters, no email address), or - to read it from standard input "
+        "(needs --yes)",
     )
 
 
@@ -2720,6 +2772,36 @@ def _test_specs():
     )
 
 
+def _portal_specs():
+    """The Family portal maintenance switch (PR 7a, ``admin_portal``)."""
+    from .admin_portal import MaintenanceStatus
+
+    return (
+        CommandSpec(
+            "portal maintenance show",
+            "Show whether the Family portal is closed for maintenance.",
+            portal_maintenance_show,
+            "read_only",
+            False,
+            MaintenanceStatus.field_names(),
+            7,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "portal maintenance set",
+            "Close the Family portal for maintenance, or reopen it.",
+            portal_maintenance_set,
+            "full",
+            True,
+            MaintenanceStatus.field_names(),
+            7,
+            options=(_portal_maintenance_set_options,),
+            fresh_gated=True,
+            prompts=True,
+        ),
+    )
+
+
 def _report_specs():
     """The report, export, digest and log commands (PR 8; 8a: the logs).
 
@@ -3029,6 +3111,7 @@ COMMANDS = (
     + _change_specs()
     + _refresh_specs()
     + _test_specs()
+    + _portal_specs()
     + _operation_specs()
     + _report_specs()
 )
