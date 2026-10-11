@@ -5247,44 +5247,30 @@ BEGIN
 END;
 $$;
 
--- Built-in Member talents used by a campaign that never edited its list.
--- Must match responses.service.DEFAULT_TALENTS (a unit test compares them).
-CREATE FUNCTION public.stewardship_talent_defaults_v1() RETURNS jsonb
-    LANGUAGE sql IMMUTABLE SET search_path TO pg_catalog, public, pg_temp
-AS $$
-    SELECT '[{"id":"6f1c6a52-2e33-4d6c-9a7a-0d5f3f3b1a01","label":"Painter","free_text":false},
-             {"id":"6f1c6a52-2e33-4d6c-9a7a-0d5f3f3b1a02","label":"Florist","free_text":false},
-             {"id":"6f1c6a52-2e33-4d6c-9a7a-0d5f3f3b1a03","label":"Seamstress","free_text":false},
-             {"id":"6f1c6a52-2e33-4d6c-9a7a-0d5f3f3b1a04","label":"Carpenter","free_text":false},
-             {"id":"6f1c6a52-2e33-4d6c-9a7a-0d5f3f3b1a05","label":"Attorney","free_text":false},
-             {"id":"6f1c6a52-2e33-4d6c-9a7a-0d5f3f3b1a06","label":"Gardener","free_text":false},
-             {"id":"6f1c6a52-2e33-4d6c-9a7a-0d5f3f3b1a07","label":"Other","free_text":true}]'::jsonb
-$$;
-
--- Per-Member talents and "cannot participate in any ministries". Identities
--- match the Ministry answer exactly; a Member who cannot participate stops
--- every current offered Ministry and joins none.
+-- Per-Member "cannot participate in any ministries". Identities match the
+-- Ministry answer exactly; a Member who cannot participate stops every current
+-- offered Ministry and joins none. Each entry keeps the talents map of the
+-- retired Talents question (#970), which must now be empty: the application
+-- drops talents a form opened before then still sends. Older submissions keep
+-- the talents they recorded; this runs only for new ones (migration 0056).
 CREATE FUNCTION public.stewardship_service_answers_guard_v1(
     response public.stewardship_submission, campaign public.stewardship_campaign_configuration)
     RETURNS void LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp
 AS $$
 DECLARE
     answers jsonb := response.answers->'service';
-    options jsonb := coalesce(campaign.values->'talent_options',
-        public.stewardship_talent_defaults_v1());
-    group_name text; member_key text; entry jsonb; talent_key text; talent_value jsonb;
-    option_value jsonb; text_value text; choices jsonb; current_count integer;
+    group_name text; member_key text; entry jsonb; choices jsonb; current_count integer;
 BEGIN
     IF NOT (campaign.values->'modules' ? 'ministry') THEN
         IF answers IS DISTINCT FROM '{}'::jsonb THEN
-            RAISE EXCEPTION 'Disabled Ministry talents must be empty' USING ERRCODE='23514';
+            RAISE EXCEPTION 'Disabled Ministry service answers must be empty' USING ERRCODE='23514';
         END IF;
         RETURN;
     END IF;
     IF jsonb_typeof(answers) IS DISTINCT FROM 'object'
        OR NOT (answers ?& ARRAY['members','proposed_members'])
        OR answers-ARRAY['members','proposed_members'] <> '{}'::jsonb THEN
-        RAISE EXCEPTION 'Talent aggregate must be complete' USING ERRCODE='23514';
+        RAISE EXCEPTION 'Service answers must be complete' USING ERRCODE='23514';
     END IF;
     FOREACH group_name IN ARRAY ARRAY['members','proposed_members'] LOOP
         IF jsonb_typeof(answers->group_name) IS DISTINCT FROM 'object'
@@ -5292,32 +5278,16 @@ BEGIN
                FROM jsonb_object_keys(answers->group_name) key)
               IS DISTINCT FROM (SELECT coalesce(array_agg(key ORDER BY key),'{}'::text[])
                FROM jsonb_object_keys(response.answers->'ministries'->group_name) key) THEN
-            RAISE EXCEPTION 'Talent identities must match the Ministry answer' USING ERRCODE='23514';
+            RAISE EXCEPTION 'Service identities must match the Ministry answer' USING ERRCODE='23514';
         END IF;
         FOR member_key,entry IN SELECT * FROM jsonb_each(answers->group_name) LOOP
             IF jsonb_typeof(entry) IS DISTINCT FROM 'object'
                OR NOT (entry ?& ARRAY['cannot_serve','talents'])
                OR entry-ARRAY['cannot_serve','talents'] <> '{}'::jsonb
                OR jsonb_typeof(entry->'cannot_serve') IS DISTINCT FROM 'boolean'
-               OR jsonb_typeof(entry->'talents') IS DISTINCT FROM 'object' THEN
-                RAISE EXCEPTION 'Talent entry requires exact fields' USING ERRCODE='23514';
+               OR entry->'talents' IS DISTINCT FROM '{}'::jsonb THEN
+                RAISE EXCEPTION 'Service entry requires exact fields and no talents' USING ERRCODE='23514';
             END IF;
-            FOR talent_key,talent_value IN SELECT * FROM jsonb_each(entry->'talents') LOOP
-                SELECT option INTO option_value FROM jsonb_array_elements(options) option
-                    WHERE option->>'id'=talent_key;
-                IF option_value IS NULL OR jsonb_typeof(talent_value) IS DISTINCT FROM 'string' THEN
-                    RAISE EXCEPTION 'Talent is not currently offered' USING ERRCODE='23514';
-                END IF;
-                text_value := talent_value#>>'{}';
-                IF length(text_value)>200
-                   OR text_value IS DISTINCT FROM public.stewardship_response_comparison_v1(
-                       'first_name',talent_value)
-                   OR text_value ~ U&'[\0001-\0008\000B\000C\000E-\001F\007F]'
-                   OR (option_value->'free_text'='true'::jsonb AND text_value='')
-                   OR (option_value->'free_text'='false'::jsonb AND text_value<>'') THEN
-                    RAISE EXCEPTION 'Talent text is invalid' USING ERRCODE='23514';
-                END IF;
-            END LOOP;
             IF entry->'cannot_serve'='true'::jsonb THEN
                 choices := response.answers->'ministries'->group_name->member_key;
                 -- The Ministry guard already proved each leave is a current,
