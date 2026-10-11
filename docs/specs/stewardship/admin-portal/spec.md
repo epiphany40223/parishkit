@@ -5482,9 +5482,10 @@ Only Admins access the combined log screen. It supports:
   related view, which lists the default kinds of entry (every level but
   DEBUG, and audit records), would list another entry with the same
   correlation; the actor, subject, campaign and task icons only when the
-  entry has one. An absent icon leaves its slot empty. The page reads the
-  related counts for its own entries only, through each log's correlation
-  index; the download skips that read. Each filter travels in a POST body
+  entry has one. An absent icon leaves its slot empty. Only the page reads
+  this, for its own entries, in one statement that takes at most two
+  entries per correlation from each log through its correlation index; the
+  download and the command line's `logs list` skip it. Each filter travels in a POST body
   like the form's and applies
   [in place](../ui-conventions/spec.md#in-place-controls): the filter form above then shows the
   filters applied ("Filter by identifier" opened), and focus returns to the

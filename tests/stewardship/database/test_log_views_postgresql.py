@@ -92,12 +92,18 @@ def audit_entries(response):
 
 
 def identifiers(response):
-    """Each listed entry's correlation identifier, top to bottom."""
+    """Each listed entry's correlation identifier, top to bottom.
+
+    Rows show no identifiers (#1065); each row's id names its entry
+    (log-<icon>-<id>, "audit" for an audit record), so the correlation is
+    read back from that entry.
+    """
     return [
-        UUID(value)
-        for value in re.findall(
-            r'<tr data-correlation="([0-9a-f-]{36})"',
-            response.content.decode(),
+        (AuditEvent if icon == "audit" else OperationalLog)
+        .objects.values_list("correlation_id", flat=True)
+        .get(pk=entry)
+        for icon, entry in re.findall(
+            r'<tr id="log-([a-z]+)-([0-9a-f-]{36})"', response.content.decode()
         )
     ]
 
@@ -174,7 +180,7 @@ def test_administrator_reads_both_sources_and_filters_privately(auth_service, go
         only = post(browser, {"applied": "yes", "audit": "yes"})
         assert levels(only) == [] and audit_entries(only) >= 2
         found = post(browser, {"correlation": str(correlation)})
-        assert found.content.count(b"<tr data-correlation=") == 1  # That one entry.
+        assert found.content.count(b'<tr id="log-') == 1  # That one entry.
         assert b"dashboard_viewed" in found.content
         typed = post(browser, {"event": "task_failed"})
         assert audit_entries(typed) == 0 and len(levels(typed)) == 4
@@ -584,21 +590,11 @@ def test_a_page_costs_a_bounded_number_of_queries(auth_service, google):
         assert 1 <= captured["stewardship_operational_log"] <= 2
         assert 1 <= captured["stewardship_audit_event"] <= 2
         assert captured["stewardship_portal_user"] == 1
-    # Whether each entry has related entries (#1065) is one grouped count per
-    # log for the whole page, however many rows it holds.
+    # Whether each entry has related entries (#1065) is one bounded read for
+    # the whole page, however many rows it holds.
     for captured in (few, many):
-        grouped = Counter(
-            table
-            for query in captured
-            for table in ("stewardship_operational_log", "stewardship_audit_event")
-            if f'FROM "{table}"' in query["sql"]
-            and "GROUP BY" in query["sql"]
-            and '"correlation_id" IN (' in query["sql"]
-        )
-        assert grouped == {
-            "stewardship_operational_log": 1,
-            "stewardship_audit_event": 1,
-        }
+        related = [query for query in captured if "unnest(" in query["sql"]]
+        assert len(related) == 1 and related[0]["sql"].count("LIMIT 2") == 2
     # Every row on the page shows its actor's resolved address. The entries
     # share one instant, so which rows the page holds depends on identifiers.
     resolved = sum(
@@ -606,7 +602,7 @@ def test_a_page_costs_a_bounded_number_of_queries(auth_service, google):
         for index in range(5)
     )
     assert resolved == 50
-    assert response.content.count(b"<tr data-correlation=") == 50
+    assert response.content.count(b'<tr id="log-') == 50
     assert next_fields(response)
 
 
@@ -1326,7 +1322,9 @@ def test_the_related_icon_shows_only_when_another_entry_would_be_listed():
     everything = LogQuery.parse(
         {"applied": "yes", "debug": "yes", "info": "yes", "audit": "yes"}
     )
-    table, _ = log_reads.load_page(everything, through=timezone.now())
+    table, _ = log_reads.load_page(
+        everything, through=timezone.now(), mark_related=True
+    )
     marked = {
         (row["correlation_id"], row["source_kind"]): row["has_related"]
         for row in table.rows
@@ -1339,3 +1337,8 @@ def test_the_related_icon_shows_only_when_another_entry_would_be_listed():
         (debug_partner, "audit"): False,
         (debug_alone, "operational"): False,
     }
+    # The command line's ``logs list`` reads the same page without it.
+    with CaptureQueriesContext(connection) as plain:
+        table, _ = log_reads.load_page(everything, through=timezone.now())
+    assert not any("unnest(" in query["sql"] for query in plain.captured_queries)
+    assert all("has_related" not in row for row in table.rows)
