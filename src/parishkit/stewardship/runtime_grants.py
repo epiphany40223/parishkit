@@ -390,10 +390,7 @@ def pending_tables(applied):
     )
 # The campaign comparison report's figures that read each Family's own rows
 # (#1018): web learns only their aggregates, never a kept archive Family's id.
-COMPARISON_FUNCTION = (
-    "stewardship_campaign_comparison_v1(uuid, date, timestamp with time zone, "
-    "numeric[], uuid)"
-)
+COMPARISON_FUNCTION = "stewardship_campaign_comparison_v1(uuid, date, numeric[], uuid)"
 ARCHIVE_RENEWAL_FUNCTION = (
     "stewardship_campaign_archive_renewal_v1(uuid, uuid, integer)"
 )

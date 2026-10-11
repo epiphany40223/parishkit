@@ -30,10 +30,18 @@
 -- eligible by the day's end from a ParishSoft load no newer than the day's
 -- own; a Family responded when it has a live submission within the fact
 -- set's watermark before the day's end, and its pledge is that of its
--- latest such submission by campaign sequence. The caller passes the
--- day's end instant (campaigns.intervals.local_day, which resolves a
--- daylight-saving gap as the graph does) and the band edges
--- (archive.workbook.BAND_EDGES, the one definition of the band set).
+-- latest such submission by campaign sequence. The day's end is derived
+-- here, from the report date and the time zone of the fact set's own
+-- configuration, never taken from the caller, and the function refuses
+-- unless its Families responded equal the fact row's cumulative responses:
+-- with the cohort and the responses both growing with time, equal counts
+-- mean the same Families, so no caller can move the cutoff to learn
+-- whether one Family is among last year's. (PostgreSQL resolves a local
+-- midnight inside a daylight-saving change as its own rules say; in the
+-- rare zone whose clocks change at midnight that could differ from the
+-- graph's cutoff, and the check then refuses rather than misreport.) The
+-- caller passes the band edges (archive.workbook.BAND_EDGES, the one
+-- definition of the band set), which must be positive and increasing.
 --
 -- Both are SECURITY DEFINER with a fixed search_path: the web login reads
 -- only the id and archive of a kept archive Family row, so the renewal
@@ -47,44 +55,51 @@ SET LOCAL check_function_bodies = false;
 SET LOCAL search_path = public;
 
 CREATE FUNCTION public.stewardship_campaign_comparison_v1(
-    fact_set uuid, report_date date, day_end timestamp with time zone,
-    band_edges numeric[], prior_archive uuid)
+    fact_set uuid, report_date date, band_edges numeric[], prior_archive uuid)
 RETURNS jsonb
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE
     selected record;
-    generation bigint;
+    observed record;
+    day_end timestamp with time zone;
     result jsonb;
 BEGIN
     IF session_user<>'pk_stewardship_web' AND NOT pg_has_role(session_user,
         (SELECT nspowner FROM pg_namespace WHERE nspname='public'),'USAGE') THEN
         RAISE EXCEPTION 'Only the web login reads campaign comparison figures' USING ERRCODE='42501';
     END IF;
-    IF day_end IS NULL OR band_edges IS NULL OR cardinality(band_edges) NOT BETWEEN 1 AND 20
-       OR array_position(band_edges, NULL) IS NOT NULL THEN
-        RAISE EXCEPTION 'Campaign comparison needs a day end and band edges' USING ERRCODE='22023';
+    IF report_date IS NULL OR band_edges IS NULL OR cardinality(band_edges) NOT BETWEEN 1 AND 20
+       OR array_position(band_edges, NULL) IS NOT NULL OR band_edges[1]<=0
+       OR EXISTS (SELECT 1 FROM generate_subscripts(band_edges, 1) i
+                  WHERE i>1 AND band_edges[i]<=band_edges[i - 1]) THEN
+        RAISE EXCEPTION 'Campaign comparison needs a report date and increasing band edges'
+            USING ERRCODE='22023';
     END IF;
     -- Only a ready historical generation, and only a day it observed.
-    SELECT s.campaign_id, s.submission_watermark INTO selected
-    FROM stewardship_daily_fact_set s
+    SELECT s.campaign_id, s.submission_watermark, c.timezone INTO selected
+    FROM public.stewardship_daily_fact_set s
+    JOIN public.stewardship_campaign_configuration c ON c.id=s.timezone_configuration_id
     WHERE s.id=fact_set AND s.state='ready' AND s.population_scope='historical';
     IF NOT FOUND THEN
         RETURN NULL;
     END IF;
-    SELECT d.source_generation INTO generation FROM stewardship_daily_fact d
+    SELECT d.source_generation, d.cumulative_responses INTO observed
+    FROM public.stewardship_daily_fact d
     WHERE d.fact_set_id=fact_set AND d.local_date=report_date AND d.population_available;
-    IF generation IS NULL THEN
+    IF NOT FOUND THEN
         RETURN NULL;
     END IF;
+    -- The day's end: the next local midnight in the fact set's time zone.
+    day_end=(report_date + 1)::timestamp AT TIME ZONE selected.timezone;
     WITH cohort AS (
-        SELECT f.id, f.family_duid FROM stewardship_family_campaign f
+        SELECT f.id, f.family_duid FROM public.stewardship_family_campaign f
         WHERE f.campaign_id=selected.campaign_id AND f.first_eligible_at IS NOT NULL
-          AND f.first_eligible_source_generation<=generation
+          AND f.first_eligible_source_generation<=observed.source_generation
           AND f.first_eligible_at<day_end
     ), latest AS (
         -- Each responding Family's latest live version by the day's end.
         SELECT DISTINCT ON (r.family_id) c.family_duid, r.annual_pledge
-        FROM stewardship_submission r JOIN cohort c ON c.id=r.family_id
+        FROM public.stewardship_submission r JOIN cohort c ON c.id=r.family_id
         WHERE r.campaign_id=selected.campaign_id AND r.mode='live'
           AND r.campaign_sequence<=selected.submission_watermark
           AND r.submitted_at<day_end
@@ -120,19 +135,23 @@ BEGIN
                               count(*) AS families, sum(amount) AS total
                        FROM pledges GROUP BY 1) g ON g.band=b.b),
         'renewed', CASE WHEN prior_archive IS NULL THEN NULL ELSE (
-            SELECT count(*) FROM stewardship_campaign_archive_family a
-            JOIN stewardship_campaign_archive x ON x.id=a.archive_id AND x.state='active'
+            SELECT count(*) FROM public.stewardship_campaign_archive_family a
+            JOIN public.stewardship_campaign_archive x ON x.id=a.archive_id AND x.state='active'
             WHERE a.archive_id=prior_archive AND a.family_id_system='parishsoft_duid'
               AND a.family_id IN (SELECT family_duid FROM latest)) END,
         'prior_families', CASE WHEN prior_archive IS NULL THEN NULL ELSE (
-            SELECT count(*) FROM stewardship_campaign_archive_family a
-            JOIN stewardship_campaign_archive x ON x.id=a.archive_id AND x.state='active'
+            SELECT count(*) FROM public.stewardship_campaign_archive_family a
+            JOIN public.stewardship_campaign_archive x ON x.id=a.archive_id AND x.state='active'
             WHERE a.archive_id=prior_archive AND a.family_id_system='parishsoft_duid') END
     ) INTO result;
+    IF (result->>'responded')::bigint IS DISTINCT FROM observed.cumulative_responses THEN
+        RAISE EXCEPTION 'Campaign comparison figures disagree with their fact row'
+            USING ERRCODE='23514';
+    END IF;
     RETURN result;
 END $$;
-ALTER FUNCTION public.stewardship_campaign_comparison_v1(uuid, date, timestamp with time zone, numeric[], uuid) SECURITY DEFINER;
-REVOKE ALL ON FUNCTION public.stewardship_campaign_comparison_v1(uuid, date, timestamp with time zone, numeric[], uuid) FROM PUBLIC;
+ALTER FUNCTION public.stewardship_campaign_comparison_v1(uuid, date, numeric[], uuid) SECURITY DEFINER;
+REVOKE ALL ON FUNCTION public.stewardship_campaign_comparison_v1(uuid, date, numeric[], uuid) FROM PUBLIC;
 
 CREATE FUNCTION public.stewardship_campaign_archive_renewal_v1(
     archive uuid, prior_archive uuid, through_day integer)
@@ -144,18 +163,18 @@ BEGIN
         RAISE EXCEPTION 'Only the web login reads campaign comparison figures' USING ERRCODE='42501';
     END IF;
     -- Both imports must be active; pending previews and tombstones never count.
-    IF (SELECT count(*) FROM stewardship_campaign_archive
+    IF (SELECT count(*) FROM public.stewardship_campaign_archive
         WHERE id IN (archive, prior_archive) AND state='active')<>2 OR archive=prior_archive THEN
         RETURN NULL;
     END IF;
     RETURN jsonb_build_object(
-        'renewed', (SELECT count(*) FROM stewardship_campaign_archive_family a
+        'renewed', (SELECT count(*) FROM public.stewardship_campaign_archive_family a
                     WHERE a.archive_id=archive AND a.first_campaign_day<=through_day
-                      AND EXISTS (SELECT 1 FROM stewardship_campaign_archive_family b
+                      AND EXISTS (SELECT 1 FROM public.stewardship_campaign_archive_family b
                                   WHERE b.archive_id=prior_archive
                                     AND b.family_id_system=a.family_id_system
                                     AND b.family_id=a.family_id)),
-        'prior_families', (SELECT count(*) FROM stewardship_campaign_archive_family b
+        'prior_families', (SELECT count(*) FROM public.stewardship_campaign_archive_family b
                            WHERE b.archive_id=prior_archive));
 END $$;
 ALTER FUNCTION public.stewardship_campaign_archive_renewal_v1(uuid, uuid, integer) SECURITY DEFINER;
@@ -174,9 +193,10 @@ BEGIN
           AND NOT has_function_privilege('public', p.oid, 'EXECUTE')
           AND ((p.proname='stewardship_campaign_comparison_v1'
                 AND pg_get_function_identity_arguments(p.oid)=
-                    'fact_set uuid, report_date date, day_end timestamp with time zone, '
-                    'band_edges numeric[], prior_archive uuid'
+                    'fact_set uuid, report_date date, band_edges numeric[], prior_archive uuid'
                 AND p.prosrc LIKE '%ORDER BY r.family_id, r.campaign_sequence DESC%'
+                AND p.prosrc LIKE '%AT TIME ZONE selected.timezone%'
+                AND p.prosrc LIKE '%DISTINCT FROM observed.cumulative_responses%'
                 AND p.prosrc LIKE '%width_bucket(amount, band_edges) + 1%')
             OR (p.proname='stewardship_campaign_archive_renewal_v1'
                 AND pg_get_function_identity_arguments(p.oid)=

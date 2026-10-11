@@ -1010,7 +1010,9 @@ linked to #1018 (the last one closes part (b)).
    As built: frozen file 0067 adds `stewardship_campaign_comparison_v1`
    (the current figures of one fact-set day, whose Families responded and
    pledge total the report checks against the fact row before showing
-   anything) and, since the web login reads only the id and archive of a
+   anything; it derives the day's end itself from the fact set's time zone
+   and refuses unless its Families responded equal the fact row's, so no
+   caller can move the cutoff to probe one Family's renewal) and, since the web login reads only the id and archive of a
    kept archive Family row, a second definer function,
    `stewardship_campaign_archive_renewal_v1`, for one imported year's
    renewal of the year before it. Both return aggregates only, and only the

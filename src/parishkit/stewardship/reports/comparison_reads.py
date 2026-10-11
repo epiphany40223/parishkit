@@ -27,7 +27,6 @@ from zoneinfo import ZoneInfo
 
 from django.db import connection
 
-from parishkit.stewardship.campaigns.intervals import local_day
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .comparison import (
@@ -97,20 +96,20 @@ def _json(sql, arguments):
     return json.loads(value) if isinstance(value, str) else value
 
 
-def current_figures(fact_set_id, fact, timezone, prior_archive_id):
+def current_figures(fact_set_id, fact, prior_archive_id):
     """The definer function's aggregates for one fact day, checked against it.
 
-    Its Families responded and (when the day has one) pledge total must
-    equal the participation fact row's, since both follow one rule; a
-    difference means the two readings disagree, and the report is refused
+    The function derives the day's end itself and refuses unless its
+    Families responded equal the fact row's. Here the pledge total (when the
+    day has one) must equal the fact row's too, since both follow one rule;
+    a difference means the two readings disagree, and the report is refused
     as unavailable rather than showing either.
     """
     from parishkit.stewardship.archive.workbook import BAND_EDGES
 
-    end = local_day(fact.local_date, timezone).interval.end
     found = _json(
-        "SELECT public.stewardship_campaign_comparison_v1(%s,%s,%s,%s::numeric[],%s)",
-        [fact_set_id, fact.local_date, end, list(BAND_EDGES), prior_archive_id],
+        "SELECT public.stewardship_campaign_comparison_v1(%s,%s,%s::numeric[],%s)",
+        [fact_set_id, fact.local_date, list(BAND_EDGES), prior_archive_id],
     )
     if found is None or found["responded"] != fact.cumulative_responses:
         raise StorageInvariantError("Comparison figures disagree with their facts.")
@@ -334,13 +333,12 @@ def read_comparison(guard, campaign_id, *, day=None):
                 found = current_figures(
                     document.fact_set_id,
                     fact,
-                    timezone,
                     last_archive.pk if reason is None else None,
                 )
                 at_day = _current_day(fact, number, found, financial)
             end, so_far = at_day, found
             if final is not fact and final is not None and final.population_available:
-                so_far = current_figures(document.fact_set_id, final, timezone, None)
+                so_far = current_figures(document.fact_set_id, final, None)
                 end = _current_day(final, latest[0], so_far, financial)
             renewal = Renewal(reason=reason)
             if reason is None and found is not None:

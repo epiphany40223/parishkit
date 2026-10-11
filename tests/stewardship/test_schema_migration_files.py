@@ -232,7 +232,7 @@ FROZEN = {
         "6b13a5dc9fa5f012710b9ac7e44ce36a98ac9cf5a999d5b9c64b02152943d9fe"
     ),
     "0067_campaign_comparison.sql": (
-        "88e3df72ad7c5a0004393b17a90a56a3ffd3e7ed7f2a1c4de428f4c82008de50"
+        "7470b2e51d474af17f85e91f44ed495be29480d658d70eb7b34a08a15da0b2d8"
     ),
 }
 

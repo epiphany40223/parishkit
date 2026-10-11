@@ -158,9 +158,8 @@ def test_current_figures_match_the_graph_and_the_python_rules(scenario):
         store, actor, archive_bytes(CURRENT_YEAR - 1, [1, 2, 99])
     )
     fact = first_day(ready)
-    timezone = harness.campaign.active_configuration.timezone
     with task_login(ServiceRole.WEB, exact=True, reconnect=True), transaction.atomic():
-        found = current_figures(ready.pk, fact, timezone, last_year.pk)
+        found = current_figures(ready.pk, fact, last_year.pk)
     amounts = [Decimal(value) for value in PLEDGES.values() if value != "0"]
     assert found["responded"] == fact.cumulative_responses == len(PLEDGES)
     assert Decimal(found["pledge_total"]) == fact.pledge_total == sum(amounts)
@@ -176,20 +175,101 @@ def test_current_figures_match_the_graph_and_the_python_rules(scenario):
     assert (found["renewed"], found["prior_families"]) == (2, 3)
 
 
+COMPARISON = "public.stewardship_campaign_comparison_v1(%s,%s,%s::numeric[],%s)"
+RENEWAL = "public.stewardship_campaign_archive_renewal_v1(%s,%s,1)"
+
+
+def calls(ready):
+    """Each definer function's call, with arguments, for one fact set."""
+    fact = first_day(ready)
+    return (
+        (COMPARISON, [ready.pk, fact.local_date, list(BAND_EDGES), None]),
+        (RENEWAL, [ready.pk, ready.pk]),
+    )
+
+
 def test_only_the_web_login_may_call_the_definer_functions(scenario):
     """EXECUTE is the web login's alone; PUBLIC has none."""
     _, ready, _, _ = scenario
     for role in (ServiceRole.WORKER, ServiceRole.SCHEDULER):
-        with (
-            pytest.raises(DatabaseError, match="permission denied"),
-            task_login(role, exact=True, reconnect=True),
-            transaction.atomic(),
-            connection.cursor() as cursor,
+        for function, arguments in calls(ready):
+            with (
+                pytest.raises(DatabaseError, match="permission denied"),
+                task_login(role, exact=True, reconnect=True),
+                transaction.atomic(),
+                connection.cursor() as cursor,
+            ):
+                cursor.execute("SELECT " + function, arguments)
+
+
+def test_a_login_granted_execute_is_still_refused_in_the_body(scenario):
+    """The body's own check refuses a session that is not the web login's."""
+    _, ready, _, _ = scenario
+    probes = calls(ready)  # Read before the session becomes the probe role.
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute("CREATE ROLE p1018c_probe LOGIN NOINHERIT")
+        for name in (
+            "stewardship_campaign_comparison_v1(uuid, date, numeric[], uuid)",
+            "stewardship_campaign_archive_renewal_v1(uuid, uuid, integer)",
         ):
-            cursor.execute(
-                "SELECT public.stewardship_campaign_archive_renewal_v1(%s,%s,1)",
-                [ready.pk, ready.pk],
-            )
+            cursor.execute(f"GRANT EXECUTE ON FUNCTION public.{name} TO p1018c_probe")
+        cursor.execute("SET LOCAL SESSION AUTHORIZATION p1018c_probe")
+        for function, arguments in probes:
+            with (
+                pytest.raises(DatabaseError, match="Only the web login"),
+                transaction.atomic(),
+            ):
+                cursor.execute("SELECT " + function, arguments)
+        # Roll back the probe role with everything else.
+        transaction.set_rollback(True)
+
+
+def test_the_cutoff_is_derived_in_sql_and_checked_against_the_fact_row(scenario):
+    """No caller-supplied day end exists, and a disagreeing fact row refuses.
+
+    Moving the cutoff could reveal whether one Family is among last year's
+    by a change in the renewal count. The function takes no day end, and
+    it refuses unless its Families responded equal the fact row's, here
+    forced apart as only a superuser could.
+    """
+    from .auth_builders import unguarded
+
+    _, ready, _, _ = scenario
+    fact = first_day(ready)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT pg_get_function_identity_arguments("
+            "'public.stewardship_campaign_comparison_v1"
+            "(uuid, date, numeric[], uuid)'::regprocedure)"
+        )
+        assert "time" not in cursor.fetchone()[0]
+    with unguarded(), connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE stewardship_daily_fact SET cumulative_responses=%s,"
+            "cohort_denominator=%s WHERE id=%s",
+            [fact.cumulative_responses + 1, fact.cohort_denominator + 1, fact.pk],
+        )
+    with (
+        pytest.raises(DatabaseError, match="disagree with their fact row"),
+        transaction.atomic(),
+        connection.cursor() as cursor,
+    ):
+        cursor.execute("SELECT " + COMPARISON, calls(ready)[0][1])
+
+
+@pytest.mark.parametrize(
+    "edges", [["500", "250"], ["250", "250"], ["0", "250"], ["-1"], []]
+)
+def test_band_edges_must_be_positive_and_increasing(scenario, edges):
+    """Unsorted, repeated, non-positive or missing edges are refused."""
+    _, ready, _, _ = scenario
+    fact = first_day(ready)
+    with (
+        pytest.raises(DatabaseError, match="increasing band edges"),
+        transaction.atomic(),
+        connection.cursor() as cursor,
+    ):
+        cursor.execute("SELECT " + COMPARISON, [ready.pk, fact.local_date, edges, None])
 
 
 def test_page_tiles_tables_notes_and_audit(scenario):
@@ -281,10 +361,9 @@ def test_migration_check_refuses_a_missing_or_widened_function():
             "DROP FUNCTION public.stewardship_campaign_archive_renewal_v1"
             "(uuid, uuid, integer)",
             "GRANT EXECUTE ON FUNCTION public.stewardship_campaign_comparison_v1"
-            "(uuid, date, timestamp with time zone, numeric[], uuid) TO PUBLIC",
+            "(uuid, date, numeric[], uuid) TO PUBLIC",
             "ALTER FUNCTION public.stewardship_campaign_comparison_v1"
-            "(uuid, date, timestamp with time zone, numeric[], uuid) "
-            "SECURITY INVOKER",
+            "(uuid, date, numeric[], uuid) SECURITY INVOKER",
         ):
             with (
                 pytest.raises(DatabaseError, match="Migration 0067"),
