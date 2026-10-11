@@ -2,13 +2,11 @@
 CREATE FUNCTION public.stewardship_ministry_scope_v1(user_uuid uuid)
 RETURNS jsonb LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
     WITH policy AS (
-        SELECT coalesce(a.roles,d.roles,'[]'::jsonb) AS roles,
+        SELECT coalesce(a.roles,'[]'::jsonb) AS roles,
             stewardship_ministry_leader_scope_v1(u.id) AS ministries
         FROM stewardship_portal_user u CROSS JOIN stewardship_system_configuration r
         LEFT JOIN stewardship_address_rule a ON a.configuration_id=r.active_configuration_id
             AND a.email=lower(u.email)
-        LEFT JOIN stewardship_domain_rule d ON d.configuration_id=r.active_configuration_id
-            AND d.domain=lower(u.hosted_domain) AND d.domain=split_part(lower(u.email),'@',2)
         WHERE u.id=user_uuid AND NOT u.disabled
     )
     SELECT jsonb_build_object('capability','ministry_report',

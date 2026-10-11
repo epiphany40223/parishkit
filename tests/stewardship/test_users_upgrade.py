@@ -464,8 +464,8 @@ def test_upgrade_users_cli_forwards_preview_and_conversion(monkeypatch, capsys):
     ]
 
 
-def test_upgrade_users_command_previews_only_until_enabled(monkeypatch):
-    """This release refuses to convert; the preview takes no conversion input."""
+def test_upgrade_users_command_refuses_unconfirmed_or_mixed_inputs(monkeypatch):
+    """The conversion needs its confirmed list; a preview takes no such input."""
     from parishkit.stewardship import operator_commands
     from parishkit.stewardship.deployment import ServiceRole
 
@@ -476,8 +476,9 @@ def test_upgrade_users_command_previews_only_until_enabled(monkeypatch):
     )
     from parishkit.stewardship.accounts import users_schema
 
-    assert users_schema.USERS_ENABLED is False
-    with pytest.raises(ConfigError, match="previews the users upgrade only"):
+    # Slice 4 enables the conversion: no "previews only" refusal is left.
+    assert users_schema.USERS_ENABLED is True
+    with pytest.raises(ConfigError, match="Confirm the Administrators"):
         operator_commands.upgrade_users_command(
             object(),
             deployment_id=str(uuid4()),
@@ -485,7 +486,6 @@ def test_upgrade_users_command_previews_only_until_enabled(monkeypatch):
             operation_id=str(uuid4()),
             operator_name="Operator",
             reason="Users revamp",
-            confirmed_administrators="admin@example.org",
         )
     with pytest.raises(ConfigError, match="no conversion inputs"):
         operator_commands.upgrade_users_command(
@@ -547,14 +547,14 @@ SETUP = dict(mode="testing", current_campaign_id=None, restore_review_required=F
     ],
 )
 def test_startup_refuses_sign_in_rules_once_users_ship(schema, state, refused):
-    """Off in this release; on, only a users (or setup) configuration starts."""
+    """On in this release: only a users (or setup) configuration starts."""
     runtime = SimpleNamespace(
         active_configuration=SimpleNamespace(validation_schema=schema), **state
     )
-    assert users_schema.USERS_ENABLED is False
-    users_schema.require_users_form(runtime)
+    assert users_schema.USERS_ENABLED is True
+    users_schema.require_users_form(runtime, enabled=False)
     if refused:
         with pytest.raises(ConfigError, match="run upgrade-users first"):
-            users_schema.require_users_form(runtime, enabled=True)
+            users_schema.require_users_form(runtime)
     else:
-        users_schema.require_users_form(runtime, enabled=True)
+        users_schema.require_users_form(runtime)

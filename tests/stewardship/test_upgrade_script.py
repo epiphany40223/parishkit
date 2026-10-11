@@ -13,8 +13,11 @@ with the proof that a Production invocation is unchanged by it.
 
 import json
 import os
+import re
 import shutil
+import signal
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -232,7 +235,13 @@ def test_the_optional_variables_reach_the_host(tmp_path):
 # answers; FAKE_RETARGET_FAIL makes `retarget-image` fail with nothing
 # written; FAKE_RESTART_WORKER brings the worker back the moment web stops
 # (the runbook's "restarted meanwhile" case); FAKE_SERVICES_AFTER is the
-# service list the re-rendered Compose file has after a retarget.
+# service list the re-rendered Compose file has after a retarget;
+# FAKE_MIGRATE_FAIL makes the full migration fail (as the users swap does on
+# an unconverted configuration) and FAKE_USERS_FAIL the users conversion.
+# The users swap's pending state is kept in FAKE_STATE/swap_pending: the base
+# migration, or a full one that fails, leaves it; a full one that succeeds
+# clears it; and while it lasts every `up` is refused (recorded in
+# FAKE_STATE/refused), as every online service refuses that schema.
 # `retarget-image` rewrites compose.json and the three role documents as
 # the real command would, so the final checks read what the run itself
 # wrote. For the local mode: FAKE_OFFSITE is the off-site state the backup
@@ -249,6 +258,8 @@ def test_the_optional_variables_reach_the_host(tmp_path):
 # images' own refusals are out of scope.
 FAKE_DOCKER = r"""
 echo "$*" >>"$FAKE_LOG"
+# FAKE_HANG: a call containing it hangs, as a stuck one-off's client does.
+if [ -n "$FAKE_HANG" ] && [[ "$*" == *"$FAKE_HANG"* ]]; then exec /bin/sleep 60; fi
 stopped="$FAKE_STATE/stopped"
 touch "$stopped"
 all=(postgres valkey web worker scheduler mail-dispatch caddy)
@@ -275,6 +286,10 @@ case "$*" in
             mv "$stopped.new" "$stopped"
         fi ;;
     *" up --detach "*)
+        if [ -e "$FAKE_STATE/swap_pending" ]; then
+            echo "$*" >>"$FAKE_STATE/refused"
+            exit 1
+        fi
         if [ -n "$FAKE_WEB_FAIL" ] && [[ " $* " == *" web "* ]]; then exit 1; fi
         for s in "$@"; do
             grep -vxF "$s" "$stopped" >"$stopped.new" || true
@@ -305,10 +320,19 @@ case "$*" in
         echo x >>"$FAKE_STATE/checks"
         if [ -n "$FAKE_NOOP_LATER" ] && [ "$(wc -l <"$FAKE_STATE/checks")" -gt 1 ]
         then echo "$FAKE_NOOP_LATER"; else echo "$FAKE_NOOP"; fi ;;
-    *" run --rm -T backup-worker")
+    *" run --rm -T backup-worker"|*" run --rm -T backup-worker backup --config "*)
         echo '{"level":"DEBUG"}'
         if [ -n "$FAKE_BACKUP_GARBAGE" ]; then echo "ERROR: backup refused; no JSON"
         elif [ -n "$FAKE_BACKUP_FAIL" ]; then json failed
+        elif [ -e "$FAKE_STATE/base_partial" ]; then
+            # Migrations outside the swap pending: only the resume reuses
+            # the earlier run's backup; a plain backup refuses.
+            if [ "$last" = --users-upgrade-resume ]; then
+                echo '{"backup_recorded": false, "backup_reused": true,' \
+                    '"reused_backup": {"completed_at": "2026-10-10T04:00:00+00:00",' \
+                    '"manifest_digest": "'"$(printf 'e%.0s' {1..64})"'"},' \
+                    '"offsite": {"state": "'"${FAKE_OFFSITE:-uploaded}"'"}}'
+            else echo "ERROR: backup refused or incomplete"; fi
         else json "${FAKE_OFFSITE:-uploaded}"; fi ;;
     *" retarget-image --config "*)
         [ -z "$FAKE_RETARGET_FAIL" ] || { echo "retarget refused" >&2; exit 1; }
@@ -334,8 +358,52 @@ case "$*" in
                 >"$(dirname "$FAKE_COMPOSE")/$role.yaml"
         done
         touch "$FAKE_STATE/retargeted" ;;
-    *" run --rm -T migration") echo "migrated" ;;
-    *"database-grants"*) echo "granted" ;;
+    *" --rm -T migration migrate --config "*" --users-upgrade-base")
+        if [ -n "$FAKE_BASE_FAIL" ]; then
+            # Stopped partway: migrations outside the swap still pending.
+            touch "$FAKE_STATE/base_partial"
+            echo "Migration refused partway" >&2
+            exit 1
+        fi
+        rm -f "$FAKE_STATE/base_partial"
+        touch "$FAKE_STATE/swap_pending"
+        echo "migrated to the base" ;;
+    *" --rm -T migration")
+        if [ -n "$FAKE_MIGRATE_FAIL" ]; then
+            touch "$FAKE_STATE/swap_pending"
+            echo "Migration 0052 refused" >&2
+            if [ -n "$FAKE_MIGRATE_TRACEBACK" ]; then
+                above="The above exception was the direct cause"
+                above+=" of the following exception:"
+                # An uncaught psycopg error, chained as Django raises it,
+                # whose frames, message and DETAIL carry a row's values.
+                printf '%s\n' "Traceback (most recent call last):" \
+                    '  File "/app/x.py", line 1, in <module>' \
+                    "    cursor.execute(sql, ['secret-param@example.org'])" \
+                    'psycopg.errors.UniqueViolation: duplicate key value' \
+                    'DETAIL:  Key (email)=(secret-detail@example.org) exists.' \
+                    "" "$above" \
+                    "" "Traceback (most recent call last):" \
+                    '  File "/app/y.py", line 2, in <module>' \
+                    'django.db.utils.IntegrityError: duplicate key value' \
+                    'DETAIL:  Key (email)=(secret-chained@example.org) exists.' \
+                    "ERROR: IntegrityError (SQLSTATE 23505)" \
+                    "  DETAIL:  secret-loose@example.org" >&2
+            fi
+            exit 1
+        fi
+        rm -f "$FAKE_STATE/swap_pending"
+        echo "migrated" ;;
+    *" upgrade-users "*"--operation-id "*)
+        [ -z "$FAKE_USERS_FAIL" ] || { echo "upgrade refused" >&2; exit 1; }
+        echo '{"users_upgrade_applied": true}' ;;
+    *"database-grants"*)
+        if [ -n "$FAKE_GRANTS_FAIL" ]; then
+            # The cause, then an empty last line, as a real traceback ends.
+            printf '%s\n' "grants refused" "UndefinedFunction: no such function" "" >&2
+            exit 1
+        fi
+        echo "granted" ;;
     *"exec -T caddy sha256sum"*) sha256sum "$FAKE_CADDYFILE" ;;
     *"pk-stewardship health"*) [ -z "$FAKE_WEB_FAIL" ] || exit 1 ;;
     *"ps --all --format json")
@@ -351,51 +419,12 @@ exit 0
 """
 
 
-def run_host(
-    tmp_path,
-    mode,
-    *,
-    noop="t",
-    status=0,
-    kept=None,
-    bulk=True,
-    prepare=None,
-    profile=None,
-    clock="normal",
-    image=None,
-    env=None,
-    **fake,
-):
-    """Run the host half against the stand-ins.
-
-    Returns the recorded docker calls, the combined output and the runtime
-    root. `noop` is the upgrade check's answer; `status` the exit status
-    the script must end with; `kept` is the content of a kept static tree
-    for the target digest, when there is one; `bulk` sets the deployment's
-    bulk Family send switch; `prepare(root)` may alter the runtime root
-    before the run; `fake` sets the stand-in's FAKE_* switches. `profile`
-    None runs the eight-argument Production invocation; "local" appends
-    `local BUILD` and lays the root out as the local environment's `up`
-    leaves it (marker, LOCAL deployment YAML, clock-mode marker saying
-    `clock`, the override file in fake mode) with `image` (default a LOCAL
-    tag) as the target; any other value is passed through as the profile.
-    `env` adds to the script's environment.
-    """
-    if shutil.which("jq") is None or shutil.which("sha256sum") is None:
-        # The runner has both; only the in-image run (which does not see
-        # this variable) may skip, as the dev deploy tests do.
-        if os.environ.get("GITHUB_ACTIONS") == "true":
-            pytest.fail(
-                "the CI runner lacks jq or sha256sum; host-half tests cannot run"
-            )
-        pytest.skip("the host-side script needs jq and sha256sum")
+def lay_out(tmp_path, local, current, target, clock, bulk, kept, prepare):
+    """Lay the runtime root out as a set-up deployment, before the first run."""
     root = tmp_path / "root"
     services = root / "config" / "services"
     services.mkdir(parents=True)
     (services / "Caddyfile").write_text("caddy\n")
-    local = profile == "local"
-    current = LOCAL_CURRENT if local else CURRENT
-    target = image or (LOCAL_TARGET if local else TARGET)
     (services / "compose.json").write_text(
         json.dumps({"services": {"web": {"image": current}}})
     )
@@ -439,6 +468,64 @@ def run_host(
         (root / "cache" / f"static.{hex_}" / "kept.js").write_text(kept)
     if prepare is not None:
         prepare(root)
+    (tmp_path / "state").mkdir()
+    (tmp_path / "logs").mkdir()
+    (tmp_path / "docker.log").touch()
+
+
+def run_host(
+    tmp_path,
+    mode,
+    *,
+    noop="t",
+    status=0,
+    kept=None,
+    bulk=True,
+    prepare=None,
+    profile=None,
+    clock="normal",
+    image=None,
+    env=None,
+    again=False,
+    interrupt=None,
+    **fake,
+):
+    """Run the host half against the stand-ins.
+
+    Returns the recorded docker calls, the combined output and the runtime
+    root. `noop` is the upgrade check's answer; `status` the exit status
+    the script must end with; `kept` is the content of a kept static tree
+    for the target digest, when there is one; `bulk` sets the deployment's
+    bulk Family send switch; `prepare(root)` may alter the runtime root
+    before the run; `fake` sets the stand-in's FAKE_* switches. `profile`
+    None runs the eight-argument Production invocation; "local" appends
+    `local BUILD` and lays the root out as the local environment's `up`
+    leaves it (marker, LOCAL deployment YAML, clock-mode marker saying
+    `clock`, the override file in fake mode) with `image` (default a LOCAL
+    tag) as the target; any other value is passed through as the profile.
+    `env` adds to the script's environment. `again` repeats a run in the
+    same `tmp_path`, keeping the runtime root and the stand-in's state as
+    the earlier run left them (the other layout arguments are then unused).
+    `interrupt` is `(fragment, signal)`: once a docker call containing the
+    fragment is recorded, the script is sent the signal.
+    """
+    if shutil.which("jq") is None or shutil.which("sha256sum") is None:
+        # The runner has both; only the in-image run (which does not see
+        # this variable) may skip, as the dev deploy tests do.
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            pytest.fail(
+                "the CI runner lacks jq or sha256sum; host-half tests cannot run"
+            )
+        pytest.skip("the host-side script needs jq and sha256sum")
+    root = tmp_path / "root"
+    services = root / "config" / "services"
+    local = profile == "local"
+    current = LOCAL_CURRENT if local else CURRENT
+    target = image or (LOCAL_TARGET if local else TARGET)
+    yaml = tmp_path / "deployment.yaml"
+    build = tmp_path / "build"
+    if not again:
+        lay_out(tmp_path, local, current, target, clock, bulk, kept, prepare)
     bin_dir = tmp_path / "bin"
     executable_stub(bin_dir, "docker", FAKE_DOCKER)
     # Root-only `install -o`, real waiting and the public-origin probe are
@@ -453,18 +540,24 @@ def run_host(
         'echo "curl $*" >>"$FAKE_LOG"; [ -z "$FAKE_ORIGIN_FAIL" ] || exit 7; '
         'printf "HTTP/2 200\\r\\nserver: gunicorn\\r\\n"',
     )
-    # coreutils timeout is Linux-only here; the stand-in just runs the command.
-    executable_stub(bin_dir, "timeout", 'shift; exec "$@"')
+    # coreutils timeout is Linux-only here; the stand-in skips its options
+    # and runs the command, unless the command contains FAKE_TIMEOUT: then
+    # it answers as an expired limit does, without running it.
+    executable_stub(
+        bin_dir,
+        "timeout",
+        'if [ -n "$FAKE_TIMEOUT" ] && [[ "$*" == *"$FAKE_TIMEOUT"* ]]; then '
+        'echo "timeout $*" >>"$FAKE_LOG"; exit 124; fi; '
+        'while [[ $1 == -* ]]; do shift; done; shift; exec "$@"',
+    )
     state = tmp_path / "state"
-    state.mkdir()
     logs = tmp_path / "logs"
-    logs.mkdir()
     log = tmp_path / "docker.log"
-    log.touch()
     project = "parishkit-local" if local else "stewardship"
     trailing = [] if profile is None else [profile, str(build)]
     override = str(services / "compose.faketime.json") if clock == "fake" else ""
-    result = subprocess.run(
+    calls_before = len(log.read_text().splitlines())
+    process = subprocess.Popen(
         [
             "bash",
             str(HOST),
@@ -493,17 +586,36 @@ def run_host(
             **(env or {}),
         },
         text=True,
-        capture_output=True,
-        timeout=60,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
     )
-    output = result.stdout + result.stderr
-    assert result.returncode == status, output
+    try:
+        if interrupt is not None:
+            fragment, signum = interrupt
+            deadline = time.monotonic() + 30
+            while not any(
+                fragment in call for call in log.read_text().splitlines()[calls_before:]
+            ):
+                assert process.poll() is None, "the run ended before the fragment"
+                assert time.monotonic() < deadline, "the fragment was never called"
+                time.sleep(0.05)
+            process.send_signal(signum)
+        stdout, stderr = process.communicate(timeout=60)
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.communicate()
+    output = stdout + stderr
+    assert process.returncode == status, output
     # The whole log is also kept on the host, named after the mode (a usage
-    # error ends before the log opens).
+    # error ends before the log opens). A repeated run in the same second
+    # appends to the earlier run's file.
     kept_logs = list(logs.glob(f"stewardship-{mode}-*.log"))
     if status != 2:
-        assert len(kept_logs) == 1 and "Log: " in kept_logs[0].read_text()
-    return log.read_text().splitlines(), output, root
+        assert kept_logs and all("Log: " in path.read_text() for path in kept_logs)
+        assert again or len(kept_logs) == 1
+    # Only this run's docker calls.
+    return log.read_text().splitlines()[calls_before:], output, root
 
 
 def first(calls, fragment):
@@ -576,7 +688,7 @@ def test_an_upgrade_with_the_override_runs_migration_and_grants(tmp_path):
     """With the override, both commands run after the retarget, before web."""
     calls, output, _ = run_host(tmp_path, "upgrade", noop="f", schema_change="1")
     retarget = first(calls, " retarget-image ")
-    migration = first(calls, "run --rm -T migration")
+    migration = first(calls, "--rm -T migration")
     assert retarget < migration < first(calls, "database-grants")
     assert migration < first(calls, "up --detach --wait web")
     assert "running migration and grants: the check answered: f" in output
@@ -1104,3 +1216,489 @@ def test_production_mode_never_reads_the_rehearsal_choices(tmp_path):
     retarget = calls[first(calls, " retarget-image ")]
     assert "BULK_FAMILY_SEND" not in retarget and "LATENCY" not in retarget
     assert "latency" not in output and f"Upgraded to {TARGET} in" in output
+
+
+# ---------------------------------------------------------------------------
+# The users upgrade (#952 slice 4): the conversion between two migrations.
+
+USERS = {
+    "STEWARDSHIP_USERS_OPERATION": "11111111-2222-4333-8444-555555555555",
+    "STEWARDSHIP_USERS_OPERATOR": "Test Operator",
+    "STEWARDSHIP_USERS_REASON": "Users revamp release",
+    "STEWARDSHIP_USERS_ADMINISTRATORS": "first@example.test,second@example.test",
+}
+
+
+def test_the_users_upgrade_converts_between_the_two_migrations(tmp_path):
+    """Base migration, grants, preview, conversion, migration, grants, then web."""
+    calls, output, _ = run_host(
+        tmp_path, "upgrade", noop="f", schema_change="1", env=USERS
+    )
+    base = first(calls, "migration migrate --config ")
+    assert calls[base].endswith(
+        "--rm -T migration migrate --config "
+        f"{tmp_path}/root/config/services/migration.yaml --users-upgrade-base"
+    )
+    grants = [i for i, call in enumerate(calls) if "database-grants" in call]
+    preview = first(calls, " upgrade-users ")
+    convert = first(calls, "--operation-id ")
+    full = next(i for i, call in enumerate(calls) if call.endswith("--rm -T migration"))
+    assert first(calls, " retarget-image ") < base < grants[0] < preview < convert
+    assert convert < full < grants[1] < first(calls, "up --detach --wait web")
+    assert len(grants) == 2
+    assert calls[preview].endswith(
+        f"--config {tmp_path}/root/config/services/admin-recovery.yaml "
+        f"--confirm-deployment {UUID} --preview"
+    )
+    # The operator's inputs reach the command exactly, one argument each.
+    assert calls[convert].endswith(
+        f"--confirm-deployment {UUID} "
+        "--operation-id 11111111-2222-4333-8444-555555555555 "
+        "--operator-name Test Operator --reason Users revamp release "
+        "--confirm-administrators first@example.test,second@example.test"
+    )
+    assert "users upgrade: operation 11111111-2222-4333-8444-555555555555, " in output
+    assert "keeping 2 confirmed Administrators" in output
+    # No address is printed by the script itself.
+    assert "first@example.test" not in output.replace(calls[convert], "")
+    # Already current: the decisive check's t skips all of it.
+    calls, output, _ = run_host(
+        tmp_path / "current",
+        "upgrade",
+        noop="f",
+        noop_later="t",
+        schema_change="1",
+        env=USERS,
+    )
+    assert not any("upgrade-users" in call or " migration" in call for call in calls)
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        ({"STEWARDSHIP_USERS_REASON": ""}, "needs all four"),
+        ({"STEWARDSHIP_USERS_OPERATION": "not-a-uuid"}, "lowercase UUID"),
+        (
+            {"STEWARDSHIP_USERS_ADMINISTRATORS": "a@example.test, b@example.test"},
+            "comma-separated addresses",
+        ),
+        ({"STEWARDSHIP_USERS_ADMINISTRATORS": "nobody"}, "comma-separated addresses"),
+    ],
+)
+def test_users_upgrade_inputs_are_refused_before_anything_stops(
+    tmp_path, change, message
+):
+    """Partial or malformed inputs end the run while the site is still up."""
+    calls, output, _ = run_host(
+        tmp_path, "upgrade", noop="f", status=1, schema_change="1", env=USERS | change
+    )
+    assert message in output
+    assert "Failed before anything stopped; nothing changed" in output
+    assert not any(" stop " in call for call in calls)
+
+
+def test_users_upgrade_needs_the_override_and_never_rolls_back(tmp_path):
+    """The conversion migrates, so it needs the override; a rollback refuses it."""
+    calls, output, _ = run_host(tmp_path, "upgrade", noop="f", status=1, env=USERS)
+    assert "needs the schema-change override as well" in output
+    assert not any(" stop " in call for call in calls)
+    calls, output, _ = run_host(
+        tmp_path / "rollback", "rollback", noop="f", status=1, env=USERS
+    )
+    assert "A rollback never converts" in output
+    assert not any(" stop " in call for call in calls)
+
+
+def test_a_refused_conversion_stops_before_the_swap_with_web_down(tmp_path):
+    """No full migration, no web; the message names recovery and the repeat."""
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        noop="f",
+        status=1,
+        schema_change="1",
+        users_fail=True,
+        env=USERS,
+    )
+    assert "The users upgrade did not complete" in output
+    assert "Admin-access recovery works" in output
+    assert "caddy serves the maintenance page" in output
+    assert not any(call.endswith("--rm -T migration") for call in calls)
+    assert not any("up --detach --wait web" in call for call in calls)
+
+
+def test_a_release_needing_the_conversion_without_it_stops_at_its_swap(tmp_path):
+    """Without the inputs the swap's refusal ends the run and says what to do."""
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        noop="f",
+        status=1,
+        schema_change="1",
+        migrate_fail=True,
+    )
+    assert "repeat the run with the" in output and "STEWARDSHIP_USERS_*" in output
+    assert "caddy serves the maintenance page" in output
+    assert not any("upgrade-users" in call for call in calls)
+    assert not any("database-grants" in call for call in calls)
+    assert not any("up --detach --wait web" in call for call in calls)
+
+
+def test_the_laptop_half_passes_the_users_inputs_only_when_set(tmp_path):
+    """An env prefix, %q-quoted, before the host half; refused for a rollback."""
+    result, calls, _ = run_local(tmp_path, env=USERS)
+    assert result.returncode == 0, result.stderr
+    assert (
+        'cat > "$f" && env '
+        "STEWARDSHIP_USERS_OPERATION=11111111-2222-4333-8444-555555555555 "
+        "STEWARDSHIP_USERS_OPERATOR=Test\\ Operator "
+        "STEWARDSHIP_USERS_REASON=Users\\ revamp\\ release "
+        "STEWARDSHIP_USERS_ADMINISTRATORS=first@example.test\\,second@example.test "
+        'bash "$f" '
+    ) in calls[0]
+    result, calls, _ = run_local(tmp_path / "rollback", "--rollback", env=USERS)
+    assert result.returncode == 1 and calls == []
+    assert "A rollback never converts" in result.stderr
+
+
+# Each way a users-release run can stop in step 4 with the base migration
+# applied (only the users swap pending): the first run's FAKE_* switches,
+# environment and exit status (a killed command's own, under `set -e`), and
+# what its output says.
+STOPPED_IN_STEP_4 = {
+    "without the users inputs": (
+        dict(migrate_fail=True),
+        {},
+        1,
+        "repeat the run with the",
+    ),
+    "a refused conversion": (
+        dict(users_fail=True),
+        USERS,
+        1,
+        "The users upgrade did not complete",
+    ),
+    "a failed final migration": (
+        dict(migrate_fail=True),
+        USERS,
+        1,
+        "Migration 0052 refused",
+    ),
+    "an interruption after the base migration": (
+        dict(timeout=" upgrade-users "),
+        USERS,
+        124,
+        "TIMEOUT: the users upgrade preview killed after",
+    ),
+}
+
+
+def stopped_in_step_4(tmp_path, case):
+    """Run the first, failing upgrade; return its root with the swap pending."""
+    fake, env, status, message = STOPPED_IN_STEP_4[case]
+    calls, output, root = run_host(
+        tmp_path,
+        "upgrade",
+        noop="f",
+        status=status,
+        schema_change="1",
+        env=env,
+        **fake,
+    )
+    assert message in output
+    assert "caddy serves the maintenance page" in output
+    assert (tmp_path / "state" / "swap_pending").exists()
+    assert not any(" up --detach " in call for call in calls)
+    return root
+
+
+@pytest.mark.parametrize("case", sorted(STOPPED_IN_STEP_4))
+def test_a_repeated_run_finishes_the_users_upgrade_after_step_4_stopped(tmp_path, case):
+    """The repeat backs up, converts and migrates, and only then starts anything.
+
+    Web is already down when it begins, so it says so; its step-1 backup
+    runs on the swap-pending schema (the backup command admits it); and no
+    service is started until the full migration cleared the pending swap.
+    """
+    stopped_in_step_4(tmp_path, case)
+    calls, output, _ = run_host(
+        tmp_path, "upgrade", noop="f", schema_change="1", env=USERS, again=True
+    )
+    assert "web is not running: repeating a run" in output
+    assert "(same digest: re-running the upgrade)" in output
+    backup = first(calls, "backup-worker")
+    convert = first(calls, "--operation-id ")
+    full = next(i for i, call in enumerate(calls) if call.endswith("--rm -T migration"))
+    assert backup < first(calls, " retarget-image ") < convert < full
+    assert full < first(calls, " up --detach ")
+    assert not (tmp_path / "state" / "refused").exists()
+    assert f"Upgraded to {TARGET} in" in output
+
+
+@pytest.mark.parametrize(
+    ("fake", "phase"),
+    [
+        (dict(backup_fail=True), "backup"),
+        (dict(stop_fail=True), "stop web"),
+        (dict(retarget_fail=True), "retarget"),
+    ],
+)
+def test_a_repeated_run_that_fails_before_the_retarget_starts_nothing(
+    tmp_path, fake, phase
+):
+    """Web was down when the repeat began, so no failure starts a service.
+
+    Before this rule, a failed stop started every service and a failed
+    backup restarted the background ones, into a schema they refuse.
+    """
+    stopped_in_step_4(tmp_path, "a refused conversion")
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        noop="f",
+        status=1,
+        schema_change="1",
+        env=USERS,
+        again=True,
+        **fake,
+    )
+    assert not any(" up --detach " in call for call in calls), phase
+    assert not (tmp_path / "state" / "refused").exists(), phase
+    assert "caddy serves the maintenance page" in output, phase
+    assert "restarting the background services" not in output, phase
+    assert "starting everything again" not in output, phase
+
+
+def test_a_normal_run_still_restarts_what_it_stopped(tmp_path):
+    """With web up when the run began, an abandoned backup restarts the rest."""
+    calls, output, _ = run_host(tmp_path, "upgrade", status=1, backup_fail=True)
+    assert "web is not running" not in output
+    assert "restarting the background services" in output
+    assert any(" up --detach --wait worker" in call for call in calls)
+
+
+@pytest.mark.parametrize(
+    ("fragment", "what", "limit", "status"),
+    [
+        (
+            "--users-upgrade-base",
+            "the migration to the users upgrade's base",
+            1800,
+            124,
+        ),
+        ("database-grants", "database-grants", 600, 124),
+        (" upgrade-users ", "the users upgrade preview", 600, 124),
+        ("--operation-id", "the users upgrade", 900, 1),
+    ],
+)
+def test_each_step_4_command_runs_under_a_logged_time_limit(
+    tmp_path, fragment, what, limit, status
+):
+    """A killed step-4 command is logged with its limit; the page stays up."""
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        noop="f",
+        status=status,
+        schema_change="1",
+        env=USERS,
+        timeout=fragment,
+    )
+    killed = next(call for call in calls if call.startswith("timeout "))
+    assert killed.startswith(f"timeout --kill-after=30 {limit} docker compose ")
+    assert f"TIMEOUT: {what} killed after " in output
+    assert f"(limit {limit}s)" in output
+    # The one-off container itself is killed and removed by its name.
+    name = one_off_name(killed)
+    assert calls.index(f"kill {name}") < calls.index(f"rm --force {name}")
+    assert f"one-off container {name} killed and removed (time limit)" in output
+    assert "caddy serves the maintenance page" in output
+    assert not any(" up --detach " in call for call in calls)
+    # The kill is in the run's persistent log as well.
+    log = next((tmp_path / "logs").glob("stewardship-upgrade-*.log")).read_text()
+    assert f"TIMEOUT: {what} killed after " in log
+
+
+def test_a_failed_step_4_command_prints_and_logs_its_full_output(tmp_path):
+    """Every output line of a failed command is shown, not just its last.
+
+    The fake grants end their output with an empty line, as a traceback
+    does, so the last line alone would hide the cause.
+    """
+    _, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        noop="f",
+        status=1,
+        schema_change="1",
+        env=USERS,
+        grants_fail=True,
+    )
+    log = next((tmp_path / "logs").glob("stewardship-upgrade-*.log")).read_text()
+    for text in (output, log):
+        assert "FAILED: database-grants exited with status 1; its full output:" in text
+        assert "    | grants refused\n    | UndefinedFunction: no such" in text
+        assert "caddy serves the maintenance page" in text
+    # A command that succeeds still prints only its last line.
+    assert "    | migrated to the base" not in output
+    assert "migrated to the base" in output
+
+
+def test_a_failed_migration_withholds_database_values_from_the_log(tmp_path):
+    """A traceback's frames, message and DETAIL never reach the output or log.
+
+    Each traceback is reduced to its exception's class; a DETAIL line
+    outside one is withheld too. The lines around them are kept.
+    """
+    _, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        noop="f",
+        status=1,
+        schema_change="1",
+        migrate_fail=True,
+        env={"FAKE_MIGRATE_TRACEBACK": "1"},
+    )
+    log = next((tmp_path / "logs").glob("stewardship-upgrade-*.log")).read_text()
+    for text in (output, log):
+        assert "secret" not in text and "duplicate key" not in text
+        assert (
+            "    | Migration 0052 refused\n"
+            "    | Traceback withheld (it may carry database values)\n"
+            "    | Exception class: psycopg.errors.UniqueViolation\n"
+            "    | The above exception was the direct cause"
+            " of the following exception:\n"
+            "    | \n"
+            "    | Traceback withheld (it may carry database values)\n"
+            "    | Exception class: django.db.utils.IntegrityError\n"
+            "    | ERROR: IntegrityError (SQLSTATE 23505)\n"
+            "    | DETAIL withheld\n"
+        ) in text
+
+
+def test_the_final_migration_runs_under_a_logged_time_limit(tmp_path):
+    """The full migration of every schema-change run is limited the same way."""
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        noop="f",
+        status=1,
+        schema_change="1",
+        timeout="-T migration",
+    )
+    assert any(call.startswith("timeout --kill-after=30 1800 ") for call in calls)
+    assert "TIMEOUT: the migration killed after " in output
+    assert "caddy serves the maintenance page" in output
+
+
+def one_off_name(call):
+    """The --name a recorded `docker compose run` call gave its container."""
+    return re.search(r" run --name (\S+) --rm -T ", call).group(1)
+
+
+def test_each_step_4_one_off_container_has_its_own_name(tmp_path):
+    """Named after the project, mode, run and step; no two alike."""
+    calls, _, _ = run_host(tmp_path, "upgrade", noop="f", schema_change="1", env=USERS)
+    names = [one_off_name(call) for call in calls if " run --name " in call]
+    assert len(names) == 6 == len(set(names))
+    assert all(
+        re.fullmatch(r"stewardship-upgrade-\d{8}T\d{6}Z-\d+-[a-z-]+", n) for n in names
+    )
+    assert [name.rsplit("-", 1)[-1] for name in names[:1]] == ["migration"]
+
+
+@pytest.mark.parametrize(
+    ("signum", "name"), [(signal.SIGTERM, "TERM"), (signal.SIGINT, "INT")]
+)
+def test_a_signal_kills_and_removes_the_running_one_off_container(
+    tmp_path, signum, name
+):
+    """Ctrl-C or kill during a step-4 command reaches its container.
+
+    The client is waited for in the background, so the trap runs at once;
+    it kills and removes the named container, logs both, and the run ends
+    with the maintenance page up.
+    """
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        noop="f",
+        status=128 + signum,
+        schema_change="1",
+        env=USERS,
+        hang="--users-upgrade-base",
+        interrupt=("--users-upgrade-base", signum),
+    )
+    hung = next(call for call in calls if "--users-upgrade-base" in call)
+    container = one_off_name(hung)
+    assert calls.index(f"kill {container}") < calls.index(f"rm --force {container}")
+    assert not any(" up --detach " in call for call in calls)
+    assert not any("database-grants" in call for call in calls)
+    log = next((tmp_path / "logs").glob("stewardship-upgrade-*.log")).read_text()
+    assert f"INTERRUPTED: SIG{name} received in phase offline" in log
+    assert f"one-off container {container} killed and removed (SIG{name})" in log
+    assert "caddy serves the maintenance page" in log
+
+
+@pytest.mark.parametrize(
+    ("fake", "reused"),
+    [(dict(base_fail=True), True), (dict(grants_fail=True), False)],
+    ids=["base migration stopped partway", "grants failed after it"],
+)
+def test_a_repeat_finishes_after_the_base_migration_or_its_grants_failed(
+    tmp_path, fake, reused
+):
+    """Both failure points of the base step are resumed by repeating the run.
+
+    A base migration stopped partway leaves migrations outside the swap
+    pending, which a plain backup refuses: the repeat (same digest, web
+    down, the users inputs) asks the backup to resume, which reports the
+    first run's backup as the restore point; the run says so, records the
+    line in stewardship-backup.log, and converts and migrates. After a
+    grants failure only the swap is pending, so the same request takes a
+    fresh backup. Repeating without the users inputs refuses at the backup
+    and says to pass them.
+    """
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        noop="f",
+        status=1,
+        schema_change="1",
+        env=USERS,
+        **fake,
+    )
+    assert "caddy serves the maintenance page" in output
+    assert not any("upgrade-users" in call for call in calls)
+    if reused:
+        calls, output, _ = run_host(
+            tmp_path, "upgrade", noop="f", status=1, schema_change="1", again=True
+        )
+        assert any(call.endswith(" run --rm -T backup-worker") for call in calls)
+        assert "repeat it with the" in output and "STEWARDSHIP_USERS_*" in output
+        assert not any(" up --detach " in call for call in calls)
+    calls, output, _ = run_host(
+        tmp_path, "upgrade", noop="f", schema_change="1", env=USERS, again=True
+    )
+    backup = first(calls, "backup-worker")
+    assert calls[backup].endswith(
+        f"run --rm -T backup-worker backup --config "
+        f"{tmp_path}/root/config/services/backup-worker.yaml --users-upgrade-resume"
+    )
+    assert ("REUSED BACKUP" in output) is reused
+    recorded = (tmp_path / "logs" / "stewardship-backup.log").read_text()
+    assert ('"backup_reused": true' in recorded) is reused
+    if reused:
+        assert "2026-10-10T04:00:00+00:00 (manifest " + "e" * 64 in output
+    base = first(calls, "--users-upgrade-base")
+    convert = first(calls, "--operation-id ")
+    full = next(i for i, call in enumerate(calls) if call.endswith("--rm -T migration"))
+    assert backup < base < convert < full < first(calls, " up --detach ")
+    assert f"Upgraded to {TARGET} in" in output
+
+
+def test_a_first_run_never_asks_the_backup_to_resume(tmp_path):
+    """The resume option is only for a repeat whose documents name this image."""
+    calls, _, _ = run_host(tmp_path, "upgrade", noop="f", schema_change="1", env=USERS)
+    assert any(call.endswith(" run --rm -T backup-worker") for call in calls)
+    assert not any("--users-upgrade-resume" in call for call in calls)

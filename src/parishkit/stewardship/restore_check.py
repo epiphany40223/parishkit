@@ -16,7 +16,12 @@ The report is one JSON document: ``match`` when the two sets are equal,
 otherwise ``mismatch`` with the migrations the set lacks (it would need
 forward migrations) and the ones this image does not know (the wrong or an
 older image), and the image the set names, which is the one to restore
-with. The command reads only the files it is given and changes nothing.
+with. One gap is not a mismatch: a set that lacks only the users swap and
+what depends on it (#952) was taken between the users upgrade's two
+migrations, by this release, and restores that state under this image;
+it is reported as ``swap_pending``, and the restored deployment finishes
+the users upgrade before any service starts. The command reads only the
+files it is given and changes nothing.
 """
 
 import json
@@ -42,8 +47,10 @@ MAX_MANIFEST_BYTES = 1024 * 1024
 DUMP_READ_SECONDS = 600
 # The reviewed name of that limit in the timeout line (observability).
 DUMP_READ = "restore_check_dump"
-# Exit codes: the sets match; they differ; the check was refused.
-MATCH, REFUSED, MISMATCH = 0, 2, 3
+# Exit codes: the sets match; they differ; the check was refused; the set
+# lacks only the users swap (#952), so it restores under this image into
+# the users upgrade's swap-pending state.
+MATCH, REFUSED, MISMATCH, SWAP_PENDING = 0, 2, 3, 4
 # Django app labels and migration names, as this code base writes them.
 APP = re.compile(r"^[a-z][a-z0-9_]{0,99}$")
 NAME = re.compile(r"^[0-9A-Za-z_]{1,255}$")
@@ -238,11 +245,25 @@ def _pairs(values):
     return [list(pair) for pair in sorted(values)]
 
 
-def check(manifest, *, dump=None, image_migrations=None):
+def image_swap_closure():
+    """The users swap and its dependents among this image's migration files."""
+    from django.db.migrations.loader import MigrationLoader
+
+    from .runtime_database import users_swap_closure
+
+    graph = MigrationLoader(None, ignore_no_migrations=True).graph
+    return frozenset(users_swap_closure(graph))
+
+
+def check(manifest, *, dump=None, image_migrations=None, swap_closure=None):
     """Compare one set with this image; return (exit code, report).
 
-    ``image_migrations`` stands in for the image's own set in tests; by
-    default it is read from this image's migration files.
+    ``image_migrations`` and ``swap_closure`` stand in for the image's own
+    set and its users swap closure in tests; by default both are read from
+    this image's migration files. A set whose only gap is part of that
+    closure (and that has nothing this image does not know) is
+    ``swap_pending``: the services refuse it, as they refuse any pending
+    migration, until the users upgrade finishes on the restored database.
     """
     facts = read_manifest(manifest)
     recorded = facts["migrations"]
@@ -259,12 +280,19 @@ def check(manifest, *, dump=None, image_migrations=None):
 
         code_settings()
         image_migrations = disk_migrations()
+        swap_closure = image_swap_closure()
     image = frozenset(tuple(pair) for pair in image_migrations)
     not_in_backup = image - applied
     unknown_to_image = applied - image
     matched = not not_in_backup and not unknown_to_image
+    pending = (
+        not matched
+        and not unknown_to_image
+        and not_in_backup <= frozenset(swap_closure or ())
+    )
+    result = "match" if matched else "swap_pending" if pending else "mismatch"
     report = {
-        "result": "match" if matched else "mismatch",
+        "result": result,
         "backup": {
             "application_version": facts["application_version"],
             "image": facts["image"],
@@ -278,17 +306,18 @@ def check(manifest, *, dump=None, image_migrations=None):
         # wrong image, usually an older release than the set's.
         "unknown_to_image": _pairs(unknown_to_image),
     }
-    if not matched:
+    if result == "mismatch":
         # The set's own image is the one that matches it. A set from before
         # #608 does not name it; the operators' notes record it.
         report["use_image"] = facts["image"]
-    return (MATCH if matched else MISMATCH), report
+    return {"match": MATCH, "swap_pending": SWAP_PENDING}.get(result, MISMATCH), report
 
 
 def execute_restore_check(args):
     """``restore-check --manifest PATH [--dump PATH]``: print the report.
 
-    Exits 0 on a match, 3 on a mismatch, and 2 with one fixed line when the
+    Exits 0 on a match, 3 on a mismatch, 4 when only the users swap is
+    pending (``check``), and 2 with one fixed line when the
     inputs cannot be compared: this module's own reason and its advice from
     ``ADVICE``, or ``GENERIC_ADVICE`` (the process log names only the
     reviewed failure category, never a path or file content).

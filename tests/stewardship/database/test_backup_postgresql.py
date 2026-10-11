@@ -306,7 +306,7 @@ def test_the_backup_command_says_when_the_key_changed(monkeypatch, capsys):
     monkeypatch.setattr(
         operator_commands, "configure_operator_database", lambda c: None
     )
-    monkeypatch.setattr(runtime_database, "require_current_schema", lambda: None)
+    monkeypatch.setattr(runtime_database, "require_current_schema", lambda **_: None)
     monkeypatch.setattr(
         runtime_paths, "RuntimeLayout", lambda c: SimpleNamespace(interlock=None)
     )

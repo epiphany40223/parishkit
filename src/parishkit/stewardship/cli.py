@@ -37,8 +37,8 @@ _COMMAND_OPTIONS = {
     "upgrade-check": {"config", "confirm_deployment"},
     "prepare-development": {"runtime_root"},
     "bootstrap": {"config", "phase", "deployment_id", "admin_email"},
-    "migrate": {"config"},
-    "backup": {"config"},
+    "migrate": {"config", "users_upgrade_base"},
+    "backup": {"config", "users_upgrade_resume"},
     "backup-keygen": {"destination"},
     "backup-open": {"key", "input", "destination"},
     "backup-prove": {"key", "input"},
@@ -253,6 +253,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         default=None,
         help="upgrade-users only: print what the conversion would do, change nothing",
+    )
+    parser.add_argument(
+        "--users-upgrade-base",
+        action="store_true",
+        default=None,
+        help=(
+            "migrate only: stop before the users swap, so database-grants and "
+            "upgrade-users can run before the full migration (#952)"
+        ),
+    )
+    parser.add_argument(
+        "--users-upgrade-resume",
+        action="store_true",
+        default=None,
+        help=(
+            "backup only: when a users upgrade's base migration stopped "
+            "partway, report the run's recent pre-upgrade backup instead (#952)"
+        ),
     )
     parser.add_argument(
         "--keep",

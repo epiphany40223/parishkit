@@ -186,6 +186,9 @@ FROZEN = {
     "0051_users_requests.sql": (
         "6f524ab96f1ecb5a68e37a2c790a7735567af4bb91c251f9cf79eccd6b7cc858"
     ),
+    "0052_users_swap.sql": (
+        "188e28a1640c83a8621ff08d2141624eb605dd72adcd494cc85ef6c9b5448a25"
+    ),
 }
 
 
@@ -417,3 +420,47 @@ def test_altered_attribute_scan_reads_identity_arguments():
         ("example_v1", "uuid, text"),
         ("other_v1", ""),
     ]
+
+
+# The three pre-swap bodies the users-swap database tests reinstall
+# (tests/stewardship/database/pre_users_swap_functions.sql), pinned to the
+# fresh-install baseline at e930e9fc0, the release before migration 0052:
+# the sha256 of each `CREATE FUNCTION ... $$;` statement there, as
+# `git show e930e9fc0:src/parishkit/stewardship/schema/functions.sql` (and
+# `exports.sql` for the export authorization) prints it. The fixture writes
+# CREATE OR REPLACE, which is turned back before hashing.
+PRE_SWAP_FIXTURE = ROOT / "tests/stewardship/database/pre_users_swap_functions.sql"
+PRE_SWAP_BASELINE = {
+    "stewardship_portal_session_admission_v1": (
+        "65a6e2dbbe2dd28d9c24208f97683b86133ea6b89098559302e553032543a8dd"
+    ),
+    "stewardship_export_authorized_v1": (
+        "a73beaf9151606f5cc2662975f8a47ce6904e6bbe80135305943967293213cde"
+    ),
+    "stewardship_policy_activation_v1": (
+        "e13d2121a8b1dd5906267e28c64b466fe8fa66fefe41d030d16fa44a38f5f1f8"
+    ),
+}
+
+
+def test_the_pre_swap_fixture_is_the_baseline_before_the_swap():
+    """The reinstalled bodies are byte for byte the e930e9fc0 baseline's.
+
+    The swap tests prove recovery and sign-in on the SQL a Production
+    database runs between `migrate --users-upgrade-base` and the full
+    migration only while the fixture holds exactly those bodies, so an edit
+    to it (or a fixture that drops one) fails here.
+    """
+    text = PRE_SWAP_FIXTURE.read_text(encoding="utf-8")
+    found = {}
+    for name in PRE_SWAP_BASELINE:
+        [statement] = re.findall(
+            rf"^CREATE OR REPLACE FUNCTION public\.{name}\(.*?\$\$;$",
+            text,
+            re.S | re.M,
+        )
+        found[name] = hashlib.sha256(
+            statement.replace("CREATE OR REPLACE", "CREATE", 1).encode()
+        ).hexdigest()
+    assert found == PRE_SWAP_BASELINE
+    assert text.count("CREATE OR REPLACE FUNCTION") == len(PRE_SWAP_BASELINE)

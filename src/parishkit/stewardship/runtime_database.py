@@ -318,8 +318,36 @@ def profile_settings(configuration):
     return values
 
 
-def require_current_schema():
-    """Reject pending, inconsistent or newer schemas before starting any service."""
+# The migration that makes sign-in read only users (#952 slice 4). Its DO
+# block refuses an unconverted configuration, so the offline upgrade runs
+# `migrate --users-upgrade-base` (everything but this and what depends on
+# it), database-grants, `upgrade-users` and then the full migration.
+USERS_SWAP = ("stewardship_accounts", "0013_users_swap")
+
+
+def users_swap_closure(graph):
+    """The users swap and every migration that depends on it, or none if absent."""
+    if USERS_SWAP not in graph.nodes:
+        return set()
+    closure, frontier = set(), [graph.node_map[USERS_SWAP]]
+    while frontier:
+        node = frontier.pop()
+        if node.key not in closure:
+            closure.add(node.key)
+            frontier.extend(node.children)
+    return closure
+
+
+def require_current_schema(*, users_swap_pending=False):
+    """Reject pending, inconsistent or newer schemas before starting any service.
+
+    ``users_swap_pending`` admits a database whose only pending migrations
+    are the users swap and what depends on it (#952): the state between
+    ``migrate --users-upgrade-base`` and the full migration, in which the
+    admin-recovery commands (``upgrade-users``, ``recover-admin`` and its
+    preview) must still run, so Administrator access can be recovered at
+    every step of the upgrade.
+    """
     from django.db import connection
     from django.db.migrations.executor import MigrationExecutor
 
@@ -327,7 +355,11 @@ def require_current_schema():
     loader = executor.loader
     loader.check_consistent_history(connection)
     unknown = set(loader.applied_migrations) - set(loader.disk_migrations)
-    if unknown or executor.migration_plan(loader.graph.leaf_nodes()):
+    plan = executor.migration_plan(loader.graph.leaf_nodes())
+    pending = {(migration.app_label, migration.name) for migration, _ in plan}
+    if users_swap_pending:
+        pending -= users_swap_closure(loader.graph)
+    if unknown or pending:
         raise ConfigError("Database migrations do not match this application image.")
 
 
@@ -420,7 +452,9 @@ def offline_columns(role):
     raise ConfigError("This role has no offline configuration grants.")
 
 
-def admit_offline_database(configuration, *, users_upgrade=False):
+def admit_offline_database(
+    configuration, *, users_upgrade=False, users_swap_pending=False
+):
     """Offline host confirmation never bypasses SQL identity or schema admission.
 
     Column grants are declared by ``offline_columns`` and verified exactly, as
@@ -428,6 +462,10 @@ def admit_offline_database(configuration, *, users_upgrade=False):
     it names. The users-upgrade definer functions (#952) are required only
     when ``users_upgrade`` is set; otherwise they are merely permitted, so
     admin recovery (the lockout fallback) never depends on their grants.
+    ``users_swap_pending`` admits a schema whose only pending migrations are
+    the users swap and its dependents (``require_current_schema``): the
+    users upgrade and Admin-access recovery run there too, so recovery works
+    at every step of that upgrade.
     """
     from django.db import connection
 
@@ -454,7 +492,7 @@ def admit_offline_database(configuration, *, users_upgrade=False):
             ) from None
     admit_columns(connection, tables, columns)
     require_no_temporary_authority()
-    require_current_schema()
+    require_current_schema(users_swap_pending=users_swap_pending)
     require_capacity(configuration)
     require_role_capacity(configuration)
 

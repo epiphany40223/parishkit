@@ -38,6 +38,23 @@
 #     for the bulk switch. A rollback never renders the latency (the
 #     previous release may not know the setting, and its loader would refuse
 #     it after web had stopped). Production mode never reads either variable.
+#
+# In both modes, the release that converts sign-in rules to users (#952)
+# needs the offline conversion between two migrations (operations
+# specification, "Users upgrade from sign-in rules"). The operator supplies
+# it through four variables, all or none, on an upgrade only:
+# STEWARDSHIP_USERS_OPERATION (a new UUID; the same one resumes an
+# interrupted run), STEWARDSHIP_USERS_OPERATOR and STEWARDSHIP_USERS_REASON
+# (who and why, recorded on the conversion) and
+# STEWARDSHIP_USERS_ADMINISTRATORS (the comma-separated Administrators the
+# preview lists, which the conversion must keep). With them, step 4 migrates
+# to the users upgrade's base, applies the grants, prints the preview,
+# converts, and only then migrates the rest and applies the grants again.
+# Without them, a release that needs the conversion stops at its migration
+# (the swap refuses an unconverted configuration) with the maintenance page
+# up, and the run is repeated with them. A repeat after a base migration
+# that stopped partway reuses the first run's backup (step 1). No address
+# is ever written here.
 
 set -euo pipefail
 # shellcheck disable=SC2034 # REPO is validated by the laptop half; kept for the fixed argument order
@@ -56,6 +73,8 @@ logdir=${STEWARDSHIP_LOG_DIR:-/var/log}
 log=$logdir/stewardship-$mode-$(date -u +%Y%m%dT%H%M%SZ).log
 exec > >(tee -a "$log") 2>&1
 tee_pid=$!
+# The log, reachable from inside a pipeline whose output is filtered.
+exec 3>&2
 echo "Log: $log"
 
 # What a failure means depends on how far the run got: before web stops,
@@ -64,6 +83,7 @@ echo "Log: $log"
 # the maintenance page stays up until the run is repeated or the other
 # direction is taken (runbook, step 6 and Rollback).
 phase=prepare
+resumed=0
 work=$(mktemp -d)
 finish() {
     rc=$?
@@ -71,15 +91,24 @@ finish() {
     if [ "$rc" -ne 0 ]; then
         case "$phase" in
             prepare) echo "==> Failed before anything stopped; nothing changed." ;;
-            background)
+            background | stopped) if [ "$resumed" = 1 ]; then
+                # Web was already down when this run began (below): the
+                # database may be in a state the services refuse, so nothing
+                # is started and the maintenance page stays up.
+                echo "==> Failed before the retarget, with web already stopped when this run began:"
+                echo "    nothing is started; caddy serves the maintenance page. Re-run with the same"
+                echo "    digest (with the STEWARDSHIP_USERS_* variables if the release notes announce"
+                echo "    the users upgrade), or roll back (runbook, Rollback)."
+            elif [ "$phase" = background ]; then
                 echo "==> Failed before web stopped; restarting the background services."
-                restart_background ;;
-            stopped)
+                restart_background
+            else
                 # Nothing was retargeted, so the current release's documents
                 # are intact: start every online service of the file again,
                 # including any that restarted meanwhile and was stopped too.
                 echo "==> Failed with web stopped but nothing retargeted; starting everything again."
-                "${dc[@]}" up --detach --wait "${wanted[@]}" 2>&1 | quiet || true ;;
+                "${dc[@]}" up --detach --wait "${wanted[@]}" 2>&1 | quiet || true
+            fi ;;
             offline)
                 echo "==> Failed with web stopped: caddy serves the maintenance page."
                 if [ "$mode" = rollback ]; then
@@ -90,12 +119,31 @@ finish() {
                 fi ;;
         esac
     fi
-    # Let tee flush the last lines before ssh exits.
-    exec >&- 2>&-
+    # Let tee flush the last lines before ssh exits (fd 3 is its copy of
+    # stderr, which `oneoff` writes to).
+    exec >&- 2>&- 3>&-
     wait "$tee_pid" 2>/dev/null || true
     exit "$rc"
 }
 trap finish EXIT
+# A signal (Ctrl-C or kill on the host; SIGPIPE once a dropped ssh session
+# has taken tee's output away) ends the run like a failure, but first kills
+# and removes the one-off container a step-4 command left running (`oneoff`
+# below): stopping the `docker compose run` client alone leaves it running.
+# Its lines go straight to the log file, since the terminal may be gone.
+interrupted() {
+    # interrupted NAME NUMBER: the trap of one signal; exits 128+NUMBER.
+    trap '' INT TERM HUP PIPE
+    {
+        echo "INTERRUPTED: SIG$1 received in phase $phase"
+        stop_oneoff "SIG$1"
+    } >>"$log" 2>&1
+    exit $((128 + $2))
+}
+trap 'interrupted INT 2' INT
+trap 'interrupted TERM 15' TERM
+trap 'interrupted HUP 1' HUP
+trap 'interrupted PIPE 13' PIPE
 
 # The generated Compose files pass this through to every application service.
 # Production starts every service with debug logging off; local mode keeps
@@ -150,6 +198,82 @@ quiet() {
     # Compose progress lines add nothing to an upgrade log.
     grep -vE ' (Creat|Start|Stop|Wait|Running|Healthy|Recreat)' || true
 }
+# Each one-off container `oneoff` starts is named after this run and its
+# step, so a kill can reach the container itself by name.
+oneoff_prefix="$project-$mode-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+oneoff_name=""
+oneoff_pid=""
+stop_oneoff() {
+    # stop_oneoff WHY: kill and remove the running one-off container (and
+    # its `docker compose run` client), if there is one, saying so.
+    local name=$oneoff_name
+    [ -n "$name" ] || return 0
+    oneoff_name=""
+    [ -z "$oneoff_pid" ] || kill "$oneoff_pid" 2>/dev/null || true
+    docker kill "$name" >/dev/null 2>&1 || true
+    if docker rm --force "$name" >/dev/null 2>&1; then
+        echo "    one-off container $name killed and removed ($1)"
+    else
+        echo "    one-off container $name was already gone ($1)"
+    fi
+}
+withhold_values() {
+    # Copy a failed command's output, withholding what may carry database
+    # values such as addresses: a PostgreSQL DETAIL line, and each Python
+    # traceback's frames and message, of which only the exception's class
+    # is kept (up to a following chained traceback or ERROR: line). The
+    # operator commands print only a reviewed line, an exception class and
+    # a SQLSTATE; this guards whatever escapes them.
+    awk '
+        /^Traceback \(most recent call last\):/ {
+            tb = 1; print "Traceback withheld (it may carry database values)"; next
+        }
+        tb == 1 && /^[ \t]/ { next }
+        tb == 1 { sub(/:.*/, ""); print "Exception class: " $0; tb = 2; next }
+        tb == 2 && /^(The above exception|During handling of the above exception|ERROR: )/ { tb = 0 }
+        tb == 2 { next }
+        /^[ \t]*DETAIL:/ { print "DETAIL withheld"; next }
+        { print }
+    '
+}
+oneoff() {
+    # oneoff SECONDS WHAT STEP SERVICE [ARGS...]: `docker compose run` one
+    # SERVICE container named after this run and STEP, killing it (TERM,
+    # then KILL 30 s later) once SECONDS have passed. Prints the command's
+    # last output line, or on a failure all of its output (into the run's
+    # log too) less what may carry database values (`withhold_values`),
+    # since the last line alone may be empty or a generic refusal that
+    # hides the cause. The client runs in the background and
+    # the shell waits for it, so a signal's trap runs at once rather than
+    # after the command. On an expired limit (124, or 137 at the limit) the kill is
+    # logged on fd 3, the run's log, with what ran, the limit and the
+    # elapsed time, and the container is killed and removed by name, since
+    # killing the client leaves it running. Returns the command's status
+    # (124 or 137 after a kill), so the caller stops.
+    local limit=$1 what=$2 started rc=0 elapsed
+    oneoff_name=$oneoff_prefix-$3
+    shift 3
+    started=$(date -u +%s)
+    timeout --kill-after=30 "$limit" "${dc[@]}" run --name "$oneoff_name" --rm -T "$@" \
+        </dev/null >"$work/oneoff.out" 2>&1 &
+    oneoff_pid=$!
+    wait "$oneoff_pid" || rc=$?
+    oneoff_pid=""
+    elapsed=$(( $(date -u +%s) - started ))
+    if [ "$rc" -eq 124 ] || { [ "$rc" -eq 137 ] && [ "$elapsed" -ge "$limit" ]; }; then
+        echo "TIMEOUT: $what killed after ${elapsed}s (limit ${limit}s). The maintenance page" >&3
+        echo "    stays up." >&3
+        stop_oneoff "time limit" >&3
+    fi
+    oneoff_name=""
+    if [ "$rc" -eq 0 ]; then
+        tail -1 "$work/oneoff.out"
+    else
+        echo "FAILED: $what exited with status $rc; its full output:" >&2
+        withhold_values <"$work/oneoff.out" | sed 's/^/    | /' >&2
+    fi
+    return "$rc"
+}
 
 # The project keeps whichever Compose file it already runs under; an upgrade
 # or a rollback changes images, not topology.
@@ -186,6 +310,16 @@ if [ "$profile" = local ]; then image_id=${image##*:}; else image_id=${image##*s
 # shellcheck disable=SC2207 # service names hold no whitespace
 wanted=($("${dc[@]}" config --services | grep -vxE 'postgres|valkey' || true))
 [ "${#wanted[@]}" -gt 0 ] || { echo "$(basename "$compose") lists no online services; refusing." >&2; exit 1; }
+# A run that finds web stopped repeats one that ended with the maintenance
+# page up, most often a users upgrade stopped in step 4 (#952) with only the
+# users swap pending, which every online service refuses. Such a run never
+# starts a service before its own step 6: a failure before the retarget
+# leaves the maintenance page up rather than starting services into a state
+# they refuse (or restarting what was down for another reason).
+running=$("${dc[@]}" ps --services --status running || true)
+grep -qxF web <<<"$running" || resumed=1
+[ "$resumed" = 0 ] ||
+    echo "    web is not running: repeating a run that left the maintenance page up; a failure before the retarget starts nothing"
 
 database=$(jq -er '.deployment.postgres.name' "$services/web.yaml")
 origin=$(jq -er '.deployment.public_origin' "$services/web.yaml")
@@ -248,6 +382,28 @@ if [ "$profile" = local ]; then
         switches+=(-e "PARISHKIT_STEWARDSHIP_LOCAL_SMTP_LATENCY_MS=$latency")
         echo "    modeled SMTP latency ${latency} ms per message"
     fi
+fi
+
+# The users conversion's inputs (#952; header above), checked before anything
+# stops. Production passes them through the laptop half's environment
+# prefix, local mode through the VM half's.
+users_upgrade=0
+if [ -n "${STEWARDSHIP_USERS_OPERATION-}${STEWARDSHIP_USERS_OPERATOR-}${STEWARDSHIP_USERS_REASON-}${STEWARDSHIP_USERS_ADMINISTRATORS-}" ]; then
+    [ "$mode" = upgrade ] ||
+        { echo "A rollback never converts; unset the STEWARDSHIP_USERS_* variables. Refusing." >&2; exit 1; }
+    if [ -z "${STEWARDSHIP_USERS_OPERATION-}" ] || [ -z "${STEWARDSHIP_USERS_OPERATOR-}" ] ||
+        [ -z "${STEWARDSHIP_USERS_REASON-}" ] || [ -z "${STEWARDSHIP_USERS_ADMINISTRATORS-}" ]; then
+        echo "The users upgrade needs all four STEWARDSHIP_USERS_* variables; refusing." >&2
+        exit 1
+    fi
+    [[ $STEWARDSHIP_USERS_OPERATION =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] ||
+        { echo "STEWARDSHIP_USERS_OPERATION must be a lowercase UUID; refusing." >&2; exit 1; }
+    [[ $STEWARDSHIP_USERS_ADMINISTRATORS =~ ^[^,[:space:]@]+@[^,[:space:]@]+(,[^,[:space:]@]+@[^,[:space:]@]+)*$ ]] ||
+        { echo "STEWARDSHIP_USERS_ADMINISTRATORS must be comma-separated addresses, no spaces; refusing." >&2; exit 1; }
+    [ "$schema_change" = 1 ] ||
+        { echo "The users upgrade migrates; it needs the schema-change override as well. Refusing." >&2; exit 1; }
+    users_upgrade=1
+    echo "    users upgrade: operation $STEWARDSHIP_USERS_OPERATION, keeping $(tr ',' '\n' <<<"$STEWARDSHIP_USERS_ADMINISTRATORS" | wc -l | tr -d ' ') confirmed Administrators"
 fi
 
 # Step 1: everything that needs only the target image, while the site is up.
@@ -333,7 +489,9 @@ step "1. Stopping the background services (web keeps serving)"
 background=$("${dc[@]}" ps --services --status running | grep -vxE 'web|caddy|postgres|valkey' || true)
 restart_background() {
     # Abandon the run before anything was retargeted: bring the services
-    # that were stopped back.
+    # that were stopped back, unless web was already down when the run
+    # began (a repeated run; see `resumed`), when nothing is started.
+    [ "$resumed" = 0 ] || return 0
     # shellcheck disable=SC2086
     [ -z "$background" ] || "${dc[@]}" up --detach --wait $background 2>&1 | quiet || true
 }
@@ -342,7 +500,19 @@ phase=background
 [ -z "$background" ] || "${dc[@]}" stop $background 2>&1 | quiet
 
 step "1. Backup (required) and its off-host copy"
-backup=$("${dc[@]}" run --rm -T backup-worker 2>&1 | grep -v '"DEBUG"' | tail -1 || true)
+# A repeated users upgrade (#952) whose earlier run already retargeted to
+# this image may find that run's base migration stopped partway, with
+# migrations outside the swap pending, which the backup refuses. Asked to
+# resume, the backup then reports that run's step-1 backup (recent, the
+# restore point of this upgrade) instead of taking one; in any other state
+# it backs up as usual. The worker runs the image the documents name, so
+# the option is passed only once they name this one.
+backup_args=()
+if [ "$users_upgrade" = 1 ] && [ "$resumed" = 1 ] && [ "$previous" = "$image" ]; then
+    backup_args=(backup --config "$services/backup-worker.yaml" --users-upgrade-resume)
+fi
+backup=$("${dc[@]}" run --rm -T backup-worker ${backup_args[@]+"${backup_args[@]}"} 2>&1 |
+    grep -v '"DEBUG"' | tail -1 || true)
 echo "    $backup"
 echo "$(date -u +%FT%TZ) $backup" >>"$logdir/stewardship-backup.log"
 # LOCAL refuses every off-host target, so its backup reports the copy as
@@ -355,9 +525,21 @@ offsite_ok=0
 case "$profile:$offsite" in
     production:uploaded | local:uploaded | local:not_configured) offsite_ok=1 ;;
 esac
-if [ "$(jq -r '.backup_recorded' <<<"$backup" 2>/dev/null)" != true ] || [ "$offsite_ok" -ne 1 ]; then
+recorded=$(jq -r '.backup_recorded' <<<"$backup" 2>/dev/null || true)
+if [ "$recorded" != true ] && [ "${#backup_args[@]}" -gt 0 ] &&
+    [ "$(jq -r '.backup_reused' <<<"$backup" 2>/dev/null || true)" = true ]; then
+    # Recorded in stewardship-backup.log (above) and said here.
+    echo "    REUSED BACKUP: the earlier run's base migration stopped partway; its backup of"
+    echo "    $(jq -r '.reused_backup.completed_at' <<<"$backup") (manifest $(jq -r '.reused_backup.manifest_digest' <<<"$backup")) stays this upgrade's restore point"
+    recorded=true
+fi
+if [ "$recorded" != true ] || [ "$offsite_ok" -ne 1 ]; then
     # The EXIT trap restarts the background services (phase background).
     echo "The backup did not complete with its off-host copy; abandoning the $mode." >&2
+    if [ "$resumed" = 1 ] && [ "$users_upgrade" = 0 ]; then
+        echo "If an earlier run of the users release stopped in its step 4, repeat it with the" >&2
+        echo "STEWARDSHIP_USERS_* variables (runbook, Users upgrade)." >&2
+    fi
     exit 1
 fi
 
@@ -430,9 +612,53 @@ if [ "$mode" = upgrade ]; then
         echo "    skipped: the upgrade check answered t (schema and grants already match)"
     else
         echo "    running migration and grants: the check answered: $(head -3 <<<"$answer")"
-        "${dc[@]}" run --rm -T migration 2>&1 | tail -1
-        "${dc[@]}" run --rm -T database-provision database-grants \
-            --config "$services/database-provision.yaml" --confirm-deployment "$uuid" 2>&1 | tail -1
+        # Every step-4 command runs under a time limit in a named one-off
+        # container (`oneoff`): a migration or conversion that hangs is
+        # killed, container and all, the kill is logged and the run stops
+        # with the maintenance page up (phase offline). The limits are far
+        # above any expected run (seconds to minutes).
+        grants() {
+            # grants STEP: database-grants as the operator-only provisioning profile.
+            oneoff 600 "database-grants" "$1" database-provision database-grants \
+                --config "$services/database-provision.yaml" --confirm-deployment "$uuid"
+        }
+        if [ "$users_upgrade" = 1 ]; then
+            # The users upgrade's fixed order (#952): every migration but the
+            # swap, the grants its conversion reads with, the preview, the
+            # conversion, and then the rest. The admin-recovery commands run
+            # on that base, so Admin-access recovery works at every step.
+            recovery=(admin-recovery upgrade-users
+                --config "$services/admin-recovery.yaml" --confirm-deployment "$uuid")
+            step "4. Migration to the users upgrade's base"
+            oneoff 1800 "the migration to the users upgrade's base" base-migration migration migrate \
+                --config "$services/migration.yaml" --users-upgrade-base
+            grants base-grants
+            step "4. Users upgrade preview"
+            oneoff 600 "the users upgrade preview" users-preview "${recovery[@]}" --preview
+            step "4. Users upgrade (operation $STEWARDSHIP_USERS_OPERATION)"
+            if ! oneoff 900 "the users upgrade" users-upgrade "${recovery[@]}" \
+                --operation-id "$STEWARDSHIP_USERS_OPERATION" \
+                --operator-name "$STEWARDSHIP_USERS_OPERATOR" --reason "$STEWARDSHIP_USERS_REASON" \
+                --confirm-administrators "$STEWARDSHIP_USERS_ADMINISTRATORS"; then
+                echo "The users upgrade did not complete: the new sign-in functions were not installed" >&2
+                echo "and, unless the conversion activated before it stopped, the configuration keeps" >&2
+                echo "its sign-in rules. Admin-access recovery works on this schema (runbook, Users" >&2
+                echo "upgrade). Repeat the run with the same operation to resume it, or with a new" >&2
+                echo "one after a refusal." >&2
+                exit 1
+            fi
+            step "4. Migration after the users upgrade"
+        fi
+        if ! oneoff 1800 "the migration" migration migration; then
+            if [ "$users_upgrade" = 0 ]; then
+                # A release whose swap refuses an unconverted configuration
+                # stops here; nothing of the swap was committed.
+                echo "If the release notes announce the users upgrade, repeat the run with the" >&2
+                echo "STEWARDSHIP_USERS_* variables (runbook, Users upgrade)." >&2
+            fi
+            exit 1
+        fi
+        grants grants
     fi
 else
     step "4. Migration: not repeated by a rollback"
