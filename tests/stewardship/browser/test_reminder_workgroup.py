@@ -2,7 +2,16 @@
 
 import pytest
 
-from .waits import visible
+from .reminder_workgroup_components import EDITOR, NAME, PENDING, REVIEW
+from .test_in_place import MARK, MARKED, count_requests
+from .test_settings_in_place import (
+    DIGEST,
+    FOCUSED,
+    answer_reviews,
+    current_step,
+    expect_review,
+)
+from .waits import has_attribute, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -52,3 +61,83 @@ def test_the_field_explains_itself_and_each_state_says_what_happens(
     visible(page.locator("[data-workgroup-status=off]"))
     page.goto(component_origin + "/reminder-workgroup-preview")
     visible(page.get_by_role("button", name="Apply changes"))
+
+
+# The settings form's top edge in the document: focus may scroll the window
+# to the review below it, but nothing may move the form within the page.
+FORM_PLACE = (
+    "document.getElementById('settings-form').getBoundingClientRect().top"
+    " + window.scrollY"
+)
+HINT = "Change the WorkGroup name to review it."
+
+
+def test_review_apply_and_status_happen_in_place(page, component_origin):
+    """Review changes waits for a change; Review shows the change under the
+    form and takes focus; Apply shows its status there, and once it is
+    applied the page refreshes itself quietly: the form takes the applied
+    version and "Now" says the name takes effect at the next refresh.
+    Nothing reloads, the form never moves and keeps the typed name (#750)."""
+    reviews = answer_reviews(page, component_origin, REVIEW, address=EDITOR)
+    posts = count_requests(page, "POST", EDITOR)
+    page.goto(component_origin + EDITOR)
+    page.evaluate(MARK)
+    expect_review(page, enabled=False, hint=HINT)
+    field = page.get_by_label("ParishSoft Family WorkGroup")
+    field.fill(NAME)
+    expect_review(page, enabled=True, hint=HINT)
+    top = page.evaluate(FORM_PLACE)
+    page.get_by_role("button", name="Review changes").click()
+    visible(page.get_by_role("heading", name="Review your changes"))
+    assert len(reviews) == 1 and "name=Active" in reviews[0]
+    assert page.evaluate(FOCUSED, "#settings-review-title")
+    panel = page.locator("#settings-review")
+    assert NAME in panel.inner_text()
+    assert current_step(page) == "Review"
+    assert page.url == component_origin + EDITOR
+    assert page.evaluate(FORM_PLACE) == top
+    page.get_by_role("button", name="Apply changes").click()
+    visible(panel.get_by_role("heading", name="Change status"))
+    assert current_step(page) == "Apply"
+    # The status settles as Applied and the page refreshes itself quietly.
+    visible(panel.get_by_role("heading", name="Applied: your change is saved"))
+    has_attribute(page.locator(DIGEST), "value", "b" * 64)
+    visible(page.locator("#workgroup-status [data-workgroup-status=pending]"))
+    assert field.input_value() == NAME
+    assert PENDING.split("?")[1] in page.url
+    assert page.evaluate(FORM_PLACE) == top
+    assert page.evaluate(MARKED) == "kept"
+    assert len(posts) == 2
+
+
+FOLLOWS = (
+    "([first, second]) => Boolean(document.querySelector(first)"
+    ".compareDocumentPosition(document.querySelector(second))"
+    " & Node.DOCUMENT_POSITION_FOLLOWING)"
+)
+
+
+@pytest.mark.parametrize("state", ["found", "missing", "off"])
+def test_the_refresh_status_comes_after_the_review_region(
+    page, component_origin, state
+):
+    """What the newest refresh found sits below the form and its review
+    region, so a status whose length changes (the quiet refresh after
+    Apply) can never move the form or the review above it (#750)."""
+    page.goto(component_origin + f"/reminder-workgroup-{state}")
+    assert page.evaluate(FOLLOWS, ["#settings-form", "#settings-review"])
+    assert page.evaluate(FOLLOWS, ["#settings-review", "#workgroup-status"])
+
+
+def test_editing_after_a_review_withdraws_it(page, component_origin):
+    """Typing again after a review withdraws it, so Apply can only apply
+    the name shown; the review stays in place, greyed."""
+    answer_reviews(page, component_origin, REVIEW, address=EDITOR)
+    page.goto(component_origin + EDITOR)
+    field = page.get_by_label("ParishSoft Family WorkGroup")
+    field.fill(NAME)
+    page.get_by_role("button", name="Review changes").click()
+    visible(page.get_by_role("heading", name="Review your changes"))
+    field.fill(NAME + " again")
+    visible(page.locator("#settings-review section[data-review-stale]"))
+    assert page.get_by_role("button", name="Apply changes").count() == 0

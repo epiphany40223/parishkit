@@ -117,6 +117,7 @@ from .my_ministries_components import components as my_ministries_components
 from .not_found_components import components as not_found_components
 from .pause_components import components as pause_components
 from .refresh_schedule_components import components as refresh_schedule_components
+from .reminder_workgroup_components import POSTS as WORKGROUP_POSTS
 from .reminder_workgroup_components import components as workgroup_components
 from .report_components import SLOW_GETS as REPORT_SLOW_GETS
 from .report_components import components as report_components
@@ -2301,6 +2302,7 @@ def component_origin():
         | SCHEDULE_LIST_POSTS
         | HOSTED_FILE_POSTS
         | USER_POSTS
+        | WORKGROUP_POSTS
         | {
             f"{IN_PLACE_FORM}/refuse": (400, None, responses["/in-place-refused"][1]),
             f"{IN_PLACE_FORM}/invalid": (200, None, responses["/in-place-invalid"][1]),

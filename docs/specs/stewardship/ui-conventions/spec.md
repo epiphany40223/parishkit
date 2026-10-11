@@ -554,6 +554,15 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   answer, handed through Change status's read and carried by the quiet
   follow-up, so the refreshed table is the one the Administrator was
   looking at.
+- **In-place review: Reminder WorkGroup (#750).** The Reminder WorkGroup
+  editor works as Parish and Campaign settings do: its one name field is a
+  `data-table-sync` form whose Review changes waits for a change (hint
+  "Change the WorkGroup name to review it."), and its review (the WorkGroup
+  now and the one proposed), refusals and the change's status fill the
+  review region under it. What the newest ParishSoft refresh found is an
+  in-place region of its own, so the quiet refresh once a change is applied
+  brings it up to date; it sits below the review region, so a status whose
+  length changes never moves the form or the review.
 
 ### No layout shift
 
