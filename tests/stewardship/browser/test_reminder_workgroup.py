@@ -110,6 +110,25 @@ def test_review_apply_and_status_happen_in_place(page, component_origin):
     assert len(posts) == 2
 
 
+FOLLOWS = (
+    "([first, second]) => Boolean(document.querySelector(first)"
+    ".compareDocumentPosition(document.querySelector(second))"
+    " & Node.DOCUMENT_POSITION_FOLLOWING)"
+)
+
+
+@pytest.mark.parametrize("state", ["found", "missing", "off"])
+def test_the_refresh_status_comes_after_the_review_region(
+    page, component_origin, state
+):
+    """What the newest refresh found sits below the form and its review
+    region, so a status whose length changes (the quiet refresh after
+    Apply) can never move the form or the review above it (#750)."""
+    page.goto(component_origin + f"/reminder-workgroup-{state}")
+    assert page.evaluate(FOLLOWS, ["#settings-form", "#settings-review"])
+    assert page.evaluate(FOLLOWS, ["#settings-review", "#workgroup-status"])
+
+
 def test_editing_after_a_review_withdraws_it(page, component_origin):
     """Typing again after a review withdraws it, so Apply can only apply
     the name shown; the review stays in place, greyed."""
