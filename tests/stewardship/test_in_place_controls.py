@@ -127,6 +127,7 @@ SETTINGS_PAGES = (
     "campaign-settings.html",
     "share-settings.html",
     "campaign-ministries.html",
+    "reminder-workgroup.html",
 )
 # Ministries reviews its row selection in the same region (#750); it has
 # no settings form, so it is not one of SETTINGS_PAGES.
