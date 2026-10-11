@@ -16,6 +16,8 @@ is always there. That line is one line high whatever it says: a long answer
 is cut short with an ellipsis and shown whole in its title (and read whole
 through the Name's aria-describedby), so the Role choices below never move
 under the pointer (#736).
+On Edit, Review is available only once the Name or role differs from the
+saved user (data-require-change, #921), with the reason after it.
 On Edit, the only Administrator's lower roles are unavailable, with the reason
 in the line under the roles, which is always there (#563); the server refuses
 that change anyway. The recorded Google identities of the address each get a
@@ -24,7 +26,7 @@ Sign-in activity button (#953), posting the identity, never in an address.
 <h1>{% if new %}{% translate "New user" %}{% else %}{% translate "Edit user" %}{% endif %}</h1>
 {% aboutpage "user-entry" %}<p>{% translate "A user is one email address with a Name and one role. The person signs in with the account of that address. The Name is a label for this portal; it is not tied to a ParishSoft Member." %}</p>
 <p>{% translate "Review shows what would change; nothing takes effect until you apply it and the status says Applied. Making someone an Administrator also tells every other Administrator." %}</p>{% endaboutpage %}
-<form method="post" action="{{ post_url }}" class="user-entry"{% if new %} data-user-entry data-names-url="{{ names_url }}" data-names-none="{% translate 'No ParishSoft Member lists this address.' %}" data-names-found="{% translate 'Suggested from ParishSoft: {names}' %}" data-names-waiting="{% translate 'Looking up ParishSoft names for this address…' %}" data-names-failed="{% translate "Couldn't look up ParishSoft names. Enter the Name yourself." %}"{% endif %}>{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}">
+<form method="post" action="{{ post_url }}" class="user-entry" id="user-entry-form"{% if not new %} data-require-change="base_digest"{% endif %}{% if new %} data-user-entry data-names-url="{{ names_url }}" data-names-none="{% translate 'No ParishSoft Member lists this address.' %}" data-names-found="{% translate 'Suggested from ParishSoft: {names}' %}" data-names-waiting="{% translate 'Looking up ParishSoft names for this address…' %}" data-names-failed="{% translate "Couldn't look up ParishSoft names. Enter the Name yourself." %}"{% endif %}>{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}">
 {{ form.non_field_errors }}
 <div class="field">{% if new %}<label for="{{ form.email.auto_id }}">{{ form.email.label }}</label>
 {{ form.email }}
@@ -42,7 +44,7 @@ Sign-in activity button (#953), posting the identity, never in an address.
 <p class="help" id="{{ form.role.auto_id }}_{{ forloop.counter0 }}_help">{{ role.help }}</p></div>{% endfor %}
 <p class="help" id="user-roles-reason">{% if locked %}{% translate "This is the only Administrator, so it must stay an Administrator. Make another user an Administrator first." %}{% endif %}</p>
 <div class="field-error-line" role="status"><ul class="errorlist" id="{{ form.role.auto_id }}_error"{% if not form.role.errors %} hidden{% endif %}>{% for error in form.role.errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div></fieldset>
-<p>{% button type="submit" %}{% translate "Review" %}{% endbutton %} <a href="{{ list_url }}">{% translate "Cancel" %}</a></p>
+<p>{% if new %}{% button type="submit" %}{% translate "Review" %}{% endbutton %}{% else %}{% button type="submit" autocomplete="off" %}{% translate "Review" %}{% endbutton %}{% endif %} <a href="{{ list_url }}">{% translate "Cancel" %}</a>{% if not new %} <span class="help unchanged-hint" data-unchanged-hint data-idle>{% translate "Change the Name or role to review it." %}</span>{% endif %}</p>
 </form>
 {% if identities %}<section class="panel" id="user-sign-in-activity" tabindex="-1" aria-labelledby="user-sign-in-activity-title">
 <h2 id="user-sign-in-activity-title">{% translate "Sign-in activity" %}</h2>
