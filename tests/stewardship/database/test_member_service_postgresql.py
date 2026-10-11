@@ -1,7 +1,8 @@
 """New Family/Member answers end to end: limitations, retired talents, guards.
 
-The Family form no longer offers talents (#970), but the installed SQL guard
-still checks each stored ``talents`` map, so its cases stay.
+The Family form no longer offers talents (#970). Each new entry still
+carries a ``talents`` map, which the SQL guard requires to be empty since
+migration 0056.
 """
 
 import json
@@ -25,14 +26,15 @@ pytestmark = pytest.mark.django_db(transaction=True)
 PAINTER, OTHER = DEFAULT_TALENTS[0].id, DEFAULT_TALENTS[-1].id
 
 
-def test_sql_default_talents_match_the_application_defaults():
-    """The guard's defaults still match the stored-data compatibility list."""
+def test_the_retired_talent_functions_are_gone():
+    """Migration 0056 dropped the talent defaults and the talent report."""
     with connection.cursor() as cursor:
-        cursor.execute("SELECT stewardship_talent_defaults_v1()::text")
-        assert json.loads(cursor.fetchone()[0]) == [
-            {"id": option.id, "label": option.label, "free_text": option.free_text}
-            for option in DEFAULT_TALENTS
-        ]
+        cursor.execute(
+            "SELECT to_regprocedure('stewardship_talent_defaults_v1()'),"
+            "to_regprocedure('stewardship_talent_report_v1(uuid,jsonb)'),"
+            "to_regprocedure('stewardship_limitations_report_v1(uuid,jsonb)') IS NULL"
+        )
+        assert cursor.fetchone() == (None, None, False)
 
 
 def test_limitations_round_trip_and_no_talents_are_offered(response_service):
@@ -82,21 +84,22 @@ def test_cannot_serve_requires_leaving_every_current_ministry(response_service):
     assert submission.answers["service"]["members"]["3"]["cannot_serve"] is True
 
 
-def test_a_form_opened_before_the_deploy_still_submits_talents(response_service):
-    """A tab opened before #970 deployed keeps working with its talents.
+def test_a_form_opened_before_the_deploy_still_submits(response_service):
+    """A tab opened before #970 deployed still submits; its talents are dropped.
 
     The pre-deploy form offered the configured talents, so a Family's open
-    tab may send one. Its baseline holds the same definition digest a new one
-    does (the digest still hashes the configured list), so this sends talents
-    on a fresh baseline exactly as that tab would. Refusing them would lose
-    the whole response mid-campaign; instead they are stored (the SQL guard
-    accepts them) and never shown. Unknown talents are still refused.
+    tab may send some. Its baseline holds the same definition digest a new
+    one does (the digest still hashes the configured list), so this sends
+    talents on a fresh baseline exactly as that tab would. Refusing them
+    would lose the whole response mid-campaign; instead the response is
+    stored with an empty talents map, the only one the SQL guard accepts.
+    A talents value that is not a map was never sent by any form.
     """
     harness = response_service
     form = start(harness)
     answers = answers_for(form)
     answers["service"] = {
-        "members": {"3": {"cannot_serve": False, "talents": {str(uuid4()): ""}}},
+        "members": {"3": {"cannot_serve": False, "talents": "Organ"}},
         "proposed_members": {},
     }
     result = post(
@@ -105,13 +108,12 @@ def test_a_form_opened_before_the_deploy_still_submits_talents(response_service)
         {"baseline": form["baseline"], "answers": answers},
     )
     assert result.status_code == 422
-    assert "service.members.3.talents" in result.json()["fields"]
-    talents = {PAINTER: "", OTHER: "Organ"}
-    answers["service"]["members"]["3"]["talents"] = talents
+    assert "service.members.3" in result.json()["fields"]
+    answers["service"]["members"]["3"]["talents"] = {PAINTER: "", OTHER: "Organ"}
     submission = respond(harness, form, answers)
     assert submission.answers["service"]["members"]["3"] == {
         "cannot_serve": False,
-        "talents": talents,
+        "talents": {},
     }
     assert revisit(harness)["service"]["members"]["3"] == {"cannot_serve": False}
 
@@ -119,7 +121,10 @@ def test_a_form_opened_before_the_deploy_still_submits_talents(response_service)
 @pytest.mark.parametrize(
     "path,value",
     [
+        # Every talent is refused now, even one the old form offered (#970).
+        (("service", "members", "3", "talents"), {PAINTER: ""}),
         (("service", "members", "3", "talents"), {"foreign": ""}),
+        (("service", "members", "3", "talents"), []),
         (("service", "members", "3", "talents"), {PAINTER: "text"}),
         (("service", "members", "3", "talents"), {OTHER: ""}),
         (("service", "members", "3", "cannot_serve"), "no"),
@@ -129,7 +134,7 @@ def test_a_form_opened_before_the_deploy_still_submits_talents(response_service)
     ],
 )
 def test_sql_rejects_forged_talents_and_lock(response_service, path, value):
-    """Bypassing Python still cannot store an invalid talent or a false lock."""
+    """Bypassing Python still cannot store a talent or a false lock."""
     harness = response_service
     form = start(harness)
     submission = respond(harness, form, answers_for(form))
@@ -203,16 +208,20 @@ def guard(submission, answers, *, modules=None):
 
 
 def test_sql_guard_edge_cases(response_service):
-    """Stored talents, module off, a non-object section, a proposed join."""
+    """Talents, module off, a non-object section, a proposed join."""
     harness = response_service
     form = start(harness)
     submission = respond(harness, form, answers_for(form))
     answers = json.loads(json.dumps(submission.answers))
     guard(submission, answers)
-    # An older response's stored talents still pass the installed guard (#970).
+    # A new response may not carry talents (#970, migration 0056), nor omit
+    # the empty map its entries keep.
     stored = json.loads(json.dumps(answers))
     stored["service"]["members"]["3"]["talents"] = {PAINTER: "", OTHER: "Organ"}
-    with transaction.atomic():
+    with pytest.raises(IntegrityError, match="no talents"), transaction.atomic():
+        guard(submission, stored)
+    del stored["service"]["members"]["3"]["talents"]
+    with pytest.raises(IntegrityError, match="no talents"), transaction.atomic():
         guard(submission, stored)
     # Without the Ministry module only an empty section is allowed.
     with transaction.atomic():
