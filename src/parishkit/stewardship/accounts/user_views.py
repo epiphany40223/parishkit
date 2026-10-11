@@ -69,6 +69,7 @@ from .user_changes import (
     MESSAGES,
     LookupLimited,
     UserRefused,
+    administrator_ids,
     clean_email,
     member_names,
     only_administrator,
@@ -279,10 +280,11 @@ def users(request):
         with read_transaction():
             configuration, records = _users(service)
             rows = user_list(records, policy_identities(records))
+            saved = saved_users(records)
             # The chrome presents this verified observation, never a newer one.
             request._stewardship_display_configuration = configuration
         table = paginate(
-            table_rows(rows, saved_users(records)),
+            table_rows(rows, saved),
             paging,
             prefix=PREFIX,
             sorting=USER_SORTING,
@@ -296,7 +298,9 @@ def users(request):
                 "refresh_url": request.get_full_path(),
                 "new_url": reverse("admin:user_new"),
                 "delete_url": reverse("admin:user_delete"),
-                "only_administrator": any(not row["deletable"] for row in table.rows),
+                # From every user, not only this page's rows: the one
+                # Administrator may be on another page.
+                "only_administrator": len(administrator_ids(saved)) == 1,
             },
         )
         with transaction.atomic():
