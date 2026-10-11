@@ -531,6 +531,10 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             "timeline_export_capture",
             "stewardship_timeline_export_capture_v1",
         ),
+        "stewardship_comparison_export_snapshot": (
+            "comparison_export_capture",
+            "stewardship_comparison_export_capture_v1",
+        ),
         "stewardship_information_revision": (
             "stewardship_information_revision_guard",
             "stewardship_information_revision_guard_v1",
@@ -802,6 +806,7 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
                 "stewardship_financial_export_snapshot",
                 "stewardship_family_test_names_export_snapshot",
                 "stewardship_timeline_export_snapshot",
+                "stewardship_comparison_export_snapshot",
                 "stewardship_information_revision",
                 "stewardship_ministry_revision",
                 "stewardship_delivery_control",

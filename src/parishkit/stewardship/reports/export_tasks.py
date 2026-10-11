@@ -242,6 +242,10 @@ def load_document(request, *, general=None, store=None):
         from .timeline_documents import load_timeline
 
         return load_timeline(request, general=general, store=store)
+    if request.report == "campaign_comparison":
+        from .comparison_documents import load_comparison
+
+        return load_comparison(request)
     facts = CampaignDailyFactSet.objects.get(
         pk=request.fact_set_id, campaign_id=request.campaign_id, state="ready"
     )
@@ -328,6 +332,10 @@ def _execute(execution, *, store, root, general=None):
                 from .information_rendering import render_information
 
                 render_information(document, stream, format=request.format)
+            elif request.report == "campaign_comparison":
+                from .comparison_documents import render_comparison
+
+                render_comparison(document, stream, format=request.format)
             elif request.format == "csv":
                 participation_csv(document, stream)
             elif request.format == "xlsx":

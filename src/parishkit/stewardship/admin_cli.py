@@ -1394,6 +1394,21 @@ def export_create(args, preamble, runtime, context):
     )
 
 
+def export_comparison(args, preamble, runtime, context):
+    """Request a Campaign comparison download, as its page's form does (#1018)."""
+    from .admin_exports import create_comparison_command
+
+    return create_comparison_command(
+        context["caller"],
+        runtime,
+        day=args.day,
+        fmt=args.format,
+        zone=args.timezone,
+        request_key=_request_key(args, context),
+        context=context,
+    )
+
+
 def export_financial(args, preamble, runtime, context):
     """Request a financial report export, as its export form does (PR 8e).
 
@@ -2484,6 +2499,22 @@ def _export_create_options(parser):
 
 # The Family-level exports' formats (the export services' own).
 FAMILY_EXPORT_FORMATS = ("csv", "xlsx", "pdf")
+
+
+def _export_comparison_options(parser):
+    """Options of ``export comparison``: the day, format, zone and key."""
+    parser.add_argument(
+        "--day",
+        type=int,
+        help="the campaign day to compare on (default: the last complete day)",
+    )
+    parser.add_argument("--format", required=True, choices=FAMILY_EXPORT_FORMATS)
+    parser.add_argument(
+        "--timezone",
+        required=True,
+        help="the time zone of the file's request time, for example America/New_York",
+    )
+    _request_key_option(parser)
 
 
 def _family_export_options(parser, *, filters=True):
@@ -3618,6 +3649,18 @@ def _report_specs():
             ExportChange.field_names(),
             8,
             options=(_export_create_options,),
+            request_key=True,
+        ),
+        # The Campaign comparison's download form (#1018, slice 6).
+        CommandSpec(
+            "export comparison",
+            "Request a Campaign comparison download, as its page's form does.",
+            export_comparison,
+            "full",
+            True,
+            ExportChange.field_names(),
+            8,
+            options=(_export_comparison_options,),
             request_key=True,
         ),
         CommandSpec(

@@ -4,6 +4,9 @@
 -- Frozen migration 0037 adds family_test_names_snapshot_id, its table and the
 -- family_test_names arm of export_report_known (#817); the request and
 -- publication guards below already name them, and 0037 installs their copies.
+-- Frozen migration 0071 likewise adds comparison_snapshot_id, its table and
+-- the campaign_comparison arm (#1018); the two guards below name it too, and
+-- 0071 installs their copies.
 CREATE TABLE stewardship_export_request (
     id uuid NOT NULL PRIMARY KEY,
     created_at timestamptz DEFAULT statement_timestamp() NOT NULL,
@@ -130,6 +133,7 @@ DECLARE facts stewardship_daily_fact_set%ROWTYPE;
         financial stewardship_financial_export_snapshot%ROWTYPE;
         names stewardship_family_test_names_export_snapshot%ROWTYPE;
         timeline stewardship_timeline_export_snapshot%ROWTYPE;
+        comparison stewardship_comparison_export_snapshot%ROWTYPE;
         handoff boolean; inputs_valid boolean:=false;
 BEGIN
     PERFORM stewardship_export_campaign_lock_v1(NEW.campaign_id,false);
@@ -199,6 +203,19 @@ BEGIN
         inputs_valid:=timeline.id IS NOT NULL AND timeline.campaign_id=NEW.campaign_id
             AND NEW.parameters=timeline.parameters
             AND stewardship_export_authorized_v1(NEW.requester_id,true);
+    ELSIF NEW.report='campaign_comparison' THEN
+        -- The Campaign comparison (migration 0071): its own capture, for
+        -- the requester who captured it, an Administrator, or a requester
+        -- of an earlier export of it, as the financial capture.
+        SELECT * INTO comparison FROM stewardship_comparison_export_snapshot
+            WHERE id=NEW.comparison_snapshot_id;
+        inputs_valid:=comparison.id IS NOT NULL AND comparison.campaign_id=NEW.campaign_id
+            AND NEW.parameters=comparison.parameters
+            AND (comparison.actor_id=NEW.requester_id
+                OR stewardship_export_authorized_v1(NEW.requester_id,true)
+                OR EXISTS(SELECT 1 FROM stewardship_export_request prior
+                    WHERE prior.comparison_snapshot_id=comparison.id
+                      AND prior.requester_id=NEW.requester_id));
     END IF;
     IF inputs_valid IS DISTINCT FROM true OR NEW.actor_id IS DISTINCT FROM NEW.requester_id
        OR NOT stewardship_export_request_authorized_v1(NEW.requester_id,NEW)
@@ -277,7 +294,10 @@ BEGIN
                WHERE s.id=request.family_test_names_snapshot_id AND s.row_count=NEW.row_count))
            OR (request.report='family_timeline' AND EXISTS(
                SELECT 1 FROM stewardship_timeline_export_snapshot s
-               WHERE s.id=request.timeline_snapshot_id AND s.row_count=NEW.row_count)))
+               WHERE s.id=request.timeline_snapshot_id AND s.row_count=NEW.row_count))
+           OR (request.report='campaign_comparison' AND EXISTS(
+               SELECT 1 FROM stewardship_comparison_export_snapshot s
+               WHERE s.id=request.comparison_snapshot_id AND s.row_count=NEW.row_count)))
        OR NOT EXISTS(SELECT 1 FROM stewardship_export_attempt a JOIN stewardship_task_run t ON t.id=a.run_id
            WHERE a.id=NEW.attempt_id AND a.request_id=request.id AND a.actor_id=NEW.actor_id
              AND t.state='running' AND t.fence=a.fence AND t.worker_id=a.actor_id

@@ -175,6 +175,8 @@ def test_every_export_command_has_a_golden_document():
         "export exact cancel",
         "export exact retry",
         "export family-timeline",
+        # The Campaign comparison's download (#1018, slice 6).
+        "export comparison",
     }
     from parishkit.stewardship import admin_exact_exports
 

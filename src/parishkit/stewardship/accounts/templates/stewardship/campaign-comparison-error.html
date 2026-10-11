@@ -1,0 +1,9 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n %}
+{% block title %}{% translate "Campaign comparison download unavailable" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Campaign comparison download unavailable" %}</h1>
+{% if status == 503 %}<p role="alert">{% translate "This information is temporarily unavailable. Please retry later." %}</p>
+{% elif status == 409 %}{% include 'stewardship/export-request-bound.html' %}
+{% else %}<p role="alert">{% translate "The download could not be queued for that day. Open Campaign comparison again, choose a day from 1 to its last complete day, and queue the download again." %}</p>{% endif %}
+<p><a href="{% url 'admin:campaign_comparison' %}">{% translate "Return to Campaign comparison" %}</a></p>
+{% endblock %}

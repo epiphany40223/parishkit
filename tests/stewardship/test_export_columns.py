@@ -50,6 +50,7 @@ from parishkit.stewardship.reports.census_changes import (
     census_xlsx,
     select,
 )
+from parishkit.stewardship.reports.comparison_documents import render_comparison
 from parishkit.stewardship.reports.directory_rendering import (
     address_blocks,
     render_directory,
@@ -67,6 +68,7 @@ from parishkit.stewardship.web.exports import PAGE_DOWNLOADS
 
 from .test_census_changes import SUBMITTED
 from .test_census_changes import rows as census_rows
+from .test_comparison_exports import document as comparison
 from .test_directory_rendering import document as directory
 from .test_directory_rendering import item as family
 from .test_family_test_names import request as names_request
@@ -93,6 +95,7 @@ WORKER_CASES = {
     "financial": ("financial",),
     "family_test_names": ("family_test_names",),
     "family_timeline": ("family_timeline",),
+    "campaign_comparison": ("campaign_comparison",),
 }
 
 
@@ -404,6 +407,15 @@ def case_family_test_names(monkeypatch):
 def case_family_timeline(monkeypatch):
     """One Family's timeline (``export family-timeline``, ADM-11 PR 8g)."""
     return shared_case(monkeypatch, timeline())
+
+
+def case_campaign_comparison(monkeypatch):
+    """The Campaign comparison's Every number table (#1018, slice 6).
+
+    Its PDF is the one-page summary and then this table, so the guard
+    reads the table's headings.
+    """
+    return shared_case(monkeypatch, comparison(), render_comparison)
 
 
 def case_response_list(monkeypatch):

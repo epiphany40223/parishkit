@@ -35,6 +35,14 @@ TENTH = Decimal("0.1")
 # protection").
 SMALL_COUNT = 5
 FEWER_THAN = "fewer than 5"
+# What a download or the PDF summary shows in place of a figure the
+# small-count protection keeps inside the Admin portal (a withheld year's
+# average pledge, or its quartiles under 5 pledging Families).
+WITHHELD = "Withheld"
+# What they show in place of quartiles that only the page shows: the
+# current campaign's (they change day by day) and a partial year's (spec,
+# "The current campaign stays inside the portal").
+PAGE_ONLY = "On the page only"
 # Why a figure shows "—" (spec, "Metrics": a toggletip gives the reason).
 NO_LAST_YEAR = "No past campaign is imported for last year."
 NO_FAMILY_ROWS = "Family rows were not kept for that year's import."
@@ -320,18 +328,25 @@ def years_label(years):
     return f"{numbers[0]}–{numbers[-1]}"
 
 
-def tiles(comparison):
+def tiles(comparison, *, outside=False):
     """The headline tiles, one per metric, in the spec's order.
 
     Each holds the current value and up to two comparison lines ("Last year
     on day 12: 240 (↑ 12.5% more)", "2020–2026 average: 220 (…)"); ``title``
     is the full wording for the tooltip and accessible name; ``reason``
     explains a "—" current value.
+
+    ``outside`` gives the tiles as they may leave the Admin portal (the PDF
+    summary): no median so far, since the current campaign's quartiles stay
+    inside, and the small-count protection applied to the average pledge's
+    comparisons (``withheld_years``, ``average_withheld``), which then read
+    "Withheld".
     """
     current, day = comparison.current, comparison.day
     if current is None or day is None:
         return []
     averaged = [year for year in comparison.imported]
+    withheld = withheld_years(comparison) if outside else set()
     result = []
     for metric in METRICS:
         if metric.financial and not comparison.financial:
@@ -342,17 +357,26 @@ def tiles(comparison):
         sentences.append(f"{metric.label}: {shown} on day {number(day)}.")
         references = []
         if comparison.last_year is not None:
+            last = comparison.last_year
             references.append(
                 (
                     f"Last year on day {number(day)}",
-                    metric.value(comparison.last_year),
+                    WITHHELD
+                    if metric.key == "average" and last.year in withheld
+                    else metric.value(last),
                 )
             )
         mean = average(metric, averaged)
         if mean is not None:
             covered = [y for y in averaged if metric.value(y) is not None]
+            if average_withheld(metric, averaged, withheld):
+                mean = WITHHELD
             references.append((f"{years_label(covered)} average", mean))
         for label, reference in references:
+            if isinstance(reference, str):  # WITHHELD
+                lines.append(f"{label}: {WITHHELD}")
+                sentences.append(f"{label}: {WITHHELD.lower()}.")
+                continue
             text = value_text(metric.kind, reference)
             difference = change_text(metric.kind, value, reference)
             lines.append(
@@ -366,7 +390,7 @@ def tiles(comparison):
         if value is None:
             reason = _reason(metric, current, comparison)
         median = None
-        if metric.key == "average" and current.distribution is not None:
+        if not outside and metric.key == "average" and current.distribution is not None:
             quartiles = current.distribution.quartiles
             if quartiles is not None:
                 median = money_text(quartiles[1])
@@ -563,6 +587,52 @@ def protected(distribution):
     }, withheld
 
 
+def outside_distribution(comparison, year):
+    """``year``'s distribution as it may leave the portal: (document, withheld?).
+
+    Only a final imported year's distribution leaves the Admin portal (spec,
+    "The current campaign stays inside the portal"), and only with Financial
+    stewardship; any other year is (None, False).
+    """
+    found = year.distribution
+    if (
+        comparison.financial
+        and not year.current
+        and year.final
+        and found is not None
+        and found.reason is None
+    ):
+        return protected(found)
+    return None, False
+
+
+def withheld_years(comparison):
+    """The imported years whose pledging count and averages stay inside.
+
+    A year with a withheld band (or fewer than 5 pledging Families) withholds
+    its number of pledging Families and every average pledge outside the
+    portal, at any day, since the year's total divided by its average gives
+    that number (spec, "Small-count protection").
+    """
+    return {
+        year.year
+        for year in comparison.imported
+        if outside_distribution(comparison, year)[1]
+    }
+
+
+def average_withheld(metric, years, withheld):
+    """Whether ``metric``'s prior-years average must stay inside the portal.
+
+    The average pledge averaged over a year whose averages are withheld would
+    give that year's average back from the other years' (and so its number of
+    pledging Families), so the whole average is withheld outside.
+    """
+    return metric.key == "average" and any(
+        year.year in withheld and metric.value(year) is not None for year in years
+    )
+
+
 def _day_document(day, *, withhold_average, financial=True):
     """One year's figures at a day, as the command prints them.
 
@@ -602,16 +672,11 @@ def outside_document(comparison):
     day, and two days' difference could expose one Family's pledge).
     Distributions and quartiles appear only for final imported years.
     """
-    withheld_years = set()
+    withheld = withheld_years(comparison)
     years = []
     for year in comparison.imported:
-        distribution = None
-        found = year.distribution
-        if comparison.financial and year.final and found and found.reason is None:
-            distribution, withheld = protected(found)
-            if withheld:
-                withheld_years.add(year.year)
-        withhold = year.year in withheld_years
+        distribution, _ = outside_distribution(comparison, year)
+        withhold = year.year in withheld
         financial = comparison.financial
         years.append(
             {
@@ -636,10 +701,7 @@ def outside_document(comparison):
         if metric.financial and not comparison.financial:
             continue
         counted = list(comparison.imported)
-        if metric.key == "average" and any(
-            year.year in withheld_years and metric.value(year) is not None
-            for year in counted
-        ):
+        if average_withheld(metric, counted, withheld):
             averages[metric.key] = None
             continue
         mean = average(metric, counted)

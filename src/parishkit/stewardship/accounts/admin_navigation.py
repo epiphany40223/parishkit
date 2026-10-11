@@ -558,6 +558,8 @@ NON_PAGES = frozenset(
         "automation_notices",
         "automation_sessions",
         "branding_asset",
+        # The Campaign comparison's download form (#1018), a POST.
+        "campaign_comparison_export",
         "content_plain_text",
         "critical_events_acknowledge",
         "daily_digest_chart",

@@ -1094,6 +1094,36 @@ linked to #1018 (the last one closes part (b)).
    report-options refusal.
 6. **Downloads.** CSV, XLSX and the one-page PDF summary, with the
    small-count protection.
+   As built: the page's **Download** section (in the in-place region, so
+   it follows Compare on day) posts the day shown to
+   `reports/comparison/exports/`, which reads the page's comparison under
+   the read guard and stores a protected capture
+   (`comparison_exports.capture`) in the immutable
+   `stewardship_comparison_export_snapshot` of frozen file 0071: report
+   kind `campaign_comparison` in the shared export lifecycle (status page,
+   download, cancel, retry, and Regenerate from the same capture, so never
+   newer figures). Its SQL guard admits Administrators and Staff only, from
+   the web, and a closed document shape with no key a note could ride in.
+   The request records `campaign_comparison_exported` with the day as
+   `count`; download and cancel are the lifecycle's shared events.
+   `pk-admin export comparison [--day N]` is the same form. All three
+   formats carry the Every number table with the page's columns: counts
+   are numbers, money exact amounts, day 1 a date, a "—" a blank cell, and
+   a value carried "(final)" keeps that mark as text (as an unavailable
+   amount stays a word), so no cell is split. The PDF is the summary page,
+   with the headline tiles and the three day-by-day charts drawn in the
+   shared page frame, then the table in the frame's table style set at 80%
+   of body size so fifteen columns fit with no amount broken; the
+   final-results and pledge-distribution charts stay on the page, as do
+   the distribution tables. Outside the portal: a year with a withheld
+   band shows Withheld for every average pledge, and the tiles' last-year
+   and prior-years average pledge read Withheld when they would use such a
+   year; this campaign's and a partial year's quartiles read "On the page
+   only", and a final year with fewer than 5 pledging Families shows
+   Withheld quartiles; the tiles carry no median so far. This campaign's
+   own average pledge stays, as `report comparison` prints it since slice
+   3: none of its bands leave the portal, so none can be worked out from
+   it.
 7. **Digest section.** The daily digest option, with its own
    forward migration if the digest occurrence needs new columns to record
    the imported years it used.

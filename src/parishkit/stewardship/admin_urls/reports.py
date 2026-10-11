@@ -21,6 +21,7 @@ from django.urls import path
 from ..accounts import assisted_entry
 from ..reports import (
     census_change_views,
+    comparison_export_views,
     comparison_views,
     digest_views,
     directory_export_views,
@@ -84,6 +85,13 @@ patterns = [
     ),
     # Past campaigns compared with the current one (#1018).
     _page("reports/comparison/", comparison_views.report, "campaign_comparison"),
+    # Its download form (#1018, slice 6): a POST answered with the export's
+    # status page.
+    _page(
+        "reports/comparison/exports/",
+        comparison_export_views.create,
+        "campaign_comparison_export",
+    ),
     _page("reports/financial/", financial_views.report, "financial_report"),
     _page(
         "reports/financial/exports/",

@@ -160,6 +160,17 @@ SITES = {
             "reports/export_ui.py",
         },
     ),
+    "reports/comparison_exports.py::create_comparison_export": site(
+        # The Campaign comparison's download form, regenerate and
+        # ``export comparison`` (#1018, slice 6).
+        "report_export",
+        WEB,
+        {
+            "admin_exports.py",
+            "reports/comparison_export_views.py",
+            "reports/export_services.py",
+        },
+    ),
     "reports/family_test_names.py::create_family_test_names_export": site(
         "report_export",
         WEB,
