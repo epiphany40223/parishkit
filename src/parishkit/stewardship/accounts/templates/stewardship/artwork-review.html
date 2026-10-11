@@ -1,0 +1,9 @@
+{% load i18n stewardship %}{% comment %}
+  A campaign image change under review (#248), drawn inside
+  settings-review.html on Campaign images (#750): a staged upload, shown as
+  it will appear, for one slot, or that slot's image being removed. The
+  review region's own heading, notes and Apply surround it.
+{% endcomment %}{% if review.removing %}<p class="notice">{% blocktranslate with slot=review.label %}Stop showing an image for: {{ slot }}. Families will see no image there until you upload a new one.{% endblocktranslate %}</p>
+{% else %}<p class="notice">{% blocktranslate with slot=review.label %}This image is uploaded but not yet in use. Apply the change to use it as: {{ slot }}.{% endblocktranslate %}</p>
+<figure><img src="{% url 'admin:branding_asset' review.asset.pk %}" alt="" width="{{ review.asset.width }}" height="{{ review.asset.height }}" class="branding-preview artwork-{{ review.asset.label }}"><figcaption>{{ review.asset.width|number }} × {{ review.asset.height|number }} {% translate "pixels" %}</figcaption></figure>
+<p>{% translate "Uploads that are never applied are discarded after a day." %}</p>{% endif %}

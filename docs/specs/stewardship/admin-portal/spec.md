@@ -783,9 +783,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `campaign_mail` | Preview and test email | _email name_ | Administrator | Campaign email test | `/admin/campaign/content/test/<revision>/` | (same) | Returns to the page it was opened from (Go-live readiness, Pause and resume mail). |
 | `campaign_mail_families` | Send to chosen Families | Preview and test email | Administrator | Send this email to chosen Families | `/admin/campaign/content/test/<revision>/families/` | (same) |  |
 | `artwork_settings` | Campaign images | Menu: Campaign images | Administrator | (same) | `/admin/campaign/images/` | (same) |  |
-| `artwork_upload` | Campaign images | Campaign images | Administrator | Campaign images (upload error); Campaign image upload | `/admin/campaign/images/<slot>/` (POST only) | (same) | POST-only error re-render of Campaign images; reclassify as a form action. |
-| `artwork_preview` | Review campaign image | Campaign images | Administrator | (same) | `/admin/campaign/images/<slot>/<bundle>/` | (same) |  |
-| `artwork_remove` | Remove campaign image | Campaign images | Administrator | (same) | `/admin/campaign/images/<slot>/removal/` | (same) |  |
+| `artwork_upload` | Campaign images | Campaign images | Administrator | Campaign images (upload error); Campaign image upload | `/admin/campaign/images/<slot>/` (POST only) | (same) | POST-only: a staged upload answers with Campaign images naming it (`?review=<slot>&bundle=<id>`); a refused one re-renders Campaign images. Review campaign image and Remove campaign image are reviews on Campaign images itself (#750); their old addresses are gone. |
 | `schedule_settings` | Dates and mail schedules | Menu: Dates and mail schedules | Administrator | Mail schedules and campaign dates; Mail schedules | `/admin/campaign/schedules/` | (same) |  |
 | `schedule_new` | New scheduled email | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/addition/` | (same) | Its review confirms through Dates and mail schedules. |
 | `schedule_edit` | Edit scheduled email | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/<schedule>/` | (same) | The New page filled in; refuses a read-only schedule. |
@@ -1333,9 +1331,16 @@ Campaign images (Campaign navigation) hold the current campaign's theme
 artwork: five optional slots, a wide banner and one small icon each for the
 Family welcome, Member, financial and closing pages. A new campaign starts with
 none. Each upload is normalized like a logo (a banner fitted within 1,024
-pixels, an icon within 256), previewed, and used only once its configuration
+pixels, an icon within 256), reviewed, and used only once its configuration
 request is applied, the same staging and cleanup rules as logos. Removing a
 slot's image is its own reviewed change; a slot without an image shows nothing.
+Both reviews, Apply and the change's status happen
+[in place](../ui-conventions/spec.md#in-place-controls) in a review region
+under the slots (#750): an upload answers with the page naming the staged
+image (`?review=<slot>&bundle=<id>`), Remove this image names the slot
+(`?remove=<slot>`), and Apply posts to that address. An upload that expired,
+or was staged against settings changed since, is refused there with a
+request to upload it again.
 Artwork is presentation, not structure, so it stays editable while the campaign
 is live. Each Family email's editor (initial, reminder and confirmation) has a
 "Show the campaign banner at the top of this email" checkbox, on by default.
