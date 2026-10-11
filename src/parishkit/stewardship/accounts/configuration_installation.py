@@ -37,6 +37,7 @@ from .request_admission import intake_base
 from .request_models import ConfigurationChangeRequest, ConfigurationRequestCheckpoint
 from .request_patch import MANUAL_POLICY_REQUEST_SCHEMAS, build_candidate
 from .runtime_models import ConfigurationActivation, SystemConfiguration
+from .setup_configuration import REQUEST_SCHEMAS as SETUP_REQUEST_SCHEMAS
 
 # Request authorities that only an offline operator command installs.
 OFFLINE_AUTHORITIES = frozenset({"operator_recovery", "operator_upgrade"})
@@ -436,8 +437,7 @@ class DatabaseMaterializer:
         request = self.request
         journal = (
             SetupConfigurationAbort
-            if request is not None
-            and request.request_schema == "initial-setup-patch-v7"
+            if request is not None and request.request_schema in SETUP_REQUEST_SCHEMAS
             else CampaignConfigurationAbort
         )
         if (
@@ -661,7 +661,7 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
 
             verify_intent_receipt(request.pk, admit_campaign)
             return current
-        if request.request_schema == "initial-setup-patch-v7":
+        if request.request_schema in SETUP_REQUEST_SCHEMAS:
             from .setup_preparation import prepare_setup_configuration
 
             return prepare_setup_configuration(materializer)

@@ -9,7 +9,7 @@ from datetime import timedelta
 
 from django.db.models import Q
 
-from parishkit.stewardship.accounts.bootstrap_schema import BOOTSTRAP_SCHEMA
+from parishkit.stewardship.accounts.bootstrap_schema import BOOTSTRAP_SCHEMAS
 from parishkit.stewardship.accounts.configuration_models import (
     AppliedConfigurationVersion,
 )
@@ -74,7 +74,7 @@ def admitted_source_scope():
         AppliedConfigurationVersion.objects.values_list(
             "validation_schema", flat=True
         ).get(pk=scope.runtime.active_configuration_id)
-        == BOOTSTRAP_SCHEMA
+        in BOOTSTRAP_SCHEMAS
     ):
         return None
     return scope
@@ -87,7 +87,7 @@ def initial_source_at(organization):
             configuration__integrations__kind="parishsoft",
             configuration__integrations__settings__organization_id=str(organization),
         )
-        .exclude(configuration__validation_schema=BOOTSTRAP_SCHEMA)
+        .exclude(configuration__validation_schema__in=BOOTSTRAP_SCHEMAS)
         .values_list("created_at", flat=True)
         .earliest("sequence")
     )

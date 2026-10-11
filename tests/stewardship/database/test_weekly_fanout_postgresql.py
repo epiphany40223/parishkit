@@ -28,7 +28,7 @@ from parishkit.stewardship.reports.weekly_models import (
 from parishkit.stewardship.storage import StorageInvariantError
 
 from ..content_factory import content
-from ..policy_factory import address
+from ..policy_factory import administrator
 from .campaign_builders import campaign_clock, change
 from .test_background_grants_postgresql import task_login
 from .test_weekly_capture_postgresql import INSTANT, prepare
@@ -49,14 +49,19 @@ def configure_content(harness, *, additional_admins=()):
     template["id"] = definition.current_revision.values["template_version"]
     template["values"]["subject"] = definition.current_revision.values["subject"]
     store = harness.service.store
+    base = store.active()
     assert (
         change(
             store,
-            store.active(),
+            base,
             uuid4(),
             [{"operation": "add", "section": "content", **template}]
             + [
-                {"operation": "add", "section": "login_rules", **address(email)}
+                {
+                    "operation": "add",
+                    "section": "login_rules",
+                    **administrator(base, email),
+                }
                 for email in additional_admins
             ],
         ).state

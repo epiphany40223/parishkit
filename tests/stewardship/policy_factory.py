@@ -2,6 +2,8 @@
 
 from uuid import uuid4
 
+from parishkit.stewardship.accounts.users_schema import uses_users
+
 
 def address(email="admin@example.org", roles=("administrator",), *, seeded=False):
     """Create one exact-address rule without deriving origin from current roles."""
@@ -52,3 +54,22 @@ def user(email="admin@example.org", role="administrator", name=None):
             "role": role,
         },
     }
+
+
+def legacy_bootstrap_document(email="admin@example.org"):
+    """A root exact-address bootstrap, as bootstrap wrote one before #993."""
+    return {
+        "schema_version": 1,
+        "version_id": str(uuid4()),
+        "predecessor_digest": None,
+        "sections": {"login_rules": [address(email)]},
+    }
+
+
+def administrator(version, email):
+    """An Administrator record for ``email`` in the policy form of ``version``.
+
+    Setup and bootstrap write users (#952), while older fixtures still hold
+    sign-in rules, so a helper adding an Admin must match the base it edits.
+    """
+    return user(email) if uses_users(version.document()) else address(email)

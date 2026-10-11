@@ -17,7 +17,7 @@ from parishkit.stewardship.reports.digest_fanout import fanout_daily, retained_r
 from parishkit.stewardship.reports.digest_models import DailyDigestRecipient
 
 from ..content_factory import content
-from ..policy_factory import address
+from ..policy_factory import administrator
 from .campaign_builders import campaign_clock, change
 from .test_background_grants_postgresql import task_login
 from .test_daily_digest_building_postgresql import build
@@ -34,14 +34,19 @@ def configure_content(harness, *, additional_admins=()):
     template["id"] = definition.current_revision.values["template_version"]
     template["values"]["subject"] = definition.current_revision.values["subject"]
     store = harness.service.store
+    base = store.active()
     assert (
         change(
             store,
-            store.active(),
+            base,
             uuid4(),
             [{"operation": "add", "section": "content", **template}]
             + [
-                {"operation": "add", "section": "login_rules", **address(email)}
+                {
+                    "operation": "add",
+                    "section": "login_rules",
+                    **administrator(base, email),
+                }
                 for email in additional_admins
             ],
         ).state
