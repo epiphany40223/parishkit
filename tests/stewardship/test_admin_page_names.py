@@ -50,8 +50,6 @@ TEMPLATES = {
     "share_settings": "share-settings.html",
     "artwork_settings": "artwork-settings.html",
     "artwork_upload": "artwork-settings.html",
-    "artwork_preview": "artwork-preview.html",
-    "artwork_remove": "artwork-remove.html",
     "reminder_workgroup": "reminder-workgroup.html",
     "campaign_ministries": "campaign-ministries.html",
     "go_live": "go-live-readiness.html",
