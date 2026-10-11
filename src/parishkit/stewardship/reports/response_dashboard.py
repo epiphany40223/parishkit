@@ -13,8 +13,11 @@ Production is the default for everyone. Testing responses are shown only in
 explicit Admin testing views (``docs/specs/stewardship/reports/spec.md``), so
 only Administrators may choose ``mode=testing``, which reads the campaign's
 active rehearsal epoch. The page shows counts only, never a Family's name or
-identifier; its "Lists of Families" panel links to the lists behind the
-counts (``response_list_views``), each with its length.
+identifier; its "Lists of Families" panel links to the Families behind the
+counts, each with its length: in Production, the active parishioner family
+directory with that list's closed presets (#933); in Testing, still the
+response lists (``response_list_views``) until the directory has a Testing
+view.
 """
 
 from dataclasses import dataclass, replace
@@ -61,6 +64,24 @@ from .response_metrics import (
 # daily after that, unless the reader chooses a grain.
 HOURLY_SPAN = timedelta(days=3)
 AUTO = "auto"
+
+# The directory link presets (``directory_views.LINK_PRESETS``) that list
+# the same Families as each response list (#933), with its columns and its
+# default order: chronological for "submitted", most submissions first for
+# "more-than-once" and the directory's name order otherwise. The Response
+# choices list exactly the list's funnel rows, so the directory's matching
+# count equals the length shown here.
+DIRECTORY_PRESETS = {
+    "submitted": {"response": "submitted", "responses": "yes", "sort": "submitted"},
+    "started": {"response": "started", "responses": "yes"},
+    "not-opened": {"response": "never-opened", "responses": "yes"},
+    "more-than-once": {
+        "response": "more-than-once",
+        "responses": "yes",
+        "sort": "submissions_desc",
+    },
+    "data-quality": {"check": "anything"},
+}
 
 
 @dataclass(frozen=True)
@@ -158,6 +179,18 @@ def untitled(chart):
     return replace(chart, spec=spec)
 
 
+def list_url(query, key):
+    """Where the panel's link to the list ``key`` leads in the mode shown.
+
+    Production opens the active parishioner family directory with the list's
+    presets (#933). The directory reads Production only, so a Testing view
+    keeps linking to the response list's own Testing view.
+    """
+    if query.mode != "production":
+        return ListQuery(query.mode).url(key)
+    return reverse("admin:family_directory") + "?" + urlencode(DIRECTORY_PRESETS[key])
+
+
 def family_lists(query, metrics):
     """The panel linking to each list of Families, with its length when known.
 
@@ -170,7 +203,7 @@ def family_lists(query, metrics):
             "title": spec.title,
             # Only the list without a length says what it holds.
             "description": spec.description if spec.needs_facts else "",
-            "url": ListQuery(query.mode).url(key),
+            "url": list_url(query, key),
             "count": counts.get(key),
         }
         for key, spec in LISTS.items()

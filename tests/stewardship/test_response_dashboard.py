@@ -16,15 +16,20 @@ from django.http import QueryDict
 from django.template.loader import render_to_string
 from django.urls import reverse
 
+from parishkit.stewardship.reports.directories import DirectoryQuery
+from parishkit.stewardship.reports.directory_views import LINK_PRESETS
 from parishkit.stewardship.reports.response_dashboard import (
+    DIRECTORY_PRESETS,
     HOURLY_SPAN,
     DashboardQuery,
     at_grain,
     chosen_grain,
+    family_lists,
     figures,
     page_context,
     tiles,
 )
+from parishkit.stewardship.reports.response_lists import LISTS
 from parishkit.stewardship.web.dates import using
 
 from .test_chart_specs import metrics
@@ -34,6 +39,7 @@ CAMPAIGN = SimpleNamespace(
     pk=UUID(int=477), active_configuration=SimpleNamespace(name="Sample campaign")
 )
 PATH = reverse("admin:response_dashboard")
+DIRECTORY = reverse("admin:family_directory")
 # The dashboard region its switches refresh in place and land on (#519).
 REGION = "response-dashboard"
 
@@ -139,9 +145,13 @@ def test_page_shows_tiles_figures_and_both_charts():
     testing = f'<a href="{PATH}?mode=testing#{REGION}" data-in-place="mode-testing"'
     assert testing + ">Testing rehearsal" in page
     assert f'<div id="{REGION}" data-in-place-region>' in page
-    # The lists behind the counts are links with their lengths (#477, PR 5).
-    assert f'<a href="{PATH}submitted/">Families that submitted</a>: 3' in page
-    assert f'<a href="{PATH}data-quality/">ParishSoft data to check</a> <' in page
+    # The lists behind the counts are links with their lengths (#477, PR 5);
+    # in Production they open the directory's presets (#933).
+    submitted = "?response=submitted&amp;responses=yes&amp;sort=submitted"
+    assert f'<a href="{DIRECTORY}{submitted}">Families that submitted</a>: 3' in page
+    quality = f'<a href="{DIRECTORY}?check=anything">ParishSoft data to check</a> <'
+    assert quality in page
+    assert f"{PATH}submitted/" not in page
     # No Family name or DUID reaches the page: counts only.
     assert "family_duid" not in page
 
@@ -185,3 +195,43 @@ def test_no_invitations_yet_says_so_instead_of_shares():
     assert "No invitations have been delivered yet." in page
     assert "compared with invited" not in page
     assert "No invitations" not in render(value=metrics())
+
+
+def test_production_lists_open_the_directory_with_closed_presets():
+    """Each Production link is a directory preset the directory accepts in GET.
+
+    The presets reproduce every response list (#933): the Response choice
+    that lists the same funnel rows, its columns and its default order, which
+    the directory keeps because the sorted column is shown. Testing views
+    still link to the lists' own Testing views until the directory has one.
+    """
+    shown = family_lists(DashboardQuery(), metrics())
+    assert set(DIRECTORY_PRESETS) == set(LISTS)
+    assert [item["count"] for item in shown] == [3, 1, 1, 1, None]
+    queries = []
+    for item in shown:
+        path, _, preset = item["url"].partition("?")
+        values = QueryDict(preset)
+        assert path == DIRECTORY and set(values) <= LINK_PRESETS
+        query = DirectoryQuery.parse(values)
+        assert query.sort == values.get("sort", "name")
+        queries.append(query)
+    assert [(query.response, query.responses, query.check) for query in queries] == [
+        ("submitted", "yes", "any"),
+        ("started", "yes", "any"),
+        ("never-opened", "yes", "any"),
+        ("more-than-once", "yes", "any"),
+        ("any", "no", "anything"),
+    ]
+    assert [query.sort for query in queries] == [
+        "submitted",
+        "name",
+        "name",
+        "submissions_desc",
+        "name",
+    ]
+    testing = family_lists(DashboardQuery("testing"), metrics())
+    assert all(
+        item["url"].startswith(PATH) and "mode=testing" in item["url"]
+        for item in testing
+    )

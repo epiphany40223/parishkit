@@ -1,8 +1,10 @@
 """Synthetic directory data rendered with production templates and native forms."""
 
 from datetime import UTC, datetime
+from urllib.parse import urlencode
 from uuid import UUID
 
+from django.http import QueryDict
 from django.template.loader import render_to_string
 from django.urls import reverse
 
@@ -19,6 +21,8 @@ from parishkit.stewardship.reports.directories import (
     response_columns,
 )
 from parishkit.stewardship.reports.directory_documents import export_headings
+from parishkit.stewardship.reports.directory_views import page_address
+from parishkit.stewardship.reports.response_dashboard import DIRECTORY_PRESETS
 from parishkit.stewardship.source.family_names import family_heads_name
 from parishkit.stewardship.web.tables import report_table
 
@@ -99,6 +103,10 @@ def components(context, admin):
         "checks": CHECKS,
         "column_count": 7,
         "report_url": reverse("admin:family_directory"),
+        # A search is applied, so the address bar is the bare page.
+        "page_address": page_address(
+            reverse("admin:family_directory"), query, postal=False
+        ),
         "total": 51,
         "mutable": True,
         "request_key": UUID(int=81),
@@ -206,6 +214,7 @@ def components(context, admin):
         | mailing
         | {"table": _table([], 0, "yes"), "total": 0},
     }
+    pages.update(preset_pages(values | code_list, invited))
     return {
         path: (
             "text/html",
@@ -215,3 +224,44 @@ def components(context, admin):
         )
         for path, data in pages.items()
     }
+
+
+def preset_pages(values, counted):
+    """The directory as each response dashboard list link opens it (#933).
+
+    Keyed by the link's own address (the directory with its closed presets
+    in the query), so a click on the dashboard lands here. Each page is
+    shaped from the preset the view would parse: its Response and data
+    check choices, its response columns and one Family with those values.
+    """
+    pages = {}
+    for preset in DIRECTORY_PRESETS.values():
+        query = DirectoryQuery.parse(QueryDict(urlencode(preset)))
+        dates, counts = (
+            response_columns(query.response) if query.responses == "yes" else ((), ())
+        )
+        checks = query.check != "any"
+        row = values["table_rows"][0] | {
+            "date_cells": [(column, counted) for column in dates],
+            "count_cells": [1 for _ in counts],
+            "checks": ["Envelope number 0"] if checks else [],
+        }
+        url = reverse("admin:family_directory") + "?" + urlencode(preset)
+        pages[url] = values | {
+            "query": query,
+            "query_fields": query.form_values() | {"mailing": "no"},
+            "metadata": values["metadata"]
+            | {"counted_at": counted if query.response != "any" else None},
+            "date_columns": dates,
+            "count_columns": counts,
+            "column_count": 7 + len(dates) + len(counts) + int(checks),
+            "export_headings": export_headings(
+                postal=False, reach="any", dates=dates, counts=counts, checks=checks
+            ),
+            "table": _table([row], 1, "no", query),
+            "total": 1,
+            "page_address": page_address(
+                reverse("admin:family_directory"), query, postal=False
+            ),
+        }
+    return pages
