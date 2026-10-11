@@ -35,6 +35,8 @@ CELL_COLOURS = BAR_COLOURS | {ACCENT}
 # The only inline styles a compiled report may carry.
 STYLES = {
     "caption": f"margin:0 0 20px;font-size:14px;color:{MUTED};",
+    # The daily digest's as-of line: body text, not a muted caption (#1016).
+    "as-of": f"margin:0 0 20px;font-size:16px;color:{INK};",
     "heading": f"margin:28px 0 12px;font-size:18px;line-height:1.3;color:{INK};",
     "rows": "border-collapse:collapse;margin:0 0 8px;",
     "label": f"padding:8px 16px 8px 0;font-size:16px;color:{INK};",

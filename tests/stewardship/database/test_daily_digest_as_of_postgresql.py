@@ -57,7 +57,7 @@ def test_digest_reports_previous_day_end_not_send_time(
     assert snapshot.submission_watermark == 1
     assert document.statistics.active.responses == 1
     # Every figure and the as-of line describe the end of the report day.
-    as_of = "All figures are as of the end of October 7, 2054 (EDT)."
+    as_of = "All data is as of the end of October 7, 2054 (EDT)."
     total = f"{day.cohort_denominator:,}"
     assert f"Families that have responded: 0 out of {total}" in content.text
     assert "First submissions that day: 0" in content.text
@@ -134,8 +134,11 @@ def test_the_production_saved_page_shows_the_emails_funnel(
             ]
 
         before = page_funnel()
+        # The digest's stages: "Link followed" is left out (#1016).
         assert [row[1] for row in before] == [
-            f"{stage.count:,}" for stage in document.funnel.stages
+            f"{stage.count:,}"
+            for stage in document.funnel.stages
+            if stage.key != "link_followed"
         ]
         assert before[-1][:2] == ("Submitted", "1")
     # Activity after the cutoff: the next morning the Family signs in again
