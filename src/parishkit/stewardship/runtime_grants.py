@@ -298,7 +298,9 @@ MEMBER_NAMES_FOR_FUNCTION = "stewardship_member_names_for_v1(text, text, uuid)"
 # Ministries the table shows, and a count of leaders with no usable address.
 # It takes no address, so it is no oracle; it answers only a live
 # Administrator session (the same check, and the same #995 caveat, as the
-# Name lookup) and audits every call with the number of rows.
+# Name lookup) and audits every call with the number of rows. It has no
+# rate cap, deliberately: one call already returns everything, so repeated
+# calls disclose nothing more; the audit and #995 are the protections.
 LEADERS_WITHOUT_USER_FUNCTION = "stewardship_leaders_without_user_v1(text, uuid)"
 # Each definer routine above that a migration in the users swap's closure
 # creates (#952), with that migration. `migrate --users-upgrade-base` leaves
