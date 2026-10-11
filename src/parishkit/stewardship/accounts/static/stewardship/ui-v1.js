@@ -2559,20 +2559,20 @@
   // A field marked data-show-when="name=value" is shown only while the form's
   // control called "name" has that value, e.g. the daily refresh time only
   // for the once-a-day frequency; "name!=value" shows it for every other
-  // value, e.g. a contact attempt's date only once a channel is chosen, or
-  // the confirmation to reopen information follow-up only once "Follow-up
-  // completed" is unticked. On a field the mark hides its enclosing div; on a
-  // div (a group of fields, as in Ministry follow-up) it hides that div and
-  // every control inside it. Hidden fields are disabled so they are not
-  // sent, and the server ignores whatever does not apply in any case. A
-  // browser can restore form values
-  // without a change event (the back/forward cache, or autofill after load),
-  // so every rule is applied again on pageshow, not only at load.
+  // value, e.g. the confirmation to reopen information follow-up only once
+  // "Follow-up completed" is unticked. On a field the mark hides its
+  // enclosing div; on a div (a group of fields) it hides that div and every
+  // control inside it. Hidden fields are disabled so they are not sent, and
+  // the server ignores whatever does not apply in any case. A browser can
+  // restore form values without a change event (the back/forward cache, or
+  // autofill after load), so every rule is applied again on pageshow, not
+  // only at load.
   //
   // data-enabled-when takes the same rule but never hides: the field stays
   // where it is, disabled (greyed and not sent) while the rule does not
   // hold, so choosing a value moves nothing on the page (no layout shift,
-  // #953: the System logs level boxes while Sign-in activity is chosen).
+  // #953: the System logs level boxes while Sign-in activity is chosen; the
+  // Ministry follow-up outcome and contact details, #1014).
   //
   // Both this and the complete-before-submit gate are wired for the page and
   // again for content an in-place swap brings in (a follow-up form saved or
@@ -2738,7 +2738,7 @@
         limit();
         const error = document.getElementById(errorId);
         const source = error && !error.hidden ? error.dataset.source : null;
-        // A hidden contact group's fields are disabled and not sent. The
+        // A greyed contact field is disabled and not sent. The
         // time is typed in any common form (#398), so it is read as the
         // server reads it; an entry that cannot be read yet counts as no
         // time (its own refusal holds Save).

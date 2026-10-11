@@ -10,7 +10,7 @@ from django.urls import reverse
 from parishkit.stewardship.reports.ministry_followup_views import change_values
 from parishkit.stewardship.reports.report_paging import pop_navigation
 
-from .waits import has_text, visible
+from .waits import available, greyed, has_text, visible
 
 # The instant every follow-up fixture shows (followup_components.py).
 FIXTURE = datetime(2026, 9, 19, 15, 4, tzinfo=UTC)
@@ -98,9 +98,10 @@ def test_followup_mobile_keyboard_and_accessibility(
     assert page.get_by_role("button", name="Save follow-up").is_disabled()
 
 
-def test_followup_form_shows_only_the_fields_that_apply(page, component_origin):
-    """Outcome appears only for Resolved and the contact details only once a
-    channel is chosen; hidden fields are disabled, so they are not sent."""
+def test_followup_form_enables_only_the_fields_that_apply(page, component_origin):
+    """Outcome is available only for Resolved and the contact details only
+    once a channel is chosen; otherwise they stay in place, greyed (#1014),
+    and disabled fields are not sent."""
     page.goto(component_origin + "/followup-item")
     outcome = page.get_by_label("Outcome", exact=True)
     date, time = (
@@ -111,20 +112,18 @@ def test_followup_form_shows_only_the_fields_that_apply(page, component_origin):
     status, how = page.get_by_label("Status"), page.get_by_label("How")
     # The request loads as New with no contact attempt chosen.
     for field in (outcome, date, time, happened):
-        assert not field.is_visible() and field.is_disabled()
+        greyed(field)
     visible(page.get_by_label("Notes (optional; needed only for the outcome Other)"))
     status.select_option("resolved")
-    visible(outcome)
-    assert outcome.is_enabled()
+    available(outcome)
     status.select_option("closed_no_response")
-    assert not outcome.is_visible() and outcome.is_disabled()
+    greyed(outcome)
     how.select_option("phone")
     for field in (date, time, happened):
-        visible(field)
-        assert field.is_enabled()
+        available(field)
     how.select_option("")
     for field in (date, time, happened):
-        assert not field.is_visible() and field.is_disabled()
+        greyed(field)
     # Only the fields that apply are sent.
     status.select_option("in_progress")
     page.route("**/record/", lambda route: route.fulfill(body="Saved"))
@@ -240,7 +239,7 @@ def test_followup_fields_follow_a_restored_status(page, component_origin):
     the error page, or autofill) is applied again on pageshow."""
     page.goto(component_origin + "/followup-item")
     outcome = page.get_by_label("Outcome", exact=True)
-    assert not outcome.is_visible()
+    greyed(outcome)
     page.evaluate(
         """() => {
         document.getElementById("followup-state").value = "resolved";
@@ -248,9 +247,8 @@ def test_followup_fields_follow_a_restored_status(page, component_origin):
         window.dispatchEvent(new Event("pageshow"));
     }"""
     )
-    visible(outcome)
-    assert outcome.is_enabled()
-    visible(page.get_by_label("Date", exact=True))
+    available(outcome)
+    available(page.get_by_label("Date", exact=True))
     assert page.get_by_role("button", name="Save follow-up").is_disabled()
 
 
@@ -322,7 +320,10 @@ def test_followup_contact_time_round_trips_in_browser_time(
         visible(note.get_by_text(f"time zone: {zone}.", exact=False))
         assert page.locator("[name=contact_zone]").input_value() == zone
         date = page.get_by_label("Date", exact=True)
-        assert date.get_attribute("aria-describedby") == "contact-zone-help"
+        assert (
+            date.get_attribute("aria-describedby")
+            == "contact-zone-help contact-details-help"
+        )
         page.get_by_label("Date", exact=True).fill("2026-09-19")
         page.get_by_label("Time", exact=True).fill(typed)
         page.route("**/record/", lambda route: route.fulfill(body="Saved"))
@@ -366,8 +367,8 @@ def test_followup_contact_waits_for_a_known_browser_zone(
     assert page.locator("[name=contact_zone]").input_value() == ""
     # Time is also described by its time-entry reading line (#398).
     for label, described in (
-        ("Date", "followup-save-hint"),
-        ("Time", "followup-save-hint contact-time_reading"),
+        ("Date", "followup-save-hint contact-details-help"),
+        ("Time", "followup-save-hint contact-details-help contact-time_reading"),
     ):
         field = page.get_by_label(label, exact=True)
         assert field.get_attribute("aria-describedby") == described

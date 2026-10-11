@@ -31,6 +31,26 @@ def hidden(locator):
     expect(locator).to_be_hidden()
 
 
+def greyed(locator):
+    """Assert that ``locator`` stays visible and becomes disabled, waiting.
+
+    A field that does not apply stays in place, greyed and not sent
+    (``data-enabled-when``), rather than hiding, so nothing moves (#1014).
+    """
+    from playwright.sync_api import expect
+
+    expect(locator).to_be_visible()
+    expect(locator).to_be_disabled()
+
+
+def available(locator):
+    """Assert that ``locator`` is visible and becomes enabled, waiting."""
+    from playwright.sync_api import expect
+
+    expect(locator).to_be_visible()
+    expect(locator).to_be_enabled()
+
+
 def has_attribute(locator, name, value):
     """Assert that ``locator`` gets attribute ``name`` equal to ``value``, waiting.
 
