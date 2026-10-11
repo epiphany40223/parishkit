@@ -270,6 +270,7 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/background",
         "/deliveries",
         "/delivery",
+        "/delivery-note-only",
         "/delivery-refusals",
         "/delivery-refusal",
         "/delivery-error",

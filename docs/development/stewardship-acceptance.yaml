@@ -100,6 +100,7 @@ sections:
     "Outgoing mail": [ADM-06]
     "Sending limit note": [ADM-06]
     "Fix many emails at once": [ADM-06]
+    "Mail message page": [ADM-06]
     "Refused addresses": [ADM-06]
     "Family portal maintenance": [ADM-06]
     "Reopen and archive": [ADM-06]
