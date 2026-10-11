@@ -79,6 +79,7 @@ echo "Log: $log"
 # the maintenance page stays up until the run is repeated or the other
 # direction is taken (runbook, step 6 and Rollback).
 phase=prepare
+resumed=0
 work=$(mktemp -d)
 finish() {
     rc=$?
@@ -86,15 +87,24 @@ finish() {
     if [ "$rc" -ne 0 ]; then
         case "$phase" in
             prepare) echo "==> Failed before anything stopped; nothing changed." ;;
-            background)
+            background | stopped) if [ "$resumed" = 1 ]; then
+                # Web was already down when this run began (below): the
+                # database may be in a state the services refuse, so nothing
+                # is started and the maintenance page stays up.
+                echo "==> Failed before the retarget, with web already stopped when this run began:"
+                echo "    nothing is started; caddy serves the maintenance page. Re-run with the same"
+                echo "    digest (with the STEWARDSHIP_USERS_* variables if the release notes announce"
+                echo "    the users upgrade), or roll back (runbook, Rollback)."
+            elif [ "$phase" = background ]; then
                 echo "==> Failed before web stopped; restarting the background services."
-                restart_background ;;
-            stopped)
+                restart_background
+            else
                 # Nothing was retargeted, so the current release's documents
                 # are intact: start every online service of the file again,
                 # including any that restarted meanwhile and was stopped too.
                 echo "==> Failed with web stopped but nothing retargeted; starting everything again."
-                "${dc[@]}" up --detach --wait "${wanted[@]}" 2>&1 | quiet || true ;;
+                "${dc[@]}" up --detach --wait "${wanted[@]}" 2>&1 | quiet || true
+            fi ;;
             offline)
                 echo "==> Failed with web stopped: caddy serves the maintenance page."
                 if [ "$mode" = rollback ]; then
@@ -201,6 +211,16 @@ if [ "$profile" = local ]; then image_id=${image##*:}; else image_id=${image##*s
 # shellcheck disable=SC2207 # service names hold no whitespace
 wanted=($("${dc[@]}" config --services | grep -vxE 'postgres|valkey' || true))
 [ "${#wanted[@]}" -gt 0 ] || { echo "$(basename "$compose") lists no online services; refusing." >&2; exit 1; }
+# A run that finds web stopped repeats one that ended with the maintenance
+# page up, most often a users upgrade stopped in step 4 (#952) with only the
+# users swap pending, which every online service refuses. Such a run never
+# starts a service before its own step 6: a failure before the retarget
+# leaves the maintenance page up rather than starting services into a state
+# they refuse (or restarting what was down for another reason).
+running=$("${dc[@]}" ps --services --status running || true)
+grep -qxF web <<<"$running" || resumed=1
+[ "$resumed" = 0 ] ||
+    echo "    web is not running: repeating a run that left the maintenance page up; a failure before the retarget starts nothing"
 
 database=$(jq -er '.deployment.postgres.name' "$services/web.yaml")
 origin=$(jq -er '.deployment.public_origin' "$services/web.yaml")
@@ -368,7 +388,9 @@ step "1. Stopping the background services (web keeps serving)"
 background=$("${dc[@]}" ps --services --status running | grep -vxE 'web|caddy|postgres|valkey' || true)
 restart_background() {
     # Abandon the run before anything was retargeted: bring the services
-    # that were stopped back.
+    # that were stopped back, unless web was already down when the run
+    # began (a repeated run; see `resumed`), when nothing is started.
+    [ "$resumed" = 0 ] || return 0
     # shellcheck disable=SC2086
     [ -z "$background" ] || "${dc[@]}" up --detach --wait $background 2>&1 | quiet || true
 }
@@ -487,10 +509,11 @@ if [ "$mode" = upgrade ]; then
             if ! "${dc[@]}" "${recovery[@]}" --operation-id "$STEWARDSHIP_USERS_OPERATION" \
                 --operator-name "$STEWARDSHIP_USERS_OPERATOR" --reason "$STEWARDSHIP_USERS_REASON" \
                 --confirm-administrators "$STEWARDSHIP_USERS_ADMINISTRATORS" 2>&1 | tail -1; then
-                echo "The users upgrade did not apply; the configuration keeps its sign-in rules" >&2
-                echo "and the new sign-in functions were not installed. Admin-access recovery works" >&2
-                echo "on this schema (runbook, Users upgrade). Repeat the run with the same operation" >&2
-                echo "to resume it, or with a new one after a refusal." >&2
+                echo "The users upgrade did not complete: the new sign-in functions were not installed" >&2
+                echo "and, unless the conversion activated before it stopped, the configuration keeps" >&2
+                echo "its sign-in rules. Admin-access recovery works on this schema (runbook, Users" >&2
+                echo "upgrade). Repeat the run with the same operation to resume it, or with a new" >&2
+                echo "one after a refusal." >&2
                 exit 1
             fi
             step "4. Migration after the users upgrade"

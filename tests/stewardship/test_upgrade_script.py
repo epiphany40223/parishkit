@@ -235,6 +235,10 @@ def test_the_optional_variables_reach_the_host(tmp_path):
 # service list the re-rendered Compose file has after a retarget;
 # FAKE_MIGRATE_FAIL makes the full migration fail (as the users swap does on
 # an unconverted configuration) and FAKE_USERS_FAIL the users conversion.
+# The users swap's pending state is kept in FAKE_STATE/swap_pending: the base
+# migration, or a full one that fails, leaves it; a full one that succeeds
+# clears it; and while it lasts every `up` is refused (recorded in
+# FAKE_STATE/refused), as every online service refuses that schema.
 # `retarget-image` rewrites compose.json and the three role documents as
 # the real command would, so the final checks read what the run itself
 # wrote. For the local mode: FAKE_OFFSITE is the off-site state the backup
@@ -277,6 +281,10 @@ case "$*" in
             mv "$stopped.new" "$stopped"
         fi ;;
     *" up --detach "*)
+        if [ -e "$FAKE_STATE/swap_pending" ]; then
+            echo "$*" >>"$FAKE_STATE/refused"
+            exit 1
+        fi
         if [ -n "$FAKE_WEB_FAIL" ] && [[ " $* " == *" web "* ]]; then exit 1; fi
         for s in "$@"; do
             grep -vxF "$s" "$stopped" >"$stopped.new" || true
@@ -336,8 +344,16 @@ case "$*" in
                 >"$(dirname "$FAKE_COMPOSE")/$role.yaml"
         done
         touch "$FAKE_STATE/retargeted" ;;
+    *" run --rm -T migration migrate --config "*" --users-upgrade-base")
+        touch "$FAKE_STATE/swap_pending"
+        echo "migrated to the base" ;;
     *" run --rm -T migration")
-        [ -z "$FAKE_MIGRATE_FAIL" ] || { echo "Migration 0052 refused" >&2; exit 1; }
+        if [ -n "$FAKE_MIGRATE_FAIL" ]; then
+            touch "$FAKE_STATE/swap_pending"
+            echo "Migration 0052 refused" >&2
+            exit 1
+        fi
+        rm -f "$FAKE_STATE/swap_pending"
         echo "migrated" ;;
     *" upgrade-users "*"--operation-id "*)
         [ -z "$FAKE_USERS_FAIL" ] || { echo "upgrade refused" >&2; exit 1; }
@@ -358,51 +374,12 @@ exit 0
 """
 
 
-def run_host(
-    tmp_path,
-    mode,
-    *,
-    noop="t",
-    status=0,
-    kept=None,
-    bulk=True,
-    prepare=None,
-    profile=None,
-    clock="normal",
-    image=None,
-    env=None,
-    **fake,
-):
-    """Run the host half against the stand-ins.
-
-    Returns the recorded docker calls, the combined output and the runtime
-    root. `noop` is the upgrade check's answer; `status` the exit status
-    the script must end with; `kept` is the content of a kept static tree
-    for the target digest, when there is one; `bulk` sets the deployment's
-    bulk Family send switch; `prepare(root)` may alter the runtime root
-    before the run; `fake` sets the stand-in's FAKE_* switches. `profile`
-    None runs the eight-argument Production invocation; "local" appends
-    `local BUILD` and lays the root out as the local environment's `up`
-    leaves it (marker, LOCAL deployment YAML, clock-mode marker saying
-    `clock`, the override file in fake mode) with `image` (default a LOCAL
-    tag) as the target; any other value is passed through as the profile.
-    `env` adds to the script's environment.
-    """
-    if shutil.which("jq") is None or shutil.which("sha256sum") is None:
-        # The runner has both; only the in-image run (which does not see
-        # this variable) may skip, as the dev deploy tests do.
-        if os.environ.get("GITHUB_ACTIONS") == "true":
-            pytest.fail(
-                "the CI runner lacks jq or sha256sum; host-half tests cannot run"
-            )
-        pytest.skip("the host-side script needs jq and sha256sum")
+def lay_out(tmp_path, local, current, target, clock, bulk, kept, prepare):
+    """Lay the runtime root out as a set-up deployment, before the first run."""
     root = tmp_path / "root"
     services = root / "config" / "services"
     services.mkdir(parents=True)
     (services / "Caddyfile").write_text("caddy\n")
-    local = profile == "local"
-    current = LOCAL_CURRENT if local else CURRENT
-    target = image or (LOCAL_TARGET if local else TARGET)
     (services / "compose.json").write_text(
         json.dumps({"services": {"web": {"image": current}}})
     )
@@ -446,6 +423,61 @@ def run_host(
         (root / "cache" / f"static.{hex_}" / "kept.js").write_text(kept)
     if prepare is not None:
         prepare(root)
+    (tmp_path / "state").mkdir()
+    (tmp_path / "logs").mkdir()
+    (tmp_path / "docker.log").touch()
+
+
+def run_host(
+    tmp_path,
+    mode,
+    *,
+    noop="t",
+    status=0,
+    kept=None,
+    bulk=True,
+    prepare=None,
+    profile=None,
+    clock="normal",
+    image=None,
+    env=None,
+    again=False,
+    **fake,
+):
+    """Run the host half against the stand-ins.
+
+    Returns the recorded docker calls, the combined output and the runtime
+    root. `noop` is the upgrade check's answer; `status` the exit status
+    the script must end with; `kept` is the content of a kept static tree
+    for the target digest, when there is one; `bulk` sets the deployment's
+    bulk Family send switch; `prepare(root)` may alter the runtime root
+    before the run; `fake` sets the stand-in's FAKE_* switches. `profile`
+    None runs the eight-argument Production invocation; "local" appends
+    `local BUILD` and lays the root out as the local environment's `up`
+    leaves it (marker, LOCAL deployment YAML, clock-mode marker saying
+    `clock`, the override file in fake mode) with `image` (default a LOCAL
+    tag) as the target; any other value is passed through as the profile.
+    `env` adds to the script's environment. `again` repeats a run in the
+    same `tmp_path`, keeping the runtime root and the stand-in's state as
+    the earlier run left them (the other layout arguments are then unused).
+    """
+    if shutil.which("jq") is None or shutil.which("sha256sum") is None:
+        # The runner has both; only the in-image run (which does not see
+        # this variable) may skip, as the dev deploy tests do.
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            pytest.fail(
+                "the CI runner lacks jq or sha256sum; host-half tests cannot run"
+            )
+        pytest.skip("the host-side script needs jq and sha256sum")
+    root = tmp_path / "root"
+    services = root / "config" / "services"
+    local = profile == "local"
+    current = LOCAL_CURRENT if local else CURRENT
+    target = image or (LOCAL_TARGET if local else TARGET)
+    yaml = tmp_path / "deployment.yaml"
+    build = tmp_path / "build"
+    if not again:
+        lay_out(tmp_path, local, current, target, clock, bulk, kept, prepare)
     bin_dir = tmp_path / "bin"
     executable_stub(bin_dir, "docker", FAKE_DOCKER)
     # Root-only `install -o`, real waiting and the public-origin probe are
@@ -463,14 +495,12 @@ def run_host(
     # coreutils timeout is Linux-only here; the stand-in just runs the command.
     executable_stub(bin_dir, "timeout", 'shift; exec "$@"')
     state = tmp_path / "state"
-    state.mkdir()
     logs = tmp_path / "logs"
-    logs.mkdir()
     log = tmp_path / "docker.log"
-    log.touch()
     project = "parishkit-local" if local else "stewardship"
     trailing = [] if profile is None else [profile, str(build)]
     override = str(services / "compose.faketime.json") if clock == "fake" else ""
+    calls_before = len(log.read_text().splitlines())
     result = subprocess.run(
         [
             "bash",
@@ -506,11 +536,14 @@ def run_host(
     output = result.stdout + result.stderr
     assert result.returncode == status, output
     # The whole log is also kept on the host, named after the mode (a usage
-    # error ends before the log opens).
+    # error ends before the log opens). A repeated run in the same second
+    # appends to the earlier run's file.
     kept_logs = list(logs.glob(f"stewardship-{mode}-*.log"))
     if status != 2:
-        assert len(kept_logs) == 1 and "Log: " in kept_logs[0].read_text()
-    return log.read_text().splitlines(), output, root
+        assert kept_logs and all("Log: " in path.read_text() for path in kept_logs)
+        assert again or len(kept_logs) == 1
+    # Only this run's docker calls.
+    return log.read_text().splitlines()[calls_before:], output, root
 
 
 def first(calls, fragment):
@@ -1217,7 +1250,7 @@ def test_a_refused_conversion_stops_before_the_swap_with_web_down(tmp_path):
         users_fail=True,
         env=USERS,
     )
-    assert "The users upgrade did not apply" in output
+    assert "The users upgrade did not complete" in output
     assert "Admin-access recovery works" in output
     assert "caddy serves the maintenance page" in output
     assert not any(call.endswith("run --rm -T migration") for call in calls)
@@ -1256,3 +1289,114 @@ def test_the_laptop_half_passes_the_users_inputs_only_when_set(tmp_path):
     result, calls, _ = run_local(tmp_path / "rollback", "--rollback", env=USERS)
     assert result.returncode == 1 and calls == []
     assert "A rollback never converts" in result.stderr
+
+
+# Each way a users-release run can stop in step 4 with the base migration
+# applied (only the users swap pending): the first run's FAKE_* switches,
+# environment and exit status, and what its output says.
+STOPPED_IN_STEP_4 = {
+    "without the users inputs": (
+        dict(migrate_fail=True),
+        {},
+        1,
+        "repeat the run with the",
+    ),
+    "a refused conversion": (
+        dict(users_fail=True),
+        USERS,
+        1,
+        "The users upgrade did not complete",
+    ),
+    "a failed final migration": (
+        dict(migrate_fail=True),
+        USERS,
+        1,
+        "Migration 0052 refused",
+    ),
+}
+
+
+def stopped_in_step_4(tmp_path, case):
+    """Run the first, failing upgrade; return its root with the swap pending."""
+    fake, env, status, message = STOPPED_IN_STEP_4[case]
+    calls, output, root = run_host(
+        tmp_path,
+        "upgrade",
+        noop="f",
+        status=status,
+        schema_change="1",
+        env=env,
+        **fake,
+    )
+    assert message in output
+    assert "caddy serves the maintenance page" in output
+    assert (tmp_path / "state" / "swap_pending").exists()
+    assert not any(" up --detach " in call for call in calls)
+    return root
+
+
+@pytest.mark.parametrize("case", sorted(STOPPED_IN_STEP_4))
+def test_a_repeated_run_finishes_the_users_upgrade_after_step_4_stopped(tmp_path, case):
+    """The repeat backs up, converts and migrates, and only then starts anything.
+
+    Web is already down when it begins, so it says so; its step-1 backup
+    runs on the swap-pending schema (the backup command admits it); and no
+    service is started until the full migration cleared the pending swap.
+    """
+    stopped_in_step_4(tmp_path, case)
+    calls, output, _ = run_host(
+        tmp_path, "upgrade", noop="f", schema_change="1", env=USERS, again=True
+    )
+    assert "web is not running: repeating a run" in output
+    assert "(same digest: re-running the upgrade)" in output
+    backup = first(calls, "backup-worker")
+    convert = first(calls, "--operation-id ")
+    full = next(
+        i for i, call in enumerate(calls) if call.endswith("run --rm -T migration")
+    )
+    assert backup < first(calls, " retarget-image ") < convert < full
+    assert full < first(calls, " up --detach ")
+    assert not (tmp_path / "state" / "refused").exists()
+    assert f"Upgraded to {TARGET} in" in output
+
+
+@pytest.mark.parametrize(
+    ("fake", "phase"),
+    [
+        (dict(backup_fail=True), "backup"),
+        (dict(stop_fail=True), "stop web"),
+        (dict(retarget_fail=True), "retarget"),
+    ],
+)
+def test_a_repeated_run_that_fails_before_the_retarget_starts_nothing(
+    tmp_path, fake, phase
+):
+    """Web was down when the repeat began, so no failure starts a service.
+
+    Before this rule, a failed stop started every service and a failed
+    backup restarted the background ones, into a schema they refuse.
+    """
+    stopped_in_step_4(tmp_path, "a refused conversion")
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        noop="f",
+        status=1,
+        schema_change="1",
+        env=USERS,
+        again=True,
+        **fake,
+    )
+    assert not any(" up --detach " in call for call in calls), phase
+    assert not (tmp_path / "state" / "refused").exists(), phase
+    assert "caddy serves the maintenance page" in output, phase
+    assert "restarting the background services" not in output, phase
+    assert "starting everything again" not in output, phase
+
+
+def test_a_normal_run_still_restarts_what_it_stopped(tmp_path):
+    """With web up when the run began, an abandoned backup restarts the rest."""
+    calls, output, _ = run_host(tmp_path, "upgrade", status=1, backup_fail=True)
+    assert "web is not running" not in output
+    assert "restarting the background services" in output
+    assert any(" up --detach --wait worker" in call for call in calls)
