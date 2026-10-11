@@ -47,7 +47,8 @@ from parishkit.stewardship.storage import StaleRecordError
 from .check import CHECK_SECONDS, check_archive
 
 # The advisory lock that keeps archive Reviews one at a time (key, slot).
-REVIEW_LOCK = (736247, 1)
+# Its key is used nowhere else (736247 is taken by the Users chain's 0053).
+REVIEW_LOCK = (736248, 1)
 # How long a Review's preview may be applied: the preview lifetime of
 # configuration changes (admin-portal spec, "Preview lifetimes").
 PREVIEW_SECONDS = 15 * 60
