@@ -205,7 +205,10 @@ form stopped offering talents
 ([#970](https://github.com/epiphany40223/parishkit/issues/970)), so the value
 is inert history: it is still validated when present and still part of the
 Family form's definition digest, so forms issued earlier still verify, but
-nothing offers or edits it.
+nothing offers or edits it. The database no longer reads it: migration 0056
+dropped the built-in talent defaults function, and the response guard
+accepts only an empty `talents` map on each new response's Member entries.
+Submitted responses keep whatever talents they recorded.
 
 Every configurable Campaign field above is materialized from and references the
 exact `AppliedConfigurationVersion` that defined it. Lifecycle state, global

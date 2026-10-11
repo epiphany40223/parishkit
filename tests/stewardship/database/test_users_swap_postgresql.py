@@ -241,6 +241,19 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
     check_passes()
 
 
+# Objects a later closure migration's frozen file creates with plain CREATE,
+# which a full migration would otherwise fail to create again: #970's 0056
+# follows 0055 (#993), so it is in the swap's closure too. Each is dropped
+# while the swap is pending and, unless the test's full migration made it
+# again, installed again afterwards from its migration's frozen file.
+CLOSURE_CREATED = {
+    "public.stewardship_limitations_report_v1(uuid,jsonb)": (
+        "stewardship_reports",
+        "0013_retire_talents",
+    ),
+}
+
+
 @contextmanager
 def swap_pending():
     """Put the database in the state `migrate --users-upgrade-base` leaves.
@@ -253,16 +266,16 @@ def swap_pending():
     Afterwards the swap's own statements (everything before its closing
     check) and its row are put back: a transactional test's flush touches
     neither function bodies nor that table, so later tests would otherwise
-    see this state.
+    see this state. Each ``CLOSURE_CREATED`` object is dropped meanwhile.
     """
     from django.db.migrations.loader import MigrationLoader
 
     # The swap and every later migration that depends on it are pending
     # then (a later one, such as 0053's Name lookup, keeps its objects:
     # nothing here reads them).
-    closure = sorted(
-        runtime_database.users_swap_closure(MigrationLoader(connection).graph)
-    )
+    loader = MigrationLoader(connection)
+    closure = sorted(runtime_database.users_swap_closure(loader.graph))
+    assert set(CLOSURE_CREATED.values()) <= set(closure)
     removed = []
     with transaction.atomic(), connection.cursor() as cursor:
         for app, name in closure:
@@ -275,12 +288,19 @@ def swap_pending():
         assert USERS_SWAP in {(app, name) for app, name, _ in removed}
         for definition in old_definitions().values():
             cursor.execute(definition)
+        for function in CLOSURE_CREATED:
+            cursor.execute(f"DROP FUNCTION {function}")
     try:
         yield
     finally:
         with transaction.atomic(), connection.cursor() as cursor:
             cursor.execute("RESET SESSION AUTHORIZATION")
             cursor.execute(SWAP[: SWAP.index("DO $check$")])
+            for function, key in CLOSURE_CREATED.items():
+                cursor.execute("SELECT to_regprocedure(%s)", [function])
+                if cursor.fetchone()[0] is None:
+                    module = sys.modules[loader.disk_migrations[key].__module__]
+                    cursor.execute(Path(module.FROZEN_SQL).read_text(encoding="utf-8"))
             for app, name, applied in removed:
                 # A test that ran the full migration recorded the row again.
                 cursor.execute(

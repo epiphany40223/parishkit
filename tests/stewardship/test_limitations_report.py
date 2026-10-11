@@ -1,8 +1,8 @@
 """Limitations report shaping and exports (#247 follow-up, #970).
 
-The report was "Talents and limitations"; no campaign offers talents now, so
-it lists only the limitations, and older answers' stored talents are left
-out of the page and its downloads.
+The report was "Talents and limitations"; since #970 it lists only the
+limitations, and its SQL (``stewardship_limitations_report_v1``) neither
+lists nor counts older answers' stored talents.
 """
 
 import csv
@@ -38,7 +38,7 @@ MEMBER_HEADINGS = [
 FAMILY_HEADINGS = ["Family", "Family DUID", "Latest response"]
 
 
-def result(talents, counts, *, cannot_serve=True):
+def result():
     """A raw SQL projection with one Member and one Family."""
     return {
         "members": [
@@ -47,38 +47,22 @@ def result(talents, counts, *, cannot_serve=True):
                 "family_duid": 10,
                 "member_name": "Alex Example",
                 "proposed": False,
-                "cannot_serve": cannot_serve,
-                "talents": talents,
+                "cannot_serve": True,
                 "submitted_at": WHEN,
             }
         ],
         "families": [
             {"family_name": "Example", "family_duid": 10, "submitted_at": WHEN}
         ],
-        "summary": {
-            "members": 1,
-            "cannot_serve": int(cannot_serve),
-            "cannot_attend": 1,
-            "talents": counts,
-        },
+        "summary": {"cannot_serve": 1, "cannot_attend": 1},
     }
 
 
-def test_stored_talents_are_left_out_and_only_limitations_listed():
-    """Stored talents never show (#970).
-
-    A Member the SQL lists only for a talent an earlier response chose is left
-    out; a Member who cannot participate stays, and no row or summary keeps
-    the stored talents.
-    """
-    raw = result({PAINTER: ""}, {PAINTER: 2}, cannot_serve=False)
-    raw["members"].append(
-        raw["members"][0] | {"member_name": "Sam Example", "cannot_serve": True}
-    )
-    raw["summary"] |= {"members": 2, "cannot_serve": 1}
-    shaped = shape_result(raw)
-    assert [row["member_name"] for row in shaped["members"]] == ["Sam Example"]
-    assert "talents" not in shaped["members"][0]
+def test_shaping_parses_response_times_and_keeps_the_summary():
+    """The SQL rows pass through with parsed times; the summary is as read."""
+    shaped = shape_result(result())
+    assert shaped["members"][0]["submitted_at"].isoformat() == WHEN
+    assert shaped["families"][0]["submitted_at"].isoformat() == WHEN
     assert shaped["summary"] == {"cannot_serve": 1, "cannot_attend": 1}
 
 
@@ -89,7 +73,7 @@ def test_downloads_keep_the_limitations_columns():
     #966): the Members table leads with the Member, and the Families table
     has no constant Cannot attend Mass column.
     """
-    shaped = shape_result(result({PAINTER: ""}, {PAINTER: 1}))
+    shaped = shape_result(result())
     rows = list(csv.reader(io.StringIO(limitations_csv(shaped, UTC).decode())))
     assert rows[0] == MEMBER_HEADINGS
     assert rows[1] == ["Alex Example", "Example", "10", "Yes", WHEN]
@@ -108,7 +92,7 @@ def test_pdf_prints_both_tables_with_the_csv_columns_and_rows(monkeypatch):
     own page, and one frame names the parish, campaign and both counts.
     """
     zone = ZoneInfo("America/Chicago")
-    raw = result({}, {})
+    raw = result()
     raw["members"][0]["member_name"] = "=cmd"
     shaped = shape_result(raw)
     drawn, original = [], pdf_design.table_pages
@@ -151,7 +135,7 @@ def test_pdf_prints_both_tables_with_the_csv_columns_and_rows(monkeypatch):
 
 def test_exports_keep_formula_text_literal():
     """A parish-typed name such as =cmd is never a spreadsheet formula."""
-    shaped = shape_result(result({}, {}))
+    shaped = shape_result(result())
     shaped["members"][0]["member_name"] = "=cmd"
     rows = list(csv.reader(io.StringIO(limitations_csv(shaped, UTC).decode())))
     assert rows[1][0] == "'=cmd"
@@ -166,7 +150,7 @@ def test_xlsx_escapes_control_characters_in_source_names():
     openpyxl rejects characters XML 1.0 forbids, so a raw write raised and the
     download failed. The shared writer escapes them reversibly instead.
     """
-    raw = result({}, {})
+    raw = result()
     raw["members"][0]["member_name"] = "Alex\x0bExample"
     raw["families"][0]["family_name"] = "Example\x0b"
     shaped = shape_result(raw)
@@ -202,7 +186,7 @@ def page(raw, paging=None):
 
 def test_report_page_is_named_limitations_and_never_shows_talents():
     """The page is "Limitations", with no talent column, count or filter."""
-    html = page(result({PAINTER: ""}, {PAINTER: 1}))
+    html = page(result())
     assert "<h1>Limitations</h1>" in html
     assert "talent" not in html.casefold()
     assert '<select id="limitations-filter" name="show">' in html
@@ -211,11 +195,10 @@ def test_report_page_is_named_limitations_and_never_shows_talents():
 
 
 def test_the_show_filter_takes_only_the_limitation_words():
-    """The Show filter is closed; the SQL still names it ``talent``."""
+    """The Show filter is closed, and the SQL takes the same parameters."""
     for word in ("any", "cannot_serve", "cannot_attend"):
         query = LimitationsQuery.parse({"search": "Alex", "show": word})
         assert query.form_values() == {"search": "Alex", "show": word}
-        assert query.sql_parameters() == {"search": "Alex", "talent": word}
     # A talent's id (the filter's old values) and the old field name are
     # refused, as any other unknown filter is.
     for invalid in ({"show": PAINTER}, {"talent": "any"}, {"show": "talents"}):
@@ -226,7 +209,7 @@ def test_the_show_filter_takes_only_the_limitation_words():
 def test_members_table_leads_with_the_member_then_family_and_family_duid():
     """Member, Family, Family DUID, the rest, then Latest response (#932);
     the Family DUID has its own cell and sorts in place."""
-    raw = result({}, {})
+    raw = result()
     raw["members"].append(
         raw["members"][0]
         | {"family_name": "Other", "family_duid": 7, "member_name": "B"}
@@ -276,7 +259,7 @@ def captured_pdf(monkeypatch, shaped):
 
 def test_pdf_names_each_table_with_its_page_heading(monkeypatch):
     """Every PDF page names its table as the page's table heading does."""
-    _, drawn, captions = captured_pdf(monkeypatch, shape_result(result({}, {})))
+    _, drawn, captions = captured_pdf(monkeypatch, shape_result(result()))
     assert [caption for caption, _ in captions] == [MEMBER_CAPTION, FAMILY_CAPTION]
     # Each caption sits in the room the tables leave below the header rule
     # (two detail lines), above the table's heading row.
@@ -291,7 +274,7 @@ def test_pdf_with_no_families_still_prints_both_tables(monkeypatch):
     The Families table still gets its own captioned page, so the file says
     plainly that the list is empty rather than leaving it out.
     """
-    raw = result({}, {})
+    raw = result()
     raw["families"] = []
     raw["summary"]["cannot_attend"] = 0
     body, drawn, captions = captured_pdf(monkeypatch, shape_result(raw))
