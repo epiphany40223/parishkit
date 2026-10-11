@@ -8,7 +8,9 @@ while each format's own tests keep pinning the values.
 import io
 import random
 import re
-from datetime import UTC, datetime
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from functools import partial
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
@@ -16,7 +18,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from openpyxl import Workbook, load_workbook
 
-from parishkit.stewardship.reports import pdf_design, xlsx_design
+from parishkit.stewardship.reports import charts, pdf_design, xlsx_design
 from parishkit.stewardship.reports.census_changes import HEADINGS, census_xlsx
 from parishkit.stewardship.reports.directory_documents import TESTING_NOTE
 from parishkit.stewardship.reports.directory_rendering import (
@@ -579,3 +581,103 @@ def test_filters_read_as_plain_words():
         == "Action: join · Search: Lee"
     )
     assert pdf_design.humanize_filters("not json") == "not json"
+
+
+def chart_document(days, *, families=3, pledge="1234.56"):
+    """A participation document of ``days`` days with one missing day.
+
+    ``families`` and ``pledge`` set the largest Family count and pledge
+    total, so the value axes' tick labels can be made as wide as a large
+    parish's; the missing day makes the gap note draw too.
+    """
+    value = participation()
+    first = value.days[0].local_date
+    rows = [
+        replace(
+            value.days[0],
+            local_date=first + timedelta(days=index),
+            first_responses=1,
+            cumulative_responses=max(1, families * (index + 1) // days),
+            cohort_denominator=max(families, 1234),
+            pledge_total=Decimal(pledge),
+        )
+        for index in range(days)
+    ]
+    rows[0] = replace(
+        rows[0],
+        first_responses=0,
+        cumulative_responses=0,
+        cohort_denominator=0,
+        source_generation=None,
+        source_as_of=None,
+        population_available=False,
+        pledge_available=False,
+        pledge_total=None,
+    )
+    return replace(
+        value,
+        first_date=first,
+        last_date=rows[-1].local_date,
+        days=tuple(rows),
+        source_as_of=value.source_as_of + timedelta(days=days),
+        requested_at=value.requested_at + timedelta(days=days),
+    )
+
+
+def test_participation_chart_pdf_is_one_framed_page():
+    """The chart PDF is a Letter page in the shared frame (#926).
+
+    The frame names the parish, campaign and scope and numbers the page, but
+    states no request or capture time: the chart's provenance stays in the
+    file's metadata (#575).
+    """
+    value = chart_document(3)
+    output = io.BytesIO()
+    charts.render_participation(value, output, format="pdf")
+    data = output.getvalue()
+    assert len(re.findall(rb"/Type /Page\b", data)) == 1
+    assert b"/MediaBox [ 0 0 792 612 ]" in data
+    assert f"/Creator ({charts.PDF_RENDERER_VERSION})".encode() in data
+    with charts.participation_figure(value, pdf=True) as figure:
+        drawn = [text.get_text() for text in figure.texts]
+        assert "Family participation — Historical as of day" in drawn
+        assert "EXAMPLE PARISH · ANNUAL STEWARDSHIP" in drawn
+        assert "Page 1 of 1" in drawn
+        assert "Missing observations are gaps, not zero." in drawn
+        assert charts.RENDERER_VERSION not in " ".join(drawn)
+        assert not any(
+            word in text for text in drawn for word in ("Requested", "Captured")
+        )
+
+
+@pytest.mark.parametrize(
+    ("days", "families", "pledge"),
+    [
+        (3, 3, "1234.56"),
+        (120, 4321, "12345678.90"),
+        (365, 4321, "12345678.90"),
+    ],
+)
+def test_participation_chart_pdf_stays_inside_the_frame(days, families, pledge):
+    """Everything the chart draws sits inside the frame body and margins.
+
+    Wide value-axis labels ($12,345,678 and 4-digit Family counts) and the
+    first rotated date of a long campaign must not cross the page margins.
+    The figure is drawn at 72 dpi, the PDF's own, so pixels are points.
+    """
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+
+    value = chart_document(days, families=families, pledge=pledge)
+    frame = charts.pdf_frame(value)
+    with charts.participation_figure(value, pdf=True) as figure:
+        assert figure.dpi == 72
+        renderer = FigureCanvasAgg(figure).get_renderer()
+        note = next(t for t in figure.texts if t.get_text().startswith("Missing"))
+        for artist in (*figure.axes, *figure.legends, note):
+            box = artist.get_tightbbox(renderer)
+            top = pdf_design.PAGE_HEIGHT - box.y1
+            bottom = pdf_design.PAGE_HEIGHT - box.y0
+            assert frame.body_top <= top and bottom <= frame.body_bottom, artist
+            assert box.x0 >= pdf_design.MARGIN - 0.01, (artist, box.x0)
+            right = pdf_design.PAGE_WIDTH - pdf_design.MARGIN + 0.01
+            assert box.x1 <= right, (artist, box.x1)
