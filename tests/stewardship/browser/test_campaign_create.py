@@ -80,3 +80,36 @@ def test_review_says_it_creates_a_testing_draft(page, component_origin):
         )
         == top
     )
+
+
+def test_review_waits_for_the_required_fields(page, component_origin):
+    """Review changes is unavailable until the new campaign is complete.
+
+    The form starts empty, so the complete gate (data-require-complete), not
+    the change gate, holds Review: its hint names what is missing, in a line
+    after the button that keeps its height (data-complete-hint="reserve"),
+    so the review region below never moves as the hint comes and goes.
+    """
+    page.goto(component_origin + "/campaign-create")
+    review = page.get_by_role("button", name="Review changes")
+    hint = page.locator("#settings-complete-hint")
+    visible(hint.get_by_text("Fill in the required fields to review the campaign."))
+    assert review.is_disabled()
+    assert review.get_attribute("aria-describedby") == "settings-complete-hint"
+    region = page.locator("#settings-review")
+    # Page coordinates: filling a field scrolls it into view.
+    where = "node => node.getBoundingClientRect().top + window.scrollY"
+    top = region.evaluate(where)
+    page.get_by_label("Campaign name").fill("Annual stewardship")
+    page.get_by_label("Campaign start date").fill("2026-10-01")
+    page.get_by_label("Campaign end date").fill("2026-10-31")
+    page.wait_for_function(
+        "() => !document.querySelector('#settings-form button[type=submit]').disabled"
+    )
+    assert hint.text_content() == ""
+    assert region.evaluate(where) == top
+    # Emptying a required field holds Review again.
+    page.get_by_label("Campaign name").fill("")
+    page.wait_for_function(
+        "() => document.querySelector('#settings-form button[type=submit]').disabled"
+    )

@@ -2454,7 +2454,9 @@ explanation and a link to Campaign settings.
 place, polled from its Change status page. Unlike the settings pages, the
 page does not refresh itself once the change is applied: by then the
 campaign exists, so the form has nothing left to create, and a reload of
-that address still shows the change's status. The configuration installer applies the request, and the
+that address still shows the change's status; once the campaign exists, that
+reload draws no form, which could only be refused, and links to Campaign
+settings instead. The configuration installer applies the request, and the
 database checks admission again at activation: a new campaign record becomes
 the current campaign only when the current-campaign pointer is empty in
 Testing mode and every earlier campaign is archived or purged, the rule every

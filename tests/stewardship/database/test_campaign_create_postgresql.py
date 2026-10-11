@@ -84,6 +84,8 @@ def test_first_campaign_is_created_with_default_content(auth_service, google):
     # nothing refreshes this page (its follow-up is for settings pages only).
     status_url = reverse("admin:configuration_request", args=[request_id])
     assert f'data-live-url="{status_url}"' in pending
+    # Before it is applied the form is still drawn, held until complete.
+    assert 'id="settings-form"' in pending and "data-require-complete" in pending
     apply(store, accepted)
     row = Campaign.objects.get()
     assert row.state == "draft" and not row.structural_locked
@@ -103,6 +105,11 @@ def test_first_campaign_is_created_with_default_content(auth_service, google):
         assert b"data-campaign-refresh" in region.split(b"</section>", 1)[0]
         assert f'action="{reverse("admin:source_refresh")}"'.encode() in status
         assert b"data-live-follow" not in status
+    # A full load of that address once the campaign exists draws no form,
+    # which could only be refused now, and points to Campaign settings.
+    reloaded = browser.get(accepted["Location"]).content
+    assert b'id="settings-form"' not in reloaded
+    assert f'href="{reverse("admin:campaign_settings")}"'.encode() in reloaded
     # An identical retry after the campaign exists still returns the receipt.
     late = post(browser, CREATE, {"action": "confirm", "preview": proposal})
     assert late["Location"] == accepted["Location"]

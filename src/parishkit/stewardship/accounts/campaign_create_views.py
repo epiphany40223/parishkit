@@ -102,7 +102,9 @@ def _page(request, configuration, form, *, status=200, **region):
 
     ``region`` is ``review_region``'s ``review``, ``receipt`` or ``refusal``.
     The step indicator follows the region: Make changes, Review, then Apply
-    once a change is shown.
+    once a change is shown. A change's status drawn once a campaign exists
+    (a reload of the confirmation's answer) leaves the form out: it could
+    only be refused, so the page points to Campaign settings instead.
     """
     step = "review" if region.get("review") else "edit"
     if region.get("receipt"):
@@ -115,6 +117,8 @@ def _page(request, configuration, form, *, status=200, **region):
         {
             "configuration": configuration,
             "form": form,
+            "created": receipt is not None
+            and configuration.current_campaign_id is not None,
             # No in-place follow-up (page None): once applied, the campaign
             # exists and this page has nothing left to create. The status
             # offers the campaign's first refresh instead.
