@@ -7,6 +7,7 @@ are the Hosted files page's row actions through the page's own
 copies and the page's audit rows are the page's.
 """
 
+import json
 from dataclasses import replace
 from uuid import uuid4
 
@@ -29,6 +30,7 @@ from .test_hosted_files_postgresql import (
     media,  # noqa: F401
     pending,
     uploaded,
+    without_triggers,
 )
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -219,6 +221,41 @@ def test_a_use_gone_again_names_every_chosen_file(
     assert [field["field"] for field in fields] == [str(first.pk), str(second.pk)]
     assert all("nothing was deleted" in field["message"] for field in fields)
     assert HostedFile.objects.count() == 2 and events(DELETE) == 0
+
+
+def test_a_file_in_unsent_mail_is_refused(admin, media):  # noqa: F811
+    """A queued campaign email test linking a file holds it: the deletion is
+    refused before the prompt, naming the waiting email, and nothing changes."""
+    browser, secret, _ = paired(admin.service)
+    mailed = uploaded(browser, "mailed.pdf", samples.pdf(), slug="mailed")
+    without_triggers(
+        "stewardship_campaign_mail_test",
+        "INSERT INTO public.stewardship_campaign_mail_test (id, correlation_id, "
+        "version, requested_by_id, request_key, fingerprint, mail, state, "
+        "campaign_id, configuration_id, task_id, template_id) VALUES "
+        "(%s, %s, 1, %s, %s, %s, %s, 'queued', %s, %s, %s, %s)",
+        [
+            uuid4(),
+            uuid4(),
+            uuid4(),
+            uuid4(),
+            "0" * 64,
+            json.dumps({"html": f'<a href="{ORIGIN}/files/{mailed.token}">'}),
+            uuid4(),
+            uuid4(),
+            uuid4(),
+            uuid4(),
+        ],
+    )
+    code, document, errors = delete(admin, secret, mailed.pk, yes=True)
+    assert code == 1 and document["error"]["code"] == "invalid", document
+    [field] = document["error"]["fields"]
+    assert field["field"] == str(mailed.pk) and field["code"] == "invalid"
+    assert "1 email(s) waiting to be sent" in field["message"]
+    assert "Type yes" not in errors
+    assert HostedFile.objects.filter(pk=mailed.pk).exists()
+    assert (media / storage.DIRECTORY / mailed.pk.hex).exists()
+    assert events("hosted_file_deleted") == 0 and events(DELETE) == 0
 
 
 def test_deletion_usage_and_refused_sessions(
