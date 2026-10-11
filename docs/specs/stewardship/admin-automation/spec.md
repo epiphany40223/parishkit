@@ -1813,9 +1813,9 @@ none.
 | `parish_settings`, `ministries` | `parish`, `ministries` (PR 10) |
 | `hosted_files`, `hosted_file_delete`, `hosted_file_rename` | `files list`, `files delete`, `files rename` ([#463](https://github.com/epiphany40223/parishkit/issues/463)) |
 | `artwork_settings` (its upload and removal reviews, #750) | `artwork show`, `artwork remove` (PR 10) |
-| `branding_settings`: **Confirm new logos** | `branding show`, `branding confirm --expected-version …`, a configuration request for logos already uploaded (PR 10) |
+| `branding_settings`: **Apply changes** on its in-place logo review (#750) | `branding show`, `branding confirm --expected-version …`, a configuration request for logos already uploaded (PR 10) |
 | `hosted_file_upload`, `artwork_upload`, `branding_settings` uploads | Pending: file uploads; a later PR may accept `--file` |
-| `branding_preview`, `branding_asset` | Permanent: image previews and bytes for the browser |
+| `branding_asset` | Permanent: image previews and bytes for the browser |
 
 Every configuration change still becomes a configuration request that the
 configuration installer applies; the command reports the request outcome as

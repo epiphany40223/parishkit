@@ -28,7 +28,6 @@ SLASHLESS = (
     ("system/logs", "logs"),
     ("parish/settings", "parish_settings"),
     ("parish/logos", "branding_settings"),
-    ("parish/logos/<uuid:bundle_id>", "branding_preview"),
     ("parish/ministries", "ministries"),
     ("parish/files", "hosted_files"),
     ("parish/files/deletion", "hosted_file_delete"),

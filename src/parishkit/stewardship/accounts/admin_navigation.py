@@ -213,10 +213,6 @@ PAGES = {
     # Parish data
     "parish_settings": Page("parish", _("Parish settings")),
     "branding_settings": Page("parish", _("Parish logos")),
-    # Reviews one staged logo and refuses once it is chosen.
-    "branding_preview": Page(
-        "parish", _("Review parish logos"), "branding_settings", linkable=False
-    ),
     "hosted_files": Page("parish", _("Hosted files")),
     # Answers only the library's confirmation dialog (#879), never a page.
     "hosted_file_delete": Page(

@@ -25,11 +25,6 @@ patterns = [
     path("parish/settings/", parish_views.parish_settings, name="parish_settings"),
     path("parish/logos/", branding_views.branding_settings, name="branding_settings"),
     path(
-        "parish/logos/<uuid:bundle_id>/",
-        branding_views.branding_preview,
-        name="branding_preview",
-    ),
-    path(
         "parish/logos/assets/<uuid:asset_id>.png",
         branding_views.branding_asset,
         {"private": True},
