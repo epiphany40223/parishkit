@@ -141,7 +141,9 @@ def test_group_roots_open_the_first_entry_the_viewer_may_open(auth_service, goog
 
 
 def test_group_roots_without_an_open_entry_go_home(auth_service, google):
-    """Staff open no Campaign setup page, so its root takes them Home."""
+    """Staff open no Campaign setup or Mail page, so those roots take them
+    Home; Parish data's root opens Data to fix in ParishSoft, the first
+    Parish data page Staff may open (#1011)."""
     store = auth_service.store
     _current(store)
     change(
@@ -158,10 +160,14 @@ def test_group_roots_without_an_open_entry_go_home(auth_service, google):
     )
     google[0]["email"] = "reader@example.org"
     browser, _ = signed_in()
-    for root in ("/admin/campaign/", "/admin/mail/", "/admin/parish/"):
+    for root, first in (
+        ("/admin/campaign/", "/admin/"),
+        ("/admin/mail/", "/admin/"),
+        ("/admin/parish/", "/admin/parish/data-to-fix/"),
+    ):
         response = browser.get(root)
         assert response.status_code == 302, root
-        assert response["Location"] == "/admin/"
+        assert response["Location"] == first
 
 
 def test_new_campaign_pages_refuse_without_a_current_campaign(auth_service, google):

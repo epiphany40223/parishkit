@@ -289,6 +289,7 @@ DESCRIPTIONS = {
     "source_form_viewed": _(
         "An Administrator opened the list of Families the form cannot open."
     ),
+    "data_to_fix_viewed": _("Someone opened Data to fix in ParishSoft."),
     "background_viewed": _("An Administrator opened Background work."),
     "delivery_viewed": _("An Administrator opened Outgoing mail."),
     "delivery_bulk_resolved": _(
