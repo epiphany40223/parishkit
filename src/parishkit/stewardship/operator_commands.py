@@ -165,8 +165,13 @@ def recover_admin_command(
     confirmed_email,
     operator_name,
     reason,
+    name=None,
 ):
-    """Apply only explicit additive recovery, retaining the ordinary Google login."""
+    """Apply only explicit additive recovery, retaining the ordinary Google login.
+
+    ``name`` is a new Administrator user's Name in the users form (#952);
+    without it the Name is the address's local part.
+    """
     from .accounts.authority import AuthorityStore
     from .accounts.configuration_schema import validate_sections
 
@@ -186,6 +191,7 @@ def recover_admin_command(
         confirmed_email=confirmed_email,
         operator_name=operator_name,
         reason=reason,
+        name=name,
         correlation_id=uuid4(),
         offline_interlock=lambda: StartupLease(
             RuntimeLayout(configuration).interlock, offline=True
@@ -203,35 +209,38 @@ def recover_admin_command(
     }
 
 
-def preview_recovery_command(configuration, *, deployment_id, target_email):
-    """Display coherent current rules and the exact proposed change without writing."""
+def preview_recovery_command(configuration, *, deployment_id, target_email, name=None):
+    """Display coherent current rules and the exact proposed change without writing.
+
+    A manifest left ahead of the database by a recorded activation refusal,
+    or by a users upgrade interrupted before it activated, is not
+    incoherence the operator must resolve first: recovery itself selects the
+    base again before it begins, so the preview shows that base rather than
+    refusing (#952). ``name`` previews a new Administrator
+    user's Name in the users form.
+    """
     if admit_offline_service(configuration) is not ServiceRole.ADMIN_RECOVERY:
         raise ConfigError("Recovery preview requires its explicit operator profile.")
     with StartupLease(RuntimeLayout(configuration).interlock, offline=True):
         configure_operator_database(configuration)
         from .accounts.authority import AuthorityStore
-        from .accounts.configuration_installation import coherent_configuration
         from .accounts.configuration_schema import validate_sections
-        from .accounts.operator_recovery import recovery_preview
+        from .accounts.operator_recovery import recovery_preview, recovery_runtime
         from .accounts.request_admission import intake_base
         from .runtime_database import admit_offline_database
 
         admit_offline_database(configuration)
-        runtime = coherent_configuration(
+        runtime = recovery_runtime(
             AuthorityStore(configuration.paths["authority"], validate_sections)
         )
         if runtime.pk != _uuid(deployment_id):
             raise ConfigError("The confirmed deployment does not match.")
         _, version = intake_base(runtime.active_configuration.digest)
-        return {"recovery_preview": recovery_preview(version, runtime.pk, target_email)}
-
-
-# The users conversion (#952) is enabled in the release that also brings
-# the Users page and the swap of the SQL sign-in functions (its slice 4).
-# Until then this command only previews: nothing else in this release can
-# edit a configuration in the users form, so converting would leave the
-# Admin portal unable to change its settings.
-USERS_UPGRADE_ENABLED = False
+        return {
+            "recovery_preview": recovery_preview(
+                version, runtime.pk, target_email, name=name
+            )
+        }
 
 
 def upgrade_users_command(
@@ -262,21 +271,27 @@ def upgrade_users_command(
         with StartupLease(RuntimeLayout(configuration).interlock, offline=True):
             configure_operator_database(configuration)
             from .accounts.authority import AuthorityStore
-            from .accounts.configuration_installation import coherent_configuration
             from .accounts.configuration_schema import validate_sections
             from .accounts.request_admission import intake_base
-            from .accounts.users_upgrade import upgrade_preview
+            from .accounts.users_upgrade import upgrade_preview, upgrade_runtime
             from .runtime_database import admit_offline_database
 
             admit_offline_database(configuration, users_upgrade=True)
-            runtime = coherent_configuration(
+            runtime = upgrade_runtime(
                 AuthorityStore(configuration.paths["authority"], validate_sections)
             )
             if runtime.pk != _uuid(deployment_id):
                 raise ConfigError("The confirmed deployment does not match.")
             _, version = intake_base(runtime.active_configuration.digest)
             return {"users_upgrade_preview": upgrade_preview(version)}
-    if not USERS_UPGRADE_ENABLED:
+    from .accounts.users_schema import USERS_ENABLED
+
+    # The conversion is enabled (users_schema.USERS_ENABLED) in the release
+    # that also brings the Users page and swaps the SQL sign-in functions
+    # (#952 slices 4 and 5). Until then this command only previews: this
+    # release can edit a users configuration, but its SQL sign-in functions
+    # and its Portal users page still expect sign-in rules.
+    if not USERS_ENABLED:
         raise ConfigError("This release previews the users upgrade only.")
     if not isinstance(confirmed_administrators, str):
         raise ConfigError("Confirm the Administrators the upgrade keeps.")
@@ -436,6 +451,7 @@ def execute_operator(args):
                 configuration,
                 deployment_id=args.confirm_deployment,
                 target_email=args.target_email,
+                name=args.name,
             )
         elif args.command == "upgrade-users":
             result = upgrade_users_command(
@@ -462,6 +478,7 @@ def execute_operator(args):
                 confirmed_email=args.confirm_email,
                 operator_name=args.operator_name,
                 reason=args.reason,
+                name=args.name,
             )
         else:
             raise ConfigError("Unsupported operator command.")
