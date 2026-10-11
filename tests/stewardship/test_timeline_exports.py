@@ -8,7 +8,9 @@ database/test_timeline_exports_postgresql.py.
 
 import csv
 import io
+import re
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from openpyxl import load_workbook
@@ -27,6 +29,7 @@ PAYLOAD = {
         "name": "Example",
         "envelope": 7,
         "reach": "Yes",
+        "reminder_workgroup": None,
     },
     "mode": "production",
     "as_of": "2054-10-05T14:00:00+00:00",
@@ -70,7 +73,7 @@ def test_the_document_holds_the_family_and_every_line():
     """Metadata names the Family and the code; one row per timeline line."""
     built = document()
     metadata = dict(built.metadata)
-    assert metadata["Family"] == "Example" and metadata["ParishSoft DUID"] == "42"
+    assert metadata["Family"] == "Example" and metadata["Family DUID"] == "42"
     assert metadata["Family code"] == "ABCD-EFGH"
     assert metadata["Mode"] == "Production"
     assert metadata["Timeline lines"] == "2, oldest first"
@@ -139,3 +142,40 @@ def test_the_shared_renderer_writes_its_csv():
     sheets = load_workbook(io.BytesIO(book.getvalue())).worksheets
     values = {cell for sheet in sheets for row in sheet.values for cell in row}
     assert "ABCD-EFGH" in values
+
+
+TEMPLATE = (
+    Path(__file__).resolve().parents[2]
+    / "src/parishkit/stewardship/accounts/templates/stewardship/family-timeline.html"
+)
+
+
+def test_the_file_follows_its_page():
+    """The table's columns and the details' lines are the page's, in its order.
+
+    UX conventions, "Downloaded files": the same columns, names and order as
+    the page. The page's Timeline table heads its columns When, What happened
+    and Details; its identity line and Summary panel become the report
+    information, in the page's order, beside lines only a file needs.
+    """
+    text = TEMPLATE.read_text(encoding="utf-8")
+    head = text[text.index('id="events-heading"') :]
+    head = head[head.index("<thead>") : head.index("</thead>")]
+    assert tuple(re.findall(r'translate "([^"]+)"', head)) == HEADINGS
+    page_lines = re.findall(r'<dt>{% translate "([^"]+)" %}</dt>', text)
+    built = timeline_document(
+        PAYLOAD
+        | {"family": PAYLOAD["family"] | {"reminder_workgroup": "No reminders"}},
+        code="ABCD-EFGH",
+        parish_name="Sample Parish",
+        requested_at=REQUESTED,
+        timezone="UTC",
+    )
+    labels = [label for label, _ in built.metadata]
+    identity = ["Family", "Family DUID", "Envelope number"]
+    assert [label for label in labels if label in page_lines] == page_lines
+    assert labels[2:5] == identity
+    # The identity line, then the mode and Counted at, then the Summary.
+    assert labels.index("Counted at") < labels.index(page_lines[0])
+    assert dict(built.metadata)["Reminders"].endswith("“No reminders”")
+    assert "Reminders" not in dict(document().metadata)

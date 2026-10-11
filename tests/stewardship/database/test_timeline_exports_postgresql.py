@@ -299,6 +299,7 @@ def test_the_capture_refuses_what_the_web_must_not_store(request, auth_service):
             "name": "Example",
             "envelope": None,
             "reach": "Yes",
+            "reminder_workgroup": None,
         },
         "mode": "production",
         "as_of": "2054-10-05T14:00:00+00:00",
@@ -339,6 +340,11 @@ def test_the_capture_refuses_what_the_web_must_not_store(request, auth_service):
     for bad in (
         {**good, "code": "ABCD-EFGH"},
         {**good, "family": {**good["family"], "code": "ABCD-EFGH"}},
+        {**good, "family": {**good["family"], "reminder_workgroup": 7}},
+        {
+            **good,
+            "family": {k: v for k, v in good["family"].items() if k != "reach"},
+        },
         {**good, "events": [{"at": "x", "what": "x", "detail": "", "code": "y"}]},
         {**good, "events": ["not an object"]},
         {**good, "mode": "testing"},

@@ -94,7 +94,7 @@ BEGIN
                IS DISTINCT FROM ARRAY['at','name','outcome'])
     THEN RAISE EXCEPTION 'Invalid timeline export document' USING ERRCODE='23514'; END IF;
     IF (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(NEW.document->'family') k)
-           IS DISTINCT FROM ARRAY['duid','envelope','id','name','reach']
+           IS DISTINCT FROM ARRAY['duid','envelope','id','name','reach','reminder_workgroup']
        OR NEW.document->'family'->>'id' IS DISTINCT FROM NEW.family_id::text
        OR jsonb_typeof(NEW.document->'family'->'duid') IS DISTINCT FROM 'number'
        OR NOT EXISTS(SELECT 1 FROM stewardship_family_campaign f WHERE f.id=NEW.family_id
@@ -102,6 +102,7 @@ BEGIN
        OR jsonb_typeof(NEW.document->'family'->'name') NOT IN ('string','null')
        OR jsonb_typeof(NEW.document->'family'->'envelope') NOT IN ('number','null')
        OR jsonb_typeof(NEW.document->'family'->'reach') IS DISTINCT FROM 'string'
+       OR jsonb_typeof(NEW.document->'family'->'reminder_workgroup') NOT IN ('string','null')
        -- One Family's timeline is small; a bound keeps a capture from
        -- growing without limit, as the Ministry capture's search bound does.
        OR octet_length(NEW.document::text)>131072

@@ -918,12 +918,21 @@ made. The form is drawn inside the
 page's table region, so an in-place mode switch draws it again with the mode
 it posts, and with no Testing rehearsal it is absent. The request captures
 what the page shows, through the page's own reads, inside the campaign's
-export lock: the Family's name, DUID, envelope number and email reach, the
-mode, the page's Summary (submitted and when, the last email, the furthest
-step and the last time the Family was seen) and every timeline line with its
-time, words and detail, into an immutable
-`stewardship_timeline_export_snapshot`. The file lists the lines oldest
-first. The page builds its timeline in
+export lock: the Family's name, DUID, envelope number, email reach and the
+Reminder WorkGroup holding it now (the page's Reminders line), the mode, the
+page's Summary (submitted and when, the last email, the furthest step and the
+last time the Family was seen) and every timeline line with its time, words
+and detail, into an immutable `stewardship_timeline_export_snapshot`. The
+file follows its page
+([Downloaded files](../ui-conventions/spec.md#downloaded-files)): its table
+is the page's Timeline table, When, What happened and Details, with the lines
+oldest first; the Family's identity line and the Summary panel are its report
+information, with the page's words in the page's order (Family, Family DUID,
+Envelope number, the mode, Counted at, Submitted, Last email, Family code,
+Reminders, Campaign email can reach this Family, Furthest step reached, Last
+seen). As for every shared export, the CSV is the table alone; the XLSX's
+Report information sheet and the PDF's report card carry the rest, including
+the code. The page builds its timeline in
 Python, so the web supplies that document; the capture trigger admits it only
 from the web login, for a current Administrator, an admitted campaign, the
 active configuration and a Family of that campaign (with its DUID), with the

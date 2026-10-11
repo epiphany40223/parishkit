@@ -48,6 +48,7 @@ def capture(campaign_id, family, mode, epoch, *, current_mode):
     words are the page's own, already translated. The code is left out.
     """
     from parishkit.stewardship.accounts.sessions import database_now
+    from parishkit.stewardship.campaigns.models import Campaign
 
     from .family_timeline import read_timeline
     from .family_timeline_views import read_identity
@@ -59,7 +60,13 @@ def capture(campaign_id, family, mode, epoch, *, current_mode):
         full=True,
         current_mode=current_mode,
     )
-    identity = read_identity(family, codes=False)
+    # The page's Reminders line (#861) needs the campaign's configuration.
+    values = (
+        Campaign.objects.select_related("active_configuration")
+        .get(pk=campaign_id)
+        .active_configuration.values
+    )
+    identity = read_identity(family, codes=False, workgroup=values)
     summary, engagement = timeline.summary, timeline.engagement
     email = summary.last_email
 
@@ -74,6 +81,9 @@ def capture(campaign_id, family, mode, epoch, *, current_mode):
             "name": identity.name,
             "envelope": identity.envelope,
             "reach": str(identity.reach_label),
+            # The Reminder WorkGroup holding the Family now, or None: the
+            # page's Reminders line.
+            "reminder_workgroup": identity.reminder_workgroup,
         },
         "mode": mode,
         "as_of": database_now().isoformat(),

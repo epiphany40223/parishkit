@@ -4,6 +4,14 @@ Built by the worker from the retained capture (``timeline_exports.capture``)
 inside the export's campaign read guard, and rendered by the shared report
 renderer (``information_rendering.render_information``): metadata lines, then
 one row per timeline line, oldest first as the page's tie order keeps them.
+
+The file follows its page (UX conventions, "Downloaded files"): the table is
+the page's Timeline table, with its three columns in the page's order and
+words, and the Family and Summary lines are the report information (the XLSX
+"Report information" sheet and the PDF's report card; a CSV is the table
+alone), named and ordered as the page shows them. Lines that only a file
+needs (report, parish, request time, time zone, line count, privacy) come
+first or last.
 The Family code is added here, decrypted under the key-set lock, only for a
 requester who may see Family codes; the capture never holds it.
 """
@@ -68,14 +76,32 @@ def timeline_document(
         if summary["submissions"]
         else "Not yet"
     )
+    # The page's own lines, in its order and words: the identity line
+    # (Family, Family DUID, Envelope number), the mode line, Counted at, then
+    # the Summary panel (Submitted, Last email, Family code, Reminders when
+    # the Family is in the Reminder WorkGroup, Campaign email can reach this
+    # Family, Furthest step reached, Last seen).
+    workgroup = family.get("reminder_workgroup")
     metadata = (
         ("Report", "Family timeline"),
         ("Parish", parish_name),
         ("Family", family["name"] or "Not in the latest ParishSoft data"),
-        ("ParishSoft DUID", str(family["duid"])),
+        ("Family DUID", str(family["duid"])),
         (
             "Envelope number",
             str(family["envelope"]) if family["envelope"] is not None else "",
+        ),
+        (
+            "Mode",
+            "Testing rehearsal" if payload["mode"] == "testing" else "Production",
+        ),
+        ("Counted at", instant(payload["as_of"])),
+        ("Submitted", submitted),
+        (
+            "Last email",
+            f"{email['name']}, {maybe(email['at'], '')}: {email['outcome']}"
+            if email
+            else "None sent yet",
         ),
         # As the page: a Family with no code has none for this campaign; a
         # requester who may not see codes is told it is left out.
@@ -83,12 +109,15 @@ def timeline_document(
             "Family code",
             code or ("Not shown" if code_hidden else "Unavailable for this campaign"),
         ),
-        ("Submitted", submitted),
-        (
-            "Last email",
-            f"{email['name']}, {maybe(email['at'], '')}: {email['outcome']}"
-            if email
-            else "None sent yet",
+        *(
+            (
+                (
+                    "Reminders",
+                    f"Reminders skipped: in ParishSoft WorkGroup “{workgroup}”",
+                ),
+            )
+            if workgroup
+            else ()
         ),
         ("Campaign email can reach this Family", family["reach"]),
         (
@@ -98,8 +127,6 @@ def timeline_document(
             else "None recorded",
         ),
         ("Last seen", maybe(summary["last_seen_at"], "Never")),
-        ("Mode", "Testing" if payload["mode"] == "testing" else "Production"),
-        ("Captured at", instant(payload["as_of"])),
         ("Requested at", instant(requested_at)),
         ("Display timezone", timezone),
         ("Timeline lines", f"{len(events):,}, oldest first"),

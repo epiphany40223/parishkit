@@ -1347,9 +1347,10 @@ has not failed is exit 1 (`stale_version`).
 #### One Family's timeline
 
 `export family-timeline` exports one Family's timeline, as the Family
-timeline page's **Export this timeline** does: the Family's details, the
-page's summary and every line of its timeline (oldest first), with its
-Family code. Like the page's full view, it is
+timeline page's **Export this timeline** does: every line of its timeline
+(oldest first), in the page's columns, with the Family's details, the
+page's summary and its Family code as the report information of an XLSX or
+PDF file (a CSV is the timeline table alone). Like the page's full view, it is
 for Administrators. Because the file holds the Family's code, the page asks
 for a recent Google sign-in, so the command asks at the
 [confirmation prompt](#confirmations) (or takes `--yes`), and System logs
