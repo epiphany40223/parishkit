@@ -369,7 +369,10 @@ operator-visible email addresses; do not publish it as generic support diagnosti
 Its `form` is `users` once the configuration holds users
 ([#952](https://github.com/epiphany40223/parishkit/issues/952)); `name` is then
 the target user's Name after recovery, the existing user's or, for a new user,
-`--name` when given, else the address's local part. Pass the same `--name` to
+`--name` when given, else the address's local part. In that form a user has
+one role, and `before_roles` and `after_roles` list the cumulative set that
+role holds, as the security alert records it: an Administrator user shows
+`administrator`, `ministry_leader` and `staff`. Pass the same `--name` to
 both commands. A sign-in-rules configuration has no Name and refuses `--name`.
 
 `recover-admin` uses its separate operator profile, exact deployment/target
