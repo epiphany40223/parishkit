@@ -47,35 +47,22 @@ PARISH = {
 }
 
 ACCESS = {
-    "staff_domains": _(
-        "Google Workspace domains whose accounts may sign in as Staff, one per "
-        "line, for example yourparish.org. Staff can use reports and follow-up "
-        "work but cannot change settings. Personal email domains such as "
-        "gmail.com are not allowed. Leave empty to grant Staff access only to "
-        "the individual addresses below. A domain never grants Administrator "
-        "access."
-    ),
-    "ministry_domains": _(
-        "Domains whose accounts may sign in as Ministry leaders, one per line. "
-        "A Ministry leader sees only the Ministries where they hold one of the "
-        "ParishSoft Ministry roles listed in Campaign settings. A domain never "
-        "grants Administrator access."
-    ),
     "staff_addresses": _(
-        "Individual email addresses that get Staff access, one per "
-        "line, for example secretary@yourparish.org. Use this for people outside "
-        "your domains or instead of granting a whole domain."
+        "Email addresses of the people who get Staff access, one per line, for "
+        "example secretary@yourparish.org. Staff can use reports and follow-up "
+        "work but cannot change settings."
     ),
     "ministry_addresses": _(
-        "Individual addresses that may sign in as Ministry leaders, one per line. "
-        "Each sees only the Ministries where they hold one of the ParishSoft "
-        "Ministry roles listed in Campaign settings."
+        "Email addresses of the people who may sign in as Ministry leaders, one "
+        "per line. Each sees only the Ministries where they hold one of the "
+        "ParishSoft Ministry roles listed in Campaign settings."
     ),
     "admin_addresses": _(
         "People who get full Administrator access, one per line. Administrators "
         "can change every setting, including who has access. Your own access as "
-        "the original Administrator is kept automatically. Administrator access "
-        "is granted only to individual addresses, never to a whole domain."
+        "the original Administrator is kept automatically. Each address listed "
+        "becomes one user with the highest role it is listed under; you can "
+        "give each user a Name and change their role later on the Users page."
     ),
 }
 
@@ -305,8 +292,6 @@ HINTS = {
     "timezone": _("For example America/New_York."),
     "phone": _("Ten-digit US number, for example (212) 555-1234."),
     "online_giving_url": _("Optional. Must start with https://."),
-    "staff_domains": _("One domain per line, for example yourparish.org."),
-    "ministry_domains": _("One domain per line."),
     "staff_addresses": _("One address per line."),
     "ministry_addresses": _("One address per line."),
     "admin_addresses": _("One address per line."),

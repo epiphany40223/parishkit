@@ -30,6 +30,7 @@ from parishkit.stewardship.audit.models import AuditEvent
 
 from ..bootstrap_factory import bootstrap_fixture
 from ..configuration_factory import configuration_document, configuration_version
+from ..policy_factory import legacy_bootstrap_document
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -60,7 +61,15 @@ def test_initialization_has_stable_deployment_no_fake_parish(bootstrapped):
     assert runtime.current_campaign_id is None
     assert not Parish.objects.exists()
     assert not AppliedIntegration.objects.exists()
-    assert AddressRule.objects.get().email == "admin@example.org"
+    rule = AddressRule.objects.get()
+    # The initial Administrator is a user (#993), named by the local part.
+    assert (rule.email, rule.name, rule.role) == (
+        "admin@example.org",
+        "admin",
+        "administrator",
+    )
+    assert rule.roles == ["administrator", "ministry_leader", "staff"]
+    assert runtime.active_configuration.validation_schema == "bootstrap-users-v10"
     assert is_prepared(root.digest)
     prepare_initial_configuration(
         store,
@@ -84,7 +93,11 @@ def test_initialization_has_stable_deployment_no_fake_parish(bootstrapped):
 
 
 def test_bootstrap_recovery_is_additive_and_replayable(bootstrapped):
-    """Offline-only recovery commits normal activation/revocation/audit evidence."""
+    """Offline-only recovery commits normal activation/revocation/audit evidence.
+
+    During setup (#993) it adds an Administrator user and the configuration
+    stays a users bootstrap, so setup can still finish (D2).
+    """
     store, _, deployment, _ = bootstrapped
     args = dict(
         operation_id=uuid4(),
@@ -99,12 +112,15 @@ def test_bootstrap_recovery_is_additive_and_replayable(bootstrapped):
     assert recover_admin(store, **args).state == "applied"
     assert recover_admin(store, **args).state == "applied"
     runtime = coherent_configuration(store)
-    assert runtime.active_configuration.validation_schema == "bootstrap-policy-v1"
+    assert runtime.active_configuration.validation_schema == "bootstrap-users-v10"
     assert set(
         AddressRule.objects.filter(
             configuration=runtime.active_configuration
-        ).values_list("email", flat=True)
-    ) == {"admin@example.org", "replacement@example.org"}
+        ).values_list("email", "name", "role")
+    ) == {
+        ("admin@example.org", "admin", "administrator"),
+        ("replacement@example.org", "replacement", "administrator"),
+    }
     assert AdminRevocation.objects.count() == 1
     assert not Parish.objects.exists()
 
@@ -162,30 +178,122 @@ def test_sql_rejects_unrelated_later_projection(bootstrapped, kind):
             )
 
 
+def _insert_bootstrap(root, doc, schema):
+    """Insert one bootstrap version directly, with no Python parser in the way."""
+    AppliedConfigurationVersion.objects.create(
+        id=root.version_id,
+        digest=root.digest,
+        schema_version=1,
+        canonical_document=doc,
+        normalized_digest="a" * 64,
+        validation_schema=schema,
+        actor_id=uuid4(),
+        correlation_id=uuid4(),
+    )
+
+
 @pytest.mark.parametrize(
-    "damage", ["sections", "domain", "roles", "missing-projection"]
+    "damage",
+    ["sections", "domain", "role", "extra", "address", "schema", "missing-projection"],
 )
 def test_sql_rejects_bad_bootstrap_without_python_parser(damage):
-    """Raw ORM insertion cannot bypass minimal shape or deferred policy completeness."""
+    """Raw ORM insertion cannot bypass minimal shape or deferred policy completeness.
+
+    A users bootstrap (#993) holds exactly Administrator users, and only it
+    (or users-v10) may hold users.
+    """
     root = bootstrap_version(uuid4(), "admin@example.org")
     doc = root.document()
+    values = doc["sections"]["login_rules"][0]["values"]
+    schema = "bootstrap-users-v10"
     if damage == "sections":
         doc["sections"]["parish"] = []
     elif damage == "domain":
-        doc["sections"]["login_rules"][0]["values"]["kind"] = "domain"
-    elif damage == "roles":
-        doc["sections"]["login_rules"][0]["values"]["roles"].append("staff")
+        values["kind"] = "domain"
+    elif damage == "role":
+        values["role"] = "staff"
+    elif damage == "extra":
+        values["roles"] = ["administrator"]
+    elif damage == "address":
+        doc["sections"]["login_rules"] = legacy_bootstrap_document()["sections"][
+            "login_rules"
+        ]
+    elif damage == "schema":
+        schema = "bootstrap-policy-v1"
     with pytest.raises(IntegrityError), transaction.atomic():
-        AppliedConfigurationVersion.objects.create(
-            id=root.version_id,
-            digest=root.digest,
-            schema_version=1,
-            canonical_document=doc,
-            normalized_digest="a" * 64,
-            validation_schema="bootstrap-policy-v1",
-            actor_id=uuid4(),
-            correlation_id=uuid4(),
-        )
+        _insert_bootstrap(root, doc, schema)
+
+
+@pytest.mark.parametrize("damage", ["domain", "roles", "user"])
+def test_sql_rejects_bad_older_bootstrap(damage):
+    """An exact-address bootstrap keeps its own exact shape, and holds no user."""
+    doc = legacy_bootstrap_document()
+    root = configuration_version(doc)
+    values = doc["sections"]["login_rules"][0]["values"]
+    if damage == "domain":
+        values["kind"] = "domain"
+    elif damage == "roles":
+        values["roles"].append("staff")
+    else:
+        doc["sections"]["login_rules"] = bootstrap_version(
+            uuid4(), "admin@example.org"
+        ).document()["sections"]["login_rules"]
+    with pytest.raises(IntegrityError), transaction.atomic():
+        _insert_bootstrap(root, doc, "bootstrap-policy-v1")
+
+
+def test_an_older_bootstrap_still_initializes_and_recovers(tmp_path):
+    """A deployment bootstrapped before #993 keeps working in its own form."""
+    deployment = uuid4()
+    store = AuthorityStore(tmp_path, validate_sections)
+    root = configuration_version(legacy_bootstrap_document())
+    prepare_initial_configuration(
+        store,
+        root,
+        deployment_id=deployment,
+        testing_recipient="admin@example.org",
+        actor_id=uuid4(),
+        correlation_id=uuid4(),
+    )
+    status = recover_admin(
+        store,
+        operation_id=uuid4(),
+        operator_name="Test operator",
+        reason="Account lost",
+        deployment_id=deployment,
+        target_email="replacement@example.org",
+        confirmed_email="replacement@example.org",
+        correlation_id=uuid4(),
+        offline_interlock=nullcontext,
+    )
+    assert status.state == "applied"
+    runtime = coherent_configuration(store)
+    assert runtime.active_configuration.validation_schema == "bootstrap-policy-v1"
+    assert set(
+        AddressRule.objects.filter(
+            configuration=runtime.active_configuration
+        ).values_list("email", "role")
+    ) == {("admin@example.org", None), ("replacement@example.org", None)}
+
+
+def test_a_users_bootstrap_cannot_follow_an_older_one(tmp_path):
+    """A bootstrap successor keeps its form; recovery never mixes the two."""
+    deployment = uuid4()
+    store = AuthorityStore(tmp_path, validate_sections)
+    legacy = configuration_version(legacy_bootstrap_document())
+    prepare_initial_configuration(
+        store,
+        legacy,
+        deployment_id=deployment,
+        testing_recipient="admin@example.org",
+        actor_id=uuid4(),
+        correlation_id=uuid4(),
+    )
+    doc = bootstrap_version(uuid4(), "admin@example.org").document()
+    doc.update(version_id=str(uuid4()), predecessor_digest=legacy.digest)
+    successor = configuration_version(doc)
+    with pytest.raises((IntegrityError, ConfigError)):
+        prepare_snapshot(successor, actor_id=uuid4(), correlation_id=uuid4())
 
 
 def test_complete_offline_file_and_database_protocol(tmp_path):

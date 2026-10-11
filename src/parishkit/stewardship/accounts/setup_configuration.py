@@ -12,12 +12,20 @@ from uuid import UUID
 
 from parishkit.config import ConfigError
 
+from . import users_schema as users
 from .authority import ConfigurationVersion, parse_version
-from .bootstrap_schema import validate_bootstrap_sections
+from .bootstrap_schema import (
+    validate_bootstrap_sections,
+    validate_users_bootstrap_sections,
+)
 from .configuration_schema import validator_for
 from .policy_schema import validate_policy_change
 
 REQUEST_SCHEMA = "initial-setup-patch-v7"
+# The setup request over a users bootstrap (#993): its candidate is users-v10.
+USERS_REQUEST_SCHEMA = "initial-setup-users-v10"
+# Every initial-setup request format.
+REQUEST_SCHEMAS = frozenset({REQUEST_SCHEMA, USERS_REQUEST_SCHEMA})
 _SECTIONS = frozenset(
     {"parish", "integrations", "login_rules", "campaigns", "schedules", "content"}
 )
@@ -28,14 +36,60 @@ def _invalid():
     raise ConfigError("Invalid initial setup configuration intent.")
 
 
+def request_schema_for(version):
+    """The setup request format of a bootstrap or its candidate (#993).
+
+    A users bootstrap and its ``users-v10`` candidate use the users format;
+    an older exact-address bootstrap and its candidate keep the v7 format.
+    """
+    return (
+        USERS_REQUEST_SCHEMA if users.uses_users(version.document()) else REQUEST_SCHEMA
+    )
+
+
 def build_setup_candidate(base, patch, *, candidate_id):
     """Add one complete draft while preserving every bootstrap Admin exactly.
 
     This format deliberately permits only additions. Even a valid configured
     document cannot act as a base, and existing bootstrap identities cannot be
-    edited or replaced. The 400-record ceiling accommodates five bounded access
+    edited or replaced. The 400-record ceiling accommodates the bounded access
     lists, 100 schedules and all named content slots, plus core records.
     Historical v1-v6 parsers and their smaller patch limits remain unchanged.
+    """
+    return _build(
+        base,
+        patch,
+        candidate_id=candidate_id,
+        base_sections=validate_bootstrap_sections,
+        schema="campaign-content-v5",
+        policy_change=validate_policy_change,
+    )
+
+
+def build_users_setup_candidate(base, patch, *, candidate_id):
+    """The same additions over a users bootstrap, ending in the users form (#993).
+
+    The base holds only Administrator users and the candidate is a complete
+    ``users-v10`` configuration, so the deployment needs no ``upgrade-users``
+    after setup. Every bootstrap Administrator is carried unchanged (the
+    patch only adds), and the users schema checks the whole list: one user
+    per address, each with one role and a Name.
+    """
+    return _build(
+        base,
+        patch,
+        candidate_id=candidate_id,
+        base_sections=validate_users_bootstrap_sections,
+        schema=users.SCHEMA,
+        policy_change=users.validate_user_change,
+    )
+
+
+def _build(base, patch, *, candidate_id, base_sections, schema, policy_change):
+    """Apply the setup additions to a bootstrap of the form ``base_sections`` checks.
+
+    ``schema`` validates the candidate and ``policy_change`` checks the login
+    rules' change, as each setup format defines them.
     """
     from .request_patch import PatchedConfiguration
 
@@ -44,7 +98,7 @@ def build_setup_candidate(base, patch, *, candidate_id):
     if candidate_id == base.version_id:
         _invalid()
     document = base.document()
-    if parse_version(document, validate_sections=validate_bootstrap_sections) != base:
+    if parse_version(document, validate_sections=base_sections) != base:
         _invalid()
     if type(patch) is not list or not 1 <= len(patch) <= 400:
         _invalid()
@@ -77,13 +131,9 @@ def build_setup_candidate(base, patch, *, candidate_id):
         normalized.append(operation)
     document["version_id"] = str(candidate_id)
     document["predecessor_digest"] = base.digest
-    candidate = parse_version(
-        document, validate_sections=validator_for("campaign-content-v5")
-    )
+    candidate = parse_version(document, validate_sections=validator_for(schema))
     sections = candidate.document()["sections"]
-    validate_policy_change(
-        base.document()["sections"]["login_rules"], sections["login_rules"]
-    )
+    policy_change(base.document()["sections"]["login_rules"], sections["login_rules"])
     _complete_shape(sections)
     canonical = json.dumps(
         sorted(normalized, key=lambda row: (row["section"], row["id"])),

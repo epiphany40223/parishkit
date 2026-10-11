@@ -76,7 +76,11 @@ values in the image. It is idempotent when given identical values and refuses
 to replace a configured deployment without a separate restore process.
 Bootstrap writes the deployment YAML and a minimal schema-valid Stewardship
 bootstrap YAML version containing only the initial Administrator user (its
-Name defaults to the email's local part when none is given).
+Name is the email's local part until it is renamed on the Users page). The
+version uses the users bootstrap form (`bootstrap-users-v10`,
+[#993](https://github.com/epiphany40223/parishkit/issues/993)), so setup
+finishes in the users form and needs no
+[users upgrade](../operations/spec.md#users-upgrade-from-sign-in-rules).
 After migration, the latter is imported as the first applied configuration
 snapshot so the initial Admin can authenticate; the wizard supersedes it with
 the first complete version.
@@ -87,8 +91,11 @@ configured ([#142](https://github.com/epiphany40223/parishkit/issues/142)):
 
 1. Parish name, website URL, optional HTTPS online giving URL, IANA timezone,
    US main phone, and logo.
-2. The [users](#portal-user-management) who may sign in (email, Name and
-   role), while preserving the bootstrap Administrator.
+2. The [users](#portal-user-management) who may sign in, while preserving
+   the bootstrap Administrator: email addresses listed under Administrator,
+   Staff and Ministry leader. Each address becomes one user with the highest
+   role it is listed under, Named by its local part until renamed on the
+   Users page. Access is by address only; no list grants a whole domain.
 3. ParishSoft API key replacement, expected organization, connectivity check,
    and a complete staged source load.
 4. Google Workspace email service-account/delegated mailbox, sender/reply

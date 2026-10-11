@@ -30,7 +30,7 @@ from zoneinfo import ZoneInfo
 
 from django.db import connection
 
-from parishkit.stewardship.accounts.bootstrap_schema import BOOTSTRAP_SCHEMA
+from parishkit.stewardship.accounts.bootstrap_schema import BOOTSTRAP_SCHEMAS
 from parishkit.stewardship.campaigns.intervals import resolve_local
 
 from .cadence import (
@@ -303,7 +303,7 @@ def schedule_runs(after):
     )
 
     activations = ConfigurationActivation.objects.exclude(
-        configuration__validation_schema=BOOTSTRAP_SCHEMA
+        configuration__validation_schema__in=BOOTSTRAP_SCHEMAS
     ).values_list("created_at", "configuration_id")
     rows = list(activations.filter(created_at__gt=after).order_by("sequence"))
     prior = activations.filter(created_at__lte=after).order_by("-sequence").first()
@@ -348,7 +348,7 @@ def skip_setting_since():
     ).values("settings")[:1]
     rows = (
         ConfigurationActivation.objects.exclude(
-            configuration__validation_schema=BOOTSTRAP_SCHEMA
+            configuration__validation_schema__in=BOOTSTRAP_SCHEMAS
         )
         .annotate(settings=Subquery(settings))
         .order_by("-sequence")

@@ -228,7 +228,7 @@ CREATE FUNCTION public.stewardship_audit_ownership_v1() RETURNS trigger
             WHERE configuration_id = configuration;
             IF NOT FOUND AND NOT EXISTS (
             SELECT 1 FROM public.stewardship_configuration_version v
-            WHERE v.id=configuration AND v.validation_schema='bootstrap-policy-v1'
+            WHERE v.id=configuration AND v.validation_schema IN ('bootstrap-policy-v1', 'bootstrap-users-v10')
         ) THEN
                 RAISE EXCEPTION 'Audit Parish projection is missing'
                     USING ERRCODE = '23514';
@@ -274,7 +274,7 @@ CREATE FUNCTION public.stewardship_bootstrap_empty_database() RETURNS trigger
     AS $$
 DECLARE relation record; occupied boolean;
 BEGIN
-    IF NEW.validation_schema <> 'bootstrap-policy-v1'
+    IF NEW.validation_schema NOT IN ('bootstrap-policy-v1', 'bootstrap-users-v10')
        OR NEW.predecessor_id IS NOT NULL THEN
         RETURN NEW;
     END IF;
@@ -342,7 +342,7 @@ CREATE FUNCTION public.stewardship_bootstrap_projection_v1() RETURNS trigger
 BEGIN
     IF EXISTS (SELECT 1 FROM public.stewardship_configuration_version
                WHERE id=NEW.configuration_id
-                 AND validation_schema='bootstrap-policy-v1') THEN
+                 AND validation_schema IN ('bootstrap-policy-v1', 'bootstrap-users-v10')) THEN
         RAISE EXCEPTION 'Bootstrap forbids unrelated projections' USING ERRCODE='23514';
     END IF;
     RETURN NEW;
@@ -360,7 +360,9 @@ DECLARE
     item jsonb;
     vals jsonb;
 BEGIN
-    IF NEW.validation_schema <> 'bootstrap-policy-v1' THEN RETURN NEW; END IF;
+    IF NEW.validation_schema NOT IN ('bootstrap-policy-v1', 'bootstrap-users-v10') THEN
+        RETURN NEW;
+    END IF;
     sections := NEW.canonical_document->'sections';
     rules := sections->'login_rules';
     IF jsonb_typeof(rules) IS DISTINCT FROM 'array'
@@ -371,13 +373,26 @@ BEGIN
        OR (NEW.predecessor_id IS NULL AND jsonb_array_length(rules) <> 1)
        OR (NEW.predecessor_id IS NOT NULL AND NOT EXISTS (
            SELECT 1 FROM public.stewardship_configuration_version
-           WHERE id=NEW.predecessor_id AND validation_schema='bootstrap-policy-v1'
+           -- A successor (offline recovery) keeps its bootstrap's form.
+           WHERE id=NEW.predecessor_id AND validation_schema=NEW.validation_schema
        )) THEN
         RAISE EXCEPTION 'Invalid bootstrap configuration ancestry'
             USING ERRCODE='23514';
     END IF;
     FOR item IN SELECT value FROM jsonb_array_elements(rules) LOOP
         vals := item->'values';
+        -- The users form (#993): exactly an Administrator user's fields.
+        IF NEW.validation_schema = 'bootstrap-users-v10' THEN
+            IF jsonb_typeof(vals->'email') IS DISTINCT FROM 'string'
+               OR jsonb_typeof(vals->'name') IS DISTINCT FROM 'string'
+               OR vals IS DISTINCT FROM jsonb_build_object('kind', 'user',
+                    'email', vals->'email', 'name', vals->'name',
+                    'role', 'administrator') THEN
+                RAISE EXCEPTION 'Bootstrap requires Administrator users'
+                    USING ERRCODE='23514';
+            END IF;
+            CONTINUE;
+        END IF;
         IF vals->>'kind' IS DISTINCT FROM 'address'
            OR vals->'roles' IS DISTINCT FROM '["administrator"]'::jsonb
            OR vals->>'creation_origin' IS DISTINCT FROM 'manual'
@@ -559,7 +574,7 @@ BEGIN
                 JOIN public.stewardship_setup_config_abort b ON b.intent_id=i.id
                 CROSS JOIN LATERAL (SELECT state,failure_code FROM public.stewardship_config_checkpoint c
                     WHERE c.request_id=q.id ORDER BY sequence DESC LIMIT 1) receipt
-                WHERE q.candidate_version_id=p.configuration_id AND q.request_schema='initial-setup-patch-v7'
+                WHERE q.candidate_version_id=p.configuration_id AND q.request_schema IN ('initial-setup-patch-v7', 'initial-setup-users-v10')
                     AND receipt.state='failed' AND receipt.failure_code='invalid_candidate'
                     AND NOT EXISTS (SELECT 1 FROM public.stewardship_config_activation WHERE request_id=q.id))) THEN
             RAISE EXCEPTION 'Retained configuration pins branding'
@@ -4180,7 +4195,7 @@ DECLARE
     actual bigint;
     rule public.stewardship_address_rule%ROWTYPE;
 BEGIN
-    IF NEW.validation_schema NOT IN ('foundation-policy-v2', 'campaign-foundation-v3', 'bootstrap-policy-v1', 'ministry-activity-v4', 'campaign-content-v5', 'source-cadence-v8', 'users-v10') THEN RETURN NULL; END IF;
+    IF NEW.validation_schema NOT IN ('foundation-policy-v2', 'campaign-foundation-v3', 'bootstrap-policy-v1', 'bootstrap-users-v10', 'ministry-activity-v4', 'campaign-content-v5', 'source-cadence-v8', 'users-v10') THEN RETURN NULL; END IF;
     expected := jsonb_array_length(NEW.canonical_document->'sections'->'login_rules');
     SELECT (SELECT count(*) FROM public.stewardship_domain_rule
             WHERE configuration_id = NEW.id)
@@ -4196,11 +4211,13 @@ BEGIN
         RAISE EXCEPTION 'Policy must be complete and retain an Administrator'
             USING ERRCODE = '23514';
     END IF;
-    -- The users form (#952) holds only users, and only it holds them.
+    -- The users form (#952) and its bootstrap (#993) hold only users, and
+    -- only they hold them.
     IF EXISTS (SELECT 1 FROM public.stewardship_address_rule
                WHERE configuration_id = NEW.id
-                 AND (role IS NOT NULL) <> (NEW.validation_schema = 'users-v10'))
-       OR (NEW.validation_schema = 'users-v10' AND (
+                 AND (role IS NOT NULL)
+                     <> (NEW.validation_schema IN ('users-v10', 'bootstrap-users-v10')))
+       OR (NEW.validation_schema IN ('users-v10', 'bootstrap-users-v10') AND (
            EXISTS (SELECT 1 FROM public.stewardship_domain_rule
                    WHERE configuration_id = NEW.id)
            OR EXISTS (SELECT 1 FROM public.stewardship_ministry_assignment
@@ -4255,7 +4272,7 @@ BEGIN
     SELECT item->'values' INTO expected
     FROM public.stewardship_configuration_version version,
         jsonb_array_elements(version.canonical_document->'sections'->'login_rules') item
-    WHERE version.id = config AND version.validation_schema IN ('foundation-policy-v2', 'campaign-foundation-v3', 'bootstrap-policy-v1', 'ministry-activity-v4', 'campaign-content-v5', 'source-cadence-v8', 'users-v10')
+    WHERE version.id = config AND version.validation_schema IN ('foundation-policy-v2', 'campaign-foundation-v3', 'bootstrap-policy-v1', 'bootstrap-users-v10', 'ministry-activity-v4', 'campaign-content-v5', 'source-cadence-v8', 'users-v10')
         AND item->>'id' = record::text;
     IF expected IS NULL THEN
         RAISE EXCEPTION 'Policy projection requires matching YAML record'
@@ -6309,7 +6326,7 @@ CREATE FUNCTION public.stewardship_setup_activation_owner_v1() RETURNS trigger
 BEGIN
     IF current_user='pk_stewardship_worker' OR EXISTS (
         SELECT 1 FROM public.stewardship_config_request
-        WHERE id=NEW.request_id AND request_schema='initial-setup-patch-v7') THEN
+        WHERE id=NEW.request_id AND request_schema IN ('initial-setup-patch-v7', 'initial-setup-users-v10')) THEN
         IF NOT EXISTS (
             SELECT 1 FROM public.stewardship_setup_prepared prepared
             JOIN public.stewardship_setup_readiness_binding ready ON ready.id=prepared.readiness_id
@@ -6438,7 +6455,7 @@ BEGIN
            OR NEW.actor_id IS DISTINCT FROM NEW.owner_id
            OR selected IS DISTINCT FROM NEW.base_id
            OR NOT EXISTS (SELECT 1 FROM stewardship_configuration_version
-                WHERE id=selected AND validation_schema='bootstrap-policy-v1') THEN
+                WHERE id=selected AND validation_schema IN ('bootstrap-policy-v1', 'bootstrap-users-v10')) THEN
             RAISE EXCEPTION 'Setup requires the original live bootstrap Admin session'
                 USING ERRCODE='23514';
         END IF;
@@ -6570,7 +6587,7 @@ CREATE FUNCTION public.stewardship_setup_completion_context_v1() RETURNS uuid
     JOIN public.stewardship_setup_attempt attempt ON attempt.id=intent.attempt_id
         AND attempt.state='frozen' AND attempt.version=intent.attempt_version
     JOIN public.stewardship_config_request request ON request.id=intent.request_id
-        AND request.request_schema='initial-setup-patch-v7'
+        AND request.request_schema IN ('initial-setup-patch-v7', 'initial-setup-users-v10')
         AND request.candidate_version_id=prepared.configuration_id
         AND request.base_id=attempt.base_id AND request.actor_id=attempt.owner_id
     JOIN public.stewardship_system_configuration runtime
@@ -7086,11 +7103,14 @@ BEGIN
     IF a.id IS NULL OR q.id IS NULL OR a.state<>'frozen'
         OR a.version IS DISTINCT FROM NEW.attempt_version
         OR a.owner_id IS DISTINCT FROM NEW.actor_id OR a.owner_id IS DISTINCT FROM q.actor_id
-        OR q.authority<>'admin' OR q.request_schema<>'initial-setup-patch-v7'
+        OR q.authority<>'admin' OR q.request_schema NOT IN ('initial-setup-patch-v7', 'initial-setup-users-v10')
         OR q.base_id IS DISTINCT FROM a.base_id OR r.active_configuration_id IS DISTINCT FROM a.base_id
         OR r.mode<>'testing' OR r.restore_review_required OR r.current_campaign_id IS NOT NULL
         OR NOT EXISTS (SELECT 1 FROM public.stewardship_configuration_version
-            WHERE id=a.base_id AND validation_schema='bootstrap-policy-v1')
+            -- Each setup format over its own bootstrap form (#993).
+            WHERE id=a.base_id AND (validation_schema, q.request_schema) IN
+                (('bootstrap-policy-v1', 'initial-setup-patch-v7'),
+                 ('bootstrap-users-v10', 'initial-setup-users-v10')))
         OR (SELECT state FROM public.stewardship_config_checkpoint
             WHERE request_id=q.id ORDER BY sequence DESC LIMIT 1) IS DISTINCT FROM 'staged'
         OR NOT EXISTS (SELECT 1 FROM public.stewardship_portal_session s
@@ -7295,8 +7315,8 @@ BEGIN
     expected=CASE NEW.step
         WHEN 'parish' THEN ARRAY['name','online_giving_url','phone','timezone','website']
         WHEN 'branding' THEN ARRAY['bundle_id']
-        WHEN 'access' THEN ARRAY['admin_addresses','ministry_addresses',
-            'ministry_domains','staff_addresses','staff_domains']
+        -- Addresses only (#993): no hosted-domain lists.
+        WHEN 'access' THEN ARRAY['admin_addresses','ministry_addresses','staff_addresses']
         WHEN 'mail' THEN ARRAY['delegated_email','reply_to','sender','sender_name']
         WHEN 'slack' THEN ARRAY['channel_id','enabled']
         WHEN 'campaign' THEN ARRAY['campaign','source_result']
@@ -7693,7 +7713,7 @@ CREATE FUNCTION public.stewardship_setup_install_ready_live_v1(ready_id uuid) RE
             AND runtime.mode='testing' AND NOT runtime.restore_review_required
             AND runtime.current_campaign_id IS NULL
         JOIN public.stewardship_configuration_version base ON base.id=attempt.base_id
-            AND base.validation_schema='bootstrap-policy-v1'
+            AND base.validation_schema IN ('bootstrap-policy-v1', 'bootstrap-users-v10')
         JOIN public.stewardship_portal_session login ON login.id=attempt.session_id
             AND login.principal_id=attempt.owner_id AND login.revoked_at IS NULL
             AND login.expires_at>clock_timestamp()
@@ -8038,7 +8058,7 @@ CREATE FUNCTION public.stewardship_setup_mail_live_v1(attempt_id uuid, attempt_v
             AND runtime.current_campaign_id IS NULL
         JOIN public.stewardship_configuration_version base
             ON base.id=runtime.active_configuration_id
-            AND base.validation_schema='bootstrap-policy-v1'
+            AND base.validation_schema IN ('bootstrap-policy-v1', 'bootstrap-users-v10')
         JOIN public.stewardship_portal_session login
             ON login.id=attempt.session_id AND login.principal_id=attempt.owner_id
             AND login.revoked_at IS NULL AND login.expires_at>clock_timestamp()
@@ -8094,7 +8114,7 @@ BEGIN
     SELECT * INTO intent FROM public.stewardship_setup_config_intent WHERE id=readiness.intent_id;
     SELECT * INTO request FROM public.stewardship_config_request WHERE id=intent.request_id;
     SELECT * INTO candidate FROM public.stewardship_configuration_version WHERE id=NEW.configuration_id;
-    IF request.request_schema IS DISTINCT FROM 'initial-setup-patch-v7'
+    IF request.request_schema IS NULL OR request.request_schema NOT IN ('initial-setup-patch-v7', 'initial-setup-users-v10')
         OR NEW.actor_id IS DISTINCT FROM request.actor_id
         OR candidate.id IS DISTINCT FROM request.candidate_version_id
         OR candidate.digest IS DISTINCT FROM request.candidate_digest
@@ -8182,7 +8202,7 @@ BEGIN
         OR attempt.version IS DISTINCT FROM intent.attempt_version
         OR NEW.actor_id IS DISTINCT FROM attempt.owner_id
         OR request.actor_id IS DISTINCT FROM attempt.owner_id
-        OR request.request_schema IS DISTINCT FROM 'initial-setup-patch-v7'
+        OR request.request_schema IS NULL OR request.request_schema NOT IN ('initial-setup-patch-v7', 'initial-setup-users-v10')
         OR NOT EXISTS (SELECT 1 FROM public.stewardship_system_configuration runtime
             WHERE runtime.active_configuration_id=attempt.base_id
                 AND runtime.mode='testing' AND NOT runtime.restore_review_required
@@ -8282,7 +8302,7 @@ CREATE FUNCTION public.stewardship_setup_request_binding_v1() RETURNS trigger
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
 BEGIN
-    IF NEW.request_schema='initial-setup-patch-v7' AND NOT EXISTS (
+    IF NEW.request_schema IN ('initial-setup-patch-v7', 'initial-setup-users-v10') AND NOT EXISTS (
         SELECT 1 FROM public.stewardship_setup_config_intent WHERE request_id=NEW.id) THEN
         RAISE EXCEPTION 'Setup request requires its atomic original-attempt binding'
             USING ERRCODE='23514';
@@ -8449,7 +8469,7 @@ BEGIN
         SELECT 1 FROM public.stewardship_system_configuration runtime
         JOIN public.stewardship_configuration_version base
             ON base.id=runtime.active_configuration_id
-            AND base.validation_schema='bootstrap-policy-v1'
+            AND base.validation_schema IN ('bootstrap-policy-v1', 'bootstrap-users-v10')
         JOIN public.stewardship_portal_session login ON login.id=attempt.session_id
             AND login.principal_id=attempt.owner_id AND login.revoked_at IS NULL
             AND login.expires_at>stamp
@@ -8642,7 +8662,7 @@ CREATE FUNCTION public.stewardship_setup_slack_live_v1(attempt_id uuid, attempt_
             AND runtime.current_campaign_id IS NULL
         JOIN public.stewardship_configuration_version base
             ON base.id=runtime.active_configuration_id
-            AND base.validation_schema='bootstrap-policy-v1'
+            AND base.validation_schema IN ('bootstrap-policy-v1', 'bootstrap-users-v10')
         JOIN public.stewardship_portal_session login
             ON login.id=attempt.session_id AND login.principal_id=attempt.owner_id
             AND login.revoked_at IS NULL AND login.expires_at>clock_timestamp()
