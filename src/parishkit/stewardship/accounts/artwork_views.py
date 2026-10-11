@@ -4,9 +4,10 @@ The images are campaign theme artwork, so they belong to the campaign: its
 configuration's optional ``artwork`` value names them. Each slot holds one
 normalized PNG in its own branding bundle. Uploads reuse the logo pipeline's
 private staging, and a selection becomes live only through a confirmed
-configuration request. The banner heads the Family emails and welcome page;
-each icon sits above the heading of its Family page. Artwork stays editable
-while the campaign is live because it is presentation, not structure.
+configuration request. The banner heads the Family emails only (never a
+Family page); each icon sits above the heading of its Family page. Artwork
+stays editable while the campaign is live because it is presentation, not
+structure.
 
 Review, apply and the change's status happen on Campaign images itself
 (#750), in its review region under the slots: a successful upload stages
@@ -82,7 +83,7 @@ UNREVIEWABLE = {
     ),
 }
 SLOT_LABELS = {
-    "banner": _("Banner (top of the Family emails and the welcome page)"),
+    "banner": _("Banner (top of the Family emails only)"),
     "welcome": _("Welcome page icon"),
     "member": _("Member pages icon"),
     "financial": _("Financial page icon"),
