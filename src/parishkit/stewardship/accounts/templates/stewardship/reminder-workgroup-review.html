@@ -1,0 +1,10 @@
+{% load i18n %}{% comment %}
+  A Reminder WorkGroup change under review (#861), drawn inside
+  settings-review.html on Reminder WorkGroup (#750): the WorkGroup now and
+  the one proposed. The review region's own heading, notes and Apply
+  surround it.
+{% endcomment %}<dl>
+<dt>{% translate "Current WorkGroup" %}</dt><dd>{% if review.before %}{{ review.before }}{% else %}{% translate "None" %}{% endif %}</dd>
+<dt>{% translate "New WorkGroup" %}</dt><dd>{% if review.after %}{{ review.after }}{% else %}{% translate "None: every eligible Family that has not responded gets the Reminders" %}{% endif %}</dd>
+</dl>
+<p>{% translate "The change takes effect at the next ParishSoft refresh." %}</p>
