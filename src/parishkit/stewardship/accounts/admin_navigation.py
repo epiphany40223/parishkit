@@ -184,6 +184,10 @@ PAGES = {
     "delivery_refusal": Page("mail", _("Refused address"), "delivery_refusals"),
     "family_portal": Page("mail", _("Family portal availability")),
     "presence": Page("mail", _("Families on the form now")),
+    # Held emails a restore left undecided at release (#757). Not a menu
+    # entry: it matters only after a restore, so Home links to it while any
+    # hold is undecided.
+    "held_emails": Page("mail", _("Held emails")),
     # Responses and reports. Every report is a menu entry of its own. The
     # reports root only redirects to the current campaign's report (or shows
     # that there is none), so it stands alone, outside the menu.

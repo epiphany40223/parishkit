@@ -11,7 +11,12 @@ only the page moved, and any other read there is 404 (#864).
 from django.http import Http404
 from django.urls import path
 
-from ..accounts import delivery_control_views, family_maintenance_views, presence
+from ..accounts import (
+    delivery_control_views,
+    family_maintenance_views,
+    presence,
+    restore_review_views,
+)
 from ..accounts.group_root_views import group_root
 from ..jobs import delivery_views, send_history_views, send_progress_views
 from ..web.admin_routes import current_campaign
@@ -67,6 +72,13 @@ patterns = [
         name="family_portal",
     ),
     path("mail/presence/", presence.active_families, name="presence"),
+    # Held emails a restore left undecided at release (#757), linked from
+    # Home while any is undecided.
+    path(
+        "mail/held-emails/",
+        restore_review_views.held_emails,
+        name="held_emails",
+    ),
 ]
 
 # The JSON formats of the presence read that scripts poll (the header count).

@@ -360,6 +360,11 @@ input[data-time-entry=list] { max-width: 24rem; }
    never moves the table under the pointer. */
 .action-status { min-height: 3.2em; min-height: 2lh; margin-block: .5rem; font-weight: 600; }
 .action-status > p { margin: 0; }
+/* A status line that wraps keeps the lines it can take (#757): two, or
+   three on a phone, where a long sentence in a wide font needs a third. Its
+   emptying then never moves the buttons below it. */
+.reserve-lines-wrap { min-height: 3.2em; min-height: 2lh; }
+@media (max-width: 40rem) { .reserve-lines-wrap { min-height: 4.8em; min-height: 3lh; } }
 select:not([multiple]):not([size]) { max-width: 26rem; }
 select[multiple], select[size] { max-width: 40rem; }
 textarea { max-width: 56rem; }

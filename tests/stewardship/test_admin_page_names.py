@@ -68,6 +68,7 @@ TEMPLATES = {
     "delivery_refusal": "delivery-refusal.html",
     "family_portal": "family-portal-maintenance.html",
     "presence": "presence.html",
+    "held_emails": "held-emails.html",
     "parish_settings": "parish-settings.html",
     "branding_settings": "branding-settings.html",
     "ministries": "ministries.html",

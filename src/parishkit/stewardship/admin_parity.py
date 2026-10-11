@@ -90,6 +90,10 @@ LEDGER = {
     "session_status": permanent(SESSION_CHROME),
     "session_renew": permanent(SESSION_CHROME),
     "maintenance": permanent("the status page the access gate shows"),
+    "held_emails": permanent(
+        "held-email decisions need a fresh Google sign-in in the browser, "
+        "which the decision guard checks (migration 0017)"
+    ),
     # The human side of the automation interface (the specification's action
     # inventory): approving, listing and revoking sessions, and acknowledging
     # their notices, stay in the browser. ``sessions`` lists one's own

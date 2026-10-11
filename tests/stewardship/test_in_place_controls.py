@@ -153,6 +153,9 @@ HOSTED = {
     "roster-tick-row.html": ("ministry-roster.html",),
     # Past campaigns' review region (#1018): Apply sits inside it.
     "past-campaigns-review.html": ("past-campaigns.html",),
+    # The held-email table by send (#757): the Restore review page draws it
+    # in its default region, Held emails in its own (region_id).
+    "held-email-groups.html": ("restore-review.html", "held-emails.html"),
 }
 
 
@@ -193,13 +196,14 @@ def test_every_in_place_control_names_its_region_as_a_fragment():
                     continue
                 assert path.name in HOSTED, path.name
                 # Each include of the fragment names the region_id it
-                # passes, or else the default.
-                # Either quote may delimit the included name.
+                # passes, or else the default. Either quote may delimit the
+                # included name, and a shared component sits under
+                # components/ (the held-email table, #757).
                 includes = [
                     tag.group(0)
                     for tag in re.finditer(
-                        rf"\{{% include (['\"])stewardship/{re.escape(path.name)}\1"
-                        r"[^%]*%\}",
+                        r"\{% include (['\"])stewardship/(?:components/)?"
+                        rf"{re.escape(path.name)}\1[^%]*%\}}",
                         host,
                     )
                 ]
