@@ -12,6 +12,7 @@ from uuid import UUID
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 
+from .bootstrap_schema import BOOTSTRAP_SCHEMAS
 from .models import PortalSession
 from .policy import Capability, allows
 from .runtime_models import ConfigurationActivation, SystemConfiguration
@@ -81,7 +82,7 @@ def _owned(request, service, attempt_id=None):
         or runtime.current_campaign_id is not None
         or runtime.active_configuration_id != intent.attempt.base_id
         or intent.request.base_id != intent.attempt.base_id
-        or intent.request.base.validation_schema != "bootstrap-policy-v1"
+        or intent.request.base.validation_schema not in BOOTSTRAP_SCHEMAS
         or intent.attempt.state not in {SetupState.FROZEN, SetupState.EXPIRED}
         or ConfigurationActivation.objects.filter(request=intent.request).exists()
     ):
