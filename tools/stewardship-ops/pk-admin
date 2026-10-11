@@ -592,13 +592,15 @@ if [ "$documents" = errors ]; then
     }
 fi
 
-# Commands that prompt for a confirmation, as AREA_VERB words separated by
-# spaces (for example "send_confirm"). They read their answer from a
-# terminal after the preamble.
+# Commands that prompt for a confirmation, each its full name with the words
+# joined by `_` (for example "portal_maintenance_set"), separated by spaces.
+# They read their answer from a terminal after the preamble. The wrapper
+# matches a command's first two or three words, so a read command sharing a
+# prompting one's first two words (`portal maintenance show`) never matches.
 # Every catalog command with `prompts` is listed, except one that accepts
 # only `--yes` (YES_ONLY in tests/stewardship/test_pk_admin.py, which checks
 # this list).
-PROMPTING="test_sample test_families export_regenerate digest_weekly-request export_financial export_directory export_postal delivery_resend delivery_refusal-clear portal_maintenance"
+PROMPTING="test_sample test_families export_regenerate digest_weekly-request export_financial export_directory export_postal delivery_resend delivery_refusal-clear portal_maintenance_set"
 
 # Forward this standard input after the preamble only for a `-` input; a
 # prompting command run from a terminal gets one answer line (see the
@@ -612,7 +614,7 @@ done
 prompt=no
 if [ -t 0 ]; then
     for command in $PROMPTING; do
-        if [ "$command" = "$1${2:+_$2}" ]; then
+        if [ "$command" = "$1${2:+_$2}" ] || [ "$command" = "$1${2:+_$2}${3:+_$3}" ]; then
             prompt=yes
         fi
     done

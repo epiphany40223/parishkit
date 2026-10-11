@@ -1414,8 +1414,8 @@ ASCII spaces are trimmed; the log field rides on the command's
 transaction, so no lock is held while a person reads and types. The host
 wrapper forwards exactly one answer line from the terminal and stops
 waiting for it once the command has finished. A command declares that it prompts in the catalog
-(`prompts`), which gives it `--yes`, and adds its `AREA_VERB` words to the
-host wrapper's `PROMPTING` list so the wrapper forwards a terminal's input.
+(`prompts`), which gives it `--yes`, and adds its full name (words joined by
+`_`) to the host wrapper's `PROMPTING` list so the wrapper forwards a terminal's input.
 `test_pk_admin.py` checks that list against the catalog; a prompting
 command that accepts only `--yes` is left out of it by name. PR 6b's
 `test sample`, PR 6c's `test families` and PR 9c's `delivery resend` and
