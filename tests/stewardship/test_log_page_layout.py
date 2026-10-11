@@ -401,6 +401,9 @@ def test_the_activity_choice_offers_sign_in_activity_in_plain_words():
         "configuration",
         "family_mail",
         "parishsoft",
+        "downloads",
+        "security",
+        "family_portal",
     ]
     assert '<option value="" selected>All activity</option>' in plain
     chosen = _render(LogQuery.parse({"activity": "sign_in"}))
@@ -431,6 +434,7 @@ def test_same_actor_keeps_the_sign_in_activity_choice():
         ({"applied": "yes", "info": "yes", "activity": "sign_in"}, True),
         ({"applied": "yes", "audit": "yes", "activity": "sign_in"}, False),
         ({"applied": "yes", "info": "yes", "activity": "configuration"}, True),
+        ({"applied": "yes", "info": "yes", "activity": "family_portal"}, True),
         # A group with operational entries can list them without audits.
         ({"applied": "yes", "info": "yes", "activity": "parishsoft"}, False),
     ],
@@ -468,7 +472,10 @@ def test_audit_only_activity_greys_the_levels_and_waits_for_audit():
         assert 'data-enabled-when="activity=|family_mail|parishsoft"' in marks[level]
         assert "data-required-when" not in marks[level]
     audit = marks["audit"]
-    assert 'data-required-when="activity=configuration|sign_in"' in audit
+    assert (
+        'data-required-when="activity='
+        'configuration|downloads|family_portal|security|sign_in"'
+    ) in audit
     assert "data-enabled-when" not in audit
     html = _render()
     label = re.search(
