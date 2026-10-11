@@ -13,11 +13,11 @@ does.
 <h1>{% translate "Import Ministry leaders" %}</h1>
 <section class="panel" aria-labelledby="leader-import-title">
 <h2 id="leader-import-title">{% if added %}{% blocktranslate count count=added|length %}{{ count }} new user{% plural %}{{ count }} new users{% endblocktranslate %}{% else %}{% translate "Nobody to import" %}{% endif %}</h2>
-{% if added %}<p>{% translate "Each person below becomes a user with the role Ministry leader and the Name shown. They can sign in once the status says Applied. You can change a Name later with Edit." %}</p>
+{% if added %}<p>{% translate "Each person below becomes a user with the role Ministry leader, named as the Member column shows. They can sign in once the status says Applied. You can change a Name later with Edit." %}</p>
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="leader-import-caption">
 <table class="data-table leaders-table">
   <caption id="leader-import-caption" class="visually-hidden">{% translate "New users" %}</caption>
-  <thead><tr><th scope="col">{% translate "Name" %}</th><th scope="col" class="numeric">{% translate "Member DUID" %}</th><th scope="col">{% translate "Email" %}</th><th scope="col">{% translate "Role" %}</th></tr></thead>
+  <thead><tr><th scope="col">{% translate "Member" %}</th><th scope="col" class="numeric">{% translate "Member DUID" %}</th><th scope="col">{% translate "Email" %}</th><th scope="col">{% translate "Role" %}</th></tr></thead>
   <tbody>
   {% for row in added %}<tr>
     <th scope="row"><span class="cell-ellipsis" title="{{ row.name }}">{{ row.name }}</span></th>

@@ -3822,10 +3822,12 @@ be. Leaders with no usable email are not rows; a muted line under the table
 counts them, since they cannot sign in.
 
 The columns, in the [shared order](../ui-conventions/spec.md#table-column-order),
-are the selection checkbox, Name (the default Name of a new user), Member
-DUID, Email, Ministries led (a short list cut off with a count, such as
-"Choir, Ushers and 3 more") and Role, which is always Ministry leader. Name,
-Member DUID and Email sort; Name is the default order.
+are the selection checkbox, Member (the Member's name, worded as the
+default Name the new user gets), Member DUID, Email, Ministries led (a short
+list cut off with a count, such as "Choir, Ushers and 3 more") and Role,
+which is always Ministry leader. The import review's table heads the same
+column Member too, so each Member DUID follows its Member. Member, Member
+DUID and Email sort; Member is the default order.
 
 **Import selected** and **Import all** are available only while there is
 something to import (and Import selected only while a row is selected). The
