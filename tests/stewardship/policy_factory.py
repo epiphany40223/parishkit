@@ -52,3 +52,13 @@ def user(email="admin@example.org", role="administrator", name=None):
             "role": role,
         },
     }
+
+
+def legacy_bootstrap_document(email="admin@example.org"):
+    """A root exact-address bootstrap, as bootstrap wrote one before #993."""
+    return {
+        "schema_version": 1,
+        "version_id": str(uuid4()),
+        "predecessor_digest": None,
+        "sections": {"login_rules": [address(email)]},
+    }

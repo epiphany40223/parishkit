@@ -135,26 +135,32 @@ def require_users_form(runtime, *, enabled=None):
 
     The release that swaps the SQL sign-in functions reads only users, so web,
     workers and scheduler must not start before ``upgrade-users`` converted
-    the configuration. A deployment still in initial setup is exempt: its
-    Administrator stays an older exact-address rule until the setup wizard,
-    whose base it is, learns to write users with the Users page (#952 slice
-    5). Initial setup means exactly what ``setup_startup.initial_setup_hold``
-    requires: the bootstrap configuration, Testing mode, no current campaign
-    and no restore review pending, so no deployment past setup can pass as
-    one. ``enabled`` defaults to ``USERS_ENABLED``.
+    the configuration. A bootstrap in the users form (``bootstrap-users-v10``,
+    #993) already holds only Administrator users, and its setup finishes in
+    the users form. A deployment still in initial setup on an older
+    exact-address bootstrap (``bootstrap-policy-v1``, written before #993) is
+    exempt too, because setup cannot finish otherwise; its setup then ends in
+    sign-in rules, which ``upgrade-users`` converts. Initial setup means
+    exactly what ``setup_startup.initial_setup_hold`` requires: the bootstrap
+    configuration, Testing mode, no current campaign and no restore review
+    pending, so no deployment past setup can pass as one. The frozen
+    migration 0052 judges the same exemption. ``enabled`` defaults to
+    ``USERS_ENABLED``.
     """
     from parishkit.config import ConfigError
+
+    from .bootstrap_schema import BOOTSTRAP_SCHEMA, USERS_BOOTSTRAP_SCHEMA
 
     if not (USERS_ENABLED if enabled is None else enabled):
         return
     schema = runtime.active_configuration.validation_schema
     in_setup = (
-        schema == "bootstrap-policy-v1"
+        schema == BOOTSTRAP_SCHEMA
         and runtime.mode == "testing"
         and runtime.current_campaign_id is None
         and not runtime.restore_review_required
     )
-    if schema != SCHEMA and not in_setup:
+    if schema not in {SCHEMA, USERS_BOOTSTRAP_SCHEMA} and not in_setup:
         raise ConfigError(
             "The configuration still holds sign-in rules; run upgrade-users first."
         )

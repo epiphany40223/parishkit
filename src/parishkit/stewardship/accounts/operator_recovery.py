@@ -15,6 +15,7 @@ from django.db import transaction
 from parishkit.config import ConfigError
 
 from . import users_schema as users
+from .bootstrap_schema import USERS_BOOTSTRAP_SCHEMA
 from .configuration_installation import (
     _install_request,
     _selected_over,
@@ -30,9 +31,12 @@ from .request_models import ConfigurationChangeRequest
 from .request_patch import build_candidate
 from .runtime_models import SystemConfiguration
 
-# Each base configuration schema's recovery request format.
+# Each base configuration schema's recovery request format. A users
+# bootstrap (#993) uses the users format, whose candidate keeps the base's
+# schema, so recovery works during initial setup too.
 RECOVERY_SCHEMAS = {
     users.SCHEMA: users.RECOVERY_SCHEMA,
+    USERS_BOOTSTRAP_SCHEMA: users.RECOVERY_SCHEMA,
     "source-cadence-v8": "operator-recovery-cadence-v8",
     "bootstrap-policy-v1": "operator-recovery-bootstrap-v1",
     "campaign-content-v5": "operator-recovery-content-v5",

@@ -88,14 +88,18 @@ def pages():
             },
             (
                 "Who besides you may sign in to this administration site, and"
-                " with which role. Everyone signs in with a Google account. These"
-                " rules decide which accounts are let in. You can change them"
-                " later, and they take effect only when setup finishes.",
+                " with which role. Everyone signs in with a Google account. Each"
+                " address you list, under any of the three roles, becomes one user"
+                " with the highest role it is listed under; no one else is let in."
+                " You can name each user and change their role later on the Users"
+                " page; these lists take effect only when setup finishes.",
             ),
             (
                 "Who besides you may sign in to this administration site, and"
-                " with which role. These rules decide which accounts are let in."
-                " You can change them later, and they take effect only when"
+                " with which role. Each address you list, under any of the three"
+                " roles, becomes one user with the highest role it is listed under;"
+                " no one else is let in. You can name each user and change their"
+                " role later on the Users page; these lists take effect only when"
                 " setup finishes.",
             ),
         ),
@@ -237,7 +241,7 @@ def test_production_wording_is_unchanged(name):
 def test_staff_address_help_is_neutral_everywhere(local):
     """The access step's Staff-address help names email addresses, not Google."""
     page = render("setup-access", local)
-    assert "Individual email addresses that get Staff access, one per line," in page
+    assert "Email addresses of the people who get Staff access, one per line," in page
     assert "Individual Google account addresses" not in page
 
 
