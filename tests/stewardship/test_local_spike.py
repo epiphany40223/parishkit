@@ -59,7 +59,7 @@ def field(name, value):
 
 
 def form(**overrides):
-    """A small census form with Ministries, talents and a financial section."""
+    """A small census form with Ministries, a limitation and a financial section."""
     value = {
         "baseline": "baseline-id",
         "household": {
@@ -87,7 +87,7 @@ def form(**overrides):
             "proposed_members": {},
         },
         "service": {
-            "members": {"1": {"cannot_serve": False, "talents": {"t": True}}},
+            "members": {"1": {"cannot_serve": True}},
             "proposed_members": {},
         },
         "financial": {
@@ -115,13 +115,13 @@ def test_the_unchanged_submission_is_what_the_page_sends():
         "1": {"first_name": "Ann"},
         "2": {"moved_household": True},
     }
-    # A Member with a terminal request has no Ministry or talent answer.
+    # A Member with a terminal request has no Ministry or "cannot participate" answer.
     assert payload["ministries"] == {
         "members": {"1": {"join": [10], "leave": []}},
         "proposed_members": {},
     }
     assert payload["service"] == {
-        "members": {"1": {"cannot_serve": False, "talents": {"t": True}}},
+        "members": {"1": {"cannot_serve": True}},
         "proposed_members": {},
     }
     assert payload["additional_information"] == "kept"
@@ -157,7 +157,7 @@ def test_the_financial_answer_follows_the_pages_rules(answer, expected):
 
 
 def test_a_form_without_optional_sections_sends_empty_ones():
-    """No household, Ministries, talents or financial section: empty answers."""
+    """No household, Ministries or financial section: empty answers."""
     payload = unchanged_answers(
         form(
             household=None,

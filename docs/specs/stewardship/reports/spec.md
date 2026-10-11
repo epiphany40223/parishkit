@@ -1414,11 +1414,14 @@ sortable. It has no Member DUID column yet: the installed selection does not
 return the Member's key, so adding one needs a forward migration
 ([#932](https://github.com/epiphany40223/parishkit/issues/932)). The
 downloads keep their own column order until #932's export slice. Testing
-responses are excluded. Filters are a name or Family DUID search and one
-choice of everything, cannot participate or cannot attend; a summary counts
-each. Talents that older responses recorded are never shown: no talent
-column, count or filter appears on the page or in the downloads, and Members
-listed only for such talents are left out.
+responses are excluded. Filters are a name or Family DUID search and a Show
+choice (`show`) of everything, cannot participate or cannot attend; any other
+value is refused. A summary counts each. Talents that older responses
+recorded are never shown: no talent column, count or filter appears on the
+page or in the downloads, and Members listed only for such talents are left
+out. The report still reads through the installed
+`stewardship_talent_report_v1`, whose filter parameter keeps the name
+`talent`.
 
 The filtered result downloads immediately as CSV (Members, then Families) or
 XLSX (one sheet each), in a chosen display timezone, with the columns

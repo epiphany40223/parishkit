@@ -278,7 +278,7 @@ def dashboard(request, campaign_id):
     """The response dashboard of one campaign, read under the campaign guard.
 
     Admission, the purge protection, the role recheck inside the guard and
-    the completion audit follow the other campaign reports (``talent_views``).
+    the completion audit follow the other campaign reports (``limitation_views``).
     """
     finish, handed_off = None, False
     try:

@@ -7,7 +7,6 @@ it keeps that report's audit actions (``talents_report_viewed`` and
 
 from dataclasses import replace
 from datetime import UTC, datetime
-from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from django.core.exceptions import ObjectDoesNotExist
@@ -32,9 +31,14 @@ from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
 
 from .export_views import SAFE_FAILURES
+from .limitations import (
+    LimitationsQuery,
+    limitations_csv,
+    limitations_report,
+    limitations_xlsx,
+)
 from .read_admission import admit_report_read
 from .response_lists import current_snapshot
-from .talents import TalentQuery, talents_csv, talents_report, talents_xlsx
 
 # The page's two tables page and sort independently, so their table
 # parameters carry these prefixes.
@@ -149,25 +153,15 @@ def _error(campaign_id, *, status):
     return response
 
 
-# The Show filter's own words; any other ``talent`` value is a retired talent
-# option's UUID (talents.OPTION), which ``TalentQuery.offered`` reads as "any".
-TALENT_WORDS = frozenset({"any", "cannot_serve", "cannot_attend"})
-
-
 def audit_choices(query, snapshot):
     """The audit context naming what was read, without the search text (#556).
 
-    The talent choice is a closed word, or ``option`` with the configured
-    talent's UUID (a parish setting). The search text can name a Family, so
+    The Show choice is a closed word. The search text can name a Family, so
     only whether one was used is kept. ``snapshot`` is the ParishSoft data the
-    names came from, or None when it is unknown.
+    names came from, or None when it is unknown. (Rows recorded before #970
+    may also hold ``option`` and ``talent_option_id`` for a talent filter.)
     """
-    context = {"search_used": bool(query.search)}
-    if query.talent in TALENT_WORDS:
-        context["report_filter"] = query.talent
-    else:
-        context["report_filter"] = "option"
-        context["talent_option_id"] = UUID(query.talent)
+    context = {"search_used": bool(query.search), "report_filter": query.show}
     if snapshot is not None:
         context["snapshot_id"] = snapshot
     return context
@@ -228,12 +222,12 @@ def _respond(request, campaign_id, *, export, render):
                 ):
                     raise ValueError("Invalid Limitations export choice.")
                 extra = {"format": fmt[0], "zone": ZoneInfo(zone[0])}
-            query = TalentQuery.parse(parameters)
+            query = LimitationsQuery.parse(parameters)
         except ValueError:
             return _error(campaign_id, status=400)
-        # What the audit records: the parsed choices until the report reads
-        # them as offered, and the snapshot once the read has named it.
-        finalized, count, audited, snapshot = False, 0, query, None
+        # What the audit records: the parsed choices, and the snapshot once
+        # the read has named it.
+        finalized, count, snapshot = False, 0, None
 
         def finish(completed):
             """Audit completion once, after releasing the read transaction."""
@@ -248,7 +242,7 @@ def _respond(request, campaign_id, *, export, render):
                     campaign_id,
                     Outcome.SUCCEEDED if completed else Outcome.FAILED,
                     count,
-                    audit_choices(audited, snapshot),
+                    audit_choices(query, snapshot),
                 )
             except (DatabaseError, StorageInvariantError) as error:
                 emit_failure(error, event=Event.REPORT_AUDIT_FAILED)
@@ -264,26 +258,19 @@ def _respond(request, campaign_id, *, export, render):
 
         def content():
             """Only detached authorized data reaches the template or file writer."""
-            nonlocal count, audited, snapshot
-            campaign = Campaign.objects.select_related("active_configuration").get(
-                pk=campaign_id
-            )
-            configuration = campaign.active_configuration.values
-            # A removed talent filter reads as "Everything" for the tables,
-            # the re-posted sort/paging forms and the download alike.
-            shown = audited = query.offered(configuration)
+            nonlocal count, snapshot
+            # A campaign that no longer exists is refused (ObjectDoesNotExist).
+            Campaign.objects.only("pk").get(pk=campaign_id)
             # The report's SQL reads the current snapshot itself, and this
             # read-committed guard could see a refresh promote between
             # statements, so the audit names the snapshot only when it was
             # the same before and after the report.
             before = current_snapshot()
-            result = talents_report(
-                campaign_id, shown, principal, configuration=configuration
-            )
+            result = limitations_report(campaign_id, query, principal)
             if current_snapshot() == before:
                 snapshot = before
             count = len(result["members"]) + len(result["families"])
-            return iter((render(result, shown, extra),))
+            return iter((render(result, query, extra),))
 
         response = campaign_response(
             request,
@@ -319,7 +306,7 @@ def _respond(request, campaign_id, *, export, render):
 
 @require_http_methods(["GET", "POST"])
 def report(request, campaign_id):
-    """Default GET shows everything; search and talent filters use POST."""
+    """Default GET shows everything; search and Show filters use POST."""
 
     def render(result, query, extra):
         """The native report page."""
@@ -346,7 +333,7 @@ def report(request, campaign_id):
     return _respond(request, campaign_id, export=False, render=render)
 
 
-@page_download("talents")
+@page_download("limitations")
 @require_http_methods(["POST"])
 def export(request, campaign_id):
     """Download the filtered report as CSV or XLSX, rendered on request."""
@@ -354,7 +341,7 @@ def export(request, campaign_id):
     def render(result, query, extra):
         """The chosen file format, with times in the chosen timezone."""
         if extra["format"] == "xlsx":
-            return talents_xlsx(result, extra["zone"])
-        return talents_csv(result, extra["zone"])
+            return limitations_xlsx(result, extra["zone"])
+        return limitations_csv(result, extra["zone"])
 
     return _respond(request, campaign_id, export=True, render=render)

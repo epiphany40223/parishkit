@@ -216,7 +216,7 @@
     });
     if (next.service) ["members", "proposed_members"].forEach((group) => {
       Object.entries(next.service[group]).forEach(([id, entry]) => {
-        answers.service[group][id] = {cannot_serve: entry.cannot_serve, talents: {...entry.talents}};
+        answers.service[group][id] = {cannot_serve: entry.cannot_serve};
       });
     });
     separateMailing = null;
@@ -400,7 +400,7 @@
             (reference) => reference !== errorId).join(" "));
         }, {once: true});
       } else if (section) {
-        // A Member's whole-record, Ministry or talents error has no single
+        // A Member's whole-record, Ministry or "cannot participate" error has no single
         // field (#384 L2): name the Member and link to their section. No
         // custom validity is set on the section, which would keep the form
         // invalid until some field in it was typed in.
@@ -813,20 +813,15 @@
   }
   function serviceEntry(member) {
     const group = member.proposed ? "proposed_members" : "members";
-    return answers.service[group][member.id] ||= {cannot_serve: false, talents: {}};
+    return answers.service[group][member.id] ||= {cannot_serve: false};
   }
   function lockMinistries(member) {
-    // "Cannot participate": stop every current Ministry, join none and share
-    // no talents (the talents question is hidden), keeping the Family's own
-    // choices aside so unchecking restores them.
+    // "Cannot participate": stop every current Ministry and join none,
+    // keeping the Family's own choices aside so unchecking restores them.
     const choices = ministryChoices(member), key = "ministries." + member.id;
     if (!setAside.has(key)) setAside.set(key, structuredClone(choices));
     choices.join = [];
     if (!member.proposed) choices.leave = [...ministryCurrent(member)].sort((a, b) => a - b);
-    if (!form.service) return;
-    const entry = serviceEntry(member), talentsKey = "talents." + member.id;
-    if (!setAside.has(talentsKey)) setAside.set(talentsKey, {...entry.talents});
-    entry.talents = {};
   }
   function unlockMinistries(member) {
     const choices = ministryChoices(member), key = "ministries." + member.id;
@@ -834,42 +829,19 @@
     setAside.delete(key);
     choices.join = saved ? saved.join : [];
     if (!member.proposed) choices.leave = saved ? saved.leave : [];
-    if (!form.service) return;
-    const talentsKey = "talents." + member.id;
-    serviceEntry(member).talents = offeredTalents(setAside.get(talentsKey) || {});
-    setAside.delete(talentsKey);
-  }
-  function offeredTalents(talents) {
-    // A set-aside can outlive a refresh that removed talents (or emptied the
-    // list), so restore only talents still offered, and a note only while its
-    // option still takes free text. Otherwise the Family would submit a talent
-    // with no checkbox left to remove it, and the server would refuse it.
-    const options = new Map(form.service.talent_options.map((option) => [option.id, option]));
-    return Object.fromEntries(Object.entries(talents).filter(([id]) => options.has(id)).map(
-      ([id, text]) => [id, options.get(id).free_text ? text : ""]));
   }
   function preserveService(previous, before) {
-    // Keep this tab's own talent and "cannot participate" edits across a
-    // refreshed form. Each talent and the flag merge separately against the
-    // form this tab started from, so another tab's talents are not dropped;
-    // talents the parish no longer offers are left out.
+    // Keep this tab's own "cannot participate" edits across a refreshed form:
+    // the flag merges against the form this tab started from, so another
+    // tab's change to a Member this tab left alone is not overwritten.
     if (!form.service) return;
-    const offered = new Set(form.service.talent_options.map((option) => option.id));
     allMembers().forEach((member) => {
       if (!ministryEligible(member)) return;
       const group = member.proposed ? "proposed_members" : "members";
-      const old = before.service?.[group]?.[member.id] || {cannot_serve: false, talents: {}};
+      const old = before.service?.[group]?.[member.id] || {cannot_serve: false};
       const edited = previous.service?.[group]?.[member.id];
       if (!edited) return;
-      const entry = serviceEntry(member);
-      if (edited.cannot_serve !== old.cannot_serve) entry.cannot_serve = edited.cannot_serve;
-      new Set([...Object.keys(old.talents), ...Object.keys(edited.talents)]).forEach((id) => {
-        if (edited.talents[id] === old.talents[id] || !offered.has(id)) return;
-        if (edited.talents[id] === undefined) delete entry.talents[id];
-        // A note stays only while its option still takes free text.
-        else entry.talents[id] = form.service.talent_options.find((option) => option.id === id).free_text ?
-          edited.talents[id] : "";
-      });
+      if (edited.cannot_serve !== old.cannot_serve) serviceEntry(member).cannot_serve = edited.cannot_serve;
     });
   }
   function rebaseIds(kept, old, fresh, allowed) {
@@ -884,29 +856,17 @@
     });
     return [...result].sort((a, b) => a - b);
   }
-  function rebaseTalents(kept, old, fresh) {
-    // As rebaseIds, one talent at a time, for talents still offered; a note
-    // stays only while its option still takes free text (as preserveService).
-    const options = new Map(form.service.talent_options.map((option) => [option.id, option]));
-    const result = {...(fresh || {})};
-    new Set([...Object.keys(kept || {}), ...Object.keys(old || {})]).forEach((id) => {
-      if ((kept || {})[id] === (old || {})[id] || !options.has(id)) return;
-      if ((kept || {})[id] === undefined) delete result[id];
-      else result[id] = options.get(id).free_text ? kept[id] : "";
-    });
-    return result;
-  }
   function rebaseAside(member, kept, before) {
     // A set-aside kept across a refresh holds this tab's choices from before
     // the lock. It matters only while the Member is still locked: if another
     // tab unlocked them, it is dropped so a later lock captures the current
     // choices. If the refreshed form itself is locked, its stored choices are
-    // the lock's (all stopped, no talents), so the set-aside is kept as is.
+    // the lock's (all stopped), so the set-aside is kept as is.
     // Otherwise only this tab's own changes, against the form it started
     // from, are applied on top of the refreshed choices, as preserveMinistries
     // and preserveService do for visible choices.
     const group = member.proposed ? "proposed_members" : "members";
-    const key = "ministries." + member.id, talentsKey = "talents." + member.id;
+    const key = "ministries." + member.id;
     if (!serviceEntry(member).cannot_serve) return;
     const freshLocked = Boolean(form.service?.[group]?.[member.id]?.cannot_serve);
     if (kept.has(key)) {
@@ -918,11 +878,6 @@
         join: rebaseIds(mine.join, old.join, fresh.join, (id) => offered.has(id) && !current.has(id)),
         ...(member.proposed ? {} : {leave: rebaseIds(mine.leave, old.leave, fresh.leave,
           (id) => offered.has(id) && current.has(id))})});
-    }
-    if (kept.has(talentsKey)) {
-      const mine = kept.get(talentsKey), old = before?.service?.[group]?.[member.id];
-      const fresh = form.service?.[group]?.[member.id];
-      setAside.set(talentsKey, freshLocked || !old || !fresh ? mine : rebaseTalents(mine, old.talents, fresh.talents));
     }
   }
   function enforceLimitations(kept, preserve, before = null, previousForm = null) {
@@ -1049,55 +1004,6 @@
       edit(lockId, {anchor: lockId});
     });
   }
-  function offersTalents() {
-    // A campaign whose talent list was emptied (or never collects talents)
-    // shows no Talents panel or review line at all; "cannot participate"
-    // is a separate answer and still appears.
-    return Boolean(form.service?.talent_options.length);
-  }
-  function talentsEditor(member, parent) {
-    // Talents come last on the Member's page, below the ministry updates,
-    // and are hidden while the Member cannot participate (none are sent).
-    if (!offersTalents() || serviceEntry(member).cannot_serve) return;
-    const entry = serviceEntry(member), prefix = "service-" + member.id;
-    // Styled like the Ministry participation panel: a panel with an h4, and
-    // the question as the checkbox group's legend.
-    const panel = node("section", null, parent, {class: "panel talents-panel", id: prefix + "-talents-panel"});
-    node("h4", "Talents to share", panel);
-    const talents = node("fieldset", null, panel, {class: "talents-choices", id: prefix + "-talents"});
-    node("legend", "If you have a special talent that you would like to share with your parish family, please select it below.", talents);
-    form.service.talent_options.forEach((option) => {
-      const id = prefix + "-talent-" + option.id;
-      const wrapper = node("label", null, talents, {for: id});
-      const checkbox = node("input", null, wrapper, {type: "checkbox", id});
-      checkbox.checked = option.id in entry.talents;
-      wrapper.append(document.createTextNode(" " + option.label));
-      checkbox.addEventListener("change", () => {
-        if (checkbox.checked) entry.talents[option.id] = "";
-        else delete entry.talents[option.id];
-        if (option.free_text) edit(checkbox.checked ? id + "-text" : id, {anchor: id});
-      });
-      if (option.free_text && checkbox.checked) {
-        node("label", "Please describe your talent", talents, {for: id + "-text"});
-        const text = node("input", null, talents, {type: "text", id: id + "-text", required: "",
-          maxlength: String(form.service.talent_text_limit), autocomplete: "off", "aria-describedby": id + "-hint"});
-        text.value = entry.talents[option.id];
-        const error = node("p", null, talents, {id: id + "-hint", hidden: ""});
-        const validateText = () => {
-          text.setCustomValidity(text.value.trim() ? "" : "Describe your talent, or uncheck this choice.");
-          error.textContent = text.validationMessage; error.hidden = !error.textContent;
-          text.setAttribute("aria-invalid", String(!text.checkValidity()));
-        };
-        text.addEventListener("input", () => { entry.talents[option.id] = text.value; validateText(); });
-        text.addEventListener("blur", validateText);
-        pageOfValidators(parent).push(validateText);
-      }
-    });
-  }
-  function pageOfValidators(element) {
-    // Validators belong to the page being built (the last one added).
-    return pages.at(-1)?.validators || [];
-  }
   function ministryEditor(member, parent) {
     if (!form.ministries) return;
     const path = "ministries." + (member.proposed ? "proposed_members." : "members.") + member.id;
@@ -1208,7 +1114,6 @@
     // Keep the chosen ministries visible even while the list is collapsed.
     panel.append(joining);
     showJoining();
-    talentsEditor(member, parent);
   }
   function nameList(heading, names, parent) {
     // One ministry per line: a heading, then a bulleted list.
@@ -1230,12 +1135,8 @@
     const leaving = new Set(choices.leave || []);
     const continuing = names(new Set([...current].filter((id) => !leaving.has(id))));
     const stopping = names(leaving), joining = names(new Set(choices.join || []));
-    if (form.service) {
-      const entry = serviceEntry(member);
-      const talents = form.service.talent_options.filter((option) => option.id in entry.talents).map(
-        (option) => option.free_text ? option.label + ": " + entry.talents[option.id] : option.label);
-      if (!entry.cannot_serve && offersTalents()) node("p", "Talents to share: " + (talents.join(", ") || "None"), parent);
-      if (entry.cannot_serve) node("p", "Because of physical limitations, cannot participate in any ministries at this time.",
+    if (form.service && serviceEntry(member).cannot_serve) {
+      node("p", "Because of physical limitations, cannot participate in any ministries at this time.",
         parent, {class: "changed"});
     }
     // Like Stopping and Joining: a heading and one ministry per line.
@@ -2377,10 +2278,12 @@
           proposed_members: Object.fromEntries(allMembers().filter((member) => member.proposed).map(
             (member) => [member.id, ministryChoices(member)]))
         };
-        // Talents follow exactly the same Member identities as the Ministry answer.
+        // "Cannot participate" follows exactly the same Member identities as
+        // the Ministry answer. The server stores each entry with the empty
+        // talents map the retired Talents question (#970) left in its shape.
         payload.service = form.service ? Object.fromEntries(["members", "proposed_members"].map((group) => [group,
           Object.fromEntries(Object.keys(payload.ministries[group]).map((id) => [id,
-            answers.service[group][id] || {cannot_serve: false, talents: {}}]))])) : {};
+            answers.service[group][id] || {cannot_serve: false}]))])) : {};
         const result = await send("/family/submit", {baseline: form.baseline, answers: payload});
         if (!result) return;
         if (!result.accepted) submissionAttempted = uncertainSubmission;

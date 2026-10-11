@@ -16,9 +16,8 @@ accepts has a case here, so a new export cannot skip the guard. Page
 downloads (CSV, XLSX or PDF written straight from a page) come from the
 ``web.exports.page_download`` registry, cross-checked against the URL
 patterns and against the modules that name a download file, so a new one
-fails here until it has a case or a documented exception. Talents is left
-out (#970 removes it) and System logs is the recorded exception in the UX
-spec's Downloaded files section.
+fails here until it has a case or a documented exception. System logs is
+the recorded exception in the UX spec's Downloaded files section.
 """
 
 import ast
@@ -34,7 +33,7 @@ from django.urls import get_resolver
 from openpyxl import load_workbook
 
 import parishkit.stewardship
-from parishkit.stewardship.reports import family_test_names, pdf_design
+from parishkit.stewardship.reports import family_test_names, limitations, pdf_design
 from parishkit.stewardship.reports.census_changes import (
     CensusQuery,
     census_csv,
@@ -65,6 +64,7 @@ from .test_family_test_names import request as names_request
 from .test_financial_documents import document as financial
 from .test_financial_documents import row as financial_row
 from .test_information_rendering import document as information
+from .test_limitations_report import result as limitations_result
 from .test_ministry_exports import document as ministry
 from .test_ministry_packets import item as member
 from .test_ministry_packets import packet
@@ -102,8 +102,7 @@ ROUTED_PAGE_DOWNLOADS = routed_page_downloads(get_resolver().url_patterns)
 # does not render, each with its documented reason:
 # - System logs: the recorded exception in the UX spec's Downloaded files
 #   section (a log export, not a report table; JSON Lines has no columns).
-# - Talents: left out because #970 removes the report.
-PAGE_EXCEPTIONS = frozenset({"system_logs", "talents"})
+PAGE_EXCEPTIONS = frozenset({"system_logs"})
 # Every other registered page download is a case below of the same name, so
 # a new page download fails the guard until it is checked or excepted.
 PAGE_CASES = tuple(sorted(set(PAGE_DOWNLOADS) - PAGE_EXCEPTIONS))
@@ -421,6 +420,24 @@ def case_census_changes(monkeypatch):
         lambda: census_pdf(result, zone, parish="P", campaign="C", as_of=SUBMITTED),
     )
     return headers[0], headers, sheets, seen["table"], labels
+
+
+def case_limitations(monkeypatch):
+    """The Limitations report: a Members table, then a Families table.
+
+    Its CSV holds both tables, one after the other, and its XLSX one sheet
+    each; each table's columns are checked on their own. It has no PDF.
+    """
+    zone = ZoneInfo("America/Chicago")
+    result = limitations.shape_result(limitations_result({}, {}))
+    body = limitations.limitations_csv(result, zone).decode()
+    rows = list(csv.reader(io.StringIO(body)))
+    blank = rows.index([])
+    sheets, labels = xlsx_headers(limitations.limitations_xlsx(result, zone))
+    return [
+        (limitations.MEMBER_HEADINGS, [rows[0]], sheets[:1], None, labels),
+        (limitations.FAMILY_HEADINGS, [rows[blank + 1]], sheets[1:], None, labels),
+    ]
 
 
 # A page download without a case maps to None, which the page-download

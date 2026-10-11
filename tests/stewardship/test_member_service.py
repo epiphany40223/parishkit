@@ -15,7 +15,6 @@ from parishkit.stewardship.responses.service import (
     DEFAULT_TALENTS,
     InvalidServiceAnswers,
     configured_talent_options,
-    talent_options,
     validate_service_answers,
 )
 
@@ -43,25 +42,16 @@ def ministries(**entries):
 
 
 def service(**entries):
-    """A complete service payload; untouched Members serve with no talents."""
+    """A complete service payload as the Family form sends it (no talents)."""
     result = {
         "members": {
-            "1": {"cannot_serve": False, "talents": {}},
-            "2": {"cannot_serve": False, "talents": {}},
+            "1": {"cannot_serve": False},
+            "2": {"cannot_serve": False},
         },
         "proposed_members": {},
     }
     result["members"].update(entries)
     return result
-
-
-def test_no_campaign_offers_talents():
-    """Talents are retired (#970): defaults, edited and emptied lists offer none."""
-    for values in (None, [], [{"id": str(uuid4()), "label": "M", "free_text": False}]):
-        configuration = {"modules": ["ministry"]}
-        if values is not None:
-            configuration["talent_options"] = values
-        assert talent_options(configuration) == ()
 
 
 def test_campaign_without_a_list_hashes_fixed_default_talents():
@@ -204,7 +194,7 @@ def test_invalid_talents_report_only_trusted_paths(talents):
 
 def test_cannot_serve_requires_stopping_every_current_ministry():
     """The lock leaves every current Ministry and joins none."""
-    locked = {"1": {"cannot_serve": True, "talents": {}}}
+    locked = {"1": {"cannot_serve": True}}
     result = validate_service_answers(
         service(**locked),
         ministries(**{"1": {"join": [], "leave": [7, 8]}}),
@@ -222,7 +212,7 @@ def test_cannot_serve_requires_stopping_every_current_ministry():
 
 def test_cannot_serve_with_no_current_ministries_only_forbids_joining():
     """A Member with no roster simply joins nothing."""
-    locked = {"2": {"cannot_serve": True, "talents": {}}}
+    locked = {"2": {"cannot_serve": True}}
     validate_service_answers(service(**locked), ministries(), INPUTS, DEFAULT_TALENTS)
     with pytest.raises(InvalidServiceAnswers):
         validate_service_answers(
@@ -247,15 +237,22 @@ def test_cannot_serve_with_no_current_ministries_only_forbids_joining():
             "members": {"1": {"cannot_serve": "no", "talents": {}}},
             "proposed_members": {},
         },
+        {"members": {"1": {"talents": {}}}, "proposed_members": {}},
+        {"members": {"1": {}}, "proposed_members": {}},
+        {
+            "members": {"1": {"cannot_serve": False, "other": 1}},
+            "proposed_members": {},
+        },
     ],
 )
 def test_service_names_only_known_members_with_exact_fields(payload):
-    """No Member may be invented, and each entry has exactly its two fields."""
+    """No Member may be invented, and each entry holds ``cannot_serve`` and,
+    from a form opened before #970, ``talents``; nothing else."""
     with pytest.raises(InvalidServiceAnswers):
         validate_service_answers(payload, ministries(), INPUTS, DEFAULT_TALENTS)
 
 
-def test_omitted_members_default_to_no_talents_and_participating():
+def test_omitted_members_default_to_participating():
     """The stored answer always lists every Ministry identity explicitly."""
     expected = {
         "members": {
@@ -272,15 +269,16 @@ def test_omitted_members_default_to_no_talents_and_participating():
 
 
 def test_disabled_ministry_module_accepts_only_an_empty_section():
-    """Without the Ministry page there are no talents to record."""
+    """Without the Ministry page there is no "cannot participate" to record."""
     assert validate_service_answers({}, {}, None, ()) == {}
     with pytest.raises(InvalidServiceAnswers):
         validate_service_answers(service(), {}, None, ())
 
 
-def test_no_offered_talents_still_validates():
-    """With no talents offered (#970), "Cannot participate" still works."""
-    locked = {"1": {"cannot_serve": True, "talents": {}}}
+def test_entries_without_talents_are_stored_with_an_empty_map():
+    """The form sends only ``cannot_serve`` (#970); the stored entry keeps the
+    empty ``talents`` map the database guard requires."""
+    locked = {"1": {"cannot_serve": True}}
     result = validate_service_answers(
         service(**locked),
         ministries(**{"1": {"join": [], "leave": [7, 8]}}),
@@ -319,8 +317,8 @@ def test_stale_talent_from_an_older_form_is_accepted():
         assert set(caught.value.fields) == {"service.members.1.talents"}
 
 
-def test_prior_talents_drop_now_that_none_is_offered():
-    """A saved answer with talents prefills none (#970); the stored row keeps them."""
+def test_prior_talents_are_never_prefilled():
+    """A saved answer's talents are never shown (#970); the stored row keeps them."""
     prior = SimpleNamespace(
         answers={
             "service": {
@@ -332,9 +330,10 @@ def test_prior_talents_drop_now_that_none_is_offered():
             }
         }
     )
-    shown = _service_presentation(ministries(), (), prior)
+    shown = _service_presentation(ministries(), prior)
+    # Kept empty for a tab loaded before #970, whose script reads it.
     assert shown["talent_options"] == []
     assert shown["members"] == {
-        "1": {"cannot_serve": False, "talents": {}},
-        "2": {"cannot_serve": True, "talents": {}},
+        "1": {"cannot_serve": False},
+        "2": {"cannot_serve": True},
     }

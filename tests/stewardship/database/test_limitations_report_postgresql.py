@@ -2,8 +2,8 @@
 
 The report was "Talents and limitations". Responses submitted before talents
 were retired keep their stored talents; ``submit_live`` stores one such
-response by offering the old default talents while it submits, and the
-report must leave those talents out.
+response as a form opened before #970 would send it (the configured default
+talents are still accepted), and the report must leave those talents out.
 """
 
 import io
@@ -18,8 +18,10 @@ from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.deployment import ServiceRole
-from parishkit.stewardship.reports.talents import TalentQuery, talents_report
-from parishkit.stewardship.responses import inputs
+from parishkit.stewardship.reports.limitations import (
+    LimitationsQuery,
+    limitations_report,
+)
 from parishkit.stewardship.responses.service import DEFAULT_TALENTS
 from parishkit.stewardship.source.models import SourceCurrent
 
@@ -42,11 +44,9 @@ LEADER = Principal(uuid4(), frozenset({"ministry_leader"}), frozenset({4}))
 PAINTER, OTHER = DEFAULT_TALENTS[0].id, DEFAULT_TALENTS[-1].id
 
 
-def submit_live(harness, monkeypatch, *, cannot_serve=False):
+def submit_live(harness, *, cannot_serve=False):
     """One live response with stored talents (as before #970) and limitations."""
-    # Offer the old defaults only while this response is loaded and submitted.
-    with monkeypatch.context() as patched, web_login():
-        patched.setattr(inputs, "talent_options", lambda values: DEFAULT_TALENTS)
+    with web_login():
         form = load_form(harness)
         answers = answers_for(form)
         answers["cannot_attend"] = True
@@ -66,15 +66,10 @@ def submit_live(harness, monkeypatch, *, cannot_serve=False):
 
 def report(harness, principal=STAFF, **values):
     """Read through the restricted web grants, not the migration owner."""
-    campaign = Campaign.objects.select_related("active_configuration").get(
-        pk=harness.campaign.pk
-    )
+    campaign = Campaign.objects.get(pk=harness.campaign.pk)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True), transaction.atomic():
-        return talents_report(
-            campaign.pk,
-            TalentQuery.parse(values),
-            principal,
-            configuration=campaign.active_configuration.values,
+        return limitations_report(
+            campaign.pk, LimitationsQuery.parse(values), principal
         )
 
 
@@ -87,39 +82,35 @@ def directory_name(duid):
     return snapshot_family_names(snapshot, [duid])[duid]
 
 
-def test_report_lists_limitations_and_filters(response_service, monkeypatch):
+def test_report_lists_limitations_and_filters(response_service):
     """Rows come from the effective live response, filterable; no talents."""
     harness = response_service
     start(harness)
     harness = activate_response_service(harness)
-    submission = submit_live(harness, monkeypatch, cannot_serve=True)
+    submission = submit_live(harness, cannot_serve=True)
     # The stored answer keeps its talents (#970); the report never shows them.
     assert submission.answers["service"]["members"]["3"]["talents"] == {
         PAINTER: "",
         OTHER: "Organ",
     }
     result = report(harness)
-    assert result["collects_talents"] is False
     assert len(result["members"]) == 1 and len(result["families"]) == 1
     row = result["members"][0]
-    assert row["talents"] == []
+    assert "talents" not in row
     assert row["cannot_serve"] is True and row["member_name"]
     # Both tables name the Family as every Admin table does (#932).
     family = result["families"][0]
     assert ", " in row["family_name"] and family["family_name"] == row["family_name"]
     assert row["family_name"] == directory_name(row["family_duid"])
-    assert result["summary"]["cannot_attend"] == 1
-    assert result["summary"]["talents"] == []
-    # A retired talent filter reads as "Everything".
-    assert len(report(harness, talent=PAINTER)["members"]) == 1
-    only_families = report(harness, talent="cannot_attend")
+    assert result["summary"] == {"cannot_serve": 1, "cannot_attend": 1}
+    only_families = report(harness, show="cannot_attend")
     assert only_families["members"] == [] and len(only_families["families"]) == 1
     assert report(harness, search="no such name")["members"] == []
     with pytest.raises(PermissionError):
         report(harness, principal=LEADER)
-    for invalid in ({"talent": "painter"}, {"extra": "x"}):
+    for invalid in ({"show": PAINTER}, {"talent": "any"}, {"extra": "x"}):
         with pytest.raises(ValueError):
-            TalentQuery.parse(invalid)
+            LimitationsQuery.parse(invalid)
     # The ministry follow-up queue explains why this Member is leaving.
     # The queue resolves scope from the actor in SQL (#389 L3), so it needs a
     # real portal user rather than the invented STAFF Principal.
@@ -129,7 +120,7 @@ def test_report_lists_limitations_and_filters(response_service, monkeypatch):
     ]
 
 
-def test_native_page_and_downloads(response_service, google, settings, monkeypatch):
+def test_native_page_and_downloads(response_service, google, settings):
     """The page filters by CSRF POST; CSV and XLSX carry the same rows.
 
     Read with the real restricted web and download logins
@@ -141,7 +132,7 @@ def test_native_page_and_downloads(response_service, google, settings, monkeypat
     harness = response_service
     start(harness)
     harness = activate_response_service(harness)
-    submit_live(harness, monkeypatch, cannot_serve=True)
+    submit_live(harness, cannot_serve=True)
     route = reverse("admin:limitations_report")
     assert route == "/admin/reports/limitations/"
     browser, login = signed_in()
@@ -152,24 +143,25 @@ def test_native_page_and_downloads(response_service, google, settings, monkeypat
         assert b"<h1>Limitations</h1>" in body and b"Organ" not in body
         assert b"Painter" not in body and b"Members who cannot participate" in body
         assert get(browser, route + "?search=x")[0].status_code == 400
-        response, body = search(browser, route, {"talent": "cannot_attend"})
+        response, body = search(browser, route, {"show": "cannot_attend"})
         assert response.status_code == 200 and b"No matching Members." in body
-        assert search(browser, route, {"talent": "bad"})[0].status_code == 400
+        assert search(browser, route, {"show": "bad"})[0].status_code == 400
+        # The filter's old name and a talent's id are refused (#970).
+        assert search(browser, route, {"talent": "any"})[0].status_code == 400
+        assert search(browser, route, {"show": str(uuid4())})[0].status_code == 400
         # Shared tables (#203): every column sorts on the server, both tables
         # page independently, and the controls are POST forms, never links.
         response, body = search(
             browser,
             route,
-            {"talent": "any", "members_sort": "-latest", "families_size": "25"},
+            {"show": "any", "members_sort": "-latest", "families_size": "25"},
         )
         assert response.status_code == 200 and b"Page 1 of 1" in body
         assert b'aria-sort="descending"' in body and b'<a class="sort-link"' not in body
         assert b'name="families_size" value="25"' in body
         assert b'name="members_sort" value="latest"' in body
         # The Members table's Family DUID has its own sortable column (#932).
-        response, body = search(
-            browser, route, {"talent": "any", "members_sort": "duid"}
-        )
+        response, body = search(browser, route, {"show": "any", "members_sort": "duid"})
         assert response.status_code == 200 and b"Organ" not in body
         assert b'name="members_sort" value="-duid"' in body
         for invalid in (
@@ -182,7 +174,7 @@ def test_native_page_and_downloads(response_service, google, settings, monkeypat
             assert search(browser, route, invalid)[0].status_code == 400
         export = reverse("admin:limitations_export")
         response, body = search(
-            browser, export, {"format": "csv", "timezone": "UTC", "talent": "any"}
+            browser, export, {"format": "csv", "timezone": "UTC", "show": "any"}
         )
         assert response.status_code == 200
         assert response["Content-Type"] == "text/csv"
@@ -207,19 +199,9 @@ def test_native_page_and_downloads(response_service, google, settings, monkeypat
         ]
         assert book["Members"]["D2"].value == "Yes"
         assert search(browser, export, {"format": "pdf"})[0].status_code == 400
-        # A retired talent filter reads as "Everything": the tables, the
-        # re-posted forms and the download.
-        removed = str(uuid4())
-        response, body = search(
-            browser, route, {"talent": removed, "members_sort": "-latest"}
-        )
-        assert response.status_code == 200 and b"No matching Members." not in body
-        assert removed.encode() not in body
-        assert b'name="talent" value="any"' in body
-        response, body = search(
-            browser, export, {"format": "csv", "timezone": "UTC", "talent": removed}
-        )
-        assert response.status_code == 200 and b"Cannot attend Mass" in body
+        # The re-posted forms carry the Show choice.
+        response, body = search(browser, route, {"members_sort": "-latest"})
+        assert response.status_code == 200 and b'name="show" value="any"' in body
         _, body = get(browser, reverse("admin:participation"))
         assert route.encode() in body
         # The campaign reports page links the response dashboard too (#477).
@@ -232,8 +214,8 @@ def test_native_page_and_downloads(response_service, google, settings, monkeypat
     assert AuditEvent.objects.filter(event_type="talents_report_viewed").exists()
     assert AuditEvent.objects.filter(event_type="talents_report_exported").exists()
     # Each records its Show choice, whether the search box was used and the
-    # ParishSoft snapshot read (#556); a retired talent reads as "any". The
-    # report keeps the events it recorded as Talents and limitations (#970).
+    # ParishSoft snapshot read (#556). The report keeps the events it
+    # recorded as Talents and limitations (#970).
     snapshot = str(SourceCurrent.objects.get().snapshot_id)
     contexts = [
         (event.event_type, event.auditcontext.context)
@@ -263,7 +245,7 @@ def test_both_tables_sort_every_column_in_memory():
     """The complete in-memory report sorts before paging, per table."""
     from datetime import UTC, datetime
 
-    from parishkit.stewardship.reports.talent_views import tables
+    from parishkit.stewardship.reports.limitation_views import tables
 
     def row(name, duid, day, cannot=False):
         """One member/family row as the selection shapes it."""
@@ -271,7 +253,6 @@ def test_both_tables_sort_every_column_in_memory():
             "member_name": name,
             "family_name": name,
             "family_duid": duid,
-            "talents": [],
             "cannot_serve": cannot,
             "submitted_at": datetime(2026, 9, day, tzinfo=UTC),
         }
@@ -282,7 +263,7 @@ def test_both_tables_sort_every_column_in_memory():
     }
     members, families = tables(
         result,
-        TalentQuery(search="private"),
+        LimitationsQuery(search="private"),
         {"members_sort": "-cannot_serve", "families_sort": "-duid"},
         "/r/",
     )
@@ -291,5 +272,5 @@ def test_both_tables_sort_every_column_in_memory():
     assert members.method == families.method == "post" and members.action == "/r/"
     assert ("search", "private") in members.carried
     assert ("families_sort", "-duid") in members.carried
-    members, _ = tables(result, TalentQuery(), {"members_sort": "-latest"}, "/r/")
+    members, _ = tables(result, LimitationsQuery(), {"members_sort": "-latest"}, "/r/")
     assert [r["family_duid"] for r in members.rows] == [1, 2]
