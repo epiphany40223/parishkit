@@ -153,8 +153,9 @@ DO $check$
 BEGIN
     -- The one definer: SECURITY DEFINER, the fixed search_path, no EXECUTE
     -- for PUBLIC, its three arguments and jsonb answer, the session,
-    -- recovery and Administrator checks, the hourly limit, the audit event, matching the
-    -- address trimmed and case-insensitively, and no other overload.
+    -- recovery and Administrator checks, the hourly limit, the audit
+    -- event, matching the address trimmed and case-insensitively, and no
+    -- other overload.
     IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
             WHERE n.nspname='public' AND p.proname='stewardship_member_names_for_v1'
               AND p.prosecdef AND NOT p.proretset AND p.provolatile='v'
