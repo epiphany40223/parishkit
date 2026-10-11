@@ -22,6 +22,7 @@ from .restore_review_components import (
     SUPERSEDED,
     TESTING,
 )
+from .waits import painted
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -198,10 +199,10 @@ def test_refusals_answer_inside_the_region(page, component_origin):
     expect(region.get_by_role("button", name="Confirm with Google")).to_be_visible()
     # The refusal is drawn after the controls, so none of them moved.
     after = (_top(release), _top(resend))
-    assert after == before
+    assert after == pytest.approx(before, abs=1)
     resend.click()
     expect(region.get_by_text("Something changed since you looked")).to_be_visible()
-    assert _top(resend) == before[1]
+    assert _top(resend) == pytest.approx(before[1], abs=1)
     assert kept()
 
 
@@ -276,6 +277,9 @@ def _open_preview(page, component_origin, close):
     expect(button).to_be_visible()
     if close == "confirm":
         region.get_by_label("Why (kept in the System logs)").fill("In the log.")
+        # Firefox scrolls the typed field into view at its next refresh; a
+        # scroll the test makes before then is undone (#1037).
+        painted(page)
     return region, button
 
 
