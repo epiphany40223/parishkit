@@ -311,7 +311,6 @@ def test_page_tiles_tables_notes_and_audit(scenario):
         assert "$1,000 to under $1,500" in text and "$1,984.50" in text
         # Data notes, each year's provenance.
         assert "Invented test cohort" in text and "Synthetic data for tests" in text
-        assert get(browser, route + "?day=1")[0].status_code == 400
     contexts = list(
         AuditContext.objects.filter(
             event__event_type="campaign_comparison_viewed"
@@ -320,6 +319,95 @@ def test_page_tiles_tables_notes_and_audit(scenario):
     assert sorted(c["outcome"] for c in contexts) == ["started", "succeeded"]
     assert {c.get("count") for c in contexts} == {None, 2}
     assert start  # The campaign's day 1 is its start date.
+
+
+def chart_spec(text, key):
+    """The Vega-Lite spec the page embeds for chart ``key``."""
+    marker = f'<script id="comparison-{key}-spec" type="application/json">'
+    start = text.index(marker) + len(marker)
+    return json.loads(text[start : text.index("</script>", start)])
+
+
+def test_charts_and_compare_on_day(scenario):
+    """The page draws the stored years and live facts; Compare on day moves N.
+
+    Day 1 is a day the campaign has, so the page answers with day 1's
+    figures; day 3 is past the last complete day, and any value but a whole
+    day number is refused at the field, with the latest day's page, 400
+    and a denied view. Any other parameter is the plain options error.
+    """
+    harness, ready, browser, actor = scenario
+    store = harness.service.store
+    import_archive(store, actor, archive_bytes(CURRENT_YEAR - 1, [1, 2, 99]))
+    import_archive(store, actor, archive_bytes(CURRENT_YEAR - 2, [1, 99, 500, 501]))
+    opened = harness.campaign.active_configuration.starts_at
+    route = reverse("admin:campaign_comparison")
+    with (
+        campaign_clock(opened + timedelta(days=2, hours=12)),
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+    ):
+        response, body = get(browser, route)
+        assert response.status_code == 200, body
+        text = body.decode()
+        assert 'max="2"' in text and 'value="2"' in text
+        families = chart_spec(text, "families")
+        lines = {row["line"] for row in families["data"]["values"]}
+        assert lines == {
+            "current",
+            f"year-{CURRENT_YEAR - 1}",
+            f"year-{CURRENT_YEAR - 2}",
+            "average",
+        }
+        # The current line is the fact rows: four Families on days 1 and 2.
+        current = [r for r in families["data"]["values"] if r["line"] == "current"]
+        assert [(r["day"], r["shown"]) for r in current] == [(1, "4"), (2, "4")]
+        # Last year (three Families, one a day) ended on day 3 and is
+        # carried to day 4, the last day of the year before it.
+        last = [
+            (r["day"], r["shown"])
+            for r in families["data"]["values"]
+            if r["line"] == f"year-{CURRENT_YEAR - 1}"
+        ]
+        assert last == [(1, "1"), (2, "2"), (3, "3"), (4, "3 (final)")]
+        pledged = chart_spec(text, "pledged")
+        assert {r["line"] for r in pledged["data"]["values"]} == lines
+        for key in ("final-families", "final-pledged", "bands-families"):
+            chart_spec(text, key)
+        # Compare on day 1: the tiles and the rule move to day 1.
+        response, body = get(browser, route + "?day=1")
+        assert response.status_code == 200, body
+        text = body.decode()
+        assert "Day 1 of" in text and 'value="1"' in text
+        rule = [
+            layer
+            for layer in chart_spec(text, "families")["layer"]
+            if layer["mark"]["type"] == "rule"
+        ]
+        assert rule[0]["data"]["values"][0]["day"] == 1
+        for refused in ("?day=3", "?day=0", "?day=abc"):
+            response, body = get(browser, route + refused)
+            text = body.decode()
+            assert response.status_code == 400, refused
+            assert response["Cache-Control"] == "no-store"
+            assert "Enter a whole number from 1 to 2." in text
+            assert 'aria-invalid="true"' in text and "Day 2 of" in text
+        # The plain refusal, whose text the security boundary seals.
+        response, body = get(browser, route + "?day=1&scope=current")
+        assert response.status_code == 400 and b"Day 1 of" not in body
+    outcomes = sorted(
+        (c["outcome"], c.get("count"))
+        for c in AuditContext.objects.filter(
+            event__event_type="campaign_comparison_viewed"
+        ).values_list("context", flat=True)
+        if c["outcome"] != "started"
+    )
+    assert outcomes == [
+        ("denied", 2),
+        ("denied", 2),
+        ("denied", 2),
+        ("succeeded", 1),
+        ("succeeded", 2),
+    ]
 
 
 def test_command_prints_aggregates_with_the_small_count_protection(scenario, cli):  # noqa: F811

@@ -1055,6 +1055,32 @@ linked to #1018 (the last one closes part (b)).
    settings, while the current campaign's year cannot be resolved.
 5. **Charts and day control.** The three day-by-day charts, the final-results
    bars, the pledge-distribution stacked bars and Compare on day.
+   As built: `reports/comparison_charts.py` builds the seven charts from
+   the comparison's figures, each year's day-by-day series coming from its
+   stored `daily` rows and the current campaign's from the same fact rows
+   as its figures (no schema change). A final year shorter than the longest
+   is drawn flat to the last day, its points there marked "(final)", and
+   the average counts it there, as the tiles do; a partial year's line
+   stops at its last day. The chart engine's colors are the portal's design
+   tokens (accent, gold, ink and the control border for the grey years);
+   the portal has one light theme, so a browser in dark mode gets the same
+   colors on white. Lessons of the published infographic at phone width:
+   the grey years' end labels are spaced in pixels so none overlap, the
+   "Day N" label sits on the side of its rule away from them, the bars are
+   horizontal with each value inside a long bar's end or after a short
+   one, a legend's column count follows the panel's width, and the x-axis
+   title is "Campaign day", the "day 1 = first invitation day" explanation
+   moving to the line above the charts and each chart's summary (an axis
+   title wider than a phone's plot would be cut off). A browser test
+   checks at 320 and 1280 pixels that no chart text overlaps other text or
+   runs past its panel. The page's tables wrap whole words and scroll
+   sideways in their own box on a phone. Compare on day is a number field
+   (1 to the comparison day, checked by the browser) with a Compare button
+   above the report's one in-place region (`comparison-report`), so the
+   control never moves; a `day` that is not a whole number in that range
+   answers 400 with the comparison day's page and the error at the field,
+   and records the view as `denied`; any other parameter is the plain
+   report-options refusal.
 6. **Downloads.** CSV, XLSX and the one-page PDF summary, with the
    small-count protection.
 7. **Digest section.** The daily digest option, with its own
