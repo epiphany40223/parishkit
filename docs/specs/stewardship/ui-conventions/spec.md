@@ -1352,6 +1352,17 @@ money, headers) are in the reports'
 **Precedent.** #926, #929, and the Administrator's decisions of 2026-10-10
 on [#958](https://github.com/epiphany40223/parishkit/pull/958).
 
+A download may split one combined page cell into its parts, because a
+spreadsheet needs one value per cell to sort, filter or merge on: the parts
+take the cell's place, in the order the page shows them, each headed with the
+page's own words for it (the cell's heading or the label the page shows
+beside that part). The Ministry report's lists are the first case: the page's
+"Status and outcome" cell is Status and Outcome in the files, and "Contact and
+demographics" is Gender, Age, Email, Phones and Known primary Family address
+([Ministry change summary](../reports/spec.md#ministry-change-summary))
+(Administrator decision, 2026-10-11, on
+[#932](https://github.com/epiphany40223/parishkit/issues/932)).
+
 Recorded exceptions to the rule above:
 
 - **System logs:** CSV, XLSX and JSON Lines, no PDF. Its rows are wide raw

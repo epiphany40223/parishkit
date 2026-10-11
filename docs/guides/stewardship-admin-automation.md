@@ -1388,3 +1388,15 @@ error, as `logs export` does; the wrapper refuses to write it to a terminal.
   unchanged, as are the command's options and its document. The only
   readers are Administrator-run assistants; a script that reads the CSV by
   heading must use the new names.
+- `pk-admin/1` (#932): a deliberate change, kept on version 1. The file
+  `test families-preview --names` writes now has the columns `Family`, then
+  `Family DUID`, in the page's order; they were `Family DUID`, then
+  `Family name` (the heading is now `Family`, as on every Admin table).
+  `export ministry --ministry N --requests join` or `leave` writes the
+  page's list order: `Member`, `Member DUID`, `Status` (it was `State`),
+  `Outcome`, the contact columns or `Current Ministry role`, and
+  `Submitted` last (it was fourth). Its `Ministry DUID` column moved to the
+  report information, beside `Ministry`, since a list is always one
+  Ministry's. The commands' options and documents are unchanged, and the
+  only readers are Administrator-run assistants; a script that reads these
+  files by position or by the old headings must change.

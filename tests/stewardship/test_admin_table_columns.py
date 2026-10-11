@@ -10,6 +10,12 @@ has to split. A second check reads each table's column headings: every DUID
 heading is "Family DUID", "Member DUID" or "Ministry DUID" and sits right
 after the name it identifies. A third holds the shared ``numeric`` class on
 every DUID heading and every cell that prints only a DUID.
+
+Blind spot: the checks read template source, so a table whose columns come
+from a loop over a column list (``response-list.html``, where a
+``column.kind == 'id'`` cell prints ``{{ value|duid }}`` with the column's
+own ``css_class``) is not seen here. That table's own tests
+(``test_response_lists.py``) hold its DUID column's ``numeric`` class.
 """
 
 import re

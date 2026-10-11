@@ -274,7 +274,9 @@ def test_complete_columns_and_csv_privacy(action):
 )
 def test_lists_follow_the_page_column_order(action, contact):
     """A list's download has the page's order (#932): Member, Member DUID,
-    status and outcome, contact details or current role, Submitted last.
+    Status and Outcome (the page's "Status and outcome" cell, split),
+    contact details (split by the page's own labels) or current role, then
+    Submitted last.
 
     The list is one Ministry's, so its name and DUID head the file (report
     information) rather than repeat as columns, as they head the page.
@@ -283,7 +285,7 @@ def test_lists_follow_the_page_column_order(action, contact):
     assert report.headings == (
         "Member",
         "Member DUID",
-        "State",
+        "Status",
         "Outcome",
         *contact,
         "Submitted",
@@ -309,7 +311,7 @@ def test_summary_keeps_ministry_and_duid_columns():
 def test_exports_show_no_assignee_and_legacy_assigned_reads_new(action):
     """Follow-up has no assignee (#552); an old `assigned` request reads New."""
     assert "Assignee" not in document(action=action).headings
-    column = document(action=action).headings.index("State")
+    column = document(action=action).headings.index("Status")
     report = document(
         action=action, count=1, state="assigned", assignee="=leader@example.org"
     )
