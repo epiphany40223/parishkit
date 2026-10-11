@@ -18,6 +18,7 @@ import json
 import sys
 from functools import partial
 from io import BytesIO
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -29,6 +30,7 @@ from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.archive import imports
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.reports import chart_rendering
 from parishkit.stewardship.reports.daily_digest import render_daily_digest
 from parishkit.stewardship.reports.digest_building import (
@@ -46,6 +48,8 @@ from parishkit.stewardship.reports.digest_models import (
     DailyDigestRecipient,
 )
 from parishkit.stewardship.reports.digest_planning import cover_dates, discover_dates
+from parishkit.stewardship.reports.digest_tasks import daily_handler
+from parishkit.stewardship.reports.facts import FactUnavailable
 from parishkit.stewardship.reports.materialization import materialize_fact_set
 from parishkit.stewardship.web.digest_content import COMPARISON_CHART_IDS
 
@@ -60,6 +64,7 @@ from .test_campaign_comparison_postgresql import (
 )
 from .test_daily_digest_fanout_postgresql import configure_content
 from .test_daily_digest_planning_postgresql import INSTANT, allocate
+from .test_daily_digest_tasks_postgresql import execute
 from .test_daily_digest_views_postgresql import read
 from .test_family_mail_preparation_postgresql import family_mail  # noqa: F401
 
@@ -271,3 +276,201 @@ def test_a_killed_chart_render_leaves_a_durable_timeout_entry(
     assert context["what"] == "digest_chart"
     assert context["helper"] == "chart_render_worker"
     assert context["limit_seconds"] == 1 and context["elapsed_seconds"] >= 1
+
+
+# ------------------------------------------------- failures retry, then stop
+
+
+def queued_with_comparison(harness):
+    """A daily digest task with the section on, queued but not claimed."""
+    row = schedule(
+        str(harness.campaign.pk),
+        kind="daily_digest",
+        date=None,
+        weekday=None,
+        time="00:15:00",
+        comparison=True,
+    )
+    assert (
+        change(
+            harness.service.store,
+            harness.service.store.active(),
+            uuid4(),
+            [{"operation": "add", "section": "schedules", **row}],
+        ).state
+        == "applied"
+    )
+    configure_content(harness)
+    return allocate(claim_task=False)
+
+
+def run(status):
+    """Execute the real daily handler once as the worker login."""
+    with task_login(ServiceRole.WORKER, exact=True):
+        execute(status, daily_handler(public_origin="https://parish.example"))
+    return TaskRun.objects.get(pk=status.run_id)
+
+
+@pytest.mark.parametrize("final", [False, True])
+@pytest.mark.parametrize(
+    "error",
+    [
+        chart_rendering.ChartRenderError("Chart rendering failed."),
+        FactUnavailable("Synthetic disagreement"),
+    ],
+)
+def test_a_failed_section_compile_retries_then_fails_at_attempt_5(
+    family_mail,  # noqa: F811
+    google,
+    renderer,
+    monkeypatch,
+    error,
+    final,
+):
+    """A renderer failure or unavailable facts wait to retry; the fifth fails.
+
+    The retry delays run on the database's real clock (minutes), so the
+    fifth attempt is shown by having the failure branch read attempt 5
+    (``final``), as the fifth claim would: digest_tasks._execute then ends
+    the task as a permanent failure instead of scheduling another retry.
+    """
+    from dataclasses import replace
+
+    from parishkit.stewardship.reports import digest_tasks
+
+    failed = []
+
+    def failing(*args, **kwargs):
+        """The compile's failure, as the renderer or the facts raise it."""
+        failed.append(True)
+        raise error
+
+    real_status = digest_tasks._status
+
+    def status_of(run):
+        """The task's status; attempt 5 once the compile has failed (``final``)."""
+        found = real_status(run)
+        return replace(found, attempt=5) if final and failed else found
+
+    monkeypatch.setattr(digest_tasks, "render_daily_digest", failing)
+    monkeypatch.setattr(digest_tasks, "_status", status_of)
+    with campaign_clock(INSTANT):
+        import_archive(
+            family_mail.service.store,
+            administrator(),
+            archive_bytes(CURRENT_YEAR - 1, [1, 2]),
+        )
+        status = queued_with_comparison(family_mail)
+        task = run(status)
+    assert failed
+    assert task.state == ("failed" if final else "retry_wait")
+    assert not DailyDigestReady.objects.exists()
+
+
+def test_a_comparison_that_disagrees_with_its_facts_is_retried(
+    family_mail,  # noqa: F811
+    google,
+    renderer,
+    monkeypatch,
+):
+    """The SQL refusal (23514) becomes unavailable facts, so the task retries.
+
+    The fact rows are forced apart from the submissions, as only
+    a superuser could, after the facts are built and before the comparison
+    reads them; the definer function then refuses, as in
+    test_the_cutoff_is_derived_in_sql_and_checked_against_the_fact_row.
+    """
+    from django.db import connections
+
+    from parishkit.stewardship.reports import digest_tasks
+    from parishkit.stewardship.reports.models import CampaignDailyFact
+
+    real = digest_tasks.load_daily_document
+
+    def forced_apart(claim, fact_set_id):
+        """Move every day's fact row (the report day's too), as a superuser."""
+        other = connections.create_connection("default")
+        try:
+            with other.cursor() as cursor:
+                cursor.execute("SET session_replication_role = replica")
+                cursor.execute(
+                    "UPDATE stewardship_daily_fact SET"
+                    " cumulative_responses=cumulative_responses+1,"
+                    " cohort_denominator=cohort_denominator+1"
+                    " WHERE fact_set_id=%s",
+                    [fact_set_id],
+                )
+                assert cursor.rowcount >= 1
+        finally:
+            other.close()
+        return real(claim, fact_set_id)
+
+    monkeypatch.setattr(digest_tasks, "load_daily_document", forced_apart)
+    with campaign_clock(INSTANT):
+        import_archive(
+            family_mail.service.store,
+            administrator(),
+            archive_bytes(CURRENT_YEAR - 1, [1, 2]),
+        )
+        status = queued_with_comparison(family_mail)
+        task = run(status)
+    assert task.state == "retry_wait"
+    assert not DailyDigestReady.objects.exists()
+    assert CampaignDailyFact.objects.exists()
+
+
+# ------------------------------------------- 0072's check, on old bodies
+
+
+MIGRATIONS = (
+    Path(__file__).resolve().parents[3] / "src/parishkit/stewardship/schema/migrations"
+)
+
+
+def replaced(name, function):
+    """One function's definition from a frozen file, as CREATE OR REPLACE."""
+    from ..test_schema_migration_files import function_bodies
+
+    text = (MIGRATIONS / name).read_text(encoding="utf-8")
+    bodies = function_bodies(text, replace=False) | function_bodies(text, replace=True)
+    return "CREATE OR REPLACE FUNCTION" + bodies[function]
+
+
+@pytest.mark.parametrize(
+    ("installs", "refusal"),
+    [
+        (
+            [("0059_campaign_archives.sql", "stewardship_safe_context_v1")],
+            "does not admit the chart timeout",
+        ),
+        (
+            [
+                ("0067_campaign_comparison.sql", "stewardship_campaign_comparison_v1"),
+                (
+                    "0067_campaign_comparison.sql",
+                    "stewardship_campaign_archive_renewal_v1",
+                ),
+            ],
+            "comparison functions are not installed",
+        ),
+    ],
+)
+def test_the_0072_check_refuses_the_old_bodies(installs, refusal):
+    """Each replaced body, put back as it was, fails 0072's DO block."""
+    from django.db import DatabaseError, transaction
+
+    from .test_campaign_comparison_postgresql import ACL_NOW
+
+    text = (MIGRATIONS / "0072_digest_comparison.sql").read_text(encoding="utf-8")
+    check = text[text.index("DO $check$") : text.index("$check$;") + len("$check$;")]
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(ACL_NOW)
+        cursor.execute(check)  # The installed bodies pass.
+        with (
+            pytest.raises(DatabaseError, match=f"Migration 0072: .*{refusal}"),
+            transaction.atomic(),
+        ):
+            for name, function in installs:
+                cursor.execute(replaced(name, function))
+            cursor.execute(check)
+        cursor.execute(check)  # Rolled back: the installed bodies pass again.

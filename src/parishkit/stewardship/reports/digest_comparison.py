@@ -219,7 +219,7 @@ def section_html(document, url):
         )
     html += "</tbody></table>"
     html += (
-        f'<p><a href="{escape(url, quote=True)}"{_style("link")} '
+        f'<p><a href="{attribute(url)}"{_style("link")} '
         f'rel="noopener noreferrer">{plain(LINK_LABEL)}</a></p>'
     )
     return html

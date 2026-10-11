@@ -87,6 +87,10 @@ def load_daily_document(claim, fact_set_id):
     return document
 
 
+# The SQLSTATE of the comparison function's refusal of a disagreeing fact row.
+CHECK_VIOLATION = "23514"
+
+
 def comparison_enabled(preparation):
     """Whether the preparation's schedule revision includes the section."""
     values = ScheduleRevision.objects.values_list("values", flat=True).get(
@@ -105,6 +109,8 @@ def comparison_section(document, snapshot):
     retryably, as a fact problem does, rather than sending a digest without
     the section it was set to carry.
     """
+    from django.db import DatabaseError
+
     from parishkit.stewardship.storage import StorageInvariantError
 
     from .comparison_reads import digest_comparison
@@ -115,6 +121,13 @@ def comparison_section(document, snapshot):
             document.participation, snapshot.timezone_configuration
         )
     except StorageInvariantError:
+        raise FactUnavailable("Comparison figures disagree with their facts.") from None
+    except DatabaseError as error:
+        # The definer function refuses with SQLSTATE 23514 when its Families
+        # responded differ from the fact row's (Django raises IntegrityError);
+        # that is the same disagreement. Any other database error is not.
+        if getattr(error.__cause__, "sqlstate", None) != CHECK_VIOLATION:
+            raise
         raise FactUnavailable("Comparison figures disagree with their facts.") from None
     return section(found)
 
