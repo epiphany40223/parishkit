@@ -275,6 +275,12 @@ label + .help, label + .helptext { margin-block: -.15rem .5rem; }
    and a long message must not push that button onto the next line. */
 .field-error-line { min-height: 1.6em; min-height: 1lh; margin-block: .25rem .5rem; width: 0; min-width: 100%; }
 .field-error-line > .errorlist { margin: 0; }
+/* A line that keeps room for a message shown live sizes itself by an
+   invisible copy of it (.field-error-size), so the message never needs
+   more room than the line has, however the reader's fonts wrap it. */
+.field-error-line:has(> .field-error-size) { display: grid; }
+.field-error-line:has(> .field-error-size) > * { grid-area: 1 / 1; }
+.field-error-size { visibility: hidden; font-weight: 600; }
 .error { color: var(--error-ink); font-weight: 600; }
 /* Legends float inside the box so a fieldset reads as a titled card. */
 fieldset { border: 1px solid var(--border); border-radius: var(--radius); background: var(--paper); margin-block: 1.25rem; min-width: 0; padding: 1rem 1.25rem 1.25rem; }
@@ -555,6 +561,23 @@ details.export-panel > form { margin-top: .5rem; }
 .filter-bar > div { flex: 0 1 26rem; min-width: 12rem; }
 .filter-bar > div.short { flex: 0 1 9rem; }
 .filter-bar button { margin: 0; }
+/* Short form fields side by side (the Ministry follow-up request, #1014).
+   Unlike a filter bar the fields align at the top, since a time field keeps
+   a reading line under its box; every label takes the height of a label
+   with an "i" button, so the boxes line up; and a field's tip floats below
+   its field, so opening it moves nothing. A .short field (a date) is
+   narrower. At phone width each field takes its own row: one column. A
+   textarea marked .compact takes the height its rows give rather than the
+   theme's tall minimum. */
+.field-row { display: flex; flex-wrap: wrap; align-items: start; gap: .5rem 1rem; margin-block: .75rem; }
+.field-row > div { position: relative; flex: 0 1 16rem; min-width: 12rem; }
+.field-row > div.short { flex-basis: 12rem; }
+/* Wide enough for a time's reading ("Reads as 09:30 (9:30 AM)") on one line. */
+.field-row > div.field-time { flex-basis: 14rem; }
+.field-row > div > label, .field-row > div > .label-row { display: flex; align-items: center; min-height: 1.75rem; margin: 0 0 .25rem; }
+.field-row .label-row .toggletip-bubble { position: absolute; top: calc(100% + .4rem); inset-inline-start: 0; flex: none; width: max-content; max-width: min(20rem, calc(100vw - 2rem)); box-shadow: var(--shadow); }
+@media (max-width: 40rem) { .field-row > div { flex-basis: 100%; } }
+textarea.compact { min-height: 0; }
 
 /* Progress */
 progress { width: 100%; height: .85rem; appearance: none; border: 0; border-radius: 999px; background: #e3e8e7; color: var(--accent); accent-color: var(--accent); overflow: hidden; }
@@ -903,13 +926,16 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 .schedule-row-fields select { width: auto; }
 .schedule-row-fields input[type=text] { width: 7.5rem; }
 /* An invalid row control keeps its size: the second pixel of its error
-   border is drawn as a shadow, so marking it moves nothing (#736). */
-.schedule-row-fields :is(input, select)[aria-invalid=true] { border-width: 1px; box-shadow: inset 0 0 0 1px var(--error-border); }
-.schedule-row-fields :is(input, select)[aria-invalid=true]:focus { box-shadow: inset 0 0 0 1px var(--error-border), 0 0 0 3px rgb(17 94 86 / 22%); }
+   border is drawn as a shadow, so marking it moves nothing (#736). A
+   .field-row input (the follow-up contact Date and Time, #1014) is taller
+   than its minimum height, so a thicker border would grow it too; a select
+   is held at its minimum height and keeps the global 2px border. */
+:is(.schedule-row-fields :is(input, select), .field-row input)[aria-invalid=true] { border-width: 1px; box-shadow: inset 0 0 0 1px var(--error-border); }
+:is(.schedule-row-fields :is(input, select), .field-row input)[aria-invalid=true]:focus { box-shadow: inset 0 0 0 1px var(--error-border), 0 0 0 3px rgb(17 94 86 / 22%); }
 /* Forced colors draw no shadow: an outline inside the border marks it,
    except under keyboard focus, where the global 3px focus ring shows. */
 @media (forced-colors: active) {
-  .schedule-row-fields :is(input, select)[aria-invalid=true]:not(:focus-visible) { outline: 1px solid CanvasText; outline-offset: -2px; }
+  :is(.schedule-row-fields :is(input, select), .field-row input)[aria-invalid=true]:not(:focus-visible) { outline: 1px solid CanvasText; outline-offset: -2px; }
 }
 .schedule-row-messages { padding-top: .5rem; min-height: calc(1lh + .5rem); }
 .schedule-row-messages > * { margin: 0; }
