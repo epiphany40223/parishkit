@@ -750,7 +750,10 @@ pk-admin history remove 2025 --expected-version 2
   names each problem's cell and rule (never the cell's value).
   `--no-family-rows` keeps no Family ids, so the renewal figure is not
   available for that year. Another archive being checked is exit 3
-  (`unavailable`); retry in a minute.
+  (`unavailable`); retry in a minute. Text values and notes may hold tabs
+  and line breaks but no other control character: a carriage return (a
+  Windows line ending pasted into a note) is refused as a `control`
+  problem at its cell, so replace those line endings before importing.
 - `history confirm --token` (full scope) imports the preview. A
   replacement removes the year's earlier import, so it asks you to type
   `yes` (or pass `--yes`); an addition does not ask. It prints `outcome`
