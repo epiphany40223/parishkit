@@ -723,7 +723,7 @@ The `history` commands import the archive workbooks of past campaigns for
 the campaign comparison report
 ([campaign history](../specs/stewardship/campaign-history/spec.md#command-line),
 [#1018](https://github.com/epiphany40223/parishkit/issues/1018)). They are
-the **Past campaigns** page's actions (the page itself comes later), need an
+the **Past campaigns** page's actions (Parish data, Past campaigns), need an
 Administrator, and print counts, totals, dates, states and checksums only:
 never a Family row, a note's text, a pledge band or quartile, a
 pledging-Family count or an average. Check files offline first with

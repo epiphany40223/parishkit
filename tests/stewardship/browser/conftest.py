@@ -124,6 +124,8 @@ from .menu_components import components as menu_components
 from .ministry_components import components as ministry_components
 from .my_ministries_components import components as my_ministries_components
 from .not_found_components import components as not_found_components
+from .past_campaign_components import POSTS as PAST_CAMPAIGN_POSTS
+from .past_campaign_components import components as past_campaign_components
 from .pause_components import components as pause_components
 from .refresh_schedule_components import components as refresh_schedule_components
 from .reminder_workgroup_components import POSTS as WORKGROUP_POSTS
@@ -2241,6 +2243,7 @@ def component_origin():
     responses.update(limitations_components(context, admin))
     responses.update(census_components(context, admin))
     responses.update(comparison_components(context, admin))
+    responses.update(past_campaign_components(context, admin))
     responses.update(workgroup_components(context, admin))
     responses.update(schedule_list_components(context, admin))
     responses.update(content_catalog_components(context, admin))
@@ -2276,6 +2279,7 @@ def component_origin():
         | BRANDING_POSTS
         | CONTENT_CATALOG_POSTS
         | open_form_posts(context, admin)
+        | PAST_CAMPAIGN_POSTS
         | {
             f"{IN_PLACE_FORM}/refuse": (400, None, responses["/in-place-refused"][1]),
             f"{IN_PLACE_FORM}/invalid": (200, None, responses["/in-place-invalid"][1]),

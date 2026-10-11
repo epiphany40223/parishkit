@@ -236,8 +236,14 @@ def clean_file_name(name):
     return name.strip()[:FILE_NAME_LIMIT]
 
 
-class _ReviewLock:
-    """The deployment-wide, non-blocking lock for archive Reviews."""
+class ReviewLock:
+    """The deployment-wide, non-blocking lock for archive Reviews.
+
+    A session-level advisory lock, so the same connection may take it again
+    (PostgreSQL counts the holds): the Past campaigns page takes it before
+    it reads the uploaded body, and ``review`` takes it again around the
+    check. Each exit releases one hold.
+    """
 
     def __enter__(self):
         """Take the lock, or refuse at once when another Review holds it."""
@@ -258,7 +264,7 @@ def _check(data, check):
     """The helper's document, recording a kill as a durable timeout entry."""
     from parishkit.stewardship.provider_checks import helper_timeout_recorder
 
-    with _ReviewLock():
+    with ReviewLock():
         return check(
             data,
             on_timeout=helper_timeout_recorder(

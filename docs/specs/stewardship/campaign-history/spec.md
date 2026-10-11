@@ -997,9 +997,9 @@ linked to #1018 (the last one closes part (b)).
    from its rows; and a
    Review killed at its time limit leaves a `helper_timed_out` entry naming
    `archive_check` and the helper `archive_check_worker`. The command line
-   needs no page route yet: the route-parity ledger lists the `history`
+   needed no page route yet: the route-parity ledger listed the `history`
    commands as ahead of their page (`admin_parity.AHEAD_OF_PAGE`) until
-   slice 4.
+   slice 4, whose routes they now cover.
 3. **Comparison figures.** The metric service, the SQL function (in its own
    forward migration) for pledging Families, renewal, the current median
    and the current campaign's pledge distribution,
@@ -1026,6 +1026,25 @@ linked to #1018 (the last one closes part (b)).
    page exists (slice 4).
 4. **Past campaigns page.** The upload page with Review, Apply, replacement
    and Remove.
+   As built: Review posts to `review/` and, once the preview is stored,
+   answers with a redirect to the page naming it (`?preview=<id>`, an
+   import's own id, never a Family's), so the card is the page's own
+   state and survives a reload; a refused file answers with the page and
+   its problems in place. The view is marked `csrf_header_only`, so the
+   middleware takes the token from the `X-CSRFToken` header alone (the
+   form is marked `data-csrf-header`), and it closes the spooled upload
+   inside the Review lock, before the helper runs. Apply posts to
+   `imports/` and answers with the page naming the outcome
+   (`?applied=<id>&outcome=…`); Remove posts the confirmation dialog's
+   `<year>:<version>` to `removal/`. For a file already imported Apply is
+   shown unavailable with that reason rather than offered, since it has
+   nothing to do ([prerequisite
+   gates](../ui-conventions/spec.md#prerequisite-gates)); the card says
+   when and by whom the file was imported. The table's Active Families
+   cell carries the count's provenance in a toggletip, and every import's
+   file name and SHA-256, tombstones included, are under Technical
+   details. Review is unavailable, with the reason and a link to Campaign
+   settings, while the current campaign's year cannot be resolved.
 5. **Charts and day control.** The three day-by-day charts, the final-results
    bars, the pledge-distribution stacked bars and Compare on day.
 6. **Downloads.** CSV, XLSX and the one-page PDF summary, with the

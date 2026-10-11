@@ -104,9 +104,13 @@ def _maintenance_block():
 """
 
 
-# The one route that admits a request body larger than 6 MB (#346). Its old
-# address is not kept (#864), so only the current one admits it.
+# The two routes that admit a request body larger than 6 MB. Their old
+# addresses are not kept (#864), so only the current ones admit it. Hosted
+# files' upload (#346) takes one 10 MB file; Past campaigns' archive Review
+# (#1018) one 20 MB workbook, whose view refuses an oversize Content-Length
+# and an unauthorized request before it reads the body.
 HOSTED_FILE_UPLOAD = "/admin/parish/files/uploads/"
+ARCHIVE_REVIEW = "/admin/parish/past-campaigns/review/"
 
 
 def render_caddy(configuration):
@@ -183,7 +187,9 @@ def _caddyfile(configuration, *, site, global_options, tls):
     file server's ETag, and a mid-campaign fix reaches returning Families.
     Hosted files (#346): only their upload route admits an 11 MB body (a
     10 MB file plus form overhead), and Caddy buffers each served file so a
-    slow phone download never holds a web thread.
+    slow phone download never holds a web thread. Past campaigns (#1018):
+    only the archive Review admits 21 MiB (a 20 MiB workbook plus form
+    overhead), exactly the view's own bound (``MAX_REVIEW_REQUEST``).
 
     ``site`` is the site address, ``global_options`` the profile's lines of
     the global options block (ports, automatic HTTPS and trust, already
@@ -249,7 +255,11 @@ def _caddyfile(configuration, *, site, global_options, tls):
         request_body @hosted_file_upload {{
             max_size 11MB
         }}
-        @ordinary_body not path {HOSTED_FILE_UPLOAD}
+        @archive_review path {ARCHIVE_REVIEW}
+        request_body @archive_review {{
+            max_size 21MiB
+        }}
+        @ordinary_body not path {HOSTED_FILE_UPLOAD} {ARCHIVE_REVIEW}
         request_body @ordinary_body {{
             max_size 6MB
         }}

@@ -1,0 +1,44 @@
+{% load i18n stewardship %}{% comment %}
+  The contents of Past campaigns' #archive-review region (past-campaigns.html):
+  - problems: a refused Review's (or Apply's) located problems, each its
+    sheet and cell and the rule, never a value; "N more" when cut off;
+  - card: the Review card of this Administrator's pending preview, with
+    Apply. Choosing another file or changing Keep Family rows withdraws it
+    (data-review-of), so Apply only applies what is shown. A replacement
+    needs its acknowledgement box (data-acknowledgment) before Apply is
+    available; a file already imported has nothing to apply, so Apply is
+    unavailable with that reason;
+  - applied: what Apply did.
+  An Apply refusal shows its problems above the card it refused.
+{% endcomment %}{% if problems %}<section class="notice notice-error" data-error-summary tabindex="-1" aria-labelledby="archive-problems-title">
+<h2 id="archive-problems-title">{% if card %}{% translate "This was not applied" %}{% else %}{% translate "This file can't be imported" %}{% endif %}</h2>
+<ul>{% for problem in problems %}<li>{% if problem.place %}<code>{{ problem.place }}</code>: {{ problem.rule }}{% else %}{{ problem.rule|capfirst }}{% endif %}{% if problem.code == "year_unresolved" %}. <a href="{% url 'admin:campaign_settings' %}">{% translate "Open Campaign settings" %}</a>{% endif %}</li>{% endfor %}</ul>
+{% if more_problems %}<p>{% blocktranslate count count=more_problems trimmed %}{{ count }} more problem is not shown.{% plural %}{{ count }} more problems are not shown.{% endblocktranslate %}</p>{% endif %}
+</section>{% endif %}
+{% if card %}<section class="panel" data-review-of="archive-upload" data-stale-note="{% translate 'You changed the file or Keep Family rows after reviewing. Choose Review again to see what will be imported.' %}" aria-labelledby="archive-review-title">
+<h2 id="archive-review-title" tabindex="-1" data-in-place-focus>{% if card.action == "add" %}{% blocktranslate with year=card.archive.campaign_year %}Add {{ year }}{% endblocktranslate %}{% elif card.action == "replace" %}{% blocktranslate with year=card.archive.campaign_year %}Replace {{ year }}{% endblocktranslate %}{% else %}{% blocktranslate with year=card.archive.campaign_year %}{{ year }} is already imported{% endblocktranslate %}{% endif %}</h2>
+<dl class="review-figures">
+<dt>{% translate "File" %}</dt><dd>{{ card.archive.file_name|default:"—" }}</dd>
+<dt>{% translate "Campaign" %}</dt><dd>{{ card.archive.campaign_name }} ({{ card.archive.campaign_year }})</dd>
+<dt>{% translate "Final or partial" %}</dt><dd>{% if card.archive.is_final %}{% translate "Final: the campaign had closed" %}{% else %}{% translate "Partial: exported while the campaign was running" %}{% endif %}</dd>
+<dt>{% translate "Day 1" %}</dt><dd>{{ card.day_1 }}</dd>
+<dt>{% translate "Last response" %}</dt><dd>{{ card.last_day }}</dd>
+<dt>{% translate "Families responded" %}</dt><dd>{{ card.families }}</dd>
+<dt>{% translate "Annual pledges" %}</dt><dd>{{ card.pledged }}</dd>
+<dt>{% translate "Active Families" %}</dt><dd>{{ card.active }}</dd>
+<dt>{% translate "Family rows kept" %}</dt><dd>{% if card.archive.family_rows_kept %}{% blocktranslate with count=card.family_rows %}Yes, {{ count }} Families{% endblocktranslate %}{% else %}{% translate "No" %}{% endif %}</dd>
+</dl>
+<h3>{% translate "Notes for Campaign comparison" %}</h3>
+<p class="help">{% translate "These become the year's data notes on Campaign comparison, which only Administrators and Staff see." %}</p>
+<dl class="review-notes">{% for label, text, flagged in card.notes %}<dt>{{ label }}{% if flagged %} <span class="status-badge">{% translate "Check" %}</span>{% endif %}</dt><dd>{{ text|linebreaksbr }}{% if flagged %}<br><span class="help">{% translate "Check this note before Apply: it is long, or holds a dollar amount or a long number that could name a pledge or a Family." %}</span>{% endif %}</dd>{% endfor %}</dl>
+<p>{% if card.action == "add" %}{% blocktranslate with year=card.archive.campaign_year %}Apply adds {{ year }} to Campaign comparison.{% endblocktranslate %}{% elif card.action == "replace" %}{% blocktranslate with year=card.archive.campaign_year name=card.current.campaign_name %}Apply replaces the {{ year }} import ({{ name }}) with this file; the old import is removed.{% endblocktranslate %}{% else %}{% blocktranslate with who=card.current_by|default:_("an Administrator") %}This same file was imported by {{ who }} on{% endblocktranslate %} <time datetime="{{ card.current.imported_at|instant }}" data-local-instant>{{ card.current.imported_at|instant }}</time>. {% translate "Apply would change nothing." %}{% endif %}</p>
+<p data-review-note>{% translate "Nothing is imported until you choose Apply. This review expires" %} <time datetime="{{ card.expires_at|instant }}" data-local-instant>{{ card.expires_at|instant }}</time>.</p>
+<form method="post" action="{% url 'admin:past_campaign_import' %}#archive-review" data-in-place data-in-place-message="{% translate 'Applied.' %}">{% csrf_token %}<input type="hidden" name="preview" value="{{ card.archive.pk }}">
+{% if card.action == "already" %}{% button type="submit" enabled=False aria-describedby="archive-apply-reason" %}{% translate "Apply" %}{% endbutton %}<p class="help" id="archive-apply-reason">{% translate "Unavailable: this file is already imported." %}</p>
+{% elif card.replace_blocked %}{% button type="submit" enabled=False aria-describedby="archive-apply-reason" %}{% translate "Apply" %}{% endbutton %}<p class="help" id="archive-apply-reason">{% blocktranslate with year=card.archive.campaign_year %}Unavailable: a partial file can't replace the final {{ year }} import.{% endblocktranslate %}</p>
+{% else %}{% if card.action == "replace" %}<p><label><input type="checkbox" name="replace" value="yes" required data-acknowledgment data-missing-hint="{% translate 'Tick the box to confirm the replacement.' %}"> {% blocktranslate with year=card.archive.campaign_year %}This replaces the {{ year }} figures already imported{% endblocktranslate %}</label></p>{% endif %}
+{% button type="submit" %}{% translate "Apply" %}{% endbutton %}{% endif %}</form>
+</section>{% elif applied %}<section class="panel" aria-labelledby="archive-applied-title">
+<h2 id="archive-applied-title" tabindex="-1" data-in-place-focus>{% if applied.outcome == "imported" %}{% blocktranslate with year=applied.archive.campaign_year %}Imported {{ year }}{% endblocktranslate %}{% elif applied.outcome == "replaced" %}{% blocktranslate with year=applied.archive.campaign_year %}Replaced {{ year }}{% endblocktranslate %}{% else %}{% blocktranslate with year=applied.archive.campaign_year %}{{ year }} was already imported{% endblocktranslate %}{% endif %}</h2>
+<p>{% if applied.outcome == "already" %}{% blocktranslate with name=applied.archive.campaign_name who=applied.imported_by|default:_("an Administrator") %}{{ name }} from this same file was imported by {{ who }} on{% endblocktranslate %} <time datetime="{{ applied.archive.imported_at|instant }}" data-local-instant>{{ applied.archive.imported_at|instant }}</time>; {% translate "nothing changed." %}{% else %}{% blocktranslate with name=applied.archive.campaign_name %}{{ name }} is now in the table above and on Campaign comparison.{% endblocktranslate %}{% endif %}</p>
+</section>{% endif %}

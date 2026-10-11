@@ -14,8 +14,13 @@ from django.db.models.functions import Greatest
 from django.middleware.csrf import (
     CSRF_ALLOWED_CHARS,
     CSRF_SECRET_LENGTH,
+    REASON_CSRF_TOKEN_MISSING,
+    REASON_NO_CSRF_COOKIE,
     CsrfViewMiddleware,
     InvalidTokenFormat,
+    RejectRequest,
+    _check_token_format,
+    _does_token_match,
 )
 from django.utils import timezone
 from django.utils.cache import patch_vary_headers
@@ -96,6 +101,26 @@ class NamespacedSessionMiddleware:
         return response
 
 
+# The request attribute that marks a view's request for the header-only token
+# check (``csrf_header_only``).
+HEADER_TOKEN_ONLY = "stewardship_csrf_header_only"
+
+
+def csrf_header_only(view):
+    """Check this POST view's CSRF token from the X-CSRFToken header only.
+
+    Django's check reads ``request.POST`` for the form's token before it
+    looks at the header, and for a multipart request that reads and spools
+    the whole body. A large-upload route (Past campaigns' Review, #1018)
+    must refuse an unauthorized request before anything reads its body, so
+    its page script sends the token in the header and this mark makes the
+    middleware look nowhere else: a request without the header is refused
+    with the body unread. The origin and referer checks are unchanged.
+    """
+    setattr(view, HEADER_TOKEN_ONLY, True)
+    return view
+
+
 class NamespacedCsrfMiddleware(CsrfViewMiddleware):
     """Django CSRF checks with one secret cookie per session namespace.
 
@@ -109,7 +134,8 @@ class NamespacedCsrfMiddleware(CsrfViewMiddleware):
 
     The namespace supplies the cookie name and path; CSRF_COOKIE_DOMAIN,
     AGE, SECURE, HTTPONLY and SAMESITE apply as usual. Settings this class
-    would silently ignore refuse to load instead.
+    would silently ignore refuse to load instead. A view marked
+    ``csrf_header_only`` takes its token from the header alone.
     """
 
     def __init__(self, get_response):
@@ -124,6 +150,38 @@ class NamespacedCsrfMiddleware(CsrfViewMiddleware):
                 "do not support CSRF_USE_SESSIONS."
             )
         super().__init__(get_response)
+
+    def process_view(self, request, callback, callback_args, callback_kwargs):
+        """Mark a ``csrf_header_only`` view's request, then check as Django does."""
+        if getattr(callback, HEADER_TOKEN_ONLY, False):
+            setattr(request, HEADER_TOKEN_ONLY, True)
+        return super().process_view(request, callback, callback_args, callback_kwargs)
+
+    def _check_token(self, request):
+        """Django's token check, or for a marked view its header-only form.
+
+        The header-only form is Django's own check with the ``request.POST``
+        lookup left out, so it never reads the body: the namespace secret
+        must exist and the X-CSRFToken header must match it.
+        """
+        if not getattr(request, HEADER_TOKEN_ONLY, False):
+            return super()._check_token(request)
+        try:
+            secret = self._get_secret(request)
+        except InvalidTokenFormat as exc:
+            raise RejectRequest(f"CSRF cookie {exc.reason}.") from None
+        if secret is None:
+            raise RejectRequest(REASON_NO_CSRF_COOKIE)
+        token = request.META.get(settings.CSRF_HEADER_NAME, "")
+        if not token:
+            raise RejectRequest(REASON_CSRF_TOKEN_MISSING)
+        try:
+            _check_token_format(token)
+        except InvalidTokenFormat as exc:
+            raise RejectRequest(f"CSRF token {exc.reason}.") from None
+        if not _does_token_match(token, secret):
+            raise RejectRequest("CSRF token incorrect.")
+        return None
 
     def _get_secret(self, request):
         """Read the namespace secret; a malformed value is replaced, not trusted."""

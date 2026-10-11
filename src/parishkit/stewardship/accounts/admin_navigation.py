@@ -232,6 +232,9 @@ PAGES = {
         "parish", _("Delete hosted files"), "hosted_files", linkable=False
     ),
     "hosted_file_rename": Page("parish", _("Change placeholder name"), "hosted_files"),
+    # Archive workbooks of earlier campaigns (#1018): a parish record, read by
+    # Campaign comparison. Its Review, Apply and Remove are form actions.
+    "past_campaigns": Page("parish", _("Past campaigns")),
     "ministries": Page("parish", _("Ministries")),
     # A live campaign's one editable structural setting (#342). One home per
     # concept: it runs through Ministries; Campaign settings keeps a link.
@@ -482,6 +485,9 @@ MENU = (
     Entry("branding_settings", _ADMIN),
     Entry("ministries", _ADMIN),
     Entry("hosted_files", _ADMIN),
+    # CONFIGURE is the Administrator's alone, so it implies the page's
+    # FINANCIAL_DETAIL too (Staff hold that one only).
+    Entry("past_campaigns", _ADMIN),
     Entry("source_refresh", _ADMIN),
     # Last, so /admin/parish/ still opens Parish settings for an
     # Administrator; Staff see the group with this one entry (#1011). Its
@@ -555,6 +561,10 @@ NON_PAGES = frozenset(
         # The header's Find a Family results (#561), a fragment for its box.
         "find_family",
         "hosted_file_upload",
+        # Past campaigns' Review (the upload), Apply and Remove (#1018).
+        "past_campaign_review",
+        "past_campaign_import",
+        "past_campaign_removal",
         "financial_export",
         "information_export",
         "information_update",

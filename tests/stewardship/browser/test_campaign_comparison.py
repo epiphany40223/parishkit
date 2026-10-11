@@ -64,12 +64,21 @@ def test_tables_and_notes(page, component_origin):
     expect(
         page.get_by_text("Converted from <three> invented exports").first
     ).to_be_visible()
+    # An Administrator manages the imported years on Past campaigns.
+    expect(
+        page.get_by_role(
+            "link", name="Add, replace or remove imported years on Past campaigns"
+        )
+    ).to_have_attribute("href", "/admin/parish/past-campaigns/")
 
 
 def test_an_empty_comparison_says_what_is_missing(page, component_origin):
     """With no imported year the page says so, and shows no pledge tiles."""
     page.goto(component_origin + "/campaign-comparison-empty")
     expect(page.get_by_text("No past campaigns are imported")).to_be_visible()
+    expect(
+        page.get_by_role("link", name="Import them on Past campaigns")
+    ).to_have_attribute("href", "/admin/parish/past-campaigns/")
     expect(page.locator(".stat-tile")).to_have_count(3)
     # The renewal "—" explains itself from the keyboard.
     button = page.locator(".stat-tile .toggletip-button")

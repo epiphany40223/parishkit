@@ -1,8 +1,10 @@
-"""Parish data group URLs: settings, logos, Ministries, hosted files, refresh
-and Data to fix in ParishSoft.
+"""Parish data group URLs: settings, logos, Ministries, hosted files, past
+campaigns, refresh and Data to fix in ParishSoft.
 
 Pages end in ``/``; their form actions and images sit under them as nouns
-(``uploads/``, ``deletion/``, ``name/``). Campaign Ministries sits under
+(``uploads/``, ``deletion/``, ``name/``, ``imports/``, ``removal/``); Past
+campaigns' ``review/`` is the name its specification and the ingress rule
+give the upload route. Campaign Ministries sits under
 Ministries (one home per concept); it changes the current campaign's
 selections, so its route hands the view the current campaign's id.
 """
@@ -19,6 +21,7 @@ from ..accounts import (
     refresh_views,
 )
 from ..accounts.group_root_views import group_root
+from ..reports import past_campaign_views
 from ..web.admin_routes import current_campaign
 
 patterns = [
@@ -45,6 +48,23 @@ patterns = [
         "parish/files/<uuid:file_id>/name/",
         hosted_file_views.rename,
         name="hosted_file_rename",
+    ),
+    # Past campaigns (#1018): archive workbooks of earlier campaigns.
+    path("parish/past-campaigns/", past_campaign_views.page, name="past_campaigns"),
+    path(
+        "parish/past-campaigns/review/",
+        past_campaign_views.review,
+        name="past_campaign_review",
+    ),
+    path(
+        "parish/past-campaigns/imports/",
+        past_campaign_views.apply,
+        name="past_campaign_import",
+    ),
+    path(
+        "parish/past-campaigns/removal/",
+        past_campaign_views.remove,
+        name="past_campaign_removal",
     ),
     path(
         "parish/parishsoft-refresh/",
