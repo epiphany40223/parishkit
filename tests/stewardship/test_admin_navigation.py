@@ -581,6 +581,7 @@ SPEC_ORDER = [
     "ministries",
     "hosted_files",
     "source_refresh",
+    "parishsoft_fixes",
     # Users and access
     "users",
     "automation_access",
@@ -592,7 +593,8 @@ SPEC_ORDER = [
 ]
 SHAPES = {
     "administrator": SPEC_ORDER,
-    "staff": REPORTS,
+    # Staff see Parish data with its one entry for them (#1011).
+    "staff": [*REPORTS, "parishsoft_fixes"],
     "ministry_leader": ["ministry_report", "ministry_followup"],
 }
 
