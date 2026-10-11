@@ -213,10 +213,23 @@ def test_refusals_are_listed_and_shown_without_the_address(
     response_service,
     google,
 ):
-    """Refused addresses by id and time, and the source version to verify."""
+    """Refused addresses by id and time, and the source version to verify.
+
+    ``delivery list`` counts the email's unresolved refused addresses as
+    Outgoing mail marks them (#1004): the recording email 1, another 0.
+    """
     harness = activate_response_service(response_service)
-    refusal = remember(refused(harness))
+    event = refused(harness)
+    refusal = remember(event)
+    other = email(harness, address="other@example.org")
     _, secret, _ = paired(admin.service, scope="read-only")
+    code, listed, _ = admin("delivery", "list", "--search", "1", secret=secret)
+    assert code == 0, listed
+    assert {r["id"]: r["refused"] for r in listed["result"]["deliveries"]} == {
+        str(event.message_id): 1,
+        str(other.message_id): 0,
+    }
+    assert not private(listed)
     before = views()
     code, document, _ = admin("delivery", "refusals", "--duid", "1", secret=secret)
     assert code == 0, document
