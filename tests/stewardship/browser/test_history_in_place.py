@@ -1,6 +1,6 @@
 """History and report pagers act in place (#519 PR 6).
 
-Mail delivery's evidence and attempt pages, the Staff history of an
+Mail delivery's attempt and evidence pages, the Staff history of an
 additional-information item, the follow-up history of a Ministry follow-up
 request, and the weekly information report's pages are served at their real
 addresses with their next pages (delivery_components, information_components,
@@ -137,9 +137,10 @@ def test_follow_up_save_after_paging_refreshes_the_history(page, component_origi
 
 
 def test_delivery_history_pages_in_place(page, component_origin):
-    """Next page and Previous page on a mail delivery swap its evidence and
-    attempt history in place; evidence the reader is typing into a
-    resolution form above is kept."""
+    """Next page and Previous page on a mail delivery swap its attempt
+    history and its Admin evidence in place, whichever of the two pagers is
+    used, since both lists share one page window (#1015); evidence the
+    reader is typing into a resolution form between them is kept."""
     page.set_viewport_size(VIEWPORT)
     page.goto(component_origin + "/delivery-paged")
     page.evaluate(MARK)
@@ -150,22 +151,24 @@ def test_delivery_history_pages_in_place(page, component_origin):
         component_origin,
         "delivery-history",
         "Next page",
-        "Earlier evidence",
+        "Created",
         "Next page shown.",
         "Previous page",
         "/delivery-paged?page=2",
     )
+    visible(page.locator("#delivery-evidence").get_by_text("Earlier evidence"))
     assert evidence.input_value() == TYPED
     turn_page(
         page,
         component_origin,
-        "delivery-history",
+        "delivery-evidence",
         "Previous page",
         "Confirmed <private> evidence",
         "Previous page shown.",
         "Next page",
         "/delivery-paged?page=1",
     )
+    visible(page.locator("#delivery-history").get_by_text("Acceptance unknown"))
     assert evidence.input_value() == TYPED
 
 

@@ -73,10 +73,14 @@ def test_delivery_resolutions_wait_for_a_note():
     assert forms and all("data-require-complete" in form for form in forms)
     notes = re.findall(r'<textarea id="evidence-[^>]*>', html)
     assert len(notes) == len(forms)
-    assert all(
-        'data-missing-hint="Enter the evidence or reason for this decision."' in note
-        for note in notes
-    )
+    # A bare evidence note asks for the note; every decision asks why.
+    for note in notes:
+        hint = (
+            "Enter the note."
+            if 'id="evidence-note"' in note
+            else "Enter why you are doing this."
+        )
+        assert f'data-missing-hint="{hint}"' in note, note
     hint_follows(html, "Save evidence note", "complete-hint-note")
     hint_follows(
         html, "Confirm delivery using external evidence", "complete-hint-accept"

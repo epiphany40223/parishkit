@@ -229,6 +229,12 @@ def test_information_reopen_confirmation_shows_only_when_unticking():
 PAGERS = (
     ("delivery.html", "delivery-history", False, ("page-previous", "page-next")),
     (
+        "delivery.html",
+        "delivery-evidence",
+        False,
+        ("evidence-previous", "evidence-next"),
+    ),
+    (
         "information.html",
         "information-history",
         True,
@@ -273,6 +279,10 @@ def test_delivery_resolution_forms_stay_outside_the_history():
     text = (TEMPLATES / "delivery.html").read_text()
     history = region_body(text, "delivery-history")
     assert "<form" not in history and "Attempt history" in history
+    # The Admin evidence, below the forms (#1015), is a region of its own
+    # that the same pagers refresh.
+    evidence = region_body(text, "delivery-evidence")
+    assert "<form" not in evidence and "Admin evidence and decisions" in evidence
 
 
 def test_log_cross_links_filter_in_place():
