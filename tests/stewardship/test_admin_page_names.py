@@ -22,6 +22,7 @@ from django.urls import reverse
 
 from parishkit.stewardship.accounts import admin_navigation as navigation
 from parishkit.stewardship.accounts import setup_wizard
+from parishkit.stewardship.campaigns.configuration import REMINDER_WORKGROUP_NAME
 
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = ROOT / "src/parishkit/stewardship"
@@ -165,8 +166,19 @@ TRANSLATED = re.compile(r'{% translate "([^"]+)" %}')
 
 
 def _source(template):
-    """The template's text."""
-    return (TEMPLATE_DIR / template).read_text(encoding="utf-8")
+    """The template's text, with the reminder exclusion name (#1061) spelled out.
+
+    Its page names itself through a template tag reading the name's one
+    source, so the checks below see the name that tag renders.
+    """
+    return (
+        (TEMPLATE_DIR / template)
+        .read_text(encoding="utf-8")
+        .replace(
+            "{% reminder_workgroup_name %}",
+            f'{{% translate "{REMINDER_WORKGROUP_NAME}" %}}',
+        )
+    )
 
 
 def _names(fragment):
@@ -296,6 +308,8 @@ RETIRED = (
     "Setup Slack test",
     "Finish initial setup",
     "Setup credential",
+    # Retired by #1061: it read as if those Families get Reminders.
+    "Reminder WorkGroup",
 )
 
 # Legitimate uses, as (path relative to the package, retired name), each

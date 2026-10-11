@@ -12,6 +12,8 @@ Old Admin addresses are not kept (#864): each answers 404.
 
 from django.urls import path
 
+from parishkit.stewardship.campaigns.configuration import REMINDER_WORKGROUP_SLUG
+
 from ..web.admin_routes import redirect_to
 
 # (slashless route, page URL name).
@@ -56,7 +58,7 @@ SLASHLESS = (
     ("campaign/schedules/addition", "schedule_new"),
     ("campaign/schedules/<uuid:schedule_id>", "schedule_edit"),
     ("campaign/share-options", "share_settings"),
-    ("campaign/reminder-workgroup", "reminder_workgroup"),
+    (f"campaign/{REMINDER_WORKGROUP_SLUG}", "reminder_workgroup"),
     ("campaign/go-live", "go_live"),
     ("campaign/go-live/families", "go_live_families"),
     ("campaign/go-live/cleanup/<uuid:request_id>", "go_live_cleanup"),

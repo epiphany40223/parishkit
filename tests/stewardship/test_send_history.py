@@ -15,6 +15,7 @@ from uuid import UUID
 import pytest
 from django.template.loader import render_to_string
 
+from parishkit.stewardship.campaigns.configuration import REMINDER_WORKGROUP_NAME
 from parishkit.stewardship.jobs import send_history
 from parishkit.stewardship.jobs.send_history import ListedSend, SendKey, SendRow
 from parishkit.stewardship.jobs.send_progress import progress
@@ -302,7 +303,7 @@ def test_the_table_is_seven_readable_columns_with_the_dates_first():
         ("Cancelled", "12"),
         ("Not needed", "12"),
         ("Couldn't be emailed", "0"),
-        ("Skipped: Reminder WorkGroup", "0"),
+        (f"Skipped: {REMINDER_WORKGROUP_NAME}", "0"),
         ("Held", "0"),
     ]
     # A send not started says so, with no result or duration lines.

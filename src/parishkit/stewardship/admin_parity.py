@@ -20,6 +20,7 @@ or action lands with its command, or with an exemption here.
 from typing import NamedTuple
 
 from parishkit.stewardship.admin_urls.slashless import TARGETS as SLASHLESS_TARGETS
+from parishkit.stewardship.campaigns.configuration import REMINDER_WORKGROUP_SLUG
 
 
 class Parity(NamedTuple):
@@ -130,7 +131,7 @@ LEDGER = {
     "campaign_clone": pending("PR 10", "campaign clone"),
     "campaign_ministries": pending("PR 10", "campaign ministries"),
     "share_settings": pending("PR 10", "campaign shares"),
-    "reminder_workgroup": pending("PR 10", "campaign reminder-workgroup"),
+    "reminder_workgroup": pending("PR 10", f"campaign {REMINDER_WORKGROUP_SLUG}"),
     "content_catalog": pending("PR 10", "content list"),
     "content_edit": pending("PR 10", "content show", "content preview"),
     "content_revision": pending("PR 10", "content confirm"),

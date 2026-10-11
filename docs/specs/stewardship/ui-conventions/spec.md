@@ -554,7 +554,7 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   answer, handed through Change status's read and carried by the quiet
   follow-up, so the refreshed table is the one the Administrator was
   looking at.
-- **In-place review: Reminder WorkGroup (#750).** The Reminder WorkGroup
+- **In-place review: No-reminders WorkGroup (#750).** The No-reminders WorkGroup
   editor works as Parish and Campaign settings do: its one name field is a
   `data-table-sync` form whose Review changes waits for a change (hint
   "Change the WorkGroup name to review it."), and its review (the WorkGroup
@@ -794,7 +794,7 @@ running indicator with a plain final "Status unavailable" message
 dialog says the change was saved but its status can't be checked (#952).
 
 Current state, to be made consistent: Parish settings, Campaign settings,
-Share options, Campaign Ministries, Ministries, Reminder WorkGroup, Campaign
+Share options, Campaign Ministries, Ministries, No-reminders WorkGroup, Campaign
 images and Parish logos review, apply and follow the change in place
 ([in-place review](#in-place-controls), #532, #750); every other editor still
 uses its separate Review and Change status pages.

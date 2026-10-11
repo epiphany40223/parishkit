@@ -14,6 +14,7 @@ from django.http import QueryDict
 from django.template.loader import render_to_string
 from django.urls import reverse
 
+from parishkit.stewardship.campaigns.configuration import REMINDER_WORKGROUP_NAME
 from parishkit.stewardship.reports.family_timeline import (
     Email,
     Engagement,
@@ -172,7 +173,7 @@ def test_events_read_oldest_first_with_email_links():
     )
     assert [(str(line.what), str(line.detail)) for line in shown] == [
         ("Invitation", planned.outcome),
-        ("Reminder not sent", "in the ParishSoft Reminder WorkGroup"),
+        ("Reminder not sent", f"in the ParishSoft {REMINDER_WORKGROUP_NAME}"),
     ]
     # Nothing recorded: no lines; no engagement record: no step lines.
     assert events([], []) == ()

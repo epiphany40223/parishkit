@@ -26,6 +26,7 @@ from parishkit.stewardship.admin_urls import (
     system,
     users,
 )
+from parishkit.stewardship.campaigns.configuration import REMINDER_WORKGROUP_SLUG
 from parishkit.stewardship.reports.daily_digest import DailyDigestDocument
 from parishkit.stewardship.reports.weekly_digest import WeeklyDigestDocument
 
@@ -227,7 +228,9 @@ SLASHLESS_EXPECTED = {
     "/admin/campaign/schedules/addition": "/admin/campaign/schedules/addition/",
     f"/admin/campaign/schedules/{T}": f"/admin/campaign/schedules/{T}/",
     "/admin/campaign/share-options": "/admin/campaign/share-options/",
-    "/admin/campaign/reminder-workgroup": "/admin/campaign/reminder-workgroup/",
+    f"/admin/campaign/{REMINDER_WORKGROUP_SLUG}": (
+        f"/admin/campaign/{REMINDER_WORKGROUP_SLUG}/"
+    ),
     f"/admin/campaign/content/test/{T}": f"/admin/campaign/content/test/{T}/",
     f"/admin/campaign/content/test/{T}/families": (
         f"/admin/campaign/content/test/{T}/families/"
