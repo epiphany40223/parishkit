@@ -92,3 +92,32 @@ def test_backfill_refuses_outside_production(response_service):
     assert not AuditEvent.objects.filter(
         event_type="family_engagement_backfilled"
     ).exists()
+
+
+def test_backfill_skips_staff_sign_ins_through_open_form(live_response_service):
+    """An earlier Open form sign-in (#529) is not the Family's link followed.
+
+    Its family_login event shares its session id with a family_assisted_login
+    event, so the backfill leaves first_link_at at the Family's own sign-in.
+    """
+    live = FamilyEngagement.objects.get()
+    activation = engagement_backfill.production_activation()
+    assert activation is not None and activation < live.first_link_at
+    earlier = activation + (live.first_link_at - activation) / 2
+    session = uuid4()
+    with unguarded():
+        AuditEvent.objects.create(
+            event_type="family_login",
+            subject_id=session,
+            actor_id=live.family_id,
+            created_at=earlier,
+        )
+        AuditEvent.objects.create(
+            event_type="family_assisted_login",
+            subject_id=session,
+            actor_id=uuid4(),
+            created_at=earlier,
+        )
+    with web_login():
+        engagement_backfill.backfill()
+    assert FamilyEngagement.objects.get().first_link_at == live.first_link_at
