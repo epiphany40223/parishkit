@@ -168,6 +168,10 @@ DESCRIPTIONS = {
         "An automation session sent a test of one email for chosen Families "
         "to the Testing recipient, as the Send to chosen Families page does."
     ),
+    "admin_cmd_system_backup_now": _(
+        "An automation session asked the server to take a backup now, as "
+        "System health's Take a backup now does."
+    ),
     "admin_cmd_portal_maintenance_set": _(
         "An automation session closed or reopened the Family portal for "
         "maintenance, as the Family portal availability page does."

@@ -4727,8 +4727,9 @@ server?" (ADM-35):
 - **Problems:** the open `backup_rpo_breach`, `backup_offsite_failed` and
   `backup_key_changed` incidents, in words.
 - **Requested backups:** the newest backup requested from this page, with
-  its state: waiting for the server, waiting for the email send to finish,
-  running, finished, failed (its category under Technical details), did
+  its state: waiting for the server, held for a Family email send (it says
+  the server checks again every five minutes and starts once the send has
+  finished, so the wording can outlast the send by a few minutes), running, finished, failed (its category under Technical details), did
   not finish, not picked up (it waited 30 minutes, linking the nightly
   backup section), or cancelled by a restore. The page applies the lapse
   rules before the next poll records them. See

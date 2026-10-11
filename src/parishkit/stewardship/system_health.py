@@ -1053,15 +1053,9 @@ def _admit_action(caller, store):
     the fresh sign-in window (``sessions.require_fresh``), or the caller
     gets the "Confirm with Google" step-up.
     """
-    from .accounts.policy import Capability, allows
-    from .accounts.sessions import authenticated_admin, require_fresh
+    from .accounts.sessions import require_fresh
 
-    actor = authenticated_admin(caller, store=store, activity=True)
-    if not (
-        allows(actor, Capability.SYSTEM_LOGS) and allows(actor, Capability.CONFIGURE)
-    ):
-        raise PermissionError("Take a backup now requires an Administrator.")
-    return actor, require_fresh(caller)
+    return _admit_requester(caller, store), require_fresh(caller)
 
 
 def _refusal(now):
@@ -1104,23 +1098,54 @@ def preview_backup(caller, store):
         )
 
 
-def request_backup(caller, store, *, key):
+class BackupRequestRefused(PermissionError):
+    """The database refused a backup request for a reason other than a stale
+    sign-in (a missing grant, another login): the reader is told plainly,
+    and the System logs record why. The step-up would not help."""
+
+
+# The guard's words for a sign-in outside the fresh window (0062): the only
+# permission refusal a "Confirm it's you" step-up can resolve.
+FRESH_REFUSAL = "requires fresh Administrator authentication"
+
+
+def _admit_requester(caller, store):
+    """An enabled Administrator who may view System health and configure."""
+    from .accounts.policy import Capability, allows
+    from .accounts.sessions import authenticated_admin
+
+    actor = authenticated_admin(caller, store=store, activity=True)
+    if not (
+        allows(actor, Capability.SYSTEM_LOGS) and allows(actor, Capability.CONFIGURE)
+    ):
+        raise PermissionError("Take a backup now requires an Administrator.")
+    return actor
+
+
+def request_backup(caller, store, *, key, command=False):
     """Record one Take a backup now request; return ``(row, created)``.
 
-    The request's guard checks again, in the same transaction, that the
-    Administrator signed in within the fresh window, that no other request
-    is live and that no restore is under review. A repeated confirmation
-    with the same ``key`` returns the first request (``created`` false).
-    The audit event ``backup_requested`` is recorded with the request.
+    The fresh sign-in check runs inside the request's transaction, so an
+    automation session's gate (``sessions.require_fresh``, which locks the
+    session row and records its gate event) commits or rolls back with the
+    request. The request's guard checks again, in the same transaction,
+    that the sign-in is fresh (or a live full-scope automation session's),
+    that no other request is live and that no restore is under review. A
+    repeated confirmation with the same ``key`` returns the first request
+    (``created`` false). The audit event ``backup_requested`` is recorded
+    with the request, and from the command line (``command``) also
+    ``admin_cmd_system_backup_now`` naming the automation session.
     """
     from django.db import DatabaseError, IntegrityError, transaction
 
+    from .accounts.sessions import FreshAuthenticationRequired, require_fresh
     from .audit.schemas import Action, ActorKind, Outcome
     from .audit.services import record_action
     from .jobs.backup_models import BackupRequest
+    from .observability import emit_failure
     from .storage import StaleRecordError
 
-    actor, fresh = _admit_action(caller, store)
+    actor = _admit_requester(caller, store)
     session = caller.portal_session
 
     def first():
@@ -1137,6 +1162,7 @@ def request_backup(caller, store, *, key):
             previous = first()
             if previous is not None:
                 return previous, False
+            fresh = require_fresh(caller)
             row = BackupRequest.objects.create(
                 id=key,
                 actor_id=actor.identity,
@@ -1150,6 +1176,14 @@ def request_backup(caller, store, *, key):
                 subject_id=row.pk,
                 context={"outcome": Outcome.SUCCEEDED},
             )
+            if command:
+                record_action(
+                    Action.ADMIN_CMD_SYSTEM_BACKUP_NOW,
+                    actor_kind=ActorKind.PORTAL_USER,
+                    actor_id=actor.identity,
+                    subject_id=caller.automation_session_id,
+                    context={"outcome": Outcome.SUCCEEDED},
+                )
             return row, True
     except IntegrityError as error:
         # A simultaneous second click with the same key lost the race: it
@@ -1162,12 +1196,127 @@ def request_backup(caller, store, *, key):
             "A backup request is already waiting or running."
         ) from error
     except DatabaseError as error:
-        # The guard's 42501: the sign-in is no longer fresh (it lapsed since
-        # the check above), so the reader gets the step-up.
-        if getattr(error.__cause__, "sqlstate", None) == "42501":
-            from .accounts.sessions import FreshAuthenticationRequired
-
+        if getattr(error.__cause__, "sqlstate", None) != "42501":
+            raise
+        if FRESH_REFUSAL in str(error):
+            # The sign-in lapsed since the check above: the step-up helps.
             raise FreshAuthenticationRequired(
                 "Please authenticate with Google again."
             ) from error
+        # Any other permission refusal (a missing grant, the wrong login)
+        # is not the reader's to fix by signing in again: log it and say so.
+        emit_failure(error)
+        raise BackupRequestRefused(
+            "The server refused this backup request; the System logs say why."
+        ) from error
+
+
+@dataclass(frozen=True)
+class BackupNow(ReadModel):
+    """``system backup-now``'s result: the request it recorded (or the one
+    an earlier run with the same ``--request-key`` recorded), as System
+    health's Backups panel words it.
+
+    ``status`` is the panel's word for it (``waiting`` until the server's
+    five-minute check picks it up); ``created`` is false for a repeat.
+    """
+
+    request_id: object
+    created: bool
+    status: str
+    created_at: str | None
+
+
+def backup_preview_lines(store, *, key=None):
+    """What Take a backup now's preview says, as plain lines for the
+    command line's confirmation prompt. Reads only what the page reads and
+    refuses (``StaleRecordError``) as the page's preview does. A repeat (a
+    request already recorded with ``key``) needs no preview: it returns
+    None, and ``request_backup`` returns that first request."""
+    from django.template.defaultfilters import filesizeformat
+
+    from .accounts.configuration_installation import coherent_configuration
+    from .accounts.sessions import database_now
+    from .campaigns.work_locks import read_transaction
+    from .jobs.backup_models import BackupRequest
+    from .source.send_hold import family_send_active
+    from .storage import StaleRecordError
+
+    with read_transaction():
+        if key is not None and BackupRequest.objects.filter(pk=key).exists():
+            return None
+        configuration = coherent_configuration(store)
+        if configuration.restore_review_required:
+            raise StaleRecordError("No backup request during a restore review.")
+        if _refusal(database_now()) is not None:
+            raise StaleRecordError("A backup request is already waiting or running.")
+        backup_at, _, backup_bytes, _ = _backup(configuration)
+        offsite = _offsite(configuration) is not None
+        held = family_send_active()
+    lines = [
+        "Ask the server to take a backup now, of the same kind as the scheduled ones."
+    ]
+    if backup_at is None:
+        lines.append("No backup has been recorded yet.")
+    else:
+        size = (
+            "" if backup_bytes is None else f" and was {filesizeformat(backup_bytes)}"
+        )
+        lines.append(f"The last backup finished at {plain(backup_at)}{size}.")
+    lines.append(
+        "It will also be copied off-site."
+        if offsite
+        else "Off-site copies are not set up, so it stays on the server only."
+    )
+    lines.append(
+        "It follows the usual retention rules and adds to the server's disk use."
+    )
+    if held:
+        lines.append(
+            "A Family email send is in progress, so the backup waits until it finishes."
+        )
+    return tuple(lines)
+
+
+def backup_now(caller, service, *, key, context):
+    """``system backup-now``: Take a backup now, as System health's button.
+
+    The command has already shown ``backup_preview_lines`` and had them
+    confirmed. ``request_backup`` checks the fresh sign-in (a full-scope
+    automation session's, which the request's guard accepts too) inside the
+    request's transaction and records ``backup_requested`` with the
+    command's own ``admin_cmd_system_backup_now``. ``key`` (the command's
+    ``--request-key``) is the request's identity, so a repeat returns the
+    first request. ``context["committed"]`` is set once it may have
+    committed (exit 6 then). Returns the request as the panel words it.
+    """
+    from django.db import DatabaseError
+
+    from .accounts.sessions import database_now
+    from .observability import _guard_refusal
+
+    try:
+        row, created = request_backup(caller, service.store, key=key, command=True)
+    except DatabaseError as error:
+        # A failure at the commit itself may have committed.
+        if not _guard_refusal(error):
+            context["committed"] = True
         raise
+    context["committed"] = True
+    status = request_status(
+        {
+            "state": row.state,
+            "created_at": row.created_at,
+            "held_at": row.held_at,
+            "claimed_at": row.claimed_at,
+            "finished_at": row.finished_at,
+            "failure_kind": row.failure_kind,
+        },
+        database_now(),
+    )
+    return BackupNow(
+        request_id=row.pk,
+        created=created,
+        status=status,
+        created_at=plain(row.created_at),
+    )

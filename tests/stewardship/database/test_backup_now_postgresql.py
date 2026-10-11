@@ -200,3 +200,42 @@ def test_a_simultaneous_double_click_returns_the_first_request(auth_service, goo
     request = BackupRequest.objects.get()
     assert str(request.pk) == key
     assert AuditEvent.objects.filter(event_type="backup_requested").count() == 1
+
+
+@pytest.mark.parametrize(
+    ("message", "refused"),
+    [
+        (
+            "A backup request requires fresh Administrator authentication",
+            "reauthenticate",
+        ),
+        ("permission denied for table stewardship_backup_request", "denied"),
+    ],
+)
+def test_only_the_fresh_sign_in_refusal_offers_the_step_up(
+    auth_service, google, monkeypatch, caplog, message, refused
+):
+    """The guard's fresh sign-in refusal gets "Confirm it's you"; any other
+    permission refusal (a missing grant) is said plainly and logged, since a
+    new sign-in would not help."""
+    from django.db import DatabaseError
+
+    class Refusal(Exception):
+        """A psycopg error's SQLSTATE, as Django wraps it."""
+
+        sqlstate = "42501"
+
+    def refuse(**values):
+        """The insert the database refuses."""
+        error = DatabaseError(message)
+        error.__cause__ = Refusal(message)
+        raise error
+
+    browser, _ = signed_in()
+    key = key_of(post(browser, action="preview"))
+    monkeypatch.setattr(BackupRequest.objects, "create", refuse)
+    answer = post(browser, action="confirm", key=key)
+    assert answer.status_code == 403
+    assert f'data-backup-refused="{refused}"' in answer.content.decode()
+    assert not BackupRequest.objects.exists()
+    assert ("task_failed" in caplog.text) == (refused == "denied")

@@ -198,6 +198,8 @@ class Action(StrEnum):
     ADMIN_CMD_DELIVERY_REFUSAL_CLEAR = "admin_cmd_delivery_refusal_clear"
     # portal maintenance set: the Family portal switch (ADM-11 PR 7a).
     ADMIN_CMD_PORTAL_MAINTENANCE_SET = "admin_cmd_portal_maintenance_set"
+    # system backup-now: System health's Take a backup now (ADM-13 PR 3b).
+    ADMIN_CMD_SYSTEM_BACKUP_NOW = "admin_cmd_system_backup_now"
     # files delete and files rename: the Hosted files page's row actions.
     ADMIN_CMD_FILES_DELETE = "admin_cmd_files_delete"
     ADMIN_CMD_FILES_RENAME = "admin_cmd_files_rename"

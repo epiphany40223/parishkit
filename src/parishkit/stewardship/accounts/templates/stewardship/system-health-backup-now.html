@@ -24,6 +24,7 @@
 {% elif backup_now.refused == "reauthenticate" %}<div class="notice" data-backup-refused="reauthenticate"><p>{% if local_environment %}{% translate "For your security, confirm your sign-in before taking a backup now. Nothing was requested." %}{% else %}{% translate "For your security, confirm it's you with Google before taking a backup now. Nothing was requested; you will return to this page." %}{% endif %}</p>
 {% url 'admin:system_health' as here %}{% include 'stewardship/components/reauthenticate.html' with next=here %}</div>
 {% elif backup_now.refused == "busy" %}<p class="notice" data-backup-refused="busy">{% translate "A backup is already requested, or a restore is under review, so no other can be requested now. The Backups panel above shows it." %}</p>
+{% elif backup_now.refused == "denied" %}<p class="notice notice-error" data-backup-refused="denied">{% translate "The server refused this backup request, so nothing was requested. System logs record why; ask the server operator to check the database grants." %}</p>
 {% elif backup_now.refused == "invalid" %}<p class="notice notice-error" data-backup-refused="invalid">{% translate "That request could not be read. Nothing was requested; try again." %}</p>
 {% else %}<p>{% translate "Ask the server to take a backup now, for example before a risky change. It needs a recent Google sign-in." %}</p>{% endif %}
 <div data-live-mirror-target="backup-now-button">{% include 'stewardship/system-health-backup-button.html' %}</div>{% endif %}

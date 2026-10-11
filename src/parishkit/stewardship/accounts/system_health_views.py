@@ -182,7 +182,7 @@ _BACKUP_FIELDS = {
     "cancel": {"action"},
 }
 # What an in-place refusal is answered with (HTTP status, the region's words).
-_REFUSALS = {"reauthenticate": 403, "busy": 409, "invalid": 400}
+_REFUSALS = {"reauthenticate": 403, "busy": 409, "invalid": 400, "denied": 403}
 
 
 def _backup_now(request):
@@ -231,6 +231,10 @@ def _backup_now(request):
                 _principal(request, service.store, activity=True)
         except FreshAuthenticationRequired:
             backup_now = {"refused": "reauthenticate"}
+        except health_actions.BackupRequestRefused:
+            # The database refused it for a reason a new sign-in would not
+            # fix; request_backup logged why.
+            backup_now = {"refused": "denied"}
         except StaleRecordError:
             backup_now = {"refused": "busy"}
         except ConfigError:

@@ -2291,7 +2291,7 @@ lists the fields and refusals.
 | `deliveries`, `delivery`, `delivery_resolve` | `delivery list`, `delivery show`, `delivery resolve` (PR 9b), `delivery resend` (PR 9c) |
 | `delivery_refusals`, `delivery_refusal`, `delivery_refusal_clear` | `delivery refusals`, `delivery refusal-show` (PR 9b), `delivery refusal-clear` (PR 9c) |
 | `system`, `system_health`, `system_health_status` (ADM-13) | `system health`, `system health --watch`, counts and states only |
-| `system_health` POST, Take a backup now (ADM-13) | `system backup-now` (keyed), `system backup-status --watch` (owed by ADM-11 PR 5) |
+| `system_health` POST, Take a backup now (ADM-13 PR 3b) | `system backup-now [--request-key UUID]` (fresh-gated, always prompts); its progress is `system health` `backup_request`, with `--watch` |
 | `system_mail_check`, `system_mail_clear` (ADM-13) | `system mail-clear-preview` (starts the mailbox check and waits for it), `system mail-clear --token …` |
 | `system_refresh_accept` (ADM-13) | `system refresh-accept-preview`, `system refresh-accept --token …` |
 | `system_debug_off`, `system_debug_allow` (ADM-13) | `system debug-off`; `system debug-allow` (Testing only) |
@@ -2328,8 +2328,12 @@ under review is `unavailable`. The
 lists the fields.
 
 `system health` covers the page, its fragment and `/admin/system/`
-(ADM-13 PR 2b). The other ADM-13 rows name routes and commands that do not
-exist yet: each action, its route and its command land together in their
+(ADM-13 PR 2b), and `system backup-now` (ADM-13 PR 3b) is Take a backup
+now: it shows the page's preview at the prompt, records the request with
+the page's `request_backup` (the request's guard admits the session as the
+fresh sign-in) and records `backup_requested` and
+`admin_cmd_system_backup_now`. The other ADM-13 rows name routes and
+commands that do not exist yet: each action, its route and its command land together in their
 own ADM-13 pull request (PR 3 to PR 6); ADM-11 PR 5, which lets automation
 pass the fresh-sign-in check, has landed. The ADM-13 action routes will be
 POSTs to the [System health](../admin-portal/spec.md#health-actions) page,
