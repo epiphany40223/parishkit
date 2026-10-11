@@ -561,7 +561,7 @@ HIDDEN_FIELDS = frozenset(
 # campaign line, the title, the privacy and Testing-mode footer lines).
 FRAME_FIELDS = frozenset({"Report", "Parish", "Campaign", "Privacy", "Testing mode"})
 # A card's title is its name field, then that record's DUID, then its status.
-NAME_FIELDS = ("Family", "Member", "Ministry", "Family name")
+NAME_FIELDS = ("Family", "Member", "Ministry")
 TAG_FIELDS = ("Disposition", "State", "Status", "Family status", "Activity")
 # A nested workflow revision is titled by when and by whom it changed; the
 # item fields its spreadsheet row repeats (to identify the item without an
