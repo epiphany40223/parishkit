@@ -497,6 +497,7 @@ Home, then these groups, each listing the entries the viewer's role may open:
 | Parish data | Ministries | `/admin/parish/ministries/` | Administrator | Never |
 | Parish data | Hosted files | `/admin/parish/files/` | Administrator | Never |
 | Parish data | Refresh from ParishSoft | `/admin/parish/parishsoft-refresh/` | Administrator | Never |
+| Parish data | Data to fix in ParishSoft | `/admin/parish/data-to-fix/` | Administrator, Staff | Never (a section that cannot count says why) |
 | Users and access | Users | `/admin/users/` | Administrator | Never |
 | Users and access | Automation access | `/admin/users/automation/` | Administrator | Never |
 | System | System health | `/admin/system/health/` | Administrator | Never |
@@ -802,7 +803,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `family_email_sends` | Family email history | Menu: Family email history | Administrator | Family email sends | `/admin/mail/family-history/` | (same) |  |
 | `deliveries` | Outgoing mail | Menu: Outgoing mail | Administrator | (same) | `/admin/mail/outgoing/` | (same) |  |
 | `delivery` | _email type and Family name_ | Outgoing mail | Administrator | Mail delivery; Message | `/admin/mail/outgoing/<message>/` | (same) | Object-named (exception, [#1015](https://github.com/epiphany40223/parishkit/issues/1015)): the heading names the email, such as "Initial invitation to Morgan, Henry"; the menu and trail say Mail message and the browser title only the email type. See [Mail message page](#mail-message-page). |
-| `delivery_refusals` | Refused addresses | Outgoing mail | Administrator | (same) | `/admin/mail/refusals/` | (same) |  |
+| `delivery_refusals` | Refused addresses | Outgoing mail | Administrator | (same) | `/admin/mail/refusals/` | (same) | Also linked from Data to fix in ParishSoft (#1011). |
 | `delivery_refusal` | Refused address | Refused addresses | Administrator | Verify refused address | `/admin/mail/refusals/<refusal>/` | (same) |  |
 | `family_portal` | Family portal availability | Menu: Family portal availability | Administrator | (same) | `/admin/mail/family-portal/` | (same) |  |
 | `presence` | Families on the form now | Menu: Families on the form now | Administrator | (same) | `/admin/mail/presence/` | (same) | The header's count is still polled at `/admin/presence?format=count` (decision 8); any other read of that address is 404. |
@@ -838,6 +839,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `hosted_file_delete` | Delete hosted files | Hosted files | Administrator | (same) | `/admin/parish/files/deletion/` (POST only) | (same) | The table's confirmation dialog posts here (#879); it answers with a redirect or a refusal, never a page. |
 | `hosted_file_rename` | Change placeholder name | Hosted files | Administrator | (same) | `/admin/parish/files/<file>/name/` | (same) |  |
 | `source_refresh` | Refresh from ParishSoft | Menu: Refresh from ParishSoft | Administrator | ParishSoft refresh | `/admin/parish/parishsoft-refresh/` | (same) |  |
+| `parishsoft_fixes` | Data to fix in ParishSoft | Menu: Data to fix in ParishSoft | Administrator, Staff | (new, #1011) | (none) | `/admin/parish/data-to-fix/` | Not built yet ([Data to fix in ParishSoft](#data-to-fix-in-parishsoft)). Breadcrumb parent Home. |
 | `users` | Users | Menu: Users | Administrator | Portal users; Sign-in rules | `/admin/users` | `/admin/users/` | One table of users (#952), which replaces the planned split into Sign-in rules, Ministry assignments and Chairpersons (decision 13). |
 | `user_new` | New user | Users | Administrator | (new, #952) | (none) | `/admin/users/new/` | Its review applies through Users. |
 | `user_edit` | Edit user | Users | Administrator | (new, #952) | (none) | `/admin/users/<user>/edit/` | The New page filled in; `<user>` is the user's stable ID. |
@@ -852,7 +854,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `automation_access` | Automation access | Menu: Automation access | Administrator | (same) | `/admin/users/automation/` | (same) | [Admin automation](../admin-automation/spec.md#revocation-and-listing) (ADM-11); the Revoke dialog posts the session to `/admin/users/automation/sessions/` (#879). |
 | `automation_approval` | Approve an automation session | Automation access | Administrator | (same) | `/admin/users/automation/approval/` | (same) | Opened from the command line's link; needs a fresh sign-in. |
 | `system_health` | System health | Menu: System health | Administrator | (new) | (none) | `/admin/system/health/` | New page ([System health](#system-health), #530, ADM-13). |
-| `source_form` | Families the form cannot open | System health | Administrator | (new, #774) | (none) | `/admin/system/source-form/` | New page ([System health page](#system-health-page)); no menu entry. |
+| `source_form` | Families the form cannot open | System health | Administrator | (new, #774) | (none) | `/admin/system/source-form/` | New page ([System health page](#system-health-page)); no menu entry. Also linked from Data to fix in ParishSoft (#1011). |
 | `integrations` | Integrations | Menu: Integrations | Administrator | (same) | `/admin/system/integrations/` | (same) |  |
 | `integration_settings` | _integration name_ | Integrations | Administrator | _integration name_ (e.g. ParishSoft, Google Workspace mail, Slack notifications, Off-site backups, Backup encryption key); Integration | `/admin/system/integrations/<target>/` | (same) | Object-named (exception); hand-written Integrations link removed. |
 | `credential_status` | Key replacement status | _integration name_ | Administrator | (same) | `/admin/system/key-changes/<request>/` | (same) |  |
@@ -4017,6 +4019,151 @@ than 30 days ago, the history no longer shows its heartbeat and progress
 events, which the hourly maintenance removes
 ([#386](https://github.com/epiphany40223/parishkit/issues/386)); its claims,
 transitions, retries and outcome stay.
+
+## Data to fix in ParishSoft
+
+Status: not built yet
+([#1011](https://github.com/epiphany40223/parishkit/issues/1011)). The
+Administrator decided on 2026-10-11, in the
+[#935](https://github.com/epiphany40223/parishkit/issues/935) follow-up,
+that one obvious page should show every kind of data problem that is fixed
+in ParishSoft, refused email addresses being only one of them. The page is a
+summary: each section gives a count and links the existing page that lists
+and fixes those problems. Every detail page stays as it is, and Outgoing
+mail keeps its "Review refused addresses" link.
+
+The Administrator settled the page's open questions on 2026-10-11
+([#1011](https://github.com/epiphany40223/parishkit/issues/1011)), and the
+rest of this section follows those decisions:
+
+1. The page name is **Data to fix in ParishSoft**.
+2. It is the last entry of the Parish data menu group, not an entry under
+   Responses and reports.
+3. The sections run: Families the form cannot open, refused email
+   addresses, Families no mail can reach, census and roster changes to
+   enter.
+4. "No mail can reach" means no usable email **and** no usable mailing
+   address (Home's definition); postal-only Families are not counted.
+5. A role sees only the sections whose detail page it can open, so Staff
+   see sections 3 and 4; Staff get no counts for sections 1 and 2.
+6. The menu entry carries no count.
+7. Home does not link the page for now; this is revisited with NAV-18's
+   Next steps.
+
+### Data to fix page
+
+- **Name:** **Data to fix in ParishSoft**, used by the menu entry, heading,
+  breadcrumb, browser title and every link that names the page
+  ([page names](#page-names-and-placement), #520). Its data line is the
+  current campaign's name and the time of the ParishSoft data the counts
+  were read from, in browser-local time.
+- **Where:** the last entry of the Parish data
+  [menu group](#menu-groups), after Refresh from ParishSoft, at
+  `/admin/parish/data-to-fix/` (URL name `parishsoft_fixes`). Its
+  breadcrumb parent is Home. It is last so `/admin/parish/` still opens
+  Parish settings for an Administrator. Staff, who see no other Parish data
+  entry, see the group with this one entry, and `/admin/parish/` opens this
+  page for them.
+- **Who:** Administrators and Staff; never Ministry leaders, who may open no
+  detail page behind it. A role sees a section only when it may open that
+  section's detail page, checked through that page's own admission and
+  capability check, so the summary never shows a count the viewer could not
+  follow. A role that may open none of the sections does not get the menu
+  entry. The menu entry is available whenever the role has it ("Never"
+  unavailable): a section that cannot count right now says why instead.
+- **Layout:** the heading, its "About this page" panel
+  ([page help](../ui-conventions/spec.md#page-help)), then one block per
+  section in the fixed order below. Each block has the section's name as a
+  heading, one sentence with its count in plain words, one short line on
+  where the fix is made, and a link to the detail page whose text is
+  "Open" plus that page's name. It is a short list of blocks, not an
+  [Admin table](../ui-conventions/spec.md#admin-tables): four rows of
+  different kinds have nothing to sort, filter or page. The About panel
+  explains that each problem is corrected in ParishSoft and shows here
+  after the next refresh (linking Refresh from ParishSoft for
+  Administrators), except a refused address, which an Administrator may
+  also clear once the mailbox is verified.
+
+### Data to fix sections
+
+Sections run from the problem that blocks a Family most directly to the
+routine worklist. The order is the same for every role, with the sections a
+role may not see left out:
+
+| Order | Section | Count, in plain words | Detail page and link | Roles | Reused read |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Families the form cannot open | Families that cannot open the Family form because a Member's ParishSoft data has a value the form cannot accept | [Families the form cannot open](#system-health-page) | Administrator | `reports.source_form.blocked_families`, the System health sentence's own read, with its per-campaign and per-snapshot cache |
+| 2 | Refused email addresses | Unresolved refused addresses, and how many Families they belong to | [Refused addresses](#refused-addresses) | Administrator | `jobs.delivery_reads.unresolved_refusals()`, the set behind Outgoing mail's link-line count, counted in one query |
+| 3 | Families no mail can reach | Active parishioner Families with no deliverable email and no usable mailing address | The [active parishioner family directory](../reports/spec.md#active-parishioner-family-directory) with its "Can't be reached by email or mail" preset | Administrator, Staff | `accounts.admin_dashboard.unreachable_families`, Home's count, which is the directory's own "neither" selection |
+| 4 | Census and roster changes to enter | Census changes in the [Census changes](../reports/spec.md#pending-census-changes) default view for the viewer (To do and Conflict, plus To review for an Administrator); later, roster changes to enter | Census changes; later, Ministry follow-up's *Roster changes to enter* view | Administrator, Staff | `reports.census_changes.census_changes` with the page's default query; later, the roster filter's own read |
+
+Notes on the sections:
+
+- **Why this order.** A Family that cannot open the form cannot respond at
+  all. A refused address stops every later campaign email to it, usually
+  for a handful of Families. A Family no mail can reach gets no invitation,
+  but the fix (finding an address) is slower. The census and roster
+  worklist is the largest and least urgent: it is entered at any time and
+  published after the campaign closes
+  ([#528](https://github.com/epiphany40223/parishkit/issues/528)).
+- **Families no mail can reach** uses the Home definition, not "no
+  deliverable email": a Family with a usable mailing address still gets a
+  postal invitation, and many Families have no email by choice, so their
+  number is not a list of errors.
+- **Roster changes** join section 4 with the #528 roster tick: until that
+  step lands the section counts census changes only and says nothing about
+  rosters. That step also lets Ministry follow-up accept its *Roster
+  changes to enter* view as a closed GET value (as it accepts `?ministry=`),
+  so the link opens the filtered queue.
+- **No new SQL.** Every count calls the function its detail page or Home
+  already uses, with that page's own filters, so a count always matches the
+  list its link opens. The page adds no query to any other page and no
+  count to the menu; the source-form read is the cached one System health
+  already pays for.
+
+### Data to fix refresh and empty states
+
+- **Read on page load only.** Counts are read when the page loads and are
+  never polled or updated in place, as the menu's open counts are, so
+  nothing appears, changes size or moves under the pointer
+  ([no layout shift](../ui-conventions/spec.md#no-layout-shift)). The page
+  has no controls of its own; reloading it, or coming back from a detail
+  page, reads the counts again.
+- **Each section stands alone.** A section whose read fails, or that cannot
+  run now (no current campaign, no promoted ParishSoft data, a campaign
+  without the census), keeps its block and says why in place of the count,
+  with its link greyed out as an
+  [unavailable menu entry](#stable-menu-shape) is when its detail page
+  would refuse the visit too. The other sections still show. A failed read
+  is logged with its section and the page is not an error page.
+- **Zero.** A section at zero keeps its block and its link and says what
+  that means ("No refused addresses: campaign email reaches every address
+  it has tried"). When every shown section is zero, the data line adds
+  "Nothing to fix right now". An empty section never disappears, so the
+  page keeps one shape for a role.
+- **Audit.** A view records one audit event with the section counts the
+  viewer saw, never a name, address or value, as the detail pages' view
+  events do.
+
+### Data to fix command and downloads
+
+- **Command line** ([#463](https://github.com/epiphany40223/parishkit/issues/463)):
+  `pk-admin report data-to-fix` mirrors the page through its own functions,
+  admitting as the page does with any session scope. It prints
+  `campaign_id` and one key per section the session's role may see
+  (`form_cannot_open`, `refused_addresses`, `unreachable_families`,
+  `census_changes`, and later `roster_changes`), each with its count (and
+  `families` for refused addresses) or `unavailable` with the page's
+  reason, counts only, and records the page's view event. The
+  [admin automation coverage](../admin-automation/spec.md#operations) lists
+  it.
+- **No download.** The page offers no export of its own. Each detail page
+  keeps its own downloads (Census changes and the directory offer CSV, XLSX
+  and PDF); Refused addresses and Families the form cannot open offer none,
+  by Administrator decision on #935. A combined file would join four
+  different column sets, which the
+  [downloaded files](../ui-conventions/spec.md#downloaded-files) rule (one
+  column set, matching its page) cannot express.
 
 ## Follow-up workflows
 
