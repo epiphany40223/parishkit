@@ -284,6 +284,11 @@ LEADER_SCOPE_FUNCTION = "stewardship_ministry_leader_scope_v1(uuid)"
 # addresses, never the rest of a Member's contact record.
 PORTAL_IDENTITIES_FUNCTION = "stewardship_portal_identities_v1()"
 MEMBER_NAMES_FUNCTION = "stewardship_member_names_v1()"
+# The New user page's Name default (#952 slice 5): the ordered names of the
+# current ParishSoft Members listing one typed address. Web learns only the
+# names, never another contact field, and only for an address an
+# Administrator types (or a pk-admin change document names).
+MEMBER_NAMES_FOR_FUNCTION = "stewardship_member_names_for_v1(text)"
 
 
 def runtime_functions(role, *, target=None):
@@ -299,7 +304,8 @@ def runtime_functions(role, *, target=None):
     the general worker and the download login read a user's role-derived
     Ministry scope (#922). The offline admin-recovery login reads recorded
     identities and Member names for the users upgrade (#952), and web reads
-    them for that upgrade's read-only preview.
+    them for that upgrade's read-only preview, and one typed address's Member
+    names for the New user page's Name default.
     """
     role = _identity_role(role, target)
     if role is ServiceRole.CREDENTIAL_INSTALLER:
@@ -315,6 +321,7 @@ def runtime_functions(role, *, target=None):
                 LEADER_SCOPE_FUNCTION,
                 PORTAL_IDENTITIES_FUNCTION,
                 MEMBER_NAMES_FUNCTION,
+                MEMBER_NAMES_FOR_FUNCTION,
             },
             ServiceRole.CONFIG_INSTALLER: {MINISTRY_CATALOG_FUNCTION},
             ServiceRole.WORKER: {
