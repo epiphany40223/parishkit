@@ -984,10 +984,15 @@ it closes when that box scrolls its button out of view.
 Internal identifiers and bookkeeping fields that matter only for
 troubleshooting (delivery, refusal and test references, a retained
 configuration version, an export's requester reference and data-load
-numbers, and the log cross-link identifiers) sit in a "Technical details"
-disclosure, closed by default, instead of in the page's main text. Nothing
-is removed from the page; downloads leave these internal fields out of every
-format ([downloaded files](#downloaded-files)). An empty list says what to do
+numbers) sit in a "Technical details" disclosure, closed by default, instead
+of in the page's main text. Nothing is removed from the page; downloads leave
+these internal fields out of every format
+([downloaded files](#downloaded-files)). System logs' rows are the
+exception: they show no identifiers at all, since a task's identifiers are on its
+own page, which the row's task icon opens, and the log download keeps every
+entry's (Administrator decision, 2026-10-11,
+[#1065](https://github.com/epiphany40223/parishkit/issues/1065);
+[System logs](../admin-portal/spec.md#logs)). An empty list says what to do
 next rather than only that it is empty.
 
 Template tests guard these rules: one fails when a paragraph shown without a
@@ -1287,11 +1292,14 @@ selection.
 **Rule.** Row actions are same-size icon buttons in the last column, Delete
 asks in a confirmation dialog, a table that allows it acts on several rows
 through a selection column, and Edit opens the item's own page (the New page,
-filled in). **Why.** One pattern for every list of editable things; a dialog
+filled in). Row links, icons that only read (filter the same table or open a
+related page), take the same look in a column of their own, never the
+Actions column. **Why.** One pattern for every list of editable things; a dialog
 names exactly what will be removed. **Shared code.** The `table_actions`
 template tag, `components/confirm-dialog.html` and `data-confirm-open` in
 `ui-v1.js`. **Precedent.** #879, #882 (first user), #947 (second slice),
-the Pages and emails email tables (third slice).
+the Pages and emails email tables (third slice); #1065 (row links, System
+logs).
 
 A table whose rows can be acted on follows one pattern
 ([#879](https://github.com/epiphany40223/parishkit/issues/879)), built once
@@ -1343,6 +1351,23 @@ inventory on #879 lists.
 - **Server checks** are those of the action itself: the dialog only asks, and
   the server validates every chosen row and refuses the whole request when
   any one cannot be acted on.
+- **Row links** (Administrator decision, 2026-10-11,
+  [#1065](https://github.com/epiphany40223/parishkit/issues/1065)) are icon
+  buttons that only read: they filter the same table or open a related
+  page, and never change anything, so they never confirm. They have the
+  Actions column's height and look (`icon-button`, drawn by
+  `components/action-icon.html`), may be narrower, and sit in a column of
+  their own, not the last one, so no table mistakes them for Edit or
+  Delete. Each kind keeps a fixed slot, so the icons line up down the
+  column and an absent one leaves its slot empty; a row shows an icon only
+  when it has something to link to. Each has an accessible name and a
+  matching tooltip saying what it shows ("Show entries by the same actor",
+  "Open this task"), and the page's help says what each icon means. A
+  filtering link is an
+  [in-place](#in-place-controls) read whose identifiers travel only in a
+  POST body, and focus returns to the same row's icon after it filters. So
+  far only [System logs](../admin-portal/spec.md#logs) has them: related
+  entries, same actor, same subject, same campaign and the task's page.
 
 ### Table column order
 

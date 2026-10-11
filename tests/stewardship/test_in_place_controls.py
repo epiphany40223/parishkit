@@ -332,8 +332,8 @@ def test_delivery_resolution_forms_stay_outside_the_history():
 
 
 def test_log_cross_links_filter_in_place():
-    """System logs' Show related entries, Same actor, Same subject (#536) and
-    Same campaign (#519 PR 3) filter in place: each is a data-in-place POST
+    """System logs' related-entries, same-actor, same-subject (#536) and
+    same-campaign (#519 PR 3) icons filter in place: each is a data-in-place POST
     that only reads (never a save), sets the filter form's visible fields
     from the answer, says what it showed, lands on the table, and has a
     button id unique to its entry so focus can return to it."""
@@ -347,12 +347,11 @@ def test_log_cross_links_filter_in_place():
         for mark in ("data-in-place ", "data-in-place-read", "data-in-place-filters"):
             assert mark in form, (mark, form)
         assert "data-in-place-message=" in form
-    for kind in ("related", "actor", "campaign"):
-        assert f'id="log-{{{{ row.icon }}}}-{{{{ row.id }}}}-{kind}"' in text
-    # Same subject uses the shared {% button %} tag, which takes its id as one
-    # value, so the template builds the same log-<icon>-<id>-subject id first.
-    assert '"log-"|add:icon|add:"-"|add:row_id|add:"-subject"' in text
-    assert '{% button type="submit" id=subject_button' in text
+    # Each is a shared {% button %} icon (#1065), which takes its id as one
+    # value, so the template builds the log-<icon>-<id> stem first.
+    assert '{% with base="log-"|add:icon|add:"-"|add:row_id %}' in text
+    for kind in ("related", "actor", "subject", "campaign"):
+        assert f'{{% button type="submit" id=base|add:"-{kind}"' in text
     assert '<details id="log-identifier-filters"' in text
 
 

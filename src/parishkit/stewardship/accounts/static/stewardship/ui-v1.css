@@ -629,8 +629,21 @@ progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
 .log-level-choices label { display: inline-flex; align-items: center; gap: .35rem; margin: 0; font-weight: 400; }
 details.log-more-filters { margin-block: .75rem 0; }
 details.log-more-filters > .filter-bar { margin-top: .5rem; }
-.log-related { min-width: 11rem; }
-.log-related > form, .log-related > a { display: block; margin-block: .1rem; }
+/* System logs' cross-link icons (#1065): the row-action icon buttons'
+   height and look, a little narrower, in five fixed slots (related, actor,
+   subject, campaign, task) so each kind lines up down the column and an
+   absent icon leaves its slot empty. The grid never wraps, so the column
+   keeps one width and rows stay one icon tall. */
+.log-link-slots { display: grid; grid-template-columns: repeat(5, 2.25rem); gap: .25rem; }
+/* A form slot lays its button out as a flex item, not on a text line whose
+   baseline would drop it below the task link beside it. */
+.log-link-slots > form { display: flex; }
+.log-link-related { grid-column: 1; }
+.log-link-actor { grid-column: 2; }
+.log-link-subject { grid-column: 3; }
+.log-link-campaign { grid-column: 4; }
+.log-link-task { grid-column: 5; }
+.data-table .log-link-slots .icon-button { width: 2.25rem; margin: 0; }
 details.technical-details { margin: .35rem 0 0; padding: 0; border: 0; background: none; font-size: .875rem; }
 details.technical-details[open] { padding-bottom: 0; }
 details.technical-details dd { overflow-wrap: anywhere; }

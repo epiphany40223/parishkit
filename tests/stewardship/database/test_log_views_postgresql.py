@@ -22,6 +22,7 @@ from parishkit.stewardship.audit.log_rows import (
     ACTIVITY_TYPES,
     DETAIL_FIELDS,
     DETAIL_LIMIT,
+    LogQuery,
 )
 from parishkit.stewardship.audit.models import (
     AuditContext,
@@ -95,7 +96,7 @@ def identifiers(response):
     return [
         UUID(value)
         for value in re.findall(
-            r'<dd class="log-correlation">([0-9a-f-]{36})</dd>',
+            r'<tr data-correlation="([0-9a-f-]{36})"',
             response.content.decode(),
         )
     ]
@@ -173,7 +174,7 @@ def test_administrator_reads_both_sources_and_filters_privately(auth_service, go
         only = post(browser, {"applied": "yes", "audit": "yes"})
         assert levels(only) == [] and audit_entries(only) >= 2
         found = post(browser, {"correlation": str(correlation)})
-        assert found.content.count(b"<tr>") == 2  # The heading and that one entry.
+        assert found.content.count(b"<tr data-correlation=") == 1  # That one entry.
         assert b"dashboard_viewed" in found.content
         typed = post(browser, {"event": "task_failed"})
         assert audit_entries(typed) == 0 and len(levels(typed)) == 4
@@ -583,6 +584,21 @@ def test_a_page_costs_a_bounded_number_of_queries(auth_service, google):
         assert 1 <= captured["stewardship_operational_log"] <= 2
         assert 1 <= captured["stewardship_audit_event"] <= 2
         assert captured["stewardship_portal_user"] == 1
+    # Whether each entry has related entries (#1065) is one grouped count per
+    # log for the whole page, however many rows it holds.
+    for captured in (few, many):
+        grouped = Counter(
+            table
+            for query in captured
+            for table in ("stewardship_operational_log", "stewardship_audit_event")
+            if f'FROM "{table}"' in query["sql"]
+            and "GROUP BY" in query["sql"]
+            and '"correlation_id" IN (' in query["sql"]
+        )
+        assert grouped == {
+            "stewardship_operational_log": 1,
+            "stewardship_audit_event": 1,
+        }
     # Every row on the page shows its actor's resolved address. The entries
     # share one instant, so which rows the page holds depends on identifiers.
     resolved = sum(
@@ -590,7 +606,8 @@ def test_a_page_costs_a_bounded_number_of_queries(auth_service, google):
         for index in range(5)
     )
     assert resolved == 50
-    assert response.content.count(b"<tr>") == 51 and next_fields(response)
+    assert response.content.count(b"<tr data-correlation=") == 50
+    assert next_fields(response)
 
 
 def export(browser, values=None):
@@ -1280,3 +1297,45 @@ def test_reports_security_and_family_portal_groups_list_their_own_types(
             "family_login",
         ]
         assert newest("downloads", 1) == ["system_logs_exported"]
+
+
+def test_the_related_icon_shows_only_when_another_entry_would_be_listed():
+    """An entry's related icon (#1065) appears only when the related view,
+    which lists the default kinds (every level but DEBUG, and audit records),
+    would list another entry with its correlation: a lone entry, or one whose
+    only partner is a DEBUG entry, has none; a DEBUG entry whose partner is
+    listed has one."""
+    paired, lone, debug_partner, debug_alone = (uuid4() for _ in range(4))
+    with schema_owner():
+        for correlation, level in (
+            (paired, "INFO"),
+            (debug_partner, "DEBUG"),
+            (debug_alone, "DEBUG"),
+        ):
+            OperationalLog.objects.create(
+                level=level,
+                event="task_failed",
+                correlation_id=correlation,
+                schema=ContextKind.FAILURE,
+                context={"failure": "alert_mail", "outcome": "failed"},
+            )
+        for correlation in (paired, lone, debug_partner):
+            AuditEvent.objects.create(
+                event_type="dashboard_viewed", correlation_id=correlation
+            )
+    everything = LogQuery.parse(
+        {"applied": "yes", "debug": "yes", "info": "yes", "audit": "yes"}
+    )
+    table, _ = log_reads.load_page(everything, through=timezone.now())
+    marked = {
+        (row["correlation_id"], row["source_kind"]): row["has_related"]
+        for row in table.rows
+    }
+    assert marked == {
+        (paired, "operational"): True,
+        (paired, "audit"): True,
+        (lone, "audit"): False,
+        (debug_partner, "operational"): True,
+        (debug_partner, "audit"): False,
+        (debug_alone, "operational"): False,
+    }

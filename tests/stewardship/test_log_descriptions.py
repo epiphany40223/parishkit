@@ -132,7 +132,7 @@ def test_detail_fields_are_named_in_words_but_exports_keep_names():
 def test_page_shows_explanation_actor_kind_and_related_link():
     """The rendered row explains itself, names the actor kind and links related."""
     audit = _audit("family", {"outcome": "succeeded"})
-    audit.update(actor=None, actor_worker=False, task_subject=False)
+    audit.update(actor=None, actor_worker=False, task_subject=False, has_related=True)
     operational = operational_row(
         {
             "id": uuid4(),
@@ -144,7 +144,9 @@ def test_page_shows_explanation_actor_kind_and_related_link():
             "context": {"outcome": "failed", "retryable": True},
         }
     )
-    operational.update(actor=None, actor_worker=False, task_subject=False)
+    operational.update(
+        actor=None, actor_worker=False, task_subject=False, has_related=True
+    )
     html = render_to_string(
         "stewardship/logs.html",
         page_context(
@@ -161,4 +163,4 @@ def test_page_shows_explanation_actor_kind_and_related_link():
     assert "A Family signed in to the Family form." in html
     assert "A Family (using their code or link)" in html
     assert "<dt>Retryable</dt>" in html and "<dt>retryable</dt>" not in html
-    assert html.count('class="link-button">Show related entries</button>') == 2
+    assert html.count('aria-label="Show entries related to this entry"') == 2

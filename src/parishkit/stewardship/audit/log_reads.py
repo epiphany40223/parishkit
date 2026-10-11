@@ -10,11 +10,13 @@ caller.
 import csv
 import io
 import json
+from collections import Counter
 from contextlib import contextmanager
 from time import monotonic
 from zoneinfo import ZoneInfo
 
 from django.db import DatabaseError, connection, transaction
+from django.db.models import Count
 from django.urls import reverse
 
 from parishkit.stewardship.accounts.policy_models import PortalUser
@@ -25,7 +27,14 @@ from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.web.exports import csv_cell
 from parishkit.stewardship.web.tables import bounded_count
 
-from .log_rows import audit_row, log_table, merge, operational_row, task_subject
+from .log_rows import (
+    LogQuery,
+    audit_row,
+    log_table,
+    merge,
+    operational_row,
+    task_subject,
+)
 from .log_search import narrowed
 from .models import AuditContext, AuditEvent, OperationalLog
 from .timeouts import record_timeout
@@ -226,6 +235,42 @@ def _annotate(page):
     return page
 
 
+def _mark_related(page):
+    """Mark the page's rows whose "Show related entries" lists another entry.
+
+    The row's related icon (#1065) appears only when it has something to
+    link to. That filter sends the correlation alone, so its answer is the
+    first-visit default (every level but DEBUG, and audit records); this
+    counts, per correlation on the page, the entries that answer would list,
+    through each log's correlation index, and marks a row when one besides
+    itself remains. Only the page view needs it, so downloads skip the
+    extra read.
+    """
+    default = LogQuery()
+    correlations = {row["correlation_id"] for row in page if row["correlation_id"]}
+    counts = Counter()
+    if correlations:
+        for rows in (
+            OperationalLog.objects.filter(level__in=default.levels),
+            AuditEvent.objects.all(),
+        ):
+            # order_by() clears any default ordering so the count groups
+            # by correlation alone.
+            counts.update(
+                dict(
+                    rows.filter(correlation_id__in=correlations)
+                    .order_by()
+                    .values("correlation_id")
+                    .annotate(entries=Count("id"))
+                    .values_list("correlation_id", "entries")
+                )
+            )
+    for row in page:
+        listed = row["source_kind"] == "audit" or row["level"] in default.levels
+        row["has_related"] = counts[row["correlation_id"]] - listed > 0
+    return page
+
+
 def _window(operational, audit, *, offset, size, oldest):
     """One merged page: keys of both sources merged, then full rows for it.
 
@@ -280,12 +325,14 @@ def load_page(query, *, through):
     depth_limited = query.page_number > pages and capped
     offset = (number - 1) * size
     # The last reachable page stops at the paging depth, not at the page size.
-    rows = _window(
-        operational,
-        audit,
-        offset=offset,
-        size=min(size, reachable - offset),
-        oldest=query.oldest,
+    rows = _mark_related(
+        _window(
+            operational,
+            audit,
+            offset=offset,
+            size=min(size, reachable - offset),
+            oldest=query.oldest,
+        )
     )
     table = log_table(
         query,
