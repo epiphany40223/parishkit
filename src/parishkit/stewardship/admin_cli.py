@@ -1679,6 +1679,20 @@ def delivery_refusal_clear(args, preamble, runtime, context):
     )
 
 
+def users_list(args, preamble, runtime, context):
+    """The Portal users, sorted as the Users table (#952 slice 2)."""
+    from .admin_reads import read_users
+
+    return read_users(context["caller"], runtime, args.sort, audit=context["audit"])
+
+
+def users_preview_upgrade(args, preamble, runtime, context):
+    """The read-only users upgrade preview of Portal users (#952 slice 2)."""
+    from .admin_reads import read_users_upgrade
+
+    return read_users_upgrade(context["caller"], runtime, audit=context["audit"])
+
+
 def _uuid(value):
     """A canonical UUID option value; anything else is a usage error."""
     from uuid import UUID
@@ -2385,6 +2399,15 @@ def _sessions_options(parser):
         "--sort",
         help="label, scope, created, expires, used or ended; "
         "--sort=-NAME (with =) reverses it (default -created)",
+    )
+
+
+def _users_list_options(parser):
+    """Options of ``users list``: the Users table's sort (#952)."""
+    parser.add_argument(
+        "--sort",
+        help="email, name, role or last_login; --sort=-NAME (with =) reverses "
+        "it (default email; role and last_login start highest and newest)",
     )
 
 
@@ -3267,6 +3290,39 @@ def _report_specs():
     )
 
 
+def _users_specs():
+    """The Portal users reads (#952 slice 2), in the users group (ADM-11 PR 11).
+
+    Both are passive reads any session may run; each records the page's view
+    event, ``portal_users_viewed``.
+    """
+    from .admin_reads import UsersList, UsersUpgradePreview
+
+    return (
+        CommandSpec(
+            "users list",
+            "List the Admin portal users with their roles and last sign-in.",
+            users_list,
+            "read_only",
+            False,
+            UsersList.field_names(),
+            11,
+            options=(_users_list_options,),
+            audit_event="portal_users_viewed",
+        ),
+        CommandSpec(
+            "users preview-upgrade",
+            "Show what the users upgrade would do with today's sign-in rules.",
+            users_preview_upgrade,
+            "read_only",
+            False,
+            UsersUpgradePreview.field_names(),
+            11,
+            audit_event="portal_users_viewed",
+        ),
+    )
+
+
 COMMANDS = (
     COMMANDS
     + _read_specs()
@@ -3277,6 +3333,7 @@ COMMANDS = (
     + _file_specs()
     + _operation_specs()
     + _report_specs()
+    + _users_specs()
 )
 BY_NAME = {spec.name: spec for spec in COMMANDS}
 

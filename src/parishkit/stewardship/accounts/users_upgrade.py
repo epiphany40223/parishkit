@@ -236,11 +236,22 @@ def member_names():
 
 def upgrade_preview(version):
     """The read-only preview of converting this configuration version."""
-    sections = version.document()["sections"]
-    if uses_users(version.document()):
+    return document_preview(version.document())
+
+
+def document_preview(document):
+    """The read-only preview of converting one canonical configuration document.
+
+    The one function behind ``upgrade-users --preview``, ``pk-admin users
+    preview-upgrade`` and the Portal users page's Upgrade preview panel, so
+    all three list exactly what the conversion would do.
+    """
+    if uses_users(document):
         return {"already_users": True}
     plan = plan_upgrade(
-        sections.get("login_rules", []), recorded_identities(), member_names()
+        document["sections"].get("login_rules", []),
+        recorded_identities(),
+        member_names(),
     )
     return {"already_users": False} | plan
 

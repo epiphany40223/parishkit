@@ -53,10 +53,21 @@ def views():
     )
 
 
+def rules(body):
+    """The page above its Upgrade preview panel (#952): the rule tables.
+
+    The panel lists converted users by address too, so assertions about
+    the rule tables read only this part.
+    """
+    return body.split('<section id="upgrade-preview"', 1)[0]
+
+
 def row(body, key):
-    """The one table row whose header cell starts with this address or domain."""
+    """The one rule-table row whose header cell starts with this address or domain."""
     found = re.findall(
-        rf'<tr>\s*<th scope="row">{re.escape(key)}[<\s].*?</tr>', body, flags=re.S
+        rf'<tr>\s*<th scope="row">{re.escape(key)}[<\s].*?</tr>',
+        rules(body),
+        flags=re.S,
     )
     assert len(found) == 1, key
     return found[0]
@@ -170,9 +181,14 @@ def test_administrator_reviews_rules_provenance_and_warnings(auth_service, googl
     assert 'href="/admin/users"' in body
     contexts = views()
     # One audit row for the one successful view, and none for the refused query
-    # string or POST. It counts every row of both tables, naming none.
+    # string or POST. It counts every row of every table, naming none: both
+    # rule tables and the Upgrade preview's users (#952), here the admin,
+    # leader and idle rules and the colleague who signed in by domain.
     listed = sum(record["values"]["kind"] != "assignment" for record in rules)
-    assert contexts == [{"outcome": "succeeded", "count": listed}] and listed >= 6
+    panel = body.split('<section id="upgrade-preview"', 1)[1]
+    assert panel.count('<th scope="row">') == 4
+    assert contexts == [{"outcome": "succeeded", "count": listed + 4}]
+    assert listed >= 6
     assert "@" not in str(contexts) and "example" not in str(contexts)
 
 
@@ -248,6 +264,9 @@ def test_portal_users_are_not_exposed_to_other_roles(auth_service, google, role)
         response = browser.get(URL)
     assert response.status_code == 403
     assert b"admin@example.org" not in response.content
+    # Nor the users upgrade preview panel (#952), which only this page shows.
+    assert b"upgrade-preview" not in response.content
+    assert b"Upgrade preview" not in response.content
     assert views() == []
 
 
@@ -396,7 +415,8 @@ def test_long_tables_page_independently(auth_service, google):
     assert "Showing 26–31 of 31" in body
     # The address navigator keeps the domain table's place.
     assert 'type="hidden" name="domains_page" value="1"' in body
-    assert "person29@example.org" in body and "person00@example.org" not in body
+    shown = rules(body)
+    assert "person29@example.org" in shown and "person00@example.org" not in shown
     assert browser.get(URL + "?addresses_size=7").status_code == 400
 
 
@@ -411,13 +431,21 @@ def test_every_table_sorts_on_the_server_and_keeps_the_others(auth_service, goog
     body = browser.get(
         URL + "?addresses_sort=-email&addresses_size=25&domains_sort=-domain"
     ).content.decode()
-    assert body.index("person29@example.org") < body.index("person28@example.org")
-    assert "person00@example.org" not in body and "Page 1 of 2" in body
+    shown = rules(body)
+    assert shown.index("person29@example.org") < shown.index("person28@example.org")
+    assert "person00@example.org" not in shown and "Page 1 of 2" in shown
     assert 'aria-sort="descending"' in body
     # The address table's links keep the domain table's sort, and vice versa.
     assert 'type="hidden" name="domains_sort" value="-domain"' in body
     assert "addresses_sort=-email" in body
     assert browser.get(URL + "?addresses_sort=email%20desc").status_code == 400
+    # The Upgrade preview's users table (#952) sorts and pages on its own.
+    body = browser.get(URL + "?upgrade_sort=-email&upgrade_size=25").content.decode()
+    panel = body.split('<div id="upgrade-table">', 1)[1]
+    assert panel.index("person29@example.org") < panel.index("person28@example.org")
+    assert "Page 1 of 2" in panel
+    assert browser.get(URL + "?upgrade_sort=source").status_code == 200
+    assert browser.get(URL + "?upgrade_sort=warnings").status_code == 400
     assert browser.get(URL + "?sort=email").status_code == 400
 
 

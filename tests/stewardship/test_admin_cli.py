@@ -123,6 +123,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "export directory",
         "export postal",
     }
+    # The Portal users reads (#952 slice 2), in the users group (PR 11).
+    users = {"users list", "users preview-upgrade"}
     assert set(entries) == (
         session
         | reads
@@ -133,6 +135,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         | configuration
         | operations
         | reports
+        | users
     )
     for entry in entries.values():
         names = {option["name"] for option in entry["options"]}
@@ -153,6 +156,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
             if name in operations
             else 8
             if name in reports
+            else 11
+            if name in users
             else 3
         )
         # Only the chosen-Family send, the code and financial exports and
@@ -284,6 +289,14 @@ def test_the_catalog_lists_every_command_with_its_flags():
             name in {"task show", "send progress", "go-live progress", "system health"}
         )
     assert entries["status"]["audit_event"] == "dashboard_viewed"
+    for name in users:
+        # Passive reads any session may run, recording the page's view.
+        entry = entries[name]
+        assert entry["scope"] == "read_only" and not entry["changes_state"], name
+        assert entry["audit_event"] == "portal_users_viewed", name
+        assert not entry["watch"] and not entry["prompts"], name
+    assert entries["users list"]["result_fields"] == ["form", "sort", "users"]
+    assert entries["users preview-upgrade"]["result_fields"][0] == "administrators"
     assert entries["task list"]["audit_event"] == "background_viewed"
     assert entries["send history"]["audit_event"] == "delivery_viewed"
     # The pages record no view event, so neither do these reads.
