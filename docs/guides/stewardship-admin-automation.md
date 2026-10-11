@@ -904,7 +904,9 @@ Open the page, or export, to see them.
 `logs export` writes the page's download, the newest 10,000 matching
 entries at most, to standard output, as the page's file (CSV and JSON Lines
 byte for byte). It takes the filters above, `--format` (`csv`, the default,
-`xlsx` or `jsonl`; CSV and XLSX have the same columns) and
+`xlsx` or `jsonl`; CSV and XLSX have the same columns, under plain
+headings such as `Correlation identifier`, while JSON Lines keeps keys such
+as `correlation_id`) and
 `--timezone` (UTC, the default, or a time zone name, for the file's times).
 Redirect standard output to a file: the wrapper refuses to write the file
 to a terminal.

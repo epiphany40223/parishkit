@@ -1351,7 +1351,7 @@ money, headers) are in the reports'
 **Precedent.** #926, #929, and the Administrator's decisions of 2026-10-10
 on [#958](https://github.com/epiphany40223/parishkit/pull/958).
 
-Recorded exceptions to the three formats:
+Recorded exceptions to the rule above:
 
 - **System logs:** CSV, XLSX and JSON Lines, no PDF. Its rows are wide raw
   data (structured details up to the export limit) that do not print as a
@@ -1359,8 +1359,15 @@ Recorded exceptions to the three formats:
   identifiers: every format keeps the log entries' cross-link identifiers
   (request, correlation and subject IDs), because the export is itself the
   troubleshooting record and only the Administrator can download it
-  (default, pending Administrator confirmation on
-  [#966](https://github.com/epiphany40223/parishkit/issues/966)).
+  (Administrator decision, 2026-10-11, on
+  [#966](https://github.com/epiphany40223/parishkit/issues/966)). Its CSV
+  and XLSX headings are still plain names in the page's words; JSON Lines
+  keeps program keys.
+- **Postal mail merge PDF:** a sheet of address labels holding the mailing
+  columns (addressee, address, Family, DUID and Family code), not the
+  Family heads and head emails its CSV and XLSX carry. Labels are what the
+  PDF is printed for; the CSV is the word processor's merge source
+  (Administrator decision, 2026-10-11, on #966).
 
 Not data exports, so outside the rule: the deployment configuration
 document, hosted files (served as uploaded) and chart images.
@@ -1369,14 +1376,13 @@ Current state: since the
 [#966](https://github.com/epiphany40223/parishkit/issues/966) column sweep,
 every export's CSV, XLSX and PDF carry one column set with no internal
 references (`tests/stewardship/test_export_columns.py` guards it), except the
-System logs export above. A download written straight from its page registers
+recorded exceptions above. A download written straight from its page registers
 with `web.exports.page_download`; the guard finds every registered and routed
-one, and fails until a new one has a case there or a recorded exception. The postal mail merge's PDF is a sheet of address
-labels holding the mailing columns, not the Family heads and head emails;
-whether to record that as an exception is open on #966. The Limitations
-report (formerly Talents and limitations,
-[#970](https://github.com/epiphany40223/parishkit/issues/970)) has no PDF;
-the guard checks its CSV and XLSX Members and Families tables.
+one, and fails until a new one has a case there; a case without a PDF table
+must be one of the exceptions above (or the participation chart). The
+Limitations report (formerly Talents and limitations,
+[#970](https://github.com/epiphany40223/parishkit/issues/970)) offers all
+three formats; the guard checks its Members and Families tables in each.
 
 ## Family portal
 

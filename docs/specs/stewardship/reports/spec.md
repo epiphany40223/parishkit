@@ -1561,8 +1561,7 @@ The Members table follows the same
 header), Family, Family DUID, Cannot participate and Latest response, each
 sortable. It has no Member DUID column yet: the installed selection does not
 return the Member's key, so adding one needs a forward migration
-([#932](https://github.com/epiphany40223/parishkit/issues/932)). The
-downloads keep their own column order until #932's export slice. Testing
+([#932](https://github.com/epiphany40223/parishkit/issues/932)). Testing
 responses are excluded. Filters are a name or Family DUID search and a Show
 choice (`show`) of everything, cannot participate or cannot attend; any other
 value is refused. A summary counts each. Talents that older responses
@@ -1572,11 +1571,17 @@ out. The report still reads through the installed
 `stewardship_talent_report_v1`, whose filter parameter keeps the name
 `talent`.
 
-The filtered result downloads immediately as CSV (Members, then Families) or
-XLSX (one sheet each), in a chosen display timezone, with the columns
-Family, Family DUID, Member, Cannot participate in ministries and Latest
-response for Members, and Family, Family DUID, Cannot attend Mass and Latest
-response for Families. A download is rendered in memory on the web
+The filtered result downloads immediately as CSV (Members, then Families),
+XLSX (one sheet each) or PDF (one table each, the Families table starting on
+a new page, in the shared page frame with both counts), in a chosen display
+timezone, with the columns Member, Family, Family DUID, Cannot participate in
+ministries and Latest response for Members (the page's order), and Family,
+Family DUID, Cannot attend Mass and Latest response for Families. Every
+format carries these columns and rows
+([downloaded files](../ui-conventions/spec.md#downloaded-files)); the PDF
+words Latest response in the parish's date format. The Families download
+keeps its Cannot attend Mass column, which the page shows as the table's
+heading instead, so a file's table says what it lists. A download is rendered in memory on the web
 connection under the interactive campaign read guard, not through the
 dedicated download pool, whose login cannot read the response and source
 data the report needs.
@@ -1598,7 +1603,8 @@ a leave comes from a Member who cannot participate in any ministries.
 **Access:** Admin only.
 
 The report behavior, levels, source filters, timezone export, and CSV, XLSX
-and JSON Lines formats are defined by the
+and JSON Lines formats (CSV and XLSX with plain headings, JSON Lines with
+program keys) are defined by the
 [Admin log specification](../admin-portal/spec.md#logs).
 It is included in the shared report/export audit pipeline but not offered to
 Staff.
