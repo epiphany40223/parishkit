@@ -688,20 +688,42 @@ Administrator may override.
    and the activation records nothing; `upgrade-users` then refuses a new
    operation with an instruction to resume the interrupted one by its
    operation ID or to run `recover-admin`, which records that upgrade failed
-   and selects its base again before it begins. The
-   scripted upgrade and the deployment runbook gain this step in the code
-   slice.
+   and selects its base again before it begins.
 
-   The scripted upgrade (`tools/stewardship-upgrade-host.sh`) cannot run this
-   order yet: its step 4 migrates to the newest migration and then applies
-   the grants, so it would reach the function swap before any conversion.
-   Either the release that swaps the functions also adds a targeted
-   migration to the release's first migration and a conversion step between
-   the grants and the swap, or the first migration and its two read
-   functions ship in an earlier release than the swap, so that the earlier
-   deploy has already migrated past them and applied their grants. Offline
-   Admin-access recovery never depends on those grants: only
-   `upgrade-users` requires them, and it refuses with an instruction to run
+   The order runs as one offline step of the deploy (#952 slice 4).
+   `pk-stewardship migrate --users-upgrade-base` applies every pending
+   migration except the swap and any migration that depends on it, and
+   never unapplies one: once the swap is applied, it is the full migration.
+   `database-grants` then gives the conversion its read functions,
+   `upgrade-users` previews and converts, and the full `migrate` and
+   `database-grants` follow. The scripted upgrade
+   (`tools/stewardship-upgrade-host.sh`) runs exactly this in its step 4
+   when the operator supplies the conversion's inputs (operation ID,
+   operator, reason and the confirmed Administrators, all four or none, never
+   for a rollback); without them, a release whose swap refuses the
+   unconverted configuration stops at its migration with the maintenance
+   page up, nothing of the swap committed, and the run is repeated with
+   them. A repeat after a base migration that stopped partway, which leaves
+   migrations outside the swap pending, reuses the first run's step-1
+   backup as its restore point (`backup --users-upgrade-resume`, within the
+   24 hours `migrate` requires) and logs that it did; each step-4 command
+   runs in a named one-off container that a time limit or a signal kills
+   and removes by name. The
+   [deployment runbook](../../../guides/stewardship-deployment-runbook.md#users-upgrade-952)
+   gives the commands.
+
+   **Recovery in every state.** `upgrade-users`, `recover-admin` and
+   `preview-admin-recovery` admit a database whose only pending migrations
+   are the swap and its dependents, as well as a current one, so
+   [offline Admin-access recovery](#offline-admin-access-recovery) works
+   before the conversion, after a refused or interrupted one (above), after
+   it with the swap still pending, and after the swap. The `backup` command
+   admits that state too, so a repeated deploy's step-1 backup runs
+   and its set restores exactly that state (`restore-check` reports such a
+   set as `swap_pending`, below). Every other command and service
+   still requires the current schema. Offline Admin-access
+   recovery never depends on the conversion's grants: only `upgrade-users`
+   requires them, and it refuses with an instruction to run
    `database-grants` when they are missing.
 
    Considered and rejected: shipping the new SQL functions with a domain-join
@@ -718,14 +740,24 @@ Administrator may override.
      ([data model](../data/spec.md#administration-user-and-policy)); both are
      empty only on the immutable rows of configurations activated before the
      upgrade;
-   - the second replaces the SQL functions that join `stewardship_domain_rule`
-     (session admission, Ministry scope, export authorization, and the policy
-     projection and completeness functions) so they read only the users
+   - the second replaces the SQL functions that decide access by joining
+     `stewardship_domain_rule` (session admission, export authorization,
+     Ministry scope, the role-derived leader scope and policy activation's
+     security alerts and denial-namespace reset) so they read only the users
      projection. Each replacement starts from its latest prior definition with
-     only that change, keeps its attributes, and the file ends with the
-     self-verifying `DO` block;
-   - if the Ministry leaders function of migration 0042 (PR #939) is not
-     callable by the web login, the second migration grants it to that login;
+     only that change, keeps its attributes (the leader scope stays SECURITY
+     DEFINER), and the file ends with the self-verifying `DO` block, which
+     also refuses unless the active configuration is in the users form. A
+     database with no active configuration (a fresh install) and a deployment
+     still in initial setup, judged as startup judges it, have nothing to
+     convert and pass. The policy projection and completeness triggers stay
+     as they are: they validate rows and grant nothing, and initial setup
+     still writes an exact-address rule until the setup wizard writes users;
+     the cleanup migration removes their hosted-domain branches with the
+     tables;
+   - the Ministry leaders function of migration 0042 (PR #939) needs no
+     migration to become callable by the web login: EXECUTE is a
+     `database-grants` entry, added with the leaders import if it needs it;
    - nothing writes `stewardship_domain_rule` or `stewardship_address_grant`
      any more.
 
@@ -1045,7 +1077,11 @@ In v1 the application/schema compatibility check is the read-only
 before anything is restored: it compares the set's migration set (from its
 manifest, or for older sets from its decrypted dump's `django_migrations`
 rows) with the image's migration files, exits 0 on an exact match and 3 on
-a mismatch, and names the set's own image to use (see the backup runbook's
+a mismatch, and names the set's own image to use. A set whose only gap is
+the users swap and its dependents (#952) is no mismatch: it exits 4,
+`swap_pending`, and restores under this image into the state between the
+[users upgrade](#users-upgrade-from-sign-in-rules)'s two migrations (see
+the backup runbook's
 [Restore for real](../../../guides/stewardship-backup-runbook.md#restore-for-real)).
 When the Administrator considers restoring a set onto a release with another
 schema, `pk-stewardship restore-compare` reports, value-free, how the set's

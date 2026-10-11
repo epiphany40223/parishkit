@@ -87,6 +87,60 @@ def test_operator_failures_do_not_print_exception_values(
     assert "private" not in output.out + output.err
 
 
+def psycopg_failure(wrapped):
+    """A unique violation whose message and DETAIL carry a private value.
+
+    ``wrapped`` raises it as Django does, from a django.db error; otherwise
+    the psycopg error itself is raised.
+    """
+    import psycopg.errors
+    from django.db import IntegrityError
+
+    cause = psycopg.errors.UniqueViolation(
+        "duplicate key value violates unique constraint\n"
+        "DETAIL:  Key (email)=(private@example.org) already exists."
+    )
+    if not wrapped:
+        return cause
+    try:
+        raise IntegrityError(*cause.args) from cause
+    except IntegrityError as error:
+        return error
+
+
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_a_database_failure_prints_its_class_and_sqlstate_only(
+    monkeypatch, tmp_path, capsys, wrapped
+):
+    """The class and SQLSTATE say what failed; no message, DETAIL or value."""
+    error = psycopg_failure(wrapped)
+
+    def fail(path):
+        raise error
+
+    monkeypatch.setattr(operator_commands, "load_deployment", fail)
+    assert main(["migrate", "--config", str(tmp_path / "operator.yaml")]) == 2
+    output = capsys.readouterr()
+    name = "IntegrityError" if wrapped else "UniqueViolation"
+    assert f"ERROR: {name} (SQLSTATE 23505)\n" in output.err
+    for private in ("private", "DETAIL", "duplicate key"):
+        assert private not in output.out + output.err
+
+
+def test_a_config_error_prints_its_reviewed_message(monkeypatch, tmp_path, capsys):
+    """A ConfigError's own sentence is shown, with its class."""
+
+    def fail(path):
+        raise operator_commands.ConfigError("Migrations require their profile.")
+
+    monkeypatch.setattr(operator_commands, "load_deployment", fail)
+    assert main(["migrate", "--config", str(tmp_path / "operator.yaml")]) == 2
+    assert (
+        "ERROR: ConfigError: Migrations require their profile.\n"
+        in capsys.readouterr().err
+    )
+
+
 def test_a_missing_backup_refusal_is_named_in_the_formatted_log(
     monkeypatch, tmp_path, capsys, caplog
 ):
@@ -217,7 +271,8 @@ def test_recovery_wrappers_refuse_wrong_identity_and_nonapplied_receipt(
         operator_commands, "configure_operator_database", lambda _: None
     )
     monkeypatch.setattr(
-        "parishkit.stewardship.runtime_database.admit_offline_database", lambda _: None
+        "parishkit.stewardship.runtime_database.admit_offline_database",
+        lambda _, **__: None,
     )
     monkeypatch.setattr(
         "parishkit.stewardship.accounts.operator_recovery.recover_admin",
@@ -291,9 +346,11 @@ def test_migration_safety_branches_precede_success(tmp_path, monkeypatch, case):
     monkeypatch.setattr("django.db.connection", database)
     loader = MagicMock()
     loader.applied_migrations = loader.disk_migrations = {}
+    schema_checks = []
     monkeypatch.setattr("django.db.migrations.loader.MigrationLoader", lambda _: loader)
     monkeypatch.setattr(
-        "parishkit.stewardship.runtime_database.require_current_schema", lambda: None
+        "parishkit.stewardship.runtime_database.require_current_schema",
+        lambda **kwargs: schema_checks.append(kwargs),
     )
     monkeypatch.setattr(
         "parishkit.stewardship.runtime_database.require_role_capacity", lambda _: None
@@ -310,6 +367,9 @@ def test_migration_safety_branches_precede_success(tmp_path, monkeypatch, case):
     assert migrate.call_count == int(
         case in {"missing-policy", "valid", "configured-backed"}
     )
+    # The ordinary migration checks for a fully current schema.
+    if case in {"valid", "configured-backed"}:
+        assert schema_checks == [{"users_swap_pending": False}]
     # The identity query applies every isolation check but ownership.
     from parishkit.stewardship.database_provisioning import ISOLATION_DRIFT, OWNERSHIP
 
@@ -317,3 +377,112 @@ def test_migration_safety_branches_precede_success(tmp_path, monkeypatch, case):
     query = cursor.execute.call_args_list[0].args[0]
     for name, check in ISOLATION_DRIFT.items():
         assert (check in query) is (name != OWNERSHIP)
+
+
+def test_users_upgrade_base_stops_before_the_swap_and_never_unapplies():
+    """Every app's leaf, except the users swap's closure, which waits (#952).
+
+    The real migration graph, read from disk: with everything but the swap
+    applied the accounts target is the swap's parent and every other app
+    goes to its leaf; once the swap is applied (a repeated upgrade) the
+    targets are the leaves, the full migration.
+    """
+    from django.db.migrations.loader import MigrationLoader
+
+    from parishkit.stewardship.runtime_database import USERS_SWAP, users_swap_closure
+
+    loader = MigrationLoader(None, ignore_no_migrations=True)
+    graph = loader.graph
+    closure = users_swap_closure(graph)
+    assert USERS_SWAP in closure
+    leaves = sorted(graph.leaf_nodes())
+    loader.applied_migrations = {key: None for key in graph.nodes if key not in closure}
+    targets = operator_commands.users_upgrade_targets(loader)
+    assert USERS_SWAP not in targets and not set(targets) & closure
+    parents = [
+        key for key in graph.node_map[USERS_SWAP].parents if key[0] == USERS_SWAP[0]
+    ]
+    assert parents and parents[0] in targets
+    assert {key[0] for key in targets} == {key[0] for key in leaves}
+    loader.applied_migrations = {key: None for key in graph.nodes}
+    assert operator_commands.users_upgrade_targets(loader) == leaves
+
+
+def test_migrate_to_the_users_upgrade_base_admits_only_the_swap_pending(
+    tmp_path, monkeypatch
+):
+    """--users-upgrade-base migrates to each target and checks the schema so."""
+    from dataclasses import replace
+    from unittest.mock import MagicMock
+
+    from .bootstrap_factory import bootstrap_fixture
+
+    configuration, _ = bootstrap_fixture(tmp_path)
+    configuration = replace(configuration, service_role=ServiceRole.MIGRATION)
+    monkeypatch.setattr(
+        operator_commands, "admit_offline_service", lambda _: ServiceRole.MIGRATION
+    )
+    monkeypatch.setattr(
+        operator_commands, "configure_operator_database", lambda _: None
+    )
+    database = MagicMock()
+    database.cursor.return_value.__enter__.return_value.fetchone.side_effect = [
+        ("pk_stewardship_migration",) * 2 + (False,) * 7,
+        (None,),
+        (4,),
+    ]
+    monkeypatch.setattr("django.db.connection", database)
+    loader = MagicMock()
+    loader.applied_migrations = loader.disk_migrations = {}
+    monkeypatch.setattr("django.db.migrations.loader.MigrationLoader", lambda _: loader)
+    schema_checks = []
+    monkeypatch.setattr(
+        "parishkit.stewardship.runtime_database.require_current_schema",
+        lambda **kwargs: schema_checks.append(kwargs),
+    )
+    monkeypatch.setattr(
+        "parishkit.stewardship.runtime_database.require_role_capacity", lambda _: None
+    )
+    targets = [("stewardship_accounts", "0012_users_requests"), ("other", "0002_x")]
+    monkeypatch.setattr(operator_commands, "users_upgrade_targets", lambda _: targets)
+    migrate = MagicMock()
+    monkeypatch.setattr("django.core.management.call_command", migrate)
+    assert operator_commands.migrate_command(
+        configuration, users_upgrade_base=True
+    ) == {"migrations_current": True}
+    assert [call.args for call in migrate.call_args_list] == [
+        ("migrate", *target) for target in targets
+    ]
+    assert schema_checks == [{"users_swap_pending": True}]
+
+
+def test_users_upgrade_base_refuses_a_merge_migration_in_the_swap_closure():
+    """No single per-app target exists below a merge, so the base refuses (#952).
+
+    A synthetic graph: the accounts app's merge migration depends on the swap
+    and on a sibling branch, so walking back from its leaf meets two
+    same-app parents. Without the merge the walk ends on the swap's parent.
+    """
+    from django.db.migrations.graph import MigrationGraph
+
+    from parishkit.config import ConfigError
+    from parishkit.stewardship.runtime_database import USERS_SWAP
+
+    app = USERS_SWAP[0]
+    base, sibling, merge = (app, "0012_base"), (app, "0012_sibling"), (app, "0014_m")
+    graph = MigrationGraph()
+    for key in (base, sibling, USERS_SWAP, merge):
+        graph.add_node(key, None)
+    graph.add_dependency(USERS_SWAP, USERS_SWAP, base)
+    graph.add_dependency(sibling, sibling, base)
+    graph.add_dependency(merge, merge, USERS_SWAP)
+    graph.add_dependency(merge, merge, sibling)
+    loader = SimpleNamespace(graph=graph, applied_migrations={base: None})
+    with pytest.raises(ConfigError, match="no single target"):
+        operator_commands.users_upgrade_targets(loader)
+    linear = MigrationGraph()
+    for key in (base, USERS_SWAP):
+        linear.add_node(key, None)
+    linear.add_dependency(USERS_SWAP, USERS_SWAP, base)
+    loader = SimpleNamespace(graph=linear, applied_migrations={base: None})
+    assert operator_commands.users_upgrade_targets(loader) == [base]
