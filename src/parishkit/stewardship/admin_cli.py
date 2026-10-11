@@ -1520,11 +1520,11 @@ def report_financial(args, preamble, runtime, context):
     return read_financial(context["caller"], runtime)
 
 
-def report_talents(args, preamble, runtime, context):
-    """The talents and limitations report's summary, without its rows (PR 8c)."""
-    from .admin_report_reads import read_talents
+def report_limitations(args, preamble, runtime, context):
+    """The Limitations report's summary, without its rows (PR 8c, #970)."""
+    from .admin_report_reads import read_limitations
 
-    return read_talents(context["caller"], runtime)
+    return read_limitations(context["caller"], runtime)
 
 
 def report_information(args, preamble, runtime, context):
@@ -2951,11 +2951,11 @@ def _report_specs():
     from .admin_report_reads import (
         FinancialReport,
         InformationReport,
+        LimitationsReport,
         MinistryReport,
         ParticipationReport,
         ReportList,
         ResponseReport,
-        TalentsReport,
     )
     from .admin_reports import LogExport, LogList
     from .admin_source_form import SourceFormReport
@@ -3220,13 +3220,14 @@ def _report_specs():
             audit_event="financial_report_viewed",
         ),
         CommandSpec(
-            "report talents",
-            "Show the talents and limitations summary, without Member rows.",
-            report_talents,
+            "report limitations",
+            "Show the Limitations summary, without Member or Family rows.",
+            report_limitations,
             "read_only",
             False,
-            TalentsReport.field_names(),
+            LimitationsReport.field_names(),
             8,
+            # The page keeps the event it recorded as Talents and limitations.
             audit_event="talents_report_viewed",
         ),
         CommandSpec(

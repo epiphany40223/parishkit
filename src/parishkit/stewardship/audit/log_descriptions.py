@@ -572,9 +572,13 @@ DESCRIPTIONS = {
     "ministry_followup_viewed": _("Someone opened the Ministry follow-up report."),
     "ministry_request_updated": _("Someone updated follow-up on a Ministry request."),
     "financial_report_viewed": _("Someone opened the financial report."),
-    "talents_report_viewed": _("Someone opened the talents and limitations report."),
+    # The Limitations report keeps the actions it recorded as "Talents and
+    # limitations" (#970), so these describe old and new rows alike.
+    "talents_report_viewed": _(
+        "Someone opened the Limitations report (formerly Talents and limitations)."
+    ),
     "talents_report_exported": _(
-        "Someone downloaded the talents and limitations report."
+        "Someone downloaded the Limitations report (formerly Talents and limitations)."
     ),
     "census_changes_viewed": _("Someone opened the Census changes worklist."),
     "census_changes_exported": _("Someone downloaded the Census changes worklist."),
@@ -920,7 +924,9 @@ _SORT_COLUMNS = {
     "problem": _("What to check"),
 }
 # Recorded closed values shown in words, by field (#556): each report's own
-# menu wording (reports.response_lists and the Talents report's Show menu).
+# menu wording (reports.response_lists and the Limitations report's Show
+# menu). "option" and ``talent_option_id`` appear only on rows recorded before
+# talents were retired (#970); their wording stays so those rows still read.
 # "all" and "any" are each report's first, unfiltered choice.
 VALUE_LABELS = {
     "report_mode": {"production": _("Production"), "testing": _("Testing")},

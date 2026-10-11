@@ -134,7 +134,7 @@ def test_participation_responses_information_and_the_list(http_scenario, cli):  
         "report responses": True,
         "report participation": True,
         "report financial": False,
-        "report talents": False,
+        "report limitations": False,
         "report information": True,
         "report ministry": False,
     }
@@ -368,22 +368,16 @@ def test_ministry_summary_and_request_counts(response_service, google, cli):
         (0, 1),
     }
 
-    # The talents summary is the page's, counts only.
+    # The Limitations summary is the page's, counts only; both still record
+    # the event the report recorded as Talents and limitations (#970).
     parity(
         "talents_report_viewed",
-        lambda: read(browser, "/admin/reports/talents/"),
-        lambda: run("report", "talents"),
+        lambda: read(browser, "/admin/reports/limitations/"),
+        lambda: run("report", "limitations"),
     )
-    code, document = run("report", "talents")
+    code, document = run("report", "limitations")
     assert code == 0, document
-    assert set(document["result"]) == {
-        "campaign_id",
-        "collects_talents",
-        "members",
-        "cannot_serve",
-        "cannot_attend",
-        "talents",
-    }
+    assert set(document["result"]) == {"campaign_id", "cannot_serve", "cannot_attend"}
 
 
 def harness_admin(run):

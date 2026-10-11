@@ -1,4 +1,9 @@
-"""Admin/Staff talents and limitations report, with CSV and XLSX downloads (#247)."""
+"""Admin/Staff Limitations report, with CSV and XLSX downloads (#247, #970).
+
+The report was "Talents and limitations" until talents were retired (#970);
+it keeps that report's audit actions (``talents_report_viewed`` and
+``talents_report_exported``), so old and new System logs rows read alike.
+"""
 
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -49,7 +54,6 @@ MEMBER_SORTING = Sorting.by_column(
         "member": lambda row: _text(row["member_name"]),
         "family": lambda row: (_text(row["family_name"]), row["family_duid"]),
         "duid": lambda row: row["family_duid"],
-        "talents": lambda row: _text("; ".join(row["talents"])),
         "cannot_serve": lambda row: bool(row["cannot_serve"]),
         "latest": lambda row: row["submitted_at"],
     },
@@ -124,7 +128,7 @@ def _principal(request, store, *, read_only=False, export=False):
     if not allows(principal, Capability.CAMPAIGN_REPORT) or (
         export and not allows(principal, Capability.REPORT_EXPORT)
     ):
-        raise PermissionError("The talents report is unavailable.")
+        raise PermissionError("The Limitations report is unavailable.")
     return principal
 
 
@@ -133,7 +137,7 @@ def _error(campaign_id, *, status):
     debug_swallowed("report request refused")
     response = HttpResponse(
         render_to_string(
-            "stewardship/talents-report-error.html",
+            "stewardship/limitations-report-error.html",
             {"campaign_id": campaign_id, "status": status},
         ),
         status=status,
@@ -145,8 +149,8 @@ def _error(campaign_id, *, status):
     return response
 
 
-# The Talents filter's own words; any other ``talent`` value is a configured
-# talent option's UUID (talents.OPTION).
+# The Show filter's own words; any other ``talent`` value is a retired talent
+# option's UUID (talents.OPTION), which ``TalentQuery.offered`` reads as "any".
 TALENT_WORDS = frozenset({"any", "cannot_serve", "cannot_attend"})
 
 
@@ -207,7 +211,7 @@ def _respond(request, campaign_id, *, export, render):
         admit_report_read(campaign_id)
         try:
             if request.GET:
-                raise ValueError("Talent filters require private POST state.")
+                raise ValueError("Limitations filters require private POST state.")
             parameters = request.POST.copy()
             parameters.pop("csrfmiddlewaretoken", None)
             extra = {}
@@ -222,7 +226,7 @@ def _respond(request, campaign_id, *, export, render):
                     or len(zone) != 1
                     or (zone[0] != "UTC" and zone[0] not in timezone_names())
                 ):
-                    raise ValueError("Invalid talent export choice.")
+                    raise ValueError("Invalid Limitations export choice.")
                 extra = {"format": fmt[0], "zone": ZoneInfo(zone[0])}
             query = TalentQuery.parse(parameters)
         except ValueError:
@@ -254,7 +258,7 @@ def _respond(request, campaign_id, *, export, render):
             nonlocal principal
             fresh = _principal(request, service.store, read_only=True, export=export)
             if fresh.identity != principal.identity:
-                raise PermissionError("Talent report access changed.")
+                raise PermissionError("Limitations report access changed.")
             principal = fresh
             admit_report_read(campaign_id)
 
@@ -296,7 +300,7 @@ def _respond(request, campaign_id, *, export, render):
         if export and handed_off:
             stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%SZ")
             for name, value in download_headers(
-                f"stewardship-talents-{stamp}.{extra['format']}",
+                f"stewardship-limitations-{stamp}.{extra['format']}",
                 content_type=FORMATS[extra["format"]],
             ).items():
                 response[name] = value
@@ -323,10 +327,10 @@ def report(request, campaign_id):
             result,
             query,
             extra["paging"],
-            reverse("admin:talents_report"),
+            reverse("admin:limitations_report"),
         )
         return render_to_string(
-            "stewardship/talents-report.html",
+            "stewardship/limitations-report.html",
             result
             | {
                 "members_table": members,

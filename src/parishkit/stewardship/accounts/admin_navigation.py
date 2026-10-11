@@ -154,7 +154,6 @@ PAGES = {
     "artwork_remove": Page(
         "campaign", _("Remove campaign image"), "artwork_settings", linkable=False
     ),
-    "talent_settings": Page("campaign", _("Member talents")),
     "reminder_workgroup": Page("campaign", _("Reminder WorkGroup")),
     "go_live": Page("campaign", _("Go-live readiness")),
     "go_live_families": Page("campaign", _("Testing submissions"), "go_live"),
@@ -190,7 +189,7 @@ PAGES = {
     "reports": Page("reports", _("Participation"), entry="participation"),
     "participation": Page("reports", _("Participation")),
     "financial_report": Page("reports", _("Financial stewardship")),
-    "talents_report": Page("reports", _("Talents and limitations")),
+    "limitations_report": Page("reports", _("Limitations")),
     "census_changes": Page("reports", _("Census changes")),
     "response_dashboard": Page("reports", _("Response dashboard")),
     "response_list": Page("reports", _("Response list"), "response_dashboard"),
@@ -356,9 +355,9 @@ CENSUS = _module("census", _("This campaign does not include the census"))
 
 
 def _structural(module_reason):
-    """A reason check for Share options and Member talents.
+    """A reason check for Share options.
 
-    Both edit the campaign's structure, which is open only on an unlocked
+    It edits the campaign's structure, which is open only on an unlocked
     Testing draft that has never been live; the page refuses anything else,
     so the entry is greyed out rather than linking a page that fails.
     """
@@ -445,7 +444,6 @@ MENU = (
     Entry("artwork_settings", _ADMIN, _unarchived),
     Entry("schedule_settings", _ADMIN, _campaign),
     Entry("share_settings", _ADMIN, _structural(FINANCIAL)),
-    Entry("talent_settings", _ADMIN, _structural(MINISTRY)),
     # Staff mark Families in ParishSoft while the campaign runs (#861).
     Entry("reminder_workgroup", _ADMIN, _unarchived),
     Entry("go_live", _ADMIN, _draft),
@@ -461,7 +459,7 @@ MENU = (
     Entry("response_dashboard", Capability.CAMPAIGN_REPORT, _campaign),
     Entry("participation", Capability.CAMPAIGN_REPORT, _campaign),
     Entry("financial_report", Capability.FINANCIAL_DETAIL, FINANCIAL),
-    Entry("talents_report", Capability.CAMPAIGN_REPORT, MINISTRY),
+    Entry("limitations_report", Capability.CAMPAIGN_REPORT, MINISTRY),
     Entry("census_changes", Capability.VIEW_CENSUS, CENSUS),
     Entry("information_queue", Capability.ADDITIONAL_FOLLOWUP, _campaign),
     Entry("ministry_report", Capability.MINISTRY_REPORT, MINISTRY, scoped=True),
@@ -542,7 +540,7 @@ NON_PAGES = frozenset(
         "login",
         "logout",
         "logs_export",
-        "talents_export",
+        "limitations_export",
         "census_changes_export",
         "response_list_export",
         "maintenance",

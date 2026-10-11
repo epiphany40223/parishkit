@@ -342,7 +342,8 @@ FIELDS = {
         "file_fingerprint",
         # An on-request report page or download (#556): which system mode it
         # showed, its closed filter choice, the parish's talent option when
-        # that is the filter, and the ParishSoft snapshot its names came
+        # that was the filter (old rows only; talents were retired in #970),
+        # and the ParishSoft snapshot its names came
         # from. Never the search text, which can name a Family; whether a
         # search was used is the existing ``search_used``.
         "report_mode",
@@ -367,8 +368,9 @@ REVIEW_DECISIONS = frozenset({"keep_role", "restore", "remove"})
 # An on-request report's system mode and filter choices (#556); mirrored in
 # stewardship_safe_context_v1. The filters are each report's own fixed
 # choices: the response lists' ``show`` keys (reports.response_lists) and
-# the Talents report's ``talent`` words, where ``option`` stands for a
-# configured talent (recorded as ``talent_option_id``). A test keeps this
+# the Limitations report's ``talent`` words, where ``option`` stands for a
+# configured talent (recorded as ``talent_option_id``; only before talents
+# were retired in #970). A test keeps this
 # set equal to the reports' choices.
 REPORT_MODES = frozenset({"production", "testing"})
 REPORT_FILTERS = frozenset(

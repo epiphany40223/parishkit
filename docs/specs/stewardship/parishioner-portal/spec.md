@@ -228,8 +228,8 @@ decimal places and a documented maximum suitable for reporting.
 Required-but-unknown fields offer an explicit Unknown/prefer-not-to-answer
 choice where defined. An untouched blank is not equivalent to explicit
 Unknown. Server errors return the user to Review with a summary linked to every
-problem; an error about one Member as a whole, their Ministry choices or their
-talents names that Member and links to their section.
+problem; an error about one Member as a whole or their Ministry choices names
+that Member and links to their section.
 
 ## Family census
 
@@ -328,31 +328,29 @@ list with one ministry per line.
 A repeat submission uses the latest effective requested state; removing an
 unresolved choice cancels/supersedes its workflow while retaining history.
 
-### Talents and "cannot participate"
-
-At the bottom of each Member's page, below the ministry updates, a "Talents to
-share" panel (styled like Ministry participation) asks: "If you have a special
-talent that you would like to share with your parish family, please select it
-below." It offers the campaign's talent checkboxes, which an Admin edits
-alongside the share options (see
-[Admin portal](../admin-portal/spec.md#member-talents)). A campaign that never
-edited them offers the built-in defaults: Painter, Florist, Seamstress,
-Carpenter, Attorney, Gardener and Other. An option marked for free text (Other)
-requires a short description, at most 200 characters. No talent is required.
-A campaign whose talent list an Admin emptied offers no talents: no panel
-appears on the Member's page, the review step shows no talents line, and each
-Member's answer is sent with no talents. Talents an earlier response chose are
-dropped once their option is no longer offered.
+### Cannot participate in ministries
 
 Above the Ministry choices, each Member may check "Because of physical
 limitations, I/we cannot participate in any ministries at this time." While
 checked, every current Ministry is set to "Stop participating in this
-ministry", every join choice is cleared, the Ministry choices and the join-more-ministries disclosure
-are disabled for pointer, keyboard and assistive technology alike, and the
-talents question is hidden and no talents are sent. Unchecking restores the
-Family's own earlier choices, talents included. The server rejects a response in which such a
-Member continues or joins any Ministry. Talents and this answer are recorded
-with the response and are never written to ParishSoft.
+ministry", every join choice is cleared, and the Ministry choices and the
+join-more-ministries disclosure are disabled for pointer, keyboard and
+assistive technology alike. Unchecking restores the Family's own earlier
+choices. The server rejects a response in which such a Member continues or
+joins any Ministry. This answer is recorded with the response and is never
+written to ParishSoft.
+
+The form no longer asks for talents
+([#970](https://github.com/epiphany40223/parishkit/issues/970)). Each
+Member's answer is stored beside an empty `talents` map, which the database
+guard accepts. A response from before then keeps the talents it recorded,
+read-only, with no page that shows them, and a revisit prefills none. A
+form opened before the change may still send talents from the campaign's
+configured list; the response is accepted and stores them, read-only and
+unreported, so no Family loses an answer mid-campaign. An unknown or
+malformed talent is refused. The parish's "time, talent and treasure"
+wording in the default content is stewardship language, not this question,
+and stays.
 
 ## Financial stewardship
 

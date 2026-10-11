@@ -67,7 +67,7 @@ def test_access_is_checked_before_the_current_campaign(auth_service, google, rol
         "participation",
         "financial_report",
         "response_dashboard",
-        "talents_report",
+        "limitations_report",
     ):
         response = browser.get(reverse(f"admin:{name}"))
         assert response.status_code == 403, (role, name)

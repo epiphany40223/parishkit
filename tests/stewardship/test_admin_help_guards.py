@@ -105,7 +105,7 @@ INTRO_ALLOWED = {
     "go-live-readiness.html": 24,
     "delivery-control.html": 24,
     "availability.html": 21,
-    "talents-report-error.html": 16,
+    "limitations-report-error.html": 16,
 }
 
 # Labels for internal identifiers and worker bookkeeping. They may appear

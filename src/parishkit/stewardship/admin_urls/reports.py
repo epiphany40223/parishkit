@@ -85,8 +85,12 @@ patterns = [
         financial_export_views.create,
         "financial_export",
     ),
-    _page("reports/talents/", talent_report_views.report, "talents_report"),
-    _page("reports/talents/exports/", talent_report_views.export, "talents_export"),
+    _page("reports/limitations/", talent_report_views.report, "limitations_report"),
+    _page(
+        "reports/limitations/exports/",
+        talent_report_views.export,
+        "limitations_export",
+    ),
     _page("reports/census/", census_change_views.report, "census_changes"),
     _page(
         "reports/census/exports/",

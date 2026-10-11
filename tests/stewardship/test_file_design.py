@@ -43,11 +43,11 @@ from parishkit.stewardship.reports.talents import shape_result, talents_xlsx
 from .test_directory_rendering import document as directory
 from .test_directory_rendering import item as family
 from .test_information_rendering import document as information
+from .test_limitations_report import result as limitations_result
 from .test_ministry_packets import item as member
 from .test_ministry_packets import packet
 from .test_participation_rendering import document as participation
 from .test_response_lists import NEW_YORK, details_of, rows_of
-from .test_talents_report import result as talents_result
 
 # --- XLSX -----------------------------------------------------------------
 
@@ -203,8 +203,8 @@ def test_packet_detail_rows_stop_at_excels_tallest_row():
     assert max(heights) == xlsx_design.MAX_ROW_HEIGHT
 
 
-def test_participation_census_and_talents_workbooks_share_the_style():
-    """The previously unstyled census and talents workbooks match the rest."""
+def test_participation_census_and_limitations_workbooks_share_the_style():
+    """The previously unstyled census and Limitations workbooks match the rest."""
     book = saved(participation_xlsx, participation())
     assert_styled_table(book["Participation"])
     assert_information_sheet(book["Report information"])
@@ -225,7 +225,7 @@ def test_participation_census_and_talents_workbooks_share_the_style():
     sheet = book["Census changes"]
     assert tuple(cell.value for cell in sheet[1]) == HEADINGS
     assert_styled_table(sheet, first_column=True)
-    shaped = shape_result(talents_result({}, {}), configuration={"modules": []})
+    shaped = shape_result(limitations_result({}, {}), configuration={"modules": []})
     book = load_workbook(io.BytesIO(talents_xlsx(shaped, ZoneInfo("UTC"))))
     for title in ("Members", "Families"):
         assert_styled_table(book[title], first_column=True)

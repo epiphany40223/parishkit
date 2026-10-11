@@ -124,7 +124,6 @@ SETTINGS_PAGES = (
     "parish-settings.html",
     "campaign-settings.html",
     "share-settings.html",
-    "talent-settings.html",
 )
 HOSTED = {
     "integration-summary.html": ("integration-settings.html",),
@@ -426,11 +425,10 @@ def test_review_button_hint_follows_it_and_keeps_its_space():
     assert ".unchanged-hint[data-idle] { visibility: hidden; }" in css
 
 
-@pytest.mark.parametrize("page", ["share-settings.html", "talent-settings.html"])
-def test_option_lists_word_their_review_hint(page):
-    """Share options and Member talents say "option", not "setting", in the
-    hint after their Review changes button (#921)."""
-    text = (TEMPLATES / page).read_text()
+def test_option_lists_word_their_review_hint():
+    """Share options say "option", not "setting", in the hint after its
+    Review changes button (#921)."""
+    text = (TEMPLATES / "share-settings.html").read_text()
     form = re.search(r'<form id="settings-form"[^>]*>', text).group(0)
     assert 'data-require-change="base_digest"' in form
     assert 'translate "Change an option to review it." as option_hint' in text
