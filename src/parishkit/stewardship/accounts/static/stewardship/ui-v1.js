@@ -3324,14 +3324,15 @@
   // Post one confirmed change (url, body) from the open dialog and follow its
   // status until it is applied. The dialog is busy from the start: Cancel
   // and Escape do nothing until the answer. onRecorded runs once the server
-  // has recorded the change. Returns true once it is applied; otherwise
+  // has recorded the change. A review dialog's Apply shows no spinner (its
+  // width would move Cancel beside it): its progress is the status line's. Returns true once it is applied; otherwise
   // refuseConfirm has said why in the dialog, and it returns false.
   const followChange = async (state, url, body, onRecorded) => {
     const {dialog} = state;
     state.busy = true;
     const accept = dialog.querySelector("[data-confirm-accept]");
     accept.setAttribute("aria-disabled", "true");
-    accept.classList.add("is-busy");
+    if (!state.review) accept.classList.add("is-busy");
     dialog.querySelector("[data-confirm-cancel]").disabled = true;
     dialog.querySelector("[data-confirm-error]").hidden = true;
     dialog.querySelector("[data-confirm-status]").textContent = dialog.dataset.working || "Working…";
@@ -3481,10 +3482,13 @@
   // Review posts the form, submitter included, without a page load. Until
   // the answer arrives the form is inert and aria-busy, and its Review
   // button shows it is working, so nothing can be edited meanwhile. Then:
-  // - an accepted review (a fragment marked data-review-answer) fills the
-  //   dialog's body; its data-review-preview field is the signed preview
-  //   Apply posts. The dialog opens as a modal, focus on its title (never on
-  //   Apply). No preview (nobody left to import) means no Apply.
+  // - an accepted review (a fragment marked data-review-answer, whose
+  //   data-review-done is the start of the status line) fills the dialog's
+  //   body. Its hidden fields move into the dialog's Apply form, which posts
+  //   them all: the signed preview (marked data-review-preview) and any
+  //   other an editor needs (a version, an in-place page). The dialog opens
+  //   as a modal, focus on its title (never on Apply). No preview (nobody
+  //   left to import) means no Apply.
   // - a review refused for a field's value (status 400 drawing this same
   //   form) leaves the dialog shut: each field takes the answer's error line
   //   and aria-invalid mark, and the answer's error summary is shown above
@@ -3494,9 +3498,10 @@
   //   no Apply. The form keeps the reader's values at their version.
   // Escape or Cancel closes the dialog, changing nothing, and focus returns
   // to Review. Apply is the Delete dialog's (followChange): from then on the
-  // dialog cannot be dismissed until the answer; once the change is recorded
-  // Apply is hidden (its space kept, so Cancel never moves) and focus moves
-  // to the title; once applied the dialog closes, and either the page goes
+  // dialog cannot be dismissed until the answer, its progress shown in the
+  // status line (no spinner on Apply, so Cancel never moves); once the
+  // change is recorded Apply is hidden (its space kept) and focus moves to
+  // the title; once applied the dialog closes, and either the page goes
   // to the dialog's data-review-return (a New or Edit page's table) or, with
   // none, every region is redrawn from the form's region's data-refresh-url.
   // Either way the page's reserved status line named by
@@ -3571,13 +3576,18 @@
   };
   const openReview = (dialog, form, opener, answer, refusal) => {
     wireDialog(dialog);
-    const preview = answer?.querySelector("[data-review-preview]");
-    const token = preview?.value || "";
-    preview?.remove();
+    const apply = dialog.querySelector("form[data-review-apply]");
+    apply.querySelectorAll("[data-review-carried]").forEach((node) => node.remove());
+    const carried = answer ? [...answer.querySelectorAll("input[type=hidden][name]")] : [];
+    carried.forEach((field) => {
+      const copy = document.importNode(field, true);
+      copy.setAttribute("data-review-carried", "");
+      apply.append(copy);
+      field.remove();
+    });
+    const token = carried.find((field) => field.hasAttribute("data-review-preview"))?.value || "";
     dialog.querySelector("[data-review-body]").replaceChildren(
       ...(answer ? [...answer.childNodes].map((node) => document.importNode(node, true)) : []));
-    const apply = dialog.querySelector("form[data-review-apply]");
-    apply.elements.namedItem("preview").value = token;
     const error = dialog.querySelector("[data-confirm-error]");
     error.hidden = true;
     error.replaceChildren();
@@ -3648,9 +3658,8 @@
     const {dialog, review} = state;
     const accept = dialog.querySelector("[data-confirm-accept]");
     const recorded = () => {
-      // Recorded: Apply is done with, so it goes, keeping the space it had
-      // before its busy mark widened it; the status line says the rest.
-      accept.classList.remove("is-busy");
+      // Recorded: Apply is done with, so it goes, keeping its space; the
+      // status line says the rest.
       accept.setAttribute("data-recorded", "");
       dialog.querySelector("[data-review-title]").focus();
     };

@@ -494,9 +494,18 @@ def _entries(form, user_id):
 
 
 def _refuse(form, refused):
-    """Show a builder refusal at its field, or for the page as a whole."""
-    field = refused.field if refused.field in form.fields else None
-    form.add_error(field, _refusal_message(refused))
+    """Show a builder refusal at its field, or refuse the change as a whole.
+
+    A refusal of a field's value stays on the form (the page again, marked
+    at the field). Any other (an unchanged review, a guard on the change as
+    a whole) is a plain refusal, which the review dialog shows (UX
+    conventions, "Review dialog", #750).
+    """
+    if refused.field not in form.fields:
+        raise UserFacingError(
+            _refusal_message(refused), fix=_("Nothing was changed.")
+        ) from None
+    form.add_error(refused.field, _refusal_message(refused))
 
 
 def _refusal_message(refused):
@@ -541,6 +550,8 @@ def _entry(request, service, actor, user_id=None):
     (``_review``), whose Apply posts to Users; one refused for a field's
     value shows this page again with each error at its field (status 400),
     which the page script turns into marks on the form it already shows.
+    Any other refusal (``_refuse``, an invalid resulting configuration) is
+    a plain refusal for the dialog.
     """
     filters(request.GET, allowed=set())
     if request.FILES:
@@ -603,8 +614,9 @@ def _entry(request, service, actor, user_id=None):
         try:
             return _review(request, service, actor, configuration, changes, patch)
         except ConfigError:
-            form.add_error(None, MESSAGES["invalid"])
-            return _entry_page(request, context, status=400)
+            raise UserFacingError(
+                MESSAGES["invalid"], fix=_("Nothing was changed.")
+            ) from None
 
 
 def _answer(request, user_id=None):

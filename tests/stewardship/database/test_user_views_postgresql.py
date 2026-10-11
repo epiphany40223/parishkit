@@ -891,3 +891,25 @@ def test_other_refusals_reach_the_dialog_in_the_servers_words(converted, monkeyp
     assert ConfigurationChangeRequest.objects.count() == before
     assert "late@example.org" not in users(store)
     assert users(store)["admin@example.org"] == ("admin", "administrator")
+
+
+def test_a_refusal_of_the_whole_change_goes_to_the_dialog(converted):
+    """An unchanged Review (a safeguard the gate makes unreachable) has no
+    field, so it is the plain JSON refusal the dialog shows, not the form."""
+    store, browser = converted
+    with web():
+        unchanged = fetched(
+            browser,
+            edit(store, "staff@example.org"),
+            {
+                "action": "preview",
+                "base_digest": store.active().digest,
+                "name": "staff",
+                "role": "staff",
+            },
+        )
+    assert unchanged.status_code == 400
+    assert unchanged["Content-Type"].startswith("application/json")
+    refusal = json.loads(unchanged.content)["refusal"]
+    assert refusal["message"].startswith("Nothing has changed.")
+    assert refusal["fix"] == "Nothing was changed."

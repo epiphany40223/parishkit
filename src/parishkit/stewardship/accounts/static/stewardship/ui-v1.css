@@ -919,11 +919,13 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 /* The review dialog of Admin editors (#750, confirm-dialog.html with
    review=True). It fits the window at every width: its title, buttons,
    status line and refusal stay in view while a long review scrolls in its
-   body. A recorded change's Apply goes, keeping its space, so Cancel never
-   moves. The status line it ends with on the page (review-outcome.html)
+   body. Apply never shows the busy spinner (ui-v1.js), whose width would
+   move Cancel, and a recorded change's Apply goes, keeping its space, so
+   Cancel never moves. dvh follows a phone's changing toolbar; vh is the
+   fallback. The status line it ends with on the page (review-outcome.html)
    keeps one line of space whether or not it says anything, and cuts a long
    line short, so it never moves a control. */
-.review-dialog { margin-top: 5vh; width: min(44rem, calc(100vw - 2rem)); max-height: 90vh; }
+.review-dialog { margin-top: 5vh; margin-top: 5dvh; width: min(44rem, calc(100vw - 2rem)); max-height: 90vh; max-height: 90dvh; }
 .review-dialog[open] { display: flex; flex-direction: column; }
 .review-dialog > * { flex: none; }
 .review-dialog .dialog-body { flex: 1 1 auto; min-height: 0; overflow: auto; margin-bottom: 1rem; }

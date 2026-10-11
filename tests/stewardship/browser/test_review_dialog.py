@@ -12,11 +12,13 @@ answers are user_components'.
 """
 
 import re
+from urllib.parse import parse_qs
 
 import pytest
 
 from .test_components import axe_violations
 from .user_components import (
+    APPLY,
     APPLY_REFUSAL,
     EDIT,
     LIST,
@@ -144,7 +146,12 @@ def test_apply_returns_to_users_with_the_status_line(page, component_origin):
     table = page.locator("#users-table-title").bounding_box()["y"]
     fill_new(page, component_origin)
     dialog = review(page)
-    dialog.get_by_role("button", name="Apply").click()
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        dialog.get_by_role("button", name="Apply").click()
+    fields = parse_qs(sent.value.post_data or "")
+    assert fields["action"] == ["confirm"]
+    assert fields["preview"] == ["synthetic-preview"]
+    assert set(fields) == {"csrfmiddlewaretoken", "action", "preview"}
     page.wait_for_url(re.compile(re.escape(LIST) + "$"))
     line = page.locator("#users-outcome")
     eventually(page, "document.getElementById('users-outcome').textContent !== ''")
@@ -252,13 +259,20 @@ def test_the_import_applies_and_redraws_users_in_place(page, component_origin):
     dialog = page.get_by_role("dialog", name="Review Ministry leader import")
     visible(dialog)
     assert page.evaluate(FOCUSED) == "leader-review-title"
-    dialog.get_by_role("button", name="Apply").click()
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        dialog.get_by_role("button", name="Apply").click()
+    # Every hidden field of the review is posted, not only its preview.
+    fields = parse_qs(sent.value.post_data or "")
+    assert fields["preview"] == ["synthetic-preview"] and fields["extra"] == ["kept"]
     hidden(page.locator("#leader-review"))
-    eventually(page, "document.getElementById('users-outcome').textContent !== ''")
-    line = page.locator("#users-outcome")
+    eventually(page, "document.getElementById('leaders-outcome').textContent !== ''")
+    # The line above the leaders table, where the reader acted; the users
+    # table's own line stays empty.
+    line = page.locator("#leaders-outcome")
     assert line.inner_text().startswith("Leaders imported. ")
     assert APPLIED_LINE.search(line.inner_text())
-    assert page.evaluate(FOCUSED) == "users-outcome"
+    assert page.evaluate(FOCUSED) == "leaders-outcome"
+    assert page.locator("#users-outcome").inner_text() == ""
     # Redrawn in place from the refresh address (the Ministry leader gone).
     eventually(
         page, "document.querySelectorAll('table.users-table tbody tr').length === 3"
@@ -289,3 +303,29 @@ def test_a_refused_apply_shows_in_the_dialog_which_can_then_close(
     assert page.get_by_label("Name", exact=True).input_value() == "Smith, Ann"
     assert page.evaluate("window.notReloaded === true")
     assert not failures
+
+
+def test_cancel_never_moves_while_apply_is_sent(page, component_origin):
+    """While the Apply POST is held, Apply shows no spinner and Cancel stays
+    exactly where it was; the status line shows the progress."""
+    fill_new(page, component_origin)
+    dialog = review(page)
+    cancel = dialog.locator("[data-confirm-cancel]")
+    before = cancel.bounding_box()
+    held = []
+    page.route("**" + APPLY, lambda route: held.append(route))
+    dialog.get_by_role("button", name="Apply").click()
+    eventually(
+        page,
+        "document.querySelector('#user-review [data-confirm-status]')"
+        ".textContent === 'Applying…'",
+    )
+    eventually(page, "true")
+    assert len(held) == 1
+    assert cancel.bounding_box() == before
+    assert cancel.is_disabled()
+    accept = dialog.locator("[data-confirm-accept]")
+    assert "is-busy" not in (accept.get_attribute("class") or "")
+    assert accept.get_attribute("aria-disabled") == "true"
+    held[0].continue_()
+    page.wait_for_url(re.compile(re.escape(LIST) + "$"))

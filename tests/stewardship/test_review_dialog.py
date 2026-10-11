@@ -57,7 +57,8 @@ def test_apply_posts_the_signed_preview_and_status_sits_below_the_buttons():
     apply = re.search(r"<form ([^>]*)>(.*?)</form>", text, re.S)
     assert 'action="/admin/things/"' in apply.group(1)
     assert 'name="action" value="confirm"' in apply.group(2)
-    assert 'name="preview" value=""' in apply.group(2)
+    # The review's own hidden fields (its preview) are added by the script.
+    assert 'name="preview"' not in apply.group(2)
     actions = text.index('class="dialog-actions"')
     status = text.index('role="status" data-confirm-status')
     error = text.index('role="alert" data-confirm-error hidden')
@@ -123,9 +124,14 @@ def test_the_status_line_keeps_its_space_and_is_polite():
     rule = re.search(r"\.review-outcome \{([^}]*)\}", css).group(1)
     assert "min-height" in rule and "white-space: nowrap" in rule
     source = (TEMPLATES / "users.html").read_text(encoding="utf-8")
-    outcome = source.index('review-outcome.html" with outcome_id="users-outcome"')
-    # Above both table regions, so their redraw keeps it.
-    assert outcome < source.index("data-table-region")
+    users = source.index('review-outcome.html" with outcome_id="users-outcome"')
+    leaders = source.index('review-outcome.html" with outcome_id="leaders-outcome"')
+    regions = [match.start() for match in re.finditer("<section id=", source)]
+    ends = [match.start() for match in re.finditer("</section>", source)]
+    # Above each table region, outside it, so a redraw keeps the line: the
+    # users line above the users table, the import's above the leaders
+    # table, where the reader acted.
+    assert users < regions[0] and ends[0] < leaders < regions[1]
 
 
 def review_fragment():
@@ -185,4 +191,4 @@ def test_new_and_edit_user_review_in_the_dialog_and_return_to_users():
     # The leader import stays on Users and redraws in place: no return.
     users = (TEMPLATES / "users.html").read_text(encoding="utf-8")
     include = re.search(r'review=True dialog_id="leader-review"[^%]*%', users).group(0)
-    assert "return_url" not in include and 'outcome_id="users-outcome"' in include
+    assert "return_url" not in include and 'outcome_id="leaders-outcome"' in include

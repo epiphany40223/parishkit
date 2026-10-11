@@ -21,7 +21,8 @@ The browser checks need no database:
   leaders without a user (#952 slice 6), and counts two with no email. Its
   Import selected and Import all post to ``IMPORT``, which answers with the
   Import Ministry leaders review fragment of two of them with one skipped,
-  for the review dialog (#750). Its Apply posts to ``APPLY``, which
+  for the review dialog (#750), with one more hidden field (``extra``)
+  besides its preview. Its Apply posts to ``APPLY``, which
   redirects to the Applied status page, after which both tables are
   redrawn from ``LIST``'s refresh address.
 - ``NEW``: New user. Its Email lookup posts to ``NAMES``, which answers two
@@ -301,6 +302,12 @@ def components(context, admin):
             "limit": 100,
             "preview": "synthetic-preview",
         },
+    )
+    # Another hidden field, as a later editor's version would be: Apply
+    # posts every hidden field of the review, not only its preview.
+    leader_review = leader_review.replace(
+        "data-review-preview>",
+        'data-review-preview><input type="hidden" name="extra" value="kept">',
     )
     status = render_to_string(
         "stewardship/configuration-request.html",
