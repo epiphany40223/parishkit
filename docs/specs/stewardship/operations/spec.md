@@ -833,6 +833,15 @@ initial setup, and it runs `upgrade-users` once setup finishes. Running
 `upgrade-users` automatically at setup completion was rejected: it is an
 offline, operator-confirmed conversion with its own audit trail.
 
+Such a deployment may be part-way through setup with an Administrative access
+step that the earlier release saved. The migration leaves that saved step as
+it was. If the step granted a Staff or Ministry-leader hosted domain, Review
+and Finish refuse the draft. The refusal says that domains no longer grant
+access and links to the access step. The Administrator lists each person's
+address and saves the step again. A domain is never silently dropped, because
+that would quietly remove people's access. A step saved with empty domain
+lists is still read as it is.
+
 ### Offline bootstrap profile
 
 The `bootstrap` Compose profile is an explicitly operator-invoked, one-shot
