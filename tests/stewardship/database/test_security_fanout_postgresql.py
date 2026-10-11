@@ -31,7 +31,7 @@ from parishkit.stewardship.jobs.security_models import SecurityCohort, SecurityR
 from parishkit.stewardship.jobs.security_owner import SECURITY, TASK_TYPE
 from parishkit.stewardship.jobs.security_routing import event_alert
 
-from ..policy_factory import address, domain
+from ..policy_factory import address
 from .campaign_builders import change
 from .role_grants import seed_user
 from .test_background_grants_postgresql import task_login
@@ -384,7 +384,6 @@ def test_metadata_scheduler_cannot_read_addresses_or_prepare(routing):
 def test_closed_content_compilers_agree_for_every_kind_mode_and_actor(routing):
     """The SQL twin recompiles every kind, both modes, with and without an actor."""
     store, actor, _, _ = routing
-    rule = domain("partner.example", ("ministry_leader",))
     assert (
         change(
             store,
@@ -396,28 +395,31 @@ def test_closed_content_compilers_agree_for_every_kind_mode_and_actor(routing):
                     "section": "login_rules",
                     **address("new@example.org"),
                 },
-                {"operation": "add", "section": "login_rules", **rule},
             ],
         ).state
         == "applied"
     )
-    widened = domain("partner.example", ("ministry_leader", "staff"))
-    assert (
-        change(
-            store,
-            store.active(),
-            actor,
-            [
-                {
-                    "operation": "update",
-                    "section": "login_rules",
-                    "id": rule["id"],
-                    "values": widened["values"],
-                }
-            ],
-        ).state
-        == "applied"
-    )
+    # Since the users swap (#952 slice 4) activation raises no hosted-domain
+    # alert, but those recorded before it still render: they are recorded
+    # here as that activation wrote them.
+    granted = PolicySecurityEvent.objects.get(target="new@example.org")
+    for kind, before, after in (
+        ("domain_created", [], ["ministry_leader"]),
+        ("domain_staff_granted", ["ministry_leader"], ["ministry_leader", "staff"]),
+    ):
+        PolicySecurityEvent.objects.create(
+            id=uuid4(),
+            created_at=granted.created_at,
+            actor_id=granted.actor_id,
+            correlation_id=granted.correlation_id,
+            activation_id=granted.activation_id,
+            rule_record_id=uuid4(),
+            target="partner.example",
+            kind=kind,
+            before_roles=before,
+            after_roles=after,
+            recipients=granted.recipients,
+        )
     replaced_key(routing)
     events = list(PolicySecurityEvent.objects.exclude(recipients=[]))
     assert sorted(event.kind for event in events) == [

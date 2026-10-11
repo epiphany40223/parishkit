@@ -42,6 +42,15 @@
 #                           upgrade check proves migration and grants would
 #                           change nothing. Refused with --rollback: a
 #                           rollback never migrates.
+#   STEWARDSHIP_USERS_OPERATION, STEWARDSHIP_USERS_OPERATOR,
+#   STEWARDSHIP_USERS_REASON, STEWARDSHIP_USERS_ADMINISTRATORS
+#                           all four, only for the release whose notes
+#                           announce the users upgrade (#952): a new
+#                           operation UUID, who runs it and why, and the
+#                           comma-separated Administrators its preview
+#                           lists. Step 4 then converts the sign-in rules
+#                           between the release's two migrations (host
+#                           half's header). Refused with --rollback.
 
 set -euo pipefail
 
@@ -72,6 +81,20 @@ if [ "$mode" = rollback ] && [ "$schema_change" != 0 ]; then
     exit 1
 fi
 
+# The users upgrade's inputs reach the host half as an environment prefix
+# (ssh forwards no variables), and only when set, so every other run's
+# command line is exactly what it was. The host half validates them.
+users_env=""
+for name in STEWARDSHIP_USERS_OPERATION STEWARDSHIP_USERS_OPERATOR \
+    STEWARDSHIP_USERS_REASON STEWARDSHIP_USERS_ADMINISTRATORS; do
+    [ -z "${!name-}" ] || users_env+="$name=$(printf '%q' "${!name}") "
+done
+if [ -n "$users_env" ] && [ "$mode" = rollback ]; then
+    echo "A rollback never converts; unset the STEWARDSHIP_USERS_* variables. Refusing." >&2
+    exit 1
+fi
+[ -z "$users_env" ] || users_env="env $users_env"
+
 # As in the dev deploy tool: upload the host half
 # (tools/stewardship-upgrade-host.sh) to a file and run it from there,
 # because `docker compose run` would otherwise read the rest of the script
@@ -80,4 +103,4 @@ args=$(printf '%q ' "$repo" "$image" "$root" "$project" "$yaml" "$uuid" "$schema
 host_script=$(CDPATH='' cd "$(dirname "$0")" && pwd)/stewardship-upgrade-host.sh
 [ -f "$host_script" ] || { echo "Missing $host_script; refusing." >&2; exit 1; }
 # shellcheck disable=SC2029 # $args is meant to expand here, %q-quoted for the host
-ssh "$host" "f=\$(mktemp) && cat > \"\$f\" && bash \"\$f\" $args; rc=\$?; rm -f \"\$f\"; exit \$rc" <"$host_script"
+ssh "$host" "f=\$(mktemp) && cat > \"\$f\" && ${users_env}bash \"\$f\" $args; rc=\$?; rm -f \"\$f\"; exit \$rc" <"$host_script"

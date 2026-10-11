@@ -605,7 +605,15 @@ layout; where the deployment YAML overrides a path, use that path instead.
    on the restored database. Exit 3 (`"mismatch"`) lists `not_in_backup`
    (migrations the image has and the set lacks) and `unknown_to_image`
    (migrations the set has and the image lacks), and `use_image` names the
-   image the set was taken under: restore with that image instead. A set
+   image the set was taken under: restore with that image instead. Exit 4
+   (`"swap_pending"`) means the set lacks only the users swap and what
+   depends on it (`not_in_backup` lists them): it was taken by a repeated
+   deploy of the users release between that upgrade's two migrations
+   ([Users upgrade](stewardship-deployment-runbook.md#users-upgrade-952)).
+   Restore it with this image; the restored database is in the same
+   swap-pending state, which every online service refuses, but
+   `recover-admin` and `upgrade-users` admit, so finish the users upgrade
+   on it (its step 4) before any service starts. A set
    taken before the manifest recorded its migrations needs its decrypted
    dump as well: also mount the output directory read-only
    (`target=/out,readonly`) and add `--dump /out/database.pgdump`. Exit 2 is

@@ -908,9 +908,9 @@ folding, whatever the contact's publication flag says. An address that several
 leader Members list gets the union of their Ministries. No current campaign, or
 a campaign without Ministry stewardship, means no Ministry leaders. An
 address's one user gives its role ([Portal user
-management](../admin-portal/spec.md#portal-user-management)); until #952 lands,
-the interim code still picks the login rule (an exact address over a
-hosted-domain rule). Ministry assignments grant no Ministry.
+management](../admin-portal/spec.md#portal-user-management)); since the users
+swap (#952 slice 4) SQL reads only that user, never a hosted-domain rule.
+Ministry assignments grant no Ministry.
 
 The campaign's `ministry_leader_roles` value lists the role names: one to 50
 distinct trimmed names, none repeated once compared as above. Campaign

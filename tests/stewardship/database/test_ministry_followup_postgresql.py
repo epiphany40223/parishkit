@@ -45,7 +45,7 @@ from parishkit.stewardship.workflows.models import (
 )
 
 from ..census_factory import member
-from ..policy_factory import domain
+from ..policy_factory import address, domain
 from .auth_builders import signed_in, unguarded
 from .campaign_builders import change
 from .test_background_grants_postgresql import task_login
@@ -1229,26 +1229,27 @@ def test_a_failing_menu_count_leaves_the_page_and_transaction_usable(
                 assert cursor.fetchone() == (1,)
 
 
-def test_domain_admitted_users_read_through_the_actor_as_before(response_service):
-    """Staff admitted by a domain sign-in rule, and leaders, keep their reads (#389 L3).
+def test_users_read_through_the_actor_and_domain_rules_grant_nothing(
+    response_service,
+):
+    """Staff and leaders read by their user; a hosted domain admits no one (#952).
 
     The actor-scoped selections derive scope in SQL
-    (stewardship_ministry_scope_v1), which must resolve a hosted-domain rule
-    exactly as the application does (an exact address wins, else the
-    matching domain). Each Principal here is the application's own
-    resolution (current_principal), so the report, the follow-up queue, the
-    leader's My Ministries panel and the menu count all read what they did
-    when the application passed the scope. A domain rule can never grant
-    Administrator (the configuration refuses it), so Administrators are
-    always admitted by exact address; the actor() Administrator shows that
-    path is unchanged too.
+    (stewardship_ministry_scope_v1), which since the users swap reads only
+    the address-rule projection, each user one row, as the application
+    resolves a users configuration. Each Principal here is the application's
+    own resolution (current_principal), so the report, the follow-up queue,
+    the leader's My Ministries panel and the menu count all read what they
+    did when the application passed the scope; the actor() Administrator
+    shows that path is unchanged too. A hosted-domain rule still in a
+    sign-in-rules configuration grants nothing in SQL any more, even for a
+    proven domain identity (#389 L3's case before the swap).
     """
     from parishkit.stewardship.accounts import admin_context
 
     harness = setup(response_service)
     store = harness.service.store
-    # A domain rule admits head@leaders.example, which leads Food pantry (9)
-    # in ParishSoft (#922).
+    # head@leaders.example leads Food pantry (9) in ParishSoft (#922).
     change(
         store,
         store.active(),
@@ -1256,8 +1257,9 @@ def test_domain_admitted_users_read_through_the_actor_as_before(response_service
         [
             {"operation": "add", "section": "login_rules", **record}
             for record in (
+                address("clerk@staff.example", roles=("staff",)),
+                address("head@leaders.example", roles=("ministry_leader",)),
                 domain("staff.example", roles=("staff",)),
-                domain("leaders.example", roles=("ministry_leader",)),
             )
         ],
     )
@@ -1293,10 +1295,12 @@ def test_domain_admitted_users_read_through_the_actor_as_before(response_service
         assert queue["total"] == total and counts == {"ministry_followup": total}
         if principal is head:
             assert [(m["duid"], m["join"]) for m in mine["ministries"]] == [(9, 1)]
-    # A domain sign-in that does not prove the hosted domain gets no
-    # domain authority in either place: Python and SQL both read nothing.
-    unproven = current_principal(store, user("other@staff.example").pk)
-    assert not unproven.roles
+    # A proven domain identity with no user: SQL reads only users, so even
+    # the roles a sign-in-rules configuration's domain rule names in Python
+    # admit nothing there.
+    domain_only = current_principal(
+        store, user("other@staff.example", hosted="staff.example").pk
+    )
     with (
         task_login(ServiceRole.WEB, exact=True, reconnect=True),
         transaction.atomic(),
@@ -1305,5 +1309,5 @@ def test_domain_admitted_users_read_through_the_actor_as_before(response_service
         followup_page(
             harness.campaign.pk,
             FollowupQuery(),
-            Principal(unproven.identity, frozenset({"staff"})),
+            Principal(domain_only.identity, frozenset({"staff"})),
         )
