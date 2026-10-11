@@ -71,12 +71,15 @@ Import selected is a data-bulk-action, and while nothing is ticked the shared
 reason line under the buttons says why as visible text, so ticking a row
 moves nothing. With no rows at all, both buttons are unavailable and the same
 line gives the empty-table reason (empty_hint), which Import all names
-(hint_id). Leaders with no usable email are only counted, in a muted line.
+(hint_id). If the leaders cannot be read, the section says so instead and the
+users table above stays usable. Leaders with no usable email are only
+counted, in a muted line.
 {% endcomment %}
 {% translate "Leader pages" as leader_navigator_label %}
-<section id="{{ leaders.anchor }}" class="panel" data-table-region data-refresh-url="{{ refresh_url }}" aria-labelledby="leaders-table-title">
+<section id="{{ leaders.anchor|default:'leaders-table' }}" class="panel" data-table-region data-refresh-url="{{ refresh_url }}" aria-labelledby="leaders-table-title">
 <h2 id="leaders-table-title" tabindex="-1">{% translate "ParishSoft Ministry leaders without a user" %}</h2>
 <p class="help">{% translate "People ParishSoft lists as leaders of this campaign's Ministries who can't sign in yet. Importing makes each one a user with the role Ministry leader and the Name shown here; you can change the Name later with Edit." %}</p>
+{% if leaders_unavailable %}<p class="notice notice-error" id="leaders-unavailable">{% translate "The ParishSoft Ministry leaders could not be read just now, so none can be imported. The users above are not affected. Reload the page to try again." %}</p>{% else %}
 {% include "stewardship/table-navigator.html" with table=leaders label=leader_navigator_label %}
 <form method="post" action="{{ import_url }}" id="leader-import" data-select-table data-missing-hint="{% translate 'Select at least one leader to use Import selected.' %}">{% csrf_token %}
   <div class="bulk-bar">
@@ -109,6 +112,6 @@ line gives the empty-table reason (empty_hint), which Import all names
   </div>
 </form>
 {% include "stewardship/table-navigator.html" with table=leaders label=leader_navigator_label %}
-{% if leaders_unreachable %}<p class="help" id="leaders-unreachable">{% blocktranslate count count=leaders_unreachable %}{{ count }} ParishSoft Ministry leader has no email address in ParishSoft, so can't sign in and isn't listed.{% plural %}{{ count }} ParishSoft Ministry leaders have no email address in ParishSoft, so can't sign in and aren't listed.{% endblocktranslate %}</p>{% endif %}
+{% if leaders_unreachable %}<p class="help" id="leaders-unreachable">{% blocktranslate count count=leaders_unreachable %}{{ count }} ParishSoft Ministry leader has no email address in ParishSoft, so can't sign in and isn't listed.{% plural %}{{ count }} ParishSoft Ministry leaders have no email address in ParishSoft, so can't sign in and aren't listed.{% endblocktranslate %}</p>{% endif %}{% endif %}
 </section>
 {% endblock %}
