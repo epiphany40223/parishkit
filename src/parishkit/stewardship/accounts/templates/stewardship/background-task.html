@@ -41,6 +41,7 @@
 {% if work.latest_run_id and work.latest_run_id != task.id %}<p><a href="{% url 'admin:background_task_page' work.latest_run_id %}">{% translate "View the latest retry" %}</a></p>{% endif %}
 <details class="technical-details"><summary>{% translate "Technical details" %}</summary>
 <dl><dt>{% translate "Task ID" %}</dt><dd>{{ task.id }}</dd>
+{% if correlation_id %}<dt>{% translate "Correlation" %}</dt><dd>{{ correlation_id }}</dd>{% endif %}
 <dt>{% translate "Task type" %}</dt><dd><code>{{ task.type }}</code></dd>
 <dt>{% translate "State" %}</dt><dd><code>{{ task.state }}</code></dd>
 <dt>{% translate "Phase" %}</dt><dd><code>{{ task.progress.phase }}</code></dd>
