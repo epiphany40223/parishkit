@@ -315,7 +315,8 @@ each a `service`, `process` and `target`, and the time `at` its sentence
 states; a condition in several processes is one problem), the
 `processes` with their state, version and mail sender state,
 `missing_services`, `versions`, `schema_current`, the reasons Family email
-waits (`delivery_paused`, `planning_held`, `retry_waiting`), the open
+waits (`delivery_paused`, `planning_held`, `retry_waiting`), the 24-hour
+send count `daily_sent` and the `daily_limit` Family email stops at, the open
 `incidents`, the ParishSoft `refresh` outcome, a refused load's
 `refused_counts`, the newest backup and the `offsite` copy's state. The
 pause's reason and who paused it, and the page's sentences, are not in it.
@@ -1553,3 +1554,5 @@ pk-admin users import-leaders --confirm --token -
 - `pk-admin/1` (#1011): additive. `report data-to-fix`, Data to fix in
   ParishSoft's section counts (any session, Administrators and Staff, the
   page's event).
+- `pk-admin/1` (ADM-13 PR 2c, #530): additive. `system health` gains
+  `daily_sent` and `daily_limit`.

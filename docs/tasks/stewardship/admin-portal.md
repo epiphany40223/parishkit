@@ -985,5 +985,14 @@ status, so Home's query count is unchanged) and the
 `system health` command with `--watch` (stopping once nothing needs
 attention), checked by the golden document and allowlist in
 `tests/stewardship/test_admin_reads.py`, `tests/stewardship/test_admin_cli.py`
-and `tests/stewardship/database/test_system_health_postgresql.py`. The
-24-hour daily-limit count (part 2c) remains.
+and `tests/stewardship/database/test_system_health_postgresql.py`. Part 2c
+shows the 24-hour count, through the definer function of frozen migration
+0012, and the limit Family email stops at in the "Why sends are waiting"
+panel and as `daily_sent` and `daily_limit` in the command's document,
+with no schema or grant change, checked by
+`tests/stewardship/test_system_health.py`,
+`tests/stewardship/test_admin_reads.py`,
+`tests/stewardship/database/test_system_health_postgresql.py` and
+`tests/stewardship/browser/test_system_health.py`. When sending resumes
+after the daily limit needs another definer function (a migration) and
+remains.
