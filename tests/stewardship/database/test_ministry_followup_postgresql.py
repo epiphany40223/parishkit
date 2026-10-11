@@ -610,10 +610,13 @@ def test_native_queue_detail_and_edit_without_assignment(response_service, googl
         assert b"admin@example.org" not in body and b'datetime=""' not in body
         # Shared table (#203): headings choose the selection's own sort values
         # through POST forms carrying the private filters; sorting stays
-        # within the leader's scope and any other value is refused.
-        assert b"Page 1 of 1" in body and b'aria-sort="descending"' in body
+        # within the leader's scope and any other value is refused. The
+        # default newest-first order has no Submitted column to mark (#1064),
+        # and oldest first is no longer offered.
+        assert b"Page 1 of 1" in body and b"aria-sort=" not in body
         assert b'<a class="sort-link"' not in body
-        assert b'name="sort" value="oldest"' in body
+        assert b'name="sort" value="name"' in body
+        assert b'value="oldest"' not in body
         response, body = search(
             browser, route, {"state": "any", "sort": "ministry", "size": "25"}
         )
@@ -626,6 +629,7 @@ def test_native_queue_detail_and_edit_without_assignment(response_service, googl
         for invalid in (
             {"sort": "state"},
             {"sort": "-ministry"},
+            {"sort": "oldest"},
             {"size": "all"},
             {"assignee": "any"},
             {"state": "assigned"},

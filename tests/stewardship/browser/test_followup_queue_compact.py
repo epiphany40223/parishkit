@@ -25,9 +25,15 @@ MAX_FILTER_HEIGHT = 220
 # squeezed until they broke between letters; one line each, they are about
 # 43 px each (about 1,075 px in all).
 MAX_ROWS_HEIGHT = 1400
-FIRST_ROW = ("#followup-search", "#filter-ministry", "#filter-action")
-SECOND_ROW = ("#filter-state", "#filter-outcome", "#filter-history")
-CONTROLS = FIRST_ROW + SECOND_ROW + (f"{FILTERS} button[type=submit]",)
+FIELDS = (
+    "#followup-search",
+    "#filter-ministry",
+    "#filter-action",
+    "#filter-state",
+    "#filter-outcome",
+    "#filter-history",
+)
+CONTROLS = FIELDS + (f"{FILTERS} button[type=submit]",)
 AXE = """async () => (await axe.run(document, {
     runOnly: {type: 'tag', values: ['wcag2a','wcag2aa','wcag21aa','wcag22aa']}
 })).violations.map(({id,impact}) => ({id,impact}))"""
@@ -55,27 +61,26 @@ def boxes(page, selectors):
 
 
 def test_queue_is_compact_at_laptop_width(page, component_origin, axe_source):
-    """At 1280 px Search, Ministry and Request share the first filter row
-    and Status, Outcome, Request history and Apply filters the second; the
-    filter form stays within its height bound; and a page of 25 requests
-    with long names, every status and both markers is one line per row."""
+    """At 1280 px the six filters take at most two rows, Apply filters
+    ending the last; the filter form stays within its height bound; and a
+    page of 25 requests with long names, every status and both markers is
+    one line per row."""
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + PAGE)
     visible(page.locator(FILTERS))
     assert page.locator(FILTERS).bounding_box()["height"] <= MAX_FILTER_HEIGHT
-    first, second = boxes(page, FIRST_ROW), boxes(page, SECOND_ROW)
-    for row in (first, second):
-        assert max(box["y"] for box in row) - min(box["y"] for box in row) <= 1, row
-    assert min(box["y"] for box in second) > max(
-        box["y"] + box["height"] for box in first
-    )
-    # Apply filters ends the second row, its bottom level with the fields'.
+    fields = boxes(page, FIELDS)
+    # Rows of fields, told apart by their tops (within a pixel).
+    tops = sorted({round(box["y"]) for box in fields})
+    rows_of_fields = [tops[0]] + [
+        top for previous, top in zip(tops, tops[1:], strict=False) if top - previous > 1
+    ]
+    assert len(rows_of_fields) <= 2, tops
+    # Apply filters ends the last row, its bottom level with the fields'.
+    last = [box for box in fields if box["y"] >= rows_of_fields[-1] - 1]
     apply = page.locator(f"{FILTERS} button[type=submit]").bounding_box()
-    assert apply["x"] > max(box["x"] for box in second)
-    assert (
-        abs((apply["y"] + apply["height"]) - (second[0]["y"] + second[0]["height"]))
-        <= 1
-    )
+    assert apply["x"] > max(box["x"] for box in last)
+    assert abs((apply["y"] + apply["height"]) - (last[0]["y"] + last[0]["height"])) <= 1
     rows = page.evaluate(ROWS)
     assert len(rows["heights"]) == 25
     assert max(rows["heights"]) < rows["oneLine"], rows
@@ -92,12 +97,12 @@ def test_queue_cells_hold_one_short_value(page, component_origin):
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + PAGE)
     cells = page.locator("tbody tr").nth(0).locator("th, td")
-    assert cells.nth(4).inner_text() == "Leave (cannot participate)"
-    marker = cells.nth(4).locator("span[title]")
+    assert cells.nth(3).inner_text() == "Leave (cannot participate)"
+    marker = cells.nth(3).locator("span[title]")
     assert marker.get_attribute("title") == (
         "Cannot participate in any ministries (physical limitations)"
     )
-    statuses = page.locator("tbody tr td:nth-child(6)").all_inner_texts()
+    statuses = page.locator("tbody tr td:nth-child(5)").all_inner_texts()
     assert "Resolved: Declined / no longer interested" in statuses
     assert "Resolved: Joined ministry" in statuses
     # Closed: no response always records No response; it is not repeated.
@@ -107,13 +112,18 @@ def test_queue_cells_hold_one_short_value(page, component_origin):
     # whose words a screen reader hears in full.
     removed = page.locator("tbody tr").nth(6).locator("td").nth(1)
     badge = removed.locator(".status-badge")
-    assert badge.get_attribute("title") == "No longer in this campaign"
+    # The tooltip is on the visible word, which screen readers skip, so the
+    # sentence is announced once.
+    assert badge.locator("[aria-hidden=true]").get_attribute("title") == (
+        "No longer in this campaign"
+    )
     assert badge.locator(".visually-hidden").text_content() == (
         "No longer in this campaign"
     )
-    # The dates use the compact form: no "at" and no time zone name.
-    submitted = page.locator("tbody tr td:nth-child(7)").first.inner_text()
-    assert " at " not in submitted and not submitted.endswith(("PDT", "PST"))
+    # Last contact uses the compact form: no "at" and no time zone name.
+    contact = page.locator("tbody tr").nth(1).locator("td").nth(4).inner_text()
+    assert contact.startswith("Sep") and " at " not in contact
+    assert not contact.endswith(("PDT", "PST"))
 
 
 def test_queue_request_page_states_the_whole_reason(page, component_origin):
