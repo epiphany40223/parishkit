@@ -1587,7 +1587,9 @@ each preview time in the browser's zone as well. See decision 18 in the
   labeled as kept from the earlier schedule. A schedule has at most 64
   rules, said beside the rules; Add a rule is unavailable at that many.
   "Every" rules give any number of times, and the cap keeps a save within
-  the server's limit on posted fields.
+  the server's limit on posted fields. A stored schedule has the same caps
+  ([stored schedule](../background-processing/spec.md#stored-schedule-and-upgrade)),
+  so the page can always show and save it back.
 - **Skip these times**: single times or from–to ranges, at most 16, said
   and enforced the same way.
 - **Skip refreshes around Family emails**, with one line saying what it
