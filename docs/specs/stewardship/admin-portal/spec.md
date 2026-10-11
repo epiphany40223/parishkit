@@ -3625,23 +3625,20 @@ A small "See sign-in activity in System logs" link beside the page heading
 opens [sign-in activity](#sign-in-activity) on System logs, with only the
 closed link filters in its address
 ([#953](https://github.com/epiphany40223/parishkit/issues/953)). Each user's
-Last successful sign-in cell also has a small "Sign-in activity" button per
-recorded Google identity with that address, which opens the same view
-narrowed to that identity as its actor. The identity is a private filter, so
-the button posts it, never putting it in an address
-([Admin tables](../ui-conventions/spec.md#admin-tables)). Until the users code
-of [#952](https://github.com/epiphany40223/parishkit/issues/952) lands, the
-interim page's exact-address rows carry these buttons in the same cell.
+Last successful sign-in cell also has one small "Sign-in activity" control,
+so the row stays one line (#952, settling the #968 review note). With one
+recorded Google identity at that address it opens the same view narrowed to
+that identity as its actor; the identity is a private filter, so the control
+posts it, never putting it in an address
+([Admin tables](../ui-conventions/spec.md#admin-tables)). With several, it
+opens the user's Edit page, which lists one such control per identity. A
+user with no recorded identity has none.
 
-Until the users upgrade, the interim page also ends with the read-only
-**Upgrade preview** panel of the
-[users upgrade](../operations/spec.md#users-upgrade-from-sign-in-rules),
-reached by a "See the users upgrade preview" link beside the heading (#952
-slice 2). It lists first the Administrators the upgrade keeps, then a table
-of the users it writes (Email, Name, Role and the rule each comes from,
-sorting as the Users table does), the hosted-domain rules, the deny rules it
-drops and what it does not carry over. It has no controls and is gone once
-the configuration holds users.
+Every deployment past initial setup holds users once the users release
+starts (startup refuses sign-in rules), so the page has no Upgrade preview
+panel; `pk-admin users preview-upgrade` and `upgrade-users --preview` show
+the [users upgrade](../operations/spec.md#users-upgrade-from-sign-in-rules)
+preview before it.
 
 ### Users table
 
@@ -3663,8 +3660,9 @@ whose long text wraps instead, because the Administrator asked for one-line
 rows here (#952).
 
 Each row's actions are **Edit** and **Delete**. The row of the only
-Administrator has no Delete, and the server refuses it anyway. The table has
-no selection column: users are deleted one at a time.
+Administrator has no Delete, a line under the table, reserved while empty,
+says why, and the server refuses it anyway. The table has no selection
+column: users are deleted one at a time.
 
 Removed with the revamp, and not shown anywhere: the hosted-domain table and
 its `gmail.com` check, the Rule origin, Configured roles and grant origin,
@@ -3687,7 +3685,9 @@ fields:
   default from ParishSoft is described below.
 - **Role**: three radio buttons, Ministry leader, Staff and Administrator,
   each with one plain-language line saying what that role can see. New starts
-  with Ministry leader chosen.
+  with Ministry leader chosen. On the only Administrator's Edit page the
+  lower roles are unavailable, with the reason in a line under the roles
+  that is reserved while empty (#563); the server refuses that change anyway.
 
 **Review** shows each changed value, before and after, and **Apply** records
 one configuration change, whose status the page follows; it then returns to
@@ -3703,7 +3703,11 @@ current promoted data whose contact record lists that address (matched
 trimmed and case-insensitively, as sign-in matches, with no Gmail dot or plus
 folding). The request is a CSRF-protected POST, so the address never appears
 in a URL; it is Administrator-only, reads nothing else, and its audit records
-only the count of names found.
+only the count of names found. The same answer says when the address is not
+one email address or is already a user, shown at the Email field. The web
+login reads the names through one SECURITY DEFINER function
+(`stewardship_member_names_for_v1`, migration 0053), which returns only
+names, never another contact field.
 
 - **No match:** Name stays empty and required.
 - **One name:** Name is filled in, and stays editable.
@@ -3774,9 +3778,7 @@ no such role signs in and sees no Ministry (Administrator decision,
 2026-10-10). Opening a Ministry page then answers 403 with a plain sentence
 saying they lead no Ministry in the current ParishSoft data, so there are no
 Ministry pages to show, never the generic sign-in denial. The
-[data specification](../data/spec.md#ministry-leaders) defines the rule,
-including the interim login-rule admission that stays until the users code
-of [#952](https://github.com/epiphany40223/parishkit/issues/952) lands. A
+[data specification](../data/spec.md#ministry-leaders) defines the rule. A
 change in ParishSoft reaches the portal with the next full refresh.
 
 The Ministry assignments editor and the Chairperson suggestion, confirmation
@@ -3823,9 +3825,11 @@ Administrator sees and confirms who gets access).
 
 The release that introduces users converts the old sign-in rules once, as the
 [operations upgrade note](../operations/spec.md#users-upgrade-from-sign-in-rules)
-describes. Before that release, the Portal users page shows a read-only **Upgrade
-preview** panel with exactly what the conversion will do, so the
-Administrator can add any missing address as a user first.
+describes. Before that release, the Portal users page showed a read-only
+**Upgrade preview** panel with exactly what the conversion would do, so the
+Administrator could add any missing address first; with the users release
+the page shows only users, and `pk-admin users preview-upgrade` and
+`upgrade-users --preview` keep the preview.
 
 ## Manual ParishSoft refresh
 

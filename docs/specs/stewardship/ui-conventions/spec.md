@@ -1163,9 +1163,10 @@ A table whose rows can be acted on follows one pattern
 ([#879](https://github.com/epiphany40223/parishkit/issues/879)), built once
 and shared. Its users so far are
 [Dates and mail schedules](../admin-portal/spec.md#dates-and-mail-schedules), the
-[Hosted files](../hosted-files/spec.md#admin-page) library and the live
+[Hosted files](../hosted-files/spec.md#admin-page) library, the live
 sessions of
-[Automation access](../admin-automation/spec.md#revocation-and-listing); the
+[Automation access](../admin-automation/spec.md#revocation-and-listing) and
+[Users](../admin-portal/spec.md#users-table); the
 other Admin tables with per-row actions move to it in later changes, as the
 inventory on #879 lists.
 
