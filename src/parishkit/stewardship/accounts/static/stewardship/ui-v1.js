@@ -3529,7 +3529,10 @@
     if (kept && kept.path === window.location.pathname
       && Date.now() - kept.at < REVIEW_OUTCOME_MS) showOutcome(kept.id, kept.text);
   } catch { /* No storage: the page shows no status line. */ }
-  const clockTime = () => new Date().toLocaleTimeString([], {hour: "numeric", minute: "2-digit"});
+  // The status line's time, in the parish style's clock and this browser's
+  // time zone, through the shared formatter (date-format-v1.js, which every
+  // page loads from base.html; the guard only keeps Apply working without it).
+  const clockTime = () => (window.ParishDates ? window.ParishDates.time(new Date()) : "");
   // An address from an attribute, never the form's action property, which
   // a field named "action" shadows.
   const formUrl = (form) => new URL(form.getAttribute("action") || "", document.baseURI).href;
