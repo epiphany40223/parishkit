@@ -3410,7 +3410,10 @@ before. Each list ends with Previous page and Next page links, named for
 both lists ("Attempt history and evidence pages"), that act
 [in place](../ui-conventions/spec.md#in-place-controls) and refresh both
 lists; the resolution forms sit between the two regions, so a note being
-typed survives paging. No schema change.
+typed survives paging. Paging the attempt history can change its height
+and so move the forms and the evidence list below it: a recorded exception
+to [no layout shift](../ui-conventions/spec.md#no-layout-shift)
+(Administrator, 2026-10-11). No schema change.
 
 #### Refused addresses
 
