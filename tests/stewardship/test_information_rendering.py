@@ -4,7 +4,7 @@ import csv
 import io
 import warnings
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from itertools import accumulate
 
 import pytest
@@ -118,26 +118,28 @@ def test_csv_full_results_and_formula_safety(history):
     stream = io.BytesIO()
     information_csv(report, stream)
     assert not stream.closed and b"\r\n" in stream.getvalue()
-    rows = list(csv.DictReader(io.StringIO(stream.getvalue().decode())))
-    assert rows[0]["Row type"] == "Report metadata"
-    assert len(rows) == 1 + 51 * (2 if history else 1)
-    items = [row for row in rows if row["Row type"] == "Item"]
+    reader = csv.DictReader(io.StringIO(stream.getvalue().decode()))
+    rows = list(reader)
+    # Exactly the table (#966): the headings, then one row per record, with
+    # no report-information columns or row.
+    assert tuple(reader.fieldnames) == HEADINGS
+    assert len(rows) == 51 * (2 if history else 1)
+    items = [row for row in rows if not row["Changed at"]]
+    assert len(items) == 51
     assert all(row["Family"] == "'=Sample <Family>" for row in items)
     assert all(row["Staff notes"] == "'+Literal notes" for row in items)
     assert items[-1]["Submitted text"].endswith("FINAL TEXT MARKER")
     # CSV timestamps are ISO 8601 in the stated display time zone (#221).
-    assert items[-1]["Requested at"] == "2026-10-02 09:00:00-04:00"
-    # No internal references (PR #929): an earlier workflow row follows its
-    # item and repeats the item's identity, so a reader can match them.
-    assert not {"Item reference", "Replacement reference"} & set(rows[0])
+    assert items[-1]["Submitted"] == "2026-10-02 08:00:00-04:00"
+    # No internal references (PR #929, #966): an earlier workflow row
+    # follows its item and repeats the item's identity, so a reader can
+    # match them; it alone has a Changed at time.
+    assert not {"Row type", "Version", "Item reference"} & set(reader.fieldnames)
     assert all("item" not in row.values() for row in rows)
     if history:
         identity = ("Family", "Family DUID", "Submitted", "Submitted text")
-        for item, revision in zip(rows[1::2], rows[2::2], strict=True):
-            assert (item["Row type"], revision["Row type"]) == (
-                "Item",
-                "Earlier workflow",
-            )
+        for item, revision in zip(rows[0::2], rows[1::2], strict=True):
+            assert not item["Changed at"] and revision["Changed at"]
             assert all(revision[key] == item[key] for key in identity)
             assert revision["Staff notes"] == "'@Older notes"
     assert len(report.rows[0]) == len(HEADINGS)
@@ -187,7 +189,7 @@ def test_replacement_is_named_by_its_submission_time():
     )
     stream = io.BytesIO()
     information_csv(report, stream)
-    old, new, older = list(csv.DictReader(io.StringIO(stream.getvalue().decode())))[1:]
+    old, new, older = list(csv.DictReader(io.StringIO(stream.getvalue().decode())))
     assert old["Disposition"] == "Superseded by a later response"
     assert old["Replaced by request submitted"] == new["Submitted"]
     assert new["Replaced by request submitted"] == ""
@@ -209,16 +211,18 @@ def test_xlsx_values_are_literal_complete_and_structured():
         # The same headings as the CSV, with no internal references.
         assert [cell.value for cell in sheet[1]] == list(HEADINGS)
         assert "item" not in [cell.value for cell in sheet[2]]
-        assert [sheet["A2"].value, sheet["A3"].value] == ["Item", "Earlier workflow"]
-        # The earlier workflow row repeats its item's identity.
-        assert all(sheet[f"{c}3"].value == sheet[f"{c}2"].value for c in "CDEH")
-        assert sheet["C2"].value == "=Sample <Family>" and sheet["C2"].data_type == "s"
-        assert sheet["H2"].value.endswith("FINAL TEXT MARKER")
-        assert sheet["L3"].value == "@Older notes" and sheet["L3"].data_type == "s"
-        assert sheet.freeze_panes == "A2" and sheet.print_title_rows == "$1:$1"
-        assert sheet.auto_filter.ref == "A1:P3"
+        # The earlier workflow row (the one with a Changed at time) repeats
+        # its item's identity.
+        assert sheet["K2"].value is None and sheet["K3"].value is not None
+        assert all(sheet[f"{c}3"].value == sheet[f"{c}2"].value for c in "ABCF")
+        assert sheet["A2"].value == "=Sample <Family>" and sheet["A2"].data_type == "s"
+        assert sheet["F2"].value.endswith("FINAL TEXT MARKER")
+        assert sheet["J3"].value == "@Older notes" and sheet["J3"].data_type == "s"
+        # A Family-keyed sheet keeps its Family column in view too.
+        assert sheet.freeze_panes == "B2" and sheet.print_title_rows == "$1:$1"
+        assert sheet.auto_filter.ref == "A1:N3"
         # Native date-time cells in Excel's locale-aware built-in format 22.
-        requested = book["Report information"]["B10"]
+        requested = book["Report information"]["B7"]
         assert requested.value == datetime(2026, 10, 2, 9, 0)
         assert requested.is_date and requested.number_format == BUILTIN_FORMATS[22]
     finally:
@@ -245,14 +249,25 @@ def test_pdf_pagination_preserves_all_long_text_and_history():
 
 
 def test_empty_reports_still_include_source_and_request_provenance():
-    """No-result exports remain self-identifying without inventing an item row."""
+    """No-result exports remain self-identifying without inventing an item row.
+
+    The CSV is just the headings; the XLSX's report information still
+    names the source and request times, with no internal references.
+    """
     report = document(count=0)
     stream = io.BytesIO()
     information_csv(report, stream)
-    rows = list(csv.DictReader(io.StringIO(stream.getvalue().decode())))
-    assert len(rows) == 1 and rows[0]["Matching items"] == "0"
-    assert rows[0]["Source reference"] == "source"
-    assert rows[0]["Requested at"] == "2026-10-02 09:00:00-04:00"
+    assert stream.getvalue().decode() == ",".join(HEADINGS) + "\r\n"
+    stream = io.BytesIO()
+    information_xlsx(report, stream)
+    book = load_workbook(io.BytesIO(stream.getvalue()))
+    try:
+        details = dict(book["Report information"].iter_rows(values_only=True))
+    finally:
+        book.close()
+    assert details["Matching items"] == "0"
+    assert details["Source as of"] == details["Requested at"] - timedelta(hours=1)
+    assert not {"Source reference", "Campaign reference"} & set(details)
     assert report.item_count == 0 and not report.rows
 
 
@@ -269,8 +284,8 @@ def test_format_exclusions_have_lossless_visible_notation():
     information_xlsx(report, stream)
     book = load_workbook(io.BytesIO(stream.getvalue()))
     try:
-        assert book["Information"]["H2"].value == expected
-        assert "Unsupported characters" in book["Report information"]["B18"].value
+        assert book["Information"]["F2"].value == expected
+        assert "Unsupported characters" in book["Report information"]["B15"].value
     finally:
         book.close()
     lines = "\n".join(text for _, text in card_text(information_records(report)))
@@ -330,7 +345,7 @@ def test_pdf_draws_pages_without_accumulating_wrapped_report(monkeypatch):
 
 
 def test_pdf_cards_are_titled_nested_and_leave_out_internal_fields():
-    """The PDF reads as cards: CSV and XLSX keep what the cards leave out."""
+    """The PDF reads as cards holding the CSV's and XLSX's columns."""
     report = document()
     report_card, item = information_records(report)
     assert report_card.title == "About this report"

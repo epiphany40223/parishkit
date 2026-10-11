@@ -204,7 +204,8 @@ def test_share_wording_beyond_a_spreadsheet_cell_continues_in_later_rows():
     output = io.BytesIO()
     render_information(built, output, format="csv")
     records = list(csv.reader(io.StringIO(output.getvalue().decode())))
-    data = records[2:]
+    assert tuple(records[0]) == built.headings
+    data = records[1:]
     assert len(data) == 6 and [item[1] for item in data] == [c[1] for c in built.rows]
     assert data[1][5].startswith("(continued) ") and data[1][2] == data[1][3] == ""
     output = io.BytesIO()
@@ -257,7 +258,8 @@ def test_an_incomplete_capture_is_refused():
 
 @pytest.mark.parametrize("format", ["csv", "xlsx", "pdf"])
 def test_every_format_renders_from_one_document(format):
-    """The shared renderer carries headings, rows and metadata into each file."""
+    """The shared renderer carries headings and rows into each file, and the
+    report information into the XLSX and PDF."""
     output = io.BytesIO()
     render_information(document([row()]), output, format=format)
     body = output.getvalue()
@@ -266,7 +268,9 @@ def test_every_format_renders_from_one_document(format):
         text = body.decode()
         # CSV money is the canonical amount (#388 L5).
         assert "Example <Family>" in text and ",1234.50," in text
-        assert "Financial stewardship detail" in text and ",1200.00," in text
+        assert ",1200.00," in text
+        # Exactly the table: the report information is not in the CSV (#966).
+        assert "Financial stewardship detail" not in text
         assert "$" not in text
 
 
@@ -390,7 +394,7 @@ def test_csv_money_is_the_canonical_amount_and_pdf_keeps_the_page_text():
     output = io.BytesIO()
     render_information(built, output, format="csv")
     records = list(csv.reader(io.StringIO(output.getvalue().decode())))
-    first, second, third = records[2:]
+    first, second, third = records[1:]
     assert first[2:8] == [
         "1234.50",
         "Monthly",
@@ -409,8 +413,9 @@ def test_csv_money_is_the_canonical_amount_and_pdf_keeps_the_page_text():
     )
     # Beyond Excel's digits too: the exact amount, never rounded.
     assert third[6] == "123456789012345.67"
-    # The report-total metadata trailer is a canonical amount too.
-    assert records[0].index("Total annual pledges") == first.index("1234.51")
+    # The report total is not a CSV column (#966); it is in the XLSX's
+    # report information and the PDF's report card.
+    assert "Total annual pledges" not in records[0]
     lines = [
         f"{label}: {text}" for label, text in card_text(information_records(built))
     ]

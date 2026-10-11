@@ -146,9 +146,6 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
         ("Report", FinancialDocument.title),
         ("Parish", parish_name),
         ("Campaign", source["name"]),
-        ("Campaign reference", source["id"]),
-        ("Source reference", source["source_id"]),
-        ("Source generation", f"{source['source_generation']:,}"),
         ("Source as of", instant(source["source_as_of"])),
         (FAMILY_NAMES_DETAIL, source["family_names"]),
         # A Family-only refresh keeps an older giving read, so the money's own

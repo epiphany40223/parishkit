@@ -274,7 +274,8 @@ def test_native_financial_exports_use_real_worker_and_guarded_downloads(
                 # CSV money is the canonical amount (#388 L5).
                 assert b",1234.50," in body and b",1200.00," in body
                 assert b"$" not in body
-                assert b"Financial stewardship detail" in body
+                # Exactly the table: no report-information columns (#966).
+                assert b"Financial stewardship detail" not in body
                 # The comparison columns carry the page's labels (#404) and
                 # its comparison years (#932).
                 assert (

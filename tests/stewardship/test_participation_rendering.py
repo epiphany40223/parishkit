@@ -72,8 +72,12 @@ def encoded(value, format):
     return stream.getvalue()
 
 
-def test_table_and_csv_keep_exact_money_counts_and_pinned_metadata():
-    """CSV exports all dates, not a page, and never recomputes or rounds a pledge."""
+def test_table_and_csv_keep_exact_money_counts_without_internal_ids():
+    """CSV exports all dates, not a page, and never recomputes or rounds a pledge.
+
+    Its columns are the shared plain-named list, with no repeated metadata
+    or internal UUID, generation or watermark columns (#966).
+    """
     value = document()
     with localcontext(prec=2):
         rows = participation_table(value)
@@ -84,18 +88,28 @@ def test_table_and_csv_keep_exact_money_counts_and_pinned_metadata():
     assert rows[-1]["date"] == "2026-11-02"
     data = stream.getvalue()
     assert data.count(b"\r\n") == 4
-    exported = list(csv.DictReader(io.StringIO(data.decode())))
+    reader = csv.DictReader(io.StringIO(data.decode()))
+    exported = list(reader)
+    assert reader.fieldnames == [
+        "Campaign date",
+        "Population",
+        "First submissions",
+        "Families that have responded",
+        "Families in population",
+        "Cumulative participation",
+        "Source as of",
+        "Cumulative annual pledges (USD)",
+    ]
     assert len(exported) == 3
     for raw, row in zip(rows, exported, strict=True):
-        assert row["pledge_usd"] == raw["pledge_usd"]
-        assert row["fact_set_id"] == str(value.fact_set_id)
-        assert row["input_source_generation"] == "3"
-        # ISO 8601 in the stated browser_timezone (Los Angeles), per #221.
-        assert row["input_source_as_of"] == "2026-11-01 21:00:00-08:00"
-        assert row["submission_watermark"] == "1001"
-        assert row["campaign_timezone"] == "America/New_York"
+        assert row["Cumulative annual pledges (USD)"] == raw["pledge_usd"]
+        assert row["Cumulative participation"] == raw["participation"]
+        assert row["Campaign date"] == raw["date"]
+    # ISO 8601 in the stated browser_timezone (Los Angeles), per #221.
+    assert exported[-1]["Source as of"].endswith("-08:00")
+    assert str(value.fact_set_id).encode() not in data
     assert "November 1, 2026 at 9:00 PM PST" in value.as_of_label
-    assert "submission cutoff 1,001" in value.as_of_label
+    assert "cutoff" not in value.as_of_label and "#" not in value.as_of_label
 
 
 def test_figure_coordinates_match_table_and_do_not_mix_units():
@@ -186,12 +200,12 @@ def test_provenance_is_file_metadata_not_drawn(format):
     value = document()
     data = encoded(value, format)
     expected = value.as_of_label.replace("\n", " ")
-    assert "Source #3 as of" in expected and "Requested" in expected
+    assert expected.startswith("Source as of ") and "Requested" in expected
     if format == "png":
         with Image.open(io.BytesIO(data)) as image:
             assert image.text["Description"] == expected
     else:
-        assert b"/Subject (Source #3 as of " in data
+        assert b"/Subject (Source as of " in data
 
 
 @pytest.mark.parametrize("format", ["png", "pdf"])

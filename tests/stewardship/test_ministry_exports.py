@@ -235,10 +235,17 @@ def test_complete_columns_and_csv_privacy(action):
     output = io.BytesIO()
     render_information(report, output, format="csv")
     rows = list(csv.reader(io.StringIO(output.getvalue().decode())))
-    assert len(rows) == 54
+    # Exactly the table (#966): headings, then one row per result.
+    assert len(rows) == 53 and tuple(rows[0]) == report.headings
     assert "hidden" not in output.getvalue().decode()
     assert "Birth date" not in report.headings
-    assert rows[1][rows[0].index("Requested at")] == "2026-09-19 11:00:00-04:00"
+    assert not {"Proposed Member reference", "Campaign reference"} & {
+        *report.headings,
+        *dict(report.metadata),
+    }
+    assert dict(report.metadata)["Requested at"].isoformat() == (
+        "2026-09-19T11:00:00-04:00"
+    )
     assert report.sheet_name == (
         "Ministry summary" if action == "summary" else "Ministry requests"
     )
@@ -311,3 +318,26 @@ def test_retained_scope_requires_all_current_assignments(
         scope_authorized(actor, {"operational": operational, "ministries": list(scope)})
         is expected
     )
+
+
+@pytest.mark.parametrize("action", ["join", "leave"])
+def test_a_member_added_on_the_form_reads_new_member(action):
+    """No proposed Member reference in any format (#966): a Member added on
+    the form reads "New Member" in its DUID column, as on the page, and the
+    PDF card is titled with the name and those words."""
+    from parishkit.stewardship.reports.information_rendering import (
+        information_records,
+    )
+
+    proposed = "00000000-0000-4000-8000-000000000077"
+    report = document(
+        action=action,
+        count=1,
+        member_name="New Person",
+        member_duid=None,
+        proposed_id=proposed,
+    )
+    assert report.rows[0][report.headings.index("Member DUID")] == "New Member"
+    assert proposed not in report.rows[0]
+    _, card = information_records(report)
+    assert card.title == "New Person (New Member)"

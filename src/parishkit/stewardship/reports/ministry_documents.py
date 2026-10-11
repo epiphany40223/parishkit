@@ -68,9 +68,6 @@ def ministry_document(payload, parameters, *, parish_name, requested_at, timezon
         ("Report", title),
         ("Parish", parish_name),
         ("Campaign", source["name"]),
-        ("Campaign reference", source["id"]),
-        ("Source reference", source["source_id"]),
-        ("Source generation", f"{source['source_generation']:,}"),
         ("Source as of", instant(source["source_as_of"])),
         ("Captured at", instant(source["observed_at"])),
         ("Requested at", instant(requested_at)),
@@ -132,7 +129,6 @@ def ministry_document(payload, parameters, *, parish_name, requested_at, timezon
         headings = (
             "Member",
             "Member DUID",
-            "Proposed Member reference",
             "Ministry DUID",
             "Submitted",
             "State",
@@ -146,8 +142,13 @@ def ministry_document(payload, parameters, *, parish_name, requested_at, timezon
         for item in selected:
             common = (
                 item["member_name"],
-                str(item["member_duid"]) if item["member_duid"] else "",
-                item["proposed_id"] or "",
+                # A Member added on the form has no DUID yet; the page says
+                # "New Member" and keeps its proposed id in Technical details.
+                str(item["member_duid"])
+                if item["member_duid"]
+                else "New Member"
+                if item["proposed_id"]
+                else "",
                 str(item["ministry_duid"]),
                 instant(item["submitted_at"]),
                 STATE_LABELS[item["state"]],

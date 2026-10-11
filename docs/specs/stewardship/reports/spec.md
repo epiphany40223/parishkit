@@ -86,7 +86,16 @@ Admin recovery of expired-file housekeeping is a separate operational workflow
 defined by [export cleanup recovery](../background-processing/spec.md#export-cleanup-recovery),
 not a permission granted by ordinary report access.
 
-CSV is UTF-8 with a header row and CRLF-compatible output. Cells beginning with
+CSV is UTF-8 with CRLF-compatible output, and is exactly the report's
+table: one header row, then one row per record, with the same columns as the
+XLSX table and the PDF
+([#966](https://github.com/epiphany40223/parishkit/issues/966)). Report
+details (parish, campaign, capture and request times, filters, counts and
+notes) are in the XLSX "Report information" sheet and the PDF's header,
+footer and report card, never repeated as CSV columns or rows; the CSV's
+timestamps carry their UTC offset. The Ministry follow-up packet's CSV is
+the one multi-section file: its report details and each Ministry's details
+head the sections, as on the packet's XLSX sheets. Cells beginning with
 formula-significant characters are neutralized, except canonical money
 amounts (below). XLSX uses freeze panes,
 filters, meaningful widths, types, repeated print headings, and no macros.
@@ -134,24 +143,22 @@ A field/value report (additional information, Ministry, financial, Family
 test names, packets) prints one card per record. Which columns each format
 carries follows the
 [downloaded files rule](../ui-conventions/spec.md#downloaded-files): every
-format the same columns, with internal references left out. Until #966 makes
-the files consistent, CSV and XLSX still carry every column (except as a
-report's section notes). So that a page is easy to scan:
+format the same columns, with internal references left out; a card shows
+every column of its CSV and XLSX row. So that a page is easy to scan:
 
 - The first card, "About this report", shows counts and amounts as large
   tiles, then the remaining details. It leaves out what the page frame
   already states (parish, campaign, capture time, privacy and Testing-mode
   lines). Filters and sort read as words ("Search: none · Sort: newest").
   The note on escaped characters appears only when the file contains one.
-- Each record card is titled "Name (DUID N)", with its disposition, state or
-  status in a chip on the right.
-- Internal references and notes for software are left out: campaign, source
-  and response references, the row type, the source generation, row
-  versions, the email revision, the digest-resolution note and the display
-  and date-filter time zones.
+- Each record card is titled "Name (DUID N)" ("Name (New Member)" for a
+  Member added on the form), with its disposition, state or status in a
+  chip on the right.
+- The report card leaves out the digest-resolution note and the display
+  and date-filter time zones (the page frame names the display time zone).
 - Blank fields are left out. A packet is completed by hand, so its blank
   fields print as write-in rules instead.
-- A workflow revision nests under its item, headed by when and by whom it
+- A workflow revision (a row with a Changed at time) nests under its item, headed by when and by whom it
   changed, without the item fields its row repeats; a row that continues a record (long financial share wording)
   joins that record's card.
 - Two neighboring fields that each fit on one line share a line.
@@ -165,8 +172,8 @@ report's section notes). So that a page is easy to scan:
 XLSX tables share one style (`reports/xlsx_design.py`): a bold white-on-teal
 heading row as tall as its most-wrapped heading, Arial text, a frozen heading
 row (and the identifying first column on Family-keyed sheets that start
-with it: the Family-code directory, financial detail, census changes and
-talents, and the response list of ParishSoft data to check; the postal mail
+with it: the Family-code directory, financial detail, additional
+information, census changes and talents, and the response list of ParishSoft data to check; the postal mail
 merge starts with the DUID and freezes only its
 heading row), filters, light zebra banding as a
 display rule, widths fitted to the content within limits with long text
@@ -296,8 +303,21 @@ The chart image draws no source snapshot, request time or other provenance
 text. By Administrator decision
 ([#575](https://github.com/epiphany40223/parishkit/issues/575)) the file
 carries that provenance as metadata instead: the PNG's `Description` text
-chunk and the PDF's Info `Subject`, both holding the same "Source … as of …;
-submission cutoff …; Requested …" text. CSV and XLSX exports keep it as rows.
+chunk and the PDF's Info `Subject`, both holding the same "Source as of … Requested
+… (time zone)" text, without the internal source generation or submission
+cutoff numbers ([#966](https://github.com/epiphany40223/parishkit/issues/966)).
+The XLSX export keeps it in its "Report information" sheet.
+
+The participation CSV and XLSX exports carry one row per campaign date
+under the same columns, in this order: Campaign date, Population, First
+submissions, Families that have responded, Families in population,
+Cumulative participation, Source as of, and Cumulative annual pledges (USD)
+when financial is enabled. An unavailable value is blank in the CSV and
+the word "Unavailable" in the XLSX, never zero. Neither
+carries the campaign or fact-generation UUIDs, source generation numbers
+or the submission cutoff
+([#966](https://github.com/epiphany40223/parishkit/issues/966)); the PNG
+and PDF are the chart, not a table.
 The daily digest email states a plain as-of line instead
 ([daily campaign digest](../background-processing/spec.md#daily-campaign-digest)),
 and its chart PNG keeps the metadata. The same drawing is used on
@@ -879,9 +899,12 @@ two forms. The file's "Family names" report detail says which form it uses
 ("Surname, then heads of household", or "Surname only" with the reason). A
 late render (a retry, or regenerating an expired file) can therefore differ
 from an earlier render of the same capture only in that name form.
-The CSV and XLSX share one set of columns and carry no internal item
-references (the Administrator, 2026-10-09). A "Row type" column says whether a
-row is the "Item" or one of its "Earlier workflow" revisions. Earlier workflow
+The CSV, XLSX and PDF share one set of columns and carry no internal
+references: no row type or row version column (the Administrator, 2026-10-09,
+and decision B1 on
+[#966](https://github.com/epiphany40223/parishkit/issues/966)). An item's
+row leaves Changed at and Changed by blank; its "Earlier workflow"
+revisions fill them, and the PDF nests them under the item. Earlier workflow
 rows are listed directly under their item and repeat its Family name, Family
 DUID, Submitted time, disposition and submitted text, which identify the item
 to a reader even after the sheet is sorted or filtered. A superseded item's
@@ -1134,9 +1157,11 @@ technical details; the row header is just the name. Both DUID columns sort
 in the installed selection's order
 ([#960](https://github.com/epiphany40223/parishkit/issues/960)): the summary
 by Ministry DUID, and a list by Member DUID with a Member added on the form
-last in either direction. Exports keep
-their own columns until the export slice of
-[#932](https://github.com/epiphany40223/parishkit/issues/932).
+last in either direction. The CSV, XLSX and PDF of a list carry the same
+columns as each other, with no internal references
+([#966](https://github.com/epiphany40223/parishkit/issues/966)): a Member
+added on the form reads "New Member" in the Member DUID column, and the
+proposed Member's reference stays on the page's technical details.
 
 Each list opens by a POST from its Ministry's form on the summary. A GET of
 either list's address (typed, bookmarked, refreshed or reached with Back)

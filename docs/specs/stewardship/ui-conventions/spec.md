@@ -1336,14 +1336,15 @@ Recorded exceptions to the three formats:
 Not data exports, so outside the rule: the deployment configuration
 document, hosted files (served as uploaded) and chart images.
 
-Current state, to be made consistent under
-[#966](https://github.com/epiphany40223/parishkit/issues/966): the Financial
-detail, Additional information and Ministry report CSV and XLSX files still
-carry internal columns (Family version, Response reference, Row type,
-Version, Proposed Member reference), and several files' report information
-still lists campaign and source references; the participation and System
-logs CSVs carry raw ids; and Talents lacks PDF (Talents is being removed
-under [#970](https://github.com/epiphany40223/parishkit/issues/970)).
+Current state: since the
+[#966](https://github.com/epiphany40223/parishkit/issues/966) column sweep,
+every export's CSV, XLSX and PDF carry one column set with no internal
+references (`tests/stewardship/test_export_columns.py` guards it), except the
+System logs export above. The postal mail merge's PDF is a sheet of address
+labels holding the mailing columns, not the Family heads and head emails;
+whether to record that as an exception is open on #966. Talents is being
+removed under
+[#970](https://github.com/epiphany40223/parishkit/issues/970).
 
 ## Family portal
 

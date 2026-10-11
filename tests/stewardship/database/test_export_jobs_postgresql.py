@@ -142,7 +142,7 @@ def test_real_worker_publishes_complete_artifact_then_one_use_download(
     ) as stream:
         value = stream.read()
     assert value.startswith(
-        {"csv": b"date,scope,", "png": b"\x89PNG", "pdf": b"%PDF"}[format]
+        {"csv": b"Campaign date,Population,", "png": b"\x89PNG", "pdf": b"%PDF"}[format]
     )
     grant = issue_download(store, principal.pk, request.pk)
     assert consume_download(store, principal.pk, grant.pk).pk == publication.pk

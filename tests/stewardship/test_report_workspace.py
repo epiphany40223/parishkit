@@ -244,13 +244,16 @@ def test_xlsx_is_complete_typed_formula_safe_and_keeps_original_request():
     sheet = book["Participation"]
     assert sheet.max_row == len(value.days) + 1
     assert sheet["C2"].data_type == "n" and sheet["C2"].value == 1
-    assert sheet["I2"].data_type == "n" and sheet["I2"].value == 1234.56
+    assert sheet["H2"].data_type == "n" and sheet["H2"].value == 1234.56
     assert sheet["A2"].is_date
-    assert sheet.freeze_panes == "A2" and sheet.auto_filter.ref == "A1:I4"
+    assert sheet.freeze_panes == "A2" and sheet.auto_filter.ref == "A1:H4"
     assert sheet.print_title_rows == "$1:$1"
     metadata = book["Report information"]
     assert metadata["B1"].value == "=HYPERLINK(1)" and metadata["B1"].data_type == "s"
-    assert value.as_of_label == metadata["B8"].value
+    assert value.as_of_label == metadata["B6"].value
+    # No internal UUIDs or cutoff numbers (#966).
+    labels = {row[0].value for row in metadata.iter_rows()}
+    assert not {"Campaign UUID", "Fact generation UUID", "Submission cutoff"} & labels
     assert not any(
         cell.data_type == "f" for page in book for row in page for cell in row
     )
@@ -264,8 +267,8 @@ def test_large_money_stays_exact_instead_of_excel_rounding():
     participation_xlsx(replace(value, days=(day, *value.days[1:])), stream)
     stream.seek(0)
     book = load_workbook(stream)
-    assert book["Participation"]["I2"].value == "1234567890123456.78"
-    assert book["Participation"]["I2"].data_type == "s"
+    assert book["Participation"]["H2"].value == "1234567890123456.78"
+    assert book["Participation"]["H2"].data_type == "s"
     book.close()
 
 
@@ -277,7 +280,7 @@ def test_zero_pledge_total_is_a_number_not_text():
     participation_xlsx(replace(value, days=(day, *value.days[1:])), stream)
     stream.seek(0)
     book = load_workbook(stream)
-    cell = book["Participation"]["I2"]
+    cell = book["Participation"]["H2"]
     assert cell.data_type == "n" and cell.value == 0
     assert cell.number_format == '"$"#,##0.00'
     book.close()

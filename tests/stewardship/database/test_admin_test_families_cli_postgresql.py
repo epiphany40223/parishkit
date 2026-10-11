@@ -9,6 +9,7 @@ these commands only write tickets. A live full-scope session stands in for
 the page's fresh sign-in (PR 5a) and leaves the fresh-gate trail (PR 5b).
 """
 
+import csv
 import io
 import json
 from uuid import uuid4
@@ -332,12 +333,9 @@ def test_names_reach_only_the_exported_file(admin, family_test, reports_root):  
     assert streamed["result"]["count"] == 2
     assert streamed["result"]["size"] == len(body)
     text = body.decode()
-    assert text.startswith("Family DUID,Family name,")
-    lines = text.splitlines()
-    assert lines[2].startswith(f"1,{names[1]},") or lines[2].startswith(
-        f'1,"{names[1]}",'
-    )
-    assert lines[3].startswith("999999,,")
+    # Exactly the table, as the XLSX and PDF (#966): no metadata columns.
+    rows = list(csv.reader(io.StringIO(text)))
+    assert rows == [["Family DUID", "Family name"], ["1", names[1]], ["999999", ""]]
 
     # An expired file is regenerated from the retained capture.
     expire_publication(made)

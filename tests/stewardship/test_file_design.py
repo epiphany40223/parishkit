@@ -137,11 +137,11 @@ def saved(writer, *arguments):
 
 
 def test_information_and_directory_workbooks_share_the_style():
-    """Information keeps column A scrolling; a directory freezes its Family."""
+    """Information and a directory both lead with, and freeze, their Family."""
     book = saved(information_xlsx, information(count=3))
-    assert_styled_table(book["Information"])
-    # Submitted text (column H) gets the wide free-text column.
-    assert book["Information"].column_dimensions["H"].width == 70
+    assert_styled_table(book["Information"], first_column=True)
+    # Submitted text (column F) gets the wide free-text column.
+    assert book["Information"].column_dimensions["F"].width == 70
     assert_information_sheet(book["Report information"])
     output = io.BytesIO()
     render_directory(directory([family()]), output, format="xlsx")

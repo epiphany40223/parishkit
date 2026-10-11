@@ -10,17 +10,15 @@ from parishkit.stewardship.source.snapshot_names import FAMILY_NAMES_DETAIL
 
 from .weekly_presentation import DISPOSITIONS
 
-# Rows carry no internal references (Administrator, 2026-10-09, PR #929): an
-# "Earlier workflow" row follows its item and repeats the item's Family, DUID,
-# submission time and text, which identify the item to a reader; a superseded
+# Rows carry no internal references, in any format (Administrator,
+# 2026-10-09 on PR #929 and decision B1 on #966): no row type or row
+# version. An earlier-workflow row follows its item, repeats the item's
+# Family, DUID, submission time and text, which identify the item to a
+# reader, and is the only kind of row with a Changed at time; a superseded
 # item names its replacement by that request's submission time.
-ITEM = "Item"
-EARLIER_WORKFLOW = "Earlier workflow"
 # A superseded item whose replacement the export's filters left out.
 REPLACEMENT_NOT_EXPORTED = "Not in this export"
 HEADINGS = (
-    "Row type",
-    "Version",
     "Family",
     "Family DUID",
     "Submitted",
@@ -71,9 +69,6 @@ def information_document(payload, parameters, *, parish_name, requested_at, time
         ("Report", "Additional information and follow-up"),
         ("Parish", parish_name),
         ("Campaign", source["name"]),
-        ("Campaign reference", source["id"]),
-        ("Source reference", source["source_id"]),
-        ("Source generation", f"{source['source_generation']:,}"),
         ("Source as of", instant(source["source_as_of"])),
         (FAMILY_NAMES_DETAIL, source["family_names"]),
         ("Captured at", instant(source["observed_at"])),
@@ -118,8 +113,6 @@ def information_document(payload, parameters, *, parish_name, requested_at, time
         )
         rows.append(
             (
-                ITEM,
-                f"{item['version']:,}",
                 *common,
                 "Yes" if item["follow_up_needed"] else "No",
                 instant(item["followed_up_at"]),
@@ -135,8 +128,6 @@ def information_document(payload, parameters, *, parish_name, requested_at, time
             for revision in item["history"]:
                 rows.append(
                     (
-                        EARLIER_WORKFLOW,
-                        f"{revision['version']:,}",
                         *common,
                         "Yes" if revision["follow_up_needed"] else "No",
                         instant(revision["followed_up_at"]),
