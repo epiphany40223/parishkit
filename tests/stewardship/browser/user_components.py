@@ -30,7 +30,11 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from django.template.loader import render_to_string
 
-from parishkit.stewardship.accounts.user_changes import plan_changes, saved_users
+from parishkit.stewardship.accounts.user_changes import (
+    administrator_ids,
+    plan_changes,
+    saved_users,
+)
 from parishkit.stewardship.accounts.user_reads import USER_SORTING, user_list
 from parishkit.stewardship.accounts.user_views import (
     PREFIX,
@@ -114,7 +118,7 @@ def _list(values, records, *, sort="email", refresh=LIST):
                 "refresh_url": refresh,
                 "new_url": NEW,
                 "delete_url": DELETE,
-                "only_administrator": any(not row["deletable"] for row in table.rows),
+                "only_administrator": len(administrator_ids(saved_users(records))) == 1,
             },
         ),
     )

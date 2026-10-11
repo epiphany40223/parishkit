@@ -125,6 +125,26 @@ def test_the_table_lists_users_and_audits_only_a_count(converted):
         assert browser.get("/admin/users/rules").status_code == 404
 
 
+def test_the_only_administrator_note_counts_every_page(auth_service, google):
+    """The note under the table holds even when the Administrator is on another
+    page of the table, not only when its row is shown."""
+    add_rules(
+        auth_service.store,
+        *(address(f"staff{number:02}@example.org", ("staff",)) for number in range(25)),
+    )
+    convert(auth_service.store)
+    browser, login = signed_in()
+    assert login.status_code == 302
+    note = "The only Administrator can't be deleted."
+    # Email descending puts admin@example.org on page 2 of 25 rows each.
+    first = page(browser, USERS + "?users_sort=-email&users_size=25")
+    assert "admin@example.org" not in first
+    assert note in first
+    assert note in page(
+        browser, USERS + "?users_sort=-email&users_size=25&users_page=2"
+    )
+
+
 @pytest.mark.parametrize("role", ["staff", "ministry_leader"])
 def test_other_roles_get_none_of_the_users_routes(auth_service, google, role):
     """Who may sign in, and changing it, is Administrator-only."""
