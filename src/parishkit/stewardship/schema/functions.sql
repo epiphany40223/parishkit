@@ -5780,12 +5780,12 @@ BEGIN
                 'drive_retry_budget','drive_request','drive_probe_wait',
                 'statement_timeout','lock_timeout','transaction_timeout','mail_helper','source_helper','provider_check',
                 'renewal_drain','control_lock','web_drain','web_heartbeat','configuration_activation','web_probe','source_load_budget',
-                'archive_check') THEN RETURN false; END IF;
+                'archive_check','digest_chart') THEN RETURN false; END IF;
         ELSIF key='helper' THEN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('readiness_delivery_worker','readiness_notification_worker',
                 'family_delivery_worker','digest_delivery_worker','weekly_delivery_worker','operational_mail_worker',
                 'operational_slack_worker','security_mail_worker','provider_check_worker','parishsoft_http_worker',
-                'archive_check_worker') THEN RETURN false; END IF;
+                'archive_check_worker','chart_render_worker') THEN RETURN false; END IF;
         -- An Administrator's decision on a suspended Chairperson seed: a closed
         -- word, and the reason entered for it, bounded text refused when it
         -- carries an address-like token, since this context holds no

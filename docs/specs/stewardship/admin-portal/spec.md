@@ -208,7 +208,10 @@ entry](../ui-conventions/spec.md#time-entry)), and the current campaign dates. W
 edited (the first-campaign Mail schedules step, the date-change review and the
 New and Edit scheduled email pages below), its fields show only those its mail
 type uses (initial invitation and reminder: date, time and email; daily digest:
-time and email; weekly digest: weekday, time and email) and offer only emails of
+time, email and the **Include Compared with past campaigns** checkbox, off by
+default, which adds the
+[comparison section](../campaign-history/spec.md#digest-section); weekly
+digest: weekday, time and email) and offer only emails of
 that type; the page script clears a field it hides. The send time is a [time
 entry](../ui-conventions/spec.md#time-entry) field. A saved schedule's mail type is shown but cannot
 change. The server reports a missing or inapplicable value on its own field (for

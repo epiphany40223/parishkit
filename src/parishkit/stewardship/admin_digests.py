@@ -51,7 +51,12 @@ class DailyDigest(ReadModel):
     ``participation`` is the retained generation (its ``fact_set_id``,
     source and dates); ``statistics`` the active population's counts, with
     pledge totals as decimal strings when the campaign includes Financial
-    stewardship; ``days`` the daily table.
+    stewardship; ``days`` the daily table. ``comparison`` is the retained
+    Compared with past campaigns section (#1018 slice 7) as the page shows
+    it: its day, date, the years compared, the headline ``figures`` (each
+    ``figure``, ``value`` and ``comparisons`` text, the small-count
+    protection already applied) and each imported year's checksum, without
+    the charts' specifications; None when the digest has no section.
     """
 
     kind: str
@@ -62,6 +67,7 @@ class DailyDigest(ReadModel):
     participation: dict
     statistics: dict
     days: list
+    comparison: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -129,6 +135,30 @@ def acknowledgement():
     return str(ManualReportForm.base_fields["acknowledge"].label)
 
 
+def _section(section):
+    """The command's projection of a retained comparison section, or None.
+
+    Each headline figure is its name, value and comparison lines; the
+    charts' specifications are left out (the page draws them).
+    """
+    if section is None:
+        return None
+    return {
+        "day": section["day"],
+        "report_date": section["report_date"],
+        "compared_with": section["compared_with"],
+        "figures": [
+            {
+                "figure": tile["label"],
+                "value": tile["value"],
+                "comparisons": tile["lines"],
+            }
+            for tile in section["tiles"]
+        ],
+        "archives": section["archives"],
+    }
+
+
 def daily_model(snapshot_id, campaign_id, document, mode):
     """The command's projection of a retained daily report's document."""
     from .admin_report_reads import _instant, day_rows, population
@@ -159,6 +189,7 @@ def daily_model(snapshot_id, campaign_id, document, mode):
             ),
         },
         days=day_rows(chart),
+        comparison=_section(document.comparison),
     )
 
 

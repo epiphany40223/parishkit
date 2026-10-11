@@ -21,6 +21,7 @@ from parishkit.stewardship.jobs.queues import WorkQueue
 from parishkit.stewardship.jobs.storage import _status
 from parishkit.stewardship.storage import StorageInvariantError
 
+from .chart_rendering import ChartRenderError
 from .daily_digest import render_daily_digest
 from .digest_building import (
     admit_daily_facts,
@@ -179,7 +180,9 @@ def _execute(execution, *, public_origin):
         if row.phase == "facts":
             try:
                 _build(execution, public_origin)
-            except FactUnavailable:
+            except (FactUnavailable, ChartRenderError):
+                # A comparison section's chart the renderer could not draw
+                # (#1018 slice 7) is retried like unavailable facts.
                 with execution.effect():
                     status = _status(lock_task_claim(execution.claim))
                     execution.transition(

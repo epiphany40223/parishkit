@@ -445,7 +445,8 @@ def runtime_functions(role, *, target=None):
     them for that upgrade's read-only preview, one typed address's Member
     names for the New user page's Name default, and the ParishSoft Ministry
     leaders who are no user yet for the Users page's import. Web reads the
-    campaign comparison report's aggregates (#1018).
+    campaign comparison report's aggregates (#1018), and so does the general
+    worker, for the daily digest's Compared with past campaigns section.
     """
     role = _identity_role(role, target)
     if role is ServiceRole.CREDENTIAL_INSTALLER:
@@ -478,6 +479,8 @@ def runtime_functions(role, *, target=None):
                 TASK_EVENT_PRUNE_FUNCTION,
                 LEADER_SCOPE_FUNCTION,
                 LEADER_CHANGES_FUNCTION,
+                COMPARISON_FUNCTION,
+                ARCHIVE_RENEWAL_FUNCTION,
             },
             "download": {LEADER_SCOPE_FUNCTION},
             ServiceRole.ADMIN_RECOVERY: {

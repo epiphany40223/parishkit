@@ -761,6 +761,7 @@ GOLDEN = {
                     "weekday": None,
                     "subject": "Campaign invitation",
                     "template_version": TEMPLATE,
+                    "comparison": False,
                     "resolved": [
                         {
                             "key": "once",
@@ -1117,6 +1118,7 @@ ALLOWED = {
         "weekday",
         "subject",
         "template_version",
+        "comparison",
         "resolved",
         "key",
         "due_at",

@@ -1,6 +1,9 @@
 """Exact daily fact ownership and atomic compiled-content/recipient handoff."""
 
+from dataclasses import replace
+
 from parishkit.stewardship.accounts.models import AddressRule
+from parishkit.stewardship.campaigns.models import ScheduleRevision
 from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
 from parishkit.stewardship.jobs.ownership import lock_task_claim
 from parishkit.stewardship.jobs.storage import _status
@@ -63,7 +66,13 @@ def begin_daily_facts(claim):
 
 
 def load_daily_document(claim, fact_set_id):
-    """Detach data in a guarded effect; expensive chart rendering happens after it."""
+    """Detach data in a guarded effect; expensive chart rendering happens after it.
+
+    When the schedule revision this preparation runs has the Compared with
+    past campaigns section on (#1018 slice 7), the section is computed here,
+    in the same owned transaction, from the digest's own pinned facts and
+    the pinned campaign configuration; ``comparison_section`` documents it.
+    """
     preparation = bound_preparation(_status(lock_task_claim(claim)))
     current_preparation(preparation)
     snapshot = DailyDigestSnapshot.objects.select_related(
@@ -72,11 +81,50 @@ def load_daily_document(claim, fact_set_id):
     facts = CampaignDailyFactSet.objects.get(pk=fact_set_id, state="ready")
     if preparation.phase != "facts" or fact_inputs(snapshot) != fact_inputs(facts):
         raise FactUnavailable("Daily report facts do not match their retained input.")
-    return retained_daily_document(snapshot, facts)
+    document = retained_daily_document(snapshot, facts)
+    if comparison_enabled(preparation):
+        document = replace(document, comparison=comparison_section(document, snapshot))
+    return document
 
 
-def retained_daily_document(snapshot, facts):
-    """Load the same pinned observation for compilation and authorized web reads."""
+def comparison_enabled(preparation):
+    """Whether the preparation's schedule revision includes the section."""
+    values = ScheduleRevision.objects.values_list("values", flat=True).get(
+        pk=preparation.revision_id
+    )
+    return values.get("comparison") is True
+
+
+def comparison_section(document, snapshot):
+    """The protected section on the digest's report day, or None.
+
+    The comparison's current figures come from the digest's fact set and its
+    comparison day is the report day; None leaves the section out (no past
+    campaign imported). A disagreement between the comparison's figures and
+    their facts raises ``FactUnavailable``, failing this compile visibly and
+    retryably, as a fact problem does, rather than sending a digest without
+    the section it was set to carry.
+    """
+    from parishkit.stewardship.storage import StorageInvariantError
+
+    from .comparison_reads import digest_comparison
+    from .digest_comparison import section
+
+    try:
+        found = digest_comparison(
+            document.participation, snapshot.timezone_configuration
+        )
+    except StorageInvariantError:
+        raise FactUnavailable("Comparison figures disagree with their facts.") from None
+    return section(found)
+
+
+def retained_daily_document(snapshot, facts, comparison=None):
+    """Load the same pinned observation for compilation and authorized web reads.
+
+    ``comparison`` is the retained section the saved page shows (the ready
+    row's), never computed again here.
+    """
     if facts.state != "ready" or fact_inputs(snapshot) != fact_inputs(facts):
         raise FactUnavailable("Daily report facts do not match their retained input.")
     document = participation_document(
@@ -106,7 +154,23 @@ def retained_daily_document(snapshot, facts):
         source_age=data_age_at(snapshot.observed_at),
         funnel=funnel,
         mode=mode,
+        comparison=comparison,
     )
+
+
+def section_charts(section, images):
+    """(Families PNG, pledges PNG) for the ready row's columns, each or None.
+
+    The images are matched to the section's charts by content id, so a
+    section without a pledges chart (no Financial stewardship) leaves that
+    column null.
+    """
+    from parishkit.stewardship.web.digest_content import COMPARISON_CHART_IDS
+
+    found = dict(images)
+    if section is None:
+        return None, None
+    return tuple(found.get(name) for name in COMPARISON_CHART_IDS)
 
 
 def retain_daily_content(claim, document, content):
@@ -115,7 +179,11 @@ def retain_daily_content(claim, document, content):
         content, DailyDigestContent
     ):
         raise TypeError("Daily publication requires compiled exact report content.")
-    validate_digest_body(content.html, content.text, content.chart.data)
+    validate_digest_body(
+        content.html, content.text, content.chart.data, content.comparison_images
+    )
+    if (document.comparison is None) != (not content.comparison):
+        raise ValueError("A digest's section and its charts are compiled together.")
     preparation = bound_preparation(_status(lock_task_claim(claim)))
     scope = current_preparation(preparation)
     snapshot = DailyDigestSnapshot.objects.get(preparation=preparation)
@@ -143,6 +211,14 @@ def retain_daily_content(claim, document, content):
         html=content.html,
         text=content.text,
         chart=content.chart.data,
+        comparison=document.comparison,
+        **dict(
+            zip(
+                ("comparison_families_chart", "comparison_pledges_chart"),
+                section_charts(document.comparison, content.comparison_images),
+                strict=True,
+            )
+        ),
         run_id=claim.run_id,
         fence=claim.fence,
         worker_id=claim.worker_id,

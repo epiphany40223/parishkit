@@ -29,7 +29,7 @@ KINDS = ("initial", "reminder", "daily_digest", "weekly_digest")
 FIELDS = {
     "initial": ("date", "time", "template_version"),
     "reminder": ("date", "time", "template_version"),
-    "daily_digest": ("time", "template_version"),
+    "daily_digest": ("time", "template_version", "comparison"),
     "weekly_digest": ("weekday", "time", "template_version"),
 }
 WEEKDAYS = (
@@ -449,6 +449,17 @@ class ScheduleForm(forms.Form):
             "and email templates."
         ),
     )
+    # The daily digest's optional Compared with past campaigns section
+    # (#1018), off unless ticked. It is saved only when on (see _values).
+    comparison = forms.BooleanField(
+        label=_("Include Compared with past campaigns"),
+        required=False,
+        help_text=_(
+            "Daily Admin digests only: add charts and figures comparing this "
+            "campaign with the past campaigns imported on Past campaigns, "
+            "with the same protections as the comparison downloads."
+        ),
+    )
 
     def __init__(
         self,
@@ -711,6 +722,16 @@ class ScheduleSet(BaseFormSet):
             problems.append(
                 ("weekday", _("Choose the day of the week the digest is sent."))
             )
+        if data.get("comparison") and "comparison" not in FIELDS[kind]:
+            problems.append(
+                (
+                    "comparison",
+                    _(
+                        "Only daily Admin digests can include the comparison "
+                        "with past campaigns — leave it unticked."
+                    ),
+                )
+            )
         if self._subject(data, previous) is None:
             problems.append(
                 (
@@ -806,7 +827,7 @@ class ScheduleSet(BaseFormSet):
         subject = self._subject(data, previous)
         if subject is None:
             raise forms.ValidationError(_("Choose a configured email template."))
-        return {
+        values = {
             "campaign_id": self.campaign_id,
             "kind": data["kind"],
             "date": data["date"].isoformat() if data["date"] else None,
@@ -815,6 +836,11 @@ class ScheduleSet(BaseFormSet):
             "template_version": data["template_version"],
             "subject": subject,
         }
+        # Present only when on, so a schedule saved before the setting
+        # existed (#1018) is unchanged when its row is posted back as shown.
+        if data.get("comparison"):
+            values["comparison"] = True
+        return values
 
     def patch(self):
         """Produce explicit changed/add/remove operations with stable identities."""

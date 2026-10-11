@@ -11,7 +11,12 @@ from .family_delivery import _deliver_validated, delivery_settings
 from .jobs.outbox_validation import mailbox, recipients
 from .mail_layout import REPORT_WIDTH, email_document
 from .provider_check_worker import CheckSession
-from .web.digest_content import CHART_ID, MAX_CHART_BYTES, validate_digest_body
+from .web.digest_content import (
+    CHART_ID,
+    COMPARISON_CHART_IDS,
+    MAX_CHART_BYTES,
+    validate_digest_body,
+)
 
 
 @dataclass(frozen=True, repr=False)
@@ -26,6 +31,9 @@ class DigestDeliveryMail:
     html: str
     text: str
     chart: bytes = field(repr=False)
+    # The Compared with past campaigns section's (content id, PNG) pairs,
+    # when the digest has the section (#1018 slice 7).
+    comparison: tuple = field(default=(), repr=False)
 
     def __post_init__(self):
         """Validate the closed MIME contract before credentials or sockets are used."""
@@ -43,7 +51,7 @@ class DigestDeliveryMail:
             or any(char in self.subject for char in "\r\n\x00")
         ):
             raise ValueError("Invalid digest delivery subject.")
-        validate_digest_body(self.html, self.text, self.chart)
+        validate_digest_body(self.html, self.text, self.chart, self.comparison)
 
     def payload(self):
         """Encode a closed in-memory payload only for the bounded private pipe."""
@@ -57,6 +65,10 @@ class DigestDeliveryMail:
             "html": self.html,
             "text": self.text,
             "chart": base64.b64encode(self.chart).decode("ascii"),
+            "comparison": [
+                [name, base64.b64encode(data).decode("ascii")]
+                for name, data in self.comparison
+            ],
         }
 
     @classmethod
@@ -75,25 +87,37 @@ class DigestDeliveryMail:
                 "html",
                 "text",
                 "chart",
+                "comparison",
             }
             or value["schema"] != "daily-digest-mail-v1"
             or type(value["recipients"]) is not list
             or any(
                 type(item) is not str
                 for name, item in value.items()
-                if name != "recipients"
+                if name not in {"recipients", "comparison"}
             )
             or len(value["chart"]) > 4 * ((MAX_CHART_BYTES + 2) // 3)
+            or type(value["comparison"]) is not list
+            or len(value["comparison"]) > len(COMPARISON_CHART_IDS)
+            or any(
+                type(pair) is not list
+                or len(pair) != 2
+                or pair[0] not in COMPARISON_CHART_IDS
+                or type(pair[1]) is not str
+                or len(pair[1]) > 4 * ((MAX_CHART_BYTES + 2) // 3)
+                for pair in value["comparison"]
+            )
         ):
             raise ValueError("Invalid digest delivery payload.")
         key = UUID(value["semantic_key"])
         if str(key) != value["semantic_key"]:
             raise ValueError("Invalid digest delivery identity.")
-        chart = base64.b64decode(value["chart"], validate=True)
-        if base64.b64encode(chart).decode("ascii") != value["chart"]:
-            raise ValueError("Invalid digest image encoding.")
+        chart = _decoded(value["chart"])
+        comparison = tuple((name, _decoded(text)) for name, text in value["comparison"])
         values = {name: item for name, item in value.items() if name != "schema"}
-        return cls(**(values | {"semantic_key": key, "chart": chart}))
+        return cls(
+            **(values | {"semantic_key": key, "chart": chart, "comparison": comparison})
+        )
 
     def message(self):
         """Use shared multipart construction with one fixed CID and no disk reads."""
@@ -104,7 +128,10 @@ class DigestDeliveryMail:
                 to=self.recipients,
                 html=email_document(self.html, family=False, width=REPORT_WIDTH),
                 text=self.text,
-                inline_images=(InlineImage(self.chart, CHART_ID),),
+                inline_images=(
+                    InlineImage(self.chart, CHART_ID),
+                    *(InlineImage(data, name) for name, data in self.comparison),
+                ),
             )
         )
         result["Reply-To"] = self.reply_to
@@ -112,6 +139,14 @@ class DigestDeliveryMail:
             f"<stewardship-{self.semantic_key.hex}@parishkit.invalid>"
         )
         return result
+
+
+def _decoded(text):
+    """Canonical base64 of one image, decoded; anything else is refused."""
+    data = base64.b64decode(text, validate=True)
+    if base64.b64encode(data).decode("ascii") != text:
+        raise ValueError("Invalid digest image encoding.")
+    return data
 
 
 def deliver_digest(

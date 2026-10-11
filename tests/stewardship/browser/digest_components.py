@@ -5,6 +5,7 @@ from dataclasses import replace
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.reports.daily_digest import render_daily_digest
+from parishkit.stewardship.reports.digest_comparison import section
 from parishkit.stewardship.reports.digest_presentation import (
     chart_layout,
     snapshot_context,
@@ -12,6 +13,7 @@ from parishkit.stewardship.reports.digest_presentation import (
 from parishkit.stewardship.reports.digest_views import daily_rows
 
 from ..test_daily_digest_content import document, funnel_metrics
+from ..test_digest_comparison import found as comparison_fixture
 
 
 def components(context, admin):
@@ -37,7 +39,25 @@ def components(context, admin):
         plot=chart_layout(content.chart.data),
     )
     funnel |= daily_rows(funnel, {})
+    # A digest with the Compared with past campaigns section (#1018 slice 7):
+    # slice 6's invented comparison, with each imported year's checksum.
+    compared = replace(value, comparison=section(comparison_fixture()))
+    comparison = snapshot_context(
+        compared,
+        mode="production",
+        chart_url="/digest-chart.png",
+        download_url="/digest-chart-download.png",
+        plot=chart_layout(content.chart.data),
+    )
+    comparison |= daily_rows(comparison, {})
     return {
+        "/daily-digest-comparison": (
+            "text/html",
+            render_to_string(
+                "stewardship/daily-digest.html",
+                context | {"admin_chrome": admin} | comparison,
+            ),
+        ),
         "/daily-digest-funnel": (
             "text/html",
             render_to_string(

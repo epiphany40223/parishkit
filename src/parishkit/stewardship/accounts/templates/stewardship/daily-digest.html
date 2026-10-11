@@ -3,11 +3,13 @@
 {% block head %}
 <link rel="stylesheet" href="{% static 'stewardship/digest-v1.css' %}">
 <script src="{% static 'stewardship/digest-v1.js' %}" defer></script>
+{% if comparison %}{% include 'stewardship/components/chart-scripts.html' %}{% endif %}
 {% endblock %}
 {% block content %}
 <h1>{{ document.title }}</h1>
 {% aboutpage "daily-digest" %}<p>{% translate "Campaign dates use the campaign's time zone. Times above use your computer's time zone when your browser allows it." %}</p>
-<p>{% translate "This chart and table include every campaign day up to the end of the report day; the totals are that day's last point. The email's table shows the last seven days and every date that mailing covered; all values come from this same saved report." %}</p>{% endaboutpage %}
+<p>{% translate "This chart and table include every campaign day up to the end of the report day; the totals are that day's last point. The email's table shows the last seven days and every date that mailing covered; all values come from this same saved report." %}</p>
+<p>{% translate "When the daily digest's schedule includes Compared with past campaigns, this report also shows that section as it was emailed: this campaign on the report day beside last year and the average of the imported past campaigns. It was saved with the email, so importing or removing a past campaign later does not change it. Like the email, it holds totals only: a figure that could single out fewer than 5 pledging Families shows Withheld, and the pledge distribution stays on the Campaign comparison page." %}</p>{% endaboutpage %}
 <p>{{ chart.parish_name }} — {{ chart.campaign_name }}</p>
 <p class="notice">{% translate "Saved report: these are the exact values this report email used, not today's live totals." %}</p>
 {% if mode == 'testing' %}<p class="notice">{% translate "This report was generated for a Testing-mode digest." %}</p>{% endif %}
@@ -45,5 +47,14 @@
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 </div>
 </section>
+{% if comparison %}<section class="panel" aria-labelledby="digest-comparison-heading" data-digest-comparison>
+<h2 id="digest-comparison-heading">{% translate "Compared with past campaigns" %}</h2>
+<p>{{ comparison_line }}</p>
+{% for chart in comparison.charts %}<section aria-labelledby="{{ chart.key }}-heading"><h3 id="{{ chart.key }}-heading">{{ chart.title }}</h3>
+{% include 'stewardship/components/chart.html' %}</section>{% endfor %}
+<dl class="digest-comparison-figures">{% for tile in comparison.tiles %}<dt>{{ tile.label }}</dt><dd><strong>{{ tile.value }}</strong>{% for line in tile.lines %}<br>{{ line }}{% endfor %}</dd>{% endfor %}</dl>
+<details class="technical-details"><summary>{% translate "Past campaigns compared" %}</summary><dl>{% for archive in comparison.archives %}<dt>{{ archive.year }}</dt><dd>{% translate "SHA-256" %} <code>{{ archive.checksum }}</code></dd>{% endfor %}</dl></details>
+<p><a href="{{ comparison_url }}">{% translate "Open the Campaign comparison report" %}</a></p>
+</section>{% endif %}
 <p><a href="{% url 'admin:index' %}">{% translate "Return to Home" %}</a></p>
 {% endblock %}

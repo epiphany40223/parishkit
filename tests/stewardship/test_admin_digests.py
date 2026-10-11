@@ -73,8 +73,43 @@ def daily():
             comparison_pledge=MoneyAmount(None),
         ),
     )
-    document = SimpleNamespace(participation=chart, statistics=statistics)
+    document = SimpleNamespace(
+        participation=chart, statistics=statistics, comparison=SECTION
+    )
     return admin_digests.daily_model(SNAPSHOT, CAMPAIGN, document, "production")
+
+
+# A retained Compared with past campaigns section (#1018 slice 7); the
+# command prints it without the charts' specifications.
+SECTION = {
+    "day": 1,
+    "report_date": "2054-10-01",
+    "compared_with": "2053",
+    "tiles": [
+        {
+            "label": "Families responded",
+            "value": "3",
+            "lines": ["Last year on day 1: 2 (↑ 50% more)"],
+        }
+    ],
+    "archives": [{"year": 2053, "checksum": "a" * 64}],
+    "campaign": "Private campaign",
+    "financial": True,
+    "charts": [{"key": "comparison-families", "spec": {"description": "x"}}],
+}
+SECTION_FIGURES = {
+    "day": 1,
+    "report_date": "2054-10-01",
+    "compared_with": "2053",
+    "figures": [
+        {
+            "figure": "Families responded",
+            "value": "3",
+            "comparisons": ["Last year on day 1: 2 (↑ 50% more)"],
+        }
+    ],
+    "archives": [{"year": 2053, "checksum": "a" * 64}],
+}
 
 
 def weekly():
@@ -195,6 +230,7 @@ GOLDEN = {
                     "pledge_total": "1234.50",
                 }
             ],
+            "comparison": SECTION_FIGURES,
         },
     ),
     "digest weekly": (

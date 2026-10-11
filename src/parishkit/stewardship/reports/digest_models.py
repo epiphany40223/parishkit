@@ -112,6 +112,15 @@ class DailyDigestReady(ImmutableRecord):
     The recipient selection is separately bound to its current configuration at
     generation; later dispatch rechecks each address's authority. The chart is
     retained as bytes, so retries do not silently change images after upgrades.
+
+    ``comparison`` is the Compared with past campaigns section when the
+    schedule turned it on and a past campaign was imported (#1018 slice 7):
+    the section's protected figures, chart specifications and each imported
+    year's checksum (``digest_comparison.section``), so the saved page shows
+    what was sent whatever is imported or removed later. Its two charts are
+    retained as PNG bytes like the participation chart (the pledges chart
+    only with Financial stewardship). All three are null otherwise, as on
+    every digest compiled before the section existed.
     """
 
     snapshot = models.OneToOneField(DailyDigestSnapshot, on_delete=models.PROTECT)
@@ -128,9 +137,40 @@ class DailyDigestReady(ImmutableRecord):
     run = models.ForeignKey("stewardship_jobs.TaskRun", on_delete=models.PROTECT)
     fence = models.PositiveBigIntegerField()
     worker_id = models.UUIDField()
+    comparison = models.JSONField(null=True)
+    comparison_families_chart = models.BinaryField(null=True)
+    comparison_pledges_chart = models.BinaryField(null=True)
 
     class Meta:
         db_table = "stewardship_daily_digest_ready"
+        constraints = [
+            # A section has its Families chart; a pledges chart needs both.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        comparison__isnull=True,
+                        comparison_families_chart__isnull=True,
+                        comparison_pledges_chart__isnull=True,
+                    )
+                    | models.Q(
+                        comparison__isnull=False,
+                        comparison_families_chart__isnull=False,
+                    )
+                ),
+                name="daily_digest_comparison_charts",
+            )
+        ]
+
+    def comparison_images(self):
+        """The section's (content id, PNG bytes) pairs, in the email's order."""
+        from parishkit.stewardship.web.digest_content import COMPARISON_CHART_IDS
+
+        charts = (self.comparison_families_chart, self.comparison_pledges_chart)
+        return tuple(
+            (name, bytes(data))
+            for name, data in zip(COMPARISON_CHART_IDS, charts, strict=True)
+            if data is not None
+        )
 
 
 class DailyDigestRecipient(ImmutableRecord):

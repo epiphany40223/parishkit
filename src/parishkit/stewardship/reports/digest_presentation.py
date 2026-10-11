@@ -3,6 +3,7 @@
 from decimal import ROUND_HALF_UP, Decimal
 from io import BytesIO
 
+from django.urls import reverse
 from PIL import Image
 
 from .charts import (
@@ -12,6 +13,7 @@ from .charts import (
     participation_limits,
 )
 from .daily_digest import PLEDGE_HEADING, participation_row, report_day_cards
+from .digest_comparison import data_line
 from .digest_funnel import funnel_context
 
 
@@ -19,10 +21,16 @@ def snapshot_context(document, *, mode, chart_url, download_url, plot=PLOT_LAYOU
     """Show the email's exact report-day figures; nothing is recalculated.
 
     ``plot`` is where the retained chart image draws its plot, for the date
-    hit-testing; see ``chart_layout``.
+    hit-testing; see ``chart_layout``. The Compared with past campaigns
+    section (#1018 slice 7) is the retained one, drawn again from its stored
+    chart specifications; the page links the report on the same day.
     """
     chart = document.participation
+    section = document.comparison
     return {
+        "comparison": section,
+        "comparison_line": data_line(section) if section else "",
+        "comparison_url": comparison_path(section) if section else "",
         **participation_context(chart, plot=plot),
         "document": document,
         "mode": mode,
@@ -33,6 +41,11 @@ def snapshot_context(document, *, mode, chart_url, download_url, plot=PLOT_LAYOU
         "chart_url": chart_url,
         "download_url": download_url,
     }
+
+
+def comparison_path(section):
+    """The Campaign comparison report on the section's day (``?day=N``)."""
+    return f"{reverse('admin:campaign_comparison')}?day={int(section['day'])}"
 
 
 def tooltip_dollars(amount):

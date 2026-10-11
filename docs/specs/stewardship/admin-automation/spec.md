@@ -1836,7 +1836,9 @@ nothing. It takes `--expected-version` (the `version` of `schedule show`,
 the page's hidden base digest) and `--changes`, a JSON change document bound
 to the page's own forms: a saved schedule named by `id` keeps what the
 document leaves out, `delete` removes it, an entry without `id` adds one,
-and saved schedules it does not name stay unchanged. A `repeat` entry
+and saved schedules it does not name stay unchanged; a daily digest's
+`comparison` is the page's Include Compared with past campaigns checkbox,
+which `schedule show` lists too. A `repeat` entry
 ([#469](https://github.com/epiphany40223/parishkit/issues/469)) takes a
 repeat rule, a `time` and a `template_version` and adds one ordinary
 reminder per date the rule gives, expanded by the server's copy of the
@@ -2237,6 +2239,9 @@ links to from its stored snapshot, through its page's own functions
 (`digest_views.retained_document`, `weekly_views.retained_context`), never
 the email's markup, inside the same campaign read guard, and record the
 page's `daily_digest_viewed` or `weekly_digest_viewed`. `digest daily`
+also prints the digest's retained
+[Compared with past campaigns](../campaign-history/spec.md#digest-section)
+section, without its chart specifications. `digest daily`
 admits as the daily report page (report readers) and `digest weekly` as
 the weekly one (Administrators); both are any-scope reads. `digest weekly`
 prints each selected item's identifier and captured and current
