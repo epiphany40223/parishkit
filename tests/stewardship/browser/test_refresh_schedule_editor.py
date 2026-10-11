@@ -701,18 +701,27 @@ def test_a_pointer_below_the_save_line_keeps_the_outlook_in_place(
     assert within_half_a_pixel(before, tops(page, "#refresh-schedule-outlook"))
 
 
-def test_the_not_checked_line_moves_nothing_under_the_pointer(page, component_origin):
+@pytest.mark.parametrize(
+    ("time", "height"),
+    [(".schedule-grid-row >> nth=3", 640), (".schedule-day[open] li >> nth=3", 900)],
+    ids=["grid", "list"],
+)
+def test_the_not_checked_line_moves_nothing_under_the_pointer(
+    page, component_origin, time, height
+):
     """On a narrow screen the "Not checked" line takes several lines when a
-    check fails: the seven-day list under the pointer stays put. With the
+    check fails: the seven-day preview under the pointer stays put. With the
     line on the screen (below "Next seven days"), the browser's own scroll
-    anchoring would keep the heading, not the list."""
-    page.set_viewport_size({"width": 360, "height": 640})
+    anchoring would keep the heading, not the preview. The pointer is on a
+    day's label in the grid, which comes first in the preview (slice 4) and
+    is sticky only sideways, so it still moves with the page, or on a time
+    in the list below the grid (a taller window keeps it on the screen)."""
+    page.set_viewport_size({"width": 360, "height": height})
     requests = answering(page, PRODUCTION, fail=True)
     page.goto(component_origin + "/refresh-schedule")
     scroll_to(page, page.locator("#refresh-schedule-outlook h2").nth(1), 100)
-    time = ".schedule-day[open] li >> nth=3"
     box = page.locator(time).bounding_box()
-    assert box["y"] < 600
+    assert box["y"] < height - 40
     point_at_height(page, box["x"] + 5, box["y"] + box["height"] / 2)
     line = page.locator("[data-schedule-stale]")
     height = line.bounding_box()["height"]
@@ -722,13 +731,13 @@ def test_the_not_checked_line_moves_nothing_under_the_pointer(page, component_or
     visible(page.get_by_text("Not checked since your last change"))
     assert line.bounding_box()["height"] - height > 20
     assert within_half_a_pixel(before, tops(page, time))
-    # The next check answers: the line goes and the list is redrawn, and
-    # the time under the pointer still stays put.
+    # The next check answers: the line goes and the preview is redrawn,
+    # and the day under the pointer still stays put.
     page.unroute(f"**{CHECK}")
     requests = answering(page, PRODUCTION)
     type_quietly(page, "rules-1-at", "08:15")
     recorded(page, requests, 1)
-    # Hidden in the same change that redraws the list.
+    # Hidden in the same change that redraws the preview.
     hidden(page.get_by_text("Not checked since your last change"))
     assert within_half_a_pixel(before, tops(page, time))
 
