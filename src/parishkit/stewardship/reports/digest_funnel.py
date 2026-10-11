@@ -1,4 +1,4 @@
-"""The response funnel in the daily digest (#477, PR 7 slice 1).
+"""The response funnel in the daily digest and the weekly report (#477).
 
 The digest states every figure as of the end of its report day (#721), so
 its funnel is the Response dashboard's (``response_metrics``), counted at
@@ -19,6 +19,11 @@ all. A digest sent before the funnel existed (before this release) gains
 the funnel, or the Testing note, on its saved page although its email never
 had it; that was accepted rather than letting the web login read compiled
 mail prose to tell old pages from new.
+
+The weekly report (``weekly_digest``, slice 3a) shows the same section and
+saved-page panel, counted at its capture instant (``observed_at``) instead
+of a report-day end, by the fan-out worker once per page and again by its
+saved list pages; the same agreement caveats apply.
 
 Only a Production digest shows the funnel. Testing data is per rehearsal
 epoch and is cleaned up at go-live, so a Testing funnel could not be counted

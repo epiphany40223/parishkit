@@ -85,6 +85,21 @@ def components(context, admin):
                 context | {"admin_chrome": admin} | data | {"detail": False},
             ),
         )
+    # The same report in Testing: the Testing notice and, in place of the
+    # funnel, its Testing note (#477).
+    testing = page | {
+        "snapshot": SimpleNamespace(
+            **vars(page["snapshot"]) | {"preparation": SimpleNamespace(mode="testing")}
+        ),
+        **funnel_context(None, "testing"),
+    }
+    pages["/weekly-digest-testing"] = (
+        "text/html",
+        render_to_string(
+            "stewardship/weekly-digest.html",
+            context | {"admin_chrome": admin} | testing | {"detail": False},
+        ),
+    )
     pages["/weekly-manual"] = (
         "text/html",
         render_to_string(

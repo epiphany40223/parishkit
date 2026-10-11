@@ -116,6 +116,20 @@ def test_weekly_list_page_recounts_the_emails_funnel(live_response_service, goog
         assert page_funnel() == before
 
 
+def test_a_testing_weekly_page_shows_the_testing_note(response_service, google):
+    """A Testing report's saved page has the Testing note and no funnel counts."""
+    with campaign_clock(INSTANT):
+        claim, snapshot = captured(response_service)
+        publish(claim)
+        browser, _ = signed_in()
+        path = reverse("admin:weekly_digest_snapshot", args=[snapshot.pk])
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            _, content = read(browser, path)
+    assert b"This report was generated in Testing mode." in content
+    assert b"Testing digests leave out the response funnel." in content
+    assert b"data-digest-funnel" not in content
+
+
 @pytest.mark.parametrize("role", ["staff", "ministry_leader"])
 def test_private_weekly_reports_deny_non_admins_and_anonymous(
     live_response_service, google, role
