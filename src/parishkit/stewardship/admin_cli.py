@@ -42,8 +42,9 @@ export`` (PR 8a, in ``admin_reports``), the export lifecycle (PR 8b, in
 ``admin_exports``), the aggregate report reads (PR 8c, in
 ``admin_report_reads``), the digests (PR 8d, in ``admin_digests``), the
 Family-level exports (PR 8e, in ``admin_family_exports``), the Family
-portal maintenance switch (PR 7a, in ``admin_portal``) and ``report
-source-form`` (in ``admin_source_form``). A
+portal maintenance switch (PR 7a, in ``admin_portal``), ``report
+source-form`` (in ``admin_source_form``) and ``files list`` (PR 10, in
+``admin_hosted_files``). A
 command that streams a file (``logs export`` and
 ``export download --stream``) writes the file's bytes, and nothing else, to
 standard output, and its document to standard error. Other areas join the same
@@ -1129,6 +1130,13 @@ def portal_maintenance_show(args, preamble, runtime, context):
     from .admin_portal import read_maintenance
 
     return read_maintenance(context["caller"], runtime)
+
+
+def files_list(args, preamble, runtime, context):
+    """The Hosted files page's library, with each file's uses (PR 10)."""
+    from .admin_hosted_files import read_library
+
+    return read_library(context["caller"], runtime)
 
 
 def portal_maintenance_set(args, preamble, runtime, context):
@@ -2827,6 +2835,25 @@ def _portal_specs():
     )
 
 
+def _file_specs():
+    """The hosted file library (PR 10, ``admin_hosted_files``)."""
+    from .admin_hosted_files import HostedFileLibrary
+
+    return (
+        # The page's GET records no event; delete and rename come later.
+        CommandSpec(
+            "files list",
+            "List the hosted files, their links and where each is used.",
+            files_list,
+            "read_only",
+            False,
+            HostedFileLibrary.field_names(),
+            10,
+            audit_event=None,
+        ),
+    )
+
+
 def _report_specs():
     """The report, export, digest and log commands (PR 8; 8a: the logs).
 
@@ -3162,6 +3189,7 @@ COMMANDS = (
     + _refresh_specs()
     + _test_specs()
     + _portal_specs()
+    + _file_specs()
     + _operation_specs()
     + _report_specs()
 )

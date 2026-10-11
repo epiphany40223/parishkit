@@ -1628,7 +1628,9 @@ signatures:
 - **PR 10:** campaign, content, Ministry, parish, branding and integration
   settings (including the backup folder probe) from `campaign_views`,
   `content_views`, `campaign_ministry_views`, `share_views`, `talent_views`,
-  `parish_views`, `ministry_views` and `integration_views`.
+  `parish_views`, `ministry_views` and `integration_views`. `files list`
+  needed none: the hosted file page's row builder was already
+  request-free.
 - **PR 11:** user, event and follow-up actions from their views (the users
   model of #952 replaces the rule actions; #922 retired the assignment and
   Chairperson actions).
@@ -1806,7 +1808,7 @@ none.
 | `campaign_ministries`, `share_settings`, `talent_settings`, `reminder_workgroup` | `campaign ministries`, `campaign shares`, `campaign talents`, `campaign reminder-workgroup` (PR 10) |
 | `content_catalog`, `content_edit`, `content_revision`, `content_history`, `content_history_revision`, `content_plain_text` | `content list`, `content show`, `content preview`, `content confirm`, `content history` (PR 10) |
 | `parish_settings`, `ministries` | `parish`, `ministries` (PR 10) |
-| `hosted_files`, `hosted_file_delete`, `hosted_file_rename` | `files list`, `files delete`, `files rename` (PR 10) |
+| `hosted_files`, `hosted_file_delete`, `hosted_file_rename` | `files list` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); `files delete`, `files rename` (PR 10) |
 | `artwork_settings`, `artwork_remove` | `artwork show`, `artwork remove` (PR 10) |
 | `branding_settings`: **Confirm new logos** | `branding show`, `branding confirm --expected-version …`, a configuration request for logos already uploaded (PR 10) |
 | `hosted_file_upload`, `artwork_upload`, `branding_settings` uploads | Pending: file uploads; a later PR may accept `--file` |
@@ -1886,6 +1888,20 @@ with a `request` field message saying that nothing was prepared and that the
 configuration installer's log says what stops it. Nothing was written that
 needs undoing; once the operator fixes that failure, the installer's next
 pass applies the change or refuses it in preflight.
+
+`files list` is the Hosted files page's library, through the page's own
+pieces (`hosted_file_views._rows` over the library in placeholder-name
+order): Administrators only (`CONFIGURE`), as the page, admitted passively
+so any session scope reads, with no event, as the page's GET records none.
+It prints the library's `count`, `total_bytes`, `max_files` and
+`max_bytes`, and each file sorted by placeholder name, with its id, name,
+placeholder, image tag, type, pixel size, size, public link, Missing flag
+and uses (`source` and the page's description). Hosted files are public by
+design, so the link is printed as the page shows it; that and the field
+names are defaults, pending Administrator confirmation. A configuration
+refusal, such as no media root, is `unavailable`. The
+[operator guide](../../../guides/stewardship-admin-automation.md#hosted-files)
+lists the fields.
 
 ### Production transition and withdrawal
 
@@ -2809,7 +2825,7 @@ exactly the commands that exist.
   delivery reads and resolution. **PR 9c:** `resend` and refusal clearing, at
   the prompt.
 - **PR 10, other configuration:** campaign, content, Ministries, parish,
-  hosted files, artwork, branding confirmation, integration settings with the
+  hosted files (`files list` first), artwork, branding confirmation, integration settings with the
   backup folder probe, and secret replacement: integration key replacement,
   finish switching and the backup key change, with the wrapper's secret
   input.
