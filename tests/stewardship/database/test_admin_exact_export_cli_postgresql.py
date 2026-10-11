@@ -259,3 +259,67 @@ def test_unknown_requests_and_missing_inputs_are_not_available(
     assert code == 1 and document["error"]["code"] == "not_available", document
     assert not ExactExportRequest.objects.exists()
     assert count("admin_cmd_export_exact_create") == 0
+
+
+def test_the_commands_need_a_live_administrator_session(
+    http_scenario,  # noqa: F811
+    cli,  # noqa: F811
+):
+    """A session whose user is now Staff, or a revoked one, is exit 5.
+
+    Automation sessions are Administrator-only: a user who becomes Staff has
+    the session ended (``role_lost``), as Staff may not act on another's
+    export on the page; a revoked session ends every command. Nothing is
+    cancelled, retried or recorded.
+    """
+    from django.db import connection
+
+    from parishkit.stewardship.accounts import automation_sessions as automation
+    from parishkit.stewardship.accounts.automation_models import AutomationSession
+    from parishkit.stewardship.accounts.policy import current_principal
+    from parishkit.stewardship.accounts.policy_models import PortalUser
+
+    from .auth_builders import unguarded
+
+    run = cli()
+    code, document = run(
+        "export", "exact", "create", "--format", "csv", "--timezone", "UTC"
+    )
+    assert code == 0, document
+    exact_id = document["result"]["exact"]["id"]
+    commands = (
+        ("export", "exact", "status", exact_id),
+        ("export", "exact", "cancel", exact_id),
+        ("export", "exact", "retry", exact_id),
+    )
+    administrator = AutomationSession.objects.get(
+        secret_digest=automation.secret_digest(run.secret)
+    )
+    email = PortalUser.objects.get(pk=administrator.principal_id).email
+
+    def set_roles(roles):
+        """Change the signed-in user's roles as a policy change would."""
+        with unguarded(), connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE stewardship_address_rule SET roles=%s::jsonb WHERE email=%s",
+                [roles, email],
+            )
+
+    set_roles('["staff"]')
+    code, document = run(*commands[0])
+    assert code == 5 and document["error"]["code"] == "session_ended", document
+    administrator.refresh_from_db()
+    assert administrator.end_reason == "role_lost"
+    set_roles('["administrator"]')
+    second = cli()
+    session = AutomationSession.objects.get(
+        secret_digest=automation.secret_digest(second.secret)
+    )
+    owner = current_principal(second.service.store, session.principal_id)
+    automation.revoke(session.pk, owner, reason="revoked_by_owner")
+    for argv in commands:
+        code, document = second(*argv)
+        assert code == 5 and document["error"]["code"] == "session_ended", argv
+    assert count("admin_cmd_export_exact_cancel") == 0
+    assert count("admin_cmd_export_exact_retry") == 0
+    assert count("export_cancelled") == 0
