@@ -298,7 +298,7 @@ MEMBER_NAMES_FOR_FUNCTION = "stewardship_member_names_for_v1(text, text, uuid)"
 # the closure pending, and database-grants runs on that base before the
 # conversion, so it grants such a routine only once its migration is
 # applied (``pending_functions``). A test proves this lists every registry
-# routine the closure's frozen SQL creates.
+# routine the closure's migrations create.
 CLOSURE_FUNCTIONS = {
     MEMBER_NAMES_FOR_FUNCTION: ("stewardship_accounts", "0014_user_name_lookup"),
 }
