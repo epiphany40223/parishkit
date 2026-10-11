@@ -781,6 +781,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `content_catalog` | Pages and emails | Menu: Pages and emails | Administrator | Campaign content and templates | `/admin/campaign/content/` | (same) |  |
 | `content_edit` | _page or email name_ | Pages and emails | Administrator | Edit page or email | `/admin/campaign/content/<kind>/<slot>/` | (same) | Object-named (exception). |
 | `content_revision` | _email name_ | Pages and emails | Administrator | _email template name_; Content revision | `/admin/campaign/content/email/<slot>/<revision>/` | (same) | Object-named (exception); links its own test page. |
+| `content_delete` | Delete email templates | Pages and emails | Administrator | (new, #879) | `/admin/campaign/content/deletion/` (POST only) | (same) | The email tables' confirmation dialog posts here. |
 | `campaign_mail` | Preview and test email | _email name_ | Administrator | Campaign email test | `/admin/campaign/content/test/<revision>/` | (same) | Returns to the page it was opened from (Go-live readiness, Pause and resume mail). |
 | `campaign_mail_families` | Send to chosen Families | Preview and test email | Administrator | Send this email to chosen Families | `/admin/campaign/content/test/<revision>/families/` | (same) |  |
 | `artwork_settings` | Campaign images | Menu: Campaign images | Administrator | (same) | `/admin/campaign/images/` | (same) |  |
@@ -2368,11 +2369,20 @@ whole ([#446](https://github.com/epiphany40223/parishkit/issues/446)): the
 subject (linking to its editor, with the start of its ID when two of that
 type share a subject), the start of its plain text, the saved schedules that
 send it, named as on Dates and mail schedules ("No schedule" when none
-does), default or customized text, and its test page. An email no schedule
-sends also offers Remove, which opens its editor at the existing "Remove
-this selected content" control, so removal goes through the same review and
-confirmation; an email a schedule sends still can't be removed. The
-confirmation email has no schedules and stays a single entry.
+does), default or customized text, and its test page (Preview and send
+test, a link). Each table is an action table
+([row actions](../ui-conventions/spec.md#row-actions-and-confirmation),
+[#879](https://github.com/epiphany40223/parishkit/issues/879)): Edit opens
+the email's editor, and an email no schedule sends also has Delete and a
+selection box for Delete selected. Delete asks in the shared dialog and then
+records one configuration change that removes every chosen email, exactly
+as the editor's "Remove this selected content" control removes one (which
+stays). The page follows that change until it is applied and redraws the
+email tables in place. The server refuses the whole request, removing
+nothing, if any chosen email is sent by a schedule, is the confirmation
+email, or is no longer listed, or if the page is out of date. The
+confirmation email has no schedules and stays a single entry, with Edit
+only.
 
 ### Create the campaign
 

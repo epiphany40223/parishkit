@@ -1269,7 +1269,8 @@ through a selection column, and Edit opens the item's own page (the New page,
 filled in). **Why.** One pattern for every list of editable things; a dialog
 names exactly what will be removed. **Shared code.** The `table_actions`
 template tag, `components/confirm-dialog.html` and `data-confirm-open` in
-`ui-v1.js`. **Precedent.** #879, #882 (first user), #947 (second slice).
+`ui-v1.js`. **Precedent.** #879, #882 (first user), #947 (second slice),
+the Pages and emails email tables (third slice).
 
 A table whose rows can be acted on follows one pattern
 ([#879](https://github.com/epiphany40223/parishkit/issues/879)), built once
@@ -1277,8 +1278,9 @@ and shared. Its users so far are
 [Dates and mail schedules](../admin-portal/spec.md#dates-and-mail-schedules), the
 [Hosted files](../hosted-files/spec.md#admin-page) library, the live
 sessions of
-[Automation access](../admin-automation/spec.md#revocation-and-listing) and
-[Users](../admin-portal/spec.md#users-table); the
+[Automation access](../admin-automation/spec.md#revocation-and-listing),
+[Users](../admin-portal/spec.md#users-table) and the email template tables of
+[Pages and emails](../admin-portal/spec.md#default-content); the
 other Admin tables with per-row actions move to it in later changes, as the
 inventory on #879 lists.
 
