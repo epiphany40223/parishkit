@@ -4405,18 +4405,20 @@ text below follows them.
 
 Work package
 [ADM-13](../../../plans/stewardship/admin-portal.md#adm-13-system-health-page)
-delivers it. Status: the read-only page has landed (PR 1 and PR 2a–2b of the
+delivers it. Status: the read-only page has landed (PR 1 and PR 2a–2c of the
 [ADM-13 checklist](../../../tasks/stewardship/admin-portal.md#adm-13-system-health-page)):
 the problems list, the six panels, the status fragment, Home's problem lines,
-Families the form cannot open and the `system health` command. None of the
+Families the form cannot open, the daily limit's 24-hour count and the
+`system health` command. None of the
 four actions is built yet (PR 3 to PR 6), so no panel offers a button; each
 problem sentence names the runbook step instead, and the steps listed under
 [runbook steps the page replaces](#runbook-steps-the-page-replaces) remain
 the way to do these things. Some panel details arrive with those pull
-requests too: the daily limit's 24-hour count (PR 2c), the last backup's
+requests too: the last backup's
 size and version and the requested backups (PR 3), a halt's kind (PR 4), the
 example Families of a refused change (PR 5) and the debug-off switch
-(PR 6).
+(PR 6). When sending resumes after the daily limit is not shown yet (see
+[Why sends are waiting](#why-sends-are-waiting)).
 
 ### System health page
 
@@ -4537,10 +4539,16 @@ reason ends (if known), and a link to act on it:
   pause](#live-delivery-pause)): who paused it, when, the reason they gave,
   and a link to Pause and resume mail.
 - **Waiting for the daily limit:** the recipients sent in the last 24 hours,
-  the limit, and when sending resumes. For example: "1,612 of 1,600 emails
-  for Families sent in the last 24 hours. Sending resumes at about 3:10
-  PM." It is the same count the mail sender compares with the limit, read
-  by a definer function
+  the limit, and (not shown yet) when sending resumes. For example: "Emails
+  went to 1,612 recipients in the last 24 hours. Family invitations,
+  reminders and Family tests stop at 1,600." The limit shown is the share
+  Family invitations, reminders and Family tests may use (the daily limit
+  less the sends kept for receipts, reports and alerts). When
+  sending resumes ("Sending resumes at about 3:10 PM") is not shown yet:
+  it needs each counted send's time and recipient count, which the web
+  login cannot read, so it waits for a second definer function in a
+  forward migration (tracked on #530). It is the same count the mail
+  sender compares with the limit, read by a definer function
   (see [bulk Family send](../background-processing/spec.md#bulk-family-send)
   and the
   [Family mail dispatch guide](../../../guides/stewardship-family-mail-dispatch.md#two-mail-consumers)).
