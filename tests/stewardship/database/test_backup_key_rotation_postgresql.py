@@ -171,7 +171,7 @@ def test_the_backup_command_seals_to_the_configured_key(rotated, monkeypatch, ca
     monkeypatch.setattr(
         operator_commands, "configure_operator_database", lambda c: None
     )
-    monkeypatch.setattr(runtime_database, "require_current_schema", lambda: None)
+    monkeypatch.setattr(runtime_database, "require_current_schema", lambda **_: None)
     monkeypatch.setattr(
         runtime_paths, "RuntimeLayout", lambda c: SimpleNamespace(interlock=None)
     )

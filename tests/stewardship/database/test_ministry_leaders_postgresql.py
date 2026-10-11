@@ -708,7 +708,15 @@ def test_migration_check_refuses_the_old_definitions():
     )
     start = earlier.index("CREATE OR REPLACE FUNCTION")
     old_pointer = earlier[start : earlier.index("END $$;", start) + len("END $$;")]
+    # Migration 0052 (#952) later replaced the leader scope to read only
+    # users, so this file's own definition is put back first, in the test's
+    # transaction, for its check to judge.
+    leader = text.index("CREATE FUNCTION public.stewardship_ministry_leader_scope_v1(")
+    own_leader = text[leader : text.index("$$;", leader) + len("$$;")].replace(
+        "CREATE FUNCTION", "CREATE OR REPLACE FUNCTION", 1
+    )
     with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(own_leader)
         cursor.execute(check)  # The installed definitions pass.
         for old in (
             old_pointer,
@@ -724,3 +732,7 @@ def test_migration_check_refuses_the_old_definitions():
                 cursor.execute(old)
                 cursor.execute(check)
         cursor.execute(check)  # Rolled back to the new definitions.
+        # Never commit the put-back definition: a transactional test database
+        # keeps its schema, so a later test (the schema baseline's) would see
+        # 0042's leader scope instead of 0052's.
+        transaction.set_rollback(True)

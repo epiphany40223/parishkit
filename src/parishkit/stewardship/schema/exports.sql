@@ -68,12 +68,10 @@ CREATE FUNCTION public.stewardship_export_authorized_v1(user_uuid uuid, admin_on
 RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
     SELECT coalesce((SELECT CASE WHEN admin_only THEN roles ? 'administrator'
         ELSE roles ?| ARRAY['administrator','staff'] END FROM (
-        SELECT coalesce(a.roles,d.roles,'[]'::jsonb) AS roles
+        SELECT coalesce(a.roles,'[]'::jsonb) AS roles
         FROM stewardship_portal_user u CROSS JOIN stewardship_system_configuration r
         LEFT JOIN stewardship_address_rule a ON a.configuration_id=r.active_configuration_id
             AND a.email=lower(u.email)
-        LEFT JOIN stewardship_domain_rule d ON d.configuration_id=r.active_configuration_id
-            AND d.domain=lower(u.hosted_domain) AND d.domain=split_part(lower(u.email),'@',2)
         WHERE u.id=user_uuid AND NOT u.disabled
     ) candidate),false)
 $$;
