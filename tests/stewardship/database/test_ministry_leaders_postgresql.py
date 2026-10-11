@@ -732,3 +732,7 @@ def test_migration_check_refuses_the_old_definitions():
                 cursor.execute(old)
                 cursor.execute(check)
         cursor.execute(check)  # Rolled back to the new definitions.
+        # Never commit the put-back definition: a transactional test database
+        # keeps its schema, so a later test (the schema baseline's) would see
+        # 0042's leader scope instead of 0052's.
+        transaction.set_rollback(True)
