@@ -89,15 +89,18 @@ def pages():
             (
                 "Who besides you may sign in to this administration site, and"
                 " with which role. Everyone signs in with a Google account. Each"
-                " address you list becomes one user; no one else is let in. You"
-                " can change them later, and they take effect only when setup"
-                " finishes.",
+                " address you list, under any of the three roles, becomes one user"
+                " with the highest role it is listed under; no one else is let in."
+                " You can name each user and change their role later on the Users"
+                " page; these lists take effect only when setup finishes.",
             ),
             (
                 "Who besides you may sign in to this administration site, and"
-                " with which role. Each address you list becomes one user; no one"
-                " else is let in. You can change them later, and they take effect"
-                " only when setup finishes.",
+                " with which role. Each address you list, under any of the three"
+                " roles, becomes one user with the highest role it is listed under;"
+                " no one else is let in. You can name each user and change their"
+                " role later on the Users page; these lists take effect only when"
+                " setup finishes.",
             ),
         ),
         "integration-settings": (
