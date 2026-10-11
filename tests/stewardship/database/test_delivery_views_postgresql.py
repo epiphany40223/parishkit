@@ -841,6 +841,42 @@ def test_mail_message_page_shows_only_the_recipient_addresses(
     assert recipients_as(ServiceRole.WEB, message.pk, admin) == "42501"
 
 
+def test_a_refused_recipient_read_leaves_the_page_to_its_recheck(
+    family_mail,  # noqa: F811
+    google,
+    monkeypatch,
+):
+    """#1024: when the recipients function refuses (the Administrator was
+    demoted after the page admitted them), the read returns None inside a
+    savepoint, so the page is not a database error: its final authority
+    recheck refuses the answer instead, and nothing is audited."""
+    from parishkit.stewardship.jobs import delivery_views
+    from parishkit.stewardship.jobs.delivery_reads import email_recipients
+
+    message = uncertain(family_mail)
+    browser, _ = signed_in()
+    admin = PortalUser.objects.get(email="admin@example.org").pk
+    # Directly: a refused actor gives None and the transaction stays usable.
+    with task_login(ServiceRole.WEB, exact=True), transaction.atomic():
+        assert email_recipients(message.pk, uuid4()) is None
+        assert OutboxMessage.objects.filter(pk=message.pk).exists()
+    original = delivery_views.read_detail
+
+    def demoted(*args, **kwargs):
+        """Read the page, then disable its Administrator before the recipients."""
+        result = original(*args, **kwargs)
+        PortalUser.objects.filter(pk=admin).update(
+            disabled=True, version=F("version") + 1
+        )
+        return result
+
+    monkeypatch.setattr(delivery_views, "read_detail", demoted)
+    response = browser.get(f"/admin/mail/outgoing/{message.pk}/")
+    assert response.status_code == 403
+    assert str(message.pk).encode() not in response.content
+    assert not AuditEvent.objects.filter(event_type="delivery_viewed").exists()
+
+
 def test_verified_clearance_form_is_audited_and_replay_safe(response_service, google):
     """The form carries current source identity and never places notes in URLs."""
     harness = activate_response_service(response_service)

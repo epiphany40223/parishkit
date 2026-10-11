@@ -13,7 +13,7 @@ refused (``ValueError``) as on the page.
 from datetime import timedelta
 from uuid import uuid4
 
-from django.db import connection
+from django.db import DatabaseError, connection, transaction
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.web.contracts import PageWindow, expected_version, filters
@@ -238,21 +238,35 @@ def email_recipients(message_id, actor_id):
     The addresses live only in the email's rendering, which the web login
     may not read; ``stewardship_delivery_recipients_v1`` (frozen migration
     0058) returns them, and nothing else from the rendering, only when
-    ``actor_id`` is an Administrator, refusing anyone else with a database
-    error. Returns ``{"intended": [...], "routed": [...]}``, each list in
-    its stored order: whom the email is for, and where it was sent (the
-    same addresses in Production; the Testing recipient in Testing mode).
-    Both lists are empty for an email with no rendering yet.
+    ``actor_id`` is an Administrator. Returns ``{"intended": [...],
+    "routed": [...]}``, each list in its stored order: whom the email is
+    for, and where it was sent (the same addresses in Production; the
+    Testing recipient in Testing mode). Both lists are empty for an email
+    with no rendering yet.
+
+    When the function refuses (SQLSTATE 42501), for example because the
+    actor stopped being an Administrator after the page admitted them,
+    this returns None and the page renders without the line: the page's
+    final authority recheck then refuses the whole answer, rather than the
+    read failing as a database error. The call runs in its own savepoint
+    so the refusal does not abort the page's transaction. Any other
+    database error is raised.
     """
     recipients = {"intended": [], "routed": []}
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT kind, address"
-            " FROM public.stewardship_delivery_recipients_v1(%s,%s)",
-            (message_id, actor_id),
-        )
-        for kind, address in cursor.fetchall():
-            recipients[kind].append(address)
+    try:
+        with transaction.atomic(), connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT kind, address"
+                " FROM public.stewardship_delivery_recipients_v1(%s,%s)",
+                (message_id, actor_id),
+            )
+            rows = cursor.fetchall()
+    except DatabaseError as error:
+        if getattr(error.__cause__, "sqlstate", None) != "42501":
+            raise
+        return None
+    for kind, address in rows:
+        recipients[kind].append(address)
     return recipients
 
 

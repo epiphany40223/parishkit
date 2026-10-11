@@ -1419,7 +1419,8 @@ them through `stewardship_delivery_recipients_v1(message, actor)`, a
 The function returns only the addresses of the message's newest rendering,
 one row each, with kind `intended` or `routed`, in stored order, and no other
 column of the rendering. It refuses (SQLSTATE `42501`) any session login but
-the web login or the schema owner, and any actor that
+the web login, the schema owner, or a member of the schema owner role, and
+any actor that
 `stewardship_export_authorized_v1(actor, true)` does not admit as an enabled
 Administrator, which is the same SQL check the page's resolution commands
 make. PUBLIC has no EXECUTE; `database-grants` grants it only to the web
