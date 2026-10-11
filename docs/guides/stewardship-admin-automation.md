@@ -634,6 +634,40 @@ result is the new state, as `show` prints it. Asking for the state the
 portal is already in changes nothing and is exit 1 (`stale_version`): read
 it again with `show`.
 
+## Hosted files
+
+`files list` is the **Hosted files** page's library: the files that pages
+and emails link to or show, and where each is used. Like the page, it
+needs an Administrator; a session of any scope may run it, and it records
+nothing in System logs, as opening the page records nothing.
+
+```sh
+pk-admin files list
+```
+
+It prints `count` and `total_bytes` (the library's totals), `max_files`
+and `max_bytes` (its limits), and `files`, sorted by placeholder name, as
+the page sorts by default:
+
+| Field | What it holds |
+| --- | --- |
+| `id` | The file's id |
+| `name` | The uploaded file name |
+| `slug` | The placeholder name |
+| `placeholder` | The placeholder that pages and emails use, such as `{{ file.ministry-guide }}` |
+| `image_tag` | For an image, the page's ready-to-copy image tag; empty for a document |
+| `type` | The stored type: `pdf`, `docx`, `xlsx`, `pptx`, `png` or `jpeg` |
+| `width`, `height` | An image's size in pixels; null for a document |
+| `size` | The size in bytes |
+| `link` | The file's public link |
+| `missing` | Whether the stored copy is gone from the server (the page's Missing) |
+| `uses` | Where it is used: `source` (`content`, `pending_change` or `unsent_mail`) and the page's `description` |
+
+Anyone with a file's link can open the file, as the page says. A
+library that cannot be read now (the server's file storage is not
+configured) is exit 3 (`unavailable`). Uploading, renaming and deleting
+files stay on the page for now.
+
 ## Task retries
 
 `task retry` is the **Retry** button of a failed task on Background work,
@@ -1296,3 +1330,6 @@ error, as `logs export` does; the wrapper refuses to write it to a terminal.
 - `pk-admin/1` (#463): additive. `report source-form`, System health's
   Families the form cannot open, by DUID (any session, Administrators
   only, the page's event).
+- `pk-admin/1` (#463): additive. `files list`, the Hosted files page's
+  library and each file's uses (any session, Administrators only, no
+  event).

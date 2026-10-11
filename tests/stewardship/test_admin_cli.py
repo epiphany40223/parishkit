@@ -73,6 +73,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
     }
     refresh = {"refresh start", "refresh status"}
     portal = {"portal maintenance show", "portal maintenance set"}
+    configuration = {"files list"}
     tests = {
         "test sample-preview",
         "test sample",
@@ -123,7 +124,15 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "export postal",
     }
     assert set(entries) == (
-        session | reads | changes | refresh | tests | portal | operations | reports
+        session
+        | reads
+        | changes
+        | refresh
+        | tests
+        | portal
+        | configuration
+        | operations
+        | reports
     )
     for entry in entries.values():
         names = {option["name"] for option in entry["options"]}
@@ -138,6 +147,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
             if name in refresh | tests
             else 7
             if name in portal
+            else 10
+            if name in configuration
             else 9
             if name in operations
             else 8
@@ -236,6 +247,18 @@ def test_the_catalog_lists_every_command_with_its_flags():
     ]
     options = {option["name"]: option for option in listed["options"]}
     assert not options["--requested"]["required"]
+    # The hosted file library (PR 10): any session, and no event, as the
+    # page's GET.
+    library = entries["files list"]
+    assert library["scope"] == "read_only" and not library["changes_state"]
+    assert library["audit_event"] is None and not library["prompts"]
+    assert library["result_fields"] == [
+        "count",
+        "total_bytes",
+        "max_files",
+        "max_bytes",
+        "files",
+    ]
     for name in reads:
         # Read-only status: any session, no state change, the page's event.
         assert entries[name]["scope"] == "read_only", name

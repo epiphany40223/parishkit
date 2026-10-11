@@ -586,6 +586,16 @@ event, the fresh-gate event and notice; Families then see the maintenance
 page; the page and the command line reopen each other's change; a no-op
 `stale_version`; bad notes `invalid` before the prompt; read-only and ended
 sessions). 7b (pause, resume and closed-campaign resolution) follows.
+ADM-11.11 lands in parts. The first adds `files list`, the Hosted files
+page's library, in `parishkit.stewardship.admin_hosted_files`, through the
+page's own capability, order and row builder, with no schema change;
+proven by `tests/stewardship/test_admin_cli.py` (catalog flags, no event),
+`tests/stewardship/test_admin_route_parity.py` and
+`tests/stewardship/database/test_admin_files_cli_postgresql.py` (the
+page's rows sorted by placeholder name for a read-only session, an image's
+tag and size, a use, a missing stored copy, no event, a Staff reader
+denied, an ended session, no media root `unavailable`) and the unchanged
+hosted files page suite. `files delete` and `files rename` follow.
 
 ## ADM-12: Admin navigation overhaul
 
