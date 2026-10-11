@@ -238,6 +238,41 @@ def test_the_definer_answers_only_a_live_administrator_session(deployment):
     assert listed().count() == 0
 
 
+# Session times that each break one liveness rule while every CHECK still
+# holds (activity never before sign-in, nor at or after the deadline).
+AGED_SESSIONS = {
+    # Idle past the 60-minute limit, its deadline still ahead.
+    "idle": (
+        "authenticated_at=least(authenticated_at,"
+        " clock_timestamp()-interval '61 minutes'),"
+        " last_activity_at=clock_timestamp()-interval '61 minutes'"
+    ),
+    # Active five minutes ago, but its absolute deadline has passed.
+    "expired": (
+        "authenticated_at=clock_timestamp()-interval '10 minutes',"
+        " last_activity_at=clock_timestamp()-interval '5 minutes',"
+        " expires_at=clock_timestamp()-interval '1 minute'"
+    ),
+}
+
+
+@pytest.mark.parametrize("aged", sorted(AGED_SESSIONS))
+def test_the_definer_refuses_an_idle_or_expired_session(deployment, aged):
+    """Past the 60-minute idle limit, or past its deadline: refused, unaudited."""
+    key = live_key()
+    as_web(key)
+    assert listed().count() == 1
+    with unguarded(), connection.cursor() as cursor:
+        cursor.execute(
+            f"UPDATE stewardship_portal_session SET {AGED_SESSIONS[aged]} "
+            "WHERE session_id=%s",
+            [key],
+        )
+    with pytest.raises(LeadersRefused):
+        as_web(key)
+    assert listed().count() == 1
+
+
 @pytest.mark.parametrize("role", ["staff", "ministry_leader"])
 def test_other_roles_get_neither_the_list_nor_the_import(auth_service, google, role):
     """The definer refuses a Staff or Ministry leader session; so do the routes."""
