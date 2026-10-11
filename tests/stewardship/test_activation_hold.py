@@ -61,6 +61,7 @@ def version(digest, predecessor):
         # Initial setup keeps its candidate selected over the bootstrap on
         # purpose; that is the setup hold, never a brief activation.
         (version(NEXT, BASE), BASE, "bootstrap-policy-v1", False),
+        (version(NEXT, BASE), BASE, "bootstrap-users-v10", False),
     ],
 )
 def test_only_a_selection_one_activation_ahead_is_changing(

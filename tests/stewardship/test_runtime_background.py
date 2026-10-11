@@ -300,7 +300,14 @@ def test_scheduler_registry_is_metadata_only():
 
 
 @pytest.mark.parametrize(
-    "bootstrap,installed", [(True, False), (False, False), (False, True)]
+    "bootstrap,installed",
+    [
+        # Either bootstrap form (#993) is a deployment still in setup.
+        ("bootstrap-users-v10", False),
+        ("bootstrap-policy-v1", False),
+        (None, False),
+        (None, True),
+    ],
 )
 def test_mail_runtime_requires_working_key_except_for_coherent_bootstrap(
     admitted_configuration, monkeypatch, bootstrap, installed
@@ -334,7 +341,7 @@ def test_mail_runtime_requires_working_key_except_for_coherent_bootstrap(
         current_campaign_id=None,
         active_configuration=SimpleNamespace(
             # A configured deployment holds users since #952 slice 4.
-            validation_schema=("bootstrap-policy-v1" if bootstrap else "users-v10")
+            validation_schema=bootstrap or "users-v10"
         ),
     )
     monkeypatch.setattr(
@@ -454,7 +461,9 @@ def test_mail_authority_requires_exact_document_and_stable_pointer(monkeypatch, 
             background.mail_authority(store)
 
 
-@pytest.mark.parametrize("bootstrap", [True, False])
+@pytest.mark.parametrize(
+    "bootstrap", ["bootstrap-users-v10", "bootstrap-policy-v1", None]
+)
 def test_only_bootstrap_worker_can_omit_installed_source_key(
     admitted_configuration, monkeypatch, bootstrap
 ):
@@ -474,7 +483,7 @@ def test_only_bootstrap_worker_can_omit_installed_source_key(
         current_campaign_id=None,
         active_configuration=SimpleNamespace(
             # A configured deployment holds users since #952 slice 4.
-            validation_schema="bootstrap-policy-v1" if bootstrap else "users-v10"
+            validation_schema=bootstrap or "users-v10"
         ),
     )
     monkeypatch.setattr(

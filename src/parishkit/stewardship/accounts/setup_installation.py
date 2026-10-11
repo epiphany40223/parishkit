@@ -14,6 +14,7 @@ from parishkit.stewardship.storage import StorageInvariantError
 from .configuration_installation import DatabaseMaterializer
 from .configuration_requests import _status
 from .runtime_models import ConfigurationActivation, SystemConfiguration
+from .setup_configuration import REQUEST_SCHEMAS as SETUP_REQUEST_SCHEMAS
 from .setup_models import (
     SetupAttempt,
     SetupConfigurationAbort,
@@ -86,7 +87,7 @@ def _journal(materializer, intent):
 def recover_setup_abort(materializer):
     """Honor original-attempt expiry before any ordinary forward recovery."""
     request = materializer.request
-    if request is None or request.request_schema != "initial-setup-patch-v7":
+    if request is None or request.request_schema not in SETUP_REQUEST_SCHEMAS:
         return None
     materializer._check()
     abort = (

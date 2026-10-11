@@ -778,9 +778,9 @@ Administrator may override.
      still in initial setup, judged as startup judges it, have nothing to
      convert and pass. The policy projection and completeness triggers stay
      as they are: they validate rows and grant nothing, and initial setup
-     still writes an exact-address rule until the setup wizard writes users;
-     the cleanup migration removes their hosted-domain branches with the
-     tables;
+     still wrote an exact-address rule until the setup wizard wrote users
+     (migration 0055, #993, below); the cleanup migration removes their
+     hosted-domain branches with the tables;
    - the Ministry leaders function of migration 0042 (PR #939) needs no
      migration to become callable by the web login: EXECUTE is a
      `database-grants` entry, added with the leaders import if it needs it;
@@ -815,12 +815,23 @@ has its own request formats (`users-patch-v10` for Admin edits,
 `integration-credential-users-v10` for a credential update and
 `operator-recovery-users-v10` for recovery; #952 slice 3), each keeping every
 rule of its `source-cadence-v8` counterpart with the users list in place of
-the sign-in rules. Bootstrap (`bootstrap --admin-email`) writes an
-Administrator user too, with the code slice that changes the setup wizard:
-the bootstrap configuration is the wizard's base, and its access step and SQL
-setup guards still expect an exact-address rule. Until then the users
-release's startup refusal of sign-in rules exempts a deployment still in
-initial setup.
+the sign-in rules.
+
+Bootstrap (`bootstrap --admin-email`) writes a users bootstrap
+(`bootstrap-users-v10`, [#993](https://github.com/epiphany40223/parishkit/issues/993)):
+its only record is the initial Administrator user, Named by the email's local
+part. The setup wizard's request over it (`initial-setup-users-v10`) activates
+a `users-v10` configuration, so a fresh install starts its services after setup
+with no `upgrade-users` step. Offline recovery during setup uses
+`operator-recovery-users-v10`, adds an Administrator user and keeps the users
+bootstrap, so setup can still finish. Migration 0055 admits both names and
+teaches each bootstrap and setup guard both forms, binding each setup format
+to its own bootstrap form. A deployment bootstrapped before #993 keeps its
+exact-address bootstrap and the `initial-setup-patch-v7` format: the users
+release's startup refusal of sign-in rules still exempts it while it is in
+initial setup, and it runs `upgrade-users` once setup finishes. Running
+`upgrade-users` automatically at setup completion was rejected: it is an
+offline, operator-confirmed conversion with its own audit trail.
 
 ### Offline bootstrap profile
 

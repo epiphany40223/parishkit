@@ -45,10 +45,9 @@ WIZARD_PARISH = {
     "phone": "+15025551234",
     "online_giving_url": "",
 }
+# Sign-in is by address only (#952): one synthetic Staff user (#993).
 WIZARD_ACCESS = {
-    "staff_domains": ["example.test"],
-    "ministry_domains": [],
-    "staff_addresses": [],
+    "staff_addresses": ["staff@example.test"],
     "ministry_addresses": [],
     "admin_addresses": [],
 }
