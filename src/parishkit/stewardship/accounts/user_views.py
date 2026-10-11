@@ -23,6 +23,13 @@ installer activates it, and SQL repeats the last-Administrator guard and
 raises the security event when someone is made an Administrator. Each
 recorded change also gets a ``user_change_requested`` audit event naming the
 request, whose patch holds the address, Name and role.
+
+An Administrator never demotes or deletes their own user here (Administrator
+decision, 2026-10-11): their row has no Delete, their Edit page offers only
+Administrator, ``plan_changes`` refuses it at Review and Delete, and the
+request's own transaction refuses it again (``_audit_change``). Without
+this, the change would end the Administrator's access to its own Change
+status page partway through.
 """
 
 from uuid import UUID, uuid4
@@ -69,11 +76,13 @@ from .user_changes import (
     MESSAGES,
     LookupLimited,
     UserRefused,
-    administrator_ids,
+    acting_email,
     clean_email,
     member_names,
     only_administrator,
+    own_user_ids,
     plan_changes,
+    refuse_own_demotion,
     saved_users,
 )
 from .user_reads import USER_SORTING, policy_identities, user_list
@@ -103,6 +112,14 @@ LOOKUP_SECONDS = 60
 LAST_ADMINISTRATOR = _(
     "This is the only Administrator, so it must stay an Administrator. Make "
     "another user an Administrator first."
+)
+# The acting Administrator's own user, on Edit user and under the table.
+OWN_ROLE = _(
+    "This is your own user, so it must stay an Administrator. Another "
+    "Administrator can change your role."
+)
+OWN_DELETE = _(
+    "Your own user has no Delete: you can't delete yourself. Another Administrator can."
 )
 
 
@@ -180,15 +197,28 @@ def _scope(service):
 
 
 def _audit_change(actor):
-    """``confirm_intent``'s ``attach``: one audit event per recorded change.
+    """``confirm_intent``'s ``attach``: refuse self-demotion, then audit it.
 
-    Its subject is the request, whose patch names the address, Name and role
-    and whose base names what they were; the context counts the users the
-    change touches, never an address (audit context holds no personal data).
+    First the request's own own-Administrator check (``refuse_own_demotion``
+    against the request's base), which rolls the request back with a plain
+    refusal. Then one audit event per recorded change: its subject is the
+    request, whose patch names the address, Name and role and whose base
+    names what they were; the context counts the users the change touches,
+    never an address (audit context holds no personal data).
     """
 
     def attach(request, extra):
-        """Record the event in the request's own durable transaction."""
+        """Check, then record the event, in the request's own transaction."""
+        try:
+            refuse_own_demotion(
+                request.base.canonical_document["sections"]["login_rules"],
+                request.patch,
+                acting_email(actor.identity),
+            )
+        except UserRefused as refused:
+            raise UserFacingError(
+                refused.message, fix=_("Nothing was changed.")
+            ) from None
         record_action(
             Action.USER_CHANGE_REQUESTED,
             actor_kind=ActorKind.PORTAL_USER,
@@ -220,19 +250,23 @@ def _missing():
     )
 
 
-def table_rows(rows, users):
+def table_rows(rows, users, own_email=None):
     """Add each row's Edit address and whether it may be deleted.
 
-    The only Administrator's row offers no Delete (#563), and its reason is
-    said once under the table; the server refuses that deletion anyway.
-    ``confirm_name`` is how the Delete dialog names the user.
+    The reader's own row and the only Administrator's offer no Delete
+    (#563); the reason is said once under the table (the only Administrator
+    is always the reader, who must be one), and the server refuses either
+    deletion anyway. ``confirm_name`` is how the Delete dialog names the
+    user.
     """
+    own = own_user_ids(users, own_email)
     return [
         row
         | {
             "role_label": ROLE_LABELS[row["role"]],
             "edit_url": reverse("admin:user_edit", args=[row["id"]]),
-            "deletable": not only_administrator(users, row["id"]),
+            "deletable": row["id"] not in own
+            and not only_administrator(users, row["id"]),
             # The delete dialog names the user's address, Name and role.
             "confirm_name": _("%(email)s (%(name)s, %(role)s)")
             % {
@@ -281,10 +315,11 @@ def users(request):
             configuration, records = _users(service)
             rows = user_list(records, policy_identities(records))
             saved = saved_users(records)
+            own = acting_email(actor.identity)
             # The chrome presents this verified observation, never a newer one.
             request._stewardship_display_configuration = configuration
         table = paginate(
-            table_rows(rows, saved),
+            table_rows(rows, saved, own),
             paging,
             prefix=PREFIX,
             sorting=USER_SORTING,
@@ -298,9 +333,11 @@ def users(request):
                 "refresh_url": request.get_full_path(),
                 "new_url": reverse("admin:user_new"),
                 "delete_url": reverse("admin:user_delete"),
-                # From every user, not only this page's rows: the one
-                # Administrator may be on another page.
-                "only_administrator": len(administrator_ids(saved)) == 1,
+                # Why the reader's own row has no Delete, said whichever page
+                # it is on. The reader is always an Administrator, so the
+                # only Administrator, when there is one, is the reader too,
+                # and the own-Administrator rule is the one that governs.
+                "delete_reason": OWN_DELETE,
             },
         )
         with transaction.atomic():
@@ -328,16 +365,26 @@ def recorded_identities(email):
 
 
 def _entry_context(
-    request, form, *, user=None, user_id=None, users, digest, identities=()
+    request,
+    form,
+    *,
+    user=None,
+    user_id=None,
+    users,
+    digest,
+    identities=(),
+    own_email=None,
 ):
     """Everything New and Edit user draw besides the form itself.
 
-    On Edit, the lower roles are unavailable for the only Administrator, with
-    the reason in a line that is always there (#563, no layout shift); the
-    recorded Google identities of the address (``recorded_identities``) give
-    its disabled-identity line and one Sign-in activity button each.
+    On Edit, the lower roles are unavailable for the reader's own user and
+    for the only Administrator, with the reason in a line that is always
+    there (#563, no layout shift); the recorded Google identities of the
+    address (``recorded_identities``) give its disabled-identity line and one
+    Sign-in activity button each.
     """
-    locked = user_id is not None and only_administrator(users, user_id)
+    own = user_id is not None and user_id in own_user_ids(users, own_email)
+    locked = own or (user_id is not None and only_administrator(users, user_id))
     identities = list(identities)
     return {
         "form": form,
@@ -353,6 +400,7 @@ def _entry_context(
             for role in reversed(ROLE_LABELS)
         ],
         "locked": locked,
+        "locked_reason": (OWN_ROLE if own else LAST_ADMINISTRATOR) if locked else "",
         "identities": identities,
         "disabled_count": sum(row["disabled"] for row in identities),
         "base_digest": digest,
@@ -398,10 +446,15 @@ def _entries(form, user_id):
 def _refuse(form, refused):
     """Show a builder refusal at its field, or for the page as a whole."""
     field = refused.field if refused.field in form.fields else None
-    message = (
-        LAST_ADMINISTRATOR if refused.code == "last_administrator" else refused.message
-    )
-    form.add_error(field, message)
+    form.add_error(field, _refusal_message(refused))
+
+
+def _refusal_message(refused):
+    """A builder refusal in the page's words: the guards name the user."""
+    return {
+        "last_administrator": LAST_ADMINISTRATOR,
+        "own_administrator": OWN_ROLE,
+    }.get(refused.code, refused.message)
 
 
 def _review(request, service, actor, configuration, changes, patch):
@@ -412,11 +465,6 @@ def _review(request, service, actor, configuration, changes, patch):
     # The whole resulting configuration is validated now, so a change the
     # installer would refuse is refused here, before anything is signed.
     build_candidate(base, patch, candidate_id=uuid4())
-    own = (
-        PortalUser.objects.filter(pk=actor.identity)
-        .values_list("email", flat=True)
-        .first()
-    )
     (change,) = changes
     admin_navigation.place(request, flow="change", step="review")
     return render(
@@ -426,7 +474,6 @@ def _review(request, service, actor, configuration, changes, patch):
             "change": change,
             "before_role": ROLE_LABELS.get((change.before or {}).get("role")),
             "after_role": ROLE_LABELS.get((change.after or {}).get("role")),
-            "self_demoted": own == change.email and change.removes_administrator,
             "preview": sign_preview(
                 actor=actor, configuration=configuration, patch=patch, salt=SALT
             ),
@@ -470,6 +517,7 @@ def _entry(request, service, actor, user_id=None):
             else {"name": user["name"], "role": user["role"]}
         )
         form = UserForm(posted, initial=initial, new=new)
+        own = acting_email(actor.identity)
         context = _entry_context(
             request,
             form,
@@ -478,6 +526,7 @@ def _entry(request, service, actor, user_id=None):
             users=users,
             digest=digest,
             identities=() if new else recorded_identities(user["email"]),
+            own_email=own,
         )
         request._stewardship_display_configuration = configuration
         admin_navigation.place(request, flow="change", step="edit")
@@ -489,7 +538,9 @@ def _entry(request, service, actor, user_id=None):
             return _entry_page(request, context, status=400)
         try:
             changes, patch = plan_changes(
-                records, _entries(form, None if new else str(user_id))
+                records,
+                _entries(form, None if new else str(user_id)),
+                own_email=own,
             )
         except UserRefused as refused:
             if refused.code == "missing":
@@ -564,15 +615,17 @@ def user_delete(request):
                 raise StaleRecordError("Reload Users before deleting a user.")
             try:
                 _changes, patch = plan_changes(
-                    records, [{"id": user_id, "delete": True}]
+                    records,
+                    [{"id": user_id, "delete": True}],
+                    own_email=acting_email(actor.identity),
                 )
             except UserRefused as refused:
                 if refused.code == "missing":
                     raise _missing() from None
                 raise UserFacingError(
-                    LAST_ADMINISTRATOR
-                    if refused.code == "last_administrator"
-                    else refused.message,
+                    OWN_DELETE
+                    if refused.code == "own_administrator"
+                    else _refusal_message(refused),
                     fix=_("Nothing was deleted."),
                 ) from None
             token = sign_preview(

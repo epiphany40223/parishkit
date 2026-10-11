@@ -2,23 +2,27 @@
 
 The browser checks need no database:
 
-- ``LIST``: four users. The Administrator signed in with one recorded
+- ``LIST``: four users, read by admin@example.org (``READER``), whose own
+  row has no Delete. The Administrator signed in with one recorded
   identity; a Staff user has a long address and Name (cut short with an
-  ellipsis); a Ministry leader has two identities (so its Sign-in activity
-  opens Edit user); another Administrator never signed in. It is sorted by
-  Email, and by Role descending at its Role heading's address. Its Delete
-  posts to ``DELETE``, which answers as the server does: a redirect to the
-  change's status page, here already Applied, after which the dialog
-  redraws the table from ``LIST``'s refresh address, without the Ministry
-  leader.
+  ellipsis); a Ministry leader has two identities; another Administrator
+  never signed in. It is sorted by Email, and by Role descending at its
+  Role heading's address. Its Delete posts to ``DELETE``, which answers as
+  the server does: a redirect to the change's status page, here already
+  Applied, after which the dialog redraws the table from ``LIST``'s refresh
+  address, without the Ministry leader.
 - ``SINGLE``: only the Administrator, who has no Delete.
+- ``PENDING``: a change's status page still applying, for the follow-up's
+  refused status read; ``LIST_PENDING`` is ``LIST`` whose Delete posts to
+  ``DELETE_PENDING``, which redirects there.
 - ``NEW``: New user. Its Email lookup posts to ``NAMES``, which answers two
   ParishSoft names; ``NEW_TAKEN``'s posts to ``NAMES_TAKEN``, which answers
   that the address is already a user. Review posts to ``REVIEW_POST``, which
   answers with ``REVIEW``.
 - ``EDIT_ONLY``: Edit user for the only Administrator: the lower roles are
-  unavailable with the reason; ``EDIT``: Edit user for the Ministry leader,
-  with two identities, one disabled.
+  unavailable with the reason; ``EDIT_OWN``: the reader's own Edit user
+  while another Administrator remains, the same; ``EDIT``: Edit user for
+  the Ministry leader, with two identities, one disabled.
 
 ``POSTS`` lists the fixture server's answers to the pages' POSTs; it is
 filled in by ``components``, before the server starts.
@@ -30,13 +34,10 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from django.template.loader import render_to_string
 
-from parishkit.stewardship.accounts.user_changes import (
-    administrator_ids,
-    plan_changes,
-    saved_users,
-)
+from parishkit.stewardship.accounts.user_changes import plan_changes, saved_users
 from parishkit.stewardship.accounts.user_reads import USER_SORTING, user_list
 from parishkit.stewardship.accounts.user_views import (
+    OWN_DELETE,
     PREFIX,
     UserForm,
     _entry_context,
@@ -51,6 +52,9 @@ SINGLE = "/users-single"
 DELETED = "/users-one-deleted"
 DELETE = "/users/deletion"
 APPLIED = "/users-change-applied"
+PENDING = "/users-change-pending"
+LIST_PENDING = "/users-delete-pending"
+DELETE_PENDING = "/users/deletion-pending"
 NEW = "/user-new"
 NEW_TAKEN = "/user-new-taken"
 NAMES = "/user-names"
@@ -59,6 +63,9 @@ REVIEW_POST = "/user-new/review"
 REVIEW = "/user-review"
 EDIT = "/user-edit"
 EDIT_ONLY = "/user-edit-only"
+EDIT_OWN = "/user-edit-own"
+# The signed-in Administrator the pages are drawn for.
+READER = "admin@example.org"
 LONG_EMAIL = "a-very-long-address-for-the-parish-office-staff@stewardship.example.org"
 LONG_NAME = "Montgomery-Fitzwilliam, Bartholomew Alexander Christopher"
 SUGGESTED = ["Smith, Ann", "Smith, Bob"]
@@ -98,11 +105,11 @@ class Request:
         self.path = path
 
 
-def _list(values, records, *, sort="email", refresh=LIST):
+def _list(values, records, *, sort="email", refresh=LIST, delete=DELETE):
     """The Users page for ``records``, sorted by ``sort``."""
     rows = user_list(records, IDENTITIES)
     table = paginate(
-        table_rows(rows, saved_users(records)),
+        table_rows(rows, saved_users(records), READER),
         {f"{PREFIX}sort": sort},
         prefix=PREFIX,
         sorting=USER_SORTING,
@@ -117,8 +124,8 @@ def _list(values, records, *, sort="email", refresh=LIST):
                 "base_digest": "a" * 64,
                 "refresh_url": refresh,
                 "new_url": NEW,
-                "delete_url": DELETE,
-                "only_administrator": len(administrator_ids(saved_users(records))) == 1,
+                "delete_url": delete,
+                "delete_reason": OWN_DELETE,
             },
         ),
     )
@@ -147,6 +154,7 @@ def _entry(values, records, *, record=None, names_url=NAMES, post=REVIEW_POST):
         users=users,
         digest="a" * 64,
         identities=known,
+        own_email=READER,
     )
     context |= {"post_url": post, "list_url": LIST, "names_url": names_url}
     return (
@@ -170,7 +178,6 @@ def components(context, admin):
             "change": change,
             "before_role": None,
             "after_role": "Staff",
-            "self_demoted": False,
             "preview": "synthetic-preview",
             "post_url": LIST,
             "list_url": LIST,
@@ -179,6 +186,10 @@ def components(context, admin):
     status = render_to_string(
         "stewardship/configuration-request.html",
         values | {"receipt": {"request_id": uuid4(), "state": "applied"}},
+    )
+    pending = render_to_string(
+        "stewardship/configuration-request.html",
+        values | {"receipt": {"request_id": uuid4(), "state": "validating"}},
     )
     responses = {
         LIST: _list(values, records, refresh=DELETED),
@@ -191,12 +202,16 @@ def components(context, admin):
         NEW_TAKEN: _entry(values, records, names_url=NAMES_TAKEN),
         EDIT: _entry(values, records, record=LEADER, post=EDIT),
         EDIT_ONLY: _entry(values, [ADMIN, STAFF], record=ADMIN, post=EDIT_ONLY),
+        EDIT_OWN: _entry(values, records, record=ADMIN, post=EDIT_OWN),
         REVIEW: ("text/html", review),
         APPLIED: ("text/html", status),
+        PENDING: ("text/html", pending),
+        LIST_PENDING: _list(values, records, delete=DELETE_PENDING),
     }
     POSTS.update(
         {
             DELETE: (303, APPLIED, ""),
+            DELETE_PENDING: (303, PENDING, ""),
             NAMES: (200, None, json.dumps({"error": None, "names": SUGGESTED})),
             NAMES_TAKEN: (
                 200,

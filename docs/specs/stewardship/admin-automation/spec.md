@@ -2412,7 +2412,11 @@ checks, audit and alerts:
   default); users it does not name stay unchanged. The document is
   `{"users": [...]}`. `users confirm` records `admin_cmd_users_confirm` and
   the page's `user_change_requested`, and a high-impact change also leaves
-  the `policy_change` automation notice.
+  the `policy_change` automation notice. The commands act as the
+  Administrator who approved the session, so the page's
+  [own-Administrator guard](../admin-portal/spec.md#user-change-checks-and-alerts)
+  refuses an entry that demotes or deletes that Administrator's own user
+  (`invalid`); another Administrator makes that change.
 - `users import-leaders --preview` lists the ParishSoft Ministry leaders
   without a user, as the page's second table does (email, Name and Member
   DUID), and the import it would make; `--all` or repeated `--email` choose
