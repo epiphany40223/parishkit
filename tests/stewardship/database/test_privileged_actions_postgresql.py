@@ -2,15 +2,17 @@
 
 import json
 from datetime import timedelta
-from importlib import import_module
 from uuid import uuid4
 
 import pytest
-from django.conf import settings
 from django.db import transaction
 from django.test import RequestFactory
 from django.utils import timezone
 
+from parishkit.stewardship.accounts.admin_session_store import (
+    SessionStore as AdminSessionStore,
+)
+from parishkit.stewardship.accounts.admin_session_store import digest
 from parishkit.stewardship.accounts.credential_handoff import PrivateHandoff
 from parishkit.stewardship.accounts.cryptography import Key
 from parishkit.stewardship.accounts.key_files import file_fingerprint
@@ -43,9 +45,7 @@ def admitted_request(browser):
     routes. Future owner forms must use normal middleware, never client flags.
     """
     request = RequestFactory().post("/admin/configuration")
-    request.session = import_module(settings.SESSION_ENGINE).SessionStore(
-        browser.cookies["pk_admin"].value
-    )
+    request.session = AdminSessionStore(browser.cookies["pk_admin"].value)
     request.csrf_processing_done = True
     return request
 
@@ -68,7 +68,7 @@ def test_configuration_intent_uses_live_actor_and_atomic_audit(auth_service, goo
     intent = config_intent(auth_service)
     status = configuration_request(request, **intent)
     row = ConfigurationChangeRequest.objects.get(pk=status.request_id)
-    session = PortalSession.objects.get(session_id=request.session.session_key)
+    session = PortalSession.objects.get(session_id=request.session.stored_key)
     assert row.actor_id == session.principal_id
     assert AuditEvent.objects.filter(
         subject_id=row.pk, actor_id=row.actor_id, event_type="config_request_staged"
@@ -126,7 +126,7 @@ def test_current_staff_role_denies_even_with_old_admin_cookie(auth_service, goog
         configuration_request(request, **config_intent(auth_service))
     assert ConfigurationChangeRequest.objects.count() == before
     assert request.session.session_key == old_session
-    assert PortalSession.objects.filter(session_id=old_session).exists()
+    assert PortalSession.objects.filter(session_id=digest(old_session)).exists()
 
 
 def secret_intent():
@@ -158,7 +158,7 @@ def test_sealed_intake_privacy_and_audit_share_real_authentication(
     assert (
         row.requested_by_id
         == PortalSession.objects.get(
-            session_id=browser.cookies["pk_admin"].value
+            session_id=digest(browser.cookies["pk_admin"].value)
         ).principal_id
     )
     artifacts = json.dumps(
@@ -188,9 +188,9 @@ def test_missing_session_after_actor_lookup_is_a_uniform_secret_denial(
     browser, _ = signed_in()
     request = admitted_request(browser)
     actor = PortalSession.objects.get(
-        session_id=request.session.session_key
+        session_id=request.session.stored_key
     ).principal_id
-    PortalSession.objects.filter(session_id=request.session.session_key).delete()
+    PortalSession.objects.filter(session_id=request.session.stored_key).delete()
     monkeypatch.setattr(privileged_actions, "_actor", lambda _: actor)
     _, intent = secret_intent()
     with pytest.raises(PermissionError, match="Access is unavailable"):
@@ -267,7 +267,7 @@ def test_admission_requires_owning_transaction_and_closed_action(auth_service, g
     browser, _ = signed_in()
     request = admitted_request(browser)
     actor = PortalSession.objects.get(
-        session_id=request.session.session_key
+        session_id=request.session.stored_key
     ).principal_id
     with pytest.raises(StorageInvariantError):
         admit_admin_action(request, actor_id=actor, action=Action.CONFIGURATION_REQUEST)

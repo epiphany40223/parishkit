@@ -47,6 +47,7 @@ def command_scope(caller, service, actor, *, admit=background_principal):
     which its tests replace). The lock is on the caller's own session row:
     the browser's, or the command session of an automation caller.
     """
+    from parishkit.stewardship.accounts.admin_session_store import stored_key
     from parishkit.stewardship.accounts.models import PortalSession
     from parishkit.stewardship.campaigns.work_locks import work_transaction
 
@@ -55,7 +56,7 @@ def command_scope(caller, service, actor, *, admit=background_principal):
             # Lock without rotating cookies or writing session maintenance in a
             # transaction that the domain command may subsequently roll back.
             PortalSession.objects.select_for_update().filter(
-                session_id=caller.session.session_key
+                session_id=stored_key(caller.session)
             ).first()
             current = admit(caller, service.store, final=True)
             if current.identity != actor.identity:

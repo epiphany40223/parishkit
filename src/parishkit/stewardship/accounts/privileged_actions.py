@@ -11,6 +11,7 @@ from parishkit.stewardship.audit.schemas import Action
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .admin_caller import as_caller, is_automation
+from .admin_session_store import stored_key
 from .authentication import runtime
 from .configuration_requests import record_request
 from .models import PortalSession, PortalUser, SystemConfiguration
@@ -65,7 +66,7 @@ def admit_admin_action(caller, *, actor_id, action):
     if (
         not PortalSession.objects.select_for_update()
         .filter(
-            session_id=caller.session.session_key,
+            session_id=stored_key(caller.session),
             principal_id=actor_id,
             revoked_at__isnull=True,
         )
@@ -96,7 +97,7 @@ def _actor(caller):
     caller = as_caller(caller)
     actor = (
         PortalSession.objects.filter(
-            session_id=caller.session.session_key, revoked_at__isnull=True
+            session_id=stored_key(caller.session), revoked_at__isnull=True
         )
         .values_list("principal_id", flat=True)
         .first()
@@ -136,7 +137,7 @@ def sealed_secret_request(request, *, configuration_digest=None, **intent):
         )
     actor = _actor(request)
     session = PortalSession.objects.filter(
-        session_id=request.session.session_key,
+        session_id=stored_key(request.session),
         principal_id=actor,
         revoked_at__isnull=True,
     ).first()

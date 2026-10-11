@@ -224,7 +224,7 @@ def test_active_attempt_cleanup_is_nonmutating_and_anonymous_is_denied(setup_ser
     assert PortalSession.objects.get().last_activity_at == activity
     anonymous = RequestFactory().post("/admin/setup")
     anonymous.session = SessionStore()
-    with pytest.raises(PermissionError):
+    with pytest.raises(PermissionError, match="requires an Administrator"):
         begin_setup(anonymous, setup_service)
 
 
