@@ -79,7 +79,7 @@ def delivery_list():
         {
             "values": {"state": "all", "q": "", "sort": "-created"},
             "window": WINDOW,
-            "rows": [MESSAGE_ROW],
+            "rows": [MESSAGE_ROW | {"refused": 2}],
             "has_next": False,
             "total": (1, False),
             "send": None,
@@ -231,7 +231,7 @@ GOLDEN |= {
             "has_next": False,
             "matching": 1,
             "matching_capped": False,
-            "deliveries": [DELIVERY],
+            "deliveries": [DELIVERY | {"refused": 2}],
         },
     ),
     "delivery show": (
@@ -357,7 +357,10 @@ ALLOWED = {
         "type",
         "state",
     },
-    "delivery list": {"state", "send", "deliveries"} | PAGE_MEMBERS | DELIVERY_MEMBERS,
+    # ``refused`` is the page's count of unresolved refused addresses (#1004).
+    "delivery list": {"state", "send", "deliveries", "refused"}
+    | PAGE_MEMBERS
+    | DELIVERY_MEMBERS,
     "delivery show": {
         "delivery",
         "task",

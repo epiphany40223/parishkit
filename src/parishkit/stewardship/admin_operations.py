@@ -236,7 +236,11 @@ NOTE_LIMIT = 2000
 
 @dataclass(frozen=True)
 class DeliveryList(ReadModel):
-    """One page of Outgoing mail: delivery metadata, never a recipient."""
+    """One page of Outgoing mail: delivery metadata, never a recipient.
+
+    Each row adds ``refused``, the page's count of the email's unresolved
+    refused addresses (#1004); ``delivery show`` has no such count.
+    """
 
     state: str
     send: str | None
@@ -335,7 +339,9 @@ def delivery_list_model(data):
         has_next=data["has_next"],
         matching=count,
         matching_capped=capped,
-        deliveries=[delivery_row(row) for row in data["rows"]],
+        deliveries=[
+            delivery_row(row) | {"refused": row["refused"]} for row in data["rows"]
+        ],
     )
 
 
@@ -444,11 +450,16 @@ def _delivery_read(caller, service, read, project, *, subject=None, audit=True):
 
 def read_deliveries(caller, service, parameters):
     """``delivery list``: one filtered page of Outgoing mail."""
-    from .jobs.delivery_reads import read_listing
+    from .jobs.delivery_reads import read_listing, with_refusal_counts
 
     def project(data):
-        """The document, and the page's audited row count."""
-        return delivery_list_model(data), len(data["rows"])
+        """The document, and the page's audited row count.
+
+        The rows take the page's refused counts (#1004), in the read's
+        transaction, from the same query Outgoing mail runs.
+        """
+        rows = with_refusal_counts(data["rows"])
+        return delivery_list_model(data | {"rows": rows}), len(rows)
 
     return _delivery_read(caller, service, lambda: read_listing(parameters), project)
 
