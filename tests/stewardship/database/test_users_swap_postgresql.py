@@ -430,6 +430,123 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
         )
 
 
+def catalog(cursor):
+    """Every routine and relation in ``public``, by oid, with how to name it.
+
+    Routines (functions and procedures, every overload) are named by their
+    full ``regprocedure`` signature; relations (tables, views, sequences
+    and the rest) by kind and name.
+    """
+    cursor.execute(
+        "SELECT oid, oid::regprocedure::text FROM pg_proc "
+        "WHERE pronamespace='public'::regnamespace"
+    )
+    routines = dict(cursor.fetchall())
+    cursor.execute(
+        "SELECT oid, relkind::text || ' ' || relname FROM pg_class "
+        "WHERE relnamespace='public'::regnamespace"
+    )
+    return routines, dict(cursor.fetchall())
+
+
+def test_closure_functions_list_every_granted_routine_the_swap_closure_adds(
+    tmp_path,
+):
+    """No grant names an object only the users swap's closure creates, unlisted.
+
+    A scratch database is migrated as ``migrate --users-upgrade-base`` would
+    (every app to its target before the swap), then through each closure
+    migration in order, and the catalog is diffed after each step, so
+    whatever SQL spelling a migration uses (quoting, an unqualified name,
+    IF NOT EXISTS, an overload, a view or a procedure) the objects it adds
+    are what PostgreSQL reports. A granted routine among them must be in
+    CLOSURE_FUNCTIONS with the migration that adds it, so database-grants
+    waits for it on the base (#952); a granted table or view has no such
+    wait, so none may be among them. Registry names are resolved by the
+    database too, so type spellings need not match.
+    """
+    import psycopg
+    from django.db.migrations.loader import MigrationLoader
+
+    from parishkit.stewardship.operator_commands import users_upgrade_targets
+    from parishkit.stewardship.runtime_grants import (
+        CLOSURE_FUNCTIONS,
+        MEMBER_NAMES_FOR_FUNCTION,
+        runtime_functions,
+        runtime_grants,
+    )
+    from parishkit.stewardship.runtime_identities import database_identities
+
+    from .test_upgrade_parity_postgresql import (
+        ROOT,
+        SETTINGS,
+        database_parameters,
+        drop_database,
+        migrate,
+    )
+
+    loader = MigrationLoader(None, ignore_no_migrations=True)
+    closure = runtime_database.users_swap_closure(loader.graph)
+    # The closure in an order that applies each migration after its parents.
+    steps = []
+    for leaf in sorted(loader.graph.leaf_nodes()):
+        steps += [
+            key
+            for key in loader.graph.forwards_plan(leaf)
+            if key in closure and key not in steps
+        ]
+    assert USERS_SWAP in steps and set(CLOSURE_FUNCTIONS.values()) <= closure
+    settings_directory = tmp_path / "settings"
+    settings_directory.mkdir()
+    (settings_directory / "upgrade_parity_settings.py").write_text(SETTINGS)
+    source = ROOT / "src"
+    scratch = f"{connection.settings_dict['NAME']}_closure"
+    with psycopg.connect(
+        **database_parameters(connection.settings_dict["NAME"]), autocommit=True
+    ) as maintenance:
+        drop_database(maintenance, scratch)
+        maintenance.execute(f'CREATE DATABASE "{scratch}"')
+        try:
+            for target in users_upgrade_targets(loader):
+                migrate(source, settings_directory, scratch, "base", target)
+            added_routines, added_relations = {}, {}
+            with psycopg.connect(**database_parameters(scratch)) as database:
+                routines, relations = catalog(database.cursor())
+                database.rollback()
+                for key in steps:
+                    migrate(source, settings_directory, scratch, "closure", key)
+                    after_routines, after_relations = catalog(database.cursor())
+                    database.rollback()
+                    for oid in after_routines.keys() - routines.keys():
+                        added_routines[oid] = (after_routines[oid], key)
+                    for oid in after_relations.keys() - relations.keys():
+                        added_relations[oid] = (after_relations[oid], key)
+                    routines, relations = after_routines, after_relations
+
+                def resolve(kind, name):
+                    """The oid the registry's name resolves to, or None."""
+                    cursor = database.cursor()
+                    cursor.execute(f"SELECT {kind}(%s)::oid", [f"public.{name}"])
+                    return cursor.fetchone()[0]
+
+                lookup = resolve("to_regprocedure", MEMBER_NAMES_FOR_FUNCTION)
+                assert lookup in added_routines
+                for _, _, role, target in database_identities():
+                    if role is ServiceRole.MIGRATION:
+                        continue
+                    for function in runtime_functions(role, target=target):
+                        oid = resolve("to_regprocedure", function)
+                        assert oid is not None, function
+                        key = added_routines.get(oid, (None, None))[1]
+                        assert CLOSURE_FUNCTIONS.get(function) == key, function
+                    tables, columns = runtime_grants(role, target=target)
+                    for table in tables.keys() | columns.keys():
+                        oid = resolve("to_regclass", table)
+                        assert oid not in added_relations, added_relations[oid]
+        finally:
+            drop_database(maintenance, scratch)
+
+
 def reads_domain_rules(name):
     """Whether the installed body of one replaced function names domain rules."""
     return "stewardship_domain_rule" in scalar(

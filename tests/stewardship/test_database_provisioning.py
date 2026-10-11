@@ -1,9 +1,6 @@
 """Fast operator refusal/SQL-shape tests complement real isolated PostgreSQL runs."""
 
-import re
-import sys
 from dataclasses import replace
-from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -13,12 +10,9 @@ from parishkit.config import ConfigError
 from parishkit.stewardship import database_provisioning as provisioning
 from parishkit.stewardship.accounts.key_files import write_private
 from parishkit.stewardship.deployment import ServiceRole
-from parishkit.stewardship.runtime_database import users_swap_closure
 from parishkit.stewardship.runtime_grants import (
     CLOSURE_FUNCTIONS,
     MEMBER_NAMES_FOR_FUNCTION,
-    runtime_functions,
-    runtime_grants,
 )
 from parishkit.stewardship.runtime_identities import database_identities
 
@@ -306,52 +300,6 @@ def test_grants_wait_for_the_users_swap_closures_functions(
     assert len(statements) == len(
         grant_statements(tmp_path, monkeypatch, CLOSURE_FUNCTIONS.values())[1]
     ) - (0 if applied else 1)
-
-
-CREATED = re.compile(
-    r"CREATE (?:OR REPLACE )?(FUNCTION|TABLE) public\.(\w+)", re.IGNORECASE
-)
-
-
-def test_closure_functions_list_every_granted_routine_the_swap_closure_adds():
-    """No grant names an object only the users swap's closure creates, unlisted.
-
-    The closure is read from the migration files on disk, and the objects
-    each member's frozen SQL creates that neither the baseline schema nor a
-    frozen file outside the closure creates are what the users upgrade's
-    base lacks (#952). A granted routine among them must be in
-    CLOSURE_FUNCTIONS with its own migration, so database-grants waits for
-    it there; a granted table has no such wait, so none may be among them.
-    """
-    from django.db.migrations.loader import MigrationLoader
-
-    loader = MigrationLoader(None, ignore_no_migrations=True)
-    closure = users_swap_closure(loader.graph)
-    schema = Path(provisioning.__file__).with_name("schema")
-    base_sql = [path.read_text() for path in schema.glob("*.sql")]
-    added = {}
-    for key, migration in loader.disk_migrations.items():
-        frozen = getattr(sys.modules[migration.__module__], "FROZEN_SQL", None)
-        if key in closure:
-            assert frozen is not None, f"{key} has no frozen SQL file to read"
-            for kind, name in CREATED.findall(Path(frozen).read_text()):
-                added.setdefault((kind.upper(), name), key)
-        elif frozen is not None:
-            base_sql.append(Path(frozen).read_text())
-    for text in base_sql:
-        for kind, name in CREATED.findall(text):
-            added.pop((kind.upper(), name), None)
-    assert ("FUNCTION", MEMBER_NAMES_FOR_FUNCTION.split("(")[0]) in added
-    assert set(CLOSURE_FUNCTIONS.values()) <= closure
-    for _, _, role, target in database_identities():
-        if role is ServiceRole.MIGRATION:
-            continue
-        for function in runtime_functions(role, target=target):
-            key = added.get(("FUNCTION", function.split("(")[0]))
-            assert CLOSURE_FUNCTIONS.get(function) == key, function
-        tables, columns = runtime_grants(role, target=target)
-        for table in tables.keys() | columns.keys():
-            assert ("TABLE", table) not in added, table
 
 
 @pytest.mark.parametrize("installed", ["current", "older", "missing"])

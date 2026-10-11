@@ -108,18 +108,21 @@ def export_release(tag, directory):
     return directory / "src"
 
 
-def migrate(source, settings_directory, database, label):
+def migrate(source, settings_directory, database, label, target=()):
     """Run Django's ``migrate`` from one source tree against one database.
 
     The tree goes first on PYTHONPATH so it shadows any installed copy of the
     package, and the generated settings module refuses to run if it did not.
+    ``target`` is an optional ``(app, name)`` to migrate to instead of every
+    leaf.
     """
     environment = dict(os.environ)
     environment["PYTHONPATH"] = os.pathsep.join([str(settings_directory), str(source)])
     environment["DJANGO_SETTINGS_MODULE"] = "upgrade_parity_settings"
     environment["UPGRADE_PARITY_SOURCE"] = str(source)
     environment["UPGRADE_PARITY_DATABASE"] = database
-    command = [sys.executable, "-m", "django", "migrate", "--noinput", "-v", "0"]
+    command = [sys.executable, "-m", "django", "migrate", *target]
+    command += ["--noinput", "-v", "0"]
     started = time.monotonic()
     try:
         result = subprocess.run(
