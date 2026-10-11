@@ -1615,7 +1615,8 @@ signatures:
   read with its stored file's receipt (`export_services.export_state`).
 - **PR 8c to 8g:** report reads and the Family-level exports from the
   report and export views; for `digest list`, the Emailed reports page's
-  lists as `emailed_views.listing`.
+  lists as `emailed_views.listing`. `report source-form` needed none: the
+  page's admission and `blocked_families` were already request-free.
 - **PR 9a:** `delivery_views.preparation_retry` and
   `export_views.retry_cleanup_command`, with the delivery views' admission and
   command scope (`jobs.task_retries`).
@@ -2240,7 +2241,23 @@ lists the fields and refusals.
 | `system_mail_check`, `system_mail_clear` (ADM-13) | `system mail-clear-preview` (starts the mailbox check and waits for it), `system mail-clear --token …` |
 | `system_refresh_accept` (ADM-13) | `system refresh-accept-preview`, `system refresh-accept --token …` |
 | `system_debug_off`, `system_debug_allow` (ADM-13) | `system debug-off`; `system debug-allow` (Testing only) |
-| `source_form` ([#774](https://github.com/epiphany40223/parishkit/issues/774)) | `report source-form` (PR 8), counts and DUIDs only; until then the host's `pk-stewardship source-form-check` lists the same Families |
+| `source_form` ([#774](https://github.com/epiphany40223/parishkit/issues/774)) | `report source-form`, counts and DUIDs only ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the host's `pk-stewardship source-form-check` lists the same Families |
+
+`report source-form` is System health's Families the form cannot open
+list, through the page's own functions (`source_form_views._principal`,
+its current-campaign read and `reports.source_form.blocked_families`
+inside the campaign read guard): Administrators only, as the page, with
+any session scope. It prints `campaign_id` (null without a current
+campaign, with counts of 0 and no rows), `eligible`, `families` and one
+row per finding (`family_duid`, `member_duid`, `field` in the page's
+words), never the Family name the page shows or a Member value, and
+records the page's `source_form_viewed` with the number of Families
+listed (`failed` with 0 when a begun read fails). A missing configuration
+row is `not_available`; a check that cannot run now is `unavailable`.
+Leaving out the Family name and printing `field` in the page's words are
+defaults, pending Administrator confirmation. The
+[operator guide](../../../guides/stewardship-admin-automation.md#reports)
+lists the fields.
 
 `system health` covers the page, its fragment and `/admin/system/`
 (ADM-13 PR 2b). The other ADM-13 rows name routes and commands that do not
@@ -2782,7 +2799,7 @@ exactly the commands that exist.
 - **PR 8, reports and exports,** in five parts. **PR 8a:** the log commands.
   **PR 8b:** the export lifecycle with streamed fetch (including the
   wrapper's `export fetch` and its tests). **PR 8c:** the aggregate report
-  reads. **PR 8d:** digests (`digest daily`, `digest weekly`,
+  reads, and later `report source-form`. **PR 8d:** digests (`digest daily`, `digest weekly`,
   `digest weekly-request`, and later `digest list`). **PR 8e:** the Family-level exports that
   create an export record without the Family keys (`export financial`,
   `export information`, `export ministry`, `export ministry-packet`).
