@@ -72,8 +72,10 @@ _COMMAND_OPTIONS = {
         "confirm_email",
         "operator_name",
         "reason",
+        # A new Administrator user's Name in the users form (#952).
+        "name",
     },
-    "preview-admin-recovery": {"config", "confirm_deployment", "target_email"},
+    "preview-admin-recovery": {"config", "confirm_deployment", "target_email", "name"},
     # The one offline conversion of sign-in rules into users (#952).
     "upgrade-users": {
         "config",
@@ -234,6 +236,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "ca-file",
         "backup-at",
         "confirm-administrators",
+        "name",
     ):
         parser.add_argument("--" + option)
     parser.add_argument(
