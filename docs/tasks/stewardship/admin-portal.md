@@ -556,8 +556,19 @@ receipt check), `tests/stewardship/test_admin_cli.py`,
 only in the file, the stream equal to the page's download, a keyring
 mismatch with nothing made, a read-only session refused, a busy key lock as
 exit 3), and the real admission's keyring wiring in
-`tests/stewardship/test_admin_cli.py`. 8g (the one-Family timeline, the
-in-memory downloads and the exact exports) follows.
+`tests/stewardship/test_admin_cli.py`. 8h adds the exact daily exports
+(`export exact create`, `export exact status`, `export exact cancel`,
+`export exact retry`) through the page's own exact-export services; proven
+by `tests/stewardship/test_admin_exact_exports.py` (the documents, when a
+watch stops, the catalog), `tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py` and
+`tests/stewardship/database/test_admin_exact_export_cli_postgresql.py`
+(create, repeat and the page's form with the same key, a bound key, retry
+by key, the real calculation and render, a read-only watch to the end, the
+handed-off file, cancel before handoff and after publication, unknown
+requests). 8g (the one-Family timeline, a new export kind with its own
+frozen migration, in its own pull request) and the in-memory downloads
+(Limitations, response lists, when PR #752 lands) follow.
 A follow-up (#682) lets `delivery resolve` retry Family emails too, loading
 the web's general and public token keyrings only for that, checked against
 the web's published receipts; proven by `tests/stewardship/test_admin_cli.py`,

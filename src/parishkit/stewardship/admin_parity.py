@@ -188,10 +188,10 @@ LEDGER = {
     # lifecycle and its fetch, 8c the aggregate report reads, 8d the
     # digests, 8e the Family-level exports that create an export record
     # without the Family keys, 8f the Family directory's exports (the code
-    # MAC keyring loaded only for them), and 8g the rest: the one-Family
-    # timeline (a new export kind, a schema change), the in-memory downloads
-    # (limitations, response lists; after #752's audit fields) and the exact
-    # daily exports.
+    # MAC keyring loaded only for them), 8g the one-Family timeline export (a
+    # new export kind, migration 0063, in its own pull request), and 8h the
+    # exact daily exports (part 1) and the in-memory downloads (limitations,
+    # response lists; part 2, after #752's audit fields).
     # The aggregate report reads (PR 8c): counts and summaries only; the
     # rows behind them are the Family-level exports (PR 8e and 8f).
     "reports": command("report list"),
@@ -201,7 +201,7 @@ LEDGER = {
     "daily_digest_download": permanent(IMAGES),
     "financial_report": command("report financial"),
     "limitations_report": command("report limitations"),
-    "census_changes": pending("PR 8g", "report census"),
+    "census_changes": pending("PR 8h", "report census"),
     "information_queue": command("report information"),
     # One Family's submission and its follow-up history: read with the
     # follow-up commands, as the Ministry follow-up items are, which print
@@ -215,8 +215,8 @@ LEDGER = {
     # A packet of the chosen Ministries' Members and contacts: an export.
     "ministry_packet": command("export ministry-packet"),
     "response_dashboard": command("report responses"),
-    "response_list": pending("PR 8g", "export responses"),
-    "response_list_export": pending("PR 8g", "export responses"),
+    "response_list": pending("PR 8h", "export responses"),
+    "response_list_export": pending("PR 8h", "export responses"),
     "family_directory": command("export directory", "export postal"),
     "family_timeline": pending("PR 8g", "export family-timeline"),
     # The header's Find a Family box (#561) runs the directory's search.
@@ -224,8 +224,8 @@ LEDGER = {
     # Creating a financial export is fresh-gated (#547): the command calls
     # the caller-aware require_fresh, as the page's view does.
     "financial_export": command("export financial"),
-    "limitations_export": pending("PR 8g", "export limitations"),
-    "census_changes_export": pending("PR 8g", "export census"),
+    "limitations_export": pending("PR 8h", "export limitations"),
+    "census_changes_export": pending("PR 8h", "export census"),
     "ministry_export": command("export ministry"),
     "information_export": command("export information"),
     # Both directory exports are fresh-gated (#547), as above.
@@ -234,12 +234,14 @@ LEDGER = {
     # Participation page's export form. The download's grant is issued and
     # consumed inside ``export download``.
     "report_export_create": command("export create"),
-    "report_export": command("export status"),
-    "report_export_cancel": command("export cancel"),
-    "report_export_retry": command("export retry"),
+    # The export pages also serve an exact request (report_exact_create's
+    # redirect), whose commands are the export exact ones (PR 8h).
+    "report_export": command("export status", "export exact status"),
+    "report_export_cancel": command("export cancel", "export exact cancel"),
+    "report_export_retry": command("export retry", "export exact retry"),
     "report_export_regenerate": command("export regenerate"),
     "report_export_download": command("export download"),
-    "report_exact_create": pending("PR 8g", "export exact"),
+    "report_exact_create": command("export exact create"),
     # The digests (PR 8d): the retained reports an emailed digest links to,
     # and the manual weekly report.
     "daily_digest_snapshot": command("digest daily"),
