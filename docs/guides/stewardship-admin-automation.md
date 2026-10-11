@@ -1173,11 +1173,12 @@ pk-admin export ministry-packet --format pdf --timezone America/New_York \
 pk-admin export fetch EXPORT_ID
 ```
 
-- `export financial` is the Financial report's export; `export
-  information` the Additional information page's, with `--history` for
-  each item's workflow history; `export ministry` the Ministry report's,
-  for the summary or, with `--ministry DUID --requests join|leave`, one
-  Ministry's list; `export ministry-packet` its follow-up packet, for the
+- `export financial` is the Financial stewardship page's export;
+  `export information` the Additional information page's, with
+  `--history` for each item's workflow history; `export ministry` the
+  Ministry requests page's, for the summary or, with
+  `--ministry DUID --requests join|leave`, one Ministry's list;
+  `export ministry-packet` its follow-up packet, for the
   Ministries `--ministry` names (repeat it; none means every Ministry you
   may report on) and `--history` for earlier versions.
 - `export financial` needs a recent Google sign-in on its page, so it asks

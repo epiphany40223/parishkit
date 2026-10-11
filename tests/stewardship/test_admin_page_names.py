@@ -249,6 +249,107 @@ def test_return_links_name_a_page(template):
         assert target in labels, (template, target)
 
 
+# A link whose whole text is one translated string, to an Admin page.
+PAGE_LINK = re.compile(
+    r"<a\b[^>]*href=\"{% url '(?:admin):(\w+)'[^%]*%}[^\"]*\"[^>]*>"
+    r'\s*{% translate "([^"]+)" %}\s*</a>'
+)
+
+
+def _former_names():
+    """Names the placement table's "Current names" column says a page replaced.
+
+    Left out: a former name that is some page's name today (Ministry
+    follow-up was the item's name and is now the queue's), placeholders,
+    quoted wording rather than a name, single generic words ("Message",
+    "Joining") that ordinary link text may start with, and rows that are
+    not pages (the shared header, a form action), whose Name column is a
+    parenthesised note other than "(retired)".
+    """
+    current = {str(page.label).lower() for page in navigation.PAGES.values()}
+    names = set()
+    for line in SPEC.read_text(encoding="utf-8").splitlines():
+        match = re.match(r"\| `\w+` \| ([^|]+?) \|(?:[^|]*\|){2} ([^|]+?) \|", line)
+        if not match:
+            continue
+        page_name, former = match.groups()
+        if page_name.startswith("(") and page_name != "(retired)":
+            continue
+        for name in re.split(r";| / ", former):
+            name = re.sub(r"\(.*?\)", "", name).strip()
+            if (
+                " " in name
+                and not name.startswith("_")
+                and not re.search("['\"]", name)
+                and name.lower() not in current
+            ):
+                names.add(name)
+    return names
+
+
+# Links still using a former name because an open PR edits the same line
+# (#520 tracks the rename). Renamed once that PR lands.
+FORMER_NAME_LINKS = {
+    # #1042 adds a Roster changes link to this line.
+    (
+        "ministry-followup.html",
+        "Ministry reports, including authorized Member contact details",
+    ),
+}
+
+
+def test_page_links_do_not_use_a_former_name():
+    """A link to an Admin page never calls it by a name the page replaced.
+
+    Action links ("Refresh now", "Open email") may word themselves freely;
+    a link whose text is a former page name ("ParishSoft refresh"), or
+    starts with one before a comma ("Ministry reports, …"), is a second
+    name for the page (rule 4).
+    """
+    former = _former_names()
+    found = set()
+    for path in sorted(TEMPLATE_DIR.glob("*.html")):
+        for _name, text in PAGE_LINK.findall(
+            COMMENT.sub("", path.read_text(encoding="utf-8"))
+        ):
+            for name in former:
+                # The whole text, or the name before a comma or dash, so
+                # "Return to Testing cleanup" is not "Return to Testing".
+                if re.match(rf"{re.escape(name)}(?:$|[,:;—])", text, re.I):
+                    found.add((path.name, text))
+    assert found == FORMER_NAME_LINKS, sorted(found ^ FORMER_NAME_LINKS)
+
+
+def test_former_names_are_read_from_the_spec():
+    """The placement table parse finds the renames it should guard."""
+    former = _former_names()
+    assert {"ParishSoft refresh", "Ministry reports", "Delivery controls"} <= former
+    # Each of a cell's " / " alternatives is a name of its own.
+    assert {"Participation export", "Financial stewardship export"} <= former
+    # Current names, a non-page row, quoted wording and single words are not.
+    assert not former & {"Ministry follow-up", "Every Admin page", "Message"}
+    assert not any('"' in name or "'" in name for name in former)
+
+
+# Templates that may link pages above their heading: Outgoing mail's links
+# lead to its sibling pages, not back up its trail.
+ABOVE_HEADING = {"deliveries.html"}
+
+
+def test_no_hand_written_way_back_above_the_heading():
+    """The breadcrumb is the way back; no Admin page repeats it above its
+    ``<h1>`` (rule 3). The setup wizard has no trail, so its steps may."""
+    found = set()
+    for path in sorted(TEMPLATE_DIR.glob("*.html")):
+        source = COMMENT.sub("", path.read_text(encoding="utf-8"))
+        content = source.partition("{% block content %}")[2]
+        if "<h1" not in content or path.name.startswith("setup-"):
+            continue
+        if "{% url 'admin:" in content.partition("<h1")[0]:
+            found.add(path.name)
+    assert found == ABOVE_HEADING, sorted(found ^ ABOVE_HEADING)
+
+
 # Names the pages had before NAV-4, NAV-5a and NAV-5b. Each is a page name
 # nobody should see again: a new link or message that uses one would bring
 # back a second name for a renamed page. Matched case-sensitively, as a
