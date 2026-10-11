@@ -44,6 +44,7 @@ from .delivery_reads import (
     ACTION_LABELS,
     REFUSAL_SORTING,
     current_snapshot,
+    email_refusals,
     read_detail,
     read_listing,
     read_refusal,
@@ -360,15 +361,27 @@ def delivery_detail(request, message_id):
     """Immutable attempt metadata is distinct from the latest Task execution."""
 
     def load():
-        """Pin history's upper version to the selected message observation."""
+        """Pin history's upper version to the selected message observation.
+
+        The page names the email by its purpose and its Family's name (from
+        the latest ParishSoft data, as Outgoing mail reads it) and lists the
+        refused addresses its delivery recorded (#1015). ``commands`` are the
+        offered resolutions; ``decisions`` says whether any of them changes
+        the email (anything but a bare evidence note), which decides whether
+        the page shows the "Resolve this email" section or only the closed
+        note form.
+        """
         data = read_detail(message_id, request.GET)
         window = data["window"]
+        (delivery,) = with_family_names([data["delivery"]], current_snapshot())
         return dict(
-            delivery=data["delivery"],
+            delivery=delivery,
+            refused=email_refusals(message_id),
             events=data["events"],
             task=data["task"],
             notes=data["notes"],
             retry_unavailable=data["retry_unavailable"],
+            decisions=any(action != "note" for action in data["actions"]),
             commands=[
                 dict(action=action, label=ACTION_LABELS[action], id=uuid4())
                 for action in data["actions"]

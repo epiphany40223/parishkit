@@ -149,7 +149,7 @@ def test_delivery_evidence_notes_need_more_than_spaces(page, component_origin):
     )
     button = form.get_by_role("button")
     hint = form.locator("[data-complete-hint]")
-    note = "Enter the evidence or reason for this decision."
+    note = "Enter why you are doing this."
     waits_with(button, hint, note)
     follows(button, hint)
     form.locator("textarea").fill("  \n ")
