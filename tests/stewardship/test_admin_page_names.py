@@ -65,7 +65,6 @@ TEMPLATES = {
     "family_email_progress": "family-email-progress.html",
     "family_email_sends": "family-email-sends.html",
     "deliveries": "deliveries.html",
-    "delivery": "delivery.html",
     "delivery_refusals": "delivery-refusals.html",
     "delivery_refusal": "delivery-refusal.html",
     "family_portal": "family-portal-maintenance.html",
@@ -114,6 +113,8 @@ TEMPLATES = {
 # list after its list and each export after its report.
 OBJECT_NAMED = {
     "content_edit",
+    # One email is named after its type and Family (#1015).
+    "delivery",
     "content_revision",
     "integration_settings",
     "response_list",

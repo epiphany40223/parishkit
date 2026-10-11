@@ -119,3 +119,54 @@ def test_warning_polls_durable_count_and_survives_unavailable_response(
         elif index == 1:
             assert page.evaluate("window.warningMutations") == 0
     assert len(requests) == 5 and all(request.method == "GET" for request in requests)
+
+
+def test_email_page_names_the_email_and_reads_in_the_requested_order(
+    page, component_origin
+):
+    """#1015: the heading names the email by its type and Family, the
+    Family's name sits beside its DUID with the refused address, and the
+    page then reads attempt history, Technical details, the latest background
+    task, the resolution forms and the Admin evidence, in that order. The
+    browser title leaves the Family's name out."""
+    page.goto(component_origin + "/delivery")
+    heading = page.get_by_role("heading", level=1)
+    assert heading.inner_text() == (
+        "Initial invitation to Castellanos, Maximiliana and Bartholomew"
+    )
+    assert "Castellanos" not in page.title()
+    main = page.locator("main")
+    text = main.inner_text()
+    assert "Family: Castellanos, Maximiliana and Bartholomew · Family DUID: 12345" in (
+        text
+    )
+    refused = main.get_by_role("link", name="head@example.org")
+    assert refused.get_attribute("href").startswith("/admin/mail/refusals/")
+    order = [
+        "Attempt history",
+        "Technical details",
+        "Latest background task",
+        "Resolve this email",
+        "Admin evidence and decisions",
+    ]
+    places = [text.index(label) for label in order]
+    assert places == sorted(places)
+    resolve = page.locator("section", has=page.locator("#resolve-heading"))
+    assert resolve.locator("form").count() == 4
+    assert (
+        page.locator("label[for=evidence-accept]").inner_text()
+        == "Why are you doing this? (saved in this email's history)"
+    )
+
+
+def test_email_without_a_decision_keeps_its_note_form_closed(page, component_origin):
+    """#1015: with only the evidence note offered (nothing to decide), there
+    is no Resolve section; the note form waits in a closed disclosure."""
+    page.goto(component_origin + "/delivery-note-only")
+    assert page.locator("#resolve-heading").count() == 0
+    disclosure = page.locator("details", has_text="Add a note to this email's history")
+    assert disclosure.get_attribute("open") is None
+    assert not page.locator("#evidence-note").is_visible()
+    disclosure.locator("summary").click()
+    assert page.locator("#evidence-note").is_visible()
+    assert "Not sure it arrived, which" not in page.locator("main").inner_text()

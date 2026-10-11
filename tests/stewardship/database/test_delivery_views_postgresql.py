@@ -242,6 +242,23 @@ def test_outgoing_mail_names_each_family_beside_its_duid(family_mail, google):  
     assert browser.get("/admin/mail/outgoing/", {"sort": "recipient"}).status_code == (
         400
     )
+    # The email's own page is named after the email and its Family (#1015),
+    # names the Family beside its DUID and reads in the requested order;
+    # the browser title leaves the name out.
+    with task_login(ServiceRole.WEB, exact=True):
+        own = browser.get(f"/admin/mail/outgoing/{message.pk}/").content.decode()
+    assert f"<h1>Initial invitation to {escape(name)}</h1>" in own
+    assert f"Family: {escape(name)} · Family DUID: {duid}" in own
+    assert escape(name) not in own.split("<title>")[1].split("</title>")[0]
+    places = [
+        own.index(label)
+        for label in (
+            "Attempt history",
+            "Technical details",
+            "Admin evidence and decisions",
+        )
+    ]
+    assert places == sorted(places)
 
 
 def test_outgoing_mail_names_reports_and_families_no_longer_in_the_data(
@@ -614,7 +631,19 @@ def test_an_email_counts_each_refused_address_once(response_service, google):
     browser, _ = signed_in()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         html = browser.get("/admin/mail/outgoing/", {"state": "all"}).content.decode()
+        own = browser.get(f"/admin/mail/outgoing/{first.message_id}/")
     assert '<a href="/admin/mail/refusals/?duid=1">2 addresses refused</a>' in html
+    # The email's own page lists each refused address once, linking its
+    # newest refusal (#1015).
+    newest = RecipientRefusal.objects.filter(address=heads[0]).latest("created_at")
+    links = [
+        f'<a href="/admin/mail/refusals/{newest.pk}/">{heads[0]}</a>',
+        f'<a href="/admin/mail/refusals/'
+        f'{RecipientRefusal.objects.get(address=heads[1]).pk}/">{heads[1]}</a>',
+    ]
+    page = own.content.decode()
+    assert f"Refused addresses: {links[0]}, {links[1]}" in page
+    assert page.count(f">{heads[0]}</a>") == 1
 
 
 @pytest.mark.parametrize(
@@ -801,7 +830,13 @@ def test_delivery_forms_apply_once_with_current_session_and_csrf(
         if action == "resend":
             values["duplicate_acknowledged"] = "yes"
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-            assert browser.get(path).status_code == 200
+            page = browser.get(path)
+            assert page.status_code == 200
+            # A decision is available, so the forms sit in the "Resolve this
+            # email" section, above the Admin evidence (#1015).
+            html = page.content.decode()
+            resolve = html.index('<h2 id="resolve-heading">Resolve this email</h2>')
+            assert resolve < html.index("Admin evidence and decisions")
             assert browser.post(path + "resolution/", values).status_code == 403
             for _ in range(2):
                 response = browser.post(
