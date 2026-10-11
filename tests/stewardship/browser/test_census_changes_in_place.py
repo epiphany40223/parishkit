@@ -64,6 +64,12 @@ def test_a_resolution_is_recorded_in_place(page, component_origin):
     form = record.locator("form.census-resolve")
     form.get_by_label("Note (optional)").fill("Typed it in")
     form.get_by_role("button", name="Entered in ParishSoft").click()
+    # It cannot be undone, so it asks first, naming the row.
+    dialog = page.locator("#census-enter-confirm")
+    has_text(
+        dialog.locator("h2"), "Mark Mobile phone for Member 00 entered in ParishSoft?"
+    )
+    dialog.get_by_role("button", name="Entered in ParishSoft").click()
     has_text(page.locator("#census-notice"), RESOLVED)
     # The page's own notice is what is announced, never a fixed "Saved."
     has_text(
@@ -92,3 +98,23 @@ def test_a_stale_resolution_is_announced_as_such(page, component_origin):
     has_text(announced, STALE)
     assert page.get_by_role("status").filter(has_text="Saved.").count() == 0
     assert page.evaluate(MARKED) == "kept"
+
+
+def test_cancelling_the_confirmation_sends_nothing(page, component_origin):
+    """Cancel in the confirmation dialog posts nothing and returns focus to
+    the row's Entered in ParishSoft button."""
+    page.goto(component_origin + PATH)
+    posts = []
+    page.on(
+        "request",
+        lambda request: posts.append(request) if request.method == "POST" else None,
+    )
+    record = page.locator("details.census-record").first
+    record.locator("summary").click()
+    button = record.get_by_role("button", name="Entered in ParishSoft")
+    button.click()
+    dialog = page.locator("#census-enter-confirm")
+    dialog.get_by_role("button", name="Cancel").click()
+    assert not dialog.is_visible()
+    assert button.evaluate("node => node === document.activeElement")
+    assert posts == []

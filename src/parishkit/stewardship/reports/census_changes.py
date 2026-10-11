@@ -98,25 +98,26 @@ HEADINGS = (
 )
 # Relative PDF column widths, in percent of the page's body width. Fourteen
 # columns share one landscape page, so a compact time ("Sep 30, 2026
-# 12:04 PM") keeps its date on one line and its time on the next; a whole
-# DUID, the longest status ("Being published") and "Automatic" stay on one
-# line; the values Families typed and ParishSoft holds, and the resolution's
-# who and note, share the rest, long ones wrapping within their column.
+# 12:04 PM") keeps its date on one line and its time on the next, and a
+# status may take two lines ("Being" / "published"); a whole DUID and
+# "Automatic" stay on one line. The resolution's who and note get room of
+# their own, and the values Families typed and ParishSoft holds share the
+# rest, long ones wrapping within their column.
 PDF_WEIGHTS = {
-    "Family": 6,
+    "Family": 5,
     "Family DUID": 7,
-    "Who": 6,
+    "Who": 5,
     "Member DUID": 7,
-    "What changed": 6,
+    "What changed": 5,
     "ParishSoft now": 6,
     "Family's answer": 6,
-    "Edited value": 5,
+    "Edited value": 4,
     "How it reaches ParishSoft": 8,
-    "Status": 12,
+    "Status": 8,
     "Submitted": 10,
-    "Recorded by": 6,
+    "Recorded by": 9,
     "Recorded at": 10,
-    "Note": 5,
+    "Note": 10,
 }
 PRIVACY = "Sensitive parish report. Share only with authorized recipients."
 

@@ -1566,12 +1566,22 @@ review/publish actions are defined by the
 The controls sit in the row's last column, in a *Record outcome* disclosure,
 so a row stays short until someone opens it
 ([table fit and row height](../ui-conventions/spec.md#table-fit-and-row-height)):
-a note field, then **Entered in ParishSoft**, which says it cannot be undone,
+a note field, then **Entered in ParishSoft**, which says it cannot be undone
+and asks first in a confirmation dialog naming the row
+([row actions and confirmation](../ui-conventions/spec.md#row-actions-and-confirmation)),
 and **Ignore**; on an *Ignored* row, for an Administrator, a required note
-and **Reopen**. The form posts with the page's own filters and table choices,
-so the answer is the same page, refreshed in place, with a notice naming the
-row by what changed and its DUIDs; that notice is what the page announces. A
-row someone else changed first is left as it is, and the notice says so.
+and **Reopen**. The disclosure is interim until the page's row actions move
+to the shared action-table pattern
+([#879](https://github.com/epiphany40223/parishkit/issues/879)). The form
+posts with the page's own filters and table choices, so the answer is the
+same page, refreshed in place, with a notice naming the row by what changed
+and its DUIDs; that notice is what the page announces, and its two lines are
+kept while empty, so it never moves the table
+([no layout shift](../ui-conventions/spec.md#no-layout-shift)). A row
+someone else changed first is left as it is, and the notice says so. While
+other campaign work holds the campaign (a restore review, or a cleanup,
+purge or go-live step), the page offers no Record outcome and says why; the
+list and its downloads still read.
 
 Before #528 the web role could change a proposal only after a later Family
 response, to *superseded*, *cancelled* or *resolved_upstream*, so the tick,

@@ -98,6 +98,7 @@ def components(context, admin):
                     "export_timezones": ["UTC", "America/Detroit"],
                     "notice": notice,
                     "action": PATH,
+                    "mutable": True,
                 },
             ),
         )

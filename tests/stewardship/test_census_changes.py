@@ -434,12 +434,15 @@ def test_csv_xlsx_and_pdf_carry_the_same_columns_and_rows():
     # Every heading has a PDF column width, and the columns fill the page.
     assert set(PDF_WEIGHTS) == set(HEADINGS)
     assert sum(drawn["table"].widths) == pytest.approx(pdf_design.BODY_WIDTH)
-    # A compact time keeps its date on one line and its time on the next;
-    # the longest status and "Automatic" each stay on one line.
+    # A compact time keeps its date on one line and its time on the next,
+    # the longest status breaks only between words, and a whole DUID and
+    # "Automatic" each stay on one line.
     for heading, text, lines in (
         ("Submitted", "Sep 30, 2026 12:04 PM", ["Sep 30, 2026", "12:04 PM"]),
         ("Recorded at", "Sep 30, 2026 12:04 PM", ["Sep 30, 2026", "12:04 PM"]),
-        ("Status", "Being published", ["Being published"]),
+        ("Status", "Being published", ["Being", "published"]),
+        ("Family DUID", "1234567", ["1234567"]),
+        ("Member DUID", "1234567", ["1234567"]),
         ("How it reaches ParishSoft", "Automatic", ["Automatic"]),
     ):
         values = [text if name == heading else "" for name in HEADINGS]
@@ -523,8 +526,9 @@ def test_page_offers_record_outcome_last_and_only_where_allowed():
     for item in shown:
         item["describedby"] = f"who-{item['id']} what-{item['id']}"
         item["final_describedby"] = f"{item['describedby']} final-{item['id']}"
+        item["confirm_name"] = f"{item['label']} for {item['who']}"
 
-    def page(administrator):
+    def page(administrator, mutable=True):
         """The page as an Administrator or a Staff member sees it."""
         return render_to_string(
             "stewardship/census-changes.html",
@@ -539,6 +543,7 @@ def test_page_offers_record_outcome_last_and_only_where_allowed():
                 "export_timezones": ["UTC"],
                 "administrator": administrator,
                 "action": "/admin/reports/census/",
+                "mutable": mutable,
             },
         )
 
@@ -552,6 +557,15 @@ def test_page_offers_record_outcome_last_and_only_where_allowed():
     assert "data-compact>2054-10-06T15:00:00+00:00</time>" in html
     staff = page(False)
     assert 'id="resolve-todo"' in staff and 'id="resolve-ignored"' not in staff
+    # Entered in ParishSoft asks first, naming the row, in the page's dialog.
+    assert 'data-confirm-submit="census-enter-confirm"' in html
+    assert 'id="census-enter-confirm"' in html
+    # While other campaign work holds the campaign, nothing is offered, the
+    # page says why, and no confirmation dialog is drawn.
+    gated = page(True, mutable=False)
+    assert "Record outcome" not in gated.split("</h1>", 1)[1].split("<table", 1)[1]
+    assert 'id="resolve-' not in gated and 'id="census-enter-confirm"' not in gated
+    assert "Other campaign work" in gated
 
 
 def test_resolution_form_parsing():

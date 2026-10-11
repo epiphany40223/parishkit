@@ -53,6 +53,7 @@ from .census_changes import (
     census_pdf,
     census_xlsx,
 )
+from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .read_admission import admit_report_read
 
@@ -302,6 +303,8 @@ def row_controls(rows):
         row["request_key"] = uuid4()
         row["describedby"] = f"who-{row['id']} what-{row['id']}"
         row["final_describedby"] = f"{row['describedby']} final-{row['id']}"
+        # How the confirmation dialog names the row: what changed, and whose.
+        row["confirm_name"] = f"{row['label']} for {row['who']}"
 
 
 def _respond(request, campaign_id, *, export, render):
@@ -413,6 +416,14 @@ def report(request, campaign_id):
             sorting=SORTING,
         )
         row_controls(table.rows)
+        # Other campaign work (a restore review, cleanup, purge or go-live
+        # step) holds the campaign: the page offers no Record outcome, as
+        # the service would refuse it, and says why.
+        mutable = True
+        try:
+            admit_campaign(campaign_id, mutating=True)
+        except PermissionError:
+            mutable = False
         return render_to_string(
             "stewardship/census-changes.html",
             result
@@ -427,6 +438,7 @@ def report(request, campaign_id):
                 "export_timezones": sorted(timezone_names()),
                 "notice": extra.get("notice"),
                 "action": action,
+                "mutable": mutable,
             },
             request=request,
         ).encode()

@@ -419,6 +419,17 @@ def test_leaders_testing_responses_and_gated_campaigns_are_refused(
     with pytest.raises((IntegrityError, DatabaseError)):
         forge_pair(home, staff, "entered", "execution='resolved_external'")
     assert ProposalResolution.objects.count() == 0
+    # The page offers no Record outcome while the campaign is held, and
+    # says why; the list still reads.
+    from .auth_builders import signed_in
+    from .test_information_followup_postgresql import search
+
+    google[0]["email"] = "admin@example.org"
+    browser, login = signed_in()
+    assert login.status_code == 302
+    response, body = search(browser, "/admin/reports/census/", {"status": "all"})
+    assert response.status_code == 200 and b"Other campaign work" in body
+    assert b'name="resolve"' not in body and b"census-enter-confirm" not in body
 
 
 def test_testing_responses_take_no_resolution(response_service):
