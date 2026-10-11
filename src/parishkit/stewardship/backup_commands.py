@@ -245,7 +245,14 @@ def _backup(config):
         from .runtime_database import require_current_schema
 
         _admit_backup_identity()
-        require_current_schema()
+        # The users upgrade (#952) may leave only the users swap pending: a
+        # deploy that stopped after its base migration (no conversion
+        # inputs, a refused conversion, a failed final migration, an
+        # interruption) is repeated, and the repeat's step 1 backs up first.
+        # That database is a valid restore point (its manifest lists exactly
+        # what is applied), so the backup admits it; anything else pending
+        # is still refused.
+        require_current_schema(users_swap_pending=True)
         from django.db import connection
         from django.db.migrations.recorder import MigrationRecorder
 
