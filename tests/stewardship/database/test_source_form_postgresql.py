@@ -49,7 +49,10 @@ def test_the_list_follows_the_snapshot_and_never_shows_a_value(
     response, body = get(browser, LIST)
     assert response.status_code == 200
     assert b"1 Family cannot open the Family form" in body
-    assert f"<td>{family}</td><td>3</td><td>First name</td>".encode() in body
+    assert (
+        f'<td class="numeric">{family}</td><td class="numeric">3</td>'
+        "<td>First name</td>"
+    ).encode() in body
     # The surname alone, never "Surname, heads": a head's name is a Member
     # value and may be the refused one (here, Member 3's first name).
     family_name = family_display_name(data.families[1], "Unavailable Family")
