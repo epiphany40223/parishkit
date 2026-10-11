@@ -693,11 +693,16 @@
     const count = scope.querySelector("[data-selected-count]");
     const actions = [...scope.querySelectorAll("[data-bulk-action]")];
     const hint = actions.length ? scope.querySelector("[data-selection-hint]") : null;
-    if (hint) {
+    if (hint && !hint.id) {
+      // An id the include was given (hint_id) is kept, so a button the
+      // server disabled can name the line too.
       selectionHints += 1;
       hint.id = `selection-hint-${selectionHints}`;
-      hint.textContent = scope.dataset.missingHint || "Select at least one row first.";
     }
+    const missingHint = scope.dataset.missingHint || "Select at least one row first.";
+    // A table that gives an empty-table reason (the include's empty_hint)
+    // keeps it visible in the line while the table has no rows at all.
+    const emptyHint = hint?.dataset.emptyHint || "";
     const update = () => {
       const all = rows();
       const chosen = all.filter((node) => node.checked).length;
@@ -711,8 +716,14 @@
         button.textContent = every ? "Clear selection" : "Select all";
       }
       if (count) count.textContent = chosen ? `${chosen} selected` : "";
-      // With no rows at all the table itself says it is empty.
-      const explain = Boolean(hint) && !chosen && all.length > 0;
+      // With no rows at all the table itself says it is empty, unless the
+      // table gave an empty-table reason, which then stays in the line.
+      const empty = !all.length && Boolean(emptyHint);
+      const explain = Boolean(hint) && !chosen && (all.length > 0 || empty);
+      if (hint) {
+        const text = empty ? emptyHint : missingHint;
+        if (hint.textContent !== text) hint.textContent = text;
+      }
       hint?.toggleAttribute("data-cleared", !explain);
       actions.forEach((node) => {
         node.disabled = !chosen;
