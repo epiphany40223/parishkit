@@ -423,11 +423,12 @@ UNGROUPED = frozenset().union(*UNGROUPED_REASONS.values())
 # The groups that hold operational entries as well as audit records. The
 # others are audit records only: while one is chosen the page greys the five
 # level boxes and waits for Audit record, and the read leaves operational
-# entries out. Named rather than derived from the ``Event`` vocabulary: an
-# ``Event`` member can share its name with an audit type yet never be written
-# to the operational log (``automation_session_refused``), so test_log_rows
-# compares this with the groups' members on the log-writer manifest instead.
-OPERATIONAL_ACTIVITIES = frozenset({"family_mail", "parishsoft"})
+# entries out.
+OPERATIONAL_ACTIVITIES = frozenset(
+    key
+    for key, types in ACTIVITY_TYPES.items()
+    if set(types) & {item.value for item in Event}
+)
 # The Activity choice's options, in the order the filter bar lists them.
 ACTIVITY_LABELS = (
     ("", _("All activity")),
