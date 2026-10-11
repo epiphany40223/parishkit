@@ -11,7 +11,7 @@ the limitation words and leaves the stored talents out of every row.
 import csv
 import io
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from django.db import connection
@@ -29,8 +29,10 @@ from .information_rendering import xlsx_cell
 
 # The Show menu's choices: everything, or one of the two limitations.
 SHOW_WORDS = frozenset({"any", "cannot_serve", "cannot_attend"})
-# Each download table has its page table's columns in the page's order
-# (#932, #966): the Members table leads with the Member, as on the page.
+# Each download table has its page table's columns, names and order (#932,
+# #966): the Members table leads with the Member, as on the page, and the
+# Families table has no "Cannot attend Mass" column, as on the page, whose
+# table heading says what it lists (every listed Family cannot attend).
 MEMBER_HEADINGS = (
     "Member",
     "Family",
@@ -38,7 +40,10 @@ MEMBER_HEADINGS = (
     "Cannot participate in ministries",
     "Latest response",
 )
-FAMILY_HEADINGS = ("Family", "Family DUID", "Cannot attend Mass", "Latest response")
+FAMILY_HEADINGS = ("Family", "Family DUID", "Latest response")
+# Each table's page heading, which the PDF prints above that table.
+MEMBER_CAPTION = "Members who cannot participate in ministries"
+FAMILY_CAPTION = "Families that cannot attend Mass or prayer services"
 # Relative PDF column widths, by heading: names and the response time get the
 # room; the Yes columns and DUIDs are short.
 PDF_WEIGHTS = {
@@ -46,7 +51,6 @@ PDF_WEIGHTS = {
     "Family DUID": 5,
     "Member": 9,
     "Cannot participate in ministries": 6,
-    "Cannot attend Mass": 6,
     "Latest response": 8,
 }
 PRIVACY = "Sensitive parish report. Share only with authorized recipients."
@@ -150,12 +154,7 @@ def export_tables(result, zone, *, time_text=iso_time):
         for row in result["members"]
     ]
     families = [
-        (
-            row["family_name"],
-            str(row["family_duid"]),
-            "Yes",
-            instant(row["submitted_at"]),
-        )
+        (row["family_name"], str(row["family_duid"]), instant(row["submitted_at"]))
         for row in result["families"]
     ]
     return members, families
@@ -207,11 +206,22 @@ def limitations_pdf(result, zone, *, parish, campaign, as_of):
     Each table is its CSV/XLSX headings over ``export_tables``' rows, so the
     three files never disagree (#966); only Latest response reads in the
     parish's compact date format. The Families table starts on a new page,
-    whose heading row names its own columns. The page frame names the parish
-    and campaign, the download time ``as_of`` in ``zone`` and both counts.
-    The caller lends the parish's date format (``dates.using``).
+    and every page names its table with the page's table heading. The page
+    frame names the parish and campaign, the download time ``as_of`` in
+    ``zone`` and both counts. The caller lends the parish's date format
+    (``dates.using``).
     """
-    from .pdf_design import PdfFrame, Table, draw_table, table_pages
+    from .pdf_design import (
+        ACCENT_STRONG,
+        CELL_PAD,
+        LABEL_SIZE,
+        MARGIN,
+        SMALL_PITCH,
+        PdfFrame,
+        Table,
+        draw_table,
+        table_pages,
+    )
 
     members, families = export_tables(
         result, zone, time_text=lambda moment: dates.display_text(moment, compact=True)
@@ -228,13 +238,38 @@ def limitations_pdf(result, zone, *, parish, campaign, as_of):
         ),
         notice=PRIVACY,
     )
+    # The tables lay out in a frame two blank detail lines taller, so the
+    # caption fits between the header rule and the table on every page.
+    body = replace(frame, details=(*frame.details, "", ""))
+
+    def drawer(caption, table):
+        """Draw one page of ``table`` under its ``caption``."""
+        draw = draw_table(table, body)
+
+        def draw_page(canvas, page):
+            """The caption, then the table page."""
+            canvas.text(
+                MARGIN + CELL_PAD,
+                frame.body_top + SMALL_PITCH,
+                caption,
+                LABEL_SIZE,
+                "bold",
+                ACCENT_STRONG,
+            )
+            draw(canvas, page)
+
+        return draw_page
+
     # Each page carries the drawer of the table it belongs to, so one frame
     # holds both tables and numbers their pages together.
     pages = []
-    for headings, rows in ((MEMBER_HEADINGS, members), (FAMILY_HEADINGS, families)):
+    for caption, headings, rows in (
+        (MEMBER_CAPTION, MEMBER_HEADINGS, members),
+        (FAMILY_CAPTION, FAMILY_HEADINGS, families),
+    ):
         table = Table.weighted(headings, [PDF_WEIGHTS[name] for name in headings])
-        draw = draw_table(table, frame)
-        pages += [(draw, page) for page in table_pages(table, rows, frame)]
+        draw = drawer(caption, table)
+        pages += [(draw, page) for page in table_pages(table, rows, body)]
     output = io.BytesIO()
     frame.write(
         output,

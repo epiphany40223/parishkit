@@ -1572,16 +1572,15 @@ out. The report still reads through the installed
 `talent`.
 
 The filtered result downloads immediately as CSV (Members, then Families),
-XLSX (one sheet each) or PDF (one table each, the Families table starting on
-a new page, in the shared page frame with both counts), in a chosen display
-timezone, with the columns Member, Family, Family DUID, Cannot participate in
-ministries and Latest response for Members (the page's order), and Family,
-Family DUID, Cannot attend Mass and Latest response for Families. Every
-format carries these columns and rows
+XLSX (one sheet each) or PDF (one table each under the page's table heading,
+the Families table starting on a new page, in the shared page frame with
+both counts), in a chosen display timezone. Each table has its page table's
+columns, names and order: Member, Family, Family DUID, Cannot participate in
+ministries and Latest response for Members, and Family, Family DUID and
+Latest response for Families (every listed Family cannot attend, so, as on
+the page, no column repeats it). Every format carries these columns and rows
 ([downloaded files](../ui-conventions/spec.md#downloaded-files)); the PDF
-words Latest response in the parish's date format. The Families download
-keeps its Cannot attend Mass column, which the page shows as the table's
-heading instead, so a file's table says what it lists. A download is rendered in memory on the web
+words Latest response in the parish's date format. A download is rendered in memory on the web
 connection under the interactive campaign read guard, not through the
 dedicated download pool, whose login cannot read the response and source
 data the report needs.

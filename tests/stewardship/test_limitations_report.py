@@ -15,6 +15,8 @@ from openpyxl import load_workbook
 
 from parishkit.stewardship.reports import pdf_design
 from parishkit.stewardship.reports.limitations import (
+    FAMILY_CAPTION,
+    MEMBER_CAPTION,
     PDF_WEIGHTS,
     LimitationsQuery,
     limitations_csv,
@@ -33,7 +35,7 @@ MEMBER_HEADINGS = [
     "Cannot participate in ministries",
     "Latest response",
 ]
-FAMILY_HEADINGS = ["Family", "Family DUID", "Cannot attend Mass", "Latest response"]
+FAMILY_HEADINGS = ["Family", "Family DUID", "Latest response"]
 
 
 def result(talents, counts, *, cannot_serve=True):
@@ -83,14 +85,16 @@ def test_stored_talents_are_left_out_and_only_limitations_listed():
 def test_downloads_keep_the_limitations_columns():
     """CSV and XLSX keep the limitations-only columns the report had (#970).
 
-    The Members table leads with the Member, in the page's order (#932, #966).
+    Each table has its page table's columns in the page's order (#932,
+    #966): the Members table leads with the Member, and the Families table
+    has no constant Cannot attend Mass column.
     """
     shaped = shape_result(result({PAINTER: ""}, {PAINTER: 1}))
     rows = list(csv.reader(io.StringIO(limitations_csv(shaped, UTC).decode())))
     assert rows[0] == MEMBER_HEADINGS
     assert rows[1] == ["Alex Example", "Example", "10", "Yes", WHEN]
     assert rows[2] == [] and rows[3] == FAMILY_HEADINGS
-    assert rows[4] == ["Example", "10", "Yes", WHEN]
+    assert rows[4] == ["Example", "10", WHEN]
     book = load_workbook(io.BytesIO(limitations_xlsx(shaped, ZoneInfo("UTC"))))
     assert [cell.value for cell in book["Members"][1]] == MEMBER_HEADINGS
     assert [cell.value for cell in book["Families"][1]] == FAMILY_HEADINGS
@@ -131,11 +135,14 @@ def test_pdf_prints_both_tables_with_the_csv_columns_and_rows(monkeypatch):
     assert list(families.headings) == csv_rows[3] == FAMILY_HEADINGS
     # The formula-like name prints as typed; the CSV guards it.
     assert member_rows[0][:4] == ("=cmd", "Example", "10", "Yes")
-    assert member_rows[0][4] == family_rows[0][3] == "Oct 5, 2026 9:00 AM"
-    assert family_rows[0][:3] == ("Example", "10", "Yes")
+    assert member_rows[0][4] == family_rows[0][2] == "Oct 5, 2026 9:00 AM"
+    assert family_rows[0][:2] == ("Example", "10")
     assert frame.eyebrow == "Example Parish · Stewardship 2055"
+    # The tables' frame adds two blank lines of room for their captions.
     assert frame.details == (
         "1 Member cannot participate in ministries; 1 Family cannot attend Mass.",
+        "",
+        "",
     )
     assert set(PDF_WEIGHTS) == {*MEMBER_HEADINGS, *FAMILY_HEADINGS}
     for table in (members, families):
@@ -235,3 +242,62 @@ def test_members_table_leads_with_the_member_then_family_and_family_duid():
     assert "DUID 10" not in members
     # Sorted by Family DUID: 7 comes before 10.
     assert members.index(">7</td>") < members.index(">10</td>")
+
+
+def captured_pdf(monkeypatch, shaped):
+    """Render the PDF; return its body, table layouts and drawn captions."""
+    drawn, captions, original = [], [], pdf_design.table_pages
+
+    def capture(table, rows, frame):
+        """Keep each table and its rows, then lay them out."""
+        rows = list(rows)
+        drawn.append((table, rows, frame))
+        return original(table, rows, frame)
+
+    text = pdf_design.Canvas.text
+
+    def keep_caption(canvas, x, y, value, size, face="regular", *args, **kwargs):
+        """Note each caption drawn, then draw the text."""
+        if value in (MEMBER_CAPTION, FAMILY_CAPTION):
+            captions.append((value, y))
+        return text(canvas, x, y, value, size, face, *args, **kwargs)
+
+    monkeypatch.setattr(pdf_design, "table_pages", capture)
+    monkeypatch.setattr(pdf_design.Canvas, "text", keep_caption)
+    body = limitations_pdf(
+        shaped,
+        ZoneInfo("America/Chicago"),
+        parish="Example Parish",
+        campaign="Stewardship 2055",
+        as_of=datetime.fromisoformat(WHEN),
+    )
+    return body, drawn, captions
+
+
+def test_pdf_names_each_table_with_its_page_heading(monkeypatch):
+    """Every PDF page names its table as the page's table heading does."""
+    _, drawn, captions = captured_pdf(monkeypatch, shape_result(result({}, {})))
+    assert [caption for caption, _ in captions] == [MEMBER_CAPTION, FAMILY_CAPTION]
+    # Each caption sits in the room the tables leave below the header rule
+    # (two detail lines), above the table's heading row.
+    (_, _, body), _ = drawn
+    room = body.body_top - 2 * pdf_design.SMALL_PITCH
+    assert all(room < y < body.body_top for _, y in captions)
+
+
+def test_pdf_with_no_families_still_prints_both_tables(monkeypatch):
+    """No Family who cannot attend: the Families page says no rows match.
+
+    The Families table still gets its own captioned page, so the file says
+    plainly that the list is empty rather than leaving it out.
+    """
+    raw = result({}, {})
+    raw["families"] = []
+    raw["summary"]["cannot_attend"] = 0
+    body, drawn, captions = captured_pdf(monkeypatch, shape_result(raw))
+    assert body.startswith(b"%PDF-") and b"/Count 2" in body
+    (_, members, frame), (families, rows, _) = drawn
+    assert len(members) == 1 and rows == []
+    assert list(families.headings) == FAMILY_HEADINGS
+    assert [caption for caption, _ in captions] == [MEMBER_CAPTION, FAMILY_CAPTION]
+    assert frame.details[0].endswith("0 Families cannot attend Mass.")

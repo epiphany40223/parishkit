@@ -180,7 +180,9 @@ def test_native_page_and_downloads(response_service, google, settings):
         assert response["Content-Type"] == "text/csv"
         assert response["Cache-Control"] == "no-store"
         assert "stewardship-limitations-" in response["Content-Disposition"]
-        assert b"Organ" not in body and b"Cannot attend Mass" in body
+        assert b"Organ" not in body
+        # The Families table has the page's columns: no Cannot attend Mass.
+        assert b"\r\nFamily,Family DUID,Latest response\r\n" in body
         assert body.startswith(
             b"Member,Family,Family DUID,Cannot participate in ministries,"
             b"Latest response\r\n"
