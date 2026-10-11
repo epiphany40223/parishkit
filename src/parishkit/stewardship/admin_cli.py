@@ -43,8 +43,8 @@ export`` (PR 8a, in ``admin_reports``), the export lifecycle (PR 8b, in
 ``admin_report_reads``), the digests (PR 8d, in ``admin_digests``), the
 Family-level exports (PR 8e, in ``admin_family_exports``), the Family
 portal maintenance switch (PR 7a, in ``admin_portal``), ``report
-source-form`` (in ``admin_source_form``) and ``files list`` (PR 10, in
-``admin_hosted_files``). A
+source-form`` (in ``admin_source_form``) and ``files list``, ``files
+delete`` and ``files rename`` (PR 10, in ``admin_hosted_files``). A
 command that streams a file (``logs export`` and
 ``export download --stream``) writes the file's bytes, and nothing else, to
 standard output, and its document to standard error. Other areas join the same
@@ -1139,6 +1139,47 @@ def files_list(args, preamble, runtime, context):
     return read_library(context["caller"], runtime)
 
 
+def files_delete(args, preamble, runtime, context):
+    """Delete unused hosted files, as the page's Delete does (PR 10).
+
+    The chosen files are read first, so one in use is refused before the
+    prompt, as the page offers Delete only for unused files. A deletion
+    cannot be undone, so it prompts, naming the files, before any
+    transaction; when none of them is left, there is nothing to ask.
+    """
+    from .accounts.hosted_file_models import MAX_FILES
+    from .admin_hosted_files import delete_files, preview_deletion
+
+    ids = args.file_id
+    if len(ids) > MAX_FILES or len(set(ids)) != len(ids):
+        raise UsageError(f"Name at most {MAX_FILES} distinct files.")
+    found = preview_deletion(context["caller"], runtime, ids)
+    if found:
+        confirm(
+            context,
+            (
+                f"Delete {len(found)} hosted file(s): "
+                + ", ".join(row.slug for row in found)
+                + ".",
+                "This cannot be undone: their links stop working.",
+            ),
+        )
+    return delete_files(context["caller"], runtime, ids, context=context)
+
+
+def files_rename(args, preamble, runtime, context):
+    """Change an unused hosted file's placeholder name, as the page's Edit does.
+
+    The page asks for no confirmation, and the link never changes, so this
+    does not prompt.
+    """
+    from .admin_hosted_files import rename_file
+
+    return rename_file(
+        context["caller"], runtime, args.file_id, args.slug.strip(), context=context
+    )
+
+
 def portal_maintenance_set(args, preamble, runtime, context):
     """Close or reopen the Family portal, as its page's buttons do (PR 7a).
 
@@ -1901,6 +1942,22 @@ def _portal_maintenance_set_options(parser):
         help="with --state closed: the note Families see (at most 500 "
         "characters, no email address), or - to read it from standard input "
         "(needs --yes)",
+    )
+
+
+def _files_delete_options(parser):
+    """Options of ``files delete``: the files, by ``files list`` id."""
+    parser.add_argument("file_id", type=_uuid, nargs="+", metavar="FILE_ID")
+
+
+def _files_rename_options(parser):
+    """Options of ``files rename``: the file and its new placeholder name."""
+    parser.add_argument("file_id", type=_uuid, metavar="FILE_ID")
+    parser.add_argument(
+        "--slug",
+        required=True,
+        help="the new placeholder name: lowercase letters, digits and single "
+        "hyphens, up to 64 characters",
     )
 
 
@@ -2837,10 +2894,10 @@ def _portal_specs():
 
 def _file_specs():
     """The hosted file library (PR 10, ``admin_hosted_files``)."""
-    from .admin_hosted_files import HostedFileLibrary
+    from .admin_hosted_files import FileDeletion, FileRename, HostedFileLibrary
 
     return (
-        # The page's GET records no event; delete and rename come later.
+        # The page's GET records no event.
         CommandSpec(
             "files list",
             "List the hosted files, their links and where each is used.",
@@ -2850,6 +2907,29 @@ def _file_specs():
             HostedFileLibrary.field_names(),
             10,
             audit_event=None,
+        ),
+        # The page's row actions: no recent sign-in on the page, so neither
+        # is fresh-gated; a deletion cannot be undone, so it prompts.
+        CommandSpec(
+            "files delete",
+            "Delete unused hosted files; their links stop working.",
+            files_delete,
+            "full",
+            True,
+            FileDeletion.field_names(),
+            10,
+            options=(_files_delete_options,),
+            prompts=True,
+        ),
+        CommandSpec(
+            "files rename",
+            "Change an unused hosted file's placeholder name.",
+            files_rename,
+            "full",
+            True,
+            FileRename.field_names(),
+            10,
+            options=(_files_rename_options,),
         ),
     )
 

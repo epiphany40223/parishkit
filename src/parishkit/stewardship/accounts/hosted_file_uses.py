@@ -33,8 +33,13 @@ def _in_use(error):
     return "Hosted file is in use" in str(error)
 
 
-def rename(actor, file_id, slug):
-    """Change an unused file's slug; the link (token) never changes."""
+def rename(actor, file_id, slug, *, record=None):
+    """Change an unused file's slug; the link (token) never changes.
+
+    ``record``, when given, is called with no arguments inside the change's
+    transaction after its audit row, and only when the slug changed, so a
+    caller's own audit row (``files rename``'s) commits with the page's.
+    """
     if not valid_slug(slug):
         raise HostedFileError("slug_invalid")
     with transaction.atomic():
@@ -62,6 +67,8 @@ def rename(actor, file_id, slug):
             raise HostedFileError("slug_taken") from None
         row.refresh_from_db()
         audit(Action.HOSTED_FILE_SLUG_CHANGED, actor, row, previous_file_slug=previous)
+        if record is not None:
+            record()
     return row
 
 
@@ -75,7 +82,7 @@ def delete(actor, file_id):
     return outcome
 
 
-def delete_many(actor, file_ids):
+def delete_many(actor, file_ids, *, record=None):
     """Delete unused files all together or not at all; return their outcomes.
 
     The answer maps each ID, as a UUID, to "deleted" or "already_deleted"
@@ -87,6 +94,10 @@ def delete_many(actor, file_ids):
     ``HostedFileError("in_use", uses)`` and a busy lock or database problem
     raises too, and either way nothing is deleted. Only after the commit are
     the files' bytes removed and the library swept, once.
+
+    ``record``, when given, is called with no arguments inside the
+    transaction after the audit rows, and only when a file was deleted, so a
+    caller's own audit row (``files delete``'s) commits with the page's.
     """
     file_ids = [UUID(str(value)) for value in file_ids]
     root = media_root()
@@ -110,6 +121,8 @@ def delete_many(actor, file_ids):
                 raise HostedFileError("in_use", _uses_of(ids)) from None
             for row in rows:
                 audit(Action.HOSTED_FILE_DELETED, actor, row)
+            if rows and record is not None:
+                record()
         # The rows are gone, so the files are deleted whatever happens next:
         # a file left on disk is never served and the next sweep removes it.
         try:

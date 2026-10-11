@@ -1419,7 +1419,8 @@ waiting for it once the command has finished. A command declares that it prompts
 `test_pk_admin.py` checks that list against the catalog; a prompting
 command that accepts only `--yes` is left out of it by name. PR 6b's
 `test sample`, PR 6c's `test families` and PR 9c's `delivery resend` and
-`delivery refusal-clear` are prompting commands.
+`delivery refusal-clear`, PR 7a's `portal maintenance set` and `files
+delete` are prompting commands.
 
 ### Audit attribution
 
@@ -1630,7 +1631,9 @@ signatures:
   `content_views`, `campaign_ministry_views`, `share_views`, `talent_views`,
   `parish_views`, `ministry_views` and `integration_views`. `files list`
   needed none: the hosted file page's row builder was already
-  request-free.
+  request-free; `files delete` and `files rename` only add a `record`
+  callback to `hosted_file_uses.delete_many` and `rename`, so the command's
+  event shares their transaction.
 - **PR 11:** user, event and follow-up actions from their views (the users
   model of #952 replaces the rule actions; #922 retired the assignment and
   Chairperson actions).
@@ -1808,7 +1811,7 @@ none.
 | `campaign_ministries`, `share_settings`, `talent_settings`, `reminder_workgroup` | `campaign ministries`, `campaign shares`, `campaign talents`, `campaign reminder-workgroup` (PR 10) |
 | `content_catalog`, `content_edit`, `content_revision`, `content_history`, `content_history_revision`, `content_plain_text` | `content list`, `content show`, `content preview`, `content confirm`, `content history` (PR 10) |
 | `parish_settings`, `ministries` | `parish`, `ministries` (PR 10) |
-| `hosted_files`, `hosted_file_delete`, `hosted_file_rename` | `files list` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); `files delete`, `files rename` (PR 10) |
+| `hosted_files`, `hosted_file_delete`, `hosted_file_rename` | `files list`, `files delete`, `files rename` ([#463](https://github.com/epiphany40223/parishkit/issues/463)) |
 | `artwork_settings`, `artwork_remove` | `artwork show`, `artwork remove` (PR 10) |
 | `branding_settings`: **Confirm new logos** | `branding show`, `branding confirm --expected-version …`, a configuration request for logos already uploaded (PR 10) |
 | `hosted_file_upload`, `artwork_upload`, `branding_settings` uploads | Pending: file uploads; a later PR may accept `--file` |
@@ -1902,6 +1905,25 @@ names are defaults, pending Administrator confirmation. A configuration
 refusal, such as no media root, is `unavailable`. The
 [operator guide](../../../guides/stewardship-admin-automation.md#hosted-files)
 lists the fields.
+
+`files delete FILE_ID [FILE_ID ...]` and `files rename FILE_ID --slug NAME`
+are the page's row actions (#947), through its own
+`hosted_file_uses.delete_many` and `rename`, admitted as the page's POST
+(`CONFIGURE`, recording activity), so they need a full-scope session. The
+page asks for no recent sign-in, so neither is fresh-gated and neither
+creates an automation notice. `files delete` takes one to 100 distinct
+IDs, refuses before its prompt any that is in use (the page offers Delete
+only for unused files), prompts because a deletion cannot be undone, and
+deletes all or none; an ID with no file left is `already_deleted`, as on
+the page, so a repeat is safe. `files rename` does not prompt, as the page
+does not. A file in use, or a name that is not valid or is taken, is
+`invalid` with `error.fields` in the page's words; a missing file is
+`not_available` for `files rename`; a busy library lock or storage problem
+is `unavailable`. Each records the page's events (`hosted_file_deleted`
+per file, `hosted_file_slug_changed`) and its own `admin_cmd_files_delete`
+or `admin_cmd_files_rename` in one transaction, only when something
+changed. No fresh gate and the in-use refusal as `invalid` are defaults,
+pending Administrator confirmation.
 
 ### Production transition and withdrawal
 
@@ -2825,7 +2847,7 @@ exactly the commands that exist.
   delivery reads and resolution. **PR 9c:** `resend` and refusal clearing, at
   the prompt.
 - **PR 10, other configuration:** campaign, content, Ministries, parish,
-  hosted files (`files list` first), artwork, branding confirmation, integration settings with the
+  hosted files (`files list`, `files delete`, `files rename`), artwork, branding confirmation, integration settings with the
   backup folder probe, and secret replacement: integration key replacement,
   finish switching and the backup key change, with the wrapper's secret
   input.

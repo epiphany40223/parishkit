@@ -140,10 +140,9 @@ LEDGER = {
     "content_plain_text": pending("PR 10", "content show"),
     "parish_settings": pending("PR 10", "parish"),
     "ministries": pending("PR 10", "ministries"),
-    # The library's list; delete and rename still come in PR 10.
     "hosted_files": command("files list"),
-    "hosted_file_delete": pending("PR 10", "files delete"),
-    "hosted_file_rename": pending("PR 10", "files rename"),
+    "hosted_file_delete": command("files delete"),
+    "hosted_file_rename": command("files rename"),
     "artwork_settings": pending("PR 10", "artwork show"),
     "artwork_remove": pending("PR 10", "artwork remove"),
     "branding_settings": pending("PR 10", "branding show", "branding confirm"),
