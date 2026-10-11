@@ -2295,6 +2295,7 @@ lists the fields and refusals.
 | `system_refresh_accept` (ADM-13) | `system refresh-accept-preview`, `system refresh-accept --token …` |
 | `system_debug_off`, `system_debug_allow` (ADM-13) | `system debug-off`; `system debug-allow` (Testing only) |
 | `source_form` ([#774](https://github.com/epiphany40223/parishkit/issues/774)) | `report source-form`, counts and DUIDs only ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the host's `pk-stewardship source-form-check` lists the same Families |
+| `parishsoft_fixes` ([#1011](https://github.com/epiphany40223/parishkit/issues/1011), not built yet) | `report data-to-fix`, section counts only, as [Data to fix in ParishSoft](../admin-portal/spec.md#data-to-fix-command-and-downloads) describes |
 
 `report source-form` is System health's Families the form cannot open
 list, through the page's own functions (`source_form_views._principal`,
