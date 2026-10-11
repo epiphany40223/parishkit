@@ -126,6 +126,39 @@ def test_a_mismatch_names_both_directions_and_the_image_to_use(files):
     assert report["use_image"] == IMAGE
 
 
+SWAP = ("stewardship_accounts", "0013_users_swap")
+
+
+def test_a_set_lacking_only_the_users_swap_is_swap_pending(files):
+    """Only the swap's closure missing: swap_pending, exit 4, this image.
+
+    A set the users upgrade's repeated deploy took between its two
+    migrations (#952) restores under this image into that state. Anything
+    else missing as well, or anything this image does not know, is still a
+    mismatch.
+    """
+    image = [*SET, list(SWAP)]
+    code, report = restore_check.check(
+        files.manifest(), image_migrations=image, swap_closure={SWAP}
+    )
+    assert code == restore_check.SWAP_PENDING == 4
+    assert report["result"] == "swap_pending"
+    assert report["not_in_backup"] == [list(SWAP)]
+    assert report["unknown_to_image"] == []
+    assert "use_image" not in report
+    more = [*image, ["stewardship_jobs", "0002_more"]]
+    code, report = restore_check.check(
+        files.manifest(), image_migrations=more, swap_closure={SWAP}
+    )
+    assert (code, report["result"]) == (restore_check.MISMATCH, "mismatch")
+    unknown = [SET[0], list(SWAP)]
+    code, report = restore_check.check(
+        files.manifest(), image_migrations=unknown, swap_closure={SWAP}
+    )
+    assert (code, report["result"]) == (restore_check.MISMATCH, "mismatch")
+    assert report["use_image"] == IMAGE
+
+
 def test_a_set_from_before_the_check_needs_its_dump(files):
     """No migration list in the manifest: refused without the dump, and
     read from the dump's django_migrations rows with it."""
@@ -301,7 +334,8 @@ def test_the_command_compares_with_this_images_own_migrations(
     files, monkeypatch, capsys
 ):
     """End to end through pk-stewardship: this image's real migration files;
-    exit 0, 3, and 2 with the fixed reason on standard error."""
+    exit 0, 3, 4 (only the users swap pending), and 2 with the fixed reason
+    on standard error."""
     monkeypatch.setattr(restore_check, "configure_logging", lambda: None)
     current = [list(pair) for pair in disk_migrations()]
     manifest = files.manifest(migrations=current)
@@ -312,6 +346,15 @@ def test_the_command_compares_with_this_images_own_migrations(
     assert main(["restore-check", "--manifest", str(manifest)]) == 3
     report = json.loads(capsys.readouterr().out)
     assert report["not_in_backup"] == [current[-1]]
+    # The users swap's closure, from this image's own migration graph.
+    closure = restore_check.image_swap_closure()
+    assert SWAP in closure
+    pending = [pair for pair in current if tuple(pair) not in closure]
+    manifest = files.manifest(migrations=pending)
+    assert main(["restore-check", "--manifest", str(manifest)]) == 4
+    report = json.loads(capsys.readouterr().out)
+    assert report["result"] == "swap_pending"
+    assert report["not_in_backup"] == sorted(map(list, closure))
     manifest = files.manifest(migrations=...)
     assert main(["restore-check", "--manifest", str(manifest)]) == 2
     captured = capsys.readouterr()

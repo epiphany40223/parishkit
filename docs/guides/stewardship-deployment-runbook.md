@@ -607,7 +607,9 @@ sequence with the commands that exist.
    revocation step. `migration` runs first and commits, so if
    `database-grants` refuses after a successful migration, start neither
    image: recover with the database-restore [rollback](#rollback) (or,
-   before the freeze, by reinstalling).
+   before the freeze, by reinstalling). For the release whose notes announce
+   the users upgrade, run this step as [Users upgrade](#users-upgrade-952)
+   says.
 5. **Refresh the static files.** `caddy` serves the packaged JavaScript and
    stylesheets from `cache/static`, which `collect-static` fills once and
    never overwrites, so a release that changes or adds a static file would
@@ -778,6 +780,101 @@ by the script's stand-in tests so far; #460 tracks their rehearsal. For a
 release that announces a schema or grant change, run the script with
 `STEWARDSHIP_SCHEMA_CHANGE=1` and watch step 4, or take the manual steps
 above.
+
+### Users upgrade (#952)
+
+The release that turns sign-in rules into users converts the configuration
+offline between two migrations, in the order the operations specification's
+[users upgrade](../specs/stewardship/operations/spec.md#users-upgrade-from-sign-in-rules)
+fixes. Its last migration refuses an unconverted configuration, so step 4
+becomes, with every online service stopped:
+
+1. `run --rm migration migrate --config MIGRATION_CONFIG --users-upgrade-base`:
+   every migration except the swap and what depends on it.
+2. `run --rm database-provision database-grants --config PROVISION_CONFIG --confirm-deployment UUID`.
+3. `run --rm admin-recovery upgrade-users --config RECOVERY_CONFIG --confirm-deployment UUID --preview`:
+   read the Administrators it lists. Before the release, the Portal users
+   page's Upgrade preview and `pk-admin users preview-upgrade` showed the
+   same list, so any missing address was already added.
+4. `run --rm admin-recovery upgrade-users --config RECOVERY_CONFIG --confirm-deployment UUID --operation-id NEW_UUID --operator-name NAME --reason REASON --confirm-administrators ADDRESSES`,
+   with `ADDRESSES` exactly the preview's list, comma-separated.
+5. `run --rm migration` and `database-grants` again, as step 4 always does.
+
+The configuration files are the services' own under `config/services/`
+(`migration.yaml`, `database-provision.yaml`, `admin-recovery.yaml`). The
+scripted upgrade runs these five when given the conversion's inputs, all
+four or none, with `STEWARDSHIP_SCHEMA_CHANGE=1`:
+
+```sh
+STEWARDSHIP_USERS_OPERATION=NEW_UUID STEWARDSHIP_USERS_OPERATOR='NAME' \
+STEWARDSHIP_USERS_REASON='REASON' STEWARDSHIP_USERS_ADMINISTRATORS=ADDRESSES \
+STEWARDSHIP_SCHEMA_CHANGE=1 STEWARDSHIP_HOST=HOST STEWARDSHIP_UUID=UUID \
+STEWARDSHIP_IMAGE=IMAGE@sha256:DIGEST tools/stewardship-upgrade.sh
+```
+
+It refuses before anything stops when they are partial or malformed, and
+for a rollback. Without them, it stops at the swap's refusal with the
+maintenance page up and nothing of the swap committed; repeat it with them.
+The local environment's `deploy --schema-change` passes the same variables.
+
+Every stop in this step 4 (no inputs, a refused conversion, a failed final
+migration, a failed `database-grants`, an interruption) leaves only the
+swap pending, which every online service refuses, so the maintenance page
+stays up until a repeated run finishes. The repeat runs from step 1: its
+backup admits a database with only the swap pending (that set restores
+exactly this state; `restore-check` reports it as `swap_pending`, see the
+[backup runbook](stewardship-backup-runbook.md#restore-for-real)), and
+because `web` was already stopped when it began, a failure before its
+retarget starts nothing and leaves the maintenance page up rather than
+starting services that would refuse the schema.
+
+A base migration that stopped partway (a failure or its time limit) leaves
+migrations outside the swap pending too, which no backup admits. Repeat
+the run the same way, with the same digest and the `STEWARDSHIP_USERS_*`
+variables, within 24 hours of the first run's backup: its step-1 backup
+then finds that state and reports the first run's backup instead of taking
+one (`backup --users-upgrade-resume`). That backup, taken before anything
+changed, stays the upgrade's restore point (with the previous release); the
+run prints `REUSED BACKUP:` with its time and manifest digest, and
+`stewardship-backup.log` records the line. Only the scripted repeat passes
+that option, and only when the documents already name the release, so a
+first run always backs up. Without the variables, or after 24 hours, the
+backup refuses and the maintenance page stays up: fail forward with a
+repeat within the window, or roll back by restoring the pre-upgrade backup
+with the previous release ([Rollback](#rollback)); an image-only rollback
+refuses a changed schema.
+
+Every step-4 command of the script runs under a time limit (30 minutes for
+each migration, 15 for the conversion, 10 for the preview and each
+`database-grants`), in a one-off container named after the project, the
+run and the step (`PROJECT-upgrade-TIME-PID-STEP`). A command that exceeds
+it is killed, and the log records a `TIMEOUT:` line naming it with its
+limit and elapsed time; the script then kills and removes that container by
+name (`docker kill`, `docker rm --force`) and logs it, since stopping the
+`docker compose run` client alone leaves the container running. The run
+stops with the maintenance page up. Ctrl-C or a kill of the host half does
+the same with an `INTERRUPTED:` line in the log. A dropped ssh session
+delivers no signal: the running command finishes or reaches its limit, and
+the run ends at its next output. Before repeating a run that ended any
+other way, check that no one-off container is left (`docker ps`). A step-4
+command that fails has all of its output printed and logged after a
+`FAILED:` line, not only its last line, less what may carry database
+values: a PostgreSQL `DETAIL` line is withheld, and a Python traceback is
+reduced to its exception's class. The operator commands themselves print
+only the exception's class and SQLSTATE (or a configuration refusal's own
+sentence), never its message.
+
+If the conversion refuses (a list that differs from the preview's, or SQL's
+last-Administrator guard), the configuration keeps its sign-in rules, the
+swap is not installed and the services stay down. `recover-admin` and
+`preview-admin-recovery` work on this schema, before and after the
+conversion, as [Admin-access recovery](stewardship-runtime.md#offline-work-and-upgrade-boundary)
+describes, so add or restore the missing Administrator and repeat the
+conversion with a new operation ID (a refused one is terminal). An
+interrupted run resumes with the same operation ID. Once the conversion has
+activated, the previous release cannot run on the configuration: fail
+forward, or restore the pre-upgrade backup together with the previous
+release.
 
 ### Family engagement backfill (#477)
 
