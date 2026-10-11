@@ -16,8 +16,11 @@ accepts has a case here, so a new export cannot skip the guard. Page
 downloads (CSV, XLSX or PDF written straight from a page) come from the
 ``web.exports.page_download`` registry, cross-checked against the URL
 patterns and against the modules that name a download file, so a new one
-fails here until it has a case or a documented exception. System logs is
-the recorded exception in the UX spec's Downloaded files section.
+fails here until it has a case. A case without a PDF table must be on the
+recorded list below, so a new export cannot quietly skip its PDF. System
+logs is the recorded exception in the UX spec's Downloaded files section:
+CSV and XLSX share plain headings, it has no PDF, and it keeps its
+cross-link identifiers.
 """
 
 import ast
@@ -33,6 +36,7 @@ from django.urls import get_resolver
 from openpyxl import load_workbook
 
 import parishkit.stewardship
+from parishkit.stewardship.audit import log_reads
 from parishkit.stewardship.reports import family_test_names, limitations, pdf_design
 from parishkit.stewardship.reports.census_changes import (
     CensusQuery,
@@ -99,10 +103,14 @@ def routed_page_downloads(patterns):
 # page download before PAGE_CASES is read from the registry.
 ROUTED_PAGE_DOWNLOADS = routed_page_downloads(get_resolver().url_patterns)
 # The synchronous page downloads (``web.exports.page_download``) this guard
-# does not render, each with its documented reason:
-# - System logs: the recorded exception in the UX spec's Downloaded files
-#   section (a log export, not a report table; JSON Lines has no columns).
-PAGE_EXCEPTIONS = frozenset({"system_logs"})
+# does not render, each with its documented reason. None today: System logs
+# has a case (its CSV and XLSX; JSON Lines has no columns).
+PAGE_EXCEPTIONS = frozenset()
+# The cases whose PDF is not a table of their columns, each a recorded
+# reason in the UX spec's Downloaded files section: the participation PDF is
+# the chart, the postal mail merge's PDF is address labels (checked by value
+# in its case) and System logs has no PDF. Every other case must have one.
+NO_PDF_TABLE = frozenset({"participation", "postal_outreach", "system_logs"})
 # Every other registered page download is a case below of the same name, so
 # a new page download fails the guard until it is checked or excepted.
 PAGE_CASES = tuple(sorted(set(PAGE_DOWNLOADS) - PAGE_EXCEPTIONS))
@@ -223,12 +231,13 @@ def xlsx_headers(body):
 def pdf_capture(monkeypatch, draw):
     """Run ``draw()`` and return what its PDF laid out: table headings, or
     the record cards (``write_records``)."""
-    seen = {}
+    seen = {"tables": []}
     pages, records = pdf_design.table_pages, pdf_design.write_records
 
     def table_pages(table, rows, frame):
-        """Keep the table's headings, then paginate as usual."""
+        """Keep the table's headings (each table's, in order), then paginate."""
         seen["table"] = list(table.headings)
+        seen["tables"].append(list(table.headings))
         return pages(table, rows, frame)
 
     def write_records(output, frame, factory, **options):
@@ -425,8 +434,9 @@ def case_census_changes(monkeypatch):
 def case_limitations(monkeypatch):
     """The Limitations report: a Members table, then a Families table.
 
-    Its CSV holds both tables, one after the other, and its XLSX one sheet
-    each; each table's columns are checked on their own. It has no PDF.
+    Its CSV holds both tables, one after the other, its XLSX one sheet
+    each and its PDF one table each; each table's columns are checked on
+    their own.
     """
     zone = ZoneInfo("America/Chicago")
     result = limitations.shape_result(limitations_result({}, {}))
@@ -434,10 +444,43 @@ def case_limitations(monkeypatch):
     rows = list(csv.reader(io.StringIO(body)))
     blank = rows.index([])
     sheets, labels = xlsx_headers(limitations.limitations_xlsx(result, zone))
+    members, families = pdf_capture(
+        monkeypatch,
+        lambda: limitations.limitations_pdf(
+            result, zone, parish="P", campaign="C", as_of=SUBMITTED
+        ),
+    )["tables"]
     return [
-        (limitations.MEMBER_HEADINGS, [rows[0]], sheets[:1], None, labels),
-        (limitations.FAMILY_HEADINGS, [rows[blank + 1]], sheets[1:], None, labels),
+        (limitations.MEMBER_HEADINGS, [rows[0]], sheets[:1], members, labels),
+        (limitations.FAMILY_HEADINGS, [rows[blank + 1]], sheets[1:], families, labels),
     ]
+
+
+def case_system_logs(monkeypatch):
+    """System logs: CSV and XLSX share plain headings; it has no PDF.
+
+    Its cross-link identifier columns are the recorded exception to leaving
+    internal identifiers out (UX spec, Downloaded files), and are named in
+    plain words, so the internal-field check below still holds for it.
+    """
+    rows = [
+        {
+            "created_at": SUBMITTED,
+            "source": "audit",
+            "level": None,
+            "event": "system_logs_exported",
+            "actor": "admin@example.org",
+            "actor_id": "a",
+            "correlation_id": "c",
+            "campaign_id": None,
+            "subject_id": None,
+            "details": {"count": "1"},
+        }
+    ]
+    zone = ZoneInfo("America/Chicago")
+    headers = csv_headers(log_reads.export_body(rows, "csv", zone))
+    sheets, labels = xlsx_headers(log_reads.export_body(rows, "xlsx", zone))
+    return list(log_reads.EXPORT_HEADINGS.values()), headers, sheets, None, labels
 
 
 # A page download without a case maps to None, which the page-download
@@ -512,7 +555,8 @@ def test_every_format_carries_the_same_columns(monkeypatch, name):
     """CSV header == XLSX header == PDF columns, with no internal field.
 
     ``None`` for the PDF means it is not a table of these columns: the
-    participation chart, and the postal labels (checked in their case).
+    participation chart, the postal labels (checked in their case) and
+    System logs, which has no PDF. Only a recorded case may have none.
     """
     results = CASES[name](monkeypatch)
     for headings, headers, sheets, pdf, labels in (
@@ -523,6 +567,8 @@ def test_every_format_carries_the_same_columns(monkeypatch, name):
         assert sheets and all(sheet == headings for sheet in sheets)
         if pdf is not None:
             assert pdf == headings
+        else:
+            assert name in NO_PDF_TABLE, f"{name} has no PDF table"
         assert not INTERNAL_FIELDS & {*headings, *labels}
         # Plain names, as on the page: no snake_case program keys.
         assert not [

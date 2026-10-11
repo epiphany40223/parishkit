@@ -808,7 +808,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `report_export` | _report name_ export | The report it came from | Administrator, Staff, Ministry leader | Participation export / Financial stewardship export / Ministry export / Additional-information export / Family-directory export; Report export | `/admin/reports/exports/<request>/` | (same) | Object-named (exception). Every export shares it: a latest-data export too (decision 8). Its actions post to `cancellation/`, `retries/`, `download/` and `regeneration/`. |
 | `report_exact` | Latest-data export | Participation | Administrator, Staff | Queued participation export; Exact export | `/admin/reports/exports/<request>/` (the shared export page) | (same) | Decision 8: folded into the shared export page; it keeps its own heading, and its trail names it. Its old addresses (`exact-exports/<request>/` and its actions) are gone (#864). |
 | `financial_report` | Financial stewardship | Menu: Financial stewardship | Administrator, Staff | Financial stewardship detail; Financial report | `/admin/reports/financial/` | (same) |  |
-| `limitations_report` | Limitations | Menu: Limitations | Administrator, Staff | Talents and limitations | `/admin/reports/limitations/` | (same) | Renamed when talents were retired (#970); the old address is gone. Its CSV/XLSX download (`limitations/exports/`) is a non-page action. |
+| `limitations_report` | Limitations | Menu: Limitations | Administrator, Staff | Talents and limitations | `/admin/reports/limitations/` | (same) | Renamed when talents were retired (#970); the old address is gone. Its CSV/XLSX/PDF download (`limitations/exports/`) is a non-page action. |
 | `census_changes` | Census changes | Menu: Census changes | Administrator, Staff | (new, #528) Pending census changes | `/admin/reports/census/` | (same) | Its CSV/XLSX/PDF download (`census/exports/`) is a non-page action. |
 | `information_queue` | Additional information | Menu: Additional information | Administrator, Staff | Additional information and follow-up | `/admin/reports/information/` | (same) |  |
 | `information_item` | Information request | Additional information | Administrator, Staff | Additional information and follow-up (one request); Information item | `/admin/reports/information/<item>/` | (same) | Return to the queue keeps its filters and page. |
@@ -5034,7 +5034,14 @@ integration; report owners supply the durable non-sensitive event metadata.
 In v1 a log export is a bounded download from the log screen: CSV, XLSX or
 JSON Lines of the entries matching the screen's filters, newest first, at most
 the newest 10,000, with the same reviewed detail the screen shows. CSV and XLSX
-carry the same columns; there is no PDF, the recorded exception in the
+carry the same columns under plain headings, in the screen's words where it
+has them (Source names an entry's kind, operational or audit): Time,
+Source, Level, Type, Actor, Actor identifier, Correlation identifier,
+Campaign identifier, Subject identifier and Recorded detail (#966). JSON
+Lines keys each entry by the same fields in snake_case (`time`, `source`,
+`level`, `type`, `actor_email`, `actor_id`, `correlation_id`,
+`campaign_id`, `subject_id`, `details`), for programs. There is no PDF, and
+the identifier columns stay: both are the recorded exception in the
 [downloaded files](../ui-conventions/spec.md#downloaded-files) rule. It is
 Administrator-only, uses a CSRF POST like the screen's filters, rechecks
 authorization after the file is built and records a count-only audit event. An

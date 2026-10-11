@@ -20,7 +20,7 @@
 <h2 id="limitations-export-heading">{% translate "Download" %}</h2>
 <form id="table-export" data-table-sync method="post" action="{% url 'admin:limitations_export' %}">{% csrf_token %}
 {% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
-<label for="limitations-format">{% translate "Format" %}</label><select id="limitations-format" name="format"><option value="csv">CSV</option><option value="xlsx">XLSX</option></select>
+<label for="limitations-format">{% translate "Format" %}</label><select id="limitations-format" name="format"><option value="csv">CSV</option><option value="xlsx">XLSX</option><option value="pdf">PDF</option></select>
 <label for="limitations-timezone">{% translate "Timezone" %}</label><select id="limitations-timezone" name="timezone" data-information-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
 {% button type="submit" %}{% translate "Download with these filters" %}{% endbutton %}</form></section>
 <script src="{% static 'stewardship/information-export-v1.js' %}" defer></script>

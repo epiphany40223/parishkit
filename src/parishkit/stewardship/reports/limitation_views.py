@@ -1,4 +1,4 @@
-"""Admin/Staff Limitations report, with CSV and XLSX downloads (#247, #970).
+"""Admin/Staff Limitations report, with CSV, XLSX and PDF downloads (#247, #970).
 
 The report was "Talents and limitations" until talents were retired (#970);
 it keeps that report's audit actions (``talents_report_viewed`` and
@@ -19,13 +19,14 @@ from django.views.decorators.http import require_http_methods
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
-from parishkit.stewardship.accounts.sessions import authenticated_admin
+from parishkit.stewardship.accounts.sessions import authenticated_admin, database_now
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.exports import download_headers, page_download
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
@@ -34,6 +35,7 @@ from .export_views import SAFE_FAILURES
 from .limitations import (
     LimitationsQuery,
     limitations_csv,
+    limitations_pdf,
     limitations_report,
     limitations_xlsx,
 )
@@ -121,6 +123,7 @@ def tables(result, query, paging, action):
 FORMATS = {
     "csv": "text/csv",
     "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "pdf": "application/pdf",
 }
 
 
@@ -336,10 +339,34 @@ def report(request, campaign_id):
 @page_download("limitations")
 @require_http_methods(["POST"])
 def export(request, campaign_id):
-    """Download the filtered report as CSV or XLSX, rendered on request."""
+    """Download the filtered report as CSV, XLSX or PDF, rendered on request."""
 
     def render(result, query, extra):
-        """The chosen file format, with times in the chosen timezone."""
+        """The chosen file format, with times in the chosen timezone.
+
+        The PDF also names the parish and campaign in its page header and
+        dates itself in the parish's date format, lent explicitly, as the
+        Census changes download does.
+        """
+        if extra["format"] == "pdf":
+            parish = (
+                SystemConfiguration.objects.select_related(
+                    "active_configuration__parish"
+                )
+                .get()
+                .active_configuration.parish
+            )
+            campaign = Campaign.objects.select_related("active_configuration").get(
+                pk=campaign_id
+            )
+            with dates.using(parish.date_format):
+                return limitations_pdf(
+                    result,
+                    extra["zone"],
+                    parish=parish.name,
+                    campaign=campaign.active_configuration.name,
+                    as_of=database_now(),
+                )
         if extra["format"] == "xlsx":
             return limitations_xlsx(result, extra["zone"])
         return limitations_csv(result, extra["zone"])
