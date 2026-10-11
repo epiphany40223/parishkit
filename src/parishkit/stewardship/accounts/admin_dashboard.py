@@ -77,12 +77,13 @@ def summary(actor, configuration, now, *, home=False):
     if campaign is None and allows(actor, Capability.CONFIGURE):
         # Just after system setup there is no campaign yet; Home's next step
         # for an Administrator is Create the campaign (#142). It is offered
-        # only while the deployment has never had one.
+        # only while the deployment has never had one, after ParishSoft data
+        # is loaded, and is shown unavailable while campaign work holds it.
         from parishkit.stewardship.campaigns.single_campaign import (
-            first_campaign_admitted,
+            first_campaign_offer,
         )
 
-        result["can_create_campaign"] = first_campaign_admitted(configuration)
+        result["first_campaign"] = first_campaign_offer(configuration)
     if campaign is not None:
         result["next_mail"] = (
             ScheduleRevision.objects.filter(

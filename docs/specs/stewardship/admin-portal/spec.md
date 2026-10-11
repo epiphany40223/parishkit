@@ -2429,7 +2429,13 @@ successor; no campaign work or credential hold may be in progress
 must have been promoted, so there is a catalog to choose Ministries and funds
 from. The page, its review and its confirmation each check these, the
 confirmation under the same lock that records the request, so a stale page
-or a direct request cannot bypass them.
+or a direct request cannot bypass them. Home shows what it already knows:
+before any ParishSoft data is loaded, Create the campaign is shown unavailable
+with the reason that ParishSoft data must be loaded first (Refresh now is
+beside it); while campaign work or a Testing cleanup holds it, it is shown
+unavailable with that reason; otherwise it is offered. Once a campaign row
+exists, in Production mode, or during a restore review, Home keeps its
+no-campaign text instead.
 
 **First page.** It collects the campaign's basics in the ordinary campaign
 form: name, modules, start and end dates, Ministries (from the loaded catalog,
@@ -2456,7 +2462,8 @@ page does not refresh itself once the change is applied: by then the
 campaign exists, so the form has nothing left to create, and a reload of
 that address still shows the change's status; once the campaign exists, that
 reload draws no form, which could only be refused, and links to Campaign
-settings instead. The configuration installer applies the request, and the
+settings instead, saying the campaign was created only when this change was
+applied (a change that failed says a campaign already exists). The configuration installer applies the request, and the
 database checks admission again at activation: a new campaign record becomes
 the current campaign only when the current-campaign pointer is empty in
 Testing mode and every earlier campaign is archived or purged, the rule every

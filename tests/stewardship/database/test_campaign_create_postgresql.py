@@ -22,7 +22,7 @@ from parishkit.stewardship.campaigns.models import Campaign
 
 from ..policy_factory import address
 from ..test_source_corpus import source
-from .auth_builders import signed_in
+from .auth_builders import signed_in, unguarded
 from .campaign_builders import add_draft, change
 from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_campaign_views_postgresql import apply, fields, post, requested
@@ -283,3 +283,168 @@ def test_an_identical_retry_still_needs_current_access(
     assert rechecked, "the retry reached confirm_intent's recheck"
     assert retry.status_code == 403
     assert ConfigurationChangeRequest.objects.count() == 1
+
+
+@pytest.mark.parametrize("state", ["restore_review", "production"])
+def test_creation_is_refused_outside_testing_or_during_restore_review(
+    auth_service, google, state
+):
+    """Production mode refuses the page, its review and its confirmation;
+    a restore review closes the Admin portal before the page is reached.
+    Either way nothing is recorded, and in Production Home offers no
+    creation."""
+    publish(source())
+    browser, _ = signed_in()
+    store = auth_service.store
+    proposal = token(post(browser, CREATE, new_fields(store)))
+    with unguarded():
+        if state == "production":
+            SystemConfiguration.objects.update(mode="production")
+        else:
+            SystemConfiguration.objects.update(restore_review_required=True)
+    responses = (
+        browser.get(CREATE),
+        post(browser, CREATE, new_fields(store)),
+        post(browser, CREATE, {"action": "confirm", "preview": proposal}),
+    )
+    for response in responses:
+        if state == "production":
+            # The page, or the JSON answer to a plain request, carries the
+            # refusal's explanation.
+            assert response.status_code == 409
+            assert "Create the campaign is available once" in (
+                response.content.decode()
+            )
+        else:
+            # A load is sent to the maintenance page; a post is refused
+            # whole (503) before any view runs.
+            assert response.status_code in {302, 503}
+    # The admission itself refuses too, whatever the portal's own gate does.
+    from parishkit.stewardship.campaigns.single_campaign import (
+        first_campaign_admitted,
+        first_campaign_offer,
+    )
+
+    runtime_row = SystemConfiguration.objects.get()
+    assert not first_campaign_admitted(runtime_row)
+    assert first_campaign_offer(runtime_row) is None
+    assert not ConfigurationChangeRequest.objects.exists()
+    assert not Campaign.objects.exists()
+    if state == "production":
+        home = browser.get("/admin/").content
+        assert f'href="{CREATE}"'.encode() not in home
+        assert b"No campaign yet" not in home
+
+
+def test_campaign_work_holds_are_read_from_their_rows(auth_service, google):
+    """``first_campaign_held`` reads both holds: a running work gate and an
+    unfinished Testing cleanup. Each needs a campaign row, which on its own
+    already refuses creation; the hold check is defence in depth."""
+    from parishkit.stewardship.campaigns.credential_models import (
+        CampaignCredentialState,
+    )
+    from parishkit.stewardship.campaigns.runtime_models import CampaignWorkGate
+    from parishkit.stewardship.campaigns.single_campaign import first_campaign_held
+
+    store = auth_service.store
+    add_draft(store, store.active(), uuid4())
+    row = Campaign.objects.get()
+    assert not first_campaign_held()
+    with unguarded():
+        gate = CampaignWorkGate.objects.create(
+            campaign_id=row.pk,
+            request_id=uuid4(),
+            initiated_by_id=uuid4(),
+            state="running",
+        )
+    assert first_campaign_held()
+    with unguarded():
+        gate.delete()
+        CampaignCredentialState.objects.update_or_create(
+            campaign_id=row.pk, defaults={"go_live_gate": True}
+        )
+    assert first_campaign_held()
+
+
+@pytest.mark.parametrize("hold", ["work_gate", "cleanup"])
+def test_a_campaign_work_hold_refuses_creation(auth_service, google, monkeypatch, hold):
+    """While campaign work or a Testing cleanup holds edits, the page, its
+    review and its confirmation refuse, and Home shows Create the campaign
+    unavailable with the reason. Both holds read as the editing state's
+    ``held`` item (``campaign_views._state``), forced here because a real
+    hold needs a campaign row (see the test above)."""
+    from parishkit.stewardship.accounts import campaign_create_views
+    from parishkit.stewardship.campaigns import single_campaign
+
+    publish(source())
+    browser, _ = signed_in()
+    store = auth_service.store
+    proposal = token(post(browser, CREATE, new_fields(store)))
+    real_state = campaign_create_views._state
+
+    def held(service):
+        """The editing state with its hold set, as either hold sets it."""
+        configuration, campaigns, source_row, _, fingerprint = real_state(service)
+        return configuration, campaigns, source_row, True, fingerprint + hold
+
+    monkeypatch.setattr(campaign_create_views, "_state", held)
+    monkeypatch.setattr(single_campaign, "first_campaign_held", lambda: True)
+    assert browser.get(CREATE).status_code == 409
+    for refused in (
+        post(browser, CREATE, new_fields(store)),
+        post(browser, CREATE, {"action": "confirm", "preview": proposal}),
+    ):
+        assert refused.status_code == 409
+    assert not ConfigurationChangeRequest.objects.exists()
+    home = browser.get("/admin/").content.decode()
+    assert "background campaign work now running finishes" in home
+    assert f'href="{CREATE}"' not in home
+    assert 'aria-describedby="create-campaign-reason"' in home
+
+
+def test_home_asks_for_parish_data_before_creation(auth_service, google):
+    """With no promoted snapshot, Home says to load ParishSoft data first and
+    shows Create the campaign unavailable, not the #145 text."""
+    browser, _ = signed_in()
+    home = browser.get("/admin/").content.decode()
+    assert "Load ParishSoft data before creating the campaign" in home
+    assert "single-campaign change (#145)" not in home
+    assert f'href="{CREATE}"' not in home
+    publish(source())
+    assert f'href="{CREATE}"' in browser.get("/admin/").content.decode()
+
+
+def test_two_creations_confirmed_together_apply_one(auth_service, google):
+    """Two reviews confirmed before either applies are both recorded; the
+    installer applies one and fails the other, so one campaign exists. The
+    failed change's page says a campaign already exists, not that it was
+    created."""
+    from parishkit.stewardship.accounts.configuration_installation import (
+        install_request,
+    )
+
+    publish(source())
+    browser, _ = signed_in()
+    store = auth_service.store
+    first = token(post(browser, CREATE, new_fields(store)))
+    second = token(post(browser, CREATE, new_fields(store)))
+    accepted = [
+        post(browser, CREATE, {"action": "confirm", "preview": proposal})
+        for proposal in (first, second)
+    ]
+    assert ConfigurationChangeRequest.objects.count() == 2
+    states = [
+        install_request(
+            store, request_id=requested(response), correlation_id=uuid4()
+        ).state
+        for response in accepted
+    ]
+    assert states == ["applied", "failed"]
+    row = Campaign.objects.get()
+    assert SystemConfiguration.objects.get().current_campaign_id == row.pk
+    applied = browser.get(accepted[0]["Location"]).content.decode()
+    failed = browser.get(accepted[1]["Location"]).content.decode()
+    assert "The campaign has been created." in applied
+    assert "A campaign already exists." in failed
+    assert "The campaign has been created." not in failed
+    assert 'id="settings-form"' not in failed

@@ -101,16 +101,61 @@ def first_campaign_admitted(configuration):
     Ministries and funds from. Purge requests only exist for an earlier
     campaign, so "no campaign row" already excludes them.
     """
-    from parishkit.stewardship.campaigns.models import Campaign
     from parishkit.stewardship.source.snapshot_models import SourceCurrent
+
+    return (
+        _never_had_campaign(configuration)
+        and SourceCurrent.objects.exclude(snapshot_id=None).exists()
+    )
+
+
+def _never_had_campaign(configuration):
+    """Testing mode, no restore review and no campaign row in any state."""
+    from parishkit.stewardship.campaigns.models import Campaign
 
     return (
         configuration.mode == "testing"
         and not configuration.restore_review_required
         and configuration.current_campaign_id is None
         and not Campaign.objects.exists()
-        and SourceCurrent.objects.exclude(snapshot_id=None).exists()
     )
+
+
+def first_campaign_held():
+    """Whether campaign work holds Create the campaign for now.
+
+    Background campaign work (a preparing or running work gate) or an
+    unfinished Testing cleanup (the credential go-live gate) holds every
+    campaign edit, creation included (``campaign_views._state``); it clears
+    by itself once that work finishes.
+    """
+    from parishkit.stewardship.campaigns.credential_models import (
+        CampaignCredentialState,
+    )
+    from parishkit.stewardship.campaigns.models import CampaignWorkGate
+
+    return (
+        CampaignWorkGate.objects.filter(state__in=("preparing", "running")).exists()
+        or CampaignCredentialState.objects.filter(go_live_gate=True).exists()
+    )
+
+
+def first_campaign_offer(configuration):
+    """What Home offers an Administrator while there is no current campaign.
+
+    None when Create the campaign can never apply (a campaign row exists,
+    Production mode or a restore review): Home keeps its no-campaign text.
+    Otherwise "source" while no ParishSoft data has been loaded yet, "held"
+    while campaign work holds creation (``first_campaign_held``), and "ready"
+    when the page would admit it. The page itself checks again.
+    """
+    from parishkit.stewardship.source.snapshot_models import SourceCurrent
+
+    if not _never_had_campaign(configuration):
+        return None
+    if not SourceCurrent.objects.exclude(snapshot_id=None).exists():
+        return "source"
+    return "held" if first_campaign_held() else "ready"
 
 
 def first_campaign_refused():

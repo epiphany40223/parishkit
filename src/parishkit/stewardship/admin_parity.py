@@ -128,6 +128,10 @@ LEDGER = {
     ),
     # The live end-date check validates what ``schedule preview`` reviews.
     "campaign_end_date_check": command("schedule preview"),
+    # The command line has no first-campaign path yet: ``campaign confirm``
+    # refuses any added campaign. When PR 10 adds one, it must admit the
+    # first campaign only through ``single_campaign.first_campaign_admitted``
+    # (and ``refuse_campaign_creation(first=True)``), as this page does.
     "campaign_create": pending("PR 10", "campaign preview", "campaign confirm"),
     "campaign_clone": pending("PR 10", "campaign clone"),
     "campaign_ministries": pending("PR 10", "campaign ministries"),

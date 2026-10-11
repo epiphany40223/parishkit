@@ -19,7 +19,7 @@ the form has nothing left to create.
 The campaign's Families and Family codes are not created here: a refresh reads
 the current campaign when it is requested, so it can only follow the
 request's activation. The change's live status then offers "Load the
-campaign's ParishSoft data" (``ministry_views.created_campaign_refresh``),
+campaign's ParishSoft data" (``created_campaign_refresh``),
 in this page's region and on Change status alike. Otherwise the new giving
 window makes the next scheduled quick update run as a full refresh (see
 ``source.cursors.delta_dates``).
@@ -63,7 +63,6 @@ from .campaign_preview import describe_changes
 from .campaign_views import MULTIPLE_FIELDS, _catalog, _state
 from .content_forms import default_content
 from .limiting import LimiterUnavailable
-from .ministry_views import created_campaign_refresh
 from .policy import Capability, allows
 from .request_patch import build_candidate
 from .sessions import authenticated_admin
@@ -77,6 +76,52 @@ CREATES_TESTING_DRAFT = _(
     "are sent by this action."
 )
 DEFAULT_TEXT = _("Pages and emails start with the default text.")
+
+
+def created_campaign_refresh(receipt):
+    """A refresh key when this applied change created the current campaign.
+
+    Create the campaign (#142) adds the deployment's first campaign; its
+    Families and Family codes come from a full ParishSoft refresh, which can
+    only be requested once the campaign is current (a refresh reads the
+    current campaign when it is requested). The status page then offers the
+    one-click refresh, posted to Refresh from ParishSoft's own action, until
+    a refresh has added the campaign's Families. The page itself already
+    required the Administrator capability.
+    """
+    from uuid import uuid4
+
+    from .request_models import ConfigurationChangeRequest
+    from .runtime_models import SystemConfiguration
+
+    if receipt.state != "applied":
+        return None
+    patch = (
+        ConfigurationChangeRequest.objects.filter(pk=receipt.request_id)
+        .values_list("patch", flat=True)
+        .first()
+    ) or []
+    # The stored patch is canonical JSON written by the request path, but
+    # this read must never fail on an unexpected item shape.
+    added = {
+        item.get("id")
+        for item in patch
+        if type(item) is dict
+        and item.get("section") == "campaigns"
+        and item.get("operation") == "add"
+    }
+    current = SystemConfiguration.objects.values_list(
+        "current_campaign_id", flat=True
+    ).first()
+    if current is None or str(current) not in added:
+        return None
+    # Once a refresh has given the campaign its Families, there is nothing
+    # left to load from here; scheduled refreshes keep it current.
+    from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+
+    if FamilyCampaign.objects.filter(campaign_id=current).exists():
+        return None
+    return uuid4()
 
 
 def _admitted(state):
@@ -104,7 +149,8 @@ def _page(request, configuration, form, *, status=200, **region):
     The step indicator follows the region: Make changes, Review, then Apply
     once a change is shown. A change's status drawn once a campaign exists
     (a reload of the confirmation's answer) leaves the form out: it could
-    only be refused, so the page points to Campaign settings instead.
+    only be refused, so the page points to Campaign settings instead, saying
+    the campaign was created only if this change was applied.
     """
     step = "review" if region.get("review") else "edit"
     if region.get("receipt"):

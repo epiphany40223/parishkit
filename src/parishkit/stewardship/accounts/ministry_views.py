@@ -46,6 +46,7 @@ from .admin_editing import (
     principal as admin_principal,
 )
 from .authentication import runtime
+from .campaign_create_views import created_campaign_refresh
 from .configuration_models import MinistryActivity
 from .configuration_request_reads import receipt as configuration_receipt
 from .limiting import LimiterUnavailable
@@ -419,48 +420,6 @@ def ministry_activity(request):
         signing.BadSignature,
     ) as error:
         return error_response(error)
-
-
-def created_campaign_refresh(receipt):
-    """A refresh key when this applied change created the current campaign.
-
-    Create the campaign (#142) adds the deployment's first campaign; its
-    Families and Family codes come from a full ParishSoft refresh, which can
-    only be requested once the campaign is current (a refresh reads the
-    current campaign when it is requested). The status page then offers the
-    one-click refresh, posted to Refresh from ParishSoft's own action, until
-    a refresh has added the campaign's Families. The page itself already
-    required the Administrator capability.
-    """
-    from uuid import uuid4
-
-    from .request_models import ConfigurationChangeRequest
-    from .runtime_models import SystemConfiguration
-
-    if receipt.state != "applied":
-        return None
-    patch = (
-        ConfigurationChangeRequest.objects.filter(pk=receipt.request_id)
-        .values_list("patch", flat=True)
-        .first()
-    ) or []
-    added = {
-        item.get("id")
-        for item in patch
-        if item.get("section") == "campaigns" and item.get("operation") == "add"
-    }
-    current = SystemConfiguration.objects.values_list(
-        "current_campaign_id", flat=True
-    ).first()
-    if current is None or str(current) not in added:
-        return None
-    # Once a refresh has given the campaign its Families, there is nothing
-    # left to load from here; scheduled refreshes keep it current.
-    from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
-
-    if FamilyCampaign.objects.filter(campaign_id=current).exists():
-        return None
-    return uuid4()
 
 
 @require_safe
