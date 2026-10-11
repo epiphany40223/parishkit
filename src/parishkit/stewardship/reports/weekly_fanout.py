@@ -25,6 +25,7 @@ from parishkit.stewardship.jobs.ownership import lock_task_claim
 from parishkit.stewardship.jobs.storage import _status
 from parishkit.stewardship.storage import StorageInvariantError
 
+from .digest_funnel import digest_funnel
 from .weekly_capture import retained_selection
 from .weekly_digest import WeeklyDigestDocument, render_weekly_digest
 from .weekly_models import (
@@ -89,6 +90,14 @@ def load_weekly_page(claim):
         else [address for address in snapshot.recipients if address not in existing]
     )
     plans = []
+    # The response funnel at the capture instant (#477), counted once per
+    # page from durable timestamps, so every Admin's email shows the same
+    # figures and the saved page, counting again, agrees. None in Testing.
+    funnel = (
+        digest_funnel(snapshot.campaign_id, row.mode, snapshot.observed_at)
+        if pending
+        else None
+    )
     for address in pending[:LIMIT]:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -119,6 +128,8 @@ def load_weekly_page(claim):
                 campaign_timezone=snapshot.timezone_configuration.timezone,
                 manual=manual,
                 date_format=snapshot.configuration.parish.date_format,
+                funnel=funnel,
+                mode=row.mode,
             )
         )
         plans.append(

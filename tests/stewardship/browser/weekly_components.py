@@ -6,7 +6,10 @@ from uuid import UUID
 
 from django.template.loader import render_to_string
 
+from parishkit.stewardship.reports.digest_funnel import funnel_context
 from parishkit.stewardship.reports.weekly_manual_views import ManualReportForm
+
+from ..test_daily_digest_content import funnel_metrics
 
 
 def components(context, admin):
@@ -31,7 +34,7 @@ def components(context, admin):
             timezone_configuration=SimpleNamespace(
                 name="2026 Census", timezone="America/New_York"
             ),
-            preparation=SimpleNamespace(mode="testing"),
+            preparation=SimpleNamespace(mode="production"),
             observed_at=instant,
             submission_watermark=1234,
         ),
@@ -43,6 +46,9 @@ def components(context, admin):
         "pages": 2,
         "next_page": 2,
         "report_url": "/weekly-digest",
+        # A Production report's response funnel at capture (#477); the
+        # template shows it on list pages only.
+        **funnel_context(funnel_metrics(), "production"),
     }
     # The report's second (last) page, as Next page fetches it (#519 PR 6).
     second = page | {

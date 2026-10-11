@@ -2290,6 +2290,20 @@ boundary and ends with "…" and a "Read the full request" link to its page;
 complete text has neither. Links use the portal's link colour, and the
 report button is the portal's primary button. There is no small print.
 
+After the requests and before the report button, a Production weekly report
+shows the daily digest's
+[response funnel](../reports/spec.md#response-funnel) section, with the same
+rows and bars ([#477](https://github.com/epiphany40223/parishkit/issues/477)).
+It is counted at the report's capture instant instead of a report-day end,
+once for all of the report's Admins, so every email in one report shows the
+same figures. The saved report's list pages show the same funnel panel as the
+daily digest's saved page, counted again at the capture instant, including
+the saved page of a report emailed before the funnel existed, as for the
+daily digest. A single request's page shows only that request. A Testing report shows the daily
+digest's Testing note in place of the funnel. The funnel does not change when
+a weekly report is sent: an interval with no new requests or corrections
+still sends no email.
+
 Changing Admin recipients does not resend past successful digests. An Admin may
 manually generate/send a new report occurrence, visibly labeled manual and
 independently audited. The saved weekly report pages are

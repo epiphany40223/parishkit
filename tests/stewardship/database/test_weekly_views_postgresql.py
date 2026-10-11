@@ -1,7 +1,8 @@
 """Weekly email links require current Admin scope and a guarded response lifetime."""
 
+import re
 import socket
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -11,6 +12,7 @@ from django.urls import reverse
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports import weekly_views
+from parishkit.stewardship.reports.digest_funnel import digest_funnel
 from parishkit.stewardship.reports.weekly_models import WeeklyDigestRecipient
 
 from ..policy_factory import address
@@ -60,6 +62,58 @@ def test_weekly_page_and_detail_preserve_capture_but_show_current_status(
             ).count()
             == 6
         )
+
+
+def test_weekly_list_page_recounts_the_emails_funnel(live_response_service, google):
+    """The list page shows the email's funnel, counted again at capture (#477).
+
+    A single request's page shows no funnel. A later submission does not
+    change the saved page's funnel, because it is counted at the capture
+    instant from durable timestamps.
+    """
+    harness = live_response_service
+    with campaign_clock(INSTANT):
+        snapshot = allocated(harness)
+        email = WeeklyDigestRecipient.objects.filter(snapshot=snapshot).first().text
+        browser, _ = signed_in()
+        path = reverse("admin:weekly_digest_snapshot", args=[snapshot.pk])
+        detail = path + f"items/{snapshot.information[0]}/"
+
+        def page_funnel():
+            """The list page's funnel panel as (label, families) pairs."""
+            with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+                _, content = read(browser, path)
+            panel = re.search(
+                rb'<section class="panel" data-digest-funnel>.*?</section>',
+                content,
+                re.S,
+            )
+            assert panel, "The list page has no funnel panel."
+            return re.findall(
+                rb'<th scope="row">([^<]+).*?</th><td>([^<]+)</td>'
+                rb"|<dt>([^<]+)</dt><dd>([^ <]+)",
+                panel.group(0),
+                re.S,
+            )
+
+        before = page_funnel()
+        rows = {(a or c).decode(): (b or d).decode() for a, b, c, d in before}
+        assert rows["Submitted"] == "1"
+        assert rows["Submitted more than once"] == "0"
+        assert "\nSubmitted: 1 (" in email
+        assert "Submitted more than once: 0 (" in email
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            _, content = read(browser, detail)
+        assert b"data-digest-funnel" not in content
+    # A second submission an hour after the capture instant is real: counted
+    # then, it is the Family's second. The saved page is unchanged.
+    later = INSTANT + timedelta(hours=1)
+    with campaign_clock(later):
+        harness, form, answers, _ = revisit(harness)
+        answers["additional_information"] = "LATER-PRIVATE-REQUEST"
+        submit(harness, form, answers)
+        assert digest_funnel(harness.campaign.pk, "production", later).submitted_again
+        assert page_funnel() == before
 
 
 @pytest.mark.parametrize("role", ["staff", "ministry_leader"])

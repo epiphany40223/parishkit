@@ -503,7 +503,9 @@ cannot drift apart. The
 [response lists](#response-lists) show the Families behind the counts; the
 [Family timeline](#family-timeline) shows what happened with one Family; and
 a Production [daily digest](../background-processing/spec.md#daily-campaign-digest)
-states the funnel at the end of its report day.
+states the funnel at the end of its report day, and a Production
+[weekly report](../background-processing/spec.md#weekly-additional-information-digest)
+at its capture instant.
 
 ### Funnel stages
 

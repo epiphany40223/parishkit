@@ -126,3 +126,18 @@ def funnel_text(metrics):
         for label, count, _whole, portion in figure_rows(metrics)
     ]
     return "\n".join(lines)
+
+
+def funnel_context(metrics, mode):
+    """The saved report page's funnel panel: its stages, figure and Testing note.
+
+    The daily and weekly report pages share it (and the
+    ``components/digest-funnel.html`` panel), so both show the funnel alike.
+    """
+    return {
+        "funnel_stages": stage_rows(metrics) if metrics else (),
+        "funnel_figures": figure_rows(metrics) if metrics else (),
+        "funnel_testing_note": TESTING_NOTE
+        if metrics is None and mode == "testing"
+        else "",
+    }

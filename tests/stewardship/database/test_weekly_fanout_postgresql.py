@@ -268,3 +268,33 @@ def test_outsider_has_no_coverage_projection(live_response_service):
                 [snapshot.pk, "outsider@example.org"],
             )
             assert cursor.fetchone()[0] is None
+
+
+def test_every_admins_email_carries_the_capture_instant_funnel(live_response_service):
+    """The worker counts the funnel at the capture instant, once per page (#477).
+
+    It runs as the exact worker login, so this also proves the weekly
+    compile has the read grants the funnel needs.
+    """
+    respond(live_response_service, "Funnel request")
+    with campaign_clock(INSTANT):
+        claim, snapshot = captured(
+            live_response_service, additional_admins=("second@example.org",)
+        )
+        page, contents = detached(claim)
+        assert len(page.recipients) == 2
+        for plan in page.recipients:
+            funnel = plan.document.funnel
+            assert plan.document.mode == "production"
+            assert funnel.as_of == snapshot.observed_at
+            assert funnel.stage("submitted") == 1
+        # Both Admins' emails show the same funnel from one count.
+        assert page.recipients[0].document.funnel is page.recipients[1].document.funnel
+        assert retain(claim, page, contents).phase == "complete"
+        for recipient in WeeklyDigestRecipient.objects.all():
+            assert "Response funnel" in recipient.html
+            assert "Response funnel (Families):" in recipient.text
+            assert "\nSubmitted: 1 (" in recipient.text
+            assert recipient.text.index("Funnel request") < recipient.text.index(
+                "Response funnel"
+            )
