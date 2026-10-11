@@ -950,7 +950,7 @@ def test_smoke_send_reads_the_deployment_tag(workspace, monkeypatch):
     monkeypatch.setattr(
         backup_commands, "_admit_backup_identity", lambda: admitted.append("login")
     )
-    monkeypatch.setattr(runtime_database, "require_current_schema", lambda: None)
+    monkeypatch.setattr(runtime_database, "require_current_schema", lambda **_: None)
     expected = deployment_tag(SystemConfiguration.objects.get().pk)
     assert smoke._deployment_tag("configuration") == expected
     assert admitted == ["configuration", "login"]

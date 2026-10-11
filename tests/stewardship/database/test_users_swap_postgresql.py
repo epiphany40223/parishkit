@@ -438,3 +438,59 @@ def test_recovery_works_before_during_and_after_the_conversion(tmp_path, monkeyp
             confirmed_administrators="admin@example.org",
         ) == {"users_upgrade_applied": False, "already_users": True}
     sessions(*ADMINS, "early@example.org", "middle@example.org", "late@example.org")
+
+
+def test_the_backup_admits_a_database_with_only_the_swap_pending(
+    tmp_path, monkeypatch, capsys
+):
+    """A repeated deploy's step-1 backup runs between the two migrations (#952).
+
+    The schema check is the real one: with only the swap pending the backup
+    records its set, whose manifest lists every applied migration but the
+    swap, so it restores exactly that state.
+    """
+    from contextlib import nullcontext
+
+    from parishkit.stewardship import (
+        backup,
+        backup_boundaries,
+        backup_commands,
+        runtime_paths,
+        startup_interlock,
+    )
+    from parishkit.stewardship.cli import main
+
+    from .test_backup_postgresql import FACTS, backup_login
+
+    initialized(tmp_path, rules())
+    listed = []
+
+    def run_backup(configuration, *, record, migrations, recipient):
+        """Record one run and keep the migration list the manifest would carry."""
+        listed.extend(migrations)
+        record(started_at=scalar("SELECT statement_timestamp()"), **FACTS)
+        return {
+            "database": {"plaintext_bytes": 1},
+            "files": {"plaintext_bytes": 1},
+            "recipient_fingerprint": FACTS["recipient_fingerprint"],
+        }
+
+    monkeypatch.setattr(backup_commands, "configure_logging", lambda: None)
+    monkeypatch.setattr(backup_commands, "load_deployment", lambda path: None)
+    monkeypatch.setattr(backup_commands, "_admit_backup_identity", lambda: None)
+    monkeypatch.setattr(backup_commands, "_copy_offsite", lambda c: {"state": "x"})
+    monkeypatch.setattr(backup_boundaries, "admit_backup_service", lambda c: None)
+    monkeypatch.setattr(
+        operator_commands, "configure_operator_database", lambda c: None
+    )
+    monkeypatch.setattr(
+        runtime_paths, "RuntimeLayout", lambda c: SimpleNamespace(interlock=None)
+    )
+    monkeypatch.setattr(
+        startup_interlock, "StartupLease", lambda path, offline: nullcontext()
+    )
+    monkeypatch.setattr(backup, "run_backup", run_backup)
+    with swap_pending(), backup_login():
+        assert main(["backup", "--config", "unused"]) == 0
+    assert json.loads(capsys.readouterr().out)["backup_recorded"] is True
+    assert listed and USERS_SWAP not in set(map(tuple, listed))

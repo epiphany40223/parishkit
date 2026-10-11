@@ -712,8 +712,10 @@ Administrator may override.
    are the swap and its dependents, as well as a current one, so
    [offline Admin-access recovery](#offline-admin-access-recovery) works
    before the conversion, after a refused or interrupted one (above), after
-   it with the swap still pending, and after the swap. Every other command
-   and service still requires the current schema. Offline Admin-access
+   it with the swap still pending, and after the swap. The `backup` command
+   admits that state too, so a repeated deploy's step-1 backup runs
+   and its set restores exactly that state. Every other command and service
+   still requires the current schema. Offline Admin-access
    recovery never depends on the conversion's grants: only `upgrade-users`
    requires them, and it refuses with an instruction to run
    `database-grants` when they are missing.
