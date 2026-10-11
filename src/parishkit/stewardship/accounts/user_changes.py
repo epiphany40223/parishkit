@@ -1,0 +1,378 @@
+"""Users-page changes as minimal configuration patches, decided by pure code.
+
+The Users page (#952 slice 5) and ``pk-admin users preview`` both describe a
+change as a list of entries, the command line's change document:
+
+- ``{"email", "name", "role"}`` adds a user (``role`` defaults to Ministry
+  leader; ``name`` may be left out only where a default is supplied);
+- ``{"id", "name"?, "role"?}`` changes a saved user's Name or role;
+- ``{"id", "delete": true}`` deletes a saved user.
+
+``plan_changes`` turns the entries into one ``login_rules`` patch with each
+user's Name and role before and after, or refuses with a ``UserRefused``
+naming the field and a plain message, never repeating what was submitted.
+It enforces what the page promises before anything is signed: one valid,
+new address per added user (changing an address is Delete and then New), a
+1-200 character Name, one of the three roles, a real change, the
+last-Administrator guard, and the own-Administrator guard (the acting
+Administrator cannot demote or delete their own user; Administrator
+decision, 2026-10-11). The whole candidate is still validated by the
+``users-v10`` schema at intake and again by SQL at activation, so this is
+the early, readable refusal, not the only one.
+"""
+
+import json
+from dataclasses import dataclass
+from uuid import UUID, uuid4
+
+from django.db import DatabaseError, connection, transaction
+from django.utils.translation import gettext_lazy as _
+
+from parishkit.config import ConfigError
+from parishkit.stewardship.observability import current_correlation
+
+from .policy_models import PortalUser
+from .policy_schema import normalized_email
+from .users_schema import NAME_LIMIT, ROLE_LEVELS, valid_name
+
+# A new user's role unless another is chosen (Administrator decision,
+# 2026-10-10): the least access that still lets the person sign in.
+DEFAULT_ROLE = "ministry_leader"
+# A change document holds at most this many entries: one request's patch
+# limit (``configuration_requests.record_request``).
+ENTRY_LIMIT = 100
+ADD_FIELDS = {"email", "name", "role"}
+UPDATE_FIELDS = {"id", "name", "role"}
+
+MESSAGES = {
+    "email_required": _("Enter the email address this person signs in with."),
+    "email_invalid": _("Enter one email address, such as name@example.org."),
+    "email_taken": _(
+        "This address is already a user. Choose Edit on that user's row instead."
+    ),
+    "email_repeated": _("This address is added more than once."),
+    "name_required": _("Enter a name."),
+    "name_invalid": _(
+        "Use at most %(limit)s characters, on one line, with no special "
+        "control characters."
+    )
+    % {"limit": NAME_LIMIT},
+    "role_invalid": _("Choose Ministry leader, Staff or Administrator."),
+    "missing": _("That user no longer exists. Return to Users to see the list."),
+    "repeated": _("The same user is changed more than once."),
+    "unchanged": _("Nothing has changed. Change the Name or the role, then review."),
+    "last_administrator": _(
+        "At least one Administrator must remain. Make another user an "
+        "Administrator first."
+    ),
+    "own_administrator": _(
+        "You can't remove your own Administrator role or delete yourself. "
+        "Another Administrator can make this change."
+    ),
+    "invalid": _("This change can't be made. Return to Users and start again."),
+}
+
+
+class UserRefused(ValueError):
+    """A change the builder will not make: a field, a closed code and words.
+
+    ``field`` is ``email``, ``name``, ``role`` or None for the change as a
+    whole; ``index`` is the entry's place in the change document. The
+    message is one of ``MESSAGES``, never built from submitted values.
+    """
+
+    def __init__(self, code, field=None, index=0):
+        """Carry the code, the field it concerns and the entry's index."""
+        super().__init__(code)
+        self.code = code
+        self.field = field
+        self.index = index
+
+    @property
+    def message(self):
+        """The plain explanation the page and the command line show."""
+        return MESSAGES[self.code]
+
+
+@dataclass(frozen=True)
+class UserChange:
+    """One user's change: its ``operation`` and Name and role before and after.
+
+    ``before`` and ``after`` are ``{"name", "role"}`` or None (added or
+    deleted); ``id`` is the user's opaque record ID; ``email`` never changes.
+    """
+
+    operation: str
+    id: str
+    email: str
+    before: dict | None
+    after: dict | None
+
+    @property
+    def grants_administrator(self):
+        """True when this change makes someone an Administrator (an alert)."""
+        return (self.after or {}).get("role") == "administrator" and (
+            self.before or {}
+        ).get("role") != "administrator"
+
+    @property
+    def removes_administrator(self):
+        """True when an Administrator is demoted or deleted (high impact)."""
+        return (self.before or {}).get("role") == "administrator" and (
+            self.after or {}
+        ).get("role") != "administrator"
+
+    @property
+    def changed(self):
+        """The fields that differ, in the page's order (``name``, ``role``)."""
+        before, after = self.before or {}, self.after or {}
+        return [
+            field for field in ("name", "role") if before.get(field) != after.get(field)
+        ]
+
+
+def saved_users(records):
+    """The users of a ``login_rules`` list, by record ID, in address order."""
+    users = {
+        record["id"]: record["values"]
+        for record in records
+        if record["values"].get("kind") == "user"
+    }
+    return dict(sorted(users.items(), key=lambda item: item[1]["email"]))
+
+
+def administrator_ids(users):
+    """The IDs of the users who are Administrators."""
+    return {key for key, values in users.items() if values["role"] == "administrator"}
+
+
+def clean_email(value, index=0):
+    """A typed address, trimmed and lowercased as sign-in matches, or refuse."""
+    if value is None or (type(value) is str and not value.strip()):
+        raise UserRefused("email_required", "email", index)
+    try:
+        return normalized_email(value.strip() if type(value) is str else value)
+    except ConfigError:
+        raise UserRefused("email_invalid", "email", index) from None
+
+
+def clean_name(value, index=0):
+    """A typed Name, trimmed, 1-200 characters with no controls, or refuse."""
+    if value is None or (type(value) is str and not value.strip()):
+        raise UserRefused("name_required", "name", index)
+    try:
+        return valid_name(value.strip() if type(value) is str else value)
+    except ConfigError:
+        raise UserRefused("name_invalid", "name", index) from None
+
+
+def clean_role(value, index=0):
+    """One of the three roles, or refuse."""
+    if value not in ROLE_LEVELS:
+        raise UserRefused("role_invalid", "role", index)
+    return value
+
+
+def _record_id(value, index):
+    """A saved user's ID as the patch names it: a canonical UUID string."""
+    try:
+        if type(value) is not str or str(UUID(value)) != value:
+            raise ValueError
+    except ValueError:
+        raise UserRefused("missing", None, index) from None
+    return value
+
+
+def _added(entry, index, users, taken, default_name):
+    """One added user's change and patch operation."""
+    if set(entry) - ADD_FIELDS:
+        raise UserRefused("invalid", None, index)
+    email = clean_email(entry.get("email"), index)
+    if email in {values["email"] for values in users.values()}:
+        raise UserRefused("email_taken", "email", index)
+    if email in taken:
+        raise UserRefused("email_repeated", "email", index)
+    taken.add(email)
+    name = entry.get("name")
+    if name is None and default_name is not None:
+        name = default_name(email)
+    name = clean_name(name, index)
+    role = clean_role(entry.get("role", DEFAULT_ROLE), index)
+    identifier = str(uuid4())
+    values = {"kind": "user", "email": email, "name": name, "role": role}
+    change = UserChange("add", identifier, email, None, {"name": name, "role": role})
+    return change, {
+        "operation": "add",
+        "section": "login_rules",
+        "id": identifier,
+        "values": values,
+    }
+
+
+def _updated(entry, index, users):
+    """One saved user's Name or role change, or deletion, and its operation."""
+    identifier = _record_id(entry.get("id"), index)
+    if identifier not in users:
+        raise UserRefused("missing", None, index)
+    saved = users[identifier]
+    before = {"name": saved["name"], "role": saved["role"]}
+    if entry.get("delete") is not None:
+        if entry != {"id": identifier, "delete": True}:
+            raise UserRefused("invalid", None, index)
+        change = UserChange("remove", identifier, saved["email"], before, None)
+        return change, {
+            "operation": "remove",
+            "section": "login_rules",
+            "id": identifier,
+        }
+    if set(entry) - UPDATE_FIELDS:
+        raise UserRefused("invalid", None, index)
+    after = {
+        "name": clean_name(entry["name"], index) if "name" in entry else before["name"],
+        "role": clean_role(entry["role"], index) if "role" in entry else before["role"],
+    }
+    change = UserChange("update", identifier, saved["email"], before, after)
+    if not change.changed:
+        raise UserRefused("unchanged", None, index)
+    values = {field: after[field] for field in change.changed}
+    return change, {
+        "operation": "update",
+        "section": "login_rules",
+        "id": identifier,
+        "values": values,
+    }
+
+
+def plan_changes(records, entries, *, default_name=None, own_email=None):
+    """Turn a change document's entries into ``(changes, patch)``, or refuse.
+
+    ``records`` are the applied ``login_rules``; ``default_name(email)``, when
+    given, names an added user whose entry has no ``name`` (the command line;
+    the page always posts one). Entries are checked in order, so the first
+    problem is the one reported. A user may appear once. The result must keep
+    at least one Administrator: the last-Administrator guard, which the
+    ``users-v10`` schema and SQL activation also enforce. ``own_email`` is
+    the acting Administrator's address (``acting_email``); a change that
+    demotes or deletes that user is refused (``own_administrator``).
+    """
+    if type(entries) is not list or not 1 <= len(entries) <= ENTRY_LIMIT:
+        raise UserRefused("invalid")
+    users = saved_users(records)
+    changes, patch, taken, seen = [], [], set(), set()
+    for index, entry in enumerate(entries):
+        if type(entry) is not dict:
+            raise UserRefused("invalid", None, index)
+        if "id" in entry:
+            if entry["id"] in seen:
+                raise UserRefused("repeated", None, index)
+            seen.add(entry["id"])
+            change, operation = _updated(entry, index, users)
+        else:
+            change, operation = _added(entry, index, users, taken, default_name)
+        if change.email == own_email and change.removes_administrator:
+            # Edit's Role field, or the change as a whole for a Delete.
+            field = "role" if change.operation == "update" else None
+            raise UserRefused("own_administrator", field, index)
+        changes.append(change)
+        patch.append(operation)
+    remaining = administrator_ids(users) - {
+        change.id for change in changes if change.removes_administrator
+    }
+    if not remaining and not any(change.grants_administrator for change in changes):
+        raise UserRefused("last_administrator", "role", 0)
+    return changes, patch
+
+
+def only_administrator(users, identifier):
+    """True when this saved user is the one Administrator left.
+
+    The Users table then offers no Delete for that row, and Edit user shows
+    the lower roles unavailable with the reason (#563); the server refuses
+    either change anyway (``plan_changes``).
+    """
+    return administrator_ids(users) == {identifier}
+
+
+def acting_email(identity):
+    """The address of the acting Administrator's recorded Google identity.
+
+    A user is its address, so this names the acting Administrator's own user
+    (None for an identity that is not recorded, which owns no user).
+    """
+    return (
+        PortalUser.objects.filter(pk=identity).values_list("email", flat=True).first()
+    )
+
+
+def own_user_ids(users, email):
+    """The IDs of the saved users with this address: at most one."""
+    return {key for key, values in users.items() if values["email"] == email}
+
+
+def refuse_own_demotion(records, patch, email):
+    """Refuse a recorded patch that demotes or deletes the acting user.
+
+    The configuration request's own check (#952, Administrator decision,
+    2026-10-11): ``plan_changes`` already refused such a change before it
+    was signed, and this repeats the refusal against the request's base
+    ``records`` inside the transaction that records the request, so no
+    channel can record one. Raises ``UserRefused("own_administrator")``.
+    """
+    users = saved_users(records)
+    own = {
+        key
+        for key in own_user_ids(users, email)
+        if users[key]["role"] == "administrator"
+    }
+    for operation in patch:
+        if operation.get("section") != "login_rules" or operation.get("id") not in own:
+            continue
+        role = (operation.get("values") or {}).get("role", "administrator")
+        if operation.get("operation") == "remove" or role != "administrator":
+            raise UserRefused("own_administrator")
+
+
+class LookupLimited(RuntimeError):
+    """The Administrator has used up the hourly Name lookups (SQLSTATE 53400)."""
+
+
+# The SQLSTATEs stewardship_member_names_for_v1 refuses with: past its
+# limit, and for a session that is not a live Administrator's.
+LOOKUP_LIMITED = "53400"
+LOOKUP_REFUSED = "42501"
+
+
+def member_names(session_key, email):
+    """The ordered, distinct ParishSoft Member names that list this address.
+
+    Read through the ``stewardship_member_names_for_v1`` definer (migration
+    0053), which matches the address trimmed and case-insensitively and
+    returns only names, best first: a Member of an active Family, then a head
+    of household, then by name and Member DUID. The definer itself refuses
+    unless ``session_key`` is a live Admin session of a current
+    Administrator (a ``DatabaseError`` whose cause has SQLSTATE
+    ``LOOKUP_REFUSED``), refuses past 60 lookups an hour for
+    that Administrator (``LookupLimited``), and records the lookup's audit
+    event, with the count of names but never the address. Call it inside
+    the transaction that owns the request's effects. Names the users schema
+    would refuse are left out, so the first one is always usable as a
+    default.
+    """
+    try:
+        with transaction.atomic(), connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT public.stewardship_member_names_for_v1(%s, %s, %s)::text",
+                [session_key, email, current_correlation()],
+            )
+            (value,) = cursor.fetchone()
+    except DatabaseError as error:
+        if getattr(error.__cause__, "sqlstate", None) == LOOKUP_LIMITED:
+            raise LookupLimited("Too many Name lookups this hour.") from None
+        raise
+    names = []
+    for name in json.loads(value or "[]"):
+        try:
+            names.append(valid_name(name))
+        except ConfigError:
+            continue
+    return names

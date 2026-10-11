@@ -27,7 +27,6 @@ BROWSER_JOBS = (
 BROWSER_FILE_SECONDS = {
     "test_components.py": 235,
     "test_family_pages.py": 60,
-    "test_rule_autosave.py": 60,
     "test_about_page.py": 48,
     "test_automation.py": 48,
     "test_family_financial.py": 46,

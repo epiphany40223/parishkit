@@ -282,13 +282,18 @@ LEDGER = {
     # Asks for the page's verification acknowledgement at the prompt.
     "delivery_refusal_clear": command("delivery refusal-clear"),
     # Users and follow-up.
-    # The page's users and its Upgrade preview panel (#952 slice 2). Its
-    # interim rule tables are retired by #952, so nothing else is owed.
-    "users": command("users list", "users preview-upgrade"),
-    "user_rules": pending("PR 11", "rules show"),
-    "rule_apply": pending("PR 11", "rules apply"),
-    "rule_base": pending("PR 11", "rules show"),
-    "rule_request": pending("PR 11", "rules request show"),
+    # The Users page (#952): the table, and Apply of a reviewed change. New,
+    # Edit and Delete build the change document ``users preview`` takes, and
+    # a new user's Name defaults from ParishSoft there as on the page.
+    # ``users preview-upgrade`` was the interim page's Upgrade preview panel; it
+    # answers not_available once the configuration holds users.
+    "users": command(
+        "users list", "users preview", "users confirm", "users preview-upgrade"
+    ),
+    "user_new": command("users preview", "users confirm"),
+    "user_edit": command("users list", "users preview", "users confirm"),
+    "user_delete": command("users preview", "users confirm"),
+    "user_name_suggestions": command("users preview"),
     "security_event_acknowledge": pending("PR 11", "events acknowledge"),
     "critical_events_acknowledge": pending("PR 11", "events acknowledge"),
     "information_update": pending("PR 11", "followup"),

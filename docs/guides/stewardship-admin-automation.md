@@ -1450,3 +1450,9 @@ them on the Portal users page before the upgrade.
   files by position or by the old headings must change.
 - `pk-admin/1` (#952 slice 2): additive. `users list` and
   `users preview-upgrade`.
+- `pk-admin/1` (#952 slice 5): additive. `users preview` and
+  `users confirm`. Each ParishSoft Name lookup a preview makes is audited
+  and counts toward the Administrator's 60 lookups an hour; past that the
+  preview exits 3 with `unavailable`. When the database refuses the lookup
+  for the command session (ended, begun before a recovery, or its user no
+  longer an Administrator), the preview exits 5 with `session_ended`.

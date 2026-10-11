@@ -189,6 +189,9 @@ FROZEN = {
     "0052_users_swap.sql": (
         "188e28a1640c83a8621ff08d2141624eb605dd72adcd494cc85ef6c9b5448a25"
     ),
+    "0053_user_name_lookup.sql": (
+        "8d830c804f525ae5753343dde91e3bc69d08081c3cd716c47d57e220b099dcf2"
+    ),
 }
 
 

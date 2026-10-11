@@ -3624,24 +3624,20 @@ autosaves.
 A small "See sign-in activity in System logs" link beside the page heading
 opens [sign-in activity](#sign-in-activity) on System logs, with only the
 closed link filters in its address
-([#953](https://github.com/epiphany40223/parishkit/issues/953)). Each user's
-Last successful sign-in cell also has a small "Sign-in activity" button per
-recorded Google identity with that address, which opens the same view
-narrowed to that identity as its actor. The identity is a private filter, so
-the button posts it, never putting it in an address
-([Admin tables](../ui-conventions/spec.md#admin-tables)). Until the users code
-of [#952](https://github.com/epiphany40223/parishkit/issues/952) lands, the
-interim page's exact-address rows carry these buttons in the same cell.
+([#953](https://github.com/epiphany40223/parishkit/issues/953)). The table
+rows have no sign-in activity control (Administrator, 2026-10-11, after
+pk-local review). A user's Edit page lists one small "Sign-in activity"
+control per recorded Google identity at that address, which opens the same
+view narrowed to that identity as its actor; the identity is a private
+filter, so the control posts it, never putting it in an address
+([Admin tables](../ui-conventions/spec.md#admin-tables)). A user with no
+recorded identity has none.
 
-Until the users upgrade, the interim page also ends with the read-only
-**Upgrade preview** panel of the
-[users upgrade](../operations/spec.md#users-upgrade-from-sign-in-rules),
-reached by a "See the users upgrade preview" link beside the heading (#952
-slice 2). It lists first the Administrators the upgrade keeps, then a table
-of the users it writes (Email, Name, Role and the rule each comes from,
-sorting as the Users table does), the hosted-domain rules, the deny rules it
-drops and what it does not carry over. It has no controls and is gone once
-the configuration holds users.
+Every deployment past initial setup holds users once the users release
+starts (startup refuses sign-in rules), so the page has no Upgrade preview
+panel; `pk-admin users preview-upgrade` and `upgrade-users --preview` show
+the [users upgrade](../operations/spec.md#users-upgrade-from-sign-in-rules)
+preview before it.
 
 ### Users table
 
@@ -3650,8 +3646,11 @@ Email (the row header, the most relevant column), Name, Role, Last successful
 sign-in and the row actions. Email, Name, Role and Last successful sign-in
 sort on the server; Role sorts by level (Administrator first on the first
 choice), and Last successful sign-in shows the newest successful Google
-sign-in of any identity with that address, in the browser's time zone, with
-users who never signed in sorting last. The default order is Email. The table
+sign-in of any identity with that address, in the browser's time zone and
+the compact variant of the parish
+[date format](../ui-conventions/spec.md#date-format), as other dense tables
+show times (Administrator, 2026-10-11), with users who never signed in
+sorting last; it sorts by the time itself. The default order is Email. The table
 refreshes in place like every other Admin table.
 
 Each row is one line. An email or Name too long for its column is cut short
@@ -3662,9 +3661,12 @@ the Edit page shows it whole. This is a recorded exception to
 whose long text wraps instead, because the Administrator asked for one-line
 rows here (#952).
 
-Each row's actions are **Edit** and **Delete**. The row of the only
-Administrator has no Delete, and the server refuses it anyway. The table has
-no selection column: users are deleted one at a time.
+Each row's actions are **Edit** and **Delete**. The signed-in
+Administrator's own row has no Delete (the
+[own-Administrator guard](#user-change-checks-and-alerts)); that also covers
+the only Administrator, who is always the reader. A line under the table
+says why, and the server refuses it anyway. The table has no selection
+column: users are deleted one at a time.
 
 Removed with the revamp, and not shown anywhere: the hosted-domain table and
 its `gmail.com` check, the Rule origin, Configured roles and grant origin,
@@ -3687,7 +3689,10 @@ fields:
   default from ParishSoft is described below.
 - **Role**: three radio buttons, Ministry leader, Staff and Administrator,
   each with one plain-language line saying what that role can see. New starts
-  with Ministry leader chosen.
+  with Ministry leader chosen. On the signed-in Administrator's own Edit
+  page (and the only Administrator's) the lower roles are unavailable, with
+  the reason in a line under the roles that is reserved while empty (#563);
+  the server refuses that change anyway.
 
 **Review** shows each changed value, before and after, and **Apply** records
 one configuration change, whose status the page follows; it then returns to
@@ -3703,7 +3708,19 @@ current promoted data whose contact record lists that address (matched
 trimmed and case-insensitively, as sign-in matches, with no Gmail dot or plus
 folding). The request is a CSRF-protected POST, so the address never appears
 in a URL; it is Administrator-only, reads nothing else, and its audit records
-only the count of names found.
+only the count of names found. The same answer says when the address is not
+one email address or is already a user, shown at the Email field. The web
+login reads the names through one SECURITY DEFINER function
+(`stewardship_member_names_for_v1`, migration 0053), which returns only
+names, never another contact field. The function answers only for the
+caller's live Admin session (one begun after the latest Admin-access
+recovery) whose user is an Administrator now, records the lookup's audit
+event itself, and refuses an Administrator's 61st lookup within an hour;
+against a compromised web database login, only that cap and the audit
+hold ([residual risk](../operations/spec.md#users-upgrade-from-sign-in-rules)).
+The page also refuses an Administrator's 20th lookup within a minute, and
+every lookup while the rate limiter is unavailable; a refused lookup says
+the names couldn't be looked up, and the Name is typed instead.
 
 - **No match:** Name stays empty and required.
 - **One name:** Name is filled in, and stays editable.
@@ -3737,9 +3754,18 @@ and follows it until it is applied, as
 Every save, delete and import is checked on the server, in the transaction
 that records the request and again at activation: the actor is a current
 Administrator with the page's CSRF token, the actor is still authorized, and
-the **last-Administrator guard** holds (no change may leave no Administrator;
-an Administrator may demote or delete themselves only while another
-Administrator remains). A user change asks for no fresh Google sign-in and no
+the **last-Administrator guard** holds (no change may leave no
+Administrator), and so does the **own-Administrator guard**: no Administrator
+demotes or deletes their own user, even while another Administrator remains;
+another Administrator makes that change (Administrator decision, 2026-10-11,
+after a self-demotion left its Change status page waiting on a status read
+the demoted reader could no longer make). The change builder refuses it at
+Review and Delete, and the configuration request's own transaction refuses
+it again against the request's base. Both guards are Python's: SQL's
+activation check keeps an Administrator but cannot tell who asked, so the
+own-Administrator guard has no SQL counterpart. The `pk-admin users` commands
+act as the Administrator who approved the automation session and apply the
+same guard. A user change asks for no fresh Google sign-in and no
 dialog beyond Delete's; this is the accepted low-friction policy of the
 [identity security policy](../architecture/spec.md#identity-and-session-security).
 The audit records the actor, the target email, the Name and role before and
@@ -3774,9 +3800,7 @@ no such role signs in and sees no Ministry (Administrator decision,
 2026-10-10). Opening a Ministry page then answers 403 with a plain sentence
 saying they lead no Ministry in the current ParishSoft data, so there are no
 Ministry pages to show, never the generic sign-in denial. The
-[data specification](../data/spec.md#ministry-leaders) defines the rule,
-including the interim login-rule admission that stays until the users code
-of [#952](https://github.com/epiphany40223/parishkit/issues/952) lands. A
+[data specification](../data/spec.md#ministry-leaders) defines the rule. A
 change in ParishSoft reaches the portal with the next full refresh.
 
 The Ministry assignments editor and the Chairperson suggestion, confirmation
@@ -3823,9 +3847,11 @@ Administrator sees and confirms who gets access).
 
 The release that introduces users converts the old sign-in rules once, as the
 [operations upgrade note](../operations/spec.md#users-upgrade-from-sign-in-rules)
-describes. Before that release, the Portal users page shows a read-only **Upgrade
-preview** panel with exactly what the conversion will do, so the
-Administrator can add any missing address as a user first.
+describes. Before that release, the Portal users page showed a read-only
+**Upgrade preview** panel with exactly what the conversion would do, so the
+Administrator could add any missing address first; with the users release
+the page shows only users, and `pk-admin users preview-upgrade` and
+`upgrade-users --preview` keep the preview.
 
 ## Manual ParishSoft refresh
 
@@ -5172,9 +5198,10 @@ every `'<prefix>_'||` an installed audit-writing function builds to be a
   (`policy_security_event`, `policy_denial_namespace_reset`), mail schedules
   and live campaign changes (`schedule_selected`, `admin_cmd_schedule_confirm`,
   `admin_cmd_config_request_cancel`, `campaign_ministries_requested`,
-  `campaign_end_date_requested`), portal user roles (`roles_applied`, and
-  the operator's one-time conversion of sign-in rules into users,
-  `operator_users_upgraded`), hosted files (`hosted_file_*`), stored key
+  `campaign_end_date_requested`), portal users and their roles
+  (`roles_applied`, the Users page's `user_change_requested`, the command
+  line's `admin_cmd_users_confirm`, and the operator's one-time conversion
+  of sign-in rules into users, `operator_users_upgraded`), hosted files (`hosted_file_*`), stored key
   replacements
   (`secret_replacement_requested`, `secret_request_*`,
   `credential_consumer_acknowledged`) and initial setup, which is

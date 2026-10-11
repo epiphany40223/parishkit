@@ -1,5 +1,11 @@
 # Login rule edits
 
+> **Retired (login rule edits).** The [Users page](../specs/stewardship/admin-portal/spec.md#portal-user-management)
+> of [#952](https://github.com/epiphany40223/parishkit/issues/952) (slice 5)
+> replaced these login rule edits: one users table, New and Edit user with Review and
+> Apply, and Delete through the shared dialog. This guide records the
+> earlier design and is kept for its history.
+
 This Phase 5 increment begins at verified main `e01b52ba` after PR #79's
 [protected delivery](stewardship-financial-exports.md#protected-delivery). It
 is the second slice of

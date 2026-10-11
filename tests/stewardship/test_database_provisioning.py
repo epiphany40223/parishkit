@@ -10,6 +10,10 @@ from parishkit.config import ConfigError
 from parishkit.stewardship import database_provisioning as provisioning
 from parishkit.stewardship.accounts.key_files import write_private
 from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.runtime_grants import (
+    CLOSURE_FUNCTIONS,
+    MEMBER_NAMES_FOR_FUNCTION,
+)
 from parishkit.stewardship.runtime_identities import database_identities
 
 from .test_runtime_topology import configuration_at
@@ -237,12 +241,15 @@ def test_role_creation_preflights_all_identities_and_never_emits_plaintext(
     assert len(connections) == 1 + (len(admissions) if existing else 0)
 
 
-def test_grant_provisioning_uses_only_explicit_table_and_column_registry(
-    tmp_path, monkeypatch
-):
-    """Schema ownership is not translated into runtime ALL or wildcard grants."""
+def grant_statements(tmp_path, monkeypatch, applied):
+    """Run provision_grants on a fake cursor; its configuration and GRANTs.
+
+    ``applied`` is the ``(app, name)`` rows the cursor answers for
+    ``django_migrations``.
+    """
     configuration = configuration_at(tmp_path)
     cursor = Cursor()
+    cursor.fetchall = lambda: list(applied)
     monkeypatch.setattr(provisioning, "_password", lambda path: b"private-password")
     monkeypatch.setattr(provisioning, "_admit_operator", lambda *args, **kwargs: None)
     monkeypatch.setattr(provisioning, "_check_role", lambda *args, **kwargs: True)
@@ -253,15 +260,46 @@ def test_grant_provisioning_uses_only_explicit_table_and_column_registry(
     assert provisioning.provision_grants(configuration, uuid4())[
         "database_grants_provisioned"
     ]
-    assert cursor.statements
-    assert all(statement.startswith("GRANT ") for statement in cursor.statements)
+    assert cursor.statements[0] == "SELECT app,name FROM public.django_migrations"
+    return configuration, cursor.statements[1:]
+
+
+def test_grant_provisioning_uses_only_explicit_table_and_column_registry(
+    tmp_path, monkeypatch
+):
+    """Schema ownership is not translated into runtime ALL or wildcard grants."""
+    configuration, statements = grant_statements(
+        tmp_path, monkeypatch, CLOSURE_FUNCTIONS.values()
+    )
+    assert statements
+    assert all(statement.startswith("GRANT ") for statement in statements)
     assert all(
         "ALL" not in statement and "private-password" not in statement
-        for statement in cursor.statements
+        for statement in statements
     )
     monkeypatch.setattr(provisioning, "_check_role", lambda *args, **kwargs: False)
     with pytest.raises(ConfigError, match="before grants"):
         provisioning.provision_grants(configuration, uuid4())
+
+
+@pytest.mark.parametrize("applied", [False, True])
+def test_grants_wait_for_the_users_swap_closures_functions(
+    tmp_path, monkeypatch, applied
+):
+    """On the users upgrade's base, a routine the swap's closure adds waits.
+
+    Its creating migration is pending there (#952), so naming it would fail;
+    once the migration is recorded, the same grants include it.
+    """
+    _, statements = grant_statements(
+        tmp_path, monkeypatch, CLOSURE_FUNCTIONS.values() if applied else ()
+    )
+    named = [s for s in statements if MEMBER_NAMES_FOR_FUNCTION in s]
+    assert len(named) == (1 if applied else 0)
+    # Everything else is granted either way.
+    assert len(statements) == len(
+        grant_statements(tmp_path, monkeypatch, CLOSURE_FUNCTIONS.values())[1]
+    ) - (0 if applied else 1)
 
 
 @pytest.mark.parametrize("installed", ["current", "older", "missing"])

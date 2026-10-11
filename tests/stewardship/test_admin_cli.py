@@ -123,8 +123,9 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "export directory",
         "export postal",
     }
-    # The Portal users reads (#952 slice 2), in the users group (PR 11).
-    users = {"users list", "users preview-upgrade"}
+    # The users commands (#952), in the users group (PR 11): the reads of
+    # slice 2 and the changes of slice 5.
+    users = {"users list", "users preview-upgrade", "users preview", "users confirm"}
     assert set(entries) == (
         session
         | reads
@@ -289,13 +290,26 @@ def test_the_catalog_lists_every_command_with_its_flags():
             name in {"task show", "send progress", "go-live progress", "system health"}
         )
     assert entries["status"]["audit_event"] == "dashboard_viewed"
-    for name in users:
+    for name in ("users list", "users preview-upgrade"):
         # Passive reads any session may run, recording the page's view.
         entry = entries[name]
         assert entry["scope"] == "read_only" and not entry["changes_state"], name
         assert entry["audit_event"] == "portal_users_viewed", name
         assert not entry["watch"] and not entry["prompts"], name
-    assert entries["users list"]["result_fields"] == ["form", "sort", "users"]
+    # The Users page's changes (#952 slice 5): a full-scope preview that
+    # changes nothing, and a confirm that records its own event.
+    preview, confirmed = entries["users preview"], entries["users confirm"]
+    assert preview["scope"] == confirmed["scope"] == "full"
+    assert not preview["changes_state"] and preview["audit_event"] is None
+    assert confirmed["changes_state"]
+    assert confirmed["audit_event"] == "admin_cmd_users_confirm"
+    assert preview["result_fields"][-1] == "preview"
+    assert entries["users list"]["result_fields"] == [
+        "form",
+        "version",
+        "sort",
+        "users",
+    ]
     assert entries["users preview-upgrade"]["result_fields"][0] == "administrators"
     assert entries["task list"]["audit_event"] == "background_viewed"
     assert entries["send history"]["audit_event"] == "delivery_viewed"
@@ -521,6 +535,7 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_export_directory",
         "admin_cmd_export_postal",
         "admin_cmd_digest_weekly_request",
+        "admin_cmd_users_confirm",
     ]
     for event in events:
         assert Action(event) and event in DESCRIPTIONS, event
