@@ -14,13 +14,31 @@ from django.db import transaction
 
 from parishkit.config import ConfigError
 
-from .configuration_installation import _install_request, coherent_configuration
+from . import users_schema as users
+from .configuration_installation import (
+    _install_request,
+    _selected_over,
+    abandon_interrupted_upgrade,
+    coherent_configuration,
+    interrupted_upgrade,
+    restore_refused,
+)
 from .configuration_requests import _own_transaction, _status
 from .policy_schema import normalized_email
 from .request_admission import intake_base
 from .request_models import ConfigurationChangeRequest
 from .request_patch import build_candidate
 from .runtime_models import SystemConfiguration
+
+# Each base configuration schema's recovery request format.
+RECOVERY_SCHEMAS = {
+    users.SCHEMA: users.RECOVERY_SCHEMA,
+    "source-cadence-v8": "operator-recovery-cadence-v8",
+    "bootstrap-policy-v1": "operator-recovery-bootstrap-v1",
+    "campaign-content-v5": "operator-recovery-content-v5",
+    "ministry-activity-v4": "operator-recovery-ministry-v4",
+    "campaign-foundation-v3": "operator-recovery-patch-v2",
+}
 
 
 def _text(value, limit):
@@ -34,8 +52,65 @@ def _text(value, limit):
         raise ConfigError("Explicit operator name and reason are required.")
 
 
-def _patch(version, email, operation_id):
-    """Generate exactly one manual Admin addition while preserving other origins."""
+def _name(email, name):
+    """A new Administrator user's Name: ``--name``, or the address's local part."""
+    if name is None:
+        return users.local_part_name(email)
+    try:
+        return users.valid_name(name)
+    except ConfigError:
+        raise ConfigError(
+            "The Name must be 1 to 200 characters, trimmed, with no control characters."
+        ) from None
+
+
+def _users_patch(records, email, name):
+    """Raise the address's user to Administrator, or add it as one (#952).
+
+    An existing user keeps its Name: a different ``--name`` is refused
+    rather than silently ignored, since recovery changes nothing but the role.
+    """
+    user = next(
+        (record for record in records if record["values"]["email"] == email), None
+    )
+    if user is None:
+        return [
+            {
+                "operation": "add",
+                "section": "login_rules",
+                "id": str(uuid4()),
+                "values": {
+                    "kind": "user",
+                    "email": email,
+                    "name": _name(email, name),
+                    "role": "administrator",
+                },
+            }
+        ]
+    if user["values"]["role"] == "administrator":
+        raise ConfigError("The target is already an Administrator.")
+    if name is not None and name != user["values"]["name"]:
+        raise ConfigError("Recovery keeps an existing user's Name.")
+    return [
+        {
+            "operation": "update",
+            "section": "login_rules",
+            "id": user["id"],
+            "values": {"role": "administrator"},
+        }
+    ]
+
+
+def _patch(version, email, operation_id, name=None):
+    """Generate exactly one manual Admin addition while preserving other origins.
+
+    In the users form (#952) that is an Administrator user. A sign-in rule
+    has no Name, so ``name`` is refused for one.
+    """
+    if users.uses_users(version.document()):
+        return _users_patch(version.document()["sections"]["login_rules"], email, name)
+    if name is not None:
+        raise ConfigError("Only a configuration in the users form keeps a Name.")
     rule = next(
         (
             record
@@ -78,11 +153,46 @@ def _patch(version, email, operation_id):
     ]
 
 
-def recovery_preview(version, deployment_id, target_email):
-    """Describe only the additive address grant, without creating an intent or user."""
+def recovery_preview(version, deployment_id, target_email, name=None):
+    """Describe only the additive address grant, without creating an intent or user.
+
+    ``form`` says which policy form the configuration holds; in the users
+    form (#952) ``current_admin_rules`` lists the Administrator users and
+    ``name`` is the target user's Name after recovery. A sign-in rule has no
+    Name, so it is null there.
+    """
     email = normalized_email(target_email)
     sections = version.document()["sections"]
     rules = [record["values"] for record in sections.get("login_rules", [])]
+    parishes = sections.get("parish", [])
+    identity = {
+        "deployment_id": str(deployment_id),
+        "parish_name": parishes[0]["values"]["name"] if parishes else None,
+        "configuration_digest": version.digest,
+        "target_email": email,
+        "provenance": "manual",
+    }
+    if users.uses_users(version.document()):
+        user = next((rule for rule in rules if rule["email"] == email), None)
+        # The preview refuses exactly what recovery itself refuses
+        # (``_users_patch``), so it never promises a Name apply rejects.
+        if user is not None and name is not None and name != user["name"]:
+            raise ConfigError("Recovery keeps an existing user's Name.")
+        return identity | {
+            "form": "users",
+            "current_admin_rules": sorted(
+                rule["email"] for rule in rules if rule["role"] == "administrator"
+            ),
+            "before_roles": (
+                [] if user is None else users.cumulative_roles(user["role"])
+            ),
+            "after_roles": users.cumulative_roles("administrator"),
+            "adds_access_to_explicit_deny": False,
+            "already_granted": user is not None and user["role"] == "administrator",
+            "name": _name(email, name) if user is None else user["name"],
+        }
+    if name is not None:
+        raise ConfigError("Only a configuration in the users form keeps a Name.")
     existing = next(
         (
             rule
@@ -92,11 +202,9 @@ def recovery_preview(version, deployment_id, target_email):
         None,
     )
     before = existing["roles"] if existing is not None else []
-    parishes = sections.get("parish", [])
-    return {
-        "deployment_id": str(deployment_id),
-        "parish_name": parishes[0]["values"]["name"] if parishes else None,
-        "configuration_digest": version.digest,
+    return identity | {
+        "form": "sign_in_rules",
+        "name": None,
         "current_admin_rules": sorted(
             [
                 rule["email"]
@@ -104,13 +212,67 @@ def recovery_preview(version, deployment_id, target_email):
                 if rule["kind"] == "address" and "administrator" in rule["roles"]
             ]
         ),
-        "target_email": email,
         "before_roles": sorted(before),
         "after_roles": sorted(set(before) | {"administrator"}),
         "adds_access_to_explicit_deny": existing is not None and not before,
         "already_granted": "administrator" in before,
-        "provenance": "manual",
     }
+
+
+def recovery_runtime(store):
+    """The runtime recovery works from, even with a refused candidate selected.
+
+    A refused activation (``failed`` with ``actor_unauthorized`` or
+    ``invalid_candidate``) leaves the manifest naming its candidate until the
+    installer selects the base again, and so does a users upgrade
+    interrupted before it activated (``interrupted_upgrade``); recovery
+    restores the base itself before it begins. So neither state is the
+    incoherence the operator must resolve first, and the preview reads the
+    database's active configuration, the base. Any other disagreement still
+    refuses (#952).
+    """
+    try:
+        return coherent_configuration(store)
+    except ConfigError:
+        if not _refused_selection(store) and interrupted_upgrade(store) is None:
+            raise
+    return SystemConfiguration.objects.select_related("active_configuration").get()
+
+
+def _refused_selection(store):
+    """True when the manifest names a refused request's candidate over its base."""
+    selected = _selected_over(store)
+    if selected is None:
+        return False
+    (version_id, _), active_digest = selected
+    return any(
+        (status.state, status.failure_code)
+        in {("failed", "actor_unauthorized"), ("failed", "invalid_candidate")}
+        for status in map(
+            _status,
+            ConfigurationChangeRequest.objects.filter(
+                candidate_version_id=version_id, base__digest=active_digest
+            ),
+        )
+    )
+
+
+def _stored_name(request, version, email):
+    """The Name for the preview: the one the stored request gives a new user.
+
+    The preview then shows what the request applies even on a replay, which
+    never uses that run's ``--name``. None when there is no Name to show
+    beyond the configuration's own: a sign-in rule has none, and a user the
+    configuration already holds keeps (and the preview shows) its own Name.
+    """
+    document = version.document()
+    if not users.uses_users(document) or any(
+        record["values"]["email"] == email
+        for record in document["sections"]["login_rules"]
+    ):
+        return None
+    operation = request.patch[0]
+    return operation["values"].get("name") if operation["operation"] == "add" else None
 
 
 def recover_admin(
@@ -125,6 +287,7 @@ def recover_admin(
     correlation_id,
     offline_interlock,
     before_apply=None,
+    name=None,
 ):
     """Resume one confirmed offline operation through the ordinary checkpoint engine.
 
@@ -136,6 +299,15 @@ def recover_admin(
     requires diagnosis and a newly confirmed operation ID; replay preserves
     that receipt, never silently retries a different intent. OPS-04 must inspect
     state and failure_code before reporting recovery success.
+
+    In the users form (#952) the target becomes an Administrator user, whose
+    Name for a new user is ``name`` or the address's local part. A manifest
+    left ahead of the database by a recorded activation refusal (such as SQL
+    refusing the users upgrade) is first returned to its base, so recovery
+    works in that state too. So is one left by a users upgrade that stopped
+    before activating (a crash or a lost connection): recovery records that
+    upgrade failed and restores its base first, so no failed upgrade can
+    lock the Administrator out.
     """
     if any(
         not isinstance(value, UUID)
@@ -164,6 +336,9 @@ def recover_admin(
             raise ConfigError("Recovery requires one initialized deployment.") from None
         if runtime.pk != deployment_id:
             raise ConfigError("The confirmed deployment does not match.")
+        # Undo a users upgrade that stopped before activating (#952): the
+        # database never left its base, so only the manifest moves back.
+        abandon_interrupted_upgrade(store, correlation_id=correlation_id)
         request = ConfigurationChangeRequest.objects.filter(
             authority="operator_recovery", request_key=operation_id
         ).first()
@@ -178,24 +353,17 @@ def recover_admin(
                     "Recovery operation is already bound to another intent."
                 )
         else:
+            # Finish a refused activation's restore first (#952): until then
+            # the manifest names the refused candidate and nothing is coherent.
+            restore_refused(store)
             runtime = coherent_configuration(store)
             base, version = intake_base(runtime.active_configuration.digest)
-            schema = (
-                "operator-recovery-cadence-v8"
-                if base.validation_schema == "source-cadence-v8"
-                else "operator-recovery-bootstrap-v1"
-                if base.validation_schema == "bootstrap-policy-v1"
-                else "operator-recovery-content-v5"
-                if base.validation_schema == "campaign-content-v5"
-                else "operator-recovery-ministry-v4"
-                if base.validation_schema == "ministry-activity-v4"
-                else "operator-recovery-patch-v2"
-                if base.validation_schema == "campaign-foundation-v3"
-                else "operator-recovery-patch-v1"
+            schema = RECOVERY_SCHEMAS.get(
+                base.validation_schema, "operator-recovery-patch-v1"
             )
             intent = build_candidate(
                 version,
-                _patch(version, email, operation_id),
+                _patch(version, email, operation_id, name),
                 candidate_id=uuid4(),
                 request_schema=schema,
             )
@@ -221,7 +389,11 @@ def recover_admin(
             # YAML/DB activation window. Do not require a newly coherent YAML
             # manifest here and thereby prevent replay of this exact operation.
             _, current = intake_base(runtime.active_configuration.digest)
-            before_apply(recovery_preview(current, deployment_id, email))
+            before_apply(
+                recovery_preview(
+                    current, deployment_id, email, _stored_name(request, current, email)
+                )
+            )
         result = _install_request(store, request=request, correlation_id=correlation_id)
         if result.state == "applied":
             from .policy_models import AdminRevocation

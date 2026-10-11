@@ -20,6 +20,18 @@ from .policy_schema import normalized_email
 SCHEMA = "users-v10"
 # The one offline conversion format (#952): an operator-upgrade request.
 UPGRADE_REQUEST_SCHEMA = "operator-upgrade-users-v10"
+# The request formats over a users configuration (#952 slice 3): ordinary
+# Admin edits, an integration credential update, and offline Admin-access
+# recovery. Each keeps every rule of its source-cadence-v8 counterpart, with
+# the users list in place of the sign-in rules.
+REQUEST_SCHEMA = "users-patch-v10"
+CREDENTIAL_SCHEMA = "integration-credential-users-v10"
+RECOVERY_SCHEMA = "operator-recovery-users-v10"
+# The release that swaps the SQL sign-in functions and brings the Users page
+# (#952 slice 4) sets this. Until then the conversion only previews, and
+# startup still accepts a configuration of sign-in rules; once it is set,
+# web, workers and scheduler refuse to start on one (``require_users_form``).
+USERS_ENABLED = False
 # Lowest first: each role includes every role before it.
 ROLE_LEVELS = ("ministry_leader", "staff", "administrator")
 NAME_LIMIT = 200
@@ -46,6 +58,11 @@ def record_roles(values):
     if values["kind"] == "user":
         return cumulative_roles(values["role"])
     return list(values.get("roles", ()))
+
+
+def local_part_name(email):
+    """The default Name of a user no one named: the address's local part."""
+    return email.rsplit("@", 1)[0]
 
 
 def uses_users(document):
@@ -95,6 +112,52 @@ def validate_user_records(records):
         administrators += values["role"] == "administrator"
     if not administrators:
         invalid()
+
+
+def validate_user_change(old_records, new_records):
+    """Refuse an edit that moves a user to another address (#952).
+
+    A user's ``id`` is bound to its address for good: changing the address
+    is Delete and then New, so the old address's sessions and history never
+    pass to someone else. Everything else about the list (one user per
+    address, the shapes, and at least one Administrator) is the schema's own
+    check of the whole candidate.
+    """
+    addresses = {record["id"]: record["values"]["email"] for record in old_records}
+    for record in new_records:
+        email = record["values"]["email"]
+        if addresses.get(record["id"], email) != email:
+            invalid()
+
+
+def require_users_form(runtime, *, enabled=None):
+    """Refuse to run on a configuration of sign-in rules once users ship (#952).
+
+    The release that swaps the SQL sign-in functions reads only users, so web,
+    workers and scheduler must not start before ``upgrade-users`` converted
+    the configuration. A deployment still in initial setup is exempt: its
+    Administrator stays an older exact-address rule until the setup wizard,
+    whose base it is, learns to write users with the Users page (#952 slice
+    5). Initial setup means exactly what ``setup_startup.initial_setup_hold``
+    requires: the bootstrap configuration, Testing mode, no current campaign
+    and no restore review pending, so no deployment past setup can pass as
+    one. ``enabled`` defaults to ``USERS_ENABLED``.
+    """
+    from parishkit.config import ConfigError
+
+    if not (USERS_ENABLED if enabled is None else enabled):
+        return
+    schema = runtime.active_configuration.validation_schema
+    in_setup = (
+        schema == "bootstrap-policy-v1"
+        and runtime.mode == "testing"
+        and runtime.current_campaign_id is None
+        and not runtime.restore_review_required
+    )
+    if schema != SCHEMA and not in_setup:
+        raise ConfigError(
+            "The configuration still holds sign-in rules; run upgrade-users first."
+        )
 
 
 def validate_sections(document):

@@ -366,13 +366,18 @@ This displays deployment/parish identity, current Admin addresses, the normalize
 target, before/after roles, manual provenance, and any explicit-deny access grant.
 It does not create a recovery request or mutate policy. Its output contains
 operator-visible email addresses; do not publish it as generic support diagnostics.
+Its `form` is `users` once the configuration holds users
+([#952](https://github.com/epiphany40223/parishkit/issues/952)); `name` is then
+the target user's Name after recovery, the existing user's or, for a new user,
+`--name` when given, else the address's local part. Pass the same `--name` to
+both commands. A sign-in-rules configuration has no Name and refuses `--name`.
 
 `recover-admin` uses its separate operator profile, exact deployment/target
 confirmation, operator attribution and the existing versioned additive-only
 recovery engine. It cannot create an alternate login method, remove Admins or edit
 general configuration. Supply `--operation-id`, `--operator-name`, `--reason`,
-`--confirm-deployment`, `--target-email` and matching `--confirm-email`; there is
-no default yes. Before activation the command prints its current SQL-authoritative
+`--confirm-deployment`, `--target-email` and matching `--confirm-email`, and
+optionally `--name` for a new Administrator user; there is no default yes. Before activation the command prints its current SQL-authoritative
 preview, including on matching operation replay. Complete normal Google sign-in
 afterward. Follow the
 [normative recovery protocol](../specs/stewardship/operations/spec.md#offline-admin-access-recovery);
