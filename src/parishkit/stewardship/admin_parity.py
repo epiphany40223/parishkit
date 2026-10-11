@@ -134,6 +134,7 @@ LEDGER = {
     "content_catalog": pending("PR 10", "content list"),
     "content_edit": pending("PR 10", "content show", "content preview"),
     "content_revision": pending("PR 10", "content confirm"),
+    "content_delete": pending("PR 10", "content preview", "content confirm"),
     "content_history": pending("PR 10", "content history"),
     "content_history_revision": pending("PR 10", "content history"),
     "content_plain_text": pending("PR 10", "content show"),
