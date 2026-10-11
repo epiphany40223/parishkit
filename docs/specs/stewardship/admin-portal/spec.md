@@ -3838,6 +3838,31 @@ Import never changes an existing user, never grants more than Ministry
 leader, and so raises no security alert; the last-Administrator guard is
 unaffected. Each imported Name stays editable on that user's Edit page.
 
+The bulk bar follows the [shared pattern](../ui-conventions/spec.md#admin-tables):
+while no row is ticked, "Select at least one leader to import." is visible
+text in a reserved line under the buttons; with no row at all, both buttons
+are unavailable and that line says there is nothing to import. One change
+adds at most 100 users, the limit of one configuration request; when more
+are chosen, the review imports the first 100 by Name and says how many
+remain for another import. Posted addresses only choose among the rows the
+server reads again for the review: a Name, Member DUID or role is never
+taken from the form. The audit's count entry is
+`user_leaders_import_requested` and each new user's row
+`user_leader_imported`, whose subject is that user's record ID.
+
+The web login reads no Member, contact or roster record. It reads the table
+through one SECURITY DEFINER function, `stewardship_leaders_without_user_v1`
+(migration 0054), which takes no address, so it answers no question about
+an address the Administrator chose. Like the
+[Name lookup](#name-from-parishsoft), it answers only for the caller's live
+Admin session (one begun after the latest Admin-access recovery) whose user
+is an Administrator now, and it records its own `user_leaders_listed` audit
+event for each read, with the number of rows and never an address. Its
+leader conditions are those of the
+[leaders definition](../data/spec.md#ministry-leaders), except that it also
+counts leaders with no valid address; a PostgreSQL test pins the two to the
+same answer.
+
 Rejected: letting every ParishSoft leader sign in without a user (the
 Administrator decided that sign-in needs an explicit user), and importing
 automatically at each refresh (that would create accounts silently; the

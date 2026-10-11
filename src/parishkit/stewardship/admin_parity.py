@@ -294,6 +294,8 @@ LEDGER = {
     "user_edit": command("users list", "users preview", "users confirm"),
     "user_delete": command("users preview", "users confirm"),
     "user_name_suggestions": command("users preview"),
+    # The leaders table and its import review (#952 slice 6).
+    "user_leader_import": command("users import-leaders"),
     "security_event_acknowledge": pending("PR 11", "events acknowledge"),
     "critical_events_acknowledge": pending("PR 11", "events acknowledge"),
     "information_update": pending("PR 11", "followup"),
