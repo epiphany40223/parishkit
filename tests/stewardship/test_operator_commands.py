@@ -87,6 +87,60 @@ def test_operator_failures_do_not_print_exception_values(
     assert "private" not in output.out + output.err
 
 
+def psycopg_failure(wrapped):
+    """A unique violation whose message and DETAIL carry a private value.
+
+    ``wrapped`` raises it as Django does, from a django.db error; otherwise
+    the psycopg error itself is raised.
+    """
+    import psycopg.errors
+    from django.db import IntegrityError
+
+    cause = psycopg.errors.UniqueViolation(
+        "duplicate key value violates unique constraint\n"
+        "DETAIL:  Key (email)=(private@example.org) already exists."
+    )
+    if not wrapped:
+        return cause
+    try:
+        raise IntegrityError(*cause.args) from cause
+    except IntegrityError as error:
+        return error
+
+
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_a_database_failure_prints_its_class_and_sqlstate_only(
+    monkeypatch, tmp_path, capsys, wrapped
+):
+    """The class and SQLSTATE say what failed; no message, DETAIL or value."""
+    error = psycopg_failure(wrapped)
+
+    def fail(path):
+        raise error
+
+    monkeypatch.setattr(operator_commands, "load_deployment", fail)
+    assert main(["migrate", "--config", str(tmp_path / "operator.yaml")]) == 2
+    output = capsys.readouterr()
+    name = "IntegrityError" if wrapped else "UniqueViolation"
+    assert f"ERROR: {name} (SQLSTATE 23505)\n" in output.err
+    for private in ("private", "DETAIL", "duplicate key"):
+        assert private not in output.out + output.err
+
+
+def test_a_config_error_prints_its_reviewed_message(monkeypatch, tmp_path, capsys):
+    """A ConfigError's own sentence is shown, with its class."""
+
+    def fail(path):
+        raise operator_commands.ConfigError("Migrations require their profile.")
+
+    monkeypatch.setattr(operator_commands, "load_deployment", fail)
+    assert main(["migrate", "--config", str(tmp_path / "operator.yaml")]) == 2
+    assert (
+        "ERROR: ConfigError: Migrations require their profile.\n"
+        in capsys.readouterr().err
+    )
+
+
 def test_a_missing_backup_refusal_is_named_in_the_formatted_log(
     monkeypatch, tmp_path, capsys, caplog
 ):
