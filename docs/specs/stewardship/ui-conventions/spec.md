@@ -586,6 +586,22 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   with that explanation in the review region. Each upload form has an id,
   so a file chosen while the quiet refresh redraws it is said not to be
   kept.
+- **In-place review: Parish logos (#750).** Parish logos has no settings
+  form: its upload form (`data-in-place`, multipart, a region of its own)
+  answers with the page naming the staged logos (`?review=<bundle>`), whose
+  review region under the form shows every generated size with Apply, which
+  posts to that address. The current logos are a region of their own below
+  the review region, so the quiet refresh once a change is applied shows
+  the new ones without moving the form or the review. A refused upload's
+  field error shows in the form and, linked to that field, in the review
+  region, which takes focus; a stale upload or Apply is refused there too.
+  A refused Apply's answer marks the form and the current logos
+  `data-in-place-always`, so both are redrawn at the current version and
+  the next upload is accepted. Loading the address of logos that can no
+  longer be reviewed (already applied, expired, another sign-in's, or
+  staged against settings changed since) shows the page with that
+  explanation in the review region. The form has an id, so a file chosen
+  while the quiet refresh redraws it is said not to be kept.
 
 ### No layout shift
 
@@ -777,8 +793,9 @@ running indicator with a plain final "Status unavailable" message
 (`template[data-live-refused]`, `live-status-v1.js`), and a table's Delete
 dialog says the change was saved but its status can't be checked (#952).
 
-Current state, to be made consistent: Parish settings, Campaign settings, Share
-options and Campaign Ministries review, apply and follow the change in place
+Current state, to be made consistent: Parish settings, Campaign settings,
+Share options, Campaign Ministries, Ministries, Reminder WorkGroup, Campaign
+images and Parish logos review, apply and follow the change in place
 ([in-place review](#in-place-controls), #532, #750); every other editor still
 uses its separate Review and Change status pages.
 

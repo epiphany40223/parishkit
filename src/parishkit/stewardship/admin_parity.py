@@ -147,7 +147,6 @@ LEDGER = {
     "branding_settings": pending("PR 10", "branding show", "branding confirm"),
     "hosted_file_upload": permanent(UPLOAD),
     "artwork_upload": permanent(UPLOAD),
-    "branding_preview": permanent(IMAGES),
     "branding_asset": permanent(IMAGES),
     # Production transition and withdrawal.
     # The verified preview with the DNS check and cleanup come in PR 12.
