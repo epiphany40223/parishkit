@@ -3668,9 +3668,19 @@
     const parsed = new DOMParser().parseFromString(answer.text, "text/html");
     const review = answer.response.ok && parsed.querySelector("[data-review-answer]");
     if (review) {
-      // An earlier refusal's summary no longer applies.
+      // An earlier refusal no longer applies: its summary goes, and so do
+      // the marks and messages it left on fields the reader did not edit
+      // since (the server's, never a live check's, data-field-error="client",
+      // which holds Review until it clears by itself). Reserved lines stay,
+      // hidden and empty; a list showFieldErrors placed is hidden too.
       document.querySelectorAll("[data-error-summary]").forEach((node) => {
         if (!node.closest(REGIONS)) node.remove();
+      });
+      form.querySelectorAll('[data-field-error=""]').forEach((node) => {
+        if (node.hasAttribute("data-field-error")) clearFieldError(node);
+      });
+      form.querySelectorAll(".errorlist[data-review-placed]").forEach((placed) => {
+        placed.hidden = true;
       });
       openReview(dialog, form, opener, review, null);
     } else if (answer.response.status === 400 && form.id && parsed.getElementById(form.id)) {

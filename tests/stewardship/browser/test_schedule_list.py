@@ -707,3 +707,59 @@ def test_a_blocked_change_has_no_apply(page, component_origin):
     assert shown.get_by_role("button", name="Apply").count() == 0
     shown.get_by_role("button", name="Cancel").click()
     hidden(shown)
+
+
+def test_tab_reaches_the_review_body_and_arrow_keys_scroll_it(page, component_origin):
+    """The long repeat review holds nothing else to focus: Tab from the
+    title reaches the body, and the keyboard scrolls it."""
+    page.set_viewport_size({"width": 1280, "height": 640})
+    fill_new(page, component_origin, NEW_REPEAT)
+    shown = review(page)
+    assert page.evaluate(FOCUSED) == "schedule-review-title"
+    page.keyboard.press("Tab")
+    eventually(
+        page,
+        "document.activeElement?.matches('[data-review-body]') === true",
+    )
+    body = shown.locator("[data-review-body]")
+    assert body.evaluate("node => node.scrollTop") == 0
+    # Playwright's WebKit ignores a synthetic arrow key for scrolling (Safari
+    # itself scrolls on it), so there Page Down stands in for it.
+    engine = page.context.browser.browser_type.name
+    key = "PageDown" if engine == "webkit" else "ArrowDown"
+    for _ in range(5):
+        page.keyboard.press(key)
+    eventually(page, "document.querySelector('[data-review-body]').scrollTop > 0")
+    # Still the body, inside the open dialog.
+    assert page.evaluate("document.getElementById('schedule-review').open")
+
+
+def test_an_accepted_review_clears_an_earlier_field_error(page, component_origin):
+    """A date refused, then a Review the server accepts without the date
+    edited: the message placed at the date and its mark go."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + NEW_INVALID)
+    failures = watch(page)
+    choose(page, "kind", "reminder")
+    date = page.locator('[name="schedule-date"]')
+    date.fill("2054-11-15")
+    page.locator('[name="schedule-time"]').fill("6am")
+    choose(page, "template_version", email_for(page, "reminder"))
+    page.get_by_role("button", name=REVIEW).click()
+    message = page.locator("#id_schedule-date_error")
+    visible(message)
+    assert date.get_attribute("aria-invalid") == "true"
+    # The next Review is answered with an accepted review.
+    page.evaluate(
+        "document.getElementById('schedule-entry-form')"
+        f".setAttribute('action', '{NEW}/review')"
+    )
+    page.locator('[name="schedule-time"]').fill("7am")
+    review(page)
+    hidden(message)
+    assert date.get_attribute("aria-invalid") == "false"
+    assert "id_schedule-date_error" not in (
+        date.get_attribute("aria-describedby") or ""
+    )
+    assert page.locator("[data-error-summary]").count() == 0
+    assert not failures

@@ -126,7 +126,9 @@ ZONE_MISSING = _(
 # Edit's refusal of a save that changes nothing. The page's change gate
 # keeps Review unavailable until something changed, so only a request that
 # bypasses the page script meets it, in the review dialog (#750).
-UNCHANGED = _("Nothing has changed. Change the date, time or email, then save.")
+UNCHANGED = _(
+    "Nothing has changed. Change the date, time or email, then choose Review changes."
+)
 
 
 class RepeatRule(forms.Form):
