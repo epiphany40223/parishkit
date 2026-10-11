@@ -276,8 +276,10 @@ EMAILS = {
         # "Annual campaign — daily report, November 2, 2026 (Example Parish)".
         "{{ campaign_name }} — daily report",
         # The subject names the campaign, parish and day (#720), and the figures
-        # describe the end of the previous day (#723), so one short line.
-        "<p>Here is yesterday’s report. Testing responses are never included.</p>",
+        # describe the end of the previous day (#723), so one short line. It
+        # no longer says Testing responses are left out (#1016): a Production
+        # report never had them, and a Testing report says it is Testing.
+        "<p>Here is yesterday’s report.</p>",
     ),
     "weekly_digest": DefaultEmail(
         "{{ campaign_name }} — weekly report",
@@ -333,8 +335,13 @@ RETIRED_EMAILS = {
     "initial": (_older_salutation(EMAILS["initial"]),),
     "reminder": (_older_salutation(EMAILS["reminder"]),),
     "confirmation": (_confirmation(_GIVE_ONLINE_PLEDGE),),
-    # The report defaults before #720 (subjects and intros).
+    # The report defaults before #720 (subjects and intros), and the intro
+    # before #1016, which also said Testing responses are never included.
     "daily_digest": (
+        DefaultEmail(
+            "{{ campaign_name }} — daily report",
+            "<p>Here is yesterday’s report. Testing responses are never included.</p>",
+        ),
         DefaultEmail("{{ campaign_name }}: daily progress report", _OLD_DAILY_HTML),
         DefaultEmail("{{ campaign_name }} — daily report", _OLD_DAILY_HTML),
     ),
