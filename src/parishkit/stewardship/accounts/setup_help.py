@@ -60,9 +60,7 @@ ACCESS = {
     "admin_addresses": _(
         "People who get full Administrator access, one per line. Administrators "
         "can change every setting, including who has access. Your own access as "
-        "the original Administrator is kept automatically. Each address listed "
-        "becomes one user with the highest role it is listed under; you can "
-        "give each user a Name and change their role later on the Users page."
+        "the original Administrator is kept automatically."
     ),
 }
 
