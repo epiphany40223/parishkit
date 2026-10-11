@@ -275,6 +275,12 @@ label + .help, label + .helptext { margin-block: -.15rem .5rem; }
    and a long message must not push that button onto the next line. */
 .field-error-line { min-height: 1.6em; min-height: 1lh; margin-block: .25rem .5rem; width: 0; min-width: 100%; }
 .field-error-line > .errorlist { margin: 0; }
+/* A line that keeps room for a message shown live sizes itself by an
+   invisible copy of it (.field-error-size), so the message never needs
+   more room than the line has, however the reader's fonts wrap it. */
+.field-error-line:has(> .field-error-size) { display: grid; }
+.field-error-line:has(> .field-error-size) > * { grid-area: 1 / 1; }
+.field-error-size { visibility: hidden; font-weight: 600; }
 .error { color: var(--error-ink); font-weight: 600; }
 /* Legends float inside the box so a fieldset reads as a titled card. */
 fieldset { border: 1px solid var(--border); border-radius: var(--radius); background: var(--paper); margin-block: 1.25rem; min-width: 0; padding: 1rem 1.25rem 1.25rem; }
