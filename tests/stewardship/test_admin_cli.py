@@ -122,6 +122,10 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "export ministry-packet",
         "export directory",
         "export postal",
+        "export exact create",
+        "export exact status",
+        "export exact cancel",
+        "export exact retry",
     }
     # The users commands (#952), in the users group (PR 11): the reads of
     # slice 2, the changes of slice 5 and the leaders import of slice 6.
@@ -540,6 +544,9 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_export_ministry_packet",
         "admin_cmd_export_directory",
         "admin_cmd_export_postal",
+        "admin_cmd_export_exact_create",
+        "admin_cmd_export_exact_cancel",
+        "admin_cmd_export_exact_retry",
         "admin_cmd_digest_weekly_request",
         "admin_cmd_users_confirm",
         "admin_cmd_users_import_leaders",

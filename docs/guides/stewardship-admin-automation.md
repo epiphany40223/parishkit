@@ -1212,8 +1212,48 @@ pk-admin export postal --format xlsx --timezone America/New_York
 - The file holds every matching Family's code (or mailing address). Keep
   it private and delete it once used (`pk-admin exports clean`).
 
-The one-Family timeline, the Limitations and response list downloads and the
-exact daily exports are not on the command line yet; use the pages.
+#### Exact daily exports
+
+When the Participation page has no complete figures ready yet, its exact
+export calculates today's figures first and then makes the file. From the
+command line it takes two steps more than `export create`: follow the
+calculation, then fetch the export it hands off to.
+
+```sh
+pk-admin export exact create --scope current --format csv \
+  --timezone America/New_York
+pk-admin export exact status EXACT_ID --watch 10
+pk-admin export fetch EXPORT_ID
+```
+
+- `export exact create` freezes the current campaign's figures as the page's
+  form does: `--scope` is `historical` (the default) or `current`,
+  `--format` is `csv`, `png`, `pdf` or `xlsx`, and `--timezone` is the time
+  zone of the file's dates. It takes `--request-key`. It needs a full-scope
+  session.
+- `EXACT_ID` is the `exact.id` that `export exact create` prints, or the
+  last part of the exact status page's address. It is not an export id:
+  `export status EXACT_ID` is exit 1 (`not_available`).
+- `export exact status` shows the request as its status page does: `state`
+  is the calculation's until it hands off, then the export's. Once handed off
+  it gives `export_id`: fetch that with `export fetch`. With `--watch` it
+  stops once the file is settled, or the calculation failed or was
+  cancelled. Any session may run it.
+- `export exact cancel` and `export exact retry` are the status page's
+  buttons, before or after the handoff. A repeat (the same retry key, or a
+  second cancel) changes nothing (`created` false). After the handoff a
+  retry is the export's, so a retry key first used on the calculation is a
+  new retry there: `stale_version` unless the export failed.
+
+Each change prints `created`, `request_key` and `exact`, the request's
+`export exact status` fields afterwards, and records the page's events plus
+`admin_cmd_export_exact_create`, `admin_cmd_export_exact_cancel` or
+`admin_cmd_export_exact_retry`. An unknown request, or no figures to freeze,
+is exit 1 (`not_available`); cancelling a ready export or retrying one that
+has not failed is exit 1 (`stale_version`).
+
+The one-Family timeline and the Limitations and response list downloads
+are not on the command line yet; use the pages.
 
 ### Fetching an export's file
 
@@ -1484,3 +1524,8 @@ pk-admin users import-leaders --confirm --token -
 - `pk-admin/1` (#952 slice 6): additive. `users import-leaders --preview`
   and `--confirm`. A session the leaders definer refuses is exit 5
   (`session_ended`), as for the Name lookup.
+- `pk-admin/1` (#463, ADM-11 PR 8h): additive. `export exact create`
+  (full scope; its event), `export exact status` (any session, `--watch`,
+  no event), `export exact cancel` and `export exact retry` (full scope;
+  their events), the Participation page's exact export and its status
+  page's buttons.

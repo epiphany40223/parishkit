@@ -192,6 +192,9 @@ class Action(StrEnum):
     # files delete and files rename: the Hosted files page's row actions.
     ADMIN_CMD_FILES_DELETE = "admin_cmd_files_delete"
     ADMIN_CMD_FILES_RENAME = "admin_cmd_files_rename"
+    ADMIN_CMD_EXPORT_EXACT_CREATE = "admin_cmd_export_exact_create"
+    ADMIN_CMD_EXPORT_EXACT_CANCEL = "admin_cmd_export_exact_cancel"
+    ADMIN_CMD_EXPORT_EXACT_RETRY = "admin_cmd_export_exact_retry"
 
 
 # Closed field identifiers are operational metadata, never census values.
