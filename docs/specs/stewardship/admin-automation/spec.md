@@ -2397,10 +2397,14 @@ checks, audit and alerts:
 
 - `users list` prints each user's email, Name, role and last successful
   sign-in, with the page's sort (`--sort`); it is read-only and needs only a
-  read-only session.
+  read-only session. Before the users upgrade, its `form` is
+  `sign_in_rules` and its users are the exact-address rules that grant a
+  role, each with its highest role and no Name; a domain rule's people are
+  in the upgrade preview instead.
 - `users preview-upgrade` prints the
   [users upgrade](../operations/spec.md#users-upgrade-from-sign-in-rules)
-  preview: read-only, and unavailable once the configuration holds users.
+  preview: read-only, and unavailable (`not_available`) once the
+  configuration holds users.
 - `users preview --expected-version … --changes …` and
   `users confirm --token …` change users as `schedule preview` and
   `schedule confirm` change schedules: the change document names a saved user
@@ -2417,6 +2421,11 @@ checks, audit and alerts:
 These need a full-scope session, except `users list` and
 `users preview-upgrade`; none is fresh-gated, as the page asks for no fresh
 sign-in. The command shapes are defaults, pending Administrator confirmation.
+
+`users list` and `users preview-upgrade` record the page's view event,
+`portal_users_viewed`, with the number of users printed. They print Admin
+portal users' own addresses and Names, which the page shows; they are not
+Family data.
 
 ### Integrations and credentials
 
