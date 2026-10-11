@@ -44,8 +44,10 @@ reused for all three formats. Regeneration retains original source/response
 values even after a newer source promotion. Family head emails are the
 exception: once the captured source is compacted they come from the current
 ParishSoft data, dated "Head emails as of" (see the
-[active parishioner family directory spec](../specs/stewardship/reports/spec.md#active-parishioner-family-directory)). CSV provides an explicit Record
-column to distinguish Family mail-merge rows from report metadata.
+[active parishioner family directory spec](../specs/stewardship/reports/spec.md#active-parishioner-family-directory)). The CSV is
+exactly one header row plus one row per Family, with no report metadata, so it
+opens cleanly in a mail merge; the report details are in the XLSX's Report
+information sheet and the PDF's page header and footer.
 
 Focused local checks on September 19, 2026:
 
