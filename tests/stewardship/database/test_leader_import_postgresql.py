@@ -341,13 +341,13 @@ def leaders_region(body):
 
 
 def test_the_page_lists_the_leaders_below_the_users(deployment):
-    """Selection, Name, Member DUID, Email, Ministries led, Role; sorted on the
+    """Selection, Member, Member DUID, Email, Ministries led, Role; sorted on the
     server."""
     _store, browser = deployment
     region = leaders_region(page(browser))
     headings = re.findall(r"<th[^>]*scope=\"col\"[^>]*>(.*?)</th>", region, flags=re.S)
     labels = [re.sub(r"<[^>]+>", " ", heading) for heading in headings]
-    order = ["Name", "Member DUID", "Email", "Ministries led", "Role"]
+    order = ["Member", "Member DUID", "Email", "Ministries led", "Role"]
     positions = [
         next(i for i, text in enumerate(labels) if name in text) for name in order
     ]
