@@ -734,8 +734,10 @@ pk-admin history remove 2025 --expected-version 2
 - `history confirm --token` (full scope) imports the preview. A
   replacement removes the year's earlier import, so it asks you to type
   `yes` (or pass `--yes`); an addition does not ask. It prints `outcome`
-  (`imported`, `replaced` or `already`). An expired, applied or racing
-  preview is exit 1 (`stale_version`): preview again.
+  (`imported`, `replaced` or `already`). `already` means the same file is
+  imported (`archive` is that import): nothing changes, but the preview is
+  used up and the command records `admin_cmd_history_confirm`. An expired,
+  applied or racing preview is exit 1 (`stale_version`): preview again.
 - `history remove YEAR --expected-version N` (full scope) removes a year's
   import after the prompt, keeping a tombstone; the file can be imported
   again. A wrong version is exit 1 (`stale_version`).

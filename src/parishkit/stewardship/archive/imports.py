@@ -376,17 +376,9 @@ def review(
     audit event).
     """
     from parishkit.stewardship.audit.schemas import Action, Outcome
-    from parishkit.stewardship.reports.archive_models import (
-        CampaignArchive,
-        CampaignArchiveBand,
-        CampaignArchiveDay,
-        CampaignArchiveFamily,
-    )
 
     authorize(store, actor_id)
-    current_year = stewardship_year()
     checksum = hashlib.sha256(data).hexdigest()
-    document = _check(data, check or check_archive)
 
     def denied(year=None):
         """Record the refused Review, without any Family value or note."""
@@ -396,6 +388,13 @@ def review(
         with transaction.atomic():
             _audit(Action.CAMPAIGN_ARCHIVE_PREVIEWED, actor_id, None, context)
 
+    try:
+        current_year = stewardship_year()
+    except ArchiveRefusal:
+        # year_unresolved: every import is refused, before any check.
+        denied()
+        raise
+    document = _check(data, check or check_archive)
     if not document["valid"]:
         denied()
         raise ArchiveRefusal(document["problems"], document.get("more_problems", 0))
@@ -408,6 +407,42 @@ def review(
             "this is the current campaign's year; the report reads the "
             "current campaign live",
         )
+    try:
+        archive, action, current = _store_preview(
+            actor_id,
+            data,
+            checksum,
+            document,
+            keep_family_rows=keep_family_rows,
+            file_name=file_name,
+            record=record,
+        )
+    except ArchiveRefusal:
+        # partial_over_final; the preview's transaction rolled back first.
+        denied(year)
+        raise
+    return Review(archive, action, current, tuple(document["flagged_notes"]))
+
+
+def _store_preview(
+    actor_id, data, checksum, document, *, keep_family_rows, file_name, record
+):
+    """Store a checked file as a pending preview, in one transaction.
+
+    Returns the preview, what Apply would do and the import it concerns
+    (see ``Review``). Raises ``ArchiveRefusal`` (``partial_over_final``)
+    with nothing stored.
+    """
+    from parishkit.stewardship.audit.schemas import Action, Outcome
+    from parishkit.stewardship.reports.archive_models import (
+        CampaignArchive,
+        CampaignArchiveBand,
+        CampaignArchiveDay,
+        CampaignArchiveFamily,
+    )
+
+    metadata = document["metadata"]
+    year = metadata["campaign_year"]
     renewal = document["renewal_families"] if keep_family_rows else []
     quartiles = _quartiles(document)
     with transaction.atomic():
@@ -506,7 +541,7 @@ def review(
         )
         if record is not None:
             record()
-    return Review(archive, action, current, tuple(document["flagged_notes"]))
+    return archive, action, current
 
 
 def _family_rows(archive):
@@ -521,11 +556,11 @@ def apply(store, actor_id, archive_id, *, replace_acknowledged=False, record=Non
 
     The preview must be the caller's own, still pending and younger than
     fifteen minutes; otherwise it is stale (``StaleRecordError``). A file
-    already imported changes nothing (``already``, its preview is deleted).
-    A replacement needs ``replace_acknowledged``, and a partial file never
-    replaces a final one. A racing Apply that won first makes this one
-    stale. ``record()`` runs in the Apply's transaction when it changed
-    something.
+    already imported changes no import (``already``); its preview is
+    deleted. A replacement needs ``replace_acknowledged``, and a partial file
+    never replaces a final one. A racing Apply that won first makes this one
+    stale. ``record()`` runs in the Apply's transaction whenever the preview
+    was used, ``already`` included.
     """
     from parishkit.stewardship.audit.schemas import Action, Outcome
     from parishkit.stewardship.reports.archive_models import CampaignArchive
@@ -556,7 +591,12 @@ def apply(store, actor_id, archive_id, *, replace_acknowledged=False, record=Non
                 .first()
             )
             if already is not None:
+                # Nothing is imported, but the preview is used up, so the
+                # command's own event (admin_cmd_history_confirm) is kept:
+                # its token was spent and a repeat is stale.
                 _delete_pending([pending.pk])
+                if record is not None:
+                    record()
                 return Applied("already", already)
             current = (
                 CampaignArchive.objects.select_for_update()

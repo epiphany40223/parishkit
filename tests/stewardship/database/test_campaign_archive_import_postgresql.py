@@ -7,6 +7,7 @@ restricted web login, where the tables' guards and grants apply; the
 command-line tests run the real ``pk-stewardship admin history`` commands.
 """
 
+import hashlib
 import json
 import re
 import threading
@@ -207,15 +208,42 @@ def test_a_partial_file_never_replaces_a_final_one(administrator):
     store, actor = administrator
     final = as_web(imports.review, store, actor, workbook(2051)).archive
     as_web(imports.apply, store, actor, final.pk)
+    partial = workbook(2051, final=False)
     with pytest.raises(imports.ArchiveRefusal) as refused:
-        as_web(imports.review, store, actor, workbook(2051, final=False))
+        as_web(imports.review, store, actor, partial)
     assert refused.value.problems[0]["code"] == "partial_over_final"
+    # The refusal is recorded as a denied Review, with its year; no preview.
+    assert events("campaign_archive_previewed")[-1] == {
+        "outcome": "denied",
+        "file_fingerprint": hashlib.sha256(partial).hexdigest(),
+        "archive_year": 2051,
+    }
+    assert CampaignArchive.objects.filter(state="pending").count() == 0
     # A final file replaces a partial one.
     as_web(imports.remove, store, actor, 2051, expected_version=2)
     partial = as_web(imports.review, store, actor, workbook(2051, final=False))
     as_web(imports.apply, store, actor, partial.archive.pk)
     later = as_web(imports.review, store, actor, workbook(2051, note="Final"))
     assert later.action == "replace"
+
+
+def test_an_unresolvable_year_is_a_denied_review(administrator, monkeypatch):
+    """year_unresolved is recorded like any refused Review, with no year."""
+    store, actor = administrator
+
+    def unresolved():
+        """The current campaign's year cannot be resolved."""
+        raise imports.refusal("year_unresolved", "cannot be resolved")
+
+    monkeypatch.setattr(imports, "stewardship_year", unresolved)
+    data = workbook(2040)
+    with pytest.raises(imports.ArchiveRefusal) as refused:
+        as_web(imports.review, store, actor, data)
+    assert refused.value.problems[0]["code"] == "year_unresolved"
+    assert events("campaign_archive_previewed") == [
+        {"outcome": "denied", "file_fingerprint": hashlib.sha256(data).hexdigest()}
+    ]
+    assert not CampaignArchive.objects.exists()
 
 
 def test_refusals_store_nothing(administrator, monkeypatch):
@@ -728,8 +756,9 @@ def test_history_commands_through_the_page_service(admin, monkeypatch):
     code, document_, _ = admin("history", "confirm", "--token", token, secret=secret)
     assert code == 0 and document_["result"]["outcome"] == "imported"
     # A replacement asks first; unanswered, nothing changes.
+    workbook_new = workbook(2042, note="New")
     code, document_, _ = admin(
-        "history", "preview", "-", secret=secret, answer=workbook(2042, note="New")
+        "history", "preview", "-", secret=secret, answer=workbook_new
     )
     token = document_["result"]["preview"]["token"]
     assert document_["result"]["action"] == "replace"
@@ -739,6 +768,21 @@ def test_history_commands_through_the_page_service(admin, monkeypatch):
         "history", "confirm", "--token", token, secret=secret, answer=b"yes\n"
     )
     assert code == 0 and document_["result"]["outcome"] == "replaced"
+    # The same file again: already imported; confirm says so, uses up the
+    # preview and records its own event, as each confirm does.
+    confirms = AuditEvent.objects.filter(event_type="admin_cmd_history_confirm")
+    assert confirms.count() == 2
+    code, document_, _ = admin(
+        "history", "preview", "-", secret=secret, answer=workbook_new
+    )
+    assert code == 0 and document_["result"]["action"] == "already"
+    token = document_["result"]["preview"]["token"]
+    code, document_, _ = admin("history", "confirm", "--token", token, secret=secret)
+    assert code == 0 and document_["result"]["outcome"] == "already"
+    assert document_["result"]["replaced"] is None
+    assert confirms.count() == 3
+    code, stale, _ = admin("history", "confirm", "--token", token, secret=secret)
+    assert code == 1 and stale["error"]["code"] == "stale_version"
     code, listed, _ = admin("history", "list", secret=secret)
     rows = listed["result"]["archives"]
     assert [row["state"] for row in rows] == ["active", "removed"]
