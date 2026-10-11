@@ -575,6 +575,23 @@ def test_guards_refuse_every_other_change(administrator):
     assert archive.state == "active" and archive.version == 2
 
 
+def test_the_web_login_reads_no_family_value(administrator):
+    """Family rows' id system, id and first day are not the web login's."""
+    store, actor = administrator
+    archive = as_web(imports.review, store, actor, workbook(2039)).archive
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        for column in ("family_id_system", "family_id", "first_campaign_day"):
+            code, _ = refusal_of(
+                executing(
+                    f"SELECT {column} FROM stewardship_campaign_archive_family",
+                    [],
+                )
+            )
+            assert code == UNGRANTED, column
+        # Counting an archive's rows, as the service does, is allowed.
+        assert imports._family_rows(archive) == len(campaign()[1]["families"])
+
+
 def test_a_killed_check_leaves_a_durable_timeout_entry(administrator, monkeypatch):
     """The Review's kill hook writes helper_timed_out naming archive_check."""
     store, actor = administrator
