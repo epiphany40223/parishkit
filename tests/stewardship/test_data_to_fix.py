@@ -170,11 +170,11 @@ def test_without_a_campaign_sections_say_why(monkeypatch):
     _counted(monkeypatch, refused_addresses={"count": 1, "families": 1})
     rows = _rows(current=None)
     assert rows["refused_addresses"]["count"] == 1
-    assert rows["form_cannot_open"]["reason"] == admin_navigation.NO_CAMPAIGN
+    assert rows["form_cannot_open"]["reason"] == "No current campaign."
     # The source-form list opens without a campaign and says so itself.
     assert rows["form_cannot_open"]["url"]
     for key in ("unreachable_families", "census_changes"):
-        assert rows[key]["reason"] == admin_navigation.NO_CAMPAIGN
+        assert rows[key]["reason"] == "No current campaign."
         assert rows[key]["url"] is None and "count" not in rows[key]
 
 
@@ -183,7 +183,7 @@ def test_a_campaign_without_the_census_greys_that_section(monkeypatch):
     _counted(monkeypatch, census_changes=AssertionError("must not be read"))
     rows = _rows(current=campaign(modules=("financial",)))
     assert rows["census_changes"]["reason"] == (
-        "This campaign does not include the census"
+        "This campaign does not include the census."
     )
     assert rows["census_changes"]["url"] is None
 
@@ -323,3 +323,87 @@ def test_malformed_commands_are_usage_errors(argv):
         stderr=out,
     )
     assert code == 2 and json.loads(out.getvalue())["error"]["code"] == "usage"
+
+
+def test_no_parishsoft_data_yet_is_not_a_failure(monkeypatch, caplog):
+    """Before any promoted snapshot the scan refuses; the section says there
+    is nothing to count yet, and no warning is logged."""
+    from parishkit.stewardship.load_check import LoadCheckRefused
+    from parishkit.stewardship.reports import source_form
+
+    def refused(campaign_id):
+        """No promoted source snapshot."""
+        raise LoadCheckRefused("The load check requires a promoted source snapshot.")
+
+    monkeypatch.setattr(
+        data_to_fix_views, "_guarded", lambda campaign_id, read, **k: read()
+    )
+    monkeypatch.setattr(source_form, "blocked_families", refused)
+    # Only this section's real read runs; the others answer at once.
+    _counted(monkeypatch)
+    data_to_fix_views.READS["form_cannot_open"] = data_to_fix_views._form_cannot_open
+    with caplog.at_level(logging.WARNING, logger="parishkit.stewardship"):
+        rows = _rows(current=campaign())
+    assert rows["form_cannot_open"]["reason"] == str(data_to_fix_views.NO_SOURCE)
+    assert rows["form_cannot_open"]["url"] == "/admin/system/source-form/"
+    assert not [r for r in caplog.records if r.msg == "report_shaping_failed"]
+
+
+def _view(monkeypatch, principal, *, query="", current=None):
+    """Call the page's view as ``principal``, with ``current`` standing in
+    for the configuration read (a value, or an exception to raise)."""
+    from django.test import RequestFactory
+
+    def read(store):
+        """The configuration read's stand-in."""
+        if isinstance(current, Exception):
+            raise current
+        return current
+
+    monkeypatch.setattr(
+        data_to_fix_views, "runtime", lambda: SimpleNamespace(store=None)
+    )
+    monkeypatch.setattr(
+        data_to_fix_views, "authenticated_admin", lambda *args, **kwargs: principal
+    )
+    monkeypatch.setattr(data_to_fix_views, "current", read)
+    return data_to_fix_views.data_to_fix(
+        RequestFactory().get("/admin/parish/data-to-fix/" + query)
+    )
+
+
+def test_a_ministry_leader_gets_the_shared_denial(monkeypatch):
+    """403 from the shared denial, never Outgoing mail's error page."""
+    from parishkit.stewardship.accounts.authentication import denial
+
+    response = _view(monkeypatch, LEADER)
+    assert response.status_code == 403
+    assert response.content == denial().content
+    assert b"Delivery" not in response.content
+
+
+@pytest.mark.parametrize("principal", [STAFF, ADMIN], ids=["staff", "administrator"])
+@pytest.mark.parametrize(
+    "current", [None, RuntimeError], ids=["restore review", "database outage"]
+)
+def test_an_outage_is_the_report_error_page(monkeypatch, principal, current):
+    """A restore under review or a database outage is the report pages' 503,
+    whose words and links every Admin role may follow."""
+    from django.db import DatabaseError
+
+    from parishkit.stewardship.web.report_errors import REPORT_UNAVAILABLE
+
+    failure = DatabaseError("down") if current is RuntimeError else None
+    response = _view(monkeypatch, principal, current=failure)
+    assert response.status_code == 503
+    assert response.stewardship_refusal is REPORT_UNAVAILABLE
+    assert b"Delivery" not in response.content
+
+
+def test_an_unknown_parameter_is_a_typed_400(monkeypatch):
+    """Anything but a plain GET is refused with the closed invalid code."""
+    from parishkit.stewardship.web.contracts import ErrorCode
+
+    response = _view(monkeypatch, STAFF, query="?other=1")
+    assert response.status_code == 400
+    assert [error.code for error in response.stewardship_errors] == [ErrorCode.INVALID]
