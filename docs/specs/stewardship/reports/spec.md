@@ -141,7 +141,9 @@ cannot draw become visible escapes. Inside the frame, the Family-code
 directory is a zebra-striped table whose heading row repeats on every page,
 with each phone number and each head's emails on its own line; each response
 list and the Census changes list is the same table; the postal mail merge is a
-grid of address cards.
+grid of address cards. The [participation chart](#participation-graph)'s PDF
+is one page with the chart in the frame's body, titled with the population
+scope; like its picture it states no request or capture time.
 
 A field/value report (additional information, Ministry, financial, Family
 test names, packets) prints one card per record. Which columns each format
@@ -324,8 +326,10 @@ or the submission cutoff
 and PDF are the chart, not a table.
 The daily digest email states a plain as-of line instead
 ([daily campaign digest](../background-processing/spec.md#daily-campaign-digest)),
-and its chart PNG keeps the metadata. The same drawing is used on
-the Participation page, in PNG and PDF exports, and in the daily digest email.
+and its chart PNG keeps the metadata. The same plot is used on
+the Participation page, in PNG and PDF exports, and in the daily digest email;
+the PDF sets it in the shared report page frame ([file design](#file-design)),
+while the page and email PNGs keep their own titles and layout.
 
 Each process draws one matplotlib file at a time, because matplotlib's style
 settings are process-global, so a web process's chart image can wait behind a
