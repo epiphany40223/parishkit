@@ -1686,6 +1686,30 @@ def users_list(args, preamble, runtime, context):
     return read_users(context["caller"], runtime, args.sort, audit=context["audit"])
 
 
+def users_preview(args, preamble, runtime, context):
+    """Review a change to Admin portal users (#952 slice 5)."""
+    from .admin_users import CHANGES_LIMIT, preview_users
+
+    return preview_users(
+        context["caller"],
+        runtime,
+        expected_version=args.expected_version,
+        changes=_input(args.changes, context, CHANGES_LIMIT),
+    )
+
+
+def users_confirm(args, preamble, runtime, context):
+    """Confirm a reviewed user change as a configuration request (#952)."""
+    from .admin_users import TOKEN_LIMIT, confirm_users
+
+    return confirm_users(
+        context["caller"],
+        runtime,
+        token=_input(args.token, context, TOKEN_LIMIT),
+        context=context,
+    )
+
+
 def users_preview_upgrade(args, preamble, runtime, context):
     """The read-only users upgrade preview of Portal users (#952 slice 2)."""
     from .admin_reads import read_users_upgrade
@@ -2399,6 +2423,30 @@ def _sessions_options(parser):
         "--sort",
         help="label, scope, created, expires, used or ended; "
         "--sort=-NAME (with =) reverses it (default -created)",
+    )
+
+
+def _users_preview_options(parser):
+    """Options of ``users preview``: the users' version and the change."""
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_digest,
+        help="the version users list printed",
+    )
+    parser.add_argument(
+        "--changes",
+        required=True,
+        help="the change document as JSON, or - to read it from standard input",
+    )
+
+
+def _users_confirm_options(parser):
+    """Options of ``users confirm``: the preview's token."""
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from users preview, or - for standard input",
     )
 
 
@@ -3291,12 +3339,15 @@ def _report_specs():
 
 
 def _users_specs():
-    """The Portal users reads (#952 slice 2), in the users group (ADM-11 PR 11).
+    """The users commands (#952), in the users group (ADM-11 PR 11).
 
-    Both are passive reads any session may run; each records the page's view
-    event, ``portal_users_viewed``.
+    ``users list`` and ``users preview-upgrade`` are passive reads any
+    session may run; each records the page's view event,
+    ``portal_users_viewed``. ``users preview`` and ``users confirm`` change
+    users as the Users page does (slice 5) and need a full-scope session.
     """
     from .admin_reads import UsersList, UsersUpgradePreview
+    from .admin_users import UsersConfirm, UsersPreview
 
     return (
         CommandSpec(
@@ -3319,6 +3370,28 @@ def _users_specs():
             UsersUpgradePreview.field_names(),
             11,
             audit_event="portal_users_viewed",
+        ),
+        CommandSpec(
+            "users preview",
+            "Review a change to Admin portal users.",
+            users_preview,
+            "full",
+            False,
+            UsersPreview.field_names(),
+            11,
+            options=(_users_preview_options,),
+            expected_version=True,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "users confirm",
+            "Confirm a reviewed change to Admin portal users.",
+            users_confirm,
+            "full",
+            True,
+            UsersConfirm.field_names(),
+            11,
+            options=(_users_confirm_options,),
         ),
     )
 

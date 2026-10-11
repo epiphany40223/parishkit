@@ -9,6 +9,10 @@
   version it was reviewed at. A refused live end-date change (#944) says
   why, in the same paragraph a failure's explanation always takes, so the
   settled status occupies the same place as any other.
+  The template[data-live-refused] is what live-status-v1.js shows, in place
+  of the running status, when a status read is refused (signed out, or the
+  reader lost access, such as by a change that removed their own access): a
+  plain final status, never an indefinite wait (#952).
 {% endcomment %}<section class="panel" role="status" aria-live="polite" data-live-status="configuration"{% if status_url %} data-live-url="{{ status_url }}"{% endif %} data-live-state="{{ receipt.state }}"{% if receipt.state != 'applied' and receipt.state != 'failed' and receipt.state != 'cancelled' %} data-live-pending{% endif %}>
 {% if receipt.state == 'applied' %}
   <h2 class="live-done">{% translate "Applied: your change is saved" %}</h2><p>{% translate "The change has been applied and is now in effect." %}</p>
@@ -22,6 +26,7 @@
 {% else %}
   {% translate "Applying your change…" as running %}{% include 'stewardship/live-running.html' with message=running %}
   <p>{% translate "This usually takes a few seconds. The change is not saved until this page says Applied." %}</p>
+  <template data-live-refused><h2>{% translate "Status unavailable" %}</h2><p>{% translate "This page can no longer check the change, because your sign-in ended or your account no longer has access to its status. If the change removed your own access, it was probably applied; another Administrator can confirm it." %}</p><p>{% translate "Request:" %} {{ receipt.request_id }}</p></template>
 {% endif %}
   <p>{% translate "Request:" %} {{ receipt.request_id }}</p>
 {% if follow_url %}{% if receipt.state == 'applied' %}<a hidden data-live-follow data-in-place data-in-place-quiet href="{{ follow_url }}#settings-review">{% translate "Reload settings" %}</a>{% endif %}{% endif %}

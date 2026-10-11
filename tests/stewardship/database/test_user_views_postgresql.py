@@ -1,311 +1,471 @@
-"""The Administrator-only portal users review under the real web database role."""
+"""The Users page (#952 slice 5) under the real web database role.
 
+One table of users, New and Edit user with a review and Apply, Delete from
+the table's dialog and New user's Name lookup. Each change is one recorded,
+installed configuration request with its audit event; the last-Administrator
+guard, the capability and CSRF are checked on the server.
+"""
+
+import json
 import re
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import psycopg
 import pytest
-from django.db import connection
-from django.test.utils import CaptureQueriesContext
+from django.db import DatabaseError, connection
 
 from parishkit.stewardship.accounts import user_views
-from parishkit.stewardship.accounts.authentication import AuthRuntime
-from parishkit.stewardship.accounts.policy import current_principal
-from parishkit.stewardship.accounts.policy_models import AssignmentOverlay, PortalUser
+from parishkit.stewardship.accounts.models import PortalSession
+from parishkit.stewardship.accounts.policy_models import PolicySecurityEvent, PortalUser
+from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
+from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+from parishkit.stewardship.accounts.user_changes import LookupLimited, member_names
 from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.deployment import ServiceRole
 
-from ..policy_factory import address, assignment, domain
-from .auth_builders import auth_runtime, signed_in
-from .campaign_builders import change
+from ..policy_factory import address
+from .auth_builders import signed_in, unguarded
 from .leader_builders import grant_role
-from .role_grants import seed_user
 from .test_background_grants_postgresql import task_login
+from .user_builders import (
+    USERS,
+    add_rules,
+    convert,
+    installed,
+    post,
+    review,
+    token,
+    user_change,
+    user_id,
+    users,
+    web,
+)
 
 pytestmark = pytest.mark.django_db(transaction=True)
-URL = "/admin/users"
+NEW = "/admin/users/new/"
+DELETE = "/admin/users/deletion/"
+NAMES = "/admin/users/new/names/"
 
 
-def add_rules(store, *records):
-    """Install login rules through the real configuration owner, before sign-in.
-
-    Rules come first so every sign-in in a case is decided by the final policy;
-    a session that outlives a policy change is refused by the reload, not ended.
-    """
-    receipt = change(
-        store,
-        store.active(),
-        uuid4(),
-        [
-            {"operation": "add", "section": "login_rules", **record}
-            for record in records
-        ],
-    )
-    assert receipt.state == "applied"
-
-
-def views():
-    """Audit contexts for this page only."""
+def contexts(event_type):
+    """The audit contexts recorded for one event type."""
     return list(
-        AuditContext.objects.filter(
-            event__event_type="portal_users_viewed"
-        ).values_list("context", flat=True)
+        AuditContext.objects.filter(event__event_type=event_type).values_list(
+            "context", flat=True
+        )
     )
 
 
-def rules(body):
-    """The page above its Upgrade preview panel (#952): the rule tables.
-
-    The panel lists converted users by address too, so assertions about
-    the rule tables read only this part.
-    """
-    return body.split('<section id="upgrade-preview"', 1)[0]
+def edit(store, email):
+    """Edit user's address for one active user."""
+    return f"/admin/users/{user_id(store, email)}/edit/"
 
 
-def row(body, key):
-    """The one rule-table row whose header cell starts with this address or domain."""
+def page(browser, path=USERS):
+    """One page as the signed-in browser sees it now, under the web role."""
+    with web():
+        response = browser.get(path)
+    assert response.status_code == 200, response.content
+    return response.content.decode()
+
+
+def row(body, email):
+    """The Users table row whose header cell is this address."""
     found = re.findall(
-        rf'<tr>\s*<th scope="row">{re.escape(key)}[<\s].*?</tr>',
-        rules(body),
+        r'<tr>\s*<th scope="row"><span class="cell-ellipsis" '
+        rf'title="{re.escape(email)}">.*?</tr>',
+        body,
         flags=re.S,
     )
-    assert len(found) == 1, key
+    assert len(found) == 1, email
     return found[0]
 
 
-def identity(email, *, hosted=None, disabled=False):
-    """A verified Google identity that never opened a session."""
-    return seed_user(
-        google_subject=str(uuid4()),
-        email=email,
-        hosted_domain=hosted,
-        disabled=disabled,
-    )
-
-
-def signed_in_before(email, *, hosted):
-    """A Google identity that signed in to the Admin portal before the users swap.
-
-    Sign-in reads only users since #952 slice 4, so a hosted-domain
-    colleague's earlier sign-in is recorded as that sign-in left it: the
-    identity and its admin_login audit event.
-    """
-    portal = identity(email, hosted=hosted)
-    AuditEvent.objects.create(event_type="admin_login", actor_id=portal.pk)
-    return portal
-
-
-def test_administrator_reviews_rules_provenance_and_warnings(auth_service, google):
-    """Real grants, real policy: every table row and warning, and a clean audit."""
-    # Only rules an Administrator can really add: Chairperson-seeded authority
-    # enters through its own reconciliation owner, never an ordinary patch.
+@pytest.fixture
+def converted(auth_service, google):
+    """A users deployment: the Administrator, a second one and a Staff user."""
     add_rules(
         auth_service.store,
-        domain("example.org", roles=("staff",)),
-        domain("workspace.example", roles=("staff",)),
-        address("blocked@example.org", roles=()),
-        address("leader@example.org", roles=("ministry_leader",)),
-        assignment("leader@example.org", ministry=9),
-        address("idle@example.org", roles=("ministry_leader",)),
-        assignment("helper@workspace.example", ministry=4),
+        address("second@example.org"),
+        address("staff@example.org", ("staff",)),
     )
-    rules = auth_service.store.active().document()["sections"]["login_rules"]
-    # Google verifies this person, then the explicit deny refuses them. That
-    # attempt records an identity but must never read as a sign-in.
-    google[0].update(email="blocked@example.org", sub="blocked-subject")
-    assert signed_in()[1].status_code == 403
-    assert PortalUser.objects.filter(email="blocked@example.org").exists()
-    # A colleague with no exact rule signed in through the domain rule before
-    # the users swap (#952).
-    signed_in_before("colleague@example.org", hosted="example.org")
-    identity("idle@example.org", disabled=True)
-    google[0].update(email="admin@example.org", sub="synthetic-google-subject")
+    convert(auth_service.store)
     browser, login = signed_in()
     assert login.status_code == 302
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        response = browser.get(URL)
-        assert response.status_code == 200
-        assert response["Cache-Control"] == "no-store"
-        body = response.content.decode()
-        # The minimal link beside the heading (#953) opens System logs'
-        # Sign-in activity, carrying only closed link filters.
-        link = re.search(
-            r'<p id="users-sign-in-activity"><a href="([^"]+)">'
-            r"See sign-in activity in System logs</a></p>",
-            body,
-        )
-        assert link and link.group(1) == (
-            "/admin/system/logs/?applied=yes&amp;audit=yes&amp;activity=sign_in"
-        )
-        assert browser.get(link.group(1).replace("&amp;", "&")).status_code == 200
-        # Each exact-address identity links to its own sign-in activity
-        # (#953), its account id only in the POST body. The refused attempt
-        # above is listed there, naming the address.
-        blocked = PortalUser.objects.get(email="blocked@example.org")
-        fields = dict(
-            re.findall(
-                r'<input type="hidden" name="(\w+)" value="([^"]*)">',
-                re.search(
-                    r'<form method="post" action="/admin/system/logs/" '
-                    r'class="inline-form">(.*?)</form>',
-                    row(body, "blocked@example.org"),
-                    flags=re.S,
-                ).group(1),
-            )
-        )
-        assert fields.pop("csrfmiddlewaretoken")
-        assert fields == {
-            "applied": "yes",
-            "audit": "yes",
-            "activity": "sign_in",
-            "actor": str(blocked.pk),
-        }
-        assert 'aria-label="Sign-in activity for blocked@example.org"' in body
-        assert "/admin/system/logs/" not in row(body, "leader@example.org")
-        history = browser.post(
-            "/admin/system/logs/",
-            fields | {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value},
-        ).content.decode()
-        assert re.findall(r"<td>([a-z_]+)<br>", history) == ["admin_login_refused"]
-        assert "<td>blocked@example.org</td>" in history
-        # Identifying values never travel in a URL.
-        assert browser.get(URL + "?email=blocked@example.org").status_code == 400
-        # With a genuine CSRF token, so the view itself refuses the method.
-        token = browser.cookies["pk_admin_csrf"].value
-        assert browser.post(URL, {"csrfmiddlewaretoken": token}).status_code == 405
-    # Three identities presented the example.org claim, but the rule authorizes
-    # only the colleague: the Administrator and the refused address each have an
-    # exact rule that replaces it. The other domain has no evidence yet.
-    claimed = row(body, "example.org")
-    assert "<td>1</td>" in claimed and claimed.count("data-local-instant") == 1
-    assert "No recorded Google account is authorized" in row(body, "workspace.example")
-    assert "data-local-instant" in row(body, "admin@example.org")
-    denied = row(body, "blocked@example.org")
-    assert "Explicit deny" in denied and "None on record" in denied
-    assert "data-local-instant" not in denied
-    # A rule's Ministry leader role is held (2026-10-10); Ministry
-    # assignments are not shown at all (#922).
-    assert "<td>Ministry leader</td>" in row(body, "leader@example.org")
-    idle = row(body, "idle@example.org")
-    assert "<td>Ministry leader</td>" in idle
-    assert "is disabled and cannot sign in" in idle
-    assert "helper@workspace.example" not in body and "Ministry DUID" not in body
-    assert 'href="/admin/users"' in body
-    contexts = views()
-    # One audit row for the one successful view, and none for the refused query
-    # string or POST. It counts every row of every table, naming none: both
-    # rule tables and the Upgrade preview's users (#952), here the admin,
-    # leader and idle rules and the colleague who signed in by domain.
-    listed = sum(record["values"]["kind"] != "assignment" for record in rules)
-    panel = body.split('<section id="upgrade-preview"', 1)[1]
-    assert panel.count('<th scope="row">') == 4
-    assert contexts == [{"outcome": "succeeded", "count": listed + 4}]
-    assert listed >= 6
-    assert "@" not in str(contexts) and "example" not in str(contexts)
+    return auth_service.store, browser
 
 
-@pytest.fixture
-def seeded_service(tmp_path, settings, real_limiter):
-    """The ordinary authentication runtime over a policy bootstrapped with chairs.
+def test_the_table_lists_users_and_audits_only_a_count(converted):
+    """Email first, Name, Role, sign-in and actions; one line; the view audited."""
+    store, browser = converted
+    body = page(browser)
+    assert "<h1>Users</h1>" in body
+    admin = row(body, "admin@example.org")
+    # The Administrator signed in through the fixture; the time is drawn in
+    # the compact parish format, as other dense tables are. No row has a
+    # Sign-in activity control (Administrator, 2026-10-11): the link above
+    # the table opens System logs.
+    assert "data-local-instant data-compact" in admin
+    assert 'name="actor"' not in body and "<form" not in admin
+    assert "See sign-in activity in System logs" in body
+    assert f'href="{edit(store, "admin@example.org")}"' in admin
+    # The reader's own row has no Delete, though another Administrator
+    # remains; the other Administrator's row has one.
+    assert 'data-confirm-open="user-delete"' not in admin
+    assert 'data-confirm-open="user-delete"' in row(body, "second@example.org")
+    assert "delete yourself" in body
+    assert "admin (Administrator)" not in admin
+    staff = row(body, "staff@example.org")
+    assert '<td class="nowrap">Staff</td>' in staff and "Never" in staff
+    # Rows come in Email order by default; Role sorts by level, Administrators
+    # first, on its first choice.
+    assert body.index("admin@example.org") < body.index("second@example.org")
+    assert body.index("second@example.org") < body.index("staff@example.org")
+    ordered = page(browser, USERS + "?users_sort=-role")
+    assert ordered.index("second@example.org") < ordered.index("staff@example.org")
+    with web():
+        assert browser.get(USERS + "?users_sort=warnings").status_code == 400
+        assert browser.get(USERS + "?sort=email").status_code == 400
+    assert contexts("portal_users_viewed")[0] == {"outcome": "succeeded", "count": 3}
+    assert "@" not in str(contexts("portal_users_viewed"))
+    # The old Portal users addresses are gone (#864).
+    with web():
+        assert browser.get("/admin/users/rules").status_code == 404
 
-    Chairperson-seeded rules cannot be added by a patch, so they are installed
-    the way the evaluator's own tests install them: in the initial policy.
-    """
-    confirmed = assignment("confirmed@example.org", ministry=9, seeded=True)
-    missing = assignment("missing@example.org", ministry=4, seeded=True)
-    service = auth_runtime(
-        tmp_path,
-        settings,
-        real_limiter,
-        [
-            address(),
-            address("confirmed@example.org", ("ministry_leader",), seeded=True),
-            confirmed,
-            address("missing@example.org", ("ministry_leader",), seeded=True),
-            missing,
-        ],
+
+def test_the_own_row_note_counts_every_page(auth_service, google):
+    """The note under the table holds even when the reader's own row is on
+    another page of the table, not only when it is shown."""
+    add_rules(
+        auth_service.store,
+        *(address(f"staff{number:02}@example.org", ("staff",)) for number in range(25)),
     )
-    AssignmentOverlay.objects.create(
-        assignment_record_id=UUID(confirmed["id"]),
-        active=True,
-        source_snapshot_id=uuid4(),
-        reason="chair_present",
-    )
-    AssignmentOverlay.objects.create(
-        assignment_record_id=UUID(missing["id"]),
-        active=False,
-        source_snapshot_id=uuid4(),
-        reason="chair_missing",
-    )
-    return service
-
-
-def test_chairperson_seeds_on_the_page_match_a_sign_in(seeded_service, google):
-    """The page and the evaluator agree, whatever the overlay tables say: a
-    seeded rule's Ministry leader role is held (2026-10-10) and no seeded
-    assignment gives a Ministry (#922)."""
-    store = seeded_service.store
-    chairs = {
-        email: identity(email)
-        for email in ("confirmed@example.org", "missing@example.org")
-    }
+    convert(auth_service.store)
     browser, login = signed_in()
     assert login.status_code == 302
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        body = browser.get(URL).content.decode()
-        granted = {
-            email: current_principal(store, user.pk) for email, user in chairs.items()
-        }
-    for email, duid in (("confirmed@example.org", 9), ("missing@example.org", 4)):
-        assert granted[email].roles == {"ministry_leader"}
-        assert not granted[email].ministries
-        shown = row(body, email)
-        assert "<td>Ministry leader</td>" in shown
-        assert f"Ministry DUID {duid}" not in shown
+    note = "delete yourself"
+    # Email descending puts admin@example.org on page 2 of 25 rows each.
+    first = page(browser, USERS + "?users_sort=-email&users_size=25")
+    assert "admin@example.org" not in first
+    assert note in first
+    assert note in page(
+        browser, USERS + "?users_sort=-email&users_size=25&users_page=2"
+    )
 
 
 @pytest.mark.parametrize("role", ["staff", "ministry_leader"])
-def test_portal_users_are_not_exposed_to_other_roles(auth_service, google, role):
-    """Who else holds access is an Administrator-only disclosure."""
+def test_other_roles_get_none_of_the_users_routes(auth_service, google, role):
+    """Who may sign in, and changing it, is Administrator-only."""
     grant_role(auth_service.store, "reader@example.org", role)
+    convert(auth_service.store)
     google[0]["email"] = "reader@example.org"
     browser, login = signed_in()
-    # The sign-in itself succeeds, so the 403 is the capability's alone.
     assert login.status_code == 302
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        response = browser.get(URL)
-    assert response.status_code == 403
-    assert b"admin@example.org" not in response.content
-    # Nor the users upgrade preview panel (#952), which only this page shows.
-    assert b"upgrade-preview" not in response.content
-    assert b"Upgrade preview" not in response.content
-    assert views() == []
+    target = edit(auth_service.store, "admin@example.org")
+    with web():
+        for path in (USERS, NEW, target):
+            response = browser.get(path)
+            assert response.status_code == 403, path
+            assert b"admin@example.org" not in response.content
+        for path, values in (
+            (NEW, {"action": "preview", "email": "x@example.org", "name": "X"}),
+            (DELETE, {"user_id": user_id(auth_service.store, "admin@example.org")}),
+            (NAMES, {"email": "x@example.org"}),
+        ):
+            assert post(browser, path, values).status_code == 403, path
+    assert contexts("portal_users_viewed") == []
+    assert contexts("user_names_looked_up") == []
 
 
-def test_access_lost_during_the_request_discloses_and_audits_nothing(
-    auth_service, google, monkeypatch
-):
-    """A real demotion after admission is caught by the genuine recheck.
+def test_new_user_defaults_to_ministry_leader_and_applies_audited(converted):
+    """New user's form, review and Apply: one request, its audit, then a user."""
+    store, browser = converted
+    form = page(browser, NEW)
+    assert 'value="ministry_leader" id="id_role_0"' in form
+    assert re.search(r'value="ministry_leader"[^>]* checked', form)
+    reviewed = review(
+        store,
+        browser,
+        NEW,
+        {"email": " New.Person@Example.org ", "name": " Person, New ", "role": "staff"},
+    )
+    text = reviewed.content.decode()
+    assert "new.person@example.org" in text and "Person, New" in text
+    assert "Staff" in text and "This adds a new user." in text
+    request = user_change(
+        store,
+        browser,
+        NEW,
+        {"email": "new.person@example.org", "name": "Person, New", "role": "staff"},
+    )
+    assert users(store)["new.person@example.org"] == ("Person, New", "staff")
+    assert request.request_schema == "users-patch-v10"
+    event = AuditEvent.objects.get(
+        event_type="user_change_requested", subject_id=request.pk
+    )
+    assert event.auditcontext.context == {"outcome": "succeeded", "count": 1}
+    # Granting Staff raises no security alert.
+    assert not PolicySecurityEvent.objects.filter(
+        target="new.person@example.org"
+    ).exists()
 
-    The Administrator's Google identity is disabled while the observation is
-    being taken, so ordinary admission has already passed. Nothing substitutes
-    the recheck itself: the real read-only authorization must notice.
+
+def test_new_user_refusals_are_shown_at_their_fields(converted):
+    """An address in use or malformed, and a missing Name, are refused in place."""
+    store, browser = converted
+    for values, field, message in (
+        (
+            {"email": "Staff@example.org", "name": "Again", "role": "staff"},
+            "id_email",
+            "This address is already a user.",
+        ),
+        (
+            {"email": "not-an-address", "name": "X", "role": "staff"},
+            "id_email",
+            "Enter one email address",
+        ),
+        (
+            {"email": "fresh@example.org", "name": "  ", "role": "staff"},
+            "id_name",
+            "Enter a name.",
+        ),
+        (
+            {"email": "fresh@example.org", "name": "X", "role": "owner"},
+            "id_role",
+            "Select a valid choice",
+        ),
+    ):
+        response = review(store, browser, NEW, values)
+        assert response.status_code == 400, values
+        text = response.content.decode()
+        assert message in text and f'href="#{field}' in text
+    assert not ConfigurationChangeRequest.objects.filter(
+        request_schema="users-patch-v10"
+    ).exists()
+
+
+def test_edit_changes_name_and_role_and_grants_administrator(converted):
+    """Edit shows the user; Review shows before and after; Administrator alerts."""
+    store, browser = converted
+    path = edit(store, "staff@example.org")
+    form = page(browser, path)
+    assert "staff@example.org" in form and 'name="email"' not in form
+    reviewed = review(store, browser, path, {"name": "Staff, Sam", "role": "staff"})
+    assert "Staff, Sam" in reviewed.content.decode()
+    unchanged = review(store, browser, path, {"name": "staff", "role": "staff"})
+    assert unchanged.status_code == 400
+    assert "Nothing has changed." in unchanged.content.decode()
+    user_change(store, browser, path, {"name": "Staff, Sam", "role": "administrator"})
+    assert users(store)["staff@example.org"] == ("Staff, Sam", "administrator")
+    event = PolicySecurityEvent.objects.get(target="staff@example.org")
+    assert event.kind == "administrator_granted"
+    # An unknown or deleted user is refused, even from an old link.
+    with web():
+        assert browser.get(f"/admin/users/{uuid4()}/edit/").status_code == 404
+
+
+def test_the_only_administrator_cannot_be_demoted_or_deleted(auth_service, google):
+    """The guard is shown and enforced on the server for Edit and Delete.
+
+    The only Administrator is always the reader, so the own-Administrator
+    words are the ones shown.
     """
+    store = auth_service.store
+    add_rules(store, address("staff@example.org", ("staff",)))
+    convert(store)
     browser, login = signed_in()
-    # Ordinary admission must succeed, so the later 403 is the recheck's alone.
     assert login.status_code == 302
-    admin = PortalUser.objects.get(email="admin@example.org")
-    genuine, observed = user_views.policy_identities, []
+    body = page(browser)
+    assert 'data-confirm-open="user-delete"' not in row(body, "admin@example.org")
+    assert "delete yourself" in body
+    path = edit(store, "admin@example.org")
+    form = page(browser, path)
+    assert re.search(r'value="staff"[^>]* disabled', form)
+    assert "This is your own user" in form
+    refused = review(store, browser, path, {"name": "admin", "role": "staff"})
+    assert refused.status_code == 400
+    assert "This is your own user" in refused.content.decode()
+    with web():
+        response = post(
+            browser,
+            DELETE,
+            {
+                "base_digest": store.active().digest,
+                "user_id": user_id(store, "admin@example.org"),
+            },
+        )
+    assert response.status_code == 400
+    assert "delete yourself" in response.content.decode()
+    assert users(store)["admin@example.org"] == ("admin", "administrator")
 
+
+def test_an_administrator_cannot_demote_or_delete_themselves(
+    converted, google, monkeypatch
+):
+    """Refused at Review and Delete, and again by the request's own check.
+
+    Another Administrator remains, so only the own-Administrator guard
+    applies; that other Administrator may still demote this one.
+    """
+    store, browser = converted
+    path = edit(store, "admin@example.org")
+    form = page(browser, path)
+    assert re.search(r'value="staff"[^>]* disabled', form)
+    assert re.search(r'value="ministry_leader"[^>]* disabled', form)
+    assert "This is your own user" in form
+    # Another user's Edit page leaves every role available.
+    other = page(browser, edit(store, "second@example.org"))
+    assert not re.search(r'value="staff"[^>]* disabled', other)
+    refused = review(store, browser, path, {"name": "admin", "role": "staff"})
+    assert refused.status_code == 400
+    assert "This is your own user" in refused.content.decode()
+    # A Name change of one's own user is still a change.
+    assert (
+        review(
+            store, browser, path, {"name": "Admin, A", "role": "administrator"}
+        ).status_code
+        == 200
+    )
+    with web():
+        response = post(
+            browser,
+            DELETE,
+            {
+                "base_digest": store.active().digest,
+                "user_id": user_id(store, "admin@example.org"),
+            },
+        )
+    assert response.status_code == 400
+    assert "delete yourself" in response.content.decode()
+    # A review signed without the builder's guard is still refused by the
+    # request's own check, in its transaction: nothing is recorded.
+    real = user_views.plan_changes
+    monkeypatch.setattr(
+        user_views,
+        "plan_changes",
+        lambda records, entries, **options: real(records, entries),
+    )
+    signed = token(review(store, browser, path, {"name": "admin", "role": "staff"}))
+    monkeypatch.setattr(user_views, "plan_changes", real)
+    with web():
+        applied = post(browser, USERS, {"action": "confirm", "preview": signed})
+    assert applied.status_code == 400
+    assert "remove your own Administrator role" in applied.content.decode()
+    assert not ConfigurationChangeRequest.objects.filter(
+        request_schema="users-patch-v10"
+    ).exists()
+    assert contexts("user_change_requested") == []
+    assert users(store)["admin@example.org"] == ("admin", "administrator")
+    # The other Administrator may demote this one.
+    google[0].update(email="second@example.org", sub="second-subject")
+    second, login = signed_in()
+    assert login.status_code == 302
+    user_change(store, second, path, {"name": "admin", "role": "staff"})
+    assert users(store)["admin@example.org"] == ("admin", "staff")
+
+
+def test_change_status_refuses_a_reader_who_lost_access(converted, google):
+    """The status read a demoted reader makes is refused, never left waiting.
+
+    Change status needs Administrator; the page's script turns this refusal
+    into its final "Status unavailable" (browser-tested).
+    """
+    store, browser = converted
+    signed = token(
+        review(
+            store,
+            browser,
+            edit(store, "staff@example.org"),
+            {"name": "S", "role": "staff"},
+        )
+    )
+    with web():
+        response = post(browser, USERS, {"action": "confirm", "preview": signed})
+    status = response["Location"]
+    assert "data-live-refused" in page(browser, status)
+    google[0].update(email="second@example.org", sub="second-subject")
+    second, login = signed_in()
+    assert login.status_code == 302
+    user_change(
+        store,
+        second,
+        edit(store, "admin@example.org"),
+        {"name": "admin", "role": "staff"},
+    )
+    with web():
+        assert browser.get(status).status_code in {302, 403}
+
+
+def test_delete_records_one_change_and_ends_access(converted, google):
+    """The dialog's POST records a change at once; the person can't sign in."""
+    store, browser = converted
+    google[0].update(email="second@example.org", sub="second-subject")
+    other, login = signed_in()
+    assert login.status_code == 302
+    with web():
+        assert other.get(USERS).status_code == 200
+        response = post(
+            browser,
+            DELETE,
+            {
+                "base_digest": store.active().digest,
+                "user_id": user_id(store, "second@example.org"),
+            },
+        )
+    request = installed(store, response)
+    assert "second@example.org" not in users(store)
+    assert AuditEvent.objects.filter(
+        event_type="user_change_requested", subject_id=request.pk
+    ).exists()
+    # Deletion is the emergency switch: the open session ends on its next
+    # request.
+    with web():
+        assert other.get(USERS).status_code in {302, 403}
+    # A stale page's delete, or one naming nobody, changes nothing.
+    with web():
+        assert (
+            post(
+                browser,
+                DELETE,
+                {
+                    "base_digest": "0" * 64,
+                    "user_id": user_id(store, "staff@example.org"),
+                },
+            ).status_code
+            == 409
+        )
+        assert (
+            post(
+                browser,
+                DELETE,
+                {"base_digest": store.active().digest, "user_id": str(uuid4())},
+            ).status_code
+            == 404
+        )
+        assert (
+            browser.post(
+                DELETE,
+                {
+                    "base_digest": store.active().digest,
+                    "user_id": user_id(store, "staff@example.org"),
+                },
+            ).status_code
+            == 403
+        )
+    assert "staff@example.org" in users(store)
+
+
+def test_access_lost_during_the_page_discloses_and_audits_nothing(
+    converted, monkeypatch
+):
+    """A demotion committed while the page is observed is caught by the recheck."""
+    store, browser = converted
+    admin = PortalUser.objects.get(email="admin@example.org")
+    genuine = user_views.policy_identities
     settings = connection.settings_dict
 
     def disabling(records):
-        """Observe as usual while another session disables the identity.
-
-        The observation is a read-only snapshot, so the demotion arrives the
-        way a real one does: committed by a separate connection.
-        """
-        observed.append(len(records))
+        """Observe as usual while another connection disables the identity."""
         with psycopg.connect(
             host=settings["HOST"],
             port=settings["PORT"],
@@ -321,159 +481,253 @@ def test_access_lost_during_the_request_discloses_and_audits_nothing(
         return genuine(records)
 
     monkeypatch.setattr(user_views, "policy_identities", disabling)
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        response = browser.get(URL)
-    # The observation ran, in its snapshot, before the identity was lost.
-    assert len(observed) == 1
+    with web():
+        response = browser.get(USERS)
     assert response.status_code == 403
-    assert b"admin@example.org" not in response.content
-    assert views() == []
+    assert b"staff@example.org" not in response.content
+    assert contexts("portal_users_viewed") == []
 
 
-def test_the_page_waits_for_completed_setup(auth_service, google, settings):
-    """Before setup completes the applied policy is not yet the parish's own."""
-    browser, _ = signed_in()
-    settings.STEWARDSHIP_AUTH_RUNTIME = AuthRuntime(
-        auth_service.store, auth_service.limiter, lambda: False
+def test_name_lookup_checks_the_address_and_suggests_names(converted):
+    """The lookup answers JSON, audits only a count, and needs CSRF."""
+    from parishkit.stewardship.campaigns.models import Campaign
+    from parishkit.stewardship.source.models import SourceCurrent, SourceMutationLease
+
+    from .campaign_builders import add_draft
+    from .credential_builders import keys
+    from .leader_builders import leader, with_leaders
+    from .response_builders import response_source
+    from .test_source_families_postgresql import prepare, promote
+
+    store, browser = converted
+    add_draft(store, store.active(), uuid4())
+    campaign = Campaign.objects.get(
+        pk=SystemConfiguration.objects.get().current_campaign_id
     )
+    SourceMutationLease.objects.get_or_create(singleton=True)
+    SourceCurrent.objects.get_or_create(singleton=True)
+    snapshot, claim = prepare(
+        with_leaders(
+            response_source(),
+            [
+                leader("shared@example.org", 9, family="inactive"),
+                leader(" Shared@Example.org ", 9),
+            ],
+        )
+    )
+    promote(snapshot, claim, campaign, keys())
+
+    def ask(email):
+        """Post the lookup as the page's script does."""
+        with web():
+            response = post(browser, NAMES, {"email": email})
+        assert response.status_code == 200, response.content
+        return json.loads(response.content)
+
+    # Any address, not only a rule's or an identity's: the active Family's
+    # Member first, matched trimmed and case-insensitively.
+    assert ask(" SHARED@example.org ") == {
+        "error": None,
+        "names": ["Example 1, Leader", "Example 0, Leader"],
+    }
+    assert ask("nobody@example.org") == {"error": None, "names": []}
+    assert ask("Staff@example.org")["error"].startswith("This address is already")
+    assert ask("not-an-address")["error"].startswith("Enter one email address")
+    # Only the two real lookups are audited, by count alone.
+    looked_up = contexts("user_names_looked_up")
+    assert sorted(item["count"] for item in looked_up) == [0, 2]
+    assert {item["outcome"] for item in looked_up} == {"succeeded"}
+    with web():
+        assert browser.post(NAMES, {"email": "x@example.org"}).status_code == 403
+        assert post(browser, NAMES + "?email=x", {"email": "x"}).status_code == 400
+    # The web login runs the definer itself; it holds no Member grant.
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        response = browser.get(URL)
-    # Admission itself sends an incomplete deployment to setup, before the page.
-    assert response.status_code == 302 and response["Location"] == "/admin/setup"
-    assert b"admin@example.org" not in response.content and views() == []
+        assert member_names(live_key(), "shared@example.org") == [
+            "Example 1, Leader",
+            "Example 0, Leader",
+        ]
 
 
-def test_a_revoked_administrator_loses_the_page(auth_service, google):
-    """Current policy is reloaded on every request, not remembered by a session.
-
-    The revoked person signed in from a consumer account: no hosted-domain
-    claim, and after the removal no rule at all. Their sign-in is still history
-    for the domain's row, which the evaluator's stricter test never authorizes.
-    """
-    store = auth_service.store
-    add_rules(store, address("second@example.org"), domain("example.org"))
-    google[0].update(email="second@example.org", sub="second-subject")
-    google[0].pop("hd")
-    browser, _ = signed_in()
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        assert browser.get(URL).status_code == 200
-    version = store.active()
-    rule = next(
-        record
-        for record in version.document()["sections"]["login_rules"]
-        if record["values"].get("email") == "second@example.org"
+def live_key(email="admin@example.org"):
+    """The Django session key of this address's live Admin session."""
+    return (
+        PortalSession.objects.filter(
+            revoked_at=None, principal_id=PortalUser.objects.get(email=email).id
+        )
+        .latest("authenticated_at")
+        .session_id
     )
-    receipt = change(
-        store,
-        version,
-        uuid4(),
-        [{"operation": "remove", "section": "login_rules", "id": rule["id"]}],
+
+
+def lookups(email="admin@example.org"):
+    """The Name lookup audit events recorded for this address's user."""
+    return AuditEvent.objects.filter(
+        event_type="user_names_looked_up",
+        actor_id=PortalUser.objects.get(email=email).id,
     )
-    assert receipt.state == "applied"
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        assert browser.get(URL).status_code == 403
-    assert len(views()) == 1
-    google[0].update(email="admin@example.org", sub="synthetic-google-subject")
-    google[0]["hd"] = "example.org"
-    browser, login = signed_in()
-    assert login.status_code == 302
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        body = browser.get(URL).content.decode()
-    # The rule authorizes nobody: the Administrator has an exact rule and the
-    # consumer account presented no claim. The sign-in still happened here.
-    claimed = row(body, "example.org")
-    assert "No recorded Google account is authorized" in claimed
-    assert "data-local-instant" in claimed
-    assert "second@example.org" not in body
 
 
-def test_strangers_who_only_attempted_a_sign_in_cost_and_show_nothing(
-    auth_service, google
-):
-    """The work under the global lock is bounded by policy, not by attempts."""
-    from parishkit.stewardship.accounts import family_maintenance
-
-    browser, _ = signed_in()
-    # The Family maintenance banner reads its state through a process-wide
-    # cache of a few seconds; start both requests cold so each makes that
-    # read, whatever ran before this test.
-    family_maintenance._cache.update(at=None)
-    with CaptureQueriesContext(connection) as before:
-        assert browser.get(URL).status_code == 200
-    for index in range(40):
-        identity(f"stranger{index}@elsewhere.example", hosted="elsewhere.example")
-    family_maintenance._cache.update(at=None)
-    with CaptureQueriesContext(connection) as after:
-        response = browser.get(URL)
-    assert response.status_code == 200 and b"stranger" not in response.content
-    assert b"elsewhere.example" not in response.content
-    assert len(after) == len(before)
-    loaded = [
-        query["sql"] for query in after if "stewardship_portal_user" in query["sql"]
-    ]
-    # Identities are selected by the addresses and domains the policy names, on
-    # the column as stored, so the rows loaded are bounded by policy.
-    assert any('"email" IN (' in sql and "LOWER(" not in sql.upper() for sql in loaded)
-
-
-def test_long_tables_page_independently(auth_service, google):
-    """Each long table has its own navigator and keeps the other table's place."""
-    add_rules(
-        auth_service.store,
-        *(address(f"person{index:02}@example.org") for index in range(30)),
-    )
-    browser, _ = signed_in()
-    body = browser.get(URL + "?addresses_size=25&addresses_page=2").content.decode()
-    assert "Showing 26–31 of 31" in body
-    # The address navigator keeps the domain table's place.
-    assert 'type="hidden" name="domains_page" value="1"' in body
-    shown = rules(body)
-    assert "person29@example.org" in shown and "person00@example.org" not in shown
-    assert browser.get(URL + "?addresses_size=7").status_code == 400
-
-
-def test_every_table_sorts_on_the_server_and_keeps_the_others(auth_service, google):
-    """A heading sorts its whole table; the other tables keep their place,
-    and raw column names are refused before any read."""
-    add_rules(
-        auth_service.store,
-        *(address(f"person{index:02}@example.org") for index in range(30)),
-    )
-    browser, _ = signed_in()
-    body = browser.get(
-        URL + "?addresses_sort=-email&addresses_size=25&domains_sort=-domain"
-    ).content.decode()
-    shown = rules(body)
-    assert shown.index("person29@example.org") < shown.index("person28@example.org")
-    assert "person00@example.org" not in shown and "Page 1 of 2" in shown
-    assert 'aria-sort="descending"' in body
-    # The address table's links keep the domain table's sort, and vice versa.
-    assert 'type="hidden" name="domains_sort" value="-domain"' in body
-    assert "addresses_sort=-email" in body
-    assert browser.get(URL + "?addresses_sort=email%20desc").status_code == 400
-    # The Upgrade preview's users table (#952) sorts and pages on its own.
-    body = browser.get(URL + "?upgrade_sort=-email&upgrade_size=25").content.decode()
-    panel = body.split('<div id="upgrade-table">', 1)[1]
-    assert panel.index("person29@example.org") < panel.index("person28@example.org")
-    assert "Page 1 of 2" in panel
-    assert browser.get(URL + "?upgrade_sort=source").status_code == 200
-    assert browser.get(URL + "?upgrade_sort=warnings").status_code == 400
-    assert browser.get(URL + "?sort=email").status_code == 400
-
-
-def test_retired_assignment_and_chairperson_addresses_are_gone(auth_service, google):
-    """The Ministry assignment and Chairperson reviews are removed (#922).
-
-    Their old addresses answer 404 to an Administrator, with no redirect
-    (#864), whether a stale page links or posts to them.
-    """
-    browser, login = signed_in()
-    assert login.status_code == 302
-    token = browser.cookies["pk_admin_csrf"].value
-    for path in (
-        "/admin/users/assignments",
-        "/admin/users/suggestions",
-        "/admin/users/reviews",
+def test_the_name_lookup_definer_is_installed_as_declared():
+    """Migration 0053: a definer with a fixed path, web's alone to run."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT p.prosecdef, p.proconfig, "
+            "has_function_privilege('public', p.oid, 'EXECUTE') "
+            "FROM pg_proc p WHERE p.proname='stewardship_member_names_for_v1'"
+        )
+        assert cursor.fetchall() == [
+            (True, ["search_path=pg_catalog, public, pg_temp"], False)
+        ]
+    with (
+        task_login(ServiceRole.WORKER, exact=True, reconnect=True),
+        pytest.raises(Exception, match="permission denied"),
     ):
-        assert browser.get(path).status_code == 404
-        assert browser.post(path, {"csrfmiddlewaretoken": token}).status_code == 404
+        member_names("no-session", "x@example.org")
+
+
+def test_the_definer_answers_only_a_live_administrator_session(converted):
+    """No key, a made-up key or an ended session: refused, nothing audited."""
+    from django.utils import timezone
+
+    store, _browser = converted
+    key = live_key()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        for refused in (None, "", "not-a-session-key", "x" * 40):
+            with pytest.raises(DatabaseError, match="live Administrator session"):
+                member_names(refused, "x@example.org")
+        assert member_names(key, "x@example.org") == []
+    assert lookups().count() == 1
+    # A revoked session no longer answers, even under the owner.
+    with unguarded():
+        PortalSession.objects.filter(session_id=key).update(revoked_at=timezone.now())
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        pytest.raises(DatabaseError, match="live Administrator session"),
+    ):
+        member_names(key, "x@example.org")
+    assert lookups().count() == 1
+
+
+def test_a_session_from_before_a_recovery_is_refused(converted):
+    """An offline recovery after the session began ends its lookups.
+
+    The recovery epoch sessions.py checks, done in SQL: the row stays
+    unrevoked here (the recovery's own trigger would revoke it), so only the
+    definer's recovery check refuses it.
+    """
+    _store, _browser = converted
+    key = live_key()
+    with unguarded(), connection.cursor() as cursor:
+        cursor.execute(
+            "INSERT INTO stewardship_admin_revocation "
+            "(id, created_at, actor_id, correlation_id, activation_id) "
+            "VALUES (%s, clock_timestamp(), NULL, %s, %s)",
+            [uuid4(), uuid4(), uuid4()],
+        )
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        pytest.raises(DatabaseError, match="live Administrator session"),
+    ):
+        member_names(key, "x@example.org")
+    assert lookups().count() == 0
+
+
+def test_a_staff_session_is_refused(auth_service, google):
+    """Staff has a live Admin session but is not an Administrator."""
+    grant_role(auth_service.store, "reader@example.org", "staff")
+    convert(auth_service.store)
+    google[0]["email"] = "reader@example.org"
+    _browser, login = signed_in()
+    assert login.status_code == 302
+    key = live_key("reader@example.org")
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        pytest.raises(DatabaseError, match="live Administrator session"),
+    ):
+        member_names(key, "x@example.org")
+    assert lookups("reader@example.org").count() == 0
+
+
+def test_each_lookup_is_audited_and_the_61st_in_an_hour_refused(converted):
+    """One audit event per lookup, by count; 60 an hour per Administrator."""
+    from datetime import timedelta
+
+    _store, _browser = converted
+    key = live_key()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        for number in range(60):
+            assert member_names(key, f"person{number}@example.org") == []
+        with pytest.raises(LookupLimited):
+            member_names(key, "one-more@example.org")
+    events = lookups()
+    assert events.count() == 60
+    contexts_found = AuditContext.objects.filter(event__in=events)
+    assert {(item.actor_kind, item.schema) for item in contexts_found} == {
+        ("portal_user", "action")
+    }
+    assert {json.dumps(item.context, sort_keys=True) for item in contexts_found} == {
+        '{"count": 0, "outcome": "succeeded"}'
+    }
+    # Never the address, in the event or its context.
+    assert "@" not in str(list(events.values())) + str(
+        list(contexts_found.values_list("context", flat=True))
+    )
+    # Lookups older than an hour no longer count. The audit log is append
+    # only, so the oldest event is aged as only the owner could.
+    oldest = events.order_by("created_at").first()
+    with unguarded(), connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE stewardship_audit_event SET created_at=created_at-%s WHERE id=%s",
+            [timedelta(hours=1, minutes=1), oldest.id],
+        )
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        assert member_names(key, "after@example.org") == []
+        with pytest.raises(LookupLimited):
+            member_names(key, "one-more@example.org")
+
+
+def test_the_page_limits_lookups_and_fails_closed(converted, monkeypatch):
+    """The page's per-minute window answers 429; no limiter answers 503."""
+    from parishkit.stewardship.accounts.authentication import runtime
+    from parishkit.stewardship.accounts.limiting import LimiterUnavailable
+
+    _store, browser = converted
+    statuses = []
+    with web():
+        for number in range(user_views.LOOKUP_LIMIT):
+            statuses.append(
+                post(browser, NAMES, {"email": f"p{number}@example.org"}).status_code
+            )
+    assert statuses == [200] * (user_views.LOOKUP_LIMIT - 1) + [429]
+    assert lookups().count() == user_views.LOOKUP_LIMIT - 1
+
+    def unavailable(*_args, **_kwargs):
+        """The limiter's store is down."""
+        raise LimiterUnavailable("Authentication is temporarily unavailable.")
+
+    monkeypatch.setattr(runtime().limiter, "counters", unavailable)
+    with web():
+        response = post(browser, NAMES, {"email": "down@example.org"})
+    assert response.status_code == 503
+    assert lookups().count() == user_views.LOOKUP_LIMIT - 1
+
+
+def test_an_added_user_signs_in_with_its_role(converted, google):
+    """A user added through the page is admitted by SQL as that role."""
+    store, browser = converted
+    user_change(
+        store,
+        browser,
+        NEW,
+        {
+            "email": "leader@example.org",
+            "name": "Leader, Lee",
+            "role": "ministry_leader",
+        },
+    )
+    google[0].update(email="leader@example.org", sub="leader-subject")
+    leader_browser, login = signed_in()
+    assert login.status_code == 302
+    # A Ministry leader is not an Administrator: Users is refused.
+    with web():
+        assert leader_browser.get(USERS).status_code == 403

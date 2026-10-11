@@ -931,3 +931,35 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 .schedule-time-full { font-weight: 600; }
 .schedule-save { align-items: flex-start; }
 .schedule-status { flex: 1 1 18rem; margin: 0; min-height: 2lh; }
+/* The Users page (#952). Each row is one line: a long email or Name is cut
+   short with an ellipsis and shown whole in its title (the recorded
+   exception to "Table fit and row height"); the text stays whole for screen
+   readers and copying. A narrow screen scrolls the table in its region.
+   The reason line under the table and under Edit user's roles is reserved
+   while empty, so the reason appearing never moves a control (#736). On
+   Edit user, each role's plain-language line sits under its radio button. */
+.cell-ellipsis { display: block; max-width: 18rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.users-table th, .users-table td { white-space: nowrap; vertical-align: middle; }
+#users-only-administrator, #user-roles-reason { min-height: 1.6em; min-height: 1lh; }
+/* New user's Name help line says what the lookup found (#952). It is one
+   line high in every state, cut short with an ellipsis (whole in its title
+   and to screen readers), so a long answer never moves the Role choices
+   under the pointer (#736). */
+.user-entry .names-help { height: 1.6em; height: 1lh; margin-block: .25rem 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* The Email error line the lookup fills is cut short the same way: on a
+   phone-width screen "This address is already a user." would wrap to a
+   second line and push the Role choices down. The whole message is in the
+   item's title and, through aria-describedby, read to screen readers. */
+.user-entry [data-email-error] > li { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* Email marked invalid by the lookup keeps its size, as invalid schedule
+   row controls do: the second pixel of its error border is a shadow. */
+.user-entry input[aria-invalid=true] { border-width: 1px; box-shadow: inset 0 0 0 1px var(--error-border); }
+.user-entry input[aria-invalid=true]:focus { box-shadow: inset 0 0 0 1px var(--error-border), 0 0 0 3px rgb(17 94 86 / 22%); }
+@media (forced-colors: active) {
+  .user-entry input[aria-invalid=true]:not(:focus-visible) { outline: 1px solid CanvasText; outline-offset: -2px; }
+}
+.user-entry .field-label { margin-bottom: .25rem; font-weight: 600; }
+.user-entry .user-email { margin-top: 0; }
+.user-roles .choice { margin-block: .5rem; }
+.user-roles .choice label { display: inline; font-weight: 600; }
+.user-roles .choice .help { margin: .1rem 0 0 1.75rem; }

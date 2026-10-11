@@ -139,7 +139,13 @@ class Counter:
             type(self.name) is not str
             or (
                 self.name
-                not in {"admin_start", "admin_callback", "family_ip", "family_pair"}
+                not in {
+                    "admin_start",
+                    "admin_callback",
+                    "admin_user_names",
+                    "family_ip",
+                    "family_pair",
+                }
                 and re.fullmatch(r"admin_identity_[1-9][0-9]{0,18}", self.name) is None
             )
             or type(self.fingerprint) is not str
