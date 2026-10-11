@@ -5166,8 +5166,10 @@ every `'<prefix>_'||` an installed audit-writing function builds to be a
   (`policy_security_event`, `policy_denial_namespace_reset`), mail schedules
   and live campaign changes (`schedule_selected`, `admin_cmd_schedule_confirm`,
   `admin_cmd_config_request_cancel`, `campaign_ministries_requested`,
-  `campaign_end_date_requested`), portal user roles (`roles_applied`), hosted
-  files (`hosted_file_*`), stored key replacements
+  `campaign_end_date_requested`), portal user roles (`roles_applied`, and
+  the operator's one-time conversion of sign-in rules into users,
+  `operator_users_upgraded`), hosted files (`hosted_file_*`), stored key
+  replacements
   (`secret_replacement_requested`, `secret_request_*`,
   `credential_consumer_acknowledged`) and initial setup, which is
   configuration too (`setup_started`, `setup_credential_staged`,

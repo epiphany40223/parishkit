@@ -131,7 +131,8 @@ EVENTS = tuple(sorted({item.value for item in Action} | {item.value for item in 
 # - Configuration changes: settings requests through Review and Apply to
 #   applied, refused (``config_request_failed``) or cancelled, and what an
 #   applied change did to access; mail schedules and live campaign changes;
-#   portal user roles; hosted files; stored key replacements (and each
+#   portal user roles (and the operator's one-time conversion of sign-in
+#   rules into users); hosted files; stored key replacements (and each
 #   process acknowledging the new key); and initial setup, from starting it
 #   and entering its credentials, through its test email and Slack message,
 #   to locking it or letting it expire.
@@ -168,6 +169,7 @@ ACTIVITY_TYPES = {
         "campaign_ministries_requested",
         "campaign_end_date_requested",
         "roles_applied",
+        "operator_users_upgraded",
         "hosted_file_uploaded",
         "hosted_file_slug_changed",
         "hosted_file_deleted",
