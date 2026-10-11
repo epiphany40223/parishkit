@@ -1809,7 +1809,7 @@ none.
 | `configuration_request` | `config request show --watch` (PR 4); `config request cancel` ([#944](https://github.com/epiphany40223/parishkit/pull/944)), an operator recovery with no page button |
 | `campaign_settings`, `campaign_clone` | `campaign show`, `campaign preview`, `campaign confirm`, `campaign clone` (PR 10); until #145, creating or copying a campaign is refused, except the first campaign through [Create the campaign](../admin-portal/spec.md#create-the-campaign) (#142) ([navigation rule 10](../admin-portal/spec.md#navigation-rules)): commands that go through `confirm` and `_target`, or call `refuse_campaign_creation`, will get the same refusal as the pages; `privileged_actions.configuration_request` has no such check |
 | `campaign_ministries`, `share_settings`, `reminder_workgroup` | `campaign ministries`, `campaign shares`, `campaign reminder-workgroup` (PR 10) |
-| `content_catalog`, `content_edit`, `content_revision`, `content_history`, `content_history_revision`, `content_plain_text` | `content list`, `content show`, `content preview`, `content confirm`, `content history` (PR 10) |
+| `content_catalog`, `content_edit`, `content_revision`, `content_delete`, `content_history`, `content_history_revision`, `content_plain_text` | `content list`, `content show`, `content preview`, `content confirm`, `content history` (PR 10) |
 | `parish_settings`, `ministries` | `parish`, `ministries` (PR 10) |
 | `hosted_files`, `hosted_file_delete`, `hosted_file_rename` | `files list`, `files delete`, `files rename` ([#463](https://github.com/epiphany40223/parishkit/issues/463)) |
 | `artwork_settings` (its upload and removal reviews, #750) | `artwork show`, `artwork remove` (PR 10) |

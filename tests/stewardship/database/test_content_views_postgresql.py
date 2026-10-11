@@ -1,5 +1,6 @@
 """Real-session content editing, sanitization, immutable revisions and mail impacts."""
 
+import json
 from html import unescape
 from uuid import uuid4
 
@@ -23,6 +24,9 @@ from .test_campaign_views_postgresql import apply, post
 from .test_parish_views_postgresql import token
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+# The email tables' Delete dialog posts here (#879).
+DELETE = "/admin/campaign/content/deletion/"
 
 
 def setup(store):
@@ -575,7 +579,7 @@ def test_closing_note_without_confirmation_email_is_listed_and_folded(
     plant(store, monkeypatch, closing_note(campaign))
     browser, _ = signed_in()
     body = browser.get(catalog).content.decode()
-    confirmation = body.split(">Confirmation email<", 1)[1].split("<h3>", 1)[0]
+    confirmation = body.split(">Confirmation email<", 1)[1].split("<h3", 1)[0]
     fallback = ReceiptTemplate()
     assert fallback.subject in confirmation
     assert "No template yet." not in confirmation
@@ -631,7 +635,7 @@ def test_stale_saved_content_is_flagged_and_resaves_without_an_edit(
     plant_stale(store, monkeypatch, page, email)
     browser, _ = signed_in()
     listing = browser.get(catalog).content.decode()
-    pages, emails = listing.split("<h2>Email templates</h2>", 1)
+    pages, emails = listing.split(">Email templates</h2>", 1)
     welcome = pages.split(">Family welcome</a>", 1)[1].split("</li>", 1)[0]
     assert "Re-save recommended" in welcome
     assert pages.count("Re-save recommended") == 1
@@ -653,7 +657,7 @@ def test_stale_saved_content_is_flagged_and_resaves_without_an_edit(
         "<p>Welcome to {{ parish_name }}.</p>"
     )
     assert browser.get(path).context["stale"] is None
-    pages = browser.get(catalog).content.decode().split("<h2>Email templates", 1)[0]
+    pages = browser.get(catalog).content.decode().split(">Email templates</h2>", 1)[0]
     assert "Re-save recommended" not in pages
 
 
@@ -742,7 +746,7 @@ def test_folded_confirmation_with_a_stale_note_resaves_clean(
         browser.get(catalog)
         .content.decode()
         .split(">Confirmation email<", 1)[1]
-        .split("<h3>", 1)[0]
+        .split("<h3", 1)[0]
     )
     assert "Re-save recommended" in confirmation
     path = catalog + "email/confirmation/"
@@ -767,10 +771,10 @@ def test_folded_confirmation_with_a_stale_note_resaves_clean(
     assert browser.get(path).context["stale"] is None
 
 
-def test_catalog_lists_who_sends_each_email_and_offers_remove_when_unused(
+def test_catalog_lists_who_sends_each_email_and_offers_delete_when_unused(
     auth_service, google
 ):
-    """The invitation sent by a schedule names it; an unused one offers Remove.
+    """The invitation sent by a schedule names it; an unused one offers Delete.
 
     Two invitation emails share a subject, so each also shows the start of
     its ID (#446).
@@ -799,13 +803,122 @@ def test_catalog_lists_who_sends_each_email_and_offers_remove_when_unused(
     )
     browser, _ = signed_in()
     page = unescape(browser.get(catalog).content.decode())
-    rows = {
-        identifier: page[page.index(f"/email/initial/{identifier}/") :][:2000]
-        for identifier in (used["id"], spare["id"])
-    }
+
+    def row(identifier):
+        """The table row whose Edit opens ``identifier``'s editor."""
+        at = page.index(f"/email/initial/{identifier}/")
+        return page[page.rindex("<tr>", 0, at) : page.index("</tr>", at)]
+
+    rows = {identifier: row(identifier) for identifier in (used["id"], spare["id"])}
     assert f"({used['id'][:8]})" in page and f"({spare['id'][:8]})" in page
-    assert "Initial invitation" in rows[used["id"]].split("</tr>")[0]
-    assert "#id_clear" not in rows[used["id"]].split("</tr>")[0]
-    spare_row = rows[spare["id"]].split("</tr>")[0]
-    assert "No schedule" in spare_row
-    assert f"/email/initial/{spare['id']}/#id_clear" in spare_row
+    assert f'action="{DELETE}"' in page
+    assert f'value="{store.active().digest}"' in page
+    assert "Initial invitation" in rows[used["id"]]
+    assert 'aria-label="Edit Same (' in rows[used["id"]]
+    assert "Delete Same" not in rows[used["id"]]
+    assert "data-select-row" not in rows[used["id"]]
+    assert "No schedule" in rows[spare["id"]]
+    assert f'aria-label="Delete Same ({spare["id"][:8]})"' in rows[spare["id"]]
+    assert f'name="revision_id" value="{spare["id"]}"' in rows[spare["id"]]
+    assert "#id_clear" not in page
+
+
+def added(store, campaign, *rows, schedule=None, sent=None):
+    """Apply ``rows`` as this campaign's emails; ``schedule`` then sends ``sent``."""
+    patch = [{"operation": "add", "section": "content", **row} for row in rows]
+    if schedule is not None:
+        patch.append(
+            {
+                "operation": "update",
+                "section": "schedules",
+                "id": schedule["id"],
+                "values": {
+                    "template_version": sent["id"],
+                    "subject": sent["values"]["subject"],
+                },
+            }
+        )
+    assert change(store, store.active(), uuid4(), patch).state == "applied"
+
+
+def saved_emails():
+    """The applied configuration's email revision IDs."""
+    rows = SystemConfiguration.objects.get().active_configuration.content_versions
+    return {str(row.record_id) for row in rows.filter(kind="email")}
+
+
+def test_delete_removes_the_chosen_unused_emails_in_one_change(auth_service, google):
+    """Delete selected removes both unused emails and keeps the sent one.
+
+    The dialog's post is recorded at once as one change whose status page
+    leads back to Pages and emails (#879).
+    """
+    store = auth_service.store
+    campaign, _catalog, schedule = setup(store)
+    owner = str(campaign.pk)
+    used = content(owner, kind="email", slot="initial", subject="Sent")
+    spare = content(owner, kind="email", slot="initial", subject="Spare")
+    reminder = content(owner, kind="email", slot="reminder", subject="Spare too")
+    added(store, campaign, used, spare, reminder, schedule=schedule, sent=used)
+    browser, _ = signed_in()
+    before = ConfigurationChangeRequest.objects.count()
+    accepted = browser.post(
+        DELETE,
+        {
+            "csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value,
+            "base_digest": store.active().digest,
+            "revision_id": [spare["id"], reminder["id"]],
+        },
+    )
+    assert accepted.status_code == 302, accepted.content
+    assert accepted["Location"].startswith("/admin/changes/")
+    assert ConfigurationChangeRequest.objects.count() == before + 1
+    apply(store, accepted)
+    emails = saved_emails()
+    assert used["id"] in emails
+    assert spare["id"] not in emails and reminder["id"] not in emails
+    status = unescape(browser.get(accepted["Location"]).content.decode())
+    assert "Return to Pages and emails" in status
+
+
+def test_delete_refuses_a_sent_email_the_confirmation_or_a_bad_post(
+    auth_service, google
+):
+    """Each refusal says why and records nothing, even beside a valid choice."""
+    store = auth_service.store
+    campaign, _catalog, schedule = setup(store)
+    owner = str(campaign.pk)
+    used = content(owner, kind="email", slot="initial", subject="Sent")
+    spare = content(owner, kind="email", slot="initial", subject="Spare")
+    confirmation = content(owner, kind="email", slot="confirmation")
+    added(store, campaign, used, spare, confirmation, schedule=schedule, sent=used)
+    browser, _ = signed_in()
+    before = ConfigurationChangeRequest.objects.count()
+    digest = store.active().digest
+
+    def refused(values, status=400):
+        """Post ``values``; return the refusal's message."""
+        response = post(browser, DELETE, values)
+        assert response.status_code == status, response.content
+        return json.loads(response.content)["refusal"]["message"]
+
+    sent = refused({"base_digest": digest, "revision_id": [spare["id"], used["id"]]})
+    assert "used by a mail schedule" in sent
+    assert "no longer one that can be deleted" in refused(
+        {"base_digest": digest, "revision_id": confirmation["id"]}
+    )
+    assert "no longer one that can be deleted" in refused(
+        {"base_digest": digest, "revision_id": str(uuid4())}
+    )
+    assert "more than once" in refused(
+        {"base_digest": digest, "revision_id": [spare["id"], spare["id"]]}
+    )
+    assert "at least one" in refused({"base_digest": digest})
+    assert "unexpected data" in refused(
+        {"base_digest": digest, "revision_id": spare["id"], "action": "confirm"}
+    )
+    refused({"base_digest": "b" * 64, "revision_id": spare["id"]}, status=409)
+    assert ConfigurationChangeRequest.objects.count() == before
+    assert {used["id"], spare["id"]} <= saved_emails()
+    # The address answers only the dialog's POST.
+    assert browser.get(DELETE).status_code == 405
