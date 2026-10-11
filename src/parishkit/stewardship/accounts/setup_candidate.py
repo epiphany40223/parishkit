@@ -12,10 +12,16 @@ from uuid import UUID, uuid5
 
 from parishkit.config import ConfigError
 
+from . import users_schema as users
 from .content_forms import LEGACY_PAGE_REFERENCES, page_slots
 from .policy_schema import validate_manual_operation
 from .provider_context import validated_context, workspace_scope
-from .setup_configuration import build_setup_candidate
+from .setup_configuration import (
+    USERS_REQUEST_SCHEMA,
+    build_setup_candidate,
+    build_users_setup_candidate,
+    request_schema_for,
+)
 from .setup_content_values import CONTENT_STEPS, without_retired
 from .setup_forms import FORMS, validate_values
 
@@ -29,45 +35,60 @@ class CandidateCredential:
     settings: dict = field(repr=False)
 
 
+# The access step's lists, lowest role first: an address listed under several
+# roles gets the highest.
+ACCESS_ROLES = (
+    ("ministry", "ministry_leader"),
+    ("staff", "staff"),
+    ("admin", "administrator"),
+)
+
+
 def _rules(base, attempt_id, operation_id, access):
-    """Merge repeated identities while preserving each bootstrap Admin exactly."""
+    """Turn the access step into login rules, keeping each bootstrap Admin exactly.
+
+    A users bootstrap (#993) gets users: each listed address not already a
+    bootstrap Administrator becomes one user with the highest role it is
+    listed under and its local part as Name. An older exact-address
+    bootstrap gets exact-address rules as before, granting every role listed.
+    """
     initial = {
         row["values"]["email"] for row in base.document()["sections"]["login_rules"]
     }
-    domains, addresses = {}, {}
-    for prefix, role in (
-        ("staff", "staff"),
-        ("ministry", "ministry_leader"),
-        ("admin", "administrator"),
-    ):
+    addresses = {}
+    for prefix, role in ACCESS_ROLES:
         for email in access[f"{prefix}_addresses"]:
             if email not in initial:
-                addresses.setdefault(email, set()).add(role)
-        if prefix != "admin":
-            for domain in access[f"{prefix}_domains"]:
-                domains.setdefault(domain, set()).add(role)
-    result = []
-    for kind, identities in (("domain", domains), ("address", addresses)):
-        for identity, selected in sorted(identities.items()):
-            roles = sorted(selected)
-            values = {
-                "kind": kind,
-                "roles": roles,
-                "domain" if kind == "domain" else "email": identity,
+                addresses.setdefault(email, []).append(role)
+    if users.uses_users(base.document()):
+        return [
+            {
+                "id": str(uuid5(attempt_id, f"login-rule:user:{email}")),
+                "values": {
+                    "kind": "user",
+                    "email": email,
+                    "name": users.local_part_name(email),
+                    "role": roles[-1],
+                },
             }
-            if kind == "address":
-                values.update(
-                    creation_origin="manual",
-                    creation_operation=str(operation_id),
-                    grants={role: {"manual": str(operation_id)} for role in roles},
-                )
-            result.append(
-                {
-                    "id": str(uuid5(attempt_id, f"login-rule:{kind}:{identity}")),
-                    "values": values,
-                }
-            )
-    return result
+            for email, roles in sorted(addresses.items())
+        ]
+    return [
+        {
+            "id": str(uuid5(attempt_id, f"login-rule:address:{email}")),
+            "values": {
+                "kind": "address",
+                "roles": sorted(roles),
+                "email": email,
+                "creation_origin": "manual",
+                "creation_operation": str(operation_id),
+                "grants": {
+                    role: {"manual": str(operation_id)} for role in sorted(roles)
+                },
+            },
+        }
+        for email, roles in sorted(addresses.items())
+    ]
 
 
 def compile_candidate(
@@ -173,8 +194,14 @@ def _system_records(base, attempt_id, operation_id, values, branding, credential
 
 
 def _compile(base, public, *, candidate_id, operation_id):
-    """Build the v7 candidate from its public records and check its login rules."""
-    compiled = build_setup_candidate(
+    """Build the setup candidate from its public records and check its login rules."""
+    # A users bootstrap (#993) finishes in the users form.
+    build = (
+        build_users_setup_candidate
+        if request_schema_for(base) == USERS_REQUEST_SCHEMA
+        else build_setup_candidate
+    )
+    compiled = build(
         base,
         [
             {"operation": "add", "section": section, **row}
@@ -183,11 +210,14 @@ def _compile(base, public, *, candidate_id, operation_id):
         ],
         candidate_id=candidate_id,
     )
-    validate_manual_operation(
-        base.document()["sections"]["login_rules"],
-        compiled.candidate.document()["sections"]["login_rules"],
-        operation_id,
-    )
+    # Users carry no grant provenance, so only sign-in rules name the
+    # operation that created them.
+    if not users.uses_users(base.document()):
+        validate_manual_operation(
+            base.document()["sections"]["login_rules"],
+            compiled.candidate.document()["sections"]["login_rules"],
+            operation_id,
+        )
     return compiled
 
 

@@ -55,6 +55,7 @@ class AppliedConfigurationVersion(ImmutableRecord):
                         "campaign-content-v5",
                         "source-cadence-v8",
                         "users-v10",
+                        "bootstrap-users-v10",
                     ]
                 ),
                 name="configuration_validation_schema",

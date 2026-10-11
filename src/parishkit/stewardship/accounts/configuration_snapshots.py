@@ -19,6 +19,7 @@ from parishkit.stewardship.observability import correlation
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .authority import ConfigurationVersion, parse_version
+from .bootstrap_schema import BOOTSTRAP_SCHEMAS
 from .configuration_errors import ConfigurationHistoryInvalid
 from .configuration_models import (
     AppliedConfigurationVersion,
@@ -44,6 +45,7 @@ POLICY_SCHEMAS = {
     "foundation-policy-v2",
     "campaign-foundation-v3",
     "bootstrap-policy-v1",
+    "bootstrap-users-v10",
     MINISTRY_SCHEMA,
     CONTENT_SCHEMA,
     CADENCE_SCHEMA,
@@ -90,7 +92,7 @@ def _digest(value):
 
 def _stored_projections(snapshot):
     """Reconstruct YAML-shaped records from the actual persisted projection rows."""
-    if snapshot.validation_schema == "bootstrap-policy-v1":
+    if snapshot.validation_schema in BOOTSTRAP_SCHEMAS:
         from .policy_projections import stored_policy
 
         if hasattr(snapshot, "parish") or list(snapshot.integrations.all()):

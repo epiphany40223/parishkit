@@ -55,6 +55,7 @@ class ConfigurationChangeRequest(ImmutableRecord):
                         "users-patch-v10",
                         "integration-credential-users-v10",
                         "operator-recovery-users-v10",
+                        "initial-setup-users-v10",
                     ]
                 ),
                 name="config_request_schema",

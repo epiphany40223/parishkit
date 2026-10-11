@@ -13,6 +13,9 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.integration_selection import integration_records
 from parishkit.stewardship.accounts.request_admission import intake_base
 from parishkit.stewardship.accounts.request_models import ConfigurationRequestCheckpoint
+from parishkit.stewardship.accounts.setup_configuration import (
+    REQUEST_SCHEMAS as SETUP_REQUEST_SCHEMAS,
+)
 from parishkit.stewardship.accounts.setup_credential_installation import ready_live
 from parishkit.stewardship.accounts.setup_install_models import SetupPreparationReceipt
 from parishkit.stewardship.campaigns.work_locks import require_work_order
@@ -60,7 +63,7 @@ def require_prepared_setup(store, preparation_id):
     request, attempt = intent.request, intent.attempt
     selected = store.active()
     if (
-        request.request_schema != "initial-setup-patch-v7"
+        request.request_schema not in SETUP_REQUEST_SCHEMAS
         or receipt.configuration_id != request.candidate_version_id
         or selected is None
         or (selected.version_id, selected.digest)

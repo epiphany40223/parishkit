@@ -12,7 +12,7 @@ from parishkit.stewardship.web.sender_name_field import SenderNameField
 
 from . import setup_help
 from .parish_views import ParishForm
-from .policy_schema import normalized_domain, normalized_email
+from .policy_schema import normalized_email
 
 
 class SetupParishForm(ParishForm):
@@ -40,48 +40,45 @@ class SetupParishForm(ParishForm):
 
 
 class IdentityLines(forms.CharField):
-    """Normalize at most fifty distinct domains or addresses, one per line."""
+    """Normalize at most fifty distinct email addresses, one per line."""
 
-    def __init__(self, *, domains=False, **kwargs):
-        """Use bounded text controls and a compiled domain-or-address interpretation."""
-        self.domains = domains
+    def __init__(self, **kwargs):
+        """Use bounded text controls and a compiled address interpretation."""
         super().__init__(
             required=False,
             max_length=12800,
             widget=forms.Textarea(attrs={"rows": 3, "spellcheck": "false"}),
-            help_text=_("One per line. Leave empty when no additional rule is needed."),
+            help_text=_("One per line. Leave empty when no one else needs this role."),
             **kwargs,
         )
 
     def clean(self, value):
-        """No wildcard, personal Gmail domain grant or duplicate alias expansion."""
+        """No malformed or duplicate address."""
         value = super().clean(value)
         lines = [line.strip() for line in value.splitlines() if line.strip()]
         if len(lines) > 50:
-            raise forms.ValidationError(_("Enter at most fifty identities."))
+            raise forms.ValidationError(_("Enter at most fifty addresses."))
         try:
-            normalizer = normalized_domain if self.domains else normalized_email
-            values = sorted({normalizer(line) for line in lines})
-            if self.domains and "gmail.com" in values:
-                raise ConfigError("A personal email domain cannot be allowlisted.")
+            values = sorted({normalized_email(line) for line in lines})
         except ConfigError:
-            raise forms.ValidationError(
-                _("Check the domains or email addresses.")
-            ) from None
+            raise forms.ValidationError(_("Check the email addresses.")) from None
         return values
 
 
 class SetupAccessForm(forms.Form):
-    """Additional rules cannot remove or replace the bootstrap Administrator."""
+    """Additional users cannot remove or replace the bootstrap Administrator.
 
-    staff_domains = IdentityLines(domains=True, label=_("Staff domains"))
-    ministry_domains = IdentityLines(domains=True, label=_("Ministry-leader domains"))
+    Sign-in is by email address only (#952), so each address listed becomes
+    one user with the highest role it is listed under; there are no
+    hosted-domain rules.
+    """
+
     staff_addresses = IdentityLines(label=_("Staff email addresses"))
     ministry_addresses = IdentityLines(label=_("Ministry-leader email addresses"))
     admin_addresses = IdentityLines(label=_("Additional Administrator email addresses"))
 
     def __init__(self, *args, **kwargs):
-        """Replace the generic one-per-line hint with what each rule grants."""
+        """Replace the generic one-per-line hint with what each role grants."""
         super().__init__(*args, **kwargs)
         setup_help.apply(self, setup_help.ACCESS, replace=True)
 
@@ -173,6 +170,27 @@ FORMS = {
 }
 
 
+# The hosted-domain lists an access step saved before sign-in became
+# address-only (#952, #993). Such a step is still read when every list is
+# empty; one that granted a domain must be saved again.
+LEGACY_ACCESS_FIELDS = frozenset({"staff_domains", "ministry_domains"})
+
+
+def _without_domains(values):
+    """An access step saved with the retired domain lists, without them.
+
+    Domains no longer grant sign-in, so a saved domain is refused rather than
+    silently dropped: the Admin saves the step again and lists addresses.
+    """
+    if any(values.get(name) != [] for name in LEGACY_ACCESS_FIELDS):
+        raise ValueError("Save the access step again: domains no longer grant access.")
+    return {
+        name: value
+        for name, value in values.items()
+        if name not in LEGACY_ACCESS_FIELDS
+    }
+
+
 def form_values(form):
     """Copy only declared, validated fields in canonical public-storage types."""
     if not form.is_valid():
@@ -228,6 +246,8 @@ def validate_values(step, values):
     if step == "mail" and "sender_name" not in values:
         # Likewise a mail step saved before the optional From name existed.
         values = values | {"sender_name": ""}
+    if step == "access" and LEGACY_ACCESS_FIELDS & values.keys():
+        values = _without_domains(values)
     form_type = FORMS[step]
     if set(values) != set(form_type.base_fields):
         raise ValueError("Invalid public setup fields.")

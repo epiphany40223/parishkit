@@ -17,6 +17,7 @@ from parishkit.config import ConfigError
 from . import source_cadence_schema as cadence
 from . import users_schema as users
 from .authority import ConfigurationVersion, parse_version
+from .bootstrap_schema import USERS_BOOTSTRAP_SCHEMA
 from .chair_confirmation import REQUEST_SCHEMA as CHAIR_REQUEST_SCHEMA
 from .configuration_schema import schema_for, validator_for
 from .content_schema import RECOVERY_SCHEMA as CONTENT_RECOVERY_SCHEMA
@@ -29,7 +30,8 @@ from .ministry_activity import REQUEST_SCHEMA as MINISTRY_REQUEST_SCHEMA
 from .ministry_activity import SCHEMA as MINISTRY_SCHEMA
 from .ministry_activity import remember_records
 from .setup_configuration import REQUEST_SCHEMA as SETUP_REQUEST_SCHEMA
-from .setup_configuration import build_setup_candidate
+from .setup_configuration import USERS_REQUEST_SCHEMA as USERS_SETUP_REQUEST_SCHEMA
+from .setup_configuration import build_setup_candidate, build_users_setup_candidate
 
 REQUEST_SCHEMA = "parish-integrations-patch-v1"
 POLICY_REQUEST_SCHEMA = "foundation-policy-patch-v2"
@@ -551,13 +553,19 @@ def _build_users_recovery_candidate(base, patch, *, candidate_id):
     Exactly one operation: it adds a new Administrator user, or raises one
     existing user who is not yet an Administrator to Administrator and
     changes nothing else about them. Every other user and every other
-    section stays as it was.
+    section stays as it was. Over a users bootstrap (#993), recovery during
+    initial setup, the candidate stays a users bootstrap: the base's own
+    schema, which ``_build_records`` also revalidates the base under.
     """
     result = _build_records(
         base,
         patch,
         candidate_id=candidate_id,
-        schema=users.SCHEMA,
+        schema=(
+            USERS_BOOTSTRAP_SCHEMA
+            if schema_for(base.document()) == USERS_BOOTSTRAP_SCHEMA
+            else users.SCHEMA
+        ),
         sections={"login_rules"},
     )
     if len(patch) != 1 or patch[0]["operation"] not in {"add", "update"}:
@@ -698,6 +706,7 @@ BUILDERS = MappingProxyType(
         CONTENT_RECOVERY_SCHEMA: _build_recovery_content_candidate,
         CREDENTIAL_REQUEST_SCHEMA: _build_credential_candidate,
         SETUP_REQUEST_SCHEMA: build_setup_candidate,
+        USERS_SETUP_REQUEST_SCHEMA: build_users_setup_candidate,
         cadence.REQUEST_SCHEMA: _build_cadence_candidate,
         cadence.RECOVERY_SCHEMA: _build_recovery_cadence_candidate,
         cadence.CREDENTIAL_SCHEMA: _build_credential_cadence_candidate,
