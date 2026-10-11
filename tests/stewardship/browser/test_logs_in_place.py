@@ -360,8 +360,9 @@ def test_a_cross_link_clearing_the_activity_gives_the_levels_back(
 
 
 def test_activity_groups_grey_the_levels_only_when_audit_only(page, component_origin):
-    """Configuration changes is audit records only (#953), so, like Sign-in
-    activity, it greys the five level boxes and Apply waits for Audit
+    """Configuration changes, Reports and downloads, Security events and
+    Family portal activity are audit records only (#953), so, like Sign-in
+    activity, each greys the five level boxes and Apply waits for Audit
     record. Family mail and ParishSoft refreshes hold operational entries
     too, so the levels stay enabled and Apply needs no audit tick. Switching
     groups moves nothing. Apply then sends the group with the ticked levels
@@ -391,6 +392,11 @@ def test_activity_groups_grey_the_levels_only_when_audit_only(page, component_or
     assert hint.text_content() == (
         "This activity is made of audit records only; tick Audit record."
     )
+    # The later groups are audit records only too.
+    for group in ("downloads", "security", "family_portal"):
+        activity.select_option(group)
+        assert enabled() == [False] * 5, group
+        assert apply.is_disabled(), group
     for group in ("family_mail", "parishsoft"):
         activity.select_option(group)
         assert enabled() == [True] * 5, group
