@@ -14,6 +14,7 @@ from uuid import uuid4
 import pytest
 from django.db import transaction
 
+from parishkit.stewardship.campaigns.configuration import REMINDER_WORKGROUP_NAME
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.jobs.ownership import database_now
@@ -154,9 +155,10 @@ def test_workgroup_family_gets_no_reminder_and_keeps_everything_else(invited):  
             full=True,
         )
         identity = read_identity(family, codes=False, workgroup=values(harness))
-    assert ("Reminder not sent", "in the ParishSoft Reminder WorkGroup") in [
-        (str(line.what), str(line.detail)) for line in timeline.events
-    ]
+    assert (
+        "Reminder not sent",
+        f"in the ParishSoft {REMINDER_WORKGROUP_NAME}",
+    ) in [(str(line.what), str(line.detail)) for line in timeline.events]
     assert identity.reminder_workgroup == NAME
 
 

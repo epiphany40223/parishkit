@@ -42,6 +42,7 @@ from django.db import connection
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.audit.models import AuditEvent
+from parishkit.stewardship.campaigns.configuration import REMINDER_WORKGROUP_NAME
 from parishkit.stewardship.campaigns.credential_models import RehearsalEpoch
 from parishkit.stewardship.campaigns.engagement_models import FamilyEngagement
 from parishkit.stewardship.campaigns.runtime_models import RuntimeTransition
@@ -357,7 +358,11 @@ def events(
         for at, _occurrence in skips
     ]
     lines += [
-        Event(at, _("Reminder not sent"), _("in the ParishSoft Reminder WorkGroup"))
+        Event(
+            at,
+            _("Reminder not sent"),
+            _("in the ParishSoft %(name)s") % {"name": _(REMINDER_WORKGROUP_NAME)},
+        )
         for at, _occurrence in workgroup_skips
     ]
     skipped = {occurrence for _at, occurrence in (*skips, *workgroup_skips)}

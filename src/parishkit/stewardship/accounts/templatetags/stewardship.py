@@ -9,6 +9,7 @@ from django.utils.safestring import mark_safe
 from django.utils.translation import gettext as _
 
 from parishkit.stewardship.campaigns import single_campaign
+from parishkit.stewardship.campaigns.configuration import REMINDER_WORKGROUP_NAME
 from parishkit.stewardship.web import dates, presentation
 from parishkit.stewardship.web.buttons import portal_classes
 
@@ -23,6 +24,15 @@ for name in (
     "instant",
 ):
     register.filter(name, getattr(presentation, name))
+
+
+@register.simple_tag
+def reminder_workgroup_name():
+    """The displayed name of the campaign's reminder exclusion setting (#1061).
+
+    Templates take it from its one source, so renaming it is one line.
+    """
+    return _(REMINDER_WORKGROUP_NAME)
 
 
 @register.filter

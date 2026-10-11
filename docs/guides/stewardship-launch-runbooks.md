@@ -856,7 +856,7 @@ email progress counts the skipped Reminders separately.
    a new one each year keeps last year's list from carrying over by
    accident). Add each Family that should get no Reminders. Staff can add or
    remove Families there at any time without touching any other field.
-2. In the Admin portal, open Campaign setup, then **Reminder WorkGroup**.
+2. In the Admin portal, open Campaign setup, then **No-reminders WorkGroup**.
    Type the WorkGroup's name as ParishSoft shows it (capital letters and
    spaces at the ends do not matter), preview and apply the change. It can be
    changed while the campaign is live.
@@ -870,12 +870,12 @@ email progress counts the skipped Reminders separately.
 4. Check it against live ParishSoft right after the deploy, and well before
    the night a Reminder is prepared (preparation starts two hours before it
    is due): set the name, run **Refresh from ParishSoft**, and confirm that
-   the Reminder WorkGroup page shows the number of Families you expect. While
+   the No-reminders WorkGroup page shows the number of Families you expect. While
    a name is set, a failure of ParishSoft's WorkGroup calls fails the whole
    refresh, so a refresh that fails right after setting the name points at
    the WorkGroup read.
 
-**How you know it worked.** The Reminder WorkGroup page says how many
+**How you know it worked.** The No-reminders WorkGroup page says how many
 Families the newest refresh found in the WorkGroup, and each one's Family
 timeline names it. If the name matches no Family WorkGroup in ParishSoft,
 the page and System health say so, the refresh logs a warning, and nobody's

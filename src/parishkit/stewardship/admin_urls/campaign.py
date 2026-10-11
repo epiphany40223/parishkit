@@ -12,6 +12,8 @@ refusal (decision 18) at its new address.
 
 from django.urls import path
 
+from parishkit.stewardship.campaigns.configuration import REMINDER_WORKGROUP_SLUG
+
 from ..accounts import (
     activation_views,
     artwork_views,
@@ -117,7 +119,7 @@ patterns = [
     ),
     _page("campaign/share-options/", share_views.share_settings, "share_settings"),
     _page(
-        "campaign/reminder-workgroup/",
+        f"campaign/{REMINDER_WORKGROUP_SLUG}/",
         reminder_workgroup_views.reminder_workgroup,
         "reminder_workgroup",
     ),

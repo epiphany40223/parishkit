@@ -29,6 +29,7 @@ from django.urls import NoReverseMatch, Resolver404, get_resolver, resolve, reve
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.admin_urls.slashless import TARGETS as SLASHLESS_TARGETS
+from parishkit.stewardship.campaigns.configuration import REMINDER_WORKGROUP_NAME
 from parishkit.stewardship.campaigns.domain import CampaignState
 from parishkit.stewardship.campaigns.lifecycle import structural_edit_admitted
 from parishkit.stewardship.web.error_pages import ERROR_PAGE_ATTRIBUTE
@@ -154,7 +155,7 @@ PAGES = {
     # A POST-only re-render of Campaign images with the upload's error, so it
     # shares that page's name.
     "artwork_upload": Page("campaign", _("Campaign images"), "artwork_settings"),
-    "reminder_workgroup": Page("campaign", _("Reminder WorkGroup")),
+    "reminder_workgroup": Page("campaign", _(REMINDER_WORKGROUP_NAME)),
     "go_live": Page("campaign", _("Go-live readiness")),
     "go_live_families": Page("campaign", _("Testing submissions"), "go_live"),
     "go_live_cleanup": Page("campaign", _("Testing cleanup"), "go_live"),

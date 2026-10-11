@@ -14,6 +14,10 @@ import pytest
 
 from parishkit.stewardship.accounts.configuration_installation import install_request
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
+from parishkit.stewardship.campaigns.configuration import (
+    REMINDER_WORKGROUP_NAME,
+    REMINDER_WORKGROUP_SLUG,
+)
 from parishkit.stewardship.campaigns.models import Campaign
 
 from ..campaign_factory import campaign
@@ -25,7 +29,7 @@ from .test_parish_views_postgresql import digest, region
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
-URL = "/admin/campaign/reminder-workgroup/"
+URL = f"/admin/campaign/{REMINDER_WORKGROUP_SLUG}/"
 NAME = "Active: Stewardship 2027"
 
 
@@ -74,7 +78,7 @@ def test_review_apply_and_status_happen_in_place(auth_service, google):
     assert b'data-workgroup-status="pending"' in applied.content
     # Change status itself still leads back to the page.
     status = browser.get(f"/admin/changes/{request}/").content
-    assert f'<a href="{URL}">Return to Reminder WorkGroup</a>'.encode() in status
+    assert f'<a href="{URL}">Return to {REMINDER_WORKGROUP_NAME}</a>'.encode() in status
 
 
 def test_refusals_are_explained_in_place_at_the_readers_version(auth_service, google):
@@ -88,7 +92,9 @@ def test_refusals_are_explained_in_place_at_the_readers_version(auth_service, go
     data = {"action": "preview", "name": "", "base_digest": loaded}
     unchanged = post(browser, URL, data)
     assert unchanged.status_code == 400
-    assert "The Reminder WorkGroup has not changed." in region(unchanged.content)
+    assert f"The {REMINDER_WORKGROUP_NAME} has not changed." in region(
+        unchanged.content
+    )
     assert "Apply changes" not in region(unchanged.content)
     too_long = post(browser, URL, data | {"name": "x" * 500})
     assert too_long.status_code == 400
