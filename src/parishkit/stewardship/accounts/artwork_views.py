@@ -29,6 +29,7 @@ from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
+from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.configuration import ARTWORK_SLOTS
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.storage import StaleRecordError
@@ -65,6 +66,19 @@ STALE = {
     "remove": _(
         "The settings changed after this removal was reviewed, so the image "
         "was not removed. Choose Remove this image again."
+    ),
+}
+# Why a review address can no longer be reviewed, by change kind.
+UNREVIEWABLE = {
+    "image": _(
+        "This uploaded image can no longer be reviewed: it was already "
+        "applied, expired after a day, or the settings changed since it was "
+        "uploaded. Upload the image again."
+    ),
+    "remove": _(
+        "This removal can no longer be reviewed: the slot has no image to "
+        "remove now, or the settings changed since. Choose Remove this image "
+        "again if the slot still shows one."
     ),
 }
 SLOT_LABELS = {
@@ -162,13 +176,23 @@ def _check_candidate(service, configuration, patch, actor):
 
 
 def _page(
-    request, service, configuration, campaign, forms_by_slot, *, status=200, **region
+    request,
+    service,
+    configuration,
+    campaign,
+    forms_by_slot,
+    *,
+    status=200,
+    redraw=False,
+    **region,
 ):
     """Render every slot with its current image and upload form, and the review.
 
     ``region`` is ``review_region``'s ``review``, ``receipt`` or ``refusal``
     for the review region under the slots; the step indicator follows it
-    through edit, review and apply (#196), all on this page.
+    through edit, review and apply (#196), all on this page. ``redraw``
+    marks the slots to be redrawn even by Apply's answer (a refused Apply:
+    their forms then carry the current version).
     """
     current = campaign.active_configuration.values.get("artwork", {}).get("images", {})
     assets = {
@@ -198,6 +222,7 @@ def _page(
         {
             "slots": slots,
             "campaign": campaign,
+            "redraw": redraw,
             # A refused upload's errors are summarized in the review region
             # too, linked to the slot's field, where focus then goes.
             **review_region(
@@ -339,24 +364,32 @@ def artwork_settings(request, campaign_id):
                     ),
                 )
             except UserFacingStale as error:
-                region, status = {"refusal": error.refusal}, 409
+                region, status = {"refusal": error.refusal, "redraw": True}, 409
             except StaleRecordError:
                 # A staged upload is tied to the settings it was uploaded
                 # against and to this sign-in, and expires after a day; a
                 # removal goes stale only when the settings change.
-                region, status = {"message": STALE[change[0]]}, 409
+                region, status = {"message": STALE[change[0]], "redraw": True}, 409
+        if request.method != "POST" and requested is not None:
+            # The change's status is read first, as on Parish settings.
+            with transaction.atomic():
+                region["receipt"] = requested_status(
+                    request, service, actor, request.GET
+                )
         configuration = editable_configuration(service)
         campaign = _campaign(configuration, campaign_id)
-        if request.method != "POST":
-            if change is not None:
+        if request.method != "POST" and change is not None:
+            try:
                 region["review"] = _review(
                     request, service, actor, configuration, campaign, change
                 )
-            elif requested is not None:
-                with transaction.atomic():
-                    region["receipt"] = requested_status(
-                        request, service, actor, request.GET
-                    )
+            except (StaleRecordError, LookupError, ConfigError) as error:
+                # A reload of an old review address: the page itself, with
+                # the explanation where the review would be. An unknown or
+                # another sign-in's upload (or a slot with nothing left to
+                # remove) is 404; an expired, applied or stale one 409.
+                region = {"message": UNREVIEWABLE[change[0]]}
+                status = 404 if isinstance(error, LookupError) else 409
         return _page(
             request, service, configuration, campaign, {}, status=status, **region
         )

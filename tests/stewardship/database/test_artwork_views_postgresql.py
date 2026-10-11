@@ -127,12 +127,19 @@ def test_images_belong_to_the_campaign_publish_and_clear(auth_service, google, m
         "/admin/changes/" + address(accepted).rsplit("=", 1)[1] + "/"
     ).content
     assert f'<a href="{path}">Return to Campaign images</a>'.encode() in status
-    # That review no longer opens now its image is chosen.
-    assert browser.get(accepted.review_path).status_code != 200
+    # That review no longer opens now its image is chosen: the page says so
+    # where the review would be.
+    reloaded = browser.get(accepted.review_path)
+    assert reloaded.status_code == 409
+    assert "can no longer be reviewed" in region(reloaded.content)
     apply(store, select(browser, auth_service, path, "financial", image(600, 600)))
     images = artwork(row)["images"]
     banner = BrandingAsset.objects.get(pk=images["banner"])
     icon = BrandingAsset.objects.get(pk=images["financial"])
+    # The page shows exactly the applied images as the slots' current ones.
+    shown = browser.get(path).content.decode()
+    for asset in (banner, icon):
+        assert f'<img src="/branding/{asset.pk}.png"' in shown
     # Resized for email and phones; the aspect ratio is kept.
     assert (banner.label, banner.width, banner.height) == ("banner", 1024, 217)
     assert (icon.label, icon.width, icon.height) == ("section", 256, 256)
@@ -152,8 +159,10 @@ def test_images_belong_to_the_campaign_publish_and_clear(auth_service, google, m
     assert not unpinned_bundles().filter(pk=banner.bundle_id).exists()
     removed = remove(browser, path, "financial")
     apply(store, removed)
-    # The removal review now refuses (nothing left to remove).
-    assert browser.get(f"{path}?remove=financial").status_code != 200
+    # The removal review now refuses (nothing left to remove), in place.
+    gone = browser.get(f"{path}?remove=financial")
+    assert gone.status_code == 404
+    assert "can no longer be reviewed" in region(gone.content)
     followed = browser.get(address(removed))
     assert flow_steps(followed.content) == (STEPS, "Apply")
     assert "Applied: your change is saved" in region(followed.content)
@@ -185,7 +194,9 @@ def test_a_slot_refuses_the_wrong_image_kind(auth_service, google, media, monkey
         )
         bundle = address(staged).rsplit("=", 1)[-1]
         # The same staged icon is not an image for the banner slot.
-        assert browser.get(f"{path}?review=banner&bundle={bundle}").status_code == 404
+        wrong = browser.get(f"{path}?review=banner&bundle={bundle}")
+        assert wrong.status_code == 404
+        assert "can no longer be reviewed" in region(wrong.content)
         assert browser.get(f"{path}?review=unknown&bundle={bundle}").status_code == 404
         # Only the change, or the request, the page names may be read.
         assert browser.get(f"{path}?review=member").status_code == 400
@@ -280,6 +291,17 @@ def test_a_refused_apply_is_explained_in_place(auth_service, google, media):
         )
         assert refused.status_code == 409
         assert "Upload the image again." in region(refused.content)
+        # The slots are redrawn at the current version, though Apply's
+        # answer otherwise takes only the review region, so the next upload
+        # is accepted.
+        body = refused.content.decode()
+        assert (
+            '<div id="artwork-slots" data-in-place-region data-in-place-always>' in body
+        )
+        assert f'name="base_digest" value="{store.active().digest}"' in body
+        reloaded = browser.get(review_path)
+        assert reloaded.status_code == 409
+        assert "can no longer be reviewed" in region(reloaded.content)
         refused = post(
             browser,
             f"{path}?remove=banner",
