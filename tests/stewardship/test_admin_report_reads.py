@@ -15,7 +15,7 @@ from uuid import UUID
 
 import pytest
 
-from parishkit.stewardship import admin_cli, admin_report_reads
+from parishkit.stewardship import admin_cli, admin_report_reads, admin_source_form
 from parishkit.stewardship.jobs.send_history import SendKey
 from parishkit.stewardship.reports.money import MoneyAmount
 
@@ -484,10 +484,16 @@ def test_every_report_command_has_its_models_fields():
         "report talents": admin_report_reads.TalentsReport,
         "report information": admin_report_reads.InformationReport,
         "report ministry": admin_report_reads.MinistryReport,
+        # System health's list (#774), not a campaign report: ``report
+        # list`` does not offer it.
+        "report source-form": admin_source_form.SourceFormReport,
     }
     reports = {spec.name for spec in admin_cli.COMMANDS if spec.name[:7] == "report "}
     assert reports == set(models)
-    assert set(admin_report_reads.REPORT_COMMANDS.values()) == reports - {"report list"}
+    assert set(admin_report_reads.REPORT_COMMANDS.values()) == reports - {
+        "report list",
+        "report source-form",
+    }
     for name, model in models.items():
         assert entries[name]["result_fields"] == list(model.field_names()), name
         assert entries[name]["pr"] == 8

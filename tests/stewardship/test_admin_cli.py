@@ -110,6 +110,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "report talents",
         "report information",
         "report ministry",
+        "report source-form",
         "digest list",
         "digest daily",
         "digest weekly",
@@ -370,6 +371,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "report talents": "talents_report_viewed",
         "report information": "information_viewed",
         "report ministry": "ministry_report_viewed",
+        "report source-form": "source_form_viewed",
     }
     for name, event in events.items():
         entry = entries[name]

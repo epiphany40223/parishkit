@@ -41,8 +41,9 @@ commands (PR 9, in ``admin_operations``), ``logs list`` and ``logs
 export`` (PR 8a, in ``admin_reports``), the export lifecycle (PR 8b, in
 ``admin_exports``), the aggregate report reads (PR 8c, in
 ``admin_report_reads``), the digests (PR 8d, in ``admin_digests``), the
-Family-level exports (PR 8e, in ``admin_family_exports``) and the Family
-portal maintenance switch (PR 7a, in ``admin_portal``). A
+Family-level exports (PR 8e, in ``admin_family_exports``), the Family
+portal maintenance switch (PR 7a, in ``admin_portal``) and ``report
+source-form`` (in ``admin_source_form``). A
 command that streams a file (``logs export`` and
 ``export download --stream``) writes the file's bytes, and nothing else, to
 standard output, and its document to standard error. Other areas join the same
@@ -1517,6 +1518,13 @@ def report_ministry(args, preamble, runtime, context):
     )
 
 
+def report_source_form(args, preamble, runtime, context):
+    """Families the form cannot open, by DUID only (#774)."""
+    from .admin_source_form import read_source_form
+
+    return read_source_form(context["caller"], runtime)
+
+
 def digest_list(args, preamble, runtime, context):
     """The Emailed reports page's lists of retained reports (ADM-11)."""
     from .admin_digests import read_list
@@ -2839,6 +2847,7 @@ def _report_specs():
         TalentsReport,
     )
     from .admin_reports import LogExport, LogList
+    from .admin_source_form import SourceFormReport
 
     return (
         CommandSpec(
@@ -3130,6 +3139,18 @@ def _report_specs():
             8,
             options=(_report_ministry_options,),
             audit_event="ministry_report_viewed",
+        ),
+        # System health's Families the form cannot open (#774): counts and
+        # DUIDs only, Administrators only, as the page.
+        CommandSpec(
+            "report source-form",
+            "List the Families whose ParishSoft data keeps the form closed.",
+            report_source_form,
+            "read_only",
+            False,
+            SourceFormReport.field_names(),
+            8,
+            audit_event="source_form_viewed",
         ),
     )
 
