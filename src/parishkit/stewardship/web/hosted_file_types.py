@@ -131,6 +131,16 @@ def detect(data):
     raise FileRefused("type")
 
 
+def ooxml_kind(data):
+    """An Office package's kind (``docx``, ``xlsx`` or ``pptx``) after its checks.
+
+    Raises FileRefused (``macro`` or ``type``) exactly as an upload would be.
+    The campaign archive reader (#1018) applies these checks to a workbook
+    before its own stricter part allowlist; uploads go through ``detect``.
+    """
+    return _ooxml_kind(data)
+
+
 def _ooxml_kind(data):
     """An Office package's kind, after refusing unsafe or unexpected packages.
 
