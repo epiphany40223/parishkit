@@ -1,13 +1,23 @@
-"""Normalized logo upload, versioned preview and narrowly served immutable PNGs."""
+"""Normalized logo upload, versioned preview and narrowly served immutable PNGs.
+
+Review, apply and the change's status happen on Parish logos itself (#750),
+in its review region under the upload form: a successful upload stages the
+four variants and answers with the page naming them (``?review=<bundle>``),
+and Apply posts the signed preview to that same address. The answer is the
+page again naming the request (``?request=<id>``), whose status the region
+follows until the change settles and the page refreshes itself quietly with
+the new current logos.
+"""
 
 from io import BytesIO
 from pathlib import Path
-from uuid import uuid4
+from urllib.parse import urlencode
+from uuid import UUID, uuid4
 
 from django import forms
 from django.conf import settings
 from django.core import signing
-from django.db import DatabaseError
+from django.db import DatabaseError, transaction
 from django.http import FileResponse, HttpResponseRedirect
 from django.shortcuts import render
 from django.urls import reverse
@@ -23,14 +33,18 @@ from parishkit.stewardship.web.contracts import (
     filters,
     validation_response,
 )
+from parishkit.stewardship.web.refusals import UserFacingStale, stale_page
 
 from . import admin_navigation
 from .admin_editing import (
+    REVIEW_REGION,
     confirm,
     editable_configuration,
     error_response,
     form_action,
     principal,
+    requested_status,
+    review_region,
     sign_preview,
 )
 from .authentication import runtime
@@ -118,139 +132,222 @@ def _retained(asset):
     ).exists()
 
 
+def _upload(request, service):
+    """Stage one uploaded logo, or return its refused form.
+
+    Returns ``(redirect, None)`` once the four variants are staged: the
+    page naming them, whose review region shows them with Apply. Otherwise
+    ``(None, form)``, the bound form with its errors.
+    """
+    if (
+        set(request.POST) - {"base_digest", "csrfmiddlewaretoken"}
+        or set(request.FILES) - {"logo"}
+        or any(len(values) != 1 for _, values in request.POST.lists())
+        or any(len(values) != 1 for _, values in request.FILES.lists())
+    ):
+        raise ValueError("Invalid logo upload fields.")
+    form = LogoForm(request.POST, request.FILES)
+    if form.is_valid():
+        try:
+            graphics = prepare_graphics(form.cleaned_data["logo"])
+        except ValueError:
+            form.add_error("logo", _("Choose a supported, bounded static image."))
+        else:
+            identifier = stage_branding(
+                request,
+                service,
+                media_root(),
+                graphics,
+                base_digest=form.cleaned_data["base_digest"],
+            )
+            query = urlencode({"review": identifier})
+            return HttpResponseRedirect(
+                f"{reverse('admin:branding_settings')}?{query}#{REVIEW_REGION}"
+            ), None
+    return None, form
+
+
+def _review(service, actor, configuration, staged):
+    """Review every staged variant; nothing is requested yet.
+
+    ``staged`` is ``staged_bundle``'s row and assets, read before the
+    configuration so the preview is signed against the version checked
+    last. Returns ``review_region``'s ``review``: the generated sizes and
+    the signed preview Apply posts.
+    """
+    row, assets = staged
+    for asset in assets:
+        read_variant(media_root(), row.pk, file_receipt(asset))
+    record = configuration.active_configuration.canonical_document["sections"][
+        "parish"
+    ][0]
+    patch = [
+        {
+            "operation": "update",
+            "section": "parish",
+            "id": record["id"],
+            "values": {"branding": {asset.label: str(asset.pk) for asset in assets}},
+        }
+    ]
+    base = service.store.active()
+    if base is None or base.digest != configuration.active_configuration.digest:
+        raise StaleRecordError("The branding preview base changed.")
+    candidate = build_candidate(base, patch, candidate_id=uuid4())
+    validate_installation(candidate.candidate.document(), actor_id=actor.identity)
+    return {
+        # Drawn inside settings-review.html, above its Apply.
+        "template": "stewardship/branding-review.html",
+        "notes": [],
+        "assets": assets,
+        "preview": sign_preview(
+            actor=actor,
+            configuration=configuration,
+            patch=patch,
+            # The salt the separate review page used, so tokens keep meaning.
+            salt=SALT + str(row.pk),
+        ),
+    }
+
+
+def _scope(request, bundle_id):
+    """Confirmation's current scope: the staged logos must still be this
+    session's, or already published (an exact retry after selection)."""
+
+    def scope(service):
+        """Permit exact receipt retries after selection, not stale new edits."""
+        asset = BrandingAsset.objects.filter(bundle_id=bundle_id, label="large").first()
+        if asset is None or not _retained(asset):
+            staged_bundle(request, service, bundle_id)
+        return editable_configuration(service), None
+
+    return scope
+
+
+def _page(request, service, configuration, form, *, status=200, **region):
+    """Render the upload form, its review region and the current logos.
+
+    ``region`` is ``review_region``'s ``review``, ``receipt``, ``refusal`` or
+    ``message``; the step indicator follows it through edit, review and
+    apply (#196), all on this page.
+    """
+    current = configuration.active_configuration.parish
+    assets = BrandingAsset.objects.filter(
+        pk__in=[
+            current.large_logo_id,
+            current.menu_logo_id,
+            current.icon_logo_id,
+            current.favicon_id,
+        ]
+    ).order_by("label")
+    step = "review" if region.get("review") else "edit"
+    if region.get("receipt"):
+        step = "apply"
+    admin_navigation.place(request, flow="change", step=step)
+    response = render(
+        request,
+        "stewardship/branding-settings.html",
+        {
+            "form": form,
+            "assets": assets,
+            # A refused upload's errors are summarized in the review region
+            # too, linked to its field, where focus then goes.
+            **review_region("branding_settings", form, **region),
+        },
+        status=status,
+    )
+    if status != 200:
+        response.stewardship_safe_error = True
+    return _checked(request, service, response)
+
+
 @require_http_methods(["GET", "HEAD", "POST"])
 def branding_settings(request):
-    """Upload normalized staging, without claiming that the parish logo has changed."""
+    """Upload, review and apply new logos, all on this page (#750).
+
+    The query is nothing, ``request`` (Apply's answer) or ``review`` (the
+    staged logos a successful upload names); Apply posts to the ``review``
+    address. A refused Apply (an out-of-date preview, an upload that
+    expired) is the page again (status 409) explained in its review region.
+    """
     try:
         service = runtime()
-        principal(request, service)
-        configuration = editable_configuration(service)
-        if request.method == "POST":
-            if (
-                set(request.POST) - {"base_digest", "csrfmiddlewaretoken"}
-                or set(request.FILES) - {"logo"}
-                or any(len(values) != 1 for _, values in request.POST.lists())
-                or any(len(values) != 1 for _, values in request.FILES.lists())
-            ):
-                raise ValueError("Invalid logo upload fields.")
-            form = LogoForm(request.POST, request.FILES)
-            if form.is_valid():
-                try:
-                    graphics = prepare_graphics(form.cleaned_data["logo"])
-                except ValueError:
-                    form.add_error(
-                        "logo", _("Choose a supported, bounded static image.")
-                    )
-                else:
-                    identifier = stage_branding(
-                        request,
-                        service,
-                        media_root(),
-                        graphics,
-                        base_digest=form.cleaned_data["base_digest"],
-                    )
-                    return _checked(
-                        request,
-                        service,
-                        HttpResponseRedirect(
-                            reverse("admin:branding_preview", args=[identifier])
-                        ),
-                    )
-            status = 400
-        else:
-            filters(request.GET, allowed=set())
-            form = LogoForm(
-                initial={"base_digest": configuration.active_configuration.digest}
-            )
-            status = 200
-        current = configuration.active_configuration.parish
-        assets = BrandingAsset.objects.filter(
-            pk__in=[
-                current.large_logo_id,
-                current.menu_logo_id,
-                current.icon_logo_id,
-                current.favicon_id,
-            ]
-        ).order_by("label")
-        # Uploading a logo is the first step of edit, review, apply (#196).
-        admin_navigation.place(request, flow="change", step="edit")
-        response = render(
+        # Reading a change's status (the page's own quiet refresh once it is
+        # applied) is passive, as Change status is: it never renews idle time.
+        actor = principal(
             request,
-            "stewardship/branding-settings.html",
-            {"form": form, "assets": assets},
-            status=status,
+            service,
+            passive=request.method != "POST" and "request" in request.GET,
         )
-        if status == 400:
-            response.stewardship_safe_error = True
-        return _checked(request, service, response)
-    except ERRORS as error:
-        return _error(error)
-
-
-@require_http_methods(["GET", "HEAD", "POST"])
-def branding_preview(request, bundle_id):
-    """Preview all normalized variants and confirm their exact YAML references."""
-    try:
-        service = runtime()
-        actor = principal(request, service)
-        if request.method == "POST":
-            if form_action(request.POST, preview_fields=set()) != "confirm":
-                raise ValueError("Confirm the prepared branding preview.")
-
-            def scope(service):
-                """Permit exact receipt retries after selection, not stale new edits."""
-                asset = BrandingAsset.objects.filter(
-                    bundle_id=bundle_id, label="large"
-                ).first()
-                if asset is None or not _retained(asset):
-                    staged_bundle(request, service, bundle_id)
-                return editable_configuration(service), None
-
-            response = confirm(
-                request, service, actor, salt=SALT + str(bundle_id), current_scope=scope
-            )
-        else:
-            filters(request.GET, allowed=set())
-            row, assets = staged_bundle(request, service, bundle_id)
-            for asset in assets:
-                read_variant(media_root(), row.pk, file_receipt(asset))
-            configuration = editable_configuration(service)
-            record = configuration.active_configuration.canonical_document["sections"][
-                "parish"
-            ][0]
-            patch = [
-                {
-                    "operation": "update",
-                    "section": "parish",
-                    "id": record["id"],
-                    "values": {
-                        "branding": {asset.label: str(asset.pk) for asset in assets}
-                    },
-                }
-            ]
-            base = service.store.active()
-            if base is None or base.digest != configuration.active_configuration.digest:
-                raise StaleRecordError("The branding preview base changed.")
-            candidate = build_candidate(base, patch, candidate_id=uuid4())
-            validate_installation(
-                candidate.candidate.document(), actor_id=actor.identity
-            )
-            admin_navigation.place(request, flow="change", step="review")
-            response = render(
-                request,
-                "stewardship/branding-preview.html",
-                {
-                    "assets": assets,
-                    "bundle": row,
-                    "preview": sign_preview(
-                        actor=actor,
-                        configuration=configuration,
-                        patch=patch,
+        selected = filters(request.GET, allowed={"review", "request"})
+        if len(selected) > 1:
+            raise ValueError("Invalid Parish logos query.")
+        bundle_id = UUID(selected["review"]) if "review" in selected else None
+        form, region, status = None, {}, 200
+        if request.method == "POST" and "action" in request.POST:
+            if (
+                bundle_id is None
+                or form_action(request.POST, preview_fields=set()) != "confirm"
+            ):
+                raise ValueError("Confirm reviewed Parish logos.")
+            try:
+                return _checked(
+                    request,
+                    service,
+                    confirm(
+                        request,
+                        service,
+                        actor,
                         salt=SALT + str(bundle_id),
+                        current_scope=_scope(request, bundle_id),
+                        in_place=True,
                     ),
-                },
-            )
-        return _checked(request, service, response)
+                )
+            except UserFacingStale as error:
+                region, status = {"refusal": error.refusal}, 409
+            except StaleRecordError:
+                # Staged logos are tied to the settings they were uploaded
+                # against and to this sign-in, and expire after a day.
+                region, status = (
+                    {
+                        "message": _(
+                            "These logos expired, or the settings changed after they "
+                            "were uploaded, so they were not used. Upload the logo "
+                            "again."
+                        )
+                    },
+                    409,
+                )
+        elif request.method == "POST":
+            try:
+                redirect, form = _upload(request, service)
+            except StaleRecordError:
+                # The form's version is not the current one: say so in place,
+                # as any other settings page does, and stage nothing.
+                region, status = {"refusal": stale_page().refusal}, 409
+            else:
+                if redirect is not None:
+                    return _checked(request, service, redirect)
+                status = 400
+        # The staged upload is read first, then the configuration it is
+        # reviewed against (as the separate review page did).
+        staged = (
+            staged_bundle(request, service, bundle_id)
+            if request.method != "POST" and bundle_id is not None
+            else None
+        )
+        configuration = editable_configuration(service)
+        if request.method != "POST":
+            if staged is not None:
+                region["review"] = _review(service, actor, configuration, staged)
+            elif "request" in selected:
+                with transaction.atomic():
+                    region["receipt"] = requested_status(
+                        request, service, actor, request.GET
+                    )
+        form = form or LogoForm(
+            initial={"base_digest": configuration.active_configuration.digest}
+        )
+        return _page(request, service, configuration, form, status=status, **region)
     except ERRORS as error:
         return _error(error)
 

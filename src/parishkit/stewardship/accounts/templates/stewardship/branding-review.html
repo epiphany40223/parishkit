@@ -1,0 +1,8 @@
+{% load i18n stewardship %}{% comment %}
+  Staged Parish logos under review, drawn inside settings-review.html on
+  Parish logos (#750): every generated size, as it will appear. The review
+  region's own heading, notes and Apply surround it.
+{% endcomment %}<p class="notice">{% translate "These logos are uploaded but not yet in use. Apply the change to start using them." %}</p>
+<section><h3>{% translate "Generated variants" %}</h3>
+{% for asset in review.assets %}<figure><img src="{% url 'admin:branding_asset' asset.pk %}" alt="{{ asset.label }}" width="{{ asset.width }}" height="{{ asset.height }}" class="branding-preview"><figcaption>{{ asset.label|capfirst }} — {{ asset.width|number }} × {{ asset.height|number }} {% translate "pixels" %}</figcaption></figure>{% endfor %}</section>
+<p>{% translate "Uploads that are never applied are discarded after a day." %}</p>

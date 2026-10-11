@@ -200,7 +200,6 @@ SLASHLESS_EXPECTED = {
     "/admin/system/logs": "/admin/system/logs/",
     "/admin/parish/settings": "/admin/parish/settings/",
     "/admin/parish/logos": "/admin/parish/logos/",
-    f"/admin/parish/logos/{T}": f"/admin/parish/logos/{T}/",
     "/admin/parish/ministries": "/admin/parish/ministries/",
     "/admin/parish/files": "/admin/parish/files/",
     "/admin/parish/files/deletion": "/admin/parish/files/deletion/",
@@ -332,6 +331,9 @@ OLD_ADDRESSES = (
     # itself now (#750).
     "/admin/campaign/images/logo/removal/",
     f"/admin/campaign/images/logo/{T}/",
+    # The separate Review parish logos page: logos are reviewed on Parish
+    # logos itself now (#750).
+    f"/admin/parish/logos/{T}/",
     # Retired addresses that named no campaign (decisions 10 and 19).
     "/admin/reports/campaigns/",
     "/admin/ministry-reports/",

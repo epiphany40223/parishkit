@@ -69,7 +69,6 @@ TEMPLATES = {
     "presence": "presence.html",
     "parish_settings": "parish-settings.html",
     "branding_settings": "branding-settings.html",
-    "branding_preview": "branding-preview.html",
     "ministries": "ministries.html",
     "hosted_files": "hosted-files.html",
     "hosted_file_rename": "hosted-file-rename.html",
