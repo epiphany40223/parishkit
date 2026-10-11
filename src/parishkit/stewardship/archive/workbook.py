@@ -199,6 +199,7 @@ SHEETS: dict[str, tuple[Column, ...]] = {
             "Per-installment amount: the form's own computed column, or the "
             "annual pledge divided by 52, 12, 4 or 1.",
             optional=True,
+            minimum=0,
         ),
         Column(
             "installment_source",
@@ -219,12 +220,13 @@ SHEETS: dict[str, tuple[Column, ...]] = {
             _M,
             "The previous year's pledge as pre-filled on the form (old system only).",
             optional=True,
+            minimum=0,
         ),
         Column(
             "prior_year_contributions",
             _M,
             "The previous year's contributions as pre-filled on the form (old "
-            "system only).",
+            "system only); may be negative after refunds or adjustments.",
             optional=True,
         ),
         Column(
@@ -258,6 +260,7 @@ SHEETS: dict[str, tuple[Column, ...]] = {
             _M,
             "The annual pledge in this submission.",
             optional=True,
+            minimum=0,
         ),
         Column(
             "frequency",
@@ -557,6 +560,13 @@ def _cell(sheet, column, row):
 
 
 # --- Cell values --------------------------------------------------------------
+
+# Cells that hold no literal value, by openpyxl's data type: a formula,
+# whose cached value may be stale or absent, and an error such as #N/A.
+NOT_LITERAL = {
+    "f": ("formula", "the cell holds a formula; only values are allowed"),
+    "e": ("error_value", "the cell holds an error value; only values are allowed"),
+}
 
 
 def _blank(value):
@@ -867,10 +877,9 @@ class _Reader:
         for number, row in enumerate(sheet.iter_rows(), start=1):
             self._count()
             for index, cell in enumerate(row):
-                if cell.data_type == "f":
+                if cell.data_type in NOT_LITERAL:
                     self.add(
-                        "formula",
-                        "the cell holds a formula; only values are allowed",
+                        *NOT_LITERAL[cell.data_type],
                         "README",
                         f"{_letter(index)}{number}",
                     )
@@ -884,7 +893,9 @@ class _Reader:
         checked once it is.
         """
         columns = SHEETS[name]
-        names = [None if cell.data_type == "f" else cell.value for cell in header]
+        names = [
+            None if cell.data_type in NOT_LITERAL else cell.value for cell in header
+        ]
         while names and _blank(names[-1]):
             names.pop()
         for index, column in enumerate(columns):
@@ -952,11 +963,10 @@ class _Reader:
                 return
             usable = True
             for index, (value, data_type) in enumerate(cells):
-                if data_type == "f":
+                if data_type in NOT_LITERAL:
                     usable = False
                     self.add(
-                        "formula",
-                        "the cell holds a formula; only values are allowed",
+                        *NOT_LITERAL[data_type],
                         name,
                         f"{_letter(index)}{number}",
                     )

@@ -80,8 +80,11 @@ REFUSED_KINDS = (
     ("comments", "a comment"),
 )
 # An XML declaration's encoding; only UTF-8 is accepted, because the
-# declaration checks below search the bytes as UTF-8 text.
-XML_ENCODING = re.compile(rb"""^<\?xml[^>]*?\sencoding\s*=\s*["']([^"']*)["']""")
+# declaration checks below search the bytes as UTF-8 text. The encoding is
+# read only from a declaration that closes within XML_DECLARATION_BYTES, so
+# padding cannot push it past what is checked.
+XML_DECLARATION_BYTES = 1024
+XML_ENCODING = re.compile(rb"""\sencoding\s*=\s*["']([^"']*)["']""")
 UTF8_BOM = b"\xef\xbb\xbf"
 DECLARATIONS = (b"<!doctype", b"<!entity")
 
@@ -190,11 +193,13 @@ def _read_parts(package, entries):
     for entry in entries:
         xml = not entry.filename.endswith(".bin")
         keep = entry.filename.endswith(".rels")
-        size, tail, kept = 0, b"", []
+        size, tail, kept, head = 0, b"", [], b""
         with package.open(entry) as stream:
             while chunk := stream.read(CHUNK_BYTES):
-                if size == 0 and xml:
-                    _check_xml_start(chunk)
+                if xml and len(head) < XML_DECLARATION_BYTES:
+                    head += chunk[: XML_DECLARATION_BYTES - len(head)]
+                    if len(head) == XML_DECLARATION_BYTES:
+                        _check_xml_start(head)
                 size += len(chunk)
                 total += len(chunk)
                 if (
@@ -219,17 +224,31 @@ def _read_parts(package, entries):
                     tail = window[-(max(map(len, DECLARATIONS)) - 1) :]
                 if keep:
                     kept.append(chunk)
+        if xml and len(head) < XML_DECLARATION_BYTES:
+            # A part shorter than the declaration window, checked whole.
+            _check_xml_start(head)
         if keep:
             yield entry, b"".join(kept)
         else:
             yield entry, None
 
 
-def _check_xml_start(chunk):
-    """Refuse an XML part whose byte-order mark or declaration is not UTF-8."""
-    if chunk.startswith((b"\xfe\xff", b"\xff\xfe")):
+def _check_xml_start(head):
+    """Refuse an XML part whose byte-order mark or declaration is not UTF-8.
+
+    ``head`` is the part's first XML_DECLARATION_BYTES (or all of a shorter
+    part). A declaration must close within it, and its encoding, if named,
+    must be UTF-8; a part without a declaration is UTF-8 by XML's rules.
+    """
+    if head.startswith((b"\xfe\xff", b"\xff\xfe")):
         raise PackageRefused("unsafe_to_read", "an XML part is not UTF-8 text")
-    declared = XML_ENCODING.match(chunk.removeprefix(UTF8_BOM))
+    head = head.removeprefix(UTF8_BOM)
+    if not head.startswith(b"<?xml"):
+        return
+    end = head.find(b"?>")
+    if end == -1:
+        raise PackageRefused("unsafe_to_read", "an XML part is not UTF-8 text")
+    declared = XML_ENCODING.search(head[:end])
     if declared is not None and declared[1].lower() not in {b"utf-8", b"utf8"}:
         raise PackageRefused("unsafe_to_read", "an XML part is not UTF-8 text")
 

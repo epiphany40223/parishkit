@@ -31,8 +31,13 @@ def _check_owner(check):
         raise ProviderCheckOwnershipLost("Provider check ownership was lost.") from None
 
 
-def _stop(process):
-    """Kill and reap this exact child; never leave credential-bearing work detached."""
+def stop_helper(process):
+    """Kill and reap this exact child; never leave credential-bearing work detached.
+
+    Shared by every short-lived helper process (provider checks, delivery,
+    chart rendering, the archive check). Raises ProviderCheckDrainFailure
+    when the operating system cannot confirm the child is gone.
+    """
     if process.poll() is not None:
         return
     try:
@@ -41,6 +46,10 @@ def _stop(process):
         process.wait(timeout=5)
     except (subprocess.TimeoutExpired, OSError):
         raise ProviderCheckDrainFailure("Provider check could not drain.") from None
+
+
+# The original private name, still imported by the older helpers.
+_stop = stop_helper
 
 
 def helper_timeout_recorder(helper, *, what, seconds):

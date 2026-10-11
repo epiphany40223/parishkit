@@ -269,6 +269,12 @@ def _unknown_column(book):
     book["families"].cell(1, len(SHEETS["families"]) + 1, SECRET)
 
 
+def _error_cell(book):
+    cell = book["daily"]["C3"]
+    cell.value = "#N/A"
+    cell.data_type = "e"
+
+
 def _readme_second(book):
     book.move_sheet("README", offset=1)
 
@@ -380,6 +386,22 @@ CHANGES = {
         "choice",
     ),
     "required blank": (None, _cell("submissions", "form", 3, None), "blank"),
+    "error cell": (None, _error_cell, "error_value"),
+    "negative installment": (
+        _family("duid:1005", "installment_amount", Decimal("-1")),
+        None,
+        "range",
+    ),
+    "negative prior-year pledge": (
+        _family("duid:1005", "prior_year_pledge", Decimal("-5")),
+        None,
+        "range",
+    ),
+    "negative submission pledge": (
+        None,
+        _cell("submissions", "annual_pledge", 2, -12.5),
+        "range",
+    ),
     "unknown metadata key": (_metadata("favourite_" + SECRET, "1"), None, None),
     "estimate key": (_metadata("active_families_estimate", 400), None, None),
     "blank active_families": (_metadata("active_families", None), None, "blank"),
@@ -563,3 +585,11 @@ def test_notes_with_amounts_digits_or_length_are_flagged():
     metadata = set_metadata(metadata, "note.02", "Envelope 55555 skipped")
     archive = read_archive(workbook_bytes(metadata, sheets))
     assert flagged_notes(archive) == ["note.02"]
+
+
+def test_negative_prior_year_contributions_are_accepted():
+    """Old-system contributions can be net negative after a refund."""
+    metadata, sheets = campaign()
+    sheets["families"][0]["prior_year_contributions"] = Decimal("-20.00")
+    archive = read_archive(workbook_bytes(metadata, sheets))
+    assert archive.families[0]["prior_year_contributions"] == Decimal("-20.00")

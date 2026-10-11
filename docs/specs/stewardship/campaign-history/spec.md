@@ -179,11 +179,11 @@ same ordering over submissions with `campaign_day` up to that day.
 | `annual_pledge` | Money or blank | Greater than zero exactly when `pledged`; `0` when `zero`; `0` or blank when `cannot_give`; blank otherwise |
 | `frequency` | Enumeration or blank | `weekly`, `monthly`, `quarterly`, `annual`, `none` or `other` |
 | `frequency_detail` | Text or blank | The choice as the form worded it; free-text answers only as `other (free text omitted)` |
-| `installment_amount` | Money or blank | Per-installment amount |
+| `installment_amount` | Money ≥ 0 or blank | Per-installment amount |
 | `installment_source` | Enumeration or blank | `form` (the form's own computed column) or `computed` (annual ÷ 52, 12, 4 or 1); blank exactly when `installment_amount` is blank |
 | `cannot_give` | Boolean or blank | The "cannot contribute financially" box; blank where the form had none |
-| `prior_year_pledge` | Money or blank | Previous year's pledge as pre-filled on the form (old system only) |
-| `prior_year_contributions` | Money or blank | Previous year's contributions as pre-filled on the form (old system only) |
+| `prior_year_pledge` | Money ≥ 0 or blank | Previous year's pledge as pre-filled on the form (old system only) |
+| `prior_year_contributions` | Money or blank | Previous year's contributions as pre-filled on the form (old system only); may be negative after refunds or adjustments |
 | `pledge_parse_note` | Text or blank | Set when the entered pledge text needed interpretation |
 
 #### `submissions` sheet
@@ -199,7 +199,7 @@ pledge can use each Family's latest answer as of that day.
 | `submitted_at` | Instant | |
 | `local_date` | Local date | |
 | `campaign_day` | Integer ≥ 1 | |
-| `annual_pledge` | Money or blank | The annual pledge in this submission |
+| `annual_pledge` | Money ≥ 0 or blank | The annual pledge in this submission |
 | `frequency` | Enumeration or blank | As in `families` |
 | `cannot_give` | Boolean or blank | As in `families` |
 | `is_last_for_family` | Boolean | `TRUE` for the Family's last submission of this form |

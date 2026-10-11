@@ -65,7 +65,8 @@ def test_the_helper_runs_isolated(monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", spy)
     document = check.check_archive(b"PK")
     assert launched["command"][1:3] == ["-I", "-m"]
-    assert launched["env"] == {} and launched["close_fds"] is True
+    assert launched["env"] == {"OPENPYXL_LXML": "False"}
+    assert launched["close_fds"] is True
     assert launched["stderr"] is subprocess.DEVNULL
     assert document["problems"][0]["code"] == "check_failed"
 
@@ -122,6 +123,27 @@ def test_a_failing_helper_is_a_fixed_problem(monkeypatch, code):
     helper(monkeypatch, code)
     document = check.check_archive(b"PK")
     assert document["problems"] == [check.FAILED]
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        {"valid": True},
+        {"valid": True, "metadata": {}, "extra": 1},
+        {"valid": False, "problems": [{"code": 1}], "more_problems": 0},
+        {"valid": False, "problems": [], "more_problems": True},
+        {"valid": False, "problems": "x", "more_problems": 0},
+        {"valid": "yes"},
+    ],
+)
+def test_a_reply_of_the_wrong_shape_is_a_fixed_problem(monkeypatch, reply):
+    """Missing keys or wrong types are "could not be checked", no traceback."""
+    text = json.dumps(reply)
+    helper(
+        monkeypatch,
+        f"import sys; sys.stdin.buffer.read(); sys.stdout.write({text!r})",
+    )
+    assert check.check_archive(b"PK")["problems"] == [check.FAILED]
 
 
 def test_the_worker_maps_memory_errors_to_its_exit(monkeypatch, capsysbinary):

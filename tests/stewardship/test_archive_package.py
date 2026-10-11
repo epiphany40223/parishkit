@@ -187,6 +187,36 @@ def test_xml_that_is_not_utf8_is_refused(plain, content):
     assert refusal(repack(plain, replace={SHEET: content}))[0] == "unsafe_to_read"
 
 
+@pytest.mark.parametrize("part", [SHEET, "xl/sharedStrings.xml"])
+def test_a_declaration_padded_past_the_first_chunk_is_refused(plain, part):
+    """Padding cannot push a Latin-1 encoding past the declaration check."""
+    content = (
+        b'<?xml version="1.0"'
+        + b" " * 70000
+        + b'encoding="ISO-8859-1"?><sst><si><t>caf\xe9</t></si></sst>'
+    )
+    with zipfile.ZipFile(BytesIO(plain)) as source:
+        present = part in source.namelist()
+    changed = (
+        repack(plain, replace={part: content})
+        if present
+        else repack(plain, add={part: content})
+    )
+    assert refusal(changed)[0] == "unsafe_to_read"
+
+
+def test_a_declaration_must_close_within_its_window(plain):
+    """An unclosed or very long declaration is refused, whatever it names."""
+    content = b'<?xml version="1.0"' + b" " * 2000 + b"?><x/>"
+    assert refusal(repack(plain, replace={SHEET: content}))[0] == "unsafe_to_read"
+
+
+def test_a_short_part_with_a_declaration_is_checked_whole(plain):
+    """A part shorter than the window is still checked."""
+    content = b'<?xml version="1.0" encoding="windows-1252"?><x/>'
+    assert refusal(repack(plain, replace={SHEET: content}))[0] == "unsafe_to_read"
+
+
 def test_a_high_compression_ratio_is_refused(plain):
     """Two megabytes of one byte compress far past the ratio limit."""
     bomb = b"<x>" + b" " * (2 * 1024 * 1024) + b"</x>"

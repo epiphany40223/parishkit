@@ -29,7 +29,10 @@ from contextlib import suppress
 from pathlib import Path
 from threading import Event, Thread
 
-from parishkit.stewardship.provider_checks import ProviderCheckDrainFailure, _stop
+from parishkit.stewardship.provider_checks import (
+    ProviderCheckDrainFailure,
+    stop_helper,
+)
 
 from .package import MAX_FILE_BYTES
 
@@ -52,9 +55,36 @@ FAILED = {
     "cell": None,
     "rule": "the file could not be checked",
 }
-# Exit codes of archive-check: every file valid; a file refused; a usage or
-# read error before any check.
+# Exit codes of archive-check: 0 every file valid; 2 a usage error, before
+# any file is read; 3 a file refused or unreadable.
 VALID, USAGE, REFUSED = 0, 2, 3
+# The shape of the helper's reply, checked before anything reads it: a
+# reply of any other shape is "could not be checked", never a traceback.
+VALID_SHAPE = {
+    "minor_version": int,
+    "metadata": dict,
+    "notes": dict,
+    "other_counts": dict,
+    "flagged_notes": list,
+    "family_id_systems": list,
+    "families": int,
+    "submission_rows": int,
+    "unattributed_rows": int,
+    "ministry_rows": int,
+    "pledging_families": int,
+    "annual_pledged": str,
+    "daily": list,
+    "renewal_families": list,
+    "band_set_version": int,
+    "bands": list,
+    "quartiles": (list, type(None)),
+}
+PROBLEM_SHAPE = {
+    "code": str,
+    "rule": str,
+    "sheet": (str, type(None)),
+    "cell": (str, type(None)),
+}
 
 
 def _refused(problem):
@@ -89,14 +119,17 @@ def check_archive(data, *, limit_seconds=CHECK_SECONDS, on_timeout=None):
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             close_fds=True,
-            env={},
+            # Nothing of this process's environment, and openpyxl's stdlib
+            # parser: lxml would honour encodings such as UTF-7 or EBCDIC
+            # that the package checks' byte search cannot see through.
+            env={"OPENPYXL_LXML": "False"},
         )
     except OSError:
         return _refused(FAILED)
     try:
         state, stopped = _exchange(process, data, started + limit_seconds)
     finally:
-        _stop(process)
+        stop_helper(process)
         for stream in (process.stdin, process.stdout):
             with suppress(Exception):
                 stream.close()
@@ -113,9 +146,36 @@ def check_archive(data, *, limit_seconds=CHECK_SECONDS, on_timeout=None):
         document = json.loads(reply)
     except ValueError:
         return _refused(FAILED)
+    return document if _well_formed(document) else _refused(FAILED)
+
+
+def _shaped(value, shape):
+    """Whether a dict has exactly the keys of ``shape``, of those types.
+
+    ``bool`` is never accepted where an ``int`` is expected.
+    """
+    return (
+        type(value) is dict
+        and set(value) == set(shape)
+        and all(
+            type(value[key]) in (kinds if isinstance(kinds, tuple) else (kinds,))
+            for key, kinds in shape.items()
+        )
+    )
+
+
+def _well_formed(document):
+    """Whether the helper's reply is a document of the agreed shape."""
     if type(document) is not dict or type(document.get("valid")) is not bool:
-        return _refused(FAILED)
-    return document
+        return False
+    fields = {key: value for key, value in document.items() if key != "valid"}
+    if document["valid"]:
+        return _shaped(fields, VALID_SHAPE) and all(
+            type(row) is dict for row in fields["daily"]
+        )
+    return _shaped(fields, {"problems": list, "more_problems": int}) and all(
+        _shaped(problem, PROBLEM_SHAPE) for problem in fields["problems"]
+    )
 
 
 def _exchange(process, data, deadline):
@@ -147,7 +207,7 @@ def _exchange(process, data, deadline):
     finished = done.wait(max(0, deadline - time.monotonic()))
     stopped = None if finished else time.monotonic()
     # Killing ends the pump's read or wait, so ``state`` is final once joined.
-    _stop(process)
+    stop_helper(process)
     thread.join(timeout=5)
     if thread.is_alive():
         raise ProviderCheckDrainFailure("Archive check helper could not drain.")
