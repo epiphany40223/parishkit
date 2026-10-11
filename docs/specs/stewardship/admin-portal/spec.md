@@ -1339,11 +1339,15 @@ expired or were staged against settings changed since, are refused there.
 
 Campaign images (Campaign navigation) hold the current campaign's theme
 artwork: five optional slots, a wide banner and one small icon each for the
-Family welcome, Member, financial and closing pages. A new campaign starts with
-none. Each upload is normalized like a logo (a banner fitted within 1,024
-pixels, an icon within 256), reviewed, and used only once its configuration
-request is applied, the same staging and cleanup rules as logos. Removing a
-slot's image is its own reviewed change; a slot without an image shows nothing.
+Family welcome, Member, financial and closing pages. The banner appears only at
+the top of the Family emails, never on a Family page; each icon appears above
+the heading of its Family page
+([where images appear](../parishioner-portal/spec.md#form-state-and-navigation)).
+A new campaign starts with none. Each upload is normalized like a logo (a
+banner fitted within 1,024 pixels, an icon within 256), reviewed, and used
+only once its configuration request is applied, the same staging and cleanup
+rules as logos. Removing a slot's image is its own reviewed change; a slot
+without an image shows nothing.
 Both reviews, Apply and the change's status happen
 [in place](../ui-conventions/spec.md#in-place-controls) in a review region
 under the slots (#750): an upload answers with the page naming the staged
