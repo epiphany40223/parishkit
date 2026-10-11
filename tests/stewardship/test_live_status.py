@@ -166,6 +166,24 @@ def test_ended_task_brings_the_rest_of_its_page_up_to_date(state, ended):
     assert '<div id="task-actions" data-in-place-region>' in page
 
 
+def test_a_failed_refresh_on_its_own_page_points_to_its_task():
+    """On Refresh from ParishSoft (region_id given, #521) a failure names the
+    run's Background task for its history, never a history or Retry button
+    "below", which that page does not have; the task page keeps its wording,
+    and the follow-up link names the region it was given."""
+    task_page = render_to_string(
+        "stewardship/background-task-status.html", {"task": task("failed")}
+    )
+    assert "Its history is below" in task_page and "Retry button" in task_page
+    refresh = render_to_string(
+        "stewardship/background-task-status.html",
+        {"task": task("failed"), "region_id": "refresh-run"},
+    )
+    assert "Open this refresh's Background task for its history" in refresh
+    assert "below" not in region(refresh, "task")
+    assert 'href="#refresh-run"' in refresh
+
+
 def test_script_follows_an_in_place_link_without_navigating():
     """An in-place follow-up naming only a fragment re-reads this page (#869)."""
     source = SCRIPT.read_text()
