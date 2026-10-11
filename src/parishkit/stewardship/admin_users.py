@@ -121,6 +121,24 @@ def _admit(caller, service):
         raise
 
 
+def _lookup_refused(caller, service):
+    """Report the Name lookup definer's session refusal (SQLSTATE 42501).
+
+    The definer refuses a session that is no longer live (revoked, past its
+    deadline or idle limit, or begun before a recovery) or whose user is no
+    longer an Administrator: an ended session, exit 5 (``session_ended``),
+    as admission reports it. Should the session still pass Python's own
+    check (the two clocks a moment apart), the preview is ``unavailable``
+    (exit 3) and safe to retry. Either way nothing was looked up or audited.
+    """
+    from .accounts.automation_sessions import SessionUnusable
+    from .accounts.sessions import authenticated_admin
+
+    if authenticated_admin(caller, store=service.store, read_only=True) is None:
+        raise SessionUnusable("session_ended") from None
+    raise Unavailable("The ParishSoft Names can't be looked up now; try again.")
+
+
 def _problem(refused):
     """One ``InvalidChange`` field problem for a ``UserRefused``.
 
@@ -153,6 +171,7 @@ def preview_users(caller, service, *, expected_version, changes):
     from .accounts.policy import Capability
     from .accounts.request_patch import build_candidate
     from .accounts.user_changes import (
+        LOOKUP_REFUSED,
         LookupLimited,
         UserRefused,
         clean_email,
@@ -185,6 +204,10 @@ def preview_users(caller, service, *, expected_version, changes):
                     "Too many ParishSoft Name lookups this hour; give each new "
                     "user a name, or try again later."
                 ) from None
+            except DatabaseError as error:
+                if getattr(error.__cause__, "sqlstate", None) != LOOKUP_REFUSED:
+                    raise
+                _lookup_refused(caller, service)
 
     def step():
         """Plan, validate and sign in one snapshot, as the page's Review does."""

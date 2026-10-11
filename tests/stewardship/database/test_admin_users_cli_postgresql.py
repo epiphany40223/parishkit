@@ -373,3 +373,84 @@ def test_users_preview_and_confirm_change_users_as_the_page(admin, google):  # n
     )
     assert code == 1 and document["error"]["code"] == "invalid", document
     assert "users" in json.dumps(document["error"])
+
+
+def test_users_preview_looks_up_a_new_users_name_for_a_live_session(
+    admin,  # noqa: F811
+    google,
+    monkeypatch,
+):
+    """A new user without a Name gets the ParishSoft default, under the session.
+
+    The lookup definer receives the command session's key
+    (``caller.session.session_key``, its portal-session row's
+    ``session_id``). Within the idle limit it answers and audits the lookup;
+    once that row is past the 60-minute idle limit (aged by another
+    connection after admission, so only the definer sees it) it refuses,
+    and the preview is ``session_ended`` (exit 5) with nothing audited.
+    """
+    import psycopg
+
+    from parishkit.stewardship import admin_users
+    from parishkit.stewardship.audit.models import AuditEvent
+    from parishkit.stewardship.source.models import SourceCurrent, SourceMutationLease
+
+    from .leader_builders import leader, with_leaders
+    from .response_builders import response_source
+    from .test_source_families_postgresql import publish
+    from .user_builders import convert
+
+    _, secret = sample(admin.service, google)
+    store = admin.service.store
+    convert(store)
+    SourceMutationLease.objects.get_or_create(singleton=True)
+    SourceCurrent.objects.get_or_create(singleton=True)
+    publish(with_leaders(response_source(), [leader("Nell@Example.org", 9)]))
+    admin_id = PortalUser.objects.get(email=ADMIN).pk
+    lookups = AuditEvent.objects.filter(
+        event_type="user_names_looked_up", actor_id=admin_id
+    )
+    version = store.active().digest
+    preview = (
+        "users",
+        "preview",
+        "--expected-version",
+        version,
+        "--changes",
+        _changes({"email": "nell@example.org"}),
+    )
+    code, document = one(admin, *preview, secret=secret)
+    assert code == 0 and document["ok"], document
+    (change,) = document["result"]["changes"]
+    assert change["after"] == {"name": "Example 0, Leader", "role": "ministry_leader"}
+    assert change["other_names"] == 0
+    assert lookups.count() == 1
+
+    owner = dict(connection.settings_dict)
+    real_parse = admin_users.parse_users
+
+    def idle(text):
+        """After admission, age this Administrator's sessions past idle."""
+        with psycopg.connect(
+            host=owner["HOST"],
+            port=owner["PORT"],
+            user=owner["USER"],
+            password=owner["PASSWORD"],
+            dbname=owner["NAME"],
+        ) as other:
+            other.execute("SET lock_timeout = '10s'")
+            other.execute("SET session_replication_role = replica")
+            other.execute(
+                # A row's activity is never before its sign-in (a CHECK).
+                "UPDATE stewardship_portal_session SET authenticated_at="
+                "least(authenticated_at, clock_timestamp()-interval '61 minutes'),"
+                " last_activity_at=clock_timestamp()-interval '61 minutes' "
+                "WHERE principal_id=%s AND revoked_at IS NULL",
+                [admin_id],
+            )
+        return real_parse(text)
+
+    monkeypatch.setattr(admin_users, "parse_users", idle)
+    code, document = one(admin, *preview, secret=secret)
+    assert code == 5 and document["error"]["code"] == "session_ended", document
+    assert lookups.count() == 1

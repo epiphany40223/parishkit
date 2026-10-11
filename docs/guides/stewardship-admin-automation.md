@@ -1450,3 +1450,7 @@ them on the Portal users page before the upgrade.
   files by position or by the old headings must change.
 - `pk-admin/1` (#952 slice 2): additive. `users list` and
   `users preview-upgrade`.
+- `pk-admin/1` (#952 slice 5): additive. `users preview` and
+  `users confirm`. When the database refuses a preview's ParishSoft Name
+  lookup for the command session (ended, or its user no longer an
+  Administrator), the preview exits 5 with `session_ended`.

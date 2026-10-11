@@ -284,8 +284,10 @@ class LookupLimited(RuntimeError):
     """The Administrator has used up the hourly Name lookups (SQLSTATE 53400)."""
 
 
-# The SQLSTATE stewardship_member_names_for_v1 refuses with past its limit.
+# The SQLSTATEs stewardship_member_names_for_v1 refuses with: past its
+# limit, and for a session that is not a live Administrator's.
 LOOKUP_LIMITED = "53400"
+LOOKUP_REFUSED = "42501"
 
 
 def member_names(session_key, email):
@@ -296,7 +298,8 @@ def member_names(session_key, email):
     returns only names, best first: a Member of an active Family, then a head
     of household, then by name and Member DUID. The definer itself refuses
     unless ``session_key`` is a live Admin session of a current
-    Administrator (a ``DatabaseError``), refuses past 60 lookups an hour for
+    Administrator (a ``DatabaseError`` whose cause has SQLSTATE
+    ``LOOKUP_REFUSED``), refuses past 60 lookups an hour for
     that Administrator (``LookupLimited``), and records the lookup's audit
     event, with the count of names but never the address. Call it inside
     the transaction that owns the request's effects. Names the users schema
