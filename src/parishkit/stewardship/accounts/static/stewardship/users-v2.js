@@ -16,7 +16,10 @@
 //     Name's help line, which is always there, says what was found.
 // The help line is one line high whatever it says (a long answer is cut
 // short with an ellipsis and shown whole in its title), so the Role choices
-// never move (#736).
+// never move (#736). An address with no match, already a user, or whose
+// lookup fails or is refused clears a Name this script filled for an
+// earlier address, so it never stays as another address's Name; a Name the
+// Administrator typed is kept.
 // Only the latest answer is used. The server checks everything again on
 // Review, so a lookup that fails only says so and changes nothing else.
 (() => {
@@ -49,6 +52,11 @@
     help.textContent = words;
     help.title = words;
   };
+  // Clear the Name only if this script filled it and it is unchanged.
+  const unfill = () => {
+    if (filled !== null && name.value === filled) name.value = "";
+    filled = null;
+  };
   const suggest = (names) => {
     list.replaceChildren(...names.map((value) => {
       const option = document.createElement("option");
@@ -58,6 +66,7 @@
     say(names.length
       ? form.dataset.namesFound.replace("{names}", names.join("; "))
       : form.dataset.namesNone);
+    if (!names.length) unfill();
     // Never over a Name the Administrator typed; a Name filled in for an
     // earlier address is replaced.
     if (names.length && (!name.value.trim() || name.value === filled)) {
@@ -87,6 +96,7 @@
         mark(answer.error);
         list.replaceChildren();
         say(form.dataset.namesNone);
+        unfill();
         return;
       }
       suggest(Array.isArray(answer.names) ? answer.names.map(String) : []);
@@ -94,7 +104,9 @@
       if (mine !== latest) return;
       // Asking again for the same address may work later.
       asked = null;
+      list.replaceChildren();
       say(form.dataset.namesFailed);
+      unfill();
     }
   };
   email.addEventListener("change", lookUp);

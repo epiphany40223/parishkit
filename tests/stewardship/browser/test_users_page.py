@@ -343,3 +343,47 @@ def test_role_choices_never_move_while_the_lookup_answers(
     help_says(page, "Couldn't look up")
     unmoved("refused")
     assert not failures
+
+
+def test_a_filled_name_is_cleared_when_the_address_has_none(page, component_origin):
+    """A Name filled for an earlier address goes; a typed Name stays."""
+    page.goto(component_origin + NEW)
+    failures = watch(page)
+    name = page.get_by_label("Name", exact=True)
+    lookups = HeldLookups(page)
+    lookups.ask("ann@example.org")
+    lookups.answer(200, {"error": None, "names": SUGGESTED})
+    eventually(
+        page,
+        "document.querySelector('[data-user-name]').value === "
+        + json.dumps(SUGGESTED[0]),
+    )
+    # No match: the filled Name is cleared.
+    lookups.ask("nobody@example.org")
+    lookups.answer(200, {"error": None, "names": []})
+    help_says(page, "No ParishSoft Member")
+    assert name.input_value() == ""
+    # A failed lookup clears a filled Name too.
+    lookups.ask("ann@example.org")
+    lookups.answer(200, {"error": None, "names": SUGGESTED})
+    help_says(page, "Suggested from ParishSoft")
+    assert name.input_value() == SUGGESTED[0]
+    lookups.ask("broken@example.org")
+    lookups.answer(503, {"errors": []})
+    help_says(page, "Couldn't look up")
+    assert name.input_value() == ""
+    # An address already a user clears it as well.
+    lookups.ask("ann@example.org")
+    lookups.answer(200, {"error": None, "names": SUGGESTED})
+    help_says(page, "Suggested from ParishSoft")
+    lookups.ask("staff@example.org")
+    lookups.answer(200, {"error": "This address is already a user.", "names": []})
+    visible(page.locator("[data-email-error]"))
+    assert name.input_value() == ""
+    # A Name the Administrator typed is kept, whatever the answer.
+    name.fill("Typed, Name")
+    lookups.ask("other@example.org")
+    lookups.answer(200, {"error": None, "names": []})
+    help_says(page, "No ParishSoft Member")
+    assert name.input_value() == "Typed, Name"
+    assert not failures
