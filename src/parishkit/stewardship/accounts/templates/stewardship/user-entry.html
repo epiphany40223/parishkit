@@ -12,7 +12,10 @@ On New, users-v2.js asks the server (user_name_suggestions, a CSRF POST) when
 the Administrator leaves Email: it shows the address's problem at the field,
 or fills in the first ParishSoft name (never over a typed Name), offers the
 others in the datalist and says which it found in the Name's help line, which
-is always there.
+is always there. That line is one line high whatever it says: a long answer
+is cut short with an ellipsis and shown whole in its title (and read whole
+through the Name's aria-describedby), so the Role choices below never move
+under the pointer (#736).
 On Edit, the only Administrator's lower roles are unavailable, with the reason
 in the line under the roles, which is always there (#563); the server refuses
 that change anyway. The recorded Google identities of the address each get a
@@ -32,7 +35,7 @@ Sign-in activity button (#953), posting the identity, never in an address.
 {% if disabled_count %}<p class="notice notice-error" id="user-disabled-identity">{% blocktranslate count counter=disabled_count %}A recorded sign-in account for this address is disabled and can't sign in.{% plural %}{{ counter }} recorded sign-in accounts for this address are disabled and can't sign in.{% endblocktranslate %}</p>{% endif %}{% endif %}</div>
 <div class="field"><label for="{{ form.name.auto_id }}">{{ form.name.label }}</label>
 {{ form.name }}<datalist id="user-names"></datalist>
-<p class="help" id="{{ form.name.auto_id }}_help" data-names-help>{% if new %}{% translate "When you enter the email address, any ParishSoft names that list it are suggested here." %}{% else %}{% translate "A label for this portal, such as Smith, Ann." %}{% endif %}</p>
+{% if new %}{% translate "When you enter the email address, any ParishSoft names that list it are suggested here." as names_intro %}{% endif %}<p class="help{% if new %} names-help{% endif %}" id="{{ form.name.auto_id }}_help" data-names-help{% if new %} title="{{ names_intro }}"{% endif %}>{% if new %}{{ names_intro }}{% else %}{% translate "A label for this portal, such as Smith, Ann." %}{% endif %}</p>
 <div class="field-error-line" role="status"><ul class="errorlist" id="{{ form.name.auto_id }}_error"{% if not form.name.errors %} hidden{% endif %}>{% for error in form.name.errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div></div>
 <fieldset class="field user-roles" aria-describedby="user-roles-reason{% if form.role.errors %} {{ form.role.auto_id }}_error{% endif %}"><legend>{% translate "Role" %}</legend>
 {% for role in roles %}<div class="choice"><input type="radio" name="role" value="{{ role.value }}" id="{{ form.role.auto_id }}_{{ forloop.counter0 }}" aria-describedby="{{ form.role.auto_id }}_{{ forloop.counter0 }}_help"{% if form.role.value == role.value %} checked{% endif %}{% if role.locked %} disabled{% endif %}{% if form.role.errors %} aria-invalid="true"{% endif %}> <label for="{{ form.role.auto_id }}_{{ forloop.counter0 }}">{{ role.label }}</label>
