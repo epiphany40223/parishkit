@@ -1309,6 +1309,31 @@ the configuration holds users it is exit 1 (`not_available`).
 If someone you expect is missing from `users`, add an exact-address rule for
 them on the Portal users page before the upgrade.
 
+`users import-leaders` is the Users page's ParishSoft Ministry leaders
+table and its import. It needs a full-scope session. `--preview` lists the
+leaders without a user and reviews importing everyone (`--all`) or the
+chosen addresses (`--email`, repeatable); with neither it only lists them.
+`--confirm --token` applies the review, as the page's Apply does. Each
+listing is recorded in System logs (`user_leaders_listed`, with the number
+of leaders, never an address).
+
+```sh
+pk-admin users import-leaders --preview
+pk-admin users import-leaders --preview --email ann@example.org
+pk-admin users import-leaders --confirm --token -
+```
+
+| `users import-leaders` field | What it holds |
+| --- | --- |
+| `version` | The applied configuration's version the review was made against |
+| `leaders` | Each leader without a user: `email`, `name` ("Last, first"), `member_duid` and the `ministries` they lead, by name |
+| `unreachable` | How many leaders have no usable email address, so are not listed |
+| `added` | Each user the import adds: `id`, `email`, `name`, `member_duid` and `role` (always `ministry_leader`) |
+| `skipped` | Each chosen address left out: `email` and `reason` (`user`, already a user; `not_listed`, no longer a leader without a user) |
+| `remaining` | Chosen leaders past one change's limit of 100, left for another import |
+| `preview` | `token`, which `--confirm` takes, or `null` with nobody to import |
+| `created`, `request` | With `--confirm`: as `users confirm` prints them |
+
 ## Output changelog
 
 - `pk-admin/1` (ADM-11 PR 2): the first version, with the session commands.
@@ -1444,3 +1469,6 @@ them on the Portal users page before the upgrade.
   preview exits 3 with `unavailable`. When the database refuses the lookup
   for the command session (ended, begun before a recovery, or its user no
   longer an Administrator), the preview exits 5 with `session_ended`.
+- `pk-admin/1` (#952 slice 6): additive. `users import-leaders --preview`
+  and `--confirm`. A session the leaders definer refuses is exit 5
+  (`session_ended`), as for the Name lookup.

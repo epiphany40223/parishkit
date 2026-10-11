@@ -19,6 +19,8 @@ from parishkit.stewardship.accounts.integration_forms import (
     InlineCredentialForm,
     IntegrationForm,
 )
+from parishkit.stewardship.accounts.leader_import import LEADER_SORTING
+from parishkit.stewardship.accounts.leader_import_views import PREFIX as LEADER_PREFIX
 from parishkit.stewardship.accounts.setup_credential_views import SetupCredentialForm
 from parishkit.stewardship.accounts.setup_forms import SetupAccessForm
 from parishkit.stewardship.accounts.user_reads import USER_SORTING
@@ -175,6 +177,12 @@ def pages():
                 "refresh_url": "/admin/users/",
                 "new_url": "/admin/users/new/",
                 "delete_url": "/admin/users/deletion/",
+                # The ParishSoft Ministry leaders table below it (#952 slice 6).
+                "leaders": paginate(
+                    [], {}, prefix=LEADER_PREFIX, sorting=LEADER_SORTING
+                ),
+                "leaders_unreachable": 0,
+                "import_url": "/admin/users/leaders/import/",
             },
             ("Everyone who may sign in to the Admin portal with Google.",),
             ("Everyone who may sign in to the Admin portal.",),
