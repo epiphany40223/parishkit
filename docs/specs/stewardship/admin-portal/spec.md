@@ -1015,7 +1015,7 @@ the integration the key belongs to, never under each other, because only the
 Administrator who saved a key may read its status. Some pages are named in
 trails but never linked, and "Return to" skips them: those that only answer a
 POST (the Import Ministry leaders review); one-time reviews that refuse once their change is
-confirmed (Copy campaign, and the campaign image and logo reviews); and Finish
+confirmed (Copy campaign and the logo review); and Finish
 switching, which still opens afterward but needs a fresh Google sign-in and has
 nothing left to do. A menu page is linked in a trail or "Return to" only while
 the viewer's menu entry for it is available, so a page whose entry is

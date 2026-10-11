@@ -572,7 +572,13 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   address. The slots are one in-place region, redrawn by an upload's answer
   and by the quiet refresh once a change is applied; a refused upload's
   field error shows in its slot and, linked to that field, in the review
-  region, which takes focus.
+  region, which takes focus. Each slot is the same height with or without
+  an image (its image box keeps the slot's image size, its caption is one
+  line, and the removal line keeps its space), so the quiet refresh never
+  moves the review region below the slots. A stale upload (the page's
+  settings changed elsewhere) is refused in the region too; a stale Apply
+  says to upload the image again, or for a removal, to choose Remove this
+  image again.
 
 ### No layout shift
 
