@@ -439,7 +439,7 @@ def case_limitations(monkeypatch):
     their own.
     """
     zone = ZoneInfo("America/Chicago")
-    result = limitations.shape_result(limitations_result({}, {}))
+    result = limitations.shape_result(limitations_result())
     body = limitations.limitations_csv(result, zone).decode()
     rows = list(csv.reader(io.StringIO(body)))
     blank = rows.index([])

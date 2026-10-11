@@ -198,6 +198,9 @@ FROZEN = {
     "0055_setup_users.sql": (
         "aa178a20f0feb29f3428f28dda8c106bf6d1d7d9e615c26e62d9e18ed9fe9cc3"
     ),
+    "0056_retire_talents.sql": (
+        "2272e33d49651301e90253a582b00f4f9a04110e62839a9cafb5084d86bbe64c"
+    ),
 }
 
 
