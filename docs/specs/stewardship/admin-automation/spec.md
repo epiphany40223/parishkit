@@ -1418,8 +1418,8 @@ waiting for it once the command has finished. A command declares that it prompts
 `_`) to the host wrapper's `PROMPTING` list so the wrapper forwards a terminal's input.
 `test_pk_admin.py` checks that list against the catalog; a prompting
 command that accepts only `--yes` is left out of it by name. PR 6b's
-`test sample`, PR 6c's `test families` and PR 9c's `delivery resend` and
-`delivery refusal-clear`, PR 7a's `portal maintenance set` and `files
+`test sample`, PR 6c's `test families`, PR 9c's `delivery resend` and
+`delivery refusal-clear`, PR 7a's `portal maintenance set` and #463's `files
 delete` are prompting commands.
 
 ### Audit attribution
