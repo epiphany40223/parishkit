@@ -54,7 +54,7 @@ def test_upload_review_apply_and_status_happen_in_place(page, component_origin):
     page.goto(component_origin + PAGE)
     page.evaluate(MARK)
     top = page.evaluate(SLOT_PLACE)
-    banner = slot(page, "Banner (top of the Family emails and the welcome page)")
+    banner = slot(page, "Banner (top of the Family emails only)")
     banner.get_by_label("Image").set_input_files(png())
     banner.get_by_role("button", name="Upload and review").click()
     region = page.locator("#settings-review")
