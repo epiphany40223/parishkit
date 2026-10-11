@@ -2382,9 +2382,9 @@ never prepares or sends twice.
 
 | URL names | Command or exemption |
 | --- | --- |
-| `users` | `users list` (#952 slice 2); the page's Upgrade preview panel is `users preview-upgrade` (#952 slice 2) |
-| `user_new`, `user_edit`, `user_delete` | `users preview`, `users confirm` (#952 slice 4): a change document adds, changes or deletes users, including the [high-impact changes](#high-impact-changes) |
-| `user_name_suggestions` | Covered by `users preview` (#952 slice 4): a new user in the change document without a `name` gets the [default from ParishSoft](../admin-portal/spec.md#name-from-parishsoft), which the preview shows; the other suggested Member names are only counted, under the [personal data](#personal-data-on-the-command-line) rule |
+| `users` | `users list` (#952 slice 2); its Apply is `users confirm` (#952 slice 5); the interim page's Upgrade preview panel was `users preview-upgrade` (#952 slice 2), which stays |
+| `user_new`, `user_edit`, `user_delete` | `users preview`, `users confirm` (#952 slice 5): a change document adds, changes or deletes users, including the [high-impact changes](#high-impact-changes) |
+| `user_name_suggestions` | Covered by `users preview` (#952 slice 5): a new user in the change document without a `name` gets the [default from ParishSoft](../admin-portal/spec.md#name-from-parishsoft), which the preview shows; the other suggested Member names are only counted, under the [personal data](#personal-data-on-the-command-line) rule |
 | `user_leader_import` | `users import-leaders --preview`, `users import-leaders --confirm` (#952 leaders slice) |
 | `user_rules`, `rule_apply`, `rule_base`, `rule_request` | Retired by #952: removed with the rule tables and autosave when the users commands land; no rule commands are built |
 | `chair_confirmations`, `chair_reviews`, `assignments` | Retired by #922: removed with Ministry assignments and Chairperson flows; no commands are built |
@@ -2395,9 +2395,10 @@ The users commands (#952) call the same service functions as the
 [Users page](../admin-portal/spec.md#portal-user-management), with its
 checks, audit and alerts:
 
-- `users list` prints each user's email, Name, role and last successful
-  sign-in, with the page's sort (`--sort`); it is read-only and needs only a
-  read-only session. Before the users upgrade, its `form` is
+- `users list` prints each user's ID, email, Name, role, last successful
+  sign-in and recorded identities, with the page's sort (`--sort`), and the
+  applied configuration's `version`, which `users preview` takes; it is
+  read-only and needs only a read-only session. Before the users upgrade, its `form` is
   `sign_in_rules` and its users are the exact-address rules that grant a
   role, each with its highest role and no Name; a domain rule's people are
   in the upgrade preview instead.
@@ -2409,8 +2410,11 @@ checks, audit and alerts:
   `users confirm --token …` change users as `schedule preview` and
   `schedule confirm` change schedules: the change document names a saved user
   by `id` to change its Name or role or, with `delete`, to delete it; an entry
-  with no `id` adds a user by `email`, `name` and `role`; users it does not
-  name stay unchanged.
+  with no `id` adds a user by `email`, `name` and `role` (Ministry leader by
+  default); users it does not name stay unchanged. The document is
+  `{"users": [...]}`. `users confirm` records `admin_cmd_users_confirm` and
+  the page's `user_change_requested`, and a high-impact change also leaves
+  the `policy_change` automation notice.
 - `users import-leaders --preview` lists the ParishSoft Ministry leaders
   without a user, as the page's second table does (email, Name and Member
   DUID), and the import it would make; `--all` or repeated `--email` choose
