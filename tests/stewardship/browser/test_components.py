@@ -9,6 +9,7 @@ from parishkit.stewardship.accounts.templatetags.stewardship import parish_time
 from parishkit.stewardship.web import dates
 
 from .conftest import NOW, load_collections
+from .keyboard import tab_to_next
 from .waits import eventually, hidden, recorded, visible
 
 pytestmark = pytest.mark.parametrize(
@@ -1011,7 +1012,8 @@ def test_setup_stepper_is_compact_and_its_full_list_stays_accessible(
             "nodes => nodes.map(node => node.getBoundingClientRect().toJSON())"
         )
     )
-    page.keyboard.press("Tab")
+    # The list holds only links, which Tab skips in macOS WebKit (#1043).
+    tab_to_next(page)
     assert page.evaluate("document.activeElement.closest('.setup-steps') !== null")
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []
