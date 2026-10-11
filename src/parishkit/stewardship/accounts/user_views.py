@@ -3,12 +3,10 @@
 from dataclasses import replace
 
 from django.db import DatabaseError, transaction
-from django.db.models import Max, Q
 from django.shortcuts import render
 from django.views.decorators.http import require_safe
 
 from parishkit.config import ConfigError
-from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.work_locks import read_transaction
@@ -20,14 +18,16 @@ from .admin_editing import editable_configuration, error_response, principal
 from .authentication import runtime
 from .limiting import LimiterUnavailable
 from .policy import Capability
-from .policy_models import PortalUser
+from .user_reads import UPGRADE_SORTING, policy_identities, upgrade_panel, upgrade_rows
 from .user_rows import ROLE_LABELS, AppliedPolicy, address_rows, domain_rows
 from .user_rules import ROLE_ORDER
+from .users_upgrade import document_preview
 
 # Query-string prefixes, one per table, so each pages and sorts on its own.
 DOMAINS = "domains_"
 ADDRESSES = "addresses_"
-PREFIXES = (DOMAINS, ADDRESSES)
+UPGRADE = "upgrade_"
+PREFIXES = (DOMAINS, ADDRESSES, UPGRADE)
 
 
 def _text(values):
@@ -71,48 +71,9 @@ ADDRESS_SORTING = Sorting.by_column(
 TABLES = {
     "domain_table": (DOMAINS, DOMAIN_SORTING),
     "address_table": (ADDRESSES, ADDRESS_SORTING),
+    # The Upgrade preview's users (#952): who the users upgrade would write.
+    "upgrade_table": (UPGRADE, UPGRADE_SORTING),
 }
-
-
-def policy_identities(records):
-    """Only the Google identities this policy names, with successful sign-ins.
-
-    Every verified Google attempt records an identity and refreshes its
-    verification time, including a stranger's attempt that policy then denies.
-    So the read is bounded by policy, not by attempts, and a sign-in means the
-    durable login event written only when a session was actually issued.
-    """
-    emails = {
-        record["values"]["email"]
-        for record in records
-        if record["values"]["kind"] != "domain"
-    }
-    domains = {
-        record["values"]["domain"]
-        for record in records
-        if record["values"]["kind"] == "domain"
-    }
-    # Addresses are stored normalized, so the stored column is compared as is.
-    # An identity at a configured domain is history for that domain's row even
-    # when no rule names its address and it presented no hosted claim, such as
-    # a consumer account whose exact rule was since removed; the evaluator's
-    # stricter claim test still decides whom the rule authorizes.
-    named = Q(email__in=emails)
-    for domain in domains:
-        named |= Q(email__endswith=f"@{domain}")
-    rows = list(
-        PortalUser.objects.filter(named).values(
-            "id", "email", "hosted_domain", "disabled"
-        )
-    )
-    logins = dict(
-        AuditEvent.objects.filter(
-            event_type="admin_login", actor_id__in=[row["id"] for row in rows]
-        )
-        .values_list("actor_id")
-        .annotate(latest=Max("created_at"))
-    )
-    return [row | {"last_login": logins.get(row["id"])} for row in rows]
 
 
 def user_tables(paging, rows):
@@ -178,18 +139,22 @@ def users(request):
         )
         with read_transaction():
             configuration = editable_configuration(service)
-            records = configuration.active_configuration.canonical_document[
-                "sections"
-            ].get("login_rules", [])
+            document = configuration.active_configuration.canonical_document
+            records = document["sections"].get("login_rules", [])
             identities = policy_identities(records)
+            # The read-only users upgrade preview (#952), in the same
+            # snapshot: the one function the offline conversion previews with.
+            preview = document_preview(document)
             # The chrome presents this verified observation, never a newer one.
             request._stewardship_display_configuration = configuration
         policy = AppliedPolicy(records, identities)
+        upgrade = upgrade_panel(preview)
         tables = user_tables(
             paging,
             {
                 "domain_table": domain_rows(policy),
                 "address_table": address_rows(policy),
+                "upgrade_table": [] if upgrade is None else upgrade_rows(preview),
             },
         )
         response = render(
@@ -201,6 +166,7 @@ def users(request):
                 # change proposed against an older policy is refused as stale.
                 "base_digest": configuration.active_configuration.digest,
                 "roles": [(role, ROLE_LABELS[role]) for role in ROLE_ORDER],
+                "upgrade": upgrade,
             },
         )
         with transaction.atomic():

@@ -4,6 +4,7 @@
 {% block content %}
 <h1>{% translate "Portal users" %}</h1>
 {% comment %}Deliberately minimal (#953): #952 redesigns this page. Only the closed link filters travel, never an address (System logs' LINK_FIELDS).{% endcomment %}<p id="users-sign-in-activity"><a href="{% url 'admin:logs' %}?applied=yes&amp;audit=yes&amp;activity=sign_in">{% translate "See sign-in activity in System logs" %}</a></p>
+{% if upgrade %}<p id="users-upgrade-link"><a href="#upgrade-preview">{% translate "See the users upgrade preview" %}</a></p>{% endif %}
 <div data-rule-autosave data-apply-url="{% url 'admin:rule_apply' %}" data-request-url="{% url 'admin:rule_request' request_id='00000000-0000-4000-8000-000000000000' %}" data-base-url="{% url 'admin:rule_base' %}" data-base-digest="{{ base_digest }}"></div>
 {% if local_environment %}<p>{% translate "Who may sign in to this portal, and why. This page shows the applied login rules. An Administrator changes a rule from its row: the change is shown back for review and saved only when you confirm it. An exact address always replaces its domain rule for that person." %}</p>
 <p>{% translate "A successful sign-in is one that was allowed and opened a session. A sign-in attempt that policy then refused is not counted. Times use your browser timezone when available; UTC is the fallback." %}</p>{% else %}<p>{% translate "Who may sign in to this portal with Google, and why. This page shows the applied login rules. An Administrator changes a rule from its row: the change is shown back for review and saved only when you confirm it. An exact address always replaces its domain rule for that person." %}</p>
@@ -65,5 +66,39 @@ swaps in place while another loads in full would lose the in-place choice.
 <label for="new-address">{% translate "Email address" %}</label> <input id="new-address" name="identity" type="email" maxlength="254" required autocomplete="off">
 {% for key,label in roles %}<label><input type="checkbox" name="roles" value="{{ key }}"> {{ label }}</label> {% endfor %}
 {% button type="submit" %}{% translate "Review new address rule" %}{% endbutton %}</fieldset></form>
+
+{% if upgrade %}{% comment %}The read-only users upgrade preview (#952, operations "Users upgrade from sign-in rules"): the same document_preview the offline conversion and pk-admin users preview-upgrade print. Gone once the configuration holds users. Like the tables above, its table re-sorts by a full load (#478).{% endcomment %}
+<section id="upgrade-preview" aria-labelledby="upgrade-preview-heading">
+<h2 id="upgrade-preview-heading">{% translate "Upgrade preview" %}</h2>
+<p>{% translate "A coming release replaces these sign-in rules with one list of users, each with one role. This preview shows what that upgrade would do with today's rules. It changes nothing." %}</p>
+<p>{% translate "Anyone you expect who is not listed under Users after the upgrade will not be able to sign in. Add an exact-address rule for them before the upgrade." %}</p>
+<h3 id="upgrade-administrators">{% translate "Administrators kept" %}</h3>
+<p>{% blocktranslate count counter=upgrade.administrators|length %}This address keeps Administrator. Whoever runs the upgrade must confirm this exact list.{% plural %}These {{ counter }} addresses keep Administrator. Whoever runs the upgrade must confirm this exact list.{% endblocktranslate %}</p>
+<ul aria-labelledby="upgrade-administrators">{% for email in upgrade.administrators %}<li>{{ email }}</li>{% endfor %}</ul>
+<h3 id="upgrade-users">{% translate "Users after the upgrade" %}</h3>
+<div id="{{ upgrade_table.anchor }}">
+{% translate "Users after the upgrade pages" as upgrade_label %}{% include "stewardship/table-navigator.html" with table=upgrade_table label=upgrade_label %}
+<div class="table-scroll" tabindex="0" role="region" aria-labelledby="upgrade-users"><table class="data-table">
+<caption>{% translate "Users after the upgrade" %}</caption><thead><tr>{% translate "Email" as heading %}{% sort_heading upgrade_table "email" heading %}{% translate "Name" as heading %}{% sort_heading upgrade_table "name" heading %}{% translate "Role" as heading %}{% sort_heading upgrade_table "role" heading %}{% translate "Comes from" as heading %}{% sort_heading upgrade_table "source" heading %}</tr></thead><tbody>
+{% for row in upgrade_table.rows %}<tr>
+<th scope="row">{{ row.email }}</th>
+<td>{{ row.name }}</td>
+<td>{{ row.role_label }}</td>
+<td>{% if row.source.kind == "address" %}{% blocktranslate with roles=row.source.roles|join:", " %}Exact-address rule ({{ roles }}){% endblocktranslate %}{% else %}{{ row.source_label }}{% endif %}</td></tr>
+{% empty %}<tr><td colspan="4">{% translate "No users. Add an exact-address rule for each person who should keep signing in." %}</td></tr>{% endfor %}</tbody></table></div>
+{% include "stewardship/table-navigator.html" with table=upgrade_table label=upgrade_label %}
+</div>
+<h3 id="upgrade-domains">{% translate "Hosted-domain rules" %}</h3>
+<p>{% translate "Hosted-domain rules go away. Each person a rule lets in who has signed in before becomes a user with the rule's highest role." %}</p>
+<ul aria-labelledby="upgrade-domains">{% for rule in upgrade.domain_rules %}<li>{% blocktranslate with domain=rule.domain roles=rule.roles|join:", " role=rule.role count counter=rule.count %}{{ domain }} ({{ roles }}): {{ counter }} person becomes a {{ role }} user.{% plural %}{{ domain }} ({{ roles }}): {{ counter }} people become {{ role }} users.{% endblocktranslate %}</li>{% empty %}<li>{% translate "None." %}</li>{% endfor %}</ul>
+<h3 id="upgrade-denied">{% translate "Deny rules dropped" %}</h3>
+<p>{% translate "An address with no user cannot sign in, so deny rules are no longer needed." %}</p>
+<ul aria-labelledby="upgrade-denied">{% for rule in upgrade.dropped %}<li>{{ rule.email }} ({{ rule.name }}): {% if rule.overrides_identity %}{% translate "it refuses a recorded Google account today, which stays refused." %}{% else %}{% translate "no recorded Google account uses this address." %}{% endif %}</li>{% empty %}<li>{% translate "None." %}</li>{% endfor %}</ul>
+<h3 id="upgrade-not-kept">{% translate "Not carried over" %}</h3>
+<p id="upgrade-never">{% translate "Recorded Google accounts a hosted-domain rule lets in that never signed in:" %}</p>
+<ul aria-labelledby="upgrade-never">{% for email in upgrade.never_signed_in %}<li>{{ email }}</li>{% empty %}<li>{% translate "None." %}</li>{% endfor %}</ul>
+<p id="upgrade-disabled">{% translate "Disabled Google accounts a hosted-domain rule would let in:" %}</p>
+<ul aria-labelledby="upgrade-disabled">{% for email in upgrade.disabled %}<li>{{ email }}</li>{% empty %}<li>{% translate "None." %}</li>{% endfor %}</ul>
+</section>{% endif %}
 
 {% endblock %}
