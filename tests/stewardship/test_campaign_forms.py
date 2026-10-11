@@ -8,6 +8,7 @@ from django.http import QueryDict
 from parishkit.stewardship.accounts.admin_editing import form_action
 from parishkit.stewardship.accounts.campaign_forms import (
     FINANCIAL_REQUIRED,
+    LEADER_ROLES_HELP,
     CampaignForm,
     initial_fields,
 )
@@ -313,6 +314,12 @@ def test_leader_roles_need_one_role_and_only_offered_names():
     form = settings_form(posted(), previous=previous, roles=["Member"])
     assert form.is_valid(), form.errors
     assert form.values()["ministry_leader_roles"] == ["Member"]
+
+
+def test_leader_roles_help_points_to_the_users_page():
+    """Sign-in rules became users (#952); a leader signs in as a user."""
+    assert "import leaders on the Users page" in str(LEADER_ROLES_HELP)
+    assert "sign-in rule" not in str(LEADER_ROLES_HELP)
 
 
 def test_leader_roles_review_lists_the_names():

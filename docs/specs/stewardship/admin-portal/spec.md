@@ -3822,10 +3822,12 @@ be. Leaders with no usable email are not rows; a muted line under the table
 counts them, since they cannot sign in.
 
 The columns, in the [shared order](../ui-conventions/spec.md#table-column-order),
-are the selection checkbox, Name (the default Name of a new user), Member
-DUID, Email, Ministries led (a short list cut off with a count, such as
-"Choir, Ushers and 3 more") and Role, which is always Ministry leader. Name,
-Member DUID and Email sort; Name is the default order.
+are the selection checkbox, Member (the Member's name, worded as the
+default Name the new user gets), Member DUID, Email, Ministries led (a short
+list cut off with a count, such as "Choir, Ushers and 3 more") and Role,
+which is always Ministry leader. The import review's table heads the same
+column Member too, so each Member DUID follows its Member. Member, Member
+DUID and Email sort; Member is the default order.
 
 **Import selected** and **Import all** are available only while there is
 something to import (and Import selected only while a row is selected). The
@@ -3837,6 +3839,38 @@ count and one audit row per new user, and both tables then refresh in place.
 Import never changes an existing user, never grants more than Ministry
 leader, and so raises no security alert; the last-Administrator guard is
 unaffected. Each imported Name stays editable on that user's Edit page.
+
+The bulk bar is the [shared one](../ui-conventions/spec.md#admin-tables):
+while no row is ticked, its reserved reason line under the buttons says
+"Select at least one leader to use Import selected."; with no row at all,
+both buttons are unavailable and the same line says there is nothing to
+import. If the leaders cannot be read, the section says so in place of the
+table and the users table above stays usable. Reading the leaders has no
+rate cap, unlike the [Name lookup](#name-from-parishsoft): one read already
+returns every row, so repeating it discloses nothing more;
+the audit of each read and hashing the session keys
+([#995](https://github.com/epiphany40223/parishkit/issues/995)) are the
+protections. One change
+adds at most 100 users, the limit of one configuration request; when more
+are chosen, the review imports the first 100 by Name and says how many
+remain for another import. Posted addresses only choose among the rows the
+server reads again for the review: a Name, Member DUID or role is never
+taken from the form. The audit's count entry is
+`user_leaders_import_requested` and each new user's row
+`user_leader_imported`, whose subject is that user's record ID.
+
+The web login reads no Member, contact or roster record. It reads the table
+through one SECURITY DEFINER function, `stewardship_leaders_without_user_v1`
+(migration 0054), which takes no address, so it answers no question about
+an address the Administrator chose. Like the
+[Name lookup](#name-from-parishsoft), it answers only for the caller's live
+Admin session (one begun after the latest Admin-access recovery) whose user
+is an Administrator now, and it records its own `user_leaders_listed` audit
+event for each read, with the number of rows and never an address. Its
+leader conditions are those of the
+[leaders definition](../data/spec.md#ministry-leaders), except that it also
+counts leaders with no valid address; a PostgreSQL test pins the two to the
+same answer.
 
 Rejected: letting every ParishSoft leader sign in without a user (the
 Administrator decided that sign-in needs an explicit user), and importing
@@ -5200,7 +5234,9 @@ every `'<prefix>_'||` an installed audit-writing function builds to be a
   `admin_cmd_config_request_cancel`, `campaign_ministries_requested`,
   `campaign_end_date_requested`), portal users and their roles
   (`roles_applied`, the Users page's `user_change_requested`, the command
-  line's `admin_cmd_users_confirm`, and the operator's one-time conversion
+  line's `admin_cmd_users_confirm`, ParishSoft Ministry leaders imported as
+  users (`user_leaders_import_requested`, `user_leader_imported`,
+  `admin_cmd_users_import_leaders`), and the operator's one-time conversion
   of sign-in rules into users, `operator_users_upgraded`), hosted files (`hosted_file_*`), stored key
   replacements
   (`secret_replacement_requested`, `secret_request_*`,

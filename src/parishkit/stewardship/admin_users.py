@@ -21,6 +21,12 @@ confirm`` change schedules:
   (admin-automation specification, "High-impact changes"). A repeated
   confirm returns the original request and records nothing new.
 
+``users import-leaders`` (#952 slice 6) is the page's ParishSoft Ministry
+leaders table and its import: ``--preview`` prints the leaders without a
+user and the review of importing everyone (``--all``) or the chosen
+addresses (``--email``), and ``--confirm`` applies that review exactly as
+the page's Apply does, through ``confirm_users``.
+
 The change document (default, pending Administrator confirmation) is JSON::
 
     {"users": [{"email": "ann@example.org", "name": "Smith, Ann",
@@ -291,16 +297,20 @@ def preview_users(caller, service, *, expected_version, changes):
     return model
 
 
-def confirm_users(caller, service, *, token, context):
+def confirm_users(
+    caller, service, *, token, context, command_action="ADMIN_CMD_USERS_CONFIRM"
+):
     """``users confirm``: the page's **Apply** for a reviewed user change.
 
     Admits as the page does, then ``confirm_intent`` checks the token
     (expired or out of date is ``stale_version``, altered ``invalid``,
     another Administrator's ``denied``) and records the request with its
     audit events (and, for a high-impact change, the automation notice) in
-    its own durable transaction. ``context["committed"]`` and
-    ``context["request_id"]`` follow ``schedule confirm``'s rules, so a
-    later error is ``outcome_unknown`` naming the request.
+    its own durable transaction. ``command_action`` names the ``Action`` of
+    the command's own event (``users import-leaders --confirm`` passes its
+    own). ``context["committed"]`` and ``context["request_id"]`` follow
+    ``schedule confirm``'s rules, so a later error is ``outcome_unknown``
+    naming the request.
     """
     from uuid import UUID
 
@@ -329,7 +339,7 @@ def confirm_users(caller, service, *, token, context):
     def attach(request, extra):
         """Record the command's events with the request it created."""
         record_action(
-            Action.ADMIN_CMD_USERS_CONFIRM,
+            getattr(Action, command_action),
             actor_kind=ActorKind.PORTAL_USER,
             actor_id=actor.identity,
             subject_id=caller.automation_session_id,
@@ -371,3 +381,176 @@ def confirm_users(caller, service, *, token, context):
     return UsersConfirm(
         created=bool(created), request=config_request(receipt).to_document()
     )
+
+
+@dataclass(frozen=True)
+class LeaderImport(ReadModel):
+    """``users import-leaders``: the leaders table, and its import's review.
+
+    ``--preview`` fills ``version`` (the applied configuration's digest),
+    ``leaders`` (each ParishSoft Ministry leader without a user, as the
+    page's second table lists them: ``email``, ``name``, ``member_duid`` and
+    the ``ministries`` they lead, by name), ``unreachable`` (leaders with no
+    usable email, only counted), and the import the chosen leaders would
+    make: ``added`` (each new user's ``id``, ``email``, ``name``,
+    ``member_duid`` and ``role``, always ``ministry_leader``), ``skipped``
+    (``email`` and ``reason``: ``user`` or ``not_listed``), ``remaining``
+    (chosen leaders past one change's limit) and ``preview.token``, which
+    ``--confirm`` takes (null when nobody is chosen or left to import).
+    ``--confirm`` fills ``created`` and ``request`` as ``users confirm``
+    does; the other fields are then null.
+    """
+
+    version: str | None = None
+    leaders: list | None = None
+    unreachable: int | None = None
+    added: list | None = None
+    skipped: list | None = None
+    remaining: int | None = None
+    preview: dict | None = None
+    created: bool | None = None
+    request: dict | None = None
+
+
+def _leaders(caller, service):
+    """The leaders without a user, read under this command's own session.
+
+    The definer records its own audit event and checks the command session
+    itself; a session it refuses is reported as ``_lookup_refused`` says.
+    """
+    from .accounts.leader_import import LeadersRefused, read_leaders
+
+    try:
+        return read_leaders(caller.session.session_key)
+    except LeadersRefused:
+        _lookup_refused(caller, service)
+
+
+def preview_import(caller, service, *, everyone, emails):
+    """``users import-leaders --preview``: the page's leaders table and review.
+
+    Admits as the page's Import does, reads the leaders, then, in one
+    read-only snapshot, plans importing everyone (``everyone``), the chosen
+    ``emails``, or nobody (neither: the list alone) with the page's code,
+    validates the resulting configuration and signs the review. Rechecks
+    access afterwards. Records only the definer's own audit event.
+    """
+    from uuid import uuid4
+
+    from parishkit.config import ConfigError
+
+    from .accounts.admin_editing import sign_preview
+    from .accounts.leader_import import plan_import, table_rows
+    from .accounts.policy import Capability
+    from .accounts.request_patch import build_candidate
+    from .accounts.user_changes import UserRefused, clean_email
+    from .accounts.user_views import SALT, _users
+    from .campaigns.work_locks import read_transaction
+    from .storage import StaleRecordError
+
+    actor = _admit(caller, service)
+    chosen = None
+    if not everyone:
+        try:
+            chosen = [clean_email(email) for email in emails]
+        except UserRefused as refused:
+            raise InvalidChange([_problem(refused)]) from None
+    leaders = _leaders(caller, service)
+
+    def step():
+        """Plan, validate and sign in one snapshot, as the page's review does."""
+        with read_transaction():
+            configuration, records = _users(service)
+            try:
+                plan = plan_import(records, leaders, chosen)
+            except UserRefused as refused:
+                raise InvalidChange([_problem(refused)]) from None
+            token = None
+            if plan.patch:
+                base = service.store.active()
+                if (
+                    base is None
+                    or base.digest != configuration.active_configuration.digest
+                ):
+                    raise StaleRecordError("The applied configuration changed.")
+                try:
+                    build_candidate(base, plan.patch, candidate_id=uuid4())
+                except ConfigError:
+                    raise InvalidChange(
+                        [
+                            {
+                                "field": "users",
+                                "code": "invalid",
+                                "message": "This import can't be made.",
+                            }
+                        ]
+                    ) from None
+                token = sign_preview(
+                    actor=actor,
+                    configuration=configuration,
+                    patch=plan.patch,
+                    salt=SALT,
+                    extra={"leader_import": True},
+                )
+            rows = table_rows(leaders)
+        return LeaderImport(
+            version=configuration.active_configuration.digest,
+            leaders=[
+                {
+                    "email": row["email"],
+                    "name": row["name"],
+                    "member_duid": row["member_duid"],
+                    "ministries": row["ministry_names"],
+                }
+                for row in rows
+            ],
+            unreachable=leaders.unreachable,
+            added=[
+                {
+                    "id": change.id,
+                    "email": change.email,
+                    "name": change.after["name"],
+                    "member_duid": row["member_duid"],
+                    "role": change.after["role"],
+                }
+                for change, row in zip(plan.changes, plan.added, strict=True)
+            ],
+            skipped=plan.skipped,
+            remaining=plan.remaining,
+            preview={"token": token},
+        )
+
+    model = _held(step)
+    _recheck(caller, service.store, actor, Capability.MANAGE_USERS)
+    return model
+
+
+def confirm_import(caller, service, *, token, context):
+    """``users import-leaders --confirm``: the import review's **Apply**.
+
+    Refuses (``invalid``) a token that is not an import review, so a
+    ``users preview`` token cannot be applied here. Otherwise it records the
+    request as the page's Apply does, through ``confirm_users``' path, with
+    ``admin_cmd_users_import_leaders`` and the page's import audit events
+    (``user_leaders_import_requested`` and one ``user_leader_imported`` per
+    new user) in the request's own durable transaction. An import grants
+    only Ministry leader, so it is never high impact.
+    """
+    from django.core import signing
+
+    from .accounts.user_views import SALT
+
+    try:
+        extra = signing.loads(token, salt=SALT).get("extra") or {}
+    except (signing.BadSignature, AttributeError, TypeError, ValueError):
+        raise ValueError("The preview token is not valid.") from None
+    if extra.get("leader_import") is not True:
+        raise ValueError("The preview token is not an import of leaders.")
+    confirmed = confirm_users(
+        caller,
+        service,
+        token=token,
+        context=context,
+        command_action="ADMIN_CMD_USERS_IMPORT_LEADERS",
+    )
+    return LeaderImport(created=confirmed.created, request=confirmed.request)

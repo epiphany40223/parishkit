@@ -143,6 +143,10 @@ DESCRIPTIONS = {
         "An automation session confirmed a reviewed change to Admin portal "
         "users, which became a configuration request."
     ),
+    "admin_cmd_users_import_leaders": _(
+        "An automation session confirmed a reviewed import of ParishSoft "
+        "Ministry leaders as users, which became a configuration request."
+    ),
     "admin_cmd_delivery_refusal_clear": _(
         "An automation session cleared a refused email address after the "
         "Administrator confirmed verifying it, as the address's page does."
@@ -625,6 +629,15 @@ DESCRIPTIONS = {
     "user_names_looked_up": _(
         "An Administrator looked up the ParishSoft names for a new user's "
         "email address."
+    ),
+    "user_leaders_listed": _(
+        "An Administrator listed the ParishSoft Ministry leaders who aren't users yet."
+    ),
+    "user_leaders_import_requested": _(
+        "An Administrator asked to import ParishSoft Ministry leaders as users."
+    ),
+    "user_leader_imported": _(
+        "A ParishSoft Ministry leader was imported as a Ministry leader user."
     ),
     "system_logs_exported": _("An Administrator downloaded the system logs."),
     "export_cancelled": _("A report download was cancelled."),
