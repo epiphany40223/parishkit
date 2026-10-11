@@ -218,10 +218,13 @@ def test_the_saved_report_shows_the_response_funnel(
     page.goto(component_origin + "/daily-digest-funnel")
     funnel = page.locator("[data-digest-funnel]")
     visible(funnel.get_by_role("heading", name="Response funnel"))
-    assert funnel.locator("tbody tr").count() == 5
+    # Four stages: "Link followed" is left out (#1016).
+    assert funnel.locator("tbody tr").count() == 4
     text = funnel.inner_text()
-    assert "includes mail-scanner prefetches" in text and "40%" in text
-    assert "Submitted more than once" in text
+    assert "Email invites sent" in text and "40%" in text
+    assert "Compared with email invites sent" in text
+    assert "Link followed" not in text and "mail-scanner" not in text
+    assert "Submitted more than once" in text and "7 (2% of Submitted)" in text
     assert "already responded" not in text and "Families at each stage" not in text
     assert "without a delivered invitation" not in text
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")

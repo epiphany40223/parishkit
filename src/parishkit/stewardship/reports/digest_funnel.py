@@ -1,12 +1,13 @@
 """The response funnel in the daily digest (#477, PR 7 slice 1).
 
 The digest states every figure as of the end of its report day (#721), so
-its funnel is the same five stages as the Response dashboard
-(``response_metrics``), counted at that instant, with one of the dashboard's
-side figures. The Administrator trimmed the digest (#969): it has no caption
-and leaves out "Invitations not sent (already responded)" and "Submitted
+its funnel is the Response dashboard's (``response_metrics``), counted at
+that instant, with one of the dashboard's side figures. The Administrator
+trimmed the digest (#969, #1016): it has no caption, leaves out the "Link
+followed" stage, "Invitations not sent (already responded)" and "Submitted
 without a delivered invitation", which stay on the dashboard and in
-``pk-admin report responses``. The funnel reads
+``pk-admin report responses``, and names its first stage "Email invites
+sent". The funnel reads
 durable timestamps only, so counting it again later gives the same numbers:
 the compiling worker counts it for the email and the saved report page
 counts it again when it is opened, the way both read the ParishSoft data age
@@ -61,29 +62,55 @@ def digest_funnel(campaign_id, mode, as_of):
     return response_metrics(ResponseScope(campaign_id), as_of)
 
 
+# The stages the digest shows, in funnel order. "Link followed" is left out
+# (#1016): a mail scanner's prefetch counts the same as a Family's click, so
+# the Administrator found it more confusing than useful. It stays on the
+# Response dashboard and in ``pk-admin report responses``.
+DIGEST_STAGES = ("invited", "form_opened", "progressed", "submitted")
+# The digest's own stage names where they differ from the dashboard's. The
+# Administrator renamed "Invited" (#1016) so it no longer reads as every
+# Family of the campaign: it counts Families sent an email invitation, which
+# is why it can be smaller than the Campaign totals' Families.
+DIGEST_LABELS = {"invited": "Email invites sent"}
+
+
 def stage_rows(metrics):
-    """Each stage as (label, count, share of Invited, note) for display."""
+    """Each digest stage as (label, count, share of the first stage, note)."""
     if not isinstance(metrics, ResponseMetrics):
         raise TypeError("A digest funnel needs response metrics.")
     invited = metrics.stage("invited")
     return tuple(
         (
-            STAGE_LABELS[stage.key],
+            DIGEST_LABELS.get(stage.key, STAGE_LABELS[stage.key]),
             stage.count,
             share(stage.count, invited),
             stage.note,
         )
         for stage in metrics.stages
+        if stage.key in DIGEST_STAGES
     )
 
 
 def figure_rows(metrics):
-    """The digest's figures beside the funnel, as (label, count).
+    """The digest's figures beside the funnel, as (label, count, whole, portion).
 
-    Only "Submitted more than once" (#969); the other dashboard figures are
-    left out of the digest but still counted in ``ResponseMetrics``.
+    Only "Submitted more than once" (#969), shown like a funnel line with a
+    share (#1016): its share of the Families that submitted, which
+    ``portion`` names ("2% of Submitted") because it is not the funnel's
+    share of email invites sent. ``whole`` is what its bar is drawn against.
+    The other dashboard figures are left out of the digest but still counted
+    in ``ResponseMetrics``.
     """
-    return (("Submitted more than once", metrics.submitted_again),)
+    submitted = metrics.stage("submitted")
+    again = metrics.submitted_again
+    return (
+        (
+            "Submitted more than once",
+            again,
+            submitted,
+            f"{share(again, submitted)} of {STAGE_LABELS['submitted']}",
+        ),
+    )
 
 
 def funnel_text(metrics):
@@ -94,5 +121,8 @@ def funnel_text(metrics):
         for label, count, portion, note in stage_rows(metrics)
     ]
     lines.append("")
-    lines += [f"{label}: {count:,}" for label, count in figure_rows(metrics)]
+    lines += [
+        f"{label}: {count:,} ({portion})"
+        for label, count, _whole, portion in figure_rows(metrics)
+    ]
     return "\n".join(lines)
