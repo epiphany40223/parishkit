@@ -50,6 +50,7 @@ when it lands.
   [prerequisite gates](#prerequisite-gates),
   [field errors and live checks](#field-errors-and-live-checks),
   [Review, Apply and Change status](#review-apply-and-change-status),
+  [review dialog](#review-dialog),
   [conditional fields](#conditional-fields),
   [single-campaign interim](#single-campaign-interim),
   [addresses and legacy URLs](#addresses-and-legacy-urls),
@@ -455,9 +456,13 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   status line: if it brings back a new key change in progress (another
   Administrator started one), the settings form and notes below it keep the
   state the page was loaded with until the next load.
-- **In-place review (#532, #750).** Parish settings, Campaign settings,
-  Share options and Campaign Ministries review, apply and follow a change on
-  the page itself, not on separate Review and Change status pages. The settings form is a `form[data-in-place]` marked
+- **In-place review (#532, #750).** This panel is being replaced by the
+  [review dialog](#review-dialog) (Administrator decision, 2026-10-11); it
+  describes the pages that still use it until issue 750 converts them.
+  Parish settings, Campaign settings, Share options and Campaign
+  Ministries review, apply and follow a change on the page itself, not on
+  separate Review and Change status pages. The settings form is a
+  `form[data-in-place]` marked
   `data-table-sync`: its answer fills the review region under it, while the
   form keeps the reader's typing and every script bound to it and takes only
   its hidden fields (the version it edits) from the answer. The review shows
@@ -714,7 +719,9 @@ browser restores are not mistaken for them; once this page's change is
 applied, the reviewed values are the saved ones while the form itself is
 kept, and after an applied change a redrawn form compares with its new
 defaults. The hint keeps its space while hidden, so it never moves the page.
-The server still refuses an unchanged Review ("No settings have changed.").
+The server still refuses an unchanged Review ("No settings have changed."),
+only as a safeguard for requests that bypass the page script: no page draws
+a "nothing has changed" state ([review dialog](#review-dialog)).
 Gates that share a button release it only when none of them holds it, and
 never enable a button the server drew disabled (marked
 `data-server-disabled`, so a disabled state Firefox restores on a reload
@@ -814,11 +821,125 @@ running indicator with a plain final "Status unavailable" message
 (`template[data-live-refused]`, `live-status-v1.js`), and a table's Delete
 dialog says the change was saved but its status can't be checked (#952).
 
-Current state, to be made consistent: Parish settings, Campaign settings,
-Share options, Campaign Ministries, Ministries, No-reminders WorkGroup, Campaign
-images and Parish logos review, apply and follow the change in place
-([in-place review](#in-place-controls), #532, #750); every other editor still
-uses its separate Review and Change status pages.
+Review and Apply happen in the shared [review dialog](#review-dialog)
+(Administrator decision, 2026-10-11), which says how every editor's Review
+opens, applies, refuses and follows its change.
+
+### Review dialog
+
+**Rule.** Every Admin editor reviews and applies its change in one shared
+modal dialog over the page: **Review changes** opens the dialog with the
+change and its impact, the dialog offers **Apply** and **Cancel**, and Apply's
+progress and outcome show inside it. Once the change is applied the dialog
+closes, the page refreshes in place and a short status line stays under the
+form. Review changes is unavailable until the form holds a real change, so no
+page ever says that nothing has changed. **Why.** One way to review and apply
+across the portal, instead of some editors using a second screen and others a
+panel under the form; the reader stays on the page and never loses their
+place, and a dialog keeps the form from changing while its review is shown.
+**Shared code.** The [confirmation dialog](#row-actions-and-confirmation)
+(`components/confirm-dialog.html` and `data-confirm-open` in `ui-v1.js`),
+extended to show a server-drawn review; the change gate
+(`data-require-change`) and `components/review-changes-button.html`
+([prerequisite gates](#prerequisite-gates)); the configuration-change request
+path and Change status's passive read (`live-status-v1.js`). **Precedent.**
+Administrator decision, 2026-10-11, on
+[#750](https://github.com/epiphany40223/parishkit/issues/750), which replaces
+the in-place review panel of #532 and the separate Review and Change status
+pages.
+
+An editor is an Admin page whose form changes configuration or saved data
+through Review and Apply: a settings page, a list editor, a New or Edit page,
+an upload editor, or a table's bulk action that is reviewed before it is
+applied. Each feature specification says what its own Review shows; this
+section says how every Review behaves.
+
+- **Review is available only for a real change.** Review changes is
+  unavailable until the form differs from the saved values, and unavailable
+  again when the reader's edits return to them, with the gate's short hint
+  after the button ([prerequisite gates](#prerequisite-gates)). A table's
+  bulk Review action is likewise unavailable until the selection would change
+  something (for example, Review activation while every ticked row is already
+  active), with its reason in the bulk bar's reserved line. No page draws a
+  "nothing has changed" review, refusal, heading or page. The server still
+  refuses an unchanged Review, as a safeguard for requests that bypass the
+  page script.
+- **Opening the dialog.** Review changes posts the form without a page load
+  and says it is working while the review is prepared; the answer opens the
+  dialog. Its title names the change ("Review Parish settings"), and its body
+  shows the review the feature specification describes: each changed value
+  with its current and proposed value, and the change's notes and impact
+  (affected Families, counts, a generated preview). A field the server
+  refuses opens the dialog with an error summary, each item linked to its
+  field; following a link closes the dialog and moves focus to that field,
+  which is marked as the [field errors](#field-errors-and-live-checks)
+  convention says.
+- **While the dialog is open** it is a native modal `<dialog>`: the rest of
+  the page, the form included, is inert and cannot be edited, and Tab stays
+  inside the dialog. So the review shown is always the review of the form as
+  it stands, and no edit ever has to withdraw it. Escape or Cancel closes the
+  dialog, changes nothing, and returns focus to Review changes.
+- **Apply** posts the dialog's signed preview without a page load. The
+  dialog shows the change's progress in its reserved status line below the
+  buttons (Applying…, then Applied), polled from Change status's passive
+  read, which never renews idle time. Once the change is applied the dialog
+  closes, every region of the page is redrawn in place from the page's own
+  address at the version the change made (no reload, no jump to the top),
+  and focus moves to the status line under the form, which says what was
+  applied and when ("Applied at 3:42 PM."). That line has its space
+  reserved, so it never moves a control ([no layout
+  shift](#no-layout-shift)). Once the request is recorded, Close may dismiss
+  a dialog whose change is still applying; the status line then follows the
+  change, and the page refreshes in place when it is applied.
+- **Refusals stay in the dialog.** A Review or Apply refused because the
+  settings changed elsewhere (another tab or another Administrator), an
+  out-of-date or expired preview, a change that failed to apply or was
+  refused when it ran (`stale_base`), a lock held by background work, or any
+  other refusal is shown inside the dialog, below its buttons so they never
+  move, with the server's explanation and fix (such as reloading to start
+  from the current settings). The page behind is not redrawn, and the form
+  keeps the reader's values at the version they came from, never the current
+  one, so a stale page can never quietly propose undoing a change made
+  elsewhere. A refusal that needs a fresh sign-in offers **Confirm with
+  Google** and its step-up page, as it does today.
+- **Uploads.** In an upload editor (Campaign images, Parish logos), choosing
+  the file and selecting Review uploads it as the first step of Review: the
+  server stages it and the dialog shows its preview (each generated size, the
+  image as Families will see it). Cancel leaves the staged file to expire
+  unused; a refused upload (wrong type, too large) is shown in the dialog.
+- **Long reviews scroll inside the dialog.** The dialog fits the window at
+  every width the portal supports, phones included
+  ([devices and browsers](#devices-and-browsers)); its body scrolls while
+  its title and its Apply and Cancel buttons stay in view.
+- **Unchanged guarantees.** The signed preview and its
+  [lifetime](../admin-portal/spec.md#preview-lifetimes), optimistic
+  concurrency, the capability and session rechecks under the work lock, the
+  durable configuration-change request and its audit are the same whichever
+  way the review is shown.
+
+Recorded exceptions (Administrator decision, 2026-10-11):
+
+- **The setup wizard** keeps its stepwise Next and Back, with its own review
+  step ([Bootstrap and first-Admin
+  wizard](../admin-portal/spec.md#bootstrap-and-first-admin-wizard)).
+- **Integrations' slow key install** shows its status inside the
+  Integrations page while the key is installed, not in a dialog or on a
+  second page ([#456](https://github.com/epiphany40223/parishkit/issues/456)).
+  Integrations' other changes use the dialog.
+
+Operational actions that are not editors (going live, Confirm Production,
+cancelling go-live, pausing and resuming mail, fixing many emails at once,
+test email sends, a manual ParishSoft refresh, Family portal maintenance) keep
+the flows their own sections describe; whether any of them moves to the
+dialog is decided on #750.
+
+Current state, to be converted: no page uses the dialog yet. Parish
+settings, Campaign settings, Share options, Campaign Ministries,
+Ministries, No-reminders WorkGroup, Campaign images and Parish logos show the
+in-place review panel of #532 and #750
+([in-place controls](#in-place-controls)); every other editor still uses
+its separate Review and Change status pages. Issue #750 tracks the
+conversion.
 
 ### Conditional fields
 
