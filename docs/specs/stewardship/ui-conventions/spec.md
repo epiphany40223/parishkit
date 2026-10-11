@@ -793,8 +793,9 @@ running indicator with a plain final "Status unavailable" message
 (`template[data-live-refused]`, `live-status-v1.js`), and a table's Delete
 dialog says the change was saved but its status can't be checked (#952).
 
-Current state, to be made consistent: Parish settings, Campaign settings, Share
-options and Campaign Ministries review, apply and follow the change in place
+Current state, to be made consistent: Parish settings, Campaign settings,
+Share options, Campaign Ministries, Ministries, Reminder WorkGroup, Campaign
+images and Parish logos review, apply and follow the change in place
 ([in-place review](#in-place-controls), #532, #750); every other editor still
 uses its separate Review and Change status pages.
 
