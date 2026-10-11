@@ -4,6 +4,17 @@ from django.db import models
 
 from parishkit.stewardship.storage import MutableRecord, UTCDateTimeField
 
+# Each state a setup test email can be in; its audit types (``setup_mail_``
+# plus a state, ``audit.log_descriptions.BUILT_TYPES``) read the same list.
+SETUP_MAIL_STATES = (
+    "queued",
+    "submitting",
+    "accepted",
+    "not_sent",
+    "delivery_unknown",
+    "cancelled",
+)
+
 
 class SetupMailDelivery(MutableRecord):
     """Pin an explicit test to one draft, key revision, recipient and Task root.
@@ -79,16 +90,7 @@ class SetupMailDelivery(MutableRecord):
                 name="setup_mail_digest_shape",
             ),
             models.CheckConstraint(
-                condition=models.Q(
-                    state__in=[
-                        "queued",
-                        "submitting",
-                        "accepted",
-                        "not_sent",
-                        "delivery_unknown",
-                        "cancelled",
-                    ]
-                ),
+                condition=models.Q(state__in=list(SETUP_MAIL_STATES)),
                 name="setup_mail_known_state",
             ),
             models.CheckConstraint(

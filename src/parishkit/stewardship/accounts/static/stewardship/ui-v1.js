@@ -2438,12 +2438,20 @@
   //
   // A number field's rule compares numbers, as the server reads them, so
   // "04321" matches a saved 4321; an empty number field matches no number.
+  // Every gate (show, enabled and required) compares this way.
   // While the rule's own control is missing or invalid (an emptied
   // organization ID), the rule waits: that control's hint comes first.
   const sameValue = (control, value) => (control instanceof HTMLInputElement
     && control.type === "number" && value !== ""
     ? control.value.trim() !== "" && Number(control.value) === Number(value)
     : ruleValue(control) === value);
+  // A rule's value may list alternatives separated by "|": "activity=a|b"
+  // holds while the control has either value, and "activity=|a" while it is
+  // empty or a (the System logs level boxes, enabled for all activity and
+  // for the Activity groups with operational entries, #953). A negated rule
+  // "activity!=a|b" holds while the control has none of them.
+  const anyValue = (control, values, same) => values.split("|")
+    .some((value) => same(control, value));
   const requiredWhen = (form) => {
     form.querySelectorAll("[data-required-when]").forEach((node) => {
       const rule = node.dataset.requiredWhen;
@@ -2454,7 +2462,7 @@
       // group (RadioNodeList) has no validity of its own.
       node.required = Boolean(control) && !control.disabled
         && control.validity?.valid !== false
-        && sameValue(control, value) !== negated;
+        && anyValue(control, value, sameValue) !== negated;
     });
   };
   const requireOne = (form) => {
@@ -2554,7 +2562,7 @@
       const update = () => {
         // A control outside a swapped region outlives the marks it served.
         if (!node.isConnected) return;
-        const shown = (ruleValue(control) === value) !== negated;
+        const shown = anyValue(control, value, sameValue) !== negated;
         if (hides) wrapper.hidden = !shown;
         // A hidden field is not sent, so an error marked on it no longer
         // applies: it clears, with its message and summary item.

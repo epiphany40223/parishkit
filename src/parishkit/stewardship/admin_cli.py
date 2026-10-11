@@ -2021,7 +2021,7 @@ def _delivery_resolve_options(parser):
 LOG_KINDS = ("debug", "info", "warning", "error", "critical", "audit")
 # The page's Activity groups (#953, ``audit.log_rows.ACTIVITY_TYPES``),
 # spelled out for the same reason; a test keeps them equal to the page's.
-LOG_ACTIVITIES = ("sign_in",)
+LOG_ACTIVITIES = ("configuration", "family_mail", "parishsoft", "sign_in")
 
 
 def _log_filter_options(parser):
@@ -2036,8 +2036,12 @@ def _log_filter_options(parser):
     parser.add_argument(
         "--activity",
         choices=LOG_ACTIVITIES,
-        help="a fixed group of audit types listed together, as the page's "
-        "Activity choice (sign_in: every Admin portal sign-in event)",
+        help="a fixed group of types listed together, as the page's Activity "
+        "choice: sign_in (every Admin portal sign-in event) or configuration "
+        "(settings, schedule, user, file and key changes), both audit records "
+        "only; family_mail (outgoing email steps, resolutions, pauses, tests "
+        "and provider failures) or parishsoft (refreshes, quick updates, "
+        "failures and holds)",
     )
     parser.add_argument("--event", metavar="TYPE", help="one event type, exactly")
     parser.add_argument("--actor", type=_uuid, help="the acting user or process")

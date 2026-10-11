@@ -1,5 +1,6 @@
 """The Administrator-only combined log screen under the real web database role."""
 
+import csv
 import io
 import json
 import re
@@ -17,7 +18,11 @@ from openpyxl import load_workbook
 from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit import log_reads, log_search, log_views
-from parishkit.stewardship.audit.log_rows import DETAIL_FIELDS, DETAIL_LIMIT
+from parishkit.stewardship.audit.log_rows import (
+    ACTIVITY_TYPES,
+    DETAIL_FIELDS,
+    DETAIL_LIMIT,
+)
 from parishkit.stewardship.audit.models import (
     AuditContext,
     AuditEvent,
@@ -1114,3 +1119,91 @@ def test_sign_in_activity_lists_every_admin_sign_in_type_together(auth_service, 
         assert {record["source"] for record in records} == {"Audit"}
     # Each view and the download were audited as before, with counts only.
     assert {"outcome": "succeeded", "count": 7} in views()
+
+
+def listed_types(response):
+    """Each listed entry's stored type, top to bottom."""
+    return re.findall(
+        r"<td>([a-z_]+)<br><span class=\"help\">", response.content.decode()
+    )
+
+
+def test_activity_groups_list_their_own_audit_and_operational_types(
+    auth_service, google
+):
+    """Configuration changes, Family mail and ParishSoft refreshes (#953)
+    each list their own types and nothing else, newest first. The two with
+    operational members list those at the ticked levels too; Configuration
+    changes is audit records only. The CSV and JSON Lines downloads hold
+    exactly the page's entries."""
+    browser, _ = signed_in()
+    written = [
+        ("ERROR", Event.SOURCE_PROVIDER_FAILED),
+        ("audit", "configuration_requested"),
+        ("audit", "outbox_submit"),
+        ("CRITICAL", Event.MAIL_PROVIDER_FAILED),
+        ("audit", "source_promoted"),
+        # In no group: a failed task, whatever it was.
+        ("ERROR", Event.TASK_FAILED),
+        ("audit", "roles_applied"),
+        ("audit", "delivery_resolution_resend"),
+        ("INFO", Event.SOURCE_HELD),
+        ("audit", "source_fallback_requested"),
+        ("audit", "dashboard_viewed"),
+    ]
+    for level, event in written:
+        if level == "audit":
+            AuditEvent.objects.create(event_type=event)
+            continue
+        # Written directly, as the schema owner: only the type and level
+        # matter here, not each writer's own detail.
+        with schema_owner():
+            OperationalLog.objects.create(
+                level=level, event=event.value, schema="failure", context={}
+            )
+    every = {key: "yes" for key in ("applied", "info", "error", "critical", "audit")}
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        configuration = post(browser, every | {"activity": "configuration"})
+        # Signing in set up the deployment, whose own settings records
+        # follow, older; every one is a configuration change.
+        listed = listed_types(configuration)
+        assert listed[:2] == ["roles_applied", "configuration_requested"]
+        assert set(listed) <= set(ACTIVITY_TYPES["configuration"])
+        # Audit records only: the levels are ignored, and without Audit
+        # record the empty table says to tick it.
+        assert levels(configuration) == []
+        alone = post(
+            browser, {"applied": "yes", "error": "yes", "activity": "configuration"}
+        )
+        assert b"This activity is made of audit records only" in alone.content
+        mail = post(browser, every | {"activity": "family_mail"})
+        assert listed_types(mail) == [
+            "delivery_resolution_resend",
+            "mail_provider_failed",
+            "outbox_submit",
+        ]
+        parishsoft = post(browser, every | {"activity": "parishsoft"})
+        expected = [
+            "source_fallback_requested",
+            "source_refresh_held",
+            "source_promoted",
+            "source_provider_failed",
+        ]
+        assert listed_types(parishsoft) == expected
+        assert levels(parishsoft) == ["info", "error"]
+        # The level choices apply to the group's operational entries, and a
+        # group with them needs no Audit record tick.
+        failures = post(
+            browser, {"applied": "yes", "error": "yes", "activity": "parishsoft"}
+        )
+        assert listed_types(failures) == ["source_provider_failed"]
+        # A bookmarkable GET carries the group.
+        linked = browser.get(URL, every | {"activity": "parishsoft"})
+        assert listed_types(linked) == expected
+        # Both downloads hold exactly the page's entries.
+        csv_file = export(browser, every | {"activity": "parishsoft"})
+        rows = list(csv.DictReader(io.StringIO(csv_file.content.decode())))
+        assert [row["type"] for row in rows] == expected
+        lines = export(browser, every | {"activity": "parishsoft", "format": "jsonl"})
+        records = [json.loads(line) for line in lines.content.decode().splitlines()]
+        assert [record["type"] for record in records] == expected
