@@ -69,6 +69,9 @@ Implementation tracking: [plans](../../plans/stewardship/README.md) and
 - [Admin automation interface](admin-automation/spec.md): the host
   `pk-stewardship admin` command line that reaches every Admin portal action
   and read under the same authorization, previews and audit as the pages.
+- [Campaign history and comparison](campaign-history/spec.md): the
+  campaign archive workbook format, importing past campaigns, and the
+  day-by-day comparison of the current campaign with them.
 - [Local laptop environment](local-environment/spec.md): the
   production-shaped `local` profile in a Lima VM, with a mail catcher, fake
   ParishSoft, synthetic parish, seeded campaign and local test sign-in.
