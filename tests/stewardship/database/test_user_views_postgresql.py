@@ -12,18 +12,19 @@ from uuid import uuid4
 
 import psycopg
 import pytest
-from django.db import connection
+from django.db import DatabaseError, connection
 
 from parishkit.stewardship.accounts import user_views
+from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.accounts.policy_models import PolicySecurityEvent, PortalUser
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
-from parishkit.stewardship.accounts.user_changes import member_names
+from parishkit.stewardship.accounts.user_changes import LookupLimited, member_names
 from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.deployment import ServiceRole
 
 from ..policy_factory import address
-from .auth_builders import signed_in
+from .auth_builders import signed_in, unguarded
 from .leader_builders import grant_role
 from .test_background_grants_postgresql import task_login
 from .user_builders import (
@@ -412,10 +413,29 @@ def test_name_lookup_checks_the_address_and_suggests_names(converted):
         assert post(browser, NAMES + "?email=x", {"email": "x"}).status_code == 400
     # The web login runs the definer itself; it holds no Member grant.
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        assert member_names("shared@example.org") == [
+        assert member_names(live_key(), "shared@example.org") == [
             "Example 1, Leader",
             "Example 0, Leader",
         ]
+
+
+def live_key(email="admin@example.org"):
+    """The Django session key of this address's live Admin session."""
+    return (
+        PortalSession.objects.filter(
+            revoked_at=None, principal_id=PortalUser.objects.get(email=email).id
+        )
+        .latest("authenticated_at")
+        .session_id
+    )
+
+
+def lookups(email="admin@example.org"):
+    """The Name lookup audit events recorded for this address's user."""
+    return AuditEvent.objects.filter(
+        event_type="user_names_looked_up",
+        actor_id=PortalUser.objects.get(email=email).id,
+    )
 
 
 def test_the_name_lookup_definer_is_installed_as_declared():
@@ -433,7 +453,110 @@ def test_the_name_lookup_definer_is_installed_as_declared():
         task_login(ServiceRole.WORKER, exact=True, reconnect=True),
         pytest.raises(Exception, match="permission denied"),
     ):
-        member_names("x@example.org")
+        member_names("no-session", "x@example.org")
+
+
+def test_the_definer_answers_only_a_live_administrator_session(converted):
+    """No key, a made-up key or an ended session: refused, nothing audited."""
+    from django.utils import timezone
+
+    store, _browser = converted
+    key = live_key()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        for refused in (None, "", "not-a-session-key", "x" * 40):
+            with pytest.raises(DatabaseError, match="live Administrator session"):
+                member_names(refused, "x@example.org")
+        assert member_names(key, "x@example.org") == []
+    assert lookups().count() == 1
+    # A revoked session no longer answers, even under the owner.
+    with unguarded():
+        PortalSession.objects.filter(session_id=key).update(revoked_at=timezone.now())
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        pytest.raises(DatabaseError, match="live Administrator session"),
+    ):
+        member_names(key, "x@example.org")
+    assert lookups().count() == 1
+
+
+def test_a_staff_session_is_refused(auth_service, google):
+    """Staff has a live Admin session but is not an Administrator."""
+    grant_role(auth_service.store, "reader@example.org", "staff")
+    convert(auth_service.store)
+    google[0]["email"] = "reader@example.org"
+    _browser, login = signed_in()
+    assert login.status_code == 302
+    key = live_key("reader@example.org")
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        pytest.raises(DatabaseError, match="live Administrator session"),
+    ):
+        member_names(key, "x@example.org")
+    assert lookups("reader@example.org").count() == 0
+
+
+def test_each_lookup_is_audited_and_the_61st_in_an_hour_refused(converted):
+    """One audit event per lookup, by count; 60 an hour per Administrator."""
+    from datetime import timedelta
+
+    _store, _browser = converted
+    key = live_key()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        for number in range(60):
+            assert member_names(key, f"person{number}@example.org") == []
+        with pytest.raises(LookupLimited):
+            member_names(key, "one-more@example.org")
+    events = lookups()
+    assert events.count() == 60
+    contexts_found = AuditContext.objects.filter(event__in=events)
+    assert {(item.actor_kind, item.schema) for item in contexts_found} == {
+        ("portal_user", "action")
+    }
+    assert {json.dumps(item.context, sort_keys=True) for item in contexts_found} == {
+        '{"count": 0, "outcome": "succeeded"}'
+    }
+    # Never the address, in the event or its context.
+    assert "@" not in str(list(events.values())) + str(
+        list(contexts_found.values_list("context", flat=True))
+    )
+    # Lookups older than an hour no longer count. The audit log is append
+    # only, so the oldest event is aged as only the owner could.
+    oldest = events.order_by("created_at").first()
+    with unguarded(), connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE stewardship_audit_event SET created_at=created_at-%s WHERE id=%s",
+            [timedelta(hours=1, minutes=1), oldest.id],
+        )
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        assert member_names(key, "after@example.org") == []
+        with pytest.raises(LookupLimited):
+            member_names(key, "one-more@example.org")
+
+
+def test_the_page_limits_lookups_and_fails_closed(converted, monkeypatch):
+    """The page's per-minute window answers 429; no limiter answers 503."""
+    from parishkit.stewardship.accounts.authentication import runtime
+    from parishkit.stewardship.accounts.limiting import LimiterUnavailable
+
+    _store, browser = converted
+    statuses = []
+    with web():
+        for number in range(user_views.LOOKUP_LIMIT):
+            statuses.append(
+                post(browser, NAMES, {"email": f"p{number}@example.org"}).status_code
+            )
+    assert statuses == [200] * (user_views.LOOKUP_LIMIT - 1) + [429]
+    assert lookups().count() == user_views.LOOKUP_LIMIT - 1
+
+    def unavailable(*_args, **_kwargs):
+        """The limiter's store is down."""
+        raise LimiterUnavailable("Authentication is temporarily unavailable.")
+
+    monkeypatch.setattr(runtime().limiter, "counters", unavailable)
+    with web():
+        response = post(browser, NAMES, {"email": "down@example.org"})
+    assert response.status_code == 503
+    assert lookups().count() == user_views.LOOKUP_LIMIT - 1
 
 
 def test_an_added_user_signs_in_with_its_role(converted, google):

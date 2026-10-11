@@ -82,7 +82,7 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         LEADER_SCOPE_FUNCTION,
         "stewardship_portal_identities_v1()",
         "stewardship_member_names_v1()",
-        "stewardship_member_names_for_v1(text)",
+        "stewardship_member_names_for_v1(text, text, uuid)",
     }
     # The worker's definer routines purge ended Admin sessions (ADM-11),
     # count an export's read-guard stops (#386) and read a user's

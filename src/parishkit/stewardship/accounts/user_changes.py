@@ -23,10 +23,11 @@ import json
 from dataclasses import dataclass
 from uuid import UUID, uuid4
 
-from django.db import connection
+from django.db import DatabaseError, connection, transaction
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.observability import current_correlation
 
 from .policy_schema import normalized_email
 from .users_schema import NAME_LIMIT, ROLE_LEVELS, valid_name
@@ -279,20 +280,40 @@ def only_administrator(users, identifier):
     return administrator_ids(users) == {identifier}
 
 
-def member_names(email):
+class LookupLimited(RuntimeError):
+    """The Administrator has used up the hourly Name lookups (SQLSTATE 53400)."""
+
+
+# The SQLSTATE stewardship_member_names_for_v1 refuses with past its limit.
+LOOKUP_LIMITED = "53400"
+
+
+def member_names(session_key, email):
     """The ordered, distinct ParishSoft Member names that list this address.
 
     Read through the ``stewardship_member_names_for_v1`` definer (migration
     0053), which matches the address trimmed and case-insensitively and
     returns only names, best first: a Member of an active Family, then a head
-    of household, then by name and Member DUID. Names the users schema would
-    refuse are left out, so the first one is always usable as a default.
+    of household, then by name and Member DUID. The definer itself refuses
+    unless ``session_key`` is a live Admin session of a current
+    Administrator (a ``DatabaseError``), refuses past 60 lookups an hour for
+    that Administrator (``LookupLimited``), and records the lookup's audit
+    event, with the count of names but never the address. Call it inside
+    the transaction that owns the request's effects. Names the users schema
+    would refuse are left out, so the first one is always usable as a
+    default.
     """
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT public.stewardship_member_names_for_v1(%s)::text", [email]
-        )
-        (value,) = cursor.fetchone()
+    try:
+        with transaction.atomic(), connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT public.stewardship_member_names_for_v1(%s, %s, %s)::text",
+                [session_key, email, current_correlation()],
+            )
+            (value,) = cursor.fetchone()
+    except DatabaseError as error:
+        if getattr(error.__cause__, "sqlstate", None) == LOOKUP_LIMITED:
+            raise LookupLimited("Too many Name lookups this hour.") from None
+        raise
     names = []
     for name in json.loads(value or "[]"):
         try:
