@@ -440,14 +440,11 @@ def test_recovery_works_before_during_and_after_the_conversion(tmp_path, monkeyp
     sessions(*ADMINS, "early@example.org", "middle@example.org", "late@example.org")
 
 
-def test_the_backup_admits_a_database_with_only_the_swap_pending(
-    tmp_path, monkeypatch, capsys
-):
-    """A repeated deploy's step-1 backup runs between the two migrations (#952).
+def backup_command(monkeypatch, run_backup):
+    """Run `backup` in this process with ``run_backup`` standing in for the set.
 
-    The schema check is the real one: with only the swap pending the backup
-    records its set, whose manifest lists every applied migration but the
-    swap, so it restores exactly that state.
+    Process admission, the interlock, the identity check and the off-site
+    copy are stubbed (covered elsewhere); the schema check is the real one.
     """
     from contextlib import nullcontext
 
@@ -458,6 +455,33 @@ def test_the_backup_admits_a_database_with_only_the_swap_pending(
         runtime_paths,
         startup_interlock,
     )
+
+    monkeypatch.setattr(backup_commands, "configure_logging", lambda: None)
+    monkeypatch.setattr(backup_commands, "load_deployment", lambda path: None)
+    monkeypatch.setattr(backup_commands, "_admit_backup_identity", lambda: None)
+    monkeypatch.setattr(backup_commands, "_copy_offsite", lambda c: {"state": "x"})
+    monkeypatch.setattr(backup_boundaries, "admit_backup_service", lambda c: None)
+    monkeypatch.setattr(
+        operator_commands, "configure_operator_database", lambda c: None
+    )
+    monkeypatch.setattr(
+        runtime_paths, "RuntimeLayout", lambda c: SimpleNamespace(interlock=None)
+    )
+    monkeypatch.setattr(
+        startup_interlock, "StartupLease", lambda path, offline: nullcontext()
+    )
+    monkeypatch.setattr(backup, "run_backup", run_backup)
+
+
+def test_the_backup_admits_a_database_with_only_the_swap_pending(
+    tmp_path, monkeypatch, capsys
+):
+    """A repeated deploy's step-1 backup runs between the two migrations (#952).
+
+    The schema check is the real one: with only the swap pending the backup
+    records its set, whose manifest lists every applied migration but the
+    swap, so it restores exactly that state.
+    """
     from parishkit.stewardship.cli import main
 
     from .test_backup_postgresql import FACTS, backup_login
@@ -475,22 +499,128 @@ def test_the_backup_admits_a_database_with_only_the_swap_pending(
             "recipient_fingerprint": FACTS["recipient_fingerprint"],
         }
 
-    monkeypatch.setattr(backup_commands, "configure_logging", lambda: None)
-    monkeypatch.setattr(backup_commands, "load_deployment", lambda path: None)
-    monkeypatch.setattr(backup_commands, "_admit_backup_identity", lambda: None)
-    monkeypatch.setattr(backup_commands, "_copy_offsite", lambda c: {"state": "x"})
-    monkeypatch.setattr(backup_boundaries, "admit_backup_service", lambda c: None)
-    monkeypatch.setattr(
-        operator_commands, "configure_operator_database", lambda c: None
-    )
-    monkeypatch.setattr(
-        runtime_paths, "RuntimeLayout", lambda c: SimpleNamespace(interlock=None)
-    )
-    monkeypatch.setattr(
-        startup_interlock, "StartupLease", lambda path, offline: nullcontext()
-    )
-    monkeypatch.setattr(backup, "run_backup", run_backup)
+    backup_command(monkeypatch, run_backup)
     with swap_pending(), backup_login():
         assert main(["backup", "--config", "unused"]) == 0
     assert json.loads(capsys.readouterr().out)["backup_recorded"] is True
     assert listed and USERS_SWAP not in set(map(tuple, listed))
+
+
+@contextmanager
+def restored_copy():
+    """A restore of the test database as it is now, as a second database.
+
+    pg_dump and pg_restore are not on the test runner (and the CI runner's
+    cannot read a PostgreSQL 18 dump; test_restore_compare_postgresql.py),
+    so the server copies the database instead (CREATE DATABASE ... TEMPLATE):
+    every table row, function body and grant comes back as a restore brings
+    them back. While the context is open the test's connection uses the
+    copy; afterwards it is back on the test database and the copy is gone.
+    """
+    import psycopg
+
+    settings = connection.settings_dict
+    original = settings["NAME"]
+    copy = f"{original}_restored"
+    server = {
+        "host": settings["HOST"],
+        "port": settings["PORT"],
+        "user": settings["USER"],
+        "password": settings["PASSWORD"],
+        "dbname": "postgres",
+        "autocommit": True,
+    }
+    # A template copy needs no other session on its source.
+    connection.close()
+    with psycopg.connect(**server) as admin:
+        admin.execute(f'DROP DATABASE IF EXISTS "{copy}"')
+        admin.execute(f'CREATE DATABASE "{copy}" TEMPLATE "{original}"')
+    settings["NAME"] = copy
+    try:
+        yield
+    finally:
+        connection.close()
+        settings["NAME"] = original
+        with psycopg.connect(**server) as admin:
+            admin.execute(f'DROP DATABASE "{copy}" WITH (FORCE)')
+
+
+def test_a_swap_pending_backup_restores_into_the_same_state(
+    tmp_path, monkeypatch, capsys
+):
+    """Back up with only the swap pending, restore, and recover Admin access.
+
+    The set's manifest lists what the database had applied; restore-check,
+    against this image's real migration files, calls it swap_pending (exit
+    4), not a mismatch. The restored database is in the same state: only the
+    swap pending (the services' check refuses it, the recovery commands'
+    admits it) and the pre-swap function bodies installed. recover-admin
+    runs there, and the recovered Administrator opens an Admin session
+    through the restored pre-swap guard.
+    """
+    from parishkit.stewardship import restore_check
+    from parishkit.stewardship.cli import main
+
+    from .test_backup_postgresql import FACTS, backup_login
+
+    store, _, _ = initialized(tmp_path, rules())
+    deployment = str(SystemConfiguration.objects.get().pk)
+    manifest = tmp_path / "manifest.json"
+
+    def run_backup(configuration, *, record, migrations, recipient):
+        """Write the set's manifest as the backup does, and record the run."""
+        manifest.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "application_version": FACTS["application_version"],
+                    "image": "ghcr.io/example/stewardship@sha256:" + "c" * 64,
+                    "migrations": sorted([app, name] for app, name in migrations),
+                }
+            )
+        )
+        record(started_at=scalar("SELECT statement_timestamp()"), **FACTS)
+        return {
+            "database": {"plaintext_bytes": 1},
+            "files": {"plaintext_bytes": 1},
+            "recipient_fingerprint": FACTS["recipient_fingerprint"],
+        }
+
+    backup_command(monkeypatch, run_backup)
+    with swap_pending():
+        with backup_login():
+            assert main(["backup", "--config", "unused"]) == 0
+        assert json.loads(capsys.readouterr().out)["backup_recorded"] is True
+        # The restore: a copy of the database the set was taken from.
+        with restored_copy():
+            code, report = restore_check.check(manifest)
+            assert (code, report["result"]) == (
+                restore_check.SWAP_PENDING,
+                "swap_pending",
+            )
+            assert report["not_in_backup"] == sorted(
+                map(list, restore_check.image_swap_closure())
+            )
+            assert report["unknown_to_image"] == []
+            # The same pending state as before the backup.
+            with pytest.raises(ConfigError, match="do not match"):
+                runtime_database.require_current_schema()
+            runtime_database.require_current_schema(users_swap_pending=True)
+            assert (
+                scalar(
+                    "SELECT count(*) FROM django_migrations WHERE app=%s AND name=%s",
+                    list(USERS_SWAP),
+                )
+                == 0
+            )
+            assert all(reads_domain_rules(name) for name in REPLACED)
+            # Admin-access recovery works on the restored database.
+            configuration = offline_commands(monkeypatch, store)
+            with task_login(ServiceRole.ADMIN_RECOVERY):
+                assert recover(configuration, deployment, "restored@example.org")[
+                    "recovery_applied"
+                ]
+            portal = identity("restored@example.org", signed_in=False)
+            assert forge(portal.pk).principal_id == portal.pk
+    # The test database itself is back with the swap applied.
+    runtime_database.require_current_schema()
