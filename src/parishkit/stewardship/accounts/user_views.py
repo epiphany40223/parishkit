@@ -15,6 +15,10 @@ building its answer, so an Administrator demoted meanwhile is refused:
 - ``user_name_suggestions`` answers the New page's Email field in place: is
   the address valid and new, and which ParishSoft Members list it.
 
+Below the users table, ``users`` also draws the ParishSoft Ministry leaders
+who have no user yet, and its Apply records their import
+(``leader_import_views``, #952 slice 6).
+
 Nothing here edits configuration directly. Every change is one
 ``ConfigurationChangeRequest`` built by ``user_changes.plan_changes`` and
 recorded through ``admin_editing.confirm_intent``, which rechecks the
@@ -22,7 +26,9 @@ session, the capability and the applied version under the work lock; the
 installer activates it, and SQL repeats the last-Administrator guard and
 raises the security event when someone is made an Administrator. Each
 recorded change also gets a ``user_change_requested`` audit event naming the
-request, whose patch holds the address, Name and role.
+request, whose patch holds the address, Name and role; an import of
+ParishSoft leaders gets ``user_leaders_import_requested`` instead, and one
+``user_leader_imported`` per new user.
 
 An Administrator never demotes or deletes their own user here (Administrator
 decision, 2026-10-11): their row has no Delete, their Edit page offers only
@@ -67,6 +73,9 @@ from .admin_editing import (
     sign_preview,
 )
 from .authentication import runtime
+from .leader_import import imported_ids
+from .leader_import_views import PREFIX as LEADER_PREFIX
+from .leader_import_views import leaders_context
 from .limiting import Counter, LimiterUnavailable
 from .policy import Capability
 from .policy_models import PortalUser
@@ -91,7 +100,8 @@ from .users_schema import NAME_LIMIT, uses_users
 
 SALT = "stewardship-users-preview-v1"
 # The users table's query-string prefix, so the ParishSoft Ministry leaders
-# table that follows it (#952 slice 6) keeps its own place.
+# table that follows it (#952 slice 6, ``leader_import_views.PREFIX``) keeps
+# its own place.
 PREFIX = "users_"
 ERRORS = (
     ConfigError,
@@ -201,14 +211,18 @@ def _audit_change(actor):
 
     First the request's own own-Administrator check (``refuse_own_demotion``
     against the request's base), which rolls the request back with a plain
-    refusal. Then one audit event per recorded change: its subject is the
-    request, whose patch names the address, Name and role and whose base
-    names what they were; the context counts the users the change touches,
-    never an address (audit context holds no personal data).
+    refusal. Then one event names the request, whose patch names the
+    address, Name and role and whose base names what they were; the context
+    counts the users the change touches, never an address (audit context
+    holds no personal data). That event is ``user_change_requested``, or,
+    for a reviewed import of ParishSoft leaders (signed with
+    ``leader_import``), ``user_leaders_import_requested``, followed by one
+    ``user_leader_imported`` per new user, whose subject is that user's
+    record ID.
     """
 
     def attach(request, extra):
-        """Check, then record the event, in the request's own transaction."""
+        """Check, then record the events, in the request's own transaction."""
         try:
             refuse_own_demotion(
                 request.base.canonical_document["sections"]["login_rules"],
@@ -219,13 +233,25 @@ def _audit_change(actor):
             raise UserFacingError(
                 refused.message, fix=_("Nothing was changed.")
             ) from None
+        imported = bool((extra or {}).get("leader_import"))
         record_action(
-            Action.USER_CHANGE_REQUESTED,
+            Action.USER_LEADERS_IMPORT_REQUESTED
+            if imported
+            else Action.USER_CHANGE_REQUESTED,
             actor_kind=ActorKind.PORTAL_USER,
             actor_id=actor.identity,
             subject_id=request.pk,
             context={"outcome": Outcome.SUCCEEDED, "count": len(request.patch)},
         )
+        if imported:
+            for identifier in imported_ids(request.patch):
+                record_action(
+                    Action.USER_LEADER_IMPORTED,
+                    actor_kind=ActorKind.PORTAL_USER,
+                    actor_id=actor.identity,
+                    subject_id=identifier,
+                    context={"outcome": Outcome.SUCCEEDED},
+                )
 
     return attach
 
@@ -285,9 +311,11 @@ def users(request):
 
     The list is observed in one read-only snapshot and rendered after it, then
     the reader's access is rechecked and the view audited with the rows
-    shown, never an address or role. Apply records the signed review as one
-    configuration change and answers with its Change status page, which
-    returns here.
+    shown, never an address or role. The ParishSoft Ministry leaders table
+    below it is read through its definer, which audits itself
+    (``leader_import_views.leaders_context``). Apply records the signed
+    review (a user change, or an import of leaders) as one configuration
+    change and answers with its Change status page, which returns here.
     """
     try:
         service = runtime()
@@ -310,7 +338,11 @@ def users(request):
             _recheck(request, service, actor)
             response["Cache-Control"] = "no-store"
             return response
-        paging = filters(request.GET, allowed=set(table_parameters(PREFIX)))
+        paging = filters(
+            request.GET,
+            allowed=set(table_parameters(PREFIX))
+            | set(table_parameters(LEADER_PREFIX)),
+        )
         with read_transaction():
             configuration, records = _users(service)
             rows = user_list(records, policy_identities(records))
@@ -322,12 +354,15 @@ def users(request):
             table_rows(rows, saved, own),
             paging,
             prefix=PREFIX,
+            carry=_carried(paging, LEADER_PREFIX),
             sorting=USER_SORTING,
         )
+        leaders = leaders_context(request, paging, _carried(paging, PREFIX))
         response = render(
             request,
             "stewardship/users.html",
-            {
+            leaders
+            | {
                 "table": table,
                 "base_digest": configuration.active_configuration.digest,
                 "refresh_url": request.get_full_path(),
@@ -352,6 +387,11 @@ def users(request):
         return response
     except ERRORS as error:
         return error_response(error)
+
+
+def _carried(paging, prefix):
+    """The other table's place (its prefixed page, size and sort) to keep."""
+    return [(name, value) for name, value in paging.items() if name.startswith(prefix)]
 
 
 def recorded_identities(email):

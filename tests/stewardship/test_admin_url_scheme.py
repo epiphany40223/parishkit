@@ -362,8 +362,9 @@ def test_every_slashless_form_is_listed_once_and_expected():
 # Form actions posted only from their own page's script, at the reversed URL,
 # have no slashless form (slashless.SLASHLESS's rule): Delete scheduled emails
 # answers only the list's confirmation dialog (#878), as Delete user does
-# (#952).
-POSTED_ONLY = {"schedule_delete", "user_delete"}
+# (#952), and the Import Ministry leaders review answers only the leaders
+# table's form (#952 slice 6).
+POSTED_ONLY = {"schedule_delete", "user_delete", "user_leader_import"}
 
 
 def test_every_moved_page_has_its_slashless_form():

@@ -2420,9 +2420,14 @@ checks, audit and alerts:
 - `users import-leaders --preview` lists the ParishSoft Ministry leaders
   without a user, as the page's second table does (email, Name and Member
   DUID), and the import it would make; `--all` or repeated `--email` choose
-  whom. `users import-leaders --confirm --token …` applies that preview. Both
-  run the page's import code, so existing users are skipped and nobody gets
-  more than Ministry leader.
+  whom; with neither it only lists them. `users import-leaders --confirm
+  --token …` applies that preview, and refuses (`invalid`) a token that is
+  not an import review. Both run the page's import code, so existing users
+  are skipped and nobody gets more than Ministry leader. The leaders are
+  read under the command's own session, as the page reads them, so each
+  listing is audited and a session the definer refuses is `session_ended`.
+  The confirmation records `admin_cmd_users_import_leaders` and the page's
+  import audit events.
 
 These need a full-scope session, except `users list` and
 `users preview-upgrade`; none is fresh-gated, as the page asks for no fresh
