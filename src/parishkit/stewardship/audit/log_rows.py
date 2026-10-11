@@ -131,8 +131,9 @@ EVENTS = tuple(sorted({item.value for item in Action} | {item.value for item in 
 # - Configuration changes: settings requests through Review and Apply to
 #   applied, refused (``config_request_failed``) or cancelled, and what an
 #   applied change did to access; mail schedules and live campaign changes;
-#   portal user roles (and the operator's one-time conversion of sign-in
-#   rules into users); hosted files; stored key replacements (and each
+#   portal users and their roles, asked for on the Users page or confirmed
+#   from the command line (and the operator's one-time conversion of
+#   sign-in rules into users); hosted files; stored key replacements (and each
 #   process acknowledging the new key); and initial setup, from starting it
 #   and entering its credentials, through its test email and Slack message,
 #   to locking it or letting it expire.
@@ -169,6 +170,8 @@ ACTIVITY_TYPES = {
         "campaign_ministries_requested",
         "campaign_end_date_requested",
         "roles_applied",
+        "user_change_requested",
+        "admin_cmd_users_confirm",
         "operator_users_upgraded",
         "hosted_file_uploaded",
         "hosted_file_slug_changed",
@@ -229,7 +232,7 @@ ACTIVITY_TYPES = {
 # to either log, so in neither: ``authentication_limits_weakened`` goes only
 # to the process log at startup (``AuthenticationPolicy.warn_if_weaker``).
 UNGROUPED_REASONS = {
-    "Opening a page or report reads; it changes nothing": (
+    "Opening a page or report, or looking something up, reads; it changes nothing": (
         "background_viewed",
         "census_changes_viewed",
         "daily_digest_viewed",
@@ -256,6 +259,7 @@ UNGROUPED_REASONS = {
         "system_health_viewed",
         "system_logs_viewed",
         "talents_report_viewed",
+        "user_names_looked_up",
         "weekly_digest_viewed",
     ),
     "Requesting, making or downloading a report or export": (

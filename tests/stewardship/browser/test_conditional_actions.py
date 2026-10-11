@@ -1,8 +1,8 @@
 """Actions wait for their prerequisites, with a hint (#563).
 
-Pause and resume mail and Portal users: a Preview or Review button stays
+Pause and resume mail: a Preview or Review button stays
 unavailable until what the server needs is there (a reason that is not only
-spaces, a message type, a role), the hint by the button says what is
+spaces, a message type), the hint by the button says what is
 missing, and the page offers only the choices the server accepts. Every
 check is repeated on pageshow, when a page restored from history gets back
 its values without change events.
@@ -184,33 +184,3 @@ def test_resolution_stuck_before_the_check_names_every_way_forward(
     reason = unavailable(page)
     assert "To release held messages, pass the provider and sender check" in reason
     assert "Daily Admin reports, Weekly Admin reports" in reason
-
-
-def test_new_domain_rule_waits_for_a_domain_and_a_role(page, component_origin):
-    """Review stays unavailable until a domain is typed and a role ticked."""
-    failures = []
-    page.on("pageerror", lambda error: failures.append(str(error)))
-    page.goto(component_origin + "/portal-users")
-    form = page.locator("form:has(#new-domain)")
-    review = form.get_by_role("button", name="Review new domain rule")
-    hint = form.locator("[data-complete-hint]")
-    assert review.is_disabled()
-    visible(hint)
-    assert hint.inner_text() == "Enter the hosted domain to review the rule."
-    assert described_by_hint(review, hint)
-    # A domain of only spaces is still missing.
-    page.locator("#new-domain").fill("   ")
-    assert review.is_disabled()
-    assert hint.inner_text() == "Enter the hosted domain to review the rule."
-    page.locator("#new-domain").fill("parish.example")
-    assert review.is_disabled()
-    assert hint.inner_text() == "Tick at least one role for the domain."
-    roles = form.locator('input[name="roles"]')
-    roles.first.check()
-    assert review.is_enabled()
-    hidden(hint)
-    # A role unticked by a restore holds Review again.
-    restore(roles.first, "box => { box.checked = false; }")
-    assert review.is_disabled()
-    visible(hint)
-    assert not failures

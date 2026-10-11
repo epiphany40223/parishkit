@@ -659,7 +659,25 @@ Administrator may override.
       database login can still insert a portal user (a recorded Google
       identity) for any address and then read that address's names. That is
       weaker than its existing ability to match an Admin rule, and each guess
-      is recorded. SQL's activation guard
+      is recorded. New user's
+      [Name from ParishSoft](../admin-portal/spec.md#name-from-parishsoft)
+      lookup (migration 0053) answers any typed address. Its definer answers
+      only for an Admin session key that names a live session (begun after
+      the latest Admin-access recovery) whose user is an Administrator at
+      that moment, records its own audit event for each lookup (that
+      Administrator and the number of names returned, never the address)
+      and refuses a 61st lookup by one Administrator within an hour, counted
+      from those events. The session check does not stop a compromised web
+      database login: `stewardship_portal_session.session_id` is the raw
+      Django session key, and web can read it and `django_session`, so it can
+      present any live Administrator session's key. What holds against it is
+      the per-Administrator cap and the audit: at most 60 addresses' names an
+      hour for each Administrator with a live session, each lookup traced to
+      that Administrator. Storing the session keys hashed is
+      [#995](https://github.com/epiphany40223/parishkit/issues/995). The page
+      also limits
+      each Administrator's lookups per minute and refuses them while the
+      limiter is unavailable. SQL's activation guard
       refuses it, and any other activation into the users form, unless every
       address that held Administrator keeps an Administrator user.
    3. **Swap functions:** the second migration replaces the SQL functions.
@@ -696,7 +714,10 @@ Administrator may override.
    never unapplies one: once the swap is applied, it is the full migration.
    `database-grants` then gives the conversion its read functions,
    `upgrade-users` previews and converts, and the full `migrate` and
-   `database-grants` follow. The scripted upgrade
+   `database-grants` follow. A function that a migration depending on the
+   swap creates is granted only once that migration is applied, as the
+   applied migrations record it, so the grants on the base skip it and the
+   final grants add it. The scripted upgrade
    (`tools/stewardship-upgrade-host.sh`) runs exactly this in its step 4
    when the operator supplies the conversion's inputs (operation ID,
    operator, reason and the confirmed Administrators, all four or none, never

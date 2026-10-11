@@ -139,6 +139,10 @@ DESCRIPTIONS = {
         "An automation session confirmed a reviewed change to mail schedules "
         "or campaign dates, which became a configuration request."
     ),
+    "admin_cmd_users_confirm": _(
+        "An automation session confirmed a reviewed change to Admin portal "
+        "users, which became a configuration request."
+    ),
     "admin_cmd_delivery_refusal_clear": _(
         "An automation session cleared a refused email address after the "
         "Administrator confirmed verifying it, as the address's page does."
@@ -615,6 +619,13 @@ DESCRIPTIONS = {
     ),
     "family_timeline_viewed": _("Someone opened a Family's timeline."),
     "portal_users_viewed": _("An Administrator opened the portal users list."),
+    "user_change_requested": _(
+        "An Administrator asked to add, change or delete Admin portal users."
+    ),
+    "user_names_looked_up": _(
+        "An Administrator looked up the ParishSoft names for a new user's "
+        "email address."
+    ),
     "system_logs_exported": _("An Administrator downloaded the system logs."),
     "export_cancelled": _("A report download was cancelled."),
     "chair_review_decided": _(

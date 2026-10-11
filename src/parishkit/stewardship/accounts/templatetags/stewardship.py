@@ -149,7 +149,13 @@ TABLE_ACTION_VERBS = {"delete", "revoke"}
 
 @register.inclusion_tag("stewardship/components/table-actions.html")
 def table_actions(
-    name, edit=None, delete=None, confirm=None, field="id", verb="delete"
+    name,
+    edit=None,
+    delete=None,
+    confirm=None,
+    field="id",
+    verb="delete",
+    confirm_name=None,
 ):
     """One row's Actions cell in an action table (#879).
 
@@ -159,8 +165,11 @@ def table_actions(
     ``edit`` is the row's edit page; ``delete`` the value its destructive
     action posts as ``field`` once the dialog ``confirm`` names is
     confirmed. ``verb`` names that action: "delete" (the default) or
-    "revoke" (Automation access). Leave out an action the row does not
-    offer; a row with none gets an empty cell.
+    "revoke" (Automation access). ``confirm_name`` is what the dialog's
+    title and announcement call the row, when that needs more than ``name``
+    (Users: the address with its Name and role); it defaults to ``name``.
+    Leave out an action the row does not offer; a row with none gets an
+    empty cell.
     """
     if delete is not None and not confirm:
         raise template.TemplateSyntaxError("table_actions: Delete needs its dialog.")
@@ -173,6 +182,7 @@ def table_actions(
         "confirm": confirm,
         "field": field,
         "verb": verb,
+        "confirm_name": confirm_name or name,
     }
 
 

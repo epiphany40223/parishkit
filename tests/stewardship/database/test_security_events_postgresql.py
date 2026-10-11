@@ -15,10 +15,9 @@ from parishkit.stewardship.accounts.policy_models import (
 from parishkit.stewardship.accounts.security_events import open_events
 from parishkit.stewardship.audit.models import AuditEvent
 
-from ..policy_factory import address
+from ..policy_factory import address, user
 from .auth_builders import signed_in
-from .test_user_rule_views_postgresql import applied, proposal, web
-from .test_user_views_postgresql import add_rules
+from .user_builders import add_rules, convert, user_change, web
 
 pytestmark = pytest.mark.django_db(transaction=True)
 HOME = "/admin/"
@@ -60,15 +59,15 @@ def test_an_expansion_waits_for_another_administrator(auth_service, google):
     """The granting actor's own acknowledgement clears it for that actor alone."""
     store = auth_service.store
     add_rules(store, address("second@example.org"))
+    convert(store)
     browser, login = signed_in()
     assert login.status_code == 302
     admin = PortalUser.objects.get(email="admin@example.org")
-    applied(
+    user_change(
         store,
         browser,
-        proposal(
-            store, kind="address", identity="new@example.org", roles=["administrator"]
-        ),
+        "/admin/users/new/",
+        {"email": "new@example.org", "name": "New", "role": "administrator"},
     )
     event = PolicySecurityEvent.objects.get(target="new@example.org")
     assert event.kind == "administrator_granted"
@@ -140,17 +139,14 @@ def test_an_expansion_waits_for_another_administrator(auth_service, google):
 def test_the_only_administrator_settles_an_expansion_alone(auth_service, google):
     """With no other Administrator at activation, the actor's own word suffices."""
     store = auth_service.store
+    convert(store)
     browser, login = signed_in()
     assert login.status_code == 302
-    applied(
+    user_change(
         store,
         browser,
-        proposal(
-            store,
-            kind="address",
-            identity="partner@example.org",
-            roles=["administrator"],
-        ),
+        "/admin/users/new/",
+        {"email": "partner@example.org", "name": "New", "role": "administrator"},
     )
     event = PolicySecurityEvent.objects.get(target="partner@example.org")
     assert event.kind == "administrator_granted"
@@ -169,7 +165,7 @@ def test_the_only_administrator_settles_an_expansion_alone(auth_service, google)
     assert not PolicySecurityAcknowledgement.objects.get(event=root).own
     assert not offered(home(browser), root)
     # A later Administrator inherits nothing of either to acknowledge.
-    add_rules(store, address("later@example.org"))
+    add_rules(store, user("later@example.org"))
     later = signed_in_as(google, "later@example.org", "later-subject")
     page = home(later)
     assert not offered(page, event)
@@ -184,14 +180,14 @@ def test_acknowledgement_needs_an_administrator_and_a_real_event(
 
     store = auth_service.store
     add_rules(store, address("staff@example.org", ("staff",)))
+    convert(store)
     browser, login = signed_in()
     assert login.status_code == 302
-    applied(
+    user_change(
         store,
         browser,
-        proposal(
-            store, kind="address", identity="new@example.org", roles=["administrator"]
-        ),
+        "/admin/users/new/",
+        {"email": "new@example.org", "name": "New", "role": "administrator"},
     )
     event = PolicySecurityEvent.objects.get(target="new@example.org")
     assert acknowledge(browser, uuid4()).status_code == 404
