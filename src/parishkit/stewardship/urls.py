@@ -4,7 +4,6 @@ from django.urls import include, path
 
 from . import views
 from .accounts import (
-    access_gate,
     authentication,
     automation_views,
     branding_views,
@@ -13,6 +12,7 @@ from .accounts import (
     family_authentication,
     hosted_file_serving,
     presence,
+    restore_review_views,
     security_event_views,
     session_views,
     setup_branding_views,
@@ -183,7 +183,9 @@ admin_patterns = [
         name="setup_content_edit",
     ),
     path("setup/<str:step>", setup_views.setup_step, name="setup_step"),
-    path("maintenance", access_gate.maintenance, name="maintenance"),
+    # The Restore review page (#537): where the access gate sends an
+    # Administrator while a restore is under review.
+    path("maintenance", restore_review_views.restore_review, name="maintenance"),
     path("", authentication.index, name="index"),
     path("login", authentication.login, name="login"),
     path("logout", authentication.logout, name="logout"),
