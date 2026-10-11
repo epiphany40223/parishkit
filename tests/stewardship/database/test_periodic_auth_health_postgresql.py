@@ -148,7 +148,15 @@ def test_periodic_peer_contention_preserves_health_and_outage(real_limiter, pend
             episode.refresh_from_db()
             assert episode.resolved_at is None
     finally:
-        other.close()
+        # Release the peer's lock explicitly. Closing the connection alone
+        # returns before the server backend exits, so the session lock can
+        # outlive close() and make the next skip_busy probe skip again (#989).
+        try:
+            with other.cursor() as cursor:
+                cursor.execute("SELECT pg_advisory_unlock(736227,1)")
+                assert cursor.fetchone() == (True,)
+        finally:
+            other.close()
     health.observe_once(real_limiter)
     assert LimiterStoreHealth.objects.get().observed_at > prior["observed_at"]
     assert not real_limiter.outage
