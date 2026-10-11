@@ -23,6 +23,9 @@ SUPERSEDED = "/restore-review-superseded"
 RESEND_PREVIEW = "/restore-review-resend-preview"
 # Held emails found earlier, with no step outcome shown.
 REVIEWING = "/restore-review-reviewing"
+# "Send these again" unavailable on each send, with its reason; one send's
+# schedule was removed (no due time).
+BLOCKED = "/restore-review-blocked"
 INERT_PREVIEW = "/restore-review-inert-preview"
 # The page before anything was found, in Testing (nothing is ever held).
 TESTING = "/restore-review-testing"
@@ -65,6 +68,19 @@ def components(context, admin):
         found[1],
     )
     inert = (HeldGroup(INVITATION, "initial", now - timedelta(days=4), unreviewed=3),)
+    blocked = (
+        HeldGroup(
+            INVITATION,
+            "initial",
+            now - timedelta(days=4),
+            unreviewed=2,
+            reachable=2,
+            resend_blocked="held_elsewhere",
+        ),
+        HeldGroup(
+            REMINDER, "reminder", None, unreviewed=1, resend_blocked="superseded"
+        ),
+    )
     chrome = admin | {"sections": [], "breadcrumbs": [], "restored": True}
 
     def page(state, **step):
@@ -104,6 +120,7 @@ def components(context, admin):
         ),
         CHANGED: page(review(now, groups=found), refused="changed", panel="emails"),
         REVIEWING: page(review(now, groups=found)),
+        BLOCKED: page(review(now, groups=blocked)),
         RESEND_PREVIEW: page(
             review(now, groups=found), group=found[1], group_action="resend"
         ),

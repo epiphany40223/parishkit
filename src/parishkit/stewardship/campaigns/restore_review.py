@@ -49,9 +49,11 @@ from .models import (
     RestoreDeliveryHold,
     RestoreHoldResolution,
     RuntimeTransition,
+    ScheduleDefinition,
     ScheduleFulfillment,
     ScheduleOccurrence,
 )
+from .runtime_models import CampaignWorkGate
 from .work_locks import lock_current_campaign_exports, lock_work_order
 
 # The two decisions on a held email. Each is final (the SQL guard enforces
@@ -281,6 +283,63 @@ def release_review(
         )
 
 
+class ReleaseRefused(Exception):
+    """The site cannot be released yet; ``reason`` says why.
+
+    ``needs_holds``: an email still needs a hold (find them again first);
+    ``blocked``: a purge or campaign change is still running.
+    """
+
+    def __init__(self, reason):
+        super().__init__(reason)
+        self.reason = reason
+
+
+def release_refusal(runtime=None):
+    """Why the release guard would refuse now, or "" (mirrors migration 0046).
+
+    The guard refuses everything with one SQLSTATE (23514), so the page asks
+    this first and names the reasons a person can act on. ``release_review``
+    itself leaves every refusal to the guard.
+    """
+    runtime = runtime or SystemConfiguration.objects.get()
+    if holds_needed():
+        return "needs_holds"
+    purging = Campaign.objects.filter(
+        pk=runtime.current_campaign_id,
+        state__in=("purging", "purge_cleanup_failed"),
+    ).exists()
+    if (
+        purging
+        or CampaignWorkGate.objects.filter(state__in=("preparing", "running")).exists()
+    ):
+        return "blocked"
+    return ""
+
+
+def _later_reached(definition, mode, due_at):
+    """Later reminders of ``definition``'s campaign that reached a Family or may have.
+
+    A later reminder counts once it was delivered, is being submitted or its
+    delivery is unknown, even if it was removed since; ``definition`` never
+    counts itself (migration 0048).
+    """
+    later = ScheduleOccurrence.objects.filter(
+        definition__campaign_id=definition.campaign_id,
+        definition__kind="reminder",
+        mode=mode,
+        due_at__gt=due_at,
+    ).exclude(definition_id=definition.pk)
+    return later.filter(
+        Q(outbox_id__in=OutboxMessage.objects.filter(state__in=REACHED).values("id"))
+        | Q(
+            pk__in=ScheduleFulfillment.objects.filter(disposition="delivered").values(
+                "occurrence_id"
+            )
+        )
+    )
+
+
 def later_reminder_reached(definition, mode, target, due_at):
     """Whether a reminder due after ``due_at`` reached this Family or may have.
 
@@ -293,21 +352,7 @@ def later_reminder_reached(definition, mode, target, due_at):
     and the Family dispatch check enforce the rule for every login; the
     callers here only give a plain reason first.
     """
-    later = ScheduleOccurrence.objects.filter(
-        definition__campaign_id=definition.campaign_id,
-        definition__kind="reminder",
-        mode=mode,
-        target=target,
-        due_at__gt=due_at,
-    ).exclude(definition_id=definition.pk)
-    return later.filter(
-        Q(outbox_id__in=OutboxMessage.objects.filter(state__in=REACHED).values("id"))
-        | Q(
-            pk__in=ScheduleFulfillment.objects.filter(disposition="delivered").values(
-                "occurrence_id"
-            )
-        )
-    ).exists()
+    return _later_reached(definition, mode, due_at).filter(target=target).exists()
 
 
 def _superseded(hold):
@@ -336,12 +381,72 @@ GROUP_ACTIONS = {
 }
 
 
-class SupersededResend(ValueError):
-    """A "Send these again" that would arrive after a later reminder (#757).
+class ResendBlocked(ValueError):
+    """ "Send these again" is refused for a send; ``reason`` names why.
+
+    The decision guard (migrations 0017 and 0048) refuses these too, but with
+    one SQLSTATE and by rolling the whole send back; the page names them.
+    """
+
+    reason = ""
+
+
+class SupersededResend(ResendBlocked):
+    """A resend that would arrive after a later reminder (#757).
 
     A later reminder for one of the send's Families was delivered, is on its
     way or has an unknown delivery, so the send can only be assumed sent.
     """
+
+    reason = "superseded"
+
+
+class HeldByAnotherRestore(ResendBlocked):
+    """Another restore's hold still keeps one of these emails back.
+
+    That hold is undecided or assumed sent, so a resend here would send
+    nothing; the guard refuses it.
+    """
+
+    reason = "held_elsewhere"
+
+
+RESEND_BLOCKS = {
+    error.reason: error for error in (SupersededResend, HeldByAnotherRestore)
+}
+
+
+def resend_block(definition, restore_id, keys):
+    """Why "Send these again" is refused for these holds of one send, or "".
+
+    ``definition`` is the send's schedule (with its current revision) and
+    ``keys`` the undecided holds' ``(mode, target, slot)``. Mirrors the two
+    resend rules of the decision guard (migration 0048).
+    """
+    keys = set(keys)
+    if not keys:
+        return ""
+    others = (
+        RestoreDeliveryHold.objects.filter(
+            definition_id=definition.pk, state__in=("unreviewed", "assumed_delivered")
+        )
+        .exclude(restore_id=restore_id)
+        .values_list("mode", "target", "slot")
+    )
+    if any(key in keys for key in others):
+        return HeldByAnotherRestore.reason
+    # A removed schedule has no current revision: nothing to put out of order.
+    if definition.kind == "reminder" and definition.current_revision is not None:
+        due_at = definition.current_revision.due_at
+        for mode in {mode for mode, _, _ in keys}:
+            targets = {target for key_mode, target, _ in keys if key_mode == mode}
+            if (
+                _later_reached(definition, mode, due_at)
+                .filter(target__in=targets)
+                .exists()
+            ):
+                return SupersededResend.reason
+    return ""
 
 
 @dataclass(frozen=True)
@@ -350,7 +455,8 @@ class HeldGroup:
 
     definition_id: UUID
     kind: str
-    due_at: datetime
+    # None once the schedule was removed (it has no current revision).
+    due_at: datetime | None
     unreviewed: int = 0
     assumed: int = 0
     resend: int = 0
@@ -359,11 +465,19 @@ class HeldGroup:
     # because eligibility may have changed since the backup, but nothing would
     # be sent to them. A decision still covers every undecided hold.
     reachable: int = 0
+    # Why "Send these again" is refused for this send (a ResendBlocked
+    # reason), or "" when it is not.
+    resend_blocked: str = ""
 
     @property
     def inert(self):
         """Undecided holds of Families that cannot be emailed now."""
         return self.unreviewed - self.reachable
+
+    @property
+    def reason_id(self):
+        """The id of the row's line saying why a choice is unavailable."""
+        return f"restore-reason-{self.definition_id}"
 
     def count(self, action):
         """How many holds ``action`` (a GROUP_ACTIONS key) would settle."""
@@ -450,11 +564,12 @@ def review_state():
             effective_submission_id__isnull=True,
         ).values_list("pk", flat=True)
     }
-    undecided = list(
+    undecided_keys = list(
         RestoreDeliveryHold.objects.filter(
             restore_id=runtime.restore_id, state="unreviewed"
-        ).values_list("definition_id", "definition__kind", "target")
+        ).values_list("definition_id", "definition__kind", "mode", "target", "slot")
     )
+    undecided = [(d, kind, target) for d, kind, _, target, _ in undecided_keys]
     # A reminder waits for its Family's undecided invitation, and "send
     # again" on an invitation whose latest attempt ended (failed, or skipped
     # as undeliverable) sends nothing until deliverability changes: neither
@@ -487,16 +602,35 @@ def review_state():
             row["definition__current_revision__due_at"],
         )
         counts.setdefault(key, {})[fields[row["state"]]] = row["total"]
+    # Each send's undecided holds, for the resend rules.
+    keys = {}
+    for definition_id, _, mode, target, slot in undecided_keys:
+        keys.setdefault(definition_id, []).append((mode, target, slot))
+    definitions = ScheduleDefinition.objects.select_related("current_revision").in_bulk(
+        list(keys)
+    )
+    blocked = {
+        definition_id: resend_block(definition, runtime.restore_id, keys[definition_id])
+        for definition_id, definition in definitions.items()
+    }
     groups = tuple(
         HeldGroup(
             definition_id,
             kind,
             due_at,
             reachable=reachable_counts.get(definition_id, 0),
+            resend_blocked=blocked.get(definition_id, ""),
             **values,
         )
+        # By due time, the invitation before a reminder due at the same time;
+        # a removed schedule (no due time) last.
         for (definition_id, kind, due_at), values in sorted(
-            counts.items(), key=lambda item: (item[0][2], item[0][1] != "initial")
+            counts.items(),
+            key=lambda item: (
+                item[0][2] is None,
+                item[0][2] or datetime.min,
+                item[0][1] != "initial",
+            ),
         )
     )
     return ReviewState(
@@ -608,14 +742,18 @@ def settle_group(
         )
         if len(holds) != expected_count:
             raise StaleRecordError("These held emails changed; review them again.")
-        # A resend that would arrive after a later reminder is refused by the
-        # decision guard (migration 0048), which would roll back the whole
-        # send; say so plainly instead, before anything is written.
-        if action == "resend" and any(_superseded(hold) for hold in holds):
-            raise SupersededResend(
-                "A later reminder reached some of these Families or is on its "
-                "way; assume these sent."
+        # A resend the decision guard would refuse (another restore's hold
+        # keeps an email back, or a later reminder overtook it: migrations
+        # 0017 and 0048) would roll back the whole send with one SQLSTATE;
+        # name the reason instead, before anything is written.
+        if action == "resend" and (
+            reason := resend_block(
+                holds[0].definition,
+                runtime.restore_id,
+                [(hold.mode, hold.target, hold.slot) for hold in holds],
             )
+        ):
+            raise RESEND_BLOCKS[reason](reason)
         for hold in holds:
             RestoreHoldResolution.objects.create(
                 hold=hold,

@@ -8,6 +8,7 @@ rendered sample state, routed by its action, as the view would answer it.
 import pytest
 
 from .restore_review_components import (
+    BLOCKED,
     CHANGED,
     GROUP_PREVIEW,
     INERT_PREVIEW,
@@ -98,6 +99,7 @@ def test_review_pages_are_accessible_at_phone_and_desktop_widths(
         RELEASE_PREVIEW,
         STEP_UP,
         SUPERSEDED,
+        BLOCKED,
     ):
         page.goto(component_origin + path)
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
@@ -230,3 +232,100 @@ def test_a_send_with_only_inert_holds_says_so(page, component_origin):
         )
     ).to_be_visible()
     expect(page.get_by_role("heading", name="Send 0 emails again")).to_have_count(0)
+
+
+def test_a_blocked_resend_is_unavailable_with_its_reason(page, component_origin):
+    """ "Send these again…" is greyed out, named by a visible reason."""
+    page.goto(component_origin + BLOCKED)
+    region = page.locator(REGION)
+    buttons = region.get_by_role("button", name="Send these again…")
+    expect(buttons).to_have_count(2)
+    for index in range(2):
+        expect(buttons.nth(index)).to_be_disabled()
+    expect(region.get_by_text("An earlier restore still holds")).to_be_visible()
+    expect(region.get_by_text("can only be assumed sent")).to_be_visible()
+    # A send whose schedule was removed has no due time to show.
+    expect(region.get_by_text("schedule removed")).to_be_visible()
+    reason = buttons.first.get_attribute("aria-describedby")
+    assert region.locator(f"#{reason}").is_visible()
+    # "Assume these were sent…" stays available.
+    expect(
+        region.get_by_role("button", name="Assume these were sent…").first
+    ).to_be_enabled()
+
+
+def _open_preview(page, component_origin, close):
+    """Open a send's preview on the routed page; returns (region, close button)."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    _routed(
+        page,
+        component_origin,
+        {
+            "group-preview": (200, GROUP_PREVIEW),
+            "cancel": (200, REVIEWING),
+            "group-confirm": (200, SETTLED),
+        },
+        start=REVIEWING,
+    )
+    page.goto(component_origin + PAGE)
+    region = page.locator(REGION)
+    region.get_by_role("button", name="Assume these were sent…").first.click()
+    button = region.get_by_role(
+        "button", name="Cancel" if close == "cancel" else "Confirm: assume sent"
+    )
+    expect(button).to_be_visible()
+    if close == "confirm":
+        region.get_by_label("Why (kept in the System logs)").fill("In the log.")
+    return region, button
+
+
+@pytest.mark.parametrize("close", ["cancel", "confirm"])
+def test_closing_a_preview_moves_nothing_above_it(page, component_origin, close):
+    """Cancel or Confirm leaves the table above the preview where it was.
+
+    The reader has the preview in view. Focus moves to the next control,
+    "Check again…", which takes the preview's place, so nothing scrolls.
+    """
+    region, button = _open_preview(page, component_origin, close)
+    kept = _not_reloaded(page)
+    # The preview's top just inside the window, as after reading it.
+    page.evaluate(
+        "window.scrollBy(0, document.querySelector('[data-restore-preview]')"
+        ".getBoundingClientRect().top - 40)"
+    )
+    # The settled row's own counts change; the table's top must not move.
+    row = region.get_by_role("row").first
+    before = row.bounding_box()["y"]
+    button.click()
+    expect(button).to_have_count(0)
+    # Within a pixel: engines round layout differently after a swap.
+    assert abs(row.bounding_box()["y"] - before) <= 1
+    assert page.evaluate(
+        "document.activeElement.textContent.includes('Check again for emails')"
+    )
+    assert kept()
+
+
+@pytest.mark.parametrize("close", ["cancel", "confirm"])
+def test_closing_a_preview_at_the_foot_keeps_the_page_height(
+    page, component_origin, close
+):
+    """At the page's foot the region keeps its height (data-keep-height).
+
+    Without it the shorter page would pull everything down under the
+    pointer; the only move left is focus scrolling to the next control.
+    """
+    region, button = _open_preview(page, component_origin, close)
+    page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)")
+    height = page.evaluate("document.documentElement.scrollHeight")
+    button.click()
+    expect(button).to_have_count(0)
+    assert page.evaluate("document.documentElement.scrollHeight") >= height - 1
+    assert (
+        page.evaluate(
+            "getComputedStyle(document.querySelector('#restore-review')).minHeight"
+        )
+        != "0px"
+    )
+    focused = page.evaluate_handle("document.activeElement")
+    assert "Check again for emails" in focused.text_content()
