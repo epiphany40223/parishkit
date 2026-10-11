@@ -52,7 +52,10 @@ Family-level giving and are private.
 
 This section is the one definition of the archive workbook, version `1.0`.
 It is the format of the files the one-time conversion of the 2020–2026
-campaigns produced (October 11, 2026), so those files import unchanged.
+campaigns produced (October 11, 2026), with one change: `active_families`
+is required and the `active_families_estimate` key is gone. Those files
+are regenerated once to match (all seven carry the old key, and 2020–2022
+gain their measured counts), after which they import unchanged.
 The reader (import, this specification) and the future writer (#1018 part
 (a)) are one module, `parishkit.stewardship.archive.workbook`, that owns a
 single table of sheets, columns and metadata keys with their descriptions.
@@ -215,7 +218,7 @@ historical series day for day.
 | `local_date` | Local date | `campaign_start_date` + `campaign_day` − 1 |
 | `first_submissions` | Integer ≥ 0 | Families whose first submission fell on this day |
 | `cumulative_families` | Integer ≥ 0 | Distinct Families that had submitted by the end of this day |
-| `cumulative_pct_of_active` | Number or blank | `cumulative_families` ÷ `active_families`, as a fraction from 0 to 1; blank exactly when `active_families` is blank (an estimate never fills it) |
+| `cumulative_pct_of_active` | Number | `cumulative_families` ÷ `active_families`, as a fraction from 0 to 1 |
 | `cumulative_pledging_families` | Integer ≥ 0 | Families whose latest answer by the end of this day pledged more than zero |
 | `cumulative_annual_pledged` | Money ≥ 0 | Sum of each Family's latest annual pledge at the end of this day; a revision replaces, never adds |
 | `source` | Text | `derived` (recomputed from `submissions`), or a note naming the system table it equals |
@@ -251,9 +254,8 @@ are unique. Required keys, each with a value unless marked:
 | `timezone` | IANA zone used for local dates and day numbers |
 | `campaign_start_date` | Local date of day 1 |
 | `campaign_last_submission_date` | Local date of the last attributed submission |
-| `active_families` | Active parishioner Families, the percentage denominator; may be blank when unknown |
-| `active_families_provenance` | Where `active_families` came from, or why it is unknown (and where the estimate came from) |
-| `active_families_estimate` | Best estimate when `active_families` is blank; blank otherwise |
+| `active_families` | Active parishioner Families at the campaign, the percentage denominator: a measured count, an integer ≥ 1. Required; an estimate is never accepted |
+| `active_families_provenance` | The source the count was measured from (such as a database snapshot of the old system, or this system's Family cohort) |
 | `source_system` | The system that collected the responses |
 | `source_files` | Names of the original files converted |
 | `converted_at` | Instant the file was produced |
@@ -290,8 +292,8 @@ The page is **Past campaigns** at `/admin/parish/past-campaigns/`, in the
 Parish data menu group (a parish record, not part of one campaign; see
 [menu groups](../admin-portal/spec.md#menu-groups)). It leads with a table of
 imported campaigns, newest year first: Year, Campaign, Final or Partial, Day
-1, Days, Families responded, Annual pledges, Active Families (with ≈ for an
-estimate), Family rows kept (Yes/No), Imported (local time, by whom), and a
+1, Days, Families responded, Annual pledges, Active Families, Family rows
+kept (Yes/No), Imported (local time, by whom), and a
 Remove row action. Below it, **Add an archive file** takes one `.xlsx` file
 and a **Keep Family rows** checkbox, ticked by default, whose field tip
 says the rows are needed for the renewal figure and never leave the Admin
@@ -400,7 +402,8 @@ The checks, in order:
    column tables hold (such as `annual_pledge` against `pledge_status`, and
    `installment_source` against `installment_amount`).
 4. **Consistency.** Each rule below holds for every one of the seven
-   converted 2020–2026 files.
+   converted 2020–2026 files (the percentage rule once they are regenerated
+   with measured counts).
    - `daily` runs from day 1 with no gap to the day of
      `campaign_last_submission_date`; each `local_date` matches its day;
      `cumulative_families` is the running sum of `first_submissions`;
@@ -424,10 +427,8 @@ The checks, in order:
    - `families` keys are unique, and each key matches its `family_id_system`
      and `family_id`. Every attributed `submissions` and
      `ministry_responses` key is a `families` key.
-   - `cumulative_pct_of_active` is present exactly when `active_families`
-     is, and equals `cumulative_families` ÷ `active_families` within 0.0005.
-     `active_families_estimate` is given only when `active_families` is
-     blank.
+   - Every `cumulative_pct_of_active` equals `cumulative_families` ÷
+     `active_families` within 0.0005.
    - Every `count.*` key the reader knows equals its recomputed value.
    - `as_of` is not before the last attributed submission.
 5. **Year.** A file whose `campaign_year` is the current campaign's
@@ -470,10 +471,11 @@ The SHA-256 of the uploaded bytes identifies the file:
   already has one is a **Replace**: Apply removes the old import (as Remove
   does) and stores the new one in the same transaction. A partial file never
   replaces a final one; Review refuses that with the reason.
-- Replace is also how an archive is corrected: for example, when a firm
-  active-Family count is found for a year that used an estimate, the
-  Administrator corrects `active_families` and `active_families_provenance`
-  in the file's `metadata` sheet and imports it again. The new checksum makes
+- Replace is also how an archive is corrected: for example, when a better
+  measurement of a year's active-Family count is found, the Administrator
+  corrects `active_families` and `active_families_provenance` in the
+  file's `metadata` sheet (and the `cumulative_pct_of_active` column that
+  follows from it) and imports it again. The new checksum makes
   it a Replace.
 - Two Applies racing for the same year or checksum are settled by the
   database's unique indexes: the loser is refused as stale and nothing
@@ -491,7 +493,7 @@ and they are kept until an Administrator removes the year
 - **`stewardship_campaign_archive`**, one row per import: UUID, `version`
   (for `--expected-version`), SHA-256, cleaned original file name, size,
   schema version, campaign name and year, final flag, `as_of`, time zone,
-  day-1 date, last submission date, active count, estimate and provenance,
+  day-1 date, last submission date, active count and its provenance,
   source system, `dedup_rule`, the Family id system(s), whether Family rows
   were kept, the `note.*` rows and unknown `count.*` rows (as a bounded JSON
   object, for the data notes), the recomputed totals, the pledging Families'
@@ -542,8 +544,7 @@ the report.
   apply the [small-count protection](#pledge-distribution).
 - The free-text `note.*`, provenance and dedup texts appear only on the
   Admin portal page (the Review card and the report's data notes). Downloads
-  and digests say only, per year, whether its active count was measured or
-  estimated.
+  and digests carry none of them.
 - Stored Family rows are read only inside the database, by the renewal
   calculation, which returns counts.
 - The audit trail records `campaign_archive_previewed`,
@@ -593,26 +594,24 @@ and the average of all imported years:
 | Figure | Current campaign | Imported year |
 | --- | --- | --- |
 | Families responded | Cumulative responses of the fact row for day N | `cumulative_families` of day N |
-| Percent of active Families | Cumulative responses ÷ the fact row's cohort denominator (the Families Portal-eligible at any time through that day, as on the participation graph) | `cumulative_families` ÷ `active_families` (as the archive's provenance defines it), or ÷ the estimate (shown ≈) |
+| Percent of active Families | Cumulative responses ÷ the fact row's cohort denominator (the Families Portal-eligible at any time through that day, as on the participation graph) | `cumulative_families` ÷ `active_families` (as the archive's provenance defines it) |
 | Annual pledges | Pledge total of the fact row | `cumulative_annual_pledged` of day N |
 | Average pledge | Annual pledges ÷ pledging Families as of day N's end, with the median beside it | `cumulative_annual_pledged` ÷ `cumulative_pledging_families`, with the final median beside it |
 | Renewal of last year's responders | Last year's responding Families (by ParishSoft DUID) counted among the fact row's cumulative responses for day N (so a Family must be in this campaign's cohort, as for the participation numerator), ÷ last year's responding Families | The same for that year against its previous year, when both kept Family rows in the same id system |
 
 - **The two denominators differ in kind.** This system's denominator is
   the cohort of Families ever Portal-eligible through the day; an archive's
-  `active_families` is whatever its provenance says (for 2023–2026, the
-  Families the old system issued campaign codes to; for a file this system
-  writes, the same cohort as here). A permanent data note under the report
+  `active_families` is the measured count its provenance names (for the old
+  system, such as the Families issued campaign codes or a database snapshot
+  of active Families; for a file this system writes, the same cohort as
+  here). A permanent data note under the report
   says so, and each year's provenance is listed with it.
 - **Last year** is the imported year one less than the current campaign's
   stewardship year. Without it, the "last year" lines are left out.
 - **Prior-years average** is the mean over every active imported year with a
-  value at day N. A percentage average uses only years with an active count
-  or estimate and is marked ≈ when any estimate went into it. Renewal has
-  no average unless at least two imported years can produce it.
-- **Estimates are marked ≈** wherever an estimated active count went into a
-  figure, on the page, in tooltips, tables, downloads and the digest, with a
-  data note saying which years and why.
+  value at day N. Every imported year has a measured active count, so every
+  year counts toward the percentage average too. Renewal has no average
+  unless at least two imported years can produce it.
 - Comparisons are shown as a relative change for counts and money
   ("12.5% more") and as percentage points for percentages ("4.2 points
   more"), always with an arrow and the words "more" or "fewer", so color is
@@ -634,7 +633,7 @@ and the average of all imported years:
   slice that uses it, since the import slice's migration is frozen once it
   is released.
 - A figure that cannot be computed shows "—" with a toggletip giving the
-  reason (no active count, no Family rows for last year, different id
+  reason (no Family rows for last year, different id
   systems, financial module off).
 
 ### Pledge distribution
@@ -753,8 +752,8 @@ first, explanation in the About this page panel.
    final pledges, final average pledge, and the final first quartile, median
    and third quartile.
 7. **Data notes:** the permanent note on the two kinds of denominator, then
-   for each year its source system, the active count's provenance (or the
-   estimate's), the dedup rule and its `note.*` rows, escaped and each cut
+   for each year its source system, the active count's provenance, the dedup
+   rule and its `note.*` rows, escaped and each cut
    to 500 characters. These texts stay on this page (see
    [privacy](#privacy)).
 
@@ -780,8 +779,8 @@ in all three, and the PDF adds the tiles and charts on one landscape page in
 the shared [file design](../reports/spec.md#file-design), so the
 Administrator can send leadership a single summary. Downloads hold
 aggregates only, apply the [small-count
-protection](#pledge-distribution), carry each year's "measured" or
-"estimated" active count instead of the free-text notes, and record
+protection](#pledge-distribution), carry none of the free-text notes, and
+record
 `campaign_comparison_exported` like other exports. No public or
 unauthenticated link exists.
 
@@ -854,7 +853,7 @@ importing them.
 | Preview expired | Refused as stale; Review again |
 | Apply fails part-way | The transaction rolls back; nothing is stored |
 | Fact set not ready | Last ready fact set with the Updating notice |
-| No last year, no active count, no Family rows | The affected figure shows "—" with its reason |
+| No last year, no Family rows | The affected figure shows "—" with its reason |
 | Financial module off | Pledge figures, charts and columns are left out |
 | Checking a file exceeds its 60-second limit | Stopped, logged as a durable timeout entry naming the limit and the elapsed time, and refused as too large to check |
 
@@ -887,7 +886,9 @@ committed.
   and binary-inexact two-decimal values accepted exactly; boolean cells and
   `TRUE`/`FALSE` text where each is allowed.
 - **Refusals:** one case per validation rule, including formula cells, a
-  missing or reordered column, an unknown column or metadata key, a later
+  missing or reordered column, an unknown column or metadata key (including
+  `active_families_estimate`), a blank or missing `active_families`, a
+  blank `cumulative_pct_of_active`, a later
   minor version's extra column (accepted and ignored), a wrong major
   version, a `daily` gap, a `first_submissions` count that disagrees with
   `families`, a local date or campaign day that disagrees with its instant,
@@ -913,7 +914,7 @@ committed.
   after its last day; the comparison day held at the end date once the
   current campaign has closed; the renewal numerator limited to this
   campaign's cohort; the average over years present at day
-  N; ≈ propagation from estimates; percentage points versus relative change;
+  N; percentage points versus relative change;
   average pledge; renewal against a DUID year, and "—" against a PDS-id year
   or a year without Family rows; current figures equal the participation
   graph's for the same day.
@@ -941,7 +942,8 @@ committed.
   entries, and the absence of Family values in output.
 - **Human-run check, outside CI:** a synthetic workbook corrected and saved
   again in Excel and in Google Sheets passes the allowlist; `archive-check`
-  accepts the seven converted 2020–2026 files, and an import of them reproduces the day-8
+  accepts the seven regenerated 2020–2026 files, and an import of them
+  reproduces the day-8
   figures reported on #1018. The files are private and are never committed.
 
 ## Implementation slices
@@ -1001,13 +1003,14 @@ The Administrator accepted every proposed default on October 11, 2026
    current campaign live.
 6. **Day 1 of the current campaign:** the campaign's local start date, which
    is the first invitation day.
-7. **Prior-years average:** every imported year, estimates included and
-   marked ≈. Estimates stay supported because a future import may also lack
-   a firm count. When a firm active-Family count is found for an estimated
-   year (2020–2022 borrow 2023's measured count today), the archive's
-   `active_families` and `active_families_provenance` are corrected and the
-   year is re-imported with [Replace](#idempotency-and-replacement); the
-   format does not change.
+7. **Prior-years average:** every imported year. A measured active-Family
+   count is required in every archive and its provenance records the
+   source; estimates are not supported (Administrator direction, 2026-10-11,
+   after firm counts were found for every year, 2020–2022 from database
+   snapshots of the old system). If a better measurement turns up, the
+   archive's `active_families` and `active_families_provenance` are
+   corrected and the year is re-imported with
+   [Replace](#idempotency-and-replacement).
 8. **Average pledge:** annual pledges divided by Families pledging more than
    zero. Because pledges are heavily skewed, the report adds the median,
    the quartiles and the [pledge distribution](#pledge-distribution) beside
