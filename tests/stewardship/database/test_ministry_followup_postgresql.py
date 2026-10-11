@@ -44,6 +44,7 @@ from parishkit.stewardship.workflows.models import (
     MinistryWorkflowRevision,
 )
 
+from ..census_factory import member
 from ..policy_factory import domain
 from .auth_builders import signed_in, unguarded
 from .campaign_builders import change
@@ -265,6 +266,30 @@ def test_scoped_history_replay_stale_writers_and_sql_pairing(response_service, g
     ):
         MinistryWorkflowRevision.objects.create(actor_id=head, **orphan)
     assert MinistryWorkflowRevision.objects.count() == 2
+
+
+def test_queue_rows_carry_each_members_duid(response_service):
+    """Each row carries its Member's DUID for the Member DUID column (#932).
+
+    The installed selection does not return the Member key, so the page
+    reads it for the shown rows under the web role's own grants; a Member
+    added on the form has none yet (the page shows New Member).
+    """
+    harness = setup(response_service)
+    form = revisit(harness)
+    answers = answers_for(form)
+    identifier = str(uuid4())
+    answers["proposed_members"][identifier] = member(
+        first_name="New", last_name="Person"
+    )
+    answers["ministries"]["proposed_members"][identifier] = {"join": [9]}
+    respond(harness, form, answers)
+    staff = Principal(user("admin@example.org").pk, frozenset({"staff"}), frozenset())
+    rows = read(harness, staff, ministry="9", state="any")["rows"]
+    assert {row["entity_kind"]: row["member_duid"] for row in rows} == {
+        "member": 3,
+        "proposed_member": None,
+    }
 
 
 def test_family_resubmission_retains_staff_work(response_service):

@@ -1060,7 +1060,7 @@ orders. In v1 that covers:
 - the Additional information queue (Family, Family DUID and Submitted);
 - the Ministry report (Ministry and Ministry DUID; Member, Member DUID and
   Submitted in one Ministry's view);
-- the Ministry follow-up queue (Request, Member and Ministry).
+- the Ministry follow-up queue (Member, Ministry and Submitted).
 
 Extending those vocabularies is a schema change; the DUID sorts of the
 financial, Additional information and Ministry tables came with one
@@ -1295,6 +1295,10 @@ Administrator asked for one-line rows on #952). A long email or Name is cut
 off with "…"; the full value stays the cell's text, appears in a `title`
 tooltip, and is shown whole on the user's Edit page
 ([Users table](../admin-portal/spec.md#users-table), #952, #963).
+The Ministry follow-up queue does the same for a long Member or Ministry
+name, with the shared `cell-ellipsis` class, so a long Ministry name never
+makes its row several lines tall
+([Follow-up workflows](../admin-portal/spec.md#follow-up-workflows), #932).
 
 ## Downloaded files
 
