@@ -1,6 +1,9 @@
 """Fast operator refusal/SQL-shape tests complement real isolated PostgreSQL runs."""
 
+import re
+import sys
 from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -10,6 +13,13 @@ from parishkit.config import ConfigError
 from parishkit.stewardship import database_provisioning as provisioning
 from parishkit.stewardship.accounts.key_files import write_private
 from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.runtime_database import users_swap_closure
+from parishkit.stewardship.runtime_grants import (
+    CLOSURE_FUNCTIONS,
+    MEMBER_NAMES_FOR_FUNCTION,
+    runtime_functions,
+    runtime_grants,
+)
 from parishkit.stewardship.runtime_identities import database_identities
 
 from .test_runtime_topology import configuration_at
@@ -237,12 +247,15 @@ def test_role_creation_preflights_all_identities_and_never_emits_plaintext(
     assert len(connections) == 1 + (len(admissions) if existing else 0)
 
 
-def test_grant_provisioning_uses_only_explicit_table_and_column_registry(
-    tmp_path, monkeypatch
-):
-    """Schema ownership is not translated into runtime ALL or wildcard grants."""
+def grant_statements(tmp_path, monkeypatch, applied):
+    """Run provision_grants on a fake cursor; its configuration and GRANTs.
+
+    ``applied`` is the ``(app, name)`` rows the cursor answers for
+    ``django_migrations``.
+    """
     configuration = configuration_at(tmp_path)
     cursor = Cursor()
+    cursor.fetchall = lambda: list(applied)
     monkeypatch.setattr(provisioning, "_password", lambda path: b"private-password")
     monkeypatch.setattr(provisioning, "_admit_operator", lambda *args, **kwargs: None)
     monkeypatch.setattr(provisioning, "_check_role", lambda *args, **kwargs: True)
@@ -253,15 +266,92 @@ def test_grant_provisioning_uses_only_explicit_table_and_column_registry(
     assert provisioning.provision_grants(configuration, uuid4())[
         "database_grants_provisioned"
     ]
-    assert cursor.statements
-    assert all(statement.startswith("GRANT ") for statement in cursor.statements)
+    assert cursor.statements[0] == "SELECT app,name FROM public.django_migrations"
+    return configuration, cursor.statements[1:]
+
+
+def test_grant_provisioning_uses_only_explicit_table_and_column_registry(
+    tmp_path, monkeypatch
+):
+    """Schema ownership is not translated into runtime ALL or wildcard grants."""
+    configuration, statements = grant_statements(
+        tmp_path, monkeypatch, CLOSURE_FUNCTIONS.values()
+    )
+    assert statements
+    assert all(statement.startswith("GRANT ") for statement in statements)
     assert all(
         "ALL" not in statement and "private-password" not in statement
-        for statement in cursor.statements
+        for statement in statements
     )
     monkeypatch.setattr(provisioning, "_check_role", lambda *args, **kwargs: False)
     with pytest.raises(ConfigError, match="before grants"):
         provisioning.provision_grants(configuration, uuid4())
+
+
+@pytest.mark.parametrize("applied", [False, True])
+def test_grants_wait_for_the_users_swap_closures_functions(
+    tmp_path, monkeypatch, applied
+):
+    """On the users upgrade's base, a routine the swap's closure adds waits.
+
+    Its creating migration is pending there (#952), so naming it would fail;
+    once the migration is recorded, the same grants include it.
+    """
+    _, statements = grant_statements(
+        tmp_path, monkeypatch, CLOSURE_FUNCTIONS.values() if applied else ()
+    )
+    named = [s for s in statements if MEMBER_NAMES_FOR_FUNCTION in s]
+    assert len(named) == (1 if applied else 0)
+    # Everything else is granted either way.
+    assert len(statements) == len(
+        grant_statements(tmp_path, monkeypatch, CLOSURE_FUNCTIONS.values())[1]
+    ) - (0 if applied else 1)
+
+
+CREATED = re.compile(
+    r"CREATE (?:OR REPLACE )?(FUNCTION|TABLE) public\.(\w+)", re.IGNORECASE
+)
+
+
+def test_closure_functions_list_every_granted_routine_the_swap_closure_adds():
+    """No grant names an object only the users swap's closure creates, unlisted.
+
+    The closure is read from the migration files on disk, and the objects
+    each member's frozen SQL creates that neither the baseline schema nor a
+    frozen file outside the closure creates are what the users upgrade's
+    base lacks (#952). A granted routine among them must be in
+    CLOSURE_FUNCTIONS with its own migration, so database-grants waits for
+    it there; a granted table has no such wait, so none may be among them.
+    """
+    from django.db.migrations.loader import MigrationLoader
+
+    loader = MigrationLoader(None, ignore_no_migrations=True)
+    closure = users_swap_closure(loader.graph)
+    schema = Path(provisioning.__file__).with_name("schema")
+    base_sql = [path.read_text() for path in schema.glob("*.sql")]
+    added = {}
+    for key, migration in loader.disk_migrations.items():
+        frozen = getattr(sys.modules[migration.__module__], "FROZEN_SQL", None)
+        if key in closure:
+            assert frozen is not None, f"{key} has no frozen SQL file to read"
+            for kind, name in CREATED.findall(Path(frozen).read_text()):
+                added.setdefault((kind.upper(), name), key)
+        elif frozen is not None:
+            base_sql.append(Path(frozen).read_text())
+    for text in base_sql:
+        for kind, name in CREATED.findall(text):
+            added.pop((kind.upper(), name), None)
+    assert ("FUNCTION", MEMBER_NAMES_FOR_FUNCTION.split("(")[0]) in added
+    assert set(CLOSURE_FUNCTIONS.values()) <= closure
+    for _, _, role, target in database_identities():
+        if role is ServiceRole.MIGRATION:
+            continue
+        for function in runtime_functions(role, target=target):
+            key = added.get(("FUNCTION", function.split("(")[0]))
+            assert CLOSURE_FUNCTIONS.get(function) == key, function
+        tables, columns = runtime_grants(role, target=target)
+        for table in tables.keys() | columns.keys():
+            assert ("TABLE", table) not in added, table
 
 
 @pytest.mark.parametrize("installed", ["current", "older", "missing"])
