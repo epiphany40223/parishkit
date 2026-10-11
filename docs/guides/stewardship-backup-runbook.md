@@ -205,10 +205,14 @@ requests they expired or found stuck as `task_timed_out` entries
 restore review no request is claimed; a scheduled run still backs up.
 
 Request mode arrived with the release that added Take a backup now. Its
-upgrade is a schema and grant change: run the migration and then
-`database-grants`, as the deployment runbook's upgrade describes; until
-the grants are applied, request mode logs one `startup_rejected` line per
-poll. Before any deploy, check that no backup is running, scheduled or
+upgrade is a schema and grant change: run the
+[scripted upgrade](stewardship-deployment-runbook.md#scripted-upgrade) with
+`STEWARDSHIP_SCHEMA_CHANGE=1`, so step 4 runs the migration and then
+`database-grants` (the deployment runbook's
+[Take a backup now](stewardship-deployment-runbook.md#take-a-backup-now-530)
+section lists the steps), and install the request-mode cron line above only
+after that upgrade; until the grants are applied, request mode logs one
+`startup_rejected` line per poll. Before any deploy, check that no backup is running, scheduled or
 requested (`docker ps --filter name=backup-worker` lists none), as for a
 restore. A rollback to a release before it must also remove the
 request-mode cron line, since that release has no `--request` option.

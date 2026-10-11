@@ -908,6 +908,32 @@ and refuses to commit unless the new body is installed) and then
 nightly refresh keeps its time until an Administrator lists more on the
 ParishSoft integration page.
 
+### Take a backup now (#530)
+
+The release that adds Take a backup now's request record and request mode
+is a schema and grant change: with the [scripted upgrade](#scripted-upgrade)
+set `STEWARDSHIP_SCHEMA_CHANGE=1`; the upgrade check reports `f` and step 4
+runs migration (`stewardship_jobs.0022_backup_request` installs frozen file
+0062: the `stewardship_backup_request` table and its guard, and refuses to
+commit unless both are installed as declared) and then `database-grants`,
+which gives the web login its request reads and inserts and the backups
+panel's size and version reads, and the backup login its request reads and
+column updates. Before you start, check that no backup is running, scheduled
+or requested (`docker ps --filter name=backup-worker` lists none). Then:
+
+1. After step 6, install the five-minute request-mode cron line from the
+   backup runbook's [nightly backup](stewardship-backup-runbook.md#the-nightly-backup)
+   section on the host, next to the scheduled backup. Not before: the
+   previous release has no `--request` option, so the line would fail
+   every five minutes until the upgrade.
+2. On System health, the Backups panel shows the last backup's size and
+   version.
+
+Rolling back: the previous image refuses the migrated database, so this is
+fail forward, as the general policy is. If the catastrophic case restores
+the pre-upgrade backup and redeploys the previous release, remove the
+request-mode cron line first.
+
 ### Preparing reminders ahead (BG-12)
 
 The release that prepares bulk-send reminders before their due time

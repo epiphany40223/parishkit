@@ -66,3 +66,20 @@ def test_the_check_refuses_a_missing_trigger():
         "ON public.stewardship_backup_request",
         "trigger was not created",
     )
+
+
+def test_the_check_refuses_a_guard_without_the_automation_gate():
+    """A guard that admits only a five-minute sign-in (#706's first body,
+    before automation sessions stood in for one) fails the check."""
+    body = re.search(
+        r"^CREATE FUNCTION public\.stewardship_backup_request_guard_v1\(\)"
+        r".*?^END \$\$;",
+        TEXT,
+        re.M | re.S,
+    )[0]
+    gate = "OR public.stewardship_automation_fresh_v1(login.id,NEW.actor_id)"
+    assert gate in body
+    refused(
+        body.replace("CREATE FUNCTION", "CREATE OR REPLACE FUNCTION").replace(gate, ""),
+        "not the one this file installs",
+    )

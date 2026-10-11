@@ -17,15 +17,18 @@
 -- The guard is the boundary:
 --   INSERT: only the web login (the schema owner is not checked), for an enabled
 --     Administrator whose live session signed in within the last five
---     minutes (the check stewardship_delivery_control_guard_v1 makes), never
+--     minutes or is a live full-scope automation session's command login
+--     (stewardship_automation_fresh_v1; the check
+--     stewardship_delivery_control_guard_v1 makes), never
 --     during a restore review, and only while no other request is running or
 --     waiting unexpired. Inserts are serialized by a transaction advisory
 --     lock so two cannot both see none. The row starts "waiting" with every
 --     time from the database clock.
 --   UPDATE: only the backup login (or the schema owner). Identity, actor,
 --     session, sign-in and creation never change, and a request moves only
---     forward: waiting may be stamped held (held_at), claimed (running, only
---     before it lapses and never during a restore review) or expired;
+--     forward: waiting may be stamped held (held_at, only before it lapses),
+--     claimed (running, only before it lapses and never during a restore
+--     review) or expired;
 --     running may finish with its backup run or fail with a category. Times
 --     are the database's.
 --   Both run only under READ COMMITTED, so every check reads the rows as
@@ -80,8 +83,12 @@ BEGIN
                   AND login.revoked_at IS NULL AND login.expires_at>clock_timestamp()
                   AND login.last_activity_at>clock_timestamp()-interval '60 minutes'
                   AND login.authenticated_at=NEW.authenticated_at
-                  AND login.authenticated_at BETWEEN clock_timestamp()-interval '5 minutes'
-                      AND clock_timestamp()) THEN
+                  AND (login.authenticated_at BETWEEN clock_timestamp()-interval '5 minutes'
+                           AND clock_timestamp()
+                       -- A live full-scope automation session stands in for a
+                       -- fresh sign-in, as in the other fresh-gated guards
+                       -- (ADM-11 PR 5; admin-automation spec).
+                       OR public.stewardship_automation_fresh_v1(login.id,NEW.actor_id))) THEN
             RAISE EXCEPTION 'A backup request requires fresh Administrator authentication' USING ERRCODE='42501';
         END IF;
         IF EXISTS(SELECT 1 FROM public.stewardship_system_configuration
@@ -117,9 +124,15 @@ BEGIN
         RETURN NEW;
     END IF;
     IF OLD.state='waiting' AND NEW.state='waiting' THEN
-        -- A poll that saw a bulk send: only the held stamp moves.
+        -- A poll that saw a bulk send: only the held stamp moves. A request
+        -- whose window has already passed is never held again (that would
+        -- revive it): it lapses, as a claim refuses it.
         IF NEW.held_at IS NULL THEN
             RAISE EXCEPTION 'A held stamp needs a time' USING ERRCODE='23514';
+        END IF;
+        IF greatest(OLD.created_at,coalesce(OLD.held_at,OLD.created_at))
+               <=instant-interval '30 minutes' THEN
+            RAISE EXCEPTION 'This backup request can no longer be held' USING ERRCODE='23514';
         END IF;
         NEW.held_at:=instant;
     ELSIF OLD.state='waiting' AND NEW.state='running' THEN
@@ -195,7 +208,9 @@ BEGIN
         WHERE p.oid='public.stewardship_backup_request_guard_v1()'::regprocedure
           AND p.prosrc LIKE '%transaction_isolation%'
           AND p.prosrc LIKE '%pg_advisory_xact_lock(736241, 2)%'
-          AND p.prosrc LIKE '%can no longer be run%') THEN
+          AND p.prosrc LIKE '%can no longer be run%'
+          AND p.prosrc LIKE '%can no longer be held%'
+          AND p.prosrc LIKE '%public.stewardship_automation_fresh_v1(login.id,NEW.actor_id)%') THEN
         RAISE EXCEPTION 'The backup request guard is not the one this file installs';
     END IF;
     IF has_function_privilege('public',

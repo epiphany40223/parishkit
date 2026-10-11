@@ -616,3 +616,54 @@ def test_the_upgrade_check_admits_only_the_registered_request_columns(
         cursor.execute("SELECT " + no_excess(name, tables, columns, reader=True))
         assert cursor.fetchone() == (extra is None,)
         cursor.execute(f"SET SESSION AUTHORIZATION {name}")
+
+
+def test_a_lapsed_request_is_never_held_again(auth_service):
+    """A held stamp would revive a request whose 30 minutes have passed, so
+    the guard refuses it as it refuses the claim."""
+    request = owner_request(age=timedelta(minutes=31))
+    with (
+        backup_login(),
+        pytest.raises(DatabaseError, match="can no longer be held"),
+        transaction.atomic(),
+    ):
+        BackupRequest.objects.filter(pk=request.pk).update(held_at=now())
+    request.refresh_from_db()
+    assert request.held_at is None and request.state == "waiting"
+
+
+def test_a_live_automation_session_stands_in_for_a_fresh_sign_in(auth_service, google):
+    """A full-scope command session records a request though its sign-in is
+    older than five minutes, as the other fresh-gated guards admit (ADM-11
+    PR 5); once the session ends, the same insert is refused."""
+    from parishkit.stewardship.accounts import automation_sessions as automation
+    from parishkit.stewardship.accounts.automation_models import AutomationSession
+
+    from .auth_builders import unguarded
+    from .automation_builders import command, paired
+    from .test_automation_sessions_postgresql import owner
+
+    _, secret, row = paired(auth_service)
+    caller = command(auth_service, secret)
+    login = caller.portal_session
+    # Ten minutes old for both, as fresh_v1 requires them equal.
+    older = row.authenticated_at - timedelta(minutes=10)
+    with unguarded():
+        AutomationSession.objects.filter(pk=row.pk).update(authenticated_at=older)
+        PortalSession.objects.filter(pk=login.pk).update(authenticated_at=older)
+
+    def ask():
+        """Insert a request for the command login, as the web."""
+        with task_login(ServiceRole.WEB, exact=True), transaction.atomic():
+            return BackupRequest.objects.create(
+                id=uuid4(),
+                actor_id=row.principal_id,
+                session_id=login.pk,
+                authenticated_at=older,
+            )
+
+    assert ask().state == "waiting"
+    BackupRequest.objects.update(state="expired", finished_at=now())
+    automation.revoke(row.pk, owner(auth_service), reason="revoked_by_owner")
+    with pytest.raises(DatabaseError, match="fresh Administrator"):
+        ask()

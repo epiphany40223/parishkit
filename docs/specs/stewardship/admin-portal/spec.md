@@ -4870,18 +4870,18 @@ the backup login. Instead:
    upgrade, restore and recovery hold. When the database cannot be read
    (for example during offline work), it also exits quietly; the page's
    "not picked up" message below is what shows a poll that never runs.
-3. When a request is waiting, request mode tries once to take the backup
-   lock that every backup run now takes, without waiting. The lock is a
-   PostgreSQL session advisory lock, held while a run makes its backup set
-   (the off-site upload that follows is not covered); any database
-   login could take its key and stall backups, which the scheduled run's
-   timeout and the overdue-backup alert would then show (a lock file would
-   need a new mount on every host). If another backup
-   holds it, request mode exits quietly and leaves the request waiting. It
-   then takes the startup interlock shared, as every backup run does today;
-   if offline work holds it, it exits quietly the same way. Otherwise it
-   marks the request `running` and runs the ordinary backup, then marks the
-   request `finished`, linked to its backup record, or `failed` with the
+3. When a request is waiting, request mode first takes the startup
+   interlock shared, as every backup run does; if offline work holds it, it
+   exits quietly and leaves the request waiting. It then tries once,
+   without waiting, to take the backup lock that every backup run now
+   takes. The lock is a PostgreSQL session advisory lock, held while a run
+   makes its backup set (the off-site upload that follows is not covered);
+   any database login could take its key and stall backups, which the
+   scheduled run's timeout and the overdue-backup alert would then show (a
+   lock file would need a new mount on every host). If another backup holds
+   it, request mode exits quietly the same way. Otherwise it marks the
+   request `running` and runs the ordinary backup, then marks the request
+   `finished`, linked to its backup record, or `failed` with the
    `failure_kind` category the process log records. The backup login gains
    read and update access to request rows and nothing else.
 4. The scheduled run also takes the backup lock, but waits for it, for at
