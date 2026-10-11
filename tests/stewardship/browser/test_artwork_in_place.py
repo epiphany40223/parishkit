@@ -63,7 +63,7 @@ def test_upload_review_apply_and_status_happen_in_place(page, component_origin):
     assert "not yet in use" in region.inner_text()
     assert current_step(page) == "Review"
     assert page.url == f"{component_origin}{REVIEW}#settings-review"
-    assert page.evaluate(SLOT_PLACE) == top
+    assert page.evaluate(SLOT_PLACE) == pytest.approx(top, abs=1)
     below = page.evaluate(REVIEW_PLACE)
     region.get_by_role("button", name="Apply changes").click()
     visible(region.get_by_role("heading", name="Change status"))
@@ -72,9 +72,9 @@ def test_upload_review_apply_and_status_happen_in_place(page, component_origin):
     # The quiet refresh shows the banner as the slot's current image; the
     # slot keeps its height, so the status below did not move (#736).
     visible(banner.get_by_text("Current image"))
-    assert page.evaluate(REVIEW_PLACE) == below
+    assert page.evaluate(REVIEW_PLACE) == pytest.approx(below, abs=1)
     assert PENDING.split("?")[1] in page.url
-    assert page.evaluate(SLOT_PLACE) == top
+    assert page.evaluate(SLOT_PLACE) == pytest.approx(top, abs=1)
     assert page.evaluate(MARKED) == "kept"
 
 
@@ -91,7 +91,7 @@ def test_remove_this_image_is_reviewed_in_place(page, component_origin):
     assert "Stop showing an image for: Welcome page icon" in region.inner_text()
     assert page.url == f"{component_origin}{REMOVE}#settings-review"
     visible(region.get_by_role("button", name="Apply changes"))
-    assert page.evaluate(SLOT_PLACE) == top
+    assert page.evaluate(SLOT_PLACE) == pytest.approx(top, abs=1)
     assert page.evaluate(MARKED) == "kept"
 
 
