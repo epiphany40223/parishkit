@@ -192,3 +192,13 @@ def test_new_and_edit_user_review_in_the_dialog_and_return_to_users():
     users = (TEMPLATES / "users.html").read_text(encoding="utf-8")
     include = re.search(r'review=True dialog_id="leader-review"[^%]*%', users).group(0)
     assert "return_url" not in include and 'outcome_id="leaders-outcome"' in include
+
+
+def test_the_dialog_body_is_a_focusable_region_named_by_the_title():
+    """A long review with nothing else to focus can still be scrolled by
+    keyboard (axe's scrollable-region-focusable)."""
+    assert re.search(
+        r'<div class="dialog-body" tabindex="0" role="region" '
+        r'aria-labelledby="thing-review-title" data-review-body>',
+        dialog(),
+    )
