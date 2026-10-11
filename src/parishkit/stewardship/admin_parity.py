@@ -282,7 +282,9 @@ LEDGER = {
     # Asks for the page's verification acknowledgement at the prompt.
     "delivery_refusal_clear": command("delivery refusal-clear"),
     # Users and follow-up.
-    "users": pending("PR 11", "users list"),
+    # The page's users and its Upgrade preview panel (#952 slice 2). Its
+    # interim rule tables are retired by #952, so nothing else is owed.
+    "users": command("users list", "users preview-upgrade"),
     "user_rules": pending("PR 11", "rules show"),
     "rule_apply": pending("PR 11", "rules apply"),
     "rule_base": pending("PR 11", "rules show"),

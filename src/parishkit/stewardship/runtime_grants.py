@@ -277,6 +277,11 @@ LEADER_SCOPE_FUNCTION = "stewardship_ministry_leader_scope_v1(uuid)"
 # The offline users upgrade (#952) reads each recorded Google identity and
 # whether it ever signed in, and the ParishSoft Member names of the addresses
 # it names (a new user's default Name), without audit-log or source grants.
+# Web reads them too, for the same read-only upgrade preview on Portal users
+# and in pk-admin users preview-upgrade (#952 slice 2): web already reads
+# the identities and the audit log, and the names definer takes no address:
+# it discloses only the names of the active rules' and recorded identities'
+# addresses, never the rest of a Member's contact record.
 PORTAL_IDENTITIES_FUNCTION = "stewardship_portal_identities_v1()"
 MEMBER_NAMES_FUNCTION = "stewardship_member_names_v1()"
 
@@ -293,7 +298,8 @@ def runtime_functions(role, *, target=None):
     check a secret request's automation sign-in instant (ADM-11 PR 5). Web,
     the general worker and the download login read a user's role-derived
     Ministry scope (#922). The offline admin-recovery login reads recorded
-    identities and Member names for the users upgrade (#952).
+    identities and Member names for the users upgrade (#952), and web reads
+    them for that upgrade's read-only preview.
     """
     role = _identity_role(role, target)
     if role is ServiceRole.CREDENTIAL_INSTALLER:
@@ -307,6 +313,8 @@ def runtime_functions(role, *, target=None):
                 DAILY_SENDS_FUNCTION,
                 AUTOMATION_FRESH_FUNCTION,
                 LEADER_SCOPE_FUNCTION,
+                PORTAL_IDENTITIES_FUNCTION,
+                MEMBER_NAMES_FUNCTION,
             },
             ServiceRole.CONFIG_INSTALLER: {MINISTRY_CATALOG_FUNCTION},
             ServiceRole.WORKER: {

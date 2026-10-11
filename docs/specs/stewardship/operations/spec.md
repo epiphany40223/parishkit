@@ -584,8 +584,10 @@ Administrator may override.
 
 1. **Read-only preview first.** An earlier release adds
    `pk-admin users preview-upgrade` and an **Upgrade preview** panel on the
-   Portal users page. Both run one read-only function and list exactly what
-   the conversion will do:
+   Portal users page. Both run one read-only function, the same one
+   `upgrade-users --preview` prints, and list exactly what the conversion
+   will do. For it, `database-grants` also lets the web login execute the two
+   narrow read functions of step 3 (#952 slice 2):
    - first, every address that holds Administrator today, each kept as an
      Administrator user (the list the operator confirms in step 3);
    - each domain rule, and every recorded Google identity it admits today

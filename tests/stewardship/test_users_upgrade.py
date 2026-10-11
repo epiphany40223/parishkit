@@ -497,8 +497,12 @@ def test_upgrade_users_command_previews_only_until_enabled(monkeypatch):
         )
 
 
-def test_only_admin_recovery_reads_identities_and_member_names():
-    """The two upgrade definers are granted to the offline login alone."""
+def test_only_admin_recovery_and_web_read_identities_and_member_names():
+    """The two upgrade definers: the offline login converts, web previews.
+
+    Web reads them for the read-only Upgrade preview on Portal users and
+    ``pk-admin users preview-upgrade`` (#952 slice 2); no other login does.
+    """
     from parishkit.stewardship.deployment import ServiceRole
     from parishkit.stewardship.runtime_grants import (
         MEMBER_NAMES_FUNCTION,
@@ -506,12 +510,10 @@ def test_only_admin_recovery_reads_identities_and_member_names():
         runtime_functions,
     )
 
-    assert runtime_functions(ServiceRole.ADMIN_RECOVERY) == {
-        PORTAL_IDENTITIES_FUNCTION,
-        MEMBER_NAMES_FUNCTION,
-    }
+    upgrade = {PORTAL_IDENTITIES_FUNCTION, MEMBER_NAMES_FUNCTION}
+    assert runtime_functions(ServiceRole.ADMIN_RECOVERY) == upgrade
+    assert upgrade <= runtime_functions(ServiceRole.WEB)
     for role in (
-        ServiceRole.WEB,
         ServiceRole.WORKER,
         ServiceRole.SCHEDULER,
         ServiceRole.MAIL_DISPATCH,
@@ -519,7 +521,4 @@ def test_only_admin_recovery_reads_identities_and_member_names():
         ServiceRole.BOOTSTRAP,
         "download",
     ):
-        assert not runtime_functions(role) & {
-            PORTAL_IDENTITIES_FUNCTION,
-            MEMBER_NAMES_FUNCTION,
-        }
+        assert not runtime_functions(role) & upgrade

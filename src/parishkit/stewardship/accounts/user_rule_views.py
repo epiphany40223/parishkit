@@ -36,9 +36,9 @@ from .limiting import LimiterUnavailable
 from .policy import Capability
 from .policy_models import PortalUser
 from .request_patch import build_candidate
+from .user_reads import policy_identities
 from .user_rows import AppliedPolicy, role_labels
 from .user_rules import ROLE_ORDER, RuleRefused, rule_patch
-from .user_views import policy_identities
 
 SALT = "stewardship-user-rules-preview-v1"
 PREVIEW_FIELDS = {"kind", "identity", "operation", "roles", "base_digest"}
