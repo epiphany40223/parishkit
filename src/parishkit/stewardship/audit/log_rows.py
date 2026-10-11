@@ -241,6 +241,7 @@ UNGROUPED_REASONS = {
         "census_changes_viewed",
         "daily_digest_viewed",
         "dashboard_viewed",
+        "data_to_fix_viewed",
         "delivery_viewed",
         "family_codes_viewed",
         "family_directory_viewed",

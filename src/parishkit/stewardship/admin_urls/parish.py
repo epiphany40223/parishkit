@@ -1,4 +1,5 @@
-"""Parish data group URLs: settings, logos, Ministries, hosted files, refresh.
+"""Parish data group URLs: settings, logos, Ministries, hosted files, refresh
+and Data to fix in ParishSoft.
 
 Pages end in ``/``; their form actions and images sit under them as nouns
 (``uploads/``, ``deletion/``, ``name/``). Campaign Ministries sits under
@@ -11,6 +12,7 @@ from django.urls import path
 from ..accounts import (
     branding_views,
     campaign_ministry_views,
+    data_to_fix_views,
     hosted_file_views,
     ministry_views,
     parish_views,
@@ -48,6 +50,11 @@ patterns = [
         "parish/parishsoft-refresh/",
         refresh_views.source_refresh,
         name="source_refresh",
+    ),
+    path(
+        "parish/data-to-fix/",
+        data_to_fix_views.data_to_fix,
+        name="parishsoft_fixes",
     ),
 ]
 

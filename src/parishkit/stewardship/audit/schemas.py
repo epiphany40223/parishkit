@@ -111,6 +111,9 @@ class Action(StrEnum):
     # Opening System health (ADM-13); its count is the problems it showed.
     SYSTEM_HEALTH_VIEWED = "system_health_viewed"
     SOURCE_FORM_VIEWED = "source_form_viewed"
+    # Opening Data to fix in ParishSoft (#1011); its count is the total of
+    # the section counts the viewer saw.
+    DATA_TO_FIX_VIEWED = "data_to_fix_viewed"
     PRESENCE_VIEWED = "family_presence_viewed"
     # The operator's one-time engagement backfill (#477), with its counts.
     FAMILY_ENGAGEMENT_BACKFILLED = "family_engagement_backfilled"

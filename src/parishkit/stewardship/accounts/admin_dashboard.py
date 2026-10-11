@@ -54,15 +54,7 @@ def observe(actor, store, *, home=False):
 def summary(actor, configuration, now, *, home=False):
     """Read under the caller's work lock, which pins source/configuration promotion."""
     campaign = configuration.current_campaign
-    # One query for the promoted snapshot's time: the page has a fixed query
-    # budget, and the pointer's own row need not be read first.
-    refreshed_at = (
-        SourceSnapshot.objects.filter(
-            pk__in=SourceCurrent.objects.exclude(snapshot_id=None).values("snapshot_id")
-        )
-        .values_list("promoted_at", flat=True)
-        .first()
-    )
+    refreshed_at = promoted_at()
     result = {
         "campaign": campaign,
         "refreshed_at": refreshed_at,
@@ -188,6 +180,22 @@ def summary(actor, configuration, now, *, home=False):
             .values("id", "task_type", "updated_at")[:5]
         ]
     return result
+
+
+def promoted_at():
+    """When the ParishSoft data in use now was promoted, or None before any.
+
+    One query: the page that shows it has a fixed query budget, and the
+    current-snapshot pointer's own row need not be read first. Home and
+    Data to fix in ParishSoft both show it.
+    """
+    return (
+        SourceSnapshot.objects.filter(
+            pk__in=SourceCurrent.objects.exclude(snapshot_id=None).values("snapshot_id")
+        )
+        .values_list("promoted_at", flat=True)
+        .first()
+    )
 
 
 def leads_ministries(actor):

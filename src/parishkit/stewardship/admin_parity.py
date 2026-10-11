@@ -263,6 +263,8 @@ LEDGER = {
     "system_health_status": command("system health"),
     # Families the form cannot open (#774): counts and DUIDs only.
     "source_form": command("report source-form"),
+    # Data to fix in ParishSoft (#1011): its section counts only.
+    "parishsoft_fixes": command("report data-to-fix"),
     # Operations.
     "background": command("task list"),
     "background_tasks": command("task list"),

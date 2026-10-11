@@ -205,6 +205,7 @@ SLASHLESS_EXPECTED = {
     "/admin/parish/files/deletion": "/admin/parish/files/deletion/",
     f"/admin/parish/files/{T}/name": f"/admin/parish/files/{T}/name/",
     "/admin/parish/parishsoft-refresh": "/admin/parish/parishsoft-refresh/",
+    "/admin/parish/data-to-fix": "/admin/parish/data-to-fix/",
     f"/admin/changes/{T}": f"/admin/changes/{T}/",
     "/admin/campaign": "/admin/campaign/",
     "/admin/mail": "/admin/mail/",

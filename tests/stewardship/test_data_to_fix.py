@@ -1,0 +1,325 @@
+"""Data to fix in ParishSoft (#1011): sections, roles, states and wording.
+
+Pure tests: which sections each role sees and that this matches each detail
+page's own admission, what a section says when it cannot count, the page's
+template for zero, counted and unavailable sections, and the command's
+document and catalog entry. Real reads are in
+database/test_data_to_fix_postgresql.py.
+"""
+
+import io
+import json
+import logging
+from types import SimpleNamespace
+from uuid import UUID, uuid4
+
+import pytest
+from django.template.loader import render_to_string
+
+from parishkit.stewardship import admin_cli, admin_data_to_fix
+from parishkit.stewardship.accounts import admin_navigation, data_to_fix_views
+from parishkit.stewardship.accounts.policy import Principal, allows
+from parishkit.stewardship.admin_parity import LEDGER
+
+ADMIN = Principal(uuid4(), frozenset({"administrator", "staff", "ministry_leader"}))
+STAFF = Principal(uuid4(), frozenset({"staff"}))
+LEADER = Principal(uuid4(), frozenset({"ministry_leader"}), frozenset({4}))
+ROLES = {"administrator": ADMIN, "staff": STAFF, "ministry_leader": LEADER}
+ALL = [section.key for section in data_to_fix_views.SECTIONS]
+CAMPAIGN = UUID("00000000-0000-4000-8000-000000001011")
+
+
+def campaign(modules=("financial", "ministry", "census"), state="active"):
+    """A current campaign as the menu reason checks read it."""
+    return SimpleNamespace(
+        pk=CAMPAIGN,
+        state=state,
+        active_configuration=SimpleNamespace(
+            values={"modules": list(modules)}, name="Stewardship 2027"
+        ),
+    )
+
+
+CONFIGURATION = SimpleNamespace(mode="production")
+
+
+def test_the_sections_run_in_the_decided_order():
+    """Form cannot open, refused addresses, no mail can reach, census."""
+    assert ALL == [
+        "form_cannot_open",
+        "refused_addresses",
+        "unreachable_families",
+        "census_changes",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("role", "keys"),
+    [
+        ("administrator", ALL),
+        ("staff", ["unreachable_families", "census_changes"]),
+        ("ministry_leader", []),
+    ],
+)
+def test_each_role_sees_the_sections_it_may_open(role, keys):
+    """Staff see sections 3 and 4; a Ministry leader sees none."""
+    principal = ROLES[role]
+    shown = [section.key for section in data_to_fix_views.visible_sections(principal)]
+    assert shown == keys
+    # The menu entry is offered exactly when a section is.
+    entry = next(e for e in admin_navigation.MENU if e.name == "parishsoft_fixes")
+    assert allows(principal, entry.capability) == bool(keys)
+
+
+def _detail_admissions():
+    """Each section's detail page admission, as ``(key, module, call)``."""
+    from parishkit.stewardship.accounts import source_form_views
+    from parishkit.stewardship.jobs import delivery_views, task_retries
+    from parishkit.stewardship.reports import census_change_views, directory_views
+
+    return [
+        ("form_cannot_open", source_form_views, source_form_views._principal),
+        ("refused_addresses", task_retries, delivery_views._principal),
+        ("unreachable_families", directory_views, directory_views._principal),
+        ("census_changes", census_change_views, census_change_views._principal),
+    ]
+
+
+@pytest.mark.parametrize("role", sorted(ROLES))
+def test_a_section_shows_exactly_when_its_page_admits(role, monkeypatch):
+    """The capability each section checks is its detail page's own decision."""
+    principal = ROLES[role]
+    shown = {s.key for s in data_to_fix_views.visible_sections(principal)}
+    for key, module, admission in _detail_admissions():
+        monkeypatch.setattr(
+            module, "authenticated_admin", lambda *args, **kwargs: principal
+        )
+        try:
+            admission(object(), None)
+            admitted = True
+        except PermissionError:
+            admitted = False
+        assert admitted == (key in shown), (role, key)
+
+
+def test_the_page_admits_staff_and_refuses_a_ministry_leader(monkeypatch):
+    """The page's admission is "may open at least one section"."""
+    for principal, admitted in ((ADMIN, True), (STAFF, True), (LEADER, False)):
+        monkeypatch.setattr(
+            data_to_fix_views,
+            "authenticated_admin",
+            lambda *args, principal=principal, **kwargs: principal,
+        )
+        if admitted:
+            assert data_to_fix_views._principal(object(), None) is principal
+        else:
+            with pytest.raises(PermissionError):
+                data_to_fix_views._principal(object(), None)
+
+
+def _counted(monkeypatch, **counts):
+    """Replace each section's read with a fixed answer (or an exception)."""
+    reads = {}
+    for key in ALL:
+        answer = counts.get(key, {"count": 0})
+
+        def read(principal, campaign_id, answer=answer):
+            """The fixed answer, or the exception it holds."""
+            if isinstance(answer, Exception):
+                raise answer
+            return dict(answer)
+
+        reads[key] = read
+    monkeypatch.setattr(data_to_fix_views, "READS", reads)
+
+
+def _rows(principal=ADMIN, current=None, configuration=CONFIGURATION):
+    """``read_sections`` for ``principal`` with ``current`` as the campaign."""
+    return {
+        row["key"]: row
+        for row in data_to_fix_views.read_sections(principal, configuration, current)
+    }
+
+
+def test_counted_sections_link_their_pages(monkeypatch):
+    """Each count links its detail page; the directory with its preset."""
+    _counted(
+        monkeypatch,
+        refused_addresses={"count": 2, "families": 1},
+        census_changes={"count": 7},
+    )
+    rows = _rows(current=campaign())
+    assert rows["form_cannot_open"]["url"] == "/admin/system/source-form/"
+    assert rows["refused_addresses"] == {
+        "key": "refused_addresses",
+        "label": "Refused addresses",
+        "url": "/admin/mail/refusals/",
+        "count": 2,
+        "families": 1,
+    }
+    assert rows["unreachable_families"]["url"] == (
+        "/admin/reports/families/?reach=neither"
+    )
+    assert rows["census_changes"]["count"] == 7
+    assert data_to_fix_views.total(rows.values()) == 9
+
+
+def test_without_a_campaign_sections_say_why(monkeypatch):
+    """The campaign sections say there is none; the directory and census
+    links are greyed out as their menu entries are; refusals still count."""
+    _counted(monkeypatch, refused_addresses={"count": 1, "families": 1})
+    rows = _rows(current=None)
+    assert rows["refused_addresses"]["count"] == 1
+    assert rows["form_cannot_open"]["reason"] == admin_navigation.NO_CAMPAIGN
+    # The source-form list opens without a campaign and says so itself.
+    assert rows["form_cannot_open"]["url"]
+    for key in ("unreachable_families", "census_changes"):
+        assert rows[key]["reason"] == admin_navigation.NO_CAMPAIGN
+        assert rows[key]["url"] is None and "count" not in rows[key]
+
+
+def test_a_campaign_without_the_census_greys_that_section(monkeypatch):
+    """The menu's own reason, and the census is never read."""
+    _counted(monkeypatch, census_changes=AssertionError("must not be read"))
+    rows = _rows(current=campaign(modules=("financial",)))
+    assert rows["census_changes"]["reason"] == (
+        "This campaign does not include the census"
+    )
+    assert rows["census_changes"]["url"] is None
+
+
+def test_a_failed_read_says_so_and_is_logged(monkeypatch, caplog):
+    """The failing section says it could not count; the others still count;
+    a WARNING names the section through its shaping step."""
+    _counted(
+        monkeypatch,
+        census_changes=RuntimeError("private detail"),
+        form_cannot_open={"count": 3},
+    )
+    with caplog.at_level(logging.WARNING, logger="parishkit.stewardship"):
+        rows = _rows(current=campaign())
+    assert rows["census_changes"]["reason"] == data_to_fix_views.FAILED
+    assert rows["census_changes"]["url"] == "/admin/reports/census/"
+    assert rows["form_cannot_open"]["count"] == 3
+    (record,) = [r for r in caplog.records if r.msg == "report_shaping_failed"]
+    assert record.levelno == logging.WARNING
+    assert "private detail" not in caplog.text
+
+
+def test_no_promoted_source_is_said_for_the_unreachable_count(monkeypatch):
+    """Home's read answers None before any ParishSoft data: say so."""
+    from parishkit.stewardship.accounts import admin_dashboard
+
+    monkeypatch.setattr(
+        data_to_fix_views, "_guarded", lambda campaign_id, read, **k: read()
+    )
+    monkeypatch.setattr(admin_dashboard, "unreachable_families", lambda pk: None)
+    assert data_to_fix_views._unreachable_families(ADMIN, CAMPAIGN) == {
+        "reason": data_to_fix_views.NO_SOURCE
+    }
+
+
+def render(rows, **extra):
+    """The page's template with ``rows``, outside the Admin chrome."""
+    return render_to_string(
+        "stewardship/data-to-fix.html",
+        {
+            "campaign": campaign(),
+            "refreshed_at": None,
+            "sections": rows,
+            "keys": [row["key"] for row in rows],
+            "nothing_to_fix": all(row.get("count") == 0 for row in rows),
+        }
+        | extra,
+    )
+
+
+def _row(key, **values):
+    """One section row as ``read_sections`` returns it."""
+    section = next(s for s in data_to_fix_views.SECTIONS if s.key == key)
+    return {"key": key, "label": section.label, "url": "/x/"} | values
+
+
+def test_zero_sections_keep_their_blocks_and_say_what_zero_means():
+    """Every block stays at zero, with its link; the data line says so."""
+    html = render([_row(key, count=0) for key in ALL])
+    assert html.count('class="panel data-to-fix-section"') == 4
+    assert "None: every Family that can use the portal can open the form." in html
+    assert "No refused addresses: campaign email reaches every address" in html
+    assert "None: every active Family can be reached by email or postal mail." in html
+    assert "None: every census change Families reported has been handled." in html
+    assert "Nothing to fix right now." in html
+    assert html.count('<a href="/x/">Open ') == 4
+    assert "Stewardship 2027." in html and "ParishSoft data: not yet loaded." in html
+
+
+def test_counts_and_unavailable_sections_are_worded():
+    """Plural counts in plain words; a reason replaces the count and greys
+    out the link with that reason as its tip; no "Nothing to fix" line."""
+    html = render(
+        [
+            _row("form_cannot_open", count=1),
+            _row("refused_addresses", count=3, families=2),
+            _row("unreachable_families", url=None, reason="No current campaign"),
+            _row("census_changes", count=12),
+        ]
+    )
+    assert "1 Family cannot open the Family form" in html
+    assert "3 refused email addresses are not cleared yet, from 2 Families." in html
+    assert "12 census changes that Families reported are still to be handled." in html
+    assert 'aria-disabled="true"' in html and "Open Active parishioner family" in html
+    assert 'id="data-to-fix-open-unreachable_families-tip"' in html
+    assert "Nothing to fix right now." not in html
+
+
+def test_staff_never_read_about_refused_addresses():
+    """The About panel's refusal sentence is only for those who see them."""
+    html = render([_row(key, count=0) for key in ALL[2:]])
+    assert "refused" not in html.lower()
+
+
+def test_the_document_is_counts_and_reasons_only():
+    """One member per visible section; a reason as plain text."""
+    rows = [
+        _row("refused_addresses", count=2, families=1),
+        _row("census_changes", reason=data_to_fix_views.FAILED),
+    ]
+    document = admin_data_to_fix.data_to_fix_model(campaign(), rows).to_document()
+    assert document == {
+        "campaign_id": str(CAMPAIGN),
+        "sections": {
+            "refused_addresses": {"count": 2, "families": 1},
+            "census_changes": {"unavailable": str(data_to_fix_views.FAILED)},
+        },
+    }
+    assert json.dumps(document)
+    none = admin_data_to_fix.data_to_fix_model(None, []).to_document()
+    assert none == {"campaign_id": None, "sections": {}}
+
+
+def test_the_catalog_entry():
+    """Any session, no state change, the page's event, no option."""
+    entries = {entry["name"]: entry for entry in admin_cli.catalog()}
+    entry = entries["report data-to-fix"]
+    assert entry["scope"] == "read_only" and not entry["changes_state"]
+    assert entry["audit_event"] == "data_to_fix_viewed"
+    assert not entry["prompts"] and not entry["fresh_gated"]
+    names = {option["name"] for option in entry["options"]}
+    assert names == {"--config", "--session-stdin"} and entry["arguments"] == []
+    assert entry["result_fields"] == ["campaign_id", "sections"]
+    assert LEDGER["parishsoft_fixes"].detail == ("report data-to-fix",)
+
+
+@pytest.mark.parametrize(
+    "argv", [["report", "data-to-fix", "extra"], ["report", "data-to-fix", "--x"]]
+)
+def test_malformed_commands_are_usage_errors(argv):
+    """The command takes no argument and no option."""
+    out = io.StringIO()
+    code = admin_cli.main(
+        [*argv, "--config", "web.yaml", "--session-stdin"],
+        stdin=io.BytesIO(b""),
+        stdout=out,
+        stderr=out,
+    )
+    assert code == 2 and json.loads(out.getvalue())["error"]["code"] == "usage"

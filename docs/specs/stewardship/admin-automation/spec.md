@@ -2295,7 +2295,7 @@ lists the fields and refusals.
 | `system_refresh_accept` (ADM-13) | `system refresh-accept-preview`, `system refresh-accept --token …` |
 | `system_debug_off`, `system_debug_allow` (ADM-13) | `system debug-off`; `system debug-allow` (Testing only) |
 | `source_form` ([#774](https://github.com/epiphany40223/parishkit/issues/774)) | `report source-form`, counts and DUIDs only ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the host's `pk-stewardship source-form-check` lists the same Families |
-| `parishsoft_fixes` ([#1011](https://github.com/epiphany40223/parishkit/issues/1011), not built yet) | `report data-to-fix`, section counts only, as [Data to fix in ParishSoft](../admin-portal/spec.md#data-to-fix-command-and-downloads) describes |
+| `parishsoft_fixes` ([#1011](https://github.com/epiphany40223/parishkit/issues/1011)) | `report data-to-fix`, section counts only, as [Data to fix in ParishSoft](../admin-portal/spec.md#data-to-fix-command-and-downloads) describes |
 
 `report source-form` is System health's Families the form cannot open
 list, through the page's own functions (`source_form_views._principal`,
@@ -2310,6 +2310,19 @@ listed (`failed` with 0 when a begun read fails). A missing configuration
 row is `not_available`; a check that cannot run now is `unavailable`.
 Leaving out the Family name and printing `field` in the page's words are
 defaults, pending Administrator confirmation. The
+[operator guide](../../../guides/stewardship-admin-automation.md#reports)
+lists the fields.
+
+`report data-to-fix` is Data to fix in ParishSoft through the page's own
+functions (`data_to_fix_views._principal`, its configuration and
+current-campaign read, and `read_sections`, which calls each section's
+existing read): Administrators and Staff, as the page, with any session
+scope. It prints `campaign_id` (null without a current campaign) and
+`sections`, one member per section the reader's role may see, each a
+`count` (with `families` for refused addresses) or `unavailable` with the
+page's reason; a section that cannot count never fails the command. It
+records the page's `data_to_fix_viewed` with the total printed. A restore
+under review is `unavailable`. The
 [operator guide](../../../guides/stewardship-admin-automation.md#reports)
 lists the fields.
 

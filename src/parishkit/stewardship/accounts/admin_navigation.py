@@ -225,6 +225,8 @@ PAGES = {
     "campaign_ministries": Page("parish", _("Campaign Ministries"), "ministries"),
     # A sidebar entry of its own, so a manual refresh is found without Home.
     "source_refresh": Page("parish", _("Refresh from ParishSoft")),
+    # One summary of the data problems fixed in ParishSoft (#1011).
+    "parishsoft_fixes": Page("parish", _("Data to fix in ParishSoft")),
     # A configuration change can come from any settings page, so its status
     # page is registered under Home; the view places it under the page the
     # change was confirmed on when this sign-in remembers it.
@@ -467,6 +469,12 @@ MENU = (
     Entry("ministries", _ADMIN),
     Entry("hosted_files", _ADMIN),
     Entry("source_refresh", _ADMIN),
+    # Last, so /admin/parish/ still opens Parish settings for an
+    # Administrator; Staff see the group with this one entry (#1011). Its
+    # sections' detail pages check SYSTEM_LOGS, BACKGROUND_WORK,
+    # FAMILY_CODES or VIEW_CENSUS; every role holding any of them holds
+    # FAMILY_CODES, which the page's own admission confirms per section.
+    Entry("parishsoft_fixes", Capability.FAMILY_CODES),
     # Users and access
     Entry("users", Capability.MANAGE_USERS),
     Entry("automation_access", _ADMIN),
@@ -477,6 +485,9 @@ MENU = (
     Entry("logs", Capability.SYSTEM_LOGS),
 )
 MENU_NAMES = frozenset(entry.name for entry in MENU)
+# Each entry's reason check by page, for a page that greys out its own link
+# to another menu page exactly as the menu does (Data to fix in ParishSoft).
+MENU_REASONS = {entry.name: entry.reason for entry in MENU}
 
 
 def menu(state, may_open):
