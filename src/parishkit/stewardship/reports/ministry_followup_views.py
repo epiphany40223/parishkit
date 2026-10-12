@@ -497,6 +497,10 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None):
                 roster_key=uuid4(),
                 # Admin and Staff set the tick; a Ministry leader sees it only.
                 can_tick=can_tick(principal),
+                # The help about Ministries removed from the campaign is for
+                # Staff and Administrators (#1135). A leader never meets one:
+                # a leader leads only Ministries the campaign asks about (#922).
+                campaign_marks=allows(principal, Capability.MINISTRY_FOLLOWUP),
                 states=STATES,
                 staff_states=[(key, STATES[key]) for key in STAFF_STATES],
                 # Only Resolved takes a chosen outcome (change_values), and

@@ -28,7 +28,7 @@ from parishkit.stewardship.web.security import private_response
 from .export_services import ExportRequestBound
 from .export_ui import _redirect
 from .export_views import SAFE_FAILURES
-from .ministries import ZONE_MESSAGE, MinistryQuery
+from .ministries import ZONE_MESSAGE, MinistryQuery, refuse_leader_activity
 from .ministry_exports import MAX_PACKET_MINISTRIES, create_ministry_export
 from .ministry_views import _principal
 
@@ -93,7 +93,9 @@ def create(request, campaign_id):
             service.store,
             actor.identity,
             campaign_id=campaign_id,
-            query=MinistryQuery.parse(parameters, detail=bool(ministry)),
+            query=refuse_leader_activity(
+                actor, MinistryQuery.parse(parameters, detail=bool(ministry))
+            ),
             ministry_id=int(ministry) if ministry else None,
             action=values["action"],
             format=values["format"],
