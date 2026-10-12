@@ -17,7 +17,10 @@ from parishkit.stewardship.web.dates import format_date, format_local
 from parishkit.stewardship.web.report_markup import STYLES, button
 from parishkit.stewardship.web.weekly_digest_content import validate_weekly_body
 
+from .daily_digest import funnel_html
+from .digest_funnel import TESTING_NOTE, funnel_text
 from .links import report_url
+from .response_metrics import ResponseMetrics
 
 EXCERPT_CHARACTERS = 240
 # A full-width presentational table, as the report layout builds them (#720).
@@ -92,6 +95,12 @@ class WeeklyDigestDocument:
     ``date_format`` is the parish date format of the configuration the
     snapshot pinned (None means the default style), so a compile retried
     after an Admin changes the format still renders as first captured.
+
+    ``funnel`` is the response funnel at the capture instant
+    (``digest_funnel``, #477), counted from durable timestamps by the
+    compiling worker and again by the saved report page, so the two agree;
+    ``mode`` is the report's system mode. A Testing report has no funnel and
+    says where it is instead; a document without a mode shows neither.
     """
 
     snapshot_id: UUID
@@ -104,6 +113,8 @@ class WeeklyDigestDocument:
     corrections: tuple[WeeklyCorrection, ...]
     manual: bool = False
     date_format: str | None = None
+    funnel: ResponseMetrics | None = None
+    mode: str | None = None
 
     def __post_init__(self):
         """Reject mixed/duplicate rows and future input before any email is compiled."""
@@ -112,6 +123,10 @@ class WeeklyDigestDocument:
             or not isinstance(self.campaign_id, UUID)
             or type(self.manual) is not bool
             or not isinstance(self.date_format, str | None)
+            or not isinstance(self.funnel, ResponseMetrics | None)
+            or self.mode not in {None, "production", "testing"}
+            # Only a Production report counts a funnel (see digest_funnel).
+            or (self.funnel is not None and self.mode != "production")
         ):
             raise ValueError("Weekly digest requires typed report identity.")
         _instant(self.observed_at)
@@ -275,6 +290,14 @@ def _render_weekly_digest(document, *, public_origin):
             link_label = "Read the full request: " if shortened else ""
             text += "\n" + link_label + url + f"items/{row.item_id}/"
         html += "</tbody></table>"
+    # The response funnel (#477) follows the requests, which the weekly
+    # report exists for, and uses the daily report's rows and bars, so the
+    # two emails draw it alike. A Testing report says where it is instead.
+    html += funnel_html(document, plain)
+    if document.funnel is not None:
+        text += "\n\n" + funnel_text(document.funnel)
+    elif document.mode == "testing":
+        text += "\n\n" + TESTING_NOTE
     html += button(url, "Open protected report")
     text += "\n\nOpen protected report (staff login required): " + url
     validate_weekly_body(html, text)

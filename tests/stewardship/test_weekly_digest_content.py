@@ -367,3 +367,79 @@ def test_each_header_fact_appears_once():
         assert "sign-in" not in body and "capture time" not in body
         assert body.lstrip().startswith("1 new actionable request")
     assert result.subject == "Weekly information digest — November 2, 2026"
+
+
+def test_a_production_weekly_report_shows_the_response_funnel():
+    """The daily report's funnel rows, after the requests, before the button (#477)."""
+    from parishkit.stewardship.web.report_markup import STYLES
+
+    from .test_daily_digest_content import funnel_metrics
+
+    result = render(replace(document(), funnel=funnel_metrics(), mode="production"))
+    validate_weekly_body(result.html, result.text)
+    for body in (result.html, result.text):
+        assert "Response funnel" in body
+        assert "Email invites sent" in body and "Link followed" not in body
+        assert "Submitted more than once" in body
+    assert "Response funnel (Families):" in result.text
+    assert "Email invites sent: 1,000 (100%)" in result.text
+    assert "Submitted: 401 (40%)" in result.text
+    assert "Submitted more than once: 7 (2% of Submitted)" in result.text
+    # Four stage rows and one figure row, each with a table-cell bar.
+    funnel = result.html[result.html.index("Response funnel") :]
+    assert funnel.count(f'style="{STYLES["bar"]}"') == 5
+    # The requests stay first; the funnel comes before the report button.
+    for body in (result.html, result.text):
+        assert body.index("corrections to previously") < body.index("Response funnel")
+        assert body.index("Response funnel") < body.index("Open protected report")
+
+
+def test_a_testing_weekly_report_says_where_the_funnel_is():
+    """No Testing funnel; a document without a mode shows neither."""
+    result = render(replace(document(), mode="testing"))
+    for body in (result.html, result.text):
+        assert "Response funnel" not in body
+        assert "Testing digests leave out the response funnel." in body
+    plain = render()
+    for body in (plain.html, plain.text):
+        assert "Response funnel" not in body and "Testing digests" not in body
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"mode": "live"},
+        {"mode": "testing", "funnel": "metrics"},
+        {"funnel": "metrics"},
+        {"mode": "production", "funnel": {"invited": 1}},
+    ],
+)
+def test_weekly_funnel_requires_production_metrics(changes):
+    """Only a Production report carries a funnel, and only real metrics."""
+    from .test_daily_digest_content import funnel_metrics
+
+    if changes.get("funnel") == "metrics":
+        changes = {**changes, "funnel": funnel_metrics()}
+    with pytest.raises(ValueError, match="typed report identity"):
+        replace(document(), **changes)
+
+
+def test_the_weekly_saved_page_context_shares_the_daily_panel():
+    """``funnel_context`` gives both saved pages the same rows and note."""
+    from parishkit.stewardship.reports.digest_funnel import funnel_context
+
+    from .test_daily_digest_content import funnel_metrics
+
+    context = funnel_context(funnel_metrics(), "production")
+    assert [row[:2] for row in context["funnel_stages"]] == [
+        ("Email invites sent", 1000),
+        ("Form opened", 512),
+        ("Progressed past the first step", 480),
+        ("Submitted", 401),
+    ]
+    assert context["funnel_figures"][0][0] == "Submitted more than once"
+    assert context["funnel_testing_note"] == ""
+    testing = funnel_context(None, "testing")
+    assert testing["funnel_stages"] == () and testing["funnel_figures"] == ()
+    assert testing["funnel_testing_note"].startswith("Testing digests")
+    assert funnel_context(None, None)["funnel_testing_note"] == ""

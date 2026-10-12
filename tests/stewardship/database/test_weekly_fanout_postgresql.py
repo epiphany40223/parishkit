@@ -268,3 +268,92 @@ def test_outsider_has_no_coverage_projection(live_response_service):
                 [snapshot.pk, "outsider@example.org"],
             )
             assert cursor.fetchone()[0] is None
+
+
+def test_every_admins_email_carries_the_capture_instant_funnel(live_response_service):
+    """The worker counts the funnel at the capture instant, once per page (#477).
+
+    It runs as the exact worker login, so this also proves the weekly
+    compile has the read grants the funnel needs.
+    """
+    respond(live_response_service, "Funnel request")
+    with campaign_clock(INSTANT):
+        claim, snapshot = captured(
+            live_response_service, additional_admins=("second@example.org",)
+        )
+        page, contents = detached(claim)
+        assert len(page.recipients) == 2
+        for plan in page.recipients:
+            funnel = plan.document.funnel
+            assert plan.document.mode == "production"
+            assert funnel.as_of == snapshot.observed_at
+            assert funnel.stage("submitted") == 1
+        # Both Admins' emails show the same funnel from one count.
+        assert page.recipients[0].document.funnel is page.recipients[1].document.funnel
+        assert retain(claim, page, contents).phase == "complete"
+        for recipient in WeeklyDigestRecipient.objects.all():
+            assert "Response funnel" in recipient.html
+            assert "Response funnel (Families):" in recipient.text
+            assert "\nSubmitted: 1 (" in recipient.text
+            assert recipient.text.index("Funnel request") < recipient.text.index(
+                "Response funnel"
+            )
+
+
+def test_a_funnel_only_change_does_not_fail_the_coverage_recheck(
+    live_response_service, monkeypatch
+):
+    """Retain rechecks coverage, not the funnel the emails were compiled with.
+
+    A count that changes between load and retain (an engagement backfill,
+    or a row still committing at the capture instant) is not stale coverage,
+    so the page commits and the emails keep the funnel they were compiled
+    with. The recheck does not count the funnel at all.
+    """
+    from parishkit.stewardship.reports import weekly_fanout
+
+    respond(live_response_service, "Funnel-only change request")
+    with campaign_clock(INSTANT):
+        claim, _ = captured(live_response_service)
+        page, contents = detached(claim)
+        counted = page.recipients[0].document.funnel
+        assert counted.submitted_again == 0
+
+        def changed(*args):
+            """A different funnel, as a backfill between load and retain gives."""
+            calls.append(args)
+            return replace(counted, submitted_again=5)
+
+        calls = []
+        monkeypatch.setattr(weekly_fanout, "digest_funnel", changed)
+        assert retain(claim, page, contents).phase == "complete"
+        assert calls == []
+        text = WeeklyDigestRecipient.objects.get().text
+        assert "Submitted more than once: 0 (" in text
+
+
+def test_a_testing_weekly_fanout_counts_no_funnel(response_service, monkeypatch):
+    """A Testing report has no funnel counts (#477).
+
+    Weekly capture reads live requests only, so a Testing report, made
+    before go-live, is always empty and sends no email: its fan-out stores
+    no recipient and counts no funnel. Its saved page shows the Testing
+    note instead (test_weekly_views_postgresql.py).
+    """
+    from parishkit.stewardship.reports import weekly_fanout
+
+    calls = []
+    real = weekly_fanout.digest_funnel
+    monkeypatch.setattr(
+        weekly_fanout,
+        "digest_funnel",
+        lambda *args: calls.append(args) or real(*args),
+    )
+    with campaign_clock(INSTANT):
+        claim, snapshot = captured(response_service)
+        assert snapshot.preparation.mode == "testing"
+        page, contents = detached(claim)
+        assert page.recipients == contents == ()
+        assert retain(claim, page, contents).phase == "complete"
+    assert calls == []
+    assert not WeeklyDigestRecipient.objects.exists()
