@@ -25,7 +25,14 @@ from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.web.exports import csv_cell
 from parishkit.stewardship.web.tables import bounded_count
 
-from .log_rows import audit_row, log_table, merge, operational_row, task_subject
+from .log_rows import (
+    LogQuery,
+    audit_row,
+    log_table,
+    merge,
+    operational_row,
+    task_subject,
+)
 from .log_search import narrowed
 from .models import AuditContext, AuditEvent, OperationalLog
 from .timeouts import record_timeout
@@ -226,6 +233,45 @@ def _annotate(page):
     return page
 
 
+def _mark_related(page):
+    """Mark the page's rows whose "Show related entries" lists another entry.
+
+    The row's related icon (#1065) appears only when it has something to
+    link to. That filter sends the correlation alone, so its answer is the
+    first-visit default (every level but DEBUG, and audit records). Only
+    "another entry besides this one" matters, so one statement reads, per
+    correlation on the page, at most two such entries from each log
+    (``LIMIT 2`` through each log's correlation index): a correlation
+    shared by thousands of entries costs no more than one shared by two.
+    A row is marked when the entries found, less itself when it is one of
+    them, leave at least one.
+    """
+    levels = list(LogQuery().levels)
+    correlations = list(
+        {row["correlation_id"] for row in page if row["correlation_id"]}
+    )
+    found = {}
+    if correlations:
+        operational = OperationalLog._meta.db_table
+        audit = AuditEvent._meta.db_table
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"""SELECT wanted.id,
+                    (SELECT count(*) FROM (SELECT 1 FROM "{operational}" entry
+                        WHERE entry.correlation_id = wanted.id
+                        AND entry.level = ANY(%s) LIMIT 2) listed)
+                    + (SELECT count(*) FROM (SELECT 1 FROM "{audit}" entry
+                        WHERE entry.correlation_id = wanted.id LIMIT 2) listed)
+                FROM unnest(%s::uuid[]) AS wanted(id)""",
+                [levels, correlations],
+            )
+            found = dict(cursor.fetchall())
+    for row in page:
+        listed = row["source_kind"] == "audit" or row["level"] in levels
+        row["has_related"] = found.get(row["correlation_id"], 0) - listed > 0
+    return page
+
+
 def _window(operational, audit, *, offset, size, oldest):
     """One merged page: keys of both sources merged, then full rows for it.
 
@@ -260,14 +306,15 @@ def _window(operational, audit, *, offset, size, oldest):
     return _annotate([loaded[key["source"], key["id"]] for key in keys])
 
 
-def load_page(query, *, through):
+def load_page(query, *, through, mark_related=False):
     """Read one page of the snapshot and describe it for the shared navigator.
 
     Returns (TablePage, depth_limited). The total is a bounded count per
     source (at most 10,000 each), and paging reaches at most EXPORT_LIMIT
     entries into the chosen order: a page past either the end or that depth
     shows the last reachable page, and ``depth_limited`` then tells the page
-    to suggest a narrower date range or the other order.
+    to suggest a narrower date range or the other order. ``mark_related``
+    (the screen only) marks each row's ``has_related`` for its related icon.
     """
     operational, audit = sources(query, through)
     counts = [bounded_count(rows) for rows in (operational, audit) if rows is not None]
@@ -287,6 +334,10 @@ def load_page(query, *, through):
         size=min(size, reachable - offset),
         oldest=query.oldest,
     )
+    if mark_related:
+        # Only the screen draws the related icon; the command line's
+        # ``logs list`` skips the extra read.
+        rows = _mark_related(rows)
     table = log_table(
         query,
         rows,

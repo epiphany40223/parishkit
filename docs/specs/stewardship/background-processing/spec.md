@@ -2590,7 +2590,7 @@ or exception messages), mirrored by `stewardship_safe_context_v1`:
 writes one INFO `incident_recovered` entry naming the incident, its kind, how
 long it lasted and how many times it was observed. It shares the correlation
 of the CRITICAL entry that opened the incident, and names that entry, so
-"Show related entries" lists the two together. An incident opened without a
+the related-entries icon on either lists the two together. An incident opened without a
 log entry (backup and sign-in health) keeps its own correlation. An episode
 whose end still needs follow-up (a backup encryption key change, which ends
 when the change is no longer recent rather than when anyone checked the key)

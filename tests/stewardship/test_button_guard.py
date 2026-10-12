@@ -36,7 +36,6 @@ RAW_ALLOWED = {
     # Attribute values built from several parts ("log-{{ … }}-actor"), which
     # the tag cannot take as one argument yet.
     "hosted-files.html": 2,
-    "logs.html": 3,
 }
 
 COMMENT = re.compile(r"{% comment %}.*?{% endcomment %}", re.S)
