@@ -153,6 +153,8 @@ from .send_history_components import components as send_history_components
 from .send_progress_components import components as send_progress_components
 from .settings_components import POSTS as SETTINGS_POSTS
 from .settings_components import components as settings_components
+from .signed_in_components import POSTS as SIGNED_IN_POSTS
+from .signed_in_components import components as signed_in_components
 from .source_form_components import components as source_form_components
 from .step_up_components import components as step_up_components
 from .system_health_components import components as system_health_components
@@ -2303,6 +2305,7 @@ def component_origin():
     responses.update(menu_components(context, admin))
     responses.update(my_ministries_components(context, admin))
     responses.update(automation_components(context, admin))
+    responses.update(signed_in_components(context, admin))
     responses.update(step_up_components(context, admin))
     responses.update(refresh_schedule_components(context, admin, NOW))
     # The in-place form page's POST answers (#519, #562): refusals answer
@@ -2314,6 +2317,7 @@ def component_origin():
         IN_PLACE_POSTS
         | DELIVERY_POSTS
         | AUTOMATION_POSTS
+        | SIGNED_IN_POSTS
         | FOLLOWUP_POSTS
         | ROSTER_POSTS
         | INFORMATION_POSTS

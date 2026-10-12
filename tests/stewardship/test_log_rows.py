@@ -414,6 +414,7 @@ def test_sign_in_activity_is_a_closed_link_filter():
         "admin_privileges_changed",
         "admin_reauthenticated",
         "admin_revoked",
+        "admin_session_signed_out",
         "admin_step_up",
         "admin_timeout",
     }

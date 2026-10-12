@@ -29,6 +29,7 @@ from .accounts import (
     setup_schedule_views,
     setup_share_views,
     setup_views,
+    signed_in_views,
     source_form_views,
     system_health_views,
 )
@@ -99,6 +100,13 @@ admin_patterns = [
         "critical-events/acknowledge",
         critical_event_views.acknowledge_critical_events,
         name="critical_events_acknowledge",
+    ),
+    # Every live interactive Admin session (#953); Sign out posts the chosen
+    # session to the same address, as the shared confirmation dialog does.
+    path(
+        "users/sessions/",
+        signed_in_views.signed_in_sessions_view,
+        name="signed_in_sessions",
     ),
     # The browser side of the Admin automation command line (ADM-11), under
     # Users and access in the #525 URL scheme: nouns, trailing slashes, and
