@@ -2061,7 +2061,9 @@ A closed or archived campaign's selections never change.
   never deleted or rewritten: submissions keep their recorded inputs, join and
   stop requests stay in Ministry follow-up until staff close them, and the
   Ministry report, follow-up queue and follow-up packets keep showing them,
-  marked "No longer in this campaign", while it has a request that was not
+  marked "No longer in this campaign" (in the follow-up queue, a "Removed"
+  badge; see [follow-up workflows](#follow-up-workflows)), while it has a
+  request that was not
   later withdrawn or replaced. A Family who opens the form again no
   longer sees that Ministry, and resubmitting does not withdraw its requests.
   Adding the DUID back shows those answers unmarked again, including on the
@@ -4578,15 +4580,22 @@ Family data.
 The queue's columns follow the shared
 [table column order](../ui-conventions/spec.md#table-column-order)
 ([#932](https://github.com/epiphany40223/parishkit/issues/932)): Member (the
-row header, linking to the request), Member DUID, Ministry, Ministry DUID,
-Request (Join or Leave), Status, Submitted and Last contact. A Member added
+row header, linking to the request), Member DUID, Ministry, Request (Join
+or Leave), Status and Last contact. It has no Ministry DUID or Submitted
+column (Administrator decision, 2026-10-11,
+[#1064](https://github.com/epiphany40223/parishkit/issues/1064)), a
+[recorded exception](../ui-conventions/spec.md#table-column-order) to the
+DUID rule, so the table is narrower; the request page shows when the
+request was submitted. A Member added
 on the form is not in ParishSoft yet, so their Member DUID reads "New
 Member". The installed selection orders the rows and returns each request's
 Ministry DUID but not its Member key, so the page reads the Member keys of
 the rows shown in one query by request id; a schema change was not needed.
-Member, Ministry and Submitted sort through the selection's own orders; the
-two DUID columns, Request, Status and Last contact do not, since the
-selection has no order for them. A long Member or Ministry name is cut short
+The rows are newest first by default, the selection's own order, which no
+heading shows; Member and Ministry sort through the selection's own orders,
+and the selection's oldest-first order is no longer offered. Member DUID,
+Request, Status and Last contact do not sort, since the selection has no
+order for them. A long Member or Ministry name is cut short
 with an ellipsis on one line and shown whole in its title. Member names read
 "Last, first", as the
 [Member-name rule](../ui-conventions/spec.md#family-and-member-names) asks,
@@ -4606,6 +4615,24 @@ chosen status with no assignee; until then an explicit New filter (queue or
 Ministry report) does not match it, while Unresolved and Any status do. Past
 history entries keep the assignment they recorded. The data model keeps the unused column and state, as described in
 the [data specification](../data/spec.md#follow-up-records).
+
+The queue page is compact
+([#1064](https://github.com/epiphany40223/parishkit/issues/1064)). Its
+filters share one compact filter bar that takes two rows at laptop
+widths; at phone width each field takes its own row.
+Every row of the table is one line, per [table fit and row
+height](../ui-conventions/spec.md#table-fit-and-row-height): a cell
+holds one short value that does not wrap, so a table wider than the page
+scrolls sideways inside its own box. Request reads Join or Leave, and "Leave
+(cannot participate)" for a Member who cannot participate in any ministries,
+the whole reason being the marker's tooltip and written out on the request
+page. Status is one line, with a resolved request's outcome after a colon
+("Resolved: Joined ministry"); Closed: no response, whose outcome is always
+No response, does not repeat it. A Ministry since removed from the campaign
+carries a small "Removed" badge after its name, with "No longer in this
+campaign" as its tooltip and screen-reader text, instead of that sentence in
+the cell. Last contact uses the compact date and time of dense tables
+([date format](../ui-conventions/spec.md#date-format)).
 
 The request form is compact
 ([#1014](https://github.com/epiphany40223/parishkit/issues/1014)): on a

@@ -216,10 +216,11 @@ def test_follow_up_page_labels_no_utc_entry():
     assert "data-browser-zone-note hidden" in text
     assert text.count("data-browser-zone-field>") == 2
     assert "data-browser-zone-name" in text and "UTC" not in text
-    # Every follow-up instant shown (submitted, history, contact, last
-    # contact, source as of) is converted in the browser.
+    # Every follow-up instant shown (the request's submitted time, history,
+    # contact, the queue's last contact, source as of) is converted in the
+    # browser. The queue has no Submitted column (#1064).
     shown = [line for line in text.splitlines() if "|date:'c'" in line]
-    assert len(shown) == 6
+    assert len(shown) == 5
     assert all("data-local-instant" in line for line in shown)
 
 

@@ -165,7 +165,9 @@ def components(context, admin):
         contact_zone="",
         contact_notes="",
     )
-    leave = row | dict(action="leave", member_name="Leaving <Member>")
+    leave = row | dict(
+        action="leave", member_name="Leaving <Member>", cannot_serve=True
+    )
     refused = form | dict(
         state="resolved",
         outcome="other",
@@ -197,6 +199,45 @@ def components(context, admin):
     saved = row | dict(
         version=4, state="in_progress", state_label=STATES["in_progress"]
     )
+    # A full page of 25 requests with typical data (#1064): joins and leaves,
+    # a leave from a Member who cannot participate, every status with its
+    # outcome (the longest is "Declined / no longer interested"), a Member
+    # added on the form, a Ministry since removed from the campaign, long
+    # names, and requests with no contact recorded.
+    states = [
+        ("new", None),
+        ("in_progress", None),
+        ("resolved", "joined"),
+        ("resolved", "declined"),
+        ("closed_no_response", "no_response"),
+        ("resolved", "leave_confirmed"),
+        ("superseded", None),
+    ]
+    full_page = []
+    for number in range(25):
+        state, outcome = states[number % len(states)]
+        full_page.append(
+            row
+            | dict(
+                id=str(UUID(int=200 + number)),
+                member_name=f"Member{number} Bartholomew-Fitzgerald <Example>",
+                member_duid=None if number == 4 else 100000 + number,
+                ministry_name=(
+                    "Hospitality and welcome ministry for the parish"
+                    if number % 2
+                    else "Choir"
+                ),
+                ministry_duid=1000 + number,
+                in_campaign=number != 6,
+                action="leave" if number % 3 == 0 else "join",
+                cannot_serve=number % 3 == 0 and number % 2 == 0,
+                state=state,
+                state_label=STATES[state],
+                outcome=outcome,
+                outcome_label=OUTCOMES[outcome] if outcome else "",
+                last_contact_at=None if number % 4 == 0 else moment,
+            )
+        )
     # The refusals, as the view describes them.
     kind = _refusal_error(
         FollowupRefusal("outcome_kind", outcome="leave_confirmed", action="join"), {}
@@ -209,6 +250,12 @@ def components(context, admin):
             query=unfiltered,
             rows=[row, proposed],
             table=_table([row, proposed], unfiltered, 51, campaign),
+        ),
+        "/followup-page": values
+        | dict(
+            query=unfiltered,
+            rows=full_page,
+            table=_table(full_page, unfiltered, 60, campaign),
         ),
         "/followup-empty": values
         | dict(rows=[], total=0, table=_table([], query, 0, campaign)),
