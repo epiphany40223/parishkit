@@ -172,6 +172,26 @@ class MinistryQuery:
         return int(self.size)
 
 
+def packet_choices(result, query, read_every):
+    """Every Ministry the packet may include, by name, whatever the table shows.
+
+    The packet takes no report filters, so its choices are the reader's
+    whole summary scope (#533), not the page of rows shown: a leader of
+    many Ministries can tick a few from different pages, and paging,
+    sorting or searching the table leaves the ticks alone. When this page
+    already holds the unfiltered summary in full (the usual case for a
+    leader), it is reused; otherwise ``read_every()`` reads the whole
+    unfiltered summary once, through the same scoped selection.
+    """
+    summaries = result["summaries"]
+    if query.search or query.activity != "any" or result["total"] > len(summaries):
+        summaries = read_every()["summaries"]
+    return sorted(
+        ({"duid": row["duid"], "name": row["name"]} for row in summaries),
+        key=lambda row: (row["name"].lower(), row["duid"]),
+    )
+
+
 def can_report(principal):
     """Allow global operational roles or a leader with at least one current scope."""
     return allows(principal, Capability.MINISTRY_REPORT) or any(
@@ -270,7 +290,9 @@ def within_principal(principal, capability, operational, ministries):
     )
 
 
-def ministry_page(campaign_id, query, principal, *, ministry_id=None, action="join"):
+def ministry_page(
+    campaign_id, query, principal, *, ministry_id=None, action="join", every=False
+):
     """Read under the response guard using its freshly resolved actor, not a cookie.
 
     SQL derives the actor's current role scope (stewardship_ministry_report_v4,
@@ -278,7 +300,13 @@ def ministry_page(campaign_id, query, principal, *, ministry_id=None, action="jo
     requests; Python's scope is a pre-check and a cross-check. Contact
     redaction occurs inside the query, before detached values reach the
     renderer. No credential or financial columns are selected.
+
+    ``every`` reads the whole Ministry summary rather than one page of it
+    (the packet's choices, #533). It is refused for one Ministry's request
+    rows, which a page view always reads one page at a time.
     """
+    if every and ministry_id is not None:
+        raise ValueError("Only the Ministry summary is read whole.")
     if not can_report(principal) or (
         ministry_id is not None
         and (
@@ -304,8 +332,9 @@ def ministry_page(campaign_id, query, principal, *, ministry_id=None, action="jo
                 principal.identity,
                 ministry_id,
                 action,
-                query.page_size,
-                (query.page - 1) * query.page_size,
+                # A NULL limit selects every summary row.
+                None if every else query.page_size,
+                0 if every else (query.page - 1) * query.page_size,
             ],
         )
         value = cursor.fetchone()

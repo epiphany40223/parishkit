@@ -93,13 +93,23 @@ def components(context, admin):
     dated = MinistryQuery(
         search="Example", start="2026-11-01", end="2026-11-02", zone=DATED_ZONE
     )
-    summary = values | dict(ministry_id=None, action=None, rows=[], report_url=root)
-    # The summary by Ministry name the other way, with a second Ministry on
-    # the page: what its heading's POST form returns, served from a GET path
-    # to the in-place re-sort tests (#478).
-    descending = MinistryQuery(search="Example", sort="name_desc")
+    # The packet offers every Ministry in scope, whatever the table shows
+    # (#533): here a second Ministry the first summary page leaves out.
     more = [dict(values["summaries"][0], duid=10, name="Another Ministry")]
     summaries = more + values["summaries"]
+    choices = [{"duid": row["duid"], "name": row["name"]} for row in summaries]
+    summary = values | dict(
+        ministry_id=None,
+        action=None,
+        rows=[],
+        report_url=root,
+        packet_choices=choices,
+        packet_limit=200,
+    )
+    # The summary by Ministry name the other way, with the second Ministry
+    # on the page: what its heading's POST form returns, served from a GET
+    # path to the in-place re-sort tests (#478).
+    descending = MinistryQuery(search="Example", sort="name_desc")
     pages = {
         "/ministry-detail": values | dict(table=detail),
         "/ministry-summary": summary
