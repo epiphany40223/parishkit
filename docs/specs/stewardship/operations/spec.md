@@ -820,7 +820,14 @@ has its own request formats (`users-patch-v10` for Admin edits,
 `integration-credential-users-v10` for a credential update and
 `operator-recovery-users-v10` for recovery; #952 slice 3), each keeping every
 rule of its `source-cadence-v8` counterpart with the users list in place of
-the sign-in rules.
+the sign-in rules. The same three formats build a configuration with
+[remembered reminder series](../data/spec.md#schedule-revisions-and-fulfillment)
+(`campaign-series-v11`, migration 0075,
+[#469](https://github.com/epiphany40223/parishkit/issues/469)). Its candidate
+uses that schema when the base, or an Admin edit's patch, has the series
+section; the base and patch alone decide, so a retry rebuilds the same
+candidate. Recovery and credential updates keep the series unchanged, and the
+`upgrade-users` command treats such a configuration as already converted.
 
 Bootstrap (`bootstrap --admin-email`) writes a users bootstrap
 (`bootstrap-users-v10`, [#993](https://github.com/epiphany40223/parishkit/issues/993)):

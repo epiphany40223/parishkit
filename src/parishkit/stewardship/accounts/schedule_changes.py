@@ -26,6 +26,7 @@ from .content_forms import EMAIL_LABELS
 from .request_patch import build_candidate
 from .schedule_forms import WEEKDAYS
 from .schedule_preview import fingerprint, work_summary
+from .series_schema import upkeep
 
 # A preview that changes nothing is refused with this, not with the catch-all
 # rule text, which would wrongly suggest a schedule breaks a rule (#878).
@@ -142,6 +143,10 @@ def build_preview(
         return None
     # An added email comes before the schedule that sends it.
     patch = [*content, *patch]
+    # A remembered reminder series (#469) follows its reminders: a removed
+    # one, or one moved off its rule's dates, leaves it, in this same signed
+    # intent. The review lists only the schedule changes.
+    patch.extend(upkeep(base.document(), patch))
     try:
         build_candidate(base, patch, candidate_id=uuid4())
     except (ConfigError, ValueError):

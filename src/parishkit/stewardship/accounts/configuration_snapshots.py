@@ -39,7 +39,7 @@ from .content_trust import records_of, trusted_content
 from .ministry_activity import SCHEMA as MINISTRY_SCHEMA
 from .ministry_activity import remember_records
 from .source_cadence_schema import SCHEMA as CADENCE_SCHEMA
-from .users_schema import SCHEMA as USERS_SCHEMA
+from .users_schema import FORM_SCHEMAS as USERS_SCHEMAS
 
 POLICY_SCHEMAS = {
     "foundation-policy-v2",
@@ -49,19 +49,20 @@ POLICY_SCHEMAS = {
     MINISTRY_SCHEMA,
     CONTENT_SCHEMA,
     CADENCE_SCHEMA,
-    USERS_SCHEMA,
+    *USERS_SCHEMAS,
 }
 CAMPAIGN_SCHEMAS = {
     "campaign-foundation-v3",
     MINISTRY_SCHEMA,
     CONTENT_SCHEMA,
     CADENCE_SCHEMA,
-    USERS_SCHEMA,
+    *USERS_SCHEMAS,
 }
 # The schemas with local Ministry activity, and those with content. The
-# users form (#952) keeps every section of the schema it follows.
-MINISTRY_SCHEMAS = {MINISTRY_SCHEMA, CONTENT_SCHEMA, CADENCE_SCHEMA, USERS_SCHEMA}
-CONTENT_SCHEMAS = {CONTENT_SCHEMA, CADENCE_SCHEMA, USERS_SCHEMA}
+# users form (#952) keeps every section of the schema it follows, and so do
+# remembered reminder series (#469), which have no projection of their own.
+MINISTRY_SCHEMAS = {MINISTRY_SCHEMA, CONTENT_SCHEMA, CADENCE_SCHEMA, *USERS_SCHEMAS}
+CONTENT_SCHEMAS = {CONTENT_SCHEMA, CADENCE_SCHEMA, *USERS_SCHEMAS}
 HISTORY_BATCH_SIZE = 64
 
 

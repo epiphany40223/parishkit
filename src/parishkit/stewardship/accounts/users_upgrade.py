@@ -52,8 +52,8 @@ from .request_models import ConfigurationChangeRequest
 from .request_patch import UPGRADE_BASES, build_candidate
 from .runtime_models import SystemConfiguration
 from .users_schema import (
+    FORM_SCHEMAS,
     ROLE_LEVELS,
-    SCHEMA,
     UPGRADE_REQUEST_SCHEMA,
     uses_users,
     valid_name,
@@ -347,7 +347,7 @@ def upgrade_users(
         else:
             runtime = upgrade_runtime(store)
             base, version = intake_base(runtime.active_configuration.digest)
-            if base.validation_schema == SCHEMA:
+            if base.validation_schema in FORM_SCHEMAS:
                 return None
             if base.validation_schema not in UPGRADE_BASES:
                 raise ConfigError("Finish setup before converting sign-in rules.")
