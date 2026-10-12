@@ -120,7 +120,7 @@ class ReadinessMail:
                 subject="[TEST] " + self.subject,
                 sender=self.sender,
                 to=[self.recipient],
-                html=email_document(self.html, notice=notice),
+                html=email_document(self.html, notice=notice, family=True),
                 text=banner + "\n\n" + self.text,
             )
         )

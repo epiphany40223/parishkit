@@ -1249,10 +1249,24 @@ The portal and the emails share one visual style
   secondary buttons for email: a one-cell table with inline styles from the
   tokens, `bgcolor`, and Outlook padding. The label is real text, so the
   button reads with images off and in an inverted dark mode. It links only
-  to absolute http(s) addresses.
+  to absolute http(s) addresses. The daily and weekly report emails draw
+  their button with it, and a guard test keeps any other module from
+  building an email button by hand. Its markup is already in the
+  sanitizer's canonical form, so the report validators admit it unchanged;
+  they still admit the earlier report button, so a report compiled before
+  the change and retained for a retry still delivers.
+- **Email layout:** the shared email layout takes the portal's ink, page,
+  panel border and corner radius, link colour and warning notice from the
+  tokens for every Admin email: the report emails and the operational and
+  security alerts. Family emails, including receipts, and all readiness
+  and test-send samples keep the earlier look until their own slice of
+  [#732](https://github.com/epiphany40223/parishkit/issues/732), which
+  follows a Testing send to real mail programs on a night with no reminder.
+  Their content, links and codes never change for styling. Every sender
+  names its look; there is no default.
 
-Notices, cards and headings, and each email's move to the shared
-components, follow in later slices of #732.
+Portal notices, cards and headings, and the Family emails' move to the
+shared look, follow in later slices of #732.
 
 ### Time entry
 

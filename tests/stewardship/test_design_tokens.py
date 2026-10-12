@@ -7,6 +7,7 @@ import pytest
 
 from parishkit.stewardship.web import design_tokens as tokens
 from parishkit.stewardship.web.buttons import email_button
+from parishkit.stewardship.web.report_markup import button as report_button
 
 STATIC = (
     Path(__file__).parents[2] / "src/parishkit/stewardship/accounts/static/stewardship"
@@ -68,7 +69,8 @@ def test_email_button_is_bulletproof_and_uses_the_tokens():
     assert "font-family:Arial, Helvetica, sans-serif;" in html
     # 2px border + 10px padding on each side + a 20px line = 44px tall.
     assert "line-height:20px;" in html
-    assert ">Open &lt;report&gt;</a>" in html
+    assert 'rel="noopener noreferrer">Open &lt;report&gt;</a>' in html
+    assert "<tbody><tr><td " in html and html.endswith("</tbody></table>")
     assert "<img" not in html and "<style" not in html and "class=" not in html
 
 
@@ -106,3 +108,28 @@ def test_no_token_value_contains_a_quote():
         tokens.EMAIL_SANS,
     ]
     assert not [value for value in values if '"' in value or "'" in value]
+
+
+def test_report_emails_draw_the_shared_email_button():
+    """The daily and weekly reports' button is email_button(), not a copy."""
+    url = "https://example.org/reports/1?a=1&b=2"
+    assert report_button(url, "Open <it>") == email_button("Open <it>", url)
+
+
+def test_only_the_shared_component_builds_email_buttons():
+    """Each email builder renders buttons through email_button() (#732).
+
+    Outlook's ``mso-padding-alt`` marks a hand-built email button; only the
+    shared component may spell it. ``report_markup`` also holds the frozen
+    pre-#732 button styles, which it only admits for retained reports.
+    """
+    source = Path(__file__).parents[2] / "src/parishkit"
+    builders = sorted(
+        path.relative_to(source).as_posix()
+        for path in source.rglob("*.py")
+        if "mso-padding-alt" in path.read_text()
+    )
+    assert builders == [
+        "stewardship/web/buttons.py",
+        "stewardship/web/report_markup.py",
+    ]

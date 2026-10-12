@@ -524,7 +524,8 @@ def test_the_email_layout_styles_hosted_images_only():
     """Hosted images fit phones; compiler markup keeps its own attributes."""
     document = email_document(
         f'<p><img src="{ORIGIN}/files/{TOKEN}" alt="Picnic"></p>'
-        '<img src="cid:chart" alt="Chart">'
+        '<img src="cid:chart" alt="Chart">',
+        family=True,
     )
     assert f'<img style="max-width:100%;height:auto;border:0;" src="{ORIGIN}' in (
         document
@@ -616,7 +617,8 @@ def test_family_email_renders_hosted_links_and_images():
 def test_hosted_images_are_styled_whatever_their_attribute_order():
     """An author may write alt before src; the image still fits phones."""
     document = email_document(
-        f'<p><img alt="Picnic" src="{ORIGIN}/files/{TOKEN}" width="600"></p>'
+        f'<p><img alt="Picnic" src="{ORIGIN}/files/{TOKEN}" width="600"></p>',
+        family=True,
     )
     assert (
         f'<img style="max-width:100%;height:auto;border:0;" alt="Picnic" src="{ORIGIN}'
