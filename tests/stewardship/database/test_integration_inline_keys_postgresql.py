@@ -543,14 +543,25 @@ def test_key_with_a_first_schedule_change_says_to_save_them_apart(working):
     """A key plus a refresh schedule change is refused (#632).
 
     The refusal names the reason and the order to save in, rather than the
-    generic "Check your entries" page, and nothing is staged.
+    generic "Check your entries" page, and nothing is staged. The page is
+    redrawn with the refusal at the key field, which is empty again (the key
+    is never shown back), and the schedule edits kept (#563).
     """
     hourly = {"kind": "full", "every": 60, "from": "00:00", "to": "23:00"}
     response = save(working, **rows([hourly]))
     assert response.status_code == 400
-    refusal = response.json()["refusal"]
-    assert refusal["message"].startswith("Nothing was saved: a new key and a")
-    assert "save the refresh schedule change first" in refusal["fix"]
+    html = response.content.decode()
+    (field,) = re.findall(r'<input[^>]*name="candidate"[^>]*>', html)
+    assert 'aria-invalid="true"' in field and "value=" not in field
+    (error,) = re.findall(
+        r'<ul class="errorlist" id="id_candidate_error">(.*?)</ul>', html
+    )
+    assert "Nothing was saved: a new key and a refresh schedule change" in error
+    assert "save the schedule change first" in error
+    # The summary, focused on load, links down to the key field.
+    assert re.search(
+        r'data-error-summary.*?<a href="#id_candidate">Nothing was saved', html, re.S
+    )
     assert CANDIDATE not in response.content
     assert not SecretReplacementRequest.objects.exists()
 

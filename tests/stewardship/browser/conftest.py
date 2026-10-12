@@ -121,6 +121,9 @@ from .in_place_components import SLOW as IN_PLACE_SLOW
 from .in_place_components import components as in_place_components
 from .information_components import POSTS as INFORMATION_POSTS
 from .information_components import components as information_components
+from .integration_gate_components import (
+    components as integration_gate_components,
+)
 from .limitations_components import components as limitations_components
 from .live_status_components import POSTS as LIVE_STATUS_POSTS
 from .live_status_components import components as live_status_components
@@ -2278,6 +2281,7 @@ def component_origin():
     responses.update(not_found_components(context, admin))
     responses.update(go_live_components(context, admin))
     responses.update(pause_components(context, admin))
+    responses.update(integration_gate_components(context, admin))
     responses.update(send_progress_components(context, admin))
     responses.update(send_history_components(context, admin))
     responses.update(system_health_components(context, admin))

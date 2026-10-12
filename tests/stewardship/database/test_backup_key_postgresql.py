@@ -94,10 +94,22 @@ def test_admin_replaces_the_key_after_proving_the_private_key(auth_service, goog
     bad = post(browser, URL, {"action": "challenge", "public_key": "{not a key}"})
     assert bad.status_code == 400 and b"not a backup public key" in bad.content
     assert b"{not a key}" not in bad.content
+    # Each refusal is shown at its field, not as a notice (#563).
+    assert b'id="backup-key-public-error"><li>This is not a backup' in bad.content
+    assert b'aria-describedby="backup-key-public-help backup-key-public-error"' in (
+        bad.content
+    )
+    # The focused error summary links to the field (#563).
+    assert b'<a href="#backup-key-public">This is not a backup' in bad.content
+    assert b"data-error-summary" in bad.content
     # A wrong code shows the same challenge again and saves nothing.
     wrong = replace_key(browser, private, public, code="0000-0000-0000")
     assert wrong.status_code == 400 and b"does not match" in wrong.content
     assert challenge_of(wrong)
+    assert b'aria-invalid="true" aria-describedby="backup-key-code-error"' in (
+        wrong.content
+    )
+    assert b'<a href="#backup-key-code">That code does not match' in wrong.content
     # A challenge made for this key cannot be answered with another key.
     other, _ = keypair()
     page = post(browser, URL, {"action": "challenge", "public_key": public})
