@@ -2554,8 +2554,8 @@ blocking-work recheck and audit as before; reminder planning and emailed
 Family codes and links are unaffected by how the review is shown.
 **Cancel** on the page returns to the list without saving.
 
-Edit also offers **Edit this schedule's email**, a checkbox under Email to send
-([#446](https://github.com/epiphany40223/parishkit/issues/446)). Ticking it
+New and Edit both offer **Edit this schedule's email**, a checkbox under Email
+to send ([#446](https://github.com/epiphany40223/parishkit/issues/446)). Ticking it
 shows, below it, the email's subject, HTML source and plain text with
 "Generate plain text from HTML", filled in from the chosen email, and **Reset to
 the default text**, which fills the mail type's built-in default (the text
@@ -2593,8 +2593,24 @@ planned sends not started yet are replaced, sends in progress block the change,
 and email already sent is not recalled. The change touches only content and
 schedules, never a Family's code, link or their sealed credentials. Edit
 already refuses a schedule that has run or has work prepared, so its email
-can't be changed either. New picks a saved email only for now; editing the
-email there, and sending a test of an unsaved edit, are later slices of #446.
+can't be changed either.
+
+On New, the mail type is chosen on the page, so the fields are checked against
+the mail type posted, and Reset fills that type's default. Until a mail type
+is chosen, "Edit this schedule's email" and Reset are unavailable and a
+reserved line under the checkbox says "Choose a mail type first."
+([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)); the
+line keeps its space, so choosing a type moves nothing. Clearing the type
+unticks the box. The plain-text help states the invitation and reminder rule
+for every type, and the help under the fields says the text is checked
+against the chosen type. Changing the mail type, which narrows Email to send, fills
+the fields again like choosing another email: from the email still chosen,
+or empty while none is, so another type's text is never left to be saved as
+this one's. An email must still be chosen; the new email is compared with it.
+On New the fields start empty, and the change gate compares them with the
+blank form like the rest of New. With **Repeat**, every reminder the rule adds
+sends the one new email, so they share it; the help and the review say so.
+Sending a test of an unsaved edit is a later slice of #446.
 
 On New, choosing Reminder offers a **Repeat** checkbox
 ([#469](https://github.com/epiphany40223/parishkit/issues/469)); other mail

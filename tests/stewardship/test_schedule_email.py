@@ -1,4 +1,4 @@
-"""Edit a schedule's own email on Edit scheduled email (#446, slice 3).
+"""Edit a schedule's own email on New and Edit scheduled email (#446, slice 3).
 
 Without a database: what the page's editor starts from, when it is in use,
 what it offers the page script, and when a save adds a new email. The views'
@@ -64,7 +64,8 @@ def test_the_editor_starts_unused_from_the_saved_email():
     assert "clear" not in form.fields and "base_digest" not in form.fields
     # Every reminder email and the default, never another mail type's.
     assert set(sources["emails"]) == {records[0]["id"], records[1]["id"]}
-    assert sources["default"]["subject"] == saved["subject"]
+    assert set(sources["defaults"]) == {"reminder"}
+    assert sources["defaults"]["reminder"]["subject"] == saved["subject"]
     assert sources["emails"][records[1]["id"]]["subject"] == "Second"
 
 
@@ -146,11 +147,84 @@ def test_the_content_rules_apply_and_their_errors_reach_the_summary():
     assert _summary(entry, None, unused) == []
 
 
-def test_only_edit_posts_the_email_fields():
-    """New picks a saved email; Edit may post its own."""
+def test_new_and_edit_both_post_the_email_fields():
+    """Both pages may post the schedule's own email."""
     edit, new = _fields(False), _fields(True)
     for name in ("edit_email", "subject", "html", "generate_text", "text"):
-        assert name in edit and name not in new
+        assert name in edit and name in new
+
+
+def test_new_starts_empty_and_offers_every_mail_type():
+    """New has no saved email: empty fields, every type's emails and default."""
+    records, _row = setup()
+    toggle, form, sources = schedule_email.editor(None, records, None, CAMPAIGN)
+    assert not toggle.is_bound and not form.is_bound
+    assert form["subject"].value() is None and form["html"].value() is None
+    assert set(sources["emails"]) == {record["id"] for record in records}
+    assert set(sources["defaults"]) == {
+        "initial",
+        "reminder",
+        "daily_digest",
+        "weekly_digest",
+    }
+    assert sources["emails"][records[2]["id"]]["subject"] == "Invitation"
+
+
+def test_new_checks_the_email_against_the_posted_mail_type():
+    """A reminder needs its Family code; a digest takes the digest rules."""
+    records, _row = setup()
+    data = posted(
+        edit_email="on",
+        subject="Reminder",
+        html="<p>Please respond.</p>",
+        generate_text="on",
+    )
+    data["schedule-kind"] = "reminder"
+    _toggle, form, _sources = schedule_email.editor(data, records, None, CAMPAIGN)
+    assert form.slot == "reminder"
+    assert not form.is_valid()
+    assert "{{ family_code }}" in " ".join(form.non_field_errors())
+    data["html"] = "<p>Please respond." + CODE + "</p>"
+    _toggle, form, _sources = schedule_email.editor(data, records, None, CAMPAIGN)
+    assert form.is_valid(), form.errors
+    added = schedule_email.copy(
+        form, records, records[0]["id"], campaign_id=CAMPAIGN, kind="reminder"
+    )
+    assert added["values"]["slot"] == "reminder"
+    # The same reminder text posted as a digest takes the digest rules,
+    # which refuse a Family's code and link.
+    data["schedule-kind"] = "daily_digest"
+    _toggle, form, _sources = schedule_email.editor(data, records, None, CAMPAIGN)
+    assert form.slot == "daily_digest"
+    assert not form.is_valid()
+    assert "documented placeholders" in " ".join(form.non_field_errors())
+    # An unknown mail type is never a content slot.
+    data["schedule-kind"] = "page"
+    _toggle, form, _sources = schedule_email.editor(data, records, None, CAMPAIGN)
+    assert form.slot is None
+
+
+def test_new_states_the_family_access_rule_and_gates_on_the_mail_type():
+    """New's help names the code and link rule before a type is chosen.
+
+    Its checkbox and Reset wait for a mail type, with a reserved reason line;
+    Edit, whose type is fixed, has no such line.
+    """
+    records, row = setup()
+    toggle, form, sources = schedule_email.editor(None, records, None, CAMPAIGN)
+    context = {"email_toggle": toggle, "email": form, "email_sources": sources}
+    page = render_to_string("stewardship/schedule-email.html", context | {"new": True})
+    # The long help is in the plain text's "i" toggletip.
+    assert "Initial invitation or a Reminder, both the formatted" in page
+    assert "data-schedule-email-reason data-idle" in page
+    assert "Choose a mail type first." in page
+    assert "checked against the chosen type" in page
+    toggle, form, sources = schedule_email.editor(None, records, row, CAMPAIGN)
+    page = render_to_string(
+        "stewardship/schedule-email.html",
+        {"email_toggle": toggle, "email": form, "email_sources": sources},
+    )
+    assert "data-schedule-email-reason" not in page
 
 
 def test_the_editor_renders_hidden_until_ticked_with_its_texts():

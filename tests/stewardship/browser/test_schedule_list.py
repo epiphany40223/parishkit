@@ -904,7 +904,9 @@ def generated_text(page):
     """
 
     def answer(route):
-        html = parse_qs(route.request.post_data or "")["html"][0]
+        # An emptied email posts blank HTML, which parse_qs keeps only so.
+        posted = parse_qs(route.request.post_data or "", keep_blank_values=True)
+        html = posted["html"][0]
         route.fulfill(
             status=200,
             content_type="application/json",
@@ -1018,9 +1020,79 @@ def test_an_unticked_email_editor_posts_no_email_fields(page, component_origin):
         assert name not in fields
     assert fields["schedule-time"] == ["10:30"]
     assert not failures
-    # New picks a saved email; only Edit offers the schedule's own.
+
+
+def test_new_offers_the_email_of_the_chosen_mail_type(page, component_origin):
+    """New's own email follows the mail type and email chosen above it.
+
+    Ticked, the fields fill from the chosen reminder email; another mail type
+    narrows Email to send to nothing chosen, which empties the unedited
+    fields rather than leave a reminder's text for a digest; Reset fills the
+    chosen type's default, and edited text then stays while the type
+    changes. The fields post with New's schedule.
+    """
+    page.set_viewport_size({"width": 1280, "height": 900})
+    generated_text(page)
     page.goto(component_origin + NEW)
-    assert page.get_by_label("Edit this schedule's email").count() == 0
+    failures = watch(page)
+    box = page.get_by_label("Edit this schedule's email")
+    subject = page.locator('[name="subject"]')
+    html = page.locator('[name="html"]')
+    kind = page.locator('[name="schedule-kind"]')
+    choice = page.locator('[name="schedule-template_version"]')
+    reset = page.get_by_role("button", name="Reset to the default text")
+    reason = page.locator("[data-schedule-email-reason]")
+    hidden(subject)
+    # No mail type yet: the checkbox is unavailable and its reserved line
+    # says why; once a type is chosen the line idles but keeps its space, so
+    # the fields below it do not move up.
+    assert box.is_disabled() and reason.is_visible()
+    assert "schedule-email-reason" in (box.get_attribute("aria-describedby") or "")
+    space = reason.bounding_box()["height"]
+    kind.select_option("reminder")
+    assert box.is_enabled() and not reason.is_visible()
+    assert reason.bounding_box()["height"] == space > 0
+    # The reason leaves the description; the checkbox's own help stays.
+    assert box.get_attribute("aria-describedby") == "id_edit_email_helptext"
+    first = choice.locator('option[data-kind="reminder"]').first.get_attribute("value")
+    choice.select_option(first)
+    box.check()
+    visible(subject)
+    assert subject.input_value() == "reminder mail"
+    # Another mail type leaves no email chosen: the unedited fields empty.
+    kind.select_option("daily_digest")
+    assert choice.input_value() == ""
+    assert (subject.input_value(), html.input_value()) == ("", "")
+    reset.click()
+    assert "{{ family_code }}" not in html.input_value()
+    digest = subject.input_value()
+    assert digest
+    # Reset text is the reader's: changing the type keeps it.
+    kind.select_option("reminder")
+    assert subject.input_value() == digest
+    reset.click()
+    assert "{{ family_code }}" in html.input_value()
+    # Clearing the mail type unticks the box and closes the fields.
+    kind.select_option("")
+    assert not box.is_checked() and box.is_disabled()
+    assert page.locator("[data-schedule-email-reset]").is_disabled()
+    hidden(subject)
+    kind.select_option("reminder")
+    box.check()
+    # Unticking keeps what was typed, so the reset text is still there.
+    assert "{{ family_code }}" in html.input_value()
+    choice.select_option(first)
+    page.locator('[name="schedule-date"]').fill("2054-10-15")
+    page.locator('[name="schedule-time"]').fill("09:00")
+    subject.fill("Last call")
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("button", name=REVIEW).click()
+    fields = posted(sent.value)
+    assert fields["edit_email"] == ["on"]
+    assert fields["subject"] == ["Last call"]
+    assert fields["schedule-kind"] == ["reminder"]
+    assert "{{ family_code }}" in fields["html"][0]
+    assert not failures
 
 
 def test_a_never_ticked_email_editor_posts_no_email_fields(page, component_origin):

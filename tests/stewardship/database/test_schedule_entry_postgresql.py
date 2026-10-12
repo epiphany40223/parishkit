@@ -723,6 +723,112 @@ def test_an_edited_email_is_a_new_email_only_that_schedule_sends(auth_service, g
     assert stays.state == "pending"
 
 
+def test_new_with_an_edited_email_adds_one_email_its_reminders_share(
+    auth_service, google
+):
+    """New's edited email is one new email every repeated reminder sends.
+
+    The chosen reminder email stays as it was and keeps its sender; a
+    reminder's email without its Family code is refused for the posted
+    mail type; the chosen email's own text adds nothing.
+    """
+    store = auth_service.store
+    _, emails = setup(store)
+    browser, _ = signed_in()
+    page = unescape(browser.get(NEW).content.decode())
+    assert "Edit this schedule's email" in page
+    assert 'id="schedule-email-sources"' in page
+    base = entry(
+        store, kind="reminder", time="09:00", template_version=emails["reminder"]["id"]
+    ) | {
+        "repeat-repeat": "on",
+        "repeat-frequency": "weekly",
+        "repeat-weekdays": "1",
+        "repeat-start": "2054-10-01",
+        "repeat-until": "2054-10-14",
+        "repeat-dates": ["2054-10-06", "2054-10-13"],
+    }
+    before = ConfigurationChangeRequest.objects.count()
+    refused = post(
+        browser,
+        NEW,
+        base | email_fields(subject="Reminder", html="<p>Please respond.</p>"),
+    )
+    assert refused.status_code == 400
+    assert "{{ family_code }}" in unescape(refused.content.decode())
+    saved = emails["reminder"]["values"]
+    same = post(
+        browser, NEW, base | email_fields(subject=saved["subject"], html=saved["html"])
+    )
+    assert same.status_code == 200, same.content
+    assert "New email for this schedule" not in unescape(same.content.decode())
+    assert ConfigurationChangeRequest.objects.count() == before
+    html = "<p>Still time to respond. {{ family_code }} {{ family_url }}</p>"
+    review = post(browser, NEW, base | email_fields(subject="Last call", html=html))
+    assert review.status_code == 200, review.content
+    shown = unescape(review.content.decode())
+    assert "New email for this schedule" in shown
+    assert "every reminder it adds shares it" in shown
+    assert 'data-review-done="2 reminders added."' in shown
+    apply(store, post(browser, LIST, {"action": "confirm", "preview": token(review)}))
+    added = [
+        definition_on(day).current_revision.values
+        for day in ("2054-10-06", "2054-10-13")
+    ]
+    assert {row["subject"] for row in added} == {"Last call"}
+    (version,) = {row["template_version"] for row in added}
+    assert version != emails["reminder"]["id"]
+    document = store.active().document()
+    content_rows = {row["id"]: row["values"] for row in document["sections"]["content"]}
+    assert content_rows[emails["reminder"]["id"]] == saved
+    assert (content_rows[version]["slot"], content_rows[version]["subject"]) == (
+        "reminder",
+        "Last call",
+    )
+    assert (
+        definition_on("2054-10-25").current_revision.values["template_version"]
+        == emails["reminder"]["id"]
+    )
+
+
+def test_a_tampered_new_email_post_records_nothing(auth_service, google):
+    """A ticked New email with a mismatched or unknown mail type is refused.
+
+    A page script never posts these: a digest type with a reminder's email,
+    and a type the page does not offer. Each is refused for its fields
+    (400), and no request or content record is added.
+    """
+    store = auth_service.store
+    _, emails = setup(store)
+    browser, _ = signed_in()
+    html = "<p>Still time to respond. {{ family_code }} {{ family_url }}</p>"
+    fields = email_fields(subject="Last call", html=html)
+    before = (ConfigurationChangeRequest.objects.count(), content_count(store))
+    for kind in ("daily_digest", "page"):
+        refused = post(
+            browser,
+            NEW,
+            entry(
+                store,
+                kind=kind,
+                date="2054-10-15",
+                time="09:00",
+                template_version=emails["reminder"]["id"],
+            )
+            | fields,
+        )
+        assert refused.status_code == 400, (kind, refused.content)
+        assert "data-error-summary" in refused.content.decode()
+    assert (ConfigurationChangeRequest.objects.count(), content_count(store)) == before
+
+
+def definition_on(day):
+    """The campaign's one current reminder sent on ``day``."""
+    return ScheduleDefinition.objects.get(
+        kind="reminder", current_revision__values__date=day
+    )
+
+
 def test_an_unchanged_or_refused_email_records_nothing(auth_service, google):
     """Text left as chosen adds no email; a reminder without its code is refused."""
     store = auth_service.store
