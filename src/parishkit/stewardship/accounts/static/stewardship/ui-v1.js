@@ -140,7 +140,9 @@
           field.dataset.missingHint = hint;
           field.dataset.zoneHint = hint;
         } else {
-          delete field.dataset.missingHint;
+          // An end date keeps its own order hint (#563) once the zone is known.
+          if (field.dataset.orderHint) field.dataset.missingHint = field.dataset.orderHint;
+          else delete field.dataset.missingHint;
           delete field.dataset.zoneHint;
         }
         zoneValidity(field);
@@ -2469,6 +2471,16 @@
     refresh();
   });
 
+  // The setup pollers above (test mail and Slack, Finishing setup, source
+  // progress) stop for good on pagehide. A page the browser brings back from
+  // its history (Back or Forward) would show their last reading with nothing
+  // polling, so it is loaded again instead and shows the current state (#563).
+  if (document.querySelector("[data-setup-mail], [data-finishing], [data-setup-progress]")) {
+    window.addEventListener("pageshow", (event) => {
+      if (event.persisted) window.location.reload();
+    });
+  }
+
   // A control's value for the rules below (data-show-when and
   // data-required-when). A checkbox counts as its value only while it is
   // ticked and is empty otherwise, as a submission would send it:
@@ -2553,6 +2565,10 @@
       && !node.closest("[hidden]")
       && (node.hasAttribute("data-client-error") || !node.validity.valid || blank(node)));
     const hint = form.querySelector("[data-complete-hint]");
+    // An empty required field may say what to type (data-empty-hint) where
+    // its data-missing-hint describes the format (a placeholder name, #563).
+    const empty = missing && missing.dataset.emptyHint
+      && (missing.validity.valueMissing || blank(missing));
     if (hint) {
       // A hint marked data-complete-hint="reserve" stays in the layout and
       // only empties, keeping its line's height (ui-v1.css), so it appearing
@@ -2564,6 +2580,7 @@
           // An unreadable time entry says why itself (#398).
           || (missing.matches("[data-time-entry]") && missing.validity.customError
             && missing.validationMessage)
+          || (empty && missing.dataset.emptyHint)
           || missing.closest("[data-missing-hint]")?.dataset.missingHint
           || "Fill in the required fields to save.")
         : "";
@@ -2747,6 +2764,78 @@
     const pad = (number) => String(number).padStart(2, "0");
     return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
   };
+  // File size (#563). A file input marked data-max-bytes refuses a chosen
+  // file larger than that many bytes at once, with the field's
+  // data-max-bytes-message: the field is marked invalid, and a
+  // data-require-complete form holds its button with that message
+  // (data-client-error). The server still checks every upload.
+  const wireMaxBytes = (root) => {
+    within(root, "input[type=file][data-max-bytes]").forEach((input) => {
+      const check = () => {
+        const limit = Number(input.dataset.maxBytes);
+        const large = [...(input.files || [])].some((file) => file.size > limit);
+        const message = large ? (input.dataset.maxBytesMessage || "This file is too large.") : "";
+        input.setCustomValidity(message);
+        if (large) input.dataset.clientError = message;
+        else delete input.dataset.clientError;
+        input.setAttribute("aria-invalid", String(large));
+      };
+      // On the input itself, so the gate sees it for the same change.
+      input.addEventListener("change", check);
+      check();
+    });
+  };
+  // A pattern for a textarea (#563), which has no pattern attribute of its
+  // own: data-pattern="[^@]*" must match the whole value, or the field is
+  // invalid with its data-missing-hint, so the browser marks it on blur and
+  // a data-require-complete form holds its button with that hint. Checked
+  // on input, at load, after a swap and on pageshow.
+  let patternChecks = []; // {field, check} for each wired textarea
+  const wirePattern = (root) => {
+    within(root, "textarea[data-pattern]").forEach((field) => {
+      const rule = new RegExp(`^(?:${field.dataset.pattern})$`, "u");
+      const check = () => field.setCustomValidity(rule.test(field.value) ? ""
+        : (field.closest("[data-missing-hint]")?.dataset.missingHint || "Check this field."));
+      // On the field itself, so the gate sees it for the same input.
+      field.addEventListener("input", check);
+      check();
+      patternChecks.push({field, check});
+    });
+  };
+  // Date and amount order (#563). A Through or To date marked
+  // data-not-before="<start input id>" takes the start's value as its min,
+  // so the browser itself finds an end before the start (rangeUnderflow):
+  // the field is marked on blur, and a data-require-complete form holds its
+  // button with the end's data-missing-hint. The server still checks the
+  // order. Set at load, after a swap, on pageshow (before the gates), and
+  // whenever the start changes.
+  // A text amount (the Financial report's pledge range) has no min, so
+  // the same order is a custom validity, set only while both values match
+  // their own pattern (a malformed value says so itself).
+  const checkNotBefore = (end) => {
+    const start = document.getElementById(end.dataset.notBefore);
+    if (!(start instanceof HTMLInputElement)) return;
+    if (end.type !== "date") {
+      const ordered = !start.value || !end.value || start.validity.patternMismatch
+        || end.validity.patternMismatch || Number(end.value) >= Number(start.value);
+      end.setCustomValidity(ordered ? "" : (end.dataset.missingHint || "Out of order."));
+    } else if (start.value) end.min = start.value;
+    else end.removeAttribute("min");
+  };
+  const wireNotBefore = (root) => within(root, "input[data-not-before]").forEach(checkNotBefore);
+  // One listener for every page, in the capture phase, so the order is set
+  // before the form's own listeners (the complete gate) see the same event,
+  // and a start field kept across in-place swaps never gathers a listener
+  // per swap: it finds its ends by id each time.
+  ["input", "change"].forEach((type) => document.addEventListener(type, (event) => {
+    const field = event.target;
+    if (!(field instanceof HTMLInputElement)) return;
+    if (field.hasAttribute("data-not-before")) checkNotBefore(field);
+    if (field.id) {
+      document.querySelectorAll(`input[data-not-before="${CSS.escape(field.id)}"]`)
+        .forEach(checkNotBefore);
+    }
+  }, true));
   let notFutureChecks = []; // {date, check} for each wired date input
   const wireNotFuture = (root) => {
     within(root, "input[data-not-future]").forEach((date) => {
@@ -2952,18 +3041,30 @@
     lockedUpdates = lockedUpdates.filter(({node}) => node.isConnected);
     completeForms = completeForms.filter((form) => form.isConnected);
     notFutureChecks = notFutureChecks.filter(({date}) => date.isConnected);
+    patternChecks = patternChecks.filter(({field}) => field.isConnected);
     liveChecks = liveChecks.filter(({form}) => form.isConnected);
     wireShowWhen(root);
     wireLockedWhen(root);
+    wireNotBefore(root);
+    wireMaxBytes(root);
+    wirePattern(root);
     wireComplete(root);
     wireNotFuture(root);
     wireLiveCheck(root);
   };
   wireConditional(document);
-  document.addEventListener("parishkit:swap", (event) => wireConditional(event.target));
+  document.addEventListener("parishkit:swap", (event) => {
+    wireConditional(event.target);
+    // A swapped part of a gated form (Hosted files' Upload line, #563) brings
+    // fresh buttons: the form's gate holds them again at once.
+    const form = event.target.parentElement?.closest("form[data-require-complete]");
+    if (form) gateComplete(form);
+  });
   window.addEventListener("pageshow", () => {
     showWhenUpdates.forEach(({update}) => update());
     lockedUpdates.forEach(({update}) => update());
+    document.querySelectorAll("input[data-not-before]").forEach(checkNotBefore);
+    patternChecks.forEach(({check}) => check());
     completeForms.forEach(gateComplete);
     notFutureChecks.forEach(({check}) => check());
     liveChecks.forEach(({check}) => check());

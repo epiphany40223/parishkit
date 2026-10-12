@@ -97,13 +97,47 @@ REFUSALS = {
 }
 
 
+# The placeholder-name rule (SLUG_PATTERN) for the browser's own check
+# (#563), allowing the spaces around it that the server strips.
+SLUG_INPUT = r" *[a-z0-9]+(-[a-z0-9]+)* *"
+
+
+def _upload_limits(form, files):
+    """Give the upload form the library's room, and say whether it is full.
+
+    The browser then refuses a file larger than the 10 MB limit, or than
+    the room left in the library, at the field (data-max-bytes in ui-v1.js),
+    and a full library shows Upload unavailable with why (#563). The
+    server still checks both on every upload.
+    """
+    total = sum(row.size for row in files)
+    room = MAX_LIBRARY_BYTES - total
+    attrs = form.fields["file"].widget.attrs
+    attrs["data-max-bytes"] = max(min(MAX_FILE_BYTES, room), 0)
+    attrs["data-max-bytes-message"] = (
+        REFUSALS["too_large"]
+        if room >= MAX_FILE_BYTES
+        else _(
+            "This file is larger than the room left in the library. "
+            "Delete unused files first, or choose a smaller file."
+        )
+    )
+    return len(files) >= MAX_FILES or room <= 0
+
+
 class UploadForm(forms.Form):
     """The file and an optional placeholder name; everything else is derived."""
 
     file = forms.FileField(
         label=gettext_lazy("File"),
         max_length=255,
-        widget=forms.ClearableFileInput(attrs={"accept": ACCEPT, "data-slug-from": ""}),
+        widget=forms.ClearableFileInput(
+            attrs={
+                "accept": ACCEPT,
+                "data-slug-from": "",
+                "data-missing-hint": REFUSALS["empty"],
+            }
+        ),
         help_text=gettext_lazy(
             "PDF, Word, Excel, PowerPoint, PNG, JPEG or GIF, up to 10 MB."
         ),
@@ -113,7 +147,13 @@ class UploadForm(forms.Form):
         max_length=MAX_SLUG,
         required=False,
         widget=forms.TextInput(
-            attrs={"data-slug-to": "", "autocomplete": "off", "spellcheck": "false"}
+            attrs={
+                "data-slug-to": "",
+                "autocomplete": "off",
+                "spellcheck": "false",
+                "pattern": SLUG_INPUT,
+                "data-missing-hint": REFUSALS["slug_invalid"],
+            }
         ),
         help_text=gettext_lazy(
             "Lowercase letters, digits and hyphens. Leave blank to use the file name."
@@ -127,7 +167,15 @@ class RenameForm(forms.Form):
     slug = forms.CharField(
         label=gettext_lazy("Placeholder name"),
         max_length=MAX_SLUG,
-        widget=forms.TextInput(attrs={"autocomplete": "off", "spellcheck": "false"}),
+        widget=forms.TextInput(
+            attrs={
+                "autocomplete": "off",
+                "spellcheck": "false",
+                "pattern": SLUG_INPUT,
+                "data-missing-hint": REFUSALS["slug_invalid"],
+                "data-empty-hint": gettext_lazy("Type the new placeholder name."),
+            }
+        ),
         help_text=gettext_lazy("Lowercase letters, digits and hyphens."),
     )
 
@@ -191,6 +239,8 @@ def _library(request, *, form=None, status=200, notice=None):
             (row for row in files if str(row.pk) == selected["uploaded"]), None
         )
     table = paginate(_rows(files), selected, sorting=LIBRARY_SORTING)
+    form = form or UploadForm()
+    full = _upload_limits(form, files)
     # The table region, the usage line and the upload notice redraw from
     # this address after a deletion: the page as shown (sort, page and size)
     # and its upload notice, which the redraw drops once that file is gone.
@@ -200,7 +250,8 @@ def _library(request, *, form=None, status=200, notice=None):
         request,
         "stewardship/hosted-files.html",
         {
-            "form": form or UploadForm(),
+            "form": form,
+            "library_full": full,
             "table": table,
             "refresh_url": refresh_url,
             "uploaded": uploaded,

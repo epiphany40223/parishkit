@@ -10,23 +10,26 @@
 <li>{% translate "Closing the portal does not stop email. No new receipts can be sent (no Family can submit), but scheduled invitations and reminders still go out unless you also pause Family email delivery." %}</li>
 <li>{% translate "A Family who has the form open keeps the answers on the page while they stay active on it. After 60 minutes without activity their session ends and unsubmitted answers are lost, so keep maintenance short." %}</li>
 </ul></div>
+{% comment %}Changing the switch needs a recent sign-in: until then each change button is unavailable, named by this step (#563); the server still checks it.{% endcomment %}{% if not fresh %}<div class="notice"><p id="maintenance-fresh-reason">{% if local_environment %}{% translate "For your security, confirm your sign-in before you close or reopen the Family portal. You need to have signed in within the last five minutes." %}{% else %}{% translate "For your security, confirm it's you with Google before you close or reopen the Family portal. You need to have signed in within the last five minutes; you will come back to this page." %}{% endif %}</p>{% url 'admin:family_portal' as here %}{% include 'stewardship/components/reauthenticate.html' with next=here %}</div>{% endif %}
 {% if state.closed %}
 <section class="panel notice notice-error" aria-labelledby="portal-state">
   <h2 id="portal-state">{% translate "The Family portal is closed for maintenance" %}</h2>
   <p>{% translate "Closed" %} <time data-local-instant datetime="{{ state.since|instant }}">{{ state.since|instant }}</time>{% if closed_by %} {% translate "by" %} {{ closed_by }}{% endif %}.</p>
   {% if state.message %}<p>{% translate "Families see this message:" %} {{ state.message }}</p>{% endif %}
   <form method="post">{% csrf_token %}<input type="hidden" name="action" value="open"><input type="hidden" name="message" value="">
-    {% button type="submit" %}{% translate "Reopen the Family portal" %}{% endbutton %}
+    {% button type="submit" enabled=fresh aria-describedby=fresh|yesno:",maintenance-fresh-reason" %}{% translate "Reopen the Family portal" %}{% endbutton %}
   </form>
 </section>
 {% else %}
 <section class="panel" aria-labelledby="portal-state">
   <h2 id="portal-state">{% translate "The Family portal is open" %}</h2>
-  <form method="post">{% csrf_token %}<input type="hidden" name="action" value="close">
+  {% comment %}The browser refuses an "@" at once (data-pattern, #563), and a refusal from the server comes back at the field with the message kept.{% endcomment %}<form method="post" data-require-complete>{% csrf_token %}<input type="hidden" name="action" value="close">
     <label for="maintenance-message">{% translate "Message for Families (optional)" %}</label>
-    <textarea id="maintenance-message" name="message" maxlength="{{ message_limit }}" rows="3" aria-describedby="maintenance-message-help"></textarea>
+    <textarea id="maintenance-message" name="message" maxlength="{{ message_limit }}" rows="3" data-pattern="[^@]*" data-missing-hint="{% translate 'Leave email addresses out of the message: it cannot contain @.' %}" aria-describedby="maintenance-message-help{% if message_error %} maintenance-message-error{% endif %}"{% if message_error %} aria-invalid="true"{% endif %}>{{ message }}</textarea>
+    {% if message_error %}<ul class="errorlist" id="maintenance-message-error"><li>{{ message_error }}</li></ul>{% endif %}
     <p class="help" id="maintenance-message-help">{% translate "For example: “We expect to be back by 3 PM.” It is also kept in the audit log, so leave out personal details such as names, phone numbers or addresses. Up to 500 characters; no email addresses." %}</p>
-    {% button type="submit" %}{% translate "Close the Family portal for maintenance" %}{% endbutton %}
+    {% button type="submit" enabled=fresh aria-describedby=fresh|yesno:"maintenance-close-hint,maintenance-close-hint maintenance-fresh-reason" %}{% translate "Close the Family portal for maintenance" %}{% endbutton %}
+    <p class="help" id="maintenance-close-hint" data-complete-hint="reserve"></p>
   </form>
 </section>
 {% endif %}

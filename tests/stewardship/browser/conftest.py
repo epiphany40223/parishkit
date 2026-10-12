@@ -2269,6 +2269,24 @@ def component_origin():
     responses.update(report_components(context, admin))
     responses.update(information_components(context, admin))
     responses.update(log_components(context, admin))
+    # Family portal availability while open (#563): with a recent sign-in,
+    # and without one, when both change buttons wait for it.
+    for path, fresh in (("/family-portal", True), ("/family-portal-stale", False)):
+        responses[path] = (
+            "text/html",
+            render_to_string(
+                "stewardship/family-portal-maintenance.html",
+                context
+                | {
+                    "admin_chrome": admin,
+                    "state": SimpleNamespace(
+                        closed=False, message="", since=None, actor_id=None
+                    ),
+                    "message_limit": 500,
+                    "fresh": fresh,
+                },
+            ),
+        )
     responses.update(directory_components(context, admin))
     responses.update(ministry_components(context, admin))
     responses.update(followup_components(context, admin))

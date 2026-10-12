@@ -11,6 +11,11 @@
 {% elif blocker == "refused" %}
 <div class="notice" role="alert"><p>{% translate "A weekly report can't be sent now. Usually an earlier Weekly Admin digest is still being prepared or delivered, or it is waiting for review in Outgoing mail; otherwise the campaign settings changed after this form was opened." %}</p>
 <p>{% translate "Check Background work and Outgoing mail, then open this page again." %}</p></div>
+{% elif blocker == "in_progress" %}
+{% comment %}Found on GET, so Queue is shown unavailable with why rather
+than refused after submit (#563).{% endcomment %}
+<p class="notice" role="status" id="manual-unavailable">{% translate "A weekly report can't be sent now: an earlier Weekly Admin digest is still being prepared or delivered, or is waiting for review in Outgoing mail. When it has finished, open this page again." %}</p>
+<p>{% button type="button" disabled=True aria-describedby="manual-unavailable" %}{% translate "Queue new manual report" %}{% endbutton %}</p>
 {% endif %}
 {% if form %}
 <p class="notice">{% translate "This is a new, separately audited report—not a retry of a previous email. It may repeat previously reported information and does not replace the regularly scheduled weekly digest." %} {% translate "Each current Administrator receives their own email." %}</p>

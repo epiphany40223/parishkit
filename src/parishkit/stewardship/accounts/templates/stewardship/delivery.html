@@ -37,10 +37,9 @@ Admin evidence already recorded.{% endcomment %}
   <p>{% translate "Automatic retries have stopped. The mail service cannot tell us whether this email arrived, and sending it again could give the recipient a second copy. Check other evidence first, such as the sending mailbox's Sent folder or asking the recipient, then choose one of the actions below." %}</p>
 </aside>
 {% endif %}
-{% if commands and retry_unavailable %}<p class="notice">{% translate "Retry is not available right now. It needs the campaign to be open, campaign email not paused, up-to-date ParishSoft data, and no other email already covering this one." %}</p>{% endif %}
 {% comment %}The forms show only when a decision is available (#1015): the
 "Resolve this email" section when an action other than a bare evidence note
-is offered; otherwise, when only the note is, a closed disclosure, since a
+is offered, or a retry that is unavailable (#563); otherwise, when only the note is, a closed disclosure, since a
 note changes nothing about the email. In the disclosure its summary is the
 form's heading, so the form draws no h3 of its own there.{% endcomment %}
 {% if decisions %}<section aria-labelledby="resolve-heading"><h2 id="resolve-heading">{% translate "Resolve this email" %}</h2>
@@ -66,6 +65,9 @@ form's heading, so the form draws no h3 of its own there.{% endcomment %}
   {% button type="submit" aria-describedby="complete-hint-"|add:command.action %}{{ command.label }}{% endbutton %}<p class="help" id="complete-hint-{{ command.action }}" data-complete-hint hidden></p>
 </form>
 {% endfor %}
+{% if commands and retry_unavailable %}{# The retry stays where it would sit, unavailable and named by why (#563). #}<div class="panel"><h3>{{ retry_label }}</h3>
+<p class="notice" id="retry-unavailable">{% translate "Retry is not available right now. It needs the campaign to be open, campaign email not paused, up-to-date ParishSoft data, and no other email already covering this one." %}</p>
+<p>{% button type="button" disabled=True aria-describedby="retry-unavailable" %}{{ retry_label }}{% endbutton %}</p></div>{% endif %}
 {% if decisions %}</section>{% elif commands %}</details>{% endif %}
 <div id="delivery-evidence" data-in-place-region>
 <h2>{% translate "Admin evidence and decisions" %}</h2>
