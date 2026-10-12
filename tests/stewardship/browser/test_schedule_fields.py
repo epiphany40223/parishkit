@@ -246,12 +246,32 @@ def test_repeat_adds_ordinary_reminder_rows_in_place(
     assert add.is_disabled()
     assert "Dates this rule gives:" in dates.inner_text()
     assert "to add" not in dates.inner_text()
-    reading = panel.locator("[data-repeat-reading]")
+    # The send time is a shared time entry field (#1117): the same reading
+    # line, refusal, Save gate and blur rewrite as every Admin time.
+    reading = panel.locator("#repeat-time + .time-reading")
+    assert repeat(page, "time").get_attribute("data-time-entry") == "time"
+    described = repeat(page, "time").get_attribute("aria-describedby").split()
+    assert described == ["repeat-time-help", reading.get_attribute("id")]
+    save = page.get_by_role("button", name="Save and continue")
+    assert save.is_enabled()
+    reading_height = reading.bounding_box()["height"]
+    gap = page_top(repeat(page, "email")) - page_top(reading)
     repeat(page, "time").fill("9xx")
     has_attribute(reading, "class", "time-reading is-error")
+    has_text(reading, "“9xx” isn't a time. Try 2:00 PM, 2pm, 14:00 or 1400.")
+    has_attribute(repeat(page, "time"), "aria-invalid", "true")
+    assert save.is_disabled()
+    # Its two lines are reserved: the refusal moves nothing below it.
+    assert reading.bounding_box()["height"] == pytest.approx(reading_height, abs=1)
+    assert abs(page_top(repeat(page, "email")) - page_top(reading) - gap) < 1
     repeat(page, "time").fill("9am")
-    assert "Reads as 09:00 (9:00 AM)" in panel.inner_text()
+    has_text(reading, "Reads as 09:00 (9:00 AM)")
     has_attribute(reading, "class", "time-reading")
+    # The line keeps its height: the reading moves nothing below it.
+    assert reading.bounding_box()["height"] == pytest.approx(reading_height, abs=1)
+    assert save.is_enabled()
+    repeat(page, "time").blur()
+    assert repeat(page, "time").input_value() == "09:00"
     has_text(add, "Add these 8 reminders")
     has_text(summary, "8 reminders to add, 1 not added.")
     # The summary's line is reserved and the list sits below the button, so
