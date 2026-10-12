@@ -3449,16 +3449,24 @@ in the order the Administrator asked for
    [Family timeline](../reports/spec.md#family-timeline).
 2. **Type, mode and state** on one line under the heading, such as
    "Initial invitation · Production · Not sure it arrived".
-3. **Family.** The Family's name and its Family DUID ("Not in current
-   ParishSoft data" when the name is unknown), or "Administrator report".
-   When the email's delivery recorded
-   [refused addresses](#refused-addresses) that are still unresolved, they
-   follow, each once and linking its newest refusal's page. The page shows
-   no other recipient address: the web login never reads an email's
-   recipient lists, which stay with its rendering (see
-   [Why sends are waiting](#why-sends-are-waiting)); showing every
-   recipient would need a new read path
-   ([#1024](https://github.com/epiphany40223/parishkit/issues/1024)).
+3. **Family and recipients.** The Family's name and its Family DUID ("Not
+   in current ParishSoft data" when the name is unknown), or "Administrator
+   report". Then "To:" and the email's recipient addresses, in their stored
+   order, from its newest rendering (every address is a To: address; none
+   is Cc or Bcc). When that rendering sent it elsewhere, which only Testing
+   mode does, "Testing mode sends it to:" names where. When the email's
+   delivery recorded [refused addresses](#refused-addresses) that are still
+   unresolved, they follow, each once and linking its newest refusal's
+   page. The recipient lists stay with the email's rendering, which the web
+   login never reads (see
+   [Why sends are waiting](#why-sends-are-waiting)). This page is the one
+   narrow exception
+   ([#1024](https://github.com/epiphany40223/parishkit/issues/1024)),
+   because the Administrator needs to see whom an email was for to judge
+   it: it reads the addresses, and nothing else of the rendering, through
+   a definer function that refuses any caller but an Administrator (see
+   [outbox recipient reads](../data/spec.md#outbox-recipient-reads)).
+   Viewing the page is audited as before.
 4. **Attempt history**: one table of short rows, one per recorded change,
    newest first, with When leading as in any log, then the attempt number,
    what happened and the resulting state (#934).
@@ -4558,7 +4566,9 @@ reason ends (if known), and a link to act on it:
   function `stewardship_family_daily_sends_v1()` (frozen migration 0012,
   with #382's `(previous_state, created_at)` index on the outbox events),
   which returns one number and takes no argument: the count is made of the
-  routed recipient lists, which the web login never reads. This is the
+  routed recipient lists, which the web login never reads (the
+  [Mail message page](#mail-message-page)'s own recipients are the one
+  narrow exception). This is the
   24-hour count that #382 (item M3) asks to show. Outgoing mail's
   [sending limit note](#sending-limit-note) uses the same words for each
   reason.

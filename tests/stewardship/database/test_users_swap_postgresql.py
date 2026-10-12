@@ -242,8 +242,9 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 
 
 # Objects a later closure migration's frozen file creates with plain CREATE,
-# which a full migration would otherwise fail to create again: #970's 0056
-# and #995's 0057 follow 0055 (#993), so they are in the swap's closure too.
+# which a full migration would otherwise fail to create again: #970's 0056,
+# #995's 0057 and #1024's 0058 follow 0055 (#993), so they are in the swap's
+# closure too.
 # Each is dropped while the swap is pending (with the trigger that uses it)
 # and, unless the test's full migration made it again, installed again
 # afterwards from its migration's frozen file.
@@ -259,6 +260,10 @@ CLOSURE_CREATED = {
     "public.stewardship_portal_session_key_digest_v1()": (
         "stewardship_accounts",
         "0017_admin_session_key_digests",
+    ),
+    "public.stewardship_delivery_recipients_v1(uuid,uuid)": (
+        "stewardship_jobs",
+        "0022_mail_message_recipients",
     ),
 }
 
@@ -326,8 +331,10 @@ def closure_functions_absent():
 
     ``swap_pending`` keeps them (nothing there reads them), but
     database-grants on the users upgrade's base must not name them (#952).
-    Afterwards each is installed again from its migration's frozen file,
-    unless a full migration in the test already did.
+    One that ``swap_pending`` already dropped (it is in ``CLOSURE_CREATED``
+    too, such as #1024's recipient read) stays dropped. Afterwards each is
+    installed again from its migration's frozen file, unless a full
+    migration in the test already did.
     """
     from django.db.migrations.loader import MigrationLoader
 
@@ -336,7 +343,7 @@ def closure_functions_absent():
     migrations = MigrationLoader(connection).disk_migrations
     with connection.cursor() as cursor:
         for function in CLOSURE_FUNCTIONS:
-            cursor.execute(f"DROP FUNCTION public.{function}")
+            cursor.execute(f"DROP FUNCTION IF EXISTS public.{function}")
     try:
         yield
     finally:

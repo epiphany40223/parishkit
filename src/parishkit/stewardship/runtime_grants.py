@@ -303,6 +303,10 @@ MEMBER_NAMES_FOR_FUNCTION = "stewardship_member_names_for_v1(text, text, uuid)"
 # deliberately: one call already returns everything, so repeated calls
 # disclose nothing more; the audit and the digest check are the protections.
 LEADERS_WITHOUT_USER_FUNCTION = "stewardship_leaders_without_user_v1(text, uuid)"
+# One email's recipient addresses for its Mail message page (#1024): web
+# reads them, for an Administrator only, without any grant on the email's
+# rendering (its subject and body).
+RECIPIENTS_FUNCTION = "stewardship_delivery_recipients_v1(uuid, uuid)"
 # Each definer routine above that a migration in the users swap's closure
 # creates (#952), with that migration. `migrate --users-upgrade-base` leaves
 # the closure pending, and database-grants runs on that base before the
@@ -315,6 +319,7 @@ CLOSURE_FUNCTIONS = {
         "stewardship_accounts",
         "0015_leaders_without_user",
     ),
+    RECIPIENTS_FUNCTION: ("stewardship_jobs", "0022_mail_message_recipients"),
 }
 
 
@@ -333,11 +338,13 @@ def pending_functions(applied):
 def runtime_functions(role, *, target=None):
     """Return the definer routines this login may EXECUTE.
 
-    Web signs Families in and reads the 24-hour Family mail count (System
-    health); the configuration installer checks that a Ministry
-    added to a live campaign is in the promoted catalog, without source grants;
-    the general worker purges the Django sessions of ended Admin sessions,
-    counts an export's read-guard stops and prunes old task events.
+    Web signs Families in, reads the 24-hour Family mail count (System
+    health) and, for an Administrator, one email's recipient addresses
+    (its Mail message page, #1024); the configuration installer checks
+    that a Ministry added to a live campaign is in the promoted catalog,
+    without source grants; the general worker purges the Django sessions
+    of ended Admin sessions, counts an export's read-guard stops and
+    prunes old task events.
     Web and the parishsoft, google_workspace and slack credential installers
     check a secret request's automation sign-in instant (ADM-11 PR 5). Web,
     the general worker and the download login read a user's role-derived
@@ -363,6 +370,7 @@ def runtime_functions(role, *, target=None):
                 MEMBER_NAMES_FUNCTION,
                 MEMBER_NAMES_FOR_FUNCTION,
                 LEADERS_WITHOUT_USER_FUNCTION,
+                RECIPIENTS_FUNCTION,
             },
             ServiceRole.CONFIG_INSTALLER: {MINISTRY_CATALOG_FUNCTION},
             ServiceRole.WORKER: {
