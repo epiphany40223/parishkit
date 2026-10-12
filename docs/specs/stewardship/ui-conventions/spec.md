@@ -1148,7 +1148,16 @@ data line (such as the campaign name or counts), safety notices (such as
 Testing mode) and then its data or form; at most a one-line hint that prevents
 a likely mistake stays visible above the data. A line of cross-links to
 related pages may sit above the heading instead, when an About panel left
-open would otherwise push it out of view (#938). A caution that prevents a
+open would otherwise push it out of view (#938). An ordinary
+settings or editor page's body does not repeat a menu entry as a plain
+navigation link: the menu is how an Admin moves between pages, so such a body
+links only pages the menu does not offer (such as a child page whose
+breadcrumb parent it is) and contextual actions
+([#1118](https://github.com/epiphany40223/parishkit/issues/1118), Campaign
+settings). Home's state-driven
+[Next steps](../admin-portal/spec.md#home-page) list is an exception, and
+a cross-link line (#938), a remedy link in a message and a "Return to" link are
+outside this rule; a broader sweep of other pages belongs to #522. A caution that prevents a
 likely mistake (what an action cannot undo or stop, or a lasting consequence
 it has) is never only in the panel: it stays visible beside its control as a
 one-line hint or a notice. The page's introduction and longer explanation of

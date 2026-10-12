@@ -173,7 +173,10 @@ def test_fresh_confirmation_atomically_activates_and_replays(
     path = reverse("admin:production_confirmation", args=[request_id, preparation.pk])
     with web_login():
         settings_path = "/admin/campaign/settings/"
-        assert not browser.get(settings_path).context["production_progress_available"]
+        # The menu offers Production activation only once Production is
+        # confirmed; Campaign settings' body no longer links it (#1118).
+        progress_href = f'href="{reverse("admin:production_progress")}"'.encode()
+        assert progress_href not in browser.get(settings_path).content
         activity = PortalSession.objects.get(
             pk=login.portal_session.pk
         ).last_activity_at
@@ -239,7 +242,7 @@ def test_fresh_confirmation_atomically_activates_and_replays(
         assert page["Cache-Control"] == "no-store"
         assert (b"Campaign active" if active else b"Campaign scheduled") in page.content
         assert flow_steps(page.content) == (GO_LIVE, "Activation")
-        assert browser.get(settings_path).context["production_progress_available"]
+        assert progress_href in browser.get(settings_path).content
     campaign.refresh_from_db()
     preparation.transition.refresh_from_db()
     assert campaign.state == ("active" if active else "scheduled")

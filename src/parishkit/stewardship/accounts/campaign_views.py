@@ -21,7 +21,6 @@ from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.configuration import MINISTRY_LEADER_ROLES
-from parishkit.stewardship.campaigns.confirmation_models import ProductionConfirmation
 from parishkit.stewardship.campaigns.credential_models import CampaignCredentialState
 from parishkit.stewardship.campaigns.domain import CampaignState
 from parishkit.stewardship.campaigns.leader_roles import effective_roles, role_choices
@@ -326,12 +325,6 @@ def _page(
                 campaign, configuration.current_campaign_id
             ),
             "family_test_url": chosen_family_test_url(configuration, campaign),
-            "production_progress_available": configuration.current_campaign_id
-            == campaign.pk
-            and configuration.mode == "production"
-            and ProductionConfirmation.objects.filter(
-                request__campaign=campaign
-            ).exists(),
             **review_region(
                 "campaign_settings",
                 # A bound end-date form's errors are its own review's; the
