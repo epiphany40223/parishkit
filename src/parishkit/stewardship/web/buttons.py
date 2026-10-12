@@ -47,24 +47,17 @@ def _email_colors(variant):
     raise ValueError(f"unknown email button variant: {variant!r}")
 
 
-def email_button(label, href, *, variant="primary"):
-    """One bulletproof email button: a link in a one-cell presentation table.
+# The email button's outer table: space above and below, and separate
+# borders so the cell's rounded corners draw.
+EMAIL_TABLE_STYLE = "border-collapse:separate;margin:24px 0;"
 
-    Mail programs keep inline styles only, so every value is inlined from
-    the design tokens. The cell carries the colour, border and corner radius
-    (``bgcolor`` too, for clients that drop CSS backgrounds) and
-    ``mso-padding-alt`` gives Outlook for Windows, which ignores padding on
-    links, the same size; there the corners are square but the button keeps
-    its colour, size and real-text label. There is no VML: its fixed pixel
-    width cannot fit a label of unknown length. The label is real text, so
-    the button reads with images off, and the light-on-dark (or dark-on-
-    light) pair stays legible when a dark mode inverts both colours.
+
+def email_button_styles(variant="primary"):
+    """(bgcolor, cell style, link style) of one email button variant.
+
+    The report validators (``report_markup``) admit exactly these values, so
+    they are built here once rather than copied.
     """
-    parts = urlsplit(href)
-    # A host is required too: "https:foo" and "http:///x" parse with an
-    # http(s) scheme but are not absolute addresses any mail program opens.
-    if parts.scheme not in ("https", "http") or not parts.hostname:
-        raise ValueError("an email button must link to an absolute http(s) address")
     background, text = _email_colors(variant)
     border = f"{BUTTON['button-border-width']} solid {hex6(COLORS['accent'])}"
     radius = f"{px(RADII['radius-small'])}px"
@@ -82,10 +75,37 @@ def email_button(label, href, *, variant="primary"):
         f"font-family:{EMAIL_SANS};font-size:{px('1rem')}px;font-weight:bold;"
         f"line-height:{line}px;text-decoration:none;border-radius:{radius};"
     )
+    return background, cell, link
+
+
+def email_button(label, href, *, variant="primary"):
+    """One bulletproof email button: a link in a one-cell presentation table.
+
+    Mail programs keep inline styles only, so every value is inlined from
+    the design tokens. The cell carries the colour, border and corner radius
+    (``bgcolor`` too, for clients that drop CSS backgrounds) and
+    ``mso-padding-alt`` gives Outlook for Windows, which ignores padding on
+    links, the same size; there the corners are square but the button keeps
+    its colour, size and real-text label. There is no VML: its fixed pixel
+    width cannot fit a label of unknown length. The label is real text, so
+    the button reads with images off, and the light-on-dark (or dark-on-
+    light) pair stays legible when a dark mode inverts both colours.
+
+    The markup is already in the HTML sanitizer's canonical form (an explicit
+    ``<tbody>`` and the ``rel`` it adds to links), so a validator that
+    re-sanitizes a compiled email and requires it unchanged admits it.
+    """
+    parts = urlsplit(href)
+    # A host is required too: "https:foo" and "http:///x" parse with an
+    # http(s) scheme but are not absolute addresses any mail program opens.
+    if parts.scheme not in ("https", "http") or not parts.hostname:
+        raise ValueError("an email button must link to an absolute http(s) address")
+    background, cell, link = email_button_styles(variant)
     return (
         '<table role="presentation" cellpadding="0" cellspacing="0" border="0" '
-        'style="margin:16px 0;"><tr>'
-        f'<td align="center" bgcolor="{background}" style="{cell}">'
-        f'<a href="{escape(href)}" style="{link}">{escape(label, quote=False)}</a>'
-        "</td></tr></table>"
+        f'style="{EMAIL_TABLE_STYLE}"><tbody><tr>'
+        f'<td bgcolor="{background}" style="{cell}">'
+        f'<a href="{escape(href)}" style="{link}" rel="noopener noreferrer">'
+        f"{escape(label, quote=False)}</a>"
+        "</td></tr></tbody></table>"
     )
