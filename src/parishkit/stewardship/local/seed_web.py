@@ -694,7 +694,8 @@ def campaign_values(catalog, campaign_dates):
     start, end = campaign_dates
     return {
         "name": "Annual stewardship campaign",
-        "year_label": str(end.year),
+        # The year Families pledge for: the financial period below.
+        "year_label": str(end.year + 1),
         "timezone": catalog.timezone,
         "start_date": start.isoformat(),
         "end_date": end.isoformat(),

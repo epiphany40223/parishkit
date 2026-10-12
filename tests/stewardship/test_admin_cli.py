@@ -137,6 +137,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "users confirm",
         "users import-leaders",
     }
+    # Past campaigns' archive import (#1018), listed with the reports.
+    reports |= {"history list", "history preview", "history confirm", "history remove"}
     assert set(entries) == (
         session
         | reads
@@ -552,6 +554,9 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_digest_weekly_request",
         "admin_cmd_users_confirm",
         "admin_cmd_users_import_leaders",
+        "admin_cmd_history_preview",
+        "admin_cmd_history_confirm",
+        "admin_cmd_history_remove",
     ]
     for event in events:
         assert Action(event) and event in DESCRIPTIONS, event

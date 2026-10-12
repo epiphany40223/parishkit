@@ -697,6 +697,56 @@ another file uses, is exit 1 (`invalid`) with the page's message for the
 current name changes nothing; otherwise System logs show the page's
 `hosted_file_slug_changed` and the command's `admin_cmd_files_rename`.
 
+## Past campaigns
+
+The `history` commands import the archive workbooks of past campaigns for
+the campaign comparison report
+([campaign history](../specs/stewardship/campaign-history/spec.md#command-line),
+[#1018](https://github.com/epiphany40223/parishkit/issues/1018)). They are
+the **Past campaigns** page's actions (the page itself comes later), need an
+Administrator, and print counts, totals, dates, states and checksums only:
+never a Family row, a note's text, a pledge band or quartile, a
+pledging-Family count or an average. Check files offline first with
+`pk-stewardship archive-check`, which needs no session.
+
+```sh
+pk-admin history list
+pk-admin history preview - < stewardship-2025.xlsx
+pk-admin history confirm --token TOKEN
+pk-admin history remove 2025 --expected-version 2
+```
+
+- `history list` (any session) lists each imported year and each removal's
+  tombstone, newest year first, with its `version`, `checksum` (SHA-256 of
+  the file), `state` (`active` or `removed`), Families responded, annual
+  pledges and whether Family rows were kept. It records nothing.
+- `history preview -` (full scope) reads one workbook from standard input
+  (the wrapper forwards it because of the `-`), checks it in the isolated
+  helper and keeps it as a preview for fifteen minutes. It prints `action`
+  (`add`, `replace` with the year's `current` import, or `already` when the
+  same file is imported), the figures, `notes_flagged` (the notes to read
+  on the page before applying; their text is never printed) and
+  `preview.token`. A refused file is exit 1 (`invalid`); `error.fields`
+  names each problem's cell and rule (never the cell's value).
+  `--no-family-rows` keeps no Family ids, so the renewal figure is not
+  available for that year. Another archive being checked is exit 3
+  (`unavailable`); retry in a minute.
+- `history confirm --token` (full scope) imports the preview. A
+  replacement removes the year's earlier import, so it asks you to type
+  `yes` (or pass `--yes`); an addition does not ask. It prints `outcome`
+  (`imported`, `replaced` or `already`). `already` means the same file is
+  imported (`archive` is that import): nothing changes, but the preview is
+  used up and the command records `admin_cmd_history_confirm`. An expired,
+  applied or racing preview is exit 1 (`stale_version`): preview again.
+- `history remove YEAR --expected-version N` (full scope) removes a year's
+  import after the prompt, keeping a tombstone; the file can be imported
+  again. A wrong version is exit 1 (`stale_version`).
+
+System logs show `campaign_archive_previewed`, `campaign_archive_imported`,
+`campaign_archive_replaced` and `campaign_archive_removed` (year, checksum
+and counts), and the commands' `admin_cmd_history_preview`,
+`admin_cmd_history_confirm` and `admin_cmd_history_remove`.
+
 ## Task retries
 
 `task retry` is the **Retry** button of a failed task on Background work,
@@ -1556,3 +1606,7 @@ pk-admin users import-leaders --confirm --token -
   page's event).
 - `pk-admin/1` (ADM-13 PR 2c, #530): additive. `system health` gains
   `daily_sent` and `daily_limit`.
+- `pk-admin/1` (#1018): additive. `history list`, `history preview -`
+  (the workbook on standard input), `history confirm` (prompts for a
+  replacement) and `history remove` (prompts), the Past campaigns page's
+  actions ahead of the page (Administrators only; their events).

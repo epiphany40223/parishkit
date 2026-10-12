@@ -172,6 +172,31 @@ DESCRIPTIONS = {
         "An automation session closed or reopened the Family portal for "
         "maintenance, as the Family portal availability page does."
     ),
+    "campaign_archive_previewed": _(
+        "An Administrator checked a past campaign's archive file for import "
+        "(or the file was refused)."
+    ),
+    "campaign_archive_imported": _(
+        "An Administrator imported a past campaign's archive file."
+    ),
+    "campaign_archive_replaced": _(
+        "A newer archive file replaced a past campaign's imported figures."
+    ),
+    "campaign_archive_removed": _(
+        "An Administrator removed a past campaign's imported figures."
+    ),
+    "admin_cmd_history_preview": _(
+        "An automation session checked a past campaign's archive file, as the "
+        "Past campaigns page's Review does."
+    ),
+    "admin_cmd_history_confirm": _(
+        "An automation session imported a past campaign's archive file, as "
+        "the Past campaigns page's Apply does."
+    ),
+    "admin_cmd_history_remove": _(
+        "An automation session removed a past campaign's imported figures, as "
+        "the Past campaigns page's Remove does."
+    ),
     "admin_cmd_files_delete": _(
         "An automation session deleted unused hosted files, as the Hosted "
         "files page's Delete does."

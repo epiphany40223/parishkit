@@ -266,8 +266,9 @@ TIMEOUT_LIMITS = frozenset(
         # loaded a dump into its scratch database (#608); process log only.
         "restore_compare_load",
         # The archive workbook check's helper was killed at its time limit
-        # (#1018); process log only until the import registers the durable
-        # timeout kind.
+        # (#1018): a durable timeout kind for an import's Review
+        # (audit.schemas.TIMEOUT_KINDS); process log only from the offline
+        # archive-check command.
         "archive_check",
         # The scheduler's web liveness probe (#392 L1, jobs.web_health): one
         # request's socket timeout, or a probe thread still running past

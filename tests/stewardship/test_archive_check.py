@@ -146,6 +146,119 @@ def test_a_reply_of_the_wrong_shape_is_a_fixed_problem(monkeypatch, reply):
     assert check.check_archive(b"PK")["problems"] == [check.FAILED]
 
 
+def _valid_reply():
+    """The worker's document for the synthetic workbook, as JSON reads it."""
+    return json.loads(json.dumps(check_worker.document(workbook_bytes())))
+
+
+def _set(path, value):
+    """A change that sets one value of the reply, by its key path."""
+
+    def change(document):
+        *parents, last = path
+        target = document
+        for key in parents:
+            target = target[key]
+        target[last] = value
+
+    return change
+
+
+def _drop(path):
+    """A change that deletes one key of the reply."""
+
+    def change(document):
+        *parents, last = path
+        target = document
+        for key in parents:
+            target = target[key]
+        del target[last]
+
+    return change
+
+
+def _extra_note(document):
+    document["notes"]["note.02"] = "x" * (256 * 1024)
+
+
+DEEP_CHANGES = {
+    "metadata key missing": _drop(("metadata", "dedup_rule")),
+    "metadata key added": _set(("metadata", "extra"), "x"),
+    "year as text": _set(("metadata", "campaign_year"), "2055"),
+    "year out of range": _set(("metadata", "campaign_year"), 2101),
+    "final as text": _set(("metadata", "is_final"), "TRUE"),
+    "bad as_of": _set(("metadata", "as_of"), "yesterday"),
+    "naive as_of": _set(("metadata", "as_of"), "2054-10-09 14:00:00"),
+    "bad start date": _set(("metadata", "campaign_start_date"), "2054-13-01"),
+    "last before start": _set(
+        ("metadata", "campaign_last_submission_date"), "2054-10-01"
+    ),
+    "long campaign name": _set(("metadata", "campaign_name"), "n" * 201),
+    "active past an integer": _set(("metadata", "active_families"), 2**31),
+    "active as a bool": _set(("metadata", "active_families"), True),
+    "long provenance": _set(("metadata", "active_families_provenance"), "p" * 10_001),
+    "long source system": _set(("metadata", "source_system"), "s" * 10_001),
+    "long dedup rule": _set(("metadata", "dedup_rule"), "d" * 10_001),
+    "long schema version": _set(("metadata", "schema_version"), "1." + "0" * 20),
+    "daily row key added": _set(("daily", 0, "source"), "derived"),
+    "daily row key missing": _drop(("daily", 0, "local_date")),
+    "daily day zero": _set(("daily", 0, "campaign_day"), 0),
+    "daily amount as a number": _set(("daily", 0, "cumulative_annual_pledged"), 1200),
+    "daily amount past numeric": _set(
+        ("daily", 0, "cumulative_annual_pledged"), "1" + "0" * 16
+    ),
+    "daily repeated day": _set(("daily", 1, "campaign_day"), 1),
+    "no daily rows": _set(("daily",), []),
+    "band key added": _set(("bands", 0, "extra"), 1),
+    "band total with three decimals": _set(("bands", 0, "total"), "1.005"),
+    "band number past the set": _set(("bands", 0, "band"), 9),
+    "band repeated": _set(("bands", 1, "band"), 1),
+    "renewal pair": _set(("renewal_families", 0), ["parishsoft_duid", 1001]),
+    "renewal envelope system": _set(("renewal_families", 0, 0), "pds_envelope"),
+    "renewal id as text": _set(("renewal_families", 0, 1), "1001"),
+    "renewal day zero": _set(("renewal_families", 0, 2), 0),
+    "renewal repeated": _set(("renewal_families", 1), ["parishsoft_duid", 1001, 1]),
+    "note as a number": _set(("notes", "note.01"), 1),
+    "count as a list": _set(("other_counts", "count.active_now"), ["41"]),
+    "notes past 256 KB": _extra_note,
+    "unknown id system": _set(("family_id_systems",), ["envelope"]),
+    "flagged key as a number": _set(("flagged_notes",), [1]),
+    "total as NaN": _set(("annual_pledged",), "NaN"),
+    "negative total": _set(("annual_pledged",), "-1.00"),
+    "total past numeric": _set(("annual_pledged",), "1" + "0" * 16),
+    "pledging past responded": _set(("pledging_families",), 8),
+    "families past an integer": _set(("families",), 2**31),
+    "quartiles out of order": _set(("quartiles",), ["3.00", "2.00", "1.00"]),
+    "two quartiles": _set(("quartiles",), ["1.00", "2.00"]),
+    "band set past smallint": _set(("band_set_version",), 2**15),
+}
+
+
+def test_the_valid_reply_is_well_formed():
+    """The real worker's document passes the deep check unchanged."""
+    assert check._well_formed(_valid_reply())
+
+
+@pytest.mark.parametrize("case", DEEP_CHANGES)
+def test_a_reply_the_import_could_not_store_is_refused(case):
+    """Each value is checked to its stored column's type and limit."""
+    document = _valid_reply()
+    DEEP_CHANGES[case](document)
+    assert not check._well_formed(document)
+
+
+def test_a_deep_shape_failure_is_check_failed(monkeypatch):
+    """Through the helper, such a reply is "could not be checked"."""
+    document = _valid_reply()
+    document["metadata"]["campaign_name"] = "n" * 201
+    text = json.dumps(document)
+    helper(
+        monkeypatch,
+        f"import sys; sys.stdin.buffer.read(); sys.stdout.write({text!r})",
+    )
+    assert check.check_archive(b"PK")["problems"] == [check.FAILED]
+
+
 def test_the_worker_maps_memory_errors_to_its_exit(monkeypatch, capsysbinary):
     """MemoryError anywhere in the read is exit 3, with nothing written."""
 

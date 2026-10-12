@@ -1184,6 +1184,80 @@ def files_rename(args, preamble, runtime, context):
     )
 
 
+def history_list(args, preamble, runtime, context):
+    """The Past campaigns page's imported years and tombstones (#1018)."""
+    from .admin_history import list_archives
+
+    return list_archives(context["caller"], runtime)
+
+
+def history_preview(args, preamble, runtime, context):
+    """Review one archive workbook read from standard input (#1018).
+
+    The workbook's bytes follow the preamble (the wrapper forwards them for
+    the ``-`` input); nothing else is read. A refused file is ``invalid``
+    with its located problems.
+    """
+    from .admin_history import preview_archive, read_workbook
+
+    data = read_workbook(context["stdin"])
+    return preview_archive(
+        context["caller"],
+        runtime,
+        data,
+        keep_family_rows=not args.no_family_rows,
+        context=context,
+    )
+
+
+def history_confirm(args, preamble, runtime, context):
+    """Apply a reviewed archive, as the page's Apply does (#1018).
+
+    A replacement removes the year's earlier import, so it asks the page's
+    acknowledgement first, naming the year; an addition asks nothing.
+    """
+    from .admin_history import confirm_archive, pending_replacement
+
+    pending, current = pending_replacement(context["caller"], runtime, args.token)
+    if current is not None:
+        confirm(
+            context,
+            (
+                f"This replaces the {pending.campaign_year} figures already "
+                f"imported (version {current.version}, "
+                f"checksum {current.checksum[:12]}).",
+                "The earlier import is removed; its file can be imported again.",
+            ),
+        )
+    return confirm_archive(
+        context["caller"],
+        runtime,
+        args.token,
+        replace_acknowledged=current is not None,
+        context=context,
+    )
+
+
+def history_remove(args, preamble, runtime, context):
+    """Remove one year's imported figures, as the page's Remove does (#1018)."""
+    from .admin_history import remove_archive
+
+    confirm(
+        context,
+        (
+            f"Remove the {args.year} figures imported from a past campaign.",
+            "The report stops showing the year; the file can be imported again.",
+        ),
+    )
+    return remove_archive(
+        context["caller"],
+        runtime,
+        args.year,
+        expected_version=args.expected_version,
+        context=context,
+    )
+
+
 def portal_maintenance_set(args, preamble, runtime, context):
     """Close or reopen the Family portal, as its page's buttons do (PR 7a).
 
@@ -2053,6 +2127,46 @@ def _portal_maintenance_set_options(parser):
         help="with --state closed: the note Families see (at most 500 "
         "characters, no email address), or - to read it from standard input "
         "(needs --yes)",
+    )
+
+
+def _history_year(value):
+    """A campaign archive's pledge year: four digits, 2000 to 2100."""
+    if not (len(value) == 4 and value.isdecimal() and 2000 <= int(value) <= 2100):
+        raise argparse.ArgumentTypeError("not a year")
+    return int(value)
+
+
+def _history_preview_options(parser):
+    """Options of ``history preview``: ``-`` for standard input, the box."""
+    parser.add_argument(
+        "file",
+        choices=("-",),
+        metavar="-",
+        help="read the workbook's bytes from standard input",
+    )
+    parser.add_argument(
+        "--no-family-rows",
+        action="store_true",
+        help="do not keep each Family's id and first day (the renewal figure)",
+    )
+
+
+def _history_confirm_options(parser):
+    """Options of ``history confirm``: the preview's token."""
+    parser.add_argument(
+        "--token", type=_uuid, required=True, help="preview.token from history preview"
+    )
+
+
+def _history_remove_options(parser):
+    """Options of ``history remove``: the year and its version."""
+    parser.add_argument("year", type=_history_year, metavar="YEAR")
+    parser.add_argument(
+        "--expected-version",
+        type=_version,
+        required=True,
+        help="the import's version from history list",
     )
 
 
@@ -3153,6 +3267,67 @@ def _file_specs():
     )
 
 
+def _history_specs():
+    """Past campaigns (#1018): the archive import, the page's actions.
+
+    Reading needs any session; Review stores a pending preview, so it needs
+    a full-scope session and records its command event. Apply asks only to
+    replace a year; Remove always asks.
+    """
+    from .admin_history import (
+        HistoryConfirm,
+        HistoryList,
+        HistoryPreview,
+        HistoryRemove,
+    )
+
+    return (
+        CommandSpec(
+            "history list",
+            "List the imported past campaigns and their removals.",
+            history_list,
+            "read_only",
+            False,
+            HistoryList.field_names(),
+            8,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "history preview",
+            "Check one past campaign's archive workbook from standard input.",
+            history_preview,
+            "full",
+            True,
+            HistoryPreview.field_names(),
+            8,
+            options=(_history_preview_options,),
+        ),
+        CommandSpec(
+            "history confirm",
+            "Import a checked archive workbook, replacing its year if asked.",
+            history_confirm,
+            "full",
+            True,
+            HistoryConfirm.field_names(),
+            8,
+            options=(_history_confirm_options,),
+            prompts=True,
+        ),
+        CommandSpec(
+            "history remove",
+            "Remove one past campaign's imported figures.",
+            history_remove,
+            "full",
+            True,
+            HistoryRemove.field_names(),
+            8,
+            options=(_history_remove_options,),
+            prompts=True,
+            expected_version=True,
+        ),
+    )
+
+
 def _report_specs():
     """The report, export, digest and log commands (PR 8; 8a: the logs).
 
@@ -3622,6 +3797,7 @@ COMMANDS = (
     + _operation_specs()
     + _report_specs()
     + _users_specs()
+    + _history_specs()
 )
 BY_NAME = {spec.name: spec for spec in COMMANDS}
 

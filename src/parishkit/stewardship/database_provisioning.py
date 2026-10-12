@@ -434,11 +434,16 @@ def provision_grants(configuration, deployment_id):
     """Grant only the explicit foundation registry after its migrations exist.
 
     On the users upgrade's base (#952), the swap and what depends on it are
-    still pending, so a definer routine one of those migrations creates is
-    not granted yet (``pending_functions``); the grants after the full
-    migration add it.
+    still pending, so a definer routine or a table one of those migrations
+    creates is not granted yet (``pending_functions``, ``pending_tables``);
+    the grants after the full migration add it.
     """
-    from .runtime_grants import pending_functions, runtime_functions, runtime_grants
+    from .runtime_grants import (
+        pending_functions,
+        pending_tables,
+        runtime_functions,
+        runtime_grants,
+    )
 
     if not isinstance(deployment_id, UUID):
         raise ConfigError("Database provisioning requires a deployment UUID.")
@@ -454,7 +459,8 @@ def provision_grants(configuration, deployment_id):
         _admit_operator(cursor, configuration, marker, initial=False)
         _admit_writer_guard(cursor)
         cursor.execute("SELECT app,name FROM public.django_migrations")
-        pending = pending_functions(set(cursor.fetchall()))
+        applied = set(cursor.fetchall())
+        pending, absent = pending_functions(applied), pending_tables(applied)
         for _, login, role, target in database_identities():
             if not _check_role(
                 cursor,
@@ -468,6 +474,13 @@ def provision_grants(configuration, deployment_id):
             if role is ServiceRole.MIGRATION:
                 continue
             tables, columns = runtime_grants(role, target=target)
+            # A table the base lacks gets its grants after the full migration.
+            tables = {
+                name: value for name, value in tables.items() if name not in absent
+            }
+            columns = {
+                name: value for name, value in columns.items() if name not in absent
+            }
             if role is ServiceRole.BACKUP_WORKER:
                 _admit_reader(cursor, login, tables)
             else:
