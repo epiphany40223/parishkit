@@ -52,6 +52,10 @@ from .task_wording import (
     retry_reason,
 )
 
+# The region of Refresh from ParishSoft that shows the run it requested
+# (accounts.refresh_views); its status poll asks for that page's wording.
+REFRESH_RUN = "refresh-run"
+
 
 def _error(code, status):
     """Only static error codes/messages cross this metadata boundary."""
@@ -337,12 +341,18 @@ def task_status(request, task_id):
     the poller here instead, as presence count polls do. Only the task page
     itself records the view.
     """
+    # Refresh from ParishSoft polls with ?view=refresh (#521): the region
+    # there sits in its own page region and has no history or Retry panel
+    # below it, so it is worded for that page. Any other query is ignored.
+    region = {"region_id": REFRESH_RUN} if request.GET.get("view") == "refresh" else {}
     # The region shows no history, so history paging does not apply here.
     request.GET = QueryDict()
     result, context = _task_read(request, task_id)
     if context is None:
         return result
-    response = render(request, "stewardship/background-task-status.html", context)
+    response = render(
+        request, "stewardship/background-task-status.html", context | region
+    )
     return _finish_html(request, result, response, task_id, audit=False)
 
 
