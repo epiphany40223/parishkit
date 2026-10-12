@@ -670,7 +670,7 @@ def test_followup_filter_refreshes_in_place_without_assignment(page, component_o
     assert page.evaluate(MARKED) == "kept"
     assert page.get_by_label("Ministry", exact=True).input_value() == "9"
     table = page.locator("#table")
-    assert table.get_by_role("columnheader", name="Select").count() == 0
+    assert table.get_by_role("columnheader", name="Select", exact=True).count() == 0
     assert table.get_by_role("columnheader", name="Assigned to").count() == 0
     assert page.get_by_role("button", name="Assign selected").count() == 0
 

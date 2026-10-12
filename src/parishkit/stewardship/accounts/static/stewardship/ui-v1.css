@@ -1005,6 +1005,12 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 .dialog-actions { display: flex; flex-wrap: wrap; gap: .5rem 1rem; }
 .dialog-actions button { margin: 0; }
 .dialog-status { min-height: 1.6em; margin: .5rem 0 0; color: var(--muted); }
+/* A confirmation dialog with fields (confirm-dialog.html fields_template:
+   the follow-up queue's bulk outcomes, #1131) is wider, for the contact
+   attempt's How, Date and Time row, and scrolls inside the window on a
+   short screen rather than past it. */
+.confirm-dialog:has(.dialog-fields) { width: min(42rem, calc(100vw - 2rem)); max-height: 84vh; overflow-y: auto; }
+.dialog-fields { margin-block: 1rem .5rem; }
 /* The review dialog of Admin editors (#750, confirm-dialog.html with
    review=True). It fits the window at every width: its title, buttons,
    status line and refusal stay in view while a long review scrolls in its

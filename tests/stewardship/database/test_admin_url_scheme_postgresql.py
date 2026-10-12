@@ -287,6 +287,7 @@ def test_new_report_pages_refuse_or_explain_without_a_current_campaign(
         ("ministry_packet", []),
         ("ministry_followup", []),
         ("ministry_followup_update", [item]),
+        ("ministry_followup_bulk", []),
         ("family_directory_export", []),
         ("find_family", []),
         ("response_list_export", ["submitted"]),

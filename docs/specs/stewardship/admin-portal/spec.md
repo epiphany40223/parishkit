@@ -4754,9 +4754,8 @@ Ministry follow-up has no assignment (Administrator decision, 2026-10-04,
 [#552](https://github.com/epiphany40223/parishkit/issues/552)): each
 Ministry's leader contacts the parishioners who asked to join or leave it,
 and the portal does not track coordination between people. The queue and
-request pages therefore offer no assignee field, filter or column and no bulk
-selection; the status choices are New, In progress, Resolved and Closed: no
-response. A request recorded as Assigned before this decision reads as New
+request pages therefore offer no assignee field, filter or column; the status
+choices are New, In progress, Resolved and Closed: no response. A request recorded as Assigned before this decision reads as New
 (that state only ever meant "has an assignee") until its next save stores the
 chosen status with no assignee; until then an explicit New filter (queue or
 Ministry report) does not match it, while Unresolved and Any status do. Past
@@ -4781,6 +4780,59 @@ carries a small "Removed" badge after its name, with "No longer in this
 campaign" as its tooltip and screen-reader text, instead of that sentence in
 the cell. Last contact uses the compact date and time of dense tables
 ([date format](../ui-conventions/spec.md#date-format)).
+
+The queue lists current requests only
+([#1131](https://github.com/epiphany40223/parishkit/issues/1131)). Its filters
+are Search, Ministry, Request, Status and Outcome. There is no Request history
+filter, and Status offers no Withdrawn or Replaced by Family: those are the
+system's bookkeeping for a Family's resubmission, not a leader's decision. A
+request page reached by an old link still says the Family has since replaced
+or withdrawn the request. Each request page's history shows the past.
+
+Leaders record one outcome for several requests at once
+([#1131](https://github.com/epiphany40223/parishkit/issues/1131)), through the
+shared [selection column, bulk bar](../ui-conventions/spec.md#admin-tables) and
+[confirmation dialog](../ui-conventions/spec.md#row-actions-and-confirmation).
+Only open requests (New or In progress) have a selection box. The selection
+covers the current page and the page help says so.
+
+The bulk bar offers Mark as Joined, Mark as Left and Mark as Declined /
+stayed. Joined applies only to requests to join and Left only to requests to
+leave; declined applies to both, reading Declined / no longer interested on a
+join and Stayed in the Ministry on a leave
+([#1132](https://github.com/epiphany40223/parishkit/issues/1132)). Each button
+opens one dialog, which names the count and the outcome. It names any ticked
+request of the other kind as skipped and leaves that request as it is; when
+none applies, it says so and offers nothing to record. The dialog has an
+optional "Record a contact attempt" (How, Date, Time and What happened, as on
+the request form), which is applied to each request. Its fields return to
+their defaults each time it opens.
+
+Recording posts the chosen requests, each with the version its row showed,
+without a page load. The server applies them all or none, in one transaction
+under the shared work order, with every request locked first. Each request
+gets its own revision, projection and `ministry_request_updated` audit event,
+exactly as a single save does. Its notes carry forward, and every event
+shares one correlation id. One `ministry_followup_bulk_applied` event records
+the action, with how many requests it changed and how many were chosen.
+
+The server refuses the whole batch, saving nothing, when:
+
+- any request is outside the leader's Ministries (denied, as an unknown
+  request is);
+- any request changed or closed since the page was read (named in the
+  dialog);
+- any request's kind does not take the outcome (named in the dialog); or
+- the contact attempt is refused, as on the request form.
+
+A batch is at most one page of the largest page size. Posting the same
+action again replays each request's revision rather than writing a second.
+On success the dialog redraws the table from the remembered view, keeping
+its filters, sort and page. Each bulk revision appears in the request page's
+Follow-up history like any edit, marked "(bulk)". The follow-up commands of
+the command line (PR 11,
+[#463](https://github.com/epiphany40223/parishkit/issues/463)) are still to
+come; the bulk action is listed with them.
 
 The request form is compact
 ([#1014](https://github.com/epiphany40223/parishkit/issues/1014)): on a

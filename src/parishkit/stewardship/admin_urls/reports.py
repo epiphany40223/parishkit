@@ -154,6 +154,13 @@ patterns = [
         ministry_followup_views.queue,
         "ministry_followup",
     ),
+    # One outcome for the requests chosen on the queue (#1131), posted by
+    # its confirmation dialog.
+    _page(
+        "reports/ministries/follow-up/bulk/",
+        ministry_followup_views.bulk,
+        "ministry_followup_bulk",
+    ),
     _page(
         "reports/ministries/follow-up/<uuid:request_id>/",
         ministry_followup_views.detail,

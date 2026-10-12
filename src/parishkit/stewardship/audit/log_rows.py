@@ -372,6 +372,7 @@ UNGROUPED_REASONS = {
         "chair_review_decided",
         "information_updated",
         "ministry_request_updated",
+        "ministry_followup_bulk_applied",
         "ministry_roster_entered",
     ),
     "Staff opening a Family's form through Open form, and the Family sign-in "

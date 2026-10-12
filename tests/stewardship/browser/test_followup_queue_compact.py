@@ -1,6 +1,6 @@
 """The Ministry follow-up queue page is compact (#1064).
 
-Its six filters take two rows at laptop width and one row each at phone
+Its five filters take two rows at laptop width and one row each at phone
 width; every row of a full page of requests is one line, or two where a
 long Ministry name wraps (#1136), with the long explanations kept to
 tooltips, screen-reader text and the request's own page; and applying the
@@ -33,7 +33,6 @@ FIELDS = (
     "#filter-action",
     "#filter-state",
     "#filter-outcome",
-    "#filter-history",
 )
 CONTROLS = FIELDS + (f"{FILTERS} button[type=submit]",)
 AXE = """async () => (await axe.run(document, {
@@ -83,7 +82,7 @@ def boxes(page, selectors):
 
 
 def test_queue_is_compact_at_laptop_width(page, component_origin, axe_source):
-    """At 1280 px the six filters take at most two rows, Apply filters
+    """At 1280 px the five filters take at most two rows, Apply filters
     ending the last; the filter form stays within its height bound; and a
     page of 25 requests with long names, every status and both markers is
     one line per row, or two where a long Ministry name wraps (#1136)."""
@@ -119,13 +118,14 @@ def test_queue_cells_hold_one_short_value(page, component_origin):
     explanations stay available as tooltips and screen-reader text."""
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + PAGE)
+    # The first cell is the bulk outcome selection box (#1131).
     cells = page.locator("tbody tr").nth(0).locator("th, td")
-    assert cells.nth(3).inner_text() == "Leave (cannot participate)"
-    marker = cells.nth(3).locator("span[title]")
+    assert cells.nth(4).inner_text() == "Leave (cannot participate)"
+    marker = cells.nth(4).locator("span[title]")
     assert marker.get_attribute("title") == (
         "Cannot participate in any ministries (physical limitations)"
     )
-    statuses = page.locator("tbody tr td:nth-child(5)").all_inner_texts()
+    statuses = page.locator("tbody tr td:nth-child(6)").all_inner_texts()
     assert "Resolved: Declined / no longer interested" in statuses
     assert "Resolved: Joined the Ministry" in statuses
     # A leave request resolved as declined reads Stayed (#1132).
@@ -135,7 +135,7 @@ def test_queue_cells_hold_one_short_value(page, component_origin):
     assert not any("No response" in text for text in statuses)
     # The Ministry removed from the campaign (row 7) carries its badge,
     # whose words a screen reader hears in full.
-    removed = page.locator("tbody tr").nth(6).locator("td").nth(1)
+    removed = page.locator("tbody tr").nth(6).locator("td").nth(2)
     badge = removed.locator(".status-badge")
     # The tooltip is on the visible word, which screen readers skip, so the
     # sentence is announced once.
@@ -146,7 +146,7 @@ def test_queue_cells_hold_one_short_value(page, component_origin):
         "No longer in this campaign"
     )
     # Last contact uses the compact form: no "at" and no time zone name.
-    contact = page.locator("tbody tr").nth(1).locator("td").nth(4).inner_text()
+    contact = page.locator("tbody tr").nth(1).locator("td").nth(5).inner_text()
     assert contact.startswith("Sep") and " at " not in contact
     assert not contact.endswith(("PDT", "PST"))
 

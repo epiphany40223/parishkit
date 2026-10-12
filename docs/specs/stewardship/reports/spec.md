@@ -1661,7 +1661,11 @@ lists, and their downloads and packets
 stored code is the same for both kinds, so a leave request someone resolved
 as `declined` before the labels changed reads `Stayed in the Ministry`: the
 Member did not leave. The follow-up queue's Outcome filter covers both
-kinds, so there `declined` reads `Declined / stayed`.
+kinds, so there `declined` reads `Declined / stayed`. Nobody records
+`duplicate` any more (the system never creates duplicates, since a Family's
+resubmission replaces its request), so neither the request form nor the
+Outcome filter offers it; a request already resolved that way keeps its label
+([#1131](https://github.com/epiphany40223/parishkit/issues/1131)).
 
 For Ministry leaders, every email and phone value in the packet follows the
 summary report's ParishSoft publish-flag rule and renders `Not published`

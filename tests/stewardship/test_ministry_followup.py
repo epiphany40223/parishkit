@@ -13,22 +13,31 @@ from django.template.loader import render_to_string
 from parishkit.stewardship.reports.ministries import STATE_LABELS
 from parishkit.stewardship.reports.ministries import STATES as REPORT_STATES
 from parishkit.stewardship.reports.ministry_followup import (
+    FILTER_OUTCOMES,
     HISTORY_STATES,
     STATES,
     FollowupQuery,
+)
+from parishkit.stewardship.reports.ministry_followup import (
+    STATE_LABELS as FOLLOWUP_STATE_LABELS,
 )
 from parishkit.stewardship.reports.ministry_followup_views import (
     FIELD_IDS,
     REFUSALS,
     _refusal_error,
+    bulk_actions,
+    bulk_values,
     change_values,
     refusal_fields,
 )
 from parishkit.stewardship.workflows.followup import (
+    BULK_OUTCOMES,
+    MAX_BULK,
     MAX_CONTACT_NOTES,
     MAX_NOTES,
     FollowupRefusal,
     WorkflowChange,
+    bulk_key_for,
     outcomes_for,
 )
 from parishkit.stewardship.workflows.models import STAFF_STATES
@@ -242,13 +251,40 @@ def test_assigned_is_no_longer_offered_but_still_reads_as_new():
 
 def test_each_request_kind_is_offered_only_the_outcomes_it_can_record():
     """A join cannot record Left the Ministry and a leave cannot record Joined."""
-    assert outcomes_for("join") == ("joined", "declined", "duplicate", "other")
-    assert outcomes_for("leave") == (
+    assert outcomes_for("join") == ("joined", "declined", "other")
+    assert outcomes_for("leave") == ("leave_confirmed", "declined", "other")
+
+
+def test_queue_drops_withdrawn_replaced_duplicate_and_history_choices():
+    """The queue lists current requests and offers what a person decides (#1131).
+
+    Withdrawn and Replaced by Family are system bookkeeping, so they are no
+    Status filter, and the Request history filter is gone; Duplicate request
+    is no longer offered as an outcome or an Outcome filter. Stored values
+    still read: an old link's request page names its state, and a request
+    resolved as Duplicate keeps its label.
+    """
+    assert set(STATES) == {"new", "in_progress", "resolved", "closed_no_response"}
+    assert FOLLOWUP_STATE_LABELS["cancelled"] == "Withdrawn by Family"
+    assert FOLLOWUP_STATE_LABELS["superseded"] == "Replaced by Family"
+    assert HISTORY_STATES["superseded"] == "Replaced by Family"
+    assert "duplicate" not in FILTER_OUTCOMES
+    assert list(FILTER_OUTCOMES) == [
+        "joined",
         "leave_confirmed",
         "declined",
-        "duplicate",
+        "no_response",
         "other",
-    )
+    ]
+    for invalid in (
+        {"state": "cancelled"},
+        {"state": "superseded"},
+        {"history": "all"},
+        {"outcome": "duplicate"},
+    ):
+        with pytest.raises(ValueError):
+            FollowupQuery.parse(invalid)
+    assert FollowupQuery.parse({"history": "current"}).history == "current"
 
 
 @pytest.mark.parametrize(
@@ -468,3 +504,113 @@ def test_refused_fields_are_marked_at_the_field(code):
     assert "aria-invalid" not in clean
     assert '<ul class="errorlist" id="contact-error" hidden><li></li></ul>' in clean
     assert len(re.findall(r'<ul class="errorlist"', clean)) == 1
+
+
+REQUEST = uuid4()
+BULK = {
+    "outcome": "declined",
+    "bulk_key": str(uuid4()),
+    "contact_channel": "",
+}
+
+
+def bulk(values, requests=(f"{REQUEST}:3",)):
+    """Parse a bulk outcome dialog's POST of ``values`` and ``requests``."""
+    data = QueryDict(mutable=True)
+    for key, value in values.items():
+        data[key] = value
+    data.setlist("request", list(requests))
+    return bulk_values(data)
+
+
+def test_bulk_form_reads_each_request_with_its_own_version():
+    """Each chosen row posts its id and the version it showed (#1131)."""
+    other = uuid4()
+    values = bulk(BULK, (f"{REQUEST}:3", f"{other}:1"))
+    assert values["versions"] == {REQUEST: 3, other: 1}
+    assert values["outcome"] == "declined"
+    assert values["change"].contact_channel is None
+    assert values["change"].contact_notes == ""
+    contact = bulk(
+        BULK
+        | {"contact_channel": "phone", "contact_notes": "Called everyone"}
+        | CONTACT
+    )["change"]
+    assert contact.contact_channel == "phone"
+    assert contact.contact_at == datetime(2026, 9, 19, 15, 4, tzinfo=UTC)
+    assert contact.contact_notes == "Called everyone"
+    # A contact attempt's details without a channel are ignored, as on a
+    # request's own form.
+    ignored = bulk(BULK | {"contact_notes": "Stale"} | CONTACT)["change"]
+    assert (ignored.contact_at, ignored.contact_notes) == (None, "")
+
+
+@pytest.mark.parametrize(
+    ("values", "requests"),
+    [
+        # Only Joined, Left and declined are bulk outcomes.
+        (BULK | {"outcome": "other"}, None),
+        (BULK | {"outcome": "duplicate"}, None),
+        (BULK | {"outcome": "no_response"}, None),
+        ({k: v for k, v in BULK.items() if k != "bulk_key"}, None),
+        (BULK | {"bulk_key": "not-a-uuid"}, None),
+        (BULK | {"state": "resolved"}, None),
+        (BULK | {"notes": "Shared notes"}, None),
+        (BULK, ()),
+        (BULK, (f"{REQUEST}:3", f"{REQUEST}:3")),
+        (BULK, (f"{REQUEST}:3", f"{REQUEST}:4")),
+        (BULK, (str(REQUEST),)),
+        (BULK, (f"{REQUEST}:0",)),
+        (BULK, (f"{REQUEST}:x",)),
+        (BULK, ("x:1",)),
+        (BULK, tuple(f"{uuid4()}:1" for _ in range(MAX_BULK + 1))),
+    ],
+)
+def test_malformed_bulk_forms_are_refused(values, requests):
+    """A crafted or stale dialog post is a malformed form, not a refusal."""
+    with pytest.raises(ValueError) as refused:
+        bulk(values) if requests is None else bulk(values, requests)
+    assert not isinstance(refused.value, FollowupRefusal)
+
+
+def test_bulk_contact_mistakes_are_the_request_forms_refusals():
+    """The dialog's contact attempt is checked as a request's own form's is."""
+    with pytest.raises(FollowupRefusal) as refused:
+        bulk(BULK | {"contact_channel": "phone"})
+    assert refused.value.code == "contact_incomplete"
+    with pytest.raises(FollowupRefusal) as refused:
+        bulk(BULK | {"contact_channel": "phone"} | CONTACT | {"contact_zone": ""})
+    assert refused.value.code == "contact_zone"
+
+
+def test_bulk_buttons_name_their_outcome_and_kind():
+    """Joined only for joins, Left only for leaves, declined for both (#1132)."""
+    actions = {action["outcome"]: action for action in bulk_actions()}
+    assert tuple(actions) == BULK_OUTCOMES
+    assert {key: action["kind"] for key, action in actions.items()} == {
+        "joined": "join",
+        "leave_confirmed": "leave",
+        "declined": "",
+    }
+    assert [str(action["label"]) for action in actions.values()] == [
+        "Mark as Joined",
+        "Mark as Left",
+        "Mark as Declined / stayed",
+    ]
+    joined = actions["joined"]
+    assert joined["title_many"] == "Mark {count} requests as Joined the Ministry?"
+    assert joined["done_one"] == "Marked {name} as Joined the Ministry."
+    assert "{names}" in joined["skipped_many"] and "{count}" in joined["skipped_many"]
+    assert "request to join" in joined["none"]
+    assert "request to leave" in actions["leave_confirmed"]["skipped_one"]
+    declined = actions["declined"]
+    assert declined["title_many"] == "Mark {count} requests as Declined / stayed?"
+    assert "Stayed in the Ministry" in declined["body"]
+    assert declined["skipped_one"] == declined["none"] == ""
+
+
+def test_each_request_in_a_bulk_action_has_its_own_replay_key():
+    """One page key derives a distinct, repeatable key per request."""
+    key, first, second = uuid4(), uuid4(), uuid4()
+    assert bulk_key_for(key, first) == bulk_key_for(key, first)
+    assert len({bulk_key_for(key, first), bulk_key_for(key, second), key}) == 3

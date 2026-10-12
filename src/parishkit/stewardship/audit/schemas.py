@@ -96,6 +96,11 @@ class Action(StrEnum):
     INFORMATION_UPDATED = "information_updated"
     MINISTRY_FOLLOWUP_VIEWED = "ministry_followup_viewed"
     MINISTRY_REQUEST_UPDATED = "ministry_request_updated"
+    # One bulk outcome on the Ministry follow-up queue (#1131): ``count`` is
+    # the requests it resolved, ``matching_count`` those chosen. Each request
+    # also has its own ministry_request_updated event, with the same
+    # correlation id.
+    MINISTRY_FOLLOWUP_BULK_APPLIED = "ministry_followup_bulk_applied"
     FINANCIAL_REPORT_VIEWED = "financial_report_viewed"
     TALENTS_REPORT_VIEWED = "talents_report_viewed"
     TALENTS_REPORT_EXPORTED = "talents_report_exported"

@@ -357,6 +357,8 @@ LEDGER = {
     "ministry_followup": pending("PR 11", "followup"),
     "ministry_followup_item": pending("PR 11", "followup"),
     "ministry_followup_update": pending("PR 11", "followup"),
+    # Bulk outcomes on the queue (#1131).
+    "ministry_followup_bulk": pending("PR 11", "followup"),
     # The roster Entered in ParishSoft tick and its list (#528).
     "ministry_followup_roster": pending("PR 11", "followup roster-entered"),
     # Counts only (#463): its rows name Members, so they are export roster's.

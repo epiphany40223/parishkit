@@ -16,7 +16,7 @@ from django.urls import reverse
 from parishkit.stewardship.accounts.policy import Principal, current_principal
 from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.accounts.sessions import database_now
-from parishkit.stewardship.audit.models import AuditContext
+from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
@@ -32,10 +32,12 @@ from parishkit.stewardship.reports.ministry_followup import (
 )
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.workflows.followup import (
+    BulkStale,
     FollowupRefusal,
     WorkflowChange,
     _system,
     _targets,
+    apply_bulk_outcome,
     outcomes_for,
     update_request,
 )
@@ -517,7 +519,14 @@ def test_scoped_queue_detail_and_chain_history(response_service, google):
     assert [item["id"] for item in current["rows"]] == [str(successor.pk)]
     assert current["rows"][0]["notes"] == "PRIVATE-NOTE first call"
     assert current["rows"][0]["phone_contact_at"] == called
-    everything = read(harness, staff, ministry="9", history="all", state="any")
+    # Every version (the request page's and Roster changes' read); the
+    # queue itself no longer offers it (#1131), so it is not a parsed filter.
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True), transaction.atomic():
+        everything = followup_page(
+            harness.campaign.pk,
+            FollowupQuery(ministry="9", history="all", state="any"),
+            staff,
+        )
     assert {item["id"] for item in everything["rows"]} == {
         str(join.pk),
         str(successor.pk),
@@ -1352,3 +1361,172 @@ def test_users_read_through_the_actor_and_domain_rules_grant_nothing(
             FollowupQuery(),
             Principal(domain_only.identity, frozenset({"staff"})),
         )
+
+
+def bulk(harness, actor, versions, outcome, *, key=None, **contact):
+    """Apply one bulk outcome under the real web database role (#1131)."""
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        return apply_bulk_outcome(
+            harness.service.store,
+            actor,
+            versions,
+            outcome=outcome,
+            bulk_key=key or uuid4(),
+            change=WorkflowChange(state="new", outcome=None, notes="", **contact),
+        )
+
+
+def test_bulk_outcome_is_all_or_none_with_one_revision_per_request(
+    response_service, google
+):
+    """A bulk outcome writes each request's own revision, projection and
+    audit event under one correlation id, plus one bulk event; a request of
+    the wrong kind, a stale version or another Ministry's request refuses
+    the whole batch and saves nothing (#1131)."""
+    harness = setup(response_service)
+    _, head, _, _ = leader(harness, google)
+    admin = user("admin@example.org").pk
+    join, leave = requests()
+    # Notes recorded before carry forward on the bulk revision.
+    edit(harness, admin, join, notes="PRIVATE-NOTE keep me")
+    join.refresh_from_db()
+    assert (join.version, leave.version) == (2, 1)
+    both = {join.pk: 2, leave.pk: 1}
+    # Joined does not apply to a leave, nor Left to a join: the refusal
+    # names the request.
+    for outcome, wrong in (("joined", leave), ("leave_confirmed", join)):
+        with pytest.raises(FollowupRefusal) as refused:
+            bulk(harness, admin, both, outcome)
+        assert refused.value.code == "outcome_kind"
+        assert refused.value.details["request_id"] == wrong.pk
+    # One stale version refuses the batch, naming that request.
+    with pytest.raises(BulkStale) as stale:
+        bulk(harness, admin, {join.pk: 1, leave.pk: 1}, "declined")
+    assert stale.value.request_id == join.pk
+    # A leader of Ministry 9 cannot reach Ministry 4's request, even mixed
+    # with one of their own.
+    with pytest.raises(PermissionError):
+        bulk(harness, head, both, "declined")
+    with pytest.raises(PermissionError):
+        bulk(harness, head, {join.pk: 2, uuid4(): 1}, "declined")
+    assert MinistryWorkflowRevision.objects.count() == 1
+    assert not AuditEvent.objects.filter(
+        event_type="ministry_followup_bulk_applied"
+    ).exists()
+    called, key = database_now() - timedelta(hours=1), uuid4()
+    contact = dict(contact_channel="phone", contact_at=called, contact_notes="Hi")
+    revisions = bulk(harness, admin, both, "declined", key=key, **contact)
+    join.refresh_from_db()
+    leave.refresh_from_db()
+    assert (join.state, join.outcome, join.version) == ("resolved", "declined", 3)
+    assert (leave.state, leave.outcome, leave.version) == ("resolved", "declined", 2)
+    assert join.resolved_at is not None and leave.resolved_at is not None
+    by_request = {revision.request_id: revision for revision in revisions}
+    assert by_request[join.pk].notes == "PRIVATE-NOTE keep me"
+    assert by_request[leave.pk].notes == ""
+    for revision in revisions:
+        assert (revision.contact_channel, revision.contact_at) == ("phone", called)
+        assert revision.contact_notes == "Hi"
+    correlations = {revision.correlation_id for revision in revisions}
+    assert len(correlations) == 1
+    (shared,) = correlations
+    events = AuditEvent.objects.filter(correlation_id=shared)
+    assert sorted(events.values_list("event_type", flat=True)) == [
+        "ministry_followup_bulk_applied",
+        "ministry_request_updated",
+        "ministry_request_updated",
+    ]
+    summary = AuditContext.objects.get(
+        event__event_type="ministry_followup_bulk_applied"
+    )
+    assert summary.context == {"outcome": "changed", "count": 2, "matching_count": 2}
+    assert summary.event.subject_id == harness.campaign.pk
+    # Posting the same action again replays it: same revisions, no new event.
+    again = bulk(harness, admin, both, "declined", key=key, **contact)
+    assert {revision.pk for revision in again} == set(by_request[k].pk for k in both)
+    assert MinistryWorkflowRevision.objects.count() == 3
+    assert (
+        AuditEvent.objects.filter(event_type="ministry_followup_bulk_applied").count()
+        == 1
+    )
+    # Closed requests take no further bulk outcome.
+    with pytest.raises(BulkStale):
+        bulk(harness, admin, {join.pk: 3}, "declined")
+    # The request page's history marks the bulk revision, not the single edit.
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        rows, _ = followup_history(join.pk, 1)
+    assert [(row.outcome, row.bulk) for row in rows] == [
+        ("declined", True),
+        (None, False),
+    ]
+
+
+def test_bulk_outcome_route_refuses_in_the_dialog_and_marks_history(
+    response_service, google
+):
+    """The queue's bulk route (#1131): CSRF, scope, kind, version and a
+    future contact are each refused with nothing saved; a refusal the
+    dialog can explain names the row; success answers 204, and the request
+    page's history marks the edit "(bulk)". The queue offers no Withdrawn,
+    Replaced, Duplicate or Request history choice."""
+    harness = setup(response_service)
+    browser, head, _, _ = leader(harness, google)
+    join, leave = requests()
+    route = reverse("admin:ministry_followup_bulk")
+    queue = reverse("admin:ministry_followup")
+    form = {
+        "outcome": "joined",
+        "bulk_key": str(uuid4()),
+        "request": [f"{join.pk}:1"],
+        "contact_channel": "phone",
+        "contact_date": "2026-01-02",
+        "contact_time": "3:04 PM",
+        "contact_zone": "America/Los_Angeles",
+        "contact_notes": "PRIVATE-NOTE spoke to them",
+    }
+
+    def refusal(response):
+        """The refusal message a JSON answer carries for the dialog."""
+        return json.loads(response.content)["refusal"]["message"]
+
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = get(browser, queue)
+        assert response.status_code == 200
+        assert f'value="{join.pk}:1" form="followup-bulk"'.encode() in body
+        assert str(leave.pk).encode() not in body
+        assert b'action="' + route.encode() + b'"' in body
+        assert b"Mark as Joined" in body and b"Mark as Left" in body
+        assert b"filter-history" not in body and b"Request history" not in body
+        assert b"Withdrawn by Family" not in body and b"Replaced by Family" not in body
+        assert b'value="duplicate"' not in body
+        assert browser.post(route, form).status_code == 403  # No CSRF.
+        # Another Ministry's request is denied like an unknown one.
+        outside = post(browser, route, form | {"request": [f"{leave.pk}:1"]})
+        assert outside.status_code == 403
+        mixed = form | {"request": [f"{join.pk}:1", f"{leave.pk}:1"]}
+        assert post(browser, route, mixed).status_code == 403
+        kind = post(browser, route, form | {"outcome": "leave_confirmed"})
+        assert kind.status_code == 400
+        assert refusal(kind) == (
+            "Example, Member — Food pantry is a request to join, so Left the "
+            "Ministry doesn't apply to it. Nothing was saved."
+        )
+        stale = post(browser, route, form | {"request": [f"{join.pk}:2"]})
+        assert stale.status_code == 409
+        assert refusal(stale).startswith("Example, Member — Food pantry changed after")
+        future = post(browser, route, form | {"contact_date": "2999-01-01"})
+        assert future.status_code == 400
+        assert refusal(future).startswith("The contact attempt's date and time")
+        assert post(browser, route, form | {"outcome": "other"}).status_code == 400
+        assert MinistryWorkflowRevision.objects.count() == 0
+        done = post(browser, route, form)
+        assert done.status_code == 204 and done["Cache-Control"] == "no-store"
+        assert post(browser, route, form).status_code == 204  # Replay.
+        assert MinistryWorkflowRevision.objects.count() == 1
+        join.refresh_from_db()
+        assert (join.state, join.outcome) == ("resolved", "joined")
+        detail = reverse("admin:ministry_followup_item", args=[join.pk])
+        response, body = get(browser, detail)
+        assert response.status_code == 200
+        assert b"Joined the Ministry (bulk)" in body
+        assert b"PRIVATE-NOTE spoke to them" in body

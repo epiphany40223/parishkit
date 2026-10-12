@@ -7,10 +7,22 @@ import pytest
 from django.http import QueryDict
 from django.urls import reverse
 
-from parishkit.stewardship.reports.ministry_followup_views import change_values
+from parishkit.stewardship.reports.ministry_followup_views import (
+    bulk_values,
+    change_values,
+)
 from parishkit.stewardship.reports.report_paging import pop_navigation
 
-from .waits import available, greyed, has_text, visible
+from .followup_components import (
+    BULK_CLOSED,
+    BULK_JOIN,
+    BULK_KEY,
+    BULK_LEAVE,
+    BULK_POST,
+    BULK_QUEUE,
+)
+from .test_components import axe_violations
+from .waits import available, eventually, greyed, has_text, hidden, visible
 
 # The instant every follow-up fixture shows (followup_components.py).
 FIXTURE = datetime(2026, 9, 19, 15, 4, tzinfo=UTC)
@@ -32,7 +44,9 @@ pytestmark = pytest.mark.parametrize(
 def no_assignment(page):
     """Follow-up has no assignment (#552): no Select column, Assign panel,
     assignee filter, column or field."""
-    assert page.get_by_role("columnheader", name="Select").count() == 0
+    # The bulk outcome selection column (#1131) is named for what it
+    # selects, not the old assignment's Select.
+    assert page.get_by_role("columnheader", name="Select", exact=True).count() == 0
     assert page.get_by_role("columnheader", name="Assigned to").count() == 0
     assert page.get_by_role("button", name="Assign selected").count() == 0
     assert page.get_by_label("Assigned to").count() == 0
@@ -453,8 +467,11 @@ def test_followup_columns_follow_the_shared_order(page, component_origin):
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + "/followup-all")
     headings = page.locator("thead th").all_inner_texts()
-    # A sort heading's text also holds its button's arrow and hint lines.
+    # A sort heading's text also holds its button's arrow and hint lines. The
+    # selection box for bulk outcomes leads (#1131), as the shared order puts
+    # it.
     assert [text.split("\n")[0].strip() for text in headings] == [
+        "",
         "Member",
         "Member DUID",
         "Ministry",
@@ -464,14 +481,14 @@ def test_followup_columns_follow_the_shared_order(page, component_origin):
     ]
     rows = page.locator("tbody tr")
     first, second = (rows.nth(n).locator("th, td") for n in (0, 1))
-    assert first.nth(0).inner_text() == "Example <Member>"
-    assert first.nth(1).inner_text() == "12345"
-    assert second.nth(1).inner_text() == "New Member"
-    name = second.nth(2).locator(".cell-clamp")
+    assert first.nth(1).inner_text() == "Example <Member>"
+    assert first.nth(2).inner_text() == "12345"
+    assert second.nth(2).inner_text() == "New Member"
+    name = second.nth(3).locator(".cell-clamp")
     assert name.text_content().endswith("<end>")
     assert name.evaluate("e => e.scrollHeight > e.clientHeight")
     # Two lines: twice the first row's one-line name, whatever the font.
-    short = first.nth(2).locator(".cell-clamp")
+    short = first.nth(3).locator(".cell-clamp")
     height = name.bounding_box()["height"]
     assert abs(height - 2 * short.bounding_box()["height"]) <= 2, height
     assert name.get_attribute("tabindex") == "0"
@@ -484,3 +501,198 @@ def test_followup_columns_follow_the_shared_order(page, component_origin):
     assert name.evaluate("e => document.activeElement === e")
     expect(page.locator(".admin-tip.is-shown")).to_have_count(1)
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+
+
+def bulk_dialog(page):
+    """The follow-up queue's bulk outcome dialog (#1131)."""
+    return page.locator("dialog#followup-bulk-dialog")
+
+
+def bulk_page(page, component_origin):
+    """Open the bulk outcome queue; fail on script errors; mark against reloads."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + BULK_QUEUE)
+    failures = []
+    page.on("pageerror", lambda error: failures.append(str(error)))
+    page.evaluate("window.notReloaded = true")
+    return failures
+
+
+def tick(page, request):
+    """Tick one request's selection box on the queue."""
+    page.locator(f"input[data-select-row][value^='{request}:']").check()
+
+
+def test_bulk_outcome_records_only_the_matching_kind_in_place(
+    page, component_origin, axe_source
+):
+    """Bulk outcomes (#1131): only open requests can be ticked; ticking moves
+    no control; Mark as Joined counts only the requests to join and names
+    the skipped leave; the optional contact attempt gates Record outcome
+    until complete; recording posts only the matching request with its own
+    version, then redraws the table in place without a reload."""
+    failures = bulk_page(page, component_origin)
+    assert page.locator(f"input[value^='{BULK_CLOSED}:']").count() == 0
+    joined = page.get_by_role("button", name="Mark as Joined")
+    buttons = page.locator(".bulk-bar [data-bulk-action]")
+    assert buttons.all_inner_texts() == [
+        "Mark as Joined",
+        "Mark as Left",
+        "Mark as Declined / stayed",
+    ]
+    for index in range(buttons.count()):
+        assert buttons.nth(index).is_disabled()
+    hint = page.locator("[data-selection-hint]")
+    assert "Tick open requests on this page" in hint.inner_text()
+    place = "node => JSON.stringify(node.getBoundingClientRect())"
+    before = [buttons.nth(i).evaluate(place) for i in range(buttons.count())]
+    table_top = page.locator("#followup-table").evaluate(place)
+    tick(page, BULK_JOIN)
+    tick(page, BULK_LEAVE)
+    available(joined)
+    # Ticking never moves a control or the table (no layout shift).
+    assert [buttons.nth(i).evaluate(place) for i in range(buttons.count())] == before
+    assert page.locator("#followup-table").evaluate(place) == table_top
+    joined.click()
+    dialog = bulk_dialog(page)
+    visible(dialog)
+    assert dialog.locator("h2").inner_text() == (
+        "Mark Joining <Member> — Example <Ministry> as Joined the Ministry?"
+    )
+    skipped = dialog.locator("[data-confirm-skipped]")
+    visible(skipped)
+    assert skipped.inner_text() == (
+        "Leaving <Member> — Example <Ministry> is not a request to join, so it "
+        "is left as it is."
+    )
+    assert page.evaluate("document.activeElement.textContent.trim()") == "Cancel"
+    assert axe_violations(page, axe_source) == []
+    record = dialog.get_by_role("button", name="Record outcome")
+    available(record)
+    for label in ("Date", "Time", "What happened (optional)"):
+        greyed(dialog.get_by_label(label, exact=True))
+    dialog.get_by_label("How").select_option("phone")
+    hint_line = dialog.locator("#bulk-complete-hint")
+    eventually(page, "document.querySelector('#bulk-complete-hint').textContent !== ''")
+    assert record.is_disabled()
+    assert "Enter the date and time" in hint_line.inner_text()
+    dialog.get_by_label("Date", exact=True).fill("2026-09-19")
+    dialog.get_by_label("Time", exact=True).fill("3:04 PM")
+    dialog.get_by_label("What happened (optional)").fill("Left a <message>")
+    available(record)
+    posted = []
+
+    def answer(route):
+        """Record the dialog's POST and answer as the bulk view does."""
+        posted.append(route.request.post_data or "")
+        route.fulfill(status=204, body="")
+
+    page.route(component_origin + BULK_POST, answer)
+    record.click()
+    hidden(dialog)
+    visible(
+        page.locator(
+            "main > [role=status]",
+            has_text="Marked Joining <Member> — Example <Ministry> as Joined the "
+            "Ministry.",
+        )
+    )
+    # The table is redrawn from the remembered view: the join is resolved.
+    visible(
+        page.locator("tbody tr", has_text="Joining <Member>").get_by_text(
+            "Resolved: Joined the Ministry"
+        )
+    )
+    assert page.locator(f"input[value^='{BULK_JOIN}:']").count() == 0
+    assert page.evaluate("window.notReloaded === true")
+    form = QueryDict(posted[0])
+    assert form.getlist("request") == [f"{BULK_JOIN}:3"]
+    values = bulk_values(form)
+    assert values["outcome"] == "joined" and values["bulk_key"] == BULK_KEY
+    assert values["versions"] == {BULK_JOIN: 3}
+    assert values["change"].contact_channel == "phone"
+    assert values["change"].contact_notes == "Left a <message>"
+    assert values["change"].contact_at is not None
+    # The redrawn region carries a fresh bulk key for the next action.
+    assert page.locator("input[name=bulk_key]").input_value() != str(BULK_KEY)
+    assert not failures
+
+
+def test_bulk_outcome_with_no_matching_request_cannot_be_recorded(
+    page, component_origin
+):
+    """With only a leave ticked, Mark as Joined says why and offers nothing to
+    record; reopening the dialog clears an earlier contact attempt."""
+    failures = bulk_page(page, component_origin)
+    tick(page, BULK_LEAVE)
+    page.get_by_role("button", name="Mark as Joined").click()
+    dialog = bulk_dialog(page)
+    visible(dialog)
+    assert "None of the selected requests is a request to join" in (
+        dialog.locator("[data-confirm-skipped]").inner_text()
+    )
+    record = dialog.get_by_role("button", name="Record outcome")
+    assert record.is_disabled()
+    # The skipped line describes the dialog, and the unavailable Record
+    # outcome names it, so a screen reader hears why.
+    skipped_id = "followup-bulk-dialog-skipped"
+    assert dialog.locator("[data-confirm-skipped]").get_attribute("id") == skipped_id
+    assert skipped_id in dialog.get_attribute("aria-describedby").split()
+    assert skipped_id in (record.get_attribute("aria-describedby") or "").split()
+    dialog.get_by_label("How").select_option("email")
+    dialog.get_by_role("button", name="Cancel").click()
+    hidden(dialog)
+    page.get_by_role("button", name="Mark as Declined / stayed").click()
+    visible(dialog)
+    assert dialog.locator("h2").inner_text() == (
+        "Mark Leaving <Member> — Example <Ministry> as Declined / stayed?"
+    )
+    hidden(dialog.locator("[data-confirm-skipped]"))
+    # Available again, Record outcome no longer names the skipped line.
+    assert skipped_id not in (record.get_attribute("aria-describedby") or "").split()
+    assert "Stayed in the Ministry" in dialog.inner_text()
+    assert dialog.get_by_label("How").input_value() == ""
+    available(dialog.get_by_role("button", name="Record outcome"))
+    assert not failures
+
+
+def test_a_refused_bulk_outcome_names_the_row_inside_the_dialog(page, component_origin):
+    """A stale request refuses the whole batch: the server's words show below
+    the buttons, which do not move, and nothing is redrawn."""
+    failures = bulk_page(page, component_origin)
+    message = (
+        "Joining <Member> — Example <Ministry> changed after this list was "
+        "shown (someone else may have recorded follow-up on it), so nothing "
+        "was saved."
+    )
+
+    def refuse(route):
+        """Answer as the bulk view does for a request that changed."""
+        route.fulfill(
+            status=409,
+            content_type="application/json",
+            body=json.dumps(
+                {"refusal": {"message": message, "fix": "Cancel, then reload."}}
+            ),
+        )
+
+    page.route(component_origin + BULK_POST, refuse)
+    page.locator("input[data-select-all]").check()
+    assert page.locator("input[data-select-row]:checked").count() == 2
+    page.get_by_role("button", name="Mark as Declined / stayed").click()
+    dialog = bulk_dialog(page)
+    assert dialog.locator("h2").inner_text() == (
+        "Mark 2 requests as Declined / stayed?"
+    )
+    record = dialog.get_by_role("button", name="Record outcome")
+    box = record.bounding_box()
+    record.click()
+    error = dialog.locator("[data-confirm-error]")
+    visible(error)
+    assert message in error.inner_text()
+    assert record.bounding_box() == box and record.is_disabled()
+    assert page.locator("input[data-select-row]:checked").count() == 2
+    dialog.get_by_role("button", name="Cancel").click()
+    hidden(dialog)
+    assert page.evaluate("window.notReloaded === true")
+    assert not failures
