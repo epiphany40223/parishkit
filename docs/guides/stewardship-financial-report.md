@@ -12,8 +12,9 @@ controls behavior.
 Admin and Staff read one row for each currently effective live Family response
 that carries a financial answer: Family name, DUID and active status, first and
 latest submission times with the Family version, annual pledge, frequency and
-approximate installment, selected share methods with any Other text, and the
-source comparison pledge and contribution totals. A summary over the whole
+approximate installment, selected share methods with any Other text, the
+source comparison pledge and contribution totals, and whether Staff entered the
+Family's current response ("Entered by Staff", #794). A summary over the whole
 filtered result, not the visible page, shows the Family count, annual total,
 frequency distribution and share-method counts. Filters cover every dimension
 the specification lists, plus a name or DUID search and a sort order. Results
