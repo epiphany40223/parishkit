@@ -36,7 +36,7 @@ from .waits import eventually, has_attribute, hidden, visible
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
-PAGES = (LIST, SINGLE, NEW, EDIT, EDIT_ONLY, EDIT_OWN, "/user-review")
+PAGES = (LIST, SINGLE, NEW, EDIT, EDIT_ONLY, EDIT_OWN)
 # Whether the user form's Review is held unavailable.
 REVIEW_HELD = "document.querySelector('#user-entry-form button[type=submit]').disabled"
 
@@ -304,13 +304,15 @@ def test_new_user_fills_the_name_from_parishsoft(page, component_origin):
         "document.querySelector('[data-names-help]').textContent.startsWith('Suggested')",
     )
     assert name.input_value() == "Typed, Name"
-    # Review posts the form as the page draws it.
+    # Review posts the form as the page draws it; the review opens in the
+    # shared review dialog (#750, test_review_dialog).
     with page.expect_request(lambda request: request.method == "POST") as review:
         page.get_by_role("button", name="Review").click()
     fields = parse_qs(review.value.post_data)
     assert fields["action"] == ["preview"] and fields["role"] == ["ministry_leader"]
-    visible(page.get_by_role("heading", name="Review user change"))
-    visible(page.get_by_role("button", name="Apply"))
+    dialog = page.get_by_role("dialog", name="Review new user")
+    visible(dialog)
+    visible(dialog.get_by_role("button", name="Apply"))
     assert not failures
 
 

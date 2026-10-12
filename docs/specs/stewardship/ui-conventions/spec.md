@@ -850,7 +850,15 @@ keeps the form from changing while its review is shown. **Shared code.** The
 extended to show a server-drawn review; the change gate
 (`data-require-change`) and `components/review-changes-button.html`
 ([prerequisite gates](#prerequisite-gates)); the configuration-change request
-path and Change status's passive read (`live-status-v1.js`). **Precedent.**
+path and Change status's passive read (`live-status-v1.js`). The dialog is
+`confirm-dialog.html` with `review=True`, naming where Apply posts, the page
+a New or Edit page returns to (none: redraw in place) and the page's status
+line, `components/review-outcome.html`. An editor's form names the dialog
+with `data-review-open`; its Review answers a fragment marked
+`data-review-answer` (with `data-review-done`, the start of the status
+line), whose hidden fields Apply posts, the signed preview marked
+`data-review-preview`. A field-value refusal answers the form again (status
+400); any other refusal is the closed JSON refusal. **Precedent.**
 Administrator decision, 2026-10-11, on
 [#750](https://github.com/epiphany40223/parishkit/issues/750), which replaces
 the in-place review panel of #532 and the separate Review and Change status
@@ -958,12 +966,13 @@ test email sends, a manual ParishSoft refresh, Family portal maintenance) keep
 the flows their own sections describe; whether any of them moves to the
 dialog is decided on [#750](https://github.com/epiphany40223/parishkit/issues/750).
 
-Current state, to be converted: no page uses the dialog yet. Parish
-settings, Campaign settings, Share options, Campaign Ministries,
-Ministries, No-reminders WorkGroup, Campaign images and Parish logos show the
-in-place review panel of #532 and #750
-([in-place controls](#in-place-controls)); every other editor still uses
-its separate Review and Change status pages. [#750](https://github.com/epiphany40223/parishkit/issues/750) tracks the
+Current state, to be converted: Users' New user, Edit user and Import
+Ministry leaders use the dialog. Parish settings, Campaign settings, Share
+options, Campaign Ministries, Ministries, No-reminders WorkGroup, Campaign
+images and Parish logos show the in-place review panel of #532 and #750
+([in-place controls](#in-place-controls)); the other editors use separate
+Review and Change status pages.
+[#750](https://github.com/epiphany40223/parishkit/issues/750) tracks the
 conversion.
 
 ### Conditional fields

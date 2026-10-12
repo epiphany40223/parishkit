@@ -2,7 +2,7 @@
 
 // The browser half of the parish date format (web/dates.py). The page names
 // the Admin-chosen style in <body data-date-format>; every script that shows a
-// date or time calls ParishDates.instant() or ParishDates.date() so pages,
+// date or time calls ParishDates.instant(), .date() or .time() so pages,
 // emails and reports all read alike. Keep the table in step with dates.py.
 (() => {
   const MONTHS = ["January", "February", "March", "April", "May", "June", "July",
@@ -100,5 +100,9 @@
     });
   }
 
-  window.ParishDates = Object.freeze({instant, date: calendar, localize, style});
+  // A Date's clock time alone, in this browser's time zone ("Applied at
+  // 10:05 PM", the review dialog's status line).
+  const time = (date) => clock(date);
+
+  window.ParishDates = Object.freeze({instant, date: calendar, time, localize, style});
 })();

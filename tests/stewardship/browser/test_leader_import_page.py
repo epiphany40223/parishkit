@@ -7,7 +7,8 @@ text in a reserved line (Administrator decision B2): ticking a row enables
 Import selected and hides the reason without moving anything. With nobody
 to import, both buttons are unavailable and the same line gives the
 empty-table reason. Import selected posts only the
-ticked addresses, and the answer is the Import Ministry leaders review.
+ticked addresses, and the answer, the Import Ministry leaders review, opens
+in the shared review dialog (#750; its Apply is in test_review_dialog).
 Pages and POST answers are user_components'.
 """
 
@@ -16,7 +17,7 @@ from urllib.parse import parse_qs
 import pytest
 
 from .test_components import axe_violations
-from .user_components import LEADER_REVIEW, LEADERS, LIST, SINGLE
+from .user_components import LEADERS, LIST, SINGLE
 from .waits import eventually, visible
 
 pytestmark = pytest.mark.parametrize(
@@ -48,14 +49,19 @@ def boxes(page):
 def test_the_leaders_table_and_review_are_accessible(
     page, component_origin, axe_source, width
 ):
-    """No sideways page scroll and no axe violation, with or without leaders."""
+    """No sideways page scroll and no axe violation, with or without
+    leaders, and with the review open in its dialog."""
     page.set_viewport_size({"width": width, "height": 900})
-    for path in (LIST, SINGLE, LEADER_REVIEW):
+    for path in (LIST, SINGLE):
         page.goto(component_origin + path)
         assert page.evaluate(
             "document.documentElement.scrollWidth <= window.innerWidth"
         ), path
         assert axe_violations(page, axe_source) == [], path
+    page.goto(component_origin + LIST)
+    page.get_by_role("button", name="Import all").click()
+    visible(page.get_by_role("dialog", name="Review Ministry leader import"))
+    assert axe_violations(page, axe_source) == []
 
 
 def test_columns_follow_the_shared_order(page, component_origin):
@@ -167,10 +173,11 @@ def test_import_selected_posts_only_the_ticked_addresses(page, component_origin)
     assert fields["scope"] == ["selected"]
     assert fields["email"] == ["bob.smith@example.org"]
     assert set(fields) == {"csrfmiddlewaretoken", "scope", "email"}
-    visible(page.get_by_role("heading", name="Import Ministry leaders", level=1))
-    visible(page.get_by_role("heading", name="2 new users"))
-    visible(page.get_by_role("heading", name="Skipped"))
-    visible(page.get_by_role("button", name="Apply"))
+    dialog = page.get_by_role("dialog", name="Review Ministry leader import")
+    visible(dialog)
+    visible(dialog.get_by_role("heading", name="2 new users"))
+    visible(dialog.get_by_role("heading", name="Skipped"))
+    visible(dialog.get_by_role("button", name="Apply"))
 
 
 def test_header_checkbox_selects_every_leader(page, component_origin):

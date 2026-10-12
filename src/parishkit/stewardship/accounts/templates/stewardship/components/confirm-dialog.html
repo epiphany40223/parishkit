@@ -17,11 +17,39 @@
     grows downwards.
   - fallback names the element that takes focus when the control that
     opened the dialog is gone (its row was removed).
-{% endcomment %}<dialog id="{{ dialog_id }}" class="confirm-dialog" aria-labelledby="{{ dialog_id }}-title" aria-describedby="{{ dialog_id }}-body" data-confirm-dialog data-confirm-form="{{ form_id }}" data-confirm-fallback="{{ fallback }}" data-title-one="{{ title_one }}" data-title-many="{{ title_many }}" data-done-one="{{ done_one }}" data-done-many="{{ done_many }}" data-working="{% translate 'Working…' %}">
+
+  With review=True it is instead the shared review dialog of Admin editors
+  (UX conventions, "Review dialog", #750): a form marked
+  data-review-open="<dialog_id>" posts its Review without a page load, and
+  the server's review (a fragment marked data-review-answer, holding the
+  signed preview) is shown in the dialog's body, which scrolls while the
+  title and buttons stay in view.
+
+  - title names the change and labels the dialog; it takes focus on open,
+    never Apply, so the reader hears what is reviewed first.
+  - apply_url is where Apply posts (action=confirm), with every hidden
+    field of the review's fragment: its signed preview (marked
+    data-review-preview, without which there is no Apply) and any other
+    field an editor needs, such as a version. The answer is the change's
+    status, which the dialog follows.
+  - return_url, when set, is the table page a New or Edit page returns to
+    once the change is applied; without it the page's regions are redrawn
+    in place. Either way outcome_id names that page's reserved status line
+    (components/review-outcome.html), which then says what was applied and
+    when.
+  - fallback is as above.
+{% endcomment %}{% if review %}<dialog id="{{ dialog_id }}" class="confirm-dialog review-dialog" aria-labelledby="{{ dialog_id }}-title" data-review-dialog data-confirm-fallback="{{ fallback }}" data-review-return="{{ return_url|default:'' }}" data-review-outcome="{{ outcome_id }}" data-working="{% translate 'Applying…' %}" data-applied="{% translate 'Applied.' %}" data-applied-at="{% translate 'Applied at {time}.' %}">
+<h2 id="{{ dialog_id }}-title" tabindex="-1" data-review-title>{{ title }}</h2>
+<div class="dialog-body" data-review-body></div>
+<form method="post" action="{{ apply_url }}" data-review-apply>{% csrf_token %}<input type="hidden" name="action" value="confirm"></form>
+<div class="dialog-actions">{% button type="button" data-confirm-accept %}{% translate "Apply" %}{% endbutton %}{% button type="button" variant="secondary" data-confirm-cancel %}{% translate "Cancel" %}{% endbutton %}</div>
+<p class="dialog-status" role="status" data-confirm-status></p>
+<div class="notice notice-error" role="alert" data-confirm-error hidden></div>
+</dialog>{% else %}<dialog id="{{ dialog_id }}" class="confirm-dialog" aria-labelledby="{{ dialog_id }}-title" aria-describedby="{{ dialog_id }}-body" data-confirm-dialog data-confirm-form="{{ form_id }}" data-confirm-fallback="{{ fallback }}" data-title-one="{{ title_one }}" data-title-many="{{ title_many }}" data-done-one="{{ done_one }}" data-done-many="{{ done_many }}" data-working="{% translate 'Working…' %}">
 <h2 id="{{ dialog_id }}-title" data-confirm-title>{{ title_many }}</h2>
 <p id="{{ dialog_id }}-body">{{ body }}</p>
 {% if caution %}<p class="notice">{{ caution }}</p>{% endif %}
 <div class="dialog-actions">{% button type="button" class="button-danger" data-confirm-accept %}{{ accept }}{% endbutton %}{% button type="button" variant="secondary" data-confirm-cancel %}{% translate "Cancel" %}{% endbutton %}</div>
 <p class="dialog-status" role="status" data-confirm-status></p>
 <div class="notice notice-error" role="alert" data-confirm-error hidden></div>
-</dialog>
+</dialog>{% endif %}
