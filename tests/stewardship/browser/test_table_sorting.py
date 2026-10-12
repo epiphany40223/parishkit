@@ -354,15 +354,19 @@ def test_export_choices_survive_a_sort_and_its_hidden_fields_follow(
     assert zone.locator("option").count() == options
 
 
-def test_packet_choices_follow_the_summary_while_other_options_are_kept(
+def test_packet_choices_keep_their_ticks_while_the_summary_is_resorted(
     page, component_origin
 ):
-    """The Ministry report's packet lists the Ministries on the page, so the
-    list is replaced with the rows; the packet's own options, the export's
-    format and browser timezone, and a ticked history box are untouched."""
+    """The Ministry report's packet lists every Ministry in scope, not the
+    page's rows (#533), so an in-place re-sort keeps the list and its ticks,
+    including a Ministry the table's first page did not show; the packet's
+    own options, the export's format and browser timezone, and a ticked
+    history box are untouched."""
     page.goto(component_origin + "/ministry-summary")
     choices = page.locator("#ministry-packet-choices input[name=ministries]")
-    assert choices.count() == 1
+    assert choices.count() == 2
+    off_page = page.get_by_label("Another Ministry", exact=False)
+    off_page.check()
     history = page.get_by_role("checkbox", name="Also include resolved")
     history.check()
     page.locator("#ministry-export-format").select_option("xlsx")
@@ -377,7 +381,7 @@ def test_packet_choices_follow_the_summary_while_other_options_are_kept(
     )
     page.get_by_role("button", name="Ministry (sort descending)").click()
     has_attribute(sort_heading(page, "ministry"), "aria-sort", "descending")
-    assert choices.count() == 2
+    assert choices.count() == 2 and off_page.is_checked()
     assert page.locator("#table-export input[name=sort]").input_value() == "name_desc"
     assert (
         page.locator("#table-filters input[type=hidden][name=sort]").input_value()

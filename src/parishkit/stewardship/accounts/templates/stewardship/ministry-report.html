@@ -72,10 +72,10 @@ and otherwise a summary that follows the filters (#484).{% endcomment %}
 <p class="notice">{% translate "Sensitive parish information. Download only to a trusted device and share only with authorized recipients. Ministry leaders receive only published email and phone values." %}</p>
 <form method="post" action="{% url 'admin:ministry_packet' %}">{% csrf_token %}
 <input type="hidden" name="request_key" value="{{ packet_key }}">
-<div id="ministry-packet-choices" data-table-sync><fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Ministries in the packet" %}</legend>
-<p>{% translate "Tick the Ministries to include, from this page of results. Leave every box unticked to include all Ministries you are authorized for." %}</p>
-{% for ministry in summaries %}<label><input type="checkbox" name="ministries" value="{{ ministry.duid }}"> {{ ministry.name }} — {% translate "DUID" %} {{ ministry.duid|duid }}</label>
-{% endfor %}</fieldset></div>
+{% comment %}The choices are every Ministry the reader may include, not the table's page, so they do not follow the table (no data-table-sync): paging, sorting or searching above keeps the reader's ticks (#533). Each box is labelled by the Ministry's full name alone, never its DUID (#1123).{% endcomment %}<div id="ministry-packet-choices"><fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Ministries in the packet" %}</legend>
+<p>{% translate "Tick the Ministries to include. The list has every Ministry you are authorized for, whatever page of the table above is shown. Leave every box unticked to include them all." %} {% blocktranslate with limit=packet_limit|number %}A packet can include at most {{ limit }} ticked Ministries; to include more, leave every box unticked.{% endblocktranslate %}</p>
+<div class="packet-choices">{% for ministry in packet_choices %}<label><input type="checkbox" name="ministries" value="{{ ministry.duid }}"> {{ ministry.name }}</label>
+{% endfor %}</div></fieldset></div>
 <fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Packet options" %}</legend>
 <label><input type="checkbox" name="history" value="yes"> {% translate "Also include resolved and withdrawn requests" %}</label>
 <label for="ministry-packet-format">{% translate "Packet format" %}</label><select id="ministry-packet-format" name="format"><option value="pdf">PDF</option><option value="xlsx">XLSX</option><option value="csv">CSV</option></select>{% include 'stewardship/export-dates-help.html' %}
