@@ -269,14 +269,15 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
         # The summary's Ministry DUID has its own column (#932).
         assert b'<td class="numeric">9</td>' in body
         assert b"\xe2\x80\x94 DUID 9</td>" not in body
-        # Opening a Ministry's joining or leaving list only reads, so its
-        # control looks like a link; it stays a POST so the Ministry never
-        # reaches a URL (pk-local batch 5).
+        # Opening a Ministry's joining list (its Contact details) only
+        # reads, so its control looks like a link; it stays a POST so the
+        # Ministry never reaches a URL (pk-local batch 5). Food pantry has no
+        # leave request, so it offers no leaving list (#1133).
         text = body.decode()
-        for target in ("joining", "leaving"):
-            form = text.split(f'action="/admin/reports/ministries/{target}/"', 1)[1]
-            form = form.split("</form>", 1)[0]
-            assert 'class="inline-form"' in form and 'class="link-button"' in form
+        form = text.split('action="/admin/reports/ministries/joining/"', 1)[1]
+        form = form.split("</form>", 1)[0]
+        assert 'class="inline-form"' in form and 'class="link-button"' in form
+        assert 'action="/admin/reports/ministries/leaving/"' not in text
         response, body = search(browser, route, {"ministry": "9"})
         assert response.status_code == 200 and response["Cache-Control"] == "no-store"
         assert b"/ministries/9/" not in body

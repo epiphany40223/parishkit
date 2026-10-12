@@ -365,7 +365,7 @@ def test_packet_choices_keep_their_ticks_while_the_summary_is_resorted(
     page.goto(component_origin + "/ministry-summary")
     choices = page.locator("#ministry-packet-choices input[name=ministries]")
     assert choices.count() == 2
-    off_page = page.get_by_label("Another Ministry", exact=False)
+    off_page = page.get_by_role("checkbox", name="Another Ministry")
     off_page.check()
     history = page.get_by_role("checkbox", name="Also include resolved")
     history.check()
