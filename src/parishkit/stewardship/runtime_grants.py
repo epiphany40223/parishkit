@@ -329,9 +329,16 @@ CLOSURE_FUNCTIONS = {
 # upgrade's base cannot name a table that is not there yet, so it grants on
 # one only once its migration is applied (``pending_tables``). The same test
 # proves this lists every granted table the closure's migrations create.
-# #1018's archive tables (0059) follow 0058 (#1024), so they are in it.
+# #1018's archive tables (0059) follow 0058 (#1024), so they are in it, and
+# so is #528's census resolution history (0060), which follows 0059.
 _ARCHIVES = ("stewardship_reports", "0014_campaign_archives")
-CLOSURE_TABLES = dict.fromkeys((ARCHIVE_TABLE, *CHILD_TABLES), _ARCHIVES)
+CLOSURE_TABLES = {
+    **dict.fromkeys((ARCHIVE_TABLE, *CHILD_TABLES), _ARCHIVES),
+    "stewardship_proposal_resolution": (
+        "stewardship_responses",
+        "0002_proposal_resolution",
+    ),
+}
 
 
 def pending_functions(applied):

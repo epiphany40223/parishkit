@@ -41,9 +41,12 @@ def add_response_web_grants(tables, columns):
         "stewardship_fact_demand",
     ):
         tables[table] = {"SELECT", "INSERT"}
+    # A census change's resolution (#528) changes its decision; the guard
+    # admits it only with its paired stewardship_proposal_resolution row.
     columns["stewardship_proposed_change"] = {
-        "UPDATE": {"execution", "superseded_by_id", "version"}
+        "UPDATE": {"execution", "decision", "superseded_by_id", "version"}
     }
+    tables["stewardship_proposal_resolution"] = {"SELECT", "INSERT"}
     # The guard sets resolved_at itself; Staff never write roster evidence.
     columns["stewardship_ministry_request"] = {
         "UPDATE": {"state", "superseded_by_id", "version", "outcome", "assignee_id"}

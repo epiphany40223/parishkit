@@ -201,7 +201,8 @@ LEDGER = {
     "daily_digest_download": permanent(IMAGES),
     "financial_report": command("report financial"),
     "limitations_report": command("report limitations"),
-    "census_changes": pending("PR 8h", "report census"),
+    # A row's Entered in ParishSoft, Ignore and Reopen post here too (#528).
+    "census_changes": pending("PR 8h", "report census", "census resolve"),
     "information_queue": command("report information"),
     # One Family's submission and its follow-up history: read with the
     # follow-up commands, as the Ministry follow-up items are, which print

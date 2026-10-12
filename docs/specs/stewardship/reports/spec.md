@@ -1495,6 +1495,13 @@ then:
   [data workflow](../data/spec.md#review-and-publication)).
 - **Status**, derived from the row's decision and execution as below.
 - **Submitted**, in browser-local time.
+- **Recorded by**, **Recorded at** and **Note**: the latest *Entered in
+  ParishSoft*, *Ignore* or *Reopen* on the row
+  ([manual census resolution](#manual-census-resolution)): the person's
+  sign-in address, the time in the parish's compact date format and
+  browser-local time, and the note they left. Blank until someone records
+  one.
+- **Actions**, last: *Record outcome* on a row someone may resolve.
 
 A terminal execution decides the status first, since it is the outcome
 whatever the decision says: *published* is **Published**,
@@ -1525,39 +1532,67 @@ downloads as CSV, XLSX or PDF, every format with the page's values
 a count like the other report downloads. The PDF is the shared table, its
 Submitted time in the parish's date format; CSV and XLSX give it in ISO 8601.
 The files have the page's columns in the page's order: Family, Family DUID,
-Who, then Member DUID worded as on the page (the DUID, "New Member", or blank
-for a household change), and Submitted last
-([#932](https://github.com/epiphany40223/parishkit/issues/932)). Member DUID
+Who, Member DUID worded as on the page (the DUID, "New Member", or blank for a
+household change), What changed, ParishSoft now, Family's answer, Edited
+value, How it reaches ParishSoft, Status, Submitted, then Recorded by,
+Recorded at and Note
+([#932](https://github.com/epiphany40223/parishkit/issues/932),
+[#528](https://github.com/epiphany40223/parishkit/issues/528)). Member DUID
 used to be the files' last column; a spreadsheet that reads the columns by
-position needs updating.
+position needs updating. The page's Actions column has no file column.
+Fourteen columns share the PDF's one landscape table, so its Submitted and
+Recorded at times keep the date on one line and the time on the next.
 
 The read-only page and its downloads are enough for staff to apply every
 change by hand if publication is not ready; that is why it comes first.
 
 ### Manual census resolution
 
-Not built yet ([#528](https://github.com/epiphany40223/parishkit/issues/528)):
-the Census changes page and its downloads are read-only today.
-
 On *By hand* rows in *To do* or *Conflict*, Staff and Admin may mark
 **Entered in ParishSoft** (execution *resolved_external*) or **Ignore**
-(decision *ignored*), each with an optional note, acting in place. A
+(decision *ignored*), each with an optional note, acting
+[in place](../ui-conventions/spec.md#in-place-controls). A
 *Conflict* row shows its conflict detail beside the controls, so the person
 checks ParishSoft before ticking it. *Entered in ParishSoft* is final, as
 every resolved outcome is: a mistaken tick is corrected in ParishSoft, and a
 later Family answer creates new rows. An Administrator may reopen an
-*Ignored* row (decision back to *unreviewed*) with a note. Who, when and the
-note are kept as history. Automatic rows are view-only for Staff. Admin
+*Ignored* row (decision back to *unreviewed*) with a note saying why, which
+is required. Who, when and the note are kept as history. Automatic rows are
+view-only for Staff. Admin
 review/publish actions are defined by the
 [data](../data/spec.md#review-and-publication) and
 [Admin](../admin-portal/spec.md#follow-up-workflows) specifications.
 
-Today the web role may change a proposal only after a later Family
-response, to *superseded*, *cancelled* or *resolved_upstream*, and the
-database guard refuses *resolved_external* from it, so the tick, Ignore and
-reopen ship with a forward migration that lets the web role make exactly
-these changes, following the
+The controls sit in the row's last column, in a *Record outcome* disclosure,
+so a row stays short until someone opens it
+([table fit and row height](../ui-conventions/spec.md#table-fit-and-row-height)):
+a note field, then **Entered in ParishSoft**, which says it cannot be undone
+and asks first in a confirmation dialog naming the row
+([row actions and confirmation](../ui-conventions/spec.md#row-actions-and-confirmation)),
+and **Ignore**; on an *Ignored* row, for an Administrator, a required note
+and **Reopen**. The disclosure is interim until the page's row actions move
+to the shared action-table pattern
+([#879](https://github.com/epiphany40223/parishkit/issues/879)). The form
+posts with the page's own filters and table choices, so the answer is the
+same page, refreshed in place, with a notice naming the row by what changed
+and its DUIDs; that notice is what the page announces, and its two lines are
+kept while empty, so it never moves the table
+([no layout shift](../ui-conventions/spec.md#no-layout-shift)). A row
+someone else changed first is left as it is, and the notice says so. While
+other campaign work holds the campaign (a restore review, or a cleanup,
+purge or go-live step), the page offers no Record outcome and says why; the
+list and its downloads still read.
+
+Before #528 the web role could change a proposal only after a later Family
+response, to *superseded*, *cancelled* or *resolved_upstream*, so the tick,
+Ignore and reopen ship with forward migration 0060, following the
 [post-launch schema policy](../operations/spec.md#post-launch-schema-policy).
+Each tick, Ignore and reopen is one immutable resolution row (who, when, the
+note), which the database pairs with the proposal's result and a
+`census_change_updated` audit event naming only the versions. The web role
+may set *resolved_external* or change a proposal's decision only with such a
+row, and the row's own guard checks the actor (an Administrator for reopen),
+the campaign, the proposal's version and its starting state again.
 
 Since Family addresses are not yet written by publication (see the
 [data workflow](../data/spec.md#review-and-publication)), an address entered
