@@ -316,8 +316,6 @@ def read_comparison(guard, campaign_id, *, day=None):
         pk=campaign_id
     )
     projection = campaign.active_configuration
-    timezone = projection.timezone
-    financial = (projection.values or {}).get("financial") is not None
     with guarded_participation(
         guard,
         campaign_id=campaign_id,
@@ -329,79 +327,131 @@ def read_comparison(guard, campaign_id, *, day=None):
             document,
             projection.start_date,
             projection.end_date,
-            timezone,
+            projection.timezone,
             selection.selected_at,
         )
         if day is not None and (latest is None or not 1 <= day <= latest[0]):
             raise DayOutOfRange("That day has no figures yet.")
         number = day if day is not None else (latest[0] if latest else None)
-        current_year = stewardship_year_or_none()
-        archives, days, bands = _archives(current_year)
-        imported = _archive_years(archives, days, bands, number, financial)
-        last_year = next(
-            (
-                year
-                for year in imported
-                if current_year is not None and year.year == current_year - 1
-            ),
+        comparison = compare(
+            document,
+            projection,
+            latest,
+            number,
+            status=selection.status,
+            current_year=stewardship_year_or_none(),
+        )
+        guard.check()
+        return comparison
+
+
+def digest_comparison(document, projection):
+    """The comparison on a daily digest's report day, or None (#1018 slice 7).
+
+    ``document`` is the digest's pinned participation document, whose last
+    day is the report day, and ``projection`` the campaign configuration
+    its snapshot pinned. The comparison day is the report day (held at the
+    campaign's end date, as the page holds it), and the current figures
+    come from the digest's own fact set, so the section matches the rest of
+    the digest. The stewardship year is the pinned configuration's. Returns
+    None before day 1 or when no past campaign is imported (the section is
+    left out). The caller runs this inside its own owned transaction.
+    """
+    from parishkit.stewardship.archive.imports import ArchiveRefusal, year_from_values
+
+    last = min(document.last_date, projection.end_date)
+    if last < projection.start_date:
+        return None
+    try:
+        current_year = year_from_values(projection.values or {})
+    except ArchiveRefusal:
+        current_year = None
+    latest = ((last - projection.start_date).days + 1, last)
+    comparison = compare(
+        document,
+        projection,
+        latest,
+        latest[0],
+        status="current",
+        current_year=current_year,
+    )
+    return comparison if comparison.imported else None
+
+
+def compare(document, projection, latest, number, *, status, current_year):
+    """The Comparison at day ``number`` from one participation document.
+
+    ``latest`` is (number, date) of the comparison day, or None before day 1
+    has ended; ``number`` the day compared (that day or an earlier one).
+    The page and the digest share this, so their figures cannot differ.
+    """
+    financial = (projection.values or {}).get("financial") is not None
+    archives, days, bands = _archives(current_year)
+    imported = _archive_years(archives, days, bands, number, financial)
+    last_year = next(
+        (
+            year
+            for year in imported
+            if current_year is not None and year.year == current_year - 1
+        ),
+        None,
+    )
+    current = None
+    if number is not None and document is not None:
+        last_archive = next(
+            (a for a in archives if a.campaign_year == (current_year or 0) - 1),
             None,
         )
-        current = None
-        if number is not None and document is not None:
-            last_archive = next(
-                (a for a in archives if a.campaign_year == (current_year or 0) - 1),
-                None,
+        reason = renewal_reason(None, last_archive, duid_only=True)
+        by_date = {fact.local_date: fact for fact in document.days}
+        fact = by_date.get(projection.start_date + timedelta(days=number - 1))
+        final = by_date.get(latest[1])
+        if fact is None or not fact.population_available:
+            at_day, found = None, None
+        else:
+            found = current_figures(
+                document.fact_set_id,
+                fact,
+                last_archive.pk if reason is None else None,
             )
-            reason = renewal_reason(None, last_archive, duid_only=True)
-            by_date = {fact.local_date: fact for fact in document.days}
-            fact = by_date.get(projection.start_date + timedelta(days=number - 1))
-            final = by_date.get(latest[1])
-            if fact is None or not fact.population_available:
-                at_day, found = None, None
-            else:
-                found = current_figures(
-                    document.fact_set_id,
-                    fact,
-                    last_archive.pk if reason is None else None,
-                )
-                at_day = _current_day(fact, number, found, financial)
-            end, so_far = at_day, found
-            if final is not fact and final is not None and final.population_available:
-                so_far = current_figures(document.fact_set_id, final, None)
-                end = _current_day(final, latest[0], so_far, financial)
-            renewal = Renewal(reason=reason)
-            if reason is None and found is not None:
-                renewal = Renewal(found["renewed"], found["prior_families"])
-            current = Year(
-                current_year,
-                projection.name,
-                current=True,
-                final=False,
-                start_date=projection.start_date,
-                days=latest[0],
-                at_day=at_day,
-                end=end,
-                renewal=renewal,
-                distribution=(
-                    _distribution(found)
-                    if financial and found is not None and at_day.pledged is not None
-                    else None
-                ),
-                series=current_series(
-                    document, projection.start_date, latest[1], financial
-                ),
-            )
-        guard.check()
-        return Comparison(
-            campaign_name=projection.name,
-            day=number,
-            report_date=(projection.start_date + timedelta(days=number - 1))
-            if number
-            else None,
-            financial=financial,
-            status=selection.status,
-            current=current,
-            imported=tuple(imported),
-            last_year=last_year,
-            latest_day=latest[0] if latest else None,
+            at_day = _current_day(fact, number, found, financial)
+        end, so_far = at_day, found
+        if final is not fact and final is not None and final.population_available:
+            so_far = current_figures(document.fact_set_id, final, None)
+            end = _current_day(final, latest[0], so_far, financial)
+        renewal = Renewal(reason=reason)
+        if reason is None and found is not None:
+            renewal = Renewal(found["renewed"], found["prior_families"])
+        current = Year(
+            current_year,
+            projection.name,
+            current=True,
+            final=False,
+            start_date=projection.start_date,
+            days=latest[0],
+            at_day=at_day,
+            end=end,
+            renewal=renewal,
+            distribution=(
+                _distribution(found)
+                if financial and found is not None and at_day.pledged is not None
+                else None
+            ),
+            series=current_series(
+                document, projection.start_date, latest[1], financial
+            ),
         )
+    return Comparison(
+        campaign_name=projection.name,
+        day=number,
+        report_date=(projection.start_date + timedelta(days=number - 1))
+        if number
+        else None,
+        financial=financial,
+        status=status,
+        current=current,
+        imported=tuple(imported),
+        last_year=last_year,
+        latest_day=latest[0] if latest else None,
+        checksums=tuple((a.campaign_year, a.checksum) for a in archives),
+    )

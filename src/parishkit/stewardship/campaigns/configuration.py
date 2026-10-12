@@ -282,8 +282,13 @@ def campaign_values(values):
 
 
 def schedule_values(values, campaign, *, interval=None):
-    """Validate one schedule in its campaign zone; return one-time UTC due or None."""
-    if set(values) != {
+    """Validate one schedule in its campaign zone; return one-time UTC due or None.
+
+    A daily digest may also carry ``comparison`` (#1018): ``True`` adds the
+    Compared with past campaigns section. It is absent when off, so the
+    schedules saved before it existed stay exactly as they were.
+    """
+    keys = {
         "campaign_id",
         "kind",
         "date",
@@ -291,7 +296,12 @@ def schedule_values(values, campaign, *, interval=None):
         "weekday",
         "subject",
         "template_version",
-    }:
+    }
+    if set(values) - {"comparison"} != keys:
+        invalid()
+    if "comparison" in values and (
+        values["comparison"] is not True or values.get("kind") != "daily_digest"
+    ):
         invalid()
     typed(values["campaign_id"], "uuid")
     typed(values["template_version"], "uuid")

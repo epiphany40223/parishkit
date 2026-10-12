@@ -270,6 +270,10 @@ TIMEOUT_LIMITS = frozenset(
         # (audit.schemas.TIMEOUT_KINDS); process log only from the offline
         # archive-check command.
         "archive_check",
+        # The chart engine's server renderer was killed at its time limit
+        # while drawing a daily digest's comparison charts (#1018 slice 7):
+        # a durable timeout kind (audit.schemas.TIMEOUT_KINDS).
+        "digest_chart",
         # The scheduler's web liveness probe (#392 L1, jobs.web_health): one
         # request's socket timeout, or a probe thread still running past
         # its limit.

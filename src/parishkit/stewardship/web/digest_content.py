@@ -20,18 +20,30 @@ MAX_ALT_CHARACTERS = 500
 # The chart's CSS width: 880 in the desktop layout (#720), 720 before it.
 EMAIL_CHART_WIDTH = "880"
 CHART_WIDTHS = {"720", EMAIL_CHART_WIDTH}
+# The optional Compared with past campaigns section's charts (#1018 slice
+# 7), drawn by the chart engine's server renderer: at most one of each, in
+# this order, each its own inline image beside the participation chart.
+COMPARISON_CHART_IDS = (
+    "comparison-families@parishkit",
+    "comparison-pledges@parishkit",
+)
+# Their PNGs are the email width at the renderer's scale (2); the height
+# follows the legend's rows, within a bound.
+COMPARISON_PIXEL_WIDTH = 2 * int(EMAIL_CHART_WIDTH)
+COMPARISON_PIXEL_HEIGHTS = range(200, 2001)
 
 
 def _attributes(tag, attribute, value):
     """Admit compiler-owned attributes only with their closed set of values.
 
-    CID is permitted only for our compiled chart, never an authored link; its
+    CID is permitted only for our compiled charts, never an authored link; its
     alt text is free text (escaped like any attribute) so it can carry the
     report's key numbers.
     """
     if tag == "img":
         if attribute == "src":
-            return value if value == f"cid:{CHART_ID}" else None
+            known = {f"cid:{name}" for name in (CHART_ID, *COMPARISON_CHART_IDS)}
+            return value if value in known else None
         if attribute == "width":
             return value if value in CHART_WIDTHS else None
         if attribute == "alt":
@@ -42,7 +54,7 @@ def _attributes(tag, attribute, value):
 
 
 class _ChartCount(HTMLParser):
-    """Require exactly one complete compiler-owned image element."""
+    """Collect the compiler-owned image elements, to count them by ``src``."""
 
     def __init__(self):
         super().__init__(convert_charrefs=True)
@@ -53,12 +65,36 @@ class _ChartCount(HTMLParser):
             self.charts.append(dict(attrs))
 
 
-def validate_digest_body(html, text, chart):
+def _png(data, *, size=None, width=None, heights=None):
+    """Check one inert single-frame PNG of a bounded size; raise ValueError.
+
+    ``size`` is its exact pixel size, or ``width`` and ``heights`` bound it.
+    """
+    if type(data) is not bytes or not 0 < len(data) <= MAX_CHART_BYTES:
+        raise ValueError
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", Image.DecompressionBombWarning)
+        with Image.open(BytesIO(data)) as image:
+            if image.format != "PNG" or image.n_frames != 1:
+                raise ValueError
+            if size is not None and image.size != size:
+                raise ValueError
+            if width is not None and (
+                image.size[0] != width or image.size[1] not in heights
+            ):
+                raise ValueError
+            image.verify()
+
+
+def validate_digest_body(html, text, chart, comparison=()):
     """Reject unsafe/private-pipe data without repairing it or reading any path.
 
     These checks establish syntax, sizes and inert raster content, not delivery
     authority. Only the fenced owner may select the retained report and current
-    recipient before invoking the adapter.
+    recipient before invoking the adapter. ``comparison`` holds the
+    Compared with past campaigns section's (content id, PNG bytes) pairs
+    (#1018 slice 7), in ``COMPARISON_CHART_IDS`` order; the body must show
+    exactly those images, once each, besides the one participation chart.
     """
     try:
         if any(
@@ -68,6 +104,14 @@ def validate_digest_body(html, text, chart):
             or len(value.encode("utf-8")) > MAX_BODY_BYTES
             for value in (html, text)
         ):
+            raise ValueError
+        if type(comparison) is not tuple or len(comparison) > len(COMPARISON_CHART_IDS):
+            raise ValueError
+        names = [
+            pair[0] if type(pair) is tuple and len(pair) == 2 else None
+            for pair in comparison
+        ]
+        if names != [name for name in COMPARISON_CHART_IDS if name in names]:
             raise ValueError
         clean = nh3.clean(
             html,
@@ -80,26 +124,19 @@ def validate_digest_body(html, text, chart):
         )
         parser = _ChartCount()
         parser.feed(html)
+        sources = [image.get("src") for image in parser.charts]
         if (
             clean != html
-            or len(parser.charts) != 1
-            or parser.charts[0].get("src") != f"cid:{CHART_ID}"
-            or not parser.charts[0].get("alt")
-            or parser.charts[0].get("width") not in CHART_WIDTHS
+            or sorted(sources) != sorted(f"cid:{name}" for name in [CHART_ID, *names])
+            or any(
+                not image.get("alt") or image.get("width") not in CHART_WIDTHS
+                for image in parser.charts
+            )
         ):
             raise ValueError
-        if type(chart) is not bytes or not 0 < len(chart) <= MAX_CHART_BYTES:
-            raise ValueError
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", Image.DecompressionBombWarning)
-            with Image.open(BytesIO(chart)) as image:
-                if (
-                    image.format != "PNG"
-                    or image.size != (1440, 840)
-                    or image.n_frames != 1
-                ):
-                    raise ValueError
-                image.verify()
+        _png(chart, size=(1440, 840))
+        for _name, data in comparison:
+            _png(data, width=COMPARISON_PIXEL_WIDTH, heights=COMPARISON_PIXEL_HEIGHTS)
     except (
         ValueError,
         TypeError,

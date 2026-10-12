@@ -215,6 +215,7 @@ def test_entries_are_one_schedule_or_one_reminder_per_repeat_date():
             "time": "09:00:00",
             "weekday": None,
             "template_version": reminder,
+            "comparison": False,
         }
     ]
     change = valid_entry(
@@ -232,6 +233,7 @@ def test_entries_are_one_schedule_or_one_reminder_per_repeat_date():
             "time": "10:30:00",
             "weekday": None,
             "template_version": reminder,
+            "comparison": False,
         }
     ]
     repeat = RepeatRule(

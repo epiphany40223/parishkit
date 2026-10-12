@@ -391,8 +391,8 @@ def test_a_save_that_changes_nothing_is_refused_for_the_dialog(auth_service, goo
     assert same["Content-Type"].startswith("application/json")
     refusal = json.loads(same.content)["refusal"]
     assert refusal["message"] == (
-        "Nothing has changed. Change the date, time or email, then choose "
-        "Review changes."
+        "Nothing has changed. Change the date, time, email or comparison, "
+        "then choose Review changes."
     )
     assert refusal["fix"] == "Nothing was changed."
     copy = post(browser, NEW, entry(store, kind="reminder", **shown))

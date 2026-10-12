@@ -50,7 +50,10 @@ def clone_structures(document, source, target):
             "id": identifier("schedule", row["id"]),
             "values": {
                 name: deepcopy(row["values"][name])
-                for name in ("kind", "time", "weekday", "subject")
+                # A daily digest's comparison setting (#1018) is present only
+                # when it is on, and is carried with it.
+                for name in ("kind", "time", "weekday", "subject", "comparison")
+                if name in row["values"]
             }
             | {
                 "campaign_id": str(target),

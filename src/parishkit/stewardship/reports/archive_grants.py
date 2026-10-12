@@ -4,7 +4,10 @@ The Admin web process (and ``pk-admin history``, which runs as it) reviews,
 applies and removes archives. It inserts a preview and its rows, deletes
 expired previews and the rows of a removed import, and changes only an
 archive's state and its who and when; the tables' guards admit only those
-changes (``schema/migrations/0059_campaign_archives.sql``). No other login
+changes (``schema/migrations/0059_campaign_archives.sql``). The general
+worker also reads the archive, day and band tables, for the daily digest's
+Compared with past campaigns section (#1018 slice 7;
+``digest_grants.add_digest_grants``), never the Family rows; no other login
 reads them.
 
 Stored Family rows are read only inside the database (campaign-history

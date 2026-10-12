@@ -439,11 +439,13 @@ def provision_grants(configuration, deployment_id):
     """Grant only the explicit foundation registry after its migrations exist.
 
     On the users upgrade's base (#952), the swap and what depends on it are
-    still pending, so a definer routine or a table one of those migrations
-    creates is not granted yet (``pending_functions``, ``pending_tables``);
-    the grants after the full migration add it.
+    still pending, so a definer routine, a table or a column one of those
+    migrations adds is not granted yet (``pending_functions``,
+    ``pending_tables``, ``pending_columns``); the grants after the full
+    migration add it.
     """
     from .runtime_grants import (
+        pending_columns,
         pending_functions,
         pending_tables,
         runtime_functions,
@@ -466,6 +468,7 @@ def provision_grants(configuration, deployment_id):
         cursor.execute("SELECT app,name FROM public.django_migrations")
         applied = set(cursor.fetchall())
         pending, absent = pending_functions(applied), pending_tables(applied)
+        gaps = pending_columns(applied)
         for _, login, role, target in database_identities():
             if not _check_role(
                 cursor,
@@ -483,8 +486,16 @@ def provision_grants(configuration, deployment_id):
             tables = {
                 name: value for name, value in tables.items() if name not in absent
             }
+            # So does a column the base lacks on a table it has; a privilege
+            # left with no column is not granted at all.
             columns = {
-                name: value for name, value in columns.items() if name not in absent
+                name: {
+                    privilege: kept
+                    for privilege, names in value.items()
+                    if (kept := {c for c in names if (name, c) not in gaps})
+                }
+                for name, value in columns.items()
+                if name not in absent
             }
             if role is ServiceRole.BACKUP_WORKER:
                 _admit_reader(cursor, login, tables, columns)

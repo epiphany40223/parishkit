@@ -91,12 +91,15 @@ def retained_rows(snapshot_id, *, chart=False):
     """The pinned snapshot and its ready row, read under the read barrier.
 
     The page plots the ready row's chart bytes, so it asks for them with
-    ``chart``; the command line's ``digest daily`` does not load them.
+    ``chart``; the command line's ``digest daily`` does not load them. Both
+    read the retained Compared with past campaigns section (#1018 slice 7).
     """
     selected = DailyDigestSnapshot.objects.select_related(
         "configuration__parish", "timezone_configuration", "preparation"
     ).get(pk=snapshot_id)
-    fields = ("id", "snapshot_id", "fact_set_id") + (("chart",) if chart else ())
+    fields = ("id", "snapshot_id", "fact_set_id", "comparison") + (
+        ("chart",) if chart else ()
+    )
     ready = DailyDigestReady.objects.only(*fields).get(snapshot=selected)
     return selected, ready
 
@@ -108,7 +111,10 @@ def retained_document(snapshot_id):
     the email was compiled from.
     """
     selected, ready = retained_rows(snapshot_id)
-    return retained_daily_document(selected, ready.fact_set), selected.preparation.mode
+    document = retained_daily_document(
+        selected, ready.fact_set, comparison=ready.comparison
+    )
+    return document, selected.preparation.mode
 
 
 @require_GET
@@ -177,7 +183,9 @@ def snapshot(request, snapshot_id, *, representation="html"):
                 )
                 return iter((bytes(chart),))
             selected, ready = retained_rows(snapshot_id, chart=True)
-            document = retained_daily_document(selected, ready.fact_set)
+            document = retained_daily_document(
+                selected, ready.fact_set, comparison=ready.comparison
+            )
             mode = selected.preparation.mode
             context = snapshot_context(
                 document,
