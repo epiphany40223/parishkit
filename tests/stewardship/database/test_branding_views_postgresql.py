@@ -4,7 +4,7 @@ import io
 import re
 from html import unescape
 from types import SimpleNamespace
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -86,7 +86,7 @@ def test_logo_becomes_public_only_after_yaml_activation(auth_service, google, me
         assert flow_steps(page.content) == (STEPS, "Review")
         # Reviewed in place (#750): every size and Apply in the review region.
         assert "Apply changes" in region(page.content)
-        assert region(page.content).count("<figure>") == 4
+        assert region(page.content).count("<figure") == 4
         token = preview_token(page)
         assert b"private-original" not in page.content
         assets = list(BrandingAsset.objects.order_by("label"))
@@ -356,3 +356,176 @@ def test_cleanup_crash_after_file_removal_can_resume(auth_service, google, media
     cleanup_branding(media, row.pk, admit=lambda row: True)
     row.refresh_from_db()
     assert row.state == "scrubbed"
+
+
+def png(width, height, color="blue"):
+    """A posted PNG of the given size."""
+    stream = io.BytesIO()
+    Image.new("RGB", (width, height), color).save(stream, format="PNG")
+    return SimpleUploadedFile("size.png", stream.getvalue(), content_type="image/png")
+
+
+def apply_staged(browser, service, preview):
+    """Apply the staged logos at ``preview`` and install the change, each
+    under its own database role."""
+    with task_login(ServiceRole.WEB):
+        token = preview_token(browser.get(preview))
+        result = post(browser, preview, {"action": "confirm", "preview": token})
+    assert result.status_code == 302, result.content
+    request = UUID(result["Location"].split("#")[0].rsplit("=", 1)[1])
+    with task_login(ServiceRole.CONFIG_INSTALLER):
+        installed = install_request(
+            service.store, request_id=request, correlation_id=uuid4()
+        )
+    assert installed.state == "applied"
+
+
+def test_each_size_upload_changes_only_the_sizes_chosen(auth_service, google, media):
+    """A favicon uploaded on its own (#1062) replaces only the favicon: the
+    other sizes keep the current images, byte for byte, and the review says
+    which sizes changed. A size breaking its rule stages nothing."""
+    browser, _ = signed_in()
+    with task_login(ServiceRole.WEB):
+        preview = stage(browser, auth_service)
+    apply_staged(browser, auth_service, preview)
+    with task_login(ServiceRole.WEB):
+        before = {row.label: row for row in BrandingAsset.objects.all()}
+        digest = auth_service.store.active().digest
+        refused = post(
+            browser,
+            URL,
+            {"base_digest": digest, "mode": "each", "favicon": png(400, 120)},
+        )
+        assert refused.status_code == 400
+        assert (
+            "Favicon: the image is 400 × 120 pixels; a favicon must be square "
+            "(within 10%)."
+        ) in unescape(refused.content.decode())
+        assert 'href="#id_favicon"' in region(refused.content)
+        assert BrandingBundle.objects.count() == 1
+        result = post(
+            browser,
+            URL,
+            {"base_digest": digest, "mode": "each", "favicon": png(48, 48, "red")},
+        )
+        assert result.status_code == 302, result.content
+        review = browser.get(result["Location"].split("#")[0])
+        shown = unescape(region(review.content))
+        assert "Favicon — 32 × 32 pixels — Changed" in shown
+        for title in ("Large logo", "Menu logo", "Icon"):
+            assert re.search(rf"{title} — [0-9,]+ × [0-9,]+ pixels — Unchanged", shown)
+    staged = BrandingBundle.objects.exclude(pk=before["large"].bundle_id).get()
+    after = {row.label: row for row in staged.assets.all()}
+    for label in ("large", "menu", "icon"):
+        assert after[label].sha256 == before[label].sha256
+    assert after["favicon"].sha256 != before["favicon"].sha256
+    # A stored size whose file can no longer be read counts as missing:
+    # refused at its field (no large logo to generate it from), not a 503.
+    (media / "branding" / before["menu"].bundle_id.hex / "menu.png").unlink()
+    with task_login(ServiceRole.WEB):
+        missing = post(
+            browser,
+            URL,
+            {"base_digest": digest, "mode": "each", "favicon": png(32, 32)},
+        )
+    assert missing.status_code == 400
+    assert "Menu logo: there is no current image to keep." in unescape(
+        missing.content.decode()
+    )
+
+
+def test_each_size_upload_without_stored_logos_generates_from_large(
+    auth_service, google, media
+):
+    """With no current logo images stored, an empty size cannot be kept: it
+    is generated from the large logo uploaded with it, or refused at the
+    first such size."""
+    browser, _ = signed_in()
+    digest = auth_service.store.active().digest
+    with task_login(ServiceRole.WEB):
+        refused = post(
+            browser,
+            URL,
+            {"base_digest": digest, "mode": "each", "favicon": png(32, 32)},
+        )
+        assert refused.status_code == 400
+        assert (
+            "Large logo: there is no current image to keep. Choose an image for "
+            "it, or upload a large logo to generate it from."
+        ) in unescape(refused.content.decode())
+        assert not BrandingBundle.objects.exists()
+        result = post(
+            browser,
+            URL,
+            {
+                "base_digest": digest,
+                "mode": "each",
+                "large": png(600, 300),
+                "favicon": png(32, 32, "red"),
+            },
+        )
+        assert result.status_code == 302, result.content
+    sizes = {
+        row.label: (row.width, row.height)
+        for row in BrandingAsset.objects.filter(bundle=BrandingBundle.objects.get())
+    }
+    assert sizes == {
+        "large": (600, 300),
+        "menu": (128, 64),
+        "icon": (128, 64),
+        "favicon": (32, 32),
+    }
+
+
+def test_each_size_upload_and_apply_are_refused_after_settings_change(
+    auth_service, google, media, monkeypatch
+):
+    """A per-size upload (#1062) from a page whose settings changed
+    elsewhere gets the usual changed-elsewhere refusal before the current
+    logos are read, and Apply of a per-size bundle staged before such a
+    change is refused in place, as for one image."""
+    browser, _ = signed_in()
+    store = auth_service.store
+    with task_login(ServiceRole.WEB):
+        preview = stage(browser, auth_service)
+    apply_staged(browser, auth_service, preview)
+    digest = store.active().digest
+    with task_login(ServiceRole.WEB):
+        result = post(
+            browser,
+            URL,
+            {"base_digest": digest, "mode": "each", "favicon": png(32, 32, "red")},
+        )
+        assert result.status_code == 302, result.content
+        staged = result["Location"].split("#")[0]
+        token = preview_token(browser.get(staged))
+    parish = store.active().document()["sections"]["parish"][0]
+    patch = [
+        {
+            "operation": "update",
+            "section": "parish",
+            "id": parish["id"],
+            "values": {"name": "Changed parish"},
+        }
+    ]
+    assert change(store, store.active(), uuid4(), patch).state == "applied"
+    bundles = BrandingBundle.objects.count()
+
+    def unread(*args):
+        raise AssertionError("current logos read for a stale page")
+
+    monkeypatch.setattr(
+        "parishkit.stewardship.accounts.branding_views.complete_bundle", unread
+    )
+    with task_login(ServiceRole.WEB):
+        stale = post(
+            browser,
+            URL,
+            {"base_digest": digest, "mode": "each", "favicon": png(32, 32)},
+        )
+        assert stale.status_code == 409
+        assert "This page changed in another tab or session." in region(stale.content)
+        assert BrandingBundle.objects.count() == bundles
+        refused = post(browser, staged, {"action": "confirm", "preview": token})
+        assert refused.status_code == 409
+        assert "Upload the logo again." in region(refused.content)

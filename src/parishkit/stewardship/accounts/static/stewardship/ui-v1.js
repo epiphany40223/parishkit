@@ -2706,11 +2706,22 @@
             if (item.hasAttribute("data-field-error")) clearFieldError(item);
           });
         }
-        controls.forEach((item) => { item.disabled = !shown; });
+        controls.forEach((item) => {
+          item.disabled = !shown;
+          // A hidden file field's size refusal goes with it (#1062).
+          if (!shown && item.dataset.sizeRule) {
+            item.setCustomValidity("");
+            delete item.dataset.sizeRule;
+          }
+        });
         required.forEach((item) => { item.required = shown; });
+        if (form) recheckSizes(form);
         gateComplete(form);
       };
-      control.addEventListener("change", update);
+      // A radio group (RadioNodeList, Parish logos' upload mode, #1062) is
+      // not an element: each of its buttons is listened to instead.
+      (control instanceof RadioNodeList ? [...control] : [control])
+        .forEach((item) => item.addEventListener("change", update));
       showWhenUpdates.push({node, update});
       update();
     });
@@ -2800,27 +2811,8 @@
     const pad = (number) => String(number).padStart(2, "0");
     return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
   };
-  // File size (#563). A file input marked data-max-bytes refuses a chosen
-  // file larger than that many bytes at once, with the field's
-  // data-max-bytes-message: the field is marked invalid, and a
-  // data-require-complete form holds its button with that message
-  // (data-client-error). The server still checks every upload.
-  const wireMaxBytes = (root) => {
-    within(root, "input[type=file][data-max-bytes]").forEach((input) => {
-      const check = () => {
-        const limit = Number(input.dataset.maxBytes);
-        const large = [...(input.files || [])].some((file) => file.size > limit);
-        const message = large ? (input.dataset.maxBytesMessage || "This file is too large.") : "";
-        input.setCustomValidity(message);
-        if (large) input.dataset.clientError = message;
-        else delete input.dataset.clientError;
-        input.setAttribute("aria-invalid", String(large));
-      };
-      // On the input itself, so the gate sees it for the same change.
-      input.addEventListener("change", check);
-      check();
-    });
-  };
+  // File size (#563): data-max-bytes is wired by wireMaxBytes, below with
+  // the Parish logos' size checks (#1062), which it shares.
   // A pattern for a textarea (#563), which has no pattern attribute of its
   // own: data-pattern="[^@]*" must match the whole value, or the field is
   // invalid with its data-missing-hint, so the browser marks it on blur and
@@ -3072,7 +3064,110 @@
       check();
     });
   };
+  // A file field marked data-max-bytes refuses a file over that many bytes
+  // as soon as it is chosen (Parish logos, #1062), in the server's own
+  // words: data-max-bytes-message, whose "{size}" is the chosen file's size
+  // written as the server writes it ("3.2 MB", "300 KB", rounded up). A form
+  // marked data-max-total-bytes likewise refuses files that together exceed
+  // it, at the field just chosen, with its data-max-total-message. The
+  // message goes where the server's errors for the field go: its
+  // "<id>_error" list, in a reserved line that keeps its height while empty
+  // and is a polite live region, so it is announced and moves nothing
+  // (file-size-field.html). The field is marked in error, and its custom
+  // validity keeps the browser from sending the form until another file is
+  // chosen. A field with no data-max-bytes-message (Past campaigns'
+  // archive, #1018) uses its data-too-large text, or a plain refusal.
+  // The reverse proxy refuses a request body over 6 MB before the page
+  // could explain why, so this check is what keeps such a refusal on the
+  // form; the server still checks every upload. The check runs after the
+  // change's other listeners (setTimeout), since the shared field-error
+  // wiring clears a mark on every edit.
+  const fileSize = (bytes) => (bytes >= 1048576
+    ? `${Math.ceil(bytes * 10 / 1048576) / 10} MB`
+    : `${Math.ceil(bytes / 1024).toLocaleString("en-US")} KB`);
+  // Each field's check (edited: whether it is the field just changed); a
+  // change to any file field re-checks its form's others, so a total that
+  // fits again releases the field that was refused for it.
+  const sizeChecks = new WeakMap(); // form -> [check]
+  const wireMaxBytes = (root) => {
+    within(root, "input[type=file][data-max-bytes]").forEach((input) => {
+      const errorId = `${input.id}_error`;
+      const check = (edited) => {
+        if (!input.isConnected) return;
+        const form = input.form;
+        // A hidden (disabled) field is not sent, so its file is not judged.
+        const file = !input.disabled && input.files && input.files[0];
+        const limit = form && Number(form.dataset.maxTotalBytes || 0);
+        const total = limit
+          ? [...form.querySelectorAll("input[type=file]")]
+            .filter((node) => !node.disabled && node.files && node.files[0])
+            .reduce((sum, node) => sum + node.files[0].size, 0)
+          : 0;
+        let message = "";
+        let rule = "";
+        if (file && file.size > Number(input.dataset.maxBytes)) {
+          // A field marked before #1062 (Past campaigns' archive, #1018)
+          // words its refusal in data-too-large instead.
+          message = (input.dataset.maxBytesMessage || input.dataset.tooLarge
+            || "This file is too large.").replace("{size}", fileSize(file.size));
+          rule = "own";
+        } else if (file && limit && total > limit
+          && (edited || input.dataset.sizeRule === "total")) {
+          message = form.dataset.maxTotalMessage.replace("{size}", fileSize(total));
+          rule = "total";
+        }
+        input.setCustomValidity(message);
+        // A data-require-complete form holds its button with this as its
+        // hint (Hosted files, Campaign images, #563).
+        if (message) input.dataset.clientError = message;
+        else delete input.dataset.clientError;
+        let error = document.getElementById(errorId);
+        // A field with no reserved error line of its own (only Parish logos'
+        // file-size-field.html has one) is marked invalid and says why in
+        // its form's hint; adding a line would move what follows it.
+        if (!error) {
+          if (message) input.dataset.sizeRule = rule;
+          else delete input.dataset.sizeRule;
+          input.setAttribute("aria-invalid", String(Boolean(message)));
+          return;
+        }
+        if (!message) {
+          if (input.dataset.sizeRule && input.hasAttribute("data-field-error")) {
+            clearFieldError(input);
+          }
+          delete input.dataset.sizeRule;
+          return;
+        }
+        input.dataset.sizeRule = rule;
+        error.hidden = false;
+        error.replaceChildren(Object.assign(document.createElement("li"), {textContent: message}));
+        const ids = (input.getAttribute("aria-describedby") || "").split(/\s+/)
+          .filter((id) => id && id !== errorId);
+        input.setAttribute("aria-describedby", [...ids, errorId].join(" "));
+        input.setAttribute("aria-invalid", "true");
+        input.setAttribute("data-field-error", "client");
+      };
+      const form = input.form;
+      if (!form) return;
+      if (!sizeChecks.has(form)) sizeChecks.set(form, []);
+      sizeChecks.get(form).push(check);
+      input.addEventListener("change", () => window.setTimeout(() => {
+        sizeChecks.get(form).forEach((other) => other(other === check));
+        // The gate answered this change before the check ran: answer again
+        // with the field's new data-client-error (or none).
+        gateComplete(form);
+      }, 0));
+    });
+  };
+  // Check a form's file sizes again, none as the one just changed: a field
+  // that a choice hid or showed (data-show-when) changes which files count,
+  // and a field shown again must show any refusal its file still has rather
+  // than be held silently invalid.
+  const recheckSizes = (form) => {
+    (sizeChecks.get(form) || []).forEach((check) => check(false));
+  };
   const wireConditional = (root) => {
+    wireMaxBytes(root);
     showWhenUpdates = showWhenUpdates.filter(({node}) => node.isConnected);
     lockedUpdates = lockedUpdates.filter(({node}) => node.isConnected);
     completeForms = completeForms.filter((form) => form.isConnected);
@@ -3082,7 +3177,6 @@
     wireShowWhen(root);
     wireLockedWhen(root);
     wireNotBefore(root);
-    wireMaxBytes(root);
     wirePattern(root);
     wireComplete(root);
     wireNotFuture(root);
