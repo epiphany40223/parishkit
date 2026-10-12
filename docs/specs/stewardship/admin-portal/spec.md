@@ -1398,6 +1398,21 @@ banner fitted within 1,024 pixels, an icon within 256), reviewed, and used
 only once its configuration request is applied, the same staging and cleanup
 rules as logos. Removing a slot's image is its own reviewed change; a slot
 without an image shows nothing.
+Each Upload and review waits for a chosen image, with its hint after the
+button in a line kept while empty
+([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)); the image
+field carries the server's 5 MB bound as `data-max-bytes`, which will refuse
+a larger file at the field as it is chosen once that shared check lands
+(pending #1069); until then the server refuses it on upload. An icon whose
+Family page the campaign does not show (the Financial page icon while
+Financial stewardship is off; the Member pages icon while Census and
+Ministries are both off) has its upload controls greyed in place, with the
+field and Upload named by that reason, and the server refuses such an upload
+at the field; an image the slot already holds can still be removed (#563).
+The Financial page can still appear, with its icon, for a Family whose
+earlier financial answers await a decision after the module was turned off
+(an unresolved `financial.removed` conflict); that transitional page is not
+a reason to offer the upload.
 Both reviews, Apply and the change's status happen
 [in place](../ui-conventions/spec.md#in-place-controls) in a review region
 under the slots (#750): an upload answers with the page naming the staged
