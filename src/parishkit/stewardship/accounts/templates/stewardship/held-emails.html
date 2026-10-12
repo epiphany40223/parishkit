@@ -1,0 +1,26 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Held emails" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Held emails" %}</h1>
+{% aboutpage "held-emails" %}<p>{% translate "After a restore, invitations and reminders that may already have gone out are held, so the site does not send them again. A held email is never sent unless you choose Send again. Holds nobody decided on before the site was released stay in force: decide them here." %}</p>
+<dl>
+<dt>{% translate "Assume these were sent" %}</dt><dd>{% translate "Use this when the mail provider's sent log shows the emails went out. They are not sent again." %}</dd>
+<dt>{% translate "Send these again" %}</dt><dd>{% translate "Use this when the emails did not go out, or when a second copy is acceptable. The ordinary schedule sends them, with each Family's same code and link: a restore never changes them." %}</dd>
+<dt>{% translate "Held invitations" %}</dt><dd>{% translate "While a Family's invitation is held, it gets no reminders either. Deciding the invitation lets its reminders go out again." %}</dd>
+</dl>
+<p>{% translate "Each decision is final and is kept in the System logs." %}</p>{% endaboutpage %}
+{% comment %}
+  One in-place region (#757), as on the Restore review page: each form posts
+  to this page and the answer is swapped in by ui-v1.js. The outcome or
+  refusal (with the step-up) is drawn after the table and its preview, never
+  above them, and the blocked-reminders line keeps two lines (it wraps on a
+  phone) whether or not it has text, so nothing moves under the pointer (ui-conventions: no layout
+  shift). Sends stay listed once decided, so a row never disappears.
+{% endcomment %}<section class="flow" id="held-emails" data-in-place-region data-keep-height aria-labelledby="held-emails-heading">
+<h2 id="held-emails-heading" class="visually-hidden">{% translate "Held emails by send" %}</h2>
+{% if not held.groups %}<p data-held-none>{% translate "No held emails. A restore holds emails only while its review is open; none is held for this campaign." %}</p>
+{% else %}<p class="reserve-lines-2" data-held-summary>{% if held.reminders_blocked %}<strong>{% blocktranslate count n=held.reminders_blocked trimmed %}{{ n }} Family gets no reminders until its held invitation is decided.{% plural %}{{ n }} Families get no reminders until their held invitations are decided.{% endblocktranslate %}</strong>{% elif not held.undecided %}{% translate "Every held email is decided." %}{% endif %}</p>
+{% include 'stewardship/components/held-email-groups.html' with groups=held.groups after_release=True restore_id=held.restore_id region_id="held-emails" %}
+{% include "stewardship/components/restore-review-outcome.html" %}{% endif %}
+</section>
+{% endblock %}

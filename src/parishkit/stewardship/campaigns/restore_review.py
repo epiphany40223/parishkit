@@ -18,7 +18,10 @@ the ordinary planner would send them again. The review is the pause between:
    (``settle_held_email`` again, #757).
 
 The Restore review page (``accounts/restore_review_views.py``) reads
-``review_state`` and decides a whole send at once with ``settle_group``.
+``review_state`` and decides a whole send at once with ``settle_group``. After
+release, the Held emails page reads ``held_emails`` (the same groups, for every
+restore's undecided holds of the current campaign) and decides a send with
+``settle_group(..., after_release=True)`` (#757).
 
 Every rule lives in the SQL guards (migration 0017, and migration 0048 for
 the after-release decisions of #757); these functions only order the locks,
@@ -29,6 +32,7 @@ Release and every decision need an Administrator who signed in with Google in
 the last five minutes; the session and sign-in are recorded with the decision.
 """
 
+from collections import Counter
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
@@ -36,7 +40,7 @@ from typing import NamedTuple
 from uuid import UUID, uuid4
 
 from django.db import connection, transaction
-from django.db.models import Count, F, Q
+from django.db.models import F, Q
 
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.jobs.outbox_models import OutboxMessage
@@ -416,24 +420,28 @@ RESEND_BLOCKS = {
 }
 
 
-def resend_block(definition, restore_id, keys):
+def resend_block(definition, keys):
     """Why "Send these again" is refused for these holds of one send, or "".
 
     ``definition`` is the send's schedule (with its current revision) and
     ``keys`` the undecided holds' ``(mode, target, slot)``. Mirrors the two
     resend rules of the decision guard (migration 0048).
+
+    A restore holds an email at most once (``restore_hold_semantic``), so a
+    second undecided or assumed-sent hold on one of these emails is another
+    restore's. During a review ``keys`` are that restore's; after release
+    they may span restores, and two undecided holds on one email then block
+    each other's resend just as the guard does: they can only be assumed sent.
     """
     keys = set(keys)
     if not keys:
         return ""
-    others = (
+    holding = Counter(
         RestoreDeliveryHold.objects.filter(
             definition_id=definition.pk, state__in=("unreviewed", "assumed_delivered")
-        )
-        .exclude(restore_id=restore_id)
-        .values_list("mode", "target", "slot")
+        ).values_list("mode", "target", "slot")
     )
-    if any(key in keys for key in others):
+    if any(holding[key] > 1 for key in keys):
         return HeldByAnotherRestore.reason
     # A removed schedule has no current revision: nothing to put out of order.
     if definition.kind == "reminder" and definition.current_revision is not None:
@@ -451,7 +459,13 @@ def resend_block(definition, restore_id, keys):
 
 @dataclass(frozen=True)
 class HeldGroup:
-    """One send's held emails: the invitation or one reminder, by state."""
+    """One send's held emails: the invitation or one reminder, by state.
+
+    The counts are emails (distinct mode, Family and slot), not holds: after
+    release two restores can hold one email (#757), and the page counts it
+    once. ``held_count`` is the number of undecided holds, which a decision
+    settles and the exact-count check compares.
+    """
 
     definition_id: UUID
     kind: str
@@ -460,7 +474,7 @@ class HeldGroup:
     unreviewed: int = 0
     assumed: int = 0
     resend: int = 0
-    # Undecided holds of Families that can be emailed now (active,
+    # Undecided emails of Families that can be emailed now (active,
     # email-eligible, deliverable, no response). The rest are inert: held
     # because eligibility may have changed since the backup, but nothing would
     # be sent to them. A decision still covers every undecided hold.
@@ -468,11 +482,18 @@ class HeldGroup:
     # Why "Send these again" is refused for this send (a ResendBlocked
     # reason), or "" when it is not.
     resend_blocked: str = ""
+    # Undecided holds; None means one per undecided email.
+    held_count: int | None = None
 
     @property
     def inert(self):
-        """Undecided holds of Families that cannot be emailed now."""
+        """Undecided emails of Families that cannot be emailed now."""
         return self.unreviewed - self.reachable
+
+    @property
+    def settles(self):
+        """How many undecided holds a decision on this send settles."""
+        return self.unreviewed if self.held_count is None else self.held_count
 
     @property
     def reason_id(self):
@@ -481,7 +502,7 @@ class HeldGroup:
 
     def count(self, action):
         """How many holds ``action`` (a GROUP_ACTIONS key) would settle."""
-        return self.unreviewed if action in GROUP_ACTIONS else 0
+        return self.settles if action in GROUP_ACTIONS else 0
 
 
 @dataclass(frozen=True)
@@ -538,17 +559,98 @@ def review_state():
         .filter(pk=runtime.current_campaign_id)
         .first()
     )
-    counts = {}
-    rows = (
-        RestoreDeliveryHold.objects.filter(restore_id=runtime.restore_id)
-        .values(
-            "definition_id",
-            "definition__kind",
-            "definition__current_revision__due_at",
-            "state",
-        )
-        .annotate(total=Count("id"))
+    groups, reminders_blocked = _groups(
+        runtime, RestoreDeliveryHold.objects.filter(restore_id=runtime.restore_id)
     )
+    return ReviewState(
+        restore_id=runtime.restore_id,
+        runtime_version=runtime.version,
+        backup_at=runtime.restore_backup_at,
+        restored_at=runtime.restore_activated_at,
+        mode=runtime.mode,
+        campaign_name=campaign.active_configuration.name if campaign else None,
+        campaign_state=campaign.state if campaign else None,
+        listed=bool(groups),
+        groups=groups,
+        in_flight=_in_flight(runtime),
+        paused=bool(campaign and campaign.delivery_paused),
+        needed=holds_needed(),
+        reminders_blocked=reminders_blocked,
+    )
+
+
+@dataclass(frozen=True)
+class HeldEmails:
+    """What the Held emails page shows after release (#757); never a code or link.
+
+    ``groups`` are the current campaign's sends with any restore's hold, by
+    send, with the same counts as the Restore review page; ``undecided`` is
+    how many emails nobody has decided yet. ``restore_id`` is the latest
+    restore's, which a decision's preview carries: holds are added only
+    during a review, so a new restore since the preview changes it.
+    """
+
+    groups: tuple
+    reminders_blocked: int = 0
+    restore_id: UUID | None = None
+
+    @property
+    def undecided(self):
+        """Emails nobody has decided yet, whether or not they would send now."""
+        return sum(group.unreviewed for group in self.groups)
+
+
+def held_emails():
+    """Every restore's holds of the current campaign, or None during a review.
+
+    After release a hold left undecided keeps its email back (and an
+    undecided invitation its Family's reminders) until an Administrator
+    decides it; only the current campaign's holds can be decided, because
+    the planner never acts on another campaign's (migration 0048). During a
+    review the Restore review page decides them instead.
+    """
+    runtime = SystemConfiguration.objects.get()
+    if runtime.restore_review_required:
+        return None
+    if runtime.current_campaign_id is None:
+        return HeldEmails(groups=())
+    groups, reminders_blocked = _groups(
+        runtime,
+        RestoreDeliveryHold.objects.filter(
+            definition__campaign_id=runtime.current_campaign_id
+        ),
+    )
+    return HeldEmails(
+        groups=groups,
+        reminders_blocked=reminders_blocked,
+        restore_id=runtime.restore_id,
+    )
+
+
+def undecided_emails(campaign_id):
+    """How many of the campaign's held emails nobody has decided (Home's notice).
+
+    Emails, not holds: two restores can hold one email.
+    """
+    return (
+        RestoreDeliveryHold.objects.filter(
+            definition__campaign_id=campaign_id, state="unreviewed"
+        )
+        .values_list("definition_id", "mode", "target", "slot")
+        .distinct()
+        .count()
+    )
+
+
+def _groups(runtime, holds):
+    """The held-email groups of ``holds`` by send, and the blocked-reminder count.
+
+    ``holds`` is one restore's holds (the Restore review page) or every
+    restore's holds of the current campaign (the Held emails page). Returns
+    ``(groups, reminders_blocked)``: a tuple of ``HeldGroup`` sorted by due
+    time, and how many emailable Families an undecided invitation (of any
+    restore) keeps from getting reminders.
+    """
     fields = {
         "unreviewed": "unreviewed",
         "assumed_delivered": "assumed",
@@ -564,11 +666,25 @@ def review_state():
             effective_submission_id__isnull=True,
         ).values_list("pk", flat=True)
     }
-    undecided_keys = list(
-        RestoreDeliveryHold.objects.filter(
-            restore_id=runtime.restore_id, state="unreviewed"
-        ).values_list("definition_id", "definition__kind", "mode", "target", "slot")
-    )
+    # Each send's emails by state (a set, so an email two restores hold
+    # counts once), its undecided hold count, and its undecided emails.
+    emails, held, undecided_keys = {}, {}, set()
+    for definition_id, kind, due_at, state, mode, target, slot in holds.values_list(
+        "definition_id",
+        "definition__kind",
+        "definition__current_revision__due_at",
+        "state",
+        "mode",
+        "target",
+        "slot",
+    ):
+        if state not in fields:
+            continue
+        by_state = emails.setdefault((definition_id, kind, due_at), {})
+        by_state.setdefault(fields[state], set()).add((mode, target, slot))
+        if state == "unreviewed":
+            held[definition_id] = held.get(definition_id, 0) + 1
+            undecided_keys.add((definition_id, kind, mode, target, slot))
     undecided = [(d, kind, target) for d, kind, _, target, _ in undecided_keys]
     # A reminder waits for its Family's undecided invitation, and "send
     # again" on an invitation whose latest attempt ended (failed, or skipped
@@ -593,16 +709,7 @@ def review_state():
         ):
             continue
         reachable_counts[definition_id] = reachable_counts.get(definition_id, 0) + 1
-    for row in rows:
-        if row["state"] not in fields:
-            continue
-        key = (
-            row["definition_id"],
-            row["definition__kind"],
-            row["definition__current_revision__due_at"],
-        )
-        counts.setdefault(key, {})[fields[row["state"]]] = row["total"]
-    # Each send's undecided holds, for the resend rules.
+    # Each send's undecided emails, for the resend rules.
     keys = {}
     for definition_id, _, mode, target, slot in undecided_keys:
         keys.setdefault(definition_id, []).append((mode, target, slot))
@@ -610,7 +717,7 @@ def review_state():
         list(keys)
     )
     blocked = {
-        definition_id: resend_block(definition, runtime.restore_id, keys[definition_id])
+        definition_id: resend_block(definition, keys[definition_id])
         for definition_id, definition in definitions.items()
     }
     groups = tuple(
@@ -620,12 +727,13 @@ def review_state():
             due_at,
             reachable=reachable_counts.get(definition_id, 0),
             resend_blocked=blocked.get(definition_id, ""),
-            **values,
+            held_count=held.get(definition_id, 0),
+            **{field: len(members) for field, members in by_state.items()},
         )
         # By due time, the invitation before a reminder due at the same time;
         # a removed schedule (no due time) last.
-        for (definition_id, kind, due_at), values in sorted(
-            counts.items(),
+        for (definition_id, kind, due_at), by_state in sorted(
+            emails.items(),
             key=lambda item: (
                 item[0][2] is None,
                 item[0][2] or datetime.min,
@@ -633,21 +741,7 @@ def review_state():
             ),
         )
     )
-    return ReviewState(
-        restore_id=runtime.restore_id,
-        runtime_version=runtime.version,
-        backup_at=runtime.restore_backup_at,
-        restored_at=runtime.restore_activated_at,
-        mode=runtime.mode,
-        campaign_name=campaign.active_configuration.name if campaign else None,
-        campaign_state=campaign.state if campaign else None,
-        listed=bool(groups),
-        groups=groups,
-        in_flight=_in_flight(runtime),
-        paused=bool(campaign and campaign.delivery_paused),
-        needed=holds_needed(),
-        reminders_blocked=len(invitation_waits & reachable),
-    )
+    return groups, len(invitation_waits & reachable)
 
 
 def _ended_invitations(runtime, targets):
@@ -708,13 +802,24 @@ def settle_group(
     session_id,
     authenticated_at,
     correlation_id,
+    after_release=False,
+    expected_restore_id=None,
 ):
-    """Settle one send's held emails at once; returns how many were settled.
+    """Settle one send's held emails at once; returns how many emails it settled.
 
     ``action`` is a GROUP_ACTIONS key. ``expected_count`` is the count the
     Administrator confirmed in the preview: if the holds changed since (more
     were listed, or another Administrator decided some), nothing is settled.
     Each hold gets its own audited decision, all in one transaction.
+
+    During a review it settles that restore's holds of the send. With
+    ``after_release`` (the Held emails page, #757) it settles every
+    restore's undecided holds of the send, which must be the current
+    campaign's; a review begun since the preview settles nothing, because
+    its own page decides its holds. ``expected_restore_id`` is the latest
+    restore when the preview was read: holds are added only during a review,
+    so a restore since then (even one that added as many holds as were
+    decided meanwhile, keeping the count) settles nothing either.
     """
     _uuid(definition_id, actor_id, session_id)
     if action not in GROUP_ACTIONS:
@@ -725,19 +830,23 @@ def settle_group(
         raise ValueError("Nothing to settle.")
     state, from_states = GROUP_ACTIONS[action]
     with _review_transaction(correlation_id) as runtime:
-        if not runtime.restore_review_required:
-            # Decisions belong to the review; settling after release is #757.
-            raise StaleRecordError("The site was already released.")
+        if runtime.restore_review_required == after_release:
+            # The page the preview came from no longer applies: the site was
+            # released, or a new review began.
+            raise StaleRecordError("The restore review changed; review again.")
+        if after_release and runtime.restore_id != expected_restore_id:
+            raise StaleRecordError("Another restore happened; review again.")
+        scope = (
+            {"definition__campaign_id": runtime.current_campaign_id}
+            if after_release
+            else {"restore_id": runtime.restore_id}
+        )
         # Lock only the holds: web may read the schedule definition but not
         # lock it (as in settle_held_email).
         holds = list(
             RestoreDeliveryHold.objects.select_for_update(of=("self",))
             .select_related("definition__current_revision")
-            .filter(
-                restore_id=runtime.restore_id,
-                definition_id=definition_id,
-                state__in=from_states,
-            )
+            .filter(definition_id=definition_id, state__in=from_states, **scope)
             .order_by("pk")
         )
         if len(holds) != expected_count:
@@ -749,7 +858,6 @@ def settle_group(
         if action == "resend" and (
             reason := resend_block(
                 holds[0].definition,
-                runtime.restore_id,
                 [(hold.mode, hold.target, hold.slot) for hold in holds],
             )
         ):
@@ -765,4 +873,4 @@ def settle_group(
                 authenticated_at=authenticated_at,
                 correlation_id=correlation_id,
             )
-        return len(holds)
+        return len({(hold.mode, hold.target, hold.slot) for hold in holds})
