@@ -1736,6 +1736,53 @@ pk-admin users import-leaders --confirm --token -
 | `preview` | `token`, which `--confirm` takes, or `null` with nobody to import |
 | `created`, `request` | With `--confirm`: as `users confirm` prints them |
 
+## Security events and critical problems
+
+`events list` reads what the Admin home page asks you to acknowledge: the
+**Security events awaiting acknowledgement** panel (a widening of who may
+sign in, or a replaced backup key) and the **critical problems** banner
+(critical problems of the past 24 hours). `events acknowledge` is their
+**Acknowledge** buttons. Like the page, both need an Administrator.
+`events list` runs on a session of any scope and records nothing in System
+logs; `events acknowledge` needs a full-scope session. Neither asks for
+confirmation, as the page asks none.
+
+```sh
+pk-admin events list
+pk-admin events acknowledge --security EVENT_ID
+pk-admin events list | jq -r '.result.critical.token // empty' \
+  | pk-admin events acknowledge --critical -
+```
+
+| `events list` field | What it holds |
+| --- | --- |
+| `security` | The security events still on your own dashboard, newest first: `id`, `kind`, `name` (as on the page), `target` (the address or domain it is about), `before` and `after` (role names), `key_before` and `key_after` (key IDs, for a replaced backup key only), `created_at` and `actor_id` (the account ID of the Administrator who made the change) |
+| `critical` | The banner: `count` (problems not yet acknowledged), `all_ended` (every one of them has ended), `since` (the start of the 24 hours), `events` (`event`, `name`, `count` and `ended_at` for each kind of problem, most frequent first) and `token`, which `--critical` takes (null when nothing awaits), with `acknowledgeable`, how many problems it covers |
+
+A security event leaves your own list once you acknowledge it. When it
+leaves every other Administrator's list too is decided as on the page; see
+[user change checks and alerts](../specs/stewardship/admin-portal/spec.md#user-change-checks-and-alerts).
+In short, an acknowledgement by the Administrator who made the change, or
+by the account it grants, does not clear it for the other Administrators
+who existed when it took effect, and for a replaced backup key the
+maker's own never clears it for anyone else.
+`--critical` acknowledges
+for every Administrator exactly the problems that `events list` counted.
+A problem recorded after the list stays, for the next acknowledgement, as
+do problems past the first 500.
+
+| `events acknowledge` field | What it holds |
+| --- | --- |
+| `kind` | `security` or `critical` |
+| `event_id` | The security event, or null for `critical` |
+| `acknowledged` | How many were newly acknowledged; 0 when they already were, and then nothing is recorded |
+
+Each acknowledgement is recorded in System logs as on the page
+(`security_event_acknowledged` or `critical_events_acknowledged`), with
+`admin_cmd_events_acknowledge` naming the session. An unknown security
+event is exit 1 (`not_available`), and a token that `events list` did not
+print is exit 1 (`invalid`).
+
 ## Output changelog
 
 - `pk-admin/1` (ADM-11 PR 2): the first version, with the session commands.
@@ -1949,3 +1996,9 @@ pk-admin users import-leaders --confirm --token -
   only); `parish confirm` records `admin_cmd_parish_confirm`.
 - `pk-admin/1` (#463): additive. `artwork show`, the Campaign images
   page's read (any session, Administrators only, no event).
+- `pk-admin/1` (#463): additive. `events list` and `events acknowledge
+  (--security EVENT_ID | --critical TOKEN|-)`, the Admin home page's
+  security events and critical problems and their Acknowledge buttons
+  (Administrators only; the list on any session with no event, the
+  acknowledgement on a full-scope session with
+  `admin_cmd_events_acknowledge`).

@@ -114,6 +114,8 @@ def open_events(viewer):
                 else None,
                 "created_at": event.created_at,
                 "actor": event.actor_address,
+                # The command line names the actor by account, not address.
+                "actor_id": event.actor_id,
             }
         )
     return rows

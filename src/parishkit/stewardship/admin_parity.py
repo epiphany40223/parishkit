@@ -338,8 +338,9 @@ LEDGER = {
     "user_name_suggestions": command("users preview"),
     # The leaders table and its import review (#952 slice 6).
     "user_leader_import": command("users import-leaders"),
-    "security_event_acknowledge": pending("PR 11", "events acknowledge"),
-    "critical_events_acknowledge": pending("PR 11", "events acknowledge"),
+    # Home's Acknowledge buttons; events list reads what they acknowledge.
+    "security_event_acknowledge": command("events list", "events acknowledge"),
+    "critical_events_acknowledge": command("events list", "events acknowledge"),
     "information_update": pending("PR 11", "followup"),
     "ministry_followup": pending("PR 11", "followup"),
     "ministry_followup_item": pending("PR 11", "followup"),

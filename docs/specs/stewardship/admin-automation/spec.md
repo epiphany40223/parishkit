@@ -1646,7 +1646,10 @@ signatures:
   into `parish_views.review_change`, which the page's Review now calls.
 - **PR 11:** user, event and follow-up actions from their views (the users
   model of #952 replaces the rule actions; #922 retired the assignment and
-  Chairperson actions).
+  Chairperson actions). The event acknowledgements moved each view's
+  transaction into a request-free `acknowledge_now` in
+  `security_event_views` and `critical_event_views`, which the views now
+  call.
 - **PR 12:** `go_live_commands` and `go_live_views.testing_families`, cleanup
   retry and cancel, the link preparation controls in `activation_views.links`,
   `confirmation_views._fresh_after_cleanup`, `confirmation_commands`, the
@@ -2583,7 +2586,7 @@ never prepares or sends twice.
 | `user_leader_import` | `users import-leaders --preview`, `users import-leaders --confirm` (#952 leaders slice) |
 | `user_rules`, `rule_apply`, `rule_base`, `rule_request` | Retired by #952: removed with the rule tables and autosave when the users commands land; no rule commands are built |
 | `chair_confirmations`, `chair_reviews`, `assignments` | Retired by #922: removed with Ministry assignments and Chairperson flows; no commands are built |
-| `security_event_acknowledge`, `critical_events_acknowledge` | `events list`, `events acknowledge` (PR 11) |
+| `security_event_acknowledge`, `critical_events_acknowledge` | `events list`, `events acknowledge` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); see below |
 | `information_update`, `ministry_followup`, `ministry_followup_item`, `ministry_followup_update` | `followup …` (PR 11); follow-up has no assignment ([#552](https://github.com/epiphany40223/parishkit/issues/552)) |
 | `ministry_followup_roster` | A resolved join or leave's Entered in ParishSoft tick ([#528](https://github.com/epiphany40223/parishkit/issues/528)): `followup roster-entered REQUEST_ID --set\|--clear` (PR 11), through the same `workflows.roster` service |
 | `ministry_roster`, `ministry_roster_export` | Roster changes to enter ([#528](https://github.com/epiphany40223/parishkit/issues/528)): `report roster`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); rows only as `export roster` (PR 8g) |
@@ -2636,6 +2639,34 @@ sign-in. The command shapes are defaults, pending Administrator confirmation.
 `portal_users_viewed`, with the number of users printed. They print Admin
 portal users' own addresses and Names, which the page shows; they are not
 Family data.
+
+`events list` and `events acknowledge (--security EVENT_ID | --critical
+TOKEN|-)` are the Admin home page's
+[security events awaiting acknowledgement](../admin-portal/spec.md#user-change-checks-and-alerts)
+and critical-problem banner. `events list` admits passively with
+`CONFIGURE` (both are Administrators only), so any session scope reads,
+records no event, as Home records none, and reads both in one snapshot
+through the page's own pieces: `security_events.open_events` (the events
+still on the session Administrator's dashboard, the actor named by account
+ID rather than address) and the banner's `alert_counts`, `summary` and
+`sign` over its 24-hour window, whose signed list of the counted rows (at
+most 500) is printed as `critical.token`. `events acknowledge` needs a
+full-scope session and admits as the page's post does, with the page's
+capability (`MANAGE_USERS` for `--security`, `SYSTEM_LOGS` for
+`--critical`); the pages ask for no recent sign-in and no confirmation, so
+it is neither fresh-gated nor prompting, and creates no automation notice.
+It runs the views' request-free `acknowledge_now`, which records the page's
+`security_event_acknowledged` or `critical_events_acknowledged` and, through
+a `record` callback in the same transaction and only when something was
+acknowledged, `admin_cmd_events_acknowledge`. `--security` takes one event,
+as the page's button does (unknown: `not_available`); `--critical` takes
+`events list`'s token and acknowledges only the rows it lists that are still
+inside the window and unacknowledged, so a CRITICAL row recorded after the
+list stays (an altered token is `invalid`). A repeat acknowledges nothing
+and records nothing. A restore under review is `unavailable`. The
+[operator guide](../../../guides/stewardship-admin-automation.md#security-events-and-critical-problems)
+lists the fields; the shapes are defaults pending Administrator
+confirmation.
 
 `report roster [--show todo|all] [--ministry DUID]` is Roster changes to
 enter through the page's own pieces: its admission
@@ -3104,7 +3135,8 @@ exactly the commands that exist.
   follow-up updates. #922 retired the assignment and Chairperson commands,
   and #952 replaced the rule commands with the
   [users commands](#users-and-follow-up), which its slices land with their
-  routes, ahead of the rest of PR 11.
+  routes, ahead of the rest of PR 11; the event acknowledgements
+  (`events list`, `events acknowledge`) land ahead of it too.
 - **PR 12, go-live and withdrawal:** the verified readiness preview, cleanup
   with retry and cancel, link preparation with retry and cancel,
   confirmation, the Production preparation retry and withdrawal; after

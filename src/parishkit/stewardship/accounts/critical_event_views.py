@@ -25,6 +25,31 @@ from .policy import Capability
 from .sessions import database_now
 
 
+def acknowledge_now(service, actor, ids, *, record=None):
+    """Acknowledge the shown rows ``ids`` for ``actor``, in one transaction.
+
+    The page's work, request-free so that ``pk-admin events acknowledge``
+    shares it: the configuration must be coherent and no restore under
+    review (``ConfigError`` otherwise), and only rows still inside the
+    window and not yet acknowledged are recorded. ``record``, when given, is
+    called inside the transaction only when some row was, so a caller's own
+    audit row commits with them. Returns how many rows were acknowledged.
+    """
+    with transaction.atomic():
+        configuration = coherent_configuration(service.store)
+        if configuration.restore_review_required:
+            raise ConfigError("Configuration is unavailable.")
+        count = acknowledge(
+            actor.identity,
+            ids=ids,
+            since=database_now() - WINDOW,
+            parish_id=configuration.active_configuration.parish.pk,
+        )
+        if count and record is not None:
+            record()
+    return count
+
+
 @require_POST
 def acknowledge_critical_events(request):
     """Record the signed-in Administrator's acknowledgement and return home."""
@@ -33,16 +58,7 @@ def acknowledge_critical_events(request):
         actor = principal(request, service, capability=Capability.SYSTEM_LOGS)
         filters(request.GET, allowed=set())
         ids = shown(request.POST.get("shown"))
-        with transaction.atomic():
-            configuration = coherent_configuration(service.store)
-            if configuration.restore_review_required:
-                raise ConfigError("Configuration is unavailable.")
-            acknowledge(
-                actor.identity,
-                ids=ids,
-                since=database_now() - WINDOW,
-                parish_id=configuration.active_configuration.parish.pk,
-            )
+        acknowledge_now(service, actor, ids)
         response = HttpResponseRedirect("/admin/")
         fresh = principal(
             request, service, read_only=True, capability=Capability.SYSTEM_LOGS

@@ -65,7 +65,12 @@ def summary(counts, ended=None):
     """
     ended = ended or {}
     return [
-        {"label": label(event), "count": total, "ended_at": ended.get(event)}
+        {
+            "event": event,
+            "label": label(event),
+            "count": total,
+            "ended_at": ended.get(event),
+        }
         for event, total in sorted(
             counts.items(), key=lambda item: (-item[1], label(item[0]))
         )

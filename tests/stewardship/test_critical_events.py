@@ -39,9 +39,24 @@ def test_summary_orders_by_frequency_then_name():
         Event.MAIL_PROVIDER_FAILED.value: 1,
     }
     assert summary(counts) == [
-        {"label": "ParishSoft data refresh failed", "count": 3, "ended_at": None},
-        {"label": "Background task failed", "count": 1, "ended_at": None},
-        {"label": "Email sending failed", "count": 1, "ended_at": None},
+        {
+            "event": Event.SOURCE_INVALID.value,
+            "label": "ParishSoft data refresh failed",
+            "count": 3,
+            "ended_at": None,
+        },
+        {
+            "event": Event.TASK_FAILED.value,
+            "label": "Background task failed",
+            "count": 1,
+            "ended_at": None,
+        },
+        {
+            "event": Event.MAIL_PROVIDER_FAILED.value,
+            "label": "Email sending failed",
+            "count": 1,
+            "ended_at": None,
+        },
     ]
 
 
@@ -50,8 +65,18 @@ def test_summary_says_when_a_problem_ended():
     ended = datetime(2026, 10, 6, 10, 30, 32, tzinfo=UTC)
     counts = {Event.DUE_WORK_LAG.value: 1, Event.TASK_FAILED.value: 2}
     assert summary(counts, {Event.DUE_WORK_LAG.value: ended}) == [
-        {"label": "Background task failed", "count": 2, "ended_at": None},
-        {"label": "Scheduled work is running late", "count": 1, "ended_at": ended},
+        {
+            "event": Event.TASK_FAILED.value,
+            "label": "Background task failed",
+            "count": 2,
+            "ended_at": None,
+        },
+        {
+            "event": Event.DUE_WORK_LAG.value,
+            "label": "Scheduled work is running late",
+            "count": 1,
+            "ended_at": ended,
+        },
     ]
 
 

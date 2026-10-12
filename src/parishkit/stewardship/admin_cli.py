@@ -48,8 +48,9 @@ source-form`` (in ``admin_source_form``), ``report data-to-fix`` (in
 delete`` and ``files rename`` (PR 10, in ``admin_hosted_files``),
 ``content list`` and ``content history`` (PR 10, in ``admin_content``),
 ``parish show``, ``ministries list``, ``branding show`` and ``campaign
-shares`` (PR 10, in ``admin_settings``), and ``parish preview`` and
-``parish confirm`` (PR 10, in ``admin_parish``). A
+shares`` (PR 10, in ``admin_settings``), ``parish preview`` and
+``parish confirm`` (PR 10, in ``admin_parish``), and ``events list`` and
+``events acknowledge`` (PR 11, in ``admin_events``). A
 command that streams a file (``logs export`` and
 ``export download --stream``) writes the file's bytes, and nothing else, to
 standard output, and its document to standard error. Other areas join the same
@@ -1218,6 +1219,32 @@ def artwork_show(args, preamble, runtime, context):
     return read_artwork(context["caller"], runtime)
 
 
+def events_list(args, preamble, runtime, context):
+    """Home's security events and critical-problem banner (PR 11)."""
+    from .admin_events import read_events
+
+    return read_events(context["caller"], runtime)
+
+
+def events_acknowledge(args, preamble, runtime, context):
+    """Acknowledge one security event, or the banner rows listed (PR 11).
+
+    Home asks for no confirmation, so this does not prompt.
+    """
+    from .admin_events import TOKEN_LIMIT, acknowledge
+
+    token = None
+    if args.critical is not None:
+        token = _input(args.critical, context, TOKEN_LIMIT)
+    return acknowledge(
+        context["caller"],
+        runtime,
+        event_id=args.security,
+        token=token,
+        context=context,
+    )
+
+
 def files_list(args, preamble, runtime, context):
     """The Hosted files page's library, with each file's uses (PR 10)."""
     from .admin_hosted_files import read_library
@@ -2372,6 +2399,22 @@ def _content_history_options(parser):
         "--revision",
         type=_uuid,
         help="a retained page or email, by its entries id: print its sample",
+    )
+
+
+def _events_acknowledge_options(parser):
+    """Options of ``events acknowledge``: one security event, or the banner."""
+    target = parser.add_mutually_exclusive_group(required=True)
+    target.add_argument(
+        "--security",
+        type=_uuid,
+        metavar="EVENT_ID",
+        help="a security event's id from events list",
+    )
+    target.add_argument(
+        "--critical",
+        metavar="TOKEN",
+        help="critical.token from events list, or - for standard input",
     )
 
 
@@ -4300,6 +4343,40 @@ def _users_specs():
     )
 
 
+def _events_specs():
+    """Home's acknowledgements (ADM-11 PR 11, ``admin_events``).
+
+    ``events list`` is a passive read any session may run; Home records no
+    event. ``events acknowledge`` is the pages' Acknowledge, which asks for
+    no recent sign-in and no confirmation, so it is neither fresh-gated nor
+    prompting.
+    """
+    from .admin_events import EventsAcknowledgement, EventsList
+
+    return (
+        CommandSpec(
+            "events list",
+            "List the security events and critical problems to acknowledge.",
+            events_list,
+            "read_only",
+            False,
+            EventsList.field_names(),
+            11,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "events acknowledge",
+            "Acknowledge a security event, or the critical problems listed.",
+            events_acknowledge,
+            "full",
+            True,
+            EventsAcknowledgement.field_names(),
+            11,
+            options=(_events_acknowledge_options,),
+        ),
+    )
+
+
 COMMANDS = (
     COMMANDS
     + _read_specs()
@@ -4312,6 +4389,7 @@ COMMANDS = (
     + _operation_specs()
     + _report_specs()
     + _users_specs()
+    + _events_specs()
     + _history_specs()
     + _artwork_specs()
 )
