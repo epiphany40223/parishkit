@@ -1401,7 +1401,9 @@ The UI seals the submitted value to its target-specific installer, shows
 staged/testing/installing/consumer-acknowledged progress, and never redisplays
 it. Failure or expiry destroys sealed staging and leaves the old working
 credential installed. Slack is optional; its token and channel must be
-supplied/removed together. Non-secret integration setting changes use the YAML
+supplied/removed together, so while Slack is not set up its token field is
+required and Save waits for it
+([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)). Non-secret integration setting changes use the YAML
 configuration-request path rather than the credential installer. The ParishSoft
 organization ID can change only until the first ParishSoft data load. After
 that the page shows it read-only and refuses a different value, with or without
@@ -1443,7 +1445,8 @@ its own: its one setting is a Google Drive folder link, stored in canonical
 `https://drive.google.com/drive/folders/<id>` form, and it is added, changed
 and removed through the same configuration-request path. It requires the
 Google Workspace mail integration, whose delegated user and key the copies
-use. **Test access** queues a check that the Google Workspace credential
+use. Until Google Workspace mail is set up, **Test access** is shown
+unavailable, with that reason and a link to set it up. **Test access** queues a check that the Google Workspace credential
 installer answers by writing and trashing one small file in the folder, as
 the applied delegated mailbox user only (the database refuses a check naming
 any other user, so the web process cannot make the installer impersonate

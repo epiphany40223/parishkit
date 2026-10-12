@@ -716,8 +716,19 @@ remaining allowance. Check these Families waits for a DUID. Prepare inactive
 Family links is unavailable, with its specific reason, while the campaign is
 no longer a draft, Testing cleanup is unfinished, other inputs (such as a
 ParishSoft refresh) are not ready, earlier links still need Cancel, or
-cancelled links are still being discarded. The server still checks each of
-these.
+cancelled links are still being discarded. On the Off-site backups page,
+Test access is unavailable until Google Workspace mail is set up, since the
+check signs in as its mailbox user. The server still checks each of these.
+
+The integration settings pages (other than ParishSoft, whose refresh
+schedule editor gates Save itself) and both steps of the backup encryption
+key change use the complete gate too. While Slack is not set up its token is
+required, as the server requires it. The new public key and the code from
+`backup-prove` carry a `pattern` the server's rule also admits (the code read
+as leniently as the server reads it), and a refusal of either, or of a
+missing Slack token or a new ParishSoft key sent with a refresh schedule
+change, is shown at that field rather than as a notice or an error page
+(#563).
 
 ### Field errors and live checks
 
@@ -842,6 +853,11 @@ details with `data-enabled-when` (#1014); as with #959, a greyed field keeps
 what it shows, unsent, and its tip says when it is available and that a
 greyed value is not saved. **Precedent.** #563, #736,
 open #957, #959, #1014.
+
+A Share options row ticked Delete greys its label, free-text box and order
+in place (`data-enabled-when` on the row's own Delete box), so the rows below
+never move; a redrawn form shows a deleted row's saved values, still greyed,
+and unticking Delete gives them back (#563).
 
 ### Single-campaign interim
 
