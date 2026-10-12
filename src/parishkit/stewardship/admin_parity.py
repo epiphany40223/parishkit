@@ -219,6 +219,8 @@ LEDGER = {
     "participation": command("report participation"),
     # The Campaign comparison page (#1018): its figures for a day.
     "campaign_comparison": command("report comparison"),
+    # Its download form (#1018, slice 6): the same capture and export.
+    "campaign_comparison_export": command("export comparison"),
     "participation_chart": permanent(IMAGES),
     "daily_digest_chart": permanent(IMAGES),
     "daily_digest_download": permanent(IMAGES),

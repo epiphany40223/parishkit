@@ -436,33 +436,53 @@ CLOSING_RULE = 0.75
 
 @dataclass(frozen=True)
 class Table:
-    """Column headings and widths (points) for one table PDF."""
+    """Column headings and widths (points) for one table PDF.
+
+    ``scale`` sets the table's type smaller than the body text (1, the
+    default, is the body size): a wide table of short figures, such as the
+    Campaign comparison's fifteen columns, reads better a little smaller
+    than with its amounts broken across lines. Its line pitches scale with
+    it.
+    """
 
     headings: tuple[str, ...]
     widths: tuple[float, ...]
+    scale: float = 1.0
 
     @classmethod
-    def weighted(cls, headings, weights):
+    def weighted(cls, headings, weights, *, scale=1.0):
         """Share the body width among the columns in proportion to ``weights``."""
         total = sum(weights)
-        return cls(tuple(headings), tuple(BODY_WIDTH * w / total for w in weights))
+        return cls(
+            tuple(headings), tuple(BODY_WIDTH * w / total for w in weights), scale
+        )
 
-    def cells(self, values, size=BODY_SIZE, face="regular"):
+    @property
+    def size(self):
+        """The body cells' type size."""
+        return BODY_SIZE * self.scale
+
+    @property
+    def pitch(self):
+        """The body cells' baseline-to-baseline distance."""
+        return LINE_PITCH * self.scale
+
+    def cells(self, values, size=None, face="regular"):
         """Each value wrapped to its column's text width."""
         return tuple(
-            wrap_text(safe(value), width - 2 * CELL_PAD, size, face)
+            wrap_text(safe(value), width - 2 * CELL_PAD, size or self.size, face)
             for value, width in zip(values, self.widths, strict=True)
         )
 
     @property
     def heading_cells(self):
         """The wrapped, bold column headings."""
-        return self.cells(self.headings, LABEL_SIZE, "bold")
+        return self.cells(self.headings, LABEL_SIZE * self.scale, "bold")
 
     @property
     def heading_height(self):
         """The repeated heading row's height."""
-        return _row_height(self.heading_cells, SMALL_PITCH)
+        return _row_height(self.heading_cells, SMALL_PITCH * self.scale)
 
 
 def _row_height(cells, pitch=LINE_PITCH):
@@ -480,14 +500,14 @@ def table_pages(table, rows, frame):
     # Half the closing rule's thickness hangs below the last row, so a page
     # filled exactly (a split row always is) must leave room for it.
     room = frame.body_height - table.heading_height - CLOSING_RULE / 2
-    most = max(int((room - 2 * ROW_PAD) // LINE_PITCH), 1)
+    most = max(int((room - 2 * ROW_PAD) // table.pitch), 1)
     page, used = [], 0.0
     for index, values in enumerate(rows):
         cells = table.cells(values)
         tall = max(len(cell) for cell in cells)
         for start in range(0, max(tall, 1), most):
             piece = tuple(cell[start : start + most] or [""] for cell in cells)
-            height = _row_height(piece)
+            height = _row_height(piece, table.pitch)
             if page and used + height > room:
                 yield page
                 page, used = [], 0.0
@@ -520,7 +540,7 @@ def draw_table(table, frame):
 
 def _draw_row(canvas, table, y, cells, fill, *, heading=False):
     """Draw one row at ``y`` and return its height."""
-    pitch = SMALL_PITCH if heading else LINE_PITCH
+    pitch = (SMALL_PITCH if heading else LINE_PITCH) * table.scale
     height = _row_height(cells, pitch)
     if fill:
         canvas.rect(MARGIN, y, BODY_WIDTH, height, fill)
@@ -531,7 +551,7 @@ def _draw_row(canvas, table, y, cells, fill, *, heading=False):
                 x + CELL_PAD,
                 y + ROW_PAD + pitch * (number + 1) - 3,
                 line,
-                LABEL_SIZE if heading else BODY_SIZE,
+                (LABEL_SIZE if heading else BODY_SIZE) * table.scale,
                 "bold" if heading else "regular",
                 ACCENT_STRONG if heading else INK,
             )

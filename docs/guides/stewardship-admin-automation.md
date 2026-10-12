@@ -1486,6 +1486,32 @@ that rehearsal has ended, so export it again instead. It takes `--request-key` l
 exports. A Family that is not in the current campaign is exit 1
 (`not_available`).
 
+#### Campaign comparison
+
+`export comparison` is the Campaign comparison page's **Download**: the
+Every number table as CSV or XLSX, or, as PDF, the one-page summary
+(headline figures and day-by-day charts) followed by that table. It needs
+a full-scope session and records the page's `campaign_comparison_exported`
+(with the comparison day) plus `admin_cmd_export_comparison`.
+
+```sh
+pk-admin export comparison --format pdf --timezone America/New_York
+pk-admin export comparison --day 8 --format xlsx --timezone America/New_York
+```
+
+- `--day` is a campaign day from 1 to the comparison day (the current
+  campaign's last complete day), as on the page; without it, the
+  comparison day. A day with no figures is exit 1 (`not_available`).
+- `--format` and `--timezone` (the time zone of the file's request time)
+  and `--request-key` are as for the exports above.
+- The file is the page's figures with the
+  [small-count protection](../specs/stewardship/campaign-history/spec.md#pledge-distribution)
+  applied, since it leaves the Admin portal: a figure that could single
+  out fewer than 5 pledging Families reads `Withheld`, this campaign's
+  and a partial year's quartiles read `On the page only`, and no data
+  note is included. It is meant for parish leadership; still share it only
+  with them.
+
 The Limitations and response list downloads are not on the command line
 yet; use the pages.
 
@@ -1797,3 +1823,7 @@ pk-admin users import-leaders --confirm --token -
   [--route R] [--kind K] [--start DATE] [--end DATE] [--zone ZONE]`, the
   Census changes list's counts (any session, Administrators and Staff,
   the page's event); `report list` offers it.
+- `pk-admin/1` (#1018, slice 6): additive. `export comparison [--day N]
+  --format csv|xlsx|pdf --timezone ZONE`, the Campaign comparison page's
+  download (full scope; `campaign_comparison_exported` and
+  `admin_cmd_export_comparison`).

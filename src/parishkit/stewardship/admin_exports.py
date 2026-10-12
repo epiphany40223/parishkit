@@ -428,6 +428,74 @@ def create_export_command(
     return _change(caller, service, actor, step, context=context)
 
 
+def create_comparison_command(caller, service, *, day, fmt, zone, request_key, context):
+    """``export comparison``: the Campaign comparison page's download form.
+
+    The current campaign's comparison on ``day`` (``--day``, 1 to the
+    comparison day; the comparison day when omitted), read under the
+    campaign's read guard and captured with the small-count protection, as
+    the page's form does (``comparison_exports.read_capture``), then stored
+    and queued (``create_comparison_export``), which records
+    ``campaign_comparison_exported``. A day it has no figures for is
+    ``not_available``. Like the page, it is for Administrators and Staff;
+    the command line is the Administrator's. The file is fetched with
+    ``export fetch``.
+    """
+    from .admin_report_reads import _current
+    from .audit.schemas import Action
+    from .reports.comparison_exports import create_comparison_export, read_capture
+    from .reports.comparison_reads import DayOutOfRange
+    from .reports.export_models import ExportRequest
+    from .reports.read_admission import admit_report_read
+
+    if day is not None and (type(day) is not int or day < 1):
+        raise ValueError("--day must be a whole number from 1.")
+    actor = _admit(caller, service, activity=True, ministry_jobs=False)
+    context["request_id"] = str(request_key)
+    try:
+        campaign_id = _current()
+    except (NotAvailable, Unavailable):
+        # As the page: the session is checked before the refusal is told.
+        _recheck(caller, service.store, actor)
+        raise
+    try:
+        admit_report_read(campaign_id)
+        shown, document = read_capture(
+            service.store, actor.identity, campaign_id, day=day
+        )
+    except DayOutOfRange:
+        _recheck(caller, service.store, actor)
+        raise NotAvailable("That day has no comparison figures yet.") from None
+    except _refusals() as error:
+        _refusal(caller, service, actor, error)
+
+    def step(written):
+        """Request the export inside the page's export lock."""
+        with _command_scope(caller, service, actor, campaign_id=campaign_id):
+            repeat = ExportRequest.objects.filter(
+                requester_id=actor.identity, request_key=request_key
+            ).exists()
+            job = create_comparison_export(
+                service.store,
+                actor.identity,
+                campaign_id=campaign_id,
+                day=shown,
+                format=fmt,
+                browser_timezone=zone,
+                request_key=request_key,
+                document=document,
+            )
+            if not repeat:
+                _command_event(caller, actor, Action.ADMIN_CMD_EXPORT_COMPARISON)
+                written.append(True)
+            document_out = _status_document(service, actor, job.pk)
+        return ExportChange(
+            created=not repeat, request_key=request_key, export=document_out
+        )
+
+    return _change(caller, service, actor, step, context=context, conflicts=False)
+
+
 def cancel_export_command(caller, service, export_id, *, context):
     """``export cancel``: the status page's Cancel.
 

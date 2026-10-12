@@ -246,13 +246,13 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # which a full migration would otherwise fail to create again: #970's 0056,
 # #995's 0057, #1024's 0058, #1018's 0059, #528's 0060 and 0061, #530's
 # 0062, #463's 0063, #558's 0064, #529's 0065, #794's 0066, #1018's 0067,
-# #806's 0068, #932's 0069 and #1034's 0070 follow 0055 (#993), so they are
-# in the swap's closure too.
+# #806's 0068, #932's 0069, #1034's 0070 and #1018's 0071 follow 0055
+# (#993), so they are in the swap's closure too.
 # Each is dropped while the swap is pending (with the trigger that uses it)
 # and, unless the test's full migration made it again, installed again
-# afterwards from its migration's frozen file. The tables 0059 to 0063
-# create (runtime_grants.CLOSURE_TABLES) are dropped and installed again with
-# their guard functions, as the base lacks them too. 0063 also alters the
+# afterwards from its migration's frozen file. The tables 0059 to 0063 and
+# 0071 create (runtime_grants.CLOSURE_TABLES) are dropped and installed
+# again with their guard functions, as the base lacks them too. 0063 also alters the
 # export request (``before_timeline_exports``), which is put back first, and
 # 0064 re-points the two report export capture triggers
 # (``before_report_local_days``), which are put back on the v1 captures.
@@ -264,7 +264,10 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # 0069 creates nothing and only replaces a function in place. 0070 creates
 # the leader definition at given pointers and the change recorder, and
 # re-points stewardship_ministry_leaders_v1 at the former
-# (``before_leader_changes``), which is put back on 0042's body.
+# (``before_leader_changes``), which is put back on 0042's body. 0071, like
+# 0063, alters the export request (``before_comparison_exports``), which is
+# put back as 0063 left it before 0063's own undo runs; its entries come
+# after 0063's here so the frozen files install again in prefix order.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -354,6 +357,13 @@ CLOSURE_CREATED = {
         ),
         ("stewardship_accounts", "0018_leader_changes"),
     ),
+    **dict.fromkeys(
+        (
+            "public.stewardship_comparison_export_capture_v1()",
+            "public.stewardship_comparison_export_binding_v1()",
+        ),
+        ("stewardship_reports", "0020_comparison_exports"),
+    ),
 }
 
 
@@ -410,6 +420,33 @@ def before_timeline_exports():
         _replaced(guards, "stewardship_export_request_guard_v1"),
         _replaced(guards, "stewardship_export_publication_guard_v1"),
         authorized.replace(branch, ""),
+    ]
+
+
+def before_comparison_exports():
+    """The statements that put the export request's check back as 0063 left it.
+
+    #1018's 0071, like 0063, alters the export request: it adds
+    ``comparison_snapshot_id`` and a ``campaign_comparison`` arm to
+    ``export_report_known`` and re-creates the two guards with a comparison
+    branch (the request authorization is unchanged). Once its snapshot
+    table is dropped (which drops the column's key), these restore 0063's
+    check and drop the column. The guards are left to
+    ``before_timeline_exports``, which runs next and puts 0037's back: 0063's
+    could not be compiled here, as the timeline table is already dropped.
+    0071's frozen file (or the full migration) then installs again.
+    """
+    timeline = (MIGRATIONS / "migrations/0063_timeline_exports.sql").read_text(
+        encoding="utf-8"
+    )
+    return [
+        *(
+            line
+            for line in timeline.splitlines()
+            if line.startswith("ALTER TABLE public.stewardship_export_request")
+        ),
+        "ALTER TABLE public.stewardship_export_request "
+        "DROP COLUMN comparison_snapshot_id",
     ]
 
 
@@ -487,7 +524,8 @@ def swap_pending():
     neither function bodies nor that table, so later tests would otherwise
     see this state. Each ``CLOSURE_CREATED`` object and ``CLOSURE_TABLES``
     table is dropped meanwhile, the export request is put back as it was
-    before 0063 (``before_timeline_exports``), the report export capture
+    before 0071 (``before_comparison_exports``) and then before 0063
+    (``before_timeline_exports``), the report export capture
     triggers as they were before 0064 (``before_report_local_days``) and
     submissions and the context check as they were before 0065
     (``before_staff_entered``, each ``CLOSURE_ALTERED`` column) and the
@@ -519,6 +557,7 @@ def swap_pending():
         for function in CLOSURE_CREATED:
             cursor.execute(f"DROP FUNCTION {function} CASCADE")
         for statement in (
+            *before_comparison_exports(),
             *before_timeline_exports(),
             *before_report_local_days(),
             *before_staff_entered(),

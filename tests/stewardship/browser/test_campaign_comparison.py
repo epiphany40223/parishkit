@@ -303,6 +303,55 @@ def test_tables_and_notes(page, component_origin):
     ).to_have_attribute("href", "/admin/parish/past-campaigns/")
 
 
+def test_download_follows_the_day_shown(page, component_origin):
+    """The download form posts the day the report shows, in the browser's zone.
+
+    Its columns are the page's Every number headings (the downloads' own
+    list, ``comparison_exports.headings``). After Compare on day refreshes
+    the report in place, the form posts the new day and still has the
+    browser's time zone selected (#1018, slice 6).
+    """
+    from django.urls import reverse
+
+    from parishkit.stewardship.reports.comparison_exports import headings
+
+    from .comparison_components import comparison
+
+    page.set_viewport_size({"width": 1280, "height": 900})
+    errors = watch(page)
+    page.goto(component_origin + PAGE)
+    table = page.locator("#numbers-caption").locator("xpath=..")
+    shown = [text.strip() for text in table.locator("thead th").all_text_contents()]
+    assert shown == headings(comparison())
+    form = page.locator("#comparison-download")
+    expect(form.locator("input[name=day]")).to_have_value("12")
+    zone = page.locator("#comparison-timezone")
+    expect(zone).to_have_value("America/Los_Angeles")
+    assert page.get_by_label("Format", exact=True).locator(
+        "option"
+    ).all_text_contents() == [
+        "PDF summary",
+        "XLSX",
+        "CSV",
+    ]
+    page.get_by_label("Compare on day").fill("5")
+    with page.expect_request(lambda request: request.url.endswith(DAY_5)):
+        page.get_by_role("button", name="Compare", exact=True).click()
+    expect(page.locator("#comparison-report p").first).to_contain_text("Day 5 of")
+    expect(form.locator("input[name=day]")).to_have_value("5")
+    expect(zone).to_have_value("America/Los_Angeles")
+    route = reverse("admin:campaign_comparison_export")
+    page.route("**" + route, lambda found: found.fulfill(body="Queued"))
+    page.get_by_label("Format", exact=True).select_option("xlsx")
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("button", name="Queue download").click()
+    body = sent.value.post_data
+    assert sent.value.url.endswith(route)
+    assert "day=5" in body and "format=xlsx" in body
+    assert "browser_timezone=America%2FLos_Angeles" in body and "request_key=" in body
+    assert_clean(page, errors)
+
+
 def test_an_empty_comparison_says_what_is_missing(page, component_origin):
     """With no imported year the page says so, and shows no pledge tiles."""
     page.goto(component_origin + "/campaign-comparison-empty")
