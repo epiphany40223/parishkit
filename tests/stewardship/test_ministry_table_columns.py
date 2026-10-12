@@ -161,3 +161,13 @@ def test_campaign_ministries_review_splits_the_ministry_duid():
     row = '<th scope="row">Food pantry</th><td class="numeric">9</td>'
     row += "<td>1</td><td>1</td>"
     assert row in html
+
+
+def test_packet_choices_are_labelled_by_full_name_only():
+    """Each packet box names its Ministry in full, with no DUID (#1123)."""
+    name = "Saint Vincent de Paul Society Home Visit and Food Delivery Team"
+    html = ministry_page([], packet_choices=[{"duid": 9, "name": name}])
+    choices = html[html.index('class="packet-choices"') :]
+    label = choices[: choices.index("</label>")]
+    assert label.endswith(f'value="9"> {name}')
+    assert "DUID" not in label

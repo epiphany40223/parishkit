@@ -1530,7 +1530,8 @@ are refused with a message saying to tick fewer or leave every box unticked,
 which includes them all. The list is
 read through the same scoped selection as the summary (once more only when
 the page shown does not already hold the whole unfiltered summary). It shows
-only Ministry names and DUIDs, no request data, so the report-view audit
+only each Ministry's full name (no DUID,
+[#1123](https://github.com/epiphany40223/parishkit/issues/1123)) and no request data, so the report-view audit
 still records the Ministries of the summary rows shown. For each
 Ministry, output its name, chair names, stewardship period/year, and one row for
 each latest effective `join` or `leave` MinistryRequest in that Ministry,
