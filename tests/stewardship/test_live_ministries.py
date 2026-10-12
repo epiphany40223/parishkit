@@ -112,8 +112,11 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         "stewardship_campaign_archive_renewal_v1(uuid, uuid, integer)",
     }
     assert runtime_functions("download") == {LEADER_SCOPE_FUNCTION}
-    for role in (ServiceRole.SCHEDULER, ServiceRole.MAIL_DISPATCH):
-        assert runtime_functions(role) == frozenset()
+    # Mail dispatch reads one claimed message's link token (0073, #389).
+    assert runtime_functions(ServiceRole.MAIL_DISPATCH) == {
+        "stewardship_dispatch_family_token_v1(uuid, uuid, uuid, bigint, uuid)"
+    }
+    assert runtime_functions(ServiceRole.SCHEDULER) == frozenset()
 
 
 def test_removal_reads_no_catalog(monkeypatch):

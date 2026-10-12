@@ -13,9 +13,13 @@ from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.runtime_grants import (
     CLOSURE_COLUMNS,
     CLOSURE_FUNCTIONS,
+    CLOSURE_REVOKES,
     CLOSURE_TABLES,
+    DISPATCH_TOKEN_FUNCTION,
     LEADERS_WITHOUT_USER_FUNCTION,
     MEMBER_NAMES_FOR_FUNCTION,
+    login_name,
+    pending_revokes,
 )
 from parishkit.stewardship.runtime_identities import database_identities
 
@@ -302,7 +306,11 @@ def test_grants_wait_for_the_users_swap_closures_functions(
     _, statements = grant_statements(
         tmp_path, monkeypatch, CLOSURE_FUNCTIONS.values() if applied else ()
     )
-    for function in (MEMBER_NAMES_FOR_FUNCTION, LEADERS_WITHOUT_USER_FUNCTION):
+    for function in (
+        MEMBER_NAMES_FOR_FUNCTION,
+        LEADERS_WITHOUT_USER_FUNCTION,
+        DISPATCH_TOKEN_FUNCTION,
+    ):
         named = [s for s in statements if function in s]
         assert len(named) == (1 if applied else 0), function
     # Everything else is granted either way. A routine may go to several
@@ -354,6 +362,75 @@ def test_grants_wait_for_the_users_swap_closures_columns(tmp_path, monkeypatch):
             for s in granted
             if f'"{column}"' in s and f'"{table}" TO "pk_stewardship_web"' in s
         ]
+
+
+@pytest.mark.parametrize("applied", [False, True])
+def test_grants_tolerate_a_closure_revoke_only_until_it_applies(
+    tmp_path, monkeypatch, applied
+):
+    """Mail dispatch's old ciphertext reads are admitted only on the base.
+
+    On the users upgrade's base, migration 0073 (#389 L1) has not revoked
+    them yet, so database-grants admits exactly those columns as held; once
+    0073 is recorded they are excess again. Either way no GRANT names them.
+    """
+    admitted = {}
+    applied_rows = set(CLOSURE_FUNCTIONS.values()) if applied else set()
+    monkeypatch.setattr(
+        provisioning,
+        "_admit_existing_grants",
+        lambda cursor, login, tables, columns: admitted.__setitem__(login, columns),
+    )
+    configuration = configuration_at(tmp_path)
+    cursor = Cursor()
+    cursor.fetchall = lambda: list(applied_rows)
+    monkeypatch.setattr(provisioning, "_password", lambda path: b"private-password")
+    monkeypatch.setattr(provisioning, "_admit_operator", lambda *args, **kwargs: None)
+    monkeypatch.setattr(provisioning, "_check_role", lambda *args, **kwargs: True)
+    monkeypatch.setattr(provisioning, "_connection", lambda *args: Database(cursor))
+    monkeypatch.setattr(provisioning, "_admit_reader", lambda *args: None)
+    monkeypatch.setattr(provisioning, "_admit_writer_guard", lambda *args: None)
+    provisioning.provision_grants(configuration, uuid4())
+    mail = admitted[login_name(ServiceRole.MAIL_DISPATCH)]
+    assert ("ciphertext" in mail["stewardship_family_token"]["SELECT"]) is not applied
+    assert (
+        "token_ciphertext" in mail["stewardship_rehearsal_credential"]["SELECT"]
+    ) is not applied
+    for login, columns in admitted.items():
+        if login != login_name(ServiceRole.MAIL_DISPATCH):
+            token = columns.get("stewardship_family_token", {})
+            assert "ciphertext" not in token.get("SELECT", set()), login
+    mail_grants = [
+        statement
+        for statement in cursor.statements
+        if statement.endswith(f'"{login_name(ServiceRole.MAIL_DISPATCH)}"')
+    ]
+    # Mail dispatch still reads the token metadata, so the check below sees
+    # its token GRANT and would see a ciphertext column in it.
+    assert any(
+        "stewardship_family_token" in statement and '"digest"' in statement
+        for statement in mail_grants
+    )
+    for table, column in (
+        ("stewardship_family_token", '"ciphertext"'),
+        ("stewardship_rehearsal_credential", '"token_ciphertext"'),
+    ):
+        assert not any(
+            table in statement and column in statement for statement in mail_grants
+        )
+
+
+def test_pending_revokes_name_only_their_role_and_pending_migration():
+    """Tolerance follows the revoking migration's row, for its role only."""
+    (migration,) = CLOSURE_REVOKES
+    assert pending_revokes(ServiceRole.MAIL_DISPATCH, set()) == {
+        "stewardship_family_token": {"SELECT": {"ciphertext"}},
+        "stewardship_rehearsal_credential": {"SELECT": {"token_ciphertext"}},
+    }
+    assert pending_revokes(ServiceRole.MAIL_DISPATCH, {migration}) == {}
+    assert pending_revokes(ServiceRole.WORKER, set()) == {}
+    # The revoking migration is the one that adds the replacement definer.
+    assert CLOSURE_FUNCTIONS[DISPATCH_TOKEN_FUNCTION] == migration
 
 
 @pytest.mark.parametrize("installed", ["current", "older", "missing"])

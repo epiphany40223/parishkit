@@ -122,20 +122,20 @@ def add_dispatch_grants(tables, columns):
             "email_deliverable",
             "effective_submission_id",
         },
+        # Never the ciphertext: dispatch reads one claimed message's token
+        # through runtime_grants.DISPATCH_TOKEN_FUNCTION (#389 L1).
         "stewardship_family_token": {
             "id",
             "family_id",
             "campaign_id",
             "generation_id",
             "destroyed_at",
-            "ciphertext",
             "digest",
         },
         "stewardship_rehearsal_credential": {
             "id",
             "family_id",
             "epoch_id",
-            "token_ciphertext",
             "token_digest",
         },
         "stewardship_submission": {"family_id", "mode", "rehearsal_epoch_id"},

@@ -547,7 +547,10 @@ envelope alongside an unkeyed SHA-256 lookup digest over a domain-separation
 prefix and the token bytes; its entropy makes a rotatable lookup MAC
 unnecessary. Incoming exchange uses only the digest. Only `mail-dispatch` and
 `token-key-rotation` may decrypt the token ciphertext; Admin pages,
-reports, exports, logs, and general workers cannot.
+reports, exports, logs, and general workers cannot. `mail-dispatch` has no
+read grant on the ciphertext columns: a database function gives it one
+message's own token only while it holds that unsent message's delivery task
+under a live lease, so it cannot read every Family's token at once.
 
 Tokens are campaign-bound, reusable until invalidated, and rejected whenever
 the campaign is closed or the Family is ineligible. A storage primitive can

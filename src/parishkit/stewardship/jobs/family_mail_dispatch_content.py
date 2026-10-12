@@ -2,14 +2,14 @@
 
 from html import escape
 
+from django.db import connection
+
 from parishkit.stewardship.accounts.cryptography import token_digest
 from parishkit.stewardship.campaigns.credential_keys import key_set_lock
 from parishkit.stewardship.campaigns.credential_models import (
     DeploymentCredentialState,
-    FamilyAccessToken,
     FamilyAccessTokenGeneration,
     FamilyCampaign,
-    RehearsalCredential,
 )
 from parishkit.stewardship.campaigns.link_tokens import token_context
 from parishkit.stewardship.campaigns.rehearsals import (
@@ -38,12 +38,36 @@ def retained_render(message):
     )
 
 
-def current_content(message, template_record_id, scope, *, private, public_origin):
+def claimed_token(message, token_id, claim):
+    """The ciphertext and digest of the message's own token, under ``claim``.
+
+    Mail dispatch cannot read token ciphertext (#389 L1); the definer
+    answers only for an unsent Family message whose delivery task ``claim``
+    holds under a live lease, and only that message's Family, campaign and
+    token generation (Production) or rehearsal epoch (Testing). No row is
+    refused like a token that does not match the message.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT ciphertext, digest FROM "
+            "stewardship_dispatch_family_token_v1(%s, %s, %s, %s, %s)",
+            [message.pk, token_id, claim.run_id, claim.fence, claim.worker_id],
+        )
+        row = cursor.fetchone()
+    if row is None:
+        raise PermissionError("Family delivery token is not under a live claim.")
+    return row
+
+
+def current_content(
+    message, template_record_id, scope, *, claim, private, public_origin
+):
     """Refresh unsent content without general-key mounts or cross-epoch fallback.
 
     Source, settings, template and routed recipients are pinned before returning.
     The caller journals this rendering and commits submission under the same work
-    lock. A generation change remains held for its restore/reopen owner. The
+    lock, holding ``claim``, the message's live delivery task claim. A
+    generation change remains held for its restore/reopen owner. The
     template record comes from the occurrence's schedule revision, or from the
     Admin ticket for a chosen-Family test.
     """
@@ -61,18 +85,7 @@ def current_content(message, template_record_id, scope, *, private, public_origi
             ),
         )
         if message.mode == "testing":
-            credential = RehearsalCredential.objects.only(
-                "id", "token_ciphertext", "token_digest"
-            ).get(
-                pk=reference.token_id,
-                family_id=message.family_id,
-                epoch_id=message.rehearsal_epoch_id,
-            )
-            ciphertext, context, digest = (
-                credential.token_ciphertext,
-                rehearsal_context(credential.pk),
-                credential.token_digest,
-            )
+            context = rehearsal_context(reference.token_id)
         else:
             deployment = DeploymentCredentialState.objects.get()
             if (
@@ -86,20 +99,8 @@ def current_content(message, template_record_id, scope, *, private, public_origi
                 ).exists()
             ):
                 raise PermissionError("Family delivery credential generation is held.")
-            credential = FamilyAccessToken.objects.only(
-                "id", "ciphertext", "digest"
-            ).get(
-                pk=reference.token_id,
-                family_id=message.family_id,
-                campaign_id=message.campaign_id,
-                generation_id=message.token_generation_id,
-                destroyed_at__isnull=True,
-            )
-            ciphertext, context, digest = (
-                credential.ciphertext,
-                token_context(credential.pk),
-                credential.digest,
-            )
+            context = token_context(reference.token_id)
+        ciphertext, digest = claimed_token(message, reference.token_id, claim)
         token = private.decrypt(ciphertext, context=context).decode("ascii")
         if token_digest(token, message.campaign_id) != digest:
             raise PermissionError("Family delivery token fingerprint differs.")
