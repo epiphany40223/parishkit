@@ -38,7 +38,7 @@ _COMMAND_OPTIONS = {
     "prepare-development": {"runtime_root"},
     "bootstrap": {"config", "phase", "deployment_id", "admin_email"},
     "migrate": {"config", "users_upgrade_base"},
-    "backup": {"config", "users_upgrade_resume"},
+    "backup": {"config", "request", "users_upgrade_resume"},
     "backup-keygen": {"destination"},
     "backup-open": {"key", "input", "destination"},
     "backup-prove": {"key", "input"},
@@ -277,6 +277,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         default=None,
         help="restore-compare only: keep the scratch databases afterwards",
+    )
+    parser.add_argument(
+        "--request",
+        action="store_true",
+        default=None,
+        help=(
+            "backup only: the five-minute poll for a backup an Administrator "
+            "requested; silent when none is waiting"
+        ),
     )
     parser.add_argument(
         "--bind-all-interfaces",
