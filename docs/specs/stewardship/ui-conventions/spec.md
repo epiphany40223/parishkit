@@ -811,6 +811,18 @@ The server stays the authority: it checks every save, and its refusal is
 shown at the field as above, even when the browser would have allowed the
 value (a wrong computer clock, for example).
 
+A file field marked `data-max-bytes` (with `data-max-bytes-message`, the
+server's own words) is refused at the field as soon as a file over that
+size is chosen, and the form is not sent until a smaller file is chosen; a
+form marked `data-max-total-bytes` refuses files that together exceed it
+the same way. The message shows where the server's errors for that field
+go, in a reserved line that keeps its height once the error clears and is
+announced to screen readers (`file-size-field.html`). A field that a
+choice hides drops its refusal, and shows it again if it reappears with
+the same file. The reverse proxy refuses an oversized request before the
+page could explain it, so this check is what keeps such a refusal on the
+form. First use: Parish logos (#1062).
+
 A mark clears as soon as its error does, without waiting for Save (#592). An
 error the browser checks clears once the value is valid. One only the
 server can check (an outcome that doesn't fit the request, for example)
@@ -1006,7 +1018,8 @@ made, and is required only while shown. A hidden or greyed field is not
 sent, and its errors clear. **Why.** Fields that do not apply invite wrong answers and make
 a form look longer than it is. **Shared code.** `ui-v1.js`: `data-show-when`,
 `data-required-when`, `data-required-when-shown`; re-applied on `pageshow`
-and after every in-place swap. Where hiding a field would move the controls
+and after every in-place swap. A rule may name a radio group as well as a
+single control (Parish logos' upload mode, #1062). Where hiding a field would move the controls
 around it, two gates keep it in place instead:
 
 - `data-enabled-when="name=value"` (#959) works like `data-show-when`
