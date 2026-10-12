@@ -17,6 +17,10 @@
     grows downwards.
   - fallback names the element that takes focus when the control that
     opened the dialog is gone (its row was removed).
+  - cancel (optional) replaces the Cancel label, and plain_accept draws
+    the accept button as a primary button rather than a destructive one:
+    the Basic / Advanced toggle's "Keep Advanced" and "Switch to Basic"
+    (components/editor-mode.html, #1121), which removes nothing.
 
   With review=True it is instead the shared review dialog of Admin editors
   (UX conventions, "Review dialog", #750): a form marked
@@ -51,7 +55,7 @@
 <h2 id="{{ dialog_id }}-title" data-confirm-title>{{ title_many }}</h2>
 <p id="{{ dialog_id }}-body">{{ body }}</p>
 {% if caution %}<p class="notice">{{ caution }}</p>{% endif %}
-<div class="dialog-actions">{% button type="button" class="button-danger" data-confirm-accept %}{{ accept }}{% endbutton %}{% button type="button" variant="secondary" data-confirm-cancel %}{% translate "Cancel" %}{% endbutton %}</div>
+<div class="dialog-actions">{% if plain_accept %}{% button type="button" data-confirm-accept %}{{ accept }}{% endbutton %}{% else %}{% button type="button" class="button-danger" data-confirm-accept %}{{ accept }}{% endbutton %}{% endif %}{% button type="button" variant="secondary" data-confirm-cancel %}{% if cancel %}{{ cancel }}{% else %}{% translate "Cancel" %}{% endif %}{% endbutton %}</div>
 <p class="dialog-status" role="status" data-confirm-status></p>
 <div class="notice notice-error" role="alert" data-confirm-error hidden></div>
 </dialog>{% endif %}

@@ -52,6 +52,7 @@ when it lands.
   [Review, Apply and Change status](#review-apply-and-change-status),
   [review dialog](#review-dialog),
   [conditional fields](#conditional-fields),
+  [Basic and Advanced modes](#basic-and-advanced-modes),
   [single-campaign interim](#single-campaign-interim),
   [addresses and legacy URLs](#addresses-and-legacy-urls),
   [not-found pages](#not-found-pages),
@@ -1070,10 +1071,124 @@ what it shows, unsent, and its tip says when it is available and that a
 greyed value is not saved. **Precedent.** #563, #736,
 open #957, #959, #1014.
 
+Recorded exception: the hidden Advanced panel of an editor with
+[Basic and Advanced modes](#basic-and-advanced-modes) is still sent, with
+the rules that section gives (#1121).
+
 A Share options row ticked Delete greys its label, free-text box and order
 in place (`data-enabled-when` on the row's own Delete box), so the rows below
 never move; a redrawn form shows a deleted row's saved values, still greyed,
 and unticking Delete gives them back (#563).
+
+### Basic and Advanced modes
+
+**Rule.** A settings editor whose full form is much harder than what most
+parishes need offers a page-level **Basic** / **Advanced** toggle. Basic
+offers a few plain choices that cover most parishes; Advanced offers the full
+configuration. The two modes edit one configuration: Basic → Advanced is
+always lossless, and Advanced → Basic never silently drops a configuration
+Basic cannot show. **Why.** Progressive disclosure: most Administrators
+need only the common case, and the full editor every time makes a simple
+setting look hard. One shared toggle means a reader learns it once.
+**Shared code.** `components/editor-mode.html` (the toggle and its dialog,
+through `components/confirm-dialog.html`) and `ParishEditorMode` in
+`ui-v1.js`, with an adapter each editor registers for its own mapping
+(`toAdvanced`, `toBasic`, optional `clearBasic`); `data-not-a-change` keeps
+the toggle and the Basic panel out of the change gate; `test_editor_mode.py`
+tests it on a component page. Each editor registers its adapter by the name
+in `data-editor-modes="<name>"`, so it still applies after an in-place
+answer redraws the editor. **Precedent.** #1121 (Administrator, 2026-10-12); first
+adopters #1122 (the
+[ParishSoft refresh schedule](../admin-portal/spec.md#parishsoft-refresh-schedule-settings))
+and #1062 (Parish logos), then the scheduling editors of #1129.
+
+- **Where and how it looks.** The toggle sits at the top of the editor,
+  above both modes, so switching never moves it. It is a segmented pair
+  with a short visible label ("Mode") and exactly two segments, **Basic**
+  and **Advanced**, never "Simple" (Administrator decision, 2026-10-12). It is
+  never a checkbox, a link to another page or a second settings page. The
+  chosen segment is filled; both segments keep one size and weight, so
+  choosing one changes only colours. Settings that make sense in both
+  modes (a single switch such as "Skip refreshes around Family emails")
+  stay outside the two modes, below the toggle.
+- **In place.** Switching redraws the editor in place, with no reload and no
+  scroll jump ([in-place controls](#in-place-controls)). Only what is below
+  the toggle changes; nothing above it moves
+  ([no layout shift](#no-layout-shift)).
+- **Basic** offers a few presets or one simple input, each described in
+  plain words ("Nightly at 2:00 AM", "Every 4 hours", "One image, resized
+  for every size"). One Basic choice must be chosen before Review: while
+  none is, Review is unavailable with the panel's reason, such as "Choose a
+  basic schedule to review it." ([prerequisite gates](#prerequisite-gates)).
+- **Advanced** offers the full configuration: every rule, exception and
+  per-item value, and "Edit as text" where the editor has it.
+- **Mapping.** Every Basic choice maps to exactly one Advanced
+  configuration, written by the editor's own code. **Basic → Advanced is
+  always lossless:** Advanced shows the configuration of the chosen Basic
+  choice, ready to refine (and, when no Basic choice has been chosen since
+  switching, the configuration Advanced already held). Advanced may have no
+  Basic equivalent: when the Advanced configuration equals a Basic choice,
+  Basic opens with that choice chosen.
+- **Advanced → Basic with no Basic equivalent** first opens a modal dialog,
+  the shared confirmation dialog of [row actions](#row-actions-and-confirmation).
+  Its title names the setting: "Your custom schedule has no basic
+  equivalent." for a schedule (Administrator decision, 2026-10-12), "Your
+  custom logos have no basic equivalent." for Parish logos, and so on, as
+  "Your custom *setting* has (or have) no basic equivalent." Its body says
+  that Basic cannot show the custom setup, that switching leaves no basic
+  choice chosen, and that nothing changes until a basic choice is reviewed
+  and applied. Its buttons are **Keep Advanced** (the safe choice, which
+  takes focus; it closes the dialog and changes nothing, as do Escape and
+  closing the dialog) and **Switch to Basic** (a primary button, not a
+  destructive one: it switches with no Basic choice chosen, so Review stays
+  unavailable until one is). Until a change is applied, the saved
+  configuration is untouched: reloading the page brings it back.
+- **Which mode opens.** Basic when nothing has been set yet; otherwise the
+  mode last used to save, stored with the setting (for example
+  `editor_mode: basic|advanced`, a key of the setting itself, not a database
+  column); and Advanced whenever the stored configuration has no Basic
+  equivalent, whatever mode was last saved. The page is drawn by the server
+  in that mode, so it never flashes the other one. The mode is never
+  remembered per viewer in browser storage: it belongs to the setting, so
+  every Administrator sees the same view.
+- **Review and Apply.** The mode is presentation only. The server validates
+  and stores only the full (Advanced) configuration, so the two modes cannot
+  disagree: the Advanced fields always hold the configuration, rewritten
+  from the Basic choice on every Basic edit, or, where a browser cannot copy
+  a value (a chosen file), the server expands the Basic choice with the same
+  mapping before validating it. The mode is sent with the save, but
+  switching modes alone is not a change: Review stays unavailable until the
+  configuration differs from the saved one
+  ([Review, Apply and Change status](#review-apply-and-change-status)). The
+  review shows the resulting configuration in plain words, whichever mode
+  produced it, in the shared [review dialog](#review-dialog). A Basic
+  panel's controls are not sent while Advanced is shown.
+- **The hidden Advanced panel is still sent.** This is the recorded
+  exception to [conditional fields](#conditional-fields): while Basic is
+  shown, the Advanced panel is hidden but never disabled, because its
+  fields carry the configuration the server validates. Two rules keep a
+  hidden field from hiding a problem:
+  - **Basic matches only a valid configuration.** Advanced → Basic shows a
+    matching Basic choice only while every Advanced field is valid (none
+    unreadable, refused by a live check or marked by the server); otherwise
+    it counts as having no Basic equivalent and asks, as above. A Basic
+    choice rewrites the Advanced fields, and clears the errors marked on
+    the values it replaced.
+  - **Errors open Advanced.** A server answer with an error on an Advanced
+    field (a Review refused for its values, which
+    [stays on the form](#review-dialog)) is drawn in Advanced mode, where
+    the field and its message can be seen, whatever mode was sent; the page
+    script does the same for a page drawn otherwise or redrawn in place. An
+    editor whose Basic panel could hold such an error instead shows the
+    error summary in its Basic panel, naming the setting to change.
+- **Accessibility.** The toggle is a labelled radio group (a `fieldset` and
+  `legend` around two native radios), so arrow keys move between the modes
+  and a screen reader names the group and the chosen mode. Switching
+  announces the new mode in the shared live region ("Basic mode: the common
+  choices are shown."). Focus stays on the toggle after a switch; after the
+  dialog it returns to the toggle's chosen segment. The focus ring is drawn
+  on the chosen or focused segment and keeps the
+  [theme's contrast](#accessibility-and-client-behavior).
 
 ### Single-campaign interim
 

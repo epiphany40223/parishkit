@@ -1,0 +1,35 @@
+{% load i18n stewardship %}{% comment %}
+  The Basic / Advanced mode toggle of a complex settings editor (#1121;
+  ui-conventions spec, "Basic and Advanced modes"), and the dialog that asks
+  before Advanced → Basic when the configuration has no Basic equivalent.
+  ui-v1.js (ParishEditorMode) drives it; the editor wraps this toggle and its
+  two panels in [data-editor-modes="<name>"], and its script registers its
+  mapping with ParishEditorMode.register("<name>", adapter):
+
+    <div data-editor-modes="refresh-schedule">
+      {% include "stewardship/components/editor-mode.html" with mode_id="refresh-mode" mode=editor_mode no_basic_title=… no_basic_body=… %}
+      <fieldset class="editor-mode-panel" data-editor-mode-panel="basic" data-not-a-change data-missing-hint="…"{% if editor_mode != "basic" %} hidden disabled{% endif %}>…</fieldset>
+      <div data-editor-mode-panel="advanced"{% if editor_mode != "advanced" %} hidden{% endif %}>…</div>
+    </div>
+
+  - mode_id: the toggle's id, and the prefix of its radios' and dialog's ids.
+  - mode: "basic" or "advanced", the mode the editor opens in (the view
+    works it out from the stored setting, as the convention says).
+  - name (optional, default editor_mode): the field that sends the mode
+    with the save. The toggle is marked data-not-a-change, so switching
+    modes alone does not make Review available; so is the Basic panel,
+    whose choices only write the Advanced fields (the configuration).
+  - legend (optional, default "Mode"): the group's visible label.
+  - no_basic_title / no_basic_body: the dialog's title ("Your custom
+    schedule has no basic equivalent.") and what switching does.
+
+  The dialog is included with "only", so a page's own context (an editor's
+  review, csrf and the like) never turns it into another dialog.
+{% endcomment %}<fieldset class="editor-mode" id="{{ mode_id }}" data-editor-mode data-not-a-change data-editor-mode-dialog="{{ mode_id }}-no-basic" data-announce-basic="{% translate 'Basic mode: the common choices are shown.' %}" data-announce-advanced="{% translate 'Advanced mode: every setting is shown.' %}">
+<legend>{{ legend|default:_("Mode") }}</legend>
+<span class="editor-mode-options">
+<label for="{{ mode_id }}-basic"><input type="radio" id="{{ mode_id }}-basic" name="{{ name|default:'editor_mode' }}" value="basic" data-editor-mode-choice{% if mode == "basic" %} checked{% endif %}>{% translate "Basic" %}</label>
+<label for="{{ mode_id }}-advanced"><input type="radio" id="{{ mode_id }}-advanced" name="{{ name|default:'editor_mode' }}" value="advanced" data-editor-mode-choice{% if mode != "basic" %} checked{% endif %}>{% translate "Advanced" %}</label>
+</span>
+</fieldset>
+{% translate "Switch to Basic" as accept %}{% translate "Keep Advanced" as cancel %}{% include "stewardship/components/confirm-dialog.html" with dialog_id=mode_id|add:"-no-basic" form_id="" fallback=mode_id title_one=no_basic_title title_many=no_basic_title body=no_basic_body caution="" accept=accept cancel=cancel plain_accept=True done_one="" done_many="" only %}

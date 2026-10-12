@@ -1955,6 +1955,10 @@
       if (!node.name || !(node instanceof HTMLInputElement || node instanceof HTMLSelectElement
         || node instanceof HTMLTextAreaElement)) return;
       if (["hidden", "submit", "button", "reset", "image", "file"].includes(node.type)) return;
+      // A presentation choice (the Basic / Advanced toggle and the Basic
+      // panel that drives the Advanced fields, #1121) is not a change to
+      // review: the configuration it writes is.
+      if (node.closest("[data-not-a-change]")) return;
       const index = seen.get(node.name) || 0;
       seen.set(node.name, index + 1);
       const value = controlValue(node, defaults);
@@ -4008,6 +4012,192 @@
     redrawFrom(fresh);
     if (!showOutcome(outcome, text)) announce(text);
   };
+
+  // Basic and Advanced editor modes (#1121; ui-conventions spec, "Basic and
+  // Advanced modes"). A settings editor wraps its toggle
+  // (components/editor-mode.html) and its two panels in
+  // [data-editor-modes="<name>"]:
+  //   - [data-editor-mode-panel="basic"], a <fieldset>: the few common
+  //     choices. While Advanced is shown it is hidden and disabled, so its
+  //     controls are neither sent nor validated.
+  //   - [data-editor-mode-panel="advanced"]: the full configuration. It is
+  //     only ever hidden, never disabled: its fields carry the configuration
+  //     the server validates and stores in either mode (the recorded
+  //     exception to conditional fields).
+  // The editor's script registers an adapter by the editor's name with
+  // ParishEditorMode.register(name, adapter). It is looked up by name when
+  // an event fires, so it still applies after an in-place answer redraws
+  // the editor as fresh elements. Each method is given the editor's
+  // current root element:
+  //   - toAdvanced(root): write the chosen Basic choice into the Advanced
+  //     fields (nothing when no choice is chosen). Called on every edit in
+  //     the Basic panel, so the Advanced fields always hold the result, and
+  //     on Basic → Advanced, which is therefore always lossless.
+  //   - toBasic(root): choose the Basic choice equal to the Advanced fields
+  //     and return true, or return false when there is none. It is called
+  //     only while every Advanced field is valid: an unreadable or refused
+  //     Advanced value has no Basic equivalent.
+  //   - clearBasic(root) (optional): unchoose every Basic choice; by default
+  //     every radio in the Basic panel is unticked.
+  // Advanced → Basic with no Basic equivalent puts the toggle back and asks
+  // in the toggle's components/confirm-dialog.html <dialog> (Keep Advanced,
+  // the safe choice, takes focus; Switch to Basic switches with no choice
+  // chosen, so the Basic panel's required choice holds Review). Nothing is
+  // sent until the reader reviews. The toggle and the Basic panel are
+  // marked data-not-a-change, so switching modes or choosing the Basic
+  // choice that matches the saved configuration never makes Review
+  // available on its own (the change gate above); the mode is still sent
+  // with the next save. Focus stays on the toggle, and the new mode is
+  // announced. An editor drawn with an error on an Advanced field (a
+  // refused Review) is shown in Advanced, where that field and its message
+  // can be seen.
+  const editorAdapters = new Map(); // editor name → adapter
+  const adapterOf = (root) => editorAdapters.get(root.dataset.editorModes || "");
+  // The toggle that belongs to root (not one of a nested editor's).
+  const modeToggle = (root) => [...root.querySelectorAll("[data-editor-mode]")]
+    .find((node) => node.closest("[data-editor-modes]") === root);
+  const modeChoice = (root, mode) => modeToggle(root)
+    ?.querySelector(`input[data-editor-mode-choice][value="${mode}"]`);
+  const modePanel = (root, mode) => [...root.querySelectorAll(
+    `[data-editor-mode-panel="${mode}"]`)].find((node) => node.closest("[data-editor-modes]") === root);
+  // The Advanced fields that are in error: marked by the server or a live
+  // check, or invalid in the browser's own terms (an unreadable time).
+  const advancedErrors = (root) => [...(modePanel(root, "advanced")
+    ?.querySelectorAll("input, select, textarea") || [])]
+    .filter((node) => node.getAttribute("aria-invalid") === "true"
+      || node.hasAttribute("data-field-error") || node.hasAttribute("data-client-error")
+      || (node.willValidate && !node.validity.valid));
+  // Show root's panel for mode and hide the other; true when that changed.
+  const showMode = (root, mode) => {
+    const changed = root.dataset.editorModeShown !== mode;
+    root.dataset.editorModeShown = mode;
+    root.querySelectorAll("[data-editor-mode-panel]").forEach((panel) => {
+      if (panel.closest("[data-editor-modes]") !== root) return;
+      const shown = panel.dataset.editorModePanel === mode;
+      panel.hidden = !shown;
+      if (panel.dataset.editorModePanel === "basic" && panel instanceof HTMLFieldSetElement) {
+        panel.disabled = !shown;
+      }
+    });
+    return changed;
+  };
+  // Show mode, then let every gate see the new state: a change event from
+  // the toggle reaches the form's gates (and returns early below).
+  const switchMode = (root, mode) => {
+    const choice = modeChoice(root, mode);
+    if (choice) choice.checked = true;
+    showMode(root, mode);
+    choice?.dispatchEvent(new Event("change", {bubbles: true}));
+    choice?.focus();
+    const toggle = modeToggle(root);
+    announce(toggle?.dataset[mode === "basic" ? "announceBasic" : "announceAdvanced"] || "");
+  };
+  const clearBasic = (root) => {
+    const adapter = adapterOf(root);
+    if (adapter?.clearBasic) {
+      adapter.clearBasic(root);
+      return;
+    }
+    modePanel(root, "basic")?.querySelectorAll("input[type=radio]").forEach((radio) => {
+      radio.checked = false;
+    });
+  };
+  // Write the Basic choice into the Advanced fields. The values it replaced
+  // are gone, so any error marked on them no longer applies.
+  const writeAdvanced = (root) => {
+    const adapter = adapterOf(root);
+    if (!adapter?.toAdvanced) return;
+    const before = new Map(advancedErrors(root).map((node) => [node, node.value]));
+    adapter.toAdvanced(root);
+    before.forEach((value, node) => {
+      if (node.value !== value && (node.hasAttribute("data-field-error")
+        || node.getAttribute("aria-invalid") === "true")) clearFieldError(node);
+    });
+  };
+  // Ask before Advanced → Basic when Basic cannot show the configuration.
+  const askNoBasic = (root) => {
+    const toggle = modeToggle(root);
+    const dialog = document.getElementById(toggle?.dataset.editorModeDialog || "");
+    if (!(dialog instanceof HTMLDialogElement)) return;
+    wireDialog(dialog);
+    if (!dialog.parishEditorMode) {
+      dialog.parishEditorMode = {root, accepted: false};
+      dialog.querySelector("[data-confirm-accept]")?.addEventListener("click", () => {
+        dialog.parishEditorMode.accepted = true;
+        dialog.close();
+      });
+      dialog.addEventListener("close", () => {
+        const state = dialog.parishEditorMode;
+        if (state.accepted) {
+          state.accepted = false;
+          clearBasic(state.root);
+          switchMode(state.root, "basic");
+        } else {
+          // Keep Advanced, Cancel or Escape: nothing changes.
+          modeChoice(state.root, "advanced")?.focus();
+        }
+      });
+    }
+    dialog.parishEditorMode.root = root;
+    dialog.querySelector("[data-confirm-title]").textContent = dialog.dataset.titleOne || "";
+    dialog.showModal();
+    // The safe choice takes focus first.
+    dialog.querySelector("[data-confirm-cancel]")?.focus();
+  };
+  // Capture phase, so the Advanced fields are written before the form's own
+  // input and change listeners (the gates) look at them.
+  ["input", "change"].forEach((type) => document.addEventListener(type, (event) => {
+    const node = event.target;
+    if (!(node instanceof Element)) return;
+    const root = node.closest("[data-editor-modes]");
+    if (!root) return;
+    if (!node.matches("input[data-editor-mode-choice]")) {
+      // An edit in the Basic panel rewrites the Advanced fields.
+      if (modePanel(root, "basic")?.contains(node)) writeAdvanced(root);
+      return;
+    }
+    if (type !== "change" || !node.checked || root.dataset.editorModeShown === node.value) return;
+    const adapter = adapterOf(root);
+    if (node.value === "advanced") {
+      writeAdvanced(root);
+      showMode(root, "advanced");
+      announce(modeToggle(root)?.dataset.announceAdvanced || "");
+    } else if (!advancedErrors(root).length && adapter?.toBasic?.(root)) {
+      showMode(root, "basic");
+      announce(modeToggle(root)?.dataset.announceBasic || "");
+    } else {
+      // No Basic equivalent: the toggle stays on Advanced until the reader
+      // confirms, and the gates are not told of a switch that did not happen.
+      event.stopPropagation();
+      modeChoice(root, "advanced").checked = true;
+      askNoBasic(root);
+    }
+  }, true));
+  // The panels follow the toggle on load, when a browser restores the page
+  // (and the toggle) from its history, and when an in-place answer redraws
+  // the editor; the gates then look again. An Advanced field in error opens
+  // Advanced, so a refused Review never hides its own error in Basic.
+  const syncModes = (scope = document) => within(scope, "[data-editor-modes]").forEach((root) => {
+    let checked = modeToggle(root)?.querySelector("input[data-editor-mode-choice]:checked");
+    if (checked?.value === "basic" && advancedErrors(root).some(
+      (node) => node.getAttribute("aria-invalid") === "true" || node.hasAttribute("data-field-error"))) {
+      checked = modeChoice(root, "advanced");
+      checked.checked = true;
+    }
+    const mode = checked?.value || "advanced";
+    if (showMode(root, mode) && root.dataset.editorModeSynced) {
+      checked?.dispatchEvent(new Event("change", {bubbles: true}));
+    }
+    root.dataset.editorModeSynced = "1";
+  });
+  syncModes();
+  window.addEventListener("pageshow", () => syncModes());
+  document.addEventListener("parishkit:swap", (event) => {
+    if (event.target instanceof Element) syncModes(event.target);
+  });
+  window.ParishEditorMode = Object.freeze({
+    register(name, adapter) { editorAdapters.set(name, adapter); },
+  });
 
   // Repeating reminders (#469). expandRecurrence turns a repeat rule into
   // the calendar dates it produces. Dates are civil days, computed with UTC
