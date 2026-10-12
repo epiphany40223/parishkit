@@ -52,7 +52,12 @@ class TooManyMinistries(ValueError):
 
 @require_POST
 def create(request, campaign_id):
-    """Accept complete filtered summary/join/leave work through a CSRF form."""
+    """Accept one Ministry's complete filtered join or leave list (CSRF form).
+
+    The campaign-wide summary export was removed (#1126); a request for it
+    (``action=summary`` or no Ministry) is refused by the service as an
+    invalid selection.
+    """
     try:
         service = runtime()
         actor = _principal(request, service.store)

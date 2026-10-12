@@ -1515,8 +1515,7 @@ primary Family address), as the
 allows. A list is always one Ministry's, so its
 Ministry name and Ministry DUID head the file in its report information, as
 they head the page's list, rather than repeat on every row
-([#932](https://github.com/epiphany40223/parishkit/issues/932)); the
-summary's download keeps both as its leading columns. A Member
+([#932](https://github.com/epiphany40223/parishkit/issues/932)). A Member
 added on the form reads "New Member" in the Member DUID column, and the
 proposed Member's reference stays on the page's technical details. When two
 Members added on the form share a name, they read "New Member 1", "New
@@ -1545,15 +1544,23 @@ explicitly authorized for this workflow. Birth date itself is not shown when
 age suffices.
 
 Lists are searchable/filterable/sortable and exportable as CSV, XLSX, or PDF.
+The campaign-wide summary has no export
+([#1126](https://github.com/epiphany40223/parishkit/issues/1126)): its rows
+are counts per Ministry, with no parishioner data, and the page already shows
+them, so its only download is the
+[follow-up packet](#multi-ministry-follow-up-packet). A request for a summary
+export, including regenerating an expired one made before the removal, is
+refused as an invalid selection; an existing summary file stays downloadable
+until it expires. The page shows the ParishSoft data date but not the data
+load number, an internal counter.
 One Ministry's lists filter by submitted date in the viewer's browser time
 zone, as [Additional information](#additional-information) does; the packet
 has no date filter. Every leader view/export is audited with Ministry scope.
 An export audit event retains the sorted Ministry DUID set actually included
 after filtering, plus whether the captured contact projection was operational
 or publish-restricted. This result scope is distinct from the potentially wider
-authorization scope used for lifecycle checks. An empty summary has an empty
-result scope; a named detail section retains its Ministry even with no matching
-Members. One event per action is sufficient; per-Ministry audit fan-out is not
+authorization scope used for lifecycle checks. A named detail section retains
+its Ministry even with no matching Members. One event per action is sufficient; per-Ministry audit fan-out is not
 required. These non-sensitive identifiers survive campaign-detail purge with
 the audit event and contain no names, contacts, filters or Member values.
 The [Admin log owner](../admin-portal/spec.md#logs) includes this set when

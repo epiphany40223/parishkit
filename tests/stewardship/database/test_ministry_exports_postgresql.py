@@ -122,18 +122,16 @@ def test_capture_scope_and_revocation(response_service, google):
     store = harness.service.store
     admin = user("admin@example.org").pk
     leaving = create(harness, admin, ministry_id=4, action="leave")
-    # An export keeps a DUID sort (#960): the summary by Ministry DUID and a
-    # list by Member DUID, both accepted by the capture.
-    summary = create(
-        harness,
-        admin,
-        ministry_id=None,
-        action="summary",
-        query=MinistryQuery(sort="duid_desc"),
-    )
-    summary = MinistryExportSnapshot.objects.get(pk=summary.ministry_snapshot_id)
-    assert [row["duid"] for row in summary.document["summaries"]] == [9, 4]
-    assert summary.parameters["filters"]["sort"] == "duid_desc"
+    # The campaign-wide summary export was removed (#1126): neither a
+    # summary action nor a missing Ministry is accepted.
+    for removed in (
+        {"action": "summary", "ministry_id": None},
+        {"action": "summary"},
+        {"ministry_id": None},
+    ):
+        with pytest.raises(ValueError):
+            create(harness, admin, **removed)
+    # A list keeps a Member DUID sort (#960), accepted by the capture.
     listed = create(harness, admin, query=MinistryQuery(sort="duid"))
     listed = MinistryExportSnapshot.objects.get(pk=listed.ministry_snapshot_id)
     assert listed.row_count == 1 and listed.parameters["filters"]["sort"] == "duid"
@@ -230,26 +228,6 @@ def test_complete_capture_stays_stable_after_source_promotion(response_service):
     empty = create(harness, actor, query=MinistryQuery(search="No such Member"))
     assert empty.ministry_snapshot.row_count == 0
     assert empty.authorization_scope["ministries"] == [9]
-    summary = create(harness, actor, ministry_id=None, action="summary")
-    assert summary.ministry_snapshot.row_count == 2
-    filtered = create(
-        harness,
-        actor,
-        ministry_id=None,
-        action="summary",
-        query=MinistryQuery(search="4"),
-    )
-    no_ministries = create(
-        harness,
-        actor,
-        ministry_id=None,
-        action="summary",
-        query=MinistryQuery(search="No such Ministry"),
-    )
-    assert filtered.authorization_scope["ministries"] == [4, 9]
-    assert filtered.authorization_scope["result_ministries"] == [4]
-    assert no_ministries.authorization_scope["ministries"] == [4, 9]
-    assert no_ministries.authorization_scope["result_ministries"] == []
     # Query audit-side evidence without a request handle or join to campaign
     # detail. The retained context itself proves attribution after detail purge.
     events = list(
@@ -258,34 +236,15 @@ def test_complete_capture_stays_stable_after_source_promotion(response_service):
             event__campaign_reference=harness.campaign.pk,
         ).select_related("event")
     )
-    assert len(events) == 5
     assert {event.event.subject_id: event.context for event in events} == {
         request.pk: {
             "outcome": "started",
             "count": count,
-            "ministry_duids": ministries,
+            "ministry_duids": [9],
             "ministry_operational": True,
         }
-        for request, count, ministries in (
-            (result, 52, [9]),
-            (empty, 0, [9]),
-            (summary, 2, [4, 9]),
-            (filtered, 1, [4]),
-            (no_ministries, 0, []),
-        )
+        for request, count in ((result, 52), (empty, 0))
     }
-    assert set(
-        AuditContext.objects.filter(
-            event__campaign_reference=harness.campaign.pk,
-            context__ministry_duids__contains=[4],
-        ).values_list("event__subject_id", flat=True)
-    ) == {summary.pk, filtered.pk}
-    assert (
-        MinistryExportSnapshot.objects.get(pk=summary.ministry_snapshot_id).document[
-            "rows"
-        ]
-        == []
-    )
     before = retained.document
     data.members[3]["firstName"] = "Changed after capture"
     snapshot, claim = prepare(data)

@@ -2545,15 +2545,15 @@ def _export_information_options(parser):
 
 
 def _export_ministry_options(parser):
-    """Options of ``export ministry``: the summary, or one Ministry's list."""
+    """Options of ``export ministry``: one Ministry's join or leave list."""
     _family_export_options(parser)
-    parser.add_argument(
-        "--ministry", type=_ministry_duid, help="one Ministry, by its DUID"
-    )
+    # Both are needed; a missing one is the page's "invalid" refusal, not a
+    # usage error, as for every other bad selection.
+    parser.add_argument("--ministry", type=_ministry_duid, help="the Ministry's DUID")
     parser.add_argument(
         "--requests",
         choices=("join", "leave"),
-        help="with --ministry: export its join or leave requests",
+        help="export its join or leave requests",
     )
 
 

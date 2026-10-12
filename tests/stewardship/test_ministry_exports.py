@@ -212,7 +212,7 @@ def document(*, action="join", count=52, members=None, **extra):
     payload = dict(
         total=count,
         rows=rows,
-        summaries=[summary] * (count if action == "summary" else 1),
+        summaries=[summary],
         metadata=dict(
             name="Campaign",
             id="campaign",
@@ -233,7 +233,7 @@ def document(*, action="join", count=52, members=None, **extra):
     )
 
 
-@pytest.mark.parametrize("action", ["summary", "join", "leave"])
+@pytest.mark.parametrize("action", ["join", "leave"])
 def test_complete_columns_and_csv_privacy(action):
     """Every row survives export; hidden contacts and birth dates never become cells."""
     report = document(action=action)
@@ -252,17 +252,13 @@ def test_complete_columns_and_csv_privacy(action):
     assert dict(report.metadata)["Requested at"].isoformat() == (
         "2026-09-19T11:00:00-04:00"
     )
-    assert report.sheet_name == (
-        "Ministry summary" if action == "summary" else "Ministry requests"
-    )
+    assert report.sheet_name == "Ministry requests"
     if action == "join":
         assert rows[-1][0] == "'=Example Member"
         assert "Not published" in report.rows[0]
-    elif action == "leave":
+    else:
         assert "Email" not in report.headings and "Phones" not in report.headings
         assert report.rows[0][-2] == "Volunteer"
-    else:
-        assert report.rows[0][-1] == "3 out of 4 (75%)"
 
 
 @pytest.mark.parametrize(
@@ -300,11 +296,11 @@ def test_lists_follow_the_page_column_order(action, contact):
     assert "Ministry DUID" not in report.headings
 
 
-def test_summary_keeps_ministry_and_duid_columns():
-    """The summary's rows are Ministries, so Ministry and its DUID lead it."""
-    report = document(action="summary", count=1)
-    assert report.headings[:2] == ("Ministry", "Ministry DUID")
-    assert "Ministry DUID" not in dict(report.metadata)
+def test_summary_capture_is_not_rendered():
+    """The campaign-wide summary export was removed (#1126): a summary
+    capture is refused rather than rendered."""
+    with pytest.raises(ValueError):
+        document(action="summary", count=1)
 
 
 @pytest.mark.parametrize("action", ["join", "leave"])

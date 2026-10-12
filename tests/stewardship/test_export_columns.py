@@ -85,13 +85,13 @@ from .test_roster import roster_row
 from .test_timeline_exports import document as timeline
 
 # The export worker's report kinds, each with the cases below that render
-# it. "ministry" covers its summary, both lists and the multi-Ministry packet.
+# it. "ministry" covers both lists and the multi-Ministry packet.
 WORKER_CASES = {
     "participation": ("participation",),
     "additional_information": ("additional_information",),
     "family_directory": ("family_directory",),
     "postal_outreach": ("postal_outreach",),
-    "ministry": ("ministry_summary", "ministry_join", "ministry_leave", "packet"),
+    "ministry": ("ministry_join", "ministry_leave", "packet"),
     "financial": ("financial",),
     "family_test_names": ("family_test_names",),
     "family_timeline": ("family_timeline",),
@@ -332,11 +332,6 @@ def case_postal_outreach(monkeypatch):
         assert str(values[heading]) in text, heading
     labels = [*labels, *(label for label, _ in document.metadata)]
     return list(document.headings), headers, sheets, None, labels
-
-
-def case_ministry_summary(monkeypatch):
-    """The Ministry request summary."""
-    return shared_case(monkeypatch, ministry(action="summary", count=1))
 
 
 def case_ministry_join(monkeypatch):
