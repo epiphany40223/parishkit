@@ -219,9 +219,11 @@ def test_compare_on_day_changes_the_day_in_place(page, component_origin):
     field = page.get_by_label("Compare on day")
     button = page.get_by_role("button", name="Compare", exact=True)
     assert field.get_attribute("min") == "1" and field.get_attribute("max") == "12"
-    page.mouse.wheel(0, 120)
-    page.wait_for_function("() => window.scrollY > 0")
+    # Scroll at once: WebKit animates a wheel scroll, so reading scrollY
+    # right after one catches it partway and the later check sees it land.
+    page.evaluate("window.scrollTo(0, 120)")
     scrolled = page.evaluate("window.scrollY")
+    assert scrolled == 120
     before = button.bounding_box()
     field.fill("5")
     with page.expect_request(
