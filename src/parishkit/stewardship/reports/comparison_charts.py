@@ -490,11 +490,45 @@ def day_table(measure, drawn, last_day):
             found = value_on(line, day)
             cells.append("—" if found is None else point_text(measure, *found))
         rows.append(tuple(cells))
-    headings = (
-        "Day",
-        *(line.name if line.role == OTHER else line.legend for line in ordered),
-    )
+    headings = ("Day", *(column_name(line) for line in ordered))
     return ChartTable(headings, tuple(rows))
+
+
+def column_name(line):
+    """A line's name in the table and the tooltip: a grey year by its year
+    ("2024 (partial)"), any other line as its legend names it."""
+    return line.name if line.role == OTHER else line.legend
+
+
+def day_tips(measure, drawn, last_day):
+    """One hover row per day: every line's value (and date) on that day.
+
+    Pointing anywhere over a day-by-day chart picks a day (its band, from
+    ``from`` to ``to``, in ``day_chart``), and its tooltip lists every line on
+    that day, as the exact-values table's row does, so no one has to find a
+    thin line's point to read it. ``tip`` is an object: vega-tooltip shows
+    its ``title`` as the heading and every other key as a row, in order,
+    escaping each. A line with no value that day is left out.
+    """
+    ordered = list(reversed(drawn))  # current first, as the legend
+    rows = []
+    for day in range(1, last_day + 1):
+        tip = {"title": f"Day {number(day)}"}
+        for line in ordered:
+            found = value_on(line, day)
+            if found is None or found[0] is None:
+                continue
+            text = point_text(measure, *found)
+            # A carried final value has no date of its own; the average none.
+            if not found[1] and day in line.dates:
+                text += f" · {format_date(line.dates[day], compact=True)}"
+            # A JavaScript object lists integer-like keys ("2024") before
+            # every other, whatever their order here; a trailing no-break
+            # space (invisible) keeps a grey year in the legend's order.
+            name = column_name(line)
+            tip[name + "\u00a0" if name.isdigit() else name] = text
+        rows.append({"day": day, "from": day - 0.5, "to": day + 0.5, "tip": tip})
+    return rows
 
 
 def day_chart(measure, comparison):
@@ -503,7 +537,7 @@ def day_chart(measure, comparison):
     if not drawn:
         return None
     # Every point once, at the top level: each line layer filters its role,
-    # and the tooltip points take them all.
+    # and the hovered day's points take them all.
     rows = [row for line in drawn for row in line_rows(measure, line)]
     largest = max(row["value"] for row in rows if row["value"] is not None)
     top = nice_top(largest)
@@ -586,27 +620,22 @@ def day_chart(measure, comparison):
                 },
             }
         )
-    # Invisible points carry the tooltips: a line is one shape, so pointing
-    # at it could name only one of its days. They stay out of the
-    # accessibility tree; the table holds every value.
+    # Each line's point on the hovered day, shown only while a day is
+    # hovered (the ``hover`` selection below), so the reader sees which
+    # values the tooltip lists. They stay out of the accessibility tree;
+    # the table holds every value.
     layers.append(
         {
-            "mark": {
-                "type": "point",
-                "filled": True,
-                "size": 70,
-                "opacity": 0,
-                "aria": False,
-            },
+            "transform": [{"filter": "isValid(datum.value)"}],
+            "mark": {"type": "point", "filled": True, "size": 50, "aria": False},
             "encoding": {
                 "x": {"field": "day", "type": "quantitative"},
                 "y": {"field": "value", "type": "quantitative"},
-                "tooltip": [
-                    {"field": "name", "title": "Year"},
-                    {"field": "day", "title": "Day", "format": ",d"},
-                    {"field": "date", "title": "Date"},
-                    {"field": "shown", "title": measure.axis.split(" (")[0]},
-                ],
+                "color": {**encoding_series["color"], "legend": None},
+                "opacity": {
+                    "condition": {"param": "hover", "empty": False, "value": 1},
+                    "value": 0,
+                },
             },
         }
     )
@@ -640,6 +669,53 @@ def day_chart(measure, comparison):
                 },
             },
         ]
+    # Hovering: an invisible band one day wide and the plot's full height
+    # for each day, drawn last so it lies over every mark, selects its day
+    # (``hover``) and carries that day's tooltip listing every line
+    # (``day_tips``); the day's rule and points then show. Anywhere over the
+    # plot is some day's band, so no one has to find a thin line or a small
+    # point, and a line, being one shape, could name just one of its days.
+    # Bands, not Vega-Lite's "nearest" Voronoi cells: a cell's tooltip reads
+    # the cell's own item, not the day's row, so an object tooltip there is
+    # lost.
+    tips = day_tips(measure, drawn, last_day)
+    hidden_until_hovered = {
+        "condition": {"param": "hover", "empty": False, "value": 0.5},
+        "value": 0,
+    }
+    layers += [
+        {
+            "data": {"values": tips},
+            "mark": {"type": "rule", "color": COLORS["ink"], "aria": False},
+            "encoding": {
+                "x": {"field": "day", "type": "quantitative"},
+                "opacity": hidden_until_hovered,
+            },
+        },
+        {
+            "data": {"values": tips},
+            "params": [
+                {
+                    "name": "hover",
+                    "select": {
+                        "type": "point",
+                        "fields": ["day"],
+                        "on": "pointerover",
+                        "clear": "pointerout",
+                    },
+                }
+            ],
+            # Clipped: the first and last days' half bands past the axis.
+            "mark": {"type": "rect", "opacity": 0, "clip": True, "aria": False},
+            "encoding": {
+                "x": {"field": "from", "type": "quantitative"},
+                "x2": {"field": "to"},
+                "y": {"datum": 0},
+                "y2": {"datum": top},
+                "tooltip": {"field": "tip"},
+            },
+        },
+    ]
     summary = day_summary(measure, comparison, drawn)
     spec = {
         "$schema": VEGA_LITE_SCHEMA,
@@ -733,6 +809,11 @@ def final_chart(key, title, axis, kind, comparison):
             }
         )
     names = [row["name"] for row in rows]
+    tooltip = [
+        {"field": "name", "title": "Year"},
+        {"field": "when", "title": "Figures"},
+        {"field": "shown", "title": axis.split(" (")[0]},
+    ]
     summary = (
         f"{title}: " + "; ".join(f"{row['name']} {row['shown']}" for row in rows) + "."
     )
@@ -766,6 +847,18 @@ def final_chart(key, title, axis, kind, comparison):
         },
         "layer": [
             {
+                # An invisible bar across each year's whole row, under the
+                # drawn bar, carries the same tooltip: pointing anywhere on
+                # the row reads it, even beside a bar too short to find
+                # (this campaign's "so far" one early on).
+                "mark": {"type": "bar", "opacity": 0, "aria": False},
+                "encoding": {
+                    "x": {"datum": 0},
+                    "x2": {"datum": top},
+                    "tooltip": tooltip,
+                },
+            },
+            {
                 # The current campaign is drawn lighter, with an outline so
                 # it still reads as a bar; its name says "so far" as well.
                 "mark": {
@@ -780,11 +873,7 @@ def final_chart(key, title, axis, kind, comparison):
                         "type": "quantitative",
                         "scale": None,
                     },
-                    "tooltip": [
-                        {"field": "name", "title": "Year"},
-                        {"field": "when", "title": "Figures"},
-                        {"field": "shown", "title": axis.split(" (")[0]},
-                    ],
+                    "tooltip": tooltip,
                 },
             },
             *(

@@ -142,13 +142,28 @@ def test_charts_show_each_year_and_their_exact_values(page, component_origin):
     assert "2025" in texts and "2024" in texts and "Day 12" in texts
     for name in ("2027 (so far)", "2026 (last year)", "Prior-years average"):
         assert name in texts
-    # Pointing at a day names the year, day, date and value (the chart's
-    # own points, not its legend's symbols).
-    families.locator("svg g.mark-symbol.role-mark path").last.hover()
+    # Pointing anywhere over the plot, not just at a line, picks that day:
+    # one tooltip lists every line's value (and date) on it. Here the
+    # pointer is on the day 12 rule, halfway up the plot (the mouse moves
+    # in the viewport, so the chart is scrolled into it first).
+    view.scroll_into_view_if_needed()
+    rule = families.locator("svg g.mark-rule.role-mark line").first.bounding_box()
+    page.mouse.move(rule["x"] + 1, rule["y"] + rule["height"] / 2)
     tooltip = page.locator("#vg-tooltip-element")
     expect(tooltip).to_be_visible()
-    for heading in ("Year", "Day", "Date", "Families responded"):
-        expect(tooltip).to_contain_text(heading)
+    expect(tooltip.locator("h2")).to_have_text("Day 12")
+    for text in (
+        "2027 (so far)",
+        "270 · ",
+        "2026 (last year)",
+        "240 · ",
+        "Prior-years average",
+        "230",
+    ):
+        expect(tooltip).to_contain_text(text)
+    # Leaving the chart hides it again.
+    page.mouse.move(0, 0)
+    expect(tooltip).to_be_hidden()
     # The exact values: one row per day, current campaign first.
     table = page.locator("[data-chart='comparison-families-spec'] + .chart-table")
     table.locator("summary").click()
@@ -175,6 +190,14 @@ def test_charts_show_each_year_and_their_exact_values(page, component_origin):
     # The final results mark this campaign's bar as so far.
     finals = page.locator("[data-chart='comparison-final-families-spec']")
     assert "2027 (so far)" in finals.locator("svg text").all_text_contents()
+    # Pointing beside a short bar, on its year's row, still reads its value.
+    finals.scroll_into_view_if_needed()
+    row = finals.locator("svg g.mark-rect.role-mark").first.locator("path").last
+    box = row.bounding_box()
+    page.mouse.move(box["x"] + box["width"] - 4, box["y"] + box["height"] / 2)
+    expect(tooltip).to_be_visible()
+    expect(tooltip).to_contain_text("2027 (so far)")
+    page.mouse.move(0, 0)
     bands = page.locator("[data-chart='comparison-bands-dollars-spec'] + .chart-table")
     bands.locator("summary").click()
     expect(bands.locator("tbody tr")).to_have_count(4)

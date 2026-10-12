@@ -772,10 +772,17 @@ first, explanation in the About this page panel.
    accent color, thick and solid; last year in the second color, dashed;
    every other year thin and muted grey with its year labeled at the line's
    end; the prior-years average dark and dash-dotted. A vertical rule marks
-   day N. Tooltips name the year, day, local date and value.
+   day N. Pointing anywhere over the plot (or tapping it) picks the nearest
+   campaign day: a faint rule and each line's point on that day appear, and
+   one tooltip headed "Day 15" lists every line with a value that day, in
+   the legend's order, each with its value and local date (a final year
+   carried past its last day reads "(final)" with no date; the average has
+   no date). Readers need not find a thin line or a small point.
 4. **Final results by year:** two bar charts, Families responded and annual
    pledges, one bar per imported year plus the current campaign drawn
-   lighter and labeled "so far".
+   lighter and labeled "so far". Pointing anywhere on a year's row, not
+   only at its bar, shows the year, whether its figures are final, partial
+   or so far, and the value, so a short bar still reads.
 5. **Pledge distribution:** a 100% stacked bar per year of pledging
    Families by band and a second of the total pledged by band, both
    ordered from the smallest band, with a band table (Families, share of

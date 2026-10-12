@@ -281,6 +281,77 @@ def test_day_summary_and_table_read_every_value():
     assert len(table.rows) == 5
 
 
+def test_hovering_a_day_lists_every_line_on_that_day():
+    """Anywhere over the plot picks the nearest day: its rule shows, each
+    line's point there shows, and one tooltip lists every line's value and
+    date, current first, as the table's row for that day."""
+    spec = chart_by_key(charts.day_charts(comparison()), "families").spec
+    rule, hover = spec["layer"][-2:]
+    # One invisible band per day, a day wide and the plot's full height.
+    assert hover["mark"] == {
+        "type": "rect",
+        "opacity": 0,
+        "clip": True,
+        "aria": False,
+    }
+    (param,) = hover["params"]
+    assert param["name"] == "hover"
+    assert param["select"] == {
+        "type": "point",
+        "fields": ["day"],
+        "on": "pointerover",
+        "clear": "pointerout",
+    }
+    top = spec["layer"][0]["encoding"]["y"]["scale"]["domain"][1]
+    assert hover["encoding"]["y"] == {"datum": 0}
+    assert hover["encoding"]["y2"] == {"datum": top}
+    rows = hover["data"]["values"]
+    assert [(row["from"], row["to"]) for row in rows[:2]] == [(0.5, 1.5), (1.5, 2.5)]
+    # The tooltip is the day's whole row; the day's rule shows when hovered.
+    assert hover["encoding"]["tooltip"] == {"field": "tip"}
+    assert rule["mark"]["type"] == "rule" and rule["data"] == hover["data"]
+    assert rule["encoding"]["opacity"] == {
+        "condition": {"param": "hover", "empty": False, "value": 0.5},
+        "value": 0,
+    }
+    tips = {row["day"]: row["tip"] for row in rows}
+    assert sorted(tips) == [1, 2, 3, 4, 5]
+    assert tips[1] == {
+        "title": "Day 1",
+        "2055 (so far)": "12 · Oct 4, 2054",
+        "2054 (last year)": "10 · Oct 4, 2054",
+        "Prior-years average": "7.7",
+        "2052\u00a0": "8 · Oct 4, 2054",
+        "2053 (partial)": "5 · Oct 4, 2054",
+    }
+    # Day 4: the current campaign and the partial 2053 have no value and are
+    # left out; 2052 is carried, final, with no date of its own.
+    assert tips[4] == {
+        "title": "Day 4",
+        "2054 (last year)": "40 · Oct 7, 2054",
+        "Prior-years average": "32",
+        "2052\u00a0": "24 (final)",
+    }
+    # A grey year's key is not integer-like, so a browser keeps this order.
+    assert all(not key.isdigit() for key in tips[1])
+    # Each line's point on the hovered day shows only while it is hovered.
+    (points,) = [x for x in spec["layer"] if x["mark"]["type"] == "point"]
+    assert points["encoding"]["opacity"] == {
+        "condition": {"param": "hover", "empty": False, "value": 1},
+        "value": 0,
+    }
+    assert "tooltip" not in points["encoding"]
+    assert points["encoding"]["color"]["legend"] is None
+
+
+def test_pledge_hover_tips_read_money_and_dates():
+    """A pledge tooltip reads dollars and cents, then the line's date."""
+    built = comparison()
+    pledged = chart_by_key(charts.day_charts(built), "pledged").spec
+    tips = {row["day"]: row["tip"] for row in pledged["layer"][-1]["data"]["values"]}
+    assert tips[3]["2055 (so far)"] == "$7,200.00 · Oct 6, 2054"
+
+
 def test_the_summary_names_the_years_averaged_on_the_day():
     """Like the tiles: a partial year past its last day is not averaged."""
     built = comparison()
@@ -348,9 +419,12 @@ def test_no_complete_day_draws_the_imported_years_without_a_rule():
     """Before day 1 ends: the imported lines, no comparison day and no rule."""
     built = comparison(day=None, current=year(2055, (), final=False, current=True))
     families = chart_by_key(charts.day_charts(built), "families")
-    assert not [
-        layer for layer in families.spec["layer"] if layer["mark"]["type"] == "rule"
-    ]
+    # Only the hover rule, which shows just while a day is hovered.
+    assert [
+        layer["encoding"]["opacity"]["value"]
+        for layer in families.spec["layer"]
+        if layer["mark"]["type"] == "rule"
+    ] == [0]
     assert families.summary.endswith("This campaign has no complete day yet.")
     assert "2055 (so far)" not in families.table.headings
 
@@ -404,6 +478,14 @@ def test_final_bars_mark_the_current_campaign_so_far_and_lighter():
     assert final.table.rows[0] == ("2052", "Final", "24")
     money = chart_by_key(charts.final_charts(comparison()), "final-pledged")
     assert money.table.rows[-1] == ("2055 (so far)", "So far (day 3)", "$7,200.00")
+    # An invisible bar across each whole row, under the drawn bar, carries
+    # the same tooltip, so a bar too short to point at still reads.
+    row, bar = final.spec["layer"][:2]
+    assert row["mark"] == {"type": "bar", "opacity": 0, "aria": False}
+    top = final.spec["encoding"]["x"]["scale"]["domain"][1]
+    assert row["encoding"]["x"] == {"datum": 0}
+    assert row["encoding"]["x2"] == {"datum": top}
+    assert row["encoding"]["tooltip"] == bar["encoding"]["tooltip"]
 
 
 # ---------------------------------------------------- pledge distribution
