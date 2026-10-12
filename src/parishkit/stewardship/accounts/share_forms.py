@@ -62,6 +62,27 @@ class ShareOptionsBase(BaseFormSet):
         self.previous = list(previous)
         super().__init__(*args, initial=self.previous, **kwargs)
 
+    def add_fields(self, form, index):
+        """Grey a row's fields in place while its Delete box is ticked (#563).
+
+        A row marked for deletion keeps only its identity and the Delete box:
+        its label, free-text choice and order no longer apply, so the page
+        script disables them (``data-enabled-when``, greyed and not sent)
+        rather than hiding them, which would move the rows below. A redrawn
+        form (a Review's answer, or a refusal) shows a deleted row's saved
+        values, disabled, since its own were not sent; unticking Delete gives
+        them back.
+        """
+        super().add_fields(form, index)
+        delete = form.add_prefix("DELETE")
+        for name in ("label", "free_text", "ORDER"):
+            form.fields[name].widget.attrs["data-enabled-when"] = f"{delete}!=on"
+        if form.is_bound and form.fields["DELETE"].widget.value_from_datadict(
+            form.data, form.files, delete
+        ):
+            for name in ("label", "free_text", "ORDER"):
+                form.fields[name].disabled = True
+
     def clean(self):
         """Reject replayed IDs, foreign IDs and forged initial-management counts."""
         if any(self.errors):
