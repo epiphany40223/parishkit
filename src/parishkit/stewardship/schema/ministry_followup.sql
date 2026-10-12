@@ -105,7 +105,7 @@ CREATE CONSTRAINT TRIGGER stewardship_ministry_revision_effect
 -- filtering, including hidden Ministries, so history cannot resurrect a
 -- replaced request. Notes and contact dates are read across the same-intent
 -- chain and only for the returned page.
-CREATE FUNCTION stewardship_ministry_followup_v1(
+CREATE FUNCTION public.stewardship_ministry_followup_v1(
     campaign_uuid uuid, filters jsonb, operational boolean, ministry_scope bigint[],
     viewer uuid, request_uuid uuid DEFAULT NULL,
     page_limit integer DEFAULT NULL, page_offset integer DEFAULT 0
@@ -164,12 +164,15 @@ WITH selected AS MATERIALIZED (
     JOIN ministries m ON m.duid=r.ministry_duid
     JOIN stewardship_family_campaign f ON f.id=s.family_id
 ), named AS MATERIALIZED (
-    SELECT r.*,coalesce(nullif(btrim(concat_ws(' ',
-            CASE WHEN r.entity_kind='member' THEN p.canonical::jsonb->>'firstName'
-                ELSE s.answers->'proposed_members'->r.entity_key->>'first_name' END,
-            CASE WHEN r.entity_kind='member' THEN p.canonical::jsonb->>'lastName'
-                ELSE s.answers->'proposed_members'->r.entity_key->>'last_name' END)),''),
+    -- A Member is named "Last, first" (UX conventions, "Family and Member
+    -- names", #932), so the name sort orders by surname; the search also
+    -- matches the given-name-first form shown before.
+    SELECT r.*,coalesce(nullif(concat_ws(', ',
+            nullif(stewardship_name_strip_v1(n.last_name),''),
+            nullif(stewardship_name_strip_v1(n.first_name),'')),''),
             'Unavailable Member') AS member_name,
+        coalesce(nullif(btrim(concat_ws(' ',n.first_name,n.last_name)),''),
+            'Unavailable Member') AS member_search_name,
         -- "Cannot participate in any ministries" (#247) explains a leave.
         coalesce(s.answers#>ARRAY['service',
             CASE WHEN r.entity_kind='member' THEN 'members' ELSE 'proposed_members' END,
@@ -181,6 +184,12 @@ WITH selected AS MATERIALIZED (
         AND sm.source_key=r.entity_key
     LEFT JOIN stewardship_source_member p ON p.id=sm.payload_id
         AND p.family_key=r.family_duid::text
+    CROSS JOIN LATERAL (SELECT
+        CASE WHEN r.entity_kind='member' THEN p.canonical::jsonb->>'firstName'
+            ELSE s.answers->'proposed_members'->r.entity_key->>'first_name' END,
+        CASE WHEN r.entity_kind='member' THEN p.canonical::jsonb->>'lastName'
+            ELSE s.answers->'proposed_members'->r.entity_key->>'last_name' END
+    ) n(first_name,last_name)
     WHERE CASE WHEN request_uuid IS NOT NULL THEN r.id=request_uuid ELSE
         ((filters->>'history')='all' OR (r.revision=1
             AND r.state NOT IN ('cancelled','superseded')))
@@ -197,6 +206,7 @@ WITH selected AS MATERIALIZED (
 ), filtered AS MATERIALIZED (
     SELECT * FROM named WHERE request_uuid IS NOT NULL OR (filters->>'search')=''
         OR position(lower((filters->>'search')) IN lower(member_name))>0
+        OR position(lower((filters->>'search')) IN lower(member_search_name))>0
         OR position(lower((filters->>'search')) IN lower(ministry_name))>0
 ), page AS MATERIALIZED (
     SELECT *,row_number() OVER (ORDER BY

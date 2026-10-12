@@ -4326,8 +4326,11 @@ Member, Ministry and Submitted sort through the selection's own orders; the
 two DUID columns, Request, Status and Last contact do not, since the
 selection has no order for them. A long Member or Ministry name is cut short
 with an ellipsis on one line and shown whole in its title. Member names read
-"first last", as the selection builds them for its search and order (as on
-the Ministry report); "Last, first" waits for a selection change.
+"Last, first", as the
+[Member-name rule](../ui-conventions/spec.md#family-and-member-names) asks,
+so the Member sort orders by surname; the search also finds the "first last"
+form. Migration 0069 changed the selection to build them
+([#932](https://github.com/epiphany40223/parishkit/issues/932)).
 
 Ministry follow-up has no assignment (Administrator decision, 2026-10-04,
 [#552](https://github.com/epiphany40223/parishkit/issues/552)): each
