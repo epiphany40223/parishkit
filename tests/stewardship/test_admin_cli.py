@@ -81,6 +81,10 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "files rename",
         "content list",
         "content history",
+        "parish show",
+        "ministries list",
+        "branding show",
+        "campaign shares",
     }
     tests = {
         "test sample-preview",

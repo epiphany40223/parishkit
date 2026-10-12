@@ -663,7 +663,22 @@ documents, catalog flags, no event), `tests/stewardship/test_admin_cli.py`,
 page's rows for a read-only session, a held campaign `stale_version`, no
 current campaign, a retained revision's sample, an unknown revision, no
 event, a Staff reader denied, an ended session) and the unchanged content
-page suites.
+page suites. The fourth adds `parish show`, `ministries list`, `branding
+show` and `campaign shares`, the Parish settings, Ministries, Parish logos
+and Share options pages' reads, in `parishkit.stewardship.admin_settings`,
+through the pages' own profile, catalog, logo and campaign-target reads
+(the logo page's current-logo query moved into
+`branding_slots.current_assets`, which the page now calls), with no schema
+change; proven by
+`tests/stewardship/test_admin_settings.py` (golden documents, catalog
+flags, the ledger, usage errors), `tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py` and
+`tests/stewardship/database/test_admin_settings_cli_postgresql.py` (each
+read for a read-only session with no event, no Ministry catalog
+`unavailable`, logos in slot order with a missing asset left out, a
+draft's Share options editable and a live campaign's not, no financial
+module, no or an unknown campaign, a Staff reader denied, an ended
+session).
 
 ## ADM-12: Admin navigation overhaul
 
