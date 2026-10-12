@@ -30,6 +30,37 @@ REGION = '[data-live-status="system-health"]'
 ANNOUNCER = '[data-live-announcer="system-health"]'
 
 
+def test_the_resume_time_reads_as_a_local_clock_time(page, component_origin):
+    """At the limit the count line ends with the browser-local resume time (#530)."""
+    page.goto(component_origin + PAGE)
+    resume = page.locator(f"{REGION} [data-daily-resume] time")
+    stamp = resume.get_attribute("datetime")
+    expected = page.evaluate(
+        "(stamp) => ParishDates.dayTime(new Date(stamp), new Date())", stamp
+    )
+    expect(resume).to_have_text(expected)
+    assert "UTC" not in page.locator(f"{REGION} [data-daily-count]").inner_text()
+    page.goto(component_origin + HEALTHY)
+    assert page.locator(f"{REGION} [data-daily-resume]").count() == 0
+
+
+def test_a_resume_time_on_the_next_day_says_tomorrow(page, component_origin):
+    """The clock time alone is never ambiguous: tomorrow is said, later days dated."""
+    page.goto(component_origin + PAGE)
+    worded = page.evaluate("""() => {
+        const now = new Date(2054, 9, 12, 14, 0);
+        const at = (day, hour, minute) => new Date(2054, 9, day, hour, minute);
+        return [
+            ParishDates.dayTime(at(12, 23, 59), now),
+            ParishDates.dayTime(at(13, 3, 10), now),
+            ParishDates.dayTime(at(14, 3, 10), now),
+            ParishDates.instant(at(14, 3, 10)),
+        ];
+    }""")
+    assert worded[:2] == ["11:59 PM", "3:10 AM tomorrow"]
+    assert worded[2] == worded[3]
+
+
 @pytest.mark.parametrize("width", [320, 1280])
 def test_health_pages_are_accessible_at_phone_and_desktop_widths(
     page, component_origin, axe_source, width

@@ -100,6 +100,7 @@
 !src/parishkit/stewardship/schema/migrations/0073_dispatch_token_access.sql
 !src/parishkit/stewardship/schema/migrations/0074_wide_menu_logo.sql
 !src/parishkit/stewardship/schema/migrations/0075_campaign_series.sql
+!src/parishkit/stewardship/schema/migrations/0076_daily_send_resume.sql
 !src/parishkit/stewardship/schema/due_work_health.sql
 !src/parishkit/stewardship/schema/family_dispatch.sql
 !src/parishkit/stewardship/schema/production.sql

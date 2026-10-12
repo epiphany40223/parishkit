@@ -477,6 +477,7 @@ def system_health():
         next_retry_at=NOW,
         daily_sent=1612,
         daily_limit=1600,
+        daily_resume_at=NOW,
         incidents={"backup_rpo_breach": NOW},
         refresh=FullRefreshStatus(
             NOW, None, False, connection=Connection("working", NOW)
@@ -653,6 +654,7 @@ GOLDEN = {
             "next_retry_at": iso(NOW),
             "daily_sent": 1612,
             "daily_limit": 1600,
+            "daily_resume_at": iso(NOW),
             "incidents": [{"kind": "backup_rpo_breach", "since": iso(NOW)}],
             "refresh": {
                 "full_succeeded_at": iso(NOW),
@@ -944,6 +946,7 @@ ALLOWED = {
         "next_retry_at",
         "daily_sent",
         "daily_limit",
+        "daily_resume_at",
         "incidents",
         "since",
         "refresh",

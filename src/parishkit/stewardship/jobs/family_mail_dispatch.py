@@ -193,6 +193,21 @@ def daily_sends():
         return cursor.fetchone()[0]
 
 
+def daily_resume():
+    """When ``daily_sends`` falls below the Family limit, or None if it is below.
+
+    Read for the web through the SECURITY DEFINER function of
+    ``schema/migrations/0076_daily_send_resume.sql``, which walks the same
+    counted submissions oldest first and returns the instant the first one
+    whose leaving the 24-hour window brings the count under
+    ``DAILY_SEND_LIMIT - RESERVED_SENDS`` (fixed in its body; a test keeps the
+    two equal) leaves it. It returns one instant and never a recipient.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT public.stewardship_family_daily_resume_v1()")
+        return cursor.fetchone()[0]
+
+
 def over_daily_limit(purpose, sent, recipients=1):
     """Whether ``recipients`` more of ``purpose`` would pass the daily limit."""
     limit = DAILY_SEND_LIMIT - (RESERVED_SENDS if purpose in BULK_PURPOSES else 0)
