@@ -267,8 +267,12 @@ class ContentForm(forms.Form):
         return values
 
     def values(self, *, campaign_id, slot):
-        """Return one canonical revision payload, or explicit removal intent."""
-        if self.cleaned_data["clear"]:
+        """Return one canonical revision payload, or explicit removal intent.
+
+        A form without the removal control (a schedule's own email editor,
+        ``schedule_email``) always returns a revision.
+        """
+        if self.cleaned_data.get("clear"):
             return None
         prepared = self.cleaned_data["prepared"]
         return {

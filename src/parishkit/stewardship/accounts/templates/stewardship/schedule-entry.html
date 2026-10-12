@@ -25,6 +25,9 @@ in the note, and on an unbound Edit page fills the fields from the saved
 moment in data-schedule-local, which become the values the change gate
 compares with. Without a zone, data-zone-missing shows and Review changes
 stays unavailable.
+Edit also offers "Edit this schedule's email" (schedule-email.html, #446):
+a changed email is reviewed with the schedule and saved as a new email that
+only this schedule sends.
 {% endcomment %}
 <h1>{% if new %}{% translate "New scheduled email" %}{% else %}{% translate "Edit scheduled email" %}{% endif %}</h1>
 {% aboutpage "schedule-entry" %}{% include 'stewardship/schedule-guide.html' with window_text=window_text browser_times=True %}{% endaboutpage %}
@@ -35,6 +38,7 @@ stays unavailable.
 <p class="notice notice-error" id="schedule-zone-missing" data-zone-missing hidden>{% translate "Your browser didn't report a time zone, so this send time can't be read. Check your computer's time zone setting, then reload this page." %}</p>
 {% if new %}{% translate "Scheduled email" as legend %}{% else %}{% firstof entry.schedule_label _("Scheduled email") as legend %}{% endif %}
 {% include 'stewardship/schedule-row.html' with form=entry legend=legend number=0 %}
+{% if email_toggle %}{% include 'stewardship/schedule-email.html' %}{% endif %}
 {% if repeat %}<p class="repeat-summary" role="status" data-repeat-summary hidden></p><div data-repeat-posted></div>{% endif %}
 <p>{% button type="submit" autocomplete="off" %}{% translate "Review changes" %}{% endbutton %} <a href="{{ list_url }}">{% translate "Cancel" %}</a> <span class="help unchanged-hint" data-unchanged-hint data-idle>{% if new %}{% translate "Fill in the scheduled email to review it." %}{% else %}{% translate "Change the date, time or email to review it." %}{% endif %}</span></p>
 {% if repeat %}<div data-repeat-dates></div>{% endif %}

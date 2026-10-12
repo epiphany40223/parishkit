@@ -718,7 +718,11 @@ settings are the values the server drew for the form's version, so values a
 browser restores are not mistaken for them; once this page's change is
 applied, the reviewed values are the saved ones while the form itself is
 kept, and after an applied change a redrawn form compares with its new
-defaults. The hint keeps its space while hidden, so it never moves the page.
+defaults. A control marked `data-change-ignore` is no change: one that only
+shows other fields (Edit scheduled email's "Edit this schedule's email",
+whose fields count instead), and plain text generated from the HTML, which is
+not sent. The hint
+keeps its space while hidden, so it never moves the page.
 The server still refuses an unchanged Review ("No settings have changed."),
 only as a safeguard for requests that bypass the page script: no page draws
 a "nothing has changed" state ([review dialog](#review-dialog)).

@@ -2352,6 +2352,48 @@ blocking-work recheck and audit as before; reminder planning and emailed
 Family codes and links are unaffected by how the review is shown.
 **Cancel** on the page returns to the list without saving.
 
+Edit also offers **Edit this schedule's email**, a checkbox under Email to send
+([#446](https://github.com/epiphany40223/parishkit/issues/446)). Ticking it
+shows, below it, the email's subject, HTML source and plain text with
+"Generate plain text from HTML", filled in from the chosen email, and **Reset to
+the default text**, which fills the mail type's built-in default (the text
+"Start from the default text" uses on Pages and emails). Choosing another email
+fills the fields again only while they hold no edits, so typed text is never
+replaced; the help under the fields says so, and that Cancel and Edit again
+start over from a saved email. The fields take the same cleaning and rules as
+the Pages and emails editor (placeholders, hosted files, and an invitation's or
+reminder's `{{ family_code }}` and `{{ family_url }}` in both parts), and a
+refusal shows at its field with the page's other errors. The visual editor and the campaign
+banner choice stay on Pages and emails. Unticked, the fields are not sent.
+Changed text is always saved as a **new email that only this schedule sends**:
+the one reviewed change adds that email and points the schedule (its email and
+subject) at it, so the email it sent before stays exactly as it was for every
+other schedule that sends it; one no schedule sends any more shows as "No
+schedule" on Pages and emails, where it can be removed. Ticking the box is not
+a change by itself: the email's fields count toward Review changes like the
+schedule's own, compared with the schedule's saved email, so ticking it
+without editing leaves Review changes unavailable. While "Generate plain text
+from HTML" is ticked the plain text is not sent and does not count either, so
+an older email whose saved plain text differs from what today's generation
+shows is no change by itself. Text left as the chosen email's adds nothing,
+compared after the same cleaning a save applies, so an older email whose saved
+text today's cleaning would rewrite (including such plain text) is still
+copied when it is reviewed ticked with another change, as re-saving it on
+Pages and emails would
+([#832](https://github.com/epiphany40223/parishkit/issues/832)). If the whole
+configuration refuses the change, or the email is too large to review, the
+refusal is shown at the email's HTML source, linked from the error summary.
+The review dialog shows the new email as a fictional sample beside the
+schedule's before and after, and applying it re-plans the schedule
+as any schedule change does (see [Family invitations and
+reminders](../background-processing/spec.md#family-invitations-and-reminders)):
+planned sends not started yet are replaced, sends in progress block the change,
+and email already sent is not recalled. The change touches only content and
+schedules, never a Family's code, link or their sealed credentials. Edit
+already refuses a schedule that has run or has work prepared, so its email
+can't be changed either. New picks a saved email only for now; editing the
+email there, and sending a test of an unsaved edit, are later slices of #446.
+
 On New, choosing Reminder offers a **Repeat** checkbox
 ([#469](https://github.com/epiphany40223/parishkit/issues/469)); other mail
 types do not repeat (one Initial invitation; the digests repeat by themselves).

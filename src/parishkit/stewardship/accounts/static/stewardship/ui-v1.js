@@ -1867,8 +1867,16 @@
   // date-change review's proposed dates, #750) names its saved value in
   // data-saved-value, which stands in for its default. A control the page
   // script added inside a [data-change-blank] row (a blank added schedule)
-  // that still holds its own default is no change. The gate runs on every
-  // edit, after every in-place answer (see refresh) and on pageshow.
+  // that still holds its own default is no change. A control marked
+  // data-change-ignore is no change, like a disabled one: Edit scheduled
+  // email's "Edit this schedule's email" (#446) only shows the email's
+  // fields, which then count, so ticking it without editing the email is no
+  // change; and plain text generated from the HTML is not sent (the
+  // plain-text panel marks it while generating), so text regenerated
+  // differently from a saved email's is no change either. The mark can come
+  // and go after the saved values are taken, so such a control keeps its
+  // key and only its value stops counting. The gate runs on every edit,
+  // after every in-place answer (see refresh) and on pageshow.
   const savedStates = new Map(); // form id → {version, state} it was saved at
   const reviewSent = new Map(); // form id → the state its last Review sent
   // form id → {form, state}: the form element when its Apply was sent, and
@@ -1906,7 +1914,8 @@
       const value = controlValue(node, defaults);
       const blank = !defaults && Boolean(node.closest("[data-change-blank]"))
         && value === controlValue(node, true);
-      state.set(`${node.name}#${index}`, {value, blank, disabled: node.matches(":disabled")});
+      const disabled = node.matches(":disabled") || node.hasAttribute("data-change-ignore");
+      state.set(`${node.name}#${index}`, {value, blank, disabled});
     });
     return state;
   };
@@ -4654,12 +4663,60 @@
     });
   });
 
+  // Edit scheduled email's own email (#446, schedule-email.html): ticking
+  // "Edit this schedule's email" shows its fields (data-show-when) and fills
+  // them from the email chosen in Email to send. Choosing another email
+  // fills them again, but only while the reader has not edited them, so
+  // typed text is never replaced without asking; Reset to the default text
+  // fills the built-in default. A refused page keeps what was posted. The
+  // texts are the server's (data-schedule-email-sources); each is set as a
+  // field value, never as markup. "Generate plain text from HTML" is the
+  // content editors' panel below, told of every fill by its change event.
+  document.querySelectorAll("[data-schedule-email]").forEach((section) => {
+    const form = section.closest("form");
+    const box = form?.elements.namedItem("edit_email");
+    const choice = form?.elements.namedItem("schedule-template_version");
+    const [subject, html, text, generate] = ["subject", "html", "text", "generate_text"]
+      .map((name) => form?.elements.namedItem(name));
+    const reset = section.querySelector("[data-schedule-email-reset]");
+    let sources = null;
+    try {
+      sources = JSON.parse(document.getElementById("schedule-email-sources")?.textContent || "null");
+    } catch { sources = null; }
+    if (!box || !choice || !subject || !html || !text || !generate || !reset || !sources) return;
+    // Posted back after a refusal, the fields hold the reader's own text.
+    let edited = box.checked;
+    const fill = (value) => {
+      if (!value) return;
+      subject.value = value.subject || "";
+      html.value = value.html;
+      text.value = value.text;
+      generate.checked = Boolean(value.generate);
+      generate.dispatchEvent(new Event("change"));
+      edited = false;
+    };
+    const chosen = () => sources.emails?.[choice.value];
+    [subject, html, text, generate].forEach((field) => {
+      ["input", "change"].forEach((type) => field.addEventListener(type, (event) => {
+        if (event.isTrusted) edited = true;
+      }));
+    });
+    box.addEventListener("change", () => { if (box.checked && !edited) fill(chosen()); });
+    choice.addEventListener("change", () => { if (box.checked && !edited) fill(chosen()); });
+    reset.addEventListener("click", () => {
+      fill(sources.default);
+      // The default is now the reader's choice; another email chosen above
+      // does not replace it.
+      edited = true;
+    });
+  });
+
   // "Generate plain text from HTML": while it is checked the plain-text field
   // is read-only and shows the server's own generated text for the current
   // HTML, so the Admin sees exactly what a save stores. "Edit plain text" (or
   // unchecking the box) keeps that text and makes it editable; typed text is
   // never replaced unless the Admin checks the box again. A checked box
-  // submits no plain text (the field is disabled just for the submission), so
+  // submits no plain text (it is left out of the form's data), so
   // a slightly stale preview cannot conflict with the server's generation;
   // without this script the server refuses typed text that would be dropped.
   document.querySelectorAll("[data-plain-text]").forEach((panel) => {
@@ -4704,6 +4761,8 @@
     };
     const show = () => {
       text.readOnly = box.checked;
+      // Generated text is not sent, so the change gate does not count it.
+      text.toggleAttribute("data-change-ignore", box.checked);
       note.hidden = !box.checked;
       if (!box.checked) unavailable.hidden = true;
     };
@@ -4739,8 +4798,15 @@
       source.addEventListener("input", schedule);
     }
     form.addEventListener("stewardship:html-changed", schedule);
-    form.addEventListener("submit", () => { if (box.checked) text.disabled = true; });
-    window.addEventListener("pageshow", () => { text.disabled = false; });
+    // Leave the generated text out of whatever the form sends. The formdata
+    // event fires for a navigating submission and for every FormData built
+    // from the form, so a review sent in place (the review dialog, #750,
+    // which reads the form before its own submit listeners run) leaves it
+    // out too, and the field itself is never disabled, so nothing has to
+    // re-enable it afterwards.
+    form.addEventListener("formdata", (event) => {
+      if (box.checked) event.formData.delete(text.name);
+    });
     show();
     refresh();
   });
