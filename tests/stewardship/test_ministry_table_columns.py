@@ -20,7 +20,7 @@ from parishkit.stewardship.web.tables import report_table
 SUBMITTED = datetime(2054, 10, 5, 14, 30, tzinfo=UTC)
 
 
-def ministry_page(rows, *, ministry_id=None, summaries=()):
+def ministry_page(rows, *, ministry_id=None, summaries=(), packet_choices=()):
     """Render the Ministry report as its view does, from detached rows."""
     query = MinistryQuery()
     shown = rows if ministry_id is not None else list(summaries)
@@ -35,6 +35,8 @@ def ministry_page(rows, *, ministry_id=None, summaries=()):
                 "source_generation": 1,
             },
             "summaries": list(summaries),
+            "packet_choices": list(packet_choices),
+            "packet_limit": 200,
             "rows": rows,
             "total": len(shown),
             "mutable": True,
@@ -159,3 +161,13 @@ def test_campaign_ministries_review_splits_the_ministry_duid():
     row = '<th scope="row">Food pantry</th><td class="numeric">9</td>'
     row += "<td>1</td><td>1</td>"
     assert row in html
+
+
+def test_packet_choices_are_labelled_by_full_name_only():
+    """Each packet box names its Ministry in full, with no DUID (#1123)."""
+    name = "Saint Vincent de Paul Society Home Visit and Food Delivery Team"
+    html = ministry_page([], packet_choices=[{"duid": 9, "name": name}])
+    choices = html[html.index('class="packet-choices"') :]
+    label = choices[: choices.index("</label>")]
+    assert label.endswith(f'value="9"> {name}')
+    assert "DUID" not in label

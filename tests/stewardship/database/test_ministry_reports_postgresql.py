@@ -15,6 +15,7 @@ from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.audit.models import AuditContext
 from parishkit.stewardship.campaigns.work_locks import WORK_ORDER_LOCK
 from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.reports.export_models import MinistryExportSnapshot
 from parishkit.stewardship.reports.ministries import (
     MinistryQuery,
     campaign_ids,
@@ -30,6 +31,7 @@ from .campaign_builders import add_draft, change, close_campaign
 from .leader_builders import with_leaders
 from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
+from .test_export_views_postgresql import post
 from .test_information_followup_postgresql import search
 from .test_ministry_responses_postgresql import (
     configure,
@@ -364,6 +366,91 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
     )
     promote(snapshot, claim, harness.campaign, harness.rings)
     assert search(browser, route, {"ministry": "9"})[0].status_code == 403
+
+
+def packet_boxes(body):
+    """The packet's Ministry choices on a Ministry report page, as text."""
+    text = body.decode()
+    start = text.index('<div id="ministry-packet-choices">')
+    return text[start : text.index("</fieldset>", start)]
+
+
+def test_packet_choices_list_every_ministry_in_scope_beyond_the_table(
+    response_service, google
+):
+    """The packet offers every Ministry the reader leads, not just the
+    table's rows, and never a Ministry outside their scope (#533).
+
+    A leader of Choir (4) and Food pantry (9) searches the summary down to
+    Food pantry; the packet still offers both, so a subset can be chosen
+    whatever the table shows. A leader of Food pantry alone is never offered
+    Choir, and a packet POST naming Choir anyway is refused. The
+    report-view audit records only the Ministry rows shown: the choices
+    carry names and DUIDs, no request data. Ticking more Ministries than
+    one packet may hold is refused with a message saying what to do.
+    """
+    harness = setup(response_service)
+    store = harness.service.store
+    for email in ("leader-4-9@example.org", "leader@example.org"):
+        rule = address(email, roles=("ministry_leader",))
+        change(
+            store,
+            store.active(),
+            uuid4(),
+            [{"operation": "add", "section": "login_rules", **rule}],
+        )
+    root = reverse("admin:ministry_report")
+    google[0]["email"] = "leader-4-9@example.org"
+    browser, _ = signed_in()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = search(browser, root, {"search": "Food"})
+        assert response.status_code == 200
+        table = body.decode().split("Current Ministry request summary", 1)[1]
+        table = table.split("</table>", 1)[0]
+        assert "Food pantry" in table and "Choir" not in table
+        boxes = packet_boxes(body)
+        assert boxes.count('name="ministries"') == 2
+        assert boxes.index('value="4"> Choir') < boxes.index('value="9"> Food pantry')
+        # The whole summary on one page needs no second read; same choices.
+        response, body = read(browser, root)
+        assert response.status_code == 200 and packet_boxes(body) == boxes
+    shown = [
+        context.get("ministry_duid")
+        for context in AuditContext.objects.filter(
+            event__event_type="ministry_report_viewed", context__outcome="succeeded"
+        ).values_list("context", flat=True)
+    ]
+    assert shown.count(4) == 1 and shown.count(9) == 2
+    google[0]["email"] = "leader@example.org"
+    browser, _ = signed_in()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = search(browser, root, {"search": "Nothing matches"})
+        assert response.status_code == 200
+        boxes = packet_boxes(body)
+        assert boxes.count('name="ministries"') == 1
+        assert 'value="9"> Food pantry' in boxes and "Choir" not in body.decode()
+        assert "at most 200 ticked Ministries" in body.decode()
+        route = reverse("admin:ministry_packet")
+        form = {"format": "pdf", "browser_timezone": "UTC"}
+        # A Ministry outside the leader's scope, typed into the POST, is
+        # refused like any other unavailable report; nothing is queued.
+        outside = form | {"request_key": str(uuid4()), "ministries": ["4"]}
+        assert post(browser, route, outside).status_code == 403
+        too_many = form | {
+            "request_key": str(uuid4()),
+            "ministries": [str(duid) for duid in range(1, 202)],
+        }
+        # A person sees the Admin error page with the reason, the fix and
+        # a way back; a script gets the same refusal as JSON.
+        response = post(browser, route, too_many, HTTP_ACCEPT="text/html")
+        assert response.status_code == 400
+        assert b"at most 200 ticked Ministries" in response.content
+        assert b"leave every box unticked" in response.content
+        assert root.encode() in response.content
+        response = post(browser, route, too_many, HTTP_ACCEPT="application/json")
+        assert response.status_code == 400
+        assert "at most 200" in response.json()["refusal"]["message"]
+    assert not MinistryExportSnapshot.objects.exists()
 
 
 def test_a_get_of_joining_or_leaving_returns_to_the_ministry_report(
