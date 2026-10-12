@@ -13,12 +13,19 @@ checks need no database:
 - ``REFUSED`` and ``FAILED``: lists whose Delete is refused with the server's
   explanation, or recorded but not applied.
 - ``NEW`` and ``EDIT``: New scheduled email, and Edit scheduled email for
-  Reminder 1; Review and save answers with the review page. ``EDIT_DIGEST``
-  is Edit scheduled email for the weekly digest. The campaign is in New
-  York's zone; the pages show and take times in the browser's (#558).
-- ``EDIT_UNCHANGED``: Edit scheduled email for Reminder 1 whose Review and
-  save is refused as the server refuses a save that changes nothing: the
-  page again, with its values as posted and the in-place message.
+  Reminder 1; Review changes answers with the review fragment for the
+  shared review dialog (#750), whose Apply posts to ``APPLY`` (Applied at
+  once), then returns to ``LIST``. ``EDIT_DIGEST`` is Edit scheduled email
+  for the weekly digest. The campaign is in New York's zone; the pages show
+  and take times in the browser's (#558).
+- ``NEW_REPEAT``: New, whose Review answers with the review of 30 repeated
+  reminders (the most one rule adds), a long review; ``NEW_BLOCKED``: New,
+  whose review is blocked by sends in progress, so it has no preview;
+  ``NEW_PENDING``: New, whose Apply posts to ``APPLY_PENDING``, whose change
+  stays Applying; ``NEW_INVALID``: New, whose Review answers 400 with the page
+  drawn again with the send date's error and the summary, as the server does;
+  ``NEW_STALE``: New, whose Review answers 409 with a refusal in the server's
+  words (``STALE_REFUSAL``).
 
 ``POSTS`` lists the fixture server's answers to the pages' POSTs; it is
 filled in by ``components``, before the server starts.
@@ -33,7 +40,6 @@ from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts.schedule_changes import describe
 from parishkit.stewardship.accounts.schedule_entry_views import (
-    UNCHANGED,
     RepeatRule,
     _summary,
     entry_form,
@@ -60,7 +66,17 @@ FAILED = "/schedule-list-failed"
 NEW = "/schedule-new"
 EDIT = "/schedule-edit"
 EDIT_DIGEST = "/schedule-edit-digest"
-EDIT_UNCHANGED = "/schedule-edit-unchanged"
+NEW_REPEAT = "/schedule-new-repeat"
+NEW_BLOCKED = "/schedule-new-blocked"
+NEW_PENDING = "/schedule-new-pending"
+NEW_INVALID = "/schedule-new-invalid"
+NEW_STALE = "/schedule-new-stale"
+APPLY = "/schedule-list/apply"
+APPLY_PENDING = "/schedule-list/apply-pending"
+PENDING = "/schedule-change-pending"
+STALE_REFUSAL = "Another Administrator changed the schedules meanwhile."
+# The send date's refusal NEW_INVALID's answer draws at the field.
+DATE_REFUSAL = "Choose a date within the campaign."
 DELETE = "/schedule-list/deletion"
 APPLIED = "/schedule-change-applied"
 NOT_APPLIED = "/schedule-change-failed"
@@ -128,7 +144,9 @@ def _list(values, owner, emails, rows, *, sort="when", **extra):
     )
 
 
-def _entry(values, owner, emails, rows, *, schedule_row=None, post_url):
+def _entry(
+    values, owner, emails, rows, *, schedule_row=None, post_url, apply_url=APPLY
+):
     """New scheduled email, or Edit scheduled email for ``schedule_row``."""
     context = {
         "campaign": {"pk": owner["id"], "active_configuration": owner["values"]},
@@ -140,6 +158,7 @@ def _entry(values, owner, emails, rows, *, schedule_row=None, post_url):
         "base_digest": "a" * 64,
         "post_url": post_url,
         "list_url": LIST,
+        "apply_url": apply_url,
         "window_text": window_text(owner["values"]),
     } | entry_times(owner["values"], rows, schedule_row, NOW, bound=False)
     return (
@@ -148,38 +167,67 @@ def _entry(values, owner, emails, rows, *, schedule_row=None, post_url):
     )
 
 
-def _unchanged(values, owner, emails, rows, schedule_row):
-    """Edit for ``schedule_row`` refused as posted unchanged (see the docstring).
+def _invalid(values, owner, emails, rows):
+    """New refused for its send date, drawn again as ``_entry_page`` draws it.
 
-    It is posted as the Los Angeles page shows it: 9:00 AM in New York is
-    6:00 AM there.
+    Posted as a reminder on November 15, after the campaign ends, with the
+    view's own summary of the error.
     """
+    reminder = next(row for row in emails if row["values"]["slot"] == "reminder")
     data = QueryDict(mutable=True)
     data.update(
         {
-            "schedule-date": schedule_row["values"]["date"],
+            "schedule-kind": "reminder",
+            "schedule-date": "2054-11-15",
             "schedule-time": "06:00",
-            "schedule-template_version": schedule_row["values"]["template_version"],
+            "schedule-template_version": reminder["id"],
         }
     )
-    entry = entry_form(data, emails, rows, schedule_row)
-    assert entry.is_valid(), entry.errors
-    entry.add_error(None, UNCHANGED)
+    entry = entry_form(data, emails, rows)
+    repeat = RepeatRule(data, prefix="repeat")
+    assert entry.is_valid() and repeat.is_valid(), entry.errors
+    entry.add_error("date", DATE_REFUSAL)
     context = {
         "campaign": {"pk": owner["id"], "active_configuration": owner["values"]},
         "values": owner["values"],
         "entry": entry,
-        "repeat": None,
-        "new": False,
-        "schedule": schedule_row,
+        "repeat": repeat,
+        "new": True,
+        "schedule": None,
         "base_digest": "a" * 64,
-        "post_url": f"{EDIT_UNCHANGED}/review",
+        "post_url": f"{NEW_INVALID}/review",
         "list_url": LIST,
+        "apply_url": APPLY,
         "window_text": window_text(owner["values"]),
-        # The view's own refusal summary (_entry_page).
-        "errors": _summary(entry, None),
-    } | entry_times(owner["values"], rows, schedule_row, NOW, bound=True)
+        "errors": _summary(entry, repeat),
+    } | entry_times(owner["values"], rows, None, NOW, bound=True)
     return render_to_string("stewardship/schedule-entry.html", values | context)
+
+
+def _review(owner, changes, *, new=True, blocking=0):
+    """The review dialog's fragment for ``changes`` (schedule-review.html)."""
+    return render_to_string(
+        "stewardship/schedule-review.html",
+        {
+            "campaign": {"pk": owner["id"], "active_configuration": owner["values"]},
+            "changes": changes,
+            "window_changes": {},
+            "blocking": blocking,
+            "preview": None if blocking else "synthetic-preview",
+            "new": new,
+        },
+    )
+
+
+def _added(owner, values):
+    """One added schedule's change, as ``build_preview`` describes it."""
+    return {
+        "label": "Reminder",
+        "operation": "add",
+        "before": None,
+        "after": describe(values, owner["values"]),
+        "impact": {},
+    }
 
 
 def _status(values, state, **receipt):
@@ -236,34 +284,63 @@ def components(context, admin):
         EDIT_DIGEST: _entry(
             values, owner, emails, rows, schedule_row=digest, post_url=f"{EDIT}/review"
         ),
-        EDIT_UNCHANGED: _entry(
+        PENDING: _status(values, "validating"),
+        NEW_REPEAT: _entry(
+            values, owner, emails, rows, post_url=f"{NEW_REPEAT}/review"
+        ),
+        NEW_BLOCKED: _entry(
+            values, owner, emails, rows, post_url=f"{NEW_BLOCKED}/review"
+        ),
+        NEW_PENDING: _entry(
             values,
             owner,
             emails,
             rows,
-            schedule_row=first,
-            post_url=f"{EDIT_UNCHANGED}/review",
+            post_url=f"{NEW}/review",
+            apply_url=APPLY_PENDING,
         ),
+        NEW_INVALID: _entry(
+            values, owner, emails, rows, post_url=f"{NEW_INVALID}/review"
+        ),
+        NEW_STALE: _entry(values, owner, emails, rows, post_url=f"{NEW_STALE}/review"),
     }
-    review = render_to_string(
-        "stewardship/schedule-preview.html",
-        values
-        | {
-            "campaign": {"pk": owner["id"], "active_configuration": owner["values"]},
-            "changes": [
-                {
-                    "label": "Reminder",
-                    "operation": "add",
-                    "before": None,
-                    "after": describe(reminders[0]["values"], owner["values"]),
-                    "impact": {},
-                }
-            ],
-            "window_changes": {},
-            "blocking": 0,
-            "preview": "synthetic-preview",
-            "post_url": LIST,
-        },
+    review = _review(owner, [_added(owner, reminders[0]["values"])])
+    edit_review = _review(
+        owner,
+        [
+            {
+                "label": "Reminder",
+                "operation": "update",
+                "before": describe(first["values"], owner["values"]),
+                "after": describe(
+                    first["values"] | {"time": "13:30:00"}, owner["values"]
+                ),
+                "impact": {"cancellable": 3, "occurrences": 1, "outboxes": 3},
+            }
+        ],
+        new=False,
+    )
+    # One rule adds at most 30 reminders: one a day from October 2.
+    repeated = _review(
+        owner,
+        [
+            _added(owner, reminders[0]["values"] | {"date": f"2054-10-{day:02d}"})
+            for day in range(2, 32)
+        ],
+    )
+    blocked = _review(
+        owner,
+        [
+            {
+                "label": "Reminder",
+                "operation": "update",
+                "before": describe(first["values"], owner["values"]),
+                "after": describe(first["values"], owner["values"]),
+                "impact": {"blocking": 2},
+            }
+        ],
+        new=False,
+        blocking=2,
     )
     POSTS.update(
         {
@@ -285,12 +362,29 @@ def components(context, admin):
             ),
             f"{FAILED}/deletion": (303, NOT_APPLIED, ""),
             f"{NEW}/review": (200, None, review),
-            f"{EDIT}/review": (200, None, review),
-            f"{EDIT_UNCHANGED}/review": (
+            f"{EDIT}/review": (200, None, edit_review),
+            f"{NEW_REPEAT}/review": (200, None, repeated),
+            f"{NEW_BLOCKED}/review": (200, None, blocked),
+            f"{NEW_INVALID}/review": (
                 400,
                 None,
-                _unchanged(values, owner, emails, rows, first),
+                _invalid(values, owner, emails, rows),
             ),
+            f"{NEW_STALE}/review": (
+                409,
+                None,
+                json.dumps(
+                    {
+                        "errors": [{"code": "stale_version"}],
+                        "refusal": {
+                            "message": STALE_REFUSAL,
+                            "fix": "Reload the page to start again.",
+                        },
+                    }
+                ),
+            ),
+            APPLY: (303, APPLIED, ""),
+            APPLY_PENDING: (303, PENDING, ""),
         }
     )
     return responses

@@ -4,25 +4,35 @@ The list sorts by When in place, deletes one or several schedules through the
 shared confirmation dialog and redraws itself without a reload; New and
 Edit scheduled email post one schedule, or one reminder per repeat date, in
 the browser's time zone (#558): the campaign is in New York's zone and the
-default page is Los Angeles's, three hours behind.
+default page is Los Angeles's, three hours behind. Their Review changes is
+available only for a real change and opens the shared review dialog (#750),
+whose Apply returns to the list with its status line.
 The pages and their POST answers are schedule_list_components'.
 """
 
 import json
+import re
 from urllib.parse import parse_qs
 
 import pytest
 
 from .schedule_list_components import (
+    APPLY,
     BULK,
+    DATE_REFUSAL,
     EDIT,
     EDIT_DIGEST,
-    EDIT_UNCHANGED,
     FAILED,
     LIST,
     NEW,
+    NEW_BLOCKED,
+    NEW_INVALID,
+    NEW_PENDING,
+    NEW_REPEAT,
+    NEW_STALE,
     REFUSAL,
     REFUSED,
+    STALE_REFUSAL,
 )
 from .test_components import axe_violations
 from .waits import eventually, has_attribute, hidden, visible
@@ -30,6 +40,9 @@ from .waits import eventually, has_attribute, hidden, visible
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
+REVIEW = "Review changes"
+APPLIED_LINE = re.compile(r"Applied at \d{1,2}:\d{2}\s?[AP]M\.$")
+FOCUSED = "document.activeElement && document.activeElement.id"
 
 
 def rows(page):
@@ -271,6 +284,9 @@ def test_new_scheduled_email_posts_one_schedule(page, component_origin, axe_sour
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + NEW)
     failures = watch(page)
+    # A blank form is nothing to review.
+    assert page.get_by_role("button", name=REVIEW).is_disabled()
+    visible(page.get_by_text("Fill in the scheduled email to review it."))
     repeat = page.get_by_label("Repeat", exact=True)
     hidden(repeat)
     choose(page, "kind", "reminder")
@@ -286,7 +302,7 @@ def test_new_scheduled_email_posts_one_schedule(page, component_origin, axe_sour
     email = email_for(page, "initial")
     choose(page, "template_version", email)
     with page.expect_request(lambda request: request.method == "POST") as sent:
-        page.get_by_role("button", name="Review and save").click()
+        page.get_by_role("button", name=REVIEW).click()
     fields = posted(sent.value)
     assert fields["schedule-kind"] == ["initial"]
     assert fields["schedule-date"] == ["2054-10-02"]
@@ -294,7 +310,12 @@ def test_new_scheduled_email_posts_one_schedule(page, component_origin, axe_sour
     assert fields["zone"] == ["America/Los_Angeles"]
     assert fields["schedule-template_version"] == [email]
     assert "repeat-dates" not in fields
-    visible(page.get_by_role("heading", name="Review schedule changes"))
+    dialog = page.get_by_role("dialog", name="Review new scheduled email")
+    visible(dialog)
+    assert page.evaluate(FOCUSED) == "schedule-review-title"
+    visible(dialog.get_by_role("button", name="Apply"))
+    assert "Reminder — Add" in dialog.inner_text()
+    assert page.evaluate("window.notReloaded === true")
     assert not failures
 
 
@@ -330,13 +351,13 @@ def test_new_repeating_reminder_lists_and_posts_the_dates_that_fit(
         "scheduled then" in dates.inner_text()
     )
     with page.expect_request(lambda request: request.method == "POST") as sent:
-        page.get_by_role("button", name="Review and save").click()
+        page.get_by_role("button", name=REVIEW).click()
     fields = posted(sent.value)
     assert fields["zone"] == ["America/Los_Angeles"]
     assert fields["repeat-repeat"] == ["on"]
     assert fields["repeat-dates"] == ["2054-10-06", "2054-10-13", "2054-10-27"]
     assert fields["schedule-kind"] == ["reminder"]
-    visible(page.get_by_role("heading", name="Review schedule changes"))
+    visible(page.get_by_role("dialog", name="Review new scheduled email"))
     assert not failures
 
 
@@ -356,45 +377,60 @@ def test_change_scheduled_email_is_filled_in_and_saves_that_schedule(
     assert page.locator('[name="schedule-time"]').input_value() == "06:00"
     assert page.locator('[name="schedule-template_version"]').input_value()
     assert page.locator("[data-repeat-entry]").count() == 0
+    # Nothing to review until a value changes.
+    assert page.get_by_role("button", name=REVIEW).is_disabled()
     assert axe_violations(page, axe_source) == []
     page.locator('[name="schedule-time"]').fill("10:30")
     with page.expect_request(lambda request: request.method == "POST") as sent:
-        page.get_by_role("button", name="Review and save").click()
+        page.get_by_role("button", name=REVIEW).click()
     fields = posted(sent.value)
     assert fields["schedule-time"] == ["10:30"]
     assert fields["schedule-date"] == ["2054-10-10"]
     assert "schedule-kind" not in fields
     assert not any(name.startswith("repeat-") for name in fields)
-    visible(page.get_by_role("heading", name="Review schedule changes"))
+    dialog = page.get_by_role("dialog", name="Review scheduled email change")
+    visible(dialog)
+    assert "Reminder — Update" in dialog.inner_text()
     assert not failures
 
 
-def test_an_unchanged_edit_says_nothing_has_changed(page, component_origin):
-    """Saved as shown, Edit answers with its own plain message in place.
-
-    Not the review's catch-all rule text, which would suggest a schedule
-    breaks a campaign rule; the fields keep what was posted.
-    """
+def test_edit_review_waits_for_a_change_and_greys_again_on_revert(
+    page, component_origin
+):
+    """No review of nothing (#750): Review changes is unavailable until a
+    value differs from the saved schedule as this browser shows it, and again
+    once it is put back, even when typed another way."""
     page.set_viewport_size({"width": 1280, "height": 900})
-    page.goto(component_origin + EDIT_UNCHANGED)
+    page.goto(component_origin + EDIT)
     failures = watch(page)
-    with page.expect_request(lambda request: request.method == "POST") as sent:
-        page.get_by_role("button", name="Review and save").click()
-    fields = posted(sent.value)
-    assert fields["schedule-date"] == ["2054-10-10"]
-    assert fields["schedule-time"] == ["06:00"]
-    summary = page.locator("[data-error-summary]")
-    visible(summary)
-    assert (
-        "Nothing has changed. Change the date, time or email, then save."
-        in summary.inner_text()
-    )
-    main = page.locator("main").inner_text()
-    assert "must fit the campaign" not in main
-    visible(page.get_by_role("heading", name="Edit scheduled email", level=1))
-    assert page.locator('[name="schedule-date"]').input_value() == "2054-10-10"
-    assert page.locator('[name="schedule-time"]').input_value() == "06:00"
-    assert not page.get_by_role("button", name="Review and save").is_disabled()
+    button = page.get_by_role("button", name=REVIEW)
+    assert button.is_disabled()
+    visible(page.get_by_text("Change the date, time or email to review it."))
+    time = page.locator('[name="schedule-time"]')
+    time.fill("10:30")
+    assert button.is_enabled()
+    time.fill("06:00")
+    assert button.is_disabled()
+    # "6am" is the saved 06:00 once it is written out on leaving the field.
+    time.fill("6am")
+    time.blur()
+    assert time.input_value() == "06:00"
+    assert button.is_disabled()
+    date = page.locator('[name="schedule-date"]')
+    date.fill("2054-10-11")
+    assert button.is_enabled()
+    date.fill("2054-10-10")
+    assert button.is_disabled()
+    # The weekly digest's weekday, filled in by the script, is saved too.
+    page.goto(component_origin + EDIT_DIGEST)
+    button = page.get_by_role("button", name=REVIEW)
+    assert button.is_disabled()
+    weekday = page.locator('[name="schedule-weekday"]')
+    saved = weekday.input_value()
+    weekday.select_option("3")
+    assert button.is_enabled()
+    weekday.select_option(saved)
+    assert button.is_disabled()
     assert not failures
 
 
@@ -419,13 +455,16 @@ def test_edit_fills_and_posts_times_in_a_zone_a_day_ahead(
         assert page.locator('[name="schedule-time"]').input_value() == "02:00"
         reading = page.locator("#id_schedule-time_reading")
         assert "02:00 (2:00 AM)" in reading.inner_text()
+        # As shown it is unchanged; a later time is a change to review.
+        assert page.get_by_role("button", name=REVIEW).is_disabled()
+        page.locator('[name="schedule-time"]').fill("03:00")
         with page.expect_request(lambda request: request.method == "POST") as sent:
-            page.get_by_role("button", name="Review and save").click()
+            page.get_by_role("button", name=REVIEW).click()
         fields = posted(sent.value)
         assert fields["schedule-date"] == ["2054-10-11"]
-        assert fields["schedule-time"] == ["02:00"]
+        assert fields["schedule-time"] == ["03:00"]
         assert fields["zone"] == ["Pacific/Auckland"]
-        visible(page.get_by_role("heading", name="Review schedule changes"))
+        visible(page.get_by_role("dialog", name="Review scheduled email change"))
         page.goto(component_origin + EDIT_DIGEST)
         assert page.locator('[name="schedule-weekday"]').input_value() == "1"
         assert page.locator('[name="schedule-time"]').input_value() == "02:00"
@@ -466,11 +505,11 @@ def test_a_repeat_compares_moments_in_a_zone_a_day_ahead(
             "scheduled then" in page.locator("[data-repeat-dates]").inner_text()
         )
         with page.expect_request(lambda request: request.method == "POST") as sent:
-            page.get_by_role("button", name="Review and save").click()
+            page.get_by_role("button", name=REVIEW).click()
         fields = posted(sent.value)
         assert fields["repeat-dates"] == ["2054-10-07", "2054-10-14", "2054-10-28"]
         assert fields["zone"] == ["Pacific/Auckland"]
-        visible(page.get_by_role("heading", name="Review schedule changes"))
+        visible(page.get_by_role("dialog", name="Review new scheduled email"))
         assert not failures
     finally:
         context.close()
@@ -478,7 +517,7 @@ def test_a_repeat_compares_moments_in_a_zone_a_day_ahead(
 
 @pytest.mark.parametrize("reported", ["", "Etc/Unknown"])
 def test_new_waits_for_a_known_browser_zone(page, component_origin, reported):
-    """Without a browser zone the send time can't be read: Review and save
+    """Without a browser zone the send time can't be read: Review changes
     stays unavailable and the page says why (#558)."""
     # Init scripts run before the page's own and are not subject to its CSP.
     page.add_init_script(
@@ -494,7 +533,7 @@ def test_new_waits_for_a_known_browser_zone(page, component_origin, reported):
     missing = page.locator("[data-zone-missing]")
     visible(missing)
     hidden(page.locator("[data-browser-zone-note]"))
-    save = page.get_by_role("button", name="Review and save")
+    save = page.get_by_role("button", name=REVIEW)
     assert save.is_disabled()
     assert "schedule-zone-missing" in save.get_attribute("aria-describedby")
     # Typing a readable time does not make it available.
@@ -502,4 +541,225 @@ def test_new_waits_for_a_known_browser_zone(page, component_origin, reported):
     page.locator('[name="schedule-time"]').fill("9am")
     page.locator('[name="schedule-time"]').blur()
     assert save.is_disabled()
+    assert not failures
+
+
+def fill_new(page, origin, path=NEW):
+    """New scheduled email filled in as an Initial invitation."""
+    page.goto(origin + path)
+    choose(page, "kind", "initial")
+    page.locator('[name="schedule-date"]').fill("2054-10-02")
+    page.locator('[name="schedule-time"]').fill("9am")
+    choose(page, "template_version", email_for(page, "initial"))
+
+
+def review(page):
+    """Choose Review changes and wait for the review dialog."""
+    page.get_by_role("button", name=REVIEW).click()
+    shown = page.locator("dialog[data-review-dialog]")
+    visible(shown)
+    return shown
+
+
+def near(first, second):
+    """Whether two positions are the same within a pixel."""
+    return abs(first - second) <= 1
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_a_long_repeat_review_scrolls_inside_the_dialog(
+    page, component_origin, axe_source, width
+):
+    """Thirty repeated reminders: the review scrolls in the dialog's body
+    while its title and its Apply and Cancel stay in view."""
+    page.set_viewport_size({"width": width, "height": 640})
+    fill_new(page, component_origin, NEW_REPEAT)
+    failures = watch(page)
+    shown = review(page)
+    assert shown.inner_text().count("Reminder — Add") == 30
+    body = shown.locator("[data-review-body]")
+    assert body.evaluate("node => node.scrollHeight > node.clientHeight")
+    box = shown.bounding_box()
+    assert box["x"] >= 0 and box["x"] + box["width"] <= width
+    assert box["y"] >= 0 and box["y"] + box["height"] <= 640
+    apply = shown.get_by_role("button", name="Apply")
+    before = apply.bounding_box()["y"]
+    body.evaluate("node => { node.scrollTop = node.scrollHeight; }")
+    for name in ("Apply", "Cancel"):
+        edge = shown.get_by_role("button", name=name).bounding_box()
+        assert edge["y"] + edge["height"] <= 640, name
+    assert near(apply.bounding_box()["y"], before)
+    visible(shown.get_by_role("heading", name="Review new scheduled email"))
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert axe_violations(page, axe_source) == []
+    assert not failures
+
+
+def test_apply_returns_to_the_list_with_the_status_line(page, component_origin):
+    """Applied: the dialog closes and the list says so in its reserved line,
+    which takes focus without moving the table."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + LIST)
+    table = page.locator("#schedule-table-title").bounding_box()["y"]
+    fill_new(page, component_origin)
+    shown = review(page)
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        shown.get_by_role("button", name="Apply").click()
+    assert sent.value.url.endswith(APPLY)
+    fields = posted(sent.value)
+    assert fields["action"] == ["confirm"]
+    assert fields["preview"] == ["synthetic-preview"]
+    assert set(fields) == {"csrfmiddlewaretoken", "action", "preview"}
+    page.wait_for_url(re.compile(re.escape(LIST) + "$"))
+    eventually(page, "document.getElementById('schedules-outcome').textContent !== ''")
+    line = page.locator("#schedules-outcome")
+    assert line.inner_text().startswith("Scheduled email added. ")
+    assert APPLIED_LINE.search(line.inner_text())
+    assert line.get_attribute("role") == "status"
+    assert page.evaluate(FOCUSED) == "schedules-outcome"
+    assert near(page.locator("#schedule-table-title").bounding_box()["y"], table)
+
+
+def test_once_applying_nothing_dismisses_the_dialog(page, component_origin):
+    """No Escape and no Cancel until the answer; Apply goes once recorded."""
+    fill_new(page, component_origin, NEW_PENDING)
+    shown = review(page)
+    shown.get_by_role("button", name="Apply").click()
+    eventually(
+        page,
+        "document.querySelector('#schedule-review [data-confirm-accept]')"
+        ".hasAttribute('data-recorded')",
+    )
+    assert shown.locator("[data-confirm-status]").inner_text() == "Applying…"
+    assert shown.locator("[data-confirm-cancel]").is_disabled()
+    page.keyboard.press("Escape")
+    page.keyboard.press("Escape")
+    eventually(page, "document.getElementById('schedule-review').open")
+    assert shown.is_visible()
+
+
+def test_a_field_error_stays_on_the_form(page, component_origin):
+    """A date after the campaign: the dialog stays shut, the date is marked
+    with its message where the server draws it, and the summary has focus."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + NEW_INVALID)
+    failures = watch(page)
+    choose(page, "kind", "reminder")
+    date = page.locator('[name="schedule-date"]')
+    date.fill("2054-11-15")
+    page.locator('[name="schedule-time"]').fill("6am")
+    choose(page, "template_version", email_for(page, "reminder"))
+    page.get_by_role("button", name=REVIEW).click()
+    summary = page.locator("[data-error-summary]")
+    visible(summary)
+    eventually(page, "document.activeElement?.matches('[data-error-summary]')")
+    assert not page.locator("dialog[data-review-dialog]").is_visible()
+    message = page.locator("#id_schedule-date_error")
+    visible(message)
+    assert message.inner_text() == DATE_REFUSAL
+    # Just before the field, as on a page the server drew.
+    assert message.evaluate("node => node.nextElementSibling.id") == "id_schedule-date"
+    assert date.get_attribute("aria-invalid") == "true"
+    assert "id_schedule-date_error" in date.get_attribute("aria-describedby")
+    # The reader's values stay, and the form can be edited again.
+    assert date.input_value() == "2054-11-15"
+    assert not page.evaluate("document.getElementById('schedule-entry-form').inert")
+    date.fill("2054-10-15")
+    assert date.get_attribute("aria-invalid") == "false"
+    hidden(message)
+    assert page.evaluate("window.notReloaded === true")
+    assert not failures
+
+
+def test_another_refusal_shows_in_the_dialog(page, component_origin):
+    """While Review is prepared the form is inert and busy; a stale page's
+    refusal then shows in the dialog, in the server's words, with no Apply."""
+    fill_new(page, component_origin, NEW_STALE)
+    failures = watch(page)
+    held = []
+    page.route(f"**{NEW_STALE}/review", lambda route: held.append(route))
+    page.get_by_role("button", name=REVIEW).click()
+    eventually(page, "document.getElementById('schedule-entry-form').inert")
+    assert page.locator("#schedule-entry-form").get_attribute("aria-busy") == "true"
+    eventually(page, "true")
+    assert len(held) == 1
+    held[0].continue_()
+    shown = page.locator("dialog[data-review-dialog]")
+    visible(shown)
+    error = shown.locator("[data-confirm-error]")
+    visible(error)
+    assert STALE_REFUSAL in error.inner_text()
+    assert shown.get_by_role("button", name="Apply").count() == 0
+    assert page.evaluate(FOCUSED) == "schedule-review-title"
+    shown.get_by_role("button", name="Cancel").click()
+    hidden(shown)
+    eventually(page, f"document.activeElement.textContent.trim() === '{REVIEW}'")
+    assert page.locator('[name="schedule-date"]').input_value() == "2054-10-02"
+    assert not failures
+
+
+def test_a_blocked_change_has_no_apply(page, component_origin):
+    """Sends in progress block the change: the dialog says why and offers
+    only Cancel."""
+    fill_new(page, component_origin, NEW_BLOCKED)
+    shown = review(page)
+    assert "Sends blocking the change: 2" in shown.inner_text()
+    assert shown.get_by_role("button", name="Apply").count() == 0
+    shown.get_by_role("button", name="Cancel").click()
+    hidden(shown)
+
+
+def test_tab_reaches_the_review_body_and_arrow_keys_scroll_it(page, component_origin):
+    """The long repeat review holds nothing else to focus: Tab from the
+    title reaches the body, and the keyboard scrolls it."""
+    page.set_viewport_size({"width": 1280, "height": 640})
+    fill_new(page, component_origin, NEW_REPEAT)
+    shown = review(page)
+    assert page.evaluate(FOCUSED) == "schedule-review-title"
+    page.keyboard.press("Tab")
+    eventually(
+        page,
+        "document.activeElement?.matches('[data-review-body]') === true",
+    )
+    body = shown.locator("[data-review-body]")
+    assert body.evaluate("node => node.scrollTop") == 0
+    # Playwright's WebKit ignores a synthetic arrow key for scrolling (Safari
+    # itself scrolls on it), so there Page Down stands in for it.
+    engine = page.context.browser.browser_type.name
+    key = "PageDown" if engine == "webkit" else "ArrowDown"
+    for _ in range(5):
+        page.keyboard.press(key)
+    eventually(page, "document.querySelector('[data-review-body]').scrollTop > 0")
+    # Still the body, inside the open dialog.
+    assert page.evaluate("document.getElementById('schedule-review').open")
+
+
+def test_an_accepted_review_clears_an_earlier_field_error(page, component_origin):
+    """A date refused, then a Review the server accepts without the date
+    edited: the message placed at the date and its mark go."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + NEW_INVALID)
+    failures = watch(page)
+    choose(page, "kind", "reminder")
+    date = page.locator('[name="schedule-date"]')
+    date.fill("2054-11-15")
+    page.locator('[name="schedule-time"]').fill("6am")
+    choose(page, "template_version", email_for(page, "reminder"))
+    page.get_by_role("button", name=REVIEW).click()
+    message = page.locator("#id_schedule-date_error")
+    visible(message)
+    assert date.get_attribute("aria-invalid") == "true"
+    # The next Review is answered with an accepted review.
+    page.evaluate(
+        "document.getElementById('schedule-entry-form')"
+        f".setAttribute('action', '{NEW}/review')"
+    )
+    page.locator('[name="schedule-time"]').fill("7am")
+    review(page)
+    hidden(message)
+    assert date.get_attribute("aria-invalid") == "false"
+    assert "id_schedule-date_error" not in (
+        date.get_attribute("aria-describedby") or ""
+    )
+    assert page.locator("[data-error-summary]").count() == 0
     assert not failures
