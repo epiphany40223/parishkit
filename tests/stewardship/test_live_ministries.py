@@ -76,8 +76,9 @@ def test_only_the_config_installer_may_read_the_catalog_function():
     # user's role-derived Ministry scope (#922), the users upgrade
     # preview's identities and Member names, New user's Name lookup and the
     # Users page's ParishSoft leaders without a user (#952) and, for an
-    # Administrator, one email's recipient addresses (#1024), and the
-    # campaign comparison report's aggregates (#1018).
+    # Administrator, one email's recipient addresses (#1024) and each one's
+    # latest outcome (#806), and the campaign comparison report's aggregates
+    # (#1018).
     assert runtime_functions(ServiceRole.WEB) == {
         FAMILY_LOGIN_FUNCTION,
         "stewardship_family_daily_sends_v1()",
@@ -90,6 +91,7 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         "stewardship_delivery_recipients_v1(uuid, uuid)",
         "stewardship_campaign_comparison_v1(uuid, date, numeric[], uuid)",
         "stewardship_campaign_archive_renewal_v1(uuid, uuid, integer)",
+        "stewardship_delivery_recipient_outcomes_v1(uuid, uuid)",
     }
     # The worker's definer routines purge ended Admin sessions (ADM-11),
     # count an export's read-guard stops (#386) and read a user's

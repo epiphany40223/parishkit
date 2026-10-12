@@ -221,10 +221,15 @@ def components(now):
         # (#1015).
         refused=[dict(id=REFUSAL_ID, address="head@example.org")],
         # Whom it is for, read through the definer function (#1024): a
-        # Testing-mode email, routed to the Testing recipient instead.
+        # Testing-mode email, routed to the Testing recipient instead, whose
+        # latest attempt's outcome follows it (#806).
         recipients=dict(
             intended=["head@example.org", "spouse@example.org"],
             routed=["testing@example.org"],
+            intended_rows=[("head@example.org", None), ("spouse@example.org", None)],
+            routed_rows=[("testing@example.org", "not sure it arrived")],
+            reached=None,
+            refused_for_now=False,
         ),
         # A decision is offered, so the "Resolve this email" section shows.
         decisions=True,
@@ -268,6 +273,35 @@ def components(now):
             refused=[],
             decisions=False,
             commands=[dict(id=uuid4(), action="note", label="Save evidence note")],
+        ),
+    )
+    # A Production email accepted for one address and refused for now by
+    # the other: each To: address is followed by its outcome, and a line
+    # says how many it reached (#806).
+    production = ["head@example.org", "spouse@example.org"]
+    yield (
+        "/delivery-partial",
+        "delivery",
+        delivery
+        | dict(
+            delivery=message | dict(state="delivered", mode="production"),
+            refused=[],
+            decisions=False,
+            commands=[dict(id=uuid4(), action="note", label="Save evidence note")],
+            recipients=dict(
+                intended=production,
+                routed=production,
+                intended_rows=[
+                    ("head@example.org", "delivered"),
+                    ("spouse@example.org", "refused for now"),
+                ],
+                routed_rows=[
+                    ("head@example.org", "delivered"),
+                    ("spouse@example.org", "refused for now"),
+                ],
+                reached=(1, 2),
+                refused_for_now=True,
+            ),
         ),
     )
     # A message retried after a failure: each recorded change is one short

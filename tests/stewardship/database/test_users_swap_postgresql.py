@@ -245,8 +245,9 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # Objects a later closure migration's frozen file creates with plain CREATE,
 # which a full migration would otherwise fail to create again: #970's 0056,
 # #995's 0057, #1024's 0058, #1018's 0059, #528's 0060 and 0061, #530's
-# 0062, #463's 0063, #558's 0064, #529's 0065, #794's 0066 and #1018's 0067
-# follow 0055 (#993), so they are in the swap's closure too.
+# 0062, #463's 0063, #558's 0064, #529's 0065, #794's 0066, #1018's 0067
+# and #806's 0068 follow 0055 (#993), so they are in the swap's closure
+# too.
 # Each is dropped while the swap is pending (with the trigger that uses it)
 # and, unless the test's full migration made it again, installed again
 # afterwards from its migration's frozen file. The tables 0059 to 0063
@@ -258,7 +259,8 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # 0065 creates nothing; it adds a column and replaces the audit context
 # check (``before_staff_entered``), so ``CLOSURE_ALTERED`` puts it back.
 # 0066 creates nothing and only replaces a function in place. 0067 creates
-# the two campaign comparison functions and alters no table.
+# the two campaign comparison functions and alters no table. 0068 creates
+# the Mail message page's per-address outcome read and alters no table.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -335,6 +337,10 @@ CLOSURE_CREATED = {
             "public.stewardship_campaign_archive_renewal_v1(uuid,uuid,integer)",
         ),
         ("stewardship_reports", "0018_campaign_comparison"),
+    ),
+    "public.stewardship_delivery_recipient_outcomes_v1(uuid,uuid)": (
+        "stewardship_jobs",
+        "0024_mail_message_address_outcomes",
     ),
 }
 
