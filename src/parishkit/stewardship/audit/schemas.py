@@ -81,6 +81,9 @@ class Action(StrEnum):
     DAILY_DIGEST_VIEWED = "daily_digest_viewed"
     WEEKLY_DIGEST_VIEWED = "weekly_digest_viewed"
     PARTICIPATION_VIEWED = "participation_viewed"
+    # The Campaign comparison report (#1018): its context is the outcome and
+    # the comparison day as ``count`` (the campaign days compared), no figure.
+    CAMPAIGN_COMPARISON_VIEWED = "campaign_comparison_viewed"
     INFORMATION_VIEWED = "information_viewed"
     INFORMATION_UPDATED = "information_updated"
     MINISTRY_FOLLOWUP_VIEWED = "ministry_followup_viewed"

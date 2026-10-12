@@ -342,6 +342,9 @@ DESCRIPTIONS = {
     ),
     "ministry_report_viewed": _("Someone opened a Ministry report."),
     "participation_viewed": _("Someone opened the participation report."),
+    "campaign_comparison_viewed": _(
+        "Someone opened the campaign comparison report (or ran report comparison)."
+    ),
     "export_requested": _("A report download was requested."),
     "export_downloaded": _("A report file was downloaded."),
     # Setup and configuration.

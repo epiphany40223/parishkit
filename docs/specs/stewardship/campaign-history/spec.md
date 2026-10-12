@@ -110,7 +110,9 @@ a test keeps the two in step.
   12); text cells of digits are refused.
 - **Text** columns take text cells, or number cells with a whole value read
   as their digits (`envelope_id`, `member_id`, `ministry` and
-  `ministry_code` may hold either).
+  `ministry_code` may hold either). Text, metadata values and notes
+  included, holds no C0 control character other than tab and newline (NUL
+  cannot be stored); one is a located problem.
 - **Instants** are ISO 8601 UTC text with a `Z` suffix and whole seconds,
   such as `2026-10-03T14:05:09Z`, never Excel date cells, which carry no
   time zone and are changed by locale conversions.
@@ -637,8 +639,8 @@ and the average of all imported years:
   unless at least two imported years can produce it.
 - Comparisons are shown as a relative change for counts and money
   ("12.5% more") and as percentage points for percentages ("4.2 points
-  more"), always with an arrow and the words "more" or "fewer", so color is
-  never the only signal.
+  more"), always with an arrow and the words "more" or "fewer" ("less" for
+  money), so color is never the only signal.
 - Every number follows [numbers and
   money](../ui-conventions/spec.md#numbers-and-money) with no exception:
   money in dollars and cents, percentages and percentage points with one
@@ -1005,6 +1007,23 @@ linked to #1018 (the last one closes part (b)).
    pledge-distribution and quartile tables, the Every number table and data
    notes. Leadership gets
    current comparisons here.
+   As built: frozen file 0067 adds `stewardship_campaign_comparison_v1`
+   (the current figures of one fact-set day, whose Families responded and
+   pledge total the report checks against the fact row before showing
+   anything; it derives the day's end itself from the fact set's time zone
+   and refuses unless its Families responded equal the fact row's, so no
+   caller can move the cutoff to probe one Family's renewal) and, since the web login reads only the id and archive of a
+   kept archive Family row, a second definer function,
+   `stewardship_campaign_archive_renewal_v1`, for one imported year's
+   renewal of the year before it. Both return aggregates only, and only the
+   web login may execute them. A renewal's denominator is the previous
+   year's kept Family rows (every responding Family with an id; an
+   envelope-only Family could never be matched). The audit event records
+   the comparison day as `count`, an existing context field, so the
+   context allowlist needs no change. A comparison in dollars says "less"
+   rather than "fewer". The page takes no query parameter until Compare on
+   day (slice 5), and names Past campaigns without linking it until that
+   page exists (slice 4).
 4. **Past campaigns page.** The upload page with Review, Apply, replacement
    and Remove.
 5. **Charts and day control.** The three day-by-day charts, the final-results

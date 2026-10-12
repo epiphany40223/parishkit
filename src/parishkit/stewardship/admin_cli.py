@@ -1676,6 +1676,13 @@ def report_participation(args, preamble, runtime, context):
     return read_participation(context["caller"], runtime, scope=args.scope)
 
 
+def report_comparison(args, preamble, runtime, context):
+    """The Campaign comparison page's figures for a day (#1018)."""
+    from .admin_report_reads import read_comparison
+
+    return read_comparison(context["caller"], runtime, day=args.day)
+
+
 def report_responses(args, preamble, runtime, context):
     """The response dashboard's funnel, counts only (PR 8c)."""
     from .admin_report_reads import read_responses
@@ -2567,6 +2574,15 @@ def _report_participation_options(parser):
     )
 
 
+def _report_comparison_options(parser):
+    """Options of ``report comparison``: the campaign day to compare on."""
+    parser.add_argument(
+        "--day",
+        type=int,
+        help="the campaign day to compare on (default: the last complete day)",
+    )
+
+
 def _report_responses_options(parser):
     """Options of ``report responses``: the dashboard's mode and grain."""
     parser.add_argument(
@@ -3441,6 +3457,7 @@ def _report_specs():
     from .admin_exact_exports import ExactChange, ExactStatus
     from .admin_exports import ExportChange, ExportDownload, ExportStatus
     from .admin_report_reads import (
+        ComparisonReport,
         FinancialReport,
         InformationReport,
         LimitationsReport,
@@ -3748,6 +3765,17 @@ def _report_specs():
             8,
             options=(_report_participation_options,),
             audit_event="participation_viewed",
+        ),
+        CommandSpec(
+            "report comparison",
+            "Show the Campaign comparison report's figures for a day.",
+            report_comparison,
+            "read_only",
+            False,
+            ComparisonReport.field_names(),
+            8,
+            options=(_report_comparison_options,),
+            audit_event="campaign_comparison_viewed",
         ),
         CommandSpec(
             "report responses",

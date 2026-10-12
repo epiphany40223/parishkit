@@ -108,6 +108,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "export download",
         "report list",
         "report participation",
+        "report comparison",
         "report responses",
         "report financial",
         "report limitations",
@@ -458,6 +459,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
     events = {
         "report list": None,
         "report participation": "participation_viewed",
+        "report comparison": "campaign_comparison_viewed",
         "report responses": "response_dashboard_viewed",
         "report financial": "financial_report_viewed",
         "report limitations": "talents_report_viewed",

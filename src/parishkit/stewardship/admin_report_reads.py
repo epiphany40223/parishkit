@@ -8,6 +8,10 @@ functions the page itself uses, and prints counts and aggregates only:
 - ``report participation`` is the Participation page
   (``guarded_participation`` and ``calculate_statistics``), with the
   ``fact_set_id`` that ``export create --fact-set`` takes;
+- ``report comparison`` is the Campaign comparison page
+  (``comparison_reads.read_comparison``) for its comparison day or
+  ``--day N``, with the small-count protection of output that leaves the
+  Admin portal (``comparison.outside_document``);
 - ``report responses`` is the response dashboard (``dashboard_context``'s
   ``response_metrics``);
 - ``report financial`` and ``report limitations`` are the summaries of the
@@ -45,6 +49,7 @@ from .admin_reads import NotAvailable, ReadModel, Unavailable, _held, _recheck
 REPORT_COMMANDS = {
     "response_dashboard": "report responses",
     "participation": "report participation",
+    "campaign_comparison": "report comparison",
     "financial_report": "report financial",
     "limitations_report": "report limitations",
     "information_queue": "report information",
@@ -95,6 +100,31 @@ class ParticipationReport(ReadModel):
     financial_enabled: bool
     statistics: dict
     days: list
+
+
+@dataclass(frozen=True)
+class ComparisonReport(ReadModel):
+    """The Campaign comparison page's figures at one campaign day (#1018).
+
+    ``day`` and ``date`` are the comparison day (null before the current
+    campaign's day 1 has ended, when only final results are printed);
+    ``current`` the current campaign's figures at the day and so far;
+    ``years`` each imported year, newest first; ``averages`` the imported
+    years' mean of each figure at the day. Aggregates only, with the
+    small-count protection applied: no note text, and pledge bands and
+    quartiles only for final imported years (campaign-history spec,
+    "Pledge distribution").
+    """
+
+    campaign_id: UUID
+    day: int | None
+    date: str | None
+    status: str
+    financial_enabled: bool
+    last_year: int | None
+    current: dict | None
+    years: list
+    averages: dict
 
 
 @dataclass(frozen=True)
@@ -587,6 +617,48 @@ def read_participation(caller, service, *, scope):
             actor, campaign_id, outcome
         ),
         started=True,
+    )
+
+
+# ----------------------------------------------------------- comparison
+
+
+def read_comparison(caller, service, *, day=None):
+    """``report comparison``: the Campaign comparison page at a campaign day.
+
+    ``day`` (``--day``) is a day from 1 to the current comparison day; any
+    other is ``not_available``. Records the page's
+    ``campaign_comparison_viewed``, started and then succeeded or failed,
+    with the day as ``count``.
+    """
+    from .reports.comparison import outside_document
+    from .reports.comparison_reads import DayOutOfRange
+    from .reports.comparison_reads import read_comparison as read_figures
+    from .reports.comparison_views import audit
+    from .reports.export_views import _principal
+
+    if day is not None and (type(day) is not int or day < 1):
+        raise ValueError("--day must be a whole number from 1.")
+
+    def read(guard, actor, campaign_id):
+        """The page's read; a day it has no figures for is not available."""
+        try:
+            comparison = read_figures(guard, campaign_id, day=day)
+        except DayOutOfRange:
+            raise NotAvailable("That day has no comparison figures yet.") from None
+        document = outside_document(comparison)
+        return ComparisonReport(campaign_id=campaign_id, **document), comparison.day
+
+    return _report(
+        caller,
+        service,
+        principal=_principal,
+        read=read,
+        audit=lambda actor, campaign_id, outcome, shown: audit(
+            actor, campaign_id, outcome, shown
+        ),
+        started=True,
+        shaping=True,
     )
 
 
