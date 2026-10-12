@@ -39,6 +39,8 @@ def components(context, admin):
     root = reverse("admin:ministry_report")
     query = MinistryQuery(search="Example")
     values = dict(
+        # Staff or an Administrator: Ministry activity is shown (#1135).
+        show_activity=True,
         campaign_id=campaign,
         ministry_id=9,
         action="join",
@@ -114,6 +116,12 @@ def components(context, admin):
         "/ministry-detail": values | dict(table=detail),
         "/ministry-summary": summary
         | dict(
+            table=_table(values["summaries"], query, 1, ministry=None, action=root),
+        ),
+        # What a Ministry leader sees: no Ministry activity (#1135).
+        "/ministry-summary-leader": summary
+        | dict(
+            show_activity=False,
             table=_table(values["summaries"], query, 1, ministry=None, action=root),
         ),
         "/ministry-summary-desc": summary

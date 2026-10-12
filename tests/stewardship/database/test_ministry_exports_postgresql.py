@@ -333,6 +333,8 @@ def test_native_leader_exports_worker_download_and_regeneration(
                     {"page": "2"},
                     {"ministry": "09"},
                     {"format": ["csv", "pdf"]},
+                    # A leader's export takes no Ministry activity (#1135).
+                    {"activity": "inactive"},
                 ):
                     assert (
                         post(

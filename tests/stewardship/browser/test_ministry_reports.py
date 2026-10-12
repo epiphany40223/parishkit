@@ -45,6 +45,24 @@ def test_ministry_reports_mobile_keyboard_and_accessibility(
     assert heading.get_attribute("aria-sort") == "ascending"
 
 
+def test_ministry_activity_is_shown_to_staff_only(page, component_origin):
+    """Staff and Administrators see the Ministry activity filter and each
+    Ministry's mark; a Ministry leader sees neither, nor the help about
+    them (#1135)."""
+    page.goto(component_origin + "/ministry-summary")
+    visible(page.get_by_label("Ministry activity"))
+    row = page.locator("tbody tr").first
+    assert "Inactive" in row.inner_text()
+    page.goto(component_origin + "/ministry-summary-leader")
+    visible(page.get_by_label("Search Ministry name or DUID"))
+    assert page.get_by_label("Ministry activity").count() == 0
+    assert page.locator("tbody tr th").first.inner_text() == "Example <Ministry>"
+    text = page.locator("main").text_content()
+    for hidden in ("Ministry activity", "Inactive", "Not in ParishSoft data"):
+        assert hidden not in text
+    assert "No longer in this campaign" not in text
+
+
 def test_ministry_sort_heading_posts_privately(page, component_origin):
     """A heading re-sorts through a POST that keeps the private search."""
     page.goto(component_origin + "/ministry-detail")

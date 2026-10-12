@@ -133,6 +133,9 @@ def components(context, admin):
     )
     query = FollowupQuery(search="Example", ministry="9")
     values = dict(
+        # Staff or an Administrator: the help explains the Removed badge
+        # (#1135).
+        campaign_marks=True,
         campaign_id=campaign,
         query=query,
         table=_table([row], query, 51, campaign),
@@ -257,6 +260,8 @@ def components(context, admin):
             rows=full_page,
             table=_table(full_page, unfiltered, 60, campaign),
         ),
+        # What a Ministry leader is served: no campaign help (#1135).
+        "/followup-leader": values | dict(campaign_marks=False),
         "/followup-empty": values
         | dict(rows=[], total=0, table=_table([], query, 0, campaign)),
         "/followup-gated": values | dict(mutable=False),

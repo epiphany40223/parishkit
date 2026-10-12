@@ -192,6 +192,28 @@ def packet_choices(result, query, read_every):
     )
 
 
+def reads_every_ministry(principal):
+    """Whether ``principal`` reads every Ministry: Staff or an Administrator.
+
+    Only they see Ministry activity (Active, Inactive, Not in ParishSoft
+    data) and whether a Ministry is still in the campaign. Those are the
+    Administrator's campaign settings and change nothing a Ministry leader
+    does with a request, so a leader's pages leave them out (#1135).
+    """
+    return allows(principal, Capability.MINISTRY_REPORT)
+
+
+def refuse_leader_activity(principal, query):
+    """Return ``query``, refusing an activity filter from a Ministry leader.
+
+    A leader's page offers no Ministry activity filter and its forms send
+    only "any" (#1135), so any other value is a hand-made request.
+    """
+    if query.activity != "any" and not reads_every_ministry(principal):
+        raise ValueError("Invalid Ministry filters.")
+    return query
+
+
 def can_report(principal):
     """Allow global operational roles or a leader with at least one current scope."""
     return allows(principal, Capability.MINISTRY_REPORT) or any(
