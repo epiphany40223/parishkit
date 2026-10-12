@@ -10,6 +10,7 @@ import hashlib
 import json
 import logging
 from contextlib import contextmanager
+from dataclasses import dataclass
 
 from django.db import connection, transaction
 
@@ -257,8 +258,32 @@ def _validate_relationships(snapshot_id, manifest):
             )
 
 
-def finish_snapshot(snapshot_id, claim, *, expected_counts, cursor, admit):
-    """Validate a complete corpus and freeze its exact count/digest/cursor evidence."""
+@dataclass(frozen=True)
+class SnapshotEvidence:
+    """What ``validate_snapshot`` derived from one staged corpus, for completion.
+
+    ``cursor`` is JSON text, so the evidence cannot be changed between
+    validation and completion through a shared dict.
+    """
+
+    counts: dict
+    content_digest: str
+    cursor: str
+
+
+def validate_snapshot(snapshot_id, claim, *, expected_counts, cursor, admit):
+    """Validate a complete staged corpus and derive its completion evidence.
+
+    This only reads: the manifest and its counts, every relationship, the
+    content digest, and the display-only change counts against the base. A
+    source refresh runs it in a source step, outside the global work-order
+    lock (#895), and then freezes the result with ``complete_snapshot``
+    under that lock. Nothing read here can change unseen in between: only
+    the snapshot's live fenced owner (the caller) can add membership, the
+    membership guard refuses updates, and the snapshot guard recomputes the
+    counts, digest and relationships from the membership when the state
+    becomes ``ready`` and refuses any difference.
+    """
     if type(expected_counts) is not dict or set(expected_counts) != set(ENTITY_MODELS):
         raise InvalidSourcePayload(
             "Every source collection requires a completeness count."
@@ -278,9 +303,6 @@ def finish_snapshot(snapshot_id, claim, *, expected_counts, cursor, admit):
         text = json.dumps(
             manifest, sort_keys=True, ensure_ascii=False, separators=(",", ":")
         )
-        snapshot.content_digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
-        snapshot.counts = counts
-        snapshot.validation = {"schema": "source-corpus-v1", "complete": True}
         # Every refresh stages a complete corpus, so its counts are records
         # checked. The Admin task page also says how many changed (#242):
         # compare with the base, which promotion requires to still be the
@@ -288,20 +310,62 @@ def finish_snapshot(snapshot_id, claim, *, expected_counts, cursor, admit):
         # already read that column (and not validation), so no grant or
         # schema change is needed. A first load compares with nothing and
         # counts every record as changed.
-        snapshot.cursor = json.loads(cursor_text)
+        value = json.loads(cursor_text)
         changes = _changes(snapshot, manifest)
         if changes is not None:
-            snapshot.cursor["changes"] = changes
+            value["changes"] = changes
         # Ministries added, removed or renamed since the base, for the Admin
         # home page's notice (#342); display-only in the same way.
         ministries = record_changes(snapshot)
         if ministries is not None:
-            snapshot.cursor[CURSOR_KEY] = ministries
+            value[CURSOR_KEY] = ministries
+        return SnapshotEvidence(
+            counts=counts,
+            content_digest=hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            # Plain JSON, not canonical_payload: the display-only additions
+            # were never held to the source payload bounds.
+            cursor=json.dumps(value, sort_keys=True, ensure_ascii=False),
+        )
+
+
+def complete_snapshot(snapshot_id, claim, evidence, *, admit):
+    """Freeze evidence from ``validate_snapshot``: the snapshot becomes ``ready``.
+
+    The write is one row. The snapshot guard still recomputes the corpus
+    evidence from the membership in this transaction and refuses a ready
+    snapshot whose counts or digest differ, so evidence that went stale
+    after validation can never be frozen.
+    """
+    if not isinstance(evidence, SnapshotEvidence):
+        raise TypeError("Source completion requires validated snapshot evidence.")
+    with transaction.atomic():
+        snapshot = _staging(snapshot_id, claim, admit)
+        snapshot.content_digest = evidence.content_digest
+        snapshot.counts = dict(evidence.counts)
+        snapshot.validation = {"schema": "source-corpus-v1", "complete": True}
+        snapshot.cursor = json.loads(evidence.cursor)
         snapshot.completed_at = _now()
         snapshot.state = "ready"
         snapshot.version += 1
         snapshot.save()
         return snapshot
+
+
+def finish_snapshot(snapshot_id, claim, *, expected_counts, cursor, admit):
+    """Validate a complete corpus and freeze its evidence in one transaction.
+
+    The one-step form for callers outside a source refresh (setup loading),
+    which do not split validation from completion.
+    """
+    with transaction.atomic():
+        evidence = validate_snapshot(
+            snapshot_id,
+            claim,
+            expected_counts=expected_counts,
+            cursor=cursor,
+            admit=admit,
+        )
+        return complete_snapshot(snapshot_id, claim, evidence, admit=admit)
 
 
 UNCHANGED_VALIDATION = {"schema": "source-unchanged-v1"}

@@ -879,11 +879,12 @@ become source truth only at promotion. Each step:
 That admission read stops a stale attempt early but is not the proof. It
 takes no runtime or campaign row lock, because transitions lock task rows
 and the runtime row in both orders, so a step holding both could deadlock
-with one of them. Snapshot completion and promotion keep the exclusive lock
-and the `FOR UPDATE` admission and re-verify the attempt's whole scope, so a
-transition that commits while staging runs is always seen before anything is
-published. The SQL membership guard still refuses staging unless the
-snapshot is staging and its lease and task are live.
+with one of them. Snapshot completion's ready transition and promotion keep
+the exclusive lock and the `FOR UPDATE` admission and re-verify the
+attempt's whole scope, so a transition that commits while staging runs is
+always seen before anything is published. The SQL membership guard still
+refuses staging unless the snapshot is staging and its lease and task are
+live.
 
 The other holders of the source lease are scheduler supersession, setup
 completion, compaction, credential switching and promotion. All of them
@@ -927,6 +928,20 @@ corpus is read after it commits, through the snapshot read (the promoted,
 uncompacted snapshot row held `FOR SHARE`), and a promoted snapshot's rows
 are immutable. Promotion, and recording an unchanged update, require the base
 to still be current, so nothing read this way can be published stale.
+
+Snapshot completion is split the same way, the no-schema part of change 8
+(#895). Validation is a source step: it reads the staged manifest, checks
+the counts and every relationship, computes the content digest, and counts
+the changes against the base. Only the one-row ready transition stays under
+the exclusive lock, with the attempt's whole scope re-verified there. On a
+local corpus of about 10,000 rows (1,100 Families), validation was 75–115 ms
+of a 150–220 ms completion hold. The rest is the snapshot guard, which
+re-derives the counts, digest and relationships from the membership when the
+state becomes `ready` and refuses any difference. That makes the split safe:
+only the attempt's own owner can add membership, the membership guard
+refuses updates, and evidence that went stale is never frozen. Moving the
+guard's own check off the lock needs a schema change; it is what remains of
+change 8, with the attempt start.
 
 **Change 4** is only an optimization. A hint is advisory, and the consumer
 rechecks admission under its own locks, so a skipped re-check costs nothing.

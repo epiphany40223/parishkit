@@ -43,10 +43,11 @@ from .loading import (
 from .requests import _window
 from .snapshot_models import SourceCurrent, SourceSnapshot
 from .snapshots import (
-    finish_snapshot,
+    complete_snapshot,
     finish_unchanged,
     reconstruct_snapshot,
     stage_entities,
+    validate_snapshot,
 )
 from .transport import runtime_profile, source_session
 from .windows import RefreshWindow
@@ -412,7 +413,7 @@ def load_and_stage_attempt(execution, claim, credential, *, unchanged=None):
         return True
 
     def staged(action, snapshot):
-        """``admitted`` for a staging batch, checked inside its source step."""
+        """``admitted`` for a source step: a staging batch or the validation."""
         current = verify_refresh_attempt(attempt.pk, execution, claim, step=True)
         if action != "stage" or current.snapshot_id != snapshot.pk:
             raise PermissionError("Staging belongs to another source attempt.")
@@ -461,11 +462,19 @@ def load_and_stage_attempt(execution, claim, credential, *, unchanged=None):
                 execution.progress(done, total, phase=TaskPhase.STAGING)
                 reported = done
     execution.progress(done, total, phase=TaskPhase.VALIDATING)
-    with execution.effect():
-        return finish_snapshot(
+    # Validation reads the whole staged corpus and the base's manifest
+    # (150-270 ms at 1,100 Families), so it is a source step, outside the
+    # global work order (#895), like the staging batches whose rows it reads.
+    # Only the one-row ready transition stays under the order. It re-verifies
+    # the attempt's scope under the lock, and the snapshot guard re-derives
+    # the counts and digest from the membership and refuses any difference.
+    with source_step(execution):
+        evidence = validate_snapshot(
             attempt.snapshot_id,
             claim,
             expected_counts=loaded.counts,
             cursor=cursor,
-            admit=admitted,
+            admit=staged,
         )
+    with execution.effect():
+        return complete_snapshot(attempt.snapshot_id, claim, evidence, admit=admitted)
