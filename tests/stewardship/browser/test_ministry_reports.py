@@ -18,13 +18,7 @@ def test_ministry_reports_mobile_keyboard_and_accessibility(
 ):
     """Reports stay readable and private without requiring a JavaScript UI."""
     page.set_viewport_size({"width": width, "height": 900})
-    for path in (
-        "/ministry-detail",
-        "/ministry-summary",
-        "/ministry-history",
-        "/ministry-empty",
-        "/ministry-gated",
-    ):
+    for path in ("/ministry-summary", "/ministry-summary-leader", "/ministry-gated"):
         page.goto(component_origin + path)
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         page.evaluate(axe_source)
@@ -34,16 +28,13 @@ def test_ministry_reports_mobile_keyboard_and_accessibility(
         })).violations.map(({id,impact}) => ({id,impact}))""")
             == []
         )
-    page.goto(component_origin + "/ministry-detail")
-    assert page.get_by_text("Example <Member>", exact=False).count() == 1
-    assert page.get_by_text("Not published", exact=True).count() == 2
-    search = page.get_by_label("Search Member name or DUID")
+    page.goto(component_origin + "/ministry-summary")
+    assert page.get_by_text("Example <Ministry>", exact=True).count() >= 1
+    search = page.get_by_label("Search Ministry name")
     search.focus()
     page.keyboard.press("Tab")
     assert page.locator(":focus").get_attribute("name") == "activity"
-    visible(page.get_by_role("button", name="Next").first)
-    # By its sort column: "Member DUID" would also match the name "Member".
-    heading = page.locator("th[data-sort-column='member']")
+    heading = page.locator("th[data-sort-column='ministry']")
     assert heading.get_attribute("aria-sort") == "ascending"
 
 
@@ -67,27 +58,24 @@ def test_ministry_activity_is_shown_to_staff_only(page, component_origin):
 
 def test_ministry_sort_heading_posts_privately(page, component_origin):
     """A heading re-sorts through a POST that keeps the private search."""
-    page.goto(component_origin + "/ministry-detail")
+    page.goto(component_origin + "/ministry-summary")
     page.route(
-        "**" + reverse("admin:ministry_joiners"),
+        "**" + reverse("admin:ministry_report"),
         lambda route: route.fulfill(body="Sorted"),
     )
     with page.expect_request(lambda request: request.method == "POST") as sent:
-        page.locator("th[data-sort-column='member'] button").click()
+        page.locator("th[data-sort-column='ministry'] button").click()
     assert "sort=name_desc" in sent.value.post_data
     assert "search=Example" in sent.value.post_data
-    assert "ministry=9" in sent.value.post_data and "page=" not in (
-        sent.value.post_data
-    )
-    assert "?" not in sent.value.url
+    assert "ministry=" not in sent.value.post_data
+    assert "page=" not in sent.value.post_data and "?" not in sent.value.url
+    visible(page.get_by_text("Sorted", exact=True))
 
 
-def test_ministry_counts_link_the_queue_and_contact_details_post(
-    page, component_origin
-):
-    """A count links to the filtered follow-up queue by name, a zero count is
-    plain text, and Contact details reads as a link (it only opens a list)
-    but still opens it with a POST, so the Ministry stays private (#1133)."""
+def test_ministry_counts_link_the_queue(page, component_origin):
+    """A count links to the filtered follow-up queue by name, and a zero
+    count is plain text (#1133). The retired lists' Contact details
+    controls are gone (#1157): contact details are on each request's page."""
     page.goto(component_origin + "/ministry-summary")
     queue = reverse("admin:ministry_followup")
     joining = page.get_by_role("link", name="51 join requests for Example <Ministry>")
@@ -100,64 +88,23 @@ def test_ministry_counts_link_the_queue_and_contact_details_post(
     assert unresolved.get_attribute("href") == f"{queue}?ministry=9"
     assert page.get_by_role("link", name="leave requests").count() == 0
     visible(page.get_by_text("0 leave requests", exact=True))
-    contact = page.get_by_role(
-        "button", name="Contact details of Members asking to join Example <Ministry>"
-    )
-    assert contact.evaluate("node => node.classList.contains('link-button')")
-    style = contact.evaluate(
-        "node => { const s = getComputedStyle(node);"
-        " return [s.textDecorationLine, s.backgroundColor, s.borderTopWidth]; }"
-    )
-    assert style == ["underline", "rgba(0, 0, 0, 0)", "0px"]
-    assert page.get_by_role("button", name="asking to leave").count() == 0
-    page.route(
-        "**" + reverse("admin:ministry_joiners"),
-        lambda route: route.fulfill(body="Joining"),
-    )
-    with page.expect_request(lambda request: request.method == "POST") as sent:
-        contact.click()
-    assert "ministry=9" in sent.value.post_data and "?" not in sent.value.url
+    assert page.get_by_role("button", name="Contact details").count() == 0
+    assert page.locator("form[action$='/joining/']").count() == 0
 
 
 def test_ministry_search_posts_privately(page, component_origin):
-    """Private search and history selection submit only in a POST body."""
-    page.goto(component_origin + "/ministry-detail")
-    page.get_by_label("Search Member name or DUID").fill("Private name")
-    page.get_by_label("Request history").select_option("all")
+    """Private search submits only in a POST body."""
+    page.goto(component_origin + "/ministry-summary")
+    page.get_by_label("Search Ministry name").fill("Private name")
     page.route(
-        "**" + reverse("admin:ministry_joiners"),
+        "**" + reverse("admin:ministry_report"),
         lambda route: route.fulfill(body="Filtered"),
     )
     with page.expect_request(lambda request: request.method == "POST") as sent:
         page.get_by_role("button", name="Apply filters").click()
     assert "search=Private+name" in sent.value.post_data
-    assert "history=all" in sent.value.post_data
-    assert "ministry=9" in sent.value.post_data
     assert "Private" not in sent.value.url and "?" not in sent.value.url
-
-
-def test_ministry_complete_export_posts_privately(page, component_origin):
-    """Applied filters and private selection reach the export without URL leaks."""
-    page.goto(component_origin + "/ministry-detail")
-    page.get_by_label("Export format").select_option("xlsx")
-    page.get_by_label("Export timezone").select_option("America/Detroit")
-    page.route(
-        "**" + reverse("admin:ministry_export"),
-        lambda route: route.fulfill(body="Queued"),
-    )
-    with page.expect_request(lambda request: request.method == "POST") as sent:
-        page.get_by_role("button", name="Queue complete export").click()
-    assert "search=Example" in sent.value.post_data
-    assert (
-        "ministry=9" in sent.value.post_data and "action=join" in sent.value.post_data
-    )
-    assert "format=xlsx" in sent.value.post_data and "page=" not in sent.value.post_data
-    assert "?" not in sent.value.url and "/9/" not in sent.value.url
-    # Let the routed answer finish loading before the next navigation,
-    # which it would otherwise interrupt (#623).
-    visible(page.get_by_text("Queued", exact=True))
-    page.goto(component_origin + "/ministry-gated")
-    assert page.get_by_role("button", name="Queue complete export").is_disabled()
+    visible(page.get_by_text("Filtered", exact=True))
 
 
 def test_ministry_packet_request_posts_its_selection(page, component_origin):
@@ -205,8 +152,6 @@ def test_ministry_packet_request_posts_its_selection(page, component_origin):
     # Let the routed answer finish loading before the next navigation,
     # which it would otherwise interrupt (#623).
     visible(page.get_by_text("Queued", exact=True))
-    # A single Ministry's detail page has no multi-Ministry packet to offer.
-    page.goto(component_origin + "/ministry-detail")
-    assert page.get_by_role("button", name="Queue follow-up packet").count() == 0
+    # While other campaign work holds new exports, the packet waits.
     page.goto(component_origin + "/ministry-gated")
-    assert page.get_by_role("button", name="Queue follow-up packet").count() == 0
+    assert page.get_by_role("button", name="Queue follow-up packet").is_disabled()

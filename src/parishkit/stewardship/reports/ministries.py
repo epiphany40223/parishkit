@@ -352,12 +352,11 @@ def ministry_page(
     redaction occurs inside the query, before detached values reach the
     renderer. No credential or financial columns are selected.
 
-    ``every`` reads the whole Ministry summary rather than one page of it
-    (the packet's choices, #533). It is refused for one Ministry's request
-    rows, which a page view always reads one page at a time.
+    ``every`` reads the whole selection rather than one page of it: the
+    whole Ministry summary (the packet's choices, #533), or every request
+    row of one Ministry and kind, which the follow-up request page and the
+    queue's export read their contact details from (#1157).
     """
-    if every and ministry_id is not None:
-        raise ValueError("Only the Ministry summary is read whole.")
     if not can_report(principal) or (
         ministry_id is not None
         and (

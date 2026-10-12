@@ -22,6 +22,7 @@ from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
+from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 from parishkit.stewardship.time_entry import (
     TimeEntryError,
@@ -72,8 +73,10 @@ from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .information import parse_page
 from .ministries import outcome_label, unscoped
+from .ministry_contacts import request_contacts
 from .ministry_followup import (
     CHANNELS,
+    EXPORT_PDF_LIMIT,
     FILTER_OUTCOMES,
     HISTORY_STATES,
     SORTING,
@@ -179,8 +182,13 @@ def _error(campaign_id, *, request_id=None, status=400, link=False):
     return response
 
 
-def _audit(principal, campaign_id, outcome):
-    """Retain parish-owned access evidence, not private search or displayed values."""
+def _audit(principal, campaign_id, outcome, ministry=None):
+    """Retain parish-owned access evidence, not private search or displayed values.
+
+    A request page names its Ministry (``ministry``): the page shows that
+    Member's contact details, so its view is audited with Ministry scope, as
+    the retired Members joining and leaving lists were (#1157).
+    """
     # An audit append takes no row locks, so it need not join the
     # writers' work order; waiting there stalled report pages behind
     # every source promotion and installer.
@@ -195,7 +203,8 @@ def _audit(principal, campaign_id, outcome):
             subject_id=campaign_id,
             parish_id=system.active_configuration.parish.pk,
             campaign_id=campaign_id,
-            context={"outcome": outcome},
+            context={"outcome": outcome}
+            | ({} if ministry is None else {"ministry_duid": ministry}),
         )
 
 
@@ -432,7 +441,8 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None):
             query = FollowupQuery(state="any", history="all")
         admit_report_read(campaign_id)
         _audit(principal, campaign_id, Outcome.STARTED)
-        finalized = False
+        # The request's Ministry, once read, for the completion event.
+        finalized, shown_ministry = False, None
 
         def finish(completed):
             """Read-only guards close before writing permanent access evidence."""
@@ -445,6 +455,7 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None):
                     principal,
                     campaign_id,
                     Outcome.SUCCEEDED if completed else Outcome.FAILED,
+                    shown_ministry,
                 )
             except (DatabaseError, StorageInvariantError) as error:
                 emit_failure(error, event=Event.REPORT_AUDIT_FAILED)
@@ -460,7 +471,7 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None):
 
         def content():
             """All lazy SQL and rendering stay within the response-owned barrier."""
-            nonlocal query
+            nonlocal query, shown_ministry
             result = followup_page(campaign_id, query, principal, request_id=request_id)
             # A page past the end of the queue shows its last page, as on
             # every other Admin table; one open request is not paged.
@@ -483,6 +494,18 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None):
             except PermissionError:
                 mutable = False
             item = result["rows"][0] if request_id else None
+            # Named before the contacts are read, so a failed read's audit
+            # event still carries the request's Ministry.
+            if item:
+                shown_ministry = item["ministry_duid"]
+            # The Member's contact details (#1157), read for this one request
+            # through the same scoped SQL the Ministry lists used. An in-place
+            # history page swaps only the history, so it skips them.
+            contact = (
+                request_contacts(campaign_id, principal, [item]).get(item["id"])
+                if item and not history_only
+                else None
+            )
             # Save and next opens the next open request after this one in
             # the remembered queue, found now under this guarded read (#534).
             following = (
@@ -559,6 +582,7 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None):
                 ),
                 mutable=mutable,
                 item=item,
+                contact=contact,
                 queue_token=token,
                 next_id=following,
                 history=history,
@@ -604,6 +628,11 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None):
                 refresh_url=with_queue(reverse("admin:ministry_followup"), token),
                 bulk_actions=bulk_actions(),
                 bulk_kind_hints=BULK_KIND_HINTS,
+                # Export these requests (#1157): the applied queue view's
+                # filters, search and sort, and the time zone choices.
+                export_fields=query.form_values(),
+                export_timezones=sorted(timezone_names()),
+                export_pdf_limit=EXPORT_PDF_LIMIT,
             )
             return iter(
                 (render_to_string(TEMPLATE, context, request=request).encode(),)

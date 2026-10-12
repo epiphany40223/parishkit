@@ -279,8 +279,6 @@ SLASHLESS_EXPECTED = {
     "/admin/reports/information": "/admin/reports/information/",
     f"/admin/reports/information/{T}": f"/admin/reports/information/{T}/",
     "/admin/reports/ministries": "/admin/reports/ministries/",
-    "/admin/reports/ministries/joining": "/admin/reports/ministries/joining/",
-    "/admin/reports/ministries/leaving": "/admin/reports/ministries/leaving/",
     "/admin/reports/ministries/follow-up": "/admin/reports/ministries/follow-up/",
     f"/admin/reports/ministries/follow-up/{T}": (
         f"/admin/reports/ministries/follow-up/{T}/"
@@ -349,6 +347,13 @@ OLD_ADDRESSES = (
     "/admin/reports/campaigns/",
     "/admin/ministry-reports/",
     "/admin/ministry-reports/campaigns/",
+    # The Members joining and leaving lists and their export form, retired
+    # with no redirect (#1157), slashless forms included.
+    "/admin/reports/ministries/joining/",
+    "/admin/reports/ministries/joining",
+    "/admin/reports/ministries/leaving/",
+    "/admin/reports/ministries/leaving",
+    "/admin/reports/ministries/exports/",
     # Portal users' sign-in rule review and autosave (#952).
     "/admin/users/rules",
     "/admin/users/rules/apply",

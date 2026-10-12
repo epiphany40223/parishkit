@@ -2028,12 +2028,14 @@ A download may split one combined page cell into its parts, because a
 spreadsheet needs one value per cell to sort, filter or merge on: the parts
 take the cell's place, in the order the page shows them, each headed with the
 page's own words for it (the cell's heading or the label the page shows
-beside that part). The Ministry report's lists are the first case: the page's
-"Status and outcome" cell is Status and Outcome in the files, and "Contact and
-demographics" is Gender, Age, Email, Phones and Known primary Family address
-([Ministry change summary](../reports/spec.md#ministry-change-summary))
+beside that part). The Ministry report's lists were the first case: the page's
+"Status and outcome" cell was Status and Outcome in the files, and "Contact and
+demographics" was Gender, Age, Email, Phones and Known primary Family address
 (Administrator decision, 2026-10-11, on
-[#932](https://github.com/epiphany40223/parishkit/issues/932)).
+[#932](https://github.com/epiphany40223/parishkit/issues/932)). Those lists
+were retired (#1157); Ministry follow-up's Export these requests splits its
+Status cell ("Resolved: Joined the Ministry") into Status and Outcome the
+same way.
 
 Recorded exceptions to the rule above:
 
@@ -2047,6 +2049,15 @@ Recorded exceptions to the rule above:
   [#966](https://github.com/epiphany40223/parishkit/issues/966)). Its CSV
   and XLSX headings are still plain names; JSON Lines
   keeps program keys.
+- **Ministry follow-up, Export these requests:** the queue's columns, then
+  each request's contact details from its request page (Email, Phones, Known
+  primary Family address, Gender, Age, Current Ministry role) and Submitted.
+  The contact details are what the export is for: they replaced the retired
+  Members joining and leaving exports, and the queue keeps them to each
+  request's page so its rows stay one line (Administrator decision,
+  2026-10-12, on
+  [#1157](https://github.com/epiphany40223/parishkit/issues/1157);
+  [follow-up workflows](../admin-portal/spec.md#follow-up-workflows)).
 - **Postal mail merge PDF:** a sheet of address labels holding the mailing
   columns (addressee, address, Family, DUID and Family code), not the
   Family heads and head emails its CSV and XLSX carry. Labels are what the
@@ -2084,8 +2095,9 @@ which forms ask. **Precedent.**
 [#1127](https://github.com/epiphany40223/parishkit/issues/1127).
 
 Asking: System logs, Response lists, Financial stewardship, Limitations,
-Census changes, Additional information, one Ministry's joining or leaving
-lists, Roster changes to enter, the Family timeline, and the Family directory
+Census changes, Additional information, Ministry follow-up's Export these
+requests (which replaced one Ministry's joining or leaving lists, #1157),
+Roster changes to enter, the Family timeline, and the Family directory
 code list only while its response columns are included (the field comes and
 goes with that applied choice, as the last field of its row, so nothing
 moves). Not asking: the Ministry follow-up packet, the participation exports,

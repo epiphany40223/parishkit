@@ -42,9 +42,9 @@ ASKS = {
     ("limitations-report.html", "admin:limitations_export"): True,
     ("census-changes.html", "admin:census_changes_export"): True,
     ("information.html", "admin:information_export"): True,
-    # One Ministry's joining and leaving lists; the summary export it also
-    # serves is being removed (#1126).
-    ("ministry-report.html", "admin:ministry_export"): True,
+    # Export these requests (#1157), which replaced one Ministry's joining
+    # and leaving exports: Submitted and Last contact are action times.
+    ("ministry-followup.html", "admin:ministry_followup_export"): True,
     ("ministry-roster.html", "admin:ministry_roster_export"): True,
     ("family-timeline.html", "export.url"): True,
     ("ministry-report.html", "admin:ministry_packet"): False,

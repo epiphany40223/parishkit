@@ -263,7 +263,7 @@ def test_native_leader_exports_worker_download_and_regeneration(
     tmp_path,
     monkeypatch,
 ):
-    """Exercise real session, native POST, all formats, publication and scoped bytes."""
+    """Exercise real session, all formats, publication and scoped bytes."""
     harness = setup(response_service)
     browser, actor, _, _ = leader(harness, google)
     root = tmp_path / "ministry-exports"
@@ -271,47 +271,20 @@ def test_native_leader_exports_worker_download_and_regeneration(
     settings.STEWARDSHIP_REPORTS_ROOT = root
     settings.STEWARDSHIP_DOWNLOAD_POOL = DownloadPool(ReadLimits(process_pool_size=1))
     first = None
+    # One Ministry's joining export is no longer offered on a page (#1157):
+    # the host command (and a regeneration) still captures one, through the
+    # same service, so it is created here as the command does.
     for format in ("csv", "xlsx", "pdf"):
-        fields = MinistryQuery().form_values() | dict(
-            ministry="9",
-            action="join",
-            format=format,
-            browser_timezone="UTC",
-            request_key=str(uuid4()),
+        key = uuid4()
+        # Read back: the capture's document is written by its SQL trigger.
+        result = ExportRequest.objects.get(
+            pk=create(harness, actor, format=format, request_key=key).pk
         )
+        first = first or result
+        # The same key is the same export, never a second one.
+        assert create(harness, actor, format=format, request_key=key).pk == result.pk
+        job_route = reverse("admin:report_export", args=[result.pk])
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-            response, body = search(
-                browser, reverse("admin:ministry_joiners"), {"ministry": "9"}
-            )
-            assert response.status_code == 200 and b"Queue complete export" in body
-            assert (
-                browser.post(reverse("admin:ministry_export"), fields).status_code
-                == 403
-            )
-            if format == "csv":
-                for invalid in (
-                    {"scope": "all"},
-                    {"page": "2"},
-                    {"ministry": "09"},
-                    {"format": ["csv", "pdf"]},
-                    # A leader's export takes no Ministry activity (#1135).
-                    {"activity": "inactive"},
-                ):
-                    assert (
-                        post(
-                            browser, reverse("admin:ministry_export"), fields | invalid
-                        ).status_code
-                        == 400
-                    )
-            response = post(browser, reverse("admin:ministry_export"), fields)
-            assert response.status_code == 302
-            result = ExportRequest.objects.get(request_key=fields["request_key"])
-            first = first or result
-            assert (
-                post(browser, reverse("admin:ministry_export"), fields)["Location"]
-                == response["Location"]
-            )
-            job_route = response["Location"]
             response, body = read(browser, job_route)
             assert response.status_code == 200 and b"Ministry export" in body
         with task_login(ServiceRole.WORKER, exact=True, reconnect=True):

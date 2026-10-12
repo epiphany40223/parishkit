@@ -37,6 +37,7 @@ from ..reports import (
     information_views,
     limitation_views,
     ministry_export_views,
+    ministry_followup_exports,
     ministry_followup_views,
     ministry_roster_views,
     response_dashboard,
@@ -115,24 +116,11 @@ patterns = [
         information_views.update,
         "information_update",
     ),
+    # The Members joining and leaving lists (joining/, leaving/) and their
+    # export form (exports/) were retired, with no redirect (#1157): a
+    # request's contact details are on its follow-up page, and the export is
+    # the follow-up queue's Export these requests.
     _page("reports/ministries/", ministry_report_views.report, "ministry_report"),
-    _page(
-        "reports/ministries/joining/",
-        ministry_report_views.report,
-        "ministry_joiners",
-        {"action": "join"},
-    ),
-    _page(
-        "reports/ministries/leaving/",
-        ministry_report_views.report,
-        "ministry_leavers",
-        {"action": "leave"},
-    ),
-    _page(
-        "reports/ministries/exports/",
-        ministry_export_views.create,
-        "ministry_export",
-    ),
     _page(
         "reports/ministries/packets/",
         ministry_export_views.create_packet,
@@ -149,6 +137,13 @@ patterns = [
         "reports/ministries/follow-up/bulk/",
         ministry_followup_views.bulk,
         "ministry_followup_bulk",
+    ),
+    # Export these requests (#1157): the queue's filtered set as a file,
+    # rendered on request. A request is a UUID, so "exports" is never one.
+    _page(
+        "reports/ministries/follow-up/exports/",
+        ministry_followup_exports.export,
+        "ministry_followup_export",
     ),
     _page(
         "reports/ministries/follow-up/<uuid:request_id>/",

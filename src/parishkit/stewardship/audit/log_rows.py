@@ -292,6 +292,7 @@ ACTIVITY_TYPES = {
         "response_started_list_exported",
         "response_submitted_list_exported",
         "roster_changes_exported",
+        "ministry_followup_exported",
         "talents_report_exported",
         "system_logs_exported",
     ),

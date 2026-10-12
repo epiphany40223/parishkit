@@ -64,11 +64,10 @@ def test_a_leaders_counts_open_exactly_the_counted_requests(response_service, go
         # Every link's accessible name names its Ministry.
         assert 'aria-label="1 join requests for Food pantry"' in body
         assert 'aria-label="1 unresolved requests for Food pantry"' in body
-        assert (
-            'aria-label="Contact details of Members asking to join Food pantry"' in body
-        )
-        # Food pantry has no leave request: the zero is plain text, with no
-        # Contact details either, and Ministry 4 is not this leader's.
+        # The retired lists' Contact details controls are gone (#1157).
+        assert "Contact details of Members" not in body
+        # Food pantry has no leave request: the zero is plain text, and
+        # Ministry 4 is not this leader's.
         assert "0 leave requests</td>" in body
         assert "action=leave" not in body and "ministry=4" not in body
         queue = page(browser, JOIN_9)

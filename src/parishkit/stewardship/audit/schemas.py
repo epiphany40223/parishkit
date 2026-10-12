@@ -95,6 +95,8 @@ class Action(StrEnum):
     INFORMATION_VIEWED = "information_viewed"
     INFORMATION_UPDATED = "information_updated"
     MINISTRY_FOLLOWUP_VIEWED = "ministry_followup_viewed"
+    # The queue's Export these requests download (#1157).
+    MINISTRY_FOLLOWUP_EXPORTED = "ministry_followup_exported"
     MINISTRY_REQUEST_UPDATED = "ministry_request_updated"
     # One bulk outcome on the Ministry follow-up queue (#1131): ``count`` is
     # the requests it resolved, ``matching_count`` those chosen. Each request

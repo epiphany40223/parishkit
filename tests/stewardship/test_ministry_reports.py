@@ -10,7 +10,6 @@ from parishkit.stewardship.audit.schemas import ContextKind, sanitize
 from parishkit.stewardship.reports.ministries import (
     MinistryQuery,
     can_report,
-    ministry_page,
     packet_choices,
 )
 from parishkit.stewardship.reports.ministry_export_views import (
@@ -167,13 +166,6 @@ def test_packet_choices_list_every_ministry_beyond_the_table(query, total):
     assert [row["name"] for row in choices] == ["Altar servers", "Bread", "Choir"]
     # Only names and DUIDs: the choices carry no request counts.
     assert all(set(row) == {"duid", "name"} for row in choices)
-
-
-def test_only_the_summary_is_read_whole():
-    """One Ministry's request rows are never read without a page limit."""
-    principal = Principal(uuid4(), frozenset({"staff"}), frozenset())
-    with pytest.raises(ValueError):
-        ministry_page(uuid4(), MinistryQuery(), principal, ministry_id=9, every=True)
 
 
 def test_packet_boxes_list_the_choices_not_the_table_rows():

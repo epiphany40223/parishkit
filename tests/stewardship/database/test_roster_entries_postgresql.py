@@ -255,12 +255,6 @@ def test_pages_list_tick_and_download_the_roster_changes(
             browser, export, {"format": "pdf", "timezone": "UTC", "show": "all"}
         )
         assert response.status_code == 200 and body.startswith(b"%PDF-")
-        # The Ministry change summary does not show the tick: its stored
-        # export cannot carry it, and a page shows what its files carry.
-        _, body = search(
-            browser, "/admin/reports/ministries/joining/", {"ministry": "9"}
-        )
-        assert b"Entered in ParishSoft" not in body
         assert search(browser, export, {"format": "doc"})[0].status_code == 400
     for event in ("roster_changes_viewed", "roster_changes_exported"):
         contexts = [

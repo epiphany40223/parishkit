@@ -1,4 +1,8 @@
-"""Native private selection; no client-provided document or authorization scope."""
+"""The follow-up packet's form: native private selection, no client scope.
+
+One Ministry's joining or leaving export form was retired with its lists
+(#1157); the follow-up queue's Export these requests replaced it.
+"""
 
 from uuid import UUID
 
@@ -15,12 +19,7 @@ from parishkit.stewardship.web.contracts import (
     FieldError,
     validation_response,
 )
-from parishkit.stewardship.web.dates import (
-    UnknownZone,
-    parish_zone,
-    refuse_zoneless_dates,
-    unasked_zone,
-)
+from parishkit.stewardship.web.dates import parish_zone, unasked_zone
 from parishkit.stewardship.web.refusals import Refusal
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.security import private_response
@@ -28,7 +27,6 @@ from parishkit.stewardship.web.security import private_response
 from .export_services import ExportRequestBound
 from .export_ui import _redirect
 from .export_views import SAFE_FAILURES
-from .ministries import ZONE_MESSAGE, MinistryQuery, refuse_leader_activity
 from .ministry_exports import MAX_PACKET_MINISTRIES, create_ministry_export
 from .ministry_views import _principal
 
@@ -53,66 +51,6 @@ TOO_MANY_FIX = _(
 
 class TooManyMinistries(ValueError):
     """A packet selection ticks more Ministries than one packet may hold."""
-
-
-@require_POST
-def create(request, campaign_id):
-    """Accept one Ministry's complete filtered join or leave list (CSRF form).
-
-    The campaign-wide summary export was removed (#1126); a request for it
-    (``action=summary`` or no Ministry) is refused by the service as an
-    invalid selection.
-    """
-    try:
-        service = runtime()
-        actor = _principal(request, service.store)
-        parameters = request.POST.copy()
-        parameters.pop("csrfmiddlewaretoken", None)
-        fields = {"format", "browser_timezone", "request_key", "action", "ministry"}
-        expected = fields | (set(MinistryQuery.__dataclass_fields__) - {"page", "size"})
-        # A query string is refused first: only the POSTed form's own
-        # fields may earn the reload-the-page zone refusal.
-        if request.GET:
-            raise ValueError("Invalid Ministry export fields.")
-        refuse_zoneless_dates(parameters, expected)
-        if set(parameters) != expected or any(
-            len(parameters.getlist(key)) != 1 for key in parameters
-        ):
-            raise ValueError("Invalid Ministry export fields.")
-        values = {key: parameters.pop(key)[0] for key in fields}
-        ministry = values["ministry"]
-        if ministry and (
-            len(ministry) > 10
-            or not ministry.isascii()
-            or not ministry.isdecimal()
-            or str(int(ministry)) != ministry
-            or not 0 < int(ministry) < 2**31
-        ):
-            raise ValueError("Invalid Ministry selection.")
-        result = create_ministry_export(
-            service.store,
-            actor.identity,
-            campaign_id=campaign_id,
-            query=refuse_leader_activity(
-                actor, MinistryQuery.parse(parameters, detail=bool(ministry))
-            ),
-            ministry_id=int(ministry) if ministry else None,
-            action=values["action"],
-            format=values["format"],
-            browser_timezone=values["browser_timezone"],
-            request_key=UUID(values["request_key"]),
-        )
-        return _redirect(result.pk)
-    except ExportRequestBound:
-        return private_response(BOUND, status=409)
-    except (PermissionError, ObjectDoesNotExist):
-        return denial()
-    except (*SAFE_FAILURES, StorageInvariantError):
-        return report_unavailable()
-    except UnknownZone:
-        return private_response(ZONE_MESSAGE, status=400)
-    except ValueError:
-        return private_response("Invalid Ministry export selection.\n", status=400)
 
 
 def packet_selection(parameters):

@@ -13,7 +13,8 @@
   // A form marked data-keep-choices (the Family timeline's export, which an
   // in-place sort or mode change redraws, and the Family directory's, whose
   // time zone slot every in-place refresh redraws) keeps what the user picked: each
-  // menu's last choice, by id, is put back on the fresh menu when offered.
+  // menu's last choice, by id, is put back on the fresh menu when offered
+  // (Ministry follow-up's export too, whose format menu every Apply redraws).
   const kept = new Map();
   document.addEventListener("change", (event) => {
     const select = event.target;
@@ -21,7 +22,9 @@
   });
   const restore = (root) => kept.forEach((value, id) => {
     const select = root.querySelector(`form[data-keep-choices] select#${CSS.escape(id)}`);
-    if (select && Array.from(select.options).some(option => option.value === value)) select.value = value;
+    // A choice the fresh menu offers but has turned off (Ministry follow-up's
+    // PDF above its row limit, #1157) is not put back.
+    if (select && Array.from(select.options).some(option => option.value === value && !option.disabled)) select.value = value;
   });
   choose(document);
   document.addEventListener("parishkit:swap", (event) => { choose(event.target); restore(event.target); });

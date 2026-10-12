@@ -253,10 +253,10 @@ LEDGER = {
     # only the item's state and history; its content is Family-level and
     # comes through ``export information``.
     "information_item": pending("PR 11", "followup"),
-    "ministry_report": command("report ministry"),
-    # The join and leave lists: ``report ministry --requests`` counts them.
-    "ministry_joiners": command("report ministry"),
-    "ministry_leavers": command("report ministry"),
+    # ``export ministry`` writes one Ministry's join or leave list, the file
+    # the retired Members joining and leaving pages offered (#1157); its
+    # counts are this summary's, so the summary is the page it covers.
+    "ministry_report": command("report ministry", "export ministry"),
     # A packet of the chosen Ministries' Members and contacts: an export.
     "ministry_packet": command("export ministry-packet"),
     "response_dashboard": command("report responses"),
@@ -277,7 +277,6 @@ LEDGER = {
     "limitations_export": pending("PR 8h", "export limitations"),
     # The page's download, and JSON Lines with each change's id and version.
     "census_changes_export": command("export census"),
-    "ministry_export": command("export ministry"),
     "information_export": command("export information"),
     # Both directory exports are fresh-gated (#547), as above.
     "family_directory_export": command("export directory", "export postal"),
@@ -369,6 +368,8 @@ LEDGER = {
     "ministry_followup_update": pending("PR 11", "followup"),
     # Bulk outcomes on the queue (#1131).
     "ministry_followup_bulk": pending("PR 11", "followup"),
+    # Export these requests (#1157): the queue's filtered set with contacts.
+    "ministry_followup_export": pending("PR 11", "followup export"),
     # The roster Entered in ParishSoft tick and its list (#528).
     "ministry_followup_roster": pending("PR 11", "followup roster-entered"),
     # Counts only (#463): its rows name Members, so they are export roster's.
