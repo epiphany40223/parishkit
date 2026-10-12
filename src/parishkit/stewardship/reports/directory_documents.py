@@ -39,6 +39,7 @@ from .directories import (
     CHECKS,
     INACTIVE,
     MISSING_NAME,
+    MODES,
     REACH,
     REASONS,
     RESPONSES,
@@ -98,6 +99,8 @@ FILTER_LABELS = {
     "check": ("ParishSoft data to check", CHECKS),
 }
 COUNTED_DETAIL = "Responses counted at"
+# A Testing rehearsal capture's report detail (#933): "Responses shown".
+MODE_DETAIL = "Responses shown"
 
 
 @dataclass(frozen=True, repr=False)
@@ -346,6 +349,14 @@ def directory_document(
         *(
             ((COUNTED_DETAIL, instant(source["counted_at"])),)
             if source.get("counted_at")
+            else ()
+        ),
+        # Whose responses the file's Response choice and columns read (#933):
+        # only a Testing rehearsal capture says so; Production files are as
+        # before.
+        *(
+            ((MODE_DETAIL, MODES["testing"]),)
+            if parameters.get("mode") == "testing"
             else ()
         ),
         ("Families in this file", f"{len(rows):,}"),

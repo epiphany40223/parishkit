@@ -1,10 +1,15 @@
 """The response dashboard draws its charts under the CSP, accessibly (#477)."""
 
+import re
+
 import pytest
+from django.urls import reverse
 
 from .response_dashboard_components import PATH
 from .test_charts import assert_clean, watch
 from .waits import has_text
+
+DIRECTORY = reverse("admin:family_directory")
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -204,4 +209,82 @@ def test_lists_of_families_open_the_directory_presets(
     assert f"response={response}" in sent.value.post_data
     assert "?" not in sent.value.url
     expect(page).to_have_url(preset.partition("?")[0])
+    assert_clean(page, errors)
+
+
+def test_testing_links_open_the_directory_testing_switch(page, component_origin):
+    """A Testing dashboard link opens the directory in Testing rehearsal (#933).
+
+    The directory shows the Responses shown switch set to Testing rehearsal,
+    says so in a notice and leaves out the Production-only Responded column.
+    Switching back to Production is a filter like the others: Apply posts
+    it privately, the answer replaces the table in place without moving the
+    filter bar, and the address bar drops ``mode=testing``.
+    """
+    from playwright.sync_api import expect
+
+    errors = watch(page)
+    page.goto(component_origin + "/response-dashboard-rehearsal")
+    page.get_by_role("link", name="Families that submitted", exact=True).click()
+    expect(page).to_have_url(re.compile(r"[?&]mode=testing$"))
+    switch = page.get_by_label("Responses shown", exact=True)
+    expect(switch).to_have_value("testing")
+    expect(page.locator("[data-testing-responses]")).to_be_visible()
+    headings = page.locator("table thead th").all_inner_texts()
+    assert not any(text.strip() == "Responded" for text in headings), headings
+    production = (
+        component_origin
+        + DIRECTORY
+        + ("?response=submitted&responses=yes&sort=submitted")
+    )
+    answer = page.request.get(production).text()
+    page.route(
+        "**/families/",
+        lambda route: route.fulfill(body=answer, content_type="text/html"),
+    )
+    # The filter bar's place on the page (not in the viewport: the answer
+    # may scroll to the table).
+    layout = """() => {
+        const box = document.querySelector('#table-filters').getBoundingClientRect();
+        return [box.x + scrollX, box.y + scrollY, box.width, box.height];
+    }"""
+    before = page.evaluate(layout)
+    switch.select_option("production")
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("button", name="Apply filters").click()
+    assert "mode=production" in sent.value.post_data
+    assert "?" not in sent.value.url
+    expect(page).to_have_url(production)
+    expect(page.locator("[data-testing-responses]")).to_have_count(0)
+    expect(page.locator("table thead th", has_text="Responded")).to_have_count(1)
+    assert page.evaluate(layout) == pytest.approx(before, abs=1)
+    assert_clean(page, errors)
+
+
+def test_switch_sends_mode_once_after_the_rehearsal_ends(page, component_origin):
+    """An answer drawn without the switch never doubles the mode (#933).
+
+    If the rehearsal ends after the page loads, the in-place answer has no
+    Responses shown switch. The page keeps its own select, and since the
+    fresh form carries no hidden ``mode`` either, the next Apply still
+    sends ``mode`` once (the server then refuses Testing with its 409),
+    never twice, which every later Apply would answer with a 400.
+    """
+    from playwright.sync_api import expect
+
+    errors = watch(page)
+    testing = DIRECTORY + "?response=started&responses=yes&mode=testing"
+    page.goto(component_origin + testing)
+    answer = page.request.get(component_origin + "/family-directory").text()
+    assert 'id="directory-mode"' not in answer
+    page.route(
+        "**/families/",
+        lambda route: route.fulfill(body=answer, content_type="text/html"),
+    )
+    for _ in range(2):
+        with page.expect_request(lambda request: request.method == "POST") as sent:
+            page.get_by_role("button", name="Apply filters").click()
+        assert sent.value.post_data.count("mode=") == 1, sent.value.post_data
+        # The answer (no rehearsal notice) is in place before the next Apply.
+        expect(page.locator("[data-testing-responses]")).to_have_count(0)
     assert_clean(page, errors)

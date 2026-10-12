@@ -80,6 +80,22 @@ CHECK_FLAGS = (
     ("mailing_name_blank", "Blank mailing name"),
     ("envelope_zero", "Envelope number 0"),
 )
+# Whose responses the directory reads (#933): Production, or the campaign's
+# active Testing rehearsal, which only Administrators may choose, as on the
+# Response dashboard.
+MODES = {"production": "Production", "testing": "Testing rehearsal"}
+
+
+class NoRehearsal(ValueError):
+    """Testing responses were asked for, but the campaign has no active rehearsal."""
+
+
+def admit_mode(principal, mode):
+    """Testing responses are shown to Administrators only (#933)."""
+    if mode == "testing" and "administrator" not in principal.roles:
+        raise PermissionError("Testing responses are shown to Administrators only.")
+
+
 # A row the Response filter lists although the current ParishSoft data no
 # longer lists the Family as active and registered (reason "inactive"), and
 # the name shown when that data no longer has the Family at all.
@@ -183,6 +199,11 @@ class DirectoryQuery:
     # closed values, like the filters above.
     check: str = "any"
     responses: str = "no"
+    # Whose responses the Response filter, the response columns and their
+    # orders read (#933): "production" (live responses) or "testing" (the
+    # campaign's active rehearsal; Administrators only, checked by callers
+    # with ``admit_mode``). Every other column reads the same data in both.
+    mode: str = "production"
     page: int = 1
 
     @classmethod
@@ -207,6 +228,7 @@ class DirectoryQuery:
             or query.reach not in {"any", *REACH}
             or query.check not in {"any", *CHECKS}
             or query.responses not in {"yes", "no"}
+            or query.mode not in MODES
         ):
             raise ValueError("Invalid directory filters.")
         if query.exact_code:
@@ -271,6 +293,8 @@ class DirectoryQuery:
             # ParishSoft data to check and the response columns (#933).
             "directory_data_check": self.check,
             "directory_response_columns": self.responses == "yes",
+            # Production or Testing rehearsal responses (#933).
+            "report_mode": self.mode,
             "page": self.page,
             "search_used": bool(self.search),
             "exact_code_used": bool(self.exact_code),
@@ -335,7 +359,7 @@ def address_lines(address):
     return tuple(filter(None, lines))
 
 
-def selection_parameters(campaign_id, query, *, postal, mac):
+def selection_parameters(campaign_id, query, *, postal, mac, rehearsal=None):
     """Bind private exact-code input to an immutable Family ID under key locks.
 
     Persisting this selection never persists a plaintext code or a MAC key
@@ -344,6 +368,10 @@ def selection_parameters(campaign_id, query, *, postal, mac):
     query. A postal (mail-merge) selection always has reach ``mail``; see
     ``DirectoryQuery.postal``. Callers hold the campaign read/work barrier and
     key inventory lock.
+
+    A Testing selection reads the campaign's active rehearsal; ``rehearsal``
+    (an export queued from a Testing page) names the one that page showed,
+    and the selection is refused if that is no longer the active one.
     """
     if not isinstance(campaign_id, UUID) or not isinstance(query, DirectoryQuery):
         raise ValueError("Directory selection requires typed scope and filters.")
@@ -372,13 +400,29 @@ def selection_parameters(campaign_id, query, *, postal, mac):
     values.pop("exact_code")
     # The response columns choose columns, not rows, like ``postal``.
     responses = values.pop("responses") == "yes"
-    return {
+    mode = values.pop("mode")
+    parameters = {
         "filters": values,
         "responses": responses,
         "postal": postal,
         "exact": bool(query.exact_code),
         "family_id": family_id,
     }
+    if mode == "testing":
+        # One rehearsal's funnel, pinned for the page and the export capture
+        # alike, so a result never mixes modes or rehearsals (#933). A
+        # Production selection keeps its earlier shape (no mode or epoch
+        # keys), so a request key bound before the Testing switch still
+        # matches its repeat.
+        # Imported here, keeping the dashboard view module out of the many
+        # modules that import this one.
+        from .response_dashboard import rehearsal_epoch
+
+        epoch = rehearsal_epoch(campaign_id)
+        if epoch is None or rehearsal not in (None, epoch):
+            raise NoRehearsal("That Testing rehearsal is not active.")
+        parameters |= {"mode": "testing", "epoch": str(epoch)}
+    return parameters
 
 
 def add_codes(campaign_id, rows, *, general):
@@ -644,6 +688,8 @@ def directory_page(campaign_id, query, *, postal, general, mac):
         if result is None or result[0] is None:
             raise ReadUnavailable("Directory source information is unavailable.")
         report = json.loads(result[0])
+        # The rehearsal a Testing page read, for its export form (#933).
+        report["rehearsal"] = parameters.get("epoch")
         add_codes(campaign_id, report["rows"], general=general)
         add_head_emails(report["metadata"]["source_id"], report["rows"])
         metadata = report["metadata"]

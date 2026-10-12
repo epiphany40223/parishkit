@@ -687,7 +687,29 @@ def test_response_columns_and_checks_follow_the_page():
     assert "Response: Submitted more than once" in details["Filters applied"]
     assert "ParishSoft data to check: Envelope number 0" in details["Filters applied"]
     assert "Response columns included" in details["Filters applied"]
+    # A Production capture does not name its mode; it is the default.
+    assert "Responses shown" not in details
     for format in ("xlsx", "pdf"):
         output = io.BytesIO()
         render_directory(report, output, format=format)
         assert output.getvalue()
+    # A Testing rehearsal capture says whose responses it holds (#933), as a
+    # report detail only: the columns are the same.
+    testing = directory_document(
+        payload,
+        {
+            "filters": filters,
+            "postal": False,
+            "exact": False,
+            "responses": True,
+            "mode": "testing",
+            "epoch": "00000000-0000-0000-0000-000000000007",
+        },
+        parish_name="Sample Parish",
+        captured_at=MOMENT,
+        requested_at=MOMENT,
+        timezone="America/Detroit",
+    )
+    assert dict(testing.metadata)["Responses shown"] == "Testing rehearsal"
+    assert testing.headings == report.headings
+    assert len(testing.rows) == len(report.rows)

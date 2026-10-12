@@ -33,10 +33,12 @@ from parishkit.stewardship.web.responses import campaign_response
 from .artifacts import ArtifactChunks, ArtifactReceipt
 from .export_models import ExportPublication
 from .export_services import (
+    FAMILY_CODE_REPORTS,
     admit_campaign,
     audit,
     authorize,
     consume_download,
+    directory_mode,
 )
 from .facts import FactUnavailable
 
@@ -148,6 +150,14 @@ class Download:
     finish: object
 
 
+def file_name(job):
+    """The download's file name: the report, "-testing" for a Testing
+    rehearsal directory export (#933; a CSV has no report details to say
+    so), and the format."""
+    testing = job.report in FAMILY_CODE_REPORTS and directory_mode(job) == "testing"
+    return f"{job.report}{'-testing' if testing else ''}.{job.format}"
+
+
 def prepare_download(subject, service, principal, grant_id):
     """Consume one download grant and return what its guarded read needs.
 
@@ -204,7 +214,7 @@ def prepare_download(subject, service, principal, grant_id):
     return Download(
         publication=publication,
         job=job,
-        file_name=f"{job.report}.{job.format}",
+        file_name=file_name(job),
         content_type=CONTENT_TYPES[job.format],
         authorize=fresh,
         open_content=content,

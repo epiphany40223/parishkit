@@ -1,6 +1,7 @@
 """Directory filter-bar toggletips float without moving the bar (#957)."""
 
 import pytest
+from django.urls import reverse
 
 from .waits import visible
 
@@ -18,9 +19,17 @@ LAYOUT = """() => [...document.querySelectorAll(
 })"""
 
 
+# The directory as an Administrator sees a Testing preset, with the
+# Responses shown switch and its toggletip (#933).
+TESTING = reverse("admin:family_directory") + (
+    "?response=submitted&responses=yes&sort=submitted&mode=testing"
+)
+
+
+@pytest.mark.parametrize("path", ["/family-directory", TESTING])
 @pytest.mark.parametrize("width", [400, 1280])
 def test_directory_toggletips_float_without_moving_the_filter_bar(
-    page, component_origin, width
+    page, component_origin, width, path
 ):
     """Opening a filter-bar toggletip moves no label or control.
 
@@ -29,7 +38,7 @@ def test_directory_toggletips_float_without_moving_the_filter_bar(
     instead, visible and inside the viewport, at desktop and phone widths.
     """
     page.set_viewport_size({"width": width, "height": 900})
-    page.goto(component_origin + "/family-directory")
+    page.goto(component_origin + path)
     buttons = page.locator("#table-filters .toggletip-button")
     # At least Email availability, Campaign mail can reach and Include
     # mailing columns; later filters add their own.
