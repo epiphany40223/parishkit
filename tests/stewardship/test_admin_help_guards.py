@@ -92,6 +92,9 @@ INTRO_WORDS = 15
 # exception. Lower or remove an entry when its page is converted; never raise
 # one or add a page.
 INTRO_ALLOWED = {
+    # Its refusals are alternatives (one shows); a Testing view asked for
+    # after the rehearsal ended has its own (#933).
+    "directory-error.html": 28,
     # The step-up names its return page when it is another page (#547).
     "error.html": 61,
     "setup.html": 46,

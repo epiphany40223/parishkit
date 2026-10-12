@@ -13,6 +13,7 @@ from parishkit.stewardship.reports.directories import (
     DIRECTORY_SORTING,
     INACTIVE,
     MISSING_NAME,
+    MODES,
     REACH,
     REASONS,
     RESPONSES,
@@ -235,10 +236,17 @@ def preset_pages(values, counted):
     in the query), so a click on the dashboard lands here. Each page is
     shaped from the preset the view would parse: its Response and data
     check choices, its response columns and one Family with those values.
+    Each preset is served in Production and, as a Testing dashboard links
+    it, with ``mode=testing``; both as an Administrator sees them while the
+    campaign has a rehearsal, with the Responses shown switch.
     """
     pages = {}
-    for preset in DIRECTORY_PRESETS.values():
+    for preset in (
+        *DIRECTORY_PRESETS.values(),
+        *(preset | {"mode": "testing"} for preset in DIRECTORY_PRESETS.values()),
+    ):
         query = DirectoryQuery.parse(QueryDict(urlencode(preset)))
+        testing = query.mode == "testing"
         dates, counts = (
             response_columns(query.response) if query.responses == "yes" else ((), ())
         )
@@ -256,7 +264,13 @@ def preset_pages(values, counted):
             | {"counted_at": counted if query.response != "any" else None},
             "date_columns": dates,
             "count_columns": counts,
-            "column_count": 7 + len(dates) + len(counts) + int(checks),
+            "column_count": (6 if testing else 7)
+            + len(dates)
+            + len(counts)
+            + int(checks),
+            "modes": MODES,
+            "can_test": True,
+            "testing_responses": testing,
             "export_headings": export_headings(
                 postal=False, reach="any", dates=dates, counts=counts, checks=checks
             ),

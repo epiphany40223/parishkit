@@ -32,6 +32,7 @@ from django.db import DatabaseError, connection, transaction
 from django.urls import reverse
 
 from parishkit.stewardship.accounts.sessions import database_now
+from parishkit.stewardship.audit.models import AuditContext
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.schedule_models import ScheduleDefinition
 from parishkit.stewardship.campaigns.work_locks import (
@@ -47,7 +48,14 @@ from parishkit.stewardship.reports.directories import (
 )
 from parishkit.stewardship.reports.directory_exports import create_directory_export
 from parishkit.stewardship.reports.directory_query import DIRECTORY
-from parishkit.stewardship.reports.export_models import DirectoryExportSnapshot
+from parishkit.stewardship.reports.export_models import (
+    DirectoryExportSnapshot,
+    ExportRequest,
+)
+from parishkit.stewardship.reports.export_services import (
+    regenerate_export,
+    retry_export,
+)
 from parishkit.stewardship.reports.response_lists import LISTS, ListedFamily
 from parishkit.stewardship.reports.response_metrics import MODES
 from parishkit.stewardship.source.leases import release_source
@@ -60,6 +68,8 @@ from .campaign_builders import campaign_clock, change, complete_empty_catchup
 from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
 from .test_directories_postgresql import page
+from .test_export_views_postgresql import post
+from .test_information_followup_postgresql import search
 from .test_policy_postgresql import user
 from .test_report_workspace_postgresql import read as read_page
 from .test_response_lists_postgresql import (  # noqa: F401
@@ -512,6 +522,185 @@ def follow_dashboard_links(browser):
         # The address bar's replacement is the link itself (#536).
         assert f'href="{href}" data-page-address'.encode() in body, href
     return links
+
+
+def test_directory_testing_switch_reads_the_rehearsal(
+    quality_funnel,  # noqa: F811
+    google,
+):
+    """The directory's Testing switch reads one rehearsal, never both (#933).
+
+    During the rehearsal the Testing dashboard's list links open the
+    directory with ``mode=testing`` and the counts shown; the page is
+    labelled, leaves out the Production-only Responded column, keeps the
+    mode in its address, offers the switch and audits the mode. An export
+    queued in Testing pins the rehearsal epoch and records the mode.
+    Staff are refused Testing on the page and the export, and are not
+    offered the switch.
+    """
+    harness, epoch = quality_funnel
+    open_form(harness)
+    respond(harness)
+    testing = parity(harness, database_now(), "testing", epoch)[1]
+    submitted = {row[1] for row in testing if row[7]}
+    assert submitted
+    # The selection: Testing lists the rehearsal's submission; Production none.
+    report = page(harness, response="submitted", mode="testing")
+    assert set(duids(report)) == submitted
+    assert report["metadata"]["report_mode"] == "testing"
+    assert page(harness, response="submitted")["total"] == 0
+
+    directory = reverse("admin:family_directory")
+    dashboard = reverse("admin:response_dashboard") + "?mode=testing"
+    browser, _ = signed_in()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        body = read_page(browser, dashboard)[1].decode()
+        panel = body.split('id="lists-heading"')[1].split("</section>")[0]
+        links = re.findall(r'<li><a href="([^"]+)">[^<]*</a>(?:: (\d+))?', panel)
+        assert len(links) == 5
+        for href, count in links:
+            href = html.unescape(href)
+            assert href.startswith(directory + "?") and href.endswith("&mode=testing")
+            response, body = read_page(browser, href)
+            assert response.status_code == 200, href
+            assert f"Matching Families: {count or 2}.".encode() in body, href
+            assert b"data-testing-responses" in body
+            assert b">Responded</th>" not in body
+            assert b'<option value="testing" selected>' in body
+            assert f'href="{html.escape(href)}" data-page-address'.encode() in body
+        # The form applies the switch privately, in either direction.
+        response, body = search(
+            browser, directory, {"response": "submitted", "mode": "production"}
+        )
+        assert response.status_code == 200
+        assert b"Matching Families: 0." in body and b">Responded</th>" in body
+        assert b'<select id="directory-mode" name="mode"' in body
+        assert f'href="{directory}?response=submitted" data-page-address'.encode() in (
+            body
+        )
+    modes = sorted(
+        context["report_mode"]
+        for context in AuditContext.objects.filter(
+            event__event_type="family_directory_viewed",
+            context__outcome="succeeded",
+        ).values_list("context", flat=True)
+    )
+    assert modes == ["production"] + ["testing"] * 5
+
+    # The page's export form names the rehearsal the page read; the view
+    # queues it, and refuses (409, nothing made) a rehearsal that is not
+    # the active one.
+    export = reverse("admin:family_directory_export")
+    query = DirectoryQuery(response="submitted", mode="testing")
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        body = search(browser, directory, query.form_values())[1].decode()
+        shown = re.search(r'name="rehearsal" value="([^"]+)"', body).group(1)
+        assert shown == str(epoch)
+        fields = query.form_values() | dict(
+            format="csv", browser_timezone="UTC", request_key=str(uuid4())
+        )
+        before = ExportRequest.objects.count()
+        for refused, status in (
+            ({"rehearsal": str(uuid4())}, 409),
+            ({}, 400),  # a Testing form always names its rehearsal
+        ):
+            response = post(browser, export, fields | refused)
+            assert response.status_code == status, refused
+        assert (
+            b"no longer active"
+            in post(browser, export, fields | {"rehearsal": str(uuid4())}).content
+        )
+        assert ExportRequest.objects.count() == before
+        response = post(browser, export, fields | {"rehearsal": shown})
+        assert response.status_code == 302
+        queued = ExportRequest.objects.get(request_key=fields["request_key"])
+        assert queued.parameters["epoch"] == shown
+
+    # A Testing export pins the rehearsal and says so in its audit.
+    actor = user("admin@example.org").pk
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        request = create_directory_export(
+            harness.service.store,
+            actor,
+            campaign_id=harness.campaign.pk,
+            query=DirectoryQuery(response="submitted", mode="testing"),
+            postal=False,
+            mac=harness.rings.mac,
+            format="csv",
+            browser_timezone="UTC",
+            request_key=uuid4(),
+        )
+        captured = DirectoryExportSnapshot.objects.get(pk=request.directory_snapshot_id)
+    assert captured.parameters["mode"] == "testing"
+    assert captured.parameters["epoch"] == str(epoch)
+    assert captured.document["metadata"]["report_mode"] == "testing"
+    assert {row["family_duid"] for row in captured.document["rows"]} == submitted
+    requested = AuditContext.objects.get(
+        event__event_type="export_requested", event__subject_id=request.pk
+    )
+    assert requested.context["report_mode"] == "testing"
+
+    # Another Administrator queues a Testing export, then becomes Staff: they
+    # can no longer retry or regenerate it (authorize, before any other
+    # check), as for downloading it.
+    store = harness.service.store
+    second = address("second@example.org")
+    patch = [{"operation": "add", "section": "login_rules", **second}]
+    assert change(store, store.active(), uuid4(), patch).state == "applied"
+    requester = user("second@example.org").pk
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        theirs = create_directory_export(
+            store,
+            requester,
+            campaign_id=harness.campaign.pk,
+            query=DirectoryQuery(mode="testing"),
+            postal=False,
+            mac=harness.rings.mac,
+            format="csv",
+            browser_timezone="UTC",
+            request_key=uuid4(),
+        )
+    demoted = address("second@example.org", roles=("staff",))
+    # Removed, then added back as Staff: one patch may not name an address
+    # twice.
+    patch = [{"operation": "remove", "section": "login_rules", "id": second["id"]}]
+    assert change(store, store.active(), uuid4(), patch).state == "applied"
+    patch = [{"operation": "add", "section": "login_rules", **demoted}]
+    assert change(store, store.active(), uuid4(), patch).state == "applied"
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        for again in (regenerate_export, retry_export):
+            with pytest.raises(PermissionError):
+                again(store, requester, theirs.pk, request_key=uuid4())
+
+    # Staff: no switch, and Testing is refused on the page and the export.
+    staff = address("staff@example.org", roles=("staff",))
+    patch = [{"operation": "add", "section": "login_rules", **staff}]
+    assert change(store, store.active(), uuid4(), patch).state == "applied"
+    google[0].update(email="staff@example.org", sub="synthetic-staff")
+    browser, login = signed_in()
+    assert login.status_code == 302
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = read_page(browser, directory)
+        assert response.status_code == 200
+        assert b'id="directory-mode"' not in body
+        assert b'<input type="hidden" name="mode" value="production">' in body
+        for refused in (
+            read_page(browser, directory + "?response=submitted&mode=testing"),
+            search(browser, directory, {"mode": "testing"}),
+        ):
+            assert refused[0].status_code == 403
+        with pytest.raises(PermissionError):
+            create_directory_export(
+                store,
+                user("staff@example.org").pk,
+                campaign_id=harness.campaign.pk,
+                query=DirectoryQuery(mode="testing"),
+                postal=False,
+                mac=harness.rings.mac,
+                format="csv",
+                browser_timezone="UTC",
+                request_key=uuid4(),
+            )
 
 
 @pytest.mark.parametrize(

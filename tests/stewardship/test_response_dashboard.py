@@ -197,13 +197,14 @@ def test_no_invitations_yet_says_so_instead_of_shares():
     assert "No invitations" not in render(value=metrics())
 
 
-def test_production_lists_open_the_directory_with_closed_presets():
-    """Each Production link is a directory preset the directory accepts in GET.
+def test_lists_open_the_directory_with_closed_presets():
+    """Each link is a directory preset the directory accepts in GET.
 
     The presets reproduce every response list (#933): the Response choice
     that lists the same funnel rows, its columns and its default order, which
-    the directory keeps because the sorted column is shown. Testing views
-    still link to the lists' own Testing views until the directory has one.
+    the directory keeps because the sorted column is shown. A Testing view's
+    links are the same presets plus ``mode=testing``, so the directory reads
+    the same rehearsal (the directory's Testing switch).
     """
     shown = family_lists(DashboardQuery(), metrics())
     assert set(DIRECTORY_PRESETS) == set(LISTS)
@@ -231,7 +232,14 @@ def test_production_lists_open_the_directory_with_closed_presets():
         "name",
     ]
     testing = family_lists(DashboardQuery("testing"), metrics())
-    assert all(
-        item["url"].startswith(PATH) and "mode=testing" in item["url"]
-        for item in testing
-    )
+    for production, item in zip(shown, testing, strict=True):
+        path, _, preset = item["url"].partition("?")
+        values = QueryDict(preset)
+        assert path == DIRECTORY and set(values) <= LINK_PRESETS
+        query = DirectoryQuery.parse(values)
+        assert query.mode == "testing"
+        assert query == replace(
+            DirectoryQuery.parse(QueryDict(production["url"].partition("?")[2])),
+            mode="testing",
+        )
+        assert item["count"] == production["count"]
