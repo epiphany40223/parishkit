@@ -1,9 +1,10 @@
 """The Ministry follow-up queue page is compact (#1064).
 
 Its six filters take two rows at laptop width and one row each at phone
-width; every row of a full page of requests is one line, with the long
-explanations kept to tooltips, screen-reader text and the request's own
-page; and applying the filters in place moves no filter control.
+width; every row of a full page of requests is one line, or two where a
+long Ministry name wraps (#1136), with the long explanations kept to
+tooltips, screen-reader text and the request's own page; and applying the
+filters in place moves no filter control.
 """
 
 import pytest
@@ -23,8 +24,9 @@ MAX_FILTER_HEIGHT = 220
 # A page of 25 requests at 1280 px. Before #1064 the rows were from about
 # 320 to 1,170 px tall each (about 19,400 px in all), since the cells were
 # squeezed until they broke between letters; one line each, they are about
-# 43 px each (about 1,075 px in all).
-MAX_ROWS_HEIGHT = 1400
+# 43 px each (about 1,075 px in all). Since #1136 the 12 rows with a long
+# Ministry name take two lines, about 67 px each.
+MAX_ROWS_HEIGHT = 1800
 FIELDS = (
     "#followup-search",
     "#filter-ministry",
@@ -37,9 +39,10 @@ CONTROLS = FIELDS + (f"{FILTERS} button[type=submit]",)
 AXE = """async () => (await axe.run(document, {
     runOnly: {type: 'tag', values: ['wcag2a','wcag2aa','wcag21aa','wcag22aa']}
 })).violations.map(({id,impact}) => ({id,impact}))"""
-# Each row's height, and the most a one-line row may be: its cells'
-# vertical padding plus under two lines of text, measured on the one-word
-# "Join" in a join request's Request cell, whatever the engine's font.
+# Each row's height and Ministry name, and the most a one-line row may be:
+# its cells' vertical padding plus under two lines of text, measured on the
+# one-word "Join" in a join request's Request cell, whatever the engine's
+# font; a two-line row stays under three.
 ROWS = """() => {
     const rows = [...document.querySelectorAll('tbody tr')];
     const cell = [...document.querySelectorAll('tbody td')].find(
@@ -48,11 +51,30 @@ ROWS = """() => {
     range.selectNodeContents(cell);
     const style = getComputedStyle(cell);
     const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+    const line = range.getBoundingClientRect().height;
     return {
         heights: rows.map((row) => row.getBoundingClientRect().height),
-        oneLine: padding + 2 * range.getBoundingClientRect().height,
+        ministries: rows.map((row) => row.querySelector('.cell-clamp').textContent),
+        oneLine: padding + 2 * line,
+        twoLines: padding + 3 * line,
     };
 }"""
+# Each Ministry name's text and whether it is cut short (#1136).
+MINISTRY_NAMES = """() => [...document.querySelectorAll('tbody .cell-clamp')]
+    .map((name) => [
+        name.textContent,
+        name.scrollHeight > name.clientHeight + 1
+            || name.scrollWidth > name.clientWidth + 1,
+    ])"""
+
+
+def short_rows(rows):
+    """The heights of the rows whose Ministry name is one short word."""
+    return [
+        height
+        for height, name in zip(rows["heights"], rows["ministries"], strict=True)
+        if name == "Choir"
+    ]
 
 
 def boxes(page, selectors):
@@ -64,7 +86,7 @@ def test_queue_is_compact_at_laptop_width(page, component_origin, axe_source):
     """At 1280 px the six filters take at most two rows, Apply filters
     ending the last; the filter form stays within its height bound; and a
     page of 25 requests with long names, every status and both markers is
-    one line per row."""
+    one line per row, or two where a long Ministry name wraps (#1136)."""
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + PAGE)
     visible(page.locator(FILTERS))
@@ -83,7 +105,8 @@ def test_queue_is_compact_at_laptop_width(page, component_origin, axe_source):
     assert abs((apply["y"] + apply["height"]) - (last[0]["y"] + last[0]["height"])) <= 1
     rows = page.evaluate(ROWS)
     assert len(rows["heights"]) == 25
-    assert max(rows["heights"]) < rows["oneLine"], rows
+    assert max(short_rows(rows)) < rows["oneLine"], rows
+    assert max(rows["heights"]) < rows["twoLines"], rows
     assert sum(rows["heights"]) <= MAX_ROWS_HEIGHT, rows["heights"]
     # The page itself never scrolls sideways; the table may, in its box.
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
@@ -128,6 +151,62 @@ def test_queue_cells_hold_one_short_value(page, component_origin):
     assert not contact.endswith(("PDT", "PST"))
 
 
+@pytest.mark.parametrize("width", [1280, 390])
+def test_queue_shows_long_ministry_names_whole(page, component_origin, width):
+    """A long Ministry name, even one with a digit prefix as long as the
+    longest in use, wraps whole onto at most two lines, with no ellipsis
+    and no sideways page scroll, at laptop and phone width (#1136)."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + PAGE)
+    visible(page.locator(FILTERS))
+    names = page.evaluate(MINISTRY_NAMES)
+    assert "105-Religious Education Catechists and Aides" in [n for n, _ in names]
+    assert not [name for name, cut in names if cut], names
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+
+
+def test_queue_clipped_member_name_tip(page, component_origin):
+    """A Member name its column cuts short shows whole in a tip on keyboard
+    focus, which Escape hides; the name stays the link's whole text, so
+    screen readers need no tip (#1136)."""
+    from playwright.sync_api import expect
+
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + PAGE)
+    link = page.locator("tbody tr").nth(0).locator("th a")
+    whole = "Member0 Bartholomew-Fitzgerald <Example>"
+    assert link.text_content() == whole
+    assert link.get_attribute("title") is None
+    assert link.evaluate("e => e.scrollWidth > e.clientWidth")
+    link.focus()
+    tip = page.locator(".admin-tip.is-shown")
+    expect(tip).to_have_text(whole)
+    assert tip.get_attribute("aria-hidden") == "true"
+    page.keyboard.press("Escape")
+    expect(tip).to_have_count(0)
+
+
+def test_queue_clipped_name_tip_can_be_hovered(page, component_origin):
+    """The pointer can move from a clipped name onto its tip without the
+    tip vanishing (WCAG 1.4.13), and leaving both hides it (#1136)."""
+    from playwright.sync_api import expect
+
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + PAGE)
+    link = page.locator("tbody tr").nth(0).locator("th a")
+    link.hover()
+    tip = page.locator(".admin-tip.is-shown")
+    expect(tip).to_have_text("Member0 Bartholomew-Fitzgerald <Example>")
+    box = tip.bounding_box()
+    # Through the gap between the name and the tip, then rest on the tip
+    # past the hide grace.
+    page.mouse.move(box["x"] + 10, box["y"] + box["height"] / 2, steps=8)
+    page.wait_for_timeout(400)
+    expect(tip).to_have_count(1)
+    page.mouse.move(5, 5, steps=4)
+    expect(tip).to_have_count(0)
+
+
 def test_queue_request_page_states_the_whole_reason(page, component_origin):
     """The request page writes out what the queue's marker abbreviates."""
     page.goto(component_origin + "/followup-item-leave")
@@ -143,7 +222,8 @@ def test_queue_request_page_states_the_whole_reason(page, component_origin):
 def test_queue_is_one_column_at_phone_width(page, component_origin, axe_source):
     """At 320 px each filter takes its own row, one under another with
     nothing overlapping, the page never scrolls sideways, and the rows stay
-    one line, the table scrolling in its own box."""
+    one line, or two for a long Ministry name, the table scrolling in its
+    own box."""
     page.set_viewport_size({"width": 320, "height": 900})
     page.goto(component_origin + PAGE)
     visible(page.locator(FILTERS))
@@ -152,7 +232,8 @@ def test_queue_is_one_column_at_phone_width(page, component_origin, axe_source):
     for upper, lower in zip(found, found[1:], strict=False):
         assert lower["y"] >= upper["y"] + upper["height"], (upper, lower)
     rows = page.evaluate(ROWS)
-    assert max(rows["heights"]) < rows["oneLine"], rows
+    assert max(short_rows(rows)) < rows["oneLine"], rows
+    assert max(rows["heights"]) < rows["twoLines"], rows
     assert page.locator(".table-scroll").evaluate("e => e.scrollWidth > e.clientWidth")
     page.evaluate(axe_source)
     assert page.evaluate(AXE) == []

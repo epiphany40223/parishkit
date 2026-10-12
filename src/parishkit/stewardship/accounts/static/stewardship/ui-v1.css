@@ -530,12 +530,19 @@ td > :last-child { margin-bottom: 0; }
 .data-table dl.cell-pairs dt { grid-column: 1; color: var(--muted); font-weight: 400; }
 .data-table dl.cell-pairs dd { grid-column: 2; margin: 0; white-space: nowrap; }
 .data-table dl.cell-counts dd { text-align: end; }
-/* A long name in a table cell (the Ministry follow-up queue's Member and
-   Ministry, #932) is cut short with an ellipsis, so it never makes its row
-   several lines tall; the whole value stays the cell's text (for screen
-   readers and copying) and is shown in its title. The Users page (#952)
-   uses the same rule. */
+/* A long name in a table cell (the Ministry follow-up queue's Member, #932,
+   and the Users page, #952) is cut short with an ellipsis, so it never
+   makes its row several lines tall; the whole value stays the cell's text
+   (for screen readers and copying). The Users page shows it whole in its
+   title; the queue in the clipped-name tip (admin-menu-v1.js). */
 .cell-ellipsis { display: block; max-width: 18rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A name a reader scans to tell rows apart (the queue's Ministry, #1136)
+   wraps instead, between words, to at most two lines; only a name too long
+   for two lines ends in "…", whole in the clipped-name tip. The minimum
+   width keeps a squeezed table from wrapping it to three lines and cutting
+   a name of ordinary length: two lines of 14rem hold about 55 characters,
+   and the longest Ministry name in use is under 50. */
+.cell-clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: break-word; min-width: 14rem; max-width: 18rem; }
 /* Home's My Ministries list (#533): name, counts, then the button, wrapping
    between them on a phone, never inside a word. */
 .my-ministries { list-style: none; padding: 0; margin: 0; }
@@ -927,16 +934,17 @@ th:not([aria-sort]) .sort-indicator { opacity: .45; }
 :where(.admin-body) .filter-bar > div { flex-basis: 18rem; }
 /* The Ministry follow-up queue (#1064). Its six filters take two rows at
    laptop widths, Search the widest; the fields grow to fill each row, and
-   at phone width each takes its own. Its table keeps every row one line:
-   the cells that are not names never wrap (.nowrap), and a Ministry's
-   "Removed" badge sits beside its ellipsized name, which gives up its
-   width first. The names are a little narrower than elsewhere so the
-   table fits beside the Admin menu at laptop width. */
+   at phone width each takes its own. Its table keeps rows short: the cells
+   that are not names never wrap (.nowrap), the Member name is one line, a
+   little narrower than elsewhere so the table fits beside the Admin menu
+   at laptop width, and the Ministry name takes at most two (#1136), its
+   "Removed" badge beside it. */
 .followup-filters > div { flex: 1 1 12rem; }
 .followup-filters > div.followup-search { flex: 2 1 26rem; }
 .followup-table .cell-ellipsis { max-width: 13rem; }
 .cell-with-badge { position: relative; display: flex; align-items: center; gap: .4rem; }
 .cell-with-badge > .cell-ellipsis { min-width: 0; }
+.cell-with-badge > .cell-clamp { flex: 0 1 auto; }
 .cell-with-badge > .status-badge { flex: none; }
 /* Keep the phone-width cell padding from the narrow-screen rules above,
    which the compact rule just before would otherwise override. */
@@ -1114,13 +1122,13 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 .schedule-save { align-items: flex-start; }
 .schedule-status { flex: 1 1 18rem; margin: 0; min-height: 2lh; }
 /* The Users page (#952). Each row is one line: a long email or Name is cut
-   short with an ellipsis and shown whole in its title (the recorded
-   exception to "Table fit and row height"); the text stays whole for screen
-   readers and copying. A narrow screen scrolls the table in its region.
+   short with an ellipsis (.cell-ellipsis, above) and shown whole in its
+   title (the recorded exception to "Table fit and row height"); the text
+   stays whole for screen readers and copying. A narrow screen scrolls the
+   table in its region.
    The reason line under the table and under Edit user's roles is reserved
    while empty, so the reason appearing never moves a control (#736). On
    Edit user, each role's plain-language line sits under its radio button. */
-.cell-ellipsis { display: block; max-width: 18rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .users-table th, .users-table td { white-space: nowrap; vertical-align: middle; }
 #users-only-administrator, #user-roles-reason { min-height: 1.6em; min-height: 1lh; }
 /* New user's Name help line says what the lookup found (#952). It is one
