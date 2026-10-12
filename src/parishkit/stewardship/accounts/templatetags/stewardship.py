@@ -35,6 +35,19 @@ def reminder_workgroup_name():
     return _(REMINDER_WORKGROUP_NAME)
 
 
+def _calendar(value):
+    """A calendar date from a date or its ISO text; None for blanks, and
+    unparseable text unchanged so a page shows it rather than failing."""
+    if value in (None, ""):
+        return None
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            return value
+    return value
+
+
 @register.filter
 def parish_date(value, style=None):
     """A calendar date, or its ISO text from a JSON projection, in the parish format.
@@ -42,14 +55,23 @@ def parish_date(value, style=None):
     Templates never format dates themselves (a guard test enforces this);
     unparseable text is shown unchanged rather than failing the whole page.
     """
-    if value in (None, ""):
-        return ""
-    if isinstance(value, str):
-        try:
-            value = date.fromisoformat(value)
-        except ValueError:
-            return value
+    value = _calendar(value)
+    if value is None or isinstance(value, str):
+        return value or ""
     return presentation.parish_date(value, style)
+
+
+@register.filter
+def parish_date_compact(value):
+    """:func:`parish_date` in the compact form every Admin table cell uses (#1093).
+
+    "Jan 5, 2027" or "05/01/27" rather than "January 5, 2027", so table rows
+    stay short; headings and sentences keep :func:`parish_date`.
+    """
+    value = _calendar(value)
+    if value is None or isinstance(value, str):
+        return value or ""
+    return dates.format_date(value, compact=True)
 
 
 @register.filter

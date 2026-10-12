@@ -54,7 +54,8 @@ def test_times_are_shown_in_the_browsers_time_zone(page, component_origin):
     # 7:00 AM Pacific) is the last row.
     first = page.locator("#table tbody time[data-local-instant]").last
     assert first.get_attribute("datetime") == "2026-10-03T14:00:00+00:00"
-    assert "7:00" in first.inner_text() and "PDT" in first.inner_text()
+    # Table cells use the compact form, which names no zone (#1093).
+    assert first.inner_text() == "Oct 3, 2026 7:00 AM"
     assert "UTC" not in page.locator("main").inner_text()
 
 

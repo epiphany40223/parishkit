@@ -2950,9 +2950,9 @@ undecided invitation keeps back, then releases and ends on Home. Every control
 acts in place, and a step's outcome or refusal (with the step-up for a stale
 sign-in) is drawn after the controls of its own panel, so nothing moves under
 the pointer ([UX conventions](../ui-conventions/spec.md#no-layout-shift)).
-Times are browser-local, the due times in the held-email table in the compact
-format. After release the page is gone; a page for deciding the remaining
-holds is #757.
+Times are browser-local, the due times in the held-email table in the
+[table-cell form](../ui-conventions/spec.md#date-format). After release the
+page is gone; a page for deciding the remaining holds is #757.
 
 ### Live delivery pause
 
@@ -3792,11 +3792,9 @@ Email (the row header, the most relevant column), Name, Role, Last successful
 sign-in and the row actions. Email, Name, Role and Last successful sign-in
 sort on the server; Role sorts by level (Administrator first on the first
 choice), and Last successful sign-in shows the newest successful Google
-sign-in of any identity with that address, in the browser's time zone and
-the compact variant of the parish
-[date format](../ui-conventions/spec.md#date-format), as other dense tables
-show times (Administrator, 2026-10-11), with users who never signed in
-sorting last; it sorts by the time itself. The default order is Email. The table
+sign-in of any identity with that address, as every table cell shows a
+time ([date format](../ui-conventions/spec.md#date-format)), with users who
+never signed in sorting last; it sorts by the time itself. The default order is Email. The table
 refreshes in place like every other Admin table.
 
 Each row is one line. An email or Name too long for its column is cut short
