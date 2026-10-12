@@ -443,7 +443,11 @@ def case_limitations(monkeypatch):
     body = limitations.limitations_csv(result, zone).decode()
     rows = list(csv.reader(io.StringIO(body)))
     blank = rows.index([])
-    sheets, labels = xlsx_headers(limitations.limitations_xlsx(result, zone))
+    sheets, labels = xlsx_headers(
+        limitations.limitations_xlsx(
+            result, zone, parish="P", campaign="C", as_of=SUBMITTED
+        )
+    )
     members, families = pdf_capture(
         monkeypatch,
         lambda: limitations.limitations_pdf(

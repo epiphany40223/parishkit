@@ -256,7 +256,7 @@ def packet_xlsx(document, output):
     from openpyxl import Workbook
     from openpyxl.styles import Alignment
 
-    from .xlsx_design import style_details, style_information, style_table
+    from .xlsx_design import describe, style_details, style_information, style_table
 
     def write(sheet, row, column, value):
         """Literal strings or native dates, so no value can become a formula."""
@@ -300,6 +300,7 @@ def packet_xlsx(document, output):
             write(information, index, 1, key)
             write(information, index, 2, value)
         style_information(information, title=document.title)
+        describe(book, document.title, created=document.requested_at)
         book.save(output)
     finally:
         book.close()
