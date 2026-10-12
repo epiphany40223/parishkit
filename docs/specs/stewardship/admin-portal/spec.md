@@ -876,8 +876,8 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `background_task_page` | Background task | Background work | Administrator | Background task details | `/admin/system/background/<task>/` | (same) |  |
 | `logs` | System logs | Menu: System logs | Administrator | (same) | `/admin/system/logs/` | (same) |  |
 | `campaign_new` | (retired) | (retired) | Administrator | Create campaign draft; New campaign | `/admin/campaign/new` | (retired; 404) | Decision 11: no New campaign control; the one campaign is created by Create the campaign (#142). |
-| `report_campaigns` | (retired) | (retired) | Administrator, Staff | Choose a retained campaign; Choose a campaign | `/admin/reports/campaigns/` | (retired; 404) | Decisions 10 and 19: no campaign chooser; reports show the current campaign. Its link on Participation is greyed out with the #145 tip until removed. |
-| `ministry_report_campaigns` | (retired) | (retired) | Administrator, Staff, Ministry leader | Choose a retained campaign; Choose a campaign | `/admin/ministry-reports/campaigns/` | (retired; 404) | Decisions 10 and 19: no campaign chooser. Its link on Ministry requests is greyed out with the #145 tip until removed. |
+| `report_campaigns` | (retired) | (retired) | Administrator, Staff | Choose a retained campaign; Choose a campaign | `/admin/reports/campaigns/` | (retired; 404) | Decisions 10 and 19: no campaign chooser; reports show the current campaign. Its greyed link on Participation was removed (#1125). |
+| `ministry_report_campaigns` | (retired) | (retired) | Administrator, Staff, Ministry leader | Choose a retained campaign; Choose a campaign | `/admin/ministry-reports/campaigns/` | (retired; 404) | Decisions 10 and 19: no campaign chooser. Its greyed link on Ministry requests was removed (#1125). |
 | `chrome` | (shared header and banners) | Every page | Administrator, Staff, Ministry leader | Every Admin page (header and banners) | `/admin/*` | (same) | Acknowledge stays on the current page (#519). |
 | `login` | Administration sign-in | (outside the menu) | Anyone | (same) | `/admin/login` | `/admin/login/` |  |
 | `local_sign_in` | Local test sign-in | (outside the menu) | Anyone | (same) | `/admin/local/sign-in` | `/admin/local/sign-in/` | LOCAL only. |
@@ -998,15 +998,15 @@ registry and the rendered pages.
     control whose only purpose is multi-campaign work is an unavailable
     control with the tip "Disabled; will be removed with the single-campaign
     change (#145)", reachable by keyboard and announced as its description.
-    The controls are: Copy campaign on Campaign settings; the "Choose a
-    retained campaign" links on Participation and on Ministry requests; and
+    The controls are: Copy campaign on Campaign settings, and
     the "create the successor draft" choice in the checklist after [Return to
     Testing](#return-to-testing-after-archive), which does not exist yet
     (#527), so until it does the server's refusal alone covers it. The server
     refuses the matching actions: cloning, creating a successor draft, and
     choosing a campaign other than the current one for a report. The retired
     chooser addresses are gone (404, #864). New campaign is removed outright ([decision
-    11](#navigation-decisions)), not greyed.
+    11](#navigation-decisions)), not greyed, and so are the "Choose a retained
+    campaign" links once greyed on Participation and Ministry requests (#1125).
 
 #### Breadcrumbs and flows
 
@@ -1130,7 +1130,10 @@ follows them.
     successor-campaign controls) is greyed out, not a link or action, with a
     hover and keyboard-focus tip saying it is disabled and will be removed with
     the single-campaign change (#145); the server refuses the matching actions.
-    New campaign stays removed (decision 11).
+    New campaign stays removed (decision 11). (Amended by the Administrator on
+    2026-10-12, #1125: the greyed campaign choosers on Participation and
+    Ministry requests are removed rather than kept, and report pages no longer
+    open with the campaign's name; Copy campaign stays greyed, per decision 18.)
 20. **No-script fallbacks?** (Coordinator.) None: the Admin portal
     [requires JavaScript](../ui-conventions/spec.md#javascript-requirement) (#565).
 21. **Who gets Find a Family, and how does it search?** Administrators and

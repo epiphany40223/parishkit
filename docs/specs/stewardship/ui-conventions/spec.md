@@ -1074,25 +1074,31 @@ and unticking Delete gives them back (#563).
 
 ### Single-campaign interim
 
-**Rule.** Multi-campaign-only controls are greyed out with one shared tip
-until #145 removes them. **Why.** The system becomes
-single-campaign after this campaign; removing the controls piecemeal would
-leave half-working flows. **Shared code.** The `multi_campaign_control`
+**Rule.** Copy campaign, the one remaining multi-campaign-only control, is
+greyed out with one shared tip until #145 removes it; no report page shows a
+campaign chooser or a line that only names the campaign. **Why.** The system
+becomes single-campaign after this campaign. Copy campaign stays until #145
+removes the clone code behind it, so a half-removed flow is never reachable;
+a chooser or a campaign-name line has no flow behind it and tells the reader
+nothing when there is one campaign, so the report pages dropped them during
+the campaign (Administrator, 2026-10-12, #1125). **Shared code.** The `multi_campaign_control`
 template tag (`accounts/templatetags/stewardship.py`) and its tip
-`campaigns.single_campaign.TIP`. **Precedent.** #145.
+`campaigns.single_campaign.TIP`. **Precedent.** #145, #1125.
 
 The Admin portal serves one current campaign. The system moves to a single
 campaign after this campaign (#145), so navigation already assumes it: there
 is no campaign chooser and no New campaign control (the one campaign is
 created by [Create the campaign](../admin-portal/spec.md#create-the-campaign), offered only while the
-deployment has never had a campaign), and no Admin URL names a campaign. Every
+deployment has never had a campaign), and no Admin URL names a campaign. The
+"Choose a retained campaign" links that Participation and Ministry requests
+once showed greyed out are removed, and report pages do not open with the
+campaign's name (#1125). **Copy campaign** on Campaign settings, the one
 remaining control whose only purpose is working with more than one campaign,
-such as **Copy campaign** on Campaign settings and the "Choose a retained
-campaign" links on Participation and Ministry requests, is shown greyed out
-until #145 removes it: an unavailable control, not a link or action, with the
-tip "Disabled; will be removed with the single-campaign change (#145)", shown
-and announced the same way as an unavailable menu entry's reason. The server
-refuses the matching actions too, so a greyed control cannot be bypassed
+is shown greyed out until #145 removes it: an unavailable control, not a link
+or action, with the tip "Disabled; will be removed with the single-campaign
+change (#145)", shown and announced the same way as an unavailable menu
+entry's reason. The server refuses the matching actions too, so a greyed
+control cannot be bypassed
 ([navigation rule 10](../admin-portal/spec.md#navigation-rules), [decisions 18 and
 19](../admin-portal/spec.md#navigation-decisions)).
 
@@ -1144,7 +1150,7 @@ a task; long visible prose pushes the data below the fold and is skipped.
 
 Admin pages put the page's data first and keep explanation one deliberate
 click away, without removing any of it. A page leads with its heading, its own
-data line (such as the campaign name or counts), safety notices (such as
+data line (such as counts or the ParishSoft data date), safety notices (such as
 Testing mode) and then its data or form; at most a one-line hint that prevents
 a likely mistake stays visible above the data. A line of cross-links to
 related pages may sit above the heading instead, when an About panel left
