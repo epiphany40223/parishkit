@@ -643,3 +643,59 @@ def test_negative_prior_year_contributions_are_accepted():
     sheets["families"][0]["prior_year_contributions"] = Decimal("-20.00")
     archive = read_archive(workbook_bytes(metadata, sheets))
     assert archive.families[0]["prior_year_contributions"] == Decimal("-20.00")
+
+
+@pytest.mark.parametrize("text", ["a\x00b", "\x01", "x\x0b", "\x1f", "line\r"])
+def test_control_characters_in_text_cells_are_refused(text):
+    """NUL and the other C0 controls (tab and newline aside) are refused.
+
+    PostgreSQL cannot store NUL in text or jsonb, and none of them is
+    meaningful in a cell or a note. A conforming XML parser already rejects
+    most of them, so this is checked where every text value is converted.
+    """
+    for column in (workbook.SHEETS["metadata"][1], workbook.SHEETS["families"][3]):
+        with pytest.raises(workbook._Bad) as caught:
+            workbook.convert(column, text)
+        assert caught.value.code == "control" and text not in caught.value.rule
+
+
+def _with_carriage_returns(data):
+    """The saved workbook with each CRMARK written as the XML reference &#13;.
+
+    A carriage return written that way survives XML parsing (a literal one
+    is read as a newline), so it reaches the reader as a control character.
+    """
+    import io
+    import zipfile
+
+    source, target = zipfile.ZipFile(io.BytesIO(data)), io.BytesIO()
+    with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as out:
+        for item in source.infolist():
+            part = source.read(item.filename)
+            if item.filename.startswith("xl/"):
+                part = part.replace(b"CRMARK", b"&#13;")
+            out.writestr(item, part)
+    return target.getvalue()
+
+
+def test_a_control_character_in_a_file_is_refused_where_it_stands():
+    """The problem names the cell, never the value."""
+    metadata, sheets = campaign()
+    metadata = set_metadata(metadata, "note.01", f"{SECRET}CRMARK")
+    metadata = set_metadata(metadata, "source_system", "OldCRMARKsystem")
+    sheets["families"][0]["envelope_id"] = "12CRMARK"
+    error = refused(_with_carriage_returns(workbook_bytes(metadata, sheets)))
+    found = {(p.code, p.text.split(":")[0]) for p in error.problems}
+    keys = [key for key, _, _ in metadata]
+    assert ("control", f"metadata!B{2 + keys.index('note.01')}") in found
+    assert ("control", f"metadata!B{2 + keys.index('source_system')}") in found
+    assert ("control", "families!D2") in found
+    assert_nothing_echoed(error, "Old", "CRMARK")
+
+
+def test_tab_and_newline_in_text_are_kept():
+    """A note may hold tabs and line breaks."""
+    metadata, sheets = campaign()
+    metadata = set_metadata(metadata, "note.01", "First line\nsecond\tcolumn")
+    archive = read_archive(workbook_bytes(metadata, sheets))
+    assert archive.notes["note.01"] == "First line\nsecond\tcolumn"

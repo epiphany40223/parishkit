@@ -473,6 +473,10 @@ KNOWN_COUNTS = (
     "count.ministry_response_rows",
 )
 INSTANT = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")
+# A C0 control character other than tab and newline (NUL included): text
+# holding one is refused, since PostgreSQL cannot store NUL in text or jsonb
+# and the others are never meaningful in a cell or a note.
+CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f]")
 LOCAL_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 VERSION = re.compile(r"([1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})")
 TIME_ZONE = re.compile(r"[A-Za-z][A-Za-z0-9_+-]*(?:/[A-Za-z0-9_+-]+){0,2}")
@@ -656,7 +660,8 @@ def _local_date(value):
 def convert(column, value):
     """The typed value of one non-blank data cell, or raise _Bad.
 
-    Text columns take text, or a whole number read as its digits; integers
+    Text columns take text without C0 control characters (tab and newline
+    excepted), or a whole number read as its digits; integers
     are whole numbers (a stored 12.0 reads as 12), never text; booleans are
     boolean cells. Excel date cells are refused everywhere, since they carry
     no time zone.
@@ -669,6 +674,8 @@ def convert(column, value):
             text = str(_whole(value))
         else:
             raise _Bad("type", "must be text")
+        if CONTROL.search(text):
+            raise _Bad("control", "must not hold control characters")
         if kind is Kind.ENUM and text not in column.choices:
             raise _Bad("choice", "must be one of " + ", ".join(column.choices))
         return text

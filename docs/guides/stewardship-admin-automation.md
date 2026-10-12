@@ -750,7 +750,10 @@ pk-admin history remove 2025 --expected-version 2
   names each problem's cell and rule (never the cell's value).
   `--no-family-rows` keeps no Family ids, so the renewal figure is not
   available for that year. Another archive being checked is exit 3
-  (`unavailable`); retry in a minute.
+  (`unavailable`); retry in a minute. Text values and notes may hold tabs
+  and line breaks but no other control character: a carriage return (a
+  Windows line ending pasted into a note) is refused as a `control`
+  problem at its cell, so replace those line endings before importing.
 - `history confirm --token` (full scope) imports the preview. A
   replacement removes the year's earlier import, so it asks you to type
   `yes` (or pass `--yes`); an addition does not ask. It prints `outcome`
@@ -1016,6 +1019,7 @@ report pages do, and prints its `campaign_id`.
 ```sh
 pk-admin report list
 pk-admin report participation
+pk-admin report comparison --day 12
 pk-admin report responses --mode testing --grain day
 pk-admin report financial
 pk-admin report limitations
@@ -1030,6 +1034,7 @@ pk-admin report data-to-fix
 | --- | --- | --- |
 | `report list` | Campaign reports | `campaign_id` (null without a current campaign) and `reports`: each report your menu offers, with `command`, `page` and `available` (false while the menu greys it out) |
 | `report participation` | Participation | `status` (`current`, `updating` or `unavailable`), `fact_set_id` (for `export create --fact-set`), the figures' source and dates, `statistics` (the active Families, Members, email, responses and, with Financial stewardship, pledge totals, including the comparison pledges of every Family, `comparison_pledge_all`) and `days`, the daily table |
+| `report comparison` | Campaign comparison | `day` and `date` (the comparison day: the current campaign's last complete day, or `--day`), `status`, `last_year`, `current` (the current campaign's figures at the day and so far, and its renewal of last year's Families), `years` (each imported year's figures at the day and final figures, renewal and, for a final year, its pledge distribution) and `averages` (the imported years' mean of each figure at the day); see below |
 | `report responses` | Response dashboard | `metrics`: the funnel `stages`, the three figures beside it, the `activity` buckets, the `sends` and each list's length (`lists`); null in Testing without a rehearsal |
 | `report financial` | Financial report | The summary over every pledge: `families`, `annual_total`, `frequencies`, `shares` (by share option id), `no_share`, `cannot_give` and the comparison period |
 | `report limitations` | Limitations | `cannot_serve` (Members who cannot participate in ministries) and `cannot_attend` (Families who cannot attend Mass or prayer services) |
@@ -1041,6 +1046,8 @@ The options are the pages' own, and a value the page would refuse is exit 1
 
 - `report participation`: `--scope` (`historical`, the default, or
   `current`).
+- `report comparison`: `--day` (a campaign day from 1 to the comparison
+  day; a later day is `not_available`).
 - `report responses`: `--mode` (`production`, the default, or `testing`)
   and `--grain` (`auto`, `hour` or `day`).
 - `report information`: `--disposition` (`current_actionable`, the
@@ -1058,6 +1065,18 @@ No command takes a search: searches match names. A report the campaign does
 not include (Financial or Ministry stewardship), or no current campaign, is
 exit 1 (`not_available`). In System logs, where the page's event counts
 the rows it showed, the command's counts 0: it shows none.
+
+`report comparison` prints aggregates only and applies the
+[small-count protection](../specs/stewardship/campaign-history/spec.md#pledge-distribution),
+because its output leaves the Admin portal: the current campaign's pledge
+distribution and quartiles are never printed; a final imported year's
+bands are, except that a band of fewer than 5 Families shows
+`fewer than 5` with no total, its neighbour band and that year's
+pledging-Family count, averages and shares of pledging Families are
+withheld (null), and a year with fewer than 5 pledging Families prints no
+bands or quartiles. The average of average pledges is withheld when a
+withheld year contributes to it. No data note is printed. A percentage is
+a decimal string with one decimal place, money a decimal string.
 
 `report source-form` is the one report that prints DUIDs: it is System
 health's **Families the form cannot open** list, the Families whose
@@ -1674,3 +1693,6 @@ pk-admin users import-leaders --confirm --token -
   `invalid`), and their `filters` gain `zone`; the information and
   Ministry exports need `--filter zone=…` with dates. Their only readers
   are Administrator-run assistants.
+- `pk-admin/1` (#1018): additive. `report comparison [--day N]`, the
+  Campaign comparison page's figures (any session; its event), with the
+  small-count protection.

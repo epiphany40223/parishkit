@@ -89,6 +89,7 @@ from .branding_components import POSTS as BRANDING_POSTS
 from .branding_components import components as branding_components
 from .census_components import components as census_components
 from .chart_components import components as chart_components
+from .comparison_components import components as comparison_components
 from .content_catalog_components import POSTS as CONTENT_CATALOG_POSTS
 from .content_catalog_components import components as content_catalog_components
 from .data_to_fix_components import components as data_to_fix_components
@@ -2239,6 +2240,7 @@ def component_origin():
     responses.update(branding_components(context, admin))
     responses.update(limitations_components(context, admin))
     responses.update(census_components(context, admin))
+    responses.update(comparison_components(context, admin))
     responses.update(workgroup_components(context, admin))
     responses.update(schedule_list_components(context, admin))
     responses.update(content_catalog_components(context, admin))

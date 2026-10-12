@@ -483,6 +483,8 @@ def test_every_report_command_has_its_models_fields():
         "report limitations": admin_report_reads.LimitationsReport,
         "report information": admin_report_reads.InformationReport,
         "report ministry": admin_report_reads.MinistryReport,
+        # Campaign comparison (#1018), a campaign report like the above.
+        "report comparison": admin_report_reads.ComparisonReport,
         # System health's list (#774), not a campaign report: ``report
         # list`` does not offer it.
         "report source-form": admin_source_form.SourceFormReport,
