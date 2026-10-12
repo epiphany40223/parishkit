@@ -16,6 +16,7 @@ import pytest
 from django.db import DatabaseError, connection, transaction
 
 from parishkit.stewardship import admin_cli
+from parishkit.stewardship.accounts.admin_session_store import digest
 from parishkit.stewardship.accounts.leader_import import LeadersRefused, read_leaders
 from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.accounts.policy_models import PolicySecurityEvent, PortalUser
@@ -51,6 +52,8 @@ MIGRATION = (
     Path(__file__).resolve().parents[3]
     / "src/parishkit/stewardship/schema/migrations/0054_leaders_without_user.sql"
 )
+# #995's migration, which replaced the definer to compare the key's digest.
+DIGESTS = MIGRATION.with_name("0057_admin_session_key_digests.sql")
 # Leader Members get DUIDs from 900 and the name "Example <n>, Leader", in
 # this order (leader_builders.with_leaders).
 LEADERS = [
@@ -137,15 +140,18 @@ def deployment(auth_service, google):
     return store, browser
 
 
-def live_key(email="admin@example.org"):
-    """The Django session key of this address's live Admin session."""
-    return (
-        PortalSession.objects.filter(
-            revoked_at=None, principal_id=PortalUser.objects.get(email=email).id
-        )
-        .latest("authenticated_at")
-        .session_id
-    )
+def live_key(browser):
+    """The Admin session key this browser's cookie carries (#995).
+
+    The database stores only its digest (``stored``), which the definer
+    refuses like any other unknown key.
+    """
+    return browser.cookies["pk_admin"].value
+
+
+def stored(key):
+    """The ``stewardship_portal_session.session_id`` of a session key."""
+    return digest(key)
 
 
 def listed(email="admin@example.org"):
@@ -164,7 +170,7 @@ def as_web(key):
 
 def test_the_definer_lists_leaders_without_a_user(deployment):
     """Rows, names "Last, first", the union of Ministries, the unreachable count."""
-    leaders = as_web(live_key())
+    leaders = as_web(live_key(deployment[1]))
     assert {
         row["email"]: (row["name"], row["member_duid"], row["ministries"])
         for row in leaders.rows
@@ -187,7 +193,7 @@ def test_the_definer_agrees_with_the_leaders_definition(deployment):
     0054 copies 0042's conditions to keep leaders with no valid address;
     this pins the copy to the original on the same data.
     """
-    store, _browser = deployment
+    store, browser = deployment
     with connection.cursor() as cursor:
         cursor.execute(
             "SELECT email, array_agg(DISTINCT ministry_duid ORDER BY ministry_duid) "
@@ -199,26 +205,28 @@ def test_the_definer_agrees_with_the_leaders_definition(deployment):
         email: duids for email, duids in defined.items() if email not in users_now
     }
     assert "staff@example.org" in defined and "staff@example.org" not in expected
-    rows = as_web(live_key()).rows
+    rows = as_web(live_key(browser)).rows
     assert {row["email"]: row["ministries"] for row in rows} == expected
 
 
 def test_no_campaign_or_source_lists_nobody(auth_service, google):
     """Without a Ministry campaign there are no leaders, and that is audited."""
     convert(auth_service.store)
-    _browser, login = signed_in()
+    browser, login = signed_in()
     assert login.status_code == 302
-    leaders = as_web(live_key())
+    leaders = as_web(live_key(browser))
     assert (leaders.rows, leaders.unreachable) == ([], 0)
     assert listed().count() == 1
 
 
 def test_the_definer_answers_only_a_live_administrator_session(deployment):
-    """No key, a made-up key, a revoked session, or a recovery since: refused."""
+    """No key, a made-up key, the stored session_id, a revoked session, or a
+    recovery since: refused."""
     from django.utils import timezone
 
-    key = live_key()
-    for refused in (None, "", "not-a-session-key", "x" * 40):
+    key = live_key(deployment[1])
+    # The stored digest names no session: the definer digests what it gets.
+    for refused in (None, "", "not-a-session-key", "x" * 40, stored(key)):
         with pytest.raises(LeadersRefused):
             as_web(refused)
     assert listed().count() == 0
@@ -232,7 +240,9 @@ def test_the_definer_answers_only_a_live_administrator_session(deployment):
     with pytest.raises(LeadersRefused):
         as_web(key)
     with unguarded():
-        PortalSession.objects.filter(session_id=key).update(revoked_at=timezone.now())
+        PortalSession.objects.filter(session_id=stored(key)).update(
+            revoked_at=timezone.now()
+        )
     with pytest.raises(LeadersRefused):
         as_web(key)
     assert listed().count() == 0
@@ -259,14 +269,14 @@ AGED_SESSIONS = {
 @pytest.mark.parametrize("aged", sorted(AGED_SESSIONS))
 def test_the_definer_refuses_an_idle_or_expired_session(deployment, aged):
     """Past the 60-minute idle limit, or past its deadline: refused, unaudited."""
-    key = live_key()
+    key = live_key(deployment[1])
     as_web(key)
     assert listed().count() == 1
     with unguarded(), connection.cursor() as cursor:
         cursor.execute(
             f"UPDATE stewardship_portal_session SET {AGED_SESSIONS[aged]} "
             "WHERE session_id=%s",
-            [key],
+            [stored(key)],
         )
     with pytest.raises(LeadersRefused):
         as_web(key)
@@ -282,7 +292,7 @@ def test_other_roles_get_neither_the_list_nor_the_import(auth_service, google, r
     browser, login = signed_in()
     assert login.status_code == 302
     with pytest.raises(LeadersRefused):
-        as_web(live_key("reader@example.org"))
+        as_web(live_key(browser))
     with web():
         response = post(browser, IMPORT, {"scope": "all"})
     assert response.status_code == 403
@@ -307,12 +317,28 @@ def test_the_definer_is_installed_as_declared():
         read_leaders("no-session")
 
 
-def test_the_check_block_refuses_a_wrongly_installed_definer():
-    """0054's DO block raises once the definer is no longer a definer."""
-    text = MIGRATION.read_text(encoding="utf-8")
-    check = text[text.index("DO $check$") :]
+@pytest.mark.parametrize(
+    "migration, refusal",
+    [
+        (MIGRATION, "Migration 0054"),
+        (DIGESTS, "Migration 0057: a Users session definer is not installed"),
+    ],
+)
+def test_the_check_block_refuses_a_wrongly_installed_definer(migration, refusal):
+    """0054's and 0057's DO blocks raise once the definer is no longer one.
+
+    0057 (#995) replaced the body to compare the session key's digest, so
+    only 0057's check, the latest, passes on the real installation; 0054's
+    now refuses its session comparison as well.
+    """
+    text = migration.read_text(encoding="utf-8")
+    check = re.search(r"^DO \$check\$.*?^\$check\$;", text, re.M | re.S)[0]
+    acl = re.search(r"^SELECT set_config\(.*?;$", text, re.M | re.S)
+    if acl:
+        # 0057 compares the grants with those it recorded first.
+        check = acl[0] + "\n" + check
     with (
-        pytest.raises(DatabaseError, match="Migration 0054"),
+        pytest.raises(DatabaseError, match=refusal),
         transaction.atomic(),
         connection.cursor() as cursor,
     ):
@@ -321,9 +347,10 @@ def test_the_check_block_refuses_a_wrongly_installed_definer():
             "SECURITY INVOKER"
         )
         cursor.execute(check)
-    # The real installation passes it.
-    with transaction.atomic(), connection.cursor() as cursor:
-        cursor.execute(check)
+    if migration is DIGESTS:
+        # The real installation passes the latest check.
+        with transaction.atomic(), connection.cursor() as cursor:
+            cursor.execute(check)
 
 
 def page(browser, path=USERS):

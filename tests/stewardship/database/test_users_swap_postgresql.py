@@ -243,13 +243,22 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 
 # Objects a later closure migration's frozen file creates with plain CREATE,
 # which a full migration would otherwise fail to create again: #970's 0056
-# follows 0055 (#993), so it is in the swap's closure too. Each is dropped
-# while the swap is pending and, unless the test's full migration made it
-# again, installed again afterwards from its migration's frozen file.
+# and #995's 0057 follow 0055 (#993), so they are in the swap's closure too.
+# Each is dropped while the swap is pending (with the trigger that uses it)
+# and, unless the test's full migration made it again, installed again
+# afterwards from its migration's frozen file.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
         "0013_retire_talents",
+    ),
+    "public.stewardship_admin_session_key_v1(text)": (
+        "stewardship_accounts",
+        "0017_admin_session_key_digests",
+    ),
+    "public.stewardship_portal_session_key_digest_v1()": (
+        "stewardship_accounts",
+        "0017_admin_session_key_digests",
     ),
 }
 
@@ -289,7 +298,7 @@ def swap_pending():
         for definition in old_definitions().values():
             cursor.execute(definition)
         for function in CLOSURE_CREATED:
-            cursor.execute(f"DROP FUNCTION {function}")
+            cursor.execute(f"DROP FUNCTION {function} CASCADE")
     try:
         yield
     finally:
