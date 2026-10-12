@@ -255,6 +255,9 @@ FROZEN = {
     "0074_wide_menu_logo.sql": (
         "24c1b91821f318c072e9fcc1b09ae3aafba7eddab6dabac251a5f330043c62f3"
     ),
+    "0075_campaign_series.sql": (
+        "290b90ba8ecdec8fd0a17dd190dbea510bde7487904f09dc45e1840ca69eb2c2"
+    ),
 }
 
 

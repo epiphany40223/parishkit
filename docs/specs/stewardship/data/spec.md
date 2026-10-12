@@ -453,6 +453,37 @@ occurrence; they are not `ScheduleFulfillment` and never count as provider
 success. Resolution transitions and resend creation follow the
 [restore workflow](../operations/spec.md#restore).
 
+A **remembered reminder series**
+([#469](https://github.com/epiphany40223/parishkit/issues/469), migration 0075)
+records the repeat rule that some of a campaign's reminders came from. It
+lives in the configuration's optional `schedule_series` section, under the
+document schema `campaign-series-v11`: every rule of `users-v10` plus that
+section. A users-form configuration that has the section uses this schema,
+even when the section is empty, so the schema never flips back. Each record is
+`{id, values: {campaign_id, rule, schedules}}`. `rule` is the repeat rule in
+its canonical form (`campaigns/recurrence.py`). `schedules` lists the sorted,
+distinct IDs of one or more reminders of that campaign, each dated on a day
+the rule gives. A reminder belongs to at most one series, and a series never
+moves to another campaign. Each member keeps its own send time and email. A
+series is an authoring record only: each member stays an ordinary reminder
+with its own definition and revisions, and nothing that plans, coalesces or
+sends mail reads it. Because the rule is kept outside the reminders' values,
+editing a series never replaces an unchanged reminder's revision or prepared
+work. The section has no SQL projection. SQL admits the schema name and treats
+it as the users form: the projection and completeness checks handle it as
+they handle `users-v10`. A configuration with series follows only a users-form
+configuration and never returns to sign-in rules or to `users-v10`: SQL's
+users-form activation guard holds the schema as sticky as its selection is.
+The users request formats
+([operations](../operations/spec.md#users-upgrade-from-sign-in-rules)) build
+its candidates. An ordinary schedule edit keeps each series valid in the same
+signed intent (`series_schema.upkeep`):
+
+- a deleted reminder leaves its series;
+- a reminder moved to a date its rule does not give leaves its series;
+- a series left with no reminder is removed; and
+- a changed time or email keeps the reminder in its series.
+
 ### Source snapshot
 
 `SourceSnapshot` records form an ordered history. Each stores type (`full` or

@@ -35,6 +35,8 @@ _SECTIONS = frozenset(
         "campaigns",
         "content",
         "schedules",
+        # Remembered reminder series (#469), only in campaign-series-v11.
+        "schedule_series",
         "share_options",
         "ministries",
         "funds",

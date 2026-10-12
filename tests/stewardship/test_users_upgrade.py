@@ -537,6 +537,8 @@ SETUP = dict(mode="testing", current_campaign_id=None, restore_review_required=F
         ("campaign-content-v5", SETUP, True),
         (users_schema.SCHEMA, SETUP, False),
         (users_schema.SCHEMA, SETUP | {"mode": "production"}, False),
+        # Remembered reminder series (#469) are the users form too.
+        (users_schema.SERIES_SCHEMA, SETUP | {"mode": "production"}, False),
         # A users bootstrap (#993) already holds only users.
         ("bootstrap-users-v10", SETUP, False),
         # An older exact-address bootstrap is exempt while still in setup.
