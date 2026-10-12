@@ -351,6 +351,9 @@ input[data-time-entry=list] { max-width: 24rem; }
    ui-v1.js): one line's height while empty, so the hint coming and going
    never moves the content after it (#953, the System logs table). */
 [data-complete-hint=reserve] { min-height: 1.6em; min-height: 1lh; }
+/* Inside a filter bar (the Family directory) the hint takes a line of its
+   own under the fields, not a place in their row (#563). */
+.filter-bar > [data-complete-hint] { flex-basis: 100%; margin: 0; }
 /* A reason line that keeps one line's height while empty, so its text
    coming or going never moves what follows (no layout shift; the Restore
    review's held-email rows, #537). */

@@ -151,6 +151,26 @@ def components(context, admin):
                 "stewardship/go-live-readiness.html",
                 stale | {"local_environment": True},
             ),
+            # Before a passing check, and with a problem (#563).
+            (
+                "/go-live-unchecked",
+                "stewardship/go-live-readiness.html",
+                ready | {"origin_verified": None, "cleanup_token": None},
+            ),
+            (
+                "/go-live-problems",
+                "stewardship/go-live-readiness.html",
+                ready
+                | {
+                    "problems": ["Save exactly one initial invitation schedule."],
+                    "cleanup_token": None,
+                },
+            ),
+            (
+                "/production-confirmation-unchecked",
+                "stewardship/production-confirmation.html",
+                confirmation | {"confirmation_token": None, "origin_verified": None},
+            ),
             ("/go-live-cleanup", "stewardship/go-live-cleanup.html", progress),
             ("/go-live-links", "stewardship/go-live-links.html", links),
             (

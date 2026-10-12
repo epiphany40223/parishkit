@@ -751,6 +751,19 @@ ParishSoft refresh) are not ready, earlier links still need Cancel, or
 cancelled links are still being discarded. The server still checks each of
 these.
 
+The same holds for the rest of the Admin portal (#563, the audit's last
+slice): Start Testing cleanup on Go-live readiness and Confirm Production
+before a passing check (named by the step still needed); Confirm cancelling
+go-live while mail blocks it; every Confirm on Pause and resume mail, Send on
+chosen-Family tests, and Close or Reopen on Family portal availability
+without a recent sign-in; the retry the Mail message page would offer while
+the resend admission refuses it; Queue new manual report while an earlier
+Weekly Admin digest is still being prepared or delivered (checked when the
+page opens); and Upload on Hosted files while the library is full. A button
+the server draws disabled because other campaign work holds the page (report
+exports, follow-up saves, Participation) or because the sign-in is not
+recent (automation approval) names that notice too.
+
 ### Field errors and live checks
 
 **Rule.** An error is shown at its field: the message beside it, the field
@@ -783,7 +796,13 @@ single-field check first used by a live campaign's
 [end date](../admin-portal/spec.md#campaign-configuration), #944; the ParishSoft refresh
 schedule's multi-row editor, #920, checks its whole formset with its own
 mechanism for now). Save is held while such an error stands only on forms
-that use the complete-before-submit gate above.
+that use the complete-before-submit gate above. Three shared checks in
+`ui-v1.js` cover the common cases (#563): `data-not-before="<start id>"` on
+an end date (or a text amount) keeps it no earlier than its start, as the
+report and System logs filters do; `data-max-bytes` on a file input refuses
+a file larger than the limit, or than the room left, at once (Hosted files);
+and `data-pattern` gives a textarea, which has no `pattern` of its own, a
+rule to match (no "@" in the Family portal maintenance message).
 The server stays the authority: it checks every save, and its refusal is
 shown at the field as above, even when the browser would have allowed the
 value (a wrong computer clock, for example).

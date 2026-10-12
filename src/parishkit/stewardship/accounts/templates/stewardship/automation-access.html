@@ -81,7 +81,7 @@
 </section>
 {% endif %}</div>
 {% if fresh %}<p>{% button variant="primary" href=approval_url %}{% translate "Approve a session" %}{% endbutton %}</p>
-{% else %}<div class="panel"><p>{% translate "Approving a session first asks you to confirm your sign-in, then takes you to the approval page." %}</p>
+{% else %}<div class="panel"><p id="approve-unavailable">{% translate "Approving a session first asks you to confirm your sign-in, then takes you to the approval page." %}</p>
 {% translate "the approval page" as approval_label %}{% include 'stewardship/components/reauthenticate.html' with next=approval_url next_label=approval_label %}
-<p>{% button type="button" disabled %}{% translate "Approve a session" %}{% endbutton %}</p></div>{% endif %}
+<p>{% button type="button" disabled aria-describedby="approve-unavailable" %}{% translate "Approve a session" %}{% endbutton %}</p></div>{% endif %}
 {% endblock %}
