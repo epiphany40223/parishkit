@@ -486,13 +486,36 @@ Three more guards on every drill host:
 - **Check the crontabs before step 4**: `sudo crontab -l -u root` and
   `crontab -l` as the operator user must show no backup, request-mode or
   off-host copy job.
-- **Block outbound traffic** once step 3 has pulled the image, as a
-  backstop: with the provider's firewall (for example a DigitalOcean Cloud
-  Firewall on the droplet) allow outbound traffic only for your SSH
-  session, so nothing on the host can reach Google. A host firewall such
-  as `ufw` does not stop containers, because Docker's own rules bypass it;
-  on the host itself, the rule belongs in the `DOCKER-USER` chain. Step 7's
-  `pull` then fails harmlessly: the image is already there from step 3.
+- **Block outbound traffic** as a backstop, so nothing on the host can
+  reach Google. A host firewall such as `ufw` does not stop containers,
+  because Docker's own rules bypass it. For a manual drill, once step 3 has
+  pulled the image, use the provider's firewall (for example a
+  DigitalOcean Cloud Firewall on the droplet) and allow outbound traffic
+  only for your SSH session. Step 7's `pull` then fails harmlessly: the
+  image is already there from step 3. A
+  [scripted drill](#scripted-replacement-and-drill-restore) still needs the
+  host's own network while it runs: it pulls the image during its checks,
+  step 5 may pull the `postgres` and `valkey` images, and its origin check
+  resolves the public name. So block container traffic instead, before the
+  run, in the `DOCKER-USER` chain. Containers then have no route out, while
+  the host's own pulls and DNS still work. Add the provider's firewall only
+  after `pk-restore` finishes.
+
+  ```sh
+  out=$(ip route show default | awk '{ print $5; exit }')
+  sudo iptables -I DOCKER-USER -o "$out" -j DROP
+  sudo ip6tables -I DOCKER-USER -o "$out" -j DROP  # where Docker uses IPv6
+  ```
+
+  The rule does not survive a reboot or a Docker restart: after either,
+  add it again before anything starts.
+
+On a drill host,
+[`pk-restore --drill`](#scripted-replacement-and-drill-restore) runs
+steps 1 to 8 and enforces the web-only rule itself. It refuses on a host
+that holds a deployment, lacks the drill marker or is the public origin's,
+and it starts `web` with no route out. The three guards above still apply,
+with the `DOCKER-USER` rule as the scripted drill's outbound block.
 
 A drill that only counts rows proves nothing about startup, so the drill
 rehearses [Restore for real](#restore-for-real). Before the pre-launch gate,
@@ -779,7 +802,10 @@ layout; where the deployment YAML overrides a path, use that path instead.
    `run --rm admin-recovery restore-begin --config RECOVERY_CONFIG --backup-at SET_NAME`.
    It prints the review's id. Families cannot sign in and no Family email is
    sent until an Administrator releases the site in step 8; no Family code or
-   link changes. Never run it on a disposable drill host. Re-running it for
+   link changes. On a disposable drill host it changes only that host's
+   copy and keeps Family sign-in and Family mail closed there, so
+   [`pk-restore --drill`](#scripted-replacement-and-drill-restore) runs it
+   too. Re-running it for
    the same set while its review is open (after a restart, say) changes
    nothing and reports the open review (#799). A set taken under a release
    without the restore review has no such command; follow
@@ -820,9 +846,9 @@ on the validation deployment),
 [`tools/stewardship-ops/pk-restore`](../../tools/stewardship-ops/pk-restore)
 runs steps 1, 2's check, 4, 6, 7 and 8 above in order and stops for the
 Restore review (#608). Step 2's opening of the set (on the machine with the
-key), 9 and 10 stay manual, and so does a replacement or disposable drill
-host, which it does not support yet. Run it as root, after copying the
-decrypted files to the host:
+key), 9 and 10 stay manual. For a replacement or disposable drill host, see
+[Scripted replacement and drill restore](#scripted-replacement-and-drill-restore).
+Run it as root, after copying the decrypted files to the host:
 
 ```text
 sudo tools/stewardship-ops/pk-restore plan --confirm-deployment UUID \
@@ -886,6 +912,111 @@ the set's local build tag, as a local deploy uses: nothing is pulled and
 no digest is checked, and a fake-clock deployment is refused. The script's
 header comment lists every option. When it finishes, continue with step 8's review and
 release, then steps 9 and 10.
+
+### Scripted replacement and drill restore
+
+On a new host, `pk-restore --replacement` also runs steps 3 and 5. With
+`--drill`, it runs them on a disposable drill host, stopping after web's
+health check. It takes the same options as the
+[same-host restore](#scripted-same-host-restore), plus
+`--manifest-digest`: the manifest SHA-256 from the JSON line the backup
+printed, kept off the host. The new host's database cannot hold that set's
+row. If no printed line was kept, pass `--manifest-digest unrecorded`; the
+log then says that nothing proves where the set came from, and so must the
+restore notes. Bring the deployment YAML and the UUID, as step 3 says. The
+paths, the database name and the public origin come from the set's own
+`config/services/web.yaml`. Its root must be `--runtime-root`, with every
+path under it; a set with a path elsewhere, or one provisioned with
+`--bind-source-root`, is restored by hand. `--compose` defaults to the
+set's `config/services/compose.json`. `--project` defaults to
+`stewardship`, the name the deploy tool and `pk-admin` use; pass the lost
+host's if it differed.
+
+```text
+sudo tools/stewardship-ops/pk-restore plan --replacement \
+  --manifest-digest MANIFEST_SHA256 --confirm-deployment UUID \
+  --set DECRYPTED/SET_NAME --database-dump DECRYPTED/database.pgdump \
+  --files-tar DECRYPTED/files.tar
+```
+
+`--set` names a directory called after the set that holds its
+`manifest.json`.
+
+Before anything changes, it refuses unless:
+
+- **This host holds no deployment.** No container exists of the Compose
+  project, or of any project whose Compose file is under the runtime root
+  (a project started without `-p` is named `parishkit-stewardship`). The
+  PostgreSQL store is absent or empty, and (on a full run) no `config`,
+  `credentials`, media tree or provisioning record is there. A live host
+  fails all three, Production included.
+- **The UUID is the deployment's.** It must be the id of the set's own
+  runtime row, which the image's `pg_restore` reads from the dump with no
+  network. Then it is typed again.
+- **The manifest's SHA-256 is `--manifest-digest`.**
+- **Every other check of the same-host restore passes,** plus
+  `database-roles` in the image.
+
+It then:
+
+- **Step 1:** has nothing to stop on a new host.
+- **Step 3:** creates the runtime root and its other directories (owned by
+  `10001:10001`, mode `0700`) and `run/startup.lock`, then collects the
+  static files. It never runs `provision-runtime`.
+- **Step 4:** restores the files.
+- **Step 5:** starts `postgres` and `valkey` and runs `database-roles`; the
+  database's provisioning marker must then be the UUID.
+- **Steps 6 to 8:** as on the same host.
+
+The runtime root and its `logs` directory are created first when missing,
+to hold the log. A refusal names them as the only change. A failure names the step to resume at: `--from` 4, 5, 6
+or 7. A failure in step 3 runs again without `--from`. `--from 5` and
+`--from 6` need step 4's provisioning record in place and an empty
+application schema (or, for 5, an empty store). `--from 7` needs the set
+loaded, as on the same host. A database that holds anything else is refused.
+A resume also refuses any container of the project other than `postgres`,
+`valkey`, `web` and (not drilling) `caddy`, and any other project's
+container from the same root.
+
+**Drill host (`--drill`).** Use it only on a disposable host built fresh
+for the drill (see [Restore drill](#restore-drill)). Mark that host as one
+before the run, with its own name:
+
+```sh
+sudo mkdir -p /etc/parishkit
+echo "parishkit-restore-drill-host $(hostname)" | sudo tee /etc/parishkit/restore-drill-host
+```
+
+Never create that file anywhere else. It sits outside the runtime root, so
+no backup carries it. Then add the `DOCKER-USER` rule from
+[Restore drill](#restore-drill) before the run. `--drill` also refuses
+when:
+
+- the file is missing, is not owned by root, or names another host;
+- this host's name is the set's public origin host;
+- that name does not resolve (`getent ahosts`), since the check cannot
+  tell then, or resolves to any of this host's addresses (`hostname -I`).
+
+`hostname -I` lists only the interfaces' own addresses. A public address
+the provider maps in by NAT, such as a reserved or floating IP, is not
+seen, so the address check is a backstop. The drill marker is the guard.
+
+All of the replacement checks above apply as well. Only `postgres`,
+`valkey` and `web` are ever created:
+
+- **Step 7** skips `pull`: the image is already there from the checks.
+- **Step 8** creates `web`, disconnects it from every network that is not
+  internal (`application-egress`), and checks that only internal networks
+  remain and no port is published. Only then does it start `web`, so it has
+  no route to a mail provider, Google or ParishSoft. It checks both again
+  once `web` runs. A refusal after `web` was created removes it.
+- **`restore-begin` still runs.** It closes Family sign-in and holds Family
+  mail on this copy.
+
+`caddy`, the scheduler, the worker, mail-dispatch, the installers and
+`backup-worker` are never created. After web's health check, it refuses if
+any other container of the project exists. Record the evidence, then go
+straight to step 10: destroy the host and its disks.
 
 ## Comparing a set with another release
 
