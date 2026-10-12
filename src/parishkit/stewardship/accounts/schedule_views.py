@@ -6,8 +6,11 @@ actions (``schedule_entry_views`` owns the New, Edit and Delete actions).
 Proposed campaign dates (sent here by Campaign settings) and this page's own
 POSTs keep the combined date-change review: every schedule's editor with the
 proposed dates, previewed and confirmed together, as the campaign
-configuration rules require. The review of every schedule change, from any
-of these pages, confirms here.
+configuration rules require. Its Review changes opens the shared review
+dialog (UX conventions, "Review dialog", #750) without a page load, and once
+the change is applied the dialog returns to the list, whose status line says
+what was applied. The review of every schedule change, from any of these
+pages, confirms here.
 """
 
 from django.core import signing
@@ -15,6 +18,7 @@ from django.db import DatabaseError
 from django.shortcuts import render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
@@ -24,6 +28,7 @@ from parishkit.stewardship.campaigns.work_locks import (
 )
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.refusals import UserFacingError
 from parishkit.stewardship.web.tables import whole_table
 
 from . import admin_navigation
@@ -33,7 +38,7 @@ from .campaign_mail import admits_test_mail
 from .content_views import _records
 from .limiting import LimiterUnavailable
 from .policy import Capability, allows
-from .schedule_changes import build_preview, confirm_scope, preview_salt
+from .schedule_changes import NO_CHANGES, build_preview, confirm_scope, preview_salt
 from .schedule_forms import (
     KINDS,
     Schedules,
@@ -47,6 +52,13 @@ from .schedule_preview import work_summary
 from .schedule_reads import campaign_schedules, live_end_at, schedule_state
 from .schedule_table import SORTING, attach, schedule_rows
 from .sessions import authenticated_admin
+
+# The refusal of a date-change Review that changes nothing. The page's change
+# gate keeps Review unavailable then, so only a request that bypasses the
+# page script meets it, in the review dialog (#750).
+UNCHANGED = _(
+    "Nothing has changed. Change the dates or a schedule, then choose Review changes."
+)
 
 
 def campaign_email_names(records):
@@ -100,11 +112,38 @@ def _list(request, state, campaign, editable, sort, *, end_live=False):
     )
 
 
+def _summary(window, schedules):
+    """A refused date-change Review's error summary, each message linked.
+
+    A field's message links to its field; a schedule's own message (a rule
+    between its fields) links to that schedule's editor, which the page
+    script opens; the window's and the formset's rules between schedules
+    have no one place, so they are listed without a link. The review dialog
+    stays shut and ui-v1.js shows this summary on the form (#750).
+    """
+    errors = []
+
+    def add(form, anchor=None):
+        for field, messages in form.errors.items():
+            target = anchor if field == "__all__" else form[field].auto_id
+            errors.extend({"message": text, "field_id": target} for text in messages)
+
+    add(window)
+    errors.extend(
+        {"message": text, "field_id": None} for text in schedules.non_form_errors()
+    )
+    for form in schedules.forms:
+        row = getattr(form, "schedule_row", None)
+        add(form, row.anchor if row is not None else None)
+    return errors
+
+
 def _page(request, campaign, window, schedules, digest, *, editable, status=200):
     """The date-change review: proposed dates and every schedule's editor.
 
     Civil dates and the time zone show separately from browser-local audit
-    timestamps.
+    timestamps. A refused Review (status 400) is this page with its errors
+    and their summary, which the page script marks on the form it shows.
     """
     # Schedules stay editable when the dates are locked: step 1 of 3 (#196).
     admin_navigation.place(request, flow="change", step="edit")
@@ -131,7 +170,11 @@ def _page(request, campaign, window, schedules, digest, *, editable, status=200)
             # settings, but POSTs with a query string are refused, so the
             # form posts to the clean path and carries the dates as fields.
             "post_url": request.path,
-        },
+            # The review dialog's Apply confirms here, then returns to the
+            # list (the address without proposed dates).
+            "list_url": reverse("admin:schedule_settings"),
+        }
+        | ({"errors": _summary(window, schedules)} if status == 400 else {}),
         status=status,
     )
     if status == 400:
@@ -142,7 +185,13 @@ def _page(request, campaign, window, schedules, digest, *, editable, status=200)
 def _preview(
     request, service, actor, state, campaign, window, schedules, editable, salt
 ):
-    """Review the posted change (``schedule_changes.build_preview``), or show errors."""
+    """Review the posted change (``schedule_changes.build_preview``), or show errors.
+
+    An accepted Review answers the shared review dialog's fragment
+    (``schedule-review.html``, never a page of its own; #750). A Review
+    refused for the values posted is this page again with its errors; one
+    that changes nothing is a plain refusal the dialog shows.
+    """
     context = build_preview(
         service,
         actor,
@@ -153,6 +202,8 @@ def _preview(
         base_digest=request.POST.get("base_digest"),
         salt=salt,
     )
+    if context is None and str(NO_CHANGES) in map(str, window.non_field_errors()):
+        raise UserFacingError(UNCHANGED, fix=_("Nothing was changed."))
     if context is None:
         return _page(
             request,
@@ -163,11 +214,8 @@ def _preview(
             editable=editable,
             status=400,
         )
-    admin_navigation.place(request, flow="change", step="review")
     return render(
-        request,
-        "stewardship/schedule-preview.html",
-        context | {"post_url": request.path},
+        request, "stewardship/schedule-review.html", context | {"dates": True}
     )
 
 

@@ -18,7 +18,7 @@ pytestmark = pytest.mark.parametrize(
 
 
 @pytest.mark.parametrize("width", [320, 1280])
-@pytest.mark.parametrize("path", ["/schedule-preview", "/clone-preview"])
+@pytest.mark.parametrize("path", ["/clone-preview"])
 def test_schedule_preview_distinguishes_parish_intent_from_browser_time(
     page, component_origin, width, path
 ):
@@ -296,7 +296,6 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/schedule-new",
         "/schedule-edit",
         "/schedule-edit-digest",
-        "/schedule-preview",
         "/clone-settings",
         "/clone-preview",
         "/integrations",

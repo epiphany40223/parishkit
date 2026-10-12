@@ -1865,8 +1865,12 @@
   // form, which keeps the reader's typing and takes only the new version),
   // the saved values become those that Review sent. Any other new version,
   // such as a form redrawn after an applied change, takes the form's new
-  // defaults. The gate runs on every edit, after every in-place answer (see
-  // refresh) and on pageshow.
+  // defaults. A control drawn with a proposal that is not saved yet (the
+  // date-change review's proposed dates, #750) names its saved value in
+  // data-saved-value, which stands in for its default. A control the page
+  // script added inside a [data-change-blank] row (a blank added schedule)
+  // that still holds its own default is no change. The gate runs on every
+  // edit, after every in-place answer (see refresh) and on pageshow.
   const savedStates = new Map(); // form id → {version, state} it was saved at
   const reviewSent = new Map(); // form id → the state its last Review sent
   // form id → {form, state}: the form element when its Apply was sent, and
@@ -1877,6 +1881,21 @@
   // versions and tokens, not settings; text is trimmed as the server trims it.
   // :disabled, not the disabled property, so a control inside a disabled
   // fieldset (which is not sent either) counts as disabled.
+  const controlValue = (node, defaults) => {
+    const saved = defaults ? node.dataset.savedValue : undefined;
+    if (node.type === "checkbox" || node.type === "radio") {
+      return String(defaults ? node.defaultChecked : node.checked);
+    }
+    if (node instanceof HTMLSelectElement) {
+      if (saved !== undefined) return JSON.stringify([saved]);
+      const options = [...node.options];
+      let chosen = options.filter((option) => (defaults ? option.defaultSelected : option.selected));
+      // A single select drawn with no option marked selected shows its first.
+      if (defaults && !node.multiple && !chosen.length) chosen = options.slice(0, 1);
+      return JSON.stringify(chosen.map((option) => option.value));
+    }
+    return (saved ?? (defaults ? node.defaultValue : node.value)).trim();
+  };
   const formState = (form, defaults) => {
     const state = new Map();
     const seen = new Map();
@@ -1886,31 +1905,23 @@
       if (["hidden", "submit", "button", "reset", "image", "file"].includes(node.type)) return;
       const index = seen.get(node.name) || 0;
       seen.set(node.name, index + 1);
-      let value;
-      if (node.type === "checkbox" || node.type === "radio") {
-        value = String(defaults ? node.defaultChecked : node.checked);
-      } else if (node instanceof HTMLSelectElement) {
-        const options = [...node.options];
-        let chosen = options.filter((option) => (defaults ? option.defaultSelected : option.selected));
-        // A single select drawn with no option marked selected shows its first.
-        if (defaults && !node.multiple && !chosen.length) chosen = options.slice(0, 1);
-        value = JSON.stringify(chosen.map((option) => option.value));
-      } else {
-        value = (defaults ? node.defaultValue : node.value).trim();
-      }
-      state.set(`${node.name}#${index}`, {value, disabled: node.matches(":disabled")});
+      const value = controlValue(node, defaults);
+      const blank = !defaults && Boolean(node.closest("[data-change-blank]"))
+        && value === controlValue(node, true);
+      state.set(`${node.name}#${index}`, {value, blank, disabled: node.matches(":disabled")});
     });
     return state;
   };
   // Whether the form's enabled controls hold exactly the saved values, with
-  // no control added or removed (a new or deleted option row). A control
+  // no control added or removed (a new or deleted option row; an added
+  // blank row, above, is no change). A control
   // that is disabled (a hidden module's field) is not sent, so its value
   // does not count; the control that hid it differs instead.
   const matchesSaved = (form, saved) => {
     const now = formState(form, false);
     if ([...saved.keys()].some((key) => !now.has(key))) return false;
-    return [...now].every(([key, {value, disabled}]) => disabled
-      || (saved.has(key) && saved.get(key).value === value));
+    return [...now].every(([key, {value, blank, disabled}]) => disabled
+      || (saved.has(key) ? saved.get(key).value === value : blank));
   };
   const gateChange = (form) => {
     if (!(form instanceof HTMLFormElement) || !form.id || !form.hasAttribute("data-require-change")) {
@@ -1963,7 +1974,8 @@
   // Listening on the document, after each form's own listeners, keeps the
   // input that just happened in view; the other gates share the buttons'
   // bookkeeping, so the order does not decide what is enabled.
-  ["input", "change"].forEach((type) => document.addEventListener(type, (event) => {
+  // A removed new schedule row (schedules-changed) changes the form too.
+  ["input", "change", "schedules-changed"].forEach((type) => document.addEventListener(type, (event) => {
     if (event.target instanceof Element) gateChange(event.target.closest("form"));
   }));
   window.addEventListener("pageshow", gateChanges);
@@ -3786,6 +3798,9 @@
       openReview(dialog, form, opener, review, null);
     } else if (answer.response.status === 400 && form.id && parsed.getElementById(form.id)) {
       showFieldErrors(form, parsed);
+      // The page's own script may show more of the refusal (the date-change
+      // review opens the schedule editors the answer drew open).
+      form.dispatchEvent(new CustomEvent("review-refused", {detail: parsed}));
     } else {
       openReview(dialog, form, opener, null, refusalText(answer.response.status, answer.text));
     }
@@ -4278,6 +4293,20 @@
     };
     reveal();
     window.addEventListener("pageshow", reveal);
+    // A Review refused in the review dialog's flow (#750) leaves this form
+    // in place: each editor the refused answer drew open (one with an error
+    // or a change, as the server opens them) opens here too, so its marked
+    // fields and the summary's links can be seen. A read-only editor with
+    // an error is shown as the server shows it.
+    form?.addEventListener("review-refused", (event) => {
+      const opened = (editor) => event.detail.getElementById(editor.id)?.hidden === false;
+      editors.forEach(({editor, open}) => {
+        if (editor.hidden && opened(editor)) open(false);
+      });
+      form.querySelectorAll("[data-schedule-past][hidden]").forEach((editor) => {
+        if (opened(editor)) editor.hidden = false;
+      });
+    });
   });
 
   // "Add another schedule" clones the formset's empty form (rendered in a
@@ -4315,6 +4344,8 @@
     };
     const addScheduleRow = () => {
       const row = template.content.firstElementChild.cloneNode(true);
+      // Until a field is filled in, a new row is no change to review (#750).
+      row.setAttribute("data-change-blank", "");
       const remove = document.createElement("button");
       remove.type = "button";
       remove.className = "button-secondary";
@@ -4327,7 +4358,7 @@
         gateTimes(form);
         status.textContent = "New schedule removed.";
         add.focus();
-        form.dispatchEvent(new Event("schedules-changed"));
+        form.dispatchEvent(new Event("schedules-changed", {bubbles: true}));
       });
       row.append(remove);
       rows.append(row);
