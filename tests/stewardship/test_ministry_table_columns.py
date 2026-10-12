@@ -46,6 +46,8 @@ def ministry_page(rows, *, ministry_id=None, summaries=(), packet_choices=()):
             "action": "join" if ministry_id is not None else None,
             "query": query,
             "states": {},
+            # As Staff or an Administrator sees it: with Ministry activity.
+            "show_activity": True,
             "report_url": "/report",
             "summary_url": "/report",
             "table": report_table(

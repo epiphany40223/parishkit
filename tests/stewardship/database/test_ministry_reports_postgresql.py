@@ -248,6 +248,22 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
             b"Ministry requests" in body
             and b"Active parishioner family directory" not in body
         )
+        # A leader sees no Ministry activity filter or mark and no campaign
+        # mark (#1135); Food pantry (9) is Active, which a leader never reads.
+        for hidden in (
+            b"Ministry activity",
+            b'id="ministry-activity"',
+            b"Not in ParishSoft data",
+            b"Inactive",
+            b"<br>Active",
+            b"No longer in this campaign",
+        ):
+            assert hidden not in body, hidden
+        # Its forms carry the activity "any" only, which a leader may send.
+        assert b'name="activity" value="any"' in body
+        assert body.count(b'name="activity"') == body.count(
+            b'name="activity" value="any"'
+        )
         assert b"/ministries/9/" not in body
         assert b'name="ministry" value="9"' in body
         # The summary's Ministry DUID has its own column (#932).
@@ -300,6 +316,12 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
         for invalid in ({"sort": "member_name"}, {"sort": "-name"}, {"size": "7"}):
             response, _ = search(browser, route, {"ministry": "9"} | invalid)
             assert response.status_code == 400
+        # A hand-made activity filter is refused from a leader (#1135); "any",
+        # what the page's own forms send, is accepted.
+        for activity in ("active", "inactive", "unavailable"):
+            response, _ = search(browser, root, {"activity": activity})
+            assert response.status_code == 400
+        assert search(browser, root, {"activity": "any"})[0].status_code == 200
         # The Member DUID heading sorts the list (#960).
         response, body = search(browser, route, {"ministry": "9", "sort": "duid_desc"})
         assert response.status_code == 200 and b"Member Middle Example" in body

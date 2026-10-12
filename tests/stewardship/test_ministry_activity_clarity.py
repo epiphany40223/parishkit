@@ -3,10 +3,17 @@
 from types import SimpleNamespace
 from uuid import uuid4
 
+import pytest
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts import ministry_views
 from parishkit.stewardship.accounts.ministry_views import campaign_ministries_link
+from parishkit.stewardship.accounts.policy import Principal
+from parishkit.stewardship.reports.ministries import (
+    MinistryQuery,
+    reads_every_ministry,
+    refuse_leader_activity,
+)
 from parishkit.stewardship.web.tables import paginate
 
 CAMPAIGN = uuid4()
@@ -182,3 +189,20 @@ def test_listing_sorts_every_column_on_the_server():
     )
     assert 'aria-sort="descending"' in html and "Page 1 of 1" in html
     assert '<input type="hidden" name="sort" value="-name">' in html
+
+
+@pytest.mark.parametrize("activity", ["active", "inactive", "unavailable"])
+def test_only_staff_and_administrators_filter_by_ministry_activity(activity):
+    """Ministry activity is shown to, and filtered by, Staff and
+    Administrators only; a Ministry leader's activity filter is refused,
+    while "any", what a leader's page sends, passes (#1135)."""
+    query = MinistryQuery(activity=activity)
+    leader = Principal(uuid4(), frozenset({"ministry_leader"}), frozenset({9}))
+    for role in ("staff", "administrator"):
+        reader = Principal(uuid4(), frozenset({role}))
+        assert reads_every_ministry(reader)
+        assert refuse_leader_activity(reader, query) is query
+    assert not reads_every_ministry(leader)
+    with pytest.raises(ValueError):
+        refuse_leader_activity(leader, query)
+    assert refuse_leader_activity(leader, MinistryQuery()).activity == "any"
