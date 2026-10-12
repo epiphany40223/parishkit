@@ -1,7 +1,16 @@
-"""Original-login mail schedules and atomic temporary campaign-date correction."""
+"""Original-login mail schedules and atomic temporary campaign-date correction.
+
+The step shows and takes send dates and times in the browser's time zone
+(#558), as New and Edit scheduled email do: the page script posts that zone
+as ``zone``, and the schedule formset converts each row to the
+campaign-local values a schedule keeps (``ScheduleSet`` with
+``browser_times``). The campaign's start and end dates are calendar dates
+and are not converted.
+"""
 
 from django.shortcuts import render
 from django.urls import reverse
+from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
@@ -49,7 +58,10 @@ def setup_schedules(request):
             request,
             prefix="schedules",
             fields=(*ScheduleForm.base_fields, "DELETE"),
-            extra_fields=(f"window-{name}" for name in ScheduleWindow.base_fields),
+            extra_fields=(
+                "zone",
+                *(f"window-{name}" for name in ScheduleWindow.base_fields),
+            ),
         )
         service = runtime()
         draft, campaign = _draft(request, service)
@@ -70,6 +82,9 @@ def setup_schedules(request):
             ],
             campaign_id=draft.status.attempt_id,
             campaign=selected,
+            browser_times=True,
+            zone=data.get("zone", "") if data is not None else "",
+            now=timezone.now(),
         )
         status, collection_error = 200, False
         if request.method == "POST":

@@ -194,6 +194,9 @@ def main():
             "schedules-0-date": fixture["campaign"]["start_date"],
             "schedules-0-time": "09:00:00",
             "schedules-0-template_version": template,
+            # Send times are typed in the browser's zone (#558); the
+            # campaign's own zone keeps 09:00 as typed.
+            "zone": schedules.context["schedules"].timezone,
         }
     )
     post(

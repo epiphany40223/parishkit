@@ -846,6 +846,9 @@
   // (data-require-change, below) compares the form with, so Review changes
   // stays unavailable until the reader changes one (#750). Without a zone
   // Review changes stays unavailable and [data-zone-missing] says why.
+  // The first-campaign step's schedules (form[data-schedule-zoned])
+  // works the same way, row by row: each unbound saved row carries its own
+  // data-schedule-local, and Save and continue waits for a zone.
   // localParts: a moment (ms) as this browser's {date, time, weekday}, the
   // time canonical as the time entry writes it and Monday 0.
   const localParts = (moment) => {
@@ -867,7 +870,7 @@
     const [hour, minute, second = 0] = clock.split(":").map(Number);
     return new Date(year, month - 1, date, hour, minute, second).getTime();
   };
-  document.querySelectorAll("form[data-schedule-entry]").forEach((form) => {
+  document.querySelectorAll("form[data-schedule-entry], form[data-schedule-zoned]").forEach((form) => {
     const zone = form.querySelector("input[data-browser-zone]");
     if (zone && !zone.value) {
       const missing = form.querySelector("[data-zone-missing]");
@@ -880,10 +883,16 @@
         }
       });
     }
-    const moment = Date.parse(form.dataset.scheduleLocal || "");
+  });
+  // Fill one schedule's fields (New and Edit's form, or one first-campaign
+  // row) from its data-schedule-local moment, in this browser's zone.
+  document.querySelectorAll("form[data-schedule-entry][data-schedule-local], "
+    + "[data-schedule-row][data-schedule-local]").forEach((scope) => {
+    const moment = Date.parse(scope.dataset.scheduleLocal || "");
     if (Number.isNaN(moment)) return;
     const parts = localParts(moment);
-    const field = (name) => form.querySelector(`[name="schedule-${name}"]`);
+    const field = (name) => scope.querySelector(
+      `[data-schedule-field="${name}"] input, [data-schedule-field="${name}"] select`);
     // Set a field's value and its default (a select's default option) alike.
     const settle = (node, value) => {
       if (node instanceof HTMLSelectElement) {
@@ -4309,8 +4318,9 @@
   // Repeating reminders (#469). expandRecurrence turns a repeat rule into
   // the calendar dates it produces. Dates are civil days, computed with UTC
   // dates so the browser's own zone never shifts them; the send time is
-  // added later by the server per date (the campaign's wall-clock time on
-  // the first-campaign step, the browser's on New scheduled email, #558).
+  // added later per date (the campaign's wall-clock time on the date-change
+  // review, the browser's on the first-campaign step and New scheduled
+  // email, #558).
   // The rule: {frequency: "daily" | "weekly" | "monthly", start,
   // end (inclusive, "YYYY-MM-DD"), weekdays: [0 (Monday) … 6] for weekly,
   // and for monthly either {day: 1–31} or {ordinal: 1–4 or -1 (last),
@@ -4384,7 +4394,10 @@
   // inside the campaign dates, strictly after the initial invitation, not at
   // the instant of another Family mailing, at most REPEAT_LIMIT dates per
   // rule and the form's MAX_NUM_FORMS rows in all. Here every comparison is
-  // of campaign-local date and time text, the zone the step's rows use (New
+  // of date and time text in the zone the form's rows use: the browser's on
+  // the first-campaign step (#558), the campaign's on the date-change
+  // review. The campaign-date check compares calendar days, so on the
+  // first-campaign step the server decides a time near either edge (New
   // scheduled email compares moments instead; see repeatDates).
   const REPEAT_LIMIT = 30;
   const REPEAT_ERRORS = {

@@ -81,6 +81,7 @@ from .schedule_changes import (
 )
 from .schedule_forms import (
     WEEKDAYS,
+    ZONE_MISSING,
     ScheduleForm,
     Schedules,
     ScheduleWindow,
@@ -129,10 +130,6 @@ REPEAT_FIELDS = (
 REPEAT_MULTIPLE = {"repeat-weekdays", "repeat-dates"}
 # The browser's IANA time zone, which ui-v1.js fills in (#558).
 ZONE = "zone"
-ZONE_MISSING = _(
-    "Your browser didn't report a time zone, so this send time can't be "
-    "read. Check your computer's time zone setting, then try again."
-)
 # Edit's refusal of a save that changes nothing. The page's change gate
 # keeps Review unavailable until something changed, so only a request that
 # bypasses the page script meets it, in the review dialog (#750).
@@ -381,17 +378,12 @@ def entry_form(data, templates, saved, schedule=None, kept=None, test_mail=True)
         test_mail=test_mail,
         label=labels.get(schedule["id"]) if schedule else None,
         initial=schedule["values"] | {"id": schedule["id"]} if schedule else None,
+        browser_times=True,
     )
     # The address names the schedule; a posted ID is never read.
     del form.fields["id"]
     if kept is not None:
         form.fields["time"].keep(kept)
-    # This page takes times in the browser's zone, unlike the date-change
-    # review and the first-campaign step, which share the form.
-    form.fields["time"].help_text = _(
-        "The time of day it is sent, in this computer's time zone, for example "
-        "9:00 AM, 9am or 21:00."
-    )
     return form
 
 

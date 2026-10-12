@@ -221,9 +221,11 @@ def test_repeat_adds_ordinary_reminder_rows_in_place(
 ):
     """The rule lists its dates and why any is left out, then adds one row each.
 
-    The saved initial invitation is Thursday, October 1, 2054 at 9:00 AM, in a
-    campaign of October 2054, so a Monday and Thursday rule at 9am leaves out
-    that first Thursday and adds the other eight. Nothing reloads; the rows
+    The saved initial invitation is Thursday, October 1, 2054 at 9:00 AM in
+    New York, 6:00 AM in this Los Angeles browser (send times are the
+    browser's on this step, #558), in a campaign of October 2054, so a Monday
+    and Thursday rule at 6am leaves out that first Thursday and adds the
+    other eight. Nothing reloads; the rows
     post like hand-added ones, and the panel's own controls never post.
     """
     page.set_viewport_size({"width": width, "height": 900})
@@ -275,14 +277,14 @@ def test_repeat_adds_ordinary_reminder_rows_in_place(
     # Its two lines are reserved: the refusal moves nothing below it.
     assert reading.bounding_box()["height"] == pytest.approx(reading_height, abs=1)
     assert abs(page_top(repeat(page, "email")) - page_top(reading) - gap) < 1
-    repeat(page, "time").fill("9am")
-    has_text(reading, "Reads as 09:00 (9:00 AM)")
+    repeat(page, "time").fill("6am")
+    has_text(reading, "Reads as 06:00 (6:00 AM)")
     has_attribute(reading, "class", "time-reading")
     # The line keeps its height: the reading moves nothing below it.
     assert reading.bounding_box()["height"] == pytest.approx(reading_height, abs=1)
     assert save.is_enabled()
     repeat(page, "time").blur()
-    assert repeat(page, "time").input_value() == "09:00"
+    assert repeat(page, "time").input_value() == "06:00"
     has_text(add, "Add these 8 reminders")
     has_text(summary, "8 reminders to add, 1 not added.")
     # The summary's line is reserved and the list sits below the button, so
@@ -335,7 +337,7 @@ def test_repeat_adds_ordinary_reminder_rows_in_place(
         if fields[f"schedules-{index}-kind"] == "reminder"
     ]
     assert reminders == [
-        (date, "09:00")
+        (date, "06:00")
         for date in (
             "2054-10-05",
             "2054-10-08",

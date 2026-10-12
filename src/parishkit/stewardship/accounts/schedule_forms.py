@@ -15,10 +15,11 @@ from parishkit.stewardship.campaigns.configuration import (
     schedule_values,
 )
 from parishkit.stewardship.schema_primitives import timezone_names
+from parishkit.stewardship.web.dates import UnknownZone
 from parishkit.stewardship.web.presentation import parish_date
 from parishkit.stewardship.web.time_entry_fields import FlexibleTimeField
 
-from . import field_tips
+from . import field_tips, schedule_local
 from .campaign_forms import OVERLAP_TEMPLATE, overlap_attributes, overlaps
 from .content_forms import EMAIL_LABELS
 
@@ -52,6 +53,16 @@ NO_TEMPLATES = _(
 # for this error, and shows any other schedule error as it is.
 OUTSIDE_WINDOW = _("Choose a date within the campaign (%(window)s).")
 OUTSIDE_CAMPAIGN = "outside_campaign"
+# Pages that take send times in the browser's time zone (#558): the send
+# time's help, and the refusal when the browser sent no usable zone.
+BROWSER_TIME_HELP = _(
+    "The time of day it is sent, in this computer's time zone, for example "
+    "9:00 AM, 9am or 21:00."
+)
+ZONE_MISSING = _(
+    "Your browser didn't report a time zone, so this send time can't be "
+    "read. Check your computer's time zone setting, then try again."
+)
 
 
 def window_text(campaign):
@@ -469,6 +480,7 @@ class ScheduleForm(forms.Form):
         links=False,
         test_mail=True,
         label=None,
+        browser_times=False,
         **kwargs,
     ):
         """Offer email revisions and only this row's unresolved legacy value.
@@ -481,13 +493,17 @@ class ScheduleForm(forms.Form):
         preview, test and edit addresses for the page script (#446), and
         ``test_mail`` false replaces the test address with why there is none
         (#923). ``label`` names a saved schedule (Reminder 2), so the page can tell
-        whether other schedules send the same email.
+        whether other schedules send the same email. ``browser_times`` is
+        for a page that shows and takes send times in the browser's time
+        zone (#558): only the send time's help differs.
         """
         self.schedule_label = label
         self.templates = templates
         super().__init__(*args, **kwargs)
         # A saved time with seconds (set before #631) still saves unchanged.
         self.fields["time"].keep(self.initial.get("time"))
+        if browser_times:
+            self.fields["time"].help_text = BROWSER_TIME_HELP
         fixed = self.initial.get("kind") if self.initial.get("id") else None
         if fixed:
             self.fields["kind"].disabled = True
@@ -557,6 +573,9 @@ class ScheduleSet(BaseFormSet):
         campaign,
         email_links=False,
         test_mail=True,
+        browser_times=False,
+        zone="",
+        now=None,
         **kwargs,
     ):
         """Retain complete saved records for identity and legacy-template comparison.
@@ -569,7 +588,17 @@ class ScheduleSet(BaseFormSet):
         email's preview, test and edit addresses (#446); ``test_mail`` false
         (the campaign admits no test mail now) leaves out the test address
         and says why instead (#923).
+
+        ``browser_times`` (the first-campaign step, #558) shows and takes
+        send dates and times in the browser's time zone: ``zone`` is the
+        posted browser zone and ``now`` the current instant, which places a
+        digest's time at its next send (``schedule_local``). Saved values
+        stay campaign-local either way; see ``_construct_form`` and
+        ``_to_campaign``.
         """
+        if browser_times and now is None:
+            raise ValueError("Browser-local schedule times need the current instant.")
+        self.browser_times, self.zone, self.now = browser_times, zone, now
         self.previous = sorted(previous, key=schedule_order)
         self.labels = schedule_labels(self.previous)
         self.usage = email_usage(self.previous)
@@ -587,11 +616,49 @@ class ScheduleSet(BaseFormSet):
             "usage": self.usage,
             "links": self.email_links,
             "test_mail": self.test_mail,
+            "browser_times": self.browser_times,
             # Saved forms come first, in the same order as self.previous.
             "label": self.labels[index]
             if index is not None and index < len(self.labels)
             else None,
         }
+
+    def _construct_form(self, i, **kwargs):
+        """Give a saved row its send moment when times are browser-local.
+
+        An unbound saved row carries the UTC moment its campaign-local values
+        stand for (``schedule_moment``, drawn as ``data-schedule-local``),
+        and the page script fills its date, time and weekday in the
+        browser's zone. A posted row holds what was typed in that zone, so
+        a legacy saved time with seconds (#631) is kept in that zone too: the
+        saved row is found by the row's posted ID, not its position, so a
+        reordered or forged post never borrows another row's seconds (clean
+        refuses such identities anyway).
+        """
+        form = super()._construct_form(i, **kwargs)
+        form.schedule_moment = None
+        if not self.browser_times or i >= len(self.previous):
+            return form
+        if form.is_bound:
+            posted = form.data.get(form.add_prefix("id"))
+            saved = next(
+                (row["values"] for row in self.previous if row["id"] == posted), None
+            )
+            if saved is None:
+                form.fields["time"].keep(None)
+                return form
+            try:
+                kept = schedule_local.in_browser(
+                    saved, self.zone, self.timezone, self.now
+                )
+            except UnknownZone:
+                kept = None  # Refused in clean, with ZONE_MISSING.
+            form.fields["time"].keep(kept)
+        else:
+            form.schedule_moment = schedule_local.instant(
+                self.previous[i]["values"], self.timezone, self.now
+            ).isoformat()
+        return form
 
     @property
     def has_templates(self):
@@ -654,6 +721,23 @@ class ScheduleSet(BaseFormSet):
                 raise forms.ValidationError(
                     _("A saved schedule's mail type cannot change.")
                 )
+            if self.browser_times:
+                try:
+                    self._to_campaign(form, old.get(identifier))
+                except UnknownZone:
+                    raise forms.ValidationError(ZONE_MISSING) from None
+                except ValueError:
+                    # Only a date far outside any campaign cannot convert.
+                    form.add_error(
+                        "date",
+                        forms.ValidationError(
+                            OUTSIDE_WINDOW,
+                            code=OUTSIDE_CAMPAIGN,
+                            params={"window": self.window_text},
+                        ),
+                    )
+                    field_errors = True
+                    continue
             if self._field_errors(form, old.get(identifier)):
                 field_errors = True
                 continue
@@ -673,6 +757,29 @@ class ScheduleSet(BaseFormSet):
             )
         if not field_errors:
             self._check_collection(rows)
+
+    def _to_campaign(self, form, previous):
+        """Convert a row's typed send date, time and weekday to campaign-local.
+
+        Only in browser-time mode, before any rule reads them: the row's
+        cleaned values were typed in the browser's zone, and every rule
+        (inside the campaign dates, after the initial invitation, never two
+        mailings at once) and the saved record are campaign-local, as on New
+        and Edit scheduled email (``schedule_local.to_campaign``). A saved
+        row posted exactly as it was shown keeps its saved values. Raises
+        ``UnknownZone`` for a blank or unknown zone and ``ValueError`` for a
+        date that cannot convert.
+        """
+        data = form.cleaned_data
+        data["date"], data["time"], data["weekday"] = schedule_local.to_campaign(
+            data["date"],
+            data["time"],
+            data["weekday"],
+            zone=self.zone,
+            campaign_zone=self.timezone,
+            now=self.now,
+            saved=previous,
+        )
 
     def _field_errors(self, form, previous):
         """Attach each rule this row breaks to its field; return whether any did.
