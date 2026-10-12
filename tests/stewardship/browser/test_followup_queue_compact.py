@@ -160,6 +160,8 @@ def test_queue_filters_stay_put_when_applied_in_place(page, component_origin):
     """Applying the filters replaces the table in place (the queue's server
     answer is the one-request fixture page) and moves no filter label or
     control: no layout shift."""
+    from playwright.sync_api import expect
+
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + PAGE)
     layout = f"""() => [...document.querySelectorAll(
@@ -177,7 +179,9 @@ def test_queue_filters_stay_put_when_applied_in_place(page, component_origin):
     )
     page.evaluate("document.querySelector('h1').dataset.mark = 'kept'")
     page.get_by_role("button", name="Apply filters").click()
-    page.wait_for_function("document.querySelectorAll('tbody tr').length === 1")
+    # A locator wait, not wait_for_function: the page's CSP refuses the eval
+    # that wait_for_function re-polls with when the answer is not in yet.
+    expect(page.locator("tbody tr")).to_have_count(1)
     # Applied in place: a full page load would have lost the mark.
     assert page.evaluate("document.querySelector('h1').dataset.mark") == "kept"
     after = page.evaluate(layout)
