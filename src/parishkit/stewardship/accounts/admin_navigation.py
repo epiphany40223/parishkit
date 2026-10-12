@@ -248,9 +248,6 @@ PAGES = {
     # Campaign comparison. Its Review, Apply and Remove are form actions.
     "past_campaigns": Page("parish", _("Past campaigns")),
     "ministries": Page("parish", _("Ministries")),
-    # A live campaign's one editable structural setting (#342). One home per
-    # concept: it runs through Ministries; Campaign settings keeps a link.
-    "campaign_ministries": Page("parish", _("Campaign Ministries"), "ministries"),
     # A sidebar entry of its own, so a manual refresh is found without Home.
     "source_refresh": Page("parish", _("Refresh from ParishSoft")),
     # One summary of the data problems fixed in ParishSoft (#1011).

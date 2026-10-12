@@ -649,9 +649,9 @@ def test_a_live_campaign_changes_its_leader_roles_on_the_page(auth_service, goog
     for role in ("Chairperson", "Staff"):
         tag = re.search(rf'<input [^>]*value="{role}"[^>]*>', body).group(0)
         assert "checked" in tag and "disabled" not in tag, role
-    # The Ministry list itself is locked here, with where it changes.
-    assert re.search(r'<select name="ministry_duids"[^>]*disabled', body)
-    assert "Change Campaign Ministries" in body
+    # The Ministry list is open here too (#1119); the name stays locked.
+    assert not re.search(r'<select name="ministry_duids"[^>]*disabled', body)
+    assert re.search(r'<input type="text" name="name"[^>]*disabled', body)
     version = digest(page)
     end = row.active_configuration.values["end_date"]
     open_end = 'name="end_date"' in body and not re.search(

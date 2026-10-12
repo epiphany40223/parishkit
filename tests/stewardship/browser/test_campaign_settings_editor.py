@@ -16,7 +16,7 @@ import pytest
 from parishkit.stewardship.accounts.campaign_views import (
     LOCKED_CLOSED,
     LOCKED_LIVE,
-    MINISTRIES_ELSEWHERE,
+    MINISTRIES_ALONE,
 )
 
 from .campaign_settings_components import (
@@ -26,6 +26,8 @@ from .campaign_settings_components import (
     ELSEWHERE,
     END_REFUSAL,
     LIVE,
+    LIVE_MINISTRIES_REVIEW,
+    LIVE_MIXED,
     LIVE_REFUSING,
     LIVE_REVIEW,
     LOCKED,
@@ -87,7 +89,7 @@ def test_every_setting_shows_once_in_the_same_order(page, component_origin):
         opened[path] = set(page.evaluate(OPEN))
     assert orders[DRAFT] == orders[LIVE] == orders[LOCKED]
     assert {"name", "end_date", "census"} <= opened[DRAFT]
-    assert opened[LIVE] == {"end_date", "ministry_leader_roles"}
+    assert opened[LIVE] == {"end_date", "ministry_leader_roles", "ministry_duids"}
     assert opened[LOCKED] == set()
 
 
@@ -190,7 +192,7 @@ def test_a_live_end_date_and_leader_roles_are_one_review(page, component_origin)
     failures = watch(page)
     form = page.locator("#settings-form")
     assert form.get_by_label("Campaign name").is_disabled()
-    assert form.get_by_label("Included Ministries").is_disabled()
+    assert form.get_by_label("Included Ministries").is_enabled()
     roles = page.get_by_role("group", name="Ministry leader roles")
     assert roles.get_by_label("Staff").is_enabled()
     form.get_by_label("Campaign end date").fill("2054-11-15")
@@ -207,7 +209,6 @@ def test_a_live_end_date_and_leader_roles_are_one_review(page, component_origin)
     assert "ministry_leader_roles=Chairperson" in reviews[0]
     assert "ministry_leader_roles=Staff" not in reviews[0]
     assert "name=" not in reviews[0].replace("_name", "")
-    assert "ministry_duids" not in reviews[0]
     dialog.get_by_role("button", name="Apply").click()
     hidden(dialog)
     eventually(page, "document.getElementById('settings-outcome').textContent !== ''")
@@ -218,8 +219,7 @@ def test_a_live_end_date_and_leader_roles_are_one_review(page, component_origin)
 def test_a_locked_setting_says_why_in_its_tip(page, component_origin):
     """Each locked setting's tip gives its reason. A box beside its label
     keeps to the top of its row, so its tip opening under the label never
-    moves it (no layout shift, #736). The Ministry list names where a live
-    campaign's Ministries change."""
+    moves it (no layout shift, #736)."""
     page.goto(component_origin + LIVE)
     box = page.locator("#id_additional_information")
     before = box.evaluate(PLACE)
@@ -231,11 +231,6 @@ def test_a_locked_setting_says_why_in_its_tip(page, component_origin):
     tip = page.locator("#id_census_tip")
     visible(tip)
     assert str(LOCKED_LIVE) in tip.inner_text()
-    page.locator("button[aria-controls=id_ministry_duids_tip]").click()
-    assert (
-        str(MINISTRIES_ELSEWHERE) in page.locator("#id_ministry_duids_tip").inner_text()
-    )
-    visible(page.get_by_role("link", name="Change Campaign Ministries"))
 
 
 def test_nothing_can_change_on_a_closed_campaign(page, component_origin):
@@ -276,3 +271,48 @@ def test_a_change_the_installer_refuses_is_shown_in_the_dialog(page, component_o
     assert field.input_value() == "2054-11-15"
     assert page.evaluate(MARKED) == "kept"
     assert not failures
+
+
+def test_a_live_ministry_change_is_reviewed_with_its_impact(page, component_origin):
+    """A live campaign's Ministry list is edited on the page (#1119): Review
+    posts the selections and the dialog shows what the change touches."""
+    reviews = answer_reviews(
+        page, component_origin, LIVE_MINISTRIES_REVIEW, address=LIVE
+    )
+    answer_checks(page, component_origin)
+    page.goto(component_origin + LIVE)
+    failures = watch(page)
+    expect_review(page, enabled=False)
+    page.get_by_label("Included Ministries").select_option(["4"])
+    expect_review(page, enabled=True)
+    page.get_by_role("button", name="Review changes").click()
+    dialog = dialog_of(page)
+    text = dialog.inner_text()
+    assert "Ministries to remove" in text and "Food pantry" in text
+    assert "Families with a form open now" in text
+    assert len(reviews) == 1
+    assert "ministry_duids=4" in reviews[0] and "ministry_duids=9" not in reviews[0]
+    dialog.get_by_role("button", name="Apply").click()
+    hidden(dialog)
+    eventually(page, "document.getElementById('settings-outcome').textContent !== ''")
+    assert page.evaluate(MARKED) == "kept"
+    assert not failures
+
+
+def test_a_ministry_change_with_another_is_refused_in_the_dialog(
+    page, component_origin
+):
+    """A Ministry change is reviewed on its own: made with another change,
+    the server's refusal says so in the dialog, with no Apply."""
+    answer_reviews(page, component_origin, LIVE_MIXED, 400, address=LIVE)
+    answer_checks(page, component_origin)
+    page.goto(component_origin + LIVE)
+    page.get_by_label("Included Ministries").select_option(["4"])
+    roles = page.get_by_role("group", name="Ministry leader roles")
+    roles.get_by_label("Staff").uncheck()
+    page.get_by_role("button", name="Review changes").click()
+    dialog = dialog_of(page)
+    error = dialog.locator("[data-confirm-error]")
+    visible(error)
+    assert str(MINISTRIES_ALONE) in error.inner_text()
+    assert dialog.get_by_role("button", name="Apply").count() == 0

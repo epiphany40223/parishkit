@@ -17,8 +17,6 @@ from django.utils.translation import gettext as _
 from django.views.decorators.http import require_http_methods, require_safe
 
 from parishkit.config import ConfigError
-from parishkit.stewardship.campaigns.live_ministries import live_ministries_editable
-from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.campaigns.work_locks import (
     read_transaction,
     work_transaction,
@@ -158,22 +156,12 @@ def campaign_ministries_link(configuration):
 
     Activity (offered to parishioners at all) and inclusion in the current
     campaign are separate settings; this page changes only activity, so it
-    points Admins at the place that changes inclusion: Campaign Ministries
-    while the campaign is live (it sits under Ministries), else Campaign
-    settings' Ministry selections. Returns ``{"url", "label"}``.
+    points Admins at the place that changes inclusion: Campaign settings'
+    Ministry selections, a draft's or a live campaign's alike (#1119).
+    Returns ``{"url", "label"}``.
     """
     if configuration.current_campaign_id is None:
         return None
-    campaign = (
-        Campaign.objects.select_related("active_configuration")
-        .filter(pk=configuration.current_campaign_id)
-        .first()
-    )
-    if live_ministries_editable(campaign, configuration.current_campaign_id):
-        return {
-            "url": reverse("admin:campaign_ministries"),
-            "label": _("Campaign Ministries"),
-        }
     return {
         "url": reverse("admin:campaign_settings") + "#ministry-selections",
         "label": _("Campaign settings → Ministry selections"),

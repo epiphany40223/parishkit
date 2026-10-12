@@ -1005,22 +1005,6 @@ def test_the_menu_state_script_runs_right_after_the_sidebar():
     assert "pk-admin-menu-group:" not in menu
 
 
-def test_campaign_ministries_trail_runs_through_ministries():
-    """Home › Parish data › Ministries › Campaign Ministries (one home, NAV-10)."""
-    match = _match("campaign_ministries")
-    sections, trail = navigation.build(match, _items())
-    assert [crumb["label"] for crumb in trail] == [
-        "Home",
-        "Parish data",
-        "Ministries",
-        "Campaign Ministries",
-    ]
-    assert trail[2]["url"] == reverse("admin:ministries")
-    assert trail[-1]["url"] is None
-    assert [section["key"] for section in sections if section["current"]] == ["parish"]
-    assert navigation.back(match, None, _items())["url"] == reverse("admin:ministries")
-
-
 @pytest.mark.parametrize("role", ROLES)
 def test_a_trail_links_only_pages_the_viewer_may_open(role):
     """No breadcrumb links a menu page the viewer's menu does not offer (#457 L3).

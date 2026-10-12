@@ -174,7 +174,7 @@ def test_campaign_ministries_review_names_ministries_without_duids():
     html = render_to_string(
         "stewardship/campaign-ministries-review.html",
         {
-            "review": {
+            "ministries": {
                 "added": [{"name": "Choir", "duid": 8, "answers": 0}],
                 "removed": [
                     {"name": "Food pantry", "duid": 9, "answers": 1, "open": 1}

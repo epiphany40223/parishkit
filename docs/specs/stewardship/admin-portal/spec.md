@@ -850,7 +850,6 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `parish_settings` | Parish settings | Menu: Parish settings | Administrator | (same) | `/admin/parish/settings/` | (same) | Hand-written Administration link removed. |
 | `branding_settings` | Parish logos | Menu: Parish logos | Administrator | (same) | `/admin/parish/logos/` | (same) | Uploads, the review of staged logos (`?review=<bundle>`) and Apply all happen here (#750); the old Review parish logos address is gone. |
 | `ministries` | Ministries | Menu: Ministries | Administrator | Ministry activity | `/admin/parish/ministries/` | (same) |  |
-| `campaign_ministries` | Campaign Ministries | Ministries | Administrator | Change campaign Ministries | `/admin/parish/ministries/campaign/` | (same) | Moves under Ministries, which links it while the campaign is live; its Return link goes to Ministries. Campaign settings keeps a link. |
 | `hosted_files` | Hosted files | Menu: Hosted files | Administrator | (same) | `/admin/parish/files/` | (same) |  |
 | `hosted_file_delete` | Delete hosted files | Hosted files | Administrator | (same) | `/admin/parish/files/deletion/` (POST only) | (same) | The table's confirmation dialog posts here (#879); it answers with a redirect or a refusal, never a page. |
 | `hosted_file_rename` | Change placeholder name | Hosted files | Administrator | (same) | `/admin/parish/files/<file>/name/` | (same) |  |
@@ -993,7 +992,7 @@ registry and the rendered pages.
    keyboard with its reason announced.
 8. **One home per concept.** A page appears under one menu entry only;
    another page may link it, but its breadcrumb always runs through its home
-   (Campaign Ministries runs through Ministries).
+   (Content history runs through Campaign settings).
 9. **Every route classified.** Every Admin route is either a registered page
    or listed as a non-page (form actions, downloads, images, status
    fragments, sign-in and the setup wizard), and a test requires every new
@@ -1052,7 +1051,7 @@ Multi-step flows also show a step indicator under the trail: a numbered list
 with the current step marked `aria-current="step"` and each step's state in
 text. It is orientation only and links nothing, so it cannot skip a review or
 confirmation. The flows are: making a settings change (Make changes, Review,
-Apply) on every settings editor (Campaign Ministries, Copy
+Apply) on every settings editor (Copy
 campaign, pages and emails, dates and mail schedules, share options,
 campaign images, Parish settings, Parish logos, each integration,
 Ministries and Finish switching), Campaign settings, New user and Edit user
@@ -1976,10 +1975,10 @@ change's status appear
 Activity and campaign inclusion are separate settings, and this screen changes
 only activity. One visible sentence above the table says so and names where
 inclusion changes (the longer explanation is in the page's About panel), and
-the "In current campaign" column links there too: Campaign Ministries while
-the current campaign is live (see
-[Changing a live campaign's Ministries](#changing-a-live-campaigns-ministries)),
-and Campaign settings → Ministry selections for a draft. When a bulk preview
+the "In current campaign" column links there too: Campaign settings →
+Ministry selections, for a draft and a live campaign alike (see
+[Changing a live campaign's Ministries](#changing-a-live-campaigns-ministries)).
+When a bulk preview
 includes Ministries that are not in the current campaign, the preview names
 them, says that activation does not add them to the campaign and links to the
 same place.
@@ -2109,15 +2108,19 @@ inactive there may signal retirement; adding it to the notice is tracked in
 A live campaign's structural settings are locked (see
 [Campaign configuration](#campaign-configuration)), with one reviewed
 exemption: while the current campaign is scheduled or active, an
-Administrator may change its Ministry selections. Campaign settings links a
-live campaign, from a **Change Campaign Ministries** button under its locked
-Ministry list, to its own Campaign Ministries page, which offers only
-the Ministry list and goes through the usual edit, review, apply flow as an
-ordinary configuration request, reviewed in the
-[review dialog](../ui-conventions/spec.md#review-dialog); until #750
-converts it, it is reviewed, applied and followed
-[in place](../ui-conventions/spec.md#in-place-controls) under its form.
-A closed or archived campaign's selections never change.
+Administrator may change its Ministry selections. The
+[Campaign settings page](#campaign-settings-page) leaves a live campaign's
+Ministry list open (#1119; there is no separate Campaign Ministries page or
+address), offering only the current selections and the Ministries that may
+be added now, and reviews a change of it, as an ordinary configuration
+request, in the [review dialog](../ui-conventions/spec.md#review-dialog).
+A Ministry change is reviewed on its own: a Review that also changes the
+end date or the leader roles is refused in the dialog, saying to apply the
+Ministries first, because the activation guard below restores a refused
+addition only for a request whose one update changes the selections alone.
+While background work holds campaign changes, the list stays locked, its
+tip saying it can change once that work finishes. A closed or archived
+campaign's selections never change.
 
 - **Hide** a Ministry without removing it: mark it inactive on Ministry
   activity. It disappears from every Family form; nothing else changes.
@@ -2340,16 +2343,14 @@ every campaign state. There is no second, read-only copy of the settings.
   other one stays where it is, disabled, with the reason in its "i" tip
   ([conditional fields](../ui-conventions/spec.md#conditional-fields)),
   never in a line of its own: a draft's settings while background work or
-  going live holds them, every setting but the end date and the
-  [Ministry leader roles](#ministry-leader-roles) once the campaign is live,
-  and every setting once it has closed. A live end date that background
-  work alone holds says it can change once that work finishes. A disabled
+  going live holds them; once the campaign is live, every setting but the
+  end date, the [Ministry leader roles](#ministry-leader-roles) and the
+  Ministry list ([changing a live campaign's
+  Ministries](#changing-a-live-campaigns-ministries)); and every setting
+  once it has closed. A live end date or Ministry list that background work
+  alone holds says it can change once that work finishes. A disabled
   setting is not sent, and the server keeps its saved value whatever is
-  posted, so a locked setting never changes through this page. Until
-  Campaign Ministries joins the page, a live campaign's Ministry list names
-  its own editor ([changing a live campaign's
-  Ministries](#changing-a-live-campaigns-ministries)), linked by a
-  **Change Campaign Ministries** button under the list.
+  posted, so a locked setting never changes through this page.
 - **One Review changes.** The page has exactly one **Review changes**,
   unavailable until the form holds a real change, with its hint after it
   ([review dialog](../ui-conventions/spec.md#review-dialog)); with nothing
@@ -2368,7 +2369,10 @@ every campaign state. There is no second, read-only copy of the settings.
   configuration request with one campaign update holding both values,
   applied together or not at all (decision 2 on #1119). Its review lists the
   end date, the digests re-planned for it and the leader roles, with the end
-  date's notes.
+  date's notes. A Ministry change is the exception: it is reviewed and
+  applied on its own, with its impact (the Ministries to add and remove,
+  what each touches and the Families with a form open now), and a Review
+  that combines it with another change is refused in the dialog.
 - **Refusals.** A Review refused for a value (a required field, an end date
   that has passed or strands mail) stays on the form, the field marked with
   the reason and the summary shown. Any other refusal (settings changed

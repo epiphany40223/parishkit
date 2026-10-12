@@ -54,7 +54,6 @@ TEMPLATES = {
     "artwork_settings": "artwork-settings.html",
     "artwork_upload": "artwork-settings.html",
     "reminder_workgroup": "reminder-workgroup.html",
-    "campaign_ministries": "campaign-ministries.html",
     "go_live": "go-live-readiness.html",
     "go_live_families": "go-live-families.html",
     "go_live_cleanup": "go-live-cleanup.html",

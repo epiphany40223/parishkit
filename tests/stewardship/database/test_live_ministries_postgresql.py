@@ -24,12 +24,11 @@ from parishkit.stewardship.workflows.models import MinistryRequest
 from .auth_builders import signed_in
 from .campaign_builders import campaign_clock, change, close_campaign, command
 from .test_background_grants_postgresql import task_login
-from .test_campaign_views_postgresql import requested
 from .test_ministry_followup_postgresql import read as followup
 from .test_ministry_packets_postgresql import packet, sections
 from .test_ministry_reports_postgresql import actor, page, setup
 from .test_ministry_responses_postgresql import respond, revisit, start
-from .test_parish_views_postgresql import digest, region
+from .test_parish_views_postgresql import digest
 from .test_policy_postgresql import user
 from .test_response_http_postgresql import answers_for
 
@@ -257,34 +256,56 @@ def post(browser, url, values):
     )
 
 
-def test_editor_previews_impact_and_audits_the_change(response_service, google):
-    """The review counts what removal touches; confirming records who and what."""
+def live_post(browser, page, duids, **extra):
+    """A live campaign's Review on Campaign settings, as a browser posts it.
+
+    Only its open settings are sent: the Ministry list, the leader roles in
+    effect and, while it may move, the end date at its saved value.
+    """
+    data = {
+        "action": "preview",
+        "ministry_duids": duids,
+        "ministry_leader_roles": ["Chairperson", "Staff"],
+        "base_digest": digest(page),
+    }
+    end = re.search(
+        r'<input type="date" name="end_date" value="([^"]+)"(?![^>]*disabled)[^>]*>',
+        page.content.decode(),
+    )
+    if end:
+        data["end_date"] = end.group(1)
+    return post(browser, reverse("admin:campaign_settings"), data | extra)
+
+
+def ministry_list(page):
+    """The Ministry list's select element on Campaign settings."""
+    return re.search(
+        r'<select name="ministry_duids".*?</select>', page.content.decode(), re.S
+    ).group(0)
+
+
+def test_campaign_settings_reviews_a_ministry_change_with_its_impact(
+    response_service, google
+):
+    """A live campaign's Ministries change on Campaign settings (#1119): the
+    review counts what removal touches; confirming records who and what."""
     harness = setup(response_service)
     browser, _ = signed_in()
-    url = reverse("admin:campaign_ministries")
-    settings = browser.get(reverse("admin:campaign_settings"))
-    assert url.encode() in settings.content
-    # Ministries, its home in the menu, links it while the campaign is live
-    # (NAV-10), and the page returns there.
+    url = reverse("admin:campaign_settings")
+    page = browser.get(url)
+    listed = ministry_list(page)
+    assert "disabled" not in listed.split(">", 1)[0]
+    assert re.search(r'value="4"[^>]*selected', listed)
+    # The old Campaign Ministries page is gone (no legacy URLs), and
+    # Ministries links the Ministry list here.
+    assert browser.get("/admin/parish/ministries/campaign/").status_code == 404
     ministries = browser.get(reverse("admin:ministries")).content.decode()
-    assert f'<a href="{url}">Campaign Ministries</a>' in ministries
-    assert "#ministry-selections" not in ministries
-    form = browser.get(url)
-    assert form.status_code == 200, form.content
-    back = f'<a href="{reverse("admin:ministries")}">Return to Ministries</a>'
-    assert back in form.content.decode()
-    review = post(
-        browser,
-        url,
-        {"action": "preview", "ministry_duids": "4", "base_digest": digest(form)},
-    )
+    assert f'href="{url}#ministry-selections"' in ministries
+    review = live_post(browser, page, ["4"])
     assert review.status_code == 200, review.content
-    # Reviewed in place (#750): the impact and Apply fill the review region
-    # under the form, which keeps the version it was posted at.
-    body = unescape(region(review.content))
+    body = unescape(review.content.decode())
+    assert "data-review-answer" in body
     assert "Ministries to remove" in body and "Food pantry" in body
-    assert "Apply changes" in body
-    assert digest(review) == digest(form)
     # One submitted join request for Ministry 9, still awaiting follow-up.
     # The Ministry is named, with no DUID column (#1123).
     row = '<th scope="row">Food pantry</th>'
@@ -297,8 +318,15 @@ def test_editor_previews_impact_and_audits_the_change(response_service, google):
     )
     assert confirmed.status_code == 302, confirmed.content
     request = ConfigurationChangeRequest.objects.exclude(pk__in=before).get()
-    # Apply answers with this page, naming the change, not Change status.
-    assert confirmed["Location"] == f"{url}?request={request.pk}#settings-review"
+    assert confirmed["Location"].startswith("/admin/changes/")
+    assert request.patch == [
+        {
+            "operation": "update",
+            "section": "campaigns",
+            "id": str(harness.campaign.pk),
+            "values": {"ministry_duids": [4]},
+        }
+    ]
     audit = AuditContext.objects.get(event__event_type="campaign_ministries_requested")
     assert audit.event.subject_id == request.pk
     assert audit.event.actor_id == request.actor_id
@@ -313,94 +341,103 @@ def test_editor_previews_impact_and_audits_the_change(response_service, google):
         harness.service.store, request_id=request.pk, correlation_id=uuid4()
     )
     assert receipt.state == "applied" and selected(harness) == [4]
-    # The page follows the change in place; a full load of that address
-    # draws the current selections at the current version.
-    status = browser.get(confirmed["Location"])
-    assert "Applied: your change is saved" in region(status.content)
-    assert digest(status) == harness.service.store.active().digest
-    # Adding a Ministry that is not in the catalog is refused at review.
-    form = browser.get(url)
-    refused = post(
-        browser,
-        url,
-        {
-            "action": "preview",
-            "ministry_duids": ["4", "123"],
-            "base_digest": digest(form),
-        },
-    )
+    # Adding it back says its earlier answer shows again, and the review
+    # covers only the Ministries, so it never says changes apply together.
+    readd = live_post(browser, browser.get(url), ["4", "9"])
+    assert readd.status_code == 200, readd.content
+    shown = unescape(readd.content.decode())
+    assert "Ministries to add" in shown
+    assert "1 earlier answer will show again" in shown
+    assert "apply together" not in shown
+    # Adding a Ministry that is not in the catalog is refused at the field.
+    page = browser.get(url)
+    refused = live_post(browser, page, ["4", "123"])
     assert refused.status_code == 400
-    # Its summary names the field, in the review region (#750).
-    summary = unescape(region(refused.content))
-    assert "Included Ministries: Select a valid choice." in summary
+    assert "Select a valid choice." in unescape(refused.content.decode())
 
 
-def test_editor_refuses_in_place_at_the_readers_version(response_service, google):
-    """Nothing changed, a stale page and an out-of-date Apply are refused in
-    the review region (#750). Each keeps the version the reader's selections
-    came from, so a page changed elsewhere is refused until it is reloaded
-    and can never quietly propose undoing that change."""
+def test_a_live_ministry_review_is_refused_in_the_dialog(response_service, google):
+    """Nothing changed, a stale page, an out-of-date Apply and a Ministry
+    change made with another change are refused in the server's words, for
+    the review dialog; none records a change."""
     harness = setup(response_service)
     browser, _ = signed_in()
-    url = reverse("admin:campaign_ministries")
-    loaded = digest(browser.get(url))
-    data = {"action": "preview", "ministry_duids": ["4", "9"], "base_digest": loaded}
-    unchanged = post(browser, url, data)
+    url = reverse("admin:campaign_settings")
+    page = browser.get(url)
+    unchanged = live_post(browser, page, ["4", "9"])
     assert unchanged.status_code == 400
-    assert "No Ministries have changed." in region(unchanged.content)
-    assert "Apply changes" not in region(unchanged.content)
-    stale = post(browser, url, data | {"base_digest": "a" * 64})
+    assert unchanged.json()["refusal"]["message"] == "No settings have changed."
+    stale = live_post(browser, page, ["4"], base_digest="a" * 64)
     assert stale.status_code == 409
-    assert "This page changed in another tab or session." in region(stale.content)
-    assert digest(stale) == "a" * 64
-    review = post(browser, url, data | {"ministry_duids": "4"})
+    assert stale.json()["refusal"]["message"] == (
+        "This page changed in another tab or session."
+    )
+    mixed = live_post(browser, page, ["4"], ministry_leader_roles=["Chairperson"])
+    assert mixed.status_code == 400
+    assert mixed.json()["refusal"]["message"].startswith(
+        "Change the Ministries on their own"
+    )
+    review = live_post(browser, page, ["4"])
     token = re.search(r'name="preview" value="([^"]+)"', review.content.decode())
-    # The same change lands elsewhere after the review: Apply is refused in
-    # place, and the form stays at the version the change was reviewed at.
+    # The same change lands elsewhere after the review: Apply is refused.
+    requests = ConfigurationChangeRequest.objects.count()
     assert applied(select(harness, [4]))
     refused = post(
         browser, url, {"action": "confirm", "preview": unescape(token.group(1))}
     )
     assert refused.status_code == 409
-    assert "This preview is out of date." in region(refused.content)
-    assert digest(refused) == loaded != harness.service.store.active().digest
+    assert refused.json()["refusal"]["message"] == "This preview is out of date."
+    assert ConfigurationChangeRequest.objects.count() == requests + 1
     assert selected(harness) == [4]
-    # Only the change Apply names may be read from the address.
-    assert browser.get(url + "?extra=1").status_code == 400
 
 
-def test_a_closed_campaign_is_refused_in_place(response_service, google):
-    """Once the campaign closes, an in-place Review and the quiet follow-up
-    after Apply explain it in the review region (#750), the follow-up beside
-    the change's status; a plain load still shows the refusal page."""
+def test_a_closed_campaigns_ministries_stay_locked(response_service, google):
+    """Once the campaign closes, its Ministry list is locked in place with
+    the reason in its tip, and nothing posted changes it."""
     harness = setup(response_service)
-    browser, _ = signed_in()
-    url = reverse("admin:campaign_ministries")
-    loaded = digest(browser.get(url))
-    data = {"action": "preview", "ministry_duids": "4", "base_digest": loaded}
-    token = re.search(
-        r'name="preview" value="([^"]+)"', post(browser, url, data).content.decode()
-    )
-    confirmed = post(
-        browser, url, {"action": "confirm", "preview": unescape(token.group(1))}
-    )
-    request = ConfigurationChangeRequest.objects.get(pk=requested(confirmed))
-    install_request(
-        harness.service.store, request_id=request.pk, correlation_id=uuid4()
-    )
     close_campaign(harness.campaign, uuid4())
-    locked = "This campaign's Ministries can't be changed here right now."
-    review = post(browser, url, data | {"ministry_duids": "9"})
-    assert review.status_code == 409
-    assert locked in unescape(region(review.content))
-    # The form keeps the version it was posted at: nothing can be reviewed.
-    assert digest(review) == loaded
-    follow = browser.get(confirmed["Location"], headers={"X-Requested-With": "fetch"})
-    shown = unescape(region(follow.content))
-    assert locked in shown and "Applied: your change is saved" in shown
-    plain = browser.get(url)
-    assert plain.status_code == 409
-    assert b'id="settings-review"' not in plain.content
+    browser, _ = signed_in()
+    page = browser.get(reverse("admin:campaign_settings"))
+    assert "disabled" in ministry_list(page).split(">", 1)[0]
+    assert "this campaign has closed" in page.content.decode()
+    requests = ConfigurationChangeRequest.objects.count()
+    refused = live_post(browser, page, ["4"])
+    assert 400 <= refused.status_code < 500
+    assert ConfigurationChangeRequest.objects.count() == requests
+    assert selected(harness) == [4, 9]
+
+
+def test_background_work_holds_the_ministry_list_with_its_reason(
+    response_service, google
+):
+    """While background work holds campaign changes, the live Ministry list
+    stays where it is, locked, its tip saying it can change once that work
+    finishes."""
+    from django.db import connection, transaction
+
+    from parishkit.stewardship.campaigns.models import CampaignWorkGate
+
+    harness = setup(response_service)
+    # A work gate (a purge reservation), the owner's sentinel only.
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(
+            "ALTER TABLE stewardship_campaign_work_gate DISABLE TRIGGER USER"
+        )
+        CampaignWorkGate.objects.create(
+            campaign=harness.campaign,
+            request_id=uuid4(),
+            initiated_by_id=uuid4(),
+            state="preparing",
+        )
+        cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
+        cursor.execute("ALTER TABLE stewardship_campaign_work_gate ENABLE TRIGGER USER")
+    browser, _ = signed_in()
+    page = browser.get(reverse("admin:campaign_settings"))
+    assert "disabled" in ministry_list(page).split(">", 1)[0]
+    tip = re.search(
+        r'id="id_ministry_duids_tip"[^>]*>(.*?)</span>', page.content.decode(), re.S
+    )
+    assert tip and "The Ministries can change once the background work" in tip.group(1)
 
 
 def installed(harness, duids):
@@ -628,10 +665,10 @@ def test_editor_never_offers_a_ministry_parishsoft_no_longer_lists(
 
     monkeypatch.setattr(SourceMinistry, "payload", property(payload))
     browser, _ = signed_in()
-    form = browser.get(reverse("admin:campaign_ministries"))
+    form = browser.get(reverse("admin:campaign_settings"))
     assert form.status_code == 200, form.content
-    assert 'value="4"' in form.content.decode()
-    assert 'value="9"' not in form.content.decode()
+    assert 'value="4"' in ministry_list(form)
+    assert 'value="9"' not in ministry_list(form)
 
 
 def test_checkpoint_refusal_needs_a_structurally_locked_campaign(

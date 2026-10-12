@@ -36,10 +36,10 @@ def live_change_admitted(state, *, locked):
 def live_ministries_editable(campaign, current_campaign_id):
     """Whether ``campaign`` is the current, live campaign whose Ministries may change.
 
-    The shared rule for offering Campaign Ministries (#342): Campaign
-    settings' button and the Ministries page's links both follow it. It does
-    not check the background-work hold, so the editor may still refuse for a
-    while (it says why) when background work is under way.
+    The shared rule for leaving a live campaign's Ministry list open on
+    Campaign settings (#342, #1119). It does not check the background-work
+    hold: while background work is under way the page keeps the list locked,
+    its tip saying why.
     """
     return (
         campaign is not None

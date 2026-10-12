@@ -62,7 +62,6 @@ IN_PLACE_PAGES = frozenset(
     {
         "parish_settings",
         "share_settings",
-        "campaign_ministries",
         "ministries",
         "reminder_workgroup",
         "artwork_settings",

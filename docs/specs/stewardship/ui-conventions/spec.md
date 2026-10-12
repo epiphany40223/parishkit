@@ -463,8 +463,8 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
 - **In-place review (#532, #750).** This panel is being replaced by the
   [review dialog](#review-dialog) (Administrator decision, 2026-10-11); it
   describes the pages that still use it until #750 converts them.
-  Parish settings, Share options and Campaign
-  Ministries review, apply and follow a change on the page itself, not on
+  Parish settings and Share options
+  review, apply and follow a change on the page itself, not on
   separate Review and Change status pages. The settings form is a
   `form[data-in-place]` marked
   `data-table-sync`: its answer fills the review region under it, while the
@@ -537,18 +537,11 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   waits for a change like the other settings forms (#921), with the hint
   "Change an option to review it."; a form redrawn at the same version keeps
   the saved list it is compared with, and the list an applied change is
-  redrawn with (its fresh blank row included) is the saved one. Campaign
-  Ministries (#750), a live campaign's Ministry selections, works as Parish
-  settings does: its form is `data-table-sync`, its review
-  (the Ministries to add and remove, with what each touches, and the
-  Families with a form open now) fills the review region, and its Review
-  changes waits for a change with the hint "Change a Ministry selection to
-  review it." Once its campaign can no longer change them (closed, or held by
-  background work), an in-place Review, Apply or follow-up says so in the
-  review region, beside the change's status when there is one; a plain load
-  shows the refusal page. Parish settings' and Campaign
-  Ministries' forms are never redrawn; until the change is applied, Apply's
-  answer hands them the version it was reviewed at.
+  redrawn with (its fresh blank row included) is the saved one. A live
+  campaign's Ministry selections change on
+  [Campaign settings](../admin-portal/spec.md#campaign-settings-page), in the
+  review dialog (#1119). Parish settings' form is never redrawn; until the
+  change is applied, Apply's answer hands it the version it was reviewed at.
   [Create the campaign](../admin-portal/spec.md#create-the-campaign) (#142)
   reviews and confirms the same way, except that its status names no
   `in_place` page, so it never refreshes the page once applied. The other
@@ -1021,7 +1014,7 @@ Current state, to be converted: Users' New user, Edit user and Import
 Ministry leaders, New and Edit scheduled email, and
 [Campaign settings](../admin-portal/spec.md#campaign-settings-page) (#1119)
 use the dialog. Parish
-settings, Share options, Campaign Ministries, Ministries,
+settings, Share options, Ministries,
 No-reminders WorkGroup, Campaign images and Parish logos show the in-place
 review panel of #532 and #750
 ([in-place controls](#in-place-controls)); the other editors use separate

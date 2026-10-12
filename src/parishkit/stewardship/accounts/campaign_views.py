@@ -78,11 +78,12 @@ REMOVES_SHARE_OPTIONS = _(
 MULTIPLE_FIELDS = frozenset(
     {"ministry_duids", "fund_duids", "comparison_fund_duids", "ministry_leader_roles"}
 )
-# The settings a live campaign may still change (#1119): its end date (#912)
-# and Ministry leader roles (#922). Every other setting is drawn disabled in
-# place, and Django's disabled fields take their saved values whatever is
-# posted, so the server alone decides what a Review can change.
-LIVE_FIELDS = ("end_date", "ministry_leader_roles")
+# The settings a live campaign may still change (#1119): its end date (#912),
+# Ministry leader roles (#922) and Ministry selections (#342). Every other
+# setting is drawn disabled in place, and Django's disabled fields take their
+# saved values whatever is posted, so the server alone decides what a Review
+# can change.
+LIVE_FIELDS = ("end_date", "ministry_leader_roles", "ministry_duids")
 # Why a setting is locked. Each locked field carries its reason in its "i"
 # tip (UX conventions, Conditional fields), never in a line of its own.
 LOCKED_LIVE = _(
@@ -105,9 +106,21 @@ END_HELD = _(
     "The end date can change once the background work now running finishes, "
     "usually within minutes. Reload this page then."
 )
-MINISTRIES_ELSEWHERE = _(
-    "A live campaign's Ministries are changed with Change Campaign Ministries, "
-    "under this list."
+MINISTRIES_HELD = _(
+    "The Ministries can change once the background work now running "
+    "finishes, usually within minutes. Reload this page then."
+)
+# A live Ministry change is reviewed on its own. SQL restores a refused live
+# Ministry addition (one that a ParishSoft refresh dropped after the review)
+# only for a request whose one update changes the Ministry selections alone
+# (#342), so a combined request could never be refused cleanly.
+MINISTRIES_ALONE = _(
+    "Change the Ministries on their own: their review shows what the change "
+    "touches, and it is applied by itself."
+)
+MINISTRIES_ALONE_FIX = _(
+    "Put the end date and leader roles back as they were and review the "
+    "Ministries; once that is applied, change the rest."
 )
 # A live campaign's end date: the help that replaces the draft's, since the
 # date may move either way (#912).
@@ -334,28 +347,17 @@ def _lock_reason(campaign, held):
     return LOCKED_HELD if held else LOCKED_OTHER
 
 
-def _own_reasons(configuration, campaign, end_held):
-    """Locked fields whose tip gives a reason of their own, by field name.
-
-    A live end date that background work alone holds says it can change
-    once that work finishes (#944); a live campaign's Ministries are changed
-    on Campaign Ministries, from the button under the list (#342).
-    """
-    reasons = {"end_date": END_HELD} if end_held else {}
-    if live_ministries_editable(campaign, configuration.current_campaign_id):
-        reasons["ministry_duids"] = MINISTRIES_ELSEWHERE
-    return reasons
-
-
 def _openness(state, campaign, editable):
-    """Which settings can change now, and the state of a live end date.
+    """Which settings can change now, and why some held ones are locked.
 
-    Returns ``(open_fields, live_at, end_held)``: the names of the fields the
+    Returns ``(open_fields, live_at, reasons)``: the names of the fields the
     form leaves enabled (every one on an editable draft; on a live campaign
-    its end date while it may move, #912, and its leader roles, #922), the
-    instant a live end date was found open at
-    (``schedule_reads.live_end_at``, else None), and whether background work
-    alone holds that end date back (#944).
+    its end date while it may move, #912, its leader roles, #922, and its
+    Ministry selections, #342), the instant a live end date was found open
+    at (``schedule_reads.live_end_at``, else None), and the locked fields
+    whose tip gives a reason of their own: a live end date or Ministry list
+    that background work alone holds says it can change once that work
+    finishes (#944).
     """
     from .schedule_reads import live_end_at, live_end_held
 
@@ -363,16 +365,23 @@ def _openness(state, campaign, editable):
         return (
             frozenset(CampaignSettingsForm.base_fields) - {"base_digest"},
             None,
-            False,
+            {},
         )
+    configuration, held = state[0], state[3]
     live_at = live_end_at(state, campaign)
-    open_fields = set()
+    open_fields, reasons = set(), {}
     if live_at is not None:
         open_fields.add("end_date")
-    if _leaders_editable(state[0], campaign, editable):
+    elif live_end_held(state, campaign):
+        reasons["end_date"] = END_HELD
+    if _leaders_editable(configuration, campaign, editable):
         open_fields.add("ministry_leader_roles")
-    end_held = live_at is None and live_end_held(state, campaign)
-    return frozenset(open_fields), live_at, end_held
+    if live_ministries_editable(campaign, configuration.current_campaign_id):
+        if held:
+            reasons["ministry_duids"] = MINISTRIES_HELD
+        else:
+            open_fields.add("ministry_duids")
+    return frozenset(open_fields), live_at, reasons
 
 
 def _lock(field, reason):
@@ -411,12 +420,22 @@ def _settings_form(
     ``source`` is the promoted source for the Ministry and fund names.
     ``open_fields`` names the fields that can change now (all of them when
     None); every other one is locked in place with ``reason`` in its tip, or
-    with its own reason from ``reasons`` (a live end date that background
-    work holds). ``live_end`` says a live campaign's end date is open, whose
-    help then says it may move either way.
+    with its own reason from ``reasons`` (a live end date or Ministry list
+    that background work holds). ``live_end`` says a live campaign's end
+    date is open, whose help then says it may move either way. A live
+    campaign's open Ministry list offers only what may be added now.
     """
     previous = campaign.active_configuration.values
     ministries, funds = _catalog(configuration, source, previous)
+    # A draft's settings are all open; a live campaign's few are judged by
+    # their own reviews (the end date's, #912).
+    whole = open_fields is None or "name" in open_fields
+    if not whole and "ministry_duids" in open_fields:
+        # A live campaign may add only Ministries ParishSoft still lists; the
+        # installer and SQL check it again (#342).
+        from .campaign_ministry_changes import addable
+
+        ministries = addable(ministries, source, previous["ministry_duids"])
     initial = initial_fields(previous, digest=configuration.active_configuration.digest)
     leader_roles = (
         effective_roles(previous) if "ministry" in previous["modules"] else []
@@ -433,8 +452,7 @@ def _settings_form(
         funds=funds,
         leader_choices=role_choices(shown),
         leader_roles=shown,
-        # A live campaign's end date is judged by its own review (#912).
-        whole=open_fields is None or "name" in open_fields,
+        whole=whole,
     )
     # Same plain-language field help as the setup wizard (setup_help.py).
     setup_help.apply(form, setup_help.ADMIN_CAMPAIGN, replace=True)
@@ -487,7 +505,10 @@ def _refuse_locked_changes(form, open_fields, reason, reasons):
             _("Some settings you changed can no longer change now."),
             # A reason that already says to reload is not told twice.
             fix=why
-            if any(why is said for said in (END_HELD, END_LOCKED, LOCKED_HELD))
+            if any(
+                why is said
+                for said in (END_HELD, END_LOCKED, LOCKED_HELD, MINISTRIES_HELD)
+            )
             else format_lazy("{} {}", why, _("Reload this page to start again.")),
         )
 
@@ -543,11 +564,8 @@ def _page(
             if live_at is None
             else campaign.active_configuration.values["end_date"],
             "end_check": None if live_at is None else end_check_words(),
-            # Until Campaign Ministries joins this page, a live campaign's
-            # Ministries keep their own editor (#342), linked from the list.
-            "ministries_live": live_ministries_editable(
-                campaign, configuration.current_campaign_id
-            ),
+            # A live campaign's open Ministry list says what a change does.
+            "live_ministries": not editable and "ministry_duids" in open_fields,
             "family_test_url": chosen_family_test_url(configuration, campaign),
             # Review posts here, and the review dialog's Apply too.
             "page_url": request.path,
@@ -691,7 +709,9 @@ def _live_preview(request, service, actor, state, campaign, form, opened, page):
     both or neither. A leader-role change alone is one campaign update of
     ``ministry_leader_roles``, which the installer and the SQL structural
     lock both admit while live. A refusal for the date itself (passed, before
-    the start, mail it would strand) is the end date's field error.
+    the start, mail it would strand) is the end date's field error. A change
+    of the Ministry selections is reviewed on its own
+    (``_ministries_preview``; ``MINISTRIES_ALONE`` says why).
     """
     from datetime import date
 
@@ -713,6 +733,12 @@ def _live_preview(request, service, actor, state, campaign, form, opened, page):
     }
     if not changed:
         raise UserFacingError(UNCHANGED, fix=_("Nothing was changed."))
+    if "ministry_duids" in changed:
+        if len(changed) > 1:
+            raise UserFacingError(MINISTRIES_ALONE, fix=MINISTRIES_ALONE_FIX)
+        return _ministries_preview(
+            request, service, actor, state, campaign, form, changed
+        )
     if "end_date" in changed:
         saved = date.fromisoformat(previous["end_date"])
         end_form = LiveEndDateForm(
@@ -765,30 +791,98 @@ def _live_preview(request, service, actor, state, campaign, form, opened, page):
     )
 
 
+def _ministries_preview(request, service, actor, state, campaign, form, changed):
+    """Review a live campaign's Ministry change and its impact (#342, #1119).
+
+    The change is one campaign update of ``ministry_duids`` alone. Its
+    choices offer only the current selections and the active Ministries
+    ParishSoft still lists (``campaign_ministry_changes.addable``), so the
+    form has already refused any other addition; the installer and SQL check
+    it again. The review lists the Ministries to add and to remove, with what
+    each touches, and the Families with a form open now; the signed preview
+    carries the audit companion that confirming records.
+    """
+    from . import campaign_ministry_changes
+
+    configuration, fingerprint = state[0], state[-1]
+    before = sorted(campaign.active_configuration.values["ministry_duids"])
+    after = changed["ministry_duids"]
+    patch = [
+        {
+            "operation": "update",
+            "section": "campaigns",
+            "id": str(campaign.pk),
+            "values": {"ministry_duids": after},
+        }
+    ]
+    base = service.store.active()
+    if base is None or base.digest != configuration.active_configuration.digest:
+        raise stale_page()
+    build_candidate(base, patch, candidate_id=uuid4())
+    ministries, extra = campaign_ministry_changes.review(
+        campaign, dict(form.fields["ministry_duids"].choices), before, after
+    )
+    return _review(
+        request,
+        {
+            "changes": [],
+            "ministries": ministries,
+            "notes": [],
+            "preview": sign_preview(
+                actor=actor,
+                configuration=configuration,
+                patch=patch,
+                salt=campaign_ministry_changes.SALT,
+                snapshot=fingerprint,
+                extra=extra,
+            ),
+        },
+    )
+
+
 def _confirm(request, service, actor, campaign_id):
     """Apply a reviewed change: record it and answer with its Change status.
 
-    A live end date (#912) is reviewed and signed as the Dates and mail
-    schedules change it is, so its preview's salt picks how it is
-    confirmed. The review dialog follows the answer's status, then redraws
-    this page in place. A refusal (an out-of-date preview, settings changed
-    elsewhere) is raised and shown inside the dialog.
+    The preview's salt says which change it is and how it is confirmed: a
+    live end date (#912) is signed as the Dates and mail schedules change it
+    is; a live Ministry change (#342) records its audit companion with the
+    request; anything else is an ordinary Campaign settings change. The
+    review dialog follows the answer's status, then redraws this page in
+    place. A refusal (an out-of-date preview, settings changed elsewhere) is
+    raised and shown inside the dialog.
     """
+    from . import campaign_ministry_changes
     from .campaign_end_date import signed_for
     from .schedule_changes import confirm_scope, preview_salt
 
-    live_end = signed_for(request.POST.get("preview", ""), campaign_id)
-    return confirm(
-        request,
-        service,
-        actor,
-        salt=preview_salt(campaign_id) if live_end else SALT,
-        current_scope=(
-            (lambda service: confirm_scope(service, campaign_id))
-            if live_end
-            else _scope
-        ),
-    )
+    token = request.POST.get("preview", "")
+    if signed_for(token, campaign_id):
+        return confirm(
+            request,
+            service,
+            actor,
+            salt=preview_salt(campaign_id),
+            current_scope=lambda service: confirm_scope(service, campaign_id),
+        )
+    if _signed_with(token, campaign_ministry_changes.SALT):
+        return confirm(
+            request,
+            service,
+            actor,
+            salt=campaign_ministry_changes.SALT,
+            current_scope=_scope,
+            attach=campaign_ministry_changes.audit,
+        )
+    return confirm(request, service, actor, salt=SALT, current_scope=_scope)
+
+
+def _signed_with(token, salt):
+    """Whether ``token`` is signed with ``salt``; ``confirm`` checks it in full."""
+    try:
+        signing.loads(token, salt=salt)
+    except signing.BadSignature:
+        return False
+    return True
 
 
 @require_http_methods(["GET", "HEAD", "POST"])
@@ -827,7 +921,7 @@ def campaign_settings(request, campaign_id):
             state = _state(service)
             configuration, campaigns, source, held = state[:4]
             campaign, editable = _target(configuration, campaigns, held, campaign_id)
-            open_fields, live_at, end_held = _openness(state, campaign, editable)
+            open_fields, live_at, reasons = _openness(state, campaign, editable)
             form = _settings_form(
                 configuration,
                 campaign,
@@ -835,7 +929,7 @@ def campaign_settings(request, campaign_id):
                 source=source,
                 open_fields=open_fields,
                 reason=(reason := _lock_reason(campaign, held)),
-                reasons=(reasons := _own_reasons(configuration, campaign, end_held)),
+                reasons=reasons,
                 live_end=live_at is not None,
             )
             if action == "preview":
@@ -863,7 +957,8 @@ def campaign_settings(request, campaign_id):
                         "They can be changed only for the current draft "
                         "campaign in Testing mode, before it has ever been "
                         "active, and while no background work is running. "
-                        "A live campaign's end date and Ministry leader roles "
+                        "A live campaign's end date, Ministry leader roles "
+                        "and Ministries "
                         "can still change here, while no background work is "
                         "running."
                     ),

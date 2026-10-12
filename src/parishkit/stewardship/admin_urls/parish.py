@@ -4,16 +4,14 @@ campaigns, refresh and Data to fix in ParishSoft.
 Pages end in ``/``; their form actions and images sit under them as nouns
 (``uploads/``, ``deletion/``, ``name/``, ``imports/``, ``removal/``); Past
 campaigns' ``review/`` is the name its specification and the ingress rule
-give the upload route. Campaign Ministries sits under
-Ministries (one home per concept); it changes the current campaign's
-selections, so its route hands the view the current campaign's id.
+give the upload route. A live campaign's Ministries change on Campaign
+settings (#1119), so Ministries has no campaign editor beside it.
 """
 
 from django.urls import path
 
 from ..accounts import (
     branding_views,
-    campaign_ministry_views,
     data_to_fix_views,
     hosted_file_views,
     ministry_views,
@@ -22,7 +20,6 @@ from ..accounts import (
 )
 from ..accounts.group_root_views import group_root
 from ..reports import past_campaign_views
-from ..web.admin_routes import current_campaign
 
 patterns = [
     # The group root opens the first entry the viewer may open now.
@@ -36,11 +33,6 @@ patterns = [
         name="branding_asset",
     ),
     path("parish/ministries/", ministry_views.ministry_activity, name="ministries"),
-    path(
-        "parish/ministries/campaign/",
-        current_campaign(campaign_ministry_views.campaign_ministries),
-        name="campaign_ministries",
-    ),
     path("parish/files/", hosted_file_views.library, name="hosted_files"),
     path("parish/files/uploads/", hosted_file_views.upload, name="hosted_file_upload"),
     path("parish/files/deletion/", hosted_file_views.delete, name="hosted_file_delete"),
