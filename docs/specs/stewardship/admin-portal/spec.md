@@ -1674,6 +1674,10 @@ records the products compared. It is written for a mid-level IT admin: plain
 words, no cron text, and every refused or skipped time explained where it
 appears. It follows the [in-place controls](../ui-conventions/spec.md#in-place-controls) and
 conditional-field rules: nothing on the page reloads it.
+Planned ([#1122](https://github.com/epiphany40223/parishkit/issues/1122)):
+the editor adopts the
+[Basic and Advanced modes](../ui-conventions/spec.md#basic-and-advanced-modes)
+convention, with the presets as its Basic choices.
 
 **Time zone.** Schedule times are entered and shown in the refresh
 schedule's own time zone (the current campaign's, else the parish's, as the
@@ -2391,6 +2395,11 @@ Dates and mail schedules, whose status line says what was applied. Edit
 opens it filled in
 from the saved schedule, whose mail type is fixed; a schedule that is unknown or
 read-only is refused there too, even from an old link (a GET or a POST).
+Planned ([#1129](https://github.com/epiphany40223/parishkit/issues/1129)):
+the schedule editors here, reminder repeats and the Admin digests included,
+adopt the
+[Basic and Advanced modes](../ui-conventions/spec.md#basic-and-advanced-modes)
+convention.
 
 The send date, time and day of the week are shown and typed in the browser's
 time zone, like every Admin time ([#558](https://github.com/epiphany40223/parishkit/issues/558),
