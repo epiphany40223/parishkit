@@ -1,7 +1,7 @@
 """Compile outside lifecycle locks; atomically retain one bounded Admin page."""
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from uuid import UUID, uuid4
 
 from django.db import connection
@@ -25,6 +25,7 @@ from parishkit.stewardship.jobs.ownership import lock_task_claim
 from parishkit.stewardship.jobs.storage import _status
 from parishkit.stewardship.storage import StorageInvariantError
 
+from .digest_funnel import digest_funnel
 from .weekly_capture import retained_selection
 from .weekly_digest import WeeklyDigestDocument, render_weekly_digest
 from .weekly_models import (
@@ -66,8 +67,12 @@ class WeeklyPage:
     last: bool
 
 
-def load_weekly_page(claim):
-    """Detach only uncovered items; queued or uncertain messages never cover them."""
+def load_weekly_page(claim, *, funnel=True):
+    """Detach only uncovered items; queued or uncertain messages never cover them.
+
+    ``funnel=False`` leaves the response funnel uncounted, for the coverage
+    recheck in ``retain_weekly_page``, which compares coverage only.
+    """
     require_work_order()
     row = bound_preparation(_status(lock_task_claim(claim)))
     current_preparation(row)
@@ -89,6 +94,14 @@ def load_weekly_page(claim):
         else [address for address in snapshot.recipients if address not in existing]
     )
     plans = []
+    # The response funnel at the capture instant (#477), counted once per
+    # page from durable timestamps, so every Admin's email shows the same
+    # figures and the saved page, counting again, agrees. None in Testing.
+    metrics = (
+        digest_funnel(snapshot.campaign_id, row.mode, snapshot.observed_at)
+        if funnel and pending
+        else None
+    )
     for address in pending[:LIMIT]:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -119,6 +132,8 @@ def load_weekly_page(claim):
                 campaign_timezone=snapshot.timezone_configuration.timezone,
                 manual=manual,
                 date_format=snapshot.configuration.parish.date_format,
+                funnel=metrics,
+                mode=row.mode,
             )
         )
         plans.append(
@@ -175,6 +190,25 @@ def retained_render(identity, content, scope, revision, address):
     )
 
 
+def without_funnel(page):
+    """The page with no response funnel, for comparing its coverage alone.
+
+    The funnel is not coverage: it is counted from durable timestamps, but
+    an engagement backfill or a row still committing at the capture instant
+    can change a count between load and retain. Such a change must not make
+    the page look stale and fail the compile.
+    """
+    return replace(
+        page,
+        recipients=tuple(
+            plan
+            if plan.document is None
+            else replace(plan, document=replace(plan.document, funnel=None))
+            for plan in page.recipients
+        ),
+    )
+
+
 def retain_weekly_page(claim, page, contents):
     """Recheck coverage and bind every private recipient to its exact outbox atomically.
 
@@ -183,7 +217,10 @@ def retain_weekly_page(claim, page, contents):
     accepted item. Every successful page remains immutable across later retries.
     """
     require_work_order()
-    if load_weekly_page(claim) != page or len(contents) != len(page.recipients):
+    # Coverage only: the funnel compiled into ``contents`` stays as counted.
+    if load_weekly_page(claim, funnel=False) != without_funnel(page) or len(
+        contents
+    ) != len(page.recipients):
         raise WeeklyCoverageChanged(
             "Weekly recipient coverage changed during compilation."
         )

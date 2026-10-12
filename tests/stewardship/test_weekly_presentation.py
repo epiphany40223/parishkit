@@ -50,8 +50,20 @@ def report(monkeypatch):
     """Create a detached selection and prove status reads are limited to its page."""
     values = tuple(item(number) for number in range(1, 121))
     selection = select_weekly(observation(*values), WeeklyHistory(CAMPAIGN))
-    snapshot = SimpleNamespace(pk=uuid4(), campaign_id=CAMPAIGN, preparation_id=uuid4())
+    snapshot = SimpleNamespace(
+        pk=uuid4(),
+        campaign_id=CAMPAIGN,
+        preparation_id=uuid4(),
+        preparation=SimpleNamespace(mode="testing"),
+        observed_at=object(),
+    )
     requested = []
+    # The funnel is counted only for list pages, at the capture instant.
+    monkeypatch.setattr(
+        presentation,
+        "digest_funnel",
+        lambda *args: requested.append(("funnel", *args)),
+    )
     monkeypatch.setattr(presentation, "retained_selection", lambda row: selection)
     monkeypatch.setattr(
         presentation.WeeklyManualRequest.objects,
@@ -81,6 +93,11 @@ def test_report_pages_do_not_drop_or_repeat_items(report, page, count):
     assert result["total"] == 120 and result["pages"] == 3
     assert len(result["rows"]) == len(requested[0]) == count
     assert result["rows"][0]["value"].item_id == UUID(int=101 + (page - 1) * 50)
+    # Each list page counts the funnel once, at the capture instant (#477),
+    # after its requests; a Testing report shows the note instead.
+    assert requested[1:] == [("funnel", CAMPAIGN, "testing", snapshot.observed_at)]
+    assert result["funnel_stages"] == ()
+    assert result["funnel_testing_note"].startswith("Testing digests")
 
 
 def test_only_selected_detail_identity_is_queried(report):
@@ -88,6 +105,8 @@ def test_only_selected_detail_identity_is_queried(report):
     result = presentation.snapshot_context(snapshot, item_id=UUID(int=190))
     assert requested == [[UUID(int=190)]]
     assert len(result["rows"]) == 1 and result["detail"]
+    # A single request's page counts no funnel and shows none.
+    assert result["funnel_testing_note"] == "" and result["funnel_stages"] == ()
     with pytest.raises(ObjectDoesNotExist):
         presentation.snapshot_context(snapshot, item_id=uuid4())
     with pytest.raises(ObjectDoesNotExist):
