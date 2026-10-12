@@ -2199,7 +2199,12 @@ sets (the Administrator chooses it; there is no preset time), send:
   up and could not be counted again, and says that the Response dashboard's
   Testing view has it; and
 - the same participation chart/data basis as the web report, rendered as an
-  inline accessible image plus textual summary.
+  inline accessible image plus textual summary; and
+- when its schedule includes it (off by default), the
+  [Compared with past campaigns](../campaign-history/spec.md#digest-section)
+  section after the report's button: this campaign on the report day
+  beside last year and the imported years' average, from the same pinned
+  facts, retained with the digest so its saved page shows it unchanged.
 
 The report day is the schedule slot's local date: the campaign day before the
 scheduled send. A late, retried or recovery send never moves it. Every figure

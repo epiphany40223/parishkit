@@ -171,7 +171,8 @@ class Comparison:
     the imported years' final results are shown. ``imported`` is newest
     first; ``last_year`` is one of them or None. ``latest_day`` is the
     current comparison day, the last day Compare on day can choose (``day``
-    is that day or an earlier one).
+    is that day or an earlier one). ``checksums`` pairs each imported year
+    with its file's SHA-256, which a digest's section records (slice 7).
     """
 
     campaign_name: str
@@ -183,6 +184,7 @@ class Comparison:
     imported: tuple
     last_year: Year | None
     latest_day: int | None = None
+    checksums: tuple = ()
 
 
 # ---------------------------------------------------------------- metrics

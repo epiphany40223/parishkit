@@ -113,7 +113,7 @@ SCHEDULE_LIMIT = Schedules.max_num
 # fields are posted only so a refused page can show them again; the dates it
 # gave are posted as ``repeat-dates``.
 ENTRY = "schedule"
-ENTRY_FIELDS = ("kind", "date", "time", "weekday", "template_version")
+ENTRY_FIELDS = ("kind", "date", "time", "weekday", "template_version", "comparison")
 REPEAT_FIELDS = (
     "repeat",
     "frequency",
@@ -137,7 +137,8 @@ ZONE_MISSING = _(
 # keeps Review unavailable until something changed, so only a request that
 # bypasses the page script meets it, in the review dialog (#750).
 UNCHANGED = _(
-    "Nothing has changed. Change the date, time or email, then choose Review changes."
+    "Nothing has changed. Change the date, time, email or comparison, then "
+    "choose Review changes."
 )
 # The signed review of an edited email carries its text; the Pages and emails
 # editor refuses a preview this large too (content_views._preview).
@@ -471,6 +472,8 @@ def _entries(entry, repeat, schedule, *, zone, campaign_zone, now):
             "time": clock.isoformat(timespec="seconds"),
             "weekday": weekday,
             "template_version": data["template_version"],
+            # The daily digest's comparison section (#1018); False elsewhere.
+            "comparison": bool(data.get("comparison")),
         }
         if schedule is not None:
             fields = {"id": schedule["id"], **fields}

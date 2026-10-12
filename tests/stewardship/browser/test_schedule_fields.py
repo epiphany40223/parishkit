@@ -16,12 +16,13 @@ pytestmark = pytest.mark.parametrize(
 
 # The blank new row follows the one saved initial invitation.
 NEW = "schedules-1-"
-FIELDS = ("date", "time", "weekday", "template_version")
+FIELDS = ("date", "time", "weekday", "template_version", "comparison")
 SHOWN = {
     "": set(),
     "initial": {"date", "time", "template_version"},
     "reminder": {"date", "time", "template_version"},
-    "daily_digest": {"time", "template_version"},
+    # The comparison section's checkbox is the daily digest's alone (#1018).
+    "daily_digest": {"time", "template_version", "comparison"},
     "weekly_digest": {"weekday", "time", "template_version"},
 }
 
@@ -84,6 +85,16 @@ def test_rows_show_only_the_fields_of_their_mail_type(
     page.locator(f'[name="{NEW}date"]').fill("2054-10-05")
     kind.select_option("daily_digest")
     assert page.locator(f'[name="{NEW}date"]').input_value() == ""
+    # The daily digest's comparison checkbox, labelled, is unticked when
+    # another type hides it, so it is never posted for that type.
+    comparison = page.get_by_label("Include Compared with past campaigns").last
+    assert not comparison.is_checked()
+    comparison.check()
+    kind.select_option("weekly_digest")
+    hidden(group(page, "comparison"))
+    assert not page.locator(f'[name="{NEW}comparison"]').is_checked()
+    kind.select_option("daily_digest")
+    assert not comparison.is_checked()
     kind.select_option("")
     assert shown(page) == set()
     assert page.locator(f'[name="{NEW}time"]').input_value() == ""

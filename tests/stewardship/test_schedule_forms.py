@@ -28,6 +28,9 @@ def data_for(rows, *, total=None):
         for name in ("id", "kind", "date", "time", "weekday", "template_version"):
             value = values.get(name)
             data[f"schedules-{index}-{name}"] = "" if value is None else str(value)
+        # A ticked checkbox posts "on" (the daily digest's comparison, #1018).
+        if values.get("comparison"):
+            data[f"schedules-{index}-comparison"] = "on"
     return data
 
 
@@ -316,7 +319,7 @@ def with_new_row(owner, saved, templates, **fields):
     """The saved rows plus one new row with exactly the given fields posted."""
     data = data_for(saved)
     index = len(saved)
-    for name in ("kind", "date", "time", "weekday", "template_version"):
+    for name in ("kind", "date", "time", "weekday", "template_version", "comparison"):
         value = fields.get(name, "")
         if name == "template_version" and value in templates:
             value = templates[value]["id"]
@@ -629,4 +632,67 @@ def test_saved_schedules_are_shown_in_sending_order():
         campaign=owner["values"],
     )
     assert formset.is_valid(), formset.errors
+    assert formset.patch() == []
+
+
+@pytest.mark.parametrize(("posted", "saved"), [("on", True), ("", None)])
+def test_a_daily_digest_saves_the_comparison_only_when_ticked(posted, saved):
+    """Ticked saves ``comparison: true``; unticked leaves it out (#1018)."""
+    owner = campaign()
+    templates = emails(owner)
+    formset, _ = with_new_row(
+        owner,
+        [saved_row(owner, templates)],
+        templates,
+        kind="daily_digest",
+        time="07:00:00",
+        template_version="daily_digest",
+        comparison=posted,
+    )
+    assert formset.is_valid(), (formset.errors, formset.non_form_errors())
+    (added,) = formset.patch()
+    assert added["values"].get("comparison") is saved
+
+
+def test_only_a_daily_digest_may_include_the_comparison():
+    """A weekly digest (or any other mail) with it ticked is told on the field."""
+    owner = campaign()
+    templates = emails(owner)
+    formset, form = with_new_row(
+        owner,
+        [saved_row(owner, templates)],
+        templates,
+        kind="weekly_digest",
+        weekday="2",
+        time="07:00:00",
+        template_version="weekly_digest",
+        comparison="on",
+    )
+    assert not formset.is_valid()
+    assert form.errors == {
+        "comparison": [
+            "Only daily Admin digests can include the comparison with past "
+            "campaigns — leave it unticked."
+        ]
+    }
+
+
+def test_a_saved_daily_digest_posted_unchanged_keeps_its_comparison():
+    """Turning it on is a change; posting the saved row back is not."""
+    owner = campaign()
+    templates = emails(owner)
+    initial = saved_row(owner, templates)
+    digest = saved_row(
+        owner, templates, kind="daily_digest", date=None, comparison=True
+    )
+    data = data_for([initial, digest])
+    formset = Schedules(
+        data,
+        prefix="schedules",
+        previous=[initial, digest],
+        templates=list(templates.values()),
+        campaign_id=owner["id"],
+        campaign=owner["values"],
+    )
+    assert formset.is_valid(), (formset.errors, formset.non_form_errors())
     assert formset.patch() == []

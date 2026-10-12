@@ -40,7 +40,7 @@ only this schedule sends.
 {% include 'stewardship/schedule-row.html' with form=entry legend=legend number=0 %}
 {% if email_toggle %}{% include 'stewardship/schedule-email.html' %}{% endif %}
 {% if repeat %}<p class="repeat-summary" role="status" data-repeat-summary hidden></p><div data-repeat-posted></div>{% endif %}
-<p>{% button type="submit" autocomplete="off" %}{% translate "Review changes" %}{% endbutton %} <a href="{{ list_url }}">{% translate "Cancel" %}</a> <span class="help unchanged-hint" data-unchanged-hint data-idle>{% if new %}{% translate "Fill in the scheduled email to review it." %}{% else %}{% translate "Change the date, time or email to review it." %}{% endif %}</span></p>
+<p>{% button type="submit" autocomplete="off" %}{% translate "Review changes" %}{% endbutton %} <a href="{{ list_url }}">{% translate "Cancel" %}</a> <span class="help unchanged-hint" data-unchanged-hint data-idle>{% if new %}{% translate "Fill in the scheduled email to review it." %}{% else %}{% translate "Change the date, time, email or comparison to review it." %}{% endif %}</span></p>
 {% if repeat %}<div data-repeat-dates></div>{% endif %}
 </form>
 {% if new %}{% translate "Review new scheduled email" as review_title %}{% else %}{% translate "Review scheduled email change" as review_title %}{% endif %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="schedule-review" title=review_title apply_url=apply_url return_url=list_url outcome_id="schedules-outcome" fallback="schedule-entry-form" %}

@@ -29,7 +29,8 @@ The change document (default, pending Administrator confirmation) is JSON::
                     "template_version": "<uuid>"},
                    {"repeat": {"frequency": "weekly", "start": "...",
                                "end": "...", "weekdays": [0, 3]},
-                    "time": "...", "template_version": "<uuid>"}]}
+                    "time": "...", "template_version": "<uuid>"},
+                   {"id": "<saved daily digest>", "comparison": true}]}
 
 A saved schedule named by ``id`` keeps every field the document leaves out;
 ``delete`` removes it; an entry without ``id`` adds a schedule. Saved
@@ -60,7 +61,7 @@ TOKEN_LIMIT = 256_000
 CHANGES_LIMIT = 256_000
 ROW_LIMIT = 101
 WINDOW_FIELDS = ("timezone", "start_date", "end_date", "overlap_confirmed")
-ROW_FIELDS = ("kind", "date", "time", "weekday", "template_version")
+ROW_FIELDS = ("kind", "date", "time", "weekday", "template_version", "comparison")
 # A repeat entry's members besides its rule (#469). It always adds
 # reminders, so it takes no kind, and its rule gives the dates.
 REPEAT_FIELDS = ("time", "template_version")
@@ -91,6 +92,8 @@ FIELD_TYPES = {
     "time": (str,),
     "weekday": (int, type(None)),
     "template_version": (str,),
+    # A daily digest's Compared with past campaigns section (#1018).
+    "comparison": (bool,),
 }
 
 
@@ -396,6 +399,7 @@ def _side(value):
         "weekday": value["weekday"],
         "template_version": value["template_version"],
         "subject": value["subject"],
+        "comparison": value.get("comparison", False),
         "timezone": value["timezone"],
         "resolved": [
             {"key": slot["key"], "due_at": slot["due_at"]}

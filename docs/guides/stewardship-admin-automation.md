@@ -257,7 +257,7 @@ value Outgoing mail's send filter takes), `number`, `mode`, `cycle`,
 | `campaign_id`, `editable` | The campaign, and whether its dates may still change |
 | `version` | What a schedule change is previewed against |
 | `window` | `start_date`, `end_date`, `timezone` |
-| `schedules` | Each schedule's `id`, `kind`, `date`, `time`, `weekday`, `subject`, `template_version`, its first resolved send times (`resolved`: `key`, `due_at`) and `more` |
+| `schedules` | Each schedule's `id`, `kind`, `date`, `time`, `weekday`, `subject`, `template_version`, `comparison` (whether a daily digest includes Compared with past campaigns), its first resolved send times (`resolved`: `key`, `due_at`) and `more` |
 
 `schedule show` reads the current campaign unless `--campaign UUID` names
 another. An unknown campaign, or no current campaign, is exit 1
@@ -440,9 +440,9 @@ The document is JSON with two optional members:
 
 | Entry | Members |
 | --- | --- |
-| Change a saved schedule | `id` (from `schedule show`) and any of `date`, `time`, `weekday`, `template_version`. Members you leave out keep their values. Its `kind` cannot change, so it may not be given. |
+| Change a saved schedule | `id` (from `schedule show`) and any of `date`, `time`, `weekday`, `template_version` and, for a daily digest, `comparison` (`true` or `false`: whether it includes Compared with past campaigns). Members you leave out keep their values. Its `kind` cannot change, so it may not be given. |
 | Remove a saved schedule | `id` and `"delete": true`, nothing else. |
-| Add a schedule | `kind` (`initial`, `reminder`, `daily_digest` or `weekly_digest`) and the members its kind needs: `date` for `initial` and `reminder`, `weekday` (0 is Monday) for `weekly_digest`, and `time` (in the campaign's time zone) and `template_version` for all. A `time` may be written in any form the page accepts, such as `09:00:00`, `9:00`, `9am` or `21:00`, and is stored as `HH:MM:SS`. |
+| Add a schedule | `kind` (`initial`, `reminder`, `daily_digest` or `weekly_digest`) and the members its kind needs: `date` for `initial` and `reminder`, `weekday` (0 is Monday) for `weekly_digest`, and `time` (in the campaign's time zone) and `template_version` for all. A `daily_digest` may add `"comparison": true`; it is off without it. A `time` may be written in any form the page accepts, such as `09:00:00`, `9:00`, `9am` or `21:00`, and is stored as `HH:MM:SS`. |
 | Add repeating reminders | `repeat` (the rule below), `time` and `template_version`, as for one reminder, and nothing else. It adds one ordinary reminder per date the rule gives, as if you listed each one. Every date must fit: unlike the page, which leaves out a date that does not fit, the command refuses the whole change. A problem with one date alone, such as a date after the campaign closes, names that date; a conflict between schedules, such as a date at the same moment as a saved reminder or not after the initial invitation, comes back as a plain `schedules` error, as for reminders listed one by one. A rule that gives no dates or more than 30, or skips a month, is exit 1 (`invalid`). The rule itself is not saved. |
 
 | `repeat` member | What it holds |
@@ -1233,7 +1233,12 @@ pk-admin digest list --requested REQUEST_KEY
 - `digest daily` prints the saved figures: `participation` (the figures'
   `fact_set_id`, source and dates), `statistics` (the active Families,
   Members, email, responses and, with Financial stewardship, pledge
-  totals) and `days`, the daily table.
+  totals) and `days`, the daily table. `comparison` is the digest's
+  Compared with past campaigns section when its schedule included it (null
+  otherwise): the `day` and `report_date` compared, `compared_with` (the
+  years), the headline `figures` (each `figure`, `value` and its
+  `comparisons`, with Withheld where the small-count protection applies)
+  and the `archives` compared (each `year` and file `checksum`).
 - `digest weekly` prints the report's `information_count`,
   `correction_count` and `total`, whether it was `manual`, and `items`, 50
   to a page (`--page`): each item's `item_id`, whether it is new
@@ -1827,3 +1832,7 @@ pk-admin users import-leaders --confirm --token -
   --format csv|xlsx|pdf --timezone ZONE`, the Campaign comparison page's
   download (full scope; `campaign_comparison_exported` and
   `admin_cmd_export_comparison`).
+- `pk-admin/1` (#1018, slice 7): additive. `schedule show` lists each
+  schedule's `comparison`, and a `schedule preview` change document may set
+  a daily digest's `comparison`; `digest daily` prints its retained
+  `comparison` section (or null).

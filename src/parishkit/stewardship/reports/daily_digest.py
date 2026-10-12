@@ -21,6 +21,7 @@ from parishkit.stewardship.web.digest_content import CHART_ID, EMAIL_CHART_WIDTH
 from parishkit.stewardship.web.report_markup import BLUE, STYLES, TRACK, button
 
 from .charts import render_participation
+from .digest_comparison import render_images, section_html, section_text
 from .digest_funnel import (
     TESTING_NOTE,
     figure_rows,
@@ -58,6 +59,13 @@ class DailyDigestDocument:
     compiling worker and again by the saved page, so the two agree; ``mode``
     is the digest's system mode. A Testing digest has no funnel and says
     where it is instead; a document without a mode shows neither.
+
+    ``comparison`` is the Compared with past campaigns section
+    (``digest_comparison.section``, #1018 slice 7) when the schedule has it
+    on and a past campaign is imported: computed once by the compiling
+    worker and retained with the ready row, which the saved page reads
+    back, so later imports or removals never change it. None leaves the
+    section out.
     """
 
     snapshot_id: UUID
@@ -68,12 +76,14 @@ class DailyDigestDocument:
     source_age: DataAge | None = None
     funnel: ResponseMetrics | None = None
     mode: str | None = None
+    comparison: dict | None = None
 
     def __post_init__(self):
         """Reject mixed cutoffs or incomplete coverage before rendering any output."""
         chart, statistics = self.participation, self.statistics
         if (
             not isinstance(self.snapshot_id, UUID)
+            or not isinstance(self.comparison, dict | None)
             or not isinstance(chart, ParticipationDocument)
             or not isinstance(statistics, CampaignStatistics)
             or not isinstance(self.date_format, str | None)
@@ -147,12 +157,22 @@ class DailyDigestDocument:
 
 @dataclass(frozen=True, repr=False)
 class DailyDigestContent:
-    """Compiled body and bounded in-memory chart; no recipients or file paths."""
+    """Compiled body and bounded in-memory charts; no recipients or file paths.
+
+    ``comparison`` holds the Compared with past campaigns section's chart
+    images (#1018 slice 7), none when the digest has no section.
+    """
 
     subject: str
     html: str
     text: str
     chart: InlineImage = field(repr=False)
+    comparison: tuple = field(default=(), repr=False)
+
+    @property
+    def comparison_images(self):
+        """The section's (content id, PNG bytes) pairs, as the validator takes them."""
+        return tuple((image.content_id, image.data) for image in self.comparison)
 
 
 def source_age_line(age, timezone, *, zone=True):
@@ -192,6 +212,18 @@ def source_age_line(age, timezone, *, zone=True):
 def _report_url(document, public_origin):
     """Append only our protected route to the runtime's validated public origin."""
     return report_url(public_origin, document.report_path)
+
+
+def comparison_url(section, public_origin):
+    """The Campaign comparison report on the section's day (``?day=N``).
+
+    The page takes only that whole number (campaign-history spec, "Page
+    layout"); it comes from the compiled section, never from input.
+    """
+    from django.urls import reverse
+
+    path = report_url(public_origin, reverse("admin:campaign_comparison"))
+    return f"{path}?day={int(section['day'])}"
 
 
 # The one comparison figure (#728): the parish-wide total, plainly labelled.
@@ -460,6 +492,10 @@ def _render_daily_digest(document, *, public_origin):
     text += "\n\n" + " | ".join(headings)
     text += "\n" + "\n".join(" | ".join(row) for row in rows)
     text += "\n\nOpen this exact report (staff login required): " + url
+    section = document.comparison
+    if section is not None:
+        link = comparison_url(section, public_origin)
+        text += "\n\n" + section_text(section, link)
 
     def plain(value):
         """Escape a text node; canonical HTML leaves quotes literal there."""
@@ -510,8 +546,14 @@ def _render_daily_digest(document, *, public_origin):
     )
     html += "</tbody></table>"
     html += button(url, "Open this exact report")
+    images = ()
+    if section is not None:
+        # The section follows the report it compares (#1018 slice 7), with
+        # its charts from the chart engine's server renderer.
+        html += section_html(section, link)
+        images = tuple(InlineImage(data, name) for name, data in render_images(section))
     stream = BytesIO()
     render_participation(chart, stream, format="png", email=True)
     return DailyDigestContent(
-        document.title, html, text, InlineImage(stream.getvalue(), CHART_ID)
+        document.title, html, text, InlineImage(stream.getvalue(), CHART_ID), images
     )

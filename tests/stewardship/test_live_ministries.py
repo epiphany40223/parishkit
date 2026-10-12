@@ -99,13 +99,17 @@ def test_only_the_config_installer_may_read_the_catalog_function():
     }
     # The worker's definer routines purge ended Admin sessions (ADM-11),
     # count an export's read-guard stops (#386) and read a user's
-    # role-derived Ministry scope (#922), as a download does.
+    # role-derived Ministry scope (#922), as a download does. It also
+    # reads the campaign comparison's aggregates for the daily digest's
+    # "Compared with past campaigns" section (#1018).
     assert runtime_functions(ServiceRole.WORKER) == {
         "stewardship_admin_session_purge_v1(uuid[])",
         "stewardship_read_guard_kills_v1(uuid)",
         "stewardship_task_event_prune_v1(integer, integer, integer)",
         LEADER_SCOPE_FUNCTION,
         LEADER_CHANGES_FUNCTION,
+        "stewardship_campaign_comparison_v1(uuid, date, numeric[], uuid)",
+        "stewardship_campaign_archive_renewal_v1(uuid, uuid, integer)",
     }
     assert runtime_functions("download") == {LEADER_SCOPE_FUNCTION}
     for role in (ServiceRole.SCHEDULER, ServiceRole.MAIL_DISPATCH):

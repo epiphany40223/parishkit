@@ -414,7 +414,9 @@ def test_edit_review_waits_for_a_change_and_greys_again_on_revert(
     failures = watch(page)
     button = page.get_by_role("button", name=REVIEW)
     assert button.is_disabled()
-    visible(page.get_by_text("Change the date, time or email to review it."))
+    visible(
+        page.get_by_text("Change the date, time, email or comparison to review it.")
+    )
     time = page.locator('[name="schedule-time"]')
     time.fill("10:30")
     assert button.is_enabled()

@@ -229,3 +229,44 @@ def test_the_saved_report_shows_the_response_funnel(
     assert "without a delivered invitation" not in text
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_the_saved_comparison_section_draws_its_charts(
+    page, component_origin, axe_source, width
+):
+    """The retained section's charts draw from their stored specifications.
+
+    #1018 slice 7: under the real CSP, with no axe violation and no sideways
+    scroll, each chart has its exact values, and the headline figures read
+    as the email's lines, with Withheld where the small-count protection
+    applies.
+    """
+    from playwright.sync_api import expect
+
+    from .test_charts import assert_clean, watch
+    from .test_components import axe_violations
+
+    page.set_viewport_size({"width": width, "height": 900})
+    errors = watch(page)
+    page.goto(component_origin + "/daily-digest-comparison")
+    section = page.get_by_role("region", name="Compared with past campaigns")
+    expect(section).to_be_visible()
+    rendered = section.locator("[data-chart][data-chart-state=rendered]")
+    expect(rendered).to_have_count(2)
+    assert section.get_by_role("heading", level=3).all_inner_texts() == [
+        "Families responded by campaign day",
+        "Annual pledges by campaign day",
+    ]
+    figures = section.locator(".digest-comparison-figures")
+    assert "Last year on day 3: 30 (↑ 20% more)" in figures.inner_text()
+    assert "Last year on day 3: Withheld" in figures.inner_text()
+    section.get_by_text("Exact values").first.click()
+    table = section.get_by_role("table").first
+    expect(table).to_be_visible()
+    assert table.locator("th").first.inner_text() == "Day"
+    link = section.get_by_role("link", name="Open the Campaign comparison report")
+    assert link.get_attribute("href") == "/admin/reports/comparison/?day=3"
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert axe_violations(page, axe_source) == []
+    assert_clean(page, errors)

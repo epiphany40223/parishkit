@@ -600,6 +600,7 @@ class ScheduleShow(ReadModel):
     ``version`` is the applied configuration's digest, the base a schedule
     change (PR 4) is previewed against. ``editable`` says whether the
     campaign's dates may still change. Each schedule lists its civil values
+    (a daily digest's ``comparison`` too, #1018)
     and its first resolved send times (``resolved``, at most five, with
     ``more`` when there are others).
     """
@@ -628,6 +629,8 @@ def schedule_entry(row, campaign):
         "weekday": values["weekday"],
         "subject": values["subject"],
         "template_version": values["template_version"],
+        # A daily digest's Compared with past campaigns section (#1018).
+        "comparison": values.get("comparison", False),
         "resolved": [{"key": slot.key, "due_at": slot.due_at} for slot in page.slots],
         "more": not page.exhausted,
     }

@@ -22,6 +22,18 @@ def add_digest_grants(tables, columns, *, worker):
                 "first_progress_at",
             }
         )
+        # The Compared with past campaigns section (#1018 slice 7) reads
+        # the imported years' rows and bands, read only. Kept archive Family
+        # rows stay unreadable: their renewal counts come from the definer
+        # functions (runtime_grants.runtime_functions).
+        from .archive_grants import ARCHIVE_TABLE
+
+        for table in (
+            ARCHIVE_TABLE,
+            "stewardship_campaign_archive_day",
+            "stewardship_campaign_archive_band",
+        ):
+            tables.setdefault(table, set()).add("SELECT")
         tables["stewardship_daily_digest_preparation"].add("UPDATE")
         for name in ("snapshot", "ready", "recipient"):
             tables.setdefault("stewardship_daily_digest_" + name, set()).update(
@@ -76,7 +88,11 @@ def add_digest_web_grants(tables, columns):
     # report reader gets retained inputs, not compiled mail prose or the ready
     # row's recipient snapshot. Its view rechecks Staff/Admin authority.
     tables.setdefault("stewardship_daily_digest_snapshot", set()).add("SELECT")
-    columns["stewardship_daily_digest_ready"]["SELECT"].update({"fact_set_id", "chart"})
+    # The saved page also shows the retained Compared with past campaigns
+    # section (#1018 slice 7): protected aggregates, never mail prose.
+    columns["stewardship_daily_digest_ready"]["SELECT"].update(
+        {"fact_set_id", "chart", "comparison"}
+    )
 
 
 def add_digest_download_grants(columns):

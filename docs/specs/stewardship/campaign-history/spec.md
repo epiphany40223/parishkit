@@ -840,8 +840,9 @@ unauthenticated link exists.
 
 ### Digest section
 
-The daily Administrator digest may include a **Compared with past years**
-section, off by default and turned on for the daily digest schedule on
+The daily Administrator digest may include a **Compared with past
+campaigns** section, off by default and turned on for the daily digest
+schedule on
 [Dates and mail schedules](../admin-portal/spec.md#campaign-configuration).
 It follows the digest's #720 style: the cumulative Families chart and the
 cumulative pledges chart first (PNG through the chart engine's server
@@ -1141,6 +1142,38 @@ linked to #1018 (the last one closes part (b)).
 7. **Digest section.** The daily digest option, with its own
    forward migration if the digest occurrence needs new columns to record
    the imported years it used.
+   As built: the setting is the daily digest schedule's **Include Compared
+   with past campaigns** checkbox on New and Edit scheduled email (and
+   each schedule's editor on Dates and mail schedules), saved in the
+   schedule as `comparison: true` and left out when off, so schedules
+   saved before it are unchanged; only a daily digest takes it, and the
+   schedule commands carry it as `comparison`. When the schedule revision
+   a digest runs has it on, the compiling worker reads the comparison on
+   the report day (held at the campaign's end date) from the digest's own
+   fact set and the campaign configuration its snapshot pinned, with that
+   configuration's stewardship year, and reduces it at once to the
+   section (`reports/digest_comparison.py`): the outside-the-portal tiles
+   of [Downloads and sharing](#downloads-and-sharing) (slice 6's protected
+   averages, Withheld included), the Families and pledges day-by-day
+   charts as chart engine specifications with their summaries and
+   exact-values tables, and each imported year with its file's SHA-256;
+   no distribution, quartile, median so far or note. Frozen file 0072
+   adds the digest ready row's nullable `comparison` (that document) and
+   the two charts' PNG columns, kept together by a check, and lets the
+   general worker's login call the two comparison functions (it reads the
+   archive, day and band tables but never a kept Family row). The email
+   puts the section after the report's own button: its heading, the
+   data line, each chart's title and image (`cid:` images beside the
+   participation chart, which the digest boundary admits only as
+   compiled), the figures, and a link to the report on the same day
+   (`?day=N`). The saved digest page draws the stored specifications with
+   the chart engine in the browser and lists the files compared under
+   Past campaigns compared; `pk-admin digest daily` prints the section
+   without the specifications. The renderer's timeout name is
+   `digest_chart` with the helper `chart_render_worker`. A comparison
+   that disagrees with its facts, or a chart the renderer cannot draw,
+   fails that compile (it is retried like a fact failure), rather than
+   sending a digest without the section it was set to carry.
 
 Slices 4 to 7 depend on 3 but not on each other. UI slices get the
 human pk-local check that significant new UI needs.

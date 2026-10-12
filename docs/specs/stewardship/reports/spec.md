@@ -234,16 +234,20 @@ own renderer):
   Node or a browser, and reports the image's CSS width and height. These are
   the engine's two formats; how a report page offers the downloads above is
   specified in a later increment (the [response dashboard](#response-dashboard)
-  does not offer them yet). No task calls this renderer yet: the daily
-  digest's chart is the participation graph's own renderer, and its funnel
-  is drawn with table cells. Rendering happens only in workers and
+  does not offer them yet). The daily digest's own chart is the
+  participation graph's renderer and its funnel is drawn with table cells;
+  the first task to call this renderer is the daily digest's optional
+  [Compared with past campaigns](../campaign-history/spec.md#digest-section)
+  section, whose two charts it draws at the email's width under the
+  timeout name `digest_chart`. Rendering happens only in workers and
   [export tasks](../background-processing/spec.md#exports-and-graph-rendering),
   never on a page view, and always in a short-lived helper process isolated
   like the mail helpers (no environment, no error text back): the worker
   kills it at its time limit and refuses an oversized specification or
   image. A kill leaves a `helper_timed_out`
   [durable timeout entry](../operations/spec.md#observability-and-health)
-  under a timeout name the first task that renders a chart adds.
+  naming the caller's timeout name (each caller adds its own to the
+  reviewed list) and the helper `chart_render_worker`.
 
 Each chart is accessible in every rendering. On a page the chart is a figure
 whose view has the chart's name and is described by its summary, and is

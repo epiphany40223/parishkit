@@ -47,8 +47,13 @@ def retained_render(identity, ready, scope, revision, address):
         record_id=UUID(revision.values["template_version"]),
     )
     email = AppliedIntegration.objects.get(configuration=version, kind="email")
+    images = ready.comparison_images()
     content = DailyDigestContent(
-        ready.subject, ready.html, ready.text, InlineImage(bytes(ready.chart), CHART_ID)
+        ready.subject,
+        ready.html,
+        ready.text,
+        InlineImage(bytes(ready.chart), CHART_ID),
+        tuple(InlineImage(data, name) for name, data in images),
     )
     render = render_digest_envelope(
         identity=identity,
@@ -67,7 +72,7 @@ def retained_render(identity, ready, scope, revision, address):
         if identity.mode == "testing"
         else None,
     )
-    validate_digest_body(render.html, render.text, content.chart.data)
+    validate_digest_body(render.html, render.text, content.chart.data, images)
     return render
 
 

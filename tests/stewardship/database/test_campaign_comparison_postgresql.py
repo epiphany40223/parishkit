@@ -50,8 +50,17 @@ from .test_source_snapshots_postgresql import permit
 pytestmark = pytest.mark.django_db(transaction=True)
 
 ROOT = Path(__file__).resolve().parents[3]
-FROZEN = (
-    ROOT / "src/parishkit/stewardship/schema/migrations/0067_campaign_comparison.sql"
+# The frozen file that last replaced the two functions (slice 7's).
+LATEST = ROOT / "src/parishkit/stewardship/schema/migrations/0072_digest_comparison.sql"
+# Its DO block compares the replaced functions' grants with those captured
+# before the replacement; a re-run captures them as they are now.
+ACL_NOW = (
+    "SELECT set_config('stewardship.migration_0072_acl', (SELECT string_agg("
+    "p.proname||'='||coalesce(p.proacl::text,'default'),';' ORDER BY p.proname) "
+    "FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace "
+    "WHERE n.nspname='public' AND p.proname IN ('stewardship_safe_context_v1',"
+    "'stewardship_campaign_comparison_v1','stewardship_campaign_archive_renewal_v1')),"
+    " true)"
 )
 # The current campaign's stewardship year in these tests; the archives are
 # the years before it.
@@ -188,10 +197,14 @@ def calls(ready):
     )
 
 
-def test_only_the_web_login_may_call_the_definer_functions(scenario):
-    """EXECUTE is the web login's alone; PUBLIC has none."""
+def test_only_the_web_and_worker_logins_may_call_the_definer_functions(scenario):
+    """EXECUTE is the web and worker logins' alone; PUBLIC has none.
+
+    The worker compiles the daily digest's comparison section (slice 7,
+    frozen file 0072); the scheduler, like every other login, is refused.
+    """
     _, ready, _, _ = scenario
-    for role in (ServiceRole.WORKER, ServiceRole.SCHEDULER):
+    for role in (ServiceRole.SCHEDULER,):
         for function, arguments in calls(ready):
             with (
                 pytest.raises(DatabaseError, match="permission denied"),
@@ -216,7 +229,7 @@ def test_a_login_granted_execute_is_still_refused_in_the_body(scenario):
         cursor.execute("SET LOCAL SESSION AUTHORIZATION p1018c_probe")
         for function, arguments in probes:
             with (
-                pytest.raises(DatabaseError, match="Only the web login"),
+                pytest.raises(DatabaseError, match="Only the web and worker logins"),
                 transaction.atomic(),
             ):
                 cursor.execute("SELECT " + function, arguments)
@@ -440,10 +453,17 @@ def test_command_prints_aggregates_with_the_small_count_protection(scenario, cli
 
 
 def test_migration_check_refuses_a_missing_or_widened_function():
-    """The frozen file's DO block fails when a function is absent or public."""
-    text = FROZEN.read_text(encoding="utf-8")
+    """The latest frozen check fails when a function is absent or public.
+
+    Frozen file 0072 (slice 7) replaced both functions to admit the worker
+    login, so its DO block is the one the installed functions now pass; the
+    block also compares the grants captured before the replacement, which a
+    re-run reads back as they are now.
+    """
+    text = LATEST.read_text(encoding="utf-8")
     check = text[text.index("DO $check$") : text.index("$check$;") + len("$check$;")]
     with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(ACL_NOW)
         cursor.execute(check)  # The installed functions pass.
         for change in (
             "DROP FUNCTION public.stewardship_campaign_archive_renewal_v1"
@@ -454,7 +474,7 @@ def test_migration_check_refuses_a_missing_or_widened_function():
             "(uuid, date, numeric[], uuid) SECURITY INVOKER",
         ):
             with (
-                pytest.raises(DatabaseError, match="Migration 0067"),
+                pytest.raises(DatabaseError, match="Migration 0072"),
                 transaction.atomic(),
             ):
                 cursor.execute(change)

@@ -4358,8 +4358,11 @@
         const show = wanted.includes(group.dataset.scheduleField)
           || (firstLoad && group.querySelector(".errorlist") !== null);
         group.hidden = !show;
+        // A checkbox (the daily digest's comparison, #1018) is cleared by
+        // unticking it: its value is what it posts when ticked.
         if (!show) group.querySelectorAll("input, select").forEach((control) => {
-          control.value = "";
+          if (control.type === "checkbox") control.checked = false;
+          else control.value = "";
         });
       });
       const selected = template.value;

@@ -628,6 +628,10 @@ TIMEOUT_KINDS = frozenset(
         # The archive workbook check's helper killed at its time limit
         # during a Review (#1018; archive.imports).
         "archive_check",
+        # The chart engine's server renderer killed at its time limit while
+        # drawing a daily digest's comparison charts (#1018 slice 7;
+        # reports.digest_comparison).
+        "digest_chart",
     }
 )
 # The helper processes a deadline can kill (#293), by their entry point;
@@ -646,6 +650,8 @@ TIMEOUT_HELPERS = frozenset(
         "parishsoft_http_worker",
         # The archive workbook check (#1018; archive.check_worker).
         "archive_check_worker",
+        # The chart engine's server renderer (#477; chart_render_worker).
+        "chart_render_worker",
     }
 )
 

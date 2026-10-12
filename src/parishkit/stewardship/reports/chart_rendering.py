@@ -14,12 +14,12 @@ empty environment, stderr discarded and a pipe exchange whose request and
 reply are both bounded. A kill at the deadline is reported through
 ``provider_checks.helper_timeout_recorder`` with the caller's ``what``.
 
-TODO(#477, the PR that first calls ``render_chart``): register the caller's
-``what`` and ``HELPER`` as reviewed timeout names (``audit.schemas``,
+Each caller's ``what`` is a reviewed timeout name (``audit.schemas``,
 ``observability.TIMEOUT_LIMITS`` and the SQL mirror in
-``stewardship_safe_context_v1``, through a frozen schema migration) in the
-same PR. Until then nothing renders charts on the server, and an unreviewed
-name would leave the kill only in the process log, not the durable one.
+``stewardship_safe_context_v1``), as ``HELPER`` is, so a kill reaches the
+durable log. The first caller is the daily digest's Compared with past
+campaigns section (#1018 slice 7), ``what="digest_chart"``, registered by
+frozen migration 0072.
 """
 
 import json
@@ -48,8 +48,8 @@ RENDER_SECONDS = 60
 MAX_SPEC_BYTES = 1_000_000
 # A 1,440-pixel-wide PNG of a dense chart is a few hundred kilobytes.
 MAX_IMAGE_BYTES = 16 * 1024 * 1024
-# The helper's entry point, the timeout entry's helper name (see the TODO
-# above). -I keeps the helper from reading anything the environment or the
+# The helper's entry point, the timeout entry's helper name (see the module
+# docstring). -I keeps the helper from reading anything the environment or the
 # working directory could inject; it imports the installed package.
 HELPER = "chart_render_worker"
 COMMAND = (sys.executable, "-I", "-m", f"parishkit.stewardship.{HELPER}")
