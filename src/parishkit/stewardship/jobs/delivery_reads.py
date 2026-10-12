@@ -232,7 +232,62 @@ def email_refusals(message_id):
     return list(newest.values())
 
 
-def email_recipients(message_id, actor_id):
+# What an address's latest attempt recorded (#806), as the Mail message page
+# says it after the address; the keys are the outcomes
+# stewardship_delivery_recipient_outcomes_v1 (frozen migration 0068) returns.
+OUTCOME_LABELS = {
+    "delivered": _("delivered"),
+    "refused_for_now": _("refused for now"),
+    "refused_permanently": _("refused permanently"),
+    "unknown": _("not sure it arrived"),
+    "not_delivered": _("not delivered"),
+}
+# The email states after which nothing more is sent for it.
+FINAL_STATES = frozenset({"delivered", "permanent_failure", "cancelled"})
+
+
+def outcome_label(outcome, state):
+    """The label to show after an address, given the email's current state.
+
+    The outcome is what the latest attempt's evidence recorded; ``state`` is
+    the email's state now, which an Administrator's resolution or a retry
+    may have moved on since. "Not sure it arrived" is shown only while the
+    email is still in that state: once an Administrator confirms delivery or
+    records that it was not sent, or a resend is authorized, the provider's
+    uncertainty no longer describes the email, so the address shows nothing.
+    "Not delivered" reads "not delivered yet" while the email may still be
+    sent (it waits for a retry or is being sent again). Returns None when
+    nothing should be shown.
+    """
+    if outcome == "unknown" and state != "delivery_unknown":
+        return None
+    if outcome == "not_delivered" and state not in FINAL_STATES:
+        return _("not delivered yet")
+    return OUTCOME_LABELS[outcome]
+
+
+def _definer_rows(sql, parameters):
+    """Run one Administrator-only definer read; its rows, or None if refused.
+
+    When the function refuses (SQLSTATE 42501), for example because the
+    actor stopped being an Administrator after the page admitted them, this
+    returns None and the page renders without what it read: the page's
+    final authority recheck then refuses the whole answer, rather than the
+    read failing as a database error. The call runs in its own savepoint so
+    the refusal does not abort the page's transaction. Any other database
+    error is raised.
+    """
+    try:
+        with transaction.atomic(), connection.cursor() as cursor:
+            cursor.execute(sql, parameters)
+            return cursor.fetchall()
+    except DatabaseError as error:
+        if getattr(error.__cause__, "sqlstate", None) != "42501":
+            raise
+        return None
+
+
+def email_recipients(message_id, actor_id, state):
     """One email's recipient addresses, for its Mail message page (#1024).
 
     The addresses live only in the email's rendering, which the web login
@@ -244,30 +299,69 @@ def email_recipients(message_id, actor_id):
     Testing recipient in Testing mode). Both lists are empty for an email
     with no rendering yet.
 
-    When the function refuses (SQLSTATE 42501), for example because the
-    actor stopped being an Administrator after the page admitted them,
-    this returns None and the page renders without the line: the page's
-    final authority recheck then refuses the whole answer, rather than the
-    read failing as a database error. The call runs in its own savepoint
-    so the refusal does not abort the page's transaction. Any other
-    database error is raised.
+    Each list also comes as ``intended_rows`` and ``routed_rows``: pairs of
+    an address and the label of what the latest attempt recorded for it,
+    given the email's current ``state`` (#806, see ``address_outcomes`` and
+    ``outcome_label``), or None where there is none to show.
+    ``reached`` is ``(delivered, total)`` when an accepted attempt reached
+    only some of its addresses, and ``refused_for_now`` says whether any
+    address was refused for now.
+
+    Returns None when either definer read refuses (see ``_definer_rows``).
     """
-    recipients = {"intended": [], "routed": []}
-    try:
-        with transaction.atomic(), connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT kind, address"
-                " FROM public.stewardship_delivery_recipients_v1(%s,%s)",
-                (message_id, actor_id),
-            )
-            rows = cursor.fetchall()
-    except DatabaseError as error:
-        if getattr(error.__cause__, "sqlstate", None) != "42501":
-            raise
+    rows = _definer_rows(
+        "SELECT kind, address FROM public.stewardship_delivery_recipients_v1(%s,%s)",
+        (message_id, actor_id),
+    )
+    outcomes = None if rows is None else address_outcomes(message_id, actor_id)
+    if outcomes is None:
         return None
+    recipients = {"intended": [], "routed": []}
     for kind, address in rows:
         recipients[kind].append(address)
+    # The outcomes describe the routed envelope. Use them only when they
+    # are for exactly the list shown: the two reads are separate statements,
+    # so a rendering made between them must not mislabel an address.
+    labels = dict(outcomes)
+    if [pair[0] for pair in outcomes] != recipients["routed"]:
+        labels = {}
+    for kind in ("intended", "routed"):
+        # In Production the routed list is the intended one, so the To: line
+        # carries the outcomes; in Testing mode they follow the Testing line.
+        shown = kind == "routed" or recipients["routed"] == recipients["intended"]
+        recipients[kind + "_rows"] = [
+            (
+                address,
+                outcome_label(labels[address], state) if shown and labels else None,
+            )
+            for address in recipients[kind]
+        ]
+    # Counted over the envelope, so a repeated address counts each time.
+    found = [pair[1] for pair in outcomes] if labels else []
+    delivered = found.count("delivered")
+    recipients["reached"] = (
+        (delivered, len(found)) if 0 < delivered < len(found) else None
+    )
+    recipients["refused_for_now"] = "refused_for_now" in found
     return recipients
+
+
+def address_outcomes(message_id, actor_id):
+    """What the latest attempt recorded for each of an email's routed addresses.
+
+    Read through ``stewardship_delivery_recipient_outcomes_v1`` (frozen
+    migration 0068, #806), which validates the attempt's stored evidence
+    and returns ``(address, outcome)`` pairs in envelope order, outcome
+    being a key of ``OUTCOME_LABELS``; it returns none before the newest
+    rendering's first finished attempt. Returns None when refused (see
+    ``_definer_rows``).
+    """
+    rows = _definer_rows(
+        "SELECT address, outcome"
+        " FROM public.stewardship_delivery_recipient_outcomes_v1(%s,%s)",
+        (message_id, actor_id),
+    )
+    return None if rows is None else [tuple(row) for row in rows]
 
 
 def offered_actions(state, task_state, *, campaign_state, can_resolve, can_retry):

@@ -183,7 +183,7 @@ def test_email_page_shows_its_recipients_without_moving(page, component_origin):
     text = main.inner_text()
     line = "To: head@example.org, spouse@example.org"
     assert line in text
-    assert "Testing mode sends it to: testing@example.org" in text
+    assert "Testing mode sends it to: testing@example.org (not sure it arrived)" in text
     assert (
         text.index("Family DUID:") < text.index(line) < text.index("Refused addresses:")
     )
@@ -199,3 +199,19 @@ def test_email_page_shows_its_recipients_without_moving(page, component_origin):
     # Within a pixel: Firefox reports sub-pixel scroll offsets that differ
     # by float rounding after the swap.
     assert recipients.evaluate(place) == pytest.approx(before, abs=1)
+
+
+def test_email_page_shows_what_each_address_got(page, component_origin):
+    """#806: in Production each To: address is followed by what the latest
+    attempt recorded for it, and a line under them says how many addresses
+    an accepted attempt reached, before the attempt history."""
+    page.goto(component_origin + "/delivery-partial")
+    text = page.locator("main").inner_text()
+    line = "To: head@example.org (delivered), spouse@example.org (refused for now)"
+    reached = (
+        "Delivered to 1 of 2 addresses. An address refused for now is not sent"
+        " this email again."
+    )
+    assert line in text and reached in text
+    assert text.index(line) < text.index(reached) < text.index("Attempt history")
+    assert "Testing mode sends it to" not in text

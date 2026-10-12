@@ -326,6 +326,9 @@ LEADERS_WITHOUT_USER_FUNCTION = "stewardship_leaders_without_user_v1(text, uuid)
 # reads them, for an Administrator only, without any grant on the email's
 # rendering (its subject and body).
 RECIPIENTS_FUNCTION = "stewardship_delivery_recipients_v1(uuid, uuid)"
+# What each of those addresses' latest attempt recorded (#806), for the same
+# page and caller, without any grant on the attempt's evidence.
+RECIPIENT_OUTCOMES_FUNCTION = "stewardship_delivery_recipient_outcomes_v1(uuid, uuid)"
 # The campaign comparison report's figures that read each Family's own rows
 # (#1018): web learns only their aggregates, never a kept archive Family's id.
 COMPARISON_FUNCTION = "stewardship_campaign_comparison_v1(uuid, date, numeric[], uuid)"
@@ -349,6 +352,11 @@ CLOSURE_FUNCTIONS = {
     **dict.fromkeys(
         (COMPARISON_FUNCTION, ARCHIVE_RENEWAL_FUNCTION),
         ("stewardship_reports", "0018_campaign_comparison"),
+    ),
+    # What each address got (0068, #806) follows 0067.
+    RECIPIENT_OUTCOMES_FUNCTION: (
+        "stewardship_jobs",
+        "0024_mail_message_address_outcomes",
     ),
 }
 
@@ -406,9 +414,10 @@ def runtime_functions(role, *, target=None):
 
     Web signs Families in, reads the 24-hour Family mail count (System
     health) and, for an Administrator, one email's recipient addresses
-    (its Mail message page, #1024); the configuration installer checks
-    that a Ministry added to a live campaign is in the promoted catalog,
-    without source grants; the general worker purges the Django sessions
+    and what its latest attempt recorded for each (its Mail message page,
+    #1024, #806); the configuration installer checks that a Ministry
+    added to a live campaign is in the promoted catalog, without source
+    grants; the general worker purges the Django sessions
     of ended Admin sessions, counts an export's read-guard stops and
     prunes old task events.
     Web and the parishsoft, google_workspace and slack credential installers
@@ -440,6 +449,7 @@ def runtime_functions(role, *, target=None):
                 RECIPIENTS_FUNCTION,
                 COMPARISON_FUNCTION,
                 ARCHIVE_RENEWAL_FUNCTION,
+                RECIPIENT_OUTCOMES_FUNCTION,
             },
             ServiceRole.CONFIG_INSTALLER: {MINISTRY_CATALOG_FUNCTION},
             ServiceRole.WORKER: {
