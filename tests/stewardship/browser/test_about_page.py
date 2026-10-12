@@ -81,7 +81,6 @@ def test_page_data_starts_on_a_laptop_screen(page, component_origin, path):
 CONVERTED_PAGES = {
     "/campaign-mail": "It is sent only to",
     "/live-family-tests-later": "never to the Family",
-    "/schedule-preview": "Email already sent cannot be recalled.",
     "/clone-settings": "It never copies Family codes",
     "/clone-preview": "Copied content",
     "/presence": "Families with the Family form open",

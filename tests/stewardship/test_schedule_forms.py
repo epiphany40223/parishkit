@@ -58,6 +58,26 @@ def test_schedule_window_requires_valid_whole_campaign_and_preserves_other_field
     assert locked.is_valid() and locked.values() == owner["values"]
 
 
+def test_a_proposed_date_carries_the_saved_one_for_the_change_gate():
+    """Proposed dates show as values; the saved dates stay beside them (#750)."""
+    owner = campaign()
+    form = ScheduleWindow(
+        previous=owner["values"],
+        editable=True,
+        proposed={"start_date": "2054-09-30", "end_date": "2054-10-20"},
+    )
+    html = str(form["end_date"])
+    assert 'value="2054-10-20"' in html
+    assert f'data-saved-value="{owner["values"]["end_date"]}"' in html
+    assert f'data-saved-value="{owner["values"]["start_date"]}"' in str(
+        form["start_date"]
+    )
+    assert "data-saved-value" not in str(form["timezone"])
+    # Each form has its own widgets: an unproposed form carries none.
+    plain = ScheduleWindow(previous=owner["values"], editable=True)
+    assert "data-saved-value" not in str(plain["end_date"])
+
+
 def test_schedule_window_financial_overlap_requires_explicit_acknowledgement():
     """A draft date extension cannot silently move into its financial period."""
     owner = campaign(modules=["financial"], financial=financial())

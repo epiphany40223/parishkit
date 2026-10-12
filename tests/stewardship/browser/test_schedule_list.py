@@ -6,7 +6,9 @@ Edit scheduled email post one schedule, or one reminder per repeat date, in
 the browser's time zone (#558): the campaign is in New York's zone and the
 default page is Los Angeles's, three hours behind. Their Review changes is
 available only for a real change and opens the shared review dialog (#750),
-whose Apply returns to the list with its status line.
+whose Apply returns to the list with its status line. The date-change
+review (proposed campaign dates with every schedule's editor) reviews and
+applies in the same dialog, then returns to the list the same way.
 The pages and their POST answers are schedule_list_components'.
 """
 
@@ -20,6 +22,10 @@ from .schedule_list_components import (
     APPLY,
     BULK,
     DATE_REFUSAL,
+    DATES,
+    DATES_END,
+    DATES_INVALID,
+    DATES_STALE,
     EDIT,
     EDIT_DIGEST,
     FAILED,
@@ -763,3 +769,123 @@ def test_an_accepted_review_clears_an_earlier_field_error(page, component_origin
     )
     assert page.locator("[data-error-summary]").count() == 0
     assert not failures
+
+
+DATES_REVIEW = "Review dates and mail schedules"
+SAVED_END = "2054-10-31"
+
+
+def test_date_change_review_waits_for_a_real_change(page, component_origin):
+    """Proposed dates are a change; returning them to the saved dates, or
+    adding a blank schedule, is none, and Review greys again (#750)."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + DATES)
+    failures = watch(page)
+    button = page.get_by_role("button", name=REVIEW)
+    end = page.locator('[name="window-end_date"]')
+    assert end.input_value() == DATES_END
+    eventually(
+        page, "!document.querySelector('#schedule-dates-form [type=submit]').disabled"
+    )
+    hint = page.get_by_text("Change the dates or a schedule to review it.")
+    hidden(hint)
+    before = button.bounding_box()
+    end.fill(SAVED_END)
+    eventually(
+        page, "document.querySelector('#schedule-dates-form [type=submit]').disabled"
+    )
+    visible(hint)
+    assert near(button.bounding_box()["y"], before["y"])
+    # A blank added schedule is nothing to review; choosing its type is.
+    page.get_by_role("button", name="Add another schedule").click()
+    assert button.is_disabled()
+    added = page.locator("[data-change-blank]")
+    added.locator('[data-schedule-field="kind"] select').select_option("reminder")
+    eventually(
+        page, "!document.querySelector('#schedule-dates-form [type=submit]').disabled"
+    )
+    page.get_by_role("button", name="Remove this new schedule").click()
+    eventually(
+        page, "document.querySelector('#schedule-dates-form [type=submit]').disabled"
+    )
+    end.fill(DATES_END)
+    eventually(
+        page, "!document.querySelector('#schedule-dates-form [type=submit]').disabled"
+    )
+    assert not failures
+
+
+def test_date_change_review_applies_in_the_dialog_and_returns_to_the_list(
+    page, component_origin, axe_source
+):
+    """Review posts the proposal; the dialog shows the new dates and the
+    re-planned mail; Apply posts only the signed preview to the list, then
+    returns there with the status line."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + DATES)
+    failures = watch(page)
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("button", name=REVIEW).click()
+    fields = posted(sent.value)
+    assert fields["action"] == ["preview"]
+    assert fields["window-end_date"] == [DATES_END]
+    shown = page.get_by_role("dialog", name=DATES_REVIEW)
+    visible(shown)
+    assert page.evaluate(FOCUSED) == "schedule-dates-review-title"
+    text = shown.inner_text()
+    assert "Campaign window" in text and "Reminder — Update" in text
+    assert "Email already sent cannot be recalled." in text
+    assert axe_violations(page, axe_source) == []
+    assert page.evaluate("window.notReloaded === true")
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        shown.get_by_role("button", name="Apply").click()
+    assert sent.value.url.endswith(LIST)
+    fields = posted(sent.value)
+    assert set(fields) == {"csrfmiddlewaretoken", "action", "preview"}
+    assert fields["action"] == ["confirm"]
+    assert fields["preview"] == ["synthetic-preview"]
+    page.wait_for_url(re.compile(re.escape(LIST) + "$"))
+    eventually(page, "document.getElementById('schedules-outcome').textContent !== ''")
+    line = page.locator("#schedules-outcome")
+    assert line.inner_text().startswith("Dates and mail schedules changed. ")
+    assert APPLIED_LINE.search(line.inner_text())
+    assert page.evaluate(FOCUSED) == "schedules-outcome"
+    assert not failures
+
+
+def test_a_refused_date_change_marks_the_schedule_on_the_form(page, component_origin):
+    """A reminder left after the new end: no dialog; the summary has focus,
+    and that reminder's editor opens with its date marked."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + DATES_INVALID)
+    failures = watch(page)
+    date = page.locator('[name="schedules-2-date"]')
+    hidden(date)
+    page.get_by_role("button", name=REVIEW).click()
+    summary = page.locator("[data-error-summary]")
+    visible(summary)
+    eventually(page, "document.activeElement?.matches('[data-error-summary]')")
+    assert not page.locator("dialog[data-review-dialog]").is_visible()
+    visible(date)
+    assert date.get_attribute("aria-invalid") == "true"
+    visible(page.locator("#id_schedules-2-date_error"))
+    assert summary.locator('a[href="#id_schedules-2-date"]').count() == 1
+    assert not page.evaluate("document.getElementById('schedule-dates-form').inert")
+    assert page.locator('[name="window-end_date"]').input_value() == DATES_END
+    assert page.evaluate("window.notReloaded === true")
+    assert not failures
+
+
+def test_a_stale_date_change_is_refused_in_the_dialog(page, component_origin):
+    """Another tab's change: the refusal shows in the dialog with no Apply,
+    and the form keeps the proposal."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + DATES_STALE)
+    shown = review(page)
+    error = shown.locator("[data-confirm-error]")
+    visible(error)
+    assert STALE_REFUSAL in error.inner_text()
+    assert shown.get_by_role("button", name="Apply").count() == 0
+    shown.get_by_role("button", name="Cancel").click()
+    hidden(shown)
+    assert page.locator('[name="window-end_date"]').input_value() == DATES_END
