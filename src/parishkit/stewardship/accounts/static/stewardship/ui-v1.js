@@ -2592,8 +2592,9 @@
     requiredWhen(form);
     requireOne(form);
     // A required text field holding only spaces is still empty: the server
-    // trims it (notes for the outcome Other).
-    const blank = (node) => node.required && node.matches("textarea, input[type=text]")
+    // trims it (notes for the outcome Other, a Slack token being set up).
+    const blank = (node) => node.required
+      && node.matches("textarea, input[type=text], input[type=password]")
       && !node.value.trim();
     // A live check (the follow-up contact time) marks a field it found in
     // error with data-client-error, whose text is the hint.

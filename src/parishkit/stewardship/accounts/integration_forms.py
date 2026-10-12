@@ -19,6 +19,15 @@ LABELS = {
     "backup_key": _("Backup encryption key"),
 }
 
+# What Save waits for while a required setting is empty or malformed (#563).
+MISSING_HINTS = {
+    "delegated_email": _("Enter a valid delegated mailbox address."),
+    "sender": _("Enter a valid From address."),
+    "reply_to": _("Enter a valid reply-to address."),
+    "channel_id": _("Enter a Slack channel ID, such as C0123456789."),
+    "target": _("Paste the Google Drive folder link."),
+}
+
 
 class IntegrationForm(forms.Form):
     """Non-secret settings never accept fingerprints, keys or arbitrary URLs."""
@@ -114,6 +123,14 @@ class IntegrationForm(forms.Form):
         for name, text in setup_help.MAIL.items():
             if name in self.fields and not self.fields[name].help_text:
                 self.fields[name].help_text = text
+        # The page's complete gate (#563) holds Save while a required field
+        # is empty or malformed; each says what it waits for. The channel ID
+        # is checked in the browser by the same rule as the server's.
+        for name, hint in MISSING_HINTS.items():
+            if name in self.fields:
+                self.fields[name].widget.attrs["data-missing-hint"] = hint
+        if "channel_id" in self.fields:
+            self.fields["channel_id"].widget.attrs["pattern"] = "[CG][A-Z0-9]{1,63}"
         field_tips.shorten(
             self,
             {
@@ -215,7 +232,8 @@ KEY_FIELDS = {
             "Paste a new key only to replace the current one, for example after "
             "creating a new key in ParishSoft. It is checked against the "
             "organization ID above. Leave this blank to keep the current key, "
-            "which is never shown."
+            "which is never shown. A new key can't be saved together with a "
+            "refresh schedule change: save the schedule change first."
         ),
     ),
     "google_workspace": (
@@ -248,19 +266,45 @@ class WriteOnlyPasswordInput(forms.PasswordInput):
         )
 
 
+# Label, help and missing-key message for an optional integration that is not
+# set up yet, whose key is then required (#563): without one, Save could only
+# be refused.
+SETUP_KEY_FIELDS = {
+    "slack": (
+        _("Slack bot token"),
+        _(
+            "Paste the app's bot token (it starts with xoxb-). It is checked with "
+            "Slack before it is used, and is never shown again."
+        ),
+        _("Paste the Slack bot token to set up Slack."),
+    ),
+}
+
+
 class InlineCredentialForm(forms.Form):
-    """The optional replacement key shown on an integration's settings page."""
+    """The replacement key shown on an integration's settings page.
+
+    The key is optional once the integration is set up (blank keeps the
+    current key). For an optional integration that is not set up yet
+    (``required``), the key is what sets it up, so it is required, with
+    set-up wording and the message the page's complete gate shows while it
+    is empty.
+    """
 
     intent = forms.CharField(max_length=4096, widget=forms.HiddenInput)
 
-    def __init__(self, target, *args, **kwargs):
+    def __init__(self, target, *args, required=False, **kwargs):
         """Use the target's own label, help text and one- or multi-line field."""
         super().__init__(*args, **kwargs)
         label, help_text = KEY_FIELDS[target]
+        missing = None
+        if required:
+            label, help_text, missing = SETUP_KEY_FIELDS[target]
         self.fields["candidate"] = forms.CharField(
             label=label,
             help_text=help_text,
-            required=False,
+            required=required,
+            error_messages={"required": missing} if missing else None,
             max_length=MAX_FILE_BYTES,
             strip=target != "google_workspace",
             widget=(
@@ -271,7 +315,13 @@ class InlineCredentialForm(forms.Form):
                 else WriteOnlyPasswordInput()
             ),
         )
+        if missing:
+            # The complete gate's hint names what Save is waiting for.
+            self.fields["candidate"].widget.attrs["data-missing-hint"] = missing
         self.order_fields(["candidate", "intent"])
         field_tips.shorten(
-            self, {"candidate": _("Leave blank to keep the current key.")}
+            self,
+            {}
+            if required
+            else {"candidate": _("Leave blank to keep the current key.")},
         )
