@@ -548,6 +548,8 @@ NON_PAGES = frozenset(
         "presence_count",
         "family_timeline_export",
         "family_directory_export",
+        # Open form's hand-off (#529): a POST that opens the Family form.
+        "family_open_form",
         # The header's Find a Family results (#561), a fragment for its box.
         "find_family",
         "hosted_file_upload",

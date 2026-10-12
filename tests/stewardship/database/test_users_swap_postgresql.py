@@ -245,8 +245,8 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # Objects a later closure migration's frozen file creates with plain CREATE,
 # which a full migration would otherwise fail to create again: #970's 0056,
 # #995's 0057, #1024's 0058, #1018's 0059, #528's 0060 and 0061, #530's
-# 0062, #463's 0063 and #558's 0064 follow 0055 (#993), so they are in the
-# swap's closure too.
+# 0062, #463's 0063, #558's 0064 and #529's 0065 follow 0055 (#993), so
+# they are in the swap's closure too.
 # Each is dropped while the swap is pending (with the trigger that uses it)
 # and, unless the test's full migration made it again, installed again
 # afterwards from its migration's frozen file. The tables 0059 to 0063
@@ -255,6 +255,8 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # export request (``before_timeline_exports``), which is put back first, and
 # 0064 re-points the two report export capture triggers
 # (``before_report_local_days``), which are put back on the v1 captures.
+# 0065 creates nothing; it adds a column and replaces the audit context
+# check (``before_staff_entered``), so ``CLOSURE_ALTERED`` puts it back.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -328,6 +330,18 @@ CLOSURE_CREATED = {
 }
 
 
+# Columns a later closure migration's frozen file adds to an existing table,
+# with the migration that adds them. ``swap_pending`` drops each (with the
+# ``before_*`` statements) and, unless the test's full migration added it
+# again, installs it again afterwards from its migration's frozen file.
+CLOSURE_ALTERED = {
+    ("stewardship_submission", "entered_by_id"): (
+        "stewardship_responses",
+        "0003_staff_entered",
+    ),
+}
+
+
 def _replaced(text, name):
     """One ``CREATE OR REPLACE FUNCTION`` statement of a frozen file, whole."""
     start = text.index(f"CREATE OR REPLACE FUNCTION public.{name}(")
@@ -397,6 +411,24 @@ def before_report_local_days():
     ]
 
 
+def before_staff_entered():
+    """The statements that put submissions and the context check before 0065.
+
+    #529's 0065 adds ``stewardship_submission.entered_by_id`` and replaces
+    ``stewardship_safe_context_v1`` with 0059's body plus two sort tokens.
+    These drop the column and put 0059's body back, as on production's
+    base, so 0065's frozen file (or the full migration) installs again.
+    """
+    text = (MIGRATIONS / "migrations/0059_campaign_archives.sql").read_text(
+        encoding="utf-8"
+    )
+    start = text.index("CREATE OR REPLACE FUNCTION public.stewardship_safe_context_v1(")
+    return [
+        "ALTER TABLE public.stewardship_submission DROP COLUMN entered_by_id",
+        text[start : text.index("$_$;", start) + len("$_$;")],
+    ]
+
+
 @contextmanager
 def swap_pending():
     """Put the database in the state `migrate --users-upgrade-base` leaves.
@@ -411,8 +443,10 @@ def swap_pending():
     neither function bodies nor that table, so later tests would otherwise
     see this state. Each ``CLOSURE_CREATED`` object and ``CLOSURE_TABLES``
     table is dropped meanwhile, the export request is put back as it was
-    before 0063 (``before_timeline_exports``) and the report export capture
-    triggers as they were before 0064 (``before_report_local_days``).
+    before 0063 (``before_timeline_exports``), the report export capture
+    triggers as they were before 0064 (``before_report_local_days``) and
+    submissions and the context check as they were before 0065
+    (``before_staff_entered``, each ``CLOSURE_ALTERED`` column).
     """
     from django.db.migrations.loader import MigrationLoader
 
@@ -422,6 +456,7 @@ def swap_pending():
     loader = MigrationLoader(connection)
     closure = sorted(runtime_database.users_swap_closure(loader.graph))
     assert set(CLOSURE_CREATED.values()) <= set(closure)
+    assert set(CLOSURE_ALTERED.values()) <= set(closure)
     removed = []
     with transaction.atomic(), connection.cursor() as cursor:
         for app, name in closure:
@@ -438,7 +473,11 @@ def swap_pending():
             cursor.execute(f"DROP TABLE public.{table} CASCADE")
         for function in CLOSURE_CREATED:
             cursor.execute(f"DROP FUNCTION {function} CASCADE")
-        for statement in (*before_timeline_exports(), *before_report_local_days()):
+        for statement in (
+            *before_timeline_exports(),
+            *before_report_local_days(),
+            *before_staff_entered(),
+        ):
             cursor.execute(statement)
     try:
         yield
@@ -451,6 +490,18 @@ def swap_pending():
             for function, key in CLOSURE_CREATED.items():
                 cursor.execute("SELECT to_regprocedure(%s)", [function])
                 if cursor.fetchone()[0] is None:
+                    module = sys.modules[loader.disk_migrations[key].__module__]
+                    cursor.execute(Path(module.FROZEN_SQL).read_text(encoding="utf-8"))
+            # After the created objects: a frozen file run again above (0059)
+            # replaces the context check with its older body, which the
+            # later file (0065) replaces again here.
+            for (table, column), key in CLOSURE_ALTERED.items():
+                cursor.execute(
+                    "SELECT 1 FROM pg_attribute WHERE attrelid=%s::regclass "
+                    "AND attname=%s AND NOT attisdropped",
+                    [f"public.{table}", column],
+                )
+                if cursor.fetchone() is None:
                     module = sys.modules[loader.disk_migrations[key].__module__]
                     cursor.execute(Path(module.FROZEN_SQL).read_text(encoding="utf-8"))
             for app, name, applied in removed:

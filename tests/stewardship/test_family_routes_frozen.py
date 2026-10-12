@@ -24,6 +24,9 @@ FAMILY = [
     ("presence", "presence"),
     ("", "entry"),
     ("keepalive", "keepalive"),
+    # Open form's hand-off from the Admin portal (#529): an added route;
+    # no existing Family address moved.
+    ("assisted", "assisted"),
     ("logout", "logout"),
 ]
 TOP = [

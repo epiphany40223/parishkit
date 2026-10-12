@@ -788,3 +788,31 @@ def _exact_rows(campaign_id, parameters, report, text):
 def _whole_number(text):
     """Whether ``text`` is ASCII digits only, like envelope numbers and DUIDs."""
     return text.isascii() and text.isdigit()
+
+
+def staff_entered(campaign_id, family_ids):
+    """Which of ``family_ids`` have a current response that Staff entered (#529).
+
+    The tag describes the Family's effective (latest) live response, the one
+    the directory's Responded column reports: a Family whose earlier response
+    Staff entered and who later submitted its own is not tagged.
+    ``family_ids`` are the directory rows' ids as strings (None for a Family
+    without a campaign record, skipped). One indexed query over the page's
+    Families only; the caller holds the campaign read guard. Returns the ids
+    as strings, so the page can test its rows directly.
+    """
+    from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+    from parishkit.stewardship.responses.models import Submission
+
+    ids = [value for value in family_ids if value]
+    if not ids:
+        return frozenset()
+    effective = FamilyCampaign.objects.filter(
+        campaign_id=campaign_id, pk__in=ids, effective_submission_id__isnull=False
+    ).values("effective_submission_id")
+    return frozenset(
+        str(value)
+        for value in Submission.objects.filter(
+            pk__in=effective, mode="live", entered_by_id__isnull=False
+        ).values_list("family_id", flat=True)
+    )

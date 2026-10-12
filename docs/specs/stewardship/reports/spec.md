@@ -651,10 +651,10 @@ per-Family rows as the [funnel](#response-funnel):
 
 | List | Families listed | Columns | Filter |
 | --- | --- | --- | --- |
-| `submitted` | with a submission (Submitted) | Family, Family DUID, Envelope number, Submissions, First submitted | none |
+| `submitted` | with a submission (Submitted) | Family, Family DUID, Envelope number, Submissions, Entered by Staff (how many of the submissions Staff entered through [Open form](#family-timeline)), First submitted | none |
 | `started` | form opened, nothing submitted (Form opened minus Submitted) | Family, Family DUID, Envelope number, Form opened, Got past the first step | got past the first step, or opened the form only |
 | `not-opened` | a delivered invitation, form never opened | Family, Family DUID, Envelope number, Invitation delivered, Link followed | link followed or not |
-| `more-than-once` | more than one submission (Submitted more than once) | Family, Family DUID, Envelope number, Submissions, First submitted, Last submitted | none |
+| `more-than-once` | more than one submission (Submitted more than once) | Family, Family DUID, Envelope number, Submissions, Entered by Staff, First submitted, Last submitted | none |
 | `data-quality` | active Families of the campaign whose current ParishSoft record has a blank mailing name or envelope number 0 | Family, Family DUID, Envelope number, Mailing name, What to check, First submitted | blank mailing name, or envelope number 0 |
 
 The [active parishioner family directory's Response filters](#response-filters)
@@ -816,7 +816,8 @@ data no longer has the Family), DUID and envelope number, then a summary that
 both roles see:
 
 - **Submitted:** Yes, with the first submission's time and, after more than
-  one, how many and the latest; or "Not yet".
+  one, how many and the latest, noting any that Staff entered for the Family
+  through Open form; or "Not yet".
 - **Last email:** the last email sent to the Family (Invitation, Reminder N,
   Submission receipt or a chosen-Family test email), planned last among those
   not cancelled (a cancelled email was never sent), with its time and outcome
@@ -830,8 +831,7 @@ both roles see:
   and the test-email results use the same words.
 - **Family code**, for roles that may see Family codes (`FAMILY_CODES`; the
   code is neither decrypted nor shown otherwise), as the directory shows it,
-  with **Open form**, which opens the Family form in a new tab with the code
-  in the URL fragment only, as the directory's link does. Unlike the
+  with **Open form** (described below), as the directory has. Unlike the
   directory, the page shows no notice beside it (the Administrator's choice
   on #590). Open form is a
   disabled button with its reason beside it while the system is in Testing
@@ -859,9 +859,41 @@ listed once; likewise each reminder not sent because the Family is in the
 campaign's [No-reminders WorkGroup](../background-processing/spec.md#family-invitations-and-reminders)
 (#861); each sign-in, labelled as possibly a mail scanner checking the
 link; each form open; getting past the first step and the furthest step
-reached; and each submission, noting when no receipt was sent because the
-Family had no email address. Staff get none of
-these, and the server does not read them for a Staff view.
+reached; and each submission, noting when Staff entered it for the Family
+and when no receipt was sent because the Family had no email address. Staff
+get none of these, and the server does not read them for a Staff view.
+
+**Open form** lets Staff fill in the form for a Family over the phone
+([#529](https://github.com/epiphany40223/parishkit/issues/529)). It is a
+CSRF-protected POST, from this page or the directory, for roles that may see
+Family codes; it is refused, with one plain page that gives no reason, unless
+the system is in Production and the Family is in the current campaign with a
+code. A signed-in Admin's refusal is audited as a denied `family_form_opened`
+(the Admin and the Family asked for, no reason). The POST carries the
+address of the page it was clicked on as `next`, and Back from the new tab
+returns there: only the Family directory (with its query, so its filters,
+sort and page survive) or this Family's own timeline is accepted; anything
+else, including another host, falls back to the timeline, so `next` is never
+an open redirect. It stores a single-use hand-off in Valkey for one minute, keyed by the
+SHA-256 of a fresh 256-bit secret and bound to the signed-in Admin and their
+session, records a `family_form_opened` audit event (the Admin, the Family's
+opaque record id, the campaign; never the code or the secret), and opens a
+new tab that posts the secret straight to the Family form. The secret and the
+code never appear in a URL, log or audit. The Family form takes the hand-off
+with one atomic read-and-delete, so it cannot be replayed to start a session
+later, checks that the Admin's session is still live and that the Admin may
+still see Family codes, and then signs the tab in as the Family through the
+ordinary code sign-in, recording `family_assisted_login` (the Admin and the
+new Family session). Every refusal shows the same page, and a used or
+expired hand-off counts against the browser's address like a wrong code. A
+response submitted in that session records the Admin in its `entered_by_id`
+(frozen migration 0065). The Admin's session and role are checked only when the
+hand-off is redeemed: if they end later while the Family tab is open, the
+Family session continues until its own timeout, like any Family session, and a
+response submitted in it is still marked as entered by Staff. Pages and lists
+say only "Entered by Staff", never who: who opened the form is in the System
+logs. The receipt email is the ordinary one. No Family code or link is created,
+replaced or cancelled, so emailed codes and links keep working.
 
 As on the [response lists](#response-lists), the URL carries only closed
 choices: the timeline's `sort` (and the `size=all` its heading carries), and
@@ -1019,7 +1051,8 @@ shows no population summary or separate code-privacy line above its filters;
 the page's About help covers code privacy. Each row has the Family's name,
 Family DUID (in its own column, headed "Family DUID"), envelope number,
 manual code, current email eligibility/deliverability, and whether the Family
-has a current live response (Responded). The columns follow the shared order,
+has a current live response (Responded, noting when that response is one
+Staff entered through [Open form](#family-timeline)). The columns follow the shared order,
 most relevant column first
 ([#932](https://github.com/epiphany40223/parishkit/issues/932)). The
 directory is a Family table, so Family (the row header) leads, then Family

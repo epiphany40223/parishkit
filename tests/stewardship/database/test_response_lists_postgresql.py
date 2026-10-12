@@ -195,8 +195,10 @@ def test_lists_and_downloads_for_admin_and_staff(
         assert response.status_code == 200
         table = list(csv.reader(io.StringIO(body.decode("utf-8"))))
         assert [row[1] for row in table[1:]] == ["1"]
-        # The shared CSV time text: ISO 8601 with a space separator.
-        assert re.fullmatch(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\+00:00", table[1][4])
+        # Entered by Staff (#529): none of these responses came through Open
+        # form. The shared CSV time text: ISO 8601 with a space separator.
+        assert table[1][4] == "0"
+        assert re.fullmatch(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\+00:00", table[1][5])
         for invalid in (
             {"timezone": "Mars/Base"},
             {"size": "all"},
