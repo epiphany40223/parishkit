@@ -30,6 +30,7 @@ from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.users_schema import SCHEMA
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.runtime_database import USERS_SWAP
+from parishkit.stewardship.runtime_grants import CLOSURE_TABLES
 
 from .campaign_builders import initialized
 from .test_background_grants_postgresql import task_login
@@ -243,11 +244,13 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 
 # Objects a later closure migration's frozen file creates with plain CREATE,
 # which a full migration would otherwise fail to create again: #970's 0056,
-# #995's 0057 and #1024's 0058 follow 0055 (#993), so they are in the swap's
-# closure too.
+# #995's 0057, #1024's 0058 and #1018's 0059 follow 0055 (#993), so they are
+# in the swap's closure too.
 # Each is dropped while the swap is pending (with the trigger that uses it)
 # and, unless the test's full migration made it again, installed again
-# afterwards from its migration's frozen file.
+# afterwards from its migration's frozen file. The tables 0059 creates
+# (runtime_grants.CLOSURE_TABLES) are dropped and installed again with its
+# guard functions, as the base lacks them too.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -265,6 +268,18 @@ CLOSURE_CREATED = {
         "stewardship_jobs",
         "0022_mail_message_recipients",
     ),
+    "public.stewardship_campaign_archive_guard_v1()": (
+        "stewardship_reports",
+        "0014_campaign_archives",
+    ),
+    "public.stewardship_campaign_archive_child_guard_v1()": (
+        "stewardship_reports",
+        "0014_campaign_archives",
+    ),
+    "public.stewardship_campaign_archive_child_insert_v1()": (
+        "stewardship_reports",
+        "0014_campaign_archives",
+    ),
 }
 
 
@@ -280,7 +295,8 @@ def swap_pending():
     Afterwards the swap's own statements (everything before its closing
     check) and its row are put back: a transactional test's flush touches
     neither function bodies nor that table, so later tests would otherwise
-    see this state. Each ``CLOSURE_CREATED`` object is dropped meanwhile.
+    see this state. Each ``CLOSURE_CREATED`` object and ``CLOSURE_TABLES``
+    table is dropped meanwhile.
     """
     from django.db.migrations.loader import MigrationLoader
 
@@ -302,6 +318,8 @@ def swap_pending():
         assert USERS_SWAP in {(app, name) for app, name, _ in removed}
         for definition in old_definitions().values():
             cursor.execute(definition)
+        for table in CLOSURE_TABLES:
+            cursor.execute(f"DROP TABLE public.{table} CASCADE")
         for function in CLOSURE_CREATED:
             cursor.execute(f"DROP FUNCTION {function} CASCADE")
     try:
@@ -310,6 +328,8 @@ def swap_pending():
         with transaction.atomic(), connection.cursor() as cursor:
             cursor.execute("RESET SESSION AUTHORIZATION")
             cursor.execute(SWAP[: SWAP.index("DO $check$")])
+            # A frozen file makes all its objects again, the tables with
+            # their guard functions, so each runs at most once.
             for function, key in CLOSURE_CREATED.items():
                 cursor.execute("SELECT to_regprocedure(%s)", [function])
                 if cursor.fetchone()[0] is None:
@@ -416,11 +436,12 @@ def provisioned_logins(monkeypatch):
 def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypatch):
     """The users upgrade's order: base grants, conversion, migration, grants.
 
-    On the base (the swap's closure pending, the routines it adds absent)
-    database-grants succeeds without them; the conversion runs as the
-    admin-recovery login with exactly the grants it gave; the full
-    migration then installs the swap and the Name lookup, and the grants
-    again give web the lookup (#952).
+    On the base (the swap's closure pending, the routines and tables it
+    adds absent) database-grants succeeds without them; the conversion runs
+    as the admin-recovery login with exactly the grants it gave; the full
+    migration then installs the swap, the Name lookup and the archive
+    tables, and the grants again give web the lookup (#952) and the tables
+    (#1018).
     """
     from django.core.management import call_command
 
@@ -439,6 +460,8 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
         closure_functions_absent(),
     ):
         assert scalar("SELECT to_regprocedure(%s)", [lookup]) is None
+        for table in CLOSURE_TABLES:
+            assert scalar("SELECT to_regclass(%s)", [f"public.{table}"]) is None
         assert grants() == {"database_grants_provisioned": True}
         with connection.cursor() as cursor:
             cursor.execute("SET SESSION AUTHORIZATION pk_stewardship_admin_recovery")
@@ -464,6 +487,11 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
             "SELECT has_function_privilege('pk_stewardship_web', %s, 'EXECUTE')",
             [lookup],
         )
+        for table in CLOSURE_TABLES:
+            assert scalar(
+                "SELECT has_table_privilege('pk_stewardship_web', %s, 'INSERT')",
+                [f"public.{table}"],
+            ), table
 
 
 def catalog(cursor):
@@ -496,10 +524,10 @@ def test_closure_functions_list_every_granted_routine_the_swap_closure_adds(
     whatever SQL spelling a migration uses (quoting, an unqualified name,
     IF NOT EXISTS, an overload, a view or a procedure) the objects it adds
     are what PostgreSQL reports. A granted routine among them must be in
-    CLOSURE_FUNCTIONS with the migration that adds it, so database-grants
-    waits for it on the base (#952); a granted table or view has no such
-    wait, so none may be among them. Registry names are resolved by the
-    database too, so type spellings need not match.
+    CLOSURE_FUNCTIONS, and a granted table or view in CLOSURE_TABLES, with
+    the migration that adds it, so database-grants waits for it on the base
+    (#952, #1018). Registry names are resolved by the database too, so type
+    spellings need not match.
     """
     import psycopg
     from django.db.migrations.loader import MigrationLoader
@@ -578,7 +606,8 @@ def test_closure_functions_list_every_granted_routine_the_swap_closure_adds(
                     tables, columns = runtime_grants(role, target=target)
                     for table in tables.keys() | columns.keys():
                         oid = resolve("to_regclass", table)
-                        assert oid not in added_relations, added_relations[oid]
+                        key = added_relations.get(oid, (None, None))[1]
+                        assert CLOSURE_TABLES.get(table) == key, table
         finally:
             drop_database(maintenance, scratch)
 

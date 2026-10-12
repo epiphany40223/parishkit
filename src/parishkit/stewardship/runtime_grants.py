@@ -9,6 +9,7 @@ and operator-request INSERT never become online config-installer privileges.
 from parishkit.config import ConfigError
 
 from .deployment import ServiceRole
+from .reports.archive_grants import ARCHIVE_TABLE, CHILD_TABLES
 
 # Explicit snapshot/read vocabulary; no wildcard over future application tables.
 WEB_READ_TABLES = frozenset(
@@ -323,6 +324,16 @@ CLOSURE_FUNCTIONS = {
 }
 
 
+# Each granted table a migration in the users swap's closure creates, with
+# that migration, for the same reason: database-grants on the users
+# upgrade's base cannot name a table that is not there yet, so it grants on
+# one only once its migration is applied (``pending_tables``). The same test
+# proves this lists every granted table the closure's migrations create.
+# #1018's archive tables (0059) follow 0058 (#1024), so they are in it.
+_ARCHIVES = ("stewardship_reports", "0014_campaign_archives")
+CLOSURE_TABLES = dict.fromkeys((ARCHIVE_TABLE, *CHILD_TABLES), _ARCHIVES)
+
+
 def pending_functions(applied):
     """The registry routines whose creating migration is not in ``applied``.
 
@@ -332,6 +343,13 @@ def pending_functions(applied):
         function
         for function, migration in CLOSURE_FUNCTIONS.items()
         if migration not in applied
+    )
+
+
+def pending_tables(applied):
+    """The registry tables whose creating migration is not in ``applied``."""
+    return frozenset(
+        table for table, migration in CLOSURE_TABLES.items() if migration not in applied
     )
 
 

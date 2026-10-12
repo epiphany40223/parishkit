@@ -36,7 +36,7 @@ class Migration(migrations.Migration):
         # The migration that installed the previous frozen file (0058,
         # #1024), so the files apply in prefix order. It follows the users
         # swap, so `migrate --users-upgrade-base` never applies this file
-        # and its routines are registered in runtime_grants.CLOSURE_FUNCTIONS.
+        # and its tables are registered in runtime_grants.CLOSURE_TABLES.
         ("stewardship_jobs", "0022_mail_message_recipients"),
     ]
 
