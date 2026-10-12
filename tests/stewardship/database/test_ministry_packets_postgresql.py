@@ -251,7 +251,6 @@ def test_native_packet_request_form(response_service, google):
             form(ministries=["9"], history="no"),
             form(selection="all"),
             form(format="zip"),
-            form(browser_timezone="Mars/Olympus"),
             form(unexpected="field"),
         ):
             assert post(browser, route, invalid).status_code == 400

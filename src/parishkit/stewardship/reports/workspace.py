@@ -5,8 +5,8 @@ from urllib.parse import urlencode
 
 from django.urls import reverse
 
-from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.web.contracts import PageWindow, filters
+from parishkit.stewardship.web.dates import unasked_zone
 from parishkit.stewardship.web.tables import ALL, PAGE_SIZES, Sorting
 
 from .participation import SCOPE_LABELS
@@ -79,13 +79,14 @@ class ReportQuery:
             allowed={"scope", "timezone", "inactive", "page", "sort", "size"},
         )
         scope = values.get("scope", "historical")
-        zone = values.get("timezone", "UTC")
+        # The page asks for no zone (#1127): report-v1.js supplies the
+        # browser's, and an unknown one falls back to UTC, never a refusal.
+        zone = unasked_zone(values.get("timezone"), "UTC")
         page = values.get("page", "1")
         sort = values.get("sort", "date_asc")
         size = values.get("size", "50")
         if (
             scope not in SCOPE_LABELS
-            or zone not in timezone_names()
             or not page.isascii()
             or not page.isdecimal()
             or str(int(page)) != page

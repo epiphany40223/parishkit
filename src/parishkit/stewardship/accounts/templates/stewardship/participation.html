@@ -17,8 +17,7 @@
 <form id="table-filters" data-table-sync method="get" action="{% url 'admin:participation' %}#participation-statistics" data-report-options data-in-place="report-options" data-in-place-message="{% translate 'Report options applied.' %}">
 <label for="scope">{% translate "Chart population" %}</label>
 <select id="scope" name="scope"><option value="historical"{% if query.scope == 'historical' %} selected{% endif %}>{% translate "Historical as of day" %}</option><option value="current"{% if query.scope == 'current' %} selected{% endif %}>{% translate "Current population" %}</option></select>
-<div class="label-row"><label for="timezone" id="timezone-label">{% translate "Report and export timezone" %}</label>{% translate "Campaign dates stay in the campaign's time zone. Times on this page use your computer's time zone when your browser allows it, otherwise UTC. Exports use the time zone chosen here." as tip %}{% include "stewardship/components/toggletip.html" with tip_id="timezone-tip" tip_label_id="timezone-label" tip_text=tip %}</div>
-<select id="timezone" name="timezone">{% for zone in timezones %}<option value="{{ zone }}"{% if zone == query.timezone %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
+{# The exports hold campaign dates, never exact action times, so the page asks for no time zone (#1127): report-v1.js puts this browser's zone here and in the address, and the exports' frame times (Source as of, Requested) use it. #}<input type="hidden" name="timezone" value="{{ query.timezone }}" data-report-zone>
 <input type="hidden" name="size" value="{{ query.size }}"><input type="hidden" name="sort" value="{{ query.sort }}">
 {% button type="submit" %}{% translate "Apply report options" %}{% endbutton %}
 </form>

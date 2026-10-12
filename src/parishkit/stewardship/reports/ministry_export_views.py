@@ -15,7 +15,12 @@ from parishkit.stewardship.web.contracts import (
     FieldError,
     validation_response,
 )
-from parishkit.stewardship.web.dates import UnknownZone, refuse_zoneless_dates
+from parishkit.stewardship.web.dates import (
+    UnknownZone,
+    parish_zone,
+    refuse_zoneless_dates,
+    unasked_zone,
+)
 from parishkit.stewardship.web.refusals import Refusal
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.security import private_response
@@ -114,11 +119,11 @@ def packet_selection(parameters):
     One control has one meaning, so the form cannot reach an ambiguous state
     such as "all" selected beside individually ticked boxes.
     """
-    fields = {"format", "browser_timezone", "request_key"}
+    fields = {"format", "request_key"}
     keys = set(parameters)
     if (
         not fields <= keys
-        or keys - fields - {"ministries", "history"}
+        or keys - fields - {"ministries", "history", "browser_timezone"}
         or any(len(parameters.getlist(key)) != 1 for key in keys - {"ministries"})
         or parameters.get("history", "yes") != "yes"
     ):
@@ -162,7 +167,11 @@ def create_packet(request, campaign_id):
             ministries=ministries,
             history="history" in parameters,
             format=parameters["format"],
-            browser_timezone=parameters["browser_timezone"],
+            # Asked for nowhere: the browser's zone, sent unasked, else the
+            # parish's (#1127).
+            browser_timezone=unasked_zone(
+                parameters.get("browser_timezone"), parish_zone()
+            ),
             request_key=UUID(parameters["request_key"]),
         )
         return _redirect(result.pk)

@@ -20,7 +20,6 @@ from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.observability import Event, emit_failure
-from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.responses import campaign_response
@@ -267,7 +266,6 @@ def _page_context(campaign_id, query, selected, principal):
         "selection": selected,
         "statistics": statistics,
         "cards": statistics_cards(statistics),
-        "timezones": sorted(timezone_names()),
         "export_key": uuid4(),
         "exact_key": uuid4(),
         "exact_row_count": max(

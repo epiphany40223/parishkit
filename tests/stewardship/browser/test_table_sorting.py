@@ -370,7 +370,8 @@ def test_packet_choices_keep_their_ticks_while_the_summary_is_resorted(
     history = page.get_by_role("checkbox", name="Also include resolved")
     history.check()
     assert page.locator("#table-export").count() == 0
-    packet_zone = page.locator("#ministry-packet-timezone")
+    # The packet asks for no zone (#1127): its hidden field holds the browser's.
+    packet_zone = page.locator("input[name=browser_timezone][data-browser-zone]")
     assert packet_zone.input_value() != "UTC"
     fulfil_post_with(
         page,

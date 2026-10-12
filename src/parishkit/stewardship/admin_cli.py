@@ -1068,18 +1068,20 @@ def sample_test(args, preamble, runtime, context):
 def families_preview(args, preamble, runtime, context):
     """Review a chosen-Family test, as its page does (PR 6c).
 
-    With ``--names`` (and its ``--timezone``, and optionally ``--format``)
-    it also requests the export of the names the page shows beside the
-    DUIDs (#817), as CSV, XLSX or PDF (#966). That changes state, so
-    without ``--request-key`` the new key is written to standard error
-    first, so a run that crashes can be repeated with it.
+    With ``--names`` (and optionally ``--format`` and ``--timezone``) it
+    also requests the export of the names the page shows beside the DUIDs
+    (#817), as CSV, XLSX or PDF (#966). That changes state, so without
+    ``--request-key`` the new key is written to standard error first, so a
+    run that crashes can be repeated with it. The file has no times in its
+    rows, so no zone is needed (#1127): without ``--timezone`` its frame
+    times use the parish's time zone, as a host command has no browser.
     """
     from uuid import uuid4
 
     from .admin_tests import preview_families, preview_families_with_names
 
-    if (args.timezone is not None) != args.names:
-        raise UsageError("--names and --timezone go together.")
+    if args.timezone is not None and not args.names:
+        raise UsageError("--timezone goes with --names.")
     if args.format is not None and not args.names:
         raise UsageError("--format goes with --names.")
     if args.names:
@@ -2205,8 +2207,8 @@ def _duid(value):
 
 def _families_preview_options(parser):
     """Options of ``test families-preview``: the email, the Families, the key
-    and, for the names export (#817), ``--names`` with its time zone and
-    file format (#966)."""
+    and, for the names export (#817), ``--names`` with its optional time zone
+    and file format (#966)."""
     parser.add_argument("revision_id", type=_uuid, metavar="REVISION_ID")
     parser.add_argument(
         "--family",
@@ -2226,12 +2228,12 @@ def _families_preview_options(parser):
         "--names",
         action="store_true",
         help="also request an export of the Families' names, which the "
-        "page shows, for export fetch (needs --timezone)",
+        "page shows, for export fetch",
     )
     parser.add_argument(
         "--timezone",
-        help="with --names: the time zone of the file's times, for example "
-        "America/New_York",
+        help="with --names: the time zone of the file's capture and request "
+        "times, for example America/New_York (default: the parish's)",
     )
     parser.add_argument(
         "--format",

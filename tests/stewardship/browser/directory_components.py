@@ -204,6 +204,8 @@ def components(context, admin):
         ),
         "table": _table([listed, gone], 2, "no", responding),
         "total": 2,
+        # The code list with response columns asks for a zone (#1127).
+        "export_asks_zone": True,
     }
     pages = {
         "/directory-responses": values | code_list | responses,
@@ -276,6 +278,7 @@ def preset_pages(values, counted):
             ),
             "table": _table([row], 1, "no", query),
             "total": 1,
+            "export_asks_zone": query.responses == "yes",
             "page_address": page_address(
                 reverse("admin:family_directory"), query, postal=False
             ),
