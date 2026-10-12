@@ -244,13 +244,13 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 
 # Objects a later closure migration's frozen file creates with plain CREATE,
 # which a full migration would otherwise fail to create again: #970's 0056,
-# #995's 0057, #1024's 0058 and #1018's 0059 follow 0055 (#993), so they are
-# in the swap's closure too.
+# #995's 0057, #1024's 0058, #1018's 0059 and #528's 0060 follow 0055
+# (#993), so they are in the swap's closure too.
 # Each is dropped while the swap is pending (with the trigger that uses it)
 # and, unless the test's full migration made it again, installed again
-# afterwards from its migration's frozen file. The tables 0059 creates
-# (runtime_grants.CLOSURE_TABLES) are dropped and installed again with its
-# guard functions, as the base lacks them too.
+# afterwards from its migration's frozen file. The tables 0059 and 0060
+# create (runtime_grants.CLOSURE_TABLES) are dropped and installed again with
+# their guard functions, as the base lacks them too.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -279,6 +279,14 @@ CLOSURE_CREATED = {
     "public.stewardship_campaign_archive_child_insert_v1()": (
         "stewardship_reports",
         "0014_campaign_archives",
+    ),
+    "public.stewardship_proposal_resolution_guard_v1()": (
+        "stewardship_responses",
+        "0002_proposal_resolution",
+    ),
+    "public.stewardship_proposal_resolution_effect_v1()": (
+        "stewardship_responses",
+        "0002_proposal_resolution",
     ),
 }
 

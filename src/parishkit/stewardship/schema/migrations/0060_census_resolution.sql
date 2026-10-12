@@ -33,6 +33,7 @@
 -- has no ALTER for it), so nothing else is restored. The file ends with a
 -- DO block that refuses to commit unless all of this is installed.
 SET LOCAL check_function_bodies = false;
+SET LOCAL search_path = public;
 
 CREATE TABLE "stewardship_proposal_resolution" ("id" uuid NOT NULL PRIMARY KEY, "created_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "actor_id" uuid NULL, "correlation_id" uuid NOT NULL, "expected_version" bigint NOT NULL CHECK ("expected_version" >= 0), "request_key" uuid NOT NULL, "action" varchar(12) NOT NULL, "note" text NOT NULL, "proposal_id" uuid NOT NULL, CONSTRAINT "proposal_resolution_version" UNIQUE ("proposal_id", "expected_version"), CONSTRAINT "proposal_resolution_replay" UNIQUE ("actor_id", "request_key"), CONSTRAINT "proposal_resolution_identity" CHECK (("actor_id" IS NOT NULL AND "expected_version" >= 1)), CONSTRAINT "proposal_resolution_action" CHECK (((action)::text = ANY ((ARRAY['entered'::character varying, 'ignored'::character varying, 'reopened'::character varying])::text[]))));
 ALTER TABLE "stewardship_proposal_resolution" ADD CONSTRAINT "stewardship_proposal_proposal_id_0b1a1a27_fk_stewardsh" FOREIGN KEY ("proposal_id") REFERENCES "stewardship_proposed_change" ("id") DEFERRABLE INITIALLY DEFERRED;

@@ -32,11 +32,11 @@ FROZEN_SQL = (
 class Migration(migrations.Migration):
     dependencies = [
         ("stewardship_responses", "0001_initial"),
-        # The migration that installs the previous frozen file in this base
-        # (0050), so the files apply in prefix order. Files 0051 to 0059 are
-        # assigned to other open pull requests; when they land first, this
-        # moves to the migration that installs 0059.
-        ("stewardship_reports", "0012_directory_response_filters"),
+        # The migration that installed the previous frozen file (0059,
+        # #1018), so the files apply in prefix order. It follows the users
+        # swap, so `migrate --users-upgrade-base` never applies this file
+        # and its table is registered in runtime_grants.CLOSURE_TABLES.
+        ("stewardship_reports", "0014_campaign_archives"),
     ]
 
     operations = [
