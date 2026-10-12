@@ -145,6 +145,9 @@ services:
         source: ../../tools/prepare-release.py
         target: /app/tools/prepare-release.py
       - <<: *test-bind
+        source: ../../tools/stewardship-preflight.py
+        target: /app/tools/stewardship-preflight.py
+      - <<: *test-bind
         source: ../../tools/ci-pip-install.sh
         target: /app/tools/ci-pip-install.sh
       - <<: *test-bind

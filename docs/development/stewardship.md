@@ -130,6 +130,55 @@ the installer itself, or the entire operating-system toolchain. Full artifact
 reproducibility remains an OPS-01/OPS-09 responsibility. Editable installation
 keeps local source changes immediately visible.
 
+## Pre-flight before a release train
+
+Run `tools/stewardship-preflight.py` before a PR joins a release train, and on
+the assembled train branch before dispatching its CI run
+([#1156](https://github.com/epiphany40223/parishkit/issues/1156)). It runs, in
+a few minutes, the local checks for the failures that most often sank trains:
+
+- `node --check` and a check for names declared twice in the same scope, on
+  every shipped stewardship JavaScript file. Git can merge two PRs cleanly that
+  each add the same `const` or helper function to one file.
+- `ruff check` and `ruff format --check` on the whole tree.
+- pymarkdown on changed Markdown files and shellcheck on changed shell scripts.
+- One pytest run of the traceability, wording, retired page-name, help,
+  content-default and migration-file tests, listed in the script's
+  `GUARD_TESTS`.
+- With `--browsers`, the changed browser test files for Firefox and WebKit in
+  the Linux Playwright container. See
+  [Local Linux Firefox and WebKit runs](../guides/stewardship-browser-ci.md#local-linux-firefox-and-webkit-runs-1156).
+
+Run it with a development virtual environment's Python (the one that has
+`requirements.txt` installed):
+
+```sh
+/path/to/venv/bin/python tools/stewardship-preflight.py             # changed since origin/main
+/path/to/venv/bin/python tools/stewardship-preflight.py --browsers  # plus Linux Firefox/WebKit
+/path/to/venv/bin/python tools/stewardship-preflight.py --base train/2026-10-12
+/path/to/venv/bin/python tools/stewardship-preflight.py --all       # every Markdown/shell file
+```
+
+Changed files are the files that differ from the merge base with `--base`
+(default `origin/main`), plus uncommitted and untracked files, so fetch first.
+`--all` checks every Markdown and shell file instead. With `--browsers`, it
+also runs every Firefox/WebKit browser test file, which takes a long time. The
+JavaScript, Ruff and guard checks always cover the whole tree.
+
+The command prints a short pass/fail table, shows the output of each failed
+check above it, and exits non-zero if any check fails. `-v` also shows the
+output of passing checks.
+
+The script checks the checkout it lives in, even when the virtual environment
+belongs to another worktree. It puts that checkout's `src` first on
+`PYTHONPATH` and never uses `python -I`, which would import the venv's own
+editable install instead. No check needs credentials, a database or the
+network. The one exception is the first `--browsers` run, which downloads the
+container image and axe-core.
+
+Passing pre-flight is not CI evidence. It skips the PostgreSQL, Chromium,
+Compose and operational suites; exact-head CI still gates merges.
+
 ## Scaffold commands and limits
 
 ```sh
