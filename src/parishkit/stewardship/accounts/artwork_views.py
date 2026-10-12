@@ -146,6 +146,21 @@ def name_unavailable(form, slot):
     return form
 
 
+def current_images(campaign):
+    """The campaign's current image rows, keyed by slot.
+
+    Campaign images draws these and ``pk-admin artwork show`` prints them.
+    The configuration names assets by plain id, not foreign key, so a slot
+    whose asset row is missing is simply absent.
+    """
+    current = campaign.active_configuration.values.get("artwork", {}).get("images", {})
+    assets = {
+        str(asset.pk): asset
+        for asset in BrandingAsset.objects.filter(pk__in=list(current.values()))
+    }
+    return {slot: assets[ref] for slot, ref in current.items() if ref in assets}
+
+
 def _kind(slot):
     """The one normalized image kind a slot accepts."""
     return "banner" if slot == "banner" else "section"
@@ -258,11 +273,7 @@ def _page(
     marks the slots to be redrawn even by Apply's answer (a refused Apply:
     their forms then carry the current version).
     """
-    current = campaign.active_configuration.values.get("artwork", {}).get("images", {})
-    assets = {
-        str(asset.pk): asset
-        for asset in BrandingAsset.objects.filter(pk__in=list(current.values()))
-    }
+    images = current_images(campaign)
     slots = []
     for slot in ARTWORK_SLOTS:
         form = forms_by_slot.get(slot) or ArtworkForm(
@@ -276,7 +287,7 @@ def _page(
             {
                 "slot": slot,
                 "label": SLOT_LABELS[slot],
-                "asset": assets.get(current.get(slot)),
+                "asset": images.get(slot),
                 "unavailable": reason,
                 "form": form,
             }

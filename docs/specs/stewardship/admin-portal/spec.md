@@ -3769,16 +3769,25 @@ in the order the Administrator asked for
    addresses; in Testing mode they follow the Testing recipient, the
    address the email was really sent to. One email goes to all its
    addresses at once, and the provider can accept it for some and refuse
-   others, so when an accepted attempt reached only some of them the line
-   "Delivered to 1 of 2 addresses." follows, adding, when one was refused
-   for now, that such an address is not sent this email again. Before the
+   others. A Production invitation or reminder accepted with some
+   addresses refused for now is sent again to just those addresses (see
+   [background processing](../background-processing/spec.md#addresses-refused-for-now)),
+   and such an address then shows what that follow-up did instead:
+   "refused for now, trying again" while it is still being tried, or
+   "delivered", "refused permanently" or "not sure it arrived"; an address
+   shown as just "refused for now" is no longer tried (a receipt, Testing
+   mail, an email sent before follow-ups existed, or a follow-up that
+   ended). When the email reached only some addresses the line "Delivered
+   to 1 of 2 addresses." follows. The page's About panel explains these
+   labels, that one email goes to all addresses at once, and the automatic
+   retry of an address refused for now (#806). Before the
    rendering's first finished attempt, or when its evidence does not
    validate, no outcome is shown. The outcomes come from the attempt's
-   validated delivery evidence through a second definer function with the
-   same caller checks (see
+   validated delivery evidence and its follow-up through two more definer
+   functions with the same caller checks (see
    [outbox recipient reads](../data/spec.md#outbox-recipient-reads)).
-   Resending to an address refused for now, setting a flaky address aside
-   and reporting a bounce are later slices of #806.
+   Setting a flaky address aside and reporting a bounce are later slices
+   of #806.
 4. **Attempt history**: one table of short rows, one per recorded change,
    newest first, with When leading as in any log, then the attempt number,
    what happened and the resulting state (#934).
@@ -6062,7 +6071,8 @@ every `'<prefix>_'||` an installed audit-writing function builds to be a
   line's `admin_cmd_users_confirm`, ParishSoft Ministry leaders imported as
   users (`user_leaders_import_requested`, `user_leader_imported`,
   `admin_cmd_users_import_leaders`), and the operator's one-time conversion
-  of sign-in rules into users, `operator_users_upgraded`), hosted files (`hosted_file_*`), stored key
+  of sign-in rules into users, `operator_users_upgraded`), the command
+  line's parish profile changes (`admin_cmd_parish_confirm`), hosted files (`hosted_file_*`), stored key
   replacements
   (`secret_replacement_requested`, `secret_request_*`,
   `credential_consumer_acknowledged`) and initial setup, which is

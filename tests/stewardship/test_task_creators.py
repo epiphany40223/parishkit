@@ -17,8 +17,11 @@ code and checked both ways:
   creator entry fails.
 
 The only SQL that inserts a task is the SECURITY DEFINER
-``stewardship_production_confirmation_effect_v1``; it runs as the schema
-owner, which the guard exempts, so it needs no creator entry.
+``stewardship_production_confirmation_effect_v1`` and
+``stewardship_address_retry_open_v1``; they run as the schema owner, which
+the guard exempts, so they need no creator entry. The address follow-up's
+type (#806, frozen migration 0077) is created only that way, so its creator
+entry names no login (``OWNER_ONLY_TYPES``).
 
 Logins: ``web`` covers the Admin and Family pages, the Admin command line
 (which runs as the web login) and the LOCAL seeder's web entry points;
@@ -41,7 +44,12 @@ LOGINS = {
     WORKER: "pk_stewardship_worker",
 }
 CREATORS = {"enqueue", "retry_failed"}
-OWNER_ONLY_SQL = {"stewardship_production_confirmation_effect_v1"}
+OWNER_ONLY_SQL = {
+    "stewardship_production_confirmation_effect_v1",
+    "stewardship_address_retry_open_v1",
+}
+# Task types only an owner-only SQL definer creates: no login may insert them.
+OWNER_ONLY_TYPES = {"family_address_retry"}
 
 
 class Site(NamedTuple):
@@ -572,7 +580,7 @@ def test_only_the_definer_confirmation_effect_inserts_tasks_in_sql():
             name = re.findall(r"FUNCTION public\.(\w+)\(", text[: match.start()])[-1]
             found.add(name)
             definer = re.compile(
-                rf"FUNCTION public\.{name}\(\)[^$]*?SECURITY DEFINER", re.S
+                rf"FUNCTION public\.{name}\([^)]*\)[^$]*?SECURITY DEFINER", re.S
             )
             assert definer.search(text), name
     assert found == OWNER_ONLY_SQL
@@ -580,14 +588,18 @@ def test_only_the_definer_confirmation_effect_inserts_tasks_in_sql():
 
 def test_sql_creator_map_equals_the_derived_map():
     """No login may create more, or less, than its code does."""
-    assert sql_creators() == derived_creators()
+    assert sql_creators() == derived_creators() | dict.fromkeys(
+        OWNER_ONLY_TYPES, frozenset()
+    )
 
 
 def test_every_executed_task_type_has_a_creator():
     """A new task type without a creator entry fails here."""
     creators = sql_creators()
     assert set(creators) == set(sql_executors())
-    assert all(creators.values())
+    assert all(
+        logins for name, logins in creators.items() if name not in OWNER_ONLY_TYPES
+    )
     # Mail dispatch only executes; it creates nothing.
     assert "pk_stewardship_mail_dispatch" not in set().union(*creators.values())
 

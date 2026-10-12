@@ -190,6 +190,7 @@ ACTIVITY_TYPES = {
         "roles_applied",
         "user_change_requested",
         "admin_cmd_users_confirm",
+        "admin_cmd_parish_confirm",
         "user_leaders_import_requested",
         "user_leader_imported",
         "admin_cmd_users_import_leaders",

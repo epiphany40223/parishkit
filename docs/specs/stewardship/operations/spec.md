@@ -1162,6 +1162,13 @@ order, refuses before anything stops unless the deployment UUID, the set's
 digests and `restore-check` all agree, never deletes a replaced tree, and
 stops for the Restore review (see the runbook's
 [Scripted same-host restore](../../../guides/stewardship-backup-runbook.md#scripted-same-host-restore)).
+With `--replacement` it also prepares a new host and creates the roles,
+refusing unless the host holds no deployment and the set's own runtime row
+names the deployment. With `--drill`, used only on a disposable host that
+carries the drill marker for its own name and is not the public origin's
+host, it starts `web` alone with no route out, so a drill restore of a
+Production set can send nothing (see the runbook's
+[Scripted replacement and drill restore](../../../guides/stewardship-backup-runbook.md#scripted-replacement-and-drill-restore)).
 
 Both modes verify manifest/digests, application/schema compatibility, credential
 availability, and the target-mode precondition before writing. They restore

@@ -678,7 +678,31 @@ read for a read-only session with no event, no Ministry catalog
 `unavailable`, logos in slot order with a missing asset left out, a
 draft's Share options editable and a live campaign's not, no financial
 module, no or an unknown campaign, a Staff reader denied, an ended
-session).
+session). The fifth adds `parish preview` and `parish confirm`, the Parish
+settings page's Review and Apply, in `parishkit.stewardship.admin_parish`,
+through the page's own form, review (moved into
+`parish_views.review_change`, which the page now calls) and
+`admin_editing.confirm_intent`, with no schema change; proven by
+`tests/stewardship/test_admin_parish.py` (the change document's shape,
+catalog flags, the described event), `tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py`,
+`tests/stewardship/database/test_admin_parish_cli_postgresql.py` (a
+preview and confirm recording the request and event, a telephone stored
+as E.164, the timezone note, removing the giving link, a repeated confirm,
+a stale version, no change, a field error, Staff denied, an ended session,
+another page's token) and the unchanged parish settings page suites.
+Another part adds `artwork show`, the Campaign images page's
+read, in `parishkit.stewardship.admin_artwork`, through the page's own
+campaign check, upload availability check and current-image query (moved
+into `artwork_views.current_images`, which the page now calls), with no
+schema change; proven by `tests/stewardship/test_admin_artwork.py` (the
+golden document, unavailable slots, the catalog entry, the ledger, usage
+errors), `tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py`,
+`tests/stewardship/database/test_admin_artwork_cli_postgresql.py` (every
+slot in order for a read-only session with the images the page applied
+and no event, no current campaign, a Staff reader denied, an ended
+session) and the unchanged Campaign images page suite.
 
 ## ADM-12: Admin navigation overhaul
 

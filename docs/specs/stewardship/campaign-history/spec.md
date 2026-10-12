@@ -10,14 +10,14 @@ parts that share one file format:
 - the **campaign comparison report**, which imports archive workbooks of past
   campaigns and lines them up with the current campaign day by day.
 
-The importer reads exactly the format the end-of-campaign archive export
-will write. That export (#1018 part (a)) is roadmap Tier 3 and comes later
-with the campaign close-out wizard
-([#527](https://github.com/epiphany40223/parishkit/issues/527)); when it is
-specified, it is added to this specification and links the format below
-rather than restating it. The comparison report and its import page are
-roadmap Tier 2 (Administrator decision, 2026-10-11): leadership wants updated
-comparisons before the current campaign ends.
+The importer reads exactly the format the end-of-campaign
+[archive export](#archive-export) writes. That export (#1018 part (a)) is
+roadmap Tier 3: its Download action and command come first, and the campaign
+close-out wizard
+([#527](https://github.com/epiphany40223/parishkit/issues/527)) later uses
+them to produce the final file. The comparison report and its import page
+are roadmap Tier 2 (Administrator decision, 2026-10-11): leadership wants
+updated comparisons before the current campaign ends.
 
 General UX rules come from the [UX conventions](../ui-conventions/spec.md),
 which take precedence over this specification for portal-wide rules. Report
@@ -56,8 +56,8 @@ campaigns produced (October 11, 2026), with one change: `active_families`
 is required and the `active_families_estimate` key is gone. Those files
 are regenerated once to match (all seven carry the old key, and 2020–2022
 gain their measured counts), after which they import unchanged.
-The reader (import, this specification) and the future writer (#1018 part
-(a)) are one module, `parishkit.stewardship.archive.workbook`, that owns a
+The reader ([import](#import)) and the writer
+([archive export](#archive-export)) are one module, `parishkit.stewardship.archive.workbook`, that owns a
 single table of sheets, columns and metadata keys with their descriptions.
 The README sheet's dictionary and the reader's checks are generated from that
 table, so they cannot drift; the tables below restate it for reviewers, and
@@ -282,6 +282,179 @@ it belongs only in the parish's restricted archive, and the README sheet says
 so. The reader refuses a data-sheet column that its declared minor version
 does not define (a column a later minor version added is ignored, as above),
 so a hand-edited file cannot slip a column of personal data into storage.
+
+## Archive export
+
+The archive export (#1018 part (a), roadmap Tier 3) writes the
+[archive workbook](#archive-workbook-format) of a campaign run in this
+system, so the next comparison needs no conversion. The writer is the
+reader's module: the README, sheet order, headers and conventions all come
+from its one table, and every file is read back by the reader before it is
+offered ([checks before a file is offered](#checks-before-a-file-is-offered)).
+Nothing here changes the format; a file this system writes imports like any
+converted one, once its campaign is no longer the current one
+([decision 5](#administrator-decisions)).
+
+Only the current campaign can be exported. Until the single-campaign model
+([#145](https://github.com/epiphany40223/parishkit/issues/145)) and the
+close-out wizard ([#527](https://github.com/epiphany40223/parishkit/issues/527))
+settle what happens to a finished campaign, the Administrator exports the
+final file before the next campaign is created.
+
+### What the export reads
+
+One campaign's live submissions (Test submissions never) and its ready
+historical [daily facts](../data/spec.md#campaign-daily-report-facts), read
+inside one read-only, repeatable-read transaction up to a **cutoff**:
+
+- For a `closed` or `archived` campaign, the end of its end date. The file
+  is final: `is_final` `TRUE`, named `stewardship-<year>.xlsx`.
+- Otherwise, the end of the last complete local day, the comparison
+  report's [comparison day](#alignment-by-campaign-day), never today's
+  unfinished day. The file is partial: `is_final` `FALSE`, named
+  `stewardship-<year>-partial.xlsx`.
+
+The request pins two things, which every attempt and retry use: the cutoff
+instant, and the ready historical fact set checked against it, with that
+set's submission watermark (the highest campaign sequence it read). The
+export reads only live versions with a campaign sequence up to the
+watermark **and** submitted before the cutoff, as the fact calculation
+does. The watermark must cover every live version submitted before the
+cutoff; while it does not (a submission the facts have not yet absorbed),
+the export is not ready and waits for the next fact set, as a digest waits
+for its facts. The request's pin on that fact set protects it from
+[fact compaction](../data/spec.md#derived-fact-retention) for the
+request's retention, like any export's.
+
+The Families are the [participation graph's](../reports/spec.md#participation-graph)
+respondents: Families of the campaign's historical cohort with a live
+version under those pins, the population the fact rows count, so `daily`
+matches the fact series day for day. A live version of a Family outside
+that cohort (none is expected) is left out of every sheet, counted in
+`count.outside_cohort` and explained in a `note.*` row, which the reader
+keeps as a note.
+
+### What the export writes
+
+| Sheet | Column | Source in this system |
+| --- | --- | --- |
+| `families` | `family_key`, `family_id`, `family_id_system` | `duid:<Family DUID>`, the DUID, `parishsoft_duid` |
+| `families` | `envelope_id` | Blank (old PDS numbers only) |
+| `families` | `submission_count`, first and last columns | The Family's live versions under the pins, in campaign-sequence order; dates and days in the campaign's time zone |
+| `families` | `pledge_status`, `annual_pledge` | The last version's financial answer: `cannot_give` (with `0`) when the "cannot contribute" box was ticked, `pledged` above zero, `zero` at zero; `no_answer`, with every financial column blank, when the version holds no financial answer (its `annual_pledge` is null, as for every version when the campaign has no financial module) |
+| `families` | `frequency`, `frequency_detail` | The answer's frequency word, blank when the answer has none; the detail is blank, since this system offers only the fixed choices |
+| `families` | `installment_amount`, `installment_source` | The installment the Family form showed (annual ÷ 52, 12, 4 or 1, rounded half up) and `computed`; both blank without a frequency |
+| `families` | `cannot_give` | The box's value, `TRUE` or `FALSE`; blank when the version holds no financial answer |
+| `families` | `prior_year_pledge`, `prior_year_contributions`, `pledge_parse_note` | Blank (old-system columns; [open question 2](#open-questions)) |
+| `submissions` | every column | One row per live version under the pins; `row_id` ordered by `submitted_at`, then campaign sequence; `form` `combined`; `attributed` `TRUE`, since every version has its Family |
+| `daily` | every column | Derived from `submissions` by the format's own rule, with `source` naming `stewardship_daily_fact` once [checked](#checks-before-a-file-is-offered) against it |
+| `ministry_responses` | every column | The Ministry join and leave choices of each Family's last version: `member_slot` is the Member's position on that version's form (existing Members in the order of the version's reviewed baseline source snapshot, then proposed Members sorted by their local key), `member_id` the Member DUID (blank for a proposed Member), `ministry` the ParishSoft Ministry DUID, `ministry_code` the leading three-digit number of the Ministry's name in that baseline snapshot when it has one, and `response` `join` or `leave` |
+| `metadata` | `campaign_name`, `campaign_year`, `timezone`, `campaign_start_date` | The campaign's name, stewardship year, immutable time zone and local start date |
+| `metadata` | `as_of`, `campaign_last_submission_date` | For a final file the last submission's instant, for a partial file the cutoff; the local date of the last submission |
+| `metadata` | `active_families`, `active_families_provenance` | The cohort denominator of the cutoff day's fact row, with the provenance "ParishKit Stewardship historical cohort: Families Portal-eligible at any time through day N" |
+| `metadata` | `source_system`, `source_files`, `converter`, `converted_at` | "ParishKit Stewardship"; "none (read from the campaign database)"; the program and version; the request's time |
+| `metadata` | `dedup_rule` | "Each Family's latest live submission version counts; earlier versions stay in submissions." |
+| `metadata` | `count.*`, `note.*` | The four known counts, and `count.outside_cohort` when not zero; a note for each condition below that left a day's figure unchecked; no `column_mapping.*` rows, since no source columns were read |
+
+The percentage column `cumulative_pct_of_active` divides by the one
+`active_families` count, as the format requires, so it differs from the
+participation graph's daily percentage, whose denominator grows through the
+campaign; the [metrics](#metrics) note on denominators applies.
+
+The format requires a number in `cumulative_annual_pledged`, so the file
+always holds the sum of the Families' latest known pledges, where `no_answer`
+Families add nothing. Without the financial module that is `0` on every
+day, and a `note.*` row says the campaign collected no pledges.
+
+### Checks before a file is offered
+
+- **Facts.** For every day through the last `daily` day:
+  `first_submissions` and `cumulative_families` equal the fact row's first
+  responses and cumulative responses when the row's population is
+  available; `cumulative_annual_pledged` equals the row's pledge total when
+  that total is available (it is unavailable without the financial module,
+  or when any responding Family's latest version holds no pledge); and no
+  later fact row through the cutoff adds a response. An unavailable
+  population or pledge total is not a disagreement: that figure is left
+  unchecked for the day and a `note.*` row says how many days were. A
+  disagreement fails the generation as a fact failure is failed (retried,
+  then failed with its reason), so a file that disagrees with the report
+  is never offered. The check also catches a Family whose first submission
+  precedes its entry into the cohort, which the fact rows count from entry.
+- **Reader.** The finished bytes are read back with the import's reader,
+  limits and consistency checks included, outside the database
+  transaction. A refusal fails the generation, naming the located problems
+  in the log (never a cell value).
+- **Reproducible bytes.** Every attempt and retry of one request writes the
+  same bytes. The writer re-packs the workbook openpyxl saves, because
+  openpyxl stamps the save time into `docProps/core.xml` and every ZIP
+  entry: the parts are written in a fixed order with fixed compression, each
+  ZIP entry's `date_time` is `as_of` in UTC, and `core.xml`'s created and
+  modified times are rewritten to `as_of`. A regeneration through the
+  shared lifecycle is a new request with a new request time, so its
+  `converted_at` and SHA-256 differ; its publication records its own
+  checksum.
+
+### Download campaign archive
+
+**Access:** Administrators only, as for Past campaigns (`CONFIGURE` and
+`FINANCIAL_DETAIL`). The file holds Family-level giving, so creating or
+regenerating it needs a Google sign-in within five minutes, as the
+[financial stewardship detail](../reports/spec.md#financial-stewardship-detail)
+export does; a stale sign-in gets the step-up page, which returns to Past
+campaigns, and nothing is made.
+
+Past campaigns gets a section, **This campaign's archive**, below the
+imported table. It names the current campaign, says whether a download now
+would be final or partial and through which day, and offers **Download
+campaign archive**. The About this page panel says that the file holds
+Family-level giving, belongs only in the parish's restricted archive folder
+in Google Drive, can be imported here once the next campaign is current,
+and must be downloaded before the next campaign is created, since only the
+current campaign can be exported. The action is unavailable, with the reason
+([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)), with
+no current campaign, before day 1 has ended, or while no Family has
+responded by the cutoff (an archive needs at least one Family).
+
+The action queues the shared export lifecycle's `campaign_archive` kind,
+XLSX only, and answers with the shared status page (download, Cancel, Retry,
+Regenerate and retention as for every export). The worker reads the
+submissions itself at generation, under the request's
+[pins](#what-the-export-reads), so no Family-level capture table exists.
+The request records `campaign_archive_exported` with the cutoff's campaign
+day as `count`. No separate event records the file: the shared publication
+row already holds its SHA-256 and row count (the `families` rows), and the
+file's own `count.*` rows carry the per-sheet counts. The export's
+retention is the shared one; the Drive archive folder is the file's durable
+home.
+
+The campaign close-out wizard (#527) produces the final file through this
+action and reminds the Administrator to upload it to the archive folder.
+Uploading it straight to Google Drive is a possible later addition with its
+own issue.
+
+### Open questions
+
+Proposed on #1018; the work follows each default unless the Administrator
+changes it:
+
+1. **Where the action lives:** Past campaigns (default), next to the files
+   it produces for later years; alternatively Campaign settings.
+2. **Prior-year columns:** blank (default), as the format's rule says. The
+   alternative fills them from the ParishSoft comparison-period aggregates
+   the financial detail shows, which changes the rule and needs format
+   version 1.1.
+3. **When a file is final:** once the campaign is `closed` or `archived`
+   (default); alternatively only after #527's close-out.
+4. **Partial cutoff:** the last complete local day (default), as the
+   comparison report uses.
+5. **Proposed Members' Ministry choices:** included with a blank
+   `member_id` (default).
+6. **Retention:** the shared export retention (default); the Drive folder
+   keeps the file, as [decision 3](#administrator-decisions) holds for
+   imports.
+7. **Which campaign:** only the current one (default) until #145 and #527;
+   the final file must be downloaded before the next campaign is created.
 
 ## Import
 
@@ -873,10 +1046,12 @@ the same checks and audit as the page.
 | `pk-admin history confirm --token <token>` | full | Applies the preview; a replacement asks the page's acknowledgement at the prompt (`--yes` answers it) |
 | `pk-admin history remove <year> --expected-version <n>` | full | Removes a year, after the confirmation prompt |
 | `pk-admin report comparison [--day N]` | read-only | The page's figures for day N as JSON |
+| `pk-admin export archive` | full | Requests [Download campaign archive](#download-campaign-archive) through the page's service and prints the export's id and cutoff; `export fetch` saves the file. A fresh-gated action, as `export financial` is |
 
 They follow [preview and confirm](../admin-automation/spec.md#preview-and-confirm)
 and [personal data on the command line](../admin-automation/spec.md#personal-data-on-the-command-line):
-output holds counts, sums, quartiles and states only, with the
+output holds counts, sums, quartiles and states only (an archive's
+Family-level rows reach the host only as the owner-only export file), with the
 [small-count protection](#pledge-distribution) applied, since command
 output leaves the Admin portal. `history preview` reports which notes are
 flagged but prints no note text. Validation problems name cells, never
@@ -911,6 +1086,12 @@ importing them.
 | No last year, no Family rows | The affected figure shows "—" with its reason |
 | Financial module off | Pledge figures, charts and columns are left out |
 | Checking a file exceeds its 60-second limit | Stopped, logged as a durable timeout entry naming the limit and the elapsed time, and refused as too large to check |
+| Archive download with no current campaign, before day 1 has ended, or with no Family responded by the cutoff | Download campaign archive unavailable with the reason; the command refuses |
+| Archive download with a stale sign-in | The step-up page, returning to Past campaigns; nothing queued |
+| Archive's derived `daily` disagrees with an available fact figure | The generation fails as a fact failure (retried, then failed with its reason); no file is offered |
+| A fact row's population or pledge total is unavailable | Not a disagreement: that figure is left unchecked for the day, and a `note.*` row counts such days |
+| No ready fact set's watermark yet covers every version submitted before the cutoff | Not ready: the export waits for the next fact set, as a digest waits for its facts |
+| The written archive fails the reader's checks | The generation fails, logging the located problems without cell values; no file is offered |
 
 ## Tests
 
@@ -995,6 +1176,23 @@ committed.
   renderer's timeout name is recorded on a kill.
 - **Command line:** each command through the page's service, the catalog
   entries, and the absence of Family values in output.
+- **Archive export:** a synthetic campaign (PostgreSQL) with repeat
+  submissions, a cannot-give answer, a zero pledge, a campaign without the
+  financial module, a proposed Member's Ministry choice, a Test submission
+  and a submission after the cutoff (both left out) writes a file that the
+  reader accepts and whose `daily` equals the fact series; the partial and
+  final cutoffs and names; a forced fact disagreement and a forced reader
+  refusal fail the generation with no file, while an unavailable pledge
+  total (financial module off, or a responding Family without a pledge)
+  and an unavailable population are left unchecked with their note; a
+  version above the watermark or after the cutoff is left out, and a
+  watermark short of the cutoff waits; a retry of one request gives the
+  same SHA-256, and a regeneration a new `converted_at` and checksum; no
+  respondent leaves the action unavailable; access (Staff, a Ministry
+  leader and a stale sign-in refused, nothing queued); the request event
+  carries the day only; and an exported file imports once the next
+  campaign is current, with the same day-N Families responded and annual
+  pledges the report showed.
 - **Human-run check, outside CI:** a synthetic workbook corrected and saved
   again in Excel and in Google Sheets passes the allowlist; `archive-check`
   accepts the seven regenerated 2020–2026 files, and an import of them
@@ -1005,7 +1203,7 @@ committed.
 
 Each slice is one PR of the
 [automated delivery cycle](../../../plans/stewardship/overall.md#automated-phase-delivery-cycle),
-linked to #1018 (the last one closes part (b)).
+linked to #1018 (slice 7 completed part (b)).
 
 1. **Workbook module and offline check (first, within days).** The format
    table (taken from the one-time converter's table, which holds no data),
@@ -1177,6 +1375,27 @@ linked to #1018 (the last one closes part (b)).
 
 Slices 4 to 7 depend on 3 but not on each other. UI slices get the
 human pk-local check that significant new UI needs.
+
+Part (a), the [archive export](#archive-export), follows in its own slices
+(the last one closes #1018):
+
+- **A1. Writer and its read.** The campaign read under the cutoff, the
+  column mapping, the fact comparison, the read-back through the reader and
+  the reproducible bytes (`write_archive` and `save_workbook` gain the
+  re-pack with fixed ZIP times, compression, part order and `core.xml`
+  times), as a service function with unit and PostgreSQL tests on
+  synthetic data. No page, command or schema change.
+- **A2. Download and command.** The `campaign_archive` export kind (a
+  forward migration for its request arm, which stores the cutoff instant and
+  the submission watermark and pins the checked fact-set generation against
+  compaction, at the next free number when it is built), the Past campaigns
+  section with its fresh sign-in, `pk-admin export archive`, its rows in the
+  admin automation spec's
+  [fresh-gated actions](../admin-automation/spec.md#fresh-gated-actions-from-the-command-line)
+  and [reports and exports](../admin-automation/spec.md#reports-and-exports)
+  catalog, and the request event. It needs the human pk-local check.
+- **A3. Close-out.** The #527 wizard's archive step, built with #527 (after
+  [#145](https://github.com/epiphany40223/parishkit/issues/145)).
 
 ## Administrator decisions
 

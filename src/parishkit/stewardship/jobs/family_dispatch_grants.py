@@ -90,7 +90,13 @@ def add_dispatch_grants(tables, columns):
     for entity in ("family", "member", "contact"):
         for prefix in ("stewardship_source_", "stewardship_snapshot_"):
             tables.setdefault(prefix + entity, set()).add("SELECT")
-    for table in ("stewardship_outbox_message", "stewardship_schedule_occurrence"):
+    for table in (
+        "stewardship_outbox_message",
+        "stewardship_schedule_occurrence",
+        # A delivered email's follow-up to addresses refused for now (#806):
+        # opened only by its definer, changed only as its guard admits.
+        "stewardship_outbox_address_retry",
+    ):
         tables.setdefault(table, set()).update({"SELECT", "UPDATE"})
     for table in (
         "stewardship_outbox_render",

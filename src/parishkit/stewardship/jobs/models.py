@@ -206,6 +206,7 @@ class TaskRunEvent(ImmutableRecord):
 
 
 # Model discovery stays here; delivery records have their own focused owner.
+from .address_retry_models import AddressRetry  # noqa: E402,F401
 from .backup_models import BackupRun  # noqa: E402,F401
 from .delivery_resolution_models import DeliveryResolution  # noqa: E402,F401
 from .due_work_models import DueWorkHealth  # noqa: E402,F401
