@@ -1365,8 +1365,9 @@ pk-admin export fetch EXPORT_ID
 - `export financial` is the Financial stewardship page's export;
   `export information` the Additional information page's, with
   `--history` for each item's workflow history; `export ministry` the
-  Ministry requests page's, for the summary or, with
-  `--ministry DUID --requests join|leave`, one Ministry's list;
+  Ministry requests page's, for one Ministry's list
+  (`--ministry DUID --requests join|leave`, both required; the summary
+  export was removed, #1126);
   `export ministry-packet` its follow-up packet, for the
   Ministries `--ministry` names (repeat it; none means every Ministry you
   may report on) and `--history` for earlier versions.
@@ -1836,3 +1837,9 @@ pk-admin users import-leaders --confirm --token -
   schedule's `comparison`, and a `schedule preview` change document may set
   a daily digest's `comparison`; `digest daily` prints its retained
   `comparison` section (or null).
+- `pk-admin/1` (#1126): a deliberate removal, kept on version 1.
+  `export ministry` no longer exports the campaign-wide summary, which the
+  Ministry requests page no longer offers: `--ministry` and `--requests`
+  are both required, and without them the command is exit 1 (`invalid`).
+  One Ministry's join and leave lists are unchanged. The only readers are
+  Administrator-run assistants.

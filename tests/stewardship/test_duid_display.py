@@ -53,7 +53,7 @@ def test_no_template_groups_a_duid_as_a_count():
     assert offenders == []
 
 
-@pytest.mark.parametrize("action", ["summary", "join"])
+@pytest.mark.parametrize("action", ["join", "leave"])
 def test_ministry_export_duid_columns_have_no_commas(action):
     """Exported Member and Ministry DUIDs stay plain digits in CSV cells."""
     # The sample Member DUID (12345) would read "12,345" if grouped.

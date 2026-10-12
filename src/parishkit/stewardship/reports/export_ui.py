@@ -326,6 +326,11 @@ def detail(request, request_id):
                 # A Testing timeline export is bound to its rehearsal: once
                 # that ended, Regenerate is unavailable, with the reason.
                 "rehearsal_ended": rehearsal_ended(job),
+                # The Ministry summary export was removed (#1126); an old
+                # one stays downloadable until it expires, but is not made
+                # again, so Regenerate is unavailable, with the reason.
+                "summary_removed": job.report == "ministry"
+                and job.parameters.get("action") == "summary",
                 # Why a still-queued export has not started (#340). Ministry
                 # leaders may open their own exports but not background work,
                 # so only a reader who may see that work learns what runs ahead.

@@ -126,6 +126,10 @@ def test_ministry_complete_export_posts_privately(page, component_origin):
 def test_ministry_packet_request_posts_its_selection(page, component_origin):
     """The multi-Ministry selection posts its choices; detail pages do not offer it."""
     page.goto(component_origin + "/ministry-summary")
+    # The summary's only download is the packet: its counts export and the
+    # data-load Technical details were removed (#1126).
+    assert page.get_by_role("button", name="Queue complete export").count() == 0
+    assert page.get_by_text("Technical details").count() == 0
     # Nothing ticked means every authorized Ministry: no selection is sent.
     packet = page.locator("form", has_text="Ministries in the packet")
     assert packet.locator("input[name=ministries]:checked").count() == 0

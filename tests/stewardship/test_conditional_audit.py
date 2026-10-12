@@ -92,22 +92,26 @@ def test_the_weekly_report_in_progress_is_shown_unavailable():
 
 
 @pytest.mark.parametrize(
-    ("name", "reason", "count"),
+    ("name", "reason", "count", "notices"),
     [
-        ("report-export.html", "export-locked", 3),
-        ("report-exact.html", "export-locked", 2),
-        ("ministry-report.html", "ministry-export-locked", 2),
-        ("participation.html", "participation-export-locked", 2),
-        ("information.html", "information-locked", 4),
-        ("ministry-followup.html", "followup-locked", 3),
+        ("report-export.html", "export-locked", 3, 1),
+        ("report-exact.html", "export-locked", 2, 1),
+        # A Ministry's list has the export and the summary has the packet
+        # (#1126); each branch carries its own copy of the notice.
+        ("ministry-report.html", "ministry-export-locked", 2, 2),
+        ("participation.html", "participation-export-locked", 2, 1),
+        ("information.html", "information-locked", 4, 1),
+        ("ministry-followup.html", "followup-locked", 3, 1),
     ],
 )
-def test_locked_report_actions_name_the_notice_that_says_why(name, reason, count):
+def test_locked_report_actions_name_the_notice_that_says_why(
+    name, reason, count, notices
+):
     """While other campaign work holds them, the buttons name its notice."""
     text = (TEMPLATES / name).read_text()
-    assert text.count(f'id="{reason}"') == 1
+    assert text.count(f'id="{reason}"') == notices
     # The notice's own id, then one mention in each button that names it.
-    assert text.count(reason) == count + 1
+    assert text.count(reason) == count + notices
 
 
 def test_family_portal_message_error_is_shown_at_the_field():

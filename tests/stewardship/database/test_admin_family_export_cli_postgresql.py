@@ -203,7 +203,7 @@ def test_ministry_and_information_exports(
     cli,  # noqa: F811
     reports_root,
 ):
-    """The Ministry summary, a list, a packet and the information queue."""
+    """A Ministry list, a packet and the information queue."""
     from parishkit.stewardship.reports.information import InformationQuery
     from parishkit.stewardship.reports.ministries import MinistryQuery
 
@@ -212,7 +212,6 @@ def test_ministry_and_information_exports(
     run = cli()
     base = ("--format", "csv", "--timezone", "UTC")
     cases = {
-        "summary": ("export", "ministry", *base),
         "join": (
             "export",
             "ministry",
@@ -234,7 +233,7 @@ def test_ministry_and_information_exports(
         assert document["result"]["created"], name
         made[name] = ExportRequest.objects.get(pk=document["result"]["export"]["id"])
         assert made[name].campaign_id == harness.campaign.pk
-    assert len(requested()) == 4
+    assert len(requested()) == 3
     # The pages' forms for the same selections make the same records: the
     # same parameters, and the same export_requested context members.
     forms = {
@@ -259,8 +258,8 @@ def test_ministry_and_information_exports(
             assert getattr(page, field) == getattr(made[name], field), (name, field)
         contexts = requested()
         assert contexts[-1] == contexts[list(cases).index(name)], name
-    assert len(requested()) == 6
-    assert count("admin_cmd_export_ministry") == 2
+    assert len(requested()) == 5
+    assert count("admin_cmd_export_ministry") == 1
     assert count("admin_cmd_export_ministry_packet") == 1
     assert count("admin_cmd_export_information") == 1
 
@@ -272,14 +271,25 @@ def test_ministry_and_information_exports(
     code, body, streamed = download(made["packet"].pk, run.secret)
     assert code == 0 and len(body) == streamed["result"]["size"] > 0
 
-    # The pages' refusals: detail filters on the summary, a lone
-    # --requests, a Ministry outside the page's range, a duplicate in a
-    # packet, a search.
+    # The pages' refusals: the removed summary export (no Ministry, #1126),
+    # a lone --requests or --ministry, a Ministry outside the page's range,
+    # a duplicate in a packet, a search.
     for argv in (
-        ("export", "ministry", *base, "--filter", "state=new"),
+        ("export", "ministry", *base),
         ("export", "ministry", *base, "--requests", "join"),
+        ("export", "ministry", *base, "--ministry", "9"),
         ("export", "ministry", *base, "--ministry", "0", "--requests", "join"),
-        ("export", "ministry", *base, "--filter", "size=25"),
+        (
+            "export",
+            "ministry",
+            *base,
+            "--ministry",
+            "9",
+            "--requests",
+            "join",
+            "--filter",
+            "size=25",
+        ),
         ("export", "ministry-packet", *base, "--ministry", "9", "--ministry", "9"),
         ("export", "information", *base, "--filter", "search=Example"),
     ):
@@ -291,7 +301,7 @@ def test_ministry_and_information_exports(
         "export", "ministry", *base, "--ministry", "123", "--requests", "join"
     )
     assert code == 1 and document["error"]["code"] == "invalid"
-    assert len(requested()) == 6
+    assert len(requested()) == 5
 
 
 @pytest.fixture
