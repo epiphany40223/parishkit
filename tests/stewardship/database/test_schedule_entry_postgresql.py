@@ -632,3 +632,251 @@ def test_delete_needs_the_csrf_token_and_configure(auth_service, google):
     # the refusals above came from the missing token and capability alone.
     accepted = post(browser, DELETE, values)
     assert accepted.status_code == 302, accepted.content
+
+
+def email_fields(**fields):
+    """Edit's own email, ticked, with ``fields`` (#446)."""
+    return {"edit_email": "on", "generate_text": "on"} | fields
+
+
+def test_an_edited_email_is_a_new_email_only_that_schedule_sends(auth_service, google):
+    """Reviewed with the schedule; the shared email and its other sender stay.
+
+    Reminder 1 and Reminder 2 share an email with a planned, not-started
+    send. Editing Reminder 2's email adds a new email in the same change,
+    re-plans only Reminder 2, and leaves Reminder 1 and the old email as
+    they were.
+    """
+    store = auth_service.store
+    _, emails = setup(store)
+    owner = str(Campaign.objects.get().pk)
+    first = schedule(
+        owner,
+        kind="reminder",
+        date="2054-10-20",
+        template_version=emails["reminder"]["id"],
+        subject="reminder mail",
+    )
+    assert (
+        change(
+            store,
+            store.active(),
+            uuid4(),
+            [{"operation": "add", "section": "schedules", **first}],
+        ).state
+        == "applied"
+    )
+    edited = ScheduleDefinition.objects.get(
+        kind="reminder", current_revision__values__date="2054-10-25"
+    )
+    kept = ScheduleDefinition.objects.get(
+        kind="reminder", current_revision__values__date="2054-10-20"
+    )
+    replaced, stays = pending(edited, uuid4()), pending(kept, uuid4())
+    browser, _ = signed_in()
+    path = f"/admin/campaign/schedules/{edited.pk}/"
+    page = unescape(browser.get(path).content.decode())
+    assert "Edit this schedule's email" in page
+    assert 'id="schedule-email-sources"' in page
+    before = ConfigurationChangeRequest.objects.count()
+    html = "<p>Still time to respond. {{ family_code }} {{ family_url }}</p>"
+    review = post(
+        browser,
+        path,
+        entry(
+            store,
+            date="2054-10-25",
+            time="09:00",
+            template_version=emails["reminder"]["id"],
+        )
+        | email_fields(subject="Last call", html=html),
+    )
+    assert review.status_code == 200, review.content
+    shown = unescape(review.content.decode())
+    assert "New email for this schedule" in shown
+    assert "Last call" in shown and "Still time to respond." in shown
+    # The fictional sample's code, never a real one.
+    assert "ABCDEFGH" in shown
+    assert ConfigurationChangeRequest.objects.count() == before
+    apply(store, post(browser, LIST, {"action": "confirm", "preview": token(review)}))
+    edited.refresh_from_db()
+    kept.refresh_from_db()
+    values = edited.current_revision.values
+    assert values["subject"] == "Last call"
+    assert values["template_version"] != emails["reminder"]["id"]
+    assert (values["date"], values["time"]) == ("2054-10-25", "09:00:00")
+    assert kept.current_revision.values["template_version"] == emails["reminder"]["id"]
+    document = store.active().document()
+    content_rows = {row["id"]: row["values"] for row in document["sections"]["content"]}
+    assert content_rows[emails["reminder"]["id"]] == emails["reminder"]["values"]
+    copy = content_rows[values["template_version"]]
+    assert (copy["kind"], copy["slot"], copy["subject"]) == (
+        "email",
+        "reminder",
+        "Last call",
+    )
+    assert "Still time to respond." in copy["text"]
+    # Only the edited schedule's planned send is replaced.
+    replaced.refresh_from_db()
+    stays.refresh_from_db()
+    assert replaced.state == "skipped"
+    assert stays.state == "pending"
+
+
+def test_an_unchanged_or_refused_email_records_nothing(auth_service, google):
+    """Text left as chosen adds no email; a reminder without its code is refused."""
+    store = auth_service.store
+    _, emails = setup(store)
+    browser, _ = signed_in()
+    reminder = definition("reminder")
+    path = f"/admin/campaign/schedules/{reminder.pk}/"
+    saved = emails["reminder"]["values"]
+    shown = {
+        "date": "2054-10-25",
+        "time": "09:00",
+        "template_version": emails["reminder"]["id"],
+    }
+    before = ConfigurationChangeRequest.objects.count()
+    # The chosen email's own text, with a new time: no new email.
+    same = post(
+        browser,
+        path,
+        entry(store, **(shown | {"time": "10:00"}))
+        | email_fields(subject=saved["subject"], html=saved["html"]),
+    )
+    assert same.status_code == 200, same.content
+    assert "New email for this schedule" not in unescape(same.content.decode())
+    unchanged = post(
+        browser,
+        path,
+        entry(store, **shown)
+        | email_fields(subject=saved["subject"], html=saved["html"]),
+    )
+    assert unchanged.status_code == 400
+    assert "Nothing has changed." in unescape(unchanged.content.decode())
+    refused = post(
+        browser,
+        path,
+        entry(store, **shown)
+        | email_fields(subject="Reminder", html="<p>Please respond.</p>"),
+    )
+    assert refused.status_code == 400
+    page = unescape(refused.content.decode())
+    assert "{{ family_code }}" in page and "data-error-summary" in page
+    # The posted text is kept on the refused page.
+    assert "Please respond." in page
+    assert ConfigurationChangeRequest.objects.count() == before
+
+
+def content_count(store):
+    """How many content records the applied configuration holds."""
+    return len(store.active().document()["sections"]["content"])
+
+
+def test_disallowed_markup_is_removed_from_the_stored_copy(auth_service, google):
+    """The copy is stored cleaned, as Pages and emails stores an email."""
+    store = auth_service.store
+    _, emails = setup(store)
+    browser, _ = signed_in()
+    reminder = definition("reminder")
+    path = f"/admin/campaign/schedules/{reminder.pk}/"
+    html = (
+        "<p>Respond. {{ family_code }} {{ family_url }}</p><script>alert('x')</script>"
+    )
+    review = post(
+        browser,
+        path,
+        entry(
+            store,
+            date="2054-10-25",
+            time="09:00",
+            template_version=emails["reminder"]["id"],
+        )
+        | email_fields(subject="Cleaned", html=html),
+    )
+    assert review.status_code == 200, review.content
+    apply(store, post(browser, LIST, {"action": "confirm", "preview": token(review)}))
+    reminder.refresh_from_db()
+    rows = {
+        row["id"]: row["values"]
+        for row in store.active().document()["sections"]["content"]
+    }
+    stored = rows[reminder.current_revision.values["template_version"]]
+    assert "<script" not in stored["html"] and "alert" not in stored["html"]
+    assert "Respond." in stored["html"]
+
+
+def test_a_stale_confirm_after_an_email_edit_adds_no_email(auth_service, google):
+    """Work planned after the review refuses Apply; no copy is recorded."""
+    store = auth_service.store
+    _, emails = setup(store)
+    browser, _ = signed_in()
+    reminder = definition("reminder")
+    path = f"/admin/campaign/schedules/{reminder.pk}/"
+    review = post(
+        browser,
+        path,
+        entry(
+            store,
+            date="2054-10-25",
+            time="09:00",
+            template_version=emails["reminder"]["id"],
+        )
+        | email_fields(
+            subject="Too late",
+            html="<p>Respond. {{ family_code }} {{ family_url }}</p>",
+        ),
+    )
+    assert review.status_code == 200, review.content
+    before = content_count(store)
+    pending(reminder, uuid4())
+    refused = post(browser, LIST, {"action": "confirm", "preview": token(review)})
+    assert refused.status_code == 409
+    assert content_count(store) == before
+    reminder.refresh_from_db()
+    assert (
+        reminder.current_revision.values["template_version"]
+        == (emails["reminder"]["id"])
+    )
+
+
+def test_a_refused_candidate_names_the_email(auth_service, google, monkeypatch):
+    """A configuration refusal of a change with an edited email shows there."""
+    from parishkit.config import ConfigError
+    from parishkit.stewardship.accounts import schedule_changes
+
+    store = auth_service.store
+    _, emails = setup(store)
+    browser, _ = signed_in()
+    reminder = definition("reminder")
+    path = f"/admin/campaign/schedules/{reminder.pk}/"
+
+    def refuse(base, patch, **_kwargs):
+        """Refuse the candidate, as an email the configuration rejects is."""
+        raise ConfigError("refused")
+
+    monkeypatch.setattr(schedule_changes, "build_candidate", refuse)
+    before = ConfigurationChangeRequest.objects.count()
+    refused = post(
+        browser,
+        path,
+        entry(
+            store,
+            date="2054-10-25",
+            time="09:00",
+            template_version=emails["reminder"]["id"],
+        )
+        | email_fields(
+            subject="Refused",
+            html="<p>Respond. {{ family_code }} {{ family_url }}</p>",
+        ),
+    )
+    assert refused.status_code == 400
+    page = unescape(refused.content.decode())
+    assert "Check this email's content and placeholders." in page
+    assert "must fit the campaign" not in page
+    # At the HTML source, so the in-place answer marks it and the summary
+    # links to it.
+    assert 'id="id_html_error"' in page
+    assert 'href="#id_html"' in page
+    assert ConfigurationChangeRequest.objects.count() == before
