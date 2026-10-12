@@ -7,7 +7,7 @@
 <p>{% translate "Member DUID and Ministry DUID are ParishSoft's ID numbers for the Member and the Ministry, each in its own column so you can copy it. A Member the Family added on the form is not in ParishSoft yet, so their Member DUID shows New Member. A name too long for its column ends in an ellipsis; open the request to see it whole." %}</p>
 <p>{% translate "Recording a request as done here does not change the ParishSoft roster; update ParishSoft yourself. When a later ParishSoft refresh shows the change, the request can close automatically." %}</p>{% endaboutpage %}
 <p>{{ metadata.name }}</p>
-<p><a href="{% url 'admin:ministry_report' %}">{% translate "Ministry reports, including authorized Member contact details" %}</a>{% if can_tick %} · <a href="{% url 'admin:ministry_roster' %}">{% translate "Roster changes to enter" %}</a>{% endif %}</p>
+<p><a href="{% url 'admin:ministry_report' %}">{% translate "Ministry requests, including authorized Member contact details" %}</a>{% if can_tick %} · <a href="{% url 'admin:ministry_roster' %}">{% translate "Roster changes to enter" %}</a>{% endif %}</p>
 {% if not mutable %}<p class="notice">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so follow-up edits are unavailable until it finishes or is cancelled; going live can take days. You can still read the requests and their history." %}</p>{% endif %}
 {% if item %}
 <div id="followup-item" data-in-place-region>
