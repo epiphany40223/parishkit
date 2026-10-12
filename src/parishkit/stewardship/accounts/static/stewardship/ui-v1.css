@@ -713,6 +713,9 @@ fieldset.member-section { border: 0; border-radius: 0; background: none; padding
 .artwork-box-section { width: 6rem; aspect-ratio: 1; }
 .artwork-box > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .artwork-remove { min-height: 1.6em; min-height: 1lh; }
+/* A slot's upload controls sit in a plain fieldset only so a slot whose
+   Family page the campaign never shows can grey them all at once (#563). */
+fieldset.artwork-upload { border: 0; border-radius: 0; background: none; padding: 0; margin: 0; }
 .family-summary .family-name { font-size: 1.2rem; font-weight: 650; }
 .family-nav { position: sticky; bottom: 0; z-index: 1; background: var(--paper-soft, var(--paper)); padding-block: .75rem max(.75rem, env(safe-area-inset-bottom)); border-top: 1px solid var(--border); margin-top: 1.5rem; }
 .family-nav > button { margin-block: 0; }
