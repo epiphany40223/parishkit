@@ -443,15 +443,29 @@ The checks, in order:
 5. **Year.** A file whose `campaign_year` is the current campaign's
    stewardship year is refused: the report reads the current campaign live,
    and a second copy of it would be compared with itself. The current
-   campaign's stewardship year is the Campaign settings year label, or,
-   without one, the start year of the campaign's upcoming financial period
-   (the year Families pledge for, as `campaign_year` in
-   `web/presentation.py` resolves it). The start-date fallback that function
-   uses for a campaign without a financial period is not used here, since it
-   names the year the campaign runs in (2026 for Stewardship 2027). When
-   neither gives a single four-digit year (no label and no financial period,
-   or a label such as "2026–2027"), every import is refused with that reason
-   and a link to Campaign settings, because "last year" cannot be resolved.
+   campaign's stewardship year is the year Families pledge for, as the
+   archive's `campaign_year` is:
+   - the Campaign settings year label, when it is one four-digit year and
+     the campaign has no financial period or the label is one of the
+     calendar years the financial period covers (a July–June period starting
+     in 2026 may be labelled 2027);
+   - otherwise the start year of the campaign's upcoming financial period,
+     when there is no label, or when a four-digit label lies outside a period
+     that falls within one calendar year. Such a label names something else,
+     such as the year the campaign runs in (2026 on a 2027-01-01 to
+     2027-12-31 period), so Production's Stewardship 2027, held in autumn
+     2026 with label 2027 and a 2027 calendar-year period, refuses only a
+     2027 file.
+
+   This follows `campaign_year` in `web/presentation.py` except in two
+   ways. The start-date fallback that function uses for a campaign without
+   a financial period is not used here, since it names the year the
+   campaign runs in (2026 for Stewardship 2027). And a label outside the
+   financial period gives way to the period, as described above. When
+   no single year results (no label and no financial period, a label such
+   as "2026–2027", or a four-digit label outside a period that spans two
+   calendar years), every import is refused with that reason and a link to
+   Campaign settings, because "last year" cannot be resolved.
 6. **Notes.** The `note.*` values and the provenance and dedup texts are
    shown on the Review card in full, because they become the report's data
    notes. A value longer than 500 characters, or one containing a

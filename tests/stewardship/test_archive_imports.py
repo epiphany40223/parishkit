@@ -14,16 +14,46 @@ from parishkit.stewardship.archive.imports import (
 @pytest.mark.parametrize(
     ("values", "year"),
     [
-        # The year label wins.
-        ({"year_label": "2027", "financial": {"start": "2026-07-01"}}, 2027),
+        # The year label wins when it is one of the period's years.
+        (
+            {
+                "year_label": "2027",
+                "financial": {"start": "2026-07-01", "end": "2027-06-30"},
+            },
+            2027,
+        ),
+        (
+            {
+                "year_label": "2026",
+                "financial": {"start": "2026-07-01", "end": "2027-06-30"},
+            },
+            2026,
+        ),
+        # Production's "Stewardship 2027", held in autumn 2026.
+        (
+            {
+                "year_label": "2027",
+                "financial": {"start": "2027-01-01", "end": "2027-12-31"},
+            },
+            2027,
+        ),
         ({"year_label": " 2027 ", "financial": None}, 2027),
         # Without one, the upcoming financial period's start year.
         ({"year_label": "", "financial": {"start": "2027-01-01"}}, 2027),
-        ({"financial": {"start": "2026-07-01"}}, 2026),
+        ({"financial": {"start": "2026-07-01", "end": "2027-06-30"}}, 2026),
+        # A label outside a one-year period names the year the campaign runs
+        # in (the local seed's 2026 on a 2027 period), not the pledge year.
+        (
+            {
+                "year_label": "2026",
+                "financial": {"start": "2027-01-01", "end": "2027-12-31"},
+            },
+            2027,
+        ),
     ],
 )
 def test_the_current_stewardship_year(values, year):
-    """The label, else the financial period's start year."""
+    """The label within the financial period, else the period's year."""
     assert year_from_values(values) == year
 
 
@@ -33,6 +63,11 @@ def test_the_current_stewardship_year(values, year):
         # A range or any other wording is not one year.
         {"year_label": "2026–2027", "financial": {"start": "2026-07-01"}},
         {"year_label": "FY27", "financial": None},
+        # A label outside a period spanning two years: neither year is sure.
+        {
+            "year_label": "2025",
+            "financial": {"start": "2026-07-01", "end": "2027-06-30"},
+        },
         # No label and no financial period: the campaign's own start date is
         # the year it runs in, so it is never used.
         {"year_label": "", "financial": None, "start_date": "2026-09-01"},

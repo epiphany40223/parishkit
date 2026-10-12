@@ -175,12 +175,10 @@ def authorize(store, actor_id):
 def stewardship_year():
     """The current campaign's stewardship year, or None with no campaign.
 
-    The Campaign settings year label, or, without one, the start year of the
-    upcoming financial period (the year Families pledge for). The start-date
+    The year Families pledge for (``year_from_values``). The start-date
     fallback of ``web.presentation.campaign_year`` is not used: it names the
-    year the campaign runs in. A label that is not one four-digit year, or no
-    label and no financial period, refuses every import, since "last year"
-    cannot be resolved.
+    year the campaign runs in. When no single year can be resolved, every
+    import is refused, since "last year" cannot be told apart.
     """
     from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
     from parishkit.stewardship.campaigns.models import Campaign
@@ -198,20 +196,37 @@ def stewardship_year():
 
 
 def year_from_values(values):
-    """A campaign configuration's stewardship year (see ``stewardship_year``)."""
+    """A campaign configuration's stewardship year: the year Families pledge for.
+
+    The Campaign settings year label decides when it is one four-digit year
+    and either there is no financial period or the label is one of the
+    period's calendar years (a July-June period starting 2026 may be labelled
+    2027). A label outside the period (2026 on a 2027-01-01 to 2027-12-31
+    period) names something else, such as the year the campaign runs in, so
+    the period decides when it lies in one calendar year. Without a label,
+    the period's start year decides. Anything else (a label such as
+    "2026-2027", no label and no period, or a label outside a period that
+    spans two years) is refused as unresolved.
+    """
     label = (values.get("year_label") or "").strip()
-    if label:
-        text = label
-    else:
-        financial = values.get("financial") or {}
-        text = str(financial.get("start") or "")[:4]
-    if not FOUR_DIGITS.fullmatch(text):
-        raise refusal(
-            "year_unresolved",
-            "the current campaign's stewardship year cannot be resolved; set "
-            "the year label in Campaign settings",
-        )
-    return int(text)
+    financial = values.get("financial") or {}
+    first = str(financial.get("start") or "")[:4]
+    last = str(financial.get("end") or "")[:4]
+    if not FOUR_DIGITS.fullmatch(last):
+        # Saved configurations always have an end; without one, one year.
+        last = first
+    period = range(int(first), int(last) + 1) if FOUR_DIGITS.fullmatch(first) else None
+    if FOUR_DIGITS.fullmatch(label) and (period is None or int(label) in period):
+        return int(label)
+    if period is not None and (
+        not label or (FOUR_DIGITS.fullmatch(label) and len(period) == 1)
+    ):
+        return period[0]
+    raise refusal(
+        "year_unresolved",
+        "the current campaign's stewardship year cannot be resolved; set "
+        "the year label in Campaign settings to the year Families pledge for",
+    )
 
 
 def clean_file_name(name):
