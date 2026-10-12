@@ -21,6 +21,7 @@ from parishkit.stewardship.reports.directory_views import LINK_PRESETS
 from parishkit.stewardship.reports.response_dashboard import (
     DIRECTORY_PRESETS,
     HOURLY_SPAN,
+    LISTS,
     DashboardQuery,
     at_grain,
     chosen_grain,
@@ -29,7 +30,6 @@ from parishkit.stewardship.reports.response_dashboard import (
     page_context,
     tiles,
 )
-from parishkit.stewardship.reports.response_lists import LISTS
 from parishkit.stewardship.web.dates import using
 
 from .test_chart_specs import metrics

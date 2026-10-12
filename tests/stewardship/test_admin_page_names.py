@@ -115,15 +115,14 @@ TEMPLATES = {
     "index": "home.html",
     "configuration_request": "configuration-request.html",
 }
-# Each integration's page is named after the integration, each response
-# list after its list and each export after its report.
+# Each integration's page is named after the integration and each export
+# after its report.
 OBJECT_NAMED = {
     "content_edit",
     # One email is named after its type and Family (#1015).
     "delivery",
     "content_revision",
     "integration_settings",
-    "response_list",
     "report_export",
 }
 # Pages whose heading the view supplies. The reports root renders the "no

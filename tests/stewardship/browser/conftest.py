@@ -142,7 +142,6 @@ from .reminder_workgroup_components import components as workgroup_components
 from .report_components import SLOW_GETS as REPORT_SLOW_GETS
 from .report_components import components as report_components
 from .response_dashboard_components import components as dashboard_components
-from .response_list_components import components as response_list_components
 from .restore_review_components import components as restore_review_components
 from .roster_components import POSTS as ROSTER_POSTS
 from .roster_components import components as roster_components
@@ -2242,7 +2241,6 @@ def component_origin():
     responses.update(weekly_components(context, admin))
     responses.update(chart_components(context, admin))
     responses.update(dashboard_components(context, admin))
-    responses.update(response_list_components(context, admin))
     responses.update(family_timeline_components(context, admin))
     responses.update(find_family_components(context, admin))
     responses.update(user_components(context, admin))

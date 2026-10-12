@@ -14,12 +14,13 @@ explicit Admin testing views (``docs/specs/stewardship/reports/spec.md``), so
 only Administrators may choose ``mode=testing``, which reads the campaign's
 active rehearsal epoch. The page shows counts only, never a Family's name or
 identifier; its "Lists of Families" panel links to the Families behind the
-counts, each with its length: in Production, the active parishioner family
-directory with that list's closed presets (#933); in Testing, still the
-response lists (``response_list_views``) until the directory has a Testing
-view.
+counts, each with its length: the active parishioner family directory with
+that list's closed presets (#933), plus ``mode=testing`` in a Testing view.
+The directory is the only page that lists those Families; the separate
+response list pages were removed (#933 slice 5), with no redirects.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import timedelta
 from urllib.parse import urlencode
@@ -30,6 +31,7 @@ from django.db import DatabaseError, transaction
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.translation import gettext as _
+from django.utils.translation import gettext_lazy
 from django.views.decorators.http import require_safe
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
@@ -50,7 +52,6 @@ from parishkit.stewardship.web.security import private_response
 from .chart_specs import STAGE_LABELS, activity_chart, funnel_chart, share
 from .export_views import SAFE_FAILURES
 from .read_admission import admit_report_read
-from .response_lists import LISTS, list_counts
 from .response_metrics import (
     GRAINS,
     MODES,
@@ -64,6 +65,54 @@ from .response_metrics import (
 # daily after that, unless the reader chooses a grain.
 HOURLY_SPAN = timedelta(days=3)
 AUTO = "auto"
+
+
+@dataclass(frozen=True)
+class FamilyList:
+    """One link of the "Lists of Families" panel.
+
+    ``selects`` picks the funnel rows (``response_metrics.FamilyResponse``)
+    the list holds, so its length equals the dashboard figure it sits
+    behind; None marks the ParishSoft data-to-check list, chosen by the
+    current ParishSoft data rather than by the funnel, which has no length
+    here. The panel says what that list holds (``description``).
+    """
+
+    title: str
+    description: str
+    selects: Callable | None = None
+
+
+# The lists behind the counts, in panel order. Their keys name the directory
+# presets below and the ``lists`` counts of ``pk-admin report responses``.
+LISTS = {
+    "submitted": FamilyList(
+        gettext_lazy("Families that submitted"),
+        gettext_lazy("Every Family with a submission"),
+        lambda family: family.submitted_at is not None,
+    ),
+    "started": FamilyList(
+        gettext_lazy("Families that started but did not submit"),
+        gettext_lazy("Opened the form, nothing submitted yet"),
+        lambda family: (
+            family.form_opened_at is not None and family.submitted_at is None
+        ),
+    ),
+    "not-opened": FamilyList(
+        gettext_lazy("Invited Families that never opened the form"),
+        gettext_lazy("Invitation delivered, form never opened"),
+        lambda family: family.invited_at is not None and family.form_opened_at is None,
+    ),
+    "more-than-once": FamilyList(
+        gettext_lazy("Families that submitted more than once"),
+        gettext_lazy("More than one submission"),
+        lambda family: family.submissions > 1,
+    ),
+    "data-quality": FamilyList(
+        gettext_lazy("ParishSoft data to check"),
+        gettext_lazy("Blank mailing name or envelope number 0"),
+    ),
+}
 
 # The directory link presets (``directory_views.LINK_PRESETS``) that list
 # the same Families as each response list (#933), with its columns and its
@@ -179,6 +228,19 @@ def untitled(chart):
     return replace(chart, spec=spec)
 
 
+def list_counts(families):
+    """How many Families each funnel-chosen list holds, by key.
+
+    The data-quality list is left out: counting it needs the ParishSoft
+    read, and the dashboard reads only the funnel.
+    """
+    return {
+        key: sum(1 for family in families if spec.selects(family))
+        for key, spec in LISTS.items()
+        if spec.selects is not None
+    }
+
+
 def list_url(query, key):
     """Where the panel's link to the list ``key`` leads in the mode shown.
 
@@ -204,7 +266,7 @@ def family_lists(query, metrics):
         {
             "title": spec.title,
             # Only the list without a length says what it holds.
-            "description": spec.description if spec.needs_facts else "",
+            "description": spec.description if spec.selects is None else "",
             "url": list_url(query, key),
             "count": counts.get(key),
         }

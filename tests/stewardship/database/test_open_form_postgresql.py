@@ -5,8 +5,8 @@ corpus Family (DUID 1) signed in with its own live code. An Administrator
 opens the Family form for it through the hand-off, which is single-use,
 bound to the Admin's browser and session, and never carries the code or the
 secret in a URL; a response submitted in that session is marked as entered
-by Staff on the timeline, the directory and the submitted list, never with
-the Admin's name. Requests run as the restricted web login.
+by Staff on the timeline and the directory, never with the Admin's name.
+Requests run as the restricted web login.
 """
 
 import html
@@ -154,8 +154,6 @@ def test_open_form_marks_the_response_as_entered_by_staff(
     assert body.count(b"or a mail scanner checked the link") == 1
     _, body = as_web(get, admin, "/admin/reports/families/")
     assert b"(entered by Staff)" in body
-    _, body = as_web(get, admin, "/admin/reports/responses/submitted/")
-    assert b"Entered by Staff" in body
 
     # The directory's tag follows the current response: once the Family
     # submits its own, it is no longer tagged.
@@ -301,7 +299,7 @@ def context_body(name):
     return text[start : text.index("$_$;", start) + 4]
 
 
-# The token change 0065 makes to the response lists' report_sort list.
+# The token change 0065 makes to the removed response lists' report_sort list.
 SORTS = "'problem','-problem')"
 STAFF_SORTS = "'problem','-problem','staff_entered','-staff_entered')"
 

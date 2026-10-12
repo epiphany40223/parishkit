@@ -16,7 +16,6 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
-from django.utils.datastructures import MultiValueDict
 
 from parishkit.stewardship.audit.log_descriptions import (
     FIELD_LABELS,
@@ -27,6 +26,7 @@ from parishkit.stewardship.audit.log_rows import detail_labels
 from parishkit.stewardship.audit.schemas import (
     REPORT_FILTERS,
     REPORT_MODES,
+    REPORT_SORT_COLUMNS,
     REPORT_SORTS,
     ContextKind,
     Outcome,
@@ -34,10 +34,22 @@ from parishkit.stewardship.audit.schemas import (
 )
 from parishkit.stewardship.reports.limitation_views import audit_choices
 from parishkit.stewardship.reports.limitations import SHOW_WORDS, LimitationsQuery
-from parishkit.stewardship.reports.response_lists import LISTS, ListQuery
 from parishkit.stewardship.reports.response_metrics import MODES
 
 ROOT = Path(__file__).resolve().parents[2]
+# The removed response lists' Show choices (#933), which earlier audit
+# entries still hold, so the vocabulary keeps them.
+LIST_SHOWS = frozenset(
+    {
+        "all",
+        "progressed",
+        "opened",
+        "followed",
+        "unfollowed",
+        "mailing-name",
+        "envelope",
+    }
+)
 SNAPSHOT = "00000000-0000-0000-0000-000000000001"
 OPTION = "aaaaaaaa-0000-0000-0000-000000000002"
 
@@ -90,12 +102,11 @@ def test_sanitize_accepts_only_closed_report_choices(context, valid):
 def test_report_filters_are_exactly_the_reports_choices():
     """The closed vocabulary follows the reports' own menus, no more.
 
-    Submitted's retired Show values (#860) stay, since earlier events
-    recorded them, though the list itself now refuses them. So does the
-    Limitations report's ``option`` (a talent filter, retired with #970).
+    The removed response lists' Show values (#933) stay, with Submitted's
+    earlier retired ones (#860), since earlier events recorded them. So does
+    the Limitations report's ``option`` (a talent filter, retired with #970).
     """
-    shows = {choice.value for spec in LISTS.values() for choice in spec.choices}
-    shows |= {"invited", "uninvited"}
+    shows = LIST_SHOWS | {"invited", "uninvited"}
     assert shows | SHOW_WORDS | {"option"} == REPORT_FILTERS
     assert set(MODES) == REPORT_MODES
 
@@ -114,33 +125,6 @@ def test_sql_allowlist_names_the_same_words():
     assert words("report_filter") == REPORT_FILTERS
     assert words("report_mode") == REPORT_MODES
     assert words("report_sort") == REPORT_SORTS
-
-
-def test_response_list_audit_choices():
-    from parishkit.stewardship.reports.response_list_views import audit_choices
-
-    spec = LISTS["data-quality"]
-    query, _ = ListQuery.parse(
-        spec, MultiValueDict({"mode": ["testing"], "show": ["envelope"]})
-    )
-    snapshot = uuid4()
-    context = audit_choices(query, snapshot)
-    assert context == {
-        "report_mode": "testing",
-        "report_filter": "envelope",
-        "search_used": False,
-        "snapshot_id": snapshot,
-    }
-    assert sanitize(ContextKind.ACTION, context)["snapshot_id"] == str(snapshot)
-    # A search is recorded as used, never by its text (#849).
-    searched, _ = ListQuery.parse(
-        spec, MultiValueDict({"search": ["Smith"]}), private=True
-    )
-    context = audit_choices(searched, snapshot)
-    assert context["search_used"] is True
-    assert "Smith" not in str(sanitize(ContextKind.ACTION, context))
-    # Nothing was read (Testing with no rehearsal): no snapshot is named.
-    assert "snapshot_id" not in audit_choices(query, None)
 
 
 def test_limitations_audit_choices_never_keep_the_search_text():
@@ -225,31 +209,18 @@ def test_directory_sorts_read_in_words():
     ]
 
 
-def test_response_list_sorts_are_exactly_the_lists_tokens():
-    """Every list's sort token is approved, and nothing else is (#851)."""
-    tokens = {token for spec in LISTS.values() for token in spec.sorting.tokens}
-    assert tokens == REPORT_SORTS
-    # System logs word each token by its column's own heading.
-    headings = {
-        column.key: str(column.heading)
-        for spec in LISTS.values()
-        for column in spec.columns
-    }
+def test_response_list_sorts_still_read():
+    """Every recorded response list sort token reads in words (#851, #933).
+
+    The lists were removed, but their earlier entries keep their tokens: a
+    column key ascending, ``-key`` descending, each worded by the column's
+    heading in System logs.
+    """
     assert set(VALUE_LABELS["report_sort"]) == REPORT_SORTS
-    for key, heading in headings.items():
-        assert str(field_value("report_sort", key)) == f"{heading} (ascending)"
+    for key in REPORT_SORT_COLUMNS:
+        heading = str(field_value("report_sort", key)).removesuffix(" (ascending)")
+        assert heading != key
         assert str(field_value("report_sort", f"-{key}")) == f"{heading} (descending)"
-
-
-def test_response_list_sort_choice():
-    """A view or download records its sort token, or the list's default."""
-    from parishkit.stewardship.reports.response_list_views import sort_choice
-
-    spec = LISTS["data-quality"]
-    assert sort_choice(spec, {}) == {"report_sort": spec.default_sort}
-    context = sort_choice(spec, {"sort": "-duid", "size": "25", "page": "2"})
-    assert context == {"report_sort": "-duid"}
-    assert sanitize(ContextKind.ACTION, context) == context
     rows = detail_labels([("report_sort", "-duid")])
     assert [(str(key), str(value)) for key, value in rows] == [
         ("Sorted by", "Family DUID (descending)")

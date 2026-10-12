@@ -40,7 +40,6 @@ from ..reports import (
     ministry_followup_views,
     ministry_roster_views,
     response_dashboard,
-    response_list_views,
     weekly_manual_views,
     weekly_views,
     workspace_views,
@@ -57,16 +56,6 @@ def _page(route, view, name, *extra):
 patterns = [
     path("reports/", workspace_views.index, name="reports"),
     _page("reports/responses/", response_dashboard.dashboard, "response_dashboard"),
-    _page(
-        "reports/responses/<slug:key>/",
-        response_list_views.response_list,
-        "response_list",
-    ),
-    _page(
-        "reports/responses/<slug:key>/csv/",
-        response_list_views.response_list_export,
-        "response_list_export",
-    ),
     _page("reports/participation/", workspace_views.participation, "participation"),
     _page(
         "reports/participation/<uuid:fact_set_id>.png",

@@ -1,6 +1,6 @@
 """The directory's Response filters read the dashboard's own funnel rows (#933).
 
-The campaign is the response lists' ``quality_funnel`` (five eligible
+The campaign is ``quality_funnel`` below (five eligible
 Families, Family 11 with a blank mailing name and 12 with envelope number 0),
 taken through the real paths into Production: Family 14 submits before its
 invitation is sent (so it is skipped), the other four are invited, Family 1
@@ -13,8 +13,8 @@ Checked here, as the restricted web login:
 - ``stewardship_family_response_v1`` returns exactly what the inline
   statement it replaced returned, in Production and Testing and at earlier
   cutoffs (the parity the dashboard depends on);
-- each Response choice lists the Families the matching response list chose
-  from the same rows, so its count is the dashboard's;
+- each Response choice lists the Families the removed response list of the
+  same rule chose from the same rows, so its count is the dashboard's;
 - the data checks, the response columns, the response sort orders and the
   "no longer active" population;
 - an export capture selects the same rows through v2, keeps the envelope for
@@ -56,7 +56,7 @@ from parishkit.stewardship.reports.export_services import (
     regenerate_export,
     retry_export,
 )
-from parishkit.stewardship.reports.response_lists import LISTS, ListedFamily
+from parishkit.stewardship.reports.response_dashboard import list_counts
 from parishkit.stewardship.reports.response_metrics import MODES
 from parishkit.stewardship.source.leases import release_source
 from parishkit.stewardship.source.snapshots import promote_snapshot
@@ -72,14 +72,9 @@ from .test_export_views_postgresql import post
 from .test_information_followup_postgresql import search
 from .test_policy_postgresql import user
 from .test_report_workspace_postgresql import read as read_page
-from .test_response_lists_postgresql import (  # noqa: F401
-    BLANK_MAILING,
-    ENVELOPE_ZERO,
-    funnel,
-    quality_funnel,
-)
 from .test_response_metrics_postgresql import (
     dispatch_all,
+    funnel,  # noqa: F401
     live_login,
     open_form,
     prepare_all,
@@ -91,6 +86,33 @@ from .test_source_families_postgresql import prepare, promote
 from .test_source_snapshots_postgresql import permit
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+BLANK_MAILING, ENVELOPE_ZERO = 11, 12
+
+
+@pytest.fixture
+def quality_funnel(monkeypatch, request):
+    """The funnel campaign with two Families' ParishSoft data to check."""
+    original = metrics_tests.funnel_source
+
+    def source():
+        """The funnel's source with a blank mailing name and an envelope 0."""
+        data = original()
+        # The corpus has no mailing names; give every Family one but one.
+        for duid, family in data.families.items():
+            data.families[duid] = dict(family, mailingName=f"Household {duid}")
+        # The blank-mailing Family also has an envelope number to search by.
+        data.families[BLANK_MAILING] = dict(
+            data.families[BLANK_MAILING], mailingName="  ", envelopeNumber=4711
+        )
+        data.families[ENVELOPE_ZERO] = dict(
+            data.families[ENVELOPE_ZERO], envelopeNumber=0
+        )
+        return data
+
+    monkeypatch.setattr(metrics_tests, "funnel_source", source)
+    return request.getfixturevalue("funnel")
+
 
 # The statement response_metrics ran inline before migration 0050, verbatim:
 # the function must return exactly its rows.
@@ -149,19 +171,6 @@ FUNCTION = (
     "%(epoch)s, %(as_of)s) ORDER BY family_duid, family_id"
 )
 
-# Each Response choice and the response list (and its Show choice) that chose
-# the same Families from the same funnel rows (reports.response_lists).
-LIST_OF = {
-    "submitted": ("submitted", "all"),
-    "more-than-once": ("more-than-once", "all"),
-    "started": ("started", "all"),
-    "progressed": ("started", "progressed"),
-    "opened-only": ("started", "opened"),
-    "never-opened": ("not-opened", "all"),
-    "link-followed": ("not-opened", "followed"),
-    "link-not-followed": ("not-opened", "unfollowed"),
-}
-
 
 def parity(harness, as_of, mode="production", epoch=None):
     """The function's rows and the legacy statement's, read as the web login."""
@@ -183,17 +192,6 @@ def parity(harness, as_of, mode="production", epoch=None):
         cursor.execute(FUNCTION, values)
         installed = cursor.fetchall()
     return legacy, installed
-
-
-def listed(spec_key, show, families):
-    """The DUIDs a response list chose from the funnel rows (its old rule)."""
-    spec = LISTS[spec_key]
-    keeps = spec.choice(show).keeps
-    return {
-        family.family_duid
-        for family in families
-        if spec.selects(family) and keeps(ListedFamily(family))
-    }
 
 
 def duids(report):
@@ -291,13 +289,19 @@ def test_directory_response_filters_follow_the_dashboard_rows(
         legacy, installed = parity(harness, as_of)
         assert legacy == installed and len(installed) == 6
     metrics = read(harness, settled)
-    rows = metrics.families
+    # The dashboard's "Lists of Families" lengths, from the same rows.
+    assert list_counts(metrics.families) == {
+        "submitted": 2,
+        "started": 1,
+        "not-opened": 2,
+        "more-than-once": 1,
+    }
     assert metrics.stage("submitted") == 2 and metrics.submitted_again == 1
 
-    # Each Response choice lists what its response list listed, so its count
-    # equals the dashboard's figure; nothing else changes the rows.
-    expected = {response: listed(*LIST_OF[response], rows) for response in LIST_OF}
-    assert expected == {
+    # Each Response choice lists what the removed response list of the same
+    # rule listed (#933), so its count equals the dashboard's figure; nothing
+    # else changes the rows.
+    expected = {
         "submitted": {11, 14},
         "more-than-once": {11},
         "started": {1},

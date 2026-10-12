@@ -14,12 +14,6 @@ and every cell that prints only a DUID. A fourth refuses any Ministry, fund
 or other non-Family, non-Member DUID shown anywhere in a template, and a
 fifth keeps the Member DUID to the pages where staff act on a Member in
 ParishSoft.
-
-Blind spot: the checks read template source, so a table whose columns come
-from a loop over a column list (``response-list.html``, where a
-``column.kind == 'id'`` cell prints ``{{ value|duid }}`` with the column's
-own ``css_class``) is not seen here. That table's own tests
-(``test_response_lists.py``) hold its DUID column's ``numeric`` class.
 """
 
 import re
@@ -203,9 +197,8 @@ OTHER_DUID_LABEL = re.compile(
     r'|\(DUID |\{% translate "DUID" %\}'
 )
 # Printed values that hold a Family's DUID under a name that does not say
-# so: each template's rows are Families (the response lists' "id" column is
-# their Family DUID; the Family timeline's envelope number is printed with
-# the same plain-digits filter).
+# so: each template's rows are Families (the Family timeline's envelope
+# number is printed with the same plain-digits filter).
 FAMILY_ROWS = {
     ("campaign-mail-families.html", "row.duid"),
     ("campaign-mail-families.html", "item.duid"),
@@ -213,7 +206,6 @@ FAMILY_ROWS = {
     ("family-timeline.html", "identity.envelope"),
     ("go-live-families.html", "row.duid"),
     ("presence.html", "row.duid"),
-    ("response-list.html", "value"),
 }
 # Bare "DUID" labels that name a Family's DUID in a line about one Family.
 FAMILY_LABELS = {"find-family-results.html": "a Family search result's DUID"}

@@ -1773,8 +1773,9 @@ pk-admin export comparison --day 8 --format xlsx --timezone America/New_York
   note is included. It is meant for parish leadership; still share it only
   with them.
 
-The Limitations and response list downloads are not on the command line
-yet; use the pages.
+The Limitations download is not on the command line yet; use the page. The
+lists of Families behind the response counts are `export directory` with
+the directory's Response filters.
 
 ### Census changes download
 

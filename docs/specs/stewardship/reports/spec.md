@@ -136,7 +136,7 @@ print cleanly in grayscale, and color never the only signal.
 
 PDF pages share one frame (`reports/pdf_design.py`): the parish and
 campaign above the report title, and the capture time with its display time
-zone on the right. Directory and [response list](#response-lists) PDFs add
+zone on the right. Directory PDFs add
 short count and filter lines under the title. The footer holds the privacy line, any Testing-mode note and "Page N
 of M". Text is set in proportional DejaVu Sans with a DejaVu Serif title,
 fonts matplotlib already bundles. Wrapping measures the fonts' glyph widths
@@ -202,7 +202,7 @@ XLSX tables share one style (`reports/xlsx_design.py`): a bold white-on-teal
 heading row as tall as its most-wrapped heading, Arial text, a frozen heading
 row (and the identifying first column on Family-keyed sheets that start
 with it: the Family-code directory, financial detail, additional
-information, census changes and limitations, and the response list of ParishSoft data to check; the postal mail
+information, census changes and limitations; the postal mail
 merge starts with the DUID and freezes only its
 heading row), filters, light zebra banding as a
 display rule, widths fitted to the content within limits with long text
@@ -538,7 +538,8 @@ dashboard, the digest and the
 cannot drift apart. The
 [chart engine](#chart-engine) draws the funnel and the activity series on the
 [response dashboard](#response-dashboard), and the
-[response lists](#response-lists) show the Families behind the counts; the
+directory's [Response filters](#response-filters) list the Families behind
+the counts; the
 [Family timeline](#family-timeline) shows what happened with one Family; and
 a Production [daily digest](../background-processing/spec.md#daily-campaign-digest)
 states the funnel at the end of its report day, and a Production
@@ -638,7 +639,7 @@ in the [About this page](../ui-conventions/spec.md#page-help) panel after the
 data. Each chart is named by its panel's heading rather than a title drawn
 inside it. Until an invitation has been delivered the tiles leave out their
 shares and the page says so in one sentence. A **Lists of Families** panel
-links to the Families behind each of the [response lists](#response-lists),
+links to the Families behind each count,
 with the number of Families on it (counted from the same read; the list of
 ParishSoft data to check has no number here, since counting it needs the
 ParishSoft read). Each link opens the
@@ -676,154 +677,34 @@ The charts' PNG and PDF downloads follow in a later increment.
 
 ### Response lists
 
-**Access:** Admin and Staff (`CAMPAIGN_REPORT`; the downloads also
-`REPORT_EXPORT`); the Testing view is Admin only.
+The five response list pages (`/admin/reports/responses/<list>/` and their
+`csv/` downloads: Families that submitted, started but did not submit,
+invited but never opened, submitted more than once, and ParishSoft data to
+check) were removed
+([#933](https://github.com/epiphany40223/parishkit/issues/933)). The
+[active parishioner family directory's Response filters](#response-filters)
+are the only way to list those Families: the
+[response dashboard](#response-dashboard)'s **Lists of Families** links open
+the directory with each list's closed link presets, in Production and (for
+Administrators) Testing, with Family codes, contact details and the queued
+CSV, XLSX and PDF export. Per the Administrator's rule against legacy
+addresses ([#864](https://github.com/epiphany40223/parishkit/issues/864)),
+the old addresses are not redirected or aliased: they are 404.
 
-`/admin/reports/responses/<list>/` lists the Families behind one count,
-at the database's current instant (labelled **Counted at**), from the same
-per-Family rows as the [funnel](#response-funnel):
+The `submitted` and `more-than-once` lists' **Entered by Staff** column (how
+many of a Family's submissions Staff entered through
+[Open form](#family-timeline)) is intentionally dropped with them: the
+directory marks a Family "(entered by Staff)" only when Staff entered its
+current response, and the Family timeline shows each response Staff entered.
 
-| List | Families listed | Columns | Filter |
-| --- | --- | --- | --- |
-| `submitted` | with a submission (Submitted) | Family, Family DUID, Envelope number, Submissions, Entered by Staff (how many of the submissions Staff entered through [Open form](#family-timeline)), First submitted | none |
-| `started` | form opened, nothing submitted (Form opened minus Submitted) | Family, Family DUID, Envelope number, Form opened, Got past the first step | got past the first step, or opened the form only |
-| `not-opened` | a delivered invitation, form never opened | Family, Family DUID, Envelope number, Invitation delivered, Link followed | link followed or not |
-| `more-than-once` | more than one submission (Submitted more than once) | Family, Family DUID, Envelope number, Submissions, Entered by Staff, First submitted, Last submitted | none |
-| `data-quality` | active Families of the campaign whose current ParishSoft record has a blank mailing name or envelope number 0 | Family, Family DUID, Envelope number, Mailing name, What to check, First submitted | blank mailing name, or envelope number 0 |
-
-The [active parishioner family directory's Response filters](#response-filters)
-now reproduce every list, with Family codes, contact details and the queued
-export ([#933](https://github.com/epiphany40223/parishkit/issues/933)), and
-the [dashboard](#response-dashboard)'s links open the directory, in Production
-and Testing. The list pages stay, no longer linked from the dashboard, until a
-later change removes them.
-
-Each of the first four lists has exactly the Families its count on the
-[response dashboard](#response-dashboard) counts, with the instants the
-[funnel stages](#funnel-stages) define (Link followed includes mail-scanner
-prefetches). A value not reached yet reads in words on the page (Got past the
-first step "Not yet", Link followed "No") and is blank in the CSV and XLSX.
-**ParishSoft data to check** is a live view of the latest ParishSoft data
-rather than a reproducible count, for the launch-day data problems that made
-Family names misleading; the record itself is fixed in ParishSoft, and a
-Family the latest ParishSoft data no longer has is left out (the About panel
-says so). The Family column is the
-[active parishioner family directory](#active-parishioner-family-directory)'s name (surname, then active heads),
-and the envelope number and mailing name come from the same latest
-ParishSoft data, read in two queries for the listed Families; a Family no
-longer in that data says so instead of a name.
-
-The Administrator removed the `submitted` list's filter (it offered Families
-with or without a delivered invitation), so that list simply shows every
-Family that submitted
-([#860](https://github.com/epiphany40223/parishkit/issues/860)). Its old
-`show` values (`invited`, `uninvited`) are unknown values now and are refused
-like any other.
-
-Each list is a [shared Admin table](../ui-conventions/spec.md#admin-tables):
-every column sorts (times and counts newest or largest first on the first
-click, missing values last), the default is chronological for `submitted`,
-most submissions first for `more-than-once` and Family name otherwise, and the
-filter, search, sort headings, rows per page and paging refresh the table in
-place. The Production and Testing rehearsal links are
-[in-place controls](../ui-conventions/spec.md#in-place-controls) of the table's
-region: they keep the filter and order and refresh the list without a reload.
-The URL carries only closed choices: `mode` (as on the dashboard: Production
-by default, the active Testing rehearsal for Administrators only), `show` (the
-filter), `sort`, `size` and `page`; nothing identifying.
-
-Every list has a **Search by Family name, DUID or envelope number** box
-([#849](https://github.com/epiphany40223/parishkit/issues/849)). It keeps a
-Family whose Family column (the directory's name: surname, then active heads)
-contains the text, ignoring case, or, for a search of digits only, whose
-Family DUID or envelope number is exactly that number (leading zeros are
-ignored, so `0012` finds 12); a part of a DUID or envelope number matches
-nothing by number. The search runs on the list's rows after its filter, before
-sorting and paging, so the row count, the pages and the download all follow
-it. A search can name a Family, so it is sent only in the filter form's
-CSRF-protected POST body, never in a URL, as the
-[active parishioner family directory](#active-parishioner-family-directory)'s
-search is: the list page accepts that POST as a read, and refuses a POST with
-a query string and a `search` in a URL (400). While a search is applied the
-table is a POST table, whose sort headings and navigators carry the search as
-hidden fields. After each in-place answer the address bar shows the view's
-closed choices only (the page's `data-page-address`, as
-[System logs](#system-logs) does), so Back and Reload keep the filter, order,
-page size and page, and a reload clears the search. The mode links are plain
-links, so switching mode clears the search too, and the search box then shows
-it cleared.
-
-**Download** posts the list's filter, search and order (CSRF-protected) with
-a **Format** (CSV, the default, XLSX or PDF) and a time zone chosen beside the
-button (the browser's by default), and downloads the complete filtered list,
-not just the page, rendered on request in that order with the table's columns
-([#850](https://github.com/epiphany40223/parishkit/issues/850)). The button's
-label names no format, so choosing one changes nothing else on the panel, and
-an in-place refresh keeps the format and time zone chosen. The formats hold
-the same rows and columns:
-
-- **CSV** is exactly the table in the
-  [shared CSV format](#shared-report-behavior): times as ISO text in the
-  chosen time zone, a missing value blank, every cell neutralized.
-- **XLSX** is the shared, [styled](#file-design) report workbook: the list's
-  sheet, with native date and time cells in the chosen time zone, counts as
-  numbers, identifiers and names as literal text (never a formula, characters XLSX cannot hold
-  escaped) and a missing value blank, plus the shared "Report information"
-  sheet.
-- **PDF** is the [shared design](#file-design)'s zebra table, as for the
-  [Family-code directory](#active-parishioner-family-directory): each cell as
-  the page shows it (a missing value in the page's words, counts grouped,
-  times in the parish's compact date format in the chosen time zone), with
-  text the font cannot draw escaped.
-
-The XLSX information sheet and every PDF page carry the list's title, parish,
-campaign, Production or Testing, the filter choice, whether a search was
-applied (never its text), **Counted at** and the time zone, the number of
-Families, and the sensitive-data line. The filename is
-`stewardship-responses-<list>-<UTC time>.<format>`, with no search, name or
-choice in it. Before the download the panel states how many Families the file
-holds and the sensitive-data warning; with none, the button is disabled. The
-file is built in memory on the web connection, as the
-[System logs](#system-logs) download is, and read under the interactive
-campaign read guard (see
-[campaign read guards](../data/spec.md#campaign-read-guards) for small
-downloads rendered on request). XLSX and PDF are rendered on request too,
-rather than through the shared export lifecycle (queued, retained,
-regenerable) the issue first proposed: that would need a new export kind and
-snapshot, so a migration, for a list that is a live view anyway, and the
-largest list (about 1,100 Families at launch scale, some 34 pages) renders
-as PDF in about 8 seconds on a development machine, within the read guard's
-60-second deadline. Downloading again regenerates the file. While the campaign's purge gate is closed
-(any purge work gate not released) the download is refused with an
-explanation (409), including when the gate closes as the download starts,
-and its button is disabled with a notice; the list itself stays readable
-under the read guard, as [shared report behavior](#shared-report-behavior)
-allows.
-
-Each view and each download reads the list once under the report's
-[campaign read guard](../data/spec.md#campaign-read-guards) with the role
-recheck (a download also rechecks the purge gate), sends
-`Cache-Control: no-store`, and records one audit event whose type names the
-list and the action (such as `response_submitted_list_exported`), with its
-outcome and row count and no Family name or DUID; a download the purge gate
-refuses is recorded as failed. As the export audit rule in
-[shared report behavior](#shared-report-behavior) asks, the event also records
-the mode (`report_mode`), the Show choice's closed key (`report_filter`;
-`all` for `submitted`, whose old values are ignored), whether a search was
-applied (`search_used`, never its text, #849) and the ParishSoft snapshot the
-names were read from (`snapshot_id`; left out when nothing was read, as for
-Testing with no rehearsal)
-([#556](https://github.com/epiphany40223/parishkit/issues/556)), and the sort
-order as its closed token (`report_sort`: a column key such as `family`, or
-`-` and one for the other direction, such as `-submitted`; the list's default
-when none was chosen)
-([#851](https://github.com/epiphany40223/parishkit/issues/851)). The page size
-and page number are not recorded: they pick which part of the same list is on
-screen, and the row count with these choices already says which Families the
-list held. System logs shows the mode, choice and order in the page's own
-words, the order as the column heading followed by "(ascending)" or
-"(descending)". A download's format is not recorded either: the audit context
-allowlist has no key for it, so recording it would need a migration.
+Their audit event types (`response_<list>_list_viewed` and
+`response_<list>_list_exported`) and closed context values (`report_mode`,
+`report_filter` with the lists' Show keys, `search_used`, `snapshot_id` and
+the `report_sort` column tokens,
+[#556](https://github.com/epiphany40223/parishkit/issues/556),
+[#851](https://github.com/epiphany40223/parishkit/issues/851)) stay in the
+audit vocabulary and in System logs' wording, so earlier entries still
+validate and read; nothing records them now.
 
 ### Family timeline
 
@@ -838,8 +719,7 @@ the current campaign. `<family>` is the Family's campaign record id, an
 opaque random identifier like a Mail message's; the Family's name, DUID,
 envelope number and code never enter the URL, and the browser title leaves the
 name out so browser history does not keep it. The Family's name opens the page from each
-[response list](#response-lists) row (in the list's mode) and each
-[active parishioner family directory](#active-parishioner-family-directory) row, and from each match in the header's
+[active parishioner family directory](#active-parishioner-family-directory) row (in the directory's mode), and from each match in the header's
 Find a Family box (see
 [Admin navigation](../admin-portal/spec.md#admin-navigation)). Its breadcrumb
 parent is the active parishioner family directory. The page reads the Family's records at the
@@ -933,7 +813,7 @@ say only "Entered by Staff", never who: who opened the form is in the System
 logs. The receipt email is the ordinary one. No Family code or link is created,
 replaced or cancelled, so emailed codes and links keep working.
 
-As on the [response lists](#response-lists), the URL carries only closed
+As on the [directory](#active-parishioner-family-directory), the URL carries only closed
 choices: the timeline's `sort` (and the `size=all` its heading carries), and
 `mode`, Production by default or the campaign's active Testing rehearsal for
 Administrators. Both are
@@ -1231,8 +1111,9 @@ only a keyed fingerprint when correlation is operationally necessary.
 
 ### Response filters
 
-The directory folds in the [response lists](#response-lists)
-([#933](https://github.com/epiphany40223/parishkit/issues/933)). Its
+The directory folds in the former [response lists](#response-lists)
+([#933](https://github.com/epiphany40223/parishkit/issues/933)) and is now
+the only page that lists the Families behind the response counts. Its
 **Response** filter is a closed choice: Any (the default); Submitted;
 Submitted more than once; Not submitted; Started, not submitted; Started, got
 past the first step; Opened the form only; Invited, never opened; Invited,
@@ -1337,7 +1218,7 @@ export and the audit entry alike.
 
 The [response dashboard](#response-dashboard)'s **Lists of
 Families** links open this page with closed link presets in the URL, one per
-response list. The four funnel lists' links turn on Include response columns,
+list of Families. The four funnel lists' links turn on Include response columns,
 so the page shows that list's response columns in its default order; the
 ParishSoft data to check link shows the What to check column instead:
 
@@ -1403,7 +1284,7 @@ answer the address bar shows the view's own address (the page's
 closed link presets now applied when no search text or exact code is, and
 the bare page otherwise, never with a page number. So Reload, or Back from
 another page, never brings back the preset the page was opened with; a
-search is cleared, as on the response lists.
+search is cleared.
 
 The selection is `stewardship_directory_report_v2` (migration 0050). It reads
 the funnel through `stewardship_family_response_v1`, so the directory and the
@@ -1894,9 +1775,8 @@ as the [Additional information](#additional-information) exports do.
 Entered by Staff says Yes when Staff entered the Family's current response
 through [Open form](#family-timeline) (#529), and No when the Family
 submitted it, so an earlier response Staff entered and the Family later
-replaced shows No; it names no Staff member. The page's help says so, since
-the response lists' column of the same name counts every response Staff
-entered. A file captured before frozen migration 0066 added the marker to
+replaced shows No; it names no Staff member, and the page's help says so.
+A file captured before frozen migration 0066 added the marker to
 the projection leaves the column blank, never No (#794).
 
 Filters include active/inactive, first/latest submission dates, pledge range,

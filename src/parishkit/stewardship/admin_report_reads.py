@@ -670,7 +670,7 @@ def read_comparison(caller, service, *, day=None):
 
 def response_model(campaign_id, query, context):
     """The command's projection of the response dashboard's page context."""
-    from .reports.response_lists import list_counts
+    from .reports.response_dashboard import list_counts
 
     metrics = context["metrics"]
     if metrics is None:
@@ -860,7 +860,7 @@ def read_limitations(caller, service):
     from .campaigns.models import Campaign
     from .reports.limitation_views import _audit, _principal, audit_choices
     from .reports.limitations import LimitationsQuery, limitations_report
-    from .reports.response_lists import current_snapshot
+    from .source.snapshot_names import current_snapshot
 
     def read(guard, actor, campaign_id):
         """The page's read, with the page's default filters."""

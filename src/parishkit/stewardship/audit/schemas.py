@@ -112,7 +112,9 @@ class Action(StrEnum):
     ROSTER_CHANGES_EXPORTED = "roster_changes_exported"
     RESPONSE_DASHBOARD_VIEWED = "response_dashboard_viewed"
     # The lists of Families behind the response funnel (#477): one event type
-    # per list, so the audit names the list without a new context field.
+    # per list, so the audit names the list without a new context field. The
+    # list pages were removed (#933); nothing records these now, and they stay
+    # so earlier entries still read.
     RESPONSE_SUBMITTED_LIST_VIEWED = "response_submitted_list_viewed"
     RESPONSE_SUBMITTED_LIST_EXPORTED = "response_submitted_list_exported"
     RESPONSE_STARTED_LIST_VIEWED = "response_started_list_viewed"
@@ -456,11 +458,12 @@ MINISTRY_LIST_FIELDS = frozenset(
 REVIEW_DECISIONS = frozenset({"keep_role", "restore", "remove"})
 # An on-request report's system mode and filter choices (#556); mirrored in
 # stewardship_safe_context_v1. The filters are each report's own fixed
-# choices: the response lists' ``show`` keys (reports.response_lists) and
-# the Limitations report's Show words (reports.limitations.SHOW_WORDS), plus
-# ``option``, which rows recorded before talents were retired (#970) hold for
-# a talent filter, with its ``talent_option_id``. A test keeps this set equal
-# to the reports' choices.
+# choices: the Limitations report's Show words (reports.limitations.SHOW_WORDS),
+# plus the ``show`` keys of the response lists, which were removed in favor
+# of the family directory's presets (#933) but whose earlier entries still
+# hold them, and ``option``, which rows recorded before talents were retired
+# (#970) hold for a talent filter, with its ``talent_option_id``. A test keeps
+# this set equal to those choices.
 REPORT_MODES = frozenset({"production", "testing"})
 REPORT_FILTERS = frozenset(
     {
@@ -480,9 +483,9 @@ REPORT_FILTERS = frozenset(
     }
 )
 # A response list's sort order (#851); mirrored in stewardship_safe_context_v1.
-# Each list sorts by any of its columns both ways (reports.response_lists): the
-# column key ascending, ``-key`` descending. A test keeps this set equal to
-# the lists' own tokens.
+# Each list sorted by any of its columns both ways: the column key ascending,
+# ``-key`` descending. The lists were removed (#933); the tokens stay so their
+# earlier audit entries still validate and read.
 REPORT_SORT_COLUMNS = (
     "family",
     "duid",
