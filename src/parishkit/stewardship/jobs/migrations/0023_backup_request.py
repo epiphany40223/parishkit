@@ -31,12 +31,13 @@ FROZEN_SQL = (
 class Migration(migrations.Migration):
     dependencies = [
         # The jobs app's previous migration.
-        ("stewardship_jobs", "0021_alert_local_time"),
-        # The migration that installs main's newest frozen file today
-        # (0050). Frozen files 0051 to 0061 are planned to land first; this
-        # must be re-chained onto whichever migration installs 0061 when
-        # this merges, so the files apply in prefix order.
-        ("stewardship_reports", "0012_directory_response_filters"),
+        ("stewardship_jobs", "0022_mail_message_recipients"),
+        # The migration that installs the previous frozen file (0061, the
+        # roster entries), so the files apply in prefix order. It follows
+        # the users swap, so `migrate --users-upgrade-base` never applies
+        # this file and its table is registered in
+        # runtime_grants.CLOSURE_TABLES.
+        ("stewardship_workflows", "0002_roster_entries"),
     ]
 
     operations = [

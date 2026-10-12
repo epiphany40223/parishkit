@@ -174,7 +174,9 @@ def command(monkeypatch, capsys):
     monkeypatch.setattr(
         operator_commands, "configure_operator_database", lambda c: None
     )
-    monkeypatch.setattr(runtime_database, "require_current_schema", lambda: None)
+    monkeypatch.setattr(
+        runtime_database, "require_current_schema", lambda **kwargs: None
+    )
     monkeypatch.setattr(
         runtime_paths, "RuntimeLayout", lambda c: SimpleNamespace(interlock=None)
     )
@@ -667,3 +669,12 @@ def test_a_live_automation_session_stands_in_for_a_fresh_sign_in(auth_service, g
     automation.revoke(row.pk, owner(auth_service), reason="revoked_by_owner")
     with pytest.raises(DatabaseError, match="fresh Administrator"):
         ask()
+
+
+def test_request_mode_never_combines_with_a_users_upgrade_resume(command):
+    """Refused (exit 2, no output) before any read: the two modes conflict."""
+    request = owner_request()
+    assert command("--request", "--users-upgrade-resume") == (2, None)
+    request.refresh_from_db()
+    assert request.state == "waiting"
+    assert BackupRun.objects.count() == 0

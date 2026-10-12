@@ -313,6 +313,8 @@ def reusable_upgrade_backup():
 # which every host would need provisioned and mounted).
 BACKUP_LOCK = (736241, 1)
 SCHEDULED_LOCK_SECONDS = 1800
+# The migration that creates the request record (frozen file 0062).
+BACKUP_REQUESTS = ("stewardship_jobs", "0023_backup_request")
 
 
 class Quiet(Exception):
@@ -367,7 +369,8 @@ def _run(configuration, *, wait, request_mode):
     runs only for a waiting request, stamps it held during a bulk Family
     send, and raises ``Quiet`` when the lock is taken or nothing is waiting.
     """
-    from django.db import DatabaseError
+    from django.db import DatabaseError, connection
+    from django.db.migrations.recorder import MigrationRecorder
 
     from .backup import configured_recipient, run_backup
     from .backup_requests import claim, held, settle_lapsed, waiting
@@ -375,8 +378,15 @@ def _run(configuration, *, wait, request_mode):
 
     if not _lock_backups(wait=wait):
         raise Quiet
-    settle_lapsed()
-    request = waiting()
+    # The set the schema check just admitted, for the manifest (#608).
+    applied = MigrationRecorder(connection).applied_migrations()
+    request = None
+    # The request record is in the users swap's closure, so a scheduled
+    # backup of a users upgrade stopped before the swap (#952) has no
+    # request table to read; request mode admits only a current schema.
+    if BACKUP_REQUESTS in applied:
+        settle_lapsed()
+        request = waiting()
     if request_mode:
         # Every quiet stop after taking the lock releases it, as the refused
         # claim below does, rather than leaving it to the connection's end.
@@ -408,11 +418,6 @@ def _run(configuration, *, wait, request_mode):
                 _unlock_backups()
                 raise Quiet from None
             request = None
-    from django.db import connection
-    from django.db.migrations.recorder import MigrationRecorder
-
-    # The set the schema check just admitted, for the manifest (#608).
-    applied = MigrationRecorder(connection).applied_migrations()
     recorded = {}
 
     def record(**facts):

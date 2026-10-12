@@ -913,7 +913,7 @@ ParishSoft integration page.
 The release that adds Take a backup now's request record and request mode
 is a schema and grant change: with the [scripted upgrade](#scripted-upgrade)
 set `STEWARDSHIP_SCHEMA_CHANGE=1`; the upgrade check reports `f` and step 4
-runs migration (`stewardship_jobs.0022_backup_request` installs frozen file
+runs migration (`stewardship_jobs.0023_backup_request` installs frozen file
 0062: the `stewardship_backup_request` table and its guard, and refuses to
 commit unless both are installed as declared) and then `database-grants`,
 which gives the web login its request reads and inserts and the backups
