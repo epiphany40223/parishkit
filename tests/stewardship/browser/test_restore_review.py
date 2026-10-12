@@ -40,12 +40,13 @@ def expect(locator):
     return browser_expect(locator)
 
 
-def _routed(page, component_origin, answers, start=None):
+def _routed(page, component_origin, answers, start=None, address=PAGE):
     """Answer the page's own POSTs by their action, all at the page's address.
 
     ``answers`` maps an action to ``(status, component path)``. ``start`` is
     the state the page opens in (a component path); without it the page
-    opens as served, before anything was found.
+    opens as served, before anything was found. ``address`` is the page's
+    own address (the Held emails page shares these helpers, #757).
     """
     from urllib.request import urlopen
 
@@ -72,7 +73,7 @@ def _routed(page, component_origin, answers, start=None):
         status, body = bodies[action]
         route.fulfill(status=status, content_type="text/html", body=body)
 
-    page.route(f"{component_origin}{PAGE}", respond)
+    page.route(f"{component_origin}{address}", respond)
 
 
 def _not_reloaded(page):
