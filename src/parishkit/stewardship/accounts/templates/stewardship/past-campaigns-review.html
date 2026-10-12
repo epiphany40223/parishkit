@@ -8,7 +8,8 @@
     needs its acknowledgement box (data-acknowledgment) before Apply is
     available; a file already imported has nothing to apply, so Apply is
     unavailable with that reason;
-  - applied: what Apply did.
+  - applied: what Apply did; data-clears-form then clears the file choice
+    (past-campaigns.html's #archive-upload), so Review is held again.
   An Apply refusal shows its problems above the card it refused.
 {% endcomment %}{% if problems %}<section class="notice notice-error" data-error-summary tabindex="-1" aria-labelledby="archive-problems-title">
 <h2 id="archive-problems-title">{% if card %}{% translate "This was not applied" %}{% else %}{% translate "This file can't be imported" %}{% endif %}</h2>
@@ -38,7 +39,7 @@
 {% elif card.replace_blocked %}{% button type="submit" enabled=False aria-describedby="archive-apply-reason" %}{% translate "Apply" %}{% endbutton %}<p class="help" id="archive-apply-reason">{% blocktranslate with year=card.archive.campaign_year %}Unavailable: a partial file can't replace the final {{ year }} import.{% endblocktranslate %}</p>
 {% else %}{% if card.action == "replace" %}<p><label><input type="checkbox" name="replace" value="yes" required data-acknowledgment data-missing-hint="{% translate 'Tick the box to confirm the replacement.' %}"> {% blocktranslate with year=card.archive.campaign_year %}This replaces the {{ year }} figures already imported{% endblocktranslate %}</label></p>{% endif %}
 {% button type="submit" %}{% translate "Apply" %}{% endbutton %}{% endif %}</form>
-</section>{% elif applied %}<section class="panel" aria-labelledby="archive-applied-title">
+</section>{% elif applied %}<section class="panel" aria-labelledby="archive-applied-title" data-clears-form="archive-upload">
 <h2 id="archive-applied-title" tabindex="-1" data-in-place-focus>{% if applied.outcome == "imported" %}{% blocktranslate with year=applied.archive.campaign_year %}Imported {{ year }}{% endblocktranslate %}{% elif applied.outcome == "replaced" %}{% blocktranslate with year=applied.archive.campaign_year %}Replaced {{ year }}{% endblocktranslate %}{% else %}{% blocktranslate with year=applied.archive.campaign_year %}{{ year }} was already imported{% endblocktranslate %}{% endif %}</h2>
 <p>{% if applied.outcome == "already" %}{% blocktranslate with name=applied.archive.campaign_name who=applied.imported_by|default:_("an Administrator") %}{{ name }} from this same file was imported by {{ who }} on{% endblocktranslate %} <time datetime="{{ applied.archive.imported_at|instant }}" data-local-instant>{{ applied.archive.imported_at|instant }}</time>; {% translate "nothing changed." %}{% else %}{% blocktranslate with name=applied.archive.campaign_name %}{{ name }} is now in the table above and on Campaign comparison.{% endblocktranslate %}{% endif %}</p>
 </section>{% endif %}

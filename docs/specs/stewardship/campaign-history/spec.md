@@ -327,6 +327,11 @@ status](../ui-conventions/spec.md#review-apply-and-change-status):
    <when>` (the earlier import's Administrator and local time;
    [prerequisite gates](../ui-conventions/spec.md#prerequisite-gates);
    [Administrator decision 12](#administrator-decisions)).
+   Once Apply has answered (imported, replaced or already imported), the
+   file choice is cleared and Keep Family rows ticked again, so Review is
+   unavailable with its hint until the next file is chosen, as on a fresh
+   page. The hint's line is reserved, so clearing the file moves nothing ([no
+   layout shift](../ui-conventions/spec.md#no-layout-shift)).
 
 **Remove** is a [row action with
 confirmation](../ui-conventions/spec.md#row-actions-and-confirmation): it

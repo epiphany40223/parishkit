@@ -2968,6 +2968,24 @@
     notFutureChecks.forEach(({check}) => check());
     liveChecks.forEach(({check}) => check());
   });
+  // An in-place answer that finishes a form's job carries
+  // data-clears-form="<form id>" (Past campaigns' Apply outcome, #1018):
+  // that form is reset as on a fresh page (a file field empties, boxes take
+  // their drawn defaults), a too-large mark on its file field goes with the
+  // file, and its complete gate runs again, so its buttons are held with
+  // the hint. reset() fires no input or change event, so no review is
+  // withdrawn by it. The hint's line is reserved, so nothing moves (#736).
+  document.addEventListener("parishkit:swap", (event) => {
+    if (!(event.target instanceof Element)) return;
+    within(event.target, "[data-clears-form]").forEach((mark) => {
+      const form = document.getElementById(mark.dataset.clearsForm);
+      if (!(form instanceof HTMLFormElement)) return;
+      form.reset();
+      form.querySelectorAll("input[type=file][data-client-error]")
+        .forEach((input) => input.removeAttribute("data-client-error"));
+      gateComplete(form);
+    });
+  });
 
   // Optional modules are ordinary accessible fieldsets shown or hidden by
   // their toggle. Hidden fields are disabled, not silently copied into

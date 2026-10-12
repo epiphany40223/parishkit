@@ -38,6 +38,20 @@ def review_button(page):
     return page.locator("#archive-upload").get_by_role("button", name="Review")
 
 
+def places(page):
+    """The Review button's and its hint line's places within their form.
+
+    Within the form, since Apply's redrawn table above may change height.
+    """
+    return page.evaluate(
+        """["#archive-upload [type=submit]", "#archive-review-hint"].map((s) => {
+            const form = document.querySelector("#archive-upload");
+            const box = document.querySelector(s).getBoundingClientRect();
+            return [box.top - form.getBoundingClientRect().top, box.height];
+        })"""
+    )
+
+
 def choose(page, tmp_path, size=100):
     """Choose a small stand-in workbook of ``size`` bytes.
 
@@ -129,6 +143,36 @@ def test_review_and_apply_act_in_place(page, component_origin, tmp_path):
     final = table.locator("tbody tr").nth(1)
     assert final.locator("th").inner_text() == "2025"
     assert "Final" in final.inner_text()
+    assert page.evaluate("window.notReloaded === true")
+    assert not failures
+
+
+def test_apply_clears_the_file_without_moving_the_form(
+    page, component_origin, tmp_path
+):
+    """After Apply the file choice is empty and Review is held with its hint,
+    as on a fresh page; Keep Family rows is ticked again, and the Review
+    button and its hint line do not move within the form."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + PAGE)
+    failures = watch(page)
+    hint = page.locator("#archive-review-hint")
+    choose(page, tmp_path)
+    page.get_by_role("checkbox", name="Keep Family rows").uncheck()
+    review_button(page).click()
+    card = page.locator("#archive-review section[data-review-of]")
+    visible(card)
+    card.get_by_role(
+        "checkbox", name="This replaces the 2025 figures already imported"
+    ).check()
+    before = places(page)
+    card.get_by_role("button", name="Apply").click()
+    has_attribute(page.locator("#archive-review h2"), "id", "archive-applied-title")
+    eventually(page, "document.querySelector('#archive-file').files.length === 0")
+    assert review_button(page).is_disabled()
+    assert "Choose an archive file" in hint.inner_text()
+    assert page.get_by_role("checkbox", name="Keep Family rows").is_checked()
+    assert places(page) == before
     assert page.evaluate("window.notReloaded === true")
     assert not failures
 
