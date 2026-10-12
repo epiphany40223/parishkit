@@ -313,7 +313,9 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   [refused address](../admin-portal/spec.md#refused-addresses); Dismiss on an
   integration's finished key change; the
   [participation report](../reports/spec.md#campaign-statistics)'s Apply
-  report options, which refreshes its statistics, chart and export panels)
+  report options, which refreshes its statistics, chart and export panels;
+  the [Campaign comparison](../campaign-history/spec.md#page-layout)'s
+  Compare on day, which refreshes everything below it)
   names its region by its
   URL's fragment. A POST form saves a change unless it is marked
   `data-in-place-read` (the System logs cross-links only read): a read may

@@ -128,6 +128,10 @@ class Year:
     ``at_day`` is its figures at the comparison day (None when unknown: a
     partial year after its last day, or before the current day 1 ends);
     ``end`` its final figures (for the current campaign, so far).
+    ``series`` is every day it has figures for, in day order, which the
+    day-by-day charts draw (the current campaign's through its latest
+    complete day, whatever day is compared; its ``pledging`` is None, since
+    the charts need only the fact rows' figures).
     """
 
     year: int | None
@@ -141,6 +145,7 @@ class Year:
     renewal: Renewal = field(default_factory=Renewal)
     distribution: Distribution | None = None
     notes: tuple = ()
+    series: tuple = ()
 
     @property
     def label(self):
@@ -156,7 +161,9 @@ class Comparison:
 
     ``day`` is None before the current campaign's day 1 has ended, when only
     the imported years' final results are shown. ``imported`` is newest
-    first; ``last_year`` is one of them or None.
+    first; ``last_year`` is one of them or None. ``latest_day`` is the
+    current comparison day, the last day Compare on day can choose (``day``
+    is that day or an earlier one).
     """
 
     campaign_name: str
@@ -167,6 +174,7 @@ class Comparison:
     current: Year | None
     imported: tuple
     last_year: Year | None
+    latest_day: int | None = None
 
 
 # ---------------------------------------------------------------- metrics

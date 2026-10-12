@@ -414,3 +414,116 @@ def test_the_data_line_names_the_years_the_averages_cover():
     assert context["average_years"] == "2053–2054"
     assert context["tiles"][0]["lines"][1].startswith("2053–2054 average")
     assert not context["can_import"]
+
+
+# ------------------------------------------------- slice 5: series and day
+
+
+def test_years_carry_their_daily_series(monkeypatch):
+    """Each imported year's series is its daily rows, in day order."""
+    monkeypatch.setattr(comparison_reads, "_json", pytest.fail)
+    final = archive(2054, 3, kept=False)
+    (found,) = comparison_reads._archive_years(
+        [final], {final.pk: rows(3)}, {}, 2, financial=True
+    )
+    assert [day.day for day in found.series] == [1, 2, 3]
+    assert found.series[2].pledged == Decimal(300)
+    (found,) = comparison_reads._archive_years(
+        [final], {final.pk: rows(3)}, {}, 2, financial=False
+    )
+    assert found.series[2].pledged is None
+
+
+def fact(day_number, responses, *, available=True, pledge=None):
+    """One fact row of the current campaign's Historical-as-of-day set."""
+    return SimpleNamespace(
+        local_date=date(2054, 10, 3 + day_number),
+        cumulative_responses=responses,
+        cohort_denominator=200,
+        population_available=available,
+        pledge_available=pledge is not None,
+        pledge_total=None if pledge is None else Decimal(pledge),
+    )
+
+
+def test_current_series_is_the_fact_rows_through_the_latest_day():
+    """Days 1 to the comparison day; unavailable days are gaps."""
+    document = SimpleNamespace(
+        days=(
+            fact(0, 1),  # The day before day 1 is not part of the campaign.
+            fact(1, 5, pledge="100"),
+            fact(2, 9, available=False),
+            fact(3, 12, pledge="400.50"),
+            fact(4, 20, pledge="500"),
+        )
+    )
+    series = comparison_reads.current_series(
+        document, START, date(2054, 10, 6), financial=True
+    )
+    assert [(day.day, day.families, day.pledged) for day in series] == [
+        (1, 5, Decimal(100)),
+        (3, 12, Decimal("400.50")),
+    ]
+    assert series[0].active == 200 and series[0].pledging is None
+    series = comparison_reads.current_series(
+        document, START, date(2054, 10, 6), financial=False
+    )
+    assert [day.pledged for day in series] == [None, None]
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("", (None, False)),
+        ("day=5", (5, False)),
+        ("day=1", (1, False)),
+        ("day=05", (None, True)),
+        ("day=0", (None, True)),
+        ("day=-1", (None, True)),
+        ("day=1.5", (None, True)),
+        ("day=abc", (None, True)),
+        ("day=", (None, True)),
+        ("day=10000", (None, True)),
+    ],
+)
+def test_compare_on_day_takes_a_whole_day_number(query, expected):
+    """Only day=<whole number from 1>; anything else is refused at the field."""
+    from django.http import QueryDict
+
+    from parishkit.stewardship.reports.comparison_views import requested_day
+
+    assert requested_day(QueryDict(query)) == expected
+
+
+@pytest.mark.parametrize("query", ["day=1&day=2", "scope=current", "day=1&x=1"])
+def test_compare_on_day_refuses_any_other_parameter(query):
+    """Another parameter, or two days, is the plain report-options error."""
+    from django.http import QueryDict
+
+    from parishkit.stewardship.reports.comparison_views import requested_day
+
+    with pytest.raises(ValueError, match="Invalid report options"):
+        requested_day(QueryDict(query))
+
+
+def test_a_refused_day_names_the_days_that_can_be_chosen():
+    """The field error says which days the campaign has, and links the field."""
+    from parishkit.stewardship.accounts.policy import Principal
+    from parishkit.stewardship.reports.comparison_views import day_error, page_context
+
+    assert day_error(12) == "Enter a whole number from 1 to 12."
+    assert day_error(1) == "Enter 1: only day 1 of this campaign has ended."
+    assert day_error(None).startswith("No day can be compared")
+    principal = Principal(uuid4(), frozenset({"staff"}), frozenset())
+    built = Comparison(
+        "Now", 3, date(2054, 10, 6), False, "current", None, (), None, latest_day=3
+    )
+    found = page_context(built, principal, refused=True)
+    message = "Enter a whole number from 1 to 3."
+    assert found["errors"] == [{"field_id": "compare-day", "message": message}]
+    assert found["day_error"] == message
+    assert page_context(built, principal)["errors"] == []
+    # Before day 1 has ended there is no field to link to.
+    early = replace(built, day=None, report_date=None, latest_day=None)
+    (error,) = page_context(early, principal, refused=True)["errors"]
+    assert error["field_id"] is None
