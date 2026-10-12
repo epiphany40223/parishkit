@@ -281,6 +281,7 @@ sections:
     "Fake clock": [OPS-10]
     "Seeded campaign and responses": [OPS-10]
     "Seeder phases and identities": [OPS-10]
+    "Seeded Ministry leader user": [OPS-10]
     "Go-live under the fake clock": [OPS-10]
     "Historical ordering": [OPS-10]
     "Settled": [OPS-10]

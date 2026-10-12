@@ -476,6 +476,14 @@ and other adults, never a child.
 - About 5% of roster entries are ended (they have an end date before the anchor
   date).
 - Every Ministry has at least one active Member.
+- Every Ministry has exactly one leader, an active roster entry whose role is
+  one of the
+  [default Ministry leader roles](../data/spec.md#ministry-leaders):
+  `Chairperson` (role id 2), or `Staff` (role id 3) for every fifth Ministry.
+  Every other entry has the role `Member` (role id 1). A fresh local
+  deployment therefore has Ministry leaders with no settings change, and both
+  default roles appear in the role list
+  ([#1150](https://github.com/epiphany40223/parishkit/issues/1150)).
 - These proportions hold at any `--families` size.
 
 The parish also includes heads with several semicolon-separated addresses, a
@@ -627,7 +635,7 @@ throughout, so occurrences fall due naturally.
 | 1 | prepare | Friday before the start Saturday, 09:00 | `web` (its requests are installed and run by the configuration installer, worker and `mail-dispatch`) | Configure the campaign, meet [go-live readiness](#go-live-under-the-fake-clock) and take it to Production (`scheduled`) |
 | 2 | drive | stepped through the timeline | `web` for Family steps; scheduler, worker and `mail-dispatch` running normally | Carry out every event before `now` in [historical order](#historical-ordering) |
 | 3 | check | (services stopped; PostgreSQL and Valkey running) | offline `migration` | Run the [invariant check](#post-seed-invariant-check) |
-| 4 | finish | real time, normal mode | `web` (the Admin's "Refresh now"; the worker runs the refresh) | After the restart without the preload, request the real full refresh that releases the late-added Family |
+| 4 | finish | real time, normal mode | `web` (the Admin's "Refresh now" and the Users page's leader import; the worker runs the refresh and the configuration installer applies the import) | After the restart without the preload, request the real full refresh that releases the late-added Family, then import the [seeded Ministry leader user](#seeded-ministry-leader-user) |
 
 The clock's starting point must not be earlier than any row already in the
 database. `up` therefore runs the whole install and the setup wizard in
@@ -635,6 +643,28 @@ fake-clock mode at an offset of 17 days behind real time. The Friday before
 any seed's start Saturday is at most 16 days before that seed's `now`, so
 phase 1's jump is always forward, including after `reseed` restores the
 post-setup snapshot.
+
+### Seeded Ministry leader user
+
+So that the Ministry leader flow can be tried at once, the finish phase makes
+one ParishSoft Ministry leader a Ministry leader user
+([#1150](https://github.com/epiphany40223/parishkit/issues/1150)). It reads
+the [leaders without a user](../admin-portal/spec.md#parishsoft-ministry-leaders-without-a-user)
+under the Administrator's session and picks the Ministry with the most open
+follow-up requests (ties: the lowest Ministry DUID) that has a listed leader,
+and that Ministry's first leader by address. When no led Ministry has an open
+request, it picks the first leader by address. It imports that leader through
+the Users page's own review and Apply, so the user has the Ministry leader
+role and the change is one configuration request the installer applies. The
+phase waits for that request.
+
+The finish step's answer names the user as `leader_user`, and `seed` ends by
+printing `Ministry leader user: <address>`. Sign in as that address
+(`sign-in --email <address>`) to see the Ministry's open follow-up requests.
+The address depends on the generator seed and on the seeded timeline, so it
+can differ between installs and between reseeds. A leader who is already a
+user is not listed, so a deployment where every leader is a user imports no
+one (`leader_user` is null).
 
 ### Go-live under the fake clock
 
@@ -988,7 +1018,10 @@ assert that:
   and operational mail, was sent only through the mail-catcher transport;
 - go-live reached `scheduled` with no activation catch-up, and the campaign
   became `active` at its start boundary;
-- the deployment is in normal mode at the end, with an offset of zero.
+- the deployment is in normal mode at the end, with an offset of zero;
+- `stewardship_ministry_leaders_v1()` returns roster leaders with no settings
+  change, and the finish step's `leader_user` can sign in and sees open
+  follow-up requests.
 
 The first such run (2026-10-04, 100 Families) is recorded on
 [#476](https://github.com/epiphany40223/parishkit/issues/476): the invariant
@@ -1395,8 +1428,9 @@ The local environment adds:
 - **generator tests**: the scaling table at 100 and 1,100 Families; the
   adult and child mix and `memberType` values; Ministry rosters with no child,
   about 40% of non-child Members on at least one Ministry (about 30% of those
-  on two or more, about 10% on three or more), some ended entries, and every
-  Ministry with an active Member, at both sizes;
+  on two or more, about 10% on three or more), some ended entries, every
+  Ministry with an active Member, and every Ministry with one leader in a
+  default leader role, both roles appearing, at both sizes;
 - **timeline tests** at 100 and 1,100 Families, with no Docker or database
   (see [seeder tests](#seeder-tests));
 - **database tests** (no fake clock): setup loading runs against the

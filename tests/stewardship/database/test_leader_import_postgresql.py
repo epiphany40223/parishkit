@@ -646,3 +646,49 @@ def test_import_leaders_command_previews_and_confirms(admin, google):  # noqa: F
         secret=secret,
     )
     assert code != 0 and not document["ok"], document
+
+
+def test_the_local_seeders_leader_import_takes_the_pages_path(deployment, monkeypatch):
+    """The local seed's finish step imports one leader as the page does (#1150).
+
+    Under the real web login, with no open follow-up request, the first
+    leader by address is chosen and imported by the Users page's review and
+    Apply: one audited configuration change, applied by the installer (the
+    seeder's wait stands in for the running installer here).
+    """
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.accounts.admin_session_store import SessionStore
+    from parishkit.stewardship.accounts.authentication import runtime
+    from parishkit.stewardship.accounts.configuration_installation import (
+        install_request,
+    )
+    from parishkit.stewardship.local import seed_web, seeder
+
+    store, browser = deployment
+    waits = []
+
+    def waiting(what, condition, **_options):
+        """Keep the seeder's wait condition; the installer runs below."""
+        assert condition() == "the leader import is still pending"
+        waits.append(condition)
+        return 0.0
+
+    monkeypatch.setattr(seeder, "wait_until", waiting)
+    # The step-up is the local test sign-in, which only LOCAL admits.
+    monkeypatch.setattr(seed_web, "sign_in_admin", lambda request, email: request)
+    request = seed_web.new_request(session=SessionStore(session_key=live_key(browser)))
+    with web():
+        email = seeder.import_leader_user(
+            SimpleNamespace(admin_email="admin@example.org"), request, runtime()
+        )
+    assert email == "ann@example.org" and len(waits) == 1
+    pending = ConfigurationChangeRequest.objects.latest("created_at")
+    receipt = install_request(store, request_id=pending.pk, correlation_id=uuid4())
+    assert receipt.state == "applied"
+    assert waits[0]() is True
+    assert users(store)[email] == ("Example 0, Leader", "ministry_leader")
+    assert AuditEvent.objects.filter(
+        event_type="user_leaders_import_requested"
+    ).exists()
+    assert AuditEvent.objects.filter(event_type="user_leader_imported").count() == 1

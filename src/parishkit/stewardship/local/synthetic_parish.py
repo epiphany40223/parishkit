@@ -344,7 +344,15 @@ CONTRIBUTION_AMOUNTS = (10, 20, 25, 40, 50, 75, 100, 150, 200, 250, 500)
 ANONYMOUS_CONTRIBUTION_SHARE = 0.01
 # Of contributions, the share to the first fund (the Sunday offertory).
 OFFERTORY_SHARE = 0.75
-ROLES = ((1, "Member"), (2, "Leader"))
+# Roster roles as (ministryRoleId, ministryRoleName). The leader roles are
+# the two names the default Ministry leader role list matches
+# (stewardship_ministry_leader_roles_v1), so a fresh local deployment has
+# Ministry leaders with no settings change (#1150). Every STAFF_EVERYth
+# Ministry's leader is Staff, so both default roles appear in the rosters.
+MEMBER_ROLE = (1, "Member")
+CHAIRPERSON_ROLE = (2, "Chairperson")
+STAFF_ROLE = (3, "Staff")
+STAFF_EVERY = 5
 
 
 @dataclass(frozen=True)
@@ -867,7 +875,9 @@ class _Generator:
         for index, ministry in enumerate(self.ministries):
             member = volunteers[index % len(volunteers)]
             assigned[member["memberDUID"]].add(ministry["id"])
-            entries.append((member, ministry, ROLES[1], True))
+            staff = index % STAFF_EVERY == STAFF_EVERY - 1
+            role = STAFF_ROLE if staff else CHAIRPERSON_ROLE
+            entries.append((member, ministry, role, True))
         by_id = {ministry["id"]: ministry for ministry in self.ministries}
         for member in volunteers:
             while len(assigned[member["memberDUID"]]) < targets[member["memberDUID"]]:
@@ -876,7 +886,7 @@ class _Generator:
                     break
                 ministry = by_id[self.rng.choice(open_ids)]
                 assigned[member["memberDUID"]].add(ministry["id"])
-                entries.append((member, ministry, ROLES[0], False))
+                entries.append((member, ministry, MEMBER_ROLE, False))
         ordinary = [index for index, entry in enumerate(entries) if not entry[3]]
         ended = set(
             self.rng.sample(ordinary, round(ENDED_ENTRY_SHARE * len(entries)))

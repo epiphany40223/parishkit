@@ -891,7 +891,7 @@ trap_note() {
 }
 
 cmd_seed() {
-    local lock="$snapshots/.seed.lock" mode completed seeded_now
+    local lock="$snapshots/.seed.lock" mode completed seeded_now leader_user
     seed_scale=$1
     require_marker
     load_env
@@ -931,10 +931,15 @@ cmd_seed() {
         private_file "$root/run/local/fake-parishsoft.json"
     start_services --force-recreate
     seed_step 900 finish web web.yaml
+    # The Ministry leader user the finish step imported (#1150), if any.
+    leader_user=$(jq -r '.leader_user // empty' <<<"$seed_result")
     step "Tagging the seed's mail in the catcher"
     mailpit_tag_all seed-history
     trap - EXIT
     echo "Seeded at $seeded_now (requested $seed_now) in $(( $(date -u +%s) - began ))s."
+    if [ -n "$leader_user" ]; then
+        echo "Ministry leader user: $leader_user (sign-in --email $leader_user)"
+    fi
 }
 
 # The BG-12 rehearsal (developer guide, "Rehearsing a bulk send"; plan,

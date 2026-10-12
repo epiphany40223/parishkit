@@ -28,6 +28,7 @@ from parishkit.stewardship.local.seeder import (
     SeedRequest,
     drive_timeline,
     invariant_sql,
+    leader_to_import,
     schedule_patch,
     wait_until,
 )
@@ -519,6 +520,26 @@ def test_expected_counts_add_the_families_the_timeline_drives():
     linked = set(result.stages["linked"])
     assert linked and linked <= families
     assert not any(e.kind == "baseline" and e.family in linked for e in result.events)
+
+
+def test_leader_to_import_picks_the_busiest_ministrys_leader():
+    """The finish step's leader user leads the Ministry with most open requests.
+
+    Ties go to the lower Ministry DUID and then the first address; with no
+    open request anywhere, the first leader by address; no leader, None.
+    """
+    rows = [
+        {"email": "zed@example.test", "ministries": [5, 9]},
+        {"email": "amy@example.test", "ministries": [3]},
+        {"email": "bob@example.test", "ministries": [9]},
+    ]
+    assert leader_to_import(rows, {3: 1, 9: 3, 5: 2}) == "bob@example.test"
+    assert leader_to_import(rows, {3: 2, 5: 2}) == "amy@example.test"
+    # The busiest Ministry has no listed leader: the next one's leader.
+    assert leader_to_import(rows, {7: 4, 5: 1}) == "zed@example.test"
+    assert leader_to_import(rows, {}) == "amy@example.test"
+    assert leader_to_import(rows, {7: 0}) == "amy@example.test"
+    assert leader_to_import([], {3: 1}) is None
 
 
 def test_constants_match_the_specification():

@@ -230,7 +230,8 @@ the real dates and schedules, readiness and the real go-live; `drive`: every
 event before now, with the clock stepped forward and the real scheduler,
 worker and mail-dispatch doing the work), the invariant `check` under the
 migration profile with the services stopped, the switch to normal clock
-mode, and `finish` (the real refresh that promotes the late-added Family).
+mode, and `finish` (the real refresh that promotes the late-added Family,
+then the import of one Ministry leader user).
 Every message the seed sent is tagged `seed-history` in Mailpit. Each step
 prints its JSON answer, its duration and the fake instant; the whole log is
 also kept in `~/.parishkit-local/seed.log`. A seeded deployment runs in
@@ -240,6 +241,19 @@ that fails before the switch to normal mode leaves the deployment unseeded in
 fake-clock mode with its services running; one that fails after it (the
 finish phase) leaves seeded data whose late-added Family may not be promoted.
 In both cases run `reseed`.
+
+The synthetic parish's Ministry leaders hold the default leader roles
+(`Chairperson` and `Staff`), so they count as Ministry leaders with no
+settings change. The seed imports one of them as a Ministry leader user: the
+leader of the Ministry with the most open follow-up requests. Its last line
+names that user, for example
+`Ministry leader user: cla.ward500145@example.test (sign-in --email
+cla.ward500145@example.test)`. Sign in as that address to try the Ministry
+leader flow. The address changes with the generator seed and the seeded
+timeline, so read it from each seed's output (or from the `finish` step's
+`leader_user` in `~/.parishkit-local/seed.log`); the
+[specification](../specs/stewardship/local-environment/spec.md#seeded-ministry-leader-user)
+describes the choice.
 
 ## Testing a pull request on seeded data
 
