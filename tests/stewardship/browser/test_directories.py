@@ -369,11 +369,22 @@ def test_export_time_zone_follows_the_applied_response_columns(page, component_o
     )
 
     def boxes():
-        """Where the export options' controls sit within their fieldset."""
+        """Where the export options' controls sit within their fieldset.
+
+        One flat list, so callers compare it with a sub-pixel tolerance:
+        Firefox can lay the same box out a few hundred-thousandths of a
+        pixel apart after a redraw, which no reader sees as a shift.
+        """
         frame = options.bounding_box()
         return [
-            (box["x"] - frame["x"], box["y"] - frame["y"], box["width"], box["height"])
+            value
             for box in (item.bounding_box() for item in controls)
+            for value in (
+                box["x"] - frame["x"],
+                box["y"] - frame["y"],
+                box["width"],
+                box["height"],
+            )
         ]
 
     def apply(fixture):
@@ -393,7 +404,7 @@ def test_export_time_zone_follows_the_applied_response_columns(page, component_o
     apply("/directory-responses")
     visible(zone)
     assert page.locator("#table-export input[name=responses]").input_value() == "yes"
-    assert boxes() == before
+    assert boxes() == pytest.approx(before, abs=0.5)
     # A re-sort redraws the zone slot with the rows; the form is marked
     # data-keep-choices, so the zone the reader chose is put back.
     zone.select_option("America/Detroit")
@@ -406,7 +417,7 @@ def test_export_time_zone_follows_the_applied_response_columns(page, component_o
     page.get_by_label("Include response columns").uncheck()
     apply("/family-directory")
     expect(zone).to_have_count(0)
-    assert boxes() == before
+    assert boxes() == pytest.approx(before, abs=0.5)
     # The browser's zone goes unasked, once.
     hidden = page.locator("#table-export input[name=browser_timezone]")
     assert hidden.count() == 1 and hidden.input_value() == page.evaluate(
