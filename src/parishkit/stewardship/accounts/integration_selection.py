@@ -36,6 +36,7 @@ NOT_KEY_SCOPE = frozenset(
         "delta_refresh",
         "quick_refresh_times",
         "refresh_rules",
+        "refresh_schedule_mode",
         "sender_name",
     }
 )

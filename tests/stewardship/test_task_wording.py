@@ -76,7 +76,8 @@ def test_downloading_explains_why_there_is_no_count_yet():
     assert "Full refresh" in html
     assert "Downloading from ParishSoft…" in html
     assert "This step shows no count yet" in html
-    assert "a quick update a minute or two" in html
+    assert "a full refresh usually takes a few minutes" in html
+    assert "quick" not in html.lower()
     assert "15-minute" not in html
     assert "Waiting for progress details" not in html
 

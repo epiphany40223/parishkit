@@ -1076,6 +1076,13 @@ every earlier document stays valid:
   A schedule already stored, or carried unchanged into a new version, keeps
   the earlier bound of 96 rows of each kind, so a version accepted before
   the caps never makes the configuration unreadable or blocks later changes.
+- `refresh_schedule_mode`: `basic` or `advanced`, the editor mode the
+  schedule was last saved in
+  ([#1122](https://github.com/epiphany40223/parishkit/issues/1122)), present
+  only beside `refresh_rules`. It is presentation only: the
+  [schedule editor](../admin-portal/spec.md#schedule-editor) reopens in it,
+  nothing that runs refreshes reads it, and it is never key scope. Adding it
+  is a settings shape change, not a database migration.
 
 The v8 schema checks only the shape: canonical `HH:MM` times, sorted and
 unique lists, the nightly time as the earliest full time, no time in both

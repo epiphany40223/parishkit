@@ -1,15 +1,16 @@
 """The refresh schedule's seven-day grid in real browsers (#632 slice 4).
 
 The grid is read-only and redrawn by the live check with the rest of the
-preview. These tests check what only a browser can: full refreshes and
-quick updates differ in shape, the current quarter hour is marked, the grid
+preview. These tests check what only a browser can: full refreshes and a
+stored quick rule's runs differ in shape (and a full-only schedule's legend
+names no quick updates, #1122), the current quarter hour is marked, the grid
 fits a laptop page, and on a phone it scrolls sideways inside its own box
 with the day labels held in place, never the page itself.
 """
 
 import pytest
 
-from .refresh_schedule_components import PRODUCTION
+from .refresh_schedule_components import BASIC, PRODUCTION
 from .test_components import axe_violations
 from .test_refresh_schedule_editor import answering
 from .waits import eventually, has_class, recorded, visible
@@ -94,3 +95,14 @@ def test_the_live_check_redraws_the_grid(page, component_origin):
     assert "grid-full" not in (
         first_row.locator("span[title^='08:00 to 08:15']").get_attribute("class")
     )
+
+
+def test_a_full_only_schedule_shows_no_quick_mark(page, component_origin):
+    """The editor offers no quick updates (#1122): without a stored quick
+    rule the grid has no dot and its legend does not name one."""
+    answering(page, BASIC)
+    page.goto(component_origin + "/refresh-schedule-basic")
+    visible(page.locator(GRID))
+    assert page.locator(f"{ROWS} .grid-quick").count() == 0
+    assert page.locator(".schedule-grid-legend .grid-quick").count() == 0
+    assert "uick" not in page.locator(".schedule-grid-legend").inner_text()

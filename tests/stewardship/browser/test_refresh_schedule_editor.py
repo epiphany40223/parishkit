@@ -6,12 +6,21 @@ in place of the live check's address, so the browser sees exactly what the
 server says. The tests cover the spec's "Live checks and saving": the line
 beside Save is the only live region and never moves Save, Save is
 unavailable only while a changed schedule has problems, a failed check
-leaves Save available, and rows, presets and "Edit as text" act in place.
+leaves Save available, and rows, the Basic choices and "Edit as text" act
+in place. The Basic and Advanced modes (#1122) follow the ui-conventions
+spec's "Basic and Advanced modes"; a stored quick rule is shown read-only
+with one action that removes it.
 """
 
 import pytest
 
-from .refresh_schedule_components import CHECK, CLOSE, PRODUCTION, check_answer
+from .refresh_schedule_components import (
+    BASIC,
+    CHECK,
+    CLOSE,
+    PRODUCTION,
+    check_answer,
+)
 from .test_components import axe_violations
 from .waits import has_text, hidden, painted, recorded, visible
 
@@ -91,9 +100,11 @@ def test_a_change_is_checked_live_and_blocks_save_until_fixed(page, component_or
     save = page.locator(SAVE)
     status = page.locator(STATUS)
     assert status.get_attribute("aria-live") == "polite"
-    assert page.locator("[data-refresh-schedule] [role=status]").count() == 0
+    # The Basic / Advanced dialog, a modal, has its own status line.
+    outside = "[data-refresh-schedule] :not(dialog *)"
+    assert page.locator(f"{outside}[role=status]").count() == 0
     assert (
-        page.locator("[data-refresh-schedule] [aria-live]").count()
+        page.locator(f"{outside}[aria-live]").count()
         == page.locator("[data-refresh-schedule] .time-reading + [aria-live]").count()
     )
 
@@ -161,14 +172,13 @@ def test_rows_are_added_removed_and_renumbered_in_place(page, component_origin):
     page.locator(f'[name="rules-{count}-shape"]').select_option("every")
     assert every.is_enabled() and every.is_visible()
     assert not page.locator(f'[name="rules-{count}-at"]').is_visible()
-    page.locator(f'[name="rules-{count}-kind"]').select_option("quick")
     page.locator(f'[name="rules-{count}-start"]').fill("9am")
     page.locator(f'[name="rules-{count}-last"]').fill("5pm")
     contains(page.locator(f"#id_rules-{count}-start_reading"), "Reads as 09:00")
     # Removing the first row renumbers the rest, names and all.
     rule_rows(page).first.get_by_role("button", name="Remove").click()
     assert rule_rows(page).count() == count
-    assert page.locator(f'[name="rules-{count - 1}-kind"]').input_value() == "quick"
+    assert page.locator(f'[name="rules-{count - 1}-shape"]').input_value() == "every"
     assert page.locator(f'[name="rules-{count}-kind"]').count() == 0
     assert page.locator('[name="rules-TOTAL_FORMS"]').input_value() == str(count)
     assert page.evaluate("document.activeElement.dataset.rowAdd") == "rules"
@@ -177,32 +187,157 @@ def test_rows_are_added_removed_and_renumbered_in_place(page, component_origin):
     contains(page.locator(STATUS), "of ParishSoft time a day")
 
 
-def test_a_preset_asks_before_replacing_changes(page, component_origin):
-    """Unchanged, a preset applies at once; with changes, it asks in place."""
-    answering(page, PRODUCTION)
-    page.goto(component_origin + "/refresh-schedule")
+MODE = "#refresh-schedule-mode"
+BASIC_PANEL = '[data-editor-mode-panel="basic"]'
+ADVANCED_PANEL = '[data-editor-mode-panel="advanced"]'
+NO_BASIC = "Your custom schedule has no basic equivalent."
+
+
+def mode(page, name):
+    """Choose the Basic or Advanced segment of the editor's toggle.
+
+    Clicked, not checked: with no Basic equivalent the toggle stays on
+    Advanced while the dialog asks.
+    """
+    page.locator(f"{MODE}-{name}").click()
+
+
+def test_basic_writes_the_rows_and_advanced_finds_the_choice_again(
+    page, component_origin, axe_source
+):
+    """A schedule saved from Basic opens in Basic; a choice is one rule set
+    in Advanced, and back in Basic the same choice is chosen (#1122)."""
+    requests = answering(page, BASIC)
+    page.goto(component_origin + "/refresh-schedule-basic")
+    visible(page.locator(BASIC_PANEL))
+    hidden(page.locator(ADVANCED_PANEL))
+    assert page.locator("#refresh-basic-nightly").is_checked()
+    # The switch makes sense in both modes, so it is outside them.
     switch = page.locator('[name="skip_around_family_emails"]')
-    switch.check()
-    # Ticking the switch is a change: the preset asks first.
-    page.get_by_role("button", name="Every 4 hours").click()
-    question = page.get_by_text("Replace your changes with this preset?")
-    visible(question)
-    page.get_by_role("button", name="Keep my changes").click()
-    hidden(question)
-    assert rule_rows(page).count() == 6
-    page.get_by_role("button", name="Every 4 hours").click()
-    page.get_by_role("button", name="Replace my changes").click()
-    assert rule_rows(page).count() == 1
-    assert page.locator('[name="rules-0-every"]').input_value() == "240"
-    assert page.locator('[name="rules-0-start"]').input_value() == "00:00"
-    # The switch is left as it was.
-    assert switch.is_checked()
-    # Unchanged since that preset: the next one applies without asking.
-    page.get_by_role("button", name="Nightly only").click()
-    assert not question.is_visible()
-    assert rule_rows(page).count() == 1
-    assert page.locator('[name="rules-0-at"]').input_value() == "02:00"
+    assert switch.is_visible() and switch.is_checked()
+    assert axe_violations(page, axe_source) == []
+    # Choosing hours chooses "Every … hours".
+    page.locator("#refresh-basic-hours").select_option("6")
+    assert page.locator("#refresh-basic-every").is_checked()
+    recorded(page, requests, 1)
     contains(page.locator(STATUS), "of ParishSoft time a day")
+    assert page.locator(SAVE).is_enabled()
+    mode(page, "advanced")
+    visible(page.locator(ADVANCED_PANEL))
+    hidden(page.locator(BASIC_PANEL))
+    assert rule_rows(page).count() == 1
+    assert page.locator('[name="rules-0-shape"]').input_value() == "every"
+    assert page.locator('[name="rules-0-every"]').input_value() == "360"
+    assert page.locator('[name="rules-0-last"]').input_value() == "18:00"
+    assert switch.is_checked()
+    assert axe_violations(page, axe_source) == []
+    # Unchanged rows: back to Basic without asking, the same choice chosen.
+    mode(page, "basic")
+    visible(page.locator(BASIC_PANEL))
+    assert page.locator("dialog[open]").count() == 0
+    assert page.locator("#refresh-basic-every").is_checked()
+    assert page.locator("#refresh-basic-hours").input_value() == "6"
+
+
+def test_a_custom_schedule_asks_before_switching_to_basic(page, component_origin):
+    """No Basic equivalent: the dialog asks; Keep Advanced changes nothing,
+    Switch to Basic leaves no choice and holds Save until one is chosen."""
+    requests = answering(page, BASIC)
+    page.goto(component_origin + "/refresh-schedule-basic")
+    mode(page, "advanced")
+    page.locator('[name="rules-0-at"]').fill("03:00")
+    recorded(page, requests, 1)
+    contains(page.locator(STATUS), "of ParishSoft time a day")
+    mode(page, "basic")
+    dialog = page.locator("dialog[open]")
+    contains(dialog, NO_BASIC)
+    assert page.evaluate("document.activeElement.hasAttribute('data-confirm-cancel')")
+    dialog.get_by_role("button", name="Keep Advanced").click()
+    hidden(page.locator("dialog[open]"))
+    visible(page.locator(ADVANCED_PANEL))
+    assert page.locator(f"{MODE}-advanced").is_checked()
+    assert page.locator('[name="rules-0-at"]').input_value() == "03:00"
+    mode(page, "basic")
+    page.locator("dialog[open]").get_by_role("button", name="Switch to Basic").click()
+    visible(page.locator(BASIC_PANEL))
+    assert not page.locator('[name="refresh_basic"]:checked').count()
+    contains(page.locator(STATUS), "Choose a basic schedule to review it.")
+    assert page.locator(SAVE).is_disabled()
+    page.locator("#refresh-basic-nightly").check()
+    recorded(page, requests, 2)
+    contains(page.locator(STATUS), "of ParishSoft time a day")
+    assert page.locator(SAVE).is_enabled()
+    assert page.locator('[name="rules-0-at"]').input_value() == "02:00"
+
+
+def test_a_stored_quick_schedule_opens_in_advanced_with_remove(
+    page, component_origin, axe_source
+):
+    """Quick rules are shown without controls; Remove quick updates takes
+    them all out in place, a change reviewed like any other (#1122)."""
+    requests = answering(page, PRODUCTION)
+    page.goto(component_origin + "/refresh-schedule")
+    visible(page.locator(ADVANCED_PANEL))
+    assert page.locator(f"{MODE}-advanced").is_checked()
+    quick = page.locator("[data-quick-rule]")
+    assert quick.count() == 1
+    contains(quick, "Quick update every 15 minutes from 00:00 to 23:45")
+    assert quick.locator("select, input:not([type=hidden]), button").count() == 0
+    assert axe_violations(page, axe_source) == []
+    count = rule_rows(page).count()
+    page.get_by_role("button", name="Remove quick updates").click()
+    assert rule_rows(page).count() == count - 1
+    assert page.locator("[data-quick-notice]").count() == 0
+    assert page.evaluate("document.activeElement.dataset.rowAdd") == "rules"
+    recorded(page, requests, 1)
+    assert "kind=quick" not in requests[0]
+    contains(page.locator(STATUS), "of ParishSoft time a day")
+    from playwright.sync_api import expect
+
+    expect(page.locator(".schedule-grid-legend")).not_to_contain_text("Quick")
+    expect(page.locator('[data-schedule-part="summary"]')).not_to_contain_text("quick")
+
+
+def test_a_basic_choice_replacing_quick_rules_takes_their_note_away(
+    page, component_origin
+):
+    """Advanced → Basic → a choice → Advanced: the choice replaced the
+    stored quick rule, so its note and Remove quick updates go too."""
+    requests = answering(page, PRODUCTION)
+    page.goto(component_origin + "/refresh-schedule")
+    visible(page.locator("[data-quick-notice]"))
+    mode(page, "basic")
+    page.locator("dialog[open]").get_by_role("button", name="Switch to Basic").click()
+    # The radio's accessible name says the whole choice (once the modal
+    # dialog, which makes the page inert, has closed).
+    hidden(page.locator("dialog[open]"))
+    assert page.get_by_role("radio", name="Every few hours").count() == 1
+    page.locator("#refresh-basic-nightly").check()
+    recorded(page, requests, 1)
+    mode(page, "advanced")
+    visible(page.locator(ADVANCED_PANEL))
+    assert rule_rows(page).count() == 1
+    assert page.locator("[data-quick-rule]").count() == 0
+    assert page.locator("[data-quick-notice]").count() == 0
+    assert page.get_by_role("button", name="Remove quick updates").count() == 0
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_switching_modes_moves_nothing_above_the_editor(page, component_origin, width):
+    """Only what is below the toggle changes (no layout shift)."""
+    page.set_viewport_size({"width": width, "height": 900})
+    answering(page, BASIC)
+    page.goto(component_origin + "/refresh-schedule-basic")
+    scroll_to(page, page.locator(MODE), 300)
+    watched = ("#refresh-schedule-heading", MODE)
+    before = tops(page, *watched)
+    mode(page, "advanced")
+    visible(page.locator(ADVANCED_PANEL))
+    assert steady(before, tops(page, *watched))
+    mode(page, "basic")
+    visible(page.locator(BASIC_PANEL))
+    assert steady(before, tops(page, *watched))
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 
 
 def test_edit_as_text_replaces_the_rules_with_single_times(page, component_origin):
@@ -213,9 +348,11 @@ def test_edit_as_text_replaces_the_rules_with_single_times(page, component_origi
     full = page.locator("#refresh-text-full")
     assert full.input_value() == "00:00, 08:00, 12:00, 16:00, 20:00"
     full.fill("2am, 14:00")
-    page.locator("#refresh-text-quick").fill("")
-    page.get_by_role("button", name="Use these lists").click()
+    page.get_by_role("button", name="Use this list").click()
+    # The list replaces every rule, the stored quick rule included.
     assert rule_rows(page).count() == 2
+    assert page.locator("[data-quick-rule]").count() == 0
+    assert page.locator("[data-quick-notice]").count() == 0
     assert page.locator('[name="rules-1-at"]').input_value() == "14:00"
     assert page.locator('[name="skips-TOTAL_FORMS"]').input_value() == "0"
     contains(page.locator(STATUS), "of ParishSoft time a day")
@@ -224,7 +361,7 @@ def test_edit_as_text_replaces_the_rules_with_single_times(page, component_origi
 
     expect(full).to_have_value("02:00, 15:00")
     full.fill("2am, 25:00")
-    page.get_by_role("button", name="Use these lists").click()
+    page.get_by_role("button", name="Use this list").click()
     contains(page.locator("[data-schedule-text-error]"), "has no hour 25")
     assert rule_rows(page).count() == 2
 
@@ -237,23 +374,31 @@ def top(locator):
 def test_a_whole_schedule_problem_is_said_beside_save_and_moves_nothing(
     page, component_origin
 ):
-    """Changing the only Full rule to Quick: "Add a Full rule" is said in the
-    line beside Save, and nothing above it moves (#736)."""
-    requests = answering(page, PRODUCTION)
-    page.goto(component_origin + "/refresh-schedule")
-    page.get_by_role("button", name="Nightly only").click()
-    recorded(page, requests, 1)
+    """Removing the only rule: "Add a rule" is said in the line beside Save,
+    and nothing above it moves (#736)."""
+    from .conftest import NOW
+
+    held = []
+    page.route(f"**{CHECK}", lambda route: held.append(route))
+    page.goto(component_origin + "/refresh-schedule-basic")
+    mode(page, "advanced")
     status = page.locator(STATUS)
-    contains(status, "of ParishSoft time a day")
-    kind = page.locator('[name="rules-0-kind"]')
+    rule_rows(page).first.get_by_role("button", name="Remove").click()
     add = page.get_by_role("button", name="Add a rule")
-    before = top(kind), top(add), top(page.locator(SAVE))
-    kind.select_option("quick")
-    recorded(page, requests, 2)
-    contains(status, "Add a Full rule: keep at least one full refresh a day.")
+    before = top(add), top(page.locator(SAVE))
+    # The check's answer, held until now, says the problem.
+    while not held:
+        page.wait_for_timeout(50)
+    route = held.pop()
+    route.fulfill(
+        status=200,
+        content_type="text/html; charset=utf-8",
+        body=check_answer(BASIC, route.request.post_data or "", NOW),
+    )
+    contains(status, "Add a rule: keep at least one full refresh a day.")
     assert page.locator(SAVE).is_disabled()
     assert page.locator("[data-schedule-rows] .errorlist").count() == 0
-    assert (top(kind), top(add), top(page.locator(SAVE))) == before
+    assert (top(add), top(page.locator(SAVE))) == before
 
 
 def test_the_edited_control_stays_put_and_is_tied_to_its_row_problems(
@@ -271,7 +416,7 @@ def test_the_edited_control_stays_put_and_is_tied_to_its_row_problems(
     recorded(page, requests, 1)
     contains(page.locator("#rules-1-messages"), "At: Use :00, :15, :30 or :45.")
     assert top(field) == before
-    for name in ("rules-1-at", "rules-1-kind", "rules-1-shape"):
+    for name in ("rules-1-at", "rules-1-shape"):
         control = page.locator(f'[name="{name}"]')
         assert "rules-1-messages" in control.get_attribute("aria-describedby").split()
         assert control.get_attribute("aria-invalid") == "true"
@@ -279,7 +424,7 @@ def test_the_edited_control_stays_put_and_is_tied_to_its_row_problems(
     assert "rules-0-messages" not in (other.get_attribute("aria-describedby") or "")
     assert other.get_attribute("aria-invalid") != "true"
     # Leaving the field keeps the row's mark until the problem is fixed.
-    page.locator('[name="rules-0-kind"]').focus()
+    page.locator('[name="rules-0-at"]').focus()
     assert field.get_attribute("aria-invalid") == "true"
     field.fill("09:00")
     recorded(page, requests, 2)
@@ -394,10 +539,9 @@ def test_edit_as_text_moves_nothing_under_the_pointer(page, component_origin):
     page.goto(component_origin + "/refresh-schedule")
     page.get_by_text("Edit as text").click()
     full = page.locator("#refresh-text-full")
-    apply = page.get_by_role("button", name="Use these lists")
-    for name in ("#refresh-text-full", "#refresh-text-quick"):
-        described = page.locator(name).get_attribute("aria-describedby").split()
-        assert "refresh-text-error" in described
+    apply = page.get_by_role("button", name="Use this list")
+    described = full.get_attribute("aria-describedby").split()
+    assert "refresh-text-error" in described
     scroll_to(page, apply, 500)
     watched = ("[data-schedule-text-apply]", SAVE)
     before = tops(page, *watched)
@@ -406,7 +550,6 @@ def test_edit_as_text_moves_nothing_under_the_pointer(page, component_origin):
     contains(page.locator("#refresh-text-error"), "has no hour 25")
     assert steady(before, tops(page, *watched))
     full.fill("2am, 14:00")
-    page.locator("#refresh-text-quick").fill("")
     apply.click()
     assert rule_rows(page).count() == 2
     has_text(page.locator("#refresh-text-error"), "")
@@ -456,9 +599,10 @@ def test_a_pointer_in_a_gap_between_rows_keeps_the_rows_in_place(
         [above["x"] + above["width"] / 2, below["y"] - gap / 2],
     )
     field.fill("23:30")
-    focused = page.locator('[name="rules-3-at"]')
+    # Rules 3 and 4 are stored quick rules, without controls (#1122).
+    focused = page.locator('[data-row-add="rules"]')
     focused.focus()
-    watched = ('[name="rules-3-at"]', "#rules-2")
+    watched = ('[data-row-add="rules"]', "#rules-2")
     before = tops(page, *watched)
     recorded(page, requests, 1)
     has_text(message, "")
@@ -546,11 +690,11 @@ def test_a_pointer_outside_the_form_keeps_what_it_points_at_in_place(
     # Firefox scrolls rule 2's caret into view a frame after the fill, which
     # would undo the scroll to the top below.
     painted(page)
-    # Rule 4's field is focused without scrolling it into view, with the
+    # Add a rule is focused without scrolling it into view, with the
     # heading at the top of the screen under the pointer.
     page.evaluate(
         """() => {
-          document.querySelector('[name="rules-3-at"]').focus({preventScroll: true});
+          document.querySelector('[data-row-add="rules"]').focus({preventScroll: true});
           window.scrollTo(0, 0);
         }"""
     )
@@ -792,10 +936,9 @@ def test_keyboard_remove_keeps_the_row_under_the_pointer(page, component_origin,
     assert abs(handle_top(watched) - before) <= 0.5
 
 
-def test_clicking_remove_or_a_preset_does_not_scroll_the_page(page, component_origin):
-    """On a phone, Remove moves focus to Add a rule and a preset (with
-    changes) to Replace my changes, both off the screen: focus moves without
-    scrolling what is under the mouse."""
+def test_clicking_remove_does_not_scroll_the_page(page, component_origin):
+    """On a phone, Remove moves focus to Add a rule, off the screen: focus
+    moves without scrolling what is under the mouse."""
     page.set_viewport_size({"width": 360, "height": 640})
     requests = answering(page, PRODUCTION)
     page.goto(component_origin + "/refresh-schedule")
@@ -811,18 +954,6 @@ def test_clicking_remove_or_a_preset_does_not_scroll_the_page(page, component_or
     assert abs(top(page.locator("#rules-0")) - before) <= 0.5
     recorded(page, requests, 1)
     contains(page.locator(STATUS), "of ParishSoft time a day")
-    # A change, so the preset asks first, with its question off the screen.
-    preset = page.locator("[data-preset]").first
-    scroll_to(page, preset, 100)
-    start = page.evaluate("window.scrollY")
-    before = top(preset)
-    box = preset.bounding_box()
-    page.mouse.click(box["x"] + 10, box["y"] + 10)
-    visible(page.get_by_text("Replace your changes with this preset?"))
-    assert page.evaluate("document.activeElement.hasAttribute('data-preset-replace')")
-    assert top(page.locator("[data-preset-replace]")) > 640
-    assert page.evaluate("window.scrollY") == start
-    assert abs(top(preset) - before) <= 0.5
 
 
 def test_a_header_note_above_main_moves_no_rule(page, component_origin):
@@ -940,16 +1071,17 @@ def test_a_pointer_over_the_sidebar_keeps_the_focused_field_in_place(
     contains(message, "00:00 is only 10 minutes after the 23:50 full refresh")
     height = message.bounding_box()["height"]
     scroll_to(page, page.locator("#rules-2"), 300)
-    page.locator('[name="rules-3-at"]').evaluate(
+    # Rules 3 and 4 are stored quick rules, without controls (#1122).
+    page.locator('[data-row-add="rules"]').evaluate(
         "node => node.focus({preventScroll: true})"
     )
     sidebar = page.locator(".admin-sidebar").bounding_box()
     assert "admin-sidebar" in point_at_height(
         page, sidebar["x"] + sidebar["width"] / 2, 310
     )
-    before = tops(page, '[name="rules-3-at"]')
+    before = tops(page, '[data-row-add="rules"]')
     type_quietly(page, "rules-1-at", "23:30")
     recorded(page, requests, 1)
     has_text(message, "")
     assert height - message.bounding_box()["height"] > 10
-    assert within_half_a_pixel(before, tops(page, '[name="rules-3-at"]'))
+    assert within_half_a_pixel(before, tops(page, '[data-row-add="rules"]'))

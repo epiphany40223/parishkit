@@ -18,17 +18,17 @@ from parishkit.stewardship.accounts.integration_forms import (
     IntegrationForm,
 )
 from parishkit.stewardship.accounts.refresh_schedule_forms import (
-    PRESETS,
     ScheduleEditor,
+    basic_context,
     editor_view,
-    presets_payload,
 )
+from parishkit.stewardship.source.refresh_rules import stored_settings
 from parishkit.stewardship.source.schedule_preview import durations, summarize
 
 ZONE = "America/New_York"
 CHECK = "/admin/system/integrations/parishsoft/schedule-check/"
 # Production's schedule before the editor: listed full times and quarter-hour
-# quick updates.
+# quick updates, which the editor shows read-only, in Advanced (#1122).
 PRODUCTION = {
     "organization_id": "12345",
     "full_refresh": "daily",
@@ -44,7 +44,23 @@ CLOSE = {
     "full_refresh_times": ["00:00", "23:50"],
     "delta_refresh": "hourly",
 }
-STORED = {"/refresh-schedule": PRODUCTION, "/refresh-schedule-close": CLOSE}
+# A schedule saved from Basic (#1122): "Nightly only", so it opens in Basic.
+BASIC = (
+    {"organization_id": "12345"}
+    | stored_settings(
+        {
+            "rules": [{"kind": "full", "at": "02:00"}],
+            "skips": [],
+            "skip_around_family_emails": True,
+        }
+    )
+    | {"refresh_schedule_mode": "basic"}
+)
+STORED = {
+    "/refresh-schedule": PRODUCTION,
+    "/refresh-schedule-close": CLOSE,
+    "/refresh-schedule-basic": BASIC,
+}
 
 
 def _reader(now):
@@ -69,9 +85,7 @@ def _schedule(editor, now):
         "schedule": editor_view(
             editor, timezone=ZONE, now=now, preview_reader=_reader(now)
         ),
-        "presets": PRESETS,
-        "presets_payload": presets_payload(),
-    }
+    } | basic_context()
 
 
 def check_answer(stored, body, now):

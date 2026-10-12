@@ -43,7 +43,7 @@ RANGE_SKIP = frozenset({"from", "to"})
 # row's fields with the page's other settings, and the whole request must
 # stay within the server's DATA_UPLOAD_MAX_NUMBER_FIELDS (500), or it is
 # refused before any form reads it: 64 rules and 16 skips post at most
-# 64 * 6 + 16 * 4 + 9 = 457 editor names (refresh_schedule_forms
+# 64 * 6 + 16 * 4 + 12 = 460 editor names (refresh_schedule_forms
 # .posted_names; a test pins the sum). One cap means any schedule saved
 # since can be shown and saved back from the page. More rules never matter:
 # "every" rules give any number of times. A converted (upgraded) schedule

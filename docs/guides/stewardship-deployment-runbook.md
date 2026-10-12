@@ -1109,6 +1109,30 @@ What to watch after deploying it:
 - The container uses roughly one more Python process's memory (about 150 to
   250 MB), plus a second helper while sending.
 
+### Refresh schedule modes (#1122)
+
+The release that gives the ParishSoft refresh schedule editor Basic and
+Advanced modes
+([#1122](https://github.com/epiphany40223/parishkit/issues/1122)) has no
+database migration and no grant change: the
+[scripted upgrade](#scripted-upgrade) runs without
+`STEWARDSHIP_SCHEMA_CHANGE`. It adds one optional ParishSoft setting,
+`refresh_schedule_mode`, written the first time an Administrator saves a
+changed refresh schedule.
+
+After deploying, remove Production's stored quick updates: on the
+ParishSoft integration page the schedule opens in Advanced with a note
+about quick updates. Choose **Remove quick updates**, then Save, check that
+the review lists "Quick updates removed", and Apply.
+
+Rolling back: until a schedule is saved on this release, the previous image
+runs on the configuration unchanged. Once one is saved (removing the quick
+updates included), the stored settings carry `refresh_schedule_mode`, which
+the previous release's configuration check refuses, so an image-only
+rollback is no longer possible: fail forward, as the general policy is, or
+restore the pre-upgrade backup together with the previous release
+([Rollback](#rollback)).
+
 ## Rollback
 
 An application-only rollback is possible only when the new release changed
