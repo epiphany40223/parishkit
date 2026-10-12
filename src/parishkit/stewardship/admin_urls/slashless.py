@@ -58,6 +58,7 @@ SLASHLESS = (
     ("campaign/images/<slug:slot>", "artwork_upload"),
     ("campaign/schedules", "schedule_settings"),
     ("campaign/schedules/addition", "schedule_new"),
+    ("campaign/schedules/calendar", "schedule_calendar"),
     ("campaign/schedules/<uuid:schedule_id>", "schedule_edit"),
     ("campaign/share-options", "share_settings"),
     (f"campaign/{REMINDER_WORKGROUP_SLUG}", "reminder_workgroup"),

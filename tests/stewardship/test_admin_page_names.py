@@ -49,6 +49,7 @@ TEMPLATES = {
     "schedule_settings": "schedule-settings.html",
     "schedule_new": "schedule-entry.html",
     "schedule_edit": "schedule-entry.html",
+    "schedule_calendar": "schedule-calendar.html",
     "share_settings": "share-settings.html",
     "artwork_settings": "artwork-settings.html",
     "artwork_upload": "artwork-settings.html",
