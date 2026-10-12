@@ -327,7 +327,6 @@ def _execute(execution, *, store, root, general=None):
                 "ministry",
                 "financial",
                 "family_test_names",
-                "family_timeline",
             }:
                 from .information_rendering import render_information
 
@@ -336,6 +335,11 @@ def _execute(execution, *, store, root, general=None):
                 from .comparison_documents import render_comparison
 
                 render_comparison(document, stream, format=request.format)
+            elif request.report == "family_timeline":
+                # The shared CSV and XLSX; the PDF is the infographic sheet.
+                from .timeline_pdf import render_timeline
+
+                render_timeline(document, stream, format=request.format)
             elif request.format == "csv":
                 participation_csv(document, stream)
             elif request.format == "xlsx":

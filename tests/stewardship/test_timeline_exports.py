@@ -15,11 +15,11 @@ from pathlib import Path
 import pytest
 from openpyxl import load_workbook
 
-from parishkit.stewardship.reports.information_rendering import render_information
 from parishkit.stewardship.reports.timeline_documents import (
     HEADINGS,
     timeline_document,
 )
+from parishkit.stewardship.reports.timeline_pdf import render_timeline
 from parishkit.stewardship.web import dates
 
 FAMILY = "00000000-0000-4000-8000-000000000061"
@@ -132,18 +132,18 @@ def test_the_shared_renderer_writes_its_csv():
 
     Every format carries the same columns (#966), so the shared renderer
     writes the report information (the Family, its code and the summary)
-    to the XLSX "Report information" sheet and the PDF's report card, never
+    to the XLSX "Report information" sheet and the PDF's summary, never
     as CSV columns or rows.
     """
     output = io.BytesIO()
-    render_information(document(), output, format="csv")
+    render_timeline(document(), output, format="csv")
     text = output.getvalue().decode("utf-8-sig")
     rows = list(csv.reader(io.StringIO(text)))
     assert rows[0] == ["When", "What happened", "Details"]
     assert len(rows) == 3 and rows[2][1] == "Submitted a response"
     assert "ABCD-EFGH" not in text
     book = io.BytesIO()
-    render_information(document(), book, format="xlsx")
+    render_timeline(document(), book, format="xlsx")
     sheets = load_workbook(io.BytesIO(book.getvalue())).worksheets
     values = {cell for sheet in sheets for row in sheet.values for cell in row}
     assert "ABCD-EFGH" in values
@@ -214,25 +214,17 @@ def test_summary_times_follow_the_pinned_parish_format():
     assert dict(built.metadata)["Submitted"] == "Yes, 2054-10-01 09:05 EDT"
 
 
-def test_the_pdf_report_card_holds_the_family_code(monkeypatch):
-    """The PDF carries the Family's details and code in its report card.
+def test_the_pdf_holds_the_family_code(monkeypatch):
+    """The PDF carries the Family's details and code (#926 slice 2).
 
-    The CSV is the table alone; the PDF's first card is the report
+    The CSV is the table alone; the PDF's summary cards are the report
     information, so the code an Administrator may see is in the PDF too.
+    The sheet itself is tested in ``test_timeline_pdf``.
     """
-    from parishkit.stewardship.reports import pdf_design
+    from .test_file_design import frames
 
-    seen = {}
-    write = pdf_design.write_records
-
-    def write_records(output, frame, factory, **options):
-        """Keep the cards, then write them as usual."""
-        seen["cards"] = list(factory())
-        return write(output, frame, factory, **options)
-
-    monkeypatch.setattr(pdf_design, "write_records", write_records)
-    output = io.BytesIO()
-    render_information(document(), output, format="pdf")
-    assert output.getvalue().startswith(b"%PDF")
-    card = repr(seen["cards"][0])
-    assert "ABCD-EFGH" in card and "Family DUID" in card
+    pages = frames(
+        monkeypatch, lambda output: render_timeline(document(), output, format="pdf")
+    )
+    assert "ABCD-EFGH" in pages[0]
+    assert any("Family DUID 42" in value for value in pages[0])

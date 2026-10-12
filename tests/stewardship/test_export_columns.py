@@ -400,8 +400,29 @@ def case_family_test_names(monkeypatch):
 
 
 def case_family_timeline(monkeypatch):
-    """One Family's timeline (``export family-timeline``, ADM-11 PR 8g)."""
-    return shared_case(monkeypatch, timeline())
+    """One Family's timeline (``export family-timeline``, ADM-11 PR 8g).
+
+    Its PDF is an infographic (#926), not a table or cards: its columns
+    are the column headings it draws over the timeline, in drawing order.
+    """
+    from parishkit.stewardship.reports.timeline_pdf import render_timeline
+
+    document = filled(timeline())
+    headers = csv_headers(render(render_timeline, document, "csv"))
+    sheets, labels = xlsx_headers(render(render_timeline, document, "xlsx"))
+    drawn, text = [], pdf_design.Canvas.text
+
+    def record(canvas, x, y, value, *args, **kwargs):
+        """Keep each drawn string, then draw it."""
+        drawn.append(value)
+        return text(canvas, x, y, value, *args, **kwargs)
+
+    monkeypatch.setattr(pdf_design.Canvas, "text", record)
+    assert render(render_timeline, document, "pdf").startswith(b"%PDF")
+    headings = list(document.headings)
+    pdf = [value for value in dict.fromkeys(drawn) if value in headings]
+    labels = [*labels, *(label for label, _ in document.metadata)]
+    return headings, headers, sheets, pdf, labels
 
 
 def case_campaign_comparison(monkeypatch):

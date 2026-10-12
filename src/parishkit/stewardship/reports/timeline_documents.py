@@ -1,14 +1,16 @@
 """The Family timeline export's file contents, shared by CSV, XLSX and PDF.
 
 Built by the worker from the retained capture (``timeline_exports.capture``)
-inside the export's campaign read guard, and rendered by the shared report
-renderer (``information_rendering.render_information``): metadata lines, then
-one row per timeline line, oldest first as the page's tie order keeps them.
+inside the export's campaign read guard, and rendered by
+``timeline_pdf.render_timeline``: the shared report renderer's CSV and XLSX
+(``information_rendering``), and an infographic PDF of its own. The document
+is metadata lines, then one row per timeline line, oldest first as the page's
+tie order keeps them.
 
 The file follows its page (UX conventions, "Downloaded files"): the table is
 the page's Timeline table, with its three columns in the page's order and
 words, and the Family and Summary lines are the report information (the XLSX
-"Report information" sheet and the PDF's report card; a CSV is the table
+"Report information" sheet and the PDF's summary and code; a CSV is the table
 alone), named and ordered as the page shows them. Lines that only a file
 needs (report, parish, request time, time zone, line count, privacy) come
 first or last.

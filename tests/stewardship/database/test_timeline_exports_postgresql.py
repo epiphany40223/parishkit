@@ -204,6 +204,13 @@ def test_the_page_and_the_command_export_the_same_timeline(
         for value in row
     }
     assert code_text in cells and "Submitted a response" in cells
+    # The PDF is the infographic sheet (#926), rendered by the same worker.
+    code, document = run(*argv, "--format", "pdf", "--timezone", "UTC")
+    assert code == 0, document
+    as_pdf = document["result"]["export"]["id"]
+    render(harness, reports_root, as_pdf)
+    status, pdf, streamed = download(as_pdf, run.secret)
+    assert status == 0 and pdf.startswith(b"%PDF") and code_text not in str(streamed)
 
     # The command's refusals: a read-only session, another campaign's or an
     # unknown Family, a mode the page does not offer.
