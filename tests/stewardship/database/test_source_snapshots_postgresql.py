@@ -1,5 +1,7 @@
 """Real staged-corpus validation, deduplication and all-or-nothing source truth."""
 
+import json
+from dataclasses import replace
 from itertools import batched
 
 import pytest
@@ -19,10 +21,12 @@ from parishkit.stewardship.source.snapshot_models import (
 from parishkit.stewardship.source.snapshots import (
     PROMOTION_STATEMENT_SECONDS,
     begin_snapshot,
+    complete_snapshot,
     finish_snapshot,
     promote_snapshot,
     reconstruct_snapshot,
     stage_entities,
+    validate_snapshot,
 )
 from parishkit.stewardship.source.version_models import ENTITY_MODELS, SourceFamily
 from parishkit.stewardship.storage import StorageInvariantError
@@ -238,6 +242,93 @@ def test_completeness_counts_and_admission_fail_closed():
             admit=permit,
         )
     assert SourceSnapshot.objects.get().state == "staging"
+
+
+def stage_only(corpus, claim):
+    """Stage ``corpus`` under ``claim`` without finishing it; return the row."""
+    snapshot = begin_snapshot(claim, organization_id=100, admit=permit)
+    for kind, entities in corpus.items():
+        if entities:
+            stage_entities(
+                snapshot.pk, claim, kind=kind, entities=entities, admit=permit
+            )
+    return snapshot
+
+
+def test_validation_evidence_that_went_stale_is_never_frozen():
+    """A refresh validates outside the work order and completes under it (#895).
+
+    Validation only reads; completion writes what it derived. Membership that
+    changed in between, or evidence altered on the way, is refused by the
+    snapshot guard, which re-derives the counts and digest from the rows.
+    """
+    corpus = source_corpus()
+    claim = acquire_source(**running_source_task(), phase="full")
+    snapshot = stage_only(corpus, claim)
+    options = dict(
+        expected_counts={kind: len(rows) for kind, rows in corpus.items()},
+        cursor={"watermark": "synthetic-1"},
+        admit=permit,
+    )
+    evidence = validate_snapshot(snapshot.pk, claim, **options)
+    assert SourceSnapshot.objects.get(pk=snapshot.pk).state == "staging"
+    with pytest.raises(TypeError, match="validated snapshot evidence"):
+        complete_snapshot(snapshot.pk, claim, evidence.counts, admit=permit)
+    tampered = replace(evidence, content_digest="0" * 64)
+    with pytest.raises(IntegrityError, match="differs from its complete corpus"):
+        complete_snapshot(snapshot.pk, claim, tampered, admit=permit)
+    # A Family staged after validation: the old evidence no longer matches.
+    stage_entities(
+        snapshot.pk,
+        claim,
+        kind="family",
+        entities={"9": {"name": "Late"}},
+        admit=permit,
+    )
+    with pytest.raises(IntegrityError, match="differs from its complete corpus"):
+        complete_snapshot(snapshot.pk, claim, evidence, admit=permit)
+    assert SourceSnapshot.objects.get(pk=snapshot.pk).state == "staging"
+    # Fresh evidence for the rows as they are now completes, as finishing does.
+    options["expected_counts"]["family"] = 2
+    ready = complete_snapshot(
+        snapshot.pk,
+        claim,
+        validate_snapshot(snapshot.pk, claim, **options),
+        admit=permit,
+    )
+    assert ready.state == "ready" and ready.counts["family"] == 2
+    assert ready.cursor == {
+        "watermark": "synthetic-1",
+        "changes": dict.fromkeys(ENTITY_MODELS, 1) | {"family": 2},
+    }
+
+
+def test_validation_counts_changes_against_a_base_off_the_work_order():
+    """Change counts against a promoted base are computed during validation,
+    while another session holds the work-order lock exclusively (#895), and
+    completion freezes them unchanged."""
+    from .test_source_step_lock_postgresql import separate_session
+
+    first, claim = prepared()
+    publish(first, claim)
+    release_source(claim)
+    corpus = source_corpus(name="Changed")
+    corpus["fund"]["7"] = {"name": "Second Fund"}
+    claim = acquire_source(**running_source_task(), phase="full")
+    snapshot = stage_only(corpus, claim)
+    with separate_session() as session, session.transaction():
+        session.execute("SELECT pg_advisory_xact_lock(736220, 1)")
+        evidence = validate_snapshot(
+            snapshot.pk,
+            claim,
+            expected_counts={kind: len(rows) for kind, rows in corpus.items()},
+            cursor={"watermark": "synthetic-2"},
+            admit=permit,
+        )
+    changes = dict.fromkeys(ENTITY_MODELS, 0) | {"family": 1, "fund": 1}
+    assert json.loads(evidence.cursor)["changes"] == changes
+    ready = complete_snapshot(snapshot.pk, claim, evidence, admit=permit)
+    assert ready.cursor == {"watermark": "synthetic-2", "changes": changes}
 
 
 def test_sql_cannot_fabricate_validated_completeness_evidence():

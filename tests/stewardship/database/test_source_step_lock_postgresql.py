@@ -4,13 +4,15 @@ A refresh's fetch admission (one per ParishSoft request) and each staging
 batch used to join the work-order lock (736220,1), so every Family form,
 mail step and installer queued behind about 170 holds per full refresh.
 They are now source steps (attempts.source_step): fenced, admitted
-transactions that never take that lock. Snapshot completion and promotion
-still take it and re-verify the attempt there. These tests use a real
+transactions that never take that lock. Validating the staged corpus is one
+too (#895). The ready transition and promotion still take it and re-verify
+the attempt there. These tests use a real
 competing session that holds the lock while the steps run, and the real
 attempt, transport and staging pipeline with only the provider exchange
 replaced.
 """
 
+import json
 import threading
 from contextlib import ExitStack, contextmanager
 from dataclasses import replace
@@ -661,3 +663,124 @@ def test_hint_admission_without_source_ownership_fails_closed(tmp_path):
         session.execute("DELETE FROM stewardship_source_lease")
     with pytest.raises(StorageInvariantError, match="not initialized"):
         admit_queued("hint", receipt.task_root_id)
+
+
+def observe_completion(monkeypatch, holder):
+    """Run validation while the competing session holds the lock, and record
+    who holds it in validation and in the ready transition (#895).
+
+    Returns ``seen``: (step, the competing session holds it, this step holds
+    it, seconds) for the validation, then for the ready transition.
+    """
+    seen = []
+    real_validate, real_complete = (
+        refreshing.validate_snapshot,
+        refreshing.complete_snapshot,
+    )
+
+    def validate(snapshot_id, claim, **options):
+        """The real validation, inside its source step, under a competing hold."""
+        assert connection.in_atomic_block
+        # Still inside the work order, the competing session could never take
+        # the lock: fail here rather than deadlock.
+        assert not holds_work_order(own_pid()), "validation inside the work order"
+        holder.take()
+        started = monotonic()
+        try:
+            evidence = real_validate(snapshot_id, claim, **options)
+        finally:
+            seen.append(
+                (
+                    "validate",
+                    holds_work_order(holder.pid),
+                    holds_work_order(own_pid()),
+                    monotonic() - started,
+                )
+            )
+            holder.give()
+        return evidence
+
+    def complete(snapshot_id, claim, evidence, **options):
+        """The ready transition, observed inside its effect."""
+        seen.append(
+            ("complete", holds_work_order(holder.pid), holds_work_order(own_pid()), 0)
+        )
+        return real_complete(snapshot_id, claim, evidence, **options)
+
+    monkeypatch.setattr(refreshing, "validate_snapshot", validate)
+    monkeypatch.setattr(refreshing, "complete_snapshot", complete)
+    return seen
+
+
+def test_snapshot_validation_runs_outside_the_work_order(tmp_path, monkeypatch, holder):
+    """Validating the staged corpus neither holds nor waits for the lock (#895).
+
+    It reads every staged row and the base's manifest, most of what the
+    completion hold used to be. It runs while a competing session holds the
+    lock exclusively; only the one-row ready transition takes the lock, and
+    the snapshot guard accepts the evidence validation derived.
+    """
+    credential, execution, lease, *_ = setup(tmp_path)
+    fake_provider(monkeypatch, pages())
+    with_extra_funds(monkeypatch, 400)
+    seen = observe_completion(monkeypatch, holder)
+    result = run(credential, execution, lease)
+    assert result.state == "ready"
+    (_, competing, own, seconds), ready = seen
+    assert competing and not own and seconds < 10
+    assert ready == ("complete", False, True, 0)
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT stewardship_source_corpus_evidence(%s)", [result.pk])
+        evidence = json.loads(cursor.fetchone()[0])
+    assert result.counts == evidence["counts"] and sum(result.counts.values()) > 400
+    assert result.content_digest == evidence["digest"]
+    assert result.cursor["changes"] == result.counts
+
+
+@pytest.mark.parametrize(
+    "switch,error",
+    [
+        (credential_switch, SourceCredentialChanged),
+        (lambda *args: add_draft(*args), SourceScopeChanged),
+    ],
+    ids=["credential", "campaign"],
+)
+def test_a_change_committed_after_validation_is_refused_at_completion(
+    tmp_path, monkeypatch, switch, error
+):
+    """Validation no longer runs under the lock, so a change can commit
+    between it and the ready transition. The transition re-verifies the
+    attempt's scope under the lock and refuses; nothing becomes ready or
+    current."""
+    credential, execution, lease, store, version, actor = setup(tmp_path)
+    fake_provider(monkeypatch, pages())
+    real = refreshing.validate_snapshot
+
+    def validate(snapshot_id, claim, **options):
+        """Validate; the change commits on another connection before the
+        validation's step does, so the ready transition is the first to see it."""
+        evidence = real(snapshot_id, claim, **options)
+        changes = []
+
+        def change_elsewhere():
+            """Commit the change on this thread's own connection."""
+            try:
+                switch(store, version, actor)
+                changes.append("committed")
+            except Exception as caught:  # surfaced by the assertion below
+                changes.append(caught)
+            finally:
+                connections.close_all()
+
+        thread = threading.Thread(target=change_elsewhere)
+        thread.start()
+        thread.join(60)
+        assert not thread.is_alive() and changes == ["committed"]
+        return evidence
+
+    monkeypatch.setattr(refreshing, "validate_snapshot", validate)
+    with pytest.raises(error):
+        run(credential, execution, lease)
+    snapshot = SourceSnapshot.objects.get()
+    assert snapshot.state in {"staging", "rejected"} and not snapshot.counts
+    assert SourceCurrent.objects.get().snapshot_id is None
