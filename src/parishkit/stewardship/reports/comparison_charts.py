@@ -108,6 +108,14 @@ NOMINAL_DOLLARS = "Amounts are nominal dollars, with no adjustment for inflation
 # plot's width (``legend_columns``), and without ``resize`` Vega would keep
 # the height it measured first, cutting off a legend that gained rows.
 AUTOSIZE = {"type": "fit-x", "contains": "padding", "resize": True}
+# The horizontal bar charts' value-axis title ends at the plot's right
+# edge instead of being centered under the plot. At phone width the year
+# labels take the left of the chart, so the plot is narrower than a title
+# such as "Annual pledges (US dollars)" in some fonts (WebKit with DejaVu
+# Sans), and a centered title then runs past the chart's right edge and
+# is cut off. Anchored at the end, it extends left under the empty corner
+# below the year labels.
+VALUE_AXIS_TITLE = {"titleAnchor": "end"}
 
 
 @dataclass(frozen=True)
@@ -842,6 +850,7 @@ def final_chart(key, title, axis, kind, comparison):
                     "format": ",d" if kind == "count" else "$,.0f",
                     "tickCount": 4,
                     "labelOverlap": True,
+                    **VALUE_AXIS_TITLE,
                 },
             },
         },
@@ -1023,7 +1032,12 @@ def distribution_chart(key, title, axis, comparison, edges):
                 "stack": "zero",
                 "title": axis,
                 "scale": {"domain": [0, 1], "nice": False},
-                "axis": {"format": ".0%", "tickCount": 5, "labelOverlap": True},
+                "axis": {
+                    "format": ".0%",
+                    "tickCount": 5,
+                    "labelOverlap": True,
+                    **VALUE_AXIS_TITLE,
+                },
             },
             "color": {
                 "field": "label",
