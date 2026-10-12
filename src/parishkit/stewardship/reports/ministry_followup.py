@@ -20,7 +20,7 @@ from parishkit.stewardship.workflows.models import (
 )
 
 from .information import parse_page
-from .ministries import within_principal
+from .ministries import outcome_label, within_principal
 
 PAGE_SIZE = 50
 # The installed selection (schema/ministry_followup.sql) orders and pages the
@@ -53,15 +53,6 @@ STATES = {
 }
 # History shows what each past edit recorded, including an old assignment.
 HISTORY_STATES = STATES | {"assigned": "Assigned"}
-# The exact labels of the multi-Ministry packet, so screens and packets agree.
-OUTCOMES = {
-    "joined": "Joined ministry",
-    "leave_confirmed": "Left ministry",
-    "declined": "Declined / no longer interested",
-    "no_response": "No response",
-    "duplicate": "Duplicate request",
-    "other": "Other",
-}
 CHANNELS = {
     "email": "Email",
     "phone": "Phone",
@@ -311,7 +302,8 @@ def followup_page(campaign_id, query, principal, *, request_id=None, whole=False
             row["state"] = "new"
         row.pop("assignee_id", None)
         row["state_label"] = STATES[row["state"]]
-        row["outcome_label"] = OUTCOMES.get(row["outcome"], "")
+        # The packet's exact labels, by the row's kind of request (#1132).
+        row["outcome_label"] = outcome_label(row["outcome"], row["action"])
         for field in (
             "submitted_at",
             "resolved_at",

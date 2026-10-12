@@ -241,7 +241,7 @@ def test_assigned_is_no_longer_offered_but_still_reads_as_new():
 
 
 def test_each_request_kind_is_offered_only_the_outcomes_it_can_record():
-    """A join cannot record Left ministry and a leave cannot record Joined."""
+    """A join cannot record Left the Ministry and a leave cannot record Joined."""
     assert outcomes_for("join") == ("joined", "declined", "duplicate", "other")
     assert outcomes_for("leave") == (
         "leave_confirmed",
@@ -278,7 +278,9 @@ def test_refusals_name_the_one_problem_and_its_field():
     kind = _refusal_error(
         FollowupRefusal("outcome_kind", outcome="leave_confirmed", action="join"), {}
     )
-    assert str(kind["message"]) == "Left ministry doesn't apply to a request to join."
+    assert (
+        str(kind["message"]) == "Left the Ministry doesn't apply to a request to join."
+    )
     assert kind["field_id"] == "followup-outcome"
     assert kind["fields"] == ("outcome",)
     future = _refusal_error(FollowupRefusal("contact_future"), {})

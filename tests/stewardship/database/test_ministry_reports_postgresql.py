@@ -557,7 +557,7 @@ def test_testing_hidden_proposed_and_resolved_intent(response_service):
     assert summary["completed"] == summary["unresolved"] == 1
     assert summary["joining"] == 2 and "50" in summary["progress"]
     resolved = page(harness, ministry=9, state="resolved")["rows"]
-    assert len(resolved) == 1 and resolved[0]["outcome_label"] == "Joined ministry"
+    assert len(resolved) == 1 and resolved[0]["outcome_label"] == "Joined the Ministry"
 
 
 def test_detail_pagination_is_complete_stable_and_source_scoped(response_service):

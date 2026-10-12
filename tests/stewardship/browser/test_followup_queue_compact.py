@@ -104,7 +104,9 @@ def test_queue_cells_hold_one_short_value(page, component_origin):
     )
     statuses = page.locator("tbody tr td:nth-child(5)").all_inner_texts()
     assert "Resolved: Declined / no longer interested" in statuses
-    assert "Resolved: Joined ministry" in statuses
+    assert "Resolved: Joined the Ministry" in statuses
+    # A leave request resolved as declined reads Stayed (#1132).
+    assert "Resolved: Stayed in the Ministry" in statuses
     # Closed: no response always records No response; it is not repeated.
     assert "Closed: no response" in statuses
     assert not any("No response" in text for text in statuses)

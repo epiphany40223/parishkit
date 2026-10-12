@@ -608,6 +608,14 @@ def test_native_queue_detail_and_edit_without_assignment(response_service, googl
         assert response.status_code == 200 and b"?search=" not in body
         assert not [marker for marker in absent if marker in body]
         assert b"admin@example.org" not in body and b'datetime=""' not in body
+        # The Outcome filter always uses the combined labels, whatever the
+        # Request filter (#1132): the filter form stays in place on Apply,
+        # so per-kind option text would go stale.
+        for action in ("any", "join", "leave"):
+            _, shown = search(browser, route, {"action": action, "state": "any"})
+            assert b'<option value="declined">Declined / stayed</option>' in shown
+            assert b"Stayed in the Ministry</option>" not in shown
+            assert b"Declined / no longer interested</option>" not in shown
         # Shared table (#203): headings choose the selection's own sort values
         # through POST forms carrying the private filters; sorting stays
         # within the leader's scope and any other value is refused. The
@@ -700,7 +708,7 @@ def test_native_queue_detail_and_edit_without_assignment(response_service, googl
         response, body = search(browser, update, mismatch)
         assert MinistryWorkflowRevision.objects.count() == before
         assert response.status_code == 400 and b"data-error-summary" in body
-        assert b"Left ministry doesn&#x27;t apply to a request to join." in body
+        assert b"Left the Ministry doesn&#x27;t apply to a request to join." in body
         assert b'href="#followup-outcome"' in body
         # Kept, and escaped: never live markup.
         assert (
@@ -711,7 +719,7 @@ def test_native_queue_detail_and_edit_without_assignment(response_service, googl
         assert b'name="expected_version" value="2"' in body
         assert b'<option value="resolved" selected>' in body
         assert b'value="2026-01-02"' in body and b"No answer</textarea>" in body
-        # A join request is never offered Left ministry.
+        # A join request is never offered Left the Ministry.
         assert b'<option value="leave_confirmed"' not in body
         assert b'<option value="joined"' in body
         future = form | {
