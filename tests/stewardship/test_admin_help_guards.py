@@ -63,7 +63,6 @@ LONG_PARAGRAPH_WORDS = 50
 # Pages not yet converted, with the longest visible message each may keep.
 # Lower or remove an entry when its page is converted; never raise one.
 LONG_PARAGRAPH_ALLOWED = {
-    "setup-content.html": 60,
     "setup-source-progress.html": 67,
 }
 
@@ -93,9 +92,6 @@ INTRO_WORDS = 15
 # exception. Lower or remove an entry when its page is converted; never raise
 # one or add a page.
 INTRO_ALLOWED = {
-    "logs-error.html": 94,
-    "ministry-followup-error.html": 38,
-    "setup-content.html": 60,
     # The step-up names its return page when it is another page (#547).
     "error.html": 61,
     "setup.html": 46,
