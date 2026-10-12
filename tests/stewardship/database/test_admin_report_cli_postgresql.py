@@ -214,14 +214,14 @@ def test_participation_responses_information_and_the_list(http_scenario, cli):  
     code, document = run(*dated)
     assert code == 1 and document["error"]["code"] == "invalid"
 
-    # A report the campaign does not include: the page refuses it after its
-    # started event, and so does the command, which says not_available.
-    parity(
-        "financial_report_viewed",
-        lambda: read(browser, f"{root}/financial/"),
-        lambda: run("report", "financial"),
-    )
+    # A report the campaign does not include: its menu entry is greyed out,
+    # so the page shows that reason before the report runs and records
+    # nothing (#1128). The command refuses it after its started event and
+    # says not_available.
     before = outcomes("financial_report_viewed")
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        assert read(browser, f"{root}/financial/")[0].status_code == 409
+    assert outcomes("financial_report_viewed") == before
     code, document = run("report", "financial")
     assert code == 1 and document["error"]["code"] == "not_available"
     assert outcomes("financial_report_viewed") - before == Counter(

@@ -420,7 +420,10 @@ def test_campaign_without_the_module_is_denied_and_unlinked(response_service, go
     browser, login = signed_in()
     assert login.status_code == 302
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        assert get(browser, route)[0].status_code == 403
+        # Its greyed menu entry's reason, not the report (#1128).
+        response, body = get(browser, route)
+        assert response.status_code == 409
+        assert b"does not include Financial stewardship" in body
         response, body = get(browser, reverse("admin:participation"))
         assert response.status_code == 200 and route.encode() not in body
 

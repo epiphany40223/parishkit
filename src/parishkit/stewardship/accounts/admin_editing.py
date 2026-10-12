@@ -35,9 +35,11 @@ from parishkit.stewardship.web.contracts import (
 from parishkit.stewardship.web.refusals import (
     UserFacingDenied,
     UserFacingGone,
+    UserFacingUnavailable,
     expired_preview,
     gone_response,
     load_preview,
+    unavailable_response,
 )
 from parishkit.stewardship.web.tables import table_parameters
 
@@ -497,6 +499,8 @@ def error_response(error):
         return response
     if isinstance(error, UserFacingGone):
         return gone_response(error)
+    if isinstance(error, UserFacingUnavailable):
+        return unavailable_response(error)
     if isinstance(error, PermissionError):
         code, status = ErrorCode.DENIED, 403
     elif isinstance(error, StaleRecordError):

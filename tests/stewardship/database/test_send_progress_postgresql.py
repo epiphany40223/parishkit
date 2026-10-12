@@ -275,6 +275,8 @@ def test_no_send_yet_says_so_and_keeps_checking(auth_service, google):
 
 def test_unknown_query_options_are_refused(auth_service, google):
     """The page takes no options; a stray one is a plain refusal, not ignored."""
+    store = auth_service.store
+    add_draft(store, store.active(), uuid4())
     browser, _ = signed_in()
     assert browser.get(PAGE + "?page=2").status_code == 400
 

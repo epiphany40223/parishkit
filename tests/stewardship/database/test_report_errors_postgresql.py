@@ -15,7 +15,15 @@ def test_ministry_report_outage_renders_the_admin_report_page(
     auth_service, google, monkeypatch
 ):
     """A swallowed runtime failure keeps 503 and Retry-After with Admin wording."""
+    from parishkit.stewardship.accounts import admin_navigation
+
     browser, _ = signed_in()
+    # Without a campaign the menu greys Ministry requests out and its page
+    # shows that reason before the view runs (#1128); this test is about
+    # the view's own outage page, so the entry is taken as available.
+    monkeypatch.setitem(
+        admin_navigation.MENU_REASONS, "ministry_report", admin_navigation._never
+    )
 
     def unavailable():
         """A configuration outage carrying detail that must never be shown."""

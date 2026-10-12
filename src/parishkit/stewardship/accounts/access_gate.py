@@ -11,6 +11,7 @@ from parishkit.stewardship.web.namespaces import is_admin
 from parishkit.stewardship.web.security import login_denial
 
 from . import family_maintenance
+from .admin_context import greyed_page
 from .authentication import runtime
 from .limiting import LimiterUnavailable
 from .local_sign_in import PATH as LOCAL_SIGN_IN
@@ -90,6 +91,11 @@ class AccessGateMiddleware(MiddlewareMixin):
                     state = family_maintenance.current_state()
                     if state.closed:
                         return family_maintenance.family_response(request, state)
+                # A menu page its menu greys out right now says why, in the
+                # menu's words, instead of its view's own refusal (#1128).
+                # Read-only and presentation only; see ``greyed_page``.
+                if admin:
+                    return greyed_page(request, service.store)
                 return None
             if admin:
                 principal = authenticated_admin(request, store=service.store)

@@ -60,6 +60,13 @@ _GUIDANCE = {
             "administrator for access."
         ),
     ),
+    ErrorCode.NOT_AVAILABLE: (
+        _("Not available right now"),
+        _(
+            "The campaign's state or the mode does not allow this now. "
+            "Choose another page from the menu."
+        ),
+    ),
     ErrorCode.GONE: (
         _("Page unavailable"),
         _("This page or action no longer works. Use the menu to find the page."),

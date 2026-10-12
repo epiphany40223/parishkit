@@ -741,6 +741,111 @@ def test_available_campaign_entries_link_the_current_campaign():
     assert urls["deliveries"] == reverse("admin:deliveries")
 
 
+# A greyed-out page opened directly (ui-conventions, "Unavailable menu pages",
+# #1128).
+REASONS = (
+    navigation.NO_CAMPAIGN,
+    navigation.ARCHIVED,
+    navigation.FINANCIAL_MISSING,
+    navigation.MINISTRY_MISSING,
+    navigation.CENSUS_MISSING,
+    navigation.STRUCTURE_FIXED,
+    navigation.ALREADY_LIVE,
+    navigation.NOT_CONFIRMED,
+    navigation.PRODUCTION_ONLY,
+)
+
+
+def _situations():
+    """Every (mode, campaign name, campaign) the chrome can be in."""
+    return [
+        (mode, name, campaign)
+        for mode in ("testing", "production")
+        for name, campaign in CAMPAIGNS.items()
+    ]
+
+
+def test_every_greyable_entry_has_a_direct_url_reason():
+    """Guard: each entry that can be greyed out shows its reason when opened.
+
+    A new entry with a reason check is covered without a list to update:
+    its route answers at the entry's own URL name (which the access gate
+    matches), it is a page rather than a non-page, and in some situation its
+    page's refusal carries the menu's reason word for word. Every reason a
+    check returns is one of the named strings, which the way-forward links
+    match by identity.
+    """
+    greyable = {
+        entry.name for entry in navigation.MENU if entry.reason is not navigation._never
+    }
+    assert greyable >= {"share_settings", "go_live", "delivery_control"}
+    shown = set()
+    for mode, name, campaign in _situations():
+        items = _menu("administrator", campaign, mode)
+        for item in items:
+            greyed = navigation.greyed_entry(item.name, items)
+            if item.reason is None:
+                assert greyed is None
+                continue
+            assert any(item.reason is reason for reason in REASONS), item
+            assert item.name in greyable
+            assert greyed.reason is item.reason, (mode, name, item)
+            refusal = greyed.refusal().refusal
+            assert str(refusal.message).rstrip(".") == str(item.reason)
+            assert str(refusal.title) == f"{item.label} isn't available right now"
+            shown.add(item.name)
+    assert shown == greyable
+    for entry_name in greyable:
+        assert get_resolver().resolve(reverse(f"admin:{entry_name}")).url_name == (
+            entry_name
+        )
+        assert entry_name in navigation.PAGES
+        assert entry_name not in navigation.NON_PAGES
+
+
+def test_way_forward_links_only_entries_the_viewer_is_offered():
+    """A missing module leads to Campaign settings, Production to Go-live
+    readiness, a live campaign to its activation; never to a greyed entry."""
+    targets = {page for _reason, page in navigation.FORWARD}
+    assert targets <= navigation.MENU_NAMES
+    census = _menu("administrator", CAMPAIGNS["census only"], "testing")
+    greyed = navigation.greyed_entry("financial_report", census)
+    assert greyed.forward == ("Campaign settings", reverse("admin:campaign_settings"))
+    assert greyed.refusal().refusal.link == reverse("admin:campaign_settings")
+    assert str(greyed.refusal().refusal.link_label) == "Go to Campaign settings"
+    draft = _menu("administrator", CAMPAIGNS["draft"], "testing")
+    assert navigation.greyed_entry("delivery_control", draft).forward == (
+        "Go-live readiness",
+        reverse("admin:go_live"),
+    )
+    live = _menu("administrator", CAMPAIGNS["active"], "production")
+    assert navigation.greyed_entry("go_live", live).forward == (
+        "Production activation",
+        reverse("admin:production_progress"),
+    )
+    # The structure fixed once live, and an archived campaign: nothing undoes them.
+    assert navigation.greyed_entry("share_settings", live).forward is None
+    archived = _menu("administrator", CAMPAIGNS["archived"], "production")
+    assert navigation.greyed_entry("content_catalog", archived).forward is None
+    # Staff are never offered Campaign settings, so their page has no link.
+    staff = _menu("staff", CAMPAIGNS["census only"], "testing")
+    assert navigation.greyed_entry("financial_report", staff).forward is None
+    assert (
+        navigation.greyed_entry("financial_report", staff).refusal().refusal.link
+        is None
+    )
+
+
+@pytest.mark.parametrize("role", ["staff", "ministry_leader"])
+def test_an_entry_hidden_by_role_is_never_explained(role):
+    """A page the role may not open keeps its view's own refusal (403): the
+    reason page is only for an entry the viewer's menu shows greyed out."""
+    for mode, name, campaign in _situations():
+        items = _menu(role, campaign, mode)
+        for entry_name in navigation.MENU_NAMES - set(SHAPES[role]):
+            assert navigation.greyed_entry(entry_name, items) is None, (mode, name)
+
+
 def test_menu_entries_and_groups_follow_the_spec():
     """Seven groups in campaign order; every entry is a page in its group."""
     assert [str(section.label) for section in navigation.SECTIONS] == [
