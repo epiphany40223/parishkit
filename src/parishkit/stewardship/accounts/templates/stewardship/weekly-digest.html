@@ -36,5 +36,6 @@
 {% if next_page %}<a href="?page={{ next_page }}#weekly-report-page" data-in-place="page-next" data-in-place-fallback="page-previous" data-in-place-message="{% translate 'Report page shown.' %}">{% translate "Next page" %}</a>{% endif %}
 </nav>{% endif %}
 </div>
+{% if not detail %}{% include 'stewardship/components/digest-funnel.html' %}{% endif %}
 <p><a href="{% url 'admin:index' %}">{% translate "Return to Home" %}</a></p>
 {% endblock %}

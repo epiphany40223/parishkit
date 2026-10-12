@@ -6,6 +6,7 @@ from django.urls import reverse
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.responses.models import AdditionalInformationItem
 
+from .digest_funnel import digest_funnel, funnel_context
 from .weekly_capture import retained_selection
 from .weekly_digest import WeeklyInformation, excerpt
 from .weekly_models import WeeklyManualRequest
@@ -37,6 +38,8 @@ def page_number(query, *, detail=False):
 
 def snapshot_context(snapshot, *, page=1, item_id=None):
     """Read current dispositions only for selected rows, under the read barrier.
+
+    The list pages also count the response funnel at the capture instant.
 
     Captured actionable text remains historical, never rewritten with a newer
     response. Correction captures contain no old text and this view does not
@@ -88,7 +91,19 @@ def snapshot_context(snapshot, *, page=1, item_id=None):
                 ),
             }
         )
+    # The response funnel at the capture instant (#477), counted again from
+    # the durable timestamps the email used, so the two agree. A single
+    # request's page shows only that request.
+    mode = snapshot.preparation.mode
+    funnel = (
+        funnel_context(
+            digest_funnel(snapshot.campaign_id, mode, snapshot.observed_at), mode
+        )
+        if item_id is None
+        else funnel_context(None, None)
+    )
     return {
+        **funnel,
         "snapshot": snapshot,
         "manual": WeeklyManualRequest.objects.filter(
             pk=snapshot.preparation_id
