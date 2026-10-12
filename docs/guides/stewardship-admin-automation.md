@@ -316,8 +316,9 @@ states; a condition in several processes is one problem), the
 `processes` with their state, version and mail sender state,
 `missing_services`, `versions`, `schema_current`, the reasons Family email
 waits (`delivery_paused`, `planning_held`, `retry_waiting`), the 24-hour
-send count `daily_sent` and the `daily_limit` Family email stops at, the open
-`incidents`, the ParishSoft `refresh` outcome, a refused load's
+send count `daily_sent`, the `daily_limit` Family email stops at and
+`daily_resume_at`, when that count falls below the limit again (null while
+it is below), the open `incidents`, the ParishSoft `refresh` outcome, a refused load's
 `refused_counts`, the newest backup and the `offsite` copy's state. The
 pause's reason and who paused it, and the page's sentences, are not in it.
 
@@ -1841,6 +1842,7 @@ pk-admin users import-leaders --confirm --token -
   page's event).
 - `pk-admin/1` (ADM-13 PR 2c, #530): additive. `system health` gains
   `daily_sent` and `daily_limit`.
+- `pk-admin/1` (#530): additive. `system health` gains `daily_resume_at`.
 - `pk-admin/1` (#1018): additive. `history list`, `history preview -`
   (the workbook on standard input), `history confirm` (prompts for a
   replacement) and `history remove` (prompts), the Past campaigns page's

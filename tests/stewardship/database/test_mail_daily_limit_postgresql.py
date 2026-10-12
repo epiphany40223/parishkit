@@ -23,6 +23,7 @@ from parishkit.stewardship.jobs.family_mail_delivery_tasks import (
 )
 from parishkit.stewardship.jobs.family_mail_dispatch import (
     begin_submission,
+    daily_resume,
     daily_sends,
     finish_submission,
     over_daily_limit,
@@ -369,6 +370,100 @@ def test_both_counts_use_the_same_24_hour_window(
         assert sends_in_last_day() == counted
     with task_login(ServiceRole.WEB, exact=True):
         assert daily_sends() == counted
+
+
+# Copy a message's real counted outcome event (version below 1000, never a
+# copy) under a new id, command, version, age and outcome reason.
+# Outbox events are immutable, so the schema owner writes it with triggers
+# paused for that one statement.
+COPY_EVENT = (
+    "INSERT INTO stewardship_outbox_event SELECT (jsonb_populate_record("
+    "NULL::stewardship_outbox_event, to_jsonb(e) || jsonb_build_object("
+    "'id', gen_random_uuid(), 'command_id', gen_random_uuid(),"
+    " 'version', e.version+%s, 'reason', %s, 'created_at',"
+    " statement_timestamp()-make_interval(mins=>%s)))).*"
+    " FROM stewardship_outbox_event e"
+    " WHERE message_id=%s AND previous_state='submitting' AND version<1000"
+)
+
+
+@pytest.mark.parametrize(
+    "recipients,ages,resumes,skipped",
+    [
+        # Exactly at the limit a one-recipient message still waits, so
+        # sending resumes when the oldest send leaves the window.
+        (800, (20 * 60, 2 * 60), 0, False),
+        # The same with a refused send and one older than 24 hours, which
+        # neither count: were either counted, the answer would differ.
+        (800, (20 * 60, 2 * 60), 0, True),
+        # Below the limit nothing waits.
+        (799, (20 * 60, 2 * 60), None, False),
+        (799, (20 * 60, 2 * 60), None, True),
+        # Over it, the oldest send leaving is not enough: 1,800 stay.
+        (900, (20 * 60, 10 * 60, 60), 1, False),
+        (600, (20 * 60, 10 * 60, 60), 0, False),
+        (1600, (60,), 0, False),
+    ],
+)
+def test_sending_resumes_when_the_count_falls_below_the_family_limit(
+    family_mail,  # noqa: F811
+    recipients,
+    ages,
+    resumes,
+    skipped,
+):
+    """The definer resume time is when the oldest sends' leaving brings the count under.
+
+    One real accepted submission is widened to ``recipients`` routed
+    addresses and copied to one counted send per age (minutes ago, oldest
+    first); System health's resume time (#530) is 24 hours after the send
+    at index ``resumes`` was recorded, or None below the limit. The counts
+    the mail sender and the web read stay equal, and only web may run it.
+    With ``skipped``, a refused send and one older than 24 hours are added,
+    which 0012's WHERE clause leaves out, so the resume function drifting
+    from it fails.
+    """
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = prepare(family_mail)
+        submit(message, family_mail, FamilyDeliveryResult(Status.ACCEPTED, 1))
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute("SET LOCAL session_replication_role = replica")
+        cursor.execute(
+            f"UPDATE {RENDERS} SET routed_recipients=(SELECT jsonb_agg("
+            "format('r%%s@example.org', n)) FROM generate_series(1,%s) n)"
+            " WHERE message_id=%s",
+            [recipients, message.pk],
+        )
+        for index, age in enumerate(ages[1:], start=1):
+            cursor.execute(COPY_EVENT, [1000 * index, "smtp_accepted", age, message.pk])
+        if skipped:
+            cursor.execute(COPY_EVENT, [5000, "smtp_transient", 3 * 60, message.pk])
+            cursor.execute(COPY_EVENT, [6000, "smtp_accepted", 25 * 60, message.pk])
+        cursor.execute(
+            "UPDATE stewardship_outbox_event SET created_at="
+            "statement_timestamp()-make_interval(mins=>%s) "
+            "WHERE message_id=%s AND previous_state='submitting' AND version<1000",
+            [ages[0], message.pk],
+        )
+        cursor.execute(
+            "SELECT created_at+interval '24 hours' FROM stewardship_outbox_event"
+            " WHERE message_id=%s AND previous_state='submitting'"
+            " AND version<5000 ORDER BY created_at",
+            [message.pk],
+        )
+        leaves = [row[0] for row in cursor.fetchall()]
+    assert len(leaves) == len(ages)
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True), work_transaction():
+        assert sends_in_last_day() == recipients * len(ages)
+    with task_login(ServiceRole.WEB, exact=True):
+        assert daily_sends() == recipients * len(ages)
+        assert daily_resume() == (None if resumes is None else leaves[resumes])
+    with (
+        task_login(ServiceRole.SCHEDULER, exact=True),
+        pytest.raises(DatabaseError, match="permission denied"),
+        transaction.atomic(),
+    ):
+        daily_resume()
 
 
 def test_a_full_day_defers_after_the_claim_without_sending(

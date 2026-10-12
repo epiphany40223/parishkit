@@ -132,6 +132,8 @@ def test_problems_come_from_status_rows_incidents_and_retries(auth_service, goog
     # page's read-only snapshot, under the web login (ADM-13 PR 2c);
     # test_mail_daily_limit_postgresql keeps it equal to the mail sender's.
     assert (found.daily_sent, found.daily_limit) == (0, 1600)
+    # Below the limit nothing waits for it, so there is no resume time (#530).
+    assert found.daily_resume_at is None and "data-daily-resume" not in body
     assert "Emails went to 0 recipients in the last 24 hours." in body
     # The polled fragment is never audited.
     assert views() == []

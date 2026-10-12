@@ -82,16 +82,30 @@
       Boolean(options && options.compact));
   }
 
+  // A clock time within the next day, saying "tomorrow" when it falls on
+  // this browser's next calendar day ("3:10 PM tomorrow"); any other day
+  // gets the full instant, so the clock time alone is never ambiguous.
+  function dayTime(date, now) {
+    const day = (value) => new Date(value.getFullYear(), value.getMonth(), value.getDate());
+    const next = day(now);
+    next.setDate(next.getDate() + 1);
+    const target = day(date).getTime();
+    if (target === day(now).getTime()) return clock(date);
+    if (target === next.getTime()) return `${clock(date)} tomorrow`;
+    return instant(date);
+  }
+
   // Rewrite every <time data-local-instant> in scope; data-compact marks
   // Admin table cells (ui-conventions#date-format), data-precise adds
-  // seconds and the zone name (System logs), and data-time-only a recent
-  // instant shown as its clock time ("started 10:00 PM").
+  // seconds and the zone name (System logs), data-time-only a recent
+  // instant shown as its clock time ("started 10:00 PM"), and data-time-day
+  // with it a coming instant that may fall tomorrow (dayTime).
   function localize(scope) {
     (scope || document).querySelectorAll("time[data-local-instant]").forEach((node) => {
       const date = new Date(node.dateTime);
       if (Number.isFinite(date.getTime())) {
         node.textContent = node.hasAttribute("data-time-only")
-          ? clock(date)
+          ? (node.hasAttribute("data-time-day") ? dayTime(date, new Date()) : clock(date))
           : instant(date, {
             compact: node.hasAttribute("data-compact"),
             precise: node.hasAttribute("data-precise")
@@ -108,5 +122,7 @@
   // is 1-based. The same in every style, since none abbreviates a lone month.
   const month = (year, number) => `${MONTHS[number - 1]} ${year}`;
 
-  window.ParishDates = Object.freeze({instant, date: calendar, time, month, localize, style});
+  window.ParishDates = Object.freeze({
+    instant, date: calendar, time, dayTime, month, localize, style
+  });
 })();

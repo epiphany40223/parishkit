@@ -258,6 +258,9 @@ FROZEN = {
     "0075_campaign_series.sql": (
         "290b90ba8ecdec8fd0a17dd190dbea510bde7487904f09dc45e1840ca69eb2c2"
     ),
+    "0076_daily_send_resume.sql": (
+        "5b6ad32b9ca4f581963092013c7889959d3336909d1eb5cb634756c9583f174d"
+    ),
 }
 
 
