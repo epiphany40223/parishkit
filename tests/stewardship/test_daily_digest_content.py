@@ -33,6 +33,7 @@ from parishkit.stewardship.reports.statistics import (
 )
 from parishkit.stewardship.source.data_age import Connection, DataAge
 from parishkit.stewardship.web import dates
+from parishkit.stewardship.web.buttons import EMAIL_TABLE_STYLE
 from parishkit.stewardship.web.digest_content import validate_digest_body
 from parishkit.stewardship.web.report_markup import STYLES
 
@@ -498,6 +499,31 @@ def test_report_button_is_padded_for_outlook():
     assert 'bgcolor="#115e56"' in result.html
     assert "mso-padding-alt:10px 20px;" in result.html
     assert "Open this exact report</a>" in result.html
+
+
+# The report button exactly as #720 compiled it, before it became the shared
+# email button (#732).
+PRE_732_BUTTON = (
+    '<table role="presentation" cellpadding="0" cellspacing="0" border="0"'
+    ' style="border-collapse:separate;margin:24px 0 0;"><tbody><tr>'
+    '<td bgcolor="#115e56" style="border-radius:8px;background-color:#115e56;'
+    'mso-padding-alt:10px 20px;"><a href="https://example.org/r"'
+    ' style="display:inline-block;padding:10px 20px;border:2px solid #115e56;'
+    "border-radius:8px;background-color:#115e56;color:#ffffff;font-size:16px;"
+    'font-weight:bold;line-height:1.3;text-decoration:none;"'
+    ' rel="noopener noreferrer">Open this exact report</a></td></tr></tbody></table>'
+)
+
+
+def test_retained_reports_with_the_earlier_button_still_validate():
+    """A report compiled before #732 and retained for a retry still delivers."""
+    result = render(document())
+    start = result.html.rindex("<table", 0, result.html.index(EMAIL_TABLE_STYLE))
+    end = result.html.index("</table>", start) + len("</table>")
+    retained = result.html[:start] + PRE_732_BUTTON + result.html[end:]
+    assert retained != result.html and EMAIL_TABLE_STYLE not in retained
+    validate_digest_body(retained, result.text, result.chart.data)
+    validate_digest_body(result.html, result.text, result.chart.data)
 
 
 def funnel_metrics():

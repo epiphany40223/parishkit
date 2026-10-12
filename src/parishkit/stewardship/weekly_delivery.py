@@ -96,7 +96,7 @@ class WeeklyDeliveryMail:
                 subject=self.subject,
                 sender=self.sender,
                 to=self.recipients,
-                html=email_document(self.html, width=REPORT_WIDTH),
+                html=email_document(self.html, family=False, width=REPORT_WIDTH),
                 text=self.text,
             )
         )

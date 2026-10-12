@@ -26,6 +26,7 @@ from parishkit.stewardship.jobs.operational_content import (
     OperationalAlert,
 )
 from parishkit.stewardship.jobs.operational_payload import alert_payload, decode_alert
+from parishkit.stewardship.mail_layout import FAMILY, SHARED
 from parishkit.stewardship.operational_delivery import (
     OperationalMail,
     OperationalSlack,
@@ -106,6 +107,10 @@ def test_closed_facts_roundtrip_and_generated_mime():
     assert mime["Message-ID"] == sample.message()["Message-ID"]
     assert not list(mime.iter_attachments())
     assert "1,234" in mime.get_body(preferencelist=("plain",)).get_content()
+    html = mime.get_body(preferencelist=("html",)).get_content()
+    # Admin mail uses the portal's design tokens (#732), not Family's look.
+    assert f"background-color:{SHARED.page};" in html
+    assert FAMILY.link not in html
     assert "admin@example.org" not in repr(sample)
     assert "html" not in sample.payload() and "text" not in sample.payload()
 

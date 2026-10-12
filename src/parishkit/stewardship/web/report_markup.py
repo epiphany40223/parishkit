@@ -8,21 +8,17 @@ a tag list. Parish-authored content never gains these attributes.
 """
 
 import re
-from html import escape
 
-# The Admin portal's own values (accounts/static/stewardship/ui-v1.css:
-# --ink, --muted, --accent, --link, --radius-small and the primary button
-# rule), copied so the report emails look like the portal. Email cannot read
-# the portal's CSS custom properties; #732 lifts these into shared tokens
-# for every email and the portal.
-INK = "#1b2a31"  # --ink
-MUTED = "#4f5e66"  # --muted
-ACCENT = "#115e56"  # --accent: primary button background and border
-LINK = "#155a8a"  # --link
-BUTTON_RADIUS = "8px"  # --radius-small (.5rem)
-BUTTON_PADDING = "10px 20px"  # .6rem 1.25rem
-# The portal's weight is 650; mail programs only reliably draw bold (700).
-BUTTON_WEIGHT = "bold"
+from .buttons import EMAIL_TABLE_STYLE, email_button, email_button_styles
+from .design_tokens import COLORS, hex6
+
+# The Admin portal's colours from the shared design tokens (#732), so the
+# report emails look like the portal. Email cannot read the portal's CSS
+# custom properties, so the values are inlined.
+INK = hex6(COLORS["ink"])
+MUTED = hex6(COLORS["muted"])
+ACCENT = hex6(COLORS["accent"])  # the primary button's background
+LINK = hex6(COLORS["link"])
 
 # The report chart palette (reports spec, "Chart palette and style").
 BLUE = "#1f6fae"
@@ -53,25 +49,6 @@ STYLES = {
     ),
     "td": f"padding:7px 12px 7px 0;font-size:15px;color:{INK};"
     f"border-bottom:1px solid {TRACK};",
-    # The portal's primary button as a "bulletproof" email button: the
-    # coloured table cell draws it even where a link's padding is ignored
-    # (Outlook for Windows), and the link fills the cell elsewhere. White on
-    # the dark accent is expected to stay legible when a mail program
-    # inverts dark mode; confirm with a Testing send.
-    "action": "border-collapse:separate;margin:24px 0 0;",
-    # Outlook for Windows ignores a link's padding, so the cell carries it
-    # there (mso-padding-alt); other programs pad the link, which fills the
-    # whole button area.
-    "button-cell": (
-        f"border-radius:{BUTTON_RADIUS};background-color:{ACCENT};"
-        f"mso-padding-alt:{BUTTON_PADDING};"
-    ),
-    "button": (
-        f"display:inline-block;padding:{BUTTON_PADDING};"
-        f"border:2px solid {ACCENT};border-radius:{BUTTON_RADIUS};"
-        f"background-color:{ACCENT};color:#ffffff;font-size:16px;"
-        f"font-weight:{BUTTON_WEIGHT};line-height:1.3;text-decoration:none;"
-    ),
     "link": f"color:{LINK};text-decoration:underline;",
     # The weekly digests' numbered request rows.
     "who": (
@@ -87,7 +64,23 @@ STYLES = {
         f"vertical-align:top;text-align:right;border-bottom:1px solid {TRACK};"
     ),
 }
-_STYLE_VALUES = frozenset(STYLES.values())
+# The report button is the shared email button (web/buttons.py); its
+# table, cell and link styles are admitted as they are built there.
+_BUTTON_STYLES = {EMAIL_TABLE_STYLE, *email_button_styles("primary")[1:]}
+# The button's styles before it became the shared email button (#720). A
+# report compiled before then and retained for delivery or a retry still
+# carries them, so they stay admitted; nothing compiles them any more.
+_RETAINED_STYLES = {
+    "border-collapse:separate;margin:24px 0 0;",
+    ("border-radius:8px;background-color:#115e56;mso-padding-alt:10px 20px;"),
+    (
+        "display:inline-block;padding:10px 20px;"
+        "border:2px solid #115e56;border-radius:8px;"
+        "background-color:#115e56;color:#ffffff;font-size:16px;"
+        "font-weight:bold;line-height:1.3;text-decoration:none;"
+    ),
+}
+_STYLE_VALUES = frozenset(STYLES.values()) | _BUTTON_STYLES | _RETAINED_STYLES
 # Closed values for the presentational table attributes the bars use.
 _FIXED = {
     "role": {"presentation"},
@@ -126,16 +119,9 @@ def layout_attribute(tag, attribute, value):
 
 
 def button(url, label):
-    """The portal's primary button, built from table cells for every mail program.
+    """The portal's primary button: the shared email button (web/buttons.py).
 
-    ``url`` and ``label`` are escaped here; the rest is this module's closed
-    markup, which the report validators admit.
+    ``url`` and ``label`` are escaped there; the rest is closed markup, which
+    the report validators admit.
     """
-    return (
-        '<table role="presentation" cellpadding="0" cellspacing="0" border="0"'
-        f' style="{STYLES["action"]}"><tbody><tr>'
-        f'<td bgcolor="{ACCENT}" style="{STYLES["button-cell"]}">'
-        f'<a href="{escape(url, quote=True)}" style="{STYLES["button"]}"'
-        f' rel="noopener noreferrer">{escape(label, quote=False)}</a>'
-        "</td></tr></tbody></table>"
-    )
+    return email_button(label, url)
