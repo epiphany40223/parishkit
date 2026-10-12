@@ -51,7 +51,8 @@ command that streams a file (``logs export`` and
 ``export download --stream``) writes the file's bytes, and nothing else, to
 standard output, and its document to standard error. Other areas join the same
 subparser tree in later pull requests, each listed in the catalog with the
-pull request that added it.
+pull request that added it. ``report roster`` (in ``admin_roster``) counts
+the Roster changes to enter list (#463).
 """
 
 import argparse
@@ -1761,6 +1762,15 @@ def report_ministry(args, preamble, runtime, context):
     )
 
 
+def report_roster(args, preamble, runtime, context):
+    """The Roster changes to enter list, as counts only (#463)."""
+    from .admin_roster import read_roster
+
+    return read_roster(
+        context["caller"], runtime, show=args.show, ministry=args.ministry
+    )
+
+
 def report_source_form(args, preamble, runtime, context):
     """Families the form cannot open, by DUID only (#774)."""
     from .admin_source_form import read_source_form
@@ -2685,6 +2695,19 @@ def _report_ministry_options(parser):
     _date_options(parser)
 
 
+def _report_roster_options(parser):
+    """Options of ``report roster``: the page's Show and Ministry choices."""
+    parser.add_argument(
+        "--show",
+        choices=("todo", "all"),
+        default="todo",
+        help="todo: not yet entered in ParishSoft (default); all: entered too",
+    )
+    parser.add_argument(
+        "--ministry", type=_ministry_duid, help="one Ministry, by its DUID"
+    )
+
+
 def _snapshot_option(parser):
     """The retained report, by the id in its page's address."""
     parser.add_argument("snapshot_id", type=_uuid, metavar="SNAPSHOT_ID")
@@ -3518,6 +3541,7 @@ def _report_specs():
         ResponseReport,
     )
     from .admin_reports import LogExport, LogList
+    from .admin_roster import RosterReport
     from .admin_source_form import SourceFormReport
 
     return (
@@ -3881,6 +3905,19 @@ def _report_specs():
             8,
             options=(_report_ministry_options,),
             audit_event="ministry_report_viewed",
+        ),
+        # Roster changes to enter (#528): counts only; its rows name
+        # Members, so they stay on the page and its downloads.
+        CommandSpec(
+            "report roster",
+            "Count the resolved Ministry changes to enter in ParishSoft.",
+            report_roster,
+            "read_only",
+            False,
+            RosterReport.field_names(),
+            8,
+            options=(_report_roster_options,),
+            audit_event="roster_changes_viewed",
         ),
         # System health's Families the form cannot open (#774): counts and
         # DUIDs only, Administrators only, as the page.
