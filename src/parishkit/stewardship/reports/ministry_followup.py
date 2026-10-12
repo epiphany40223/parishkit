@@ -26,13 +26,15 @@ PAGE_SIZE = 50
 # The installed selection (schema/ministry_followup.sql) orders and pages the
 # queue, so a heading can only choose one of its existing sort values; the
 # schema is frozen for v1. Member and Ministry sort A-Z only (the selection
-# has no Z-A order for them), and Submitted sorts by submission time. The
-# DUID columns, Request, Status and Last contact are not sortable: the
-# selection has no order for them (#932).
+# has no Z-A order for them). The Member DUID, Request, Status and Last
+# contact columns are not sortable: the selection has no order for them
+# (#932). The default is the newest requests first; since the queue has no
+# Submitted column (Administrator decision, #1064) no heading shows or
+# chooses that order, and the selection's oldest-first order is no longer
+# offered (a remembered view that used it opens the default queue).
 SORTING = Sorting(
     {
         "newest": ("submitted", True),
-        "oldest": ("submitted", False),
         "name": ("member", False),
         "ministry": ("ministry", False),
     },
