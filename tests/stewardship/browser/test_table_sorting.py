@@ -360,8 +360,8 @@ def test_packet_choices_keep_their_ticks_while_the_summary_is_resorted(
     """The Ministry report's packet lists every Ministry in scope, not the
     page's rows (#533), so an in-place re-sort keeps the list and its ticks,
     including a Ministry the table's first page did not show; the packet's
-    own options, the export's format and browser timezone, and a ticked
-    history box are untouched."""
+    own options (its browser timezone and a ticked history box) are
+    untouched. The summary has no export of its own (#1126)."""
     page.goto(component_origin + "/ministry-summary")
     choices = page.locator("#ministry-packet-choices input[name=ministries]")
     assert choices.count() == 2
@@ -369,10 +369,9 @@ def test_packet_choices_keep_their_ticks_while_the_summary_is_resorted(
     off_page.check()
     history = page.get_by_role("checkbox", name="Also include resolved")
     history.check()
-    page.locator("#ministry-export-format").select_option("xlsx")
-    zone = page.locator("#ministry-export-timezone")
+    assert page.locator("#table-export").count() == 0
     packet_zone = page.locator("#ministry-packet-timezone")
-    assert zone.input_value() != "UTC" and packet_zone.input_value() != "UTC"
+    assert packet_zone.input_value() != "UTC"
     fulfil_post_with(
         page,
         "**/ministries/",
@@ -382,14 +381,12 @@ def test_packet_choices_keep_their_ticks_while_the_summary_is_resorted(
     page.get_by_role("button", name="Ministry (sort descending)").click()
     has_attribute(sort_heading(page, "ministry"), "aria-sort", "descending")
     assert choices.count() == 2 and off_page.is_checked()
-    assert page.locator("#table-export input[name=sort]").input_value() == "name_desc"
     assert (
         page.locator("#table-filters input[type=hidden][name=sort]").input_value()
         == "name_desc"
     )
     assert history.is_checked()
-    assert page.locator("#ministry-export-format").input_value() == "xlsx"
-    assert zone.input_value() != "UTC" and packet_zone.input_value() != "UTC"
+    assert packet_zone.input_value() != "UTC"
 
 
 def test_a_response_without_the_region_is_shown_without_resending(

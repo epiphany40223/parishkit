@@ -7,8 +7,8 @@ Members, through the export forms' own services:
   (``financial_exports.create_financial_export``);
 - ``export information`` is the information queue's export form
   (``information_exports.create_information_export``);
-- ``export ministry`` is the Ministry report's export form, for the summary
-  or one Ministry's join or leave list
+- ``export ministry`` is the Ministry report's export form, for one
+  Ministry's join or leave list (the summary export was removed, #1126)
   (``ministry_exports.create_ministry_export``);
 - ``export ministry-packet`` is its follow-up packet form (the same service
   with ``action="packet"``).
@@ -240,10 +240,10 @@ def export_ministry(
 ):
     """``export ministry``: the Ministry report's export form.
 
-    Without ``ministry`` it exports the summary (``action`` ``summary``);
-    with ``ministry`` and ``requests`` (``join`` or ``leave``) that list, as
-    the page's form on the join and leave lists. The page's admission
-    (``can_report``) and the service's own scope check apply.
+    ``ministry`` and ``requests`` (``join`` or ``leave``) choose the list,
+    as the page's form on the join and leave lists; both are required, since
+    the campaign-wide summary export was removed (#1126). The page's
+    admission (``can_report``) and the service's own scope check apply.
     """
     from .audit.schemas import Action
     from .reports.ministries import MinistryQuery
@@ -256,14 +256,13 @@ def export_ministry(
         ``size`` chooses only the screen's window, which the page's export
         form never sends, so it is refused like ``page``.
         """
-        if (ministry is None) != (requests is None):
-            raise ValueError("--ministry and --requests go together.")
-        if ministry is not None:
-            _ministry_duid(ministry)
+        if ministry is None or requests is None:
+            raise ValueError("Choose a Ministry with --ministry and --requests.")
+        _ministry_duid(ministry)
         values = filter_values(filters)
         if "size" in values:
             raise ValueError("The export has no page size.")
-        return MinistryQuery.parse(values, detail=ministry is not None)
+        return MinistryQuery.parse(values, detail=True)
 
     def create(actor, campaign_id, query):
         """The page's service, for a Ministry this campaign offers.
@@ -271,7 +270,7 @@ def export_ministry(
         As the packet form's check: a Ministry the campaign does not offer
         is a bad selection (``invalid``), not an outage to retry.
         """
-        if ministry is not None and ministry not in offered_ministries(campaign_id):
+        if ministry not in offered_ministries(campaign_id):
             raise ValueError("That Ministry is not in this campaign.")
         return create_ministry_export(
             service.store,
@@ -279,7 +278,7 @@ def export_ministry(
             campaign_id=campaign_id,
             query=query,
             ministry_id=ministry,
-            action=requests or "summary",
+            action=requests,
             format=fmt,
             browser_timezone=zone,
             request_key=request_key,

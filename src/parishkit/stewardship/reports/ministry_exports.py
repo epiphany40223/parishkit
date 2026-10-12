@@ -92,7 +92,7 @@ def create_ministry_export(
     request_key,
     query=None,
     ministry_id=None,
-    action="summary",
+    action=None,
     snapshot=None,
     ministries=None,
     history=False,
@@ -101,6 +101,12 @@ def create_ministry_export(
 
     SQL derives the source, privacy projection and exact authorized Ministry set.
     Neither HTTP fields nor a caller-supplied document choose those authorities.
+
+    ``action`` is ``join`` or ``leave`` (one Ministry's list) or ``packet``.
+    The campaign-wide summary export was removed (#1126): its file held only
+    the counts the page shows, so neither a new request nor a regeneration of
+    an old summary capture is accepted. A regeneration passes ``snapshot``
+    and no ``action``; the retained capture fixes what it was.
     """
     if any(
         not isinstance(value, UUID) for value in (user_id, campaign_id, request_key)
@@ -116,11 +122,13 @@ def create_ministry_export(
             or snapshot.campaign_id != campaign_id
             or query is not None
             or ministry_id is not None
-            or action != "summary"
+            or action is not None
             or ministries is not None
             or history
         ):
             raise ValueError("Regeneration cannot change retained selection.")
+        if snapshot.parameters.get("action") == "summary":
+            raise ValueError("The Ministry summary export was removed.")
         parameters = snapshot.parameters
     elif action == "packet":
         if query is not None or ministry_id is not None:
@@ -131,15 +139,12 @@ def create_ministry_export(
             raise ValueError("Only a Ministry packet selects several Ministries.")
         if (
             not isinstance(query, MinistryQuery)
-            or action not in {"summary", "join", "leave"}
-            or (ministry_id is None) != (action == "summary")
-            or (
-                ministry_id is not None
-                and (type(ministry_id) is not int or not 0 < ministry_id < 2**31)
-            )
+            or action not in {"join", "leave"}
+            or type(ministry_id) is not int
+            or not 0 < ministry_id < 2**31
         ):
             raise ValueError("Ministry export requires typed selection.")
-        query = MinistryQuery.parse(query.form_values(), detail=ministry_id is not None)
+        query = MinistryQuery.parse(query.form_values(), detail=True)
         parameters = {
             "filters": query.form_values(),
             "ministry": ministry_id,
