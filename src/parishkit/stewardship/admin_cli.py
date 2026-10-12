@@ -45,10 +45,11 @@ Family-level exports (PR 8e, in ``admin_family_exports``), the Family
 portal maintenance switch (PR 7a, in ``admin_portal``), ``report
 source-form`` (in ``admin_source_form``), ``report data-to-fix`` (in
 ``admin_data_to_fix``), ``files list``, ``files
-delete`` and ``files rename`` (PR 10, in ``admin_hosted_files``) and
+delete`` and ``files rename`` (PR 10, in ``admin_hosted_files``),
 ``content list`` and ``content history`` (PR 10, in ``admin_content``),
-and ``parish show``, ``ministries list``, ``branding show`` and ``campaign
-shares`` (PR 10, in ``admin_settings``). A
+``parish show``, ``ministries list``, ``branding show`` and ``campaign
+shares`` (PR 10, in ``admin_settings``), and ``parish preview`` and
+``parish confirm`` (PR 10, in ``admin_parish``). A
 command that streams a file (``logs export`` and
 ``export download --stream``) writes the file's bytes, and nothing else, to
 standard output, and its document to standard error. Other areas join the same
@@ -1162,6 +1163,30 @@ def parish_show(args, preamble, runtime, context):
     from .admin_settings import read_parish
 
     return read_parish(context["caller"], runtime)
+
+
+def parish_preview(args, preamble, runtime, context):
+    """Review a change to the parish profile (PR 10)."""
+    from .admin_parish import CHANGES_LIMIT, preview_parish
+
+    return preview_parish(
+        context["caller"],
+        runtime,
+        expected_version=args.expected_version,
+        changes=_input(args.changes, context, CHANGES_LIMIT),
+    )
+
+
+def parish_confirm(args, preamble, runtime, context):
+    """Confirm a reviewed parish profile change as a configuration request (PR 10)."""
+    from .admin_parish import TOKEN_LIMIT, confirm_parish
+
+    return confirm_parish(
+        context["caller"],
+        runtime,
+        token=_input(args.token, context, TOKEN_LIMIT),
+        context=context,
+    )
 
 
 def ministries_list(args, preamble, runtime, context):
@@ -2925,6 +2950,30 @@ def _users_preview_options(parser):
     )
 
 
+def _parish_preview_options(parser):
+    """Options of ``parish preview``: the profile's version and the change."""
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_digest,
+        help="the version parish show printed",
+    )
+    parser.add_argument(
+        "--changes",
+        required=True,
+        help="the change document as JSON, or - to read it from standard input",
+    )
+
+
+def _parish_confirm_options(parser):
+    """Options of ``parish confirm``: the preview's token."""
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from parish preview, or - for standard input",
+    )
+
+
 def _users_confirm_options(parser):
     """Options of ``users confirm``: the preview's token."""
     parser.add_argument(
@@ -3565,8 +3614,14 @@ def _settings_specs():
 
     Parish settings, Ministries, Parish logos and Share options: like
     ``files list``, any session runs them and they record nothing, as the
-    pages' GETs record nothing. Their changes come later in PR 10.
+    pages' GETs record nothing. The parish profile's Review and Apply are
+    ``parish preview`` and ``parish confirm`` (``admin_parish``), as ``users
+    preview`` and ``users confirm``: full scope, as the page's posts record
+    activity; neither is fresh-gated nor prompts, as the page asks for no
+    recent sign-in and its Apply is the reviewed token. The other pages'
+    changes come later in PR 10.
     """
+    from .admin_parish import ParishConfirm, ParishPreview
     from .admin_settings import BrandingShow, CampaignShares, MinistryList, ParishShow
 
     def read(name, summary, handler, model, options=()):
@@ -3585,6 +3640,28 @@ def _settings_specs():
 
     return (
         read("parish show", "Show the parish profile.", parish_show, ParishShow),
+        CommandSpec(
+            "parish preview",
+            "Review a change to the parish profile.",
+            parish_preview,
+            "full",
+            False,
+            ParishPreview.field_names(),
+            10,
+            options=(_parish_preview_options,),
+            expected_version=True,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "parish confirm",
+            "Confirm a reviewed change to the parish profile.",
+            parish_confirm,
+            "full",
+            True,
+            ParishConfirm.field_names(),
+            10,
+            options=(_parish_confirm_options,),
+        ),
         read(
             "ministries list",
             "List the Ministry catalog and each Ministry's activity.",

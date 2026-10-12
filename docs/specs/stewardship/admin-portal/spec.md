@@ -6062,7 +6062,8 @@ every `'<prefix>_'||` an installed audit-writing function builds to be a
   line's `admin_cmd_users_confirm`, ParishSoft Ministry leaders imported as
   users (`user_leaders_import_requested`, `user_leader_imported`,
   `admin_cmd_users_import_leaders`), and the operator's one-time conversion
-  of sign-in rules into users, `operator_users_upgraded`), hosted files (`hosted_file_*`), stored key
+  of sign-in rules into users, `operator_users_upgraded`), the command
+  line's parish profile changes (`admin_cmd_parish_confirm`), hosted files (`hosted_file_*`), stored key
   replacements
   (`secret_replacement_requested`, `secret_request_*`,
   `credential_consumer_acknowledged`) and initial setup, which is

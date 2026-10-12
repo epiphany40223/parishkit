@@ -678,7 +678,19 @@ read for a read-only session with no event, no Ministry catalog
 `unavailable`, logos in slot order with a missing asset left out, a
 draft's Share options editable and a live campaign's not, no financial
 module, no or an unknown campaign, a Staff reader denied, an ended
-session).
+session). The fifth adds `parish preview` and `parish confirm`, the Parish
+settings page's Review and Apply, in `parishkit.stewardship.admin_parish`,
+through the page's own form, review (moved into
+`parish_views.review_change`, which the page now calls) and
+`admin_editing.confirm_intent`, with no schema change; proven by
+`tests/stewardship/test_admin_parish.py` (the change document's shape,
+catalog flags, the described event), `tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py`,
+`tests/stewardship/database/test_admin_parish_cli_postgresql.py` (a
+preview and confirm recording the request and event, a telephone stored
+as E.164, the timezone note, removing the giving link, a repeated confirm,
+a stale version, no change, a field error, Staff denied, an ended session,
+another page's token) and the unchanged parish settings page suites.
 
 ## ADM-12: Admin navigation overhaul
 

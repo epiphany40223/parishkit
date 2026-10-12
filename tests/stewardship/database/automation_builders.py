@@ -110,3 +110,28 @@ def command(service, secret, host=HOST):
     return AdminCaller.from_automation(
         secret, host, store=service.store, pairing=pairing(service)
     )
+
+
+def as_staff(monkeypatch):
+    """Give every admission the session's principal holding only Staff.
+
+    Pairing needs an Administrator, so a page's capability check is shown a
+    Staff principal this way. ``admin_editing`` imported the function itself
+    (the pages' ``principal`` and ``confirm_intent``), so it is patched
+    there too; patching ``sessions`` alone leaves those admissions real.
+    """
+    from dataclasses import replace
+
+    from parishkit.stewardship.accounts import admin_editing, sessions
+
+    real = sessions.authenticated_admin
+
+    def staff(*arguments, **options):
+        """The real admission, its principal holding only Staff."""
+        principal = real(*arguments, **options)
+        if principal is None:
+            return None
+        return replace(principal, roles=frozenset({"staff"}))
+
+    monkeypatch.setattr(sessions, "authenticated_admin", staff)
+    monkeypatch.setattr(admin_editing, "authenticated_admin", staff)

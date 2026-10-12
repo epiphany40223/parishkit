@@ -226,12 +226,17 @@ def _shown(name, value):
     return phone(value) if name == "phone" else value
 
 
-def _preview(request, service, actor):
-    """Validate the full resulting document and show only changed profile values."""
-    configuration = editable_configuration(service)
-    form = ParishForm(request.POST)
-    if not form.is_valid():
-        return _form_page(request, configuration, form, status=400)
+def review_change(service, actor, configuration, form):
+    """The page's review of a valid ``form``, or None with its refusal on the form.
+
+    Request-free, so the page's Review and ``pk-admin parish preview`` share
+    it. A form whose version is not the applied one raises ``stale_page()``.
+    Only changed profile values are reviewed; no change, or a resulting
+    document the configuration refuses, adds the page's refusal to the form
+    and returns None. The review's ``changes`` are drawn for people
+    (``_shown``); ``values`` maps each changed field to its stored
+    ``(before, after)``, None for an unset value.
+    """
     if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:
         # Shown in place (#532) with the standard explanation.
         raise stale_page()
@@ -246,7 +251,7 @@ def _preview(request, service, actor):
         values["online_giving_url"] = values["online_giving_url"] or None
     if not values:
         form.add_error(None, _("No settings have changed."))
-        return _form_page(request, configuration, form, status=400)
+        return None
     patch = [
         {
             "operation": "update",
@@ -268,8 +273,8 @@ def _preview(request, service, actor):
                 "query parameters or fragments."
             ),
         )
-        return _form_page(request, configuration, form, status=400)
-    review = {
+        return None
+    return {
         "changes": [
             {
                 "label": form.fields[name].label,
@@ -280,11 +285,26 @@ def _preview(request, service, actor):
             }
             for name, value in values.items()
         ],
+        "values": {
+            name: (record["values"].get(name, DEFAULTS.get(name)), value)
+            for name, value in values.items()
+        },
         "notes": [TIMEZONE_NOTE] if "timezone" in values else [],
         "preview": sign_preview(
             actor=actor, configuration=configuration, patch=patch, salt=SALT
         ),
     }
+
+
+def _preview(request, service, actor):
+    """Validate the full resulting document and show only changed profile values."""
+    configuration = editable_configuration(service)
+    form = ParishForm(request.POST)
+    if not form.is_valid():
+        return _form_page(request, configuration, form, status=400)
+    review = review_change(service, actor, configuration, form)
+    if review is None:
+        return _form_page(request, configuration, form, status=400)
     return _form_page(request, configuration, form, review=review)
 
 
