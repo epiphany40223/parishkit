@@ -1012,6 +1012,37 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 .schedule-day-times { list-style: none; padding: 0; margin: 0; columns: 14rem auto; }
 .schedule-day-times s { color: var(--muted); }
 .schedule-time-full { font-weight: 600; }
+/* The refresh schedule's seven-day grid (#632 slice 4). Each day is its own
+   grid row: the day label, then 96 quarter-hour cells, with a faint line at
+   each hour and a darker one every third hour. Marks and shadings are drawn
+   by class (the page's policy forbids inline styles): a full refresh is a
+   tall bar, a quick update a ringed dot, so they differ in shape as well as
+   colour; Family email windows and the missing hour when clocks go forward
+   are patterns the legend names; the current quarter hour has a bar at its
+   left edge. Below about 600 pixels the grid keeps its minimum width and
+   scrolls inside its own box, with the day labels held at its left edge.
+   Forced-colours mode keeps the authored colours, as the patterns are the
+   only way the shadings differ. */
+.schedule-grid-scroll { overflow-x: auto; margin-block: 0 .75rem; }
+.schedule-grid { min-width: 36rem; forced-color-adjust: none; }
+.schedule-grid-row { display: grid; grid-template-columns: 7.5rem repeat(96, minmax(0, 1fr)); min-height: 2.25rem; border-top: 1px solid var(--paper); }
+.schedule-grid-row > span { position: relative; background: var(--paper-soft); }
+.schedule-grid-row > span:nth-child(4n+2) { border-left: 1px solid var(--border); }
+.schedule-grid-row > span:nth-child(12n+2) { border-left-color: var(--control-border); }
+.schedule-grid-hours { min-height: 0; }
+.schedule-grid-hours > span.schedule-grid-hour { grid-column: span 12; background: none; border-left: 1px solid var(--control-border); padding-inline-start: .2rem; font-size: .75rem; color: var(--muted); }
+.schedule-grid-row > .schedule-grid-day { position: sticky; left: 0; z-index: 1; background: var(--paper); border: 0; padding-inline-end: .5rem; font-size: .85rem; line-height: 1.2; align-self: center; }
+.schedule-grid-day small { display: block; color: var(--muted); font-size: .75rem; }
+.grid-full::before { content: ""; position: absolute; inset: 15% 20%; background: var(--accent-strong); border-radius: 1px; }
+.grid-quick::after { content: ""; position: absolute; left: 50%; top: 50%; width: .4rem; height: .4rem; transform: translate(-50%, -50%); border-radius: 50%; background: var(--gold); box-shadow: 0 0 0 1px var(--paper); }
+:is(.schedule-grid-row > span, .grid-swatch).grid-reminder_preparing { background: repeating-linear-gradient(135deg, var(--warning-bg) 0 3px, var(--warning-border) 3px 4px); }
+:is(.schedule-grid-row > span, .grid-swatch).grid-reminder_sending { background: repeating-linear-gradient(0deg, var(--warning-border) 0 2px, var(--warning-bg) 2px 5px); }
+:is(.schedule-grid-row > span, .grid-swatch).grid-initial_sending { background: radial-gradient(var(--error-border) 1px, var(--error-bg) 1.5px) 0 0 / 4px 4px; }
+:is(.schedule-grid-row > span, .grid-swatch).grid-gap { background: repeating-linear-gradient(45deg, var(--control-border) 0 1px, var(--paper) 1px 4px); }
+:is(.schedule-grid-row > span, .grid-swatch).grid-now { box-shadow: inset 3px 0 0 var(--focus); }
+.schedule-grid-legend { list-style: none; padding: 0; margin: 0 0 1rem; display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; font-size: .85rem; }
+.schedule-grid-legend li { display: flex; align-items: center; gap: .4rem; }
+.grid-swatch { position: relative; display: inline-block; width: 1rem; height: 1.25rem; background: var(--paper-soft); border: 1px solid var(--border); forced-color-adjust: none; }
 .schedule-save { align-items: flex-start; }
 .schedule-status { flex: 1 1 18rem; margin: 0; min-height: 2lh; }
 /* The Users page (#952). Each row is one line: a long email or Name is cut

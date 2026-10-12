@@ -52,6 +52,7 @@ from parishkit.stewardship.source.refresh_rules import (
 )
 from parishkit.stewardship.web.time_entry_fields import FlexibleTimeField
 
+from .refresh_schedule_grid import HOURS, grid_rows, legend
 from .source_cadence_schema import CADENCE_SETTINGS
 
 RULES = "rules"
@@ -1197,6 +1198,13 @@ def editor_view(editor, *, timezone, now, preview_reader):
         view.preview = preview_context(
             preview, timezone=timezone, today=today, daily=daily
         )
+        # The seven-day grid (slice 4) draws the same days as the list: each
+        # day's dict carries its 96 cells, and the legend names the shadings.
+        rows = grid_rows(preview, timezone=timezone, now=now)
+        for shown, row in zip(view.preview["days"], rows, strict=True):
+            shown["cells"] = row["cells"]
+        view.preview["legend"] = legend(rows)
+        view.preview["hours"] = HOURS
     view.links, view.status = status_line(
         editor, view.preview["line"] if view.preview else None
     )
