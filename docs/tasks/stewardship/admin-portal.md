@@ -566,9 +566,19 @@ watch stops, the catalog), `tests/stewardship/test_admin_cli.py`,
 (create, repeat and the page's form with the same key, a bound key, retry
 by key, the real calculation and render, a read-only watch to the end, the
 handed-off file, cancel before handoff and after publication, unknown
-requests). 8g (the one-Family timeline, a new export kind with its own
-frozen migration, in its own pull request) and the in-memory downloads
-(Limitations, response lists, when PR #752 lands) follow.
+requests). 8g adds the Family timeline export, a new export kind with its
+frozen migration 0063 (`stewardship_timeline_export_snapshot`, the
+request's `timeline_snapshot_id`, the guards' timeline branches), the page's
+export form and `export family-timeline`; proven by
+`tests/stewardship/test_timeline_exports.py` (the file's contents),
+`tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_schema_migration_files.py`,
+`tests/stewardship/database/test_timeline_exports_postgresql.py` (the
+page and the command making the same record and event, the worker's file
+with the code, the stream equal to the page's download, Staff denied, the
+capture's SQL refusals), the schema baseline and upgrade parity suites and
+the timeline browser test. The in-memory downloads (Limitations, response
+lists, when PR #752 lands) follow.
 A follow-up (#682) lets `delivery resolve` retry Family emails too, loading
 the web's general and public token keyrings only for that, checked against
 the web's published receipts; proven by `tests/stewardship/test_admin_cli.py`,

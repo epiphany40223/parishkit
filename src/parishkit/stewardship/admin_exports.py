@@ -195,7 +195,8 @@ def _refusal(caller, service, actor, error):
     The session is rechecked first, so a session that ended meanwhile is
     exit 5 whatever the page refused. Then a missing export, fact set or
     file (an unknown identifier, a generation that is not ready, an expired
-    file) is ``not_available``; the page's conflicts (cancelling a
+    file, or a Testing timeline export whose rehearsal ended) is
+    ``not_available``; the page's conflicts (cancelling a
     published export, regenerating one that has not expired, retrying a
     run that is not the latest failed one) are ``stale_version``; a read
     the campaign's guard could not finish is ``unavailable``. Any other
@@ -207,11 +208,18 @@ def _refusal(caller, service, actor, error):
     from .jobs.storage import TaskRetryConflict
     from .reports.export_services import ExportConflict, ExportExpired
     from .reports.facts import FactUnavailable
+    from .reports.timeline_exports import RehearsalEnded
     from .storage import StaleRecordError
 
     _recheck(caller, service.store, actor)
     if isinstance(error, (ObjectDoesNotExist, FactUnavailable, ExportExpired)):
         raise NotAvailable("That export is not available.") from None
+    if isinstance(error, RehearsalEnded):
+        # A Testing timeline export whose rehearsal ended is made again, not
+        # regenerated, as its status page says.
+        raise NotAvailable(
+            "Its Testing rehearsal has ended; export the timeline again."
+        ) from None
     if isinstance(error, (ExportConflict, TaskRetryConflict)):
         raise StaleRecordError("The export changed; read it again.") from None
     if isinstance(error, ReadUnavailable):

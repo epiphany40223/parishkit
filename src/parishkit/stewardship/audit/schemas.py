@@ -216,6 +216,7 @@ class Action(StrEnum):
     ADMIN_CMD_HISTORY_PREVIEW = "admin_cmd_history_preview"
     ADMIN_CMD_HISTORY_CONFIRM = "admin_cmd_history_confirm"
     ADMIN_CMD_HISTORY_REMOVE = "admin_cmd_history_remove"
+    ADMIN_CMD_EXPORT_FAMILY_TIMELINE = "admin_cmd_export_family_timeline"
 
 
 # Closed field identifiers are operational metadata, never census values.

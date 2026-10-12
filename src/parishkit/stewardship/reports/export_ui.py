@@ -43,11 +43,15 @@ from .export_services import (
 )
 from .export_views import SAFE_FAILURES, _body, _principal, download_with_grant
 from .models import CampaignDailyFactSet
+from .timeline_exports import RehearsalEnded, rehearsal_ended
 from .workspace import ReportQuery
 
 # Exports whose new file needs a fresh Google sign-in (#547): the directory
-# files carry live Family codes and the financial file financial detail.
-FRESH_REPORTS = frozenset({"family_directory", "postal_outreach", "financial"})
+# files and a Family's timeline carry live Family codes and the financial
+# file financial detail.
+FRESH_REPORTS = frozenset(
+    {"family_directory", "postal_outreach", "financial", "family_timeline"}
+)
 
 
 def _regenerate_step_up(request, store, principal, request_id):
@@ -92,11 +96,14 @@ def _error(
     busy=False,
     bound=False,
     expired=False,
+    rehearsal_ended=False,
 ):
     """Fixed-text recovery never reflects a submitted value or internal failure.
 
-    ``bound`` explains a reused one-time form (``ExportRequestBound``) and
-    ``expired`` an authorized download of an expired file (``ExportExpired``).
+    ``bound`` explains a reused one-time form (``ExportRequestBound``),
+    ``expired`` an authorized download of an expired file (``ExportExpired``)
+    and ``rehearsal_ended`` a Testing timeline export whose rehearsal ended
+    (``RehearsalEnded``), which is made again rather than regenerated.
     """
     debug_swallowed("report request refused")
     # No request context processors: a database outage must not trigger another
@@ -110,6 +117,7 @@ def _error(
                 "busy": busy,
                 "bound": bound,
                 "expired": expired,
+                "rehearsal_ended": rehearsal_ended,
                 "temporary": status == 503,
             },
         ),
@@ -198,6 +206,7 @@ def detail(request, request_id):
                     "ministry_snapshot",
                     "financial_snapshot",
                     "family_test_names_snapshot",
+                    "timeline_snapshot",
                 )
                 .defer(
                     "information_snapshot__document",
@@ -205,6 +214,7 @@ def detail(request, request_id):
                     "ministry_snapshot__document",
                     "financial_snapshot__document",
                     "family_test_names_snapshot__document",
+                    "timeline_snapshot__document",
                 )
                 .annotate(
                     ministry_source_generation=F(
@@ -248,6 +258,16 @@ def detail(request, request_id):
                 source = "campaign_mail_families"
                 report_url = reverse(
                     "admin:campaign_mail_families", args=[job.parameters["revision"]]
+                )
+            elif job.report == "family_timeline":
+                # The timeline page is reached from the Family directory; the
+                # way back is the Family's own timeline page.
+                from .family_timeline_views import timeline_url
+
+                title = "Family timeline export"
+                source = "family_directory"
+                report_url = timeline_url(
+                    job.timeline_snapshot.family_id, job.parameters["mode"]
                 )
             elif job.report in {"family_directory", "postal_outreach"}:
                 source = "family_directory"
@@ -297,6 +317,9 @@ def detail(request, request_id):
                 # "Return to" names the report by its page name.
                 "report_name": admin_navigation.PAGES[source].label,
                 "can_cancel": state["state"] in {"queued", "running", "retry_wait"},
+                # A Testing timeline export is bound to its rehearsal: once
+                # that ended, Regenerate is unavailable, with the reason.
+                "rehearsal_ended": rehearsal_ended(job),
                 # Why a still-queued export has not started (#340). Ministry
                 # leaders may open their own exports but not background work,
                 # so only a reader who may see that work learns what runs ahead.
@@ -364,6 +387,8 @@ def command(request, request_id, *, action):
         else:
             raise ValueError("Unknown report action.")
         return _redirect(request_id)
+    except RehearsalEnded:
+        return _error(request, request_id=request_id, rehearsal_ended=True)
     except (ExportConflict, TaskRetryConflict):
         return _error(request, request_id=request_id)
     except ExportRequestBound:

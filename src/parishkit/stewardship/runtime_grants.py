@@ -350,7 +350,8 @@ CLOSURE_FUNCTIONS = {
 # #1018's archive tables (0059) follow 0058 (#1024), so they are in it, and
 # so is #528's census resolution history (0060), which follows 0059, and
 # its roster Entered in ParishSoft history (0061), which follows 0060.
-# Take a backup now's request record (0062, #530) follows 0061.
+# Take a backup now's request record (0062, #530) follows 0061, and the
+# Family timeline export's capture (0063, #463) follows 0062.
 _ARCHIVES = ("stewardship_reports", "0014_campaign_archives")
 CLOSURE_TABLES = {
     **dict.fromkeys((ARCHIVE_TABLE, *CHILD_TABLES), _ARCHIVES),
@@ -363,6 +364,10 @@ CLOSURE_TABLES = {
         "0002_roster_entries",
     ),
     "stewardship_backup_request": ("stewardship_jobs", "0023_backup_request"),
+    "stewardship_timeline_export_snapshot": (
+        "stewardship_reports",
+        "0015_timeline_exports",
+    ),
 }
 
 

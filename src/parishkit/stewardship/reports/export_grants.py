@@ -15,6 +15,7 @@ def add_export_grants(tables, columns, *, role):
         "ministry",
         "financial",
         "family_test_names",
+        "timeline",
     ):
         snapshot = f"stewardship_{kind}_export_snapshot"
         if role in {"web", "worker"}:

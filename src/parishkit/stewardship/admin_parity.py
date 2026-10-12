@@ -219,7 +219,10 @@ LEDGER = {
     "response_list": pending("PR 8h", "export responses"),
     "response_list_export": pending("PR 8h", "export responses"),
     "family_directory": command("export directory", "export postal"),
-    "family_timeline": pending("PR 8g", "export family-timeline"),
+    # The one-Family timeline is Family-level, so it is a file only: the
+    # page's export form (PR 8g) and ``export family-timeline``.
+    "family_timeline": command("export family-timeline"),
+    "family_timeline_export": command("export family-timeline"),
     # The header's Find a Family box (#561) runs the directory's search.
     "find_family": permanent(NAME_SEARCH),
     # Creating a financial export is fresh-gated (#547): the command calls

@@ -219,6 +219,9 @@ FROZEN = {
     "0062_backup_request.sql": (
         "2eafb3ccd65ad1aef3d1e7925f7dfb8b4e17c5a5f47022e96e80a74b8b7e47a4"
     ),
+    "0063_timeline_exports.sql": (
+        "c99c24710b46e3de1fccebd3c4f4a921315cb2f4b4ba53f31bf44c119b8dbf46"
+    ),
 }
 
 
@@ -277,6 +280,9 @@ def test_every_frozen_migration_file_is_pinned_and_unchanged():
         assert (
             text.startswith("--") and "SET LOCAL check_function_bodies = false;" in text
         )
+        # Unqualified names resolve in public, whatever the migrating role's
+        # own search_path is.
+        assert "SET LOCAL search_path = public;" in text, name
         # Every frozen file is part of the image.
         for ignore in (
             ROOT / ".dockerignore",

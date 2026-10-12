@@ -250,4 +250,9 @@ patterns = [
         {"representation": "download"},
         name="daily_digest_download",
     ),
+    _page(
+        "reports/families/<uuid:family_id>/exports/",
+        family_timeline_views.export,
+        "family_timeline_export",
+    ),
 ]

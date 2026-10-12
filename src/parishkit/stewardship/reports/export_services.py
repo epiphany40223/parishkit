@@ -71,6 +71,9 @@ def authorize(store, user_id, *, request=None):
     elif isinstance(request, ExportRequest) and request.report == "financial":
         # Money needs the page's own capability, not campaign reporting alone.
         permitted = permitted and allows(principal, Capability.FINANCIAL_DETAIL)
+    elif isinstance(request, ExportRequest) and request.report == "family_timeline":
+        # The full timeline is the page's Administrator view only.
+        permitted = permitted and "administrator" in principal.roles
     elif isinstance(request, ExportRequest) and request.report in FAMILY_CODE_REPORTS:
         # Codes need the directory page's own capability too, so a requester
         # who loses it can no longer download or regenerate an earlier export.
@@ -259,12 +262,14 @@ def regenerate_export(store, user_id, request_id, *, request_key):
                 "ministry_snapshot",
                 "financial_snapshot",
                 "family_test_names_snapshot",
+                "timeline_snapshot",
             )
             .defer(
                 "directory_snapshot__document",
                 "ministry_snapshot__document",
                 "financial_snapshot__document",
                 "family_test_names_snapshot__document",
+                "timeline_snapshot__document",
             )
             .get(pk=request_id)
         )
@@ -311,6 +316,20 @@ def regenerate_export(store, user_id, request_id, *, request_key):
                 browser_timezone=original.browser_timezone,
                 request_key=request_key,
                 snapshot=original.information_snapshot,
+            )
+        if original.report == "family_timeline":
+            from .timeline_exports import create_timeline_export
+
+            return create_timeline_export(
+                store,
+                user_id,
+                campaign_id=original.campaign_id,
+                family_id=original.timeline_snapshot.family_id,
+                mode=original.parameters["mode"],
+                format=original.format,
+                browser_timezone=original.browser_timezone,
+                request_key=request_key,
+                snapshot=original.timeline_snapshot,
             )
         if original.report == "financial":
             from .financial_exports import create_financial_export

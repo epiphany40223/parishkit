@@ -28,7 +28,8 @@
   <p class="export-state" role="status">{% translate "The generated file has expired." %}</p>
   <p>{% translate "Select Regenerate to make the file again from the same data, filters, format and time zone as the original, with the current parish logo. It does not pick up newer campaign data." %}</p>
   <p class="notice">{% translate "Sensitive parish report: download only to a trusted device and share only with authorized recipients." %}</p>
-  <form method="post" action="{% url 'admin:report_export_regenerate' job.pk %}">{% csrf_token %}<input type="hidden" name="request_key" value="{{ retry_key }}">{% button type="submit" enabled=mutable %}{% translate "Regenerate expired file" %}{% endbutton %}</form>
+  {% if rehearsal_ended %}<form method="post" action="{% url 'admin:report_export_regenerate' job.pk %}">{% csrf_token %}<input type="hidden" name="request_key" value="{{ retry_key }}">{% button type="submit" enabled=False aria-describedby="regenerate-unavailable" %}{% translate "Regenerate expired file" %}{% endbutton %}</form>
+  <p class="help" id="regenerate-unavailable" data-regenerate-unavailable>{% translate "Unavailable: the Testing rehearsal this export was made in has ended. Export the timeline again from the Family's timeline page." %}</p>{% else %}<form method="post" action="{% url 'admin:report_export_regenerate' job.pk %}">{% csrf_token %}<input type="hidden" name="request_key" value="{{ retry_key }}">{% button type="submit" enabled=mutable %}{% translate "Regenerate expired file" %}{% endbutton %}</form>{% endif %}
 {% else %}
   <p class="export-state" role="status">{{ status.state }}</p>
 {% endif %}
@@ -57,6 +58,10 @@
 <dt>{% translate "Matching results" %}</dt><dd>{{ job.ministry_snapshot.row_count|number }}</dd>
 <dt>{% translate "ParishSoft data load" %}</dt><dd>{{ job.ministry_source_generation|number }}</dd>
 <dt>{% translate "Captured at" %}</dt><dd><time datetime="{{ job.ministry_snapshot.created_at|date:'c' }}" data-local-instant>{{ job.ministry_snapshot.created_at|date:'c' }}</time></dd>
+{% elif job.timeline_snapshot_id %}
+<dt>{% translate "Timeline lines" %}</dt><dd>{{ job.timeline_snapshot.row_count|number }}</dd>
+<dt>{% translate "Mode" %}</dt><dd>{% if job.parameters.mode == 'testing' %}{% translate "Testing rehearsal" %}{% else %}{% translate "Production" %}{% endif %}</dd>
+<dt>{% translate "Captured at" %}</dt><dd><time datetime="{{ job.timeline_snapshot.created_at|date:'c' }}" data-local-instant>{{ job.timeline_snapshot.created_at|date:'c' }}</time></dd>
 {% elif job.directory_snapshot_id %}
 <dt>{% translate "Matching Families" %}</dt><dd>{{ job.directory_snapshot.row_count|number }}</dd>
 <dt>{% translate "ParishSoft data load" %}</dt><dd>{{ job.directory_source_generation|number }}</dd>
