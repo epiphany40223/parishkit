@@ -51,9 +51,13 @@ def refusal(name, data):
     [
         ("large", 256, 100, (256, 100)),
         ("large", 2000, 1000, (1024, 512)),
-        ("menu", 512, 128, (128, 32)),
+        # A menu logo may be a wide wordmark, up to 512 x 128 (#1062).
+        ("menu", 512, 128, (512, 128)),
+        ("menu", 1024, 256, (512, 128)),
+        ("menu", 300, 100, (300, 100)),
         ("menu", 64, 64, (64, 64)),
-        ("menu", 2048, 600, (128, 38)),
+        ("menu", 256, 256, (128, 128)),
+        ("menu", 2048, 600, (437, 128)),
         ("icon", 128, 128, (128, 128)),
         ("icon", 140, 128, (128, 117)),
         ("icon", 512, 512, (128, 128)),
@@ -209,7 +213,8 @@ def test_displayed_size_follows_exif_rotation():
     Image.new("RGB", (100, 200)).save(output, format="JPEG", exif=exif)
     facts = image_facts(output.getvalue())
     assert (facts.width, facts.height) == (200, 100)
-    assert check_slot("menu", output.getvalue()).width == 128
+    graphic = check_slot("menu", output.getvalue())
+    assert (graphic.width, graphic.height) == (200, 100)
 
 
 def test_file_size_rounds_up():
@@ -311,7 +316,7 @@ def test_a_bundle_takes_four_separate_sizes(tmp_path):
         "favicon": check_slot("favicon", image(32, 32)),
     }
     receipts = {item.label: item for item in create_bundle(tmp_path, uuid4(), sizes)}
-    assert (receipts["menu"].width, receipts["menu"].height) == (128, 32)
+    assert (receipts["menu"].width, receipts["menu"].height) == (256, 64)
     assert (receipts["icon"].width, receipts["icon"].height) == (128, 128)
     assert receipts["menu"].sha256 != receipts["icon"].sha256
 

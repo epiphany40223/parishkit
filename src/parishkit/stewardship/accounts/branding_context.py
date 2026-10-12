@@ -14,25 +14,55 @@ from .branding_models import BrandingAsset
 from .configuration_installation import coherent_configuration
 from .limiting import LimiterUnavailable
 
+# The header draws the menu logo within this many CSS pixels (width,
+# height): 4rem tall, the height the header reserves for it (#638), and up
+# to 4 times as wide for a wordmark (#1062). The stored menu file is up to
+# twice this, so it stays sharp on a high-density screen.
+HEADER_LOGO = (256, 64)
+
+
+def header_logo_size(width, height):
+    """The menu logo's drawn size in the header, from its stored size.
+
+    The file is fitted within ``HEADER_LOGO`` and never enlarged, keeping
+    its shape. The header gives the image these as its width and height, so
+    the browser reserves the logo's whole box before the file arrives and
+    the parish name beside it never moves (no layout shift); CSS may still
+    narrow it on a small screen, keeping the same shape.
+    """
+    scale = min(1, HEADER_LOGO[0] / width, HEADER_LOGO[1] / height)
+    return max(1, round(width * scale)), max(1, round(height * scale))
+
 
 def branding_for(parish):
-    """Render one owner's pinned Parish projection, never silently the latest logo."""
+    """Render one owner's pinned Parish projection, never silently the latest logo.
+
+    ``menu_width`` and ``menu_height`` are the menu logo's drawn size in the
+    header (``header_logo_size``), present with ``menu``.
+    """
     if parish is None:
         return {}
-    found = set(
-        BrandingAsset.objects.filter(
+    found = {
+        pk: (width, height)
+        for pk, width, height in BrandingAsset.objects.filter(
             pk__in=[parish.menu_logo_id, parish.favicon_id], bundle__state="ready"
-        ).values_list("pk", flat=True)
-    )
-    return {
+        ).values_list("pk", "width", "height")
+    }
+    branding = {
         "name": parish.name,
-        "menu": reverse("public:branding_asset", args=[parish.menu_logo_id])
-        if parish.menu_logo_id in found
-        else None,
+        "menu": None,
         "favicon": reverse("public:branding_asset", args=[parish.favicon_id])
         if parish.favicon_id in found
         else None,
     }
+    if parish.menu_logo_id in found:
+        width, height = header_logo_size(*found[parish.menu_logo_id])
+        branding |= {
+            "menu": reverse("public:branding_asset", args=[parish.menu_logo_id]),
+            "menu_width": width,
+            "menu_height": height,
+        }
+    return branding
 
 
 def campaign_artwork(values, *, origin=""):

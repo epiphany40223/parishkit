@@ -169,7 +169,7 @@ def test_partial_bundle_cannot_become_ready_or_gain_assets_after_cleanup(tmp_pat
     "values",
     [
         {"label": "unknown"},
-        {"width": 129},
+        {"width": 513},
         {"height": 129},
         {"size": 0},
         {"sha256": "not-a-digest"},

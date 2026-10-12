@@ -511,9 +511,11 @@ CREATE FUNCTION public.stewardship_branding_asset_immutable_v1() RETURNS trigger
 -- FUNCTION: stewardship_branding_asset_insert_v1()
 CREATE FUNCTION public.stewardship_branding_asset_insert_v1() RETURNS trigger
     LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
 DECLARE selected public.stewardship_branding_bundle%ROWTYPE;
         maximum integer;
+        widest integer;
 BEGIN
     PERFORM pg_advisory_xact_lock(736230,1);
     SELECT * INTO selected FROM public.stewardship_branding_bundle
@@ -521,10 +523,13 @@ BEGIN
     maximum := CASE NEW.label
         WHEN 'large' THEN 1024 WHEN 'banner' THEN 1024 WHEN 'section' THEN 256
         WHEN 'favicon' THEN 32 ELSE 128 END;
+    -- A menu logo may be a wide wordmark (#1062): up to 4 times as wide as
+    -- its 128-pixel height. Every other label is fitted within a square.
+    widest := CASE NEW.label WHEN 'menu' THEN 512 ELSE maximum END;
     IF NOT FOUND OR selected.state<>'writing'
        OR selected.expires_at<=clock_timestamp()
        OR NEW.actor_id IS DISTINCT FROM selected.owner_id
-       OR NEW.width>maximum OR NEW.height>maximum THEN
+       OR NEW.width>widest OR NEW.height>maximum THEN
         RAISE EXCEPTION 'Invalid branding asset receipt' USING ERRCODE='23514';
     END IF;
     NEW.created_at := clock_timestamp();

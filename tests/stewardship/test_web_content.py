@@ -8,6 +8,7 @@ from PIL import Image
 from parishkit.stewardship.web.content import (
     ADMIN_DIGEST_PLACEHOLDERS,
     FAMILY_NAME_PLACEHOLDERS,
+    LOGO_SIZES,
     MAX_IMAGE_BYTES,
     MAX_TEXT_BYTES,
     PLACEHOLDERS,
@@ -262,14 +263,36 @@ def png(size=(300, 200)):
 def test_graphic_variants_decode_reencode_and_use_random_names():
     """All output is static bounded PNG regardless of the caller's filename."""
     first, second = prepare_graphics(png()), prepare_graphics(png())
-    assert set(first) == {"large", "small", "favicon"}
+    assert set(first) == {"large", "menu", "icon", "favicon"}
     assert first["large"].name != second["large"].name
-    for label, limit in (("large", 1024), ("small", 128), ("favicon", 32)):
+    for label, (widest, tallest) in LOGO_SIZES.items():
         result = first[label]
         with Image.open(BytesIO(result.data)) as image:
             assert image.format == "PNG" and not image.info
-            assert max(image.size) <= limit
+            assert image.size == (result.width, result.height)
+            assert image.width <= widest and image.height <= tallest
         assert result.content_type == "image/png" and result.name.endswith(".png")
+
+
+@pytest.mark.parametrize(
+    "size, menu, icon",
+    [
+        # A square logo is the same 128-pixel square at menu and icon size.
+        ((1000, 1000), (128, 128), (128, 128)),
+        # A 4:1 wordmark keeps a 128-pixel-tall menu logo (#1062), while the
+        # icon still fits a 128-pixel square.
+        ((2048, 512), (512, 128), (128, 32)),
+        # Wider than 4:1 is bound by the menu's 512-pixel width.
+        ((1024, 128), (512, 64), (128, 16)),
+        # A small upload is never enlarged.
+        ((200, 50), (200, 50), (128, 32)),
+    ],
+)
+def test_one_image_menu_logo_may_be_wide(size, menu, icon):
+    """One image makes a menu logo within 512 x 128 and an icon within 128."""
+    graphics = prepare_graphics(png(size))
+    assert (graphics["menu"].width, graphics["menu"].height) == menu
+    assert (graphics["icon"].width, graphics["icon"].height) == icon
 
 
 @pytest.mark.parametrize(

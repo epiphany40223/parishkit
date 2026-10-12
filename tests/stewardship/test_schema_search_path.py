@@ -70,7 +70,6 @@ UNPINNED = frozenset(
         "stewardship_automation_notice_immutable_v1()",
         "stewardship_backup_run_immutable_v1()",
         "stewardship_branding_asset_immutable_v1()",
-        "stewardship_branding_asset_insert_v1()",
         "stewardship_branding_bundle_mutable_v1()",
         "stewardship_campaign_artwork_v1()",
         "stewardship_campaign_boundary_mutable_v1()",

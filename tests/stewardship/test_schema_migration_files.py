@@ -252,6 +252,9 @@ FROZEN = {
     "0073_dispatch_token_access.sql": (
         "9cc43abb774ed0250b6a5234cc482bf76c2fce9a8423d21f1fb4ea9d6664b6fc"
     ),
+    "0074_wide_menu_logo.sql": (
+        "24c1b91821f318c072e9fcc1b09ae3aafba7eddab6dabac251a5f330043c62f3"
+    ),
 }
 
 

@@ -10,6 +10,8 @@ from django.views.decorators.http import require_http_methods
 from parishkit.stewardship.jobs.campaign_mail_values import document_parish
 
 from .authentication import runtime
+from .branding_context import header_logo_size
+from .branding_models import BrandingAsset
 from .content_forms import EMAIL_LABELS, page_slots, sample_render
 from .setup_drafts import mark_reviewed
 from .setup_preview import prepare_preview
@@ -80,9 +82,23 @@ def setup_preview(request):
                         label: reverse("admin:setup_branding_asset", args=[identifier])
                         for label, identifier in preview.branding.items()
                     },
+                    **_menu_size(preview.branding.get("menu")),
                 },
             },
         )
         return _checked(request, service, response, preview.draft)
     except ERRORS as error:
         return page_error(request, error, "preview")
+
+
+def _menu_size(identifier):
+    """The staged menu logo's drawn header size, as ``branding_for`` gives
+    the live one, so the preview's header reserves the same box (#1062)."""
+    if identifier is None:
+        return {}
+    assets = BrandingAsset.objects.filter(pk=identifier)
+    stored = assets.values_list("width", "height").first()
+    if stored is None:
+        return {}
+    width, height = header_logo_size(*stored)
+    return {"menu_width": width, "menu_height": height}

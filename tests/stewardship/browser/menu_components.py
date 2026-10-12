@@ -9,8 +9,11 @@ them: Pages and emails (near the menu's top) as the same page as ``PATH``,
 and System logs (near its end) as the menu on System logs. The other links
 are never followed. ``LOGO_PATH`` is the same page with a parish logo in the
 header, served at ``LOGO``, and ``FAMILY_LOGO_PATH`` the Family sign-in page
-with that logo, for the header-height test (#638). Additional information
-and Ministry follow-up carry open counts (``COUNTS``, #585).
+with that logo, for the header-height test (#638). ``WIDE_PATH`` and
+``FAMILY_WIDE_PATH`` are the same two pages with a 4:1 wordmark, the widest
+menu logo (#1062), served at ``WIDE_LOGO``. Each logo carries its drawn size
+as ``branding_for`` gives it. Additional information and Ministry follow-up
+carry open counts (``COUNTS``, #585).
 """
 
 from io import BytesIO
@@ -21,13 +24,46 @@ from django.template.loader import render_to_string
 from PIL import Image
 
 from parishkit.stewardship.accounts import admin_context, admin_navigation
+from parishkit.stewardship.accounts.branding_context import header_logo_size
 from parishkit.stewardship.accounts.policy import Principal
 
 PATH = "/admin-menu"
 LOGO_PATH = "/admin-menu-logo"
 LOGO = "/branding/admin-menu-logo.png"
 FAMILY_LOGO_PATH = "/family-login-logo"
-BRANDING = {"parish_branding": {"name": "Saint Example Parish", "menu": LOGO}}
+WIDE_PATH = "/admin-menu-wordmark"
+WIDE_LOGO = "/branding/admin-menu-wordmark.png"
+FAMILY_WIDE_PATH = "/family-login-wordmark"
+# The stored menu files: the square 128-pixel variant, and a 4:1 wordmark at
+# the widest stored menu size (#1062).
+LOGO_SIZE = (128, 128)
+WIDE_SIZE = (512, 128)
+
+
+def _branding(url, size):
+    """The header's branding context for a menu logo of stored ``size``."""
+    width, height = header_logo_size(*size)
+    return {
+        "parish_branding": {
+            "name": "Saint Example Parish",
+            "menu": url,
+            "menu_width": width,
+            "menu_height": height,
+        }
+    }
+
+
+BRANDING = _branding(LOGO, LOGO_SIZE)
+WIDE_BRANDING = _branding(WIDE_LOGO, WIDE_SIZE)
+
+
+def _png(size):
+    """A synthetic logo file of ``size`` pixels."""
+    data = BytesIO()
+    Image.new("RGB", size, "teal").save(data, format="PNG")
+    return data.getvalue()
+
+
 CAMPAIGN = SimpleNamespace(
     pk=UUID(int=522),
     state="draft",
@@ -77,9 +113,11 @@ def components(context, admin):
         {"campaign_id": CAMPAIGN.pk},
         BRANDING,
     )
-    # A square logo, like the stored 128-pixel menu variant.
-    logo = BytesIO()
-    Image.new("RGB", (128, 128), "teal").save(logo, format="PNG")
+    _sections, wide = render(
+        "content_catalog",
+        {"campaign_id": CAMPAIGN.pk},
+        WIDE_BRANDING,
+    )
     url = {
         item["name"]: item["url"] for section in sections for item in section["items"]
     }
@@ -88,9 +126,15 @@ def components(context, admin):
         url["content_catalog"]: ("text/html", html),
         url["logs"]: ("text/html", logs),
         LOGO_PATH: ("text/html", branded),
-        LOGO: ("image/png", logo.getvalue()),
+        LOGO: ("image/png", _png(LOGO_SIZE)),
         FAMILY_LOGO_PATH: (
             "text/html",
             render_to_string("stewardship/family-login.html", context | BRANDING),
+        ),
+        WIDE_PATH: ("text/html", wide),
+        WIDE_LOGO: ("image/png", _png(WIDE_SIZE)),
+        FAMILY_WIDE_PATH: (
+            "text/html",
+            render_to_string("stewardship/family-login.html", context | WIDE_BRANDING),
         ),
     }

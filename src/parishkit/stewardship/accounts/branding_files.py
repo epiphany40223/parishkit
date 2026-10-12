@@ -15,12 +15,14 @@ from uuid import UUID, uuid5
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.runtime_paths import private_directory
-from parishkit.stewardship.web.content import Graphic
+from parishkit.stewardship.web.content import LOGO_SIZES, Graphic
 
-VARIANTS = {"large": 1024, "menu": 128, "icon": 128, "favicon": 32}
+# Each label's (width, height) bound in pixels. The four logo sizes are
+# the normalizer's own (a menu logo may be a wide wordmark, #1062).
+VARIANTS = LOGO_SIZES
 # Campaign artwork (#248) is one image per bundle: a wide banner, or a small
 # square section icon kept at 2-3x its displayed size for sharp phones.
-ARTWORK = {"banner": 1024, "section": 256}
+ARTWORK = {"banner": (1024, 1024), "section": (256, 256)}
 LABELS = VARIANTS | ARTWORK
 MAX_BYTES = 5 * 1024 * 1024
 
@@ -96,16 +98,13 @@ def media_lock(media_root):
 def _inventory(bundle_id, graphics):
     """Freeze metadata from the normalizer's bounded PNG variants.
 
-    A logo bundle comes from the three generated logo sizes (menu and icon
-    sharing ``small``), or from the four sizes given separately (#1062), and
-    stores four files; a campaign artwork bundle is exactly one ``banner``
-    or ``section`` image.
+    A logo bundle is the four logo sizes, generated from one image or
+    given separately (#1062), and stores four files; a campaign artwork
+    bundle is exactly one ``banner`` or ``section`` image. Each file must
+    fit its label's (width, height) bound.
     """
     _identifier(bundle_id)
-    if type(graphics) is dict and set(graphics) == {"large", "small", "favicon"}:
-        labels = VARIANTS
-        graphics = graphics | {"menu": graphics["small"], "icon": graphics["small"]}
-    elif type(graphics) is dict and set(graphics) == set(VARIANTS):
+    if type(graphics) is dict and set(graphics) == set(VARIANTS):
         labels = VARIANTS
     elif (
         type(graphics) is dict
@@ -116,7 +115,7 @@ def _inventory(bundle_id, graphics):
     else:
         raise ValueError("A complete normalized branding bundle is required.")
     result = []
-    for label, maximum in labels.items():
+    for label, (widest, tallest) in labels.items():
         graphic = graphics[label]
         if (
             not isinstance(graphic, Graphic)
@@ -125,9 +124,9 @@ def _inventory(bundle_id, graphics):
             or not 0 < len(graphic.data) <= MAX_BYTES
             or not graphic.data.startswith(b"\x89PNG\r\n\x1a\n")
             or type(graphic.width) is not int
-            or not 0 < graphic.width <= maximum
+            or not 0 < graphic.width <= widest
             or type(graphic.height) is not int
-            or not 0 < graphic.height <= maximum
+            or not 0 < graphic.height <= tallest
         ):
             raise ValueError("Branding variants must be normalized bounded PNGs.")
         result.append(
