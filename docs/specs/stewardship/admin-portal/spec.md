@@ -501,6 +501,7 @@ Home, then these groups, each listing the entries the viewer's role may open:
 | Parish data | Refresh from ParishSoft | `/admin/parish/parishsoft-refresh/` | Administrator | Never |
 | Parish data | Data to fix in ParishSoft | `/admin/parish/data-to-fix/` | Administrator, Staff | Never (a section that cannot count says why) |
 | Users and access | Users | `/admin/users/` | Administrator | Never |
+| Users and access | Signed-in sessions | `/admin/users/sessions/` | Administrator | Never |
 | Users and access | Automation access | `/admin/users/automation/` | Administrator | Never |
 | System | System health | `/admin/system/health/` | Administrator | Never |
 | System | Integrations | `/admin/system/integrations/` | Administrator | Never |
@@ -858,6 +859,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `assignments` | Review Ministry assignment | Portal users | Administrator | Assignments | `/admin/users/assignments` (POST only) | (none) | Retired by #922: removed with Ministry assignments. |
 | `chair_confirmations` | Review Chairperson suggestion | Portal users | Administrator | Chair suggestions | `/admin/users/suggestions` (POST only) | (none) | Retired by #922: removed with Chairperson suggestions. |
 | `chair_reviews` | Review Chairperson decision | Portal users | Administrator | Chair reviews | `/admin/users/reviews` (POST only) | (none) | Retired by #922: removed with Chairperson reviews. |
+| `signed_in_sessions` | Signed-in sessions | Menu: Signed-in sessions | Administrator | (new, #953) | (none) | `/admin/users/sessions/` | New page ([Signed-in sessions](#signed-in-sessions)); its Sign out dialog posts the session to the same address. |
 | `automation_access` | Automation access | Menu: Automation access | Administrator | (same) | `/admin/users/automation/` | (same) | [Admin automation](../admin-automation/spec.md#revocation-and-listing) (ADM-11); the Revoke dialog posts the session to `/admin/users/automation/sessions/` (#879). |
 | `automation_approval` | Approve an automation session | Automation access | Administrator | (same) | `/admin/users/automation/approval/` | (same) | Opened from the command line's link; needs a fresh sign-in. |
 | `system_health` | System health | Menu: System health | Administrator | (new) | (none) | `/admin/system/health/` | New page ([System health](#system-health), #530, ADM-13). |
@@ -4252,6 +4254,50 @@ Administrator could add any missing address first; with the users release
 the page shows only users, and `pk-admin users preview-upgrade` and
 `upgrade-users --preview` keep the preview.
 
+### Signed-in sessions
+
+The **Signed-in sessions** page (`/admin/users/sessions/`, Administrator only,
+in Users and access after Users) lists every interactive Admin session that
+can act now, of any portal role
+([#953](https://github.com/epiphany40223/parishkit/issues/953)). A session is
+listed while it is not revoked, is inside its 12-hour absolute limit, was used
+within the 60-minute idle limit
+([identity and session security](../architecture/spec.md#identity-and-session-security))
+and was issued after the latest offline Admin-access recovery. Command
+sessions of the command line are left out; Automation access lists their
+automation sessions.
+
+The table's columns are User (the address, with "(you, this browser)" on the
+reader's own current session), Signed in (the session's latest confirmation
+with Google), Last activity, Expires (the absolute limit) and Actions. Times
+are browser-local
+([dates and times](../ui-conventions/spec.md#dates-and-times)). It is shown
+whole and sorts by every data heading, most recent activity first by default.
+
+Each row but the reader's own current session has **Sign out**, a
+[row action](../ui-conventions/spec.md#row-actions-and-confirmation) with
+Revoke's icon. Its dialog says the session ends at once and that the person
+can sign in again while they have access; deleting their user removes that
+access. Confirming posts the session to the page's own address, which locks
+the session, ends it if it is still live and redirects back to the table as
+sorted, which the dialog redraws in place, announcing "Signed out …". A
+session that had already ended by then (signed out, idle or expired, or
+replaced by a newer sign-in) is left as it is and nothing is recorded; the
+redirect then carries `outcome=already_ended`, and the dialog announces
+"That session had already ended; the list is up to date." instead, from a
+hidden `data-confirm-announce` line on that page, which the shared dialog
+script reads in place of its own done words. `sort` and, on that page only,
+`outcome=already_ended` are the page's only query parameters. The list reads
+only the shown columns, never a session's key. The reader's own current
+session, a command session and an unknown session are refused. The ending is the ordinary `admin_revoked`
+[session ending](../architecture/spec.md#identity-and-session-security),
+whose actor is the person signed out, and `admin_session_signed_out` records
+the Administrator as actor with the same session as subject; both are in
+[sign-in activity](#sign-in-activity). Signing out needs no fresh Google
+sign-in, like revoking on Automation access, and has no command-line
+counterpart (the route-parity ledger lists it as session chrome); the
+operator's offline recovery still signs everyone out.
+
 ## Manual ParishSoft refresh
 
 Admins may request an immediate full refresh from a confirmation page (the
@@ -5774,9 +5820,13 @@ types internal type names one at a time:
 - `admin_logout`, `admin_timeout`, `admin_revoked`,
   `admin_reauthenticated` and `admin_privileges_changed`, the
   [session endings](../architecture/spec.md#identity-and-session-security)
-  (sign out, inactivity or absolute expiry, access removed or all sessions
-  signed out, a new sign-in that replaced the previous session, and a
-  session replaced by one carrying the person's changed roles);
+  (sign out, inactivity or absolute expiry, access removed, all sessions
+  signed out or an Administrator signing the session out on
+  [Signed-in sessions](#signed-in-sessions), a new sign-in that replaced the
+  previous session, and a session replaced by one carrying the person's
+  changed roles);
+- `admin_session_signed_out`, an Administrator signing someone's session
+  out on Signed-in sessions, with the Administrator as actor;
 - `admin_login_refused`, a sign-in by a Google account that Google verified
   and policy then refused (no user with that address, a disabled identity,
   or the SQL session guard finding the user gone at the session insert;
@@ -5823,7 +5873,9 @@ like every other audit event, indefinitely by default
 ([retention and deletion](../data/spec.md#retention-and-deletion)), and is
 seen only by Administrators.
 
-A list of live Admin sessions is a later slice of #953.
+The live sessions themselves are listed on
+[Signed-in sessions](#signed-in-sessions), where an Administrator can sign
+one out.
 
 ### Activity groups
 

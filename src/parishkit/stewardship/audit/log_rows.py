@@ -127,7 +127,8 @@ EVENTS = tuple(sorted({item.value for item in Action} | {item.value for item in 
 #   roles changed), plus refused sign-ins: a verified Google account policy
 #   refused, named and bounded per account, and the sampled, anonymous
 #   record of any other refusal (no actor, by design). Both are
-#   ``accounts.auth_incidents``.
+#   ``accounts.auth_incidents``. An Administrator signing a session out on
+#   Signed-in sessions is here too (``accounts.signed_in_sessions``).
 # - Configuration changes: settings requests through Review and Apply to
 #   applied, refused (``config_request_failed``) or cancelled, and what an
 #   applied change did to access; mail schedules and live campaign changes;
@@ -171,6 +172,7 @@ ACTIVITY_TYPES = {
         "admin_privileges_changed",
         "admin_reauthenticated",
         "admin_revoked",
+        "admin_session_signed_out",
         "admin_step_up",
         "admin_timeout",
     ),

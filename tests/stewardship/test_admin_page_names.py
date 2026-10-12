@@ -80,6 +80,7 @@ TEMPLATES = {
     "users": "users.html",
     "user_new": "user-entry.html",
     "user_edit": "user-entry.html",
+    "signed_in_sessions": "signed-in-sessions.html",
     "automation_access": "automation-access.html",
     "automation_approval": "automation-approval.html",
     "system_health": "system-health.html",

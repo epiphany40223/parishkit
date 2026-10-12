@@ -268,6 +268,8 @@ PAGES = {
     "user_leader_import": Page(
         "users", _("Import Ministry leaders"), "users", linkable=False
     ),
+    # Every live interactive Admin session, each with Sign out (#953).
+    "signed_in_sessions": Page("users", _("Signed-in sessions")),
     # The Administrator's own automation sessions (ADM-11), and the approval
     # of a pending one, which the command line links to.
     "automation_access": Page("users", _("Automation access")),
@@ -506,6 +508,7 @@ MENU = (
     Entry("parishsoft_fixes", Capability.FAMILY_CODES),
     # Users and access
     Entry("users", Capability.MANAGE_USERS),
+    Entry("signed_in_sessions", _ADMIN),
     Entry("automation_access", _ADMIN),
     # System. System health comes first, so /admin/system/ opens it (ADM-13).
     Entry("system_health", Capability.SYSTEM_LOGS),
