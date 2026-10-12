@@ -36,8 +36,10 @@ from .ministries import (
     campaign_ids,
     can_report,
     ministry_page,
+    packet_choices,
     unscoped,
 )
+from .ministry_exports import MAX_PACKET_MINISTRIES
 from .read_admission import admit_report_read
 from .report_paging import clamp_query
 
@@ -194,6 +196,18 @@ def report(request, campaign_id, *, action=None):
             except PermissionError:
                 mutable = False
             context = result | {
+                # The packet's choices, on the summary only: every Ministry
+                # in scope, not just this page's rows (#533).
+                "packet_choices": None
+                if ministry_id is not None
+                else packet_choices(
+                    result,
+                    query,
+                    lambda: ministry_page(
+                        campaign_id, MinistryQuery(), actor, every=True
+                    ),
+                ),
+                "packet_limit": MAX_PACKET_MINISTRIES,
                 "mutable": mutable,
                 "export_key": uuid4(),
                 "packet_key": uuid4(),

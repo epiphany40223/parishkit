@@ -7,7 +7,20 @@ from django.http import QueryDict
 
 from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.audit.schemas import ContextKind, sanitize
-from parishkit.stewardship.reports.ministries import MinistryQuery, can_report
+from parishkit.stewardship.reports.ministries import (
+    MinistryQuery,
+    can_report,
+    ministry_page,
+    packet_choices,
+)
+from parishkit.stewardship.reports.ministry_export_views import (
+    TOO_MANY,
+    TOO_MANY_FIX,
+    TooManyMinistries,
+    packet_selection,
+)
+
+from .test_ministry_table_columns import ministry_page as render_report
 
 
 @pytest.mark.parametrize(
@@ -106,3 +119,104 @@ def test_audit_scope_is_only_a_canonical_ministry_duid():
     for value in (True, 0, -1, 2**31, "9", "private@example.org", [9]):
         with pytest.raises(ValueError):
             sanitize(ContextKind.ACTION, {"ministry_duid": value})
+
+
+def summary_result(*names, total=None):
+    """A summary page as the selection returns it: Ministries named ``names``."""
+    rows = [{"duid": duid, "name": name} for duid, name in enumerate(names, 1)]
+    return {"summaries": rows, "total": len(rows) if total is None else total}
+
+
+def test_packet_choices_reuse_a_page_that_holds_the_whole_summary():
+    """A page with every unfiltered Ministry needs no second read (#533).
+
+    The choices are by name, case-insensitively, whatever the table's sort.
+    """
+
+    def read_every():
+        """Fails the test: this page already holds every Ministry."""
+        raise AssertionError("The whole summary was read again.")
+
+    result = summary_result("choir", "Altar servers", "Bread")
+    assert [
+        row["name"]
+        for row in packet_choices(result, MinistryQuery(sort="duid_desc"), read_every)
+    ] == ["Altar servers", "Bread", "choir"]
+
+
+@pytest.mark.parametrize(
+    "query, total",
+    [
+        (MinistryQuery(), 3),  # More Ministries than this page shows.
+        (MinistryQuery(page=2), 3),  # A later page.
+        (MinistryQuery(search="choir"), 1),  # A search narrows the table.
+        (MinistryQuery(activity="active"), 1),  # So does an activity filter.
+    ],
+)
+def test_packet_choices_list_every_ministry_beyond_the_table(query, total):
+    """A page, search or filter narrower than the scope reads it whole (#533)."""
+    reads = []
+
+    def read_every():
+        """The whole unfiltered summary in scope."""
+        reads.append(True)
+        return summary_result("Choir", "Bread", "Altar servers")
+
+    choices = packet_choices(summary_result("Choir", total=total), query, read_every)
+    assert reads == [True]
+    assert [row["name"] for row in choices] == ["Altar servers", "Bread", "Choir"]
+    # Only names and DUIDs: the choices carry no request counts.
+    assert all(set(row) == {"duid", "name"} for row in choices)
+
+
+def test_only_the_summary_is_read_whole():
+    """One Ministry's request rows are never read without a page limit."""
+    principal = Principal(uuid4(), frozenset({"staff"}), frozenset())
+    with pytest.raises(ValueError):
+        ministry_page(uuid4(), MinistryQuery(), principal, ministry_id=9, every=True)
+
+
+def test_packet_boxes_list_the_choices_not_the_table_rows():
+    """The packet's boxes are its choices, and they do not follow the table.
+
+    The table shows one Ministry; the packet offers both. Its choices are
+    not marked data-table-sync, so paging or re-sorting the table in place
+    keeps the reader's ticks (#533).
+    """
+    shown = {
+        "name": "Food pantry",
+        "duid": 9,
+        "active": True,
+        "in_campaign": True,
+        "joining": 1,
+        "leaving": 0,
+        "unresolved": 1,
+        "progress": "0 of 1",
+    }
+    choices = [{"duid": 4, "name": "Choir"}, {"duid": 9, "name": "Food pantry"}]
+    html = render_report([], summaries=[shown], packet_choices=choices)
+    start = html.index('<div id="ministry-packet-choices">')
+    packet = html[start : html.index("</fieldset>", start)]
+    assert packet.count('name="ministries"') == 2
+    assert 'value="4"> Choir' in packet and 'value="9"> Food pantry' in packet
+    assert "data-table-sync" not in packet
+    # The form states the packet limit the server enforces.
+    assert "at most 200 ticked Ministries" in packet
+
+
+def test_packet_limit_is_refused_with_its_own_message():
+    """Ticking more than 200 Ministries gets a refusal saying what to do."""
+    form = {"format": "pdf", "browser_timezone": "UTC", "request_key": "k"}
+
+    def chosen(count):
+        """The packet form with ``count`` Ministries ticked."""
+        values = QueryDict(mutable=True)
+        values.update(form)
+        values.setlist("ministries", [str(duid) for duid in range(1, count + 1)])
+        return values
+
+    assert len(packet_selection(chosen(200))) == 200
+    with pytest.raises(TooManyMinistries):
+        packet_selection(chosen(201))
+    assert "at most 200 ticked Ministries" in str(TOO_MANY)
+    assert "leave every box unticked" in str(TOO_MANY_FIX)

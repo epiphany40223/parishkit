@@ -328,6 +328,10 @@ input[aria-invalid=true], textarea[aria-invalid=true], select[aria-invalid=true]
 /* A choice group (checkboxes or radios) with an unanswered required choice;
    only groups marked .choice-group, never a whole Member section or panel. */
 fieldset.choice-group:has(> label > input:is([type=checkbox], [type=radio])[aria-invalid=true]) { border: 2px solid var(--error-border); }
+/* The Ministry packet lists every Ministry in the reader's scope (#533), which
+   for an Administrator can be many, so the boxes flow into columns. */
+.packet-choices { columns: 18rem auto; column-gap: 1.5rem; }
+.packet-choices > label { break-inside: avoid; }
 
 /* Field sizing. A field is only as wide as its content needs: dates, times
    and numbers are short, dropdowns medium, free text wider, and long text
