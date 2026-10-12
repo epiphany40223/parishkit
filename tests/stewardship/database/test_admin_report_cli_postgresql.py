@@ -192,6 +192,25 @@ def test_participation_responses_information_and_the_list(http_scenario, cli):  
         )["total"]
     code, document = run("report", "information", "--disposition", "all")
     assert code == 0 and document["result"]["matching"] == expected
+    # Dates are days in the zone --zone names (#558), required with them: a
+    # range that covers every submission matches as many, and its zone is in
+    # the printed filters.
+    dated = (
+        "report",
+        "information",
+        "--disposition",
+        "all",
+        "--start",
+        "2000-01-01",
+        "--end",
+        "2099-12-31",
+    )
+    code, document = run(*dated, "--zone", "Pacific/Kiritimati")
+    assert code == 0, document
+    assert document["result"]["matching"] == expected
+    assert document["result"]["filters"]["zone"] == "Pacific/Kiritimati"
+    code, document = run(*dated)
+    assert code == 1 and document["error"]["code"] == "invalid"
 
     # A report the campaign does not include: the page refuses it after its
     # started event, and so does the command, which says not_available.
@@ -314,6 +333,23 @@ def test_ministry_summary_and_request_counts(response_service, google, cli):
     assert code == 0, document
     result = document["result"]
     assert result["matching"] == 1 and result["requests"] == "leave"
+    # One list's dates are days in --zone (#558), required with them.
+    dated = (
+        "report",
+        "ministry",
+        "--ministry",
+        "4",
+        "--requests",
+        "leave",
+        "--start",
+        "2000-01-01",
+        "--end",
+        "2099-12-31",
+    )
+    code, document = run(*dated, "--zone", "Etc/GMT+12")
+    assert code == 0 and document["result"]["matching"] == 1, document
+    code, document = run(*dated)
+    assert code == 1 and document["error"]["code"] == "invalid"
     assert [row["ministry"] for row in result["summaries"]] == [4]
     # The count is the page's own for the same filters.
     code, document = run(

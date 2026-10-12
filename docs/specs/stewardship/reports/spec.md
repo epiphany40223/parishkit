@@ -991,6 +991,16 @@ to a reader even after the sheet is sorted or filtered. A superseded item's
 request that replaced it, which finds that request's row, or "Not in this
 export" when the export's filters left that request out.
 
+The submitted-date filters (on or after, on or before) are whole days in the
+viewer's browser time zone, under the
+[global presentation rules](../spec.md#global-presentation-rules), and work as
+the [Logs screen's date filters](../admin-portal/spec.md#logs) do: the form
+sends the browser's zone with the dates, and a date without a known zone is
+refused, never read in another zone. An export captures the filters with their
+zone, and its retry asks for exactly those filters; a capture made before
+schema migration 0064 has no zone, keeps its campaign-zone days and is retried
+unchanged.
+
 Editing is audited and uses optimistic concurrency. This report is also the
 source for the weekly Admin digest.
 
@@ -1453,7 +1463,9 @@ explicitly authorized for this workflow. Birth date itself is not shown when
 age suffices.
 
 Lists are searchable/filterable/sortable and exportable as CSV, XLSX, or PDF.
-Every leader view/export is audited with Ministry scope.
+One Ministry's lists filter by submitted date in the viewer's browser time
+zone, as [Additional information](#additional-information) does; the packet
+has no date filter. Every leader view/export is audited with Ministry scope.
 An export audit event retains the sorted Ministry DUID set actually included
 after filtering, plus whether the captured contact projection was operational
 or publish-restricted. This result scope is distinct from the potentially wider

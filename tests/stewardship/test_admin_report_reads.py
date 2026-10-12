@@ -408,6 +408,8 @@ GOLDEN = {
                 "state": "any",
                 "start": "",
                 "end": "",
+                # The zone the days fall in (#558); blank without dates.
+                "zone": "",
             },
             "page": 1,
             "size": 50,
@@ -427,6 +429,8 @@ GOLDEN = {
                 "state": "unresolved",
                 "start": "",
                 "end": "",
+                # The zone the days fall in (#558); blank without dates.
+                "zone": "",
             },
             "page": 1,
             "size": 50,

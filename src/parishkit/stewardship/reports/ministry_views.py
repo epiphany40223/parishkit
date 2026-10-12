@@ -19,6 +19,7 @@ from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.web.dates import UnknownZone
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.security import private_response
@@ -30,6 +31,7 @@ from .ministries import (
     DETAIL_SORTING,
     STATES,
     SUMMARY_SORTING,
+    ZONE_MESSAGE,
     MinistryQuery,
     campaign_ids,
     can_report,
@@ -243,6 +245,8 @@ def report(request, campaign_id, *, action=None):
         return denial()
     except (*SAFE_FAILURES, StorageInvariantError):
         return report_unavailable()
+    except UnknownZone:
+        return private_response(ZONE_MESSAGE, status=400)
     except ValueError:
         return private_response("Invalid Ministry filters.\n", status=400)
     finally:
