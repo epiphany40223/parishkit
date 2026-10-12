@@ -425,7 +425,10 @@ The document is JSON with two optional members:
     {"id": "SAVED-ID", "time": "10:30:00"},
     {"id": "OTHER-SAVED-ID", "delete": true},
     {"kind": "reminder", "date": "2054-10-20", "time": "09:00:00",
-     "template_version": "EMAIL-ID"}
+     "template_version": "EMAIL-ID"},
+    {"repeat": {"frequency": "weekly", "start": "2054-10-05",
+                "end": "2054-10-29", "weekdays": [0, 3]},
+     "time": "10:00", "template_version": "REMINDER-EMAIL-ID"}
   ]
 }
 ```
@@ -433,13 +436,21 @@ The document is JSON with two optional members:
 | Member | What it holds |
 | --- | --- |
 | `window` | Any of `start_date`, `end_date` (`YYYY-MM-DD`), `timezone` and `overlap_confirmed` (true or false, only for a campaign with a financial period). Members you leave out keep their values. Changing the dates once they are locked is exit 1 (`stale_version`), as on the page, except that a live campaign (scheduled or open in Production, before it closes) may change `end_date` alone. Family codes and links keep working until the new end date. |
-| `schedules` | A list of entries, each one of the three below. Saved schedules you do not name stay as they are; leaving one out never removes it. |
+| `schedules` | A list of entries, each one of the four below. Saved schedules you do not name stay as they are; leaving one out never removes it. |
 
 | Entry | Members |
 | --- | --- |
 | Change a saved schedule | `id` (from `schedule show`) and any of `date`, `time`, `weekday`, `template_version`. Members you leave out keep their values. Its `kind` cannot change, so it may not be given. |
 | Remove a saved schedule | `id` and `"delete": true`, nothing else. |
 | Add a schedule | `kind` (`initial`, `reminder`, `daily_digest` or `weekly_digest`) and the members its kind needs: `date` for `initial` and `reminder`, `weekday` (0 is Monday) for `weekly_digest`, and `time` (in the campaign's time zone) and `template_version` for all. A `time` may be written in any form the page accepts, such as `09:00:00`, `9:00`, `9am` or `21:00`, and is stored as `HH:MM:SS`. |
+| Add repeating reminders | `repeat` (the rule below), `time` and `template_version`, as for one reminder, and nothing else. It adds one ordinary reminder per date the rule gives, as if you listed each one. Every date must fit: unlike the page, which leaves out a date that does not fit, the command refuses the whole change. A problem with one date alone, such as a date after the campaign closes, names that date; a conflict between schedules, such as a date at the same moment as a saved reminder or not after the initial invitation, comes back as a plain `schedules` error, as for reminders listed one by one. A rule that gives no dates or more than 30, or skips a month, is exit 1 (`invalid`). The rule itself is not saved. |
+
+| `repeat` member | What it holds |
+| --- | --- |
+| `frequency` | `daily`, `weekly` or `monthly` |
+| `start`, `end` | The first and last dates (`YYYY-MM-DD`, at most a year apart), both included |
+| `weekdays` | For `weekly`: the days of the week, 0 (Monday) to 6 (Sunday), such as `[0, 3]` |
+| `monthly` | For `monthly`: `{"day": 5}` for the 5th of each month, or `{"ordinal": 2, "weekday": 6}` for the second Sunday (`ordinal` 1 to 4, or -1 for the last), never both. A range with a month that lacks the chosen day, such as the 31st with September, is refused, naming the months, rather than skipping them as the page does |
 
 `template_version` names a saved email of the schedule's kind: the
 `template_version` of a schedule in `schedule show`, or the email's id from
@@ -457,7 +468,8 @@ the page and email templates (a command for those arrives later).
 
 Each `error.fields` entry has `field` (`window.<name>`,
 `schedules.<id>.<name>`, `schedules.new<n>.<name>` for the n-th added
-schedule from 0, or `window` or `schedules` for a problem between fields),
+entry from 0, `schedules.new<n>.<YYYY-MM-DD>.<name>` for one date of a
+repeat, or `window` or `schedules` for a problem between fields),
 `code` (`required` or `invalid`) and `message`, the page's text.
 
 | `schedule confirm` field | What it holds |
