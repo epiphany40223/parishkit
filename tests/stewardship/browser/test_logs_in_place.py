@@ -1,7 +1,7 @@
 """System logs' cross-links filter in place (#519 PR 3).
 
-Show related entries, Same actor and Same campaign each send their filter in
-a POST body, as before. The page is served at the address its forms post
+The related-entries, same-actor and same-campaign icons (#1065) each send
+their filter in a POST body, as before. The page is served at the address its forms post
 to (log_components.LIVE), so the answer is this same page, and a route
 answers each POST with the fixture page the filter leads to. Each test sets
 a mark outside every region, which only a full page load could lose.

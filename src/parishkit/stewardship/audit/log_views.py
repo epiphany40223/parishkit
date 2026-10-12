@@ -123,7 +123,7 @@ def logs(request):
             if configuration is None or configuration.restore_review_required:
                 return _error(ErrorCode.UNAVAILABLE, 503)
             through = query.snapshot or database_now()
-            table, depth_limited = load_page(query, through=through)
+            table, depth_limited = load_page(query, through=through, mark_related=True)
         response = render(
             request,
             "stewardship/logs.html",
