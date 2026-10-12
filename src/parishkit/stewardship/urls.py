@@ -4,6 +4,7 @@ from django.urls import include, path
 
 from . import views
 from .accounts import (
+    assisted_entry,
     authentication,
     automation_views,
     branding_views,
@@ -58,6 +59,8 @@ family_patterns = [
     path("presence", presence.heartbeat, name="presence"),
     path("", family_authentication.portal, name="entry"),
     path("keepalive", family_authentication.keepalive, name="keepalive"),
+    # Open form's hand-off from the Admin portal (#529).
+    path("assisted", assisted_entry.assisted, name="assisted"),
     path("logout", family_authentication.logout, name="logout"),
 ]
 admin_patterns = [

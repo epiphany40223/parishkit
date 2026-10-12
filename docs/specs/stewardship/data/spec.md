@@ -768,7 +768,9 @@ their presence column is the current form step, not the furthest one reached.
 The row stores:
 
 - the first sign-in instant (`first_link_at`, "link followed"; this includes a
-  mail scanner following a personal link);
+  mail scanner following a personal link, but not a Staff sign-in for the
+  Family through [Open form](../reports/spec.md#family-timeline), which is
+  not the Family following its link);
 - the first form issuance instant (`first_form_at`, "form opened");
 - the first instant a form step past the first one was reported
   (`first_progress_at`);
@@ -780,7 +782,8 @@ The row stores:
   One row exists per Family, mode and epoch.
 
 Three existing paths maintain it inside their own transaction with one
-monotonic upsert: Family sign-in, form issuance, and the presence heartbeat,
+monotonic upsert: Family sign-in (every one except an Open form sign-in by
+Staff), form issuance, and the presence heartbeat,
 which is already bounded to one per 30 seconds per session. A write may move a
 `first_*` instant only earlier (never later and never back to unknown), the
 furthest step only forward, and `last_seen_at` only later; every `first_*`
@@ -809,7 +812,8 @@ when it lands, must inventory and delete them as campaign-owned detail, which
 means widening the record's SQL retention function to admit the purge worker.
 A one-time backfill, `pk-stewardship engagement-backfill`, fills
 `first_link_at` from the retained `family_login` audit events since Production
-activation and `first_form_at` from live form baselines through the same
+activation (skipping Open form sign-ins, whose session is also the subject of
+a `family_assisted_login` event) and `first_form_at` from live form baselines through the same
 upsert, in bounded batches, writing one audit event with its counts; repeating
 it writes nothing but that event. Progress before the record existed is not
 recoverable and is not invented.
@@ -956,8 +960,12 @@ Every final click creates an immutable `Submission` version containing:
   form-baseline/projection version, and prior effective submission, if any;
 - submitted UTC time and date derived from the Campaign's immutable timezone;
 - complete normalized answers for all enabled sections;
-- validation/content/schema versions; and
-- request/session correlation without storing credentials.
+- validation/content/schema versions;
+- request/session correlation without storing credentials; and
+- `entered_by_id`, the portal user who entered it for the Family through
+  [Open form](../reports/spec.md#family-timeline), or null when the Family
+  entered it (a soft reference with no foreign key, added by frozen migration
+  0065).
 
 The current effective live response points to the latest accepted live version.
 Test versions are isolated from live calculations, response prefilling,

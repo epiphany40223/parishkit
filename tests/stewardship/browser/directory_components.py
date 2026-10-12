@@ -72,6 +72,8 @@ def components(context, admin):
                 "family_name": "Example <Family>",
                 "display_name": family_heads_name("Example <Family>", heads),
                 "family_duid": 12345,
+                # Open form posts its hand-off for this Family (#529).
+                "family_id": UUID(int=81),
                 "code": "ABCDEFGH",
                 "reason_label": REASONS["provider_refused"],
                 "email_eligible": True,
@@ -208,7 +210,7 @@ def components(context, admin):
         | code_list
         | {"table": _table([head_emails], 1, "no"), "total": 1},
         "/directory-gated": values | code_list | {"mutable": False},
-        "/family-directory": values | code_list,
+        "/family-directory": values | code_list | {"page_path": "/family-directory"},
         "/postal-directory": values | mailing,
         "/directory-empty": values
         | mailing
@@ -265,3 +267,26 @@ def preset_pages(values, counted):
             ),
         }
     return pages
+
+
+def open_form_posts(context, admin):
+    """Open form's two POSTs (#529), answered as the real views answer them.
+
+    The Admin route returns the hand-off page, whose script posts the
+    hand-off to the Family route at once; that route signs in by redirecting
+    to the Family portal (``/family/``, a plain fixture page here).
+    """
+    handoff = render_to_string(
+        "stewardship/open-form-handoff.html",
+        context
+        | {
+            "admin_chrome": admin,
+            "secret": "A" * 43,
+            "action": reverse("family:assisted"),
+            "return_url": reverse("admin:family_directory"),
+        },
+    )
+    return {
+        reverse("admin:family_open_form", args=[UUID(int=81)]): (200, None, handoff),
+        reverse("family:assisted"): (303, "/family/", ""),
+    }

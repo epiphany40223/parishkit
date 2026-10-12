@@ -96,6 +96,7 @@ from .delivery_components import POSTS as DELIVERY_POSTS
 from .delivery_components import components as delivery_components
 from .digest_components import components as digest_components
 from .directory_components import components as directory_components
+from .directory_components import open_form_posts
 from .emailed_components import components as emailed_components
 from .family_timeline_components import components as family_timeline_components
 from .financial_components import components as financial_components
@@ -2272,6 +2273,7 @@ def component_origin():
         | ARTWORK_POSTS
         | BRANDING_POSTS
         | CONTENT_CATALOG_POSTS
+        | open_form_posts(context, admin)
         | {
             f"{IN_PLACE_FORM}/refuse": (400, None, responses["/in-place-refused"][1]),
             f"{IN_PLACE_FORM}/invalid": (200, None, responses["/in-place-invalid"][1]),
@@ -2299,6 +2301,7 @@ def component_origin():
         ("refresh-schedule-v1.js", "application/javascript"),
         ("session-v1.js", "application/javascript"),
         ("local-sign-in-v1.js", "application/javascript"),
+        ("open-form-v1.js", "application/javascript"),
         ("session-v1.css", "text/css"),
         ("digest-v1.css", "text/css"),
         ("setup-v1.css", "text/css"),
@@ -2324,6 +2327,11 @@ def component_origin():
             "image/png",
             logo.getvalue(),
         )
+    # Where Open form's hand-off lands (#529): the Family portal.
+    responses["/family/"] = (
+        "text/html",
+        "<!doctype html><html lang=en><title>Family form</title><h1>Family form</h1>",
+    )
     # A hosted image (#346) served from the same origin, like /files/<token>.
     responses[f"/files/{IMAGE_TOKEN}"] = ("image/png", logo.getvalue())
     # Every fixture page with an "About this page" panel (#227), so a browser

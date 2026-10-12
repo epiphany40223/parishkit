@@ -109,6 +109,9 @@ class Action(StrEnum):
     RESPONSE_DATA_QUALITY_LIST_EXPORTED = "response_data_quality_list_exported"
     # One Family's timeline (#477): the subject is the Family's opaque record id.
     FAMILY_TIMELINE_VIEWED = "family_timeline_viewed"
+    # Open form (#529): an Admin opened the Family form to enter a response
+    # for the Family; the subject is the Family's opaque record id.
+    FAMILY_FORM_OPENED = "family_form_opened"
     DASHBOARD_VIEWED = "dashboard_viewed"
     SYSTEM_LOGS_VIEWED = "system_logs_viewed"
     SYSTEM_LOGS_EXPORTED = "system_logs_exported"
@@ -459,6 +462,8 @@ REPORT_SORT_COLUMNS = (
     "last",
     "mailing",
     "problem",
+    # Entered by Staff (#529), admitted by migration 0065.
+    "staff_entered",
 )
 # The active parishioner family directory's Response choices (#933), as
 # stewardship_safe_context_v1 admits them; "yes" and "no" are the older

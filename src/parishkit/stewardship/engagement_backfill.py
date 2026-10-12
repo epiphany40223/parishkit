@@ -12,6 +12,12 @@ command again writes nothing but its own audit event. Writes commit in small
 batches so a long backfill never holds many Families' locks against live
 sign-ins (see ``campaigns/engagement.py`` on the deadlock this avoids).
 
+An Open form sign-in (#529) is Staff signing in for the Family, not the
+Family following its link, so the live path records no "link followed" for
+it; the backfill skips those ``family_login`` events too (each shares its
+session id, the subject, with a ``family_assisted_login`` event), or a
+repeated run would put them back.
+
 It covers Production only: the events since the latest activation of
 Production mode, for the current campaign's Families. Testing logins before
 activation belonged to a rehearsal whose detail the Production transition
@@ -114,10 +120,16 @@ def backfill():
                 "pk", flat=True
             )
         )
+        # Staff sign-ins through Open form name their session as the subject
+        # of a family_assisted_login event; they are not the Family's link.
+        assisted = AuditEvent.objects.filter(
+            event_type="family_assisted_login", subject_id__isnull=False
+        ).values("subject_id")
         logins = list(
             AuditEvent.objects.filter(
                 event_type="family_login", created_at__gte=activation
             )
+            .exclude(subject_id__in=assisted)
             .values_list("actor_id")
             .annotate(first=Min("created_at"), last=Max("created_at"))
             .order_by("actor_id")

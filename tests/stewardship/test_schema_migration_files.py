@@ -225,6 +225,9 @@ FROZEN = {
     "0064_report_local_days.sql": (
         "85da90b9c2df3eebaba5ea9bd2ce048fb9fadbe70d6bf8d0113c0fe2a11c1511"
     ),
+    "0065_staff_entered.sql": (
+        "0c9ab0d7e4a2f102ec7c5e498e57bf34d9eecf302e5a2cf6974dec6a35ff258e"
+    ),
 }
 
 

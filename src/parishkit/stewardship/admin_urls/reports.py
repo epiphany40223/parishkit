@@ -18,6 +18,7 @@ addresses are gone, with no redirect (#864).
 
 from django.urls import path
 
+from ..accounts import assisted_entry
 from ..reports import (
     census_change_views,
     digest_views,
@@ -184,6 +185,13 @@ patterns = [
         "reports/families/<uuid:family_id>/",
         family_timeline_views.family_timeline,
         "family_timeline",
+    ),
+    # Open form's hand-off (#529): a form action, posted only, so it has no
+    # slashless form.
+    _page(
+        "reports/families/<uuid:family_id>/open-form/",
+        assisted_entry.open_form,
+        "family_open_form",
     ),
     # Every export's page, report or latest-data (decision 8), and its actions.
     path(

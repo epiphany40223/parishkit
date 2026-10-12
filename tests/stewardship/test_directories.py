@@ -273,11 +273,11 @@ def test_primary_address_nulls_and_unavailable_state(address, expected, label):
 
 
 @pytest.mark.parametrize("testing", [False, True])
-def test_open_form_link_follows_the_mode_and_keeps_the_code_in_the_fragment(testing):
-    """Live rows link to the Family sign-in with the code only in the fragment.
+def test_open_form_follows_the_mode_and_keeps_the_code_out_of_urls(testing):
+    """Live rows post Open form's hand-off (#529); no URL carries the code.
 
-    A fragment never reaches the server or its logs. In Testing mode live codes
-    are refused, so the note replaces the links; rows without a code never link.
+    In Testing mode live codes are refused, so the note replaces the buttons;
+    rows without a code never offer one.
     """
     from uuid import UUID
 
@@ -308,8 +308,12 @@ def test_open_form_link_follows_the_mode_and_keeps_the_code_in_the_fragment(test
             "query": DirectoryQuery(),
         },
     )
-    link = 'href="/#code=ABCD-EFGH" target="_blank" rel="noopener" data-open-form>'
-    assert html.count(link) == (0 if testing else 1)
+    action = (
+        f'action="/admin/reports/families/{UUID(int=81)}/open-form/"'
+        ' target="_blank" rel="noopener" data-open-form data-submit-repeatable>'
+    )
+    assert html.count(action) == (0 if testing else 1)
+    assert "#code=" not in html
     # The Name cell and the contact-details summary show the surname and heads;
     # a live Open form link names the Family for screen readers too.
     # A Family's name opens its timeline by its opaque campaign record id;
@@ -589,3 +593,38 @@ def test_page_address_keeps_only_link_safe_presets():
         DirectoryQuery(response="started", exact_code="ABCDEFGH"),
     ):
         assert page_address(route, private, postal=True) == route
+
+
+def test_directory_tags_a_current_response_staff_entered():
+    """Responded says "entered by Staff" only for the rows the view marks (#529).
+
+    The view marks a Family whose effective (latest) response Staff entered
+    through Open form; every other responded row just says Yes.
+    """
+    from uuid import UUID
+
+    rows = [
+        {
+            "family_name": name,
+            "display_name": name,
+            "family_duid": duid,
+            "family_id": str(UUID(int=duid)),
+            "code": None,
+            "responded": True,
+        }
+        for name, duid in (("Assisted", 1), ("Own", 2))
+    ]
+    html = render_to_string(
+        "stewardship/directory.html",
+        {
+            "campaign_id": UUID(int=80),
+            "metadata": {"source_generation": 1},
+            "total": 2,
+            "table": _table(rows),
+            "query": DirectoryQuery(),
+            "staff_entered": frozenset({str(UUID(int=1))}),
+        },
+    )
+    assert html.count("(entered by Staff)") == 1
+    assert html.index("Assisted") < html.index("(entered by Staff)")
+    assert html.index("(entered by Staff)") < html.index(">Own<")

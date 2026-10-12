@@ -49,6 +49,7 @@ from .directories import (
     directory_page,
     find_families,
     response_columns,
+    staff_entered,
     testing_codes_context,
 )
 from .directory_documents import export_headings, head_names
@@ -313,6 +314,13 @@ def directory(request, campaign_id):
                     "count_columns": counts,
                     "column_count": _column_count(
                         postal, dates, counts, query.check != "any"
+                    ),
+                    # Where Back from an Open form tab returns (#529): this
+                    # page, with its filters, sort and page.
+                    "page_path": request.get_full_path(),
+                    # Responses Staff entered through Open form (#529).
+                    "staff_entered": staff_entered(
+                        campaign_id, [row["family_id"] for row in report["rows"]]
                     ),
                     "export_headings": export_headings(
                         postal=postal,

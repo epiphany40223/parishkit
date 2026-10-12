@@ -31,6 +31,8 @@ SHARED_BASE = (
 # Family and public pages: never gated, parishioners may have no JavaScript.
 FAMILY_PAGES = {
     "family.html",
+    # Open form's Family-side refusal (#529), shown in the Family namespace.
+    "family-assist-refused.html",
     "family-login.html",
     "family-maintenance.html",
     "family-unavailable.html",

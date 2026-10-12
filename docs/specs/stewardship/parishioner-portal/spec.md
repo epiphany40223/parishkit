@@ -38,6 +38,10 @@ provide the Testing rehearsal access described below and follows the Testing
 date-gating rule above; every other resulting state shows its ordinary no-
 campaign, before-start, or ended page.
 
+Staff can also open the Family form for a Family through
+[Open form](../reports/spec.md#family-timeline), which posts a single-use
+hand-off to `/family/assisted` and signs that tab in as the Family.
+
 Manual credential generation, canonicalization, and generic denial follow the
 [Family credential security policy](../architecture/spec.md#family-credential-security).
 Friendly entry always removes ASCII spaces and hyphens before uppercasing and
