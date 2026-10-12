@@ -82,24 +82,41 @@ def test_ministry_sort_heading_posts_privately(page, component_origin):
     assert "?" not in sent.value.url
 
 
-def test_ministry_counts_look_like_links_and_post(page, component_origin):
-    """A Ministry's join and leave counts read as links (they only open a
-    list) but still open it with a POST, so the Ministry stays private."""
+def test_ministry_counts_link_the_queue_and_contact_details_post(
+    page, component_origin
+):
+    """A count links to the filtered follow-up queue by name, a zero count is
+    plain text, and Contact details reads as a link (it only opens a list)
+    but still opens it with a POST, so the Ministry stays private (#1133)."""
     page.goto(component_origin + "/ministry-summary")
-    joining = page.get_by_role("button", name="join requests").first
-    assert joining.evaluate("node => node.classList.contains('link-button')")
-    style = joining.evaluate(
+    queue = reverse("admin:ministry_followup")
+    joining = page.get_by_role("link", name="51 join requests for Example <Ministry>")
+    assert joining.get_attribute("href") == (
+        f"{queue}?ministry=9&action=join&state=any"
+    )
+    unresolved = page.get_by_role(
+        "link", name="51 unresolved requests for Example <Ministry>"
+    )
+    assert unresolved.get_attribute("href") == f"{queue}?ministry=9"
+    assert page.get_by_role("link", name="leave requests").count() == 0
+    visible(page.get_by_text("0 leave requests", exact=True))
+    contact = page.get_by_role(
+        "button", name="Contact details of Members asking to join Example <Ministry>"
+    )
+    assert contact.evaluate("node => node.classList.contains('link-button')")
+    style = contact.evaluate(
         "node => { const s = getComputedStyle(node);"
         " return [s.textDecorationLine, s.backgroundColor, s.borderTopWidth]; }"
     )
     assert style == ["underline", "rgba(0, 0, 0, 0)", "0px"]
+    assert page.get_by_role("button", name="asking to leave").count() == 0
     page.route(
         "**" + reverse("admin:ministry_joiners"),
         lambda route: route.fulfill(body="Joining"),
     )
     with page.expect_request(lambda request: request.method == "POST") as sent:
-        joining.click()
-    assert "ministry=" in sent.value.post_data and "?" not in sent.value.url
+        contact.click()
+    assert "ministry=9" in sent.value.post_data and "?" not in sent.value.url
 
 
 def test_ministry_search_posts_privately(page, component_origin):
@@ -166,7 +183,7 @@ def test_ministry_packet_request_posts_its_selection(page, component_origin):
     # which it would otherwise interrupt (#623).
     visible(page.get_by_text("Queued", exact=True))
     page.goto(component_origin + "/ministry-summary")
-    page.get_by_label("Example <Ministry>", exact=False).check()
+    page.get_by_role("checkbox", name="Example <Ministry>").check()
     page.get_by_label("Also include resolved and withdrawn requests").check()
     page.get_by_label("Packet format").select_option("xlsx")
     # The packet asks for no time zone (#1127): the browser's goes unasked.

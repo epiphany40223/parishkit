@@ -1505,11 +1505,28 @@ queue](../admin-portal/spec.md#follow-up-workflows) likewise explains its
 "Removed" badge only to Admin/Staff; a leader never meets one, since a leader
 leads only the Ministries the campaign asks about (#922).
 
-Each Ministry links to the two lists below from its join-request and
-leave-request counts. Opening a list only reads, so each count looks like a
-link; it is a small POST form styled as one, because this report keeps every
-filter, the Ministry included, in private POST state
-([Admin tables](../admin-portal/spec.md#admin-tables)):
+Each count that is not zero links to the
+[Ministry follow-up](../admin-portal/spec.md#follow-up-workflows) queue
+showing exactly the requests it counts
+([#1133](https://github.com/epiphany40223/parishkit/issues/1133)): the
+join-request count opens that Ministry's join requests of any status, the
+leave-request count its leave requests of any status, and the unresolved
+count its unresolved requests of either kind, the queue's default status.
+The filter controls show those choices. A count links only when the reader
+may follow up that Ministry, so a Ministry leader gets links only for the
+Ministries they lead; a zero count is plain text, and each link's accessible
+name names its Ministry ("3 join requests for Choir"), as
+[count links](../ui-conventions/spec.md#admin-tables) ask.
+
+Under each join-request and leave-request count that is not zero, a
+**Contact details** control opens that Ministry's list below, the one place
+the Members' contact details are shown, until the two pages merge (#1133
+step 2). Opening a list only reads, so it looks like a link; it is a small
+POST form styled as one, because this report keeps every filter, the
+Ministry included, in private POST state
+([Admin tables](../admin-portal/spec.md#admin-tables)). Its accessible name
+names the list and the Ministry ("Contact details of Members asking to join
+Choir"). The lists are:
 
 - prospective joiners: Member name, Member DUID, status/outcome, then
   gender, age as of report date, publishable email/phones for leaders,
@@ -1549,7 +1566,8 @@ format. Form order is the order the Family form lists those Members once
 saved: ascending proposed Member reference, whatever the list's sort, with
 every request of one Member sharing its label.
 
-Each list opens by a POST from its Ministry's form on the summary. A GET of
+Each list opens by a POST from its Ministry's Contact details form on the
+summary. A GET of
 either list's address (typed, bookmarked, refreshed or reached with Back)
 carries no Ministry selection, so it answers with a 303 redirect to the
 summary rather than an invalid-request error
