@@ -25,7 +25,10 @@ existing service identity, driven by the operator script::
   waiting for work to settle around each jump.
 - ``check`` (offline ``migration``): the post-seed invariant check.
 - ``finish`` (web): request the real full refresh that promotes the
-  late-added Family once the services run in normal mode again.
+  late-added Family once the services run in normal mode again, then import
+  one ParishSoft Ministry leader as a Ministry leader user through the Users
+  page's import, so a Ministry leader can sign in to a non-empty follow-up
+  queue (#1150).
 
 Every step refuses unless the admitted deployment is LOCAL, before opening
 any connection. Every wait has a limit; on expiry the seeder logs which
@@ -1360,17 +1363,85 @@ def check_step(request, configuration):
     return {"step": "check", "result": "invariants hold"}
 
 
+def leader_to_import(rows, open_counts):
+    """The leader address to import: the busiest Ministry's leader, or None.
+
+    ``rows`` are ``read_leaders``' rows (each names the DUIDs of the
+    Ministries its address leads); ``open_counts`` maps a Ministry DUID to
+    its open follow-up requests. The Ministry with the most open requests
+    (ties: the lowest DUID) that has a listed leader wins, and its first
+    leader by address; when no led Ministry has an open request, the first
+    leader by address. Deterministic, so the same seed names the same user.
+    """
+    if not rows:
+        return None
+    ordered = sorted(rows, key=lambda row: row["email"])
+    for duid in sorted(open_counts, key=lambda duid: (-open_counts[duid], duid)):
+        if open_counts[duid] <= 0:
+            break
+        for row in ordered:
+            if duid in row["ministries"]:
+                return row["email"]
+    return ordered[0]["email"]
+
+
+def import_leader_user(request, web, service):
+    """Make one ParishSoft Ministry leader a Ministry leader user (#1150).
+
+    The synthetic rosters' leaders hold the default leader roles, so the
+    leaders without a user are listed with no settings change. The one
+    chosen by ``leader_to_import`` is imported through the Users page's own
+    review and Apply, and the step waits for the configuration installer.
+    Returns the imported address (None when the parish has no leader to
+    import, e.g. an earlier finish already imported them).
+    """
+    from parishkit.stewardship.accounts.leader_import import read_leaders
+    from parishkit.stewardship.workflows.models import OPEN_STATES, MinistryRequest
+
+    leaders = read_leaders(web.session.session_key)
+    open_counts = {}
+    for duid in MinistryRequest.objects.filter(state__in=OPEN_STATES).values_list(
+        "ministry_duid", flat=True
+    ):
+        open_counts[duid] = open_counts.get(duid, 0) + 1
+    email = leader_to_import(leaders.rows, open_counts)
+    if email is None:
+        LOGGER.warning("no ParishSoft Ministry leader without a user to import")
+        return None
+    since = datetime.now(UTC) - timedelta(minutes=1)
+    # The Apply needs a fresh sign-in; the refresh wait may have aged it.
+    seed_web.sign_in_admin(web, request.admin_email)
+    seed_web.import_leader(web, service, leaders, email)
+    wait_until(
+        "the leader import to be installed",
+        lambda: (
+            pending_configuration_requests(since) == 0
+            or "the leader import is still pending"
+        ),
+    )
+    return email
+
+
 def finish_step(request, configuration):
-    """Phase 4: the real full refresh that releases the late-added Family."""
+    """Phase 4: the real full refresh that releases the late-added Family.
+
+    Then one Ministry leader user is imported (``import_leader_user``); the
+    answer names it as ``leader_user``, the address to sign in as.
+    """
     configure_web_process(configuration)
     since = datetime.now(UTC) - timedelta(minutes=1)
     web = admin(request)
-    seed_web.request_full_refresh(web, seed_web.admin_runtime())
+    service = seed_web.admin_runtime()
+    seed_web.request_full_refresh(web, service)
     # The promoted late-added Family's missed Reminders are coalesced into
     # one recovery send by the real reconciliation; that is the point of
     # this phase, not a failure.
     waited = settle(since, tolerate=frozenset({"coalesced"}))
-    return {"step": "finish", "refresh_wait_seconds": round(waited, 1)}
+    return {
+        "step": "finish",
+        "refresh_wait_seconds": round(waited, 1),
+        "leader_user": import_leader_user(request, web, service),
+    }
 
 
 def execute_local_seed(args):
