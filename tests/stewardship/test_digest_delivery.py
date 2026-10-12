@@ -25,6 +25,7 @@ from parishkit.stewardship.family_delivery import (
     FamilyDeliveryStatus as Status,
 )
 from parishkit.stewardship.family_delivery_process import submit_digest, submit_family
+from parishkit.stewardship.mail_layout import FAMILY, SHARED
 from parishkit.stewardship.readiness_delivery import DeliveryOutcome
 from parishkit.stewardship.web.digest_content import (
     CHART_ALT,
@@ -104,6 +105,9 @@ def test_compiled_report_roundtrips_through_actual_private_decoder_and_mime():
     # Admin reports use the desktop column (#720), not the 600px Family one.
     html = mime.get_body(preferencelist=("html",)).get_content()
     assert "max-width:960px" in html
+    # Admin mail uses the portal's design tokens (#732), not Family's look.
+    assert f"background-color:{SHARED.page};" in html
+    assert FAMILY.link not in html
     assert "Report" not in repr(mail) and "admin@example.org" not in repr(mail)
 
 

@@ -420,7 +420,7 @@ class FamilyDeliveryMail:
                 sender=self.sender,
                 to=self.recipients,
                 subject=self.subject,
-                html=email_document(self.html),
+                html=email_document(self.html, family=True),
                 text=self.text,
             )
         )

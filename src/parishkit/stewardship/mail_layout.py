@@ -10,36 +10,112 @@ Mail programs support CSS unevenly: Gmail keeps only a <style> block in the
 head and Outlook for Windows ignores max-width, so the layout uses a centered
 presentation table (with an Outlook-only fixed-width table), inline styles on
 the container and on each bare sanitized tag, and a matching <style> block.
+
+Admin emails use the Admin portal's colours and shapes from the shared design
+tokens (:data:`SHARED`, #732). Family mail, and every readiness and test-send
+sample of it, keeps its earlier look (:data:`FAMILY`) until the Family slice of
+#732 moves it after a Testing send to real mail programs. Every sender names
+its look, so a new Family-facing sender cannot get the Admin look by default.
 """
 
 import re
+from dataclasses import dataclass
 from html import escape, unescape
 
-FONT = "Arial, Helvetica, sans-serif"
-TEXT = "#1f2933"
-PAGE = "#f4f5f7"
-LINK = "#1a56db"
+from .web.design_tokens import COLORS, EMAIL_SANS, RADII, hex6, px
 
-# Inline styles for the bare tags that sanitized content contains. Only an
-# attribute-free opening tag is styled, so compiler-owned digest markup that
-# carries its own attributes is left alone.
-TAG_STYLES = {
-    "p": "margin:0 0 16px;",
-    "h2": "margin:24px 0 12px;font-size:20px;line-height:1.3;color:#111827;",
-    "h3": "margin:20px 0 8px;font-size:17px;line-height:1.35;color:#111827;",
-    "ul": "margin:0 0 16px;padding:0 0 0 24px;",
-    "ol": "margin:0 0 16px;padding:0 0 0 24px;",
-    "li": "margin:0 0 6px;",
-    "blockquote": (
-        "margin:0 0 16px;padding:0 0 0 14px;border-left:3px solid #d0d5dd;"
-        "color:#475467;"
+FONT = EMAIL_SANS
+
+
+@dataclass(frozen=True)
+class Look:
+    """The colours and shapes one email look inlines (all six-digit hex)."""
+
+    text: str
+    page: str
+    card_border: str
+    card_radius: str
+    heading: str
+    link: str
+    quote_rule: str
+    quote_text: str
+    notice: str
+
+    def tag_styles(self):
+        """Inline styles for the bare tags that sanitized content contains."""
+        return {
+            "p": "margin:0 0 16px;",
+            "h2": (
+                "margin:24px 0 12px;font-size:20px;line-height:1.3;"
+                f"color:{self.heading};"
+            ),
+            "h3": (
+                "margin:20px 0 8px;font-size:17px;line-height:1.35;"
+                f"color:{self.heading};"
+            ),
+            "ul": "margin:0 0 16px;padding:0 0 0 24px;",
+            "ol": "margin:0 0 16px;padding:0 0 0 24px;",
+            "li": "margin:0 0 6px;",
+            "blockquote": (
+                f"margin:0 0 16px;padding:0 0 0 14px;border-left:3px solid "
+                f"{self.quote_rule};color:{self.quote_text};"
+            ),
+        }
+
+    def link_style(self):
+        """The inline style of every link that has none of its own."""
+        return f"color:{self.link};text-decoration:underline;"
+
+
+# Family mail's look, frozen until the Family slice of #732: these values
+# predate the design tokens, and changing them changes every Family email.
+FAMILY = Look(
+    text="#1f2933",
+    page="#f4f5f7",
+    card_border="#e4e7ec",
+    card_radius="8px",
+    heading="#111827",
+    link="#1a56db",
+    quote_rule="#d0d5dd",
+    quote_text="#475467",
+    notice=(
+        "background-color:#fff8db;border:1px solid #f0d77a;border-radius:4px;"
+        "padding:8px 12px;font-size:13px;line-height:1.4;color:#5c4a00;"
     ),
-}
-LINK_STYLE = f"color:{LINK};text-decoration:underline;"
-NOTICE_STYLE = (
-    "background-color:#fff8db;border:1px solid #f0d77a;border-radius:4px;"
-    "padding:8px 12px;font-size:13px;line-height:1.4;color:#5c4a00;"
 )
+
+
+def _token(name):
+    """One design-token colour as the six-digit hex older mail programs need."""
+    return hex6(COLORS[name])
+
+
+# Every other email: the portal's ink, page, panel border and corner radius,
+# link colour and warning notice (the portal's .notice, with its thicker
+# leading edge), all from web/design_tokens.py.
+SHARED = Look(
+    text=_token("ink"),
+    page=_token("page"),
+    card_border=_token("border"),
+    card_radius=f"{px(RADII['radius'])}px",
+    heading=_token("ink"),
+    link=_token("link"),
+    quote_rule=_token("border"),
+    quote_text=_token("muted"),
+    notice=(
+        f"background-color:{_token('warning-bg')};"
+        f"border:1px solid {_token('warning-border')};"
+        f"border-left-width:{px('.35rem')}px;"
+        f"border-radius:{px(RADII['radius-small'])}px;"
+        f"padding:8px 12px;font-size:14px;line-height:1.4;"
+        f"color:{_token('warning-ink')};"
+    ),
+)
+
+# Family mail's styles under their established names.
+TAG_STYLES = FAMILY.tag_styles()
+LINK_STYLE = FAMILY.link_style()
+NOTICE_STYLE = FAMILY.notice
 _BARE_TAG = re.compile("<(" + "|".join(TAG_STYLES) + ")>")
 _UNSTYLED_LINK = re.compile(r"<a (?![^>]*\bstyle=)")
 # Hosted images (#346) fit narrow phone mail clients; the campaign banner
@@ -52,36 +128,38 @@ IMAGE_STYLE = "max-width:100%;height:auto;border:0;"
 # receipt and digest mail (and that the database checks), shown as a notice.
 _TEST_BANNER = re.compile(r"\A<h2>TEST</h2><p>([^<]*)</p>")
 
-_STYLE_BLOCK = (
-    f"body{{margin:0;padding:0;background-color:{PAGE};}}"
-    f".pk-body{{font-family:{FONT};font-size:16px;line-height:1.5;color:{TEXT};}}"
-    ".pk-body p{margin:0 0 16px;}"
-    ".pk-body h2{margin:24px 0 12px;font-size:20px;line-height:1.3;}"
-    ".pk-body h3{margin:20px 0 8px;font-size:17px;line-height:1.35;}"
-    ".pk-body ul,.pk-body ol{margin:0 0 16px;padding:0 0 0 24px;}"
-    ".pk-body li{margin:0 0 6px;}"
-    f".pk-body a{{color:{LINK};text-decoration:underline;}}"
-    ".pk-body img{max-width:100%;height:auto;border:0;}"
-    "@media only screen and (max-width:620px){"
-    ".pk-card{padding:20px 16px !important;}}"
-)
 
-
-def _styled(html):
-    """Add the inline style of each bare sanitized tag, unstyled link and image."""
-    html = _BARE_TAG.sub(
-        lambda match: f'<{match[1]} style="{TAG_STYLES[match[1]]}">', html
+def _style_block(look):
+    """The <style> block for mail programs that keep one, matching the inline styles."""
+    return (
+        f"body{{margin:0;padding:0;background-color:{look.page};}}"
+        f".pk-body{{font-family:{FONT};font-size:16px;line-height:1.5;color:{look.text};}}"
+        ".pk-body p{margin:0 0 16px;}"
+        ".pk-body h2{margin:24px 0 12px;font-size:20px;line-height:1.3;}"
+        ".pk-body h3{margin:20px 0 8px;font-size:17px;line-height:1.35;}"
+        ".pk-body ul,.pk-body ol{margin:0 0 16px;padding:0 0 0 24px;}"
+        ".pk-body li{margin:0 0 6px;}"
+        f".pk-body a{{color:{look.link};text-decoration:underline;}}"
+        ".pk-body img{max-width:100%;height:auto;border:0;}"
+        "@media only screen and (max-width:620px){"
+        ".pk-card{padding:20px 16px !important;}}"
     )
+
+
+def _styled(html, look):
+    """Add the inline style of each bare sanitized tag, unstyled link and image."""
+    styles = look.tag_styles()
+    html = _BARE_TAG.sub(lambda match: f'<{match[1]} style="{styles[match[1]]}">', html)
     html = _UNSTYLED_IMAGE.sub(f'<img style="{IMAGE_STYLE}" ', html)
-    return _UNSTYLED_LINK.sub(f'<a style="{LINK_STYLE}" ', html)
+    return _UNSTYLED_LINK.sub(f'<a style="{look.link_style()}" ', html)
 
 
-def notice_html(text):
-    """One small, clearly styled line at the top of a test message."""
+def notice_html(text, look):
+    """One small line, styled in ``look``, at the top of a test message."""
     return (
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
         'border="0" style="margin:0 0 20px;"><tr><td style="'
-        + NOTICE_STYLE
+        + look.notice
         + '">'
         + escape(text, quote=False)
         + "</td></tr></table>"
@@ -94,40 +172,45 @@ def notice_html(text):
 REPORT_WIDTH = 960
 
 
-def email_document(html, *, notice=None, width=600):
+def email_document(html, *, family, notice=None, width=600):
     """Return the complete HTML part for one already sanitized email body.
 
     ``width`` is the column's largest width in CSS pixels, and Outlook for
     Windows' fixed width. ``notice`` is plain text for a small test notice
     above the content. A
     leading routed Testing banner (``<h2>TEST</h2><p>…</p>``) becomes that
-    notice instead of a large heading. The plain-text alternative is built
-    separately by each sender and is not affected.
+    notice instead of a large heading. ``family`` is required: True for
+    Family mail and its readiness and test-send samples (Family's own look,
+    :data:`FAMILY`), False for Admin mail (the shared design tokens,
+    :data:`SHARED`). The plain-text alternative is built separately by each
+    sender and is not affected.
     """
+    look = FAMILY if family else SHARED
     banner = _TEST_BANNER.match(html)
     if banner is not None:
         html = html[banner.end() :]
         notice = unescape(banner[1]) if notice is None else notice
-    top = notice_html(notice) if notice else ""
+    top = notice_html(notice, look) if notice else ""
     return (
         "<!DOCTYPE html>"
         '<html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         '<meta name="x-apple-disable-message-reformatting">'
-        f"<style>{_STYLE_BLOCK}</style></head>"
-        f'<body style="margin:0;padding:0;background-color:{PAGE};">'
+        f"<style>{_style_block(look)}</style></head>"
+        f'<body style="margin:0;padding:0;background-color:{look.page};">'
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-        f'border="0" style="background-color:{PAGE};"><tr>'
+        f'border="0" style="background-color:{look.page};"><tr>'
         '<td align="center" style="padding:24px 12px;">'
         # Outlook for Windows ignores max-width; fix its width instead.
         f'<!--[if mso]><table role="presentation" width="{width}" cellpadding="0" '
         'cellspacing="0" border="0"><tr><td><![endif]-->'
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
         f'border="0" style="max-width:{width}px;background-color:#ffffff;'
-        'border:1px solid #e4e7ec;border-radius:8px;"><tr>'
+        f"border:1px solid {look.card_border};border-radius:{look.card_radius};"
+        '"><tr>'
         '<td class="pk-body pk-card" style="padding:28px 32px;text-align:left;'
-        f"font-family:{FONT};font-size:16px;line-height:1.5;color:{TEXT};"
-        '">' + top + _styled(html) + "</td></tr></table>"
+        f"font-family:{FONT};font-size:16px;line-height:1.5;color:{look.text};"
+        '">' + top + _styled(html, look) + "</td></tr></table>"
         "<!--[if mso]></td></tr></table><![endif]-->"
         "</td></tr></table></body></html>"
     )

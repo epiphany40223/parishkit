@@ -1121,6 +1121,8 @@ column); test messages show one small notice line instead of a large TEST
 heading. The daily and weekly Admin report emails use a wider desktop column
 instead (see [daily campaign digest](../background-processing/spec.md#daily-campaign-digest)
 and [weekly additional-information digest](../background-processing/spec.md#weekly-additional-information-digest)).
+The layout's colours and shapes follow the
+[shared visual style](../ui-conventions/spec.md#shared-visual-style).
 Retained content and the plain-text alternative are unchanged.
 Content text rules (the sanitizer's canonical form and the placeholder
 contracts) apply to content being authored or changed. Revisions already in

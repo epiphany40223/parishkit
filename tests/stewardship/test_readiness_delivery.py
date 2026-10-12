@@ -11,7 +11,7 @@ import pytest
 from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.integration_candidates import GOOGLE_TOKEN_URI
 from parishkit.stewardship.deployment import DeploymentProfile
-from parishkit.stewardship.mail_layout import NOTICE_STYLE
+from parishkit.stewardship.mail_layout import NOTICE_STYLE, email_document
 from parishkit.stewardship.readiness_delivery import (
     DeliveryOutcome,
     _credentials,
@@ -68,6 +68,17 @@ def test_readiness_html_has_one_small_notice_above_the_sample():
     assert "<h2" not in html and "readiness sample" not in html
     assert html.index(notice) < html.index("Hello Sample Family.")
     assert html.startswith("<!DOCTYPE html>")
+
+
+def test_readiness_samples_keep_the_family_look():
+    """A readiness sample previews Family mail, so it uses Family's look (#732)."""
+    value = sample()
+    html = value.message().get_body(("html",)).get_content()
+    notice = (
+        "Test message — sent only to test@example.org. "
+        "Names, links and codes in this sample are fictional."
+    )
+    assert html.rstrip("\n") == email_document(value.html, notice=notice, family=True)
 
 
 @pytest.mark.parametrize(

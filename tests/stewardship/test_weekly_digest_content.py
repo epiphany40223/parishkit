@@ -18,7 +18,9 @@ from parishkit.stewardship.reports.weekly_digest import (
     shorten,
 )
 from parishkit.stewardship.web import dates
+from parishkit.stewardship.web.buttons import EMAIL_TABLE_STYLE
 from parishkit.stewardship.web.weekly_digest_content import validate_weekly_body
+from tests.stewardship.test_daily_digest_content import PRE_732_BUTTON
 
 INSTANT = datetime(2026, 11, 2, 5, 15, tzinfo=UTC)
 
@@ -305,6 +307,21 @@ def test_weekly_layout_admits_only_the_closed_report_markup(markup):
     result = render()
     with pytest.raises(ValueError, match="weekly"):
         validate_weekly_body(result.html + markup, result.text)
+
+
+def test_retained_weekly_reports_with_the_earlier_button_still_validate():
+    """A weekly report compiled before #732 and retained for a retry still delivers."""
+    result = render()
+    start = result.html.rindex("<table", 0, result.html.index(EMAIL_TABLE_STYLE))
+    end = result.html.index("</table>", start) + len("</table>")
+    retained = (
+        result.html[:start]
+        + PRE_732_BUTTON.replace("Open this exact report", "Open protected report")
+        + result.html[end:]
+    )
+    assert retained != result.html and EMAIL_TABLE_STYLE not in retained
+    validate_weekly_body(retained, result.text)
+    validate_weekly_body(result.html, result.text)
 
 
 def test_requests_are_numbered_in_order_and_corrections_are_not():
