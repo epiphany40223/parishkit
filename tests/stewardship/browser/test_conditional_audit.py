@@ -11,7 +11,7 @@ the sign-in is recent.
 
 import pytest
 
-from .waits import greyed, visible
+from .waits import greyed, has_count, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -243,17 +243,13 @@ def test_upload_choices_survive_the_table_redrawing(page, component_origin):
         page.locator("dialog#hosted-file-delete").get_by_role(
             "button", name="Delete", exact=True
         ).click()
-    page.wait_for_function(
-        "document.querySelectorAll('table.hosted-files tbody tr').length === 2"
-    )
+    has_count(page.locator("table.hosted-files tbody tr"), 2)
     kept()
     assert page.evaluate(
         "!document.getElementById('hosted-file-upload-action').dataset.old"
     )
     page.get_by_role("link", name="Name (sort ascending)").click()
-    page.wait_for_function(
-        "document.querySelector('table.hosted-files th[aria-sort=\"ascending\"]')"
-    )
+    has_count(page.locator('table.hosted-files th[aria-sort="ascending"]'), 1)
     kept()
     # With the file cleared, the redrawn button is held again with its hint.
     field.set_input_files([])

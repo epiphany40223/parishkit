@@ -8,7 +8,7 @@ place below it (#532). The server's admission, request and refusals are tested i
 
 import pytest
 
-from .waits import visible
+from .waits import available, greyed, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -103,13 +103,9 @@ def test_review_waits_for_the_required_fields(page, component_origin):
     page.get_by_label("Campaign name").fill("Annual stewardship")
     page.get_by_label("Campaign start date").fill("2026-10-01")
     page.get_by_label("Campaign end date").fill("2026-10-31")
-    page.wait_for_function(
-        "() => !document.querySelector('#settings-form button[type=submit]').disabled"
-    )
+    available(review)
     assert hint.text_content() == ""
     assert region.evaluate(where) == top
     # Emptying a required field holds Review again.
     page.get_by_label("Campaign name").fill("")
-    page.wait_for_function(
-        "() => document.querySelector('#settings-form button[type=submit]').disabled"
-    )
+    greyed(review)

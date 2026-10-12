@@ -12,7 +12,7 @@ import pytest
 from .refresh_schedule_components import PRODUCTION
 from .test_components import axe_violations
 from .test_refresh_schedule_editor import answering
-from .waits import recorded, visible
+from .waits import eventually, has_class, recorded, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -73,9 +73,7 @@ def test_on_a_phone_the_grid_scrolls_in_its_box_with_the_days_held(
     label = page.locator(f"{ROWS} .schedule-grid-day").first
     before = label.bounding_box()["x"]
     grid.evaluate("box => { box.scrollLeft = box.scrollWidth; }")
-    page.wait_for_function(
-        "document.querySelector('.schedule-grid-scroll').scrollLeft > 0"
-    )
+    eventually(page, "document.querySelector('.schedule-grid-scroll').scrollLeft > 0")
     assert abs(label.bounding_box()["x"] - before) < 0.5
     assert axe_violations(page, axe_source) == []
 
@@ -92,10 +90,7 @@ def test_the_live_check_redraws_the_grid(page, component_origin):
     assert "grid-full" in cell.get_attribute("class")
     page.locator('[name="rules-1-at"]').fill("09:00")
     recorded(page, requests, 1)
-    page.wait_for_function(
-        "(document.querySelector('.schedule-grid-row:not(.schedule-grid-hours) "
-        "span[title^=\"09:00 to 09:15\"]')?.className || '').includes('grid-full')"
-    )
+    has_class(first_row.locator("span[title^='09:00 to 09:15']"), "grid-full")
     assert "grid-full" not in (
         first_row.locator("span[title^='08:00 to 08:15']").get_attribute("class")
     )

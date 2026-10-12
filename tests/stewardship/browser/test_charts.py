@@ -5,7 +5,7 @@ import contextlib
 import pytest
 
 from .chart_components import HOSTILE_NAME
-from .waits import visible
+from .waits import eventually, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -93,7 +93,8 @@ def test_charts_render_under_the_csp_without_a_single_violation(
     # out, still without anything the CSP forbids.
     width = funnel.locator("svg").bounding_box()["width"]
     page.set_viewport_size({"width": 700, "height": 900})
-    page.wait_for_function(
+    eventually(
+        page,
         "width => document.querySelector("
         "\"[data-chart='response-funnel-spec'] svg\").getBoundingClientRect()"
         ".width < width",
@@ -110,7 +111,7 @@ def test_charts_render_under_the_csp_without_a_single_violation(
     # the observer must report it, and only it. A broken observer fails here.
     with contextlib.suppress(Exception):
         page.add_script_tag(content="window.__inlineRan = 1")
-    page.wait_for_function("(window.__cspViolations || []).length > 0")
+    eventually(page, "(window.__cspViolations || []).length > 0")
     (violation,) = page.evaluate("window.__cspViolations")
     assert violation.startswith("script-src")
     assert page.evaluate("window.__inlineRan") is None

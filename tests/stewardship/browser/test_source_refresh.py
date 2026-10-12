@@ -7,7 +7,7 @@ import pytest
 from .live_status_components import REFRESH, REFRESH_REQUESTED, TASK_STATUS
 from .test_in_place import MARK, MARKED, VIEWPORT
 from .test_live_status_in_place import answer_reads
-from .waits import has_text, visible
+from .waits import has_text, has_value, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -132,10 +132,7 @@ def test_refresh_now_stays_on_the_page_and_follows_the_run(page, component_origi
     visible(region.get_by_text("Finished successfully."))
     key = page.locator("input[name=request_key]")
     visible(region.get_by_text("4,000 records checked, 12 changed."))
-    page.wait_for_function(
-        "key => document.querySelector('input[name=request_key]').value === key",
-        arg=str(UUID(int=522)),
-    )
+    has_value(key, str(UUID(int=522)))
     assert key.input_value() == str(UUID(int=522))
     assert data_age.get_attribute("datetime") != first_age
     assert page.evaluate(MARKED) == "kept"
