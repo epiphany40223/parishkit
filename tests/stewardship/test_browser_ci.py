@@ -1,10 +1,13 @@
 """Browser CI partitions preserve the complete suite and fail closed."""
 
 import json
+import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import ANY, Mock
@@ -14,7 +17,11 @@ import yaml
 
 from parishkit.stewardship import quality_browser
 from parishkit.stewardship.quality_ci import environment
-from parishkit.stewardship.quality_pytest import BROWSER_DISCOVERY, BrowserSelection
+from parishkit.stewardship.quality_pytest import (
+    BROWSER_DISCOVERY,
+    BrowserSelection,
+    failures_path,
+)
 from parishkit.stewardship.quality_sharding import (
     BROWSER_CASE_SECONDS,
     BROWSER_ENGINES,
@@ -600,11 +607,11 @@ def test_real_early_exit_cannot_pass_external_runner(probe, option, capfd, monke
     if option == "--version":
         # Pytest handles version before reading addopts; inject it into the
         # real child argv to prove a future accidental command edit fails shut.
-        original_run = subprocess.run
+        original_popen = subprocess.Popen
         monkeypatch.setattr(
             quality_browser.subprocess,
-            "run",
-            lambda command, **kwargs: original_run([*command, option], **kwargs),
+            "Popen",
+            lambda command, **kwargs: original_popen([*command, option], **kwargs),
         )
     else:
         ini = probe / "pytest.ini"
@@ -619,13 +626,52 @@ def test_real_early_exit_cannot_pass_external_runner(probe, option, capfd, monke
     assert "CI_BROWSER_COMPLETE" not in capfd.readouterr().out
 
 
+class HungPytest:
+    """A Popen stand-in whose bounded wait times out, like a hung child pytest.
+
+    BEFORE_TIMEOUT(command), if given, runs first, as the child would.
+    """
+
+    def __init__(self, command, before_timeout=None):
+        """Remember the command; nothing is launched."""
+        self.args = command
+        self.pid = 4242
+        self.waits = []
+        self.before_timeout = before_timeout
+
+    def wait(self, timeout=None):
+        """Time out on the bounded wait; the reap after the kill succeeds."""
+        self.waits.append(timeout)
+        if timeout is None:
+            return -9
+        if self.before_timeout:
+            self.before_timeout(self.args)
+        raise subprocess.TimeoutExpired("pytest", timeout)
+
+
 def test_runner_environment_and_timeout(probe, monkeypatch):
-    """Inherited pytest selectors are scrubbed and the child has a bounded runtime."""
+    """Inherited pytest selectors are scrubbed and the child has a bounded runtime.
+
+    A budget kill hits the child's whole process group, then reaps pytest.
+    """
     monkeypatch.setenv("PYTEST_ADDOPTS", "--version")
-    run = Mock(side_effect=subprocess.TimeoutExpired("pytest", 2280))
-    monkeypatch.setattr(quality_browser.subprocess, "run", run)
-    with pytest.raises(subprocess.TimeoutExpired):
+    limit = quality_browser.JOB_SECONDS
+    child = []
+
+    def popen(command, **kwargs):
+        """Hand back one hung child."""
+        child.append(HungPytest(command))
+        return child[-1]
+
+    run = Mock(side_effect=popen)
+    killpg = Mock()
+    monkeypatch.setattr(quality_browser.subprocess, "Popen", run)
+    monkeypatch.setattr(quality_browser.os, "killpg", killpg)
+    with pytest.raises(quality_browser.BudgetExhausted, match="no test had failed"):
         quality_browser.run_engine(probe, "firefox")
+    killpg.assert_called_once_with(4242, signal.SIGKILL)
+    assert child[0].waits == [limit, None]
+    assert run.call_args.kwargs["start_new_session"] is True
     command = run.call_args.args[0]
     assert "--ci-browser-engine=firefox" in command
     assert "--ci-browser-partition=1/1" in command
@@ -638,7 +684,6 @@ def test_runner_environment_and_timeout(probe, monkeypatch):
         )
     )
     assert not receipt.exists() and not receipt.parent.exists()
-    assert run.call_args.kwargs["timeout"] == 2280
     assert "PYTEST_ADDOPTS" not in run.call_args.kwargs["env"]
     assert run.call_args.kwargs["env"]["PARISHKIT_RUN_BROWSER_TESTS"] == "1"
     with pytest.raises(ValueError, match="Unsupported browser engine"):
@@ -694,9 +739,17 @@ def test_browser_estimate_sums_file_hints_and_case_defaults():
     "error",
     [subprocess.CalledProcessError(1, "pytest"), FileNotFoundError("python")],
 )
-def test_job_runs_every_partition_under_one_deadline(monkeypatch, capfd, error):
-    """A failed or unlaunchable partition is reported, later ones still run."""
-    clock = iter([0, 100, 700])
+def test_job_runs_every_partition_within_its_budget(
+    monkeypatch, capfd, tmp_path, error
+):
+    """A failed or unlaunchable partition is reported, later ones still run.
+
+    The first partition may not use the second's reserved half; the second
+    gets its half plus whatever the first left unused.
+    """
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    clock = iter([0, 100, 600])
     monkeypatch.setattr(quality_browser.time, "monotonic", lambda: next(clock))
     calls = []
 
@@ -707,14 +760,145 @@ def test_job_runs_every_partition_under_one_deadline(monkeypatch, capfd, error):
             raise error
 
     monkeypatch.setattr(quality_browser, "run_engine", run_engine)
-    runs = [("webkit", 1, 2), ("chromium", 1, 2)]
-    assert quality_browser.run_job(ROOT, runs) == ["webkit 1/2"]
+    runs = [("chromium", 1, 2), ("webkit", 1, 2)]
+    assert quality_browser.run_job(ROOT, runs) == ["chromium 1/2"]
     limit = quality_browser.JOB_SECONDS
     assert calls == [
-        ("webkit", 1, 2, limit - 100),
-        ("chromium", 1, 2, limit - 700),
+        ("chromium", 1, 2, limit / 2 - 100),
+        ("webkit", 1, 2, limit - 600),
     ]
-    assert "CI_BROWSER_FAILED webkit 1/2" in capfd.readouterr().out
+    assert "CI_BROWSER_FAILED chromium 1/2" in capfd.readouterr().out
+    assert summary.read_text().startswith("- Browser partition chromium 1/2 failed: ")
+
+
+@pytest.mark.parametrize(
+    "remaining,later,count,expected",
+    [
+        (3000, 0, 1, 3000),  # A one-partition job gets the whole budget.
+        (3000, 1, 2, 1500),  # The first of two keeps the second's half free.
+        (2170, 0, 2, 2170),  # The last gets its half plus unused time.
+        (1400, 1, 2, 1),  # Overrun reserves never yield a zero timeout.
+        (3000, 2, 3, 1000),
+    ],
+)
+def test_partition_limit_reserves_later_shares(remaining, later, count, expected):
+    """A partition never eats into the budget reserved for later partitions."""
+    assert quality_browser.JOB_SECONDS == 3000
+    assert quality_browser.partition_limit(remaining, later, count) == expected
+
+
+@pytest.mark.parametrize("job", BROWSER_JOBS)
+def test_webkit_runs_last_in_its_job(job):
+    """WebKit, the slowest engine, inherits what the faster partition leaves."""
+    engines = [engine for engine, _, _ in parse_browser_runs(job)]
+    assert "webkit" not in engines[:-1]
+
+
+def run_job_timed(monkeypatch, seconds):
+    """Run a chromium-then-webkit job where partition N needs SECONDS[N].
+
+    A partition that would outrun its limit is killed at the limit. Return
+    the limits run_job gave, and the labels it reported as failed.
+    """
+    now = [0.0]
+    monkeypatch.setattr(quality_browser.time, "monotonic", lambda: now[0])
+    calls = []
+
+    def run_engine(root, engine, index, count, timeout):
+        """Spend this partition's time, or its whole limit and fail."""
+        calls.append(timeout)
+        needed = seconds[len(calls) - 1]
+        now[0] += min(needed, timeout)
+        if needed > timeout:
+            raise quality_browser.BudgetExhausted("killed")
+
+    monkeypatch.setattr(quality_browser, "run_engine", run_engine)
+    runs = [("chromium", 1, 2), ("webkit", 1, 2)]
+    return calls, quality_browser.run_job(ROOT, runs)
+
+
+def test_slow_webkit_last_gets_what_chromium_left(monkeypatch):
+    """The 2026-10-12 run: WebKit 1/2 needed 1,451 s on a slow runner.
+
+    Running last after a Chromium half of about 830 s, it now has enough.
+    """
+    calls, failed = run_job_timed(monkeypatch, [830, 1451])
+    assert failed == []
+    assert calls[0] == 1500
+    assert calls[1] == 3000 - 830 >= 1451
+
+
+def test_slow_first_partition_cannot_starve_the_second(monkeypatch, capfd):
+    """A hung first partition is killed at its share; the second keeps its own."""
+    calls, failed = run_job_timed(monkeypatch, [99999, 900])
+    assert failed == ["chromium 1/2"]
+    assert calls == [1500, 1500]
+    assert "CI_BROWSER_FAILED chromium 1/2: killed" in capfd.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "failures,tail",
+    [
+        ([], "; no test had failed, so rerun the job"),
+        (["a::b", "c::d"], "; 2 test phase(s) had already failed: a::b, c::d"),
+    ],
+)
+def test_timeout_message_names_budget_and_failures(failures, tail):
+    """The kill message names the budget, the elapsed time and any failures."""
+    assert quality_browser.timeout_message(1350, 1350.4, failures) == (
+        "killed after 1,350 s when its 1,350 s partition budget "
+        "(its share of the 3,000 s job budget) ran out" + tail
+    )
+
+
+def test_budget_kill_reports_failures_recorded_before_it(probe, monkeypatch):
+    """A child that failed a test and then hung is not reported as clean."""
+
+    def fail_one(command):
+        """Record a failure the way the child plugin does."""
+        receipt = Path(
+            next(a for a in command if a.startswith("--ci-browser-evidence=")).split(
+                "=", 1
+            )[1]
+        )
+        failures_path(receipt).write_text("tests/x.py::a\n")
+
+    monkeypatch.setattr(
+        quality_browser.subprocess,
+        "Popen",
+        lambda command, **kwargs: HungPytest(command, fail_one),
+    )
+    monkeypatch.setattr(quality_browser.os, "killpg", Mock())
+    with pytest.raises(quality_browser.BudgetExhausted) as caught:
+        quality_browser.run_engine(probe, "webkit", 1, 2, 900)
+    message = str(caught.value)
+    assert "its 900 s partition budget" in message
+    assert message.endswith("1 test phase(s) had already failed: tests/x.py::a")
+
+
+def test_plugin_records_failed_phases_beside_the_receipt(
+    selection_config, tmp_path_factory
+):
+    """Failed phases are appended as they happen; passes are not recorded."""
+    # Outside the fixture's checkout (tmp_path), like the runner's receipts.
+    receipt = tmp_path_factory.mktemp("receipt") / "receipt.json"
+    selection_config.options["--ci-browser-evidence"] = str(receipt)
+    plugin = BrowserSelection(selection_config)
+    for nodeid, when, outcome in [
+        ("a", "call", "passed"),
+        ("b", "setup", "failed"),
+        ("c", "call", "failed"),
+    ]:
+        plugin.pytest_runtest_logreport(
+            SimpleNamespace(
+                nodeid=nodeid,
+                when=when,
+                passed=outcome == "passed",
+                failed=outcome == "failed",
+            )
+        )
+    assert failures_path(receipt).read_text() == "b\nc\n"
+    assert plugin.executed == ["a"] and not receipt.exists()
 
 
 @pytest.mark.parametrize("runs,code", [("webkit", 2), ("firefox:1/1", 1)])
@@ -735,3 +919,44 @@ def test_real_ini_discovery_override_rejected(probe, name):
     result = run_probe(probe, "--ci-browser-engine=chromium")
     assert result.returncode == 4
     assert "complete opted-in browser suite" in result.stderr
+
+
+def test_kill_group_reaches_grandchildren():
+    """A budget kill also ends processes the child started, like browsers."""
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import subprocess, sys, time\n"
+            "child = subprocess.Popen([sys.executable, '-c', "
+            "'import time; time.sleep(60)'])\n"
+            "print(child.pid, flush=True)\n"
+            "time.sleep(60)\n",
+        ],
+        stdout=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    grandchild = int(process.stdout.readline())
+    quality_browser.kill_group(process)
+    process.stdout.close()
+    assert process.returncode == -signal.SIGKILL
+    # The orphaned grandchild is reaped by init once killed; wait briefly.
+    for _ in range(100):
+        try:
+            os.kill(grandchild, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.05)
+    else:
+        pytest.fail("grandchild survived the process-group kill")
+
+
+def test_kill_group_tolerates_an_exited_group(monkeypatch):
+    """A group that exited between the timeout and the kill is not an error."""
+    monkeypatch.setattr(
+        quality_browser.os, "killpg", Mock(side_effect=ProcessLookupError)
+    )
+    process = Mock()
+    quality_browser.kill_group(process)
+    process.wait.assert_called_once_with()

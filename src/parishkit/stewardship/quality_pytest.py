@@ -91,6 +91,11 @@ def pytest_configure(config):
         )
 
 
+def failures_path(receipt):
+    """The sidecar beside a browser receipt that lists failed test phases."""
+    return receipt.with_name(f"{receipt.name}.failed")
+
+
 class BrowserSelection:
     """A CI-only complete-suite partition; normal developer selection is unchanged."""
 
@@ -191,9 +196,17 @@ class BrowserSelection:
         self.started = time.monotonic()
 
     def pytest_runtest_logreport(self, report):
-        """Count actual assertion-body execution, not collection or fixture setup."""
+        """Count actual assertion-body execution, not collection or fixture setup.
+
+        Also append each failed phase's node ID to the receipt's failure
+        sidecar as it happens, so a parent that kills this run for exceeding
+        its time budget can still say whether any test had failed (#1112).
+        """
         if report.when == "call" and report.passed:
             self.executed.append(report.nodeid)
+        if report.failed and self.evidence:
+            with failures_path(self.evidence).open("a", encoding="utf-8") as stream:
+                stream.write(f"{report.nodeid}\n")
 
     def pytest_sessionfinish(self, session, exitstatus):
         """A successful early exit must not turn incomplete execution green.

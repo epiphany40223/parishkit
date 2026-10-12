@@ -12,11 +12,13 @@ BROWSER_ENGINES = ("chromium", "firefox", "webkit")
 # with test steps of a median 22.6 minutes (WebKit), 14.5 (Firefox) and 7.8
 # (Chromium), plus 1-2 minutes of setup. Halving WebKit and Chromium and
 # pairing the halves gives three jobs of about 15 minutes of tests each, so
-# the WebKit long pole is gone without adding a runner slot.
+# the WebKit long pole is gone without adding a runner slot. WebKit, the
+# slowest engine, runs last in its job so it inherits whatever time Chromium
+# leaves of its reserved share (quality_browser.partition_limit, #1112).
 BROWSER_JOBS = (
     "firefox:1/1",
-    "webkit:1/2 chromium:1/2",
-    "webkit:2/2 chromium:2/2",
+    "chromium:1/2 webkit:1/2",
+    "chromium:2/2 webkit:2/2",
 )
 
 # Scheduling hints only: median WebKit seconds per test file, from CI runs

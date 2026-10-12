@@ -49,15 +49,16 @@ of each per job. `test_browser_ci.py` requires the matrix to match and every
 engine's partitions to appear exactly once. An engine's partitions split its
 cases by whole test file, balanced by recorded per-file WebKit seconds
 (`BROWSER_FILE_SECONDS`, scheduling hints only), so module fixtures stay
-together. `quality_browser --runs` runs a job's partitions in turn under one
-38-minute deadline and fails the job if any partition fails. Every partition
-still uses `--require-no-skips` and must return a receipt naming its engine and
-partition that matches its exact selection, and `stewardship-browser` still
-requires every matrix job. Before the split, WebKit's test step took a median
-22.6 minutes (job 24.0), Firefox's 14.5 (job 15.6) and Chromium's 7.8 (job
-10.0); each job now runs about 15 minutes of tests. The same change runs all
-four operational provider modes on one runner (about 18 minutes), so a full run
-uses no more runner slots than before.
+together. `quality_browser --runs` runs a job's partitions in turn, Chromium
+before WebKit, and fails the job if any partition fails; see
+[Partition budgets](#partition-budgets-1112) for their time limits. Every
+partition still uses `--require-no-skips` and must return a receipt naming its
+engine and partition that matches its exact selection, and
+`stewardship-browser` still requires every matrix job. Before the split,
+WebKit's test step took a median 22.6 minutes (job 24.0), Firefox's 14.5 (job
+15.6) and Chromium's 7.8 (job 10.0); each job now runs about 15 minutes of
+tests. The same change runs all four operational provider modes on one runner
+(about 18 minutes), so a full run uses no more runner slots than before.
 
 Each partition logs its estimate on its `CI_BROWSER_PARTITION` line and
 `CI_BROWSER_TIMING <label>: estimated N s, actual M s` when it finishes, pass
@@ -68,6 +69,36 @@ To refresh `BROWSER_FILE_SECONDS`, sum each file's `CI_PROGRESS ... END
 repos/OWNER/REPO/actions/jobs/ID/logs`), take the median per file, and record
 files of 20 seconds or more along with the source run IDs; hints change only
 placement, never which tests run.
+
+## Partition budgets (#1112)
+
+A job's partitions share a 50-minute budget (`JOB_SECONDS`), which leaves 10
+minutes of the 60-minute job limit for setup and post-job steps. Each
+partition reserves an equal share (25 minutes in a two-partition job), and a
+partition may not run into the shares still reserved for the partitions after
+it, so a slow first partition cannot starve the second. Time an earlier
+partition leaves unused rolls forward to the next.
+
+Equal shares are not proportional to need. Estimates are WebKit-scale for
+every engine, but Chromium runs much faster than WebKit. So each two-partition
+job runs its Chromium half first and its WebKit half last, and WebKit gets its
+own share plus whatever Chromium left unused.
+
+Before #1112 one 38-minute deadline covered the whole job, and WebKit ran
+first. On 2026-10-12 a slow runner took WebKit 1/2 about 1,451 seconds against
+a 902-second estimate, and Chromium 1/2 was killed with the remaining 819
+seconds although no test had failed. With Chromium first, a Chromium half of
+about 830 seconds leaves WebKit 2,170 seconds.
+
+A partition that runs out of its budget is killed and logged as
+`CI_BROWSER_FAILED <label>: killed after N s when its M s partition budget
+(its share of the 3,000 s job budget) ran out`, followed by either `no test
+had failed, so rerun the job` or the test phases that had already failed. The
+child pytest records each failed phase beside its completion receipt as it
+happens, so this holds even after a kill. Every failed partition is also
+listed in the GitHub job summary. The child pytest runs in its own process
+group, and the kill ends the whole group, so no orphaned Playwright driver or
+browser slows the next partition.
 
 ## Evidence
 

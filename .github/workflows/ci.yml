@@ -289,18 +289,19 @@ jobs:
     runs-on: ubuntu-latest
     # On 2026-09-30 a slow Ubuntu package mirror spent 17 minutes installing
     # WebKit's system packages, so 25 minutes cancelled passing runs.
-    # quality_browser.py bounds the test run itself at 38 minutes, which stays
-    # inside this limit even after a 17-minute install.
+    # quality_browser.py bounds the test run itself at 50 minutes, split into
+    # one budget per partition (#1112), leaving 10 minutes for setup and
+    # post-job steps.
     timeout-minutes: 60
     # One job per quality_sharding.BROWSER_JOBS entry (#627): Firefox whole,
     # and WebKit (the slowest engine) and Chromium each halved by test file,
-    # one half of each per job, so three jobs of similar length. Each job
-    # installs only its engines and must prove every partition ran all of
-    # its cases.
+    # one half of each per job, so three jobs of similar length. WebKit runs
+    # last so it inherits Chromium's unused budget (#1112). Each job installs
+    # only its engines and must prove every partition ran all of its cases.
     strategy:
       fail-fast: false
       matrix:
-        runs: ["firefox:1/1", "webkit:1/2 chromium:1/2", "webkit:2/2 chromium:2/2"]
+        runs: ["firefox:1/1", "chromium:1/2 webkit:1/2", "chromium:2/2 webkit:2/2"]
     env:
       BROWSER_RUNS: ${{ matrix.runs }}
     steps:
