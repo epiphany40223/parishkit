@@ -283,6 +283,43 @@ def _open_preview(page, component_origin, close):
     return region, button
 
 
+# Where the reader has scrolled to: the preview's top 40 px inside the
+# window, as after reading down to it; or the page's foot.
+PREVIEW_NEAR_THE_TOP = (
+    "scrollY + document.querySelector('[data-restore-preview]')"
+    ".getBoundingClientRect().top - 40"
+)
+THE_FOOT = (
+    "document.documentElement.scrollHeight - document.documentElement.clientHeight"
+)
+
+
+def _scroll_and_hold(page, where, *, attempts=5):
+    """Wheel the page to ``where`` (a script giving a scrollY), and keep it there.
+
+    The reader scrolls with the wheel, not a script: Firefox can re-apply
+    the page's last scroll into view (the swap's, or the typed note's caret)
+    at a later refresh, undoing a scripted scroll made in between, and then
+    keeps doing so while the note has focus. The test would measure from a
+    place the page was about to leave, and a click on a button scrolled out
+    of view makes Playwright scroll it back into view first (#1088). A
+    wheel turn can also stop short, so the page is wheeled again until it
+    holds across two settled checks. The page itself scrolls nothing here,
+    so this changes no behaviour under test.
+    """
+    there = f"Math.abs(({where}) - scrollY) <= 1"
+    # Over the main content, so the wheel scrolls the page, not the menu.
+    page.mouse.move(900, 450)
+    for _ in range(attempts):
+        page.mouse.wheel(0, page.evaluate(f"({where}) - scrollY"))
+        painted(page)
+        if page.evaluate(there):
+            painted(page)
+            if page.evaluate(there):
+                return
+    raise AssertionError(f"the page did not stay at {where} after {attempts} turns")
+
+
 @pytest.mark.parametrize("close", ["cancel", "confirm"])
 def test_closing_a_preview_moves_nothing_above_it(page, component_origin, close):
     """Cancel or Confirm leaves the table above the preview where it was.
@@ -292,11 +329,7 @@ def test_closing_a_preview_moves_nothing_above_it(page, component_origin, close)
     """
     region, button = _open_preview(page, component_origin, close)
     kept = _not_reloaded(page)
-    # The preview's top just inside the window, as after reading it.
-    page.evaluate(
-        "window.scrollBy(0, document.querySelector('[data-restore-preview]')"
-        ".getBoundingClientRect().top - 40)"
-    )
+    _scroll_and_hold(page, PREVIEW_NEAR_THE_TOP)
     # The settled row's own counts change; the table's top must not move.
     row = region.get_by_role("row").first
     before = row.bounding_box()["y"]
@@ -320,7 +353,7 @@ def test_closing_a_preview_at_the_foot_keeps_the_page_height(
     pointer; the only move left is focus scrolling to the next control.
     """
     region, button = _open_preview(page, component_origin, close)
-    page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)")
+    _scroll_and_hold(page, THE_FOOT)
     height = page.evaluate("document.documentElement.scrollHeight")
     button.click()
     expect(button).to_have_count(0)
