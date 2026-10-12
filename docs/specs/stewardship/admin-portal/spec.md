@@ -1365,7 +1365,7 @@ from a page whose settings changed elsewhere, and an Apply of logos that
 expired or were staged against settings changed since, are refused there.
 
 Parish logos take either one image, resized into all four sizes (the
-default, unchanged), or each size uploaded separately (#1062): the large
+default), or each size uploaded separately (#1062): the large
 logo, the menu logo beside the parish name on both portals, the icon and
 the favicon in the browser tab on both portals. Each size states its
 formats and limits beside its field and is refused, naming the size, the
@@ -1387,9 +1387,22 @@ readable, is generated from the large logo uploaded with it (otherwise it
 is refused). An upload from a page whose settings changed elsewhere is
 refused before the current logos are read.
 Every accepted size is normalized like a generated one and fitted within
-the same output size (large 1,024, menu and icon 128, favicon 32 pixels),
-never enlarged. The review names every size and says whether this upload
-changes it. The setup wizard's Parish logo step keeps the one-image upload.
+the same output bound, never enlarged: large 1,024 × 1,024, menu 512 × 128,
+icon 128 × 128 and favicon 32 × 32 pixels. The menu logo may be a wide
+wordmark, up to four times as wide as it is tall (#1062 slice 2; the
+branding asset insert guard enforces the same bounds from schema
+migration 0074), in either mode, so one wide image also keeps a
+128-pixel-tall menu logo. The review names every size and says whether
+this upload changes it. The setup wizard's Parish logo step keeps the
+one-image upload.
+
+The header on both portals draws the menu logo beside the parish name
+within 16rem × 4rem (256 × 64 CSS pixels), at its own shape and never
+enlarged; on a narrow screen it takes at most half the window's width,
+and the name wraps beside it. The image carries its drawn size, so its
+whole box is reserved before the file arrives and nothing moves when it
+does ([no layout shift](../ui-conventions/spec.md#no-layout-shift)). A
+menu logo stored before slice 2 keeps its stored size until a new upload.
 
 Campaign images (Campaign navigation) hold the current campaign's theme
 artwork: five optional slots, a wide banner and one small icon each for the

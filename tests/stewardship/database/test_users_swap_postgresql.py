@@ -274,6 +274,9 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # ``CLOSURE_ALTERED`` puts it back, after 0067's file has made the two
 # functions again. 0073 creates mail dispatch's one token read and alters
 # no table; its column revokes are no-ops when run again.
+# 0074 (#1062) creates nothing: it only replaces the ungranted branding
+# asset insert guard in place, so a rerun of its file is harmless and
+# nothing is registered for it.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",

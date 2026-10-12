@@ -813,11 +813,27 @@ class Graphic:
     height: int
 
 
+# Each Parish logo size's output bound, (width, height) in pixels: every
+# stored file is fitted within it and never enlarged. The menu logo may be a
+# wide wordmark (#1062), up to 4 times as wide as its 128-pixel height, so it
+# stays sharp drawn up to 256 x 64 CSS pixels in the header on a
+# high-density screen; the others fit a square. The branding asset insert
+# guard (schema migration 0074) enforces the same bounds.
+LOGO_SIZES = {
+    "large": (1024, 1024),
+    "menu": (512, 128),
+    "icon": (128, 128),
+    "favicon": (32, 32),
+}
+
+
 def prepare_graphics(upload):
-    """Bounded PNG/JPEG/WebP input; static PNG variants strip EXIF and active data."""
-    return _normalized_variants(
-        upload, (("large", 1024), ("small", 128), ("favicon", 32))
-    )
+    """Bounded PNG/JPEG/WebP input; static PNG variants strip EXIF and active data.
+
+    Returns all four logo sizes, each fitted within its ``LOGO_SIZES`` bound
+    from the one upload.
+    """
+    return _normalized_variants(upload, tuple(LOGO_SIZES.items()))
 
 
 # Campaign artwork (#248): one normalized PNG, fitted within this many pixels
@@ -834,7 +850,8 @@ def prepare_artwork(upload, label):
     """
     if label not in ARTWORK_SIZES:
         raise ValueError("Unknown artwork kind.")
-    graphics = _normalized_variants(upload, ((label, ARTWORK_SIZES[label]),))
+    size = ARTWORK_SIZES[label]
+    graphics = _normalized_variants(upload, ((label, (size, size)),))
     graphic = graphics[label]
     ratio = graphic.width / graphic.height
     if (label == "banner" and ratio < 2) or (
@@ -907,19 +924,20 @@ def image_facts(data):
         raise ValueError("Upload must be a readable PNG, JPEG or WebP image.") from None
 
 
-def prepare_slot_graphic(data, label, size):
+def prepare_slot_graphic(data, label, bound):
     """Normalize one separately uploaded logo size (#1062) like any logo:
-    re-encoded from a fresh pixel buffer and fitted within ``size`` pixels
-    per side, never enlarged. The slot's own rules are checked first by the
-    caller (``branding_slots``)."""
-    return _normalized_variants(BytesIO(data), ((label, size),))[label]
+    re-encoded from a fresh pixel buffer and fitted within ``bound``
+    (width, height) pixels, never enlarged. The slot's own rules are
+    checked first by the caller (``branding_slots``)."""
+    return _normalized_variants(BytesIO(data), ((label, bound),))[label]
 
 
 def _normalized_variants(upload, sizes):
     """Decode one bounded upload once and emit fresh PNGs fitted to each size.
 
-    Every output is re-encoded from a fresh pixel buffer, so EXIF, ICC and
-    text chunks from the upload are never kept.
+    ``sizes`` pairs each output label with its (width, height) bound. Every
+    output is re-encoded from a fresh pixel buffer, so EXIF, ICC and text
+    chunks from the upload are never kept.
     """
     try:
         data = upload.read(MAX_IMAGE_BYTES + 1)
@@ -945,9 +963,9 @@ def _normalized_variants(upload, sizes):
                 # A fresh pixel buffer deliberately discards EXIF/ICC/text data.
                 clean = Image.frombytes("RGBA", normalized.size, normalized.tobytes())
         result = {}
-        for label, size in sizes:
+        for label, bound in sizes:
             variant = clean.copy()
-            variant.thumbnail((size, size), Image.Resampling.LANCZOS)
+            variant.thumbnail(bound, Image.Resampling.LANCZOS)
             output = BytesIO()
             variant.save(output, format="PNG")
             result[label] = Graphic(

@@ -86,11 +86,15 @@ SLOTS = {
         gettext_lazy("a menu logo"),
         ("PNG", "JPEG", "WEBP"),
         1 * MB,
-        gettext_lazy("PNG, WebP or JPEG, about 128 pixels tall, up to 1 MB."),
+        gettext_lazy(
+            "PNG, WebP or JPEG, at least 64 pixels tall; stored within 512 × 128, "
+            "up to 1 MB."
+        ),
         gettext_lazy(
             "Shown beside the parish name at the top of every Admin and Family "
-            "page, and kept within 128 pixels. It can be square or wide (up to "
-            "4 times as wide as it is tall), but not taller than it is wide. "
+            "page, and kept within 512 pixels wide and 128 tall. It can be "
+            "square or a wide wordmark (up to 4 times as wide as it is tall), "
+            "but not taller than it is wide. "
             "Refused when over 1 MB, over 2,048 pixels on a side, wider than "
             "4:1, taller than it is wide, or under 64 pixels tall."
         ),
