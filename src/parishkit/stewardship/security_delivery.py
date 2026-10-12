@@ -128,7 +128,7 @@ class SecurityMail:
                 subject=content.subject,
                 sender=self.sender,
                 to=self.recipients,
-                html=email_document(content.html),
+                html=email_document(content.html, family=False),
                 text=content.text,
             )
         )
