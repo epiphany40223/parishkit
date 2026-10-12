@@ -140,6 +140,13 @@ def test_logo_becomes_public_only_after_yaml_activation(auth_service, google, me
     )
     page = browser.get(URL)
     assert b'rel="icon"' in page.content and b'<img src="/branding/' in page.content
+    # The header draws the 150 x 80 menu logo 4rem (64 pixels) tall, at its
+    # own shape, and says so before the file arrives (#1062).
+    menu = BrandingAsset.objects.get(label="menu")
+    assert (menu.width, menu.height) == (150, 80)
+    assert (
+        f'<img src="/branding/{menu.pk}.png" alt="" width="120" height="64">'
+    ).encode() in page.content
     assert (
         len(list((media / "branding" / BrandingBundle.objects.get().pk.hex).iterdir()))
         == 4
@@ -471,7 +478,7 @@ def test_each_size_upload_without_stored_logos_generates_from_large(
     }
     assert sizes == {
         "large": (600, 300),
-        "menu": (128, 64),
+        "menu": (256, 128),
         "icon": (128, 64),
         "favicon": (32, 32),
     }
