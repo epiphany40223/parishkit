@@ -19,7 +19,7 @@ from parishkit.stewardship.web.presentation import campaign_year
 from parishkit.stewardship.web.presentation import phone as format_phone
 
 from .information_rendering import FORMAT_NOTE, visible_text, xlsx_cell
-from .ministries import NOT_IN_CAMPAIGN, OUTCOMES, STATE_LABELS
+from .ministries import NOT_IN_CAMPAIGN, STATE_LABELS, outcome_label
 from .ministry_documents import new_member_labels
 
 TITLE = "Ministry follow-up packet"
@@ -92,11 +92,13 @@ def packet_document(payload, parameters, *, parish_name, requested_at, timezone)
         return "\n".join(value for value in values if value)
 
     def outcome(item):
-        """The specification's exact labels; an unresolved request is blank.
+        """The specification's exact labels for the row's kind (a leave's
+        declined reads Stayed in the Ministry, #1132); an unresolved request
+        is blank.
 
         Only Other carries its notes/reference, which SQL captured for it alone.
         """
-        label = OUTCOMES.get(item["outcome"], "")
+        label = outcome_label(item["outcome"], item["action"])
         if item["outcome"] == "other" and item.get("notes"):
             return f"{label}: {item['notes']}"
         return label

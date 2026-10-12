@@ -152,7 +152,7 @@ def test_followup_refusal_is_swapped_into_the_request(page, component_origin):
     page.get_by_label("Outcome", exact=True).select_option("joined")
     page.locator(FOLLOWUP_SAVE).click()
     summary = page.locator("#followup-item > [data-error-summary]:first-child")
-    message = "Left ministry doesn't apply to a request to join."
+    message = "Left the Ministry doesn't apply to a request to join."
     has_text(summary.get_by_role("link"), message)
     assert page.evaluate(MARKED) == "kept"
     assert page.locator("[data-error-summary]").count() == 1
@@ -517,7 +517,7 @@ def test_server_only_error_clears_when_its_field_is_edited(page, component_origi
     page.locator(FOLLOWUP_SAVE).click()
     outcome = page.locator("#followup-outcome")
     message = page.locator("#followup-outcome-error")
-    has_text(message, "Left ministry doesn't apply to a request to join.")
+    has_text(message, "Left the Ministry doesn't apply to a request to join.")
     assert outcome.get_attribute("aria-invalid") == "true"
     # Outcome's tip (#1014) still describes it, before the error.
     assert (

@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 from parishkit.stewardship.web.presentation import phone as format_phone
 
 from .directories import address_lines
-from .ministries import OUTCOMES, STATE_LABELS
+from .ministries import STATE_LABELS, outcome_label
 
 
 @dataclass(frozen=True, repr=False)
@@ -140,7 +140,7 @@ def ministry_document(payload, parameters, *, parish_name, requested_at, timezon
             if item["member_duid"]
             else new_members.get(item["proposed_id"], ""),
             STATE_LABELS[item["state"]],
-            OUTCOMES.get(item["outcome"], "Not yet recorded"),
+            outcome_label(item["outcome"], action, "Not yet recorded"),
         )
         submitted = (instant(item["submitted_at"]),)
         if action == "leave":

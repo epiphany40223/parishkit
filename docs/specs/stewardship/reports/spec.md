@@ -1611,10 +1611,20 @@ history option. Rows contain:
 - authorized Member phone number(s);
 - recorded phone-contact date, blank if none; and
 - current outcome using this exact mapping: unresolved workflow state is blank;
-  `joined` is `Joined ministry`; `leave_confirmed` is `Left ministry`;
-  `declined` is `Declined / no longer interested`; `no_response` is
+  `joined` is `Joined the Ministry`; `leave_confirmed` is `Left the
+  Ministry`; `declined` is `Declined / no longer interested` on a join request
+  and `Stayed in the Ministry` on a leave request; `no_response` is
   `No response`; `duplicate` is `Duplicate request`; and `other` is `Other`
   with its notes/reference.
+
+These are the outcome labels everywhere a Ministry request's outcome shows:
+the follow-up queue, the request page and its history, the join and leave
+lists, and their downloads and packets
+([#1132](https://github.com/epiphany40223/parishkit/issues/1132)). The
+stored code is the same for both kinds, so a leave request someone resolved
+as `declined` before the labels changed reads `Stayed in the Ministry`: the
+Member did not leave. The follow-up queue's Outcome filter covers both
+kinds, so there `declined` reads `Declined / stayed`.
 
 For Ministry leaders, every email and phone value in the packet follows the
 summary report's ParishSoft publish-flag rule and renders `Not published`
