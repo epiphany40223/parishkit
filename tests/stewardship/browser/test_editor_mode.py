@@ -289,6 +289,8 @@ def test_switch_to_basic_needs_a_choice_and_back_is_lossless(page, component_ori
     """Switch to Basic shows Basic with no choice, holding Review with the
     panel's reason; going back to Advanced before choosing keeps the custom
     configuration."""
+    from playwright.sync_api import expect
+
     custom_from_saved(page, component_origin)
     toggle(page, "Basic").click()
     page.get_by_role("button", name="Switch to Basic").click()
@@ -304,8 +306,6 @@ def test_switch_to_basic_needs_a_choice_and_back_is_lossless(page, component_ori
         == "Choose a basic schedule to review it."
     )
     # The switch is announced in the shared live region.
-    from playwright.sync_api import expect
-
     expect(
         page.locator("main > [role=status]").filter(has_text="Basic mode")
     ).to_have_count(1)
@@ -407,6 +407,8 @@ def test_advanced_errors_open_advanced(page, component_origin):
 def test_basic_matches_only_valid_advanced_fields(page, component_origin):
     """An Advanced value in error has no Basic equivalent, even when its
     text equals a Basic choice; a Basic choice then clears that error."""
+    from playwright.sync_api import expect
+
     open_editor(
         page,
         component_origin,
@@ -418,7 +420,9 @@ def test_basic_matches_only_valid_advanced_fields(page, component_origin):
     toggle(page, "Basic").click()
     visible(page.get_by_role("dialog", name=NO_BASIC))
     page.get_by_role("button", name="Switch to Basic").click()
-    assert not page.locator("input[name=preset]:checked").count()
+    # The switch happens as the dialog closes: wait for it.
+    visible(panel(page, "basic"))
+    expect(page.locator("input[name=preset]:checked")).to_have_count(0)
     page.get_by_role("radio", name="Every 4 hours").check()
     times = page.locator("#times")
     assert times.input_value() == EVERY_4
