@@ -23,7 +23,9 @@
   data-review-open="<dialog_id>" posts its Review without a page load, and
   the server's review (a fragment marked data-review-answer, holding the
   signed preview) is shown in the dialog's body, which scrolls while the
-  title and buttons stay in view.
+  title and buttons stay in view. The body is a focusable region named by
+  the title, so a keyboard can scroll a long review that holds nothing else
+  to focus (a repeat's thirty reminders).
 
   - title names the change and labels the dialog; it takes focus on open,
     never Apply, so the reader hears what is reviewed first.
@@ -40,7 +42,7 @@
   - fallback is as above.
 {% endcomment %}{% if review %}<dialog id="{{ dialog_id }}" class="confirm-dialog review-dialog" aria-labelledby="{{ dialog_id }}-title" data-review-dialog data-confirm-fallback="{{ fallback }}" data-review-return="{{ return_url|default:'' }}" data-review-outcome="{{ outcome_id }}" data-working="{% translate 'Applying…' %}" data-applied="{% translate 'Applied.' %}" data-applied-at="{% translate 'Applied at {time}.' %}">
 <h2 id="{{ dialog_id }}-title" tabindex="-1" data-review-title>{{ title }}</h2>
-<div class="dialog-body" data-review-body></div>
+<div class="dialog-body" tabindex="0" role="region" aria-labelledby="{{ dialog_id }}-title" data-review-body></div>
 <form method="post" action="{{ apply_url }}" data-review-apply>{% csrf_token %}<input type="hidden" name="action" value="confirm"></form>
 <div class="dialog-actions">{% button type="button" data-confirm-accept %}{% translate "Apply" %}{% endbutton %}{% button type="button" variant="secondary" data-confirm-cancel %}{% translate "Cancel" %}{% endbutton %}</div>
 <p class="dialog-status" role="status" data-confirm-status></p>

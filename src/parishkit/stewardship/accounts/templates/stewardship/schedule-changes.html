@@ -1,0 +1,19 @@
+{% load i18n stewardship %}{% comment %}
+The body of a schedule change's review (schedule_changes.build_preview's
+context): the campaign window and financial acknowledgment when they change,
+then each schedule's change with its current and proposed schedule and its
+affected work, and, while sends block the change, why there is no Apply.
+Shared by the date-change review page (schedule-preview.html, headings from
+level 2) and the review dialog of New and Edit scheduled email
+(schedule-review.html, #750, headings from level 3 under the dialog's
+title). ``level`` is the level of each section's heading, ``sublevel`` that of
+the headings inside a section.
+{% endcomment %}<p class="notice">{% translate "Email already sent cannot be recalled." %}</p>
+{% if window_changes %}<section class="panel"><h{{ level }}>{% translate "Campaign window" %}</h{{ level }}><p>{% translate "Current:" %} {{ before_window.start_date|parish_date }} – {{ before_window.end_date|parish_date }} ({{ before_window.timezone }})</p><p>{% translate "Proposed:" %} {{ after_window.start_date|parish_date }} – {{ after_window.end_date|parish_date }} ({{ after_window.timezone }})</p></section>{% endif %}
+{% if 'financial' in window_changes %}<section class="panel"><h{{ level }}>{% translate "Financial overlap acknowledgment" %}</h{{ level }}><p>{% translate "Current:" %} {{ before_window.financial.overlap_confirmed|yesno }}</p><p>{% translate "Proposed:" %} {{ after_window.financial.overlap_confirmed|yesno }}</p></section>{% endif %}
+{% for change in changes %}<section class="panel"><h{{ level }}>{{ change.label }} — {{ change.operation|capfirst }}</h{{ level }}>
+<h{{ sublevel }}>{% translate "Current schedule" %}</h{{ sublevel }}>{% include 'stewardship/schedule-summary.html' with value=change.before %}
+<h{{ sublevel }}>{% translate "Proposed schedule" %}</h{{ sublevel }}>{% include 'stewardship/schedule-summary.html' with value=change.after %}
+<dl><dt>{% translate "Emails already sent by this schedule" %}</dt><dd>{{ change.impact.delivered|default:0|number }}</dd><dt>{% translate "Planned sends not started yet (will be replaced)" %}</dt><dd>{{ change.impact.cancellable|default:0|number }}</dd><dt>{% translate "Sends that failed" %}</dt><dd>{{ change.impact.failed|default:0|number }}</dd><dt>{% translate "Sends in progress or with an uncertain result (these block the change)" %}</dt><dd>{{ change.impact.blocking|default:0|number }}</dd><dt>{% translate "Send times planned so far" %}</dt><dd>{{ change.impact.occurrences|default:0|number }}</dd><dt>{% translate "Individual messages created so far" %}</dt><dd>{{ change.impact.outboxes|default:0|number }}</dd></dl>
+</section>{% endfor %}
+{% if blocking %}<p class="notice notice-error" role="alert">{% translate "Email from these schedules is being sent right now, or has an uncertain result. Wait for it to finish, or resolve it on the Outgoing mail page, then preview again. Sends blocking the change:" %} {{ blocking|number }}</p>{% endif %}

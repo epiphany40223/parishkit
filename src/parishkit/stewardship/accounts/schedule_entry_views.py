@@ -4,9 +4,11 @@ Dates and mail schedules lists the saved schedules (``schedule_views``); these
 views act on them:
 
 - **New scheduled email** and **Edit scheduled email** are one page with one
-  schedule's fields, plus, on New, a Repeat rule for reminders. Review and
-  save builds the whole set of schedules (the saved ones unchanged, plus this
-  one added or changed, or one reminder per repeat date) and reviews it.
+  schedule's fields, plus, on New, a Repeat rule for reminders. Review
+  changes builds the whole set of schedules (the saved ones unchanged, plus
+  this one added or changed, or one reminder per repeat date) and reviews it
+  in the shared review dialog (UX conventions, "Review dialog", #750), whose
+  Apply confirms on Dates and mail schedules and returns there.
   The page shows and takes send times in the browser's time zone, which the
   page script posts as ``zone``; ``schedule_local`` converts them to and
   from the campaign-local values a schedule keeps (#558).
@@ -18,8 +20,8 @@ change document the schedule commands take (``admin_changes.form_data``),
 binds it to the date-change review's own forms and runs the same
 ``schedule_changes.build_preview``: the formset's field and collection rules,
 the whole-configuration candidate, the blocking-work count and the signed
-intent. A save then shows that review, confirmed on Dates and mail
-schedules; a delete records the signed intent at once through
+intent. A save then shows that review in the dialog, confirmed on Dates and
+mail schedules; a delete records the signed intent at once through
 ``admin_editing.confirm_intent``, which rechecks the applied configuration and
 the campaign's work under the work lock, as a confirmation always does.
 
@@ -121,9 +123,12 @@ ZONE_MISSING = _(
     "Your browser didn't report a time zone, so this send time can't be "
     "read. Check your computer's time zone setting, then try again."
 )
-# Edit's in-place refusal of a save that changes nothing, as Campaign
-# settings says "No settings have changed." (#751).
-UNCHANGED = _("Nothing has changed. Change the date, time or email, then save.")
+# Edit's refusal of a save that changes nothing. The page's change gate
+# keeps Review unavailable until something changed, so only a request that
+# bypasses the page script meets it, in the review dialog (#750).
+UNCHANGED = _(
+    "Nothing has changed. Change the date, time or email, then choose Review changes."
+)
 
 
 class RepeatRule(forms.Form):
@@ -529,11 +534,16 @@ def _kept(posted, schedule, values, now):
 def _entry(request, campaign_id, schedule_id=None):
     """New (``schedule_id`` None) or Edit scheduled email, GET or POST.
 
-    A POST previews (``review``) and shows the review page, whose Apply all
-    changes posts to Dates and mail schedules; a refused preview shows this
-    page again with its errors. The posted date and time are in the
-    browser's zone (``zone``) and are converted to the campaign's before
-    the review, so its rules compare the moments the Admin chose.
+    A POST previews (``review``) and answers with the shared review dialog's
+    fragment (``schedule-review.html``; UX conventions, "Review dialog",
+    #750), whose Apply posts the signed preview to Dates and mail schedules.
+    A preview refused for the values posted (a field, or a rule between
+    schedules) is this page again with its errors (status 400), which the
+    page script marks on the form it already shows; any other refusal (a
+    stale page, a read-only schedule, an unchanged Edit) is a plain refusal
+    the dialog shows. The posted date and time are in the browser's zone
+    (``zone``) and are converted to the campaign's before the review, so its
+    rules compare the moments the Admin chose.
     """
     service = runtime()
     actor = principal(request, service)
@@ -581,6 +591,8 @@ def _entry(request, campaign_id, schedule_id=None):
             "base_digest": state[0].active_configuration.digest,
             "post_url": request.path,
             "list_url": reverse("admin:schedule_settings"),
+            # The review dialog's Apply confirms on the list, then returns.
+            "apply_url": reverse("admin:schedule_settings"),
             "window_text": window_text(values),
         } | entry_times(values, saved, schedule, now, bound=posted is not None)
         admin_navigation.place(request, flow="change", step="edit")
@@ -622,9 +634,11 @@ def _entry(request, campaign_id, schedule_id=None):
             base_digest=request.POST.get("base_digest"),
         )
         if reviewed is None and str(NO_CHANGES) in _messages(window.non_field_errors()):
-            # Only Edit can post its schedule as saved; say so plainly.
-            entry.add_error(None, UNCHANGED)
-            return _entry_page(request, context, status=400)
+            # Only Edit can post its schedule as saved. Its change gate keeps
+            # Review unavailable then, so this is a safeguard for a request
+            # that bypasses the page script: a plain refusal, which the
+            # review dialog shows (UX conventions, "Review dialog", #750).
+            raise UserFacingError(UNCHANGED, fix=_("Nothing was changed."))
         if reviewed is None:
             repeating = repeat is not None and repeat.cleaned_data["repeat"]
             days = _days(entry, repeat) if repeating else None
@@ -636,13 +650,13 @@ def _entry(request, campaign_id, schedule_id=None):
                 _targets(entries, schedule, days),
             )
             return _entry_page(request, context, status=400)
-        admin_navigation.place(request, flow="change", step="review")
-        # Apply all changes confirms on Dates and mail schedules, so the
-        # change's status page returns to the list, not to this form.
+        # The review dialog's fragment, never a page: its Apply confirms on
+        # Dates and mail schedules (the form's dialog names it), and the
+        # dialog then returns there.
         return render(
             request,
-            "stewardship/schedule-preview.html",
-            reviewed | {"post_url": reverse("admin:schedule_settings")},
+            "stewardship/schedule-review.html",
+            reviewed | {"new": new},
         )
 
 

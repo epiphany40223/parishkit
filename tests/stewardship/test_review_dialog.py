@@ -1,9 +1,12 @@
 """The shared review dialog of Admin editors (#750; UX conventions, "Review
-dialog"): the markup ui-v1.js relies on, and the Users pages that use it.
+dialog"): the markup ui-v1.js relies on, and the Users and New and Edit
+scheduled email pages that use it.
 
-The behaviour (focus, busy state, refusals, the return to Users) is checked
-in real browsers (tests/stewardship/browser/test_review_dialog.py) and the
-server's answers under PostgreSQL (database/test_user_views_postgresql.py).
+The behaviour (focus, busy state, refusals, the return to the list) is
+checked in real browsers (tests/stewardship/browser/test_review_dialog.py,
+test_schedule_list.py) and the server's answers under PostgreSQL
+(database/test_user_views_postgresql.py,
+test_schedule_entry_postgresql.py).
 """
 
 import re
@@ -192,3 +195,83 @@ def test_new_and_edit_user_review_in_the_dialog_and_return_to_users():
     users = (TEMPLATES / "users.html").read_text(encoding="utf-8")
     include = re.search(r'review=True dialog_id="leader-review"[^%]*%', users).group(0)
     assert "return_url" not in include and 'outcome_id="leaders-outcome"' in include
+
+
+def test_the_dialog_body_is_a_focusable_region_named_by_the_title():
+    """A long review with nothing else to focus can still be scrolled by
+    keyboard (axe's scrollable-region-focusable)."""
+    assert re.search(
+        r'<div class="dialog-body" tabindex="0" role="region" '
+        r'aria-labelledby="thing-review-title" data-review-body>',
+        dialog(),
+    )
+
+
+def schedule_fragment(changes, *, new=True, blocking=0):
+    """New or Edit scheduled email's review, as the view answers it."""
+    return render_to_string(
+        "stewardship/schedule-review.html",
+        {
+            "campaign": {"active_configuration": {"name": "Stewardship 2054"}},
+            "changes": changes,
+            "window_changes": {},
+            "blocking": blocking,
+            "preview": None if blocking else "signed",
+            "new": new,
+        },
+    )
+
+
+def scheduled(operation="add", **impact):
+    """One schedule change as build_preview describes it (no schedules)."""
+    return {
+        "label": "Reminder",
+        "operation": operation,
+        "before": None,
+        "after": None,
+        "impact": impact,
+    }
+
+
+def test_the_schedule_review_is_a_fragment_for_the_dialog():
+    """Headings under the dialog's title, the signed preview, and the line
+    the list starts its status with; no page, form or second-screen link."""
+    text = schedule_fragment([scheduled()])
+    assert "data-review-answer" in text
+    assert 'data-review-done="Scheduled email added."' in text
+    assert re.search(r'name="preview" value="signed" data-review-preview', text)
+    assert "<h3>Reminder — Add</h3>" in text and "<h4>Current schedule</h4>" in text
+    assert "<form" not in text and "<h1" not in text and "<h2" not in text
+    assert "Return to" not in text and "Apply all changes" not in text
+    repeated = schedule_fragment([scheduled() for _ in range(30)])
+    assert repeated.count("Reminder — Add") == 30
+    assert 'data-review-done="30 reminders added."' in repeated
+    edited = schedule_fragment([scheduled("update")], new=False)
+    assert 'data-review-done="Scheduled email changed."' in edited
+
+
+def test_a_blocked_schedule_review_offers_no_apply():
+    """Sends in progress block the change: the reason, and no preview."""
+    text = schedule_fragment([scheduled("update", blocking=2)], new=False, blocking=2)
+    assert "Sends blocking the change: 2" in text
+    assert "data-review-preview" not in text
+
+
+def test_new_and_edit_scheduled_email_review_in_the_dialog():
+    """The entry form is gated on a change and opens schedule-review; Apply
+    posts to Dates and mail schedules, then returns there to its line."""
+    source = (TEMPLATES / "schedule-entry.html").read_text(encoding="utf-8")
+    assert re.search(
+        r'id="schedule-entry-form" data-schedule-entry '
+        r'data-review-open="schedule-review" data-require-change="base_digest"',
+        source,
+    )
+    assert re.search(
+        r'review=True dialog_id="schedule-review" title=review_title '
+        r"apply_url=apply_url return_url=list_url "
+        r'outcome_id="schedules-outcome"',
+        source,
+    )
+    assert "data-unchanged-hint data-idle" in source
+    listing = (TEMPLATES / "schedule-settings.html").read_text(encoding="utf-8")
+    assert 'review-outcome.html" with outcome_id="schedules-outcome"' in listing
