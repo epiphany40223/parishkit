@@ -405,6 +405,20 @@ CLOSURE_TABLES = {
 }
 
 
+# Each granted column a migration in the users swap's closure adds to a
+# table the base already has, with that migration, for the same reason:
+# database-grants on the base cannot name a column that is not there yet,
+# so it grants on one only once its migration is applied
+# (``pending_columns``). #1018's digest comparison (0072) gives web the
+# daily digest ready row's new comparison column.
+CLOSURE_COLUMNS = {
+    ("stewardship_daily_digest_ready", "comparison"): (
+        "stewardship_reports",
+        "0021_digest_comparison",
+    ),
+}
+
+
 def pending_functions(applied):
     """The registry routines whose creating migration is not in ``applied``.
 
@@ -421,6 +435,15 @@ def pending_tables(applied):
     """The registry tables whose creating migration is not in ``applied``."""
     return frozenset(
         table for table, migration in CLOSURE_TABLES.items() if migration not in applied
+    )
+
+
+def pending_columns(applied):
+    """The registry ``(table, column)`` pairs whose adding migration is pending."""
+    return frozenset(
+        column
+        for column, migration in CLOSURE_COLUMNS.items()
+        if migration not in applied
     )
 
 

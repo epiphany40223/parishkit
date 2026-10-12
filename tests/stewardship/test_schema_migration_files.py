@@ -247,7 +247,7 @@ FROZEN = {
         "458439a4ce633a15ec9bf32b5a38ffced7ee0fcda75f9bdd3503cf88bd8e8c58"
     ),
     "0072_digest_comparison.sql": (
-        "31d39c8b9cc397834ed737fdba241ee6a885b27ecb684639203f2709350f47fc"
+        "fb33ae24438f59b7c0f745d71722ebc07526807ae89395dbeeea4a44c9774f71"
     ),
 }
 

@@ -19,8 +19,9 @@
 --     A nullable column with no default rewrites no row; every existing
 --     digest has no section. A check keeps them together: no section and
 --     no charts, or a section with at least its Families chart;
---   - replaces stewardship_safe_context_v1 with 0059's body (the latest)
---     plus the timeout word digest_chart and the helper chart_render_worker,
+--   - replaces stewardship_safe_context_v1 with 0065's body (the latest:
+--     0059's archive words plus 0065's staff_entered sort tokens) plus the
+--     timeout word digest_chart and the helper chart_render_worker,
 --     so a kill of the chart engine's server renderer while drawing the
 --     section leaves a durable helper_timed_out entry. It is not SECURITY
 --     DEFINER (the baseline has no ALTER for it), stays IMMUTABLE with its
@@ -195,7 +196,7 @@ BEGIN
                 'duid','-duid','envelope','-envelope','submitted','-submitted',
                 'submissions','-submissions','opened','-opened','progressed','-progressed',
                 'invited','-invited','link','-link','last','-last','mailing','-mailing',
-                'problem','-problem') THEN RETURN false; END IF;
+                'problem','-problem','staff_entered','-staff_entered') THEN RETURN false; END IF;
         ELSIF key LIKE '%\_id' ESCAPE '\' THEN
             IF jsonb_typeof(value)<>'string' OR text_value!~'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN RETURN false; END IF;
         ELSIF key LIKE '%\_fingerprint' ESCAPE '\' THEN
@@ -372,7 +373,8 @@ BEGIN
     END IF;
     -- The context allowlist admits the renderer's timeout values, still
     -- refuses unknown ones, and still admits the earlier contexts (the
-    -- body is whole, not just this change).
+    -- body is whole, not just this change): 0059's archive words and
+    -- 0065's Entered by Staff sorts.
     IF NOT public.stewardship_safe_context_v1(
            'timeout', '{"what": "digest_chart", "helper": "chart_render_worker",
                         "limit_seconds": 60, "elapsed_seconds": 61}'::jsonb)
@@ -380,9 +382,14 @@ BEGIN
            'timeout', '{"what": "archive_check", "helper": "archive_check_worker"}'::jsonb)
        OR NOT public.stewardship_safe_context_v1(
            'action', '{"outcome": "succeeded", "archive_year": 2026, "count": 12}'::jsonb)
+       OR NOT public.stewardship_safe_context_v1(
+           'action', '{"report_sort": "staff_entered"}'::jsonb)
+       OR NOT public.stewardship_safe_context_v1(
+           'action', '{"report_sort": "-staff_entered"}'::jsonb)
+       OR public.stewardship_safe_context_v1('action', '{"report_sort": "staff"}'::jsonb)
        OR public.stewardship_safe_context_v1('timeout', '{"what": "chart_render_worker"}'::jsonb)
        OR public.stewardship_safe_context_v1('timeout', '{"helper": "digest_chart"}'::jsonb) THEN
-        RAISE EXCEPTION 'Migration 0072: stewardship_safe_context_v1 does not admit the chart timeout as declared';
+        RAISE EXCEPTION 'Migration 0072: stewardship_safe_context_v1 does not admit the chart timeout and the earlier contexts as declared';
     END IF;
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_safe_context_v1'

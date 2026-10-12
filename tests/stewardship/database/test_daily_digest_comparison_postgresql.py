@@ -440,7 +440,7 @@ def replaced(name, function):
     ("installs", "refusal"),
     [
         (
-            [("0059_campaign_archives.sql", "stewardship_safe_context_v1")],
+            [("0065_staff_entered.sql", "stewardship_safe_context_v1")],
             "does not admit the chart timeout",
         ),
         (
@@ -474,3 +474,29 @@ def test_the_0072_check_refuses_the_old_bodies(installs, refusal):
                 cursor.execute(replaced(name, function))
             cursor.execute(check)
         cursor.execute(check)  # Rolled back: the installed bodies pass again.
+
+
+def test_the_0072_check_refuses_a_body_without_0065s_sorts():
+    """0072's body built on 0059's (a stale restack) fails its DO block.
+
+    The chart words alone are not enough: the body must keep 0065's Entered
+    by Staff sort tokens, or a restacked file would silently revert them.
+    """
+    from django.db import DatabaseError, transaction
+
+    from .test_campaign_comparison_postgresql import ACL_NOW
+
+    text = (MIGRATIONS / "0072_digest_comparison.sql").read_text(encoding="utf-8")
+    check = text[text.index("DO $check$") : text.index("$check$;") + len("$check$;")]
+    body = replaced("0072_digest_comparison.sql", "stewardship_safe_context_v1")
+    tokens = ",'staff_entered','-staff_entered'"
+    assert body.count(tokens) == 1
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(ACL_NOW)
+        with (
+            pytest.raises(DatabaseError, match="Migration 0072: .*chart timeout"),
+            transaction.atomic(),
+        ):
+            cursor.execute(body.replace(tokens, ""))
+            cursor.execute(check)
+        cursor.execute(check)  # Rolled back: the installed body passes again.

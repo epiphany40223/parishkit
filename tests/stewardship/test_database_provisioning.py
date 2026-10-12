@@ -11,6 +11,7 @@ from parishkit.stewardship import database_provisioning as provisioning
 from parishkit.stewardship.accounts.key_files import write_private
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.runtime_grants import (
+    CLOSURE_COLUMNS,
     CLOSURE_FUNCTIONS,
     CLOSURE_TABLES,
     LEADERS_WITHOUT_USER_FUNCTION,
@@ -21,7 +22,11 @@ from parishkit.stewardship.runtime_identities import database_identities
 from .test_runtime_topology import configuration_at
 
 # Every migration the users swap's closure registries wait for, as applied.
-CLOSURE_APPLIED = {*CLOSURE_FUNCTIONS.values(), *CLOSURE_TABLES.values()}
+CLOSURE_APPLIED = {
+    *CLOSURE_FUNCTIONS.values(),
+    *CLOSURE_TABLES.values(),
+    *CLOSURE_COLUMNS.values(),
+}
 
 
 class Cursor:
@@ -316,7 +321,8 @@ def test_grants_wait_for_the_users_swap_closures_tables(tmp_path, monkeypatch):
     so naming it would fail; with the migration recorded, web gets its table
     and column grants, and nothing else changes.
     """
-    _, waiting = grant_statements(tmp_path, monkeypatch, CLOSURE_FUNCTIONS.values())
+    others = {*CLOSURE_FUNCTIONS.values(), *CLOSURE_COLUMNS.values()}
+    _, waiting = grant_statements(tmp_path, monkeypatch, others)
     _, granted = grant_statements(tmp_path, monkeypatch, CLOSURE_APPLIED)
     for table in CLOSURE_TABLES:
         assert not [s for s in waiting if f'"{table}"' in s], table
@@ -326,6 +332,28 @@ def test_grants_wait_for_the_users_swap_closures_tables(tmp_path, monkeypatch):
         any(f'"{table}"' in s for table in CLOSURE_TABLES)
         for s in set(granted) - set(waiting)
     )
+
+
+def test_grants_wait_for_the_users_swap_closures_columns(tmp_path, monkeypatch):
+    """On the users upgrade's base, a column the swap's closure adds waits.
+
+    The base has the table but not the column (its migration is pending,
+    #1018's digest comparison), so naming it would fail; the table's other
+    column grants still go ahead, and with the migration recorded the same
+    grant names the column too.
+    """
+    others = {*CLOSURE_FUNCTIONS.values(), *CLOSURE_TABLES.values()}
+    _, waiting = grant_statements(tmp_path, monkeypatch, others)
+    _, granted = grant_statements(tmp_path, monkeypatch, CLOSURE_APPLIED)
+    assert len(waiting) == len(granted)
+    for table, column in CLOSURE_COLUMNS:
+        assert not [s for s in waiting if f'"{column}"' in s and f'"{table}"' in s]
+        assert [s for s in waiting if f'"{table}" TO "pk_stewardship_web"' in s]
+        assert [
+            s
+            for s in granted
+            if f'"{column}"' in s and f'"{table}" TO "pk_stewardship_web"' in s
+        ]
 
 
 @pytest.mark.parametrize("installed", ["current", "older", "missing"])

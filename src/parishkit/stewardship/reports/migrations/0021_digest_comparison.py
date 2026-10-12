@@ -11,11 +11,12 @@ operations record the same fields and constraint, so ``makemigrations
 --check`` stays clean. Reversing needs its own forward migration, so it has
 no reverse operation.
 
-It depends on the migration that installs the latest frozen file before
-it, so the files apply in prefix order. Files below 0072 may be assigned to
-other pull requests that were not merged when this was written; whichever
-of them merges last before this one becomes its dependency (a re-chain), so
-the files still apply in prefix order and Django keeps a single leaf.
+It depends on the migration that installs the previous frozen file (0071,
+``stewardship_reports.0020_comparison_exports``), so the files apply in
+prefix order and Django keeps a single leaf. That puts it in the users
+swap's closure (#952): `migrate --users-upgrade-base` never applies it, so
+web's grant on the new ``comparison`` column is registered in
+``runtime_grants.CLOSURE_COLUMNS`` and given only once it is applied.
 """
 
 from pathlib import Path
@@ -32,11 +33,10 @@ FROZEN_SQL = (
 
 class Migration(migrations.Migration):
     dependencies = [
-        # The reports app's previous migration, which also installs the
-        # latest frozen file on this branch (0071). Re-chain it onto the
-        # migration that installs the latest file below 0072 before this
-        # merges; see the docstring.
-        ("stewardship_reports", "0015_comparison_exports"),
+        # The migration that installs the previous frozen file (0071, #1018
+        # slice 6), so the files apply in prefix order. It follows the users
+        # swap, so `migrate --users-upgrade-base` never applies this file.
+        ("stewardship_reports", "0020_comparison_exports"),
     ]
 
     operations = [

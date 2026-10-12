@@ -246,8 +246,8 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # which a full migration would otherwise fail to create again: #970's 0056,
 # #995's 0057, #1024's 0058, #1018's 0059, #528's 0060 and 0061, #530's
 # 0062, #463's 0063, #558's 0064, #529's 0065, #794's 0066, #1018's 0067,
-# #806's 0068, #932's 0069, #1034's 0070 and #1018's 0071 follow 0055
-# (#993), so they are in the swap's closure too.
+# #806's 0068, #932's 0069, #1034's 0070 and #1018's 0071 and 0072 follow
+# 0055 (#993), so they are in the swap's closure too.
 # Each is dropped while the swap is pending (with the trigger that uses it)
 # and, unless the test's full migration made it again, installed again
 # afterwards from its migration's frozen file. The tables 0059 to 0063 and
@@ -268,6 +268,11 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # 0063, alters the export request (``before_comparison_exports``), which is
 # put back as 0063 left it before 0063's own undo runs; its entries come
 # after 0063's here so the frozen files install again in prefix order.
+# 0072 creates nothing; it adds the daily digest ready row's comparison
+# columns and replaces the audit context check and the two campaign
+# comparison functions in place (``before_digest_comparison``), so
+# ``CLOSURE_ALTERED`` puts it back, after 0067's file has made the two
+# functions again.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -376,6 +381,10 @@ CLOSURE_ALTERED = {
         "stewardship_responses",
         "0003_staff_entered",
     ),
+    ("stewardship_daily_digest_ready", "comparison"): (
+        "stewardship_reports",
+        "0021_digest_comparison",
+    ),
 }
 
 
@@ -447,6 +456,34 @@ def before_comparison_exports():
         ),
         "ALTER TABLE public.stewardship_export_request "
         "DROP COLUMN comparison_snapshot_id",
+    ]
+
+
+def before_digest_comparison():
+    """The statements that put the digest ready row back as 0071 left it.
+
+    #1018's 0072 adds three comparison columns to
+    ``stewardship_daily_digest_ready`` (with a check over them, which goes
+    with them) and replaces ``stewardship_safe_context_v1`` with 0065's body
+    plus the chart timeout words. These drop the columns and put 0065's body
+    back. The two comparison functions it also replaces are dropped with the
+    other ``CLOSURE_CREATED`` objects and made again from 0067's file, which
+    0072's file (``CLOSURE_ALTERED``) then replaces again.
+    """
+    text = (MIGRATIONS / "migrations/0065_staff_entered.sql").read_text(
+        encoding="utf-8"
+    )
+    start = text.index("CREATE OR REPLACE FUNCTION public.stewardship_safe_context_v1(")
+    return [
+        *(
+            "ALTER TABLE public.stewardship_daily_digest_ready DROP COLUMN " + column
+            for column in (
+                "comparison",
+                "comparison_families_chart",
+                "comparison_pledges_chart",
+            )
+        ),
+        text[start : text.index("$_$;", start) + len("$_$;")],
     ]
 
 
@@ -529,7 +566,8 @@ def swap_pending():
     triggers as they were before 0064 (``before_report_local_days``) and
     submissions and the context check as they were before 0065
     (``before_staff_entered``, each ``CLOSURE_ALTERED`` column) and the
-    leader definition as it was before 0070 (``before_leader_changes``).
+    leader definition as it was before 0070 (``before_leader_changes``), and
+    the digest ready row as it was before 0072 (``before_digest_comparison``).
     """
     from django.db.migrations.loader import MigrationLoader
 
@@ -557,6 +595,7 @@ def swap_pending():
         for function in CLOSURE_CREATED:
             cursor.execute(f"DROP FUNCTION {function} CASCADE")
         for statement in (
+            *before_digest_comparison(),
             *before_comparison_exports(),
             *before_timeline_exports(),
             *before_report_local_days(),
@@ -702,12 +741,13 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
     adds absent) database-grants succeeds without them; the conversion runs
     as the admin-recovery login with exactly the grants it gave; the full
     migration then installs the swap, the Name lookup and the archive
-    tables, and the grants again give web the lookup (#952) and the tables
-    (#1018).
+    tables, and the grants again give web the lookup (#952), the tables
+    and the digest ready row's comparison column (#1018).
     """
     from django.core.management import call_command
 
     from parishkit.stewardship.runtime_grants import (
+        CLOSURE_COLUMNS,
         CLOSURE_FUNCTIONS,
         MEMBER_NAMES_FOR_FUNCTION,
     )
@@ -724,6 +764,12 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
         assert scalar("SELECT to_regprocedure(%s)", [lookup]) is None
         for table in CLOSURE_TABLES:
             assert scalar("SELECT to_regclass(%s)", [f"public.{table}"]) is None
+        for table, column in CLOSURE_COLUMNS:
+            assert not scalar(
+                "SELECT count(*) FROM pg_attribute WHERE attrelid=%s::regclass "
+                "AND attname=%s AND NOT attisdropped",
+                [f"public.{table}", column],
+            )
         assert grants() == {"database_grants_provisioned": True}
         with connection.cursor() as cursor:
             cursor.execute("SET SESSION AUTHORIZATION pk_stewardship_admin_recovery")
@@ -754,6 +800,11 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
                 "SELECT has_table_privilege('pk_stewardship_web', %s, 'INSERT')",
                 [f"public.{table}"],
             ), table
+        for table, column in CLOSURE_COLUMNS:
+            assert scalar(
+                "SELECT has_column_privilege('pk_stewardship_web', %s, %s, 'SELECT')",
+                [f"public.{table}", column],
+            ), column
 
 
 def catalog(cursor):
@@ -788,14 +839,17 @@ def test_closure_functions_list_every_granted_routine_the_swap_closure_adds(
     are what PostgreSQL reports. A granted routine among them must be in
     CLOSURE_FUNCTIONS, and a granted table or view in CLOSURE_TABLES, with
     the migration that adds it, so database-grants waits for it on the base
-    (#952, #1018). Registry names are resolved by the database too, so type
-    spellings need not match.
+    (#952, #1018). A granted column the base's table lacks must be in
+    CLOSURE_COLUMNS, with a closure migration, and every one listed there
+    must be absent from the base. Registry names are resolved by the
+    database too, so type spellings need not match.
     """
     import psycopg
     from django.db.migrations.loader import MigrationLoader
 
     from parishkit.stewardship.operator_commands import users_upgrade_targets
     from parishkit.stewardship.runtime_grants import (
+        CLOSURE_COLUMNS,
         CLOSURE_FUNCTIONS,
         MEMBER_NAMES_FOR_FUNCTION,
         runtime_functions,
@@ -838,7 +892,18 @@ def test_closure_functions_list_every_granted_routine_the_swap_closure_adds(
             added_routines, added_relations = {}, {}
             with psycopg.connect(**database_parameters(scratch)) as database:
                 routines, relations = catalog(database.cursor())
+                cursor = database.cursor()
+                cursor.execute(
+                    "SELECT c.relname, a.attname FROM pg_attribute a "
+                    "JOIN pg_class c ON c.oid=a.attrelid "
+                    "JOIN pg_namespace n ON n.oid=c.relnamespace "
+                    "WHERE n.nspname='public' AND a.attnum>0 AND NOT a.attisdropped"
+                )
+                base_columns = set(cursor.fetchall())
                 database.rollback()
+                base_tables = {table for table, _ in base_columns}
+                assert not set(CLOSURE_COLUMNS) & base_columns
+                assert set(CLOSURE_COLUMNS.values()) <= closure
                 for key in steps:
                     migrate(source, settings_directory, scratch, "closure", key)
                     after_routines, after_relations = catalog(database.cursor())
@@ -866,6 +931,15 @@ def test_closure_functions_list_every_granted_routine_the_swap_closure_adds(
                         key = added_routines.get(oid, (None, None))[1]
                         assert CLOSURE_FUNCTIONS.get(function) == key, function
                     tables, columns = runtime_grants(role, target=target)
+                    for table, privileges in columns.items():
+                        if table not in base_tables:
+                            continue
+                        for names in privileges.values():
+                            for column in names:
+                                pair = (table, column)
+                                assert (
+                                    pair in base_columns or pair in CLOSURE_COLUMNS
+                                ), pair
                     for table in tables.keys() | columns.keys():
                         oid = resolve("to_regclass", table)
                         key = added_relations.get(oid, (None, None))[1]
