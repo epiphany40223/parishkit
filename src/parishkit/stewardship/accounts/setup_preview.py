@@ -41,7 +41,7 @@ class SetupPreview:
 
 # Whether a draft without first-campaign sections may be previewed and
 # confirmed (#142). Off until the wizard stops offering the campaign pages
-# and Create the campaign (#786) can create the campaign afterwards; until
+# and Create the campaign (#142) can create the campaign afterwards; until
 # then a setup without a campaign would leave no way to create one. Tests of
 # the system-only back end turn it on.
 SYSTEM_ONLY_SETUP = False
