@@ -1066,6 +1066,7 @@ pk-admin report comparison --day 12
 pk-admin report responses --mode testing --grain day
 pk-admin report financial
 pk-admin report limitations
+pk-admin report census --status all --route by_hand
 pk-admin report information --disposition all --needed yes
 pk-admin report ministry
 pk-admin report ministry --ministry 9 --requests join --state unresolved
@@ -1082,6 +1083,7 @@ pk-admin report roster --show all --ministry 9
 | `report responses` | Response dashboard | `metrics`: the funnel `stages`, the three figures beside it, the `activity` buckets, the `sends` and each list's length (`lists`); null in Testing without a rehearsal |
 | `report financial` | Financial report | The summary over every pledge: `families`, `annual_total`, `frequencies`, `shares` (by share option id), `no_share`, `cannot_give` and the comparison period |
 | `report limitations` | Limitations | `cannot_serve` (Members who cannot participate in ministries) and `cannot_attend` (Families who cannot attend Mass or prayer services) |
+| `report census` | Census changes | `matching`: how many changes the filters keep, split by `routes` (`automatic`, `by_hand`) and `kinds` (`contact`, `moved`, `deceased`, `new_member`), and `statuses`, the page's summary of every change by status; see below |
 | `report information` | Additional information | `matching`: how many items match the filters |
 | `report ministry` | Ministry report | `summaries`: each Ministry's DUID (`ministry`), name, state and request counts; with `--ministry` and `--requests`, `matching` is that list's request count |
 
@@ -1094,6 +1096,13 @@ The options are the pages' own, and a value the page would refuse is exit 1
   day; a later day is `not_available`).
 - `report responses`: `--mode` (`production`, the default, or `testing`)
   and `--grain` (`auto`, `hour` or `day`).
+- `report census`: `--status` (`open`, the default: the work to do,
+  which for an Administrator includes the automatic changes to review;
+  `to_review`, `to_do`, `conflict`, `being_published`, `published`,
+  `already`, `entered`, `ignored` or `all`), `--history` (count superseded
+  and cancelled changes too), `--route` (`any`, `automatic` or `by_hand`),
+  `--kind` (`any`, `contact`, `moved`, `deceased` or `new_member`) and
+  `--start`, `--end` and `--zone`, as `report information` takes them.
 - `report information`: `--disposition` (`current_actionable`, the
   default, `superseded`, `withdrawn` or `all`), `--needed` and
   `--completed` (`any`, `yes` or `no`), and `--start` and `--end` (days
@@ -1165,6 +1174,18 @@ todo`), `replaced` (the page's "Replaced by a later response") and
 (`ministry`) with its `name`. Each row names a Member and a Family, so the
 rows stay on the page and its downloads. It records the page's "viewed"
 event with a count of 0.
+
+`report census` counts **Census changes**, the census changes Families
+reported, which are carried into ParishSoft automatically or by hand. Like
+the page, Administrators and Staff may run it, from a session of any scope;
+a Ministry leader is refused (`denied`). It prints `filters` (the page's
+choices, as `status`, `history`, `route`, `kind`, `start`, `end` and
+`zone`), `matching`, `routes`, `kinds` and `statuses`: the page's summary,
+every change of the campaign by status key whatever the other filters,
+including zeros, with `superseded` and `cancelled` only with `--history`.
+Each row names a Family and often a Member, with their contact details, so
+the rows stay on the page and its downloads. It records the page's
+"viewed" event with a count of 0.
 
 ## Digests
 
@@ -1760,3 +1781,7 @@ pk-admin users import-leaders --confirm --token -
 - `pk-admin/1` (#463): additive. `report roster [--show todo|all]
   [--ministry DUID]`, the Roster changes to enter list's counts (any
   session, Administrators and Staff, the page's event).
+- `pk-admin/1` (#463): additive. `report census [--status S] [--history]
+  [--route R] [--kind K] [--start DATE] [--end DATE] [--zone ZONE]`, the
+  Census changes list's counts (any session, Administrators and Staff,
+  the page's event); `report list` offers it.

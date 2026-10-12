@@ -136,6 +136,7 @@ def test_participation_responses_information_and_the_list(http_scenario, cli):  
         "report comparison": True,
         "report financial": False,
         "report limitations": False,
+        "report census": True,
         "report information": True,
         "report ministry": False,
     }
