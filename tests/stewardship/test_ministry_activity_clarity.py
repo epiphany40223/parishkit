@@ -117,7 +117,12 @@ def test_preview_without_excluded_selection_has_no_note():
 
 
 def test_listing_links_campaign_column_and_intro():
-    """The column reads "In current campaign" and links to Ministry selections."""
+    """The column reads "In current campaign" and links to Ministry selections.
+
+    The page's introduction waits in the closed About panel (#227); the
+    one-sentence hint that inclusion changes elsewhere stays visible, with
+    its link, above the table.
+    """
     rows = [ministry("Choir", 1, included=True), ministry("Ushers", 2, included=False)]
     html = render_to_string(
         "stewardship/ministries.html",
@@ -134,7 +139,14 @@ def test_listing_links_campaign_column_and_intro():
         },
     )
     assert "In current campaign" in html
-    assert "This page turns Ministries on or off for parishioners." in html
+    start = html.index('data-about-page="ministries"')
+    about, visible = html[start:].split("</details>", 1)
+    assert "This page turns Ministries on or off for parishioners." in about
+    assert "This page turns Ministries on or off for parishioners." not in visible
+    assert (
+        "This page only sets Ministry activity; choose this campaign's "
+        "Ministries in" in visible
+    )
     assert html.count(f'href="{URL}"') == 3
 
 

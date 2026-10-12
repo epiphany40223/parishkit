@@ -2,7 +2,7 @@
 {% block title %}{% translate "Limitations unavailable" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Limitations unavailable" %}</h1>
-{% if status == 503 %}<p role="alert">{% translate "This information is temporarily unavailable. Please retry later." %}</p>
-{% else %}<p role="alert">{% translate "Check the search and filter, then try again." %}</p>{% endif %}
+{% if status == 503 %}<p class="notice notice-error" role="alert">{% translate "This information is temporarily unavailable. Please retry later." %}</p>
+{% else %}<p class="notice notice-error" role="alert">{% translate "Check the search and filter, then try again." %}</p>{% endif %}
 <p><a href="{% url 'admin:limitations_report' %}">{% translate "Return to Limitations" %}</a></p>
 {% endblock %}

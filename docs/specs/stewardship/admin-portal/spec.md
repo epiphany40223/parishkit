@@ -1838,9 +1838,10 @@ not presented as applied. The review, Apply and the change's status appear
 (#750).
 
 Activity and campaign inclusion are separate settings, and this screen changes
-only activity. It says so in one sentence and links its "In current campaign"
-column to where inclusion changes: Campaign Ministries while the current
-campaign is live (see
+only activity. One visible sentence above the table says so and names where
+inclusion changes (the longer explanation is in the page's About panel), and
+the "In current campaign" column links there too: Campaign Ministries while
+the current campaign is live (see
 [Changing a live campaign's Ministries](#changing-a-live-campaigns-ministries)),
 and Campaign settings → Ministry selections for a draft. When a bulk preview
 includes Ministries that are not in the current campaign, the preview names
