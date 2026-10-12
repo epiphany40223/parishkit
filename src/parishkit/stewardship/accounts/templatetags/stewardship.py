@@ -173,10 +173,17 @@ def sort_heading(context, table, column, label, css_class=""):
     }
 
 
-# The destructive row actions table_actions draws: each has its own icon and
-# words ("Delete Reminder 2", "Revoke nightly export"), the same size and the
-# same confirmation dialog.
-TABLE_ACTION_VERBS = {"delete", "revoke", "remove"}
+# The destructive row actions table_actions draws, each with the icon it
+# shows: each has its own words ("Delete Reminder 2", "Revoke nightly
+# export", "Sign out jane@example.org’s session"), the same size and the same
+# confirmation dialog. Sign out ends a session, as Revoke does, so it shares
+# Revoke's icon (Signed-in sessions, #953).
+TABLE_ACTION_VERBS = {
+    "delete": "delete",
+    "revoke": "revoke",
+    "remove": "remove",
+    "sign_out": "revoke",
+}
 
 
 @register.inclusion_tag("stewardship/components/table-actions.html")
@@ -197,9 +204,10 @@ def table_actions(
     ``edit`` is the row's edit page; ``delete`` the value its destructive
     action posts as ``field`` once the dialog ``confirm`` names is
     confirmed. ``verb`` names that action: "delete" (the default),
-    "revoke" (Automation access) or "remove" (Past campaigns, whose Remove
-    keeps a tombstone). ``confirm_name`` is what the dialog's
-    title and announcement call the row, when that needs more than ``name``
+    "revoke" (Automation access), "remove" (Past campaigns, whose Remove
+    keeps a tombstone) or "sign_out" (Signed-in sessions).
+    ``confirm_name`` is what the dialog's title and announcement call the
+    row, when that needs more than ``name``
     (Users: the address with its Name and role); it defaults to ``name``.
     Leave out an action the row does not offer; a row with none gets an
     empty cell.
@@ -215,6 +223,7 @@ def table_actions(
         "confirm": confirm,
         "field": field,
         "verb": verb,
+        "icon": TABLE_ACTION_VERBS[verb],
         "confirm_name": confirm_name or name,
     }
 

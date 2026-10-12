@@ -117,6 +117,7 @@ sections:
     "Ministry leaders from ParishSoft": [ADM-07]
     "ParishSoft Ministry leaders without a user": [ADM-07]
     "Upgrade from sign-in rules": [ADM-07]
+    "Signed-in sessions": [ADM-07]
     "Manual ParishSoft refresh": [ADM-08]
     "Data to fix in ParishSoft": [ADM-08]
     "Data to fix page": [ADM-08]
