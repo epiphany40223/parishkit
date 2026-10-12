@@ -246,8 +246,8 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # which a full migration would otherwise fail to create again: #970's 0056,
 # #995's 0057, #1024's 0058, #1018's 0059, #528's 0060 and 0061, #530's
 # 0062, #463's 0063, #558's 0064, #529's 0065, #794's 0066, #1018's 0067,
-# #806's 0068, #932's 0069, #1034's 0070 and #1018's 0071 and 0072 follow
-# 0055 (#993), so they are in the swap's closure too.
+# #806's 0068, #932's 0069, #1034's 0070, #1018's 0071 and 0072 and
+# #806's 0077 follow 0055 (#993), so they are in the swap's closure too.
 # Each is dropped while the swap is pending (with the trigger that uses it)
 # and, unless the test's full migration made it again, installed again
 # afterwards from its migration's frozen file. The tables 0059 to 0063 and
@@ -276,7 +276,11 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # no table; its column revokes are no-ops when run again.
 # 0074 (#1062) creates nothing: it only replaces the ungranted branding
 # asset insert guard in place, so a rerun of its file is harmless and
-# nothing is registered for it.
+# nothing is registered for it. 0077
+# creates the address follow-up table (in CLOSURE_TABLES) with its guard and
+# position check and three definers, and adds a task type to the two task
+# maps in place; the maps call nothing it creates, so they need no
+# ``before_*``.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -380,6 +384,17 @@ CLOSURE_CREATED = {
     "public.stewardship_family_daily_resume_v1()": (
         "stewardship_jobs",
         "0026_daily_send_resume",
+    ),
+    **dict.fromkeys(
+        (
+            "public.stewardship_address_positions_v1(jsonb,integer)",
+            "public.stewardship_address_retry_guard_v1()",
+            "public.stewardship_address_retry_open_v1"
+            "(uuid,uuid,bigint,uuid,text,text,integer)",
+            "public.stewardship_address_retry_token_v1(uuid,uuid,uuid,bigint,uuid)",
+            "public.stewardship_delivery_address_retries_v1(uuid,uuid)",
+        ),
+        ("stewardship_jobs", "0027_address_retry"),
     ),
 }
 
@@ -814,10 +829,19 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
             "SELECT has_function_privilege('pk_stewardship_web', %s, 'EXECUTE')",
             [lookup],
         )
+        # Web inserts into each closure table, except the address follow-ups
+        # (0077, #806), which only mail dispatch reads and updates.
+        writers = {
+            "stewardship_outbox_address_retry": (
+                "pk_stewardship_mail_dispatch",
+                "UPDATE",
+            )
+        }
         for table in CLOSURE_TABLES:
+            login, privilege = writers.get(table, ("pk_stewardship_web", "INSERT"))
             assert scalar(
-                "SELECT has_table_privilege('pk_stewardship_web', %s, 'INSERT')",
-                [f"public.{table}"],
+                "SELECT has_table_privilege(%s, %s, %s)",
+                [login, f"public.{table}", privilege],
             ), table
         for table, column in CLOSURE_COLUMNS:
             assert scalar(

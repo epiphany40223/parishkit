@@ -261,6 +261,9 @@ FROZEN = {
     "0076_daily_send_resume.sql": (
         "5b6ad32b9ca4f581963092013c7889959d3336909d1eb5cb634756c9583f174d"
     ),
+    "0077_address_retry.sql": (
+        "b1af088fb6a234352c69cdc33edb913c864c9fa13d0d00641834b8d7c85d59f9"
+    ),
 }
 
 

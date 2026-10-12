@@ -31,6 +31,23 @@ CLOSURE_APPLIED = {
     *CLOSURE_TABLES.values(),
     *CLOSURE_COLUMNS.values(),
 }
+# Migrations that create both a granted routine and a granted table (#806's
+# 0077): their table waits with their routines.
+BOTH = set(CLOSURE_FUNCTIONS.values()) & set(CLOSURE_TABLES.values())
+# The login that writes each closure table: web, except the address
+# follow-ups (0077), which mail dispatch updates.
+TABLE_WRITERS = {"stewardship_outbox_address_retry": "pk_stewardship_mail_dispatch"}
+
+
+def names_closure_object(statement, migrations):
+    """Whether a grant names a routine or table one of ``migrations`` creates."""
+    return any(
+        f in statement for f, key in CLOSURE_FUNCTIONS.items() if key in migrations
+    ) or any(
+        f'"{table}"' in statement
+        for table, key in CLOSURE_TABLES.items()
+        if key in migrations
+    )
 
 
 class Cursor:
@@ -317,7 +334,11 @@ def test_grants_wait_for_the_users_swap_closures_functions(
     # logins (#1034's recorder to two), so the statements that wait are
     # those naming one, not one per routine.
     full = grant_statements(tmp_path, monkeypatch, CLOSURE_FUNCTIONS.values())[1]
-    closure = [s for s in full if any(f in s for f in CLOSURE_FUNCTIONS)]
+    closure = [
+        s
+        for s in full
+        if any(f in s for f in CLOSURE_FUNCTIONS) or names_closure_object(s, BOTH)
+    ]
     assert len(closure) >= len(CLOSURE_FUNCTIONS)
     assert len(statements) == len(full) - (0 if applied else len(closure))
 
@@ -329,15 +350,16 @@ def test_grants_wait_for_the_users_swap_closures_tables(tmp_path, monkeypatch):
     so naming it would fail; with the migration recorded, web gets its table
     and column grants, and nothing else changes.
     """
-    others = {*CLOSURE_FUNCTIONS.values(), *CLOSURE_COLUMNS.values()}
+    others = {*CLOSURE_FUNCTIONS.values(), *CLOSURE_COLUMNS.values()} - BOTH
     _, waiting = grant_statements(tmp_path, monkeypatch, others)
     _, granted = grant_statements(tmp_path, monkeypatch, CLOSURE_APPLIED)
     for table in CLOSURE_TABLES:
+        writer = TABLE_WRITERS.get(table, "pk_stewardship_web")
         assert not [s for s in waiting if f'"{table}"' in s], table
-        assert [s for s in granted if f'"{table}" TO "pk_stewardship_web"' in s], table
+        assert [s for s in granted if f'"{table}" TO "{writer}"' in s], table
     assert set(waiting) < set(granted)
     assert all(
-        any(f'"{table}"' in s for table in CLOSURE_TABLES)
+        names_closure_object(s, set(CLOSURE_TABLES.values()))
         for s in set(granted) - set(waiting)
     )
 

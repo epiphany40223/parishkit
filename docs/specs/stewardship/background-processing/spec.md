@@ -1599,6 +1599,75 @@ Family email progress
 counts these skips separately ("Skipped: No-reminders WorkGroup"), never as owed
 or remaining, and the Family timeline names them.
 
+### Addresses refused for now
+
+One email goes to all of a Family's addresses at once, and the provider may
+accept it while refusing some addresses only for now (an SMTP 4xx reply at
+RCPT). The email is then delivered and is never prepared, rendered or sent
+again ([#806](https://github.com/epiphany40223/parishkit/issues/806)).
+Instead, for a Production invitation or reminder, the transaction that
+records the acceptance opens a follow-up for exactly that attempt's
+refused-for-now addresses (see `AddressRetry` in the
+[data specification](../data/spec.md#job-outbox-audit-and-purge-records)),
+with its own `family_address_retry` task, run by mail dispatch. A follow-up
+that cannot be opened is logged and never undoes the acceptance. Receipts
+and Testing mail are not followed up.
+
+The follow-up sends the very same email: the original rendering, with the
+Family's code and link read through the copied sealed reference, and the
+same Message-ID; only the envelope and the To: header name just the
+addresses still to send. Nothing is rendered again and no credential is
+created, rotated or revoked.
+
+It sends only where the message itself could be sent (the live check of
+Family dispatch), checked under its claim before each try and again by the
+SQL guard when it commits "submitting":
+
+- It waits, without counting a try, during a restore review, a delivery
+  pause, a go-live gate, a purge (an unreleased campaign work gate), source
+  reconciliation or another email to the Family whose provider outcome is
+  unresolved, and for the mail circuit's pause or stop and the daily cap.
+- It ends `cancelled`, unsent, when the campaign is no longer the current
+  open Production one or its production cycle changed; when the Family's
+  token generation or link epoch changed or its token is gone (it never
+  sends a link that no longer works); when the Family is no longer eligible
+  or deliverable, or an address still to send is no longer one of its
+  current, unrefused addresses; when a later invitation or reminder to the
+  Family has been accepted since (superseded); and when it was restored
+  from a backup. A restore keeps the Family's credentials (see
+  [operations](../operations/spec.md#restore)), and the restore review's
+  holds cover only undelivered messages, so a follow-up that was waiting
+  in the backup may have been sent after that backup was taken: any
+  follow-up created at or before the runtime's `restore_activated_at` is
+  never sent again.
+
+"Submitting" commits before any SMTP, and the envelope is exactly the
+addresses still to send, which only shrink: an address that accepted the
+email, in the original attempt or a follow-up, never receives it again. An
+accepted address leaves the follow-up, an address refused permanently is
+set aside (shown on the Mail message page; it does not yet become a
+recipient refusal), and an address refused for now stays. An uncertain
+outcome, or a worker lost after "submitting" whose provider deadline has
+passed, ends it `unknown` and it is never retried.
+
+The accepted attempt counts as these addresses' first, so the follow-up
+continues the message's own per-address throttle schedule: its first try
+15 minutes after the acceptance, then 1 hour, 4 hours and 12 hours later,
+four counted tries in all (about 17 hours), and never more than 7 days
+after the acceptance. Sending limits and provider outages do not count a
+try; a limit or outage it meets also holds other Family mail, as for any
+message.
+
+Its tries are not added to the 24-hour send count. The addresses it sends
+to were already counted with the message's routed recipients when the
+message was sent, so a try within 24 hours of the message is already in
+that count, and each try must fit under the bulk limit (1,600 recipients
+a day, as invitations and reminders do). A try that holds push past 24
+hours after the message goes uncounted in Stewardship's 24-hour total,
+though Google still counts it. Such tries are few, a handful of addresses
+against the 200 recipients the count holds back for receipts, digests and
+alerts, so they fit within that margin in practice; nothing enforces it.
+
 ### Family schedule sweep
 
 The scheduler plans a Family again only when something its plan reads may

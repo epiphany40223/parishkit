@@ -474,6 +474,8 @@ def test_mail_dispatch_reads_tokens_only_through_the_claimed_token_definer():
     message's token through the definer, never the ciphertext columns.
     """
     from parishkit.stewardship.runtime_grants import (
+        ADDRESS_RETRY_OPEN_FUNCTION,
+        ADDRESS_RETRY_TOKEN_FUNCTION,
         DISPATCH_TOKEN_FUNCTION,
         runtime_functions,
     )
@@ -485,7 +487,12 @@ def test_mail_dispatch_reads_tokens_only_through_the_claimed_token_definer():
     assert (
         "token_ciphertext" not in columns["stewardship_rehearsal_credential"]["SELECT"]
     )
-    assert runtime_functions(ServiceRole.MAIL_DISPATCH) == {DISPATCH_TOKEN_FUNCTION}
+    # The address follow-up (#806) reads its token through its own claimed
+    # definer too, and opens itself through another.
+    tokens = {DISPATCH_TOKEN_FUNCTION, ADDRESS_RETRY_TOKEN_FUNCTION}
+    assert runtime_functions(ServiceRole.MAIL_DISPATCH) == tokens | {
+        ADDRESS_RETRY_OPEN_FUNCTION
+    }
     for _, _, role, target in database_identities():
         if role is not ServiceRole.MAIL_DISPATCH:
-            assert DISPATCH_TOKEN_FUNCTION not in runtime_functions(role, target=target)
+            assert not tokens & runtime_functions(role, target=target)
