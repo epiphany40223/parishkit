@@ -185,6 +185,60 @@ def request_full_refresh(request, service):
     )
 
 
+def import_leader(request, service, leaders, email):
+    """Import one ParishSoft Ministry leader as a user, as the Users page does.
+
+    ``leaders`` is ``read_leaders``' answer under this Admin's session and
+    ``email`` the chosen address. This is the page's import review
+    (``leader_import_views.user_leader_import``: ``plan_import`` against the
+    applied users in one read-only snapshot, signed with ``leader_import``)
+    followed by its Apply (``confirm_intent`` with the Users page's audit
+    attachment), so the user is a Ministry leader and the change is one
+    configuration request the installer applies. Returns its status.
+    """
+    from django.urls import reverse
+
+    from parishkit.stewardship.accounts.admin_editing import (
+        confirm_intent,
+        principal,
+        sign_preview,
+    )
+    from parishkit.stewardship.accounts.leader_import import plan_import
+    from parishkit.stewardship.accounts.policy import Capability
+    from parishkit.stewardship.accounts.user_views import (
+        SALT,
+        _audit_change,
+        _scope,
+        _users,
+    )
+    from parishkit.stewardship.campaigns.work_locks import read_transaction
+
+    actor = principal(request, service, capability=Capability.MANAGE_USERS)
+    with read_transaction():
+        configuration, records = _users(service)
+        plan = plan_import(records, leaders, [email])
+        if not plan.patch:
+            raise SeedWebRefused("The chosen Ministry leader cannot be imported.")
+        token = sign_preview(
+            actor=actor,
+            configuration=configuration,
+            patch=plan.patch,
+            salt=SALT,
+            extra={"leader_import": True},
+        )
+    return confirm_intent(
+        request,
+        service,
+        actor,
+        token=token,
+        salt=SALT,
+        link=reverse("admin:users"),
+        current_scope=_scope,
+        capability=Capability.MANAGE_USERS,
+        attach=_audit_change(actor),
+    )
+
+
 def sample_mail(request, service, campaign_id, revision_id):
     """Send the sample of one campaign email to the Testing recipient.
 

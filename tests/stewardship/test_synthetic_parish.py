@@ -22,8 +22,8 @@ SIZES = (100, 1100)
 # The digests of seed 1 at the default size and at the real parish's size.
 # Any generator change, however small, changes these; update them on purpose.
 DIGESTS = {
-    100: "c76fa5629bc939391b69b465e5bb870dc92de25bf4f7caf1eef4fdf798a2e577",
-    1100: "0fe8b7236506212c6de1ce2fb4d45b6302d2c19eb54217f1f6772c0bf801f15b",
+    100: "a4cdbc884f6a19a1900163a3c18971fdcc462dd8e0cb008f7e7a85e50de250c6",
+    1100: "ef442e01cb175cba88b74c667ca32c7e19156d285c08275dc121260634a73bdc",
 }
 _cache = {}
 
@@ -209,6 +209,29 @@ def test_ministry_rosters_hold_only_active_adults_in_the_stated_shares(families)
             row["memberId"] for row in roster
         )
         assert len({row["memberId"] for row in roster}) == len(roster)
+
+
+# The default Ministry leader role list (stewardship_ministry_leader_roles_v1).
+DEFAULT_LEADER_ROLES = {"Chairperson", "Staff"}
+
+
+@pytest.mark.parametrize("families", SIZES)
+def test_every_ministry_has_a_leader_the_default_role_list_matches(families):
+    """Each Ministry's active leader holds a default leader role; both appear (#1150).
+
+    pk-local therefore has Ministry leaders with no settings change.
+    """
+    value = parish(families)
+    names = set()
+    for identifier, roster in value.ministry_rosters.items():
+        leaders = [
+            row["ministryRoleName"]
+            for row in roster
+            if row["endDate"] is None and row["ministryRoleName"] != "Member"
+        ]
+        assert len(leaders) == 1, f"Ministry {identifier} has no single leader"
+        names.update(leaders)
+    assert names == DEFAULT_LEADER_ROLES
 
 
 def test_small_parish_still_gives_every_ministry_an_active_member():
