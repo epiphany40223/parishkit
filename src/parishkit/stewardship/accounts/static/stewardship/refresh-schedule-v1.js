@@ -175,10 +175,15 @@
   // manages opt out of it (ui-v1.css), so it does not add a second
   // adjustment for their changes.
 
-  // Whether ``node`` or what holds it stays put as the page scrolls.
+  // Whether ``node`` or what holds it stays put as the page scrolls. Only
+  // something fixed, or sticky to the top or bottom (the Admin sidebar),
+  // stays put; the seven-day grid's day labels are sticky only to the left
+  // of the grid's own sideways scroll, so they still move with the page.
   const pinned = (node) => {
     for (; node; node = node.parentElement) {
-      if (/^(sticky|fixed)$/.test(getComputedStyle(node).position)) return true;
+      const style = getComputedStyle(node);
+      if (style.position === "fixed") return true;
+      if (style.position === "sticky" && (style.top !== "auto" || style.bottom !== "auto")) return true;
     }
     return false;
   };

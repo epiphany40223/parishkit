@@ -386,6 +386,12 @@ def test_the_live_check_saves_nothing_and_needs_the_page_permission(
     assert answer.status_code == 200, answer.content
     assert answer["Cache-Control"] == "no-store"
     assert b'data-blocking="false"' in answer.content
+    # The page and the check both draw the seven-day grid (slice 4): seven
+    # day rows, from the real preview reader, with the current quarter hour
+    # marked once (and named in the legend).
+    for drawn in (page, answer.content.decode()):
+        assert drawn.count('<div class="schedule-grid-row">') == 7
+        assert drawn.count(" grid-now") == 2
     changed = post(browser, check, shown(page) | {"rules-0-at": "02:10"})
     assert b'data-blocking="true"' in changed.content
     assert "At: Use :00, :15, :30 or :45." in unescape(changed.content.decode())
