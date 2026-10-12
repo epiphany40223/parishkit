@@ -3977,7 +3977,7 @@
   // skipped and listed in ``missing``, not moved. The result is {dates,
   // missing} or {error}. The shared table
   // tests/stewardship/fixtures/recurrence_cases.json pins these rules for the
-  // server's expander too (slice 2), so keep them in step.
+  // server's expander too (campaigns/recurrence.py), so keep them in step.
   const RECURRENCE_SPAN = 366;
   const civilDay = (text) => {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(text ?? ""));
@@ -3996,13 +3996,20 @@
     if (!start || !end) return {error: "dates"};
     if (end < start) return {error: "order"};
     if ((end - start) / 86400000 >= RECURRENCE_SPAN) return {error: "span"};
-    const weekdays = new Set((rule.weekdays || []).map(Number));
-    const monthly = rule.monthly || {};
-    if (rule.frequency === "weekly" && !weekdays.size) return {error: "weekdays"};
-    if (rule.frequency === "monthly" && !(
-      Number.isInteger(monthly.day) && monthly.day >= 1 && monthly.day <= 31
-      || [1, 2, 3, 4, -1].includes(monthly.ordinal)
-        && Number.isInteger(monthly.weekday) && monthly.weekday >= 0 && monthly.weekday <= 6)) {
+    // Each member is checked, for the frequency that uses it, exactly as
+    // campaigns/recurrence.py checks it, so both refuse the same rules.
+    const inRange = (value, low, high) => Number.isInteger(value) && value >= low && value <= high;
+    const monthly = rule.monthly && typeof rule.monthly === "object" ? rule.monthly : {};
+    if (rule.frequency === "weekly" && !(Array.isArray(rule.weekdays)
+      && rule.weekdays.length && rule.weekdays.every((value) => inRange(value, 0, 6)))) {
+      return {error: "weekdays"};
+    }
+    const weekdays = new Set(rule.frequency === "weekly" ? rule.weekdays : []);
+    const byDay = inRange(monthly.day, 1, 31);
+    const byWeekday = [1, 2, 3, 4, -1].includes(monthly.ordinal) && inRange(monthly.weekday, 0, 6);
+    // A day of the month and a weekday of the month together are ambiguous.
+    const mixed = "day" in monthly && ("ordinal" in monthly || "weekday" in monthly);
+    if (rule.frequency === "monthly" && (mixed || !(byDay || byWeekday))) {
       return {error: "monthly"};
     }
     if (!["daily", "weekly", "monthly"].includes(rule.frequency)) return {error: "frequency"};
@@ -4013,7 +4020,7 @@
       if (rule.frequency === "daily") dates.push(isoDay(day));
       else if (rule.frequency === "weekly") {
         if (weekdays.has(mondayFirst(day))) dates.push(isoDay(day));
-      } else if (monthly.day) {
+      } else if (byDay) {
         if (date === monthly.day) dates.push(isoDay(day));
         // The month's last day in range stands for a missing chosen day.
         else if (date === monthDays(day) && monthly.day > date) {
