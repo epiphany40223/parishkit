@@ -244,11 +244,11 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 
 # Objects a later closure migration's frozen file creates with plain CREATE,
 # which a full migration would otherwise fail to create again: #970's 0056,
-# #995's 0057, #1024's 0058, #1018's 0059 and #528's 0060 and 0061 follow
-# 0055 (#993), so they are in the swap's closure too.
+# #995's 0057, #1024's 0058, #1018's 0059, #528's 0060 and 0061 and #530's
+# 0062 follow 0055 (#993), so they are in the swap's closure too.
 # Each is dropped while the swap is pending (with the trigger that uses it)
 # and, unless the test's full migration made it again, installed again
-# afterwards from its migration's frozen file. The tables 0059 to 0061
+# afterwards from its migration's frozen file. The tables 0059 to 0062
 # create (runtime_grants.CLOSURE_TABLES) are dropped and installed again with
 # their guard functions, as the base lacks them too.
 CLOSURE_CREATED = {
@@ -295,6 +295,10 @@ CLOSURE_CREATED = {
     "public.stewardship_ministry_roster_entry_effect_v1()": (
         "stewardship_workflows",
         "0002_roster_entries",
+    ),
+    "public.stewardship_backup_request_guard_v1()": (
+        "stewardship_jobs",
+        "0023_backup_request",
     ),
 }
 
@@ -827,6 +831,39 @@ def backup_command(monkeypatch, run_backup):
     monkeypatch.setattr(backup, "run_backup", run_backup)
 
 
+@contextmanager
+def base_backup_login(monkeypatch):
+    """The backup login as database-grants leaves it on the users upgrade's base.
+
+    A table a closure migration creates (runtime_grants.CLOSURE_TABLES, such
+    as #530's backup requests) is granted only once it exists
+    (``pending_tables``), so the login's fixture grants skip each one the
+    database lacks; otherwise this is ``backup_login``.
+    """
+    from . import test_background_grants_postgresql as background
+    from .test_backup_postgresql import backup_login
+
+    real = background.runtime_grants
+
+    def base_grants(service, **kwargs):
+        """The login's grants without the closure tables not created yet."""
+        tables, columns = real(service, **kwargs)
+        absent = {
+            table
+            for table in CLOSURE_TABLES
+            if scalar("SELECT to_regclass(%s)", [f"public.{table}"]) is None
+        }
+        return (
+            {name: value for name, value in tables.items() if name not in absent},
+            {name: value for name, value in columns.items() if name not in absent},
+        )
+
+    with monkeypatch.context() as patch:
+        patch.setattr(background, "runtime_grants", base_grants)
+        with backup_login():
+            yield
+
+
 def test_the_backup_admits_a_database_with_only_the_swap_pending(
     tmp_path, monkeypatch, capsys
 ):
@@ -838,7 +875,7 @@ def test_the_backup_admits_a_database_with_only_the_swap_pending(
     """
     from parishkit.stewardship.cli import main
 
-    from .test_backup_postgresql import FACTS, backup_login
+    from .test_backup_postgresql import FACTS
 
     initialized(tmp_path, rules())
     listed = []
@@ -854,7 +891,7 @@ def test_the_backup_admits_a_database_with_only_the_swap_pending(
         }
 
     backup_command(monkeypatch, run_backup)
-    with swap_pending(), backup_login():
+    with swap_pending(), base_backup_login(monkeypatch):
         assert main(["backup", "--config", "unused"]) == 0
     assert json.loads(capsys.readouterr().out)["backup_recorded"] is True
     assert listed and USERS_SWAP not in set(map(tuple, listed))
@@ -915,7 +952,7 @@ def test_a_swap_pending_backup_restores_into_the_same_state(
     from parishkit.stewardship import restore_check
     from parishkit.stewardship.cli import main
 
-    from .test_backup_postgresql import FACTS, backup_login
+    from .test_backup_postgresql import FACTS
 
     store, _, _ = initialized(tmp_path, rules())
     deployment = str(SystemConfiguration.objects.get().pk)
@@ -942,7 +979,7 @@ def test_a_swap_pending_backup_restores_into_the_same_state(
 
     backup_command(monkeypatch, run_backup)
     with swap_pending():
-        with backup_login():
+        with base_backup_login(monkeypatch):
             assert main(["backup", "--config", "unused"]) == 0
         assert json.loads(capsys.readouterr().out)["backup_recorded"] is True
         # The restore: a copy of the database the set was taken from.
@@ -1031,7 +1068,7 @@ def test_a_resumed_users_upgrade_reuses_the_earlier_runs_backup(
     from parishkit.stewardship.cli import main
     from parishkit.stewardship.jobs.backup_models import BackupUpload
 
-    from .test_backup_postgresql import FACTS, backup_login, recorded
+    from .test_backup_postgresql import FACTS, recorded
 
     initialized(tmp_path, rules())
     taken = []
@@ -1048,7 +1085,7 @@ def test_a_resumed_users_upgrade_reuses_the_earlier_runs_backup(
 
     def backup(*flags):
         """Run the command as the backup login; its exit code and JSON."""
-        with backup_login():
+        with base_backup_login(monkeypatch):
             code = main(["backup", "--config", "unused", *flags])
         out = capsys.readouterr().out
         return code, json.loads(out) if out else None

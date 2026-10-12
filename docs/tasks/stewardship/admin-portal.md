@@ -996,3 +996,13 @@ with no schema or grant change, checked by
 `tests/stewardship/browser/test_system_health.py`. When sending resumes
 after the daily limit needs another definer function (a migration) and
 remains.
+ADM-13.03 is in progress in parts. Part 3a adds the frozen forward
+migration `0062_backup_request.sql` (the request record and its guard),
+the web's and backup login's request grants and the web's read of the
+newest backup's size and version, request mode (`backup --request`) with
+the backup lock, the backups panel's size, version and request state, and
+the backup runbook's request-mode cron entry, restore step and drill
+warning, checked by `tests/stewardship/test_system_health.py`,
+`tests/stewardship/test_runtime_grants.py` and
+`tests/stewardship/database/test_backup_request_postgresql.py`. The Take a
+backup now button (part 3b) remains.
