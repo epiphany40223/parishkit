@@ -189,6 +189,7 @@ PAGES = {
     # that there is none), so it stands alone, outside the menu.
     "reports": Page("reports", _("Participation"), entry="participation"),
     "participation": Page("reports", _("Participation")),
+    "campaign_comparison": Page("reports", _("Campaign comparison")),
     "financial_report": Page("reports", _("Financial stewardship")),
     "limitations_report": Page("reports", _("Limitations")),
     "census_changes": Page("reports", _("Census changes")),
@@ -466,6 +467,7 @@ MENU = (
     # Responses and reports
     Entry("response_dashboard", Capability.CAMPAIGN_REPORT, _campaign),
     Entry("participation", Capability.CAMPAIGN_REPORT, _campaign),
+    Entry("campaign_comparison", Capability.CAMPAIGN_REPORT, _campaign),
     Entry("financial_report", Capability.FINANCIAL_DETAIL, FINANCIAL),
     Entry("limitations_report", Capability.CAMPAIGN_REPORT, MINISTRY),
     Entry("census_changes", Capability.VIEW_CENSUS, CENSUS),

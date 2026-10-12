@@ -535,6 +535,7 @@ ROLES = ("administrator", "staff", "ministry_leader")
 REPORTS = [
     "response_dashboard",
     "participation",
+    "campaign_comparison",
     "financial_report",
     "limitations_report",
     "census_changes",
@@ -567,6 +568,7 @@ SPEC_ORDER = [
     # Responses and reports
     "response_dashboard",
     "participation",
+    "campaign_comparison",
     "financial_report",
     "limitations_report",
     "census_changes",
@@ -648,6 +650,7 @@ def test_every_campaign_entry_is_greyed_out_without_a_current_campaign():
         "family_email_sends",
         "response_dashboard",
         "participation",
+        "campaign_comparison",
         "financial_report",
         "limitations_report",
         "census_changes",

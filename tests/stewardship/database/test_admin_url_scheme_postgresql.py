@@ -231,6 +231,7 @@ def test_new_report_pages_refuse_or_explain_without_a_current_campaign(
         ("response_dashboard", []),
         ("response_list", ["submitted"]),
         ("participation", []),
+        ("campaign_comparison", []),
         ("financial_report", []),
         ("limitations_report", []),
         ("information_queue", []),
