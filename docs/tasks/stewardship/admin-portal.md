@@ -590,7 +590,19 @@ without Member, Family or resolver, the catalog, usage errors),
 page's list counted with its Show and Ministry choices, the page's event,
 an out-of-range Ministry `invalid` with nothing recorded, read-only and
 Staff readers, a Ministry leader denied, an ended session, no current
-campaign).
+campaign). A further follow-up (#463) adds `report census`, the Census
+changes list counted, in `parishkit.stewardship.admin_census`, through the
+page's own admission, `CensusQuery` and `census_changes` under the shared
+report read, offered by `report list`, with no schema change; proven by
+`tests/stewardship/test_admin_report_reads.py` (the golden documents
+without Family, Member, value or resolver, the catalog, usage errors),
+`tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py`,
+`tests/stewardship/database/test_admin_report_cli_postgresql.py` (`report
+list`) and `tests/stewardship/database/test_admin_census_cli_postgresql.py`
+(the page's list counted with its filters, the page's event, refused
+filters `invalid` with nothing recorded, read-only and Staff readers, a
+Ministry leader denied, an ended session, no current campaign).
 A follow-up (#682) lets `delivery resolve` retry Family emails too, loading
 the web's general and public token keyrings only for that, checked against
 the web's published receipts; proven by `tests/stewardship/test_admin_cli.py`,
