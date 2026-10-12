@@ -1218,8 +1218,16 @@ def test_each_documents_members_are_exactly_its_allowlist(command):
 
 
 def test_every_command_has_a_golden_document_and_an_allowlist():
-    """The nine read commands, no more and no fewer."""
-    reads = {spec.name for spec in admin_cli.COMMANDS if spec.pr == 3}
+    """The nine read commands, no more and no fewer.
+
+    ``system backup-now`` (ADM-13 PR 3b) is catalogued with PR 3's System
+    health group but changes state, so it has no golden read document.
+    """
+    reads = {
+        spec.name
+        for spec in admin_cli.COMMANDS
+        if spec.pr == 3 and not spec.changes_state
+    }
     assert reads == set(GOLDEN) == set(ALLOWED)
 
 
