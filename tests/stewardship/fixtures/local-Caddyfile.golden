@@ -46,7 +46,11 @@ localhost {
         request_body @hosted_file_upload {
             max_size 11MB
         }
-        @ordinary_body not path /admin/parish/files/uploads/
+        @archive_review path /admin/parish/past-campaigns/review/
+        request_body @archive_review {
+            max_size 21MiB
+        }
+        @ordinary_body not path /admin/parish/files/uploads/ /admin/parish/past-campaigns/review/
         request_body @ordinary_body {
             max_size 6MB
         }
