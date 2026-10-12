@@ -5,7 +5,9 @@ with the imported past campaigns at the current campaign's last complete
 day: headline tiles, the day-by-day, final-results and pledge-distribution
 charts (``comparison_charts``), the pledge distribution tables (current
 campaign included, since this page is inside the Admin portal), every
-number and the data notes. Downloads (slice 6) come later.
+number and the data notes. Its download form (slice 6) posts the day shown
+to ``comparison_export_views``, which applies the small-count protection
+before anything leaves the portal.
 
 **Compare on day** moves the comparison day N with the one query parameter
 the page takes, ``day=<integer>`` from 1 to the current comparison day (a
@@ -24,6 +26,7 @@ succeeded or failed, with the comparison day as ``count`` and no figure.
 """
 
 import re
+from uuid import uuid4
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, transaction
@@ -36,6 +39,7 @@ from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.observability import Event, emit_failure
+from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.presentation import number
 from parishkit.stewardship.web.report_errors import report_unavailable
@@ -45,6 +49,7 @@ from parishkit.stewardship.web.security import private_response
 from .comparison import distribution_rows, table_rows, tiles
 from .comparison_charts import day_charts, distribution_charts, final_charts
 from .comparison_reads import DayOutOfRange, read_comparison
+from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES, _principal
 from .facts import FactUnavailable
 from .read_admission import admit_report_read
@@ -103,11 +108,13 @@ def audit(principal, campaign_id, outcome, day=None):
         )
 
 
-def page_context(comparison, principal, *, refused=False):
+def page_context(comparison, principal, *, refused=False, mutable=True):
     """The template's context: display text only, formatted in Python.
 
     ``refused`` marks a page answering a ``day`` it could not show: the
     field shows the error and the page the current comparison day.
+    ``mutable`` is whether the campaign admits a new export now; the
+    download form is unavailable, with the reason, while it does not.
     """
     from parishkit.stewardship.archive.workbook import BAND_EDGES
 
@@ -142,6 +149,11 @@ def page_context(comparison, principal, *, refused=False):
         ),
         "can_import": allows(principal, Capability.CONFIGURE)
         and allows(principal, Capability.FINANCIAL_DETAIL),
+        # The download form (slice 6): a fresh one-time key per page, so a
+        # reused form is the shared 409, and the export time zones.
+        "mutable": mutable,
+        "request_key": uuid4(),
+        "export_timezones": sorted(timezone_names()),
     }
 
 
@@ -196,9 +208,16 @@ def report(request, campaign_id):
             if comparison is None:
                 comparison = read_comparison(holder["guard"], campaign_id)
             shown["day"] = comparison.day
+            mutable = True
+            try:
+                admit_campaign(campaign_id, mutating=True)
+            except PermissionError:
+                mutable = False
             payload = render_to_string(
                 "stewardship/campaign-comparison.html",
-                page_context(comparison, principal, refused=shown["refused"]),
+                page_context(
+                    comparison, principal, refused=shown["refused"], mutable=mutable
+                ),
                 request=request,
             ).encode()
             return iter((payload,))

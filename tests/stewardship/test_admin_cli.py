@@ -139,6 +139,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "export exact cancel",
         "export exact retry",
         "export family-timeline",
+        # The Campaign comparison's download (#1018, slice 6).
+        "export comparison",
     }
     # The users commands (#952), in the users group (PR 11): the reads of
     # slice 2, the changes of slice 5 and the leaders import of slice 6.
@@ -564,6 +566,8 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_delivery_resend",
         "admin_cmd_delivery_refusal_clear",
         "admin_cmd_export_create",
+        # The Campaign comparison's download (#1018, slice 6).
+        "admin_cmd_export_comparison",
         "admin_cmd_export_cancel",
         "admin_cmd_export_retry",
         "admin_cmd_export_regenerate",

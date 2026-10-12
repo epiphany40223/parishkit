@@ -207,6 +207,7 @@ def detail(request, request_id):
                     "financial_snapshot",
                     "family_test_names_snapshot",
                     "timeline_snapshot",
+                    "comparison_snapshot",
                 )
                 .defer(
                     "information_snapshot__document",
@@ -215,6 +216,7 @@ def detail(request, request_id):
                     "financial_snapshot__document",
                     "family_test_names_snapshot__document",
                     "timeline_snapshot__document",
+                    "comparison_snapshot__document",
                 )
                 .annotate(
                     ministry_source_generation=F(
@@ -251,6 +253,10 @@ def detail(request, request_id):
                 title = "Financial stewardship export"
                 source = "financial_report"
                 report_url = reverse("admin:financial_report")
+            elif job.report == "campaign_comparison":
+                title = "Campaign comparison download"
+                source = "campaign_comparison"
+                report_url = reverse("admin:campaign_comparison")
             elif job.report == "family_test_names":
                 # Requested from the command line's chosen-Family review
                 # (#817); the trail returns to that page for the same email.

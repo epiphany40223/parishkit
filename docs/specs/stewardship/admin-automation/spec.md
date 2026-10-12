@@ -2147,6 +2147,7 @@ file is regenerated from the retained capture, in its original format.
 | `reports` | `report list` (PR 8c) |
 | `participation` | `report participation` (PR 8c) |
 | `campaign_comparison` | `report comparison [--day N]` ([#1018](https://github.com/epiphany40223/parishkit/issues/1018) slice 3, [campaign history](../campaign-history/spec.md#command-line)): aggregates only, with the small-count protection |
+| `campaign_comparison_export` | `export comparison [--day N] --format F --timezone Z` ([#1018](https://github.com/epiphany40223/parishkit/issues/1018) slice 6, [downloads](../campaign-history/spec.md#downloads-and-sharing)): the page's download form, through the same capture (`comparison_exports.read_capture`) and service (`create_comparison_export`), with the page's `campaign_comparison_exported` and `admin_cmd_export_comparison` |
 | `participation_chart`, `daily_digest_chart`, `daily_digest_download` | Permanent: PNG images; the data is in the matching report or digest read |
 | `financial_report`, `limitations_report`, `information_queue` | `report financial`, `report limitations`, `report information`: summaries and counts (PR 8c; `report limitations` was `report talents` until #970); Family-level rows only as exports (PR 8e, PR 8h for limitations) |
 | `information_item` | One Family's submission and its follow-up history: `followup …` (PR 11), with the Ministry follow-up items; it prints only the item's state and history, and the submission's content comes through `export information` (PR 8e) |
@@ -2346,7 +2347,9 @@ download), so an export requested on a page is followed and fetched from
 the command line and the other way round. `export status` admits passively
 like the status page (any session) and records nothing, as the page
 records nothing. `export create` (the Participation page's form, for the
-generation its `--fact-set` names), `export cancel`, `export retry` and
+generation its `--fact-set` names), `export comparison` (the Campaign
+comparison page's download form, for the current campaign on `--day`),
+`export cancel`, `export retry` and
 `export regenerate` admit as the pages' form posts do, so they need a
 full-scope session; each records the page's own events and, only when it
 made the change, its `admin_cmd_export_*` event, keyed as the page's form

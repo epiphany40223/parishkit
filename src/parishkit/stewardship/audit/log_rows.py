@@ -259,6 +259,7 @@ ACTIVITY_TYPES = {
             "admin_cmd_export_" + verb
             for verb in (
                 "cancel",
+                "comparison",
                 "create",
                 "directory",
                 "exact_cancel",
@@ -277,6 +278,7 @@ ACTIVITY_TYPES = {
         ),
         "admin_cmd_digest_weekly_request",
         "weekly_manual_requested",
+        "campaign_comparison_exported",
         "export_requested",
         "export_cancelled",
         "export_downloaded",

@@ -243,6 +243,9 @@ FROZEN = {
     "0070_ministry_leader_changes.sql": (
         "a8eb331a607d66ecb320782b46cfcf06451f47ea9eaab7fd34229359ca69f3d8"
     ),
+    "0071_comparison_exports.sql": (
+        "458439a4ce633a15ec9bf32b5a38ffced7ee0fcda75f9bdd3503cf88bd8e8c58"
+    ),
 }
 
 

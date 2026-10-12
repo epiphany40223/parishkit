@@ -217,6 +217,43 @@ class TimelineExportSnapshot(ImmutableRecord):
         ]
 
 
+class ComparisonExportSnapshot(ImmutableRecord):
+    """The Campaign comparison as its downloads may hold it, captured when requested.
+
+    The page reads its figures in Python (``comparison_reads``), so the web
+    stores the protected capture (``comparison_exports.capture``: aggregates
+    only, the small-count protection applied, no note text) in
+    ``document``, and SQL checks everything around it (migration 0071): an
+    Administrator or Staff requester, an admitted campaign, the active
+    configuration, the document's closed shape and ``row_count`` (its Every
+    number rows).
+    """
+
+    campaign = models.ForeignKey(
+        "stewardship_campaigns.Campaign", on_delete=models.PROTECT, db_index=False
+    )
+    configuration = models.ForeignKey(
+        "stewardship_accounts.AppliedConfigurationVersion",
+        on_delete=models.PROTECT,
+        db_index=False,
+    )
+    actor_id = models.UUIDField(editable=False)
+    correlation_id = models.UUIDField(editable=False)
+    parameters = models.JSONField()
+    document = models.JSONField(default=dict)
+    row_count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        db_table = "stewardship_comparison_export_snapshot"
+        indexes = [
+            models.Index(
+                fields=("correlation_id",), name="comparison_export_correlation"
+            ),
+            models.Index(fields=("campaign",), name="comparison_export_campaign"),
+            models.Index(fields=("configuration",), name="comparison_export_config"),
+        ]
+
+
 class ExportRequest(ImmutableRecord):
     """One canonical report request and its exact retained calculation generation."""
 
@@ -247,6 +284,9 @@ class ExportRequest(ImmutableRecord):
     timeline_snapshot = models.ForeignKey(
         TimelineExportSnapshot, on_delete=models.PROTECT, null=True, db_index=False
     )
+    comparison_snapshot = models.ForeignKey(
+        ComparisonExportSnapshot, on_delete=models.PROTECT, null=True, db_index=False
+    )
     configuration = models.ForeignKey(
         "stewardship_accounts.AppliedConfigurationVersion", on_delete=models.PROTECT
     )
@@ -272,6 +312,7 @@ class ExportRequest(ImmutableRecord):
                     financial_snapshot__isnull=True,
                     family_test_names_snapshot__isnull=True,
                     timeline_snapshot__isnull=True,
+                    comparison_snapshot__isnull=True,
                 )
                 | models.Q(
                     report="additional_information",
@@ -282,6 +323,7 @@ class ExportRequest(ImmutableRecord):
                     financial_snapshot__isnull=True,
                     family_test_names_snapshot__isnull=True,
                     timeline_snapshot__isnull=True,
+                    comparison_snapshot__isnull=True,
                     format__in=("csv", "xlsx", "pdf"),
                 )
                 | models.Q(
@@ -293,6 +335,7 @@ class ExportRequest(ImmutableRecord):
                     financial_snapshot__isnull=True,
                     family_test_names_snapshot__isnull=True,
                     timeline_snapshot__isnull=True,
+                    comparison_snapshot__isnull=True,
                     format__in=("csv", "xlsx", "pdf"),
                 )
                 | models.Q(
@@ -304,6 +347,7 @@ class ExportRequest(ImmutableRecord):
                     financial_snapshot__isnull=True,
                     family_test_names_snapshot__isnull=True,
                     timeline_snapshot__isnull=True,
+                    comparison_snapshot__isnull=True,
                     format__in=("csv", "xlsx", "pdf"),
                 )
                 | models.Q(
@@ -315,6 +359,7 @@ class ExportRequest(ImmutableRecord):
                     financial_snapshot__isnull=False,
                     family_test_names_snapshot__isnull=True,
                     timeline_snapshot__isnull=True,
+                    comparison_snapshot__isnull=True,
                     format__in=("csv", "xlsx", "pdf"),
                 )
                 # The names behind a chosen-Family test review (#817), from
@@ -328,6 +373,7 @@ class ExportRequest(ImmutableRecord):
                     financial_snapshot__isnull=True,
                     family_test_names_snapshot__isnull=False,
                     timeline_snapshot__isnull=True,
+                    comparison_snapshot__isnull=True,
                     format__in=("csv", "xlsx", "pdf"),
                 )
                 # One Family's timeline, from its own capture (migration 0063).
@@ -340,6 +386,21 @@ class ExportRequest(ImmutableRecord):
                     financial_snapshot__isnull=True,
                     family_test_names_snapshot__isnull=True,
                     timeline_snapshot__isnull=False,
+                    comparison_snapshot__isnull=True,
+                    format__in=("csv", "xlsx", "pdf"),
+                )
+                # The Campaign comparison, from its own capture (migration
+                # 0071, #1018).
+                | models.Q(
+                    report="campaign_comparison",
+                    fact_set__isnull=True,
+                    information_snapshot__isnull=True,
+                    directory_snapshot__isnull=True,
+                    ministry_snapshot__isnull=True,
+                    financial_snapshot__isnull=True,
+                    family_test_names_snapshot__isnull=True,
+                    timeline_snapshot__isnull=True,
+                    comparison_snapshot__isnull=False,
                     format__in=("csv", "xlsx", "pdf"),
                 ),
                 name="export_report_known",
@@ -371,6 +432,9 @@ class ExportRequest(ImmutableRecord):
             ),
             models.Index(
                 fields=("timeline_snapshot",), name="export_timeline_snapshot"
+            ),
+            models.Index(
+                fields=("comparison_snapshot",), name="export_comparison_snapshot"
             ),
         ]
 

@@ -143,7 +143,11 @@ with each phone number and each head's emails on its own line; each response
 list and the Census changes list is the same table; the postal mail merge is a
 grid of address cards. The [participation chart](#participation-graph)'s PDF
 is one page with the chart in the frame's body, titled with the population
-scope; like its picture it states no request or capture time.
+scope; like its picture it states no request or capture time. The
+[Campaign comparison](../campaign-history/spec.md#downloads-and-sharing)
+PDF is a summary page (headline tiles and day-by-day charts) followed by
+its table, whose type is set smaller (`pdf_design.Table` scale) so its
+fifteen columns of figures fit.
 
 A field/value report (additional information, Ministry, financial, Family
 test names, packets) prints one card per record. Which columns each format

@@ -274,6 +274,7 @@ def regenerate_export(store, user_id, request_id, *, request_key):
                 "financial_snapshot",
                 "family_test_names_snapshot",
                 "timeline_snapshot",
+                "comparison_snapshot",
             )
             .defer(
                 "directory_snapshot__document",
@@ -281,6 +282,7 @@ def regenerate_export(store, user_id, request_id, *, request_key):
                 "financial_snapshot__document",
                 "family_test_names_snapshot__document",
                 "timeline_snapshot__document",
+                "comparison_snapshot__document",
             )
             .get(pk=request_id)
         )
@@ -353,6 +355,20 @@ def regenerate_export(store, user_id, request_id, *, request_key):
                 browser_timezone=original.browser_timezone,
                 request_key=request_key,
                 snapshot=original.financial_snapshot,
+            )
+        if original.report == "campaign_comparison":
+            from .comparison_exports import create_comparison_export
+
+            # The same capture, so the same day: never newer figures.
+            return create_comparison_export(
+                store,
+                user_id,
+                campaign_id=original.campaign_id,
+                day=original.parameters["day"],
+                format=original.format,
+                browser_timezone=original.browser_timezone,
+                request_key=request_key,
+                snapshot=original.comparison_snapshot,
             )
         if original.report == "family_test_names":
             from .family_test_names import create_family_test_names_export

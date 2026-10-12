@@ -88,6 +88,10 @@ class Action(StrEnum):
     # The Campaign comparison report (#1018): its context is the outcome and
     # the comparison day as ``count`` (the campaign days compared), no figure.
     CAMPAIGN_COMPARISON_VIEWED = "campaign_comparison_viewed"
+    # A Campaign comparison download requested (#1018, slice 6): the export
+    # lifecycle's request event for that kind, with the comparison day as
+    # ``count``, no figure. Its cancel and download are the shared events.
+    CAMPAIGN_COMPARISON_EXPORTED = "campaign_comparison_exported"
     INFORMATION_VIEWED = "information_viewed"
     INFORMATION_UPDATED = "information_updated"
     MINISTRY_FOLLOWUP_VIEWED = "ministry_followup_viewed"
@@ -202,6 +206,7 @@ class Action(StrEnum):
     ADMIN_CMD_EXPORT_MINISTRY_PACKET = "admin_cmd_export_ministry_packet"
     ADMIN_CMD_EXPORT_DIRECTORY = "admin_cmd_export_directory"
     ADMIN_CMD_EXPORT_POSTAL = "admin_cmd_export_postal"
+    ADMIN_CMD_EXPORT_COMPARISON = "admin_cmd_export_comparison"
     # test families-preview --names: the review's names as an export (#817).
     ADMIN_CMD_EXPORT_FAMILY_TEST_NAMES = "admin_cmd_export_family_test_names"
     ADMIN_CMD_DELIVERY_RESEND = "admin_cmd_delivery_resend"
