@@ -32,7 +32,9 @@ class Migration(migrations.Migration):
     dependencies = [
         ("stewardship_workflows", "0001_initial"),
         # The migration that installs the previous frozen file (0060, the census
-        # resolution), so the files apply in prefix order.
+        # resolution), so the files apply in prefix order. It follows the
+        # users swap, so `migrate --users-upgrade-base` never applies this
+        # file and its table is registered in runtime_grants.CLOSURE_TABLES.
         ("stewardship_responses", "0002_proposal_resolution"),
     ]
 

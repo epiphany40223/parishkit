@@ -22,6 +22,7 @@
 -- sequences only. The file ends with a DO block that refuses to commit
 -- unless all of this is installed.
 SET LOCAL check_function_bodies = false;
+SET LOCAL search_path = public;
 
 CREATE TABLE "stewardship_ministry_roster_entry" ("id" uuid NOT NULL PRIMARY KEY, "created_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "actor_id" uuid NULL, "correlation_id" uuid NOT NULL, "sequence" bigint NOT NULL CHECK ("sequence" >= 0), "entered" boolean NOT NULL, "request_key" uuid NOT NULL, "request_id" uuid NOT NULL, CONSTRAINT "ministry_roster_sequence" UNIQUE ("request_id", "sequence"), CONSTRAINT "ministry_roster_replay" UNIQUE ("actor_id", "request_key"), CONSTRAINT "ministry_roster_identity" CHECK (("actor_id" IS NOT NULL AND "sequence" >= 1)));
 ALTER TABLE "stewardship_ministry_roster_entry" ADD CONSTRAINT "stewardship_ministry_request_id_2da44913_fk_stewardsh" FOREIGN KEY ("request_id") REFERENCES "stewardship_ministry_request" ("id") DEFERRABLE INITIALLY DEFERRED;
