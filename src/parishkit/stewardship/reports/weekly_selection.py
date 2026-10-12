@@ -134,8 +134,14 @@ class WeeklySelection:
         campaign_timezone,
         manual=False,
         date_format=None,
+        funnel=None,
+        mode=None,
     ):
-        """Build the compiler input without querying mutable source or item rows."""
+        """Build the compiler input without querying mutable source or item rows.
+
+        ``funnel`` and ``mode`` are the report's response funnel and system
+        mode (see ``WeeklyDigestDocument``); the caller counts the funnel.
+        """
         return WeeklyDigestDocument(
             snapshot_id=snapshot_id,
             campaign_id=self.observation.campaign_id,
@@ -147,6 +153,8 @@ class WeeklySelection:
             corrections=self.corrections,
             manual=manual,
             date_format=date_format,
+            funnel=funnel,
+            mode=mode,
         )
 
 
