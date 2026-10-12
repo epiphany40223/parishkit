@@ -44,12 +44,15 @@ The historical measurements below describe the original increment.
 
 Issue #627 later split the slowest engine across CI jobs.
 `quality_sharding.BROWSER_JOBS` lists the jobs, and the workflow matrix runs
-one job per entry: Firefox whole, and WebKit and Chromium each halved, one half
-of each per job. `test_browser_ci.py` requires the matrix to match and every
-engine's partitions to appear exactly once. An engine's partitions split its
-cases by whole test file, balanced by recorded per-file WebKit seconds
-(`BROWSER_FILE_SECONDS`, scheduling hints only), so module fixtures stay
-together. `quality_browser --runs` runs a job's partitions in turn, Chromium
+one job per entry: Firefox whole, and WebKit and Chromium each split in three,
+one third of each per job (#1151; they were halved, in three jobs, before).
+`test_browser_ci.py` requires the matrix to match and every engine's
+partitions to appear exactly once. An engine's partitions split its cases by
+whole test file, balanced by estimated seconds for that engine (scheduling
+hints only), so module fixtures stay together. A file's estimate is its
+engine's fixed seconds per file plus its seconds per case
+(`BROWSER_ENGINE_SECONDS`), plus any engine-independent extra seconds recorded
+for that file (`BROWSER_FILE_EXTRA_SECONDS`). `quality_browser --runs` runs a job's partitions in turn, Chromium
 before WebKit, and fails the job if any partition fails; see
 [Partition budgets](#partition-budgets-1112) for their time limits. Every
 partition still uses `--require-no-skips` and must return a receipt naming its
@@ -60,15 +63,27 @@ WebKit's test step took a median 22.6 minutes (job 24.0), Firefox's 14.5 (job
 tests. The same change runs all four operational provider modes on one runner
 (about 18 minutes), so a full run uses no more runner slots than before.
 
+By October 2026 the halves had grown to fill their jobs: on slow runners the
+`chromium:2/2 webkit:2/2` job ran 2,958 of its 3,000 test seconds, and one
+WebKit half was killed at its partition budget (#1151). The suite then needed
+about 3,340 seconds on WebKit, 2,130 on Chromium and 1,570 to 1,750 on
+Firefox. The old estimates were about 1.7 times low for WebKit, and gave a
+file no fixed cost, so the halves were also 15 to 25% out of balance. With
+per-engine estimates and thirds, each paired job runs about 1,800 seconds of
+tests and Firefox about 1,650, near 60% of the budget. The fourth job adds one
+concurrent runner for about 33 minutes, against three for up to 50.
+
 Each partition logs its estimate on its `CI_BROWSER_PARTITION` line and
 `CI_BROWSER_TIMING <label>: estimated N s, actual M s` when it finishes, pass
-or fail (#666). Estimates use WebKit-scale hints, so other engines run faster
-than estimated; compare WebKit partitions with each other to see drift.
-To refresh `BROWSER_FILE_SECONDS`, sum each file's `CI_PROGRESS ... END
-... elapsed=` seconds from a few recent WebKit job logs (`gh api
-repos/OWNER/REPO/actions/jobs/ID/logs`), take the median per file, and record
-files of 20 seconds or more along with the source run IDs; hints change only
-placement, never which tests run.
+or fail (#666). Estimates are per engine, so each estimate should be close to
+its actual time on a normal runner. To refresh the hints, sum each file's
+`CI_PROGRESS ... END ... elapsed=` seconds per engine from the job logs of a
+recent full run or two (`gh api repos/OWNER/REPO/actions/jobs/ID/logs`). Fit
+each engine's fixed and per-case seconds to those sums by least squares,
+record as extra seconds the files that stay more than about 10 seconds above
+the fit on average across engines (refitting without them), and note the
+source run IDs. Hints change only placement and logged estimates, never which
+tests run.
 
 ## Partition budgets (#1112)
 
@@ -79,10 +94,10 @@ partition may not run into the shares still reserved for the partitions after
 it, so a slow first partition cannot starve the second. Time an earlier
 partition leaves unused rolls forward to the next.
 
-Equal shares are not proportional to need. Estimates are WebKit-scale for
-every engine, but Chromium runs much faster than WebKit. So each two-partition
-job runs its Chromium half first and its WebKit half last, and WebKit gets its
-own share plus whatever Chromium left unused.
+Equal shares are not proportional to need: a WebKit partition takes about 1.6
+times as long as its Chromium partner. So each two-partition job runs its
+Chromium partition first and its WebKit partition last, and WebKit gets its own
+share plus whatever Chromium left unused.
 
 Before #1112 one 38-minute deadline covered the whole job, and WebKit ran
 first. On 2026-10-12 a slow runner took WebKit 1/2 about 1,451 seconds against
