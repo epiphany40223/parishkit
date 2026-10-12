@@ -9,7 +9,11 @@ building its answer, so an Administrator demoted meanwhile is refused:
 - ``users`` (``/admin/users/``) lists the users in one table sorted on the
   server, and is where a reviewed change is applied (``action=confirm``).
 - ``user_new`` and ``user_edit`` are one page: Email, Name and Role. Its
-  Review shows each changed value before and after, signed for one Apply.
+  Review answers with a fragment the shared review dialog shows (UX
+  conventions, "Review dialog", #750): each changed value before and after,
+  signed for one Apply, which posts to ``users``; once applied the page
+  returns to Users. A refusal of a field's value is this page again, with
+  each error at its field, which the page script marks on the form.
 - ``user_delete`` answers the table's confirmation dialog: it records one
   configuration change at once, as Dates and mail schedules' Delete does.
 - ``user_name_suggestions`` answers the New page's Email field in place: is
@@ -315,7 +319,9 @@ def users(request):
     below it is read through its definer, which audits itself
     (``leader_import_views.leaders_context``). Apply records the signed
     review (a user change, or an import of leaders) as one configuration
-    change and answers with its Change status page, which returns here.
+    change and answers with its Change status page, which the review
+    dialog follows (never shown as a page) before it returns here or redraws
+    this page in place.
     """
     try:
         service = runtime()
@@ -368,6 +374,8 @@ def users(request):
                 "refresh_url": request.get_full_path(),
                 "new_url": reverse("admin:user_new"),
                 "delete_url": reverse("admin:user_delete"),
+                # The leader import's review dialog applies here.
+                "apply_url": reverse("admin:users"),
                 # Why the reader's own row has no Delete, said whichever page
                 # it is on. The reader is always an Administrator, so the
                 # only Administrator, when there is one, is the reader too,
@@ -445,6 +453,8 @@ def _entry_context(
         "disabled_count": sum(row["disabled"] for row in identities),
         "base_digest": digest,
         "post_url": request.path,
+        # The review dialog's Apply posts to Users, then returns there.
+        "apply_url": reverse("admin:users"),
         "list_url": reverse("admin:users"),
         "names_url": reverse("admin:user_name_suggestions"),
     }
@@ -484,9 +494,18 @@ def _entries(form, user_id):
 
 
 def _refuse(form, refused):
-    """Show a builder refusal at its field, or for the page as a whole."""
-    field = refused.field if refused.field in form.fields else None
-    form.add_error(field, _refusal_message(refused))
+    """Show a builder refusal at its field, or refuse the change as a whole.
+
+    A refusal of a field's value stays on the form (the page again, marked
+    at the field). Any other (an unchanged review, a guard on the change as
+    a whole) is a plain refusal, which the review dialog shows (UX
+    conventions, "Review dialog", #750).
+    """
+    if refused.field not in form.fields:
+        raise UserFacingError(
+            _refusal_message(refused), fix=_("Nothing was changed.")
+        ) from None
+    form.add_error(refused.field, _refusal_message(refused))
 
 
 def _refusal_message(refused):
@@ -498,7 +517,11 @@ def _refusal_message(refused):
 
 
 def _review(request, service, actor, configuration, changes, patch):
-    """The signed review of one user change: before and after, then Apply."""
+    """The signed review of one user change, for the review dialog.
+
+    A fragment, not a page: the New or Edit page's script shows it in the
+    shared review dialog, whose Apply posts the signed preview to Users.
+    """
     base = service.store.active()
     if base is None or base.digest != configuration.active_configuration.digest:
         raise StaleRecordError("The applied configuration changed.")
@@ -506,7 +529,6 @@ def _review(request, service, actor, configuration, changes, patch):
     # installer would refuse is refused here, before anything is signed.
     build_candidate(base, patch, candidate_id=uuid4())
     (change,) = changes
-    admin_navigation.place(request, flow="change", step="review")
     return render(
         request,
         "stewardship/user-review.html",
@@ -517,8 +539,6 @@ def _review(request, service, actor, configuration, changes, patch):
             "preview": sign_preview(
                 actor=actor, configuration=configuration, patch=patch, salt=SALT
             ),
-            "post_url": reverse("admin:users"),
-            "list_url": reverse("admin:users"),
         },
     )
 
@@ -526,8 +546,12 @@ def _review(request, service, actor, configuration, changes, patch):
 def _entry(request, service, actor, user_id=None):
     """New user (``user_id`` None) or Edit user, GET or POST (Review).
 
-    A POST reviews the change and shows the review, whose Apply posts to
-    Users; a refused one shows this page again with each error at its field.
+    A POST reviews the change and answers with the review dialog's fragment
+    (``_review``), whose Apply posts to Users; one refused for a field's
+    value shows this page again with each error at its field (status 400),
+    which the page script turns into marks on the form it already shows.
+    Any other refusal (``_refuse``, an invalid resulting configuration) is
+    a plain refusal for the dialog.
     """
     filters(request.GET, allowed=set())
     if request.FILES:
@@ -590,8 +614,9 @@ def _entry(request, service, actor, user_id=None):
         try:
             return _review(request, service, actor, configuration, changes, patch)
         except ConfigError:
-            form.add_error(None, MESSAGES["invalid"])
-            return _entry_page(request, context, status=400)
+            raise UserFacingError(
+                MESSAGES["invalid"], fix=_("Nothing was changed.")
+            ) from None
 
 
 def _answer(request, user_id=None):
