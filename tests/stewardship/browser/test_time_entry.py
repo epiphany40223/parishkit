@@ -281,11 +281,113 @@ def test_another_controls_change_announces_no_time_field(page, component_origin)
     page.locator(f'[name="{NEW}kind"]').select_option("reminder")
     page.locator(f'[name="{NEW}kind"]').select_option("daily_digest")
     page.wait_for_timeout(700)
+    # The saved row's, the new row's and the Repeat panel's send time (#1117).
     assert page.locator(".time-reading + [aria-live=polite]").evaluate_all(
         "nodes => nodes.map(node => node.textContent)"
-    ) == ["", ""]
+    ) == ["", "", ""]
     # This field's own typing is announced after the pause, once.
     page.locator(f'[name="{NEW}time"]').fill("7pm")
     has_text(live(page, f'[name="{NEW}time"]'), "Reads as 19:00 (7:00 PM)")
     page.locator(f'[name="{NEW}time"]').blur()
     has_text(live(page, f'[name="{NEW}time"]'), "Reads as 19:00 (7:00 PM)")
+
+
+def test_edit_as_text_lists_read_live_one_per_line_and_follow_the_rows(
+    page, component_origin, axe_source
+):
+    """The refresh schedule's Edit as text lists are shared list fields (#1117).
+
+    Each textarea reads as typed, one time per line or with commas, refuses
+    at the field and holds Save while open; a closed panel holds nothing. A
+    list refilled from the rows by the live check reads again.
+    """
+    from .refresh_schedule_components import CHECK, PRODUCTION
+    from .test_refresh_schedule_editor import answering
+
+    failures = []
+    page.on("pageerror", lambda error: failures.append(str(error)))
+    answering(page, PRODUCTION)
+    page.goto(component_origin + "/refresh-schedule")
+    page.get_by_text("Edit as text").click()
+    full = "#refresh-text-full"
+    save = page.locator("form.panel button[type=submit]")
+    line = reading(page, full)
+    has_text(
+        line,
+        "Reads as 00:00 (12:00 AM), 08:00 (8:00 AM), 12:00 (12:00 PM), "
+        "16:00 (4:00 PM), 20:00 (8:00 PM)",
+    )
+    described = page.locator(full).get_attribute("aria-describedby").split()
+    assert described == [
+        "refresh-text-help",
+        "refresh-text-error",
+        line.get_attribute("id"),
+    ]
+    # A long list reads as its count and range, so its line stays short.
+    has_text(
+        reading(page, "#refresh-text-quick"),
+        "Reads as 91 times, from 00:15 (12:15 AM) to 23:45 (11:45 PM)",
+    )
+    height = line.bounding_box()["height"]
+    # Repeats count once: nine entries of one time are listed, not summarised.
+    page.locator(full).fill("1am\n" * 9)
+    has_text(
+        line,
+        "Reads as "
+        + ", ".join(["01:00 (1:00 AM)"] * 9)
+        + "; 01:00 is listed more than once and saved once",
+    )
+    page.locator(full).fill("\n".join(f"{hour}:00" for hour in range(1, 10)))
+    has_text(line, "Reads as 9 times, from 01:00 (1:00 AM) to 09:00 (9:00 AM)")
+    # Refilling the lists re-reads only them: a rule time still being typed
+    # elsewhere is not flashed red before its pause.
+    rule = '[name="rules-0-at"]'
+    page.locator(rule).fill("")
+    page.locator(rule).press_sequentially("2:3")
+    page.evaluate(
+        "() => window.ParishTimeFields.recheck("
+        "[...document.querySelectorAll('[data-schedule-text]')])"
+    )
+    assert reading(page, rule).inner_text() == ""
+    assert "is-error" not in (reading(page, rule).get_attribute("class") or "")
+    page.locator(rule).fill("00:00")
+    page.locator(full).fill("2am\n14:00\n25:00")
+    has_text(line, "“25:00” has no hour 25: hours run from 0 to 23.")
+    has_text(live(page, full), "“25:00” has no hour 25: hours run from 0 to 23.")
+    has_attribute(page.locator(full), "aria-invalid", "true")
+    assert save.is_disabled()
+    assert axe_violations(page, axe_source) == []
+    # A closed panel's list holds nothing: the Admin could not see why.
+    # ("toggle" fires after the click, so these wait.)
+    from playwright.sync_api import expect
+
+    page.get_by_text("Edit as text").click()
+    expect(save).to_be_enabled()
+    page.get_by_text("Edit as text").click()
+    expect(save).to_be_disabled()
+    page.locator(full).fill("2am\n2 pm")
+    has_text(line, "Reads as 02:00 (2:00 AM), 14:00 (2:00 PM)")
+    assert line.bounding_box()["height"] == pytest.approx(height, abs=1)
+    assert save.is_enabled()
+    # Typed one per line, it stays one per line when focus leaves.
+    page.locator(full).blur()
+    assert page.locator(full).input_value() == "02:00\n14:00"
+    page.locator("#refresh-text-quick").fill("")
+    page.get_by_role("button", name="Use these lists").click()
+    # A row change refills the list from the check; its reading follows.
+    page.locator('[name="rules-1-at"]').fill("15:00")
+    expect(page.locator(full)).to_have_value("02:00, 15:00")
+    has_text(line, "Reads as 02:00 (2:00 AM), 15:00 (3:00 PM)")
+    # A bad entry in a closed panel neither holds Save nor makes the browser
+    # refuse the submit ("not focusable"): the form really posts.
+    page.locator(full).fill("2am\n25:00")
+    expect(save).to_be_disabled()
+    page.get_by_text("Edit as text").click()
+    expect(save).to_be_enabled()
+    assert page.locator(full).evaluate("node => node.validity.valid")
+    with page.expect_request(
+        lambda request: request.method == "POST" and CHECK not in request.url
+    ) as sent:
+        save.click()
+    assert "rules-TOTAL_FORMS" in (sent.value.post_data or "")
+    assert not failures

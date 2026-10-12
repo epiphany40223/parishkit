@@ -490,6 +490,8 @@ def test_the_page_draws_rows_templates_and_the_switch():
     assert "schedule's time zone, America/New_York: the current campaign's" in html
     # The text lists are never posted.
     assert 'name="refresh-text' not in html and "data-schedule-text=" in html
+    # Each list is a shared time entry list, so it reads as typed (#1117).
+    assert html.count('data-time-entry="list" data-schedule-text=') == 2
 
 
 def test_the_check_answer_draws_each_row_and_the_verdict():

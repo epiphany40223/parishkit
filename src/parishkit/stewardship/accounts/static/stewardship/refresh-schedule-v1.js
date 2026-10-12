@@ -317,7 +317,9 @@
   // A time field's reading line (ui-v1.js) can grow by a line or two on a
   // narrow screen: its changes in this editor are steadied too.
   fields?.steadyReadings?.((field, change) => {
-    const line = root.contains(field) && field.closest(".schedule-row-fields");
+    // A row's line, or the Edit as text lists, whose reading can run to
+    // several lines (#1117).
+    const line = root.contains(field) && field.closest(".schedule-row-fields, .schedule-text > div");
     if (line) steady([line], change);
     else change();
   });
@@ -354,6 +356,8 @@
     const text = check.querySelector("[data-schedule-text]");
     if (!textEdited && text && text.hasAttribute("data-full")) {
       textLists().forEach((area) => { area.value = text.dataset[area.dataset.scheduleText]; });
+      // Set without an event: their readings are drawn again (#1117).
+      fields?.recheck?.(textLists());
     }
     blocking = check.dataset.blocking === "true";
     gate();
