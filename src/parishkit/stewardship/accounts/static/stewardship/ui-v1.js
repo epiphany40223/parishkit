@@ -2609,8 +2609,13 @@
   //     "name!=value" while it has any other value (the ParishSoft key in
   //     setup, once the organization ID differs from the saved one);
   //   - data-require-one on a group of checkboxes needs at least one ticked
-  //     (the System logs Show choices, #601): while none is, each box is
-  //     marked invalid with the group's data-missing-hint.
+  //     (the System logs Show choices, #601), or on a group of file fields
+  //     at least one file chosen (Parish logos' Advanced sizes, #1062):
+  //     while none is, each is marked invalid with the group's
+  //     data-missing-hint (and data-require-one-missing). A group inside a
+  //     hidden element (an editor's hidden Advanced panel, which is still
+  //     sent) asks for nothing, so the browser never refuses to send a form
+  //     over a field the reader cannot see.
   // The hint is the first missing control's data-missing-hint, or that of
   // the nearest element around it. As with acknowledgments above, real
   // disabled is used (holdButton and releaseButton).
@@ -2648,13 +2653,22 @@
     form.querySelectorAll("[data-require-one]").forEach((group) => {
       // A box hidden by data-show-when is disabled and not sent, so its
       // tick does not count (a type Cancel cannot take, #563).
-      const boxes = [...group.querySelectorAll("input[type=checkbox]")]
-        .filter((box) => !box.disabled);
-      const none = !boxes.some((box) => box.checked);
+      const all = [...group.querySelectorAll("input[type=checkbox], input[type=file]")];
+      const boxes = all.filter((box) => !box.disabled);
+      const chosen = (box) => (box.type === "file" ? Boolean(box.files?.length) : box.checked);
+      const none = !group.closest("[hidden]") && !boxes.some(chosen);
       // The group's own data-missing-hint is the message (and the custom
       // validity a box needs to count as invalid); the page supplies it.
       const hint = none ? group.dataset.missingHint : "";
-      boxes.forEach((box) => box.setCustomValidity(hint));
+      all.forEach((box) => {
+        const missing = Boolean(hint) && boxes.includes(box);
+        // A file field's own refusal (its size, wireMaxBytes) is not this
+        // gate's to clear: only a mark this gate made is taken back.
+        if (missing || box.type !== "file" || box.hasAttribute("data-require-one-missing")) {
+          box.setCustomValidity(missing ? hint : "");
+        }
+        box.toggleAttribute("data-require-one-missing", missing);
+      });
     });
   };
   const gateComplete = (form) => {
@@ -2789,8 +2803,8 @@
         if (form) recheckSizes(form);
         gateComplete(form);
       };
-      // A radio group (RadioNodeList, Parish logos' upload mode, #1062) is
-      // not an element: each of its buttons is listened to instead.
+      // A radio group (RadioNodeList) is not an element: each of its
+      // buttons is listened to instead.
       (control instanceof RadioNodeList ? [...control] : [control])
         .forEach((item) => item.addEventListener("change", update));
       showWhenUpdates.push({node, update});
@@ -4166,12 +4180,15 @@
   const modePanel = (root, mode) => [...root.querySelectorAll(
     `[data-editor-mode-panel="${mode}"]`)].find((node) => node.closest("[data-editor-modes]") === root);
   // The Advanced fields that are in error: marked by the server or a live
-  // check, or invalid in the browser's own terms (an unreadable time).
+  // check, or invalid in the browser's own terms (an unreadable time). A
+  // field only waiting for its group's first choice (data-require-one, such
+  // as Parish logos' sizes with no file chosen) is incomplete, not in error.
   const advancedErrors = (root) => [...(modePanel(root, "advanced")
     ?.querySelectorAll("input, select, textarea") || [])]
     .filter((node) => node.getAttribute("aria-invalid") === "true"
       || node.hasAttribute("data-field-error") || node.hasAttribute("data-client-error")
-      || (node.willValidate && !node.validity.valid));
+      || (node.willValidate && !node.validity.valid
+        && !node.hasAttribute("data-require-one-missing")));
   // Show root's panel for mode and hide the other; true when that changed.
   const showMode = (root, mode) => {
     const changed = root.dataset.editorModeShown !== mode;
@@ -4313,6 +4330,37 @@
   });
   window.ParishEditorMode = Object.freeze({
     register(name, adapter) { editorAdapters.set(name, adapter); },
+  });
+  // Parish logos (#1062): Basic is one image, resized for every size;
+  // Advanced is each size uploaded separately, where a size left empty
+  // keeps its current image. A chosen file has no per-size equivalent the
+  // page could write, so the server turns a Basic image into the four
+  // sizes (the convention's "the server expands the Basic choice"), and
+  // the Advanced fields hold only files chosen size by size. The server
+  // marks the editor data-stored-basic="true" when the current logos were
+  // made from one image.
+  const logoSizes = (root) => [...(modePanel(root, "advanced")
+    ?.querySelectorAll("input[type=file]") || [])];
+  const basicLogo = (root) => modePanel(root, "basic")?.querySelector("input[type=file]");
+  editorAdapters.set("parish-logos", {
+    // A Basic image replaces all four sizes, so any size chosen before
+    // (kept by Switch to Basic) is emptied rather than sent unseen.
+    toAdvanced(root) {
+      if (!basicLogo(root)?.files?.length) return;
+      logoSizes(root).forEach((input) => { input.value = ""; });
+    },
+    // Basic can show the configuration only while no size is chosen and
+    // the current logos came from one image. A Basic image chosen before a
+    // switch to Advanced stays chosen, as the reader left it.
+    toBasic(root) {
+      return root.dataset.storedBasic === "true"
+        && !logoSizes(root).some((input) => input.files?.length);
+    },
+    // Switch to Basic leaves no image chosen.
+    clearBasic(root) {
+      const input = basicLogo(root);
+      if (input) input.value = "";
+    },
   });
 
   // Repeating reminders (#469). expandRecurrence turns a repeat rule into
