@@ -96,11 +96,16 @@ def media_lock(media_root):
 def _inventory(bundle_id, graphics):
     """Freeze metadata from the normalizer's bounded PNG variants.
 
-    A logo bundle comes from the three logo sizes and stores four files; a
-    campaign artwork bundle is exactly one ``banner`` or ``section`` image.
+    A logo bundle comes from the three generated logo sizes (menu and icon
+    sharing ``small``), or from the four sizes given separately (#1062), and
+    stores four files; a campaign artwork bundle is exactly one ``banner``
+    or ``section`` image.
     """
     _identifier(bundle_id)
     if type(graphics) is dict and set(graphics) == {"large", "small", "favicon"}:
+        labels = VARIANTS
+        graphics = graphics | {"menu": graphics["small"], "icon": graphics["small"]}
+    elif type(graphics) is dict and set(graphics) == set(VARIANTS):
         labels = VARIANTS
     elif (
         type(graphics) is dict
@@ -112,7 +117,7 @@ def _inventory(bundle_id, graphics):
         raise ValueError("A complete normalized branding bundle is required.")
     result = []
     for label, maximum in labels.items():
-        graphic = graphics["small" if label in {"menu", "icon"} else label]
+        graphic = graphics[label]
         if (
             not isinstance(graphic, Graphic)
             or graphic.content_type != "image/png"

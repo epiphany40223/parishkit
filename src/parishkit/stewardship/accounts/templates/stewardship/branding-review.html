@@ -3,6 +3,6 @@
   Parish logos (#750): every generated size, as it will appear. The review
   region's own heading, notes and Apply surround it.
 {% endcomment %}<p class="notice">{% translate "These logos are uploaded but not yet in use. Apply the change to start using them." %}</p>
-<section><h3>{% translate "Generated variants" %}</h3>
-{% for asset in review.assets %}<figure><img src="{% url 'admin:branding_asset' asset.pk %}" alt="{{ asset.label }}" width="{{ asset.width }}" height="{{ asset.height }}" class="branding-preview"><figcaption>{{ asset.label|capfirst }} — {{ asset.width|number }} × {{ asset.height|number }} {% translate "pixels" %}</figcaption></figure>{% endfor %}</section>
+<section><h3>{% translate "Logo sizes" %}</h3>
+{% comment %}Each size says whether this upload changes it (#1062): a size uploaded on its own changes only itself; the others keep their current image. A changed size is marked with the shared .changed style and says so in words.{% endcomment %}{% for asset in review.assets %}<figure{% if asset.changed %} class="changed"{% endif %}><img src="{% url 'admin:branding_asset' asset.pk %}" alt="{{ asset.title|default:asset.label }}" width="{{ asset.width }}" height="{{ asset.height }}" class="branding-preview"><figcaption>{{ asset.title|default:asset.label|capfirst }} — {{ asset.width|number }} × {{ asset.height|number }} {% translate "pixels" %} — {% if asset.changed %}{% translate "Changed" %}{% else %}{% translate "Unchanged" %}{% endif %}</figcaption></figure>{% endfor %}</section>
 <p>{% translate "Uploads that are never applied are discarded after a day." %}</p>
