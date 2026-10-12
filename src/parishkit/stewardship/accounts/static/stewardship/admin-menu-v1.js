@@ -3,8 +3,9 @@
 // The tips of the Admin sidebar's unavailable entries (admin-portal spec,
 // "Stable menu shape"). The markup is admin-navigation.html. The same tips
 // serve unavailable in-page controls (components/disabled-control.html,
-// navigation rule 10), so this file is deferred and runs once the whole page
-// is parsed. The menu's remembered group and scroll state is
+// navigation rule 10), and a tip of the same look shows a table name cut
+// short (clipped names, at the end), so this file is deferred and runs once
+// the whole page is parsed. The menu's remembered group and scroll state is
 // admin-menu-state-v1.js, which must run earlier. This file is kept out of
 // ui-v1.js, which every page loads, and the Admin portal requires JavaScript
 // (#565), so there is no no-script fallback here.
@@ -138,4 +139,141 @@
     window.addEventListener("scroll", follow, {capture: true, passive: true});
     window.addEventListener("resize", follow);
   }
+})();
+
+// Clipped names (#1136): a name in a table cell that its column cuts short
+// ([data-clip-tip], such as the Ministry follow-up queue's Member and a
+// Ministry name too long for two lines) shows whole in a tip styled like
+// the menu's. The whole name is already the element's text, so screen
+// readers hear it; the tip only repeats it on screen and is aria-hidden.
+// A name that fits shows no tip. One document-level listener serves every
+// row, including rows an in-place filter, sort or page change brings in.
+//
+// Pointer: the tip shows after the pointer rests on the name for
+// SHOW_DELAY. It stays while the pointer is over the name or the tip, so
+// the pointer can move onto it (WCAG 1.4.13); HIDE_GRACE covers the gap
+// between them, and leaving both hides it.
+// Keyboard: focus shows it at once. A clipped name that is not a link is
+// made focusable so the keyboard reaches it (mark(), rerun after an
+// in-place swap and on resize, since what is clipped depends on the
+// width); the focused name keeps its place in the tab order until focus
+// leaves it, so a resize never drops focus.
+// Touch: a tap shows it (a tap on a link also opens the link, whose page
+// shows the name whole). A tapped tip ignores the pointer, so the next tap
+// anywhere both hides it and acts on whatever was tapped.
+// Escape, or a tap or click elsewhere, hides it. The tip is fixed under the
+// name, or above it with no room below, and follows it as the page, the
+// table or the window changes; it moves nothing on the page.
+(() => {
+  const SHOW_DELAY = 350;
+  const HIDE_GRACE = 150;
+  const GAP = 6;
+  const SELECTOR = "[data-clip-tip]";
+  let tip = null;
+  let shown = null;
+  let showTimer = null;
+  let hideTimer = null;
+  const clipped = (name) =>
+    name.scrollWidth > name.clientWidth + 1 || name.scrollHeight > name.clientHeight + 1;
+  const nameOf = (target) => (target && target.closest ? target.closest(SELECTOR) : null);
+  const onTip = (target) => Boolean(tip && target && tip.contains(target));
+  const clearTimers = () => {
+    clearTimeout(showTimer);
+    clearTimeout(hideTimer);
+  };
+  const hide = () => {
+    clearTimers();
+    if (tip) tip.classList.remove("is-shown", "is-tapped");
+    shown = null;
+  };
+  // Hide after HIDE_GRACE unless the name keeps focus or the pointer
+  // reaches the name or the tip first.
+  const hideSoon = () => {
+    clearTimeout(hideTimer);
+    if (shown && document.activeElement !== shown) hideTimer = setTimeout(hide, HIDE_GRACE);
+  };
+  // Put the shown tip under its name, or above it with no room below, kept
+  // inside the viewport; rerun on scroll and resize, since a fixed tip
+  // stays put.
+  const place = () => {
+    const box = shown.getBoundingClientRect();
+    const width = tip.offsetWidth;
+    const height = tip.offsetHeight;
+    let top = box.bottom + GAP;
+    if (top + height > window.innerHeight - GAP) top = box.top - height - GAP;
+    tip.style.left = `${Math.round(Math.max(GAP, Math.min(box.left, window.innerWidth - GAP - width)))}px`;
+    tip.style.top = `${Math.round(Math.max(GAP, top))}px`;
+  };
+  const show = (name, byTap) => {
+    clearTimers();
+    if (!name.isConnected || !clipped(name)) return;
+    if (!tip) {
+      tip = document.createElement("span");
+      tip.className = "admin-tip";
+      tip.setAttribute("aria-hidden", "true");
+      document.body.append(tip);
+      // Over the tip the pointer keeps it shown; leaving it hides it,
+      // unless the pointer went back to its name.
+      tip.addEventListener("mouseenter", () => clearTimeout(hideTimer));
+      tip.addEventListener("mouseleave", (event) => {
+        if (shown && !shown.contains(event.relatedTarget)) hideSoon();
+      });
+    }
+    tip.textContent = name.textContent.trim();
+    tip.classList.add("is-shown");
+    tip.classList.toggle("is-tapped", Boolean(byTap));
+    shown = name;
+    place();
+  };
+  // Clipped names that are not links join the tab order; a name that fits
+  // again leaves it, except the focused one, which focusout releases.
+  const mark = (root) => {
+    root.querySelectorAll(`${SELECTOR}:not(a)`).forEach((name) => {
+      if (clipped(name)) name.setAttribute("tabindex", "0");
+      else if (name !== document.activeElement) name.removeAttribute("tabindex");
+    });
+  };
+  mark(document);
+  document.addEventListener("parishkit:swap", (event) => { hide(); mark(event.target); });
+  window.addEventListener("resize", () => {
+    if (shown && clipped(shown)) place();
+    else hide();
+    mark(document);
+  });
+  document.addEventListener("mouseover", (event) => {
+    if (onTip(event.target)) return;
+    const name = nameOf(event.target);
+    if (!name) return;
+    if (name === shown) { clearTimeout(hideTimer); return; }
+    hide();
+    showTimer = setTimeout(() => show(name, false), SHOW_DELAY);
+  });
+  document.addEventListener("mouseout", (event) => {
+    const name = nameOf(event.target);
+    if (!name || name.contains(event.relatedTarget) || onTip(event.relatedTarget)) return;
+    clearTimeout(showTimer);
+    if (name === shown && !tip.classList.contains("is-tapped")) hideSoon();
+  });
+  // A tap focuses the name it shows; the tip that tap opened is already
+  // shown and keeps its tapped mode, so it never swallows the next tap.
+  document.addEventListener("focusin", (event) => {
+    const name = nameOf(event.target);
+    if (name && name !== shown) show(name, false);
+  });
+  document.addEventListener("focusout", (event) => {
+    const name = nameOf(event.target);
+    if (!name) return;
+    if (name === shown) hide();
+    if (!name.matches("a") && !clipped(name)) name.removeAttribute("tabindex");
+  });
+  document.addEventListener("pointerdown", (event) => {
+    if (onTip(event.target)) return;
+    const name = nameOf(event.target);
+    if (event.pointerType === "touch" && name) show(name, true);
+    else if (shown && name !== shown) hide();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") hide();
+  });
+  window.addEventListener("scroll", () => { if (shown) place(); }, {capture: true, passive: true});
 })();
