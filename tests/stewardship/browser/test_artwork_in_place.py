@@ -109,3 +109,43 @@ def test_a_refused_upload_is_explained_in_place(page, component_origin):
     visible(slot(page, "Member pages icon").locator(".errorlist"))
     assert page.url == component_origin + PAGE
     assert page.evaluate(MARKED) == "kept"
+
+
+# The bottom edge of the slot headed by the argument, in the document.
+SLOT_BOTTOM = (
+    "(label) => [...document.querySelectorAll('.artwork-slot')]"
+    ".find((s) => s.querySelector('h2').textContent === label)"
+    ".getBoundingClientRect().bottom + window.scrollY"
+)
+
+
+def test_upload_waits_for_an_image_and_an_unshown_slot_says_why(page, component_origin):
+    """Upload and review waits for a chosen image, saying so in a line kept
+    after the button, so choosing one moves nothing. The Financial page icon
+    of a campaign without Financial stewardship is greyed in place, its
+    Upload named by why (#563)."""
+    page.goto(component_origin + PAGE)
+    closing = slot(page, "Closing page icon")
+    button = closing.get_by_role("button", name="Upload and review")
+    hint = closing.locator("#artwork-hint-closing")
+    assert button.is_disabled()
+    assert hint.inner_text() == "Choose an image to upload."
+    assert button.get_attribute("aria-describedby") == "artwork-hint-closing"
+    bottom = page.evaluate(SLOT_BOTTOM, "Closing page icon")
+    closing.get_by_label("Image").set_input_files(png())
+    assert button.is_enabled()
+    assert hint.inner_text() == ""
+    assert page.evaluate(SLOT_BOTTOM, "Closing page icon") == pytest.approx(
+        bottom, abs=1
+    )
+    financial = slot(page, "Financial page icon")
+    unavailable = financial.get_by_role("button", name="Upload and review")
+    assert unavailable.is_disabled()
+    field = financial.get_by_label("Image")
+    assert field.is_disabled()
+    assert field.get_attribute("aria-describedby") == (
+        "id_financial_image_helptext artwork-hint-financial"
+    )
+    reason = financial.locator("#artwork-hint-financial")
+    assert "Financial stewardship is off" in reason.inner_text()
+    assert unavailable.get_attribute("aria-describedby") == "artwork-hint-financial"

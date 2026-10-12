@@ -17,6 +17,15 @@ signed preview to that same address, whose query says which change it is.
 The answer is the page again naming the request (``?request=<id>``), whose
 status the region follows until the change settles and the page refreshes
 itself quietly with the new current image.
+
+An icon whose Family page this campaign does not show (the Financial page
+while Financial stewardship is off; the Member pages while both Census and
+Ministries are) cannot be uploaded: its slot shows Upload unavailable, named
+by the reason, and the server refuses such an upload at the field (#563).
+The Financial page can still appear for a Family whose earlier financial
+answers await a decision after the module was turned off (family-v1.js's
+unresolved ``financial.removed`` conflict); that page is transitional, so
+its icon is not offered for it.
 """
 
 from urllib.parse import urlencode
@@ -90,6 +99,52 @@ SLOT_LABELS = {
     "closing": _("Closing page icon"),
 }
 
+# Why a slot's icon would not be seen, by slot, for the slots that belong to
+# a Family page only some campaign modules show (#563).
+UNAVAILABLE = {
+    "financial": _(
+        "Families see no Financial page while Financial stewardship is off "
+        "for this campaign, so this icon cannot be uploaded."
+    ),
+    "member": _(
+        "Families see no Member pages while Census and Ministries are both "
+        "off for this campaign, so this icon cannot be uploaded."
+    ),
+}
+# The campaign modules that show each such slot's Family page (family-v1.js:
+# the Member pages need Census or Ministries; the Financial page, Financial,
+# apart from a Family's unresolved financial.removed conflict, which can still
+# show it while the module is off).
+SLOT_MODULES = {"financial": {"financial"}, "member": {"census", "ministry"}}
+
+
+def unavailable(campaign, slot):
+    """Why ``slot`` cannot take an image for ``campaign``, or None when it can.
+
+    A slot whose Family page the campaign's modules do not show would hold an
+    image Families almost never see (only the Financial page of an unresolved
+    financial.removed conflict), so its upload is shown unavailable with this reason
+    and refused by the server (#563). Its current image, if any, can still
+    be removed.
+    """
+    modules = set(campaign.active_configuration.values.get("modules", ()))
+    if slot in SLOT_MODULES and not modules & SLOT_MODULES[slot]:
+        return UNAVAILABLE[slot]
+    return None
+
+
+def name_unavailable(form, slot):
+    """Name an unavailable slot's greyed field by its reason line too (#563).
+
+    The field keeps its help and is also described by the reason line under
+    Upload (``artwork-hint-<slot>`` in artwork-settings.html), as the button
+    is, so a reader reaching the field hears why it is unavailable.
+    """
+    form.fields["image"].widget.attrs["aria-describedby"] = (
+        f"id_{slot}_image_helptext artwork-hint-{slot}"
+    )
+    return form
+
 
 def _kind(slot):
     """The one normalized image kind a slot accepts."""
@@ -123,7 +178,15 @@ class ArtworkForm(forms.Form):
     image = forms.FileField(
         label=_("Image"),
         max_length=254,
-        widget=forms.FileInput(attrs={"accept": "image/png,image/jpeg,image/webp"}),
+        # data-max-bytes (ui-v1.js, #563) refuses a file over the server's
+        # bound at the field as soon as it is chosen; the server still checks.
+        widget=forms.FileInput(
+            attrs={
+                "accept": "image/png,image/jpeg,image/webp",
+                "data-max-bytes": MAX_IMAGE_BYTES,
+                "data-max-bytes-message": _("Choose an image no larger than 5 MB."),
+            }
+        ),
         help_text=_("PNG, JPEG or WebP, up to 5 MB."),
     )
     base_digest = forms.RegexField(
@@ -200,19 +263,24 @@ def _page(
         str(asset.pk): asset
         for asset in BrandingAsset.objects.filter(pk__in=list(current.values()))
     }
-    slots = [
-        {
-            "slot": slot,
-            "label": SLOT_LABELS[slot],
-            "asset": assets.get(current.get(slot)),
-            "form": forms_by_slot.get(slot)
-            or ArtworkForm(
-                initial={"base_digest": configuration.active_configuration.digest},
-                auto_id=f"id_{slot}_%s",
-            ),
-        }
-        for slot in ARTWORK_SLOTS
-    ]
+    slots = []
+    for slot in ARTWORK_SLOTS:
+        form = forms_by_slot.get(slot) or ArtworkForm(
+            initial={"base_digest": configuration.active_configuration.digest},
+            auto_id=f"id_{slot}_%s",
+        )
+        reason = unavailable(campaign, slot)
+        if reason is not None:
+            name_unavailable(form, slot)
+        slots.append(
+            {
+                "slot": slot,
+                "label": SLOT_LABELS[slot],
+                "asset": assets.get(current.get(slot)),
+                "unavailable": reason,
+                "form": form,
+            }
+        )
     step = "review" if region.get("review") else "edit"
     if region.get("receipt"):
         step = "apply"
@@ -420,7 +488,13 @@ def artwork_upload(request, campaign_id, slot):
         ):
             raise ValueError("Invalid campaign image upload fields.")
         form = ArtworkForm(request.POST, request.FILES, auto_id=f"id_{slot}_%s")
-        if form.is_valid():
+        reason = unavailable(campaign, slot)
+        if reason is not None:
+            # The page shows this upload unavailable; a request that skips it
+            # is refused at the field like any other upload error (#563).
+            form.is_valid()
+            form.add_error("image", reason)
+        elif form.is_valid():
             try:
                 graphics = prepare_artwork(form.cleaned_data["image"], _kind(slot))
             except ValueError:
