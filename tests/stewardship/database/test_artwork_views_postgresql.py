@@ -132,10 +132,10 @@ def test_images_belong_to_the_campaign_publish_and_clear(auth_service, google, m
     reloaded = browser.get(accepted.review_path)
     assert reloaded.status_code == 409
     assert "can no longer be reviewed" in region(reloaded.content)
-    apply(store, select(browser, auth_service, path, "financial", image(600, 600)))
+    apply(store, select(browser, auth_service, path, "closing", image(600, 600)))
     images = artwork(row)["images"]
     banner = BrandingAsset.objects.get(pk=images["banner"])
-    icon = BrandingAsset.objects.get(pk=images["financial"])
+    icon = BrandingAsset.objects.get(pk=images["closing"])
     # The page shows exactly the applied images as the slots' current ones.
     shown = browser.get(path).content.decode()
     for asset in (banner, icon):
@@ -152,15 +152,15 @@ def test_images_belong_to_the_campaign_publish_and_clear(auth_service, google, m
         assert b"".join(response.streaming_content).startswith(b"\x89PNG")
     values = row.active_configuration.values
     resolved = campaign_artwork(values, origin=ORIGIN)
-    assert set(resolved) == {"banner", "financial"}
+    assert set(resolved) == {"banner", "closing"}
     assert resolved["banner"]["url"] == f"{ORIGIN}/branding/{banner.pk}.png"
     assert banner_for_email(values, "initial", origin=ORIGIN) == resolved["banner"]
     # Selected images are pinned against staging cleanup.
     assert not unpinned_bundles().filter(pk=banner.bundle_id).exists()
-    removed = remove(browser, path, "financial")
+    removed = remove(browser, path, "closing")
     apply(store, removed)
     # The removal review now refuses (nothing left to remove), in place.
-    gone = browser.get(f"{path}?remove=financial")
+    gone = browser.get(f"{path}?remove=closing")
     assert gone.status_code == 404
     assert "can no longer be reviewed" in region(gone.content)
     followed = browser.get(address(removed))
@@ -249,6 +249,42 @@ def test_upload_rejects_non_images(auth_service, google, media):
         )
     assert stale.status_code == 409
     assert "This page changed in another tab or session." in region(stale.content)
+    assert not BrandingAsset.objects.exists()
+
+
+def test_a_slot_no_family_page_shows_cannot_take_an_upload(auth_service, google, media):
+    """The census-only draft shows no Financial page, so its icon's Upload is
+    unavailable, named by why, and the server refuses one at the field (#563).
+    Every other slot waits for a chosen image (the complete gate)."""
+    store = auth_service.store
+    _, path = draft(store)
+    browser, _ = signed_in()
+    page = browser.get(path).content.decode()
+    reason = "Families see no Financial page while Financial stewardship is off"
+    assert (
+        '<fieldset class="artwork-upload" disabled>' in page
+        and page.count('<fieldset class="artwork-upload" disabled>') == 1
+    )
+    assert f'<p class="help" id="artwork-hint-financial">{reason}' in page
+    # The greyed field is named by its help and that reason, as Upload is.
+    assert (
+        'aria-describedby="id_financial_image_helptext artwork-hint-financial"' in page
+    )
+    # Census is on, so the Member pages icon is available, gated on a file.
+    assert '<p class="help" id="artwork-hint-member" data-complete-hint="reserve">' in (
+        page
+    )
+    assert page.count("data-require-complete") == 4
+    assert 'data-max-bytes="5242880"' in page
+    with task_login(ServiceRole.WEB):
+        refused = post(
+            browser,
+            f"{path}financial/",
+            {"base_digest": store.active().digest, "image": image(600, 600)},
+        )
+    assert refused.status_code == 400
+    assert reason in refused.content.decode()
+    assert 'href="#id_financial_image"' in region(refused.content)
     assert not BrandingAsset.objects.exists()
 
 

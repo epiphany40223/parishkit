@@ -4,7 +4,9 @@ The real Campaign images template is served at its real address, ``PAGE``,
 so the in-place answers (which must come from the page's own address) can
 be served by the fixture server:
 
-- ``PAGE`` lists the five slots, the welcome icon set, at the edit step;
+- ``PAGE`` lists the five slots, the welcome icon set, at the edit step,
+  for a campaign without Financial stewardship: the Financial page icon's
+  upload is unavailable with its reason (#563);
 - an upload's POST to ``UPLOAD`` (the banner's upload address) answers, as
   the view does, with a redirect to ``REVIEW``: the page naming the staged
   banner, with its review in the review region;
@@ -22,7 +24,12 @@ from uuid import UUID
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts.admin_editing import review_region
-from parishkit.stewardship.accounts.artwork_views import SLOT_LABELS, ArtworkForm
+from parishkit.stewardship.accounts.artwork_views import (
+    SLOT_LABELS,
+    UNAVAILABLE,
+    ArtworkForm,
+    name_unavailable,
+)
 from parishkit.stewardship.campaigns.configuration import ARTWORK_SLOTS
 
 PAGE = "/admin/campaign/images/"
@@ -80,15 +87,21 @@ def components(context, admin):
         )
         if region.get("receipt"):
             values["status_url"] = STATUS
+
+        def form(slot):
+            """The slot's upload form; the Financial one named as unavailable."""
+            drawn = forms.get(slot) or ArtworkForm(
+                initial={"base_digest": "a" * 64}, auto_id=f"id_{slot}_%s"
+            )
+            return name_unavailable(drawn, slot) if slot == "financial" else drawn
+
         slots = [
             {
                 "slot": slot,
                 "label": SLOT_LABELS[slot],
                 "asset": current.get(slot),
-                "form": forms.get(slot)
-                or ArtworkForm(
-                    initial={"base_digest": "a" * 64}, auto_id=f"id_{slot}_%s"
-                ),
+                "unavailable": UNAVAILABLE[slot] if slot == "financial" else None,
+                "form": form(slot),
             }
             for slot in ARTWORK_SLOTS
         ]
