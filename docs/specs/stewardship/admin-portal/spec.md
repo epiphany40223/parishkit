@@ -4684,7 +4684,7 @@ scrolls sideways inside its own box. Request reads Join or Leave, and "Leave
 (cannot participate)" for a Member who cannot participate in any ministries,
 the whole reason being the marker's tooltip and written out on the request
 page. Status is one line, with a resolved request's outcome after a colon
-("Resolved: Joined ministry"); Closed: no response, whose outcome is always
+("Resolved: Joined the Ministry"); Closed: no response, whose outcome is always
 No response, does not repeat it. A Ministry since removed from the campaign
 carries a small "Removed" badge after its name, with "No longer in this
 campaign" as its tooltip and screen-reader text, instead of that sentence in
@@ -4711,9 +4711,14 @@ to it). The Admin portal requires JavaScript
 ([#565](https://github.com/epiphany40223/parishkit/issues/565)), so there is
 no script-off variant; the server still ignores whatever does not apply to the
 chosen status or channel and refuses an incomplete Resolved. The outcome list
-offers only the outcomes the request's kind can record: Joined ministry only
-for a join and Left ministry only for a leave, from the same rule the server
-applies. If the server still refuses a save (for example a contact time in the
+offers only the outcomes the request's kind can record, from the same rule the
+server applies, in that kind's words: a join offers Joined the Ministry and
+Declined / no longer interested, and a leave offers Left the Ministry and
+Stayed in the Ministry, which is the stored `declined` on a leave request (the
+Member did not leave), beside the outcomes both kinds share. The queue's
+Outcome filter, which covers both kinds, shows declined as Declined / stayed.
+Every outcome label follows the
+[packet's mapping](../reports/spec.md#multi-ministry-follow-up-packet). If the server still refuses a save (for example a contact time in the
 future), it shows the same request page again in place, with the submitted
 values kept, a summary naming the one problem, and that problem shown
 [at its fields](#bootstrap-and-first-admin-wizard): a missing or unsuitable

@@ -79,14 +79,41 @@ ZONE_MESSAGE = (
 # A Ministry an Administrator removed from a live campaign whose requests are
 # kept (#342); SQL marks it in_campaign false.
 NOT_IN_CAMPAIGN = "No longer in this campaign"
-OUTCOMES = {
-    "joined": "Joined ministry",
-    "leave_confirmed": "Left ministry",
+# Outcome labels by request kind (#1132), shared by every screen, export and
+# packet, so they always agree. The stored code never changes: a leave
+# request's `declined` means the Member did not leave, so it reads "Stayed in
+# the Ministry", while a join request's reads as a decline. Read them only
+# through outcome_label() and outcome_choices(), never by indexing these.
+_JOIN_LABELS = {
+    "joined": "Joined the Ministry",
+    "leave_confirmed": "Left the Ministry",
     "declined": "Declined / no longer interested",
     "no_response": "No response",
     "duplicate": "Duplicate request",
     "other": "Other",
 }
+_LABELS = {
+    "join": _JOIN_LABELS,
+    "leave": _JOIN_LABELS | {"declined": "Stayed in the Ministry"},
+}
+# A list that mixes both kinds (the queue's Outcome filter with Request
+# "Any") names both meanings of `declined`.
+_ANY_LABELS = _JOIN_LABELS | {"declined": "Declined / stayed"}
+
+
+def outcome_label(outcome, action, default=""):
+    """One stored outcome's label for a join or leave request.
+
+    ``action`` is the request's kind (``join`` or ``leave``); any other value
+    (such as ``any``) gives the combined label. A missing or unknown outcome
+    gives ``default``.
+    """
+    return _LABELS.get(action, _ANY_LABELS).get(outcome, default)
+
+
+def outcome_choices(action):
+    """Every outcome code with its label for ``action``, in display order."""
+    return {key: outcome_label(key, action) for key in _JOIN_LABELS}
 
 
 @dataclass(frozen=True, repr=False)
@@ -369,7 +396,8 @@ def ministry_page(
     for row in result["rows"]:
         row["submitted_at"] = datetime.fromisoformat(row["submitted_at"])
         row["state_label"] = STATE_LABELS[row["state"]]
-        row["outcome_label"] = OUTCOMES.get(row["outcome"], "Not yet recorded")
+        # Every row is of the chosen kind (the selection filters on it).
+        row["outcome_label"] = outcome_label(row["outcome"], action, "Not yet recorded")
         row["address_lines"] = address_lines(row["address"] or {})
         row["emails"] = [
             entry["value"] for entry in row["emails"] or [] if entry.get("value")

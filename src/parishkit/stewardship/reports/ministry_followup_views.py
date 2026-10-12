@@ -60,11 +60,10 @@ from parishkit.stewardship.workflows.roster import (
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .information import parse_page
-from .ministries import unscoped
+from .ministries import outcome_choices, outcome_label, unscoped
 from .ministry_followup import (
     CHANNELS,
     HISTORY_STATES,
-    OUTCOMES,
     SORTING,
     STATES,
     FollowupQuery,
@@ -276,7 +275,7 @@ def _refusal_error(refusal, submitted):
         message = refusal.details["message"]
     elif refusal.code == "outcome_kind":
         message = _("%(outcome)s doesn't apply to a request to %(action)s.") % {
-            "outcome": OUTCOMES.get(refusal.details["outcome"], ""),
+            "outcome": outcome_label(refusal.details["outcome"], "any"),
             "action": ACTIONS[refusal.details["action"]],
         }
     fields = refusal_fields(refusal, submitted)
@@ -465,7 +464,7 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None):
                     labels.get(str(row.assignee_id), FORMER) if row.assignee_id else ""
                 )
                 row.state_label = HISTORY_STATES[row.state]
-                row.outcome_label = OUTCOMES.get(row.outcome, "")
+                row.outcome_label = outcome_label(row.outcome, item["action"])
                 row.channel_label = CHANNELS.get(row.contact_channel, "")
             context = dict(
                 result,
@@ -503,7 +502,8 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None):
                 # Only Resolved takes a chosen outcome (change_values), and
                 # only those this kind of request can record (outcomes_for).
                 resolved_outcomes=[
-                    (key, OUTCOMES[key]) for key in outcomes_for(item["action"])
+                    (key, outcome_label(key, item["action"]))
+                    for key in outcomes_for(item["action"])
                 ]
                 if item
                 else [],
@@ -515,7 +515,11 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None):
                 # The page checks a contact time as it is typed, with the
                 # server's own words for a time in the future (#592).
                 future_message=REFUSALS["contact_future"][0],
-                outcomes=OUTCOMES,
+                # The Outcome filter always uses the combined labels (both
+                # meanings of declined, #1132): the filter form is kept in
+                # place on Apply (data-table-sync), so per-kind option text
+                # would go stale when the Request filter changes.
+                outcomes=outcome_choices("any"),
                 channels=CHANNELS,
             )
             return iter(

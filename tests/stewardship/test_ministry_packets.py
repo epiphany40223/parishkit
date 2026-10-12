@@ -137,11 +137,19 @@ def test_selection_is_canonical_and_every_other_filter_is_neutral():
         ({}, ""),
         ({"state": "in_progress"}, ""),
         ({"state": "cancelled"}, ""),
-        ({"state": "resolved", "outcome": "joined"}, "Joined ministry"),
-        ({"state": "resolved", "outcome": "leave_confirmed"}, "Left ministry"),
+        ({"state": "resolved", "outcome": "joined"}, "Joined the Ministry"),
+        (
+            {"state": "resolved", "outcome": "leave_confirmed", "action": "leave"},
+            "Left the Ministry",
+        ),
         (
             {"state": "resolved", "outcome": "declined"},
             "Declined / no longer interested",
+        ),
+        # A leave request's declined means the Member stayed (#1132).
+        (
+            {"state": "resolved", "outcome": "declined", "action": "leave"},
+            "Stayed in the Ministry",
         ),
         ({"state": "closed_no_response", "outcome": "no_response"}, "No response"),
         ({"state": "resolved", "outcome": "duplicate"}, "Duplicate request"),
@@ -153,7 +161,7 @@ def test_selection_is_canonical_and_every_other_filter_is_neutral():
         # Notes are private unless the outcome is Other, even if a capture had them.
         (
             {"state": "resolved", "outcome": "joined", "notes": "PRIVATE"},
-            "Joined ministry",
+            "Joined the Ministry",
         ),
     ],
 )

@@ -315,6 +315,16 @@ def test_exports_show_no_assignee_and_legacy_assigned_reads_new(action):
     assert "=leader@example.org" not in report.rows[0]
 
 
+@pytest.mark.parametrize(
+    ("action", "expected"),
+    [("join", "Declined / no longer interested"), ("leave", "Stayed in the Ministry")],
+)
+def test_exports_label_declined_by_request_kind(action, expected):
+    """A list's download names a declined request in its kind's words (#1132)."""
+    report = document(action=action, count=1, state="resolved", outcome="declined")
+    assert report.rows[0][report.headings.index("Outcome")] == expected
+
+
 @pytest.mark.parametrize("format", ["xlsx", "pdf"])
 def test_rendered_ministry_formats_use_same_private_document(format):
     """Spreadsheet literals and complete PDF text preserve the narrowed projection."""

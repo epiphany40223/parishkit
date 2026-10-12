@@ -194,18 +194,21 @@ def test_followup_history_links_name_the_request(page, component_origin):
 
 
 def test_followup_outcomes_match_the_request_kind(page, component_origin):
-    """A join is never offered Left ministry, nor a leave Joined ministry, so
-    Save can never pass an outcome the server refuses."""
+    """A join is never offered Left the Ministry, nor a leave Joined the
+    Ministry, so Save can never pass an outcome the server refuses; each kind
+    names the shared declined outcome in its own words (#1132)."""
+    join = ("Joined the Ministry", "Declined / no longer interested")
+    leave = ("Left the Ministry", "Stayed in the Ministry")
     for path, offered, absent in (
-        ("/followup-item", "Joined ministry", "Left ministry"),
-        ("/followup-item-leave", "Left ministry", "Joined ministry"),
+        ("/followup-item", join, leave),
+        ("/followup-item-leave", leave, join),
     ):
         page.goto(component_origin + path)
         page.get_by_label("Status").select_option("resolved")
         choices = (
             page.get_by_label("Outcome", exact=True).locator("option").all_inner_texts()
         )
-        assert offered in choices and absent not in choices
+        assert set(offered) <= set(choices) and not set(absent) & set(choices)
         assert "No response" not in choices
 
 
@@ -216,7 +219,8 @@ def test_followup_refusal_is_shown_in_place(page, component_origin):
     summary = page.locator("[data-error-summary]")
     visible(summary)
     has_text(
-        summary.get_by_role("link"), "Left ministry doesn't apply to a request to join."
+        summary.get_by_role("link"),
+        "Left the Ministry doesn't apply to a request to join.",
     )
     assert page.evaluate("document.activeElement.hasAttribute('data-error-summary')")
     assert page.get_by_label("Status").input_value() == "resolved"

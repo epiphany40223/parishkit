@@ -21,10 +21,10 @@ from uuid import UUID
 from django.template.loader import render_to_string
 from django.urls import reverse
 
+from parishkit.stewardship.reports.ministries import outcome_choices, outcome_label
 from parishkit.stewardship.reports.ministry_followup import (
     CHANNELS,
     HISTORY_STATES,
-    OUTCOMES,
     SORTING,
     STATES,
     FollowupQuery,
@@ -144,8 +144,10 @@ def components(context, admin):
         request_key=UUID(int=95),
         states=STATES,
         staff_states=[(key, STATES[key]) for key in STAFF_STATES],
-        resolved_outcomes=[(key, OUTCOMES[key]) for key in outcomes_for("join")],
-        outcomes=OUTCOMES,
+        resolved_outcomes=[
+            (key, outcome_label(key, "join")) for key in outcomes_for("join")
+        ],
+        outcomes=outcome_choices("any"),
         channels=CHANNELS,
         future_message=REFUSALS["contact_future"][0],
         total=51,
@@ -194,7 +196,7 @@ def components(context, admin):
         state="resolved",
         state_label=STATES["resolved"],
         outcome="joined",
-        outcome_label=OUTCOMES["joined"],
+        outcome_label=outcome_label("joined", "join"),
     )
     saved = row | dict(
         version=4, state="in_progress", state_label=STATES["in_progress"]
@@ -234,7 +236,9 @@ def components(context, admin):
                 state=state,
                 state_label=STATES[state],
                 outcome=outcome,
-                outcome_label=OUTCOMES[outcome] if outcome else "",
+                outcome_label=outcome_label(
+                    outcome, "leave" if number % 3 == 0 else "join"
+                ),
                 last_contact_at=None if number % 4 == 0 else moment,
             )
         )
@@ -266,7 +270,9 @@ def components(context, admin):
         | dict(
             item=leave,
             form=form,
-            resolved_outcomes=[(key, OUTCOMES[key]) for key in outcomes_for("leave")],
+            resolved_outcomes=[
+                (key, outcome_label(key, "leave")) for key in outcomes_for("leave")
+            ],
         ),
         "/followup-item-refused": values
         | dict(
