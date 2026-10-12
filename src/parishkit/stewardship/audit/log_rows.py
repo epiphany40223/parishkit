@@ -258,6 +258,7 @@ ACTIVITY_TYPES = {
                 "exact_create",
                 "exact_retry",
                 "family_test_names",
+                "family_timeline",
                 "financial",
                 "information",
                 "ministry",

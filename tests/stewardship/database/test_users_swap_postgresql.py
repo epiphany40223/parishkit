@@ -244,13 +244,15 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 
 # Objects a later closure migration's frozen file creates with plain CREATE,
 # which a full migration would otherwise fail to create again: #970's 0056,
-# #995's 0057, #1024's 0058, #1018's 0059, #528's 0060 and 0061 and #530's
-# 0062 follow 0055 (#993), so they are in the swap's closure too.
+# #995's 0057, #1024's 0058, #1018's 0059, #528's 0060 and 0061, #530's
+# 0062 and #463's 0063 follow 0055 (#993), so they are in the swap's
+# closure too.
 # Each is dropped while the swap is pending (with the trigger that uses it)
 # and, unless the test's full migration made it again, installed again
-# afterwards from its migration's frozen file. The tables 0059 to 0062
+# afterwards from its migration's frozen file. The tables 0059 to 0063
 # create (runtime_grants.CLOSURE_TABLES) are dropped and installed again with
-# their guard functions, as the base lacks them too.
+# their guard functions, as the base lacks them too. 0063 also alters the
+# export request (``before_timeline_exports``), which is put back first.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -300,7 +302,59 @@ CLOSURE_CREATED = {
         "stewardship_jobs",
         "0023_backup_request",
     ),
+    "public.stewardship_timeline_export_capture_v1()": (
+        "stewardship_reports",
+        "0015_timeline_exports",
+    ),
+    "public.stewardship_timeline_export_binding_v1()": (
+        "stewardship_reports",
+        "0015_timeline_exports",
+    ),
 }
+
+
+def _replaced(text, name):
+    """One ``CREATE OR REPLACE FUNCTION`` statement of a frozen file, whole."""
+    start = text.index(f"CREATE OR REPLACE FUNCTION public.{name}(")
+    return text[start : text.index("$$;", text.index("AS $$", start)) + len("$$;")]
+
+
+def before_timeline_exports():
+    """The statements that put the export request back as it was before 0063.
+
+    Unlike the other closure files, #463's 0063 alters an existing table:
+    it adds ``timeline_snapshot_id`` and a ``family_timeline`` arm to
+    ``export_report_known``, and re-creates two guards and the request
+    authorization with a timeline branch. Once its snapshot table is
+    dropped (which drops the column's key), these restore 0049's check,
+    drop the column and restore 0037's guards and the authorization
+    without the branch, so the base matches production's and 0063's
+    frozen file (or the full migration) installs again on it.
+    """
+    files = MIGRATIONS / "migrations"
+    known = (files / "0049_family_test_names_formats.sql").read_text(encoding="utf-8")
+    guards = (files / "0037_family_test_names.sql").read_text(encoding="utf-8")
+    timeline = (files / "0063_timeline_exports.sql").read_text(encoding="utf-8")
+    branch = (
+        "        WHEN request.report='family_timeline' THEN\n"
+        "            -- One Family's full timeline is the page's Administrator view\n"
+        "            -- (migration 0063), for the requester as for anyone else.\n"
+        "            stewardship_export_authorized_v1(user_uuid,true)\n"
+    )
+    authorized = _replaced(timeline, "stewardship_export_request_authorized_v1")
+    assert authorized.count(branch) == 1
+    return [
+        *(
+            line
+            for line in known.splitlines()
+            if line.startswith("ALTER TABLE public.stewardship_export_request")
+        ),
+        "ALTER TABLE public.stewardship_export_request "
+        "DROP COLUMN timeline_snapshot_id",
+        _replaced(guards, "stewardship_export_request_guard_v1"),
+        _replaced(guards, "stewardship_export_publication_guard_v1"),
+        authorized.replace(branch, ""),
+    ]
 
 
 @contextmanager
@@ -316,7 +370,8 @@ def swap_pending():
     check) and its row are put back: a transactional test's flush touches
     neither function bodies nor that table, so later tests would otherwise
     see this state. Each ``CLOSURE_CREATED`` object and ``CLOSURE_TABLES``
-    table is dropped meanwhile.
+    table is dropped meanwhile, and the export request is put back as it
+    was before 0063 (``before_timeline_exports``).
     """
     from django.db.migrations.loader import MigrationLoader
 
@@ -342,6 +397,8 @@ def swap_pending():
             cursor.execute(f"DROP TABLE public.{table} CASCADE")
         for function in CLOSURE_CREATED:
             cursor.execute(f"DROP FUNCTION {function} CASCADE")
+        for statement in before_timeline_exports():
+            cursor.execute(statement)
     try:
         yield
     finally:

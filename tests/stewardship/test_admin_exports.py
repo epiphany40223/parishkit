@@ -174,6 +174,7 @@ def test_every_export_command_has_a_golden_document():
         "export exact status",
         "export exact cancel",
         "export exact retry",
+        "export family-timeline",
     }
     from parishkit.stewardship import admin_exact_exports
 

@@ -1167,9 +1167,9 @@ sign-in, with no browser step:
   [shared rules for health actions](../admin-portal/spec.md#shared-rules-for-health-actions));
 - the code and financial reads and files
   ([#547](https://github.com/epiphany40223/parishkit/issues/547)): creating
-  or regenerating a Family-directory, mail-merge or financial export, which
-  PR 8's `export directory`, `export postal`, `export financial` and
-  `export regenerate` run;
+  or regenerating a Family-directory, mail-merge, Family timeline or
+  financial export, which PR 8's `export directory`, `export postal`,
+  `export family-timeline`, `export financial` and `export regenerate` run;
 - integration setting changes (PR 10's `integration set`, including removing
   an integration) and starting Testing cleanup (PR 12's `go-live cleanup`)
   ([#547](https://github.com/epiphany40223/parishkit/issues/547)).
@@ -2115,7 +2115,7 @@ file is regenerated from the retained capture, in its original format.
 | `family_directory`, `family_directory_export` | Export only: `export directory`, the Family-code directory, for the current campaign only until #145 (PR 8f); [fresh-gated](#fresh-gated-actions-from-the-command-line) |
 | `family_directory`, `family_directory_export` with mailing columns | Export only: `export postal`, the mail merge (PR 8f); [fresh-gated](#fresh-gated-actions-from-the-command-line) |
 | `find_family` | Permanent: a search by name; the command line takes no text that names a Family, and `export directory` is the file. This follows the pending "no search" default (PR 8e); if the Administrator allows searches, it becomes `--filter search=` on `export directory` |
-| `family_timeline` | One Family's timeline, so export only: `export family-timeline` (PR 8g; it needs a new export kind, a schema change, proposed on #463) |
+| `family_timeline`, `family_timeline_export` | One Family's timeline, so export only: the page's new export form and `export family-timeline FAMILY_RECORD_ID` (PR 8g, migration 0063); [fresh-gated](#fresh-gated-actions-from-the-command-line) |
 | `limitations_export` | `export limitations` (PR 8h, with #752's audit fields) |
 | `census_changes`, `census_changes_export` | `report census`, counts; Family-level rows only as `export census` (PR 8h). A row's Entered in ParishSoft, Ignore and Reopen ([#528](https://github.com/epiphany40223/parishkit/issues/528)) post to `census_changes`; their command, `census resolve PROPOSAL_ID --action entered\|ignored\|reopened`, comes with PR 8h through the same `census_resolution` service |
 | `report_export_create`, `report_export`, `report_export_cancel`, `report_export_retry`, `report_export_regenerate`, `report_export_download` | `export create`, `export status --watch`, `export cancel`, `export retry`, `export regenerate`, `export download --stream` (PR 8b); an exact request's status, cancel and retry, which these pages also serve, are `export exact status --watch`, `export exact cancel` and `export exact retry` (PR 8h) |
@@ -2251,10 +2251,21 @@ handoff, as the page delegates them. Each change admits as the page's form
 post does and runs in the export lifecycle's command scope, recording the
 services' own events and, when it made the change,
 `admin_cmd_export_exact_<verb>`. Once handed off, `export exact status`
-names the `export_id` that `export fetch` saves. The one-Family timeline
-(PR 8g, a new export kind with its own frozen migration, in its own pull
-request) and the in-memory downloads (Limitations and response lists,
-after #752's audit fields, PR 8h's second part) follow.
+names the `export_id` that `export fetch` saves. The in-memory downloads
+(Limitations and response lists, after #752's audit fields, PR 8h's second
+part) follow.
+
+`export family-timeline FAMILY_RECORD_ID [--mode production|testing]` (PR
+8g) is the Family timeline page's new export form, the
+[timeline export](../reports/spec.md#timeline-export) of its frozen
+migration: the same service (`timeline_exports.create_timeline_export`), the
+same record, `export_requested` and `admin_cmd_export_family_timeline`, for
+an Administrator only, as the page. The id is the Family's campaign record
+id, the opaque id in the page's address; a Family of another campaign is
+`not_available`. The file can hold the Family's code, so it is
+[fresh-gated](#fresh-gated-actions-from-the-command-line), as on its page:
+it asks at the prompt, then calls `require_fresh` in the export lock. The
+file is fetched with `export fetch`.
 
 The export lifecycle commands work on any report export the Administrator
 may see, through the functions the export pages use
@@ -2905,10 +2916,9 @@ exactly the commands that exist.
   `export information`, `export ministry`, `export ministry-packet`).
   **PR 8f:** the Family directory's exports (`export directory`, `export
   postal`). **PR 8g:** the one-Family timeline export (`export
-  family-timeline`, with the page's export form and its frozen migration,
-  in its own pull request). **PR 8h:** the exact daily exports (`export
-  exact …`), then the in-memory downloads (Limitations and response lists)
-  after #752.
+  family-timeline`, with the page's export form and migration 0063).
+  **PR 8h:** the exact daily exports (`export exact …`), then the in-memory
+  downloads (Limitations and response lists) after #752.
 - **PR 9, operations,** in three parts. **PR 9a:** task retries. **PR 9b:**
   delivery reads and resolution. **PR 9c:** `resend` and refusal clearing, at
   the prompt.

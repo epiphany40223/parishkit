@@ -80,6 +80,7 @@ from .test_ministry_packets import packet
 from .test_participation_rendering import document as participation
 from .test_response_lists import NEW_YORK, details_of, rows_of
 from .test_roster import roster_row
+from .test_timeline_exports import document as timeline
 
 # The export worker's report kinds, each with the cases below that render
 # it. "ministry" covers its summary, both lists and the multi-Ministry packet.
@@ -91,6 +92,7 @@ WORKER_CASES = {
     "ministry": ("ministry_summary", "ministry_join", "ministry_leave", "packet"),
     "financial": ("financial",),
     "family_test_names": ("family_test_names",),
+    "family_timeline": ("family_timeline",),
 }
 
 
@@ -397,6 +399,11 @@ def case_family_test_names(monkeypatch):
     monkeypatch.setattr(family_test_names, "campaign_name", lambda request: "C")
     document = family_test_names.names_document(names_request([(12, "A")]))
     return shared_case(monkeypatch, document)
+
+
+def case_family_timeline(monkeypatch):
+    """One Family's timeline (``export family-timeline``, ADM-11 PR 8g)."""
+    return shared_case(monkeypatch, timeline())
 
 
 def case_response_list(monkeypatch):
