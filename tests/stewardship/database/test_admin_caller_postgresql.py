@@ -1,11 +1,9 @@
 """Admission through an explicit AdminCaller matches the request path exactly."""
 
-from importlib import import_module
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-from django.conf import settings
 from django.db import transaction
 from django.test import RequestFactory
 
@@ -15,6 +13,9 @@ from parishkit.stewardship.accounts.admin_caller import (
     FULL,
     READ_ONLY,
     AdminCaller,
+)
+from parishkit.stewardship.accounts.admin_session_store import (
+    SessionStore as AdminSessionStore,
 )
 from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.accounts.policy import Principal
@@ -33,9 +34,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 def store(browser):
     """The signed-in browser's server-side Admin session store."""
-    return import_module(settings.SESSION_ENGINE).SessionStore(
-        browser.cookies["pk_admin"].value
-    )
+    return AdminSessionStore(browser.cookies["pk_admin"].value)
 
 
 def web_request(browser, method="get"):
@@ -77,7 +76,7 @@ def test_web_caller_rotation_replaces_the_request_session_and_csrf_token(
     assert caller.session.session_key != old.session_key
     assert request.META.get("CSRF_COOKIE_NEEDS_UPDATE") is True
     replacement = PortalSession.objects.get(revoked_at__isnull=True)
-    assert replacement.session_id == caller.session.session_key
+    assert replacement.session_id == caller.session.stored_key
     assert request.portal_session.pk == replacement.pk != original.pk
     assert replacement.authenticated_at == original.authenticated_at
     assert AuditEvent.objects.filter(event_type="admin_privileges_changed").count() == 1
@@ -98,7 +97,7 @@ def test_automation_caller_is_never_rotated(auth_service, google, monkeypatch):
     assert sessions.authenticated_admin(caller, store=auth_service.store) is None
     assert caller.portal_session is None
     row = PortalSession.objects.get()
-    assert row.session_id == original.session_id == caller.session.session_key
+    assert row.session_id == original.session_id == caller.session.stored_key
     assert row.revoked_at is None
     assert not AuditEvent.objects.filter(event_type="admin_privileges_changed")
 
@@ -161,7 +160,7 @@ def test_privileged_intake_takes_a_state_changing_web_caller(auth_service, googl
 def test_signed_out_caller_is_told_to_sign_in(auth_service):
     """A caller without a live session gets the page's signed-out refusal."""
     request = RequestFactory().get("/admin/")
-    request.session = import_module(settings.SESSION_ENGINE).SessionStore()
+    request.session = AdminSessionStore()
     with pytest.raises(UserFacingDenied):
         admin_editing.principal(
             AdminCaller.from_request(request), SimpleNamespace(store=None)
