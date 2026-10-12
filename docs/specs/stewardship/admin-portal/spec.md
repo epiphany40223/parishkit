@@ -5465,7 +5465,7 @@ Only Admins access the combined log screen. It supports:
   checkboxes (`audit` clears the levels, `operational` leaves audit records
   out, `both` includes them), and carries only the checkboxes from then on.
   The critical-events banner's link ticks Critical alone, without audit
-  records, and "Same campaign" ticks Audit record alone;
+  records, and the same-campaign icon ticks Audit record alone;
 - action/type, Activity ([sign-in activity](#sign-in-activity) and the
   other [activity groups](#activity-groups)), campaign,
   entity, actor, task/request correlation, text, Ministry, date range, and
@@ -5519,18 +5519,39 @@ Only Admins access the combined log screen. It supports:
   how long (#633; see
   [what went wrong, and recovery](../background-processing/spec.md#what-went-wrong-and-recovery)).
   An older entry without that context lists its fields only;
-- cross-links from every entry: "Show related entries" (same correlation
-  identifier), "Same actor", "Same subject" and "Same campaign" (audit
-  records) and, for task
-  entries and views of one task's page, "Open task" to the background task
-  page. Each filter travels in a POST body like the form's and applies
+- cross-links from each entry, as small icon buttons in the Related column
+  ([#1065](https://github.com/epiphany40223/parishkit/issues/1065);
+  [row links](../ui-conventions/spec.md#row-actions-and-confirmation)), in
+  five fixed slots so each kind lines up down the column: related entries
+  (a chain link, "Show entries related to this entry", the same correlation
+  identifier), the same actor (a person, "Show entries by the same actor"),
+  the same subject (a target, "Show audit records about the same subject")
+  and the same campaign (a calendar, "Show audit records for the same
+  campaign"), both audit records only, and, for task entries and views of
+  one task's page, the task (an arrow out of a box, "Open this task"), a
+  link to the background task page. Each icon's accessible name is its
+  tooltip. An entry shows only the icons that have something to link to
+  (Administrator decision, 2026-10-11): related entries only when the
+  related view, which lists the default kinds of entry (every level but
+  DEBUG, and audit records), would list another entry with the same
+  correlation; the actor, subject, campaign and task icons only when the
+  entry has one. An absent icon leaves its slot empty. Only the page reads
+  this, for its own entries, in one statement that takes at most two
+  entries per correlation from each log through its correlation index; the
+  download and the command line's `logs list` skip it. Each filter travels in a POST body
+  like the form's and applies
   [in place](../ui-conventions/spec.md#in-place-controls): the filter form above then shows the
   filters applied ("Filter by identifier" opened), and focus returns to the
-  same entry's button in the filtered list, or to the list when that entry
-  is no longer in it. The raw
-  identifiers themselves (correlation, actor, campaign, subject) are under a
-  per-row "Technical details" disclosure, closed by default; the table uses
-  the shared Admin table styling;
+  same entry's icon in the filtered list, or to the list when that entry
+  is no longer in it. Rows show no identifiers and no "Technical details"
+  disclosure: a task's page shows its identifiers under its own Technical
+  details, including the correlation its log entries share, and the
+  [download](#logs) keeps every entry's identifiers (the recorded
+  exception in the
+  [downloaded files](../ui-conventions/spec.md#downloaded-files) rule). An
+  entry without a task therefore shows no identifiers on any page; its
+  icons filter by them, and "Filter by identifier" says to copy one from a
+  task's page or a download. The table uses the shared Admin table styling;
 - the shared [table navigator](../ui-conventions/spec.md#admin-tables) in POST mode. The first view
   records a snapshot instant, and every later page, size or sort change lists
   only entries created at or before it, so new entries never shift pages. An
@@ -5638,8 +5659,8 @@ unticked gets an empty table that says to tick it. A typed type
 narrows further within the group. Every other filter, the snapshot paging,
 the 60-second read limit and the view's own count-only audit record apply as
 for any other view. Rows keep the log's columns, Time first in browser-local
-time, and the Actor column names the person by address. "Same actor" on an
-entry carries the choice, so it lists that person's sign-in activity. The
+time, and the Actor column names the person by address. The same-actor icon
+on an entry carries the choice, so it lists that person's sign-in activity. The
 choice is a link filter, so a bookmark or the page's own link keeps it, and the
 download carries it, so the file holds exactly the entries the page lists. The
 Portal users page links to it, and to each user's recorded identities' own
@@ -5765,7 +5786,7 @@ choices apply to their operational members as to any entry
 (`data-enabled-when` and `data-required-when` list alternatives,
 [conditional fields](../ui-conventions/spec.md#conditional-fields)). Every
 other rule is Sign-in activity's: a typed type narrows within the group,
-"Same actor" keeps it, the choice travels in links, and the CSV and JSON Lines
+the same-actor icon keeps it, the choice travels in links, and the CSV and JSON Lines
 downloads hold exactly the entries the page lists.
 
 ## Campaign purge

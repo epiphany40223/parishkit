@@ -118,6 +118,15 @@ def components(context, admin):
     # task is its subject, as task entries are; the view marks both.
     operational[0]["actor_id"] = UUID(int=900)
     operational[0]["actor_worker"] = True
+    # Each entry's related icon shows only when another entry shares its
+    # correlation (#1065); the bare login has none, so it shows its actor
+    # icon alone. The dashboard view is drawn as a task entry, so it shows
+    # all five icons, the task's page link included.
+    for row in [*operational, *audit]:
+        row["has_related"] = True
+        row["task_subject"] = False
+    audit[0]["task_subject"] = True
+    audit[1]["has_related"] = False
 
     def page(query, rows, *, number=1, total=None, action="/logs", linked=False):
         """Render the production context builder's output, as the view does.
@@ -333,7 +342,8 @@ def components(context, admin):
         for index, (level, event, schema, detail) in enumerate(DETAILED)
     ]
     for row in detailed:
-        row["actor"] = None
+        # One shared correlation, so each lists the others (#1065).
+        row.update(actor=None, has_related=True, task_subject=False)
     ended = banner | {
         "critical_count": 1,
         "critical_all_ended": True,

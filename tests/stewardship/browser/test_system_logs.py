@@ -88,16 +88,20 @@ def test_logs_mobile_keyboard_and_accessibility(
     assert page.get_by_text("<b>safe</b>", exact=True).count() == 4
     assert page.locator("td b").count() == 0
     entry = page.get_by_role("row", name="dashboard_viewed", exact=False)
-    # A resolved actor is named; its identifier moves under Technical details,
-    # closed by default, and the entry cross-links by actor and campaign.
+    # A resolved actor is named; the row shows no identifier and no Technical
+    # details (#1065), and the entry cross-links by actor and campaign icons.
     assert entry.get_by_role("cell", name="admin@example.org", exact=False).count()
-    details = entry.locator("details.technical-details")
-    assert details.get_attribute("open") is None
-    assert "00000000-0000-0000-0000-00000000012d" in details.text_content()
-    assert entry.get_by_role("button", name="Same actor").count() == 1
-    assert entry.get_by_role("button", name="Same campaign").count() == 1
-    details.locator("summary").click()
-    visible(details.get_by_text("00000000-0000-0000-0000-00000000012d"))
+    assert entry.locator("details.technical-details").count() == 0
+    assert "00000000-0000-0000-0000-00000000012d" not in entry.text_content()
+    actor = entry.get_by_role("button", name="Show entries by the same actor")
+    assert actor.count() == 1
+    assert actor.get_attribute("title") == "Show entries by the same actor"
+    assert (
+        entry.get_by_role(
+            "button", name="Show audit records for the same campaign"
+        ).count()
+        == 1
+    )
     # An audit record's Level cell is named by its icon's screen-reader text.
     assert entry.get_by_role("cell", name="Audit record", exact=True).count() == 1
     # The chosen filters are kept, including a ticked DEBUG.
@@ -144,7 +148,11 @@ def test_logs_mobile_keyboard_and_accessibility(
     assert departed.get_by_text(
         "A portal user (Administrator, Staff or Ministry leader) signed in"
     ).count()
-    assert departed.get_by_role("button", name="Show related entries").count() == 1
+    # No other entry shares its correlation, so no related icon (#1065).
+    related = departed.get_by_role("button", name="Show entries related to this entry")
+    assert related.count() == 0
+    actor = departed.get_by_role("button", name="Show entries by the same actor")
+    assert actor.count() == 1
     page.goto(component_origin + "/logs-empty")
     visible(page.get_by_text("No matching entries."))
     page.goto(component_origin + "/logs-error-400")
