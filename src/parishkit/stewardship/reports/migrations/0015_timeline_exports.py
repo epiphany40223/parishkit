@@ -13,11 +13,12 @@ record the same model, field, constraint and indexes, so
 ``makemigrations --check`` stays clean. Reversing needs its own forward
 migration, so it has no reverse operation.
 
-It depends on the migration that installs the latest frozen file before it,
-so the files apply in prefix order. Files 0051 to 0062 are reserved for
-other pull requests that were not on main when this was written; whichever
-of them merges last before this one becomes its dependency (a re-chain), so
-the files still apply in prefix order and Django keeps a single leaf.
+It depends on the reports app's previous migration and on the migration
+that installs the previous frozen file (0062, Take a backup now's
+requests), so the files apply in prefix order and Django keeps a single
+leaf. That puts it in the users swap's closure (#952): `migrate
+--users-upgrade-base` never applies it, and its granted snapshot table is
+registered in ``runtime_grants.CLOSURE_TABLES``.
 """
 
 import uuid
@@ -41,11 +42,13 @@ class Migration(migrations.Migration):
     dependencies = [
         ("stewardship_accounts", "0004_automation_sessions"),
         ("stewardship_campaigns", "0003_occurrence_prepare_ahead"),
-        # The reports app's previous migration, which also installs the
-        # latest frozen file on main when this was written (0050). Re-chain
-        # it onto the migration that installs 0062 (or the latest of 0051 to
-        # 0062 on main) before this merges; see the docstring.
-        ("stewardship_reports", "0012_directory_response_filters"),
+        # The reports app's previous migration (it installed 0059, #1018).
+        ("stewardship_reports", "0014_campaign_archives"),
+        # The migration that installs the previous frozen file (0062,
+        # #530), so the files apply in prefix order. It follows the users
+        # swap, so `migrate --users-upgrade-base` never applies this file
+        # and its table is registered in runtime_grants.CLOSURE_TABLES.
+        ("stewardship_jobs", "0023_backup_request"),
     ]
 
     operations = [
