@@ -12,7 +12,7 @@ import pytest
 
 from .hosted_file_components import BULK, LIBRARY, REFUSAL, REFUSED
 from .test_components import axe_violations
-from .waits import eventually, hidden, painted, visible
+from .waits import eventually, has_value, hidden, painted, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -30,9 +30,7 @@ def test_library_copy_buttons_and_slug_suggestion(page, component_origin, tmp_pa
     picked = tmp_path / "Parish Picnic Flyer (2027).pdf"
     picked.write_bytes(b"%PDF-1.7\n%%EOF\n")
     page.locator("#id_file").set_input_files(str(picked))
-    page.wait_for_function(
-        "document.querySelector('#id_slug').value === 'parish-picnic-flyer-2027'"
-    )
+    has_value(field, "parish-picnic-flyer-2027")
     # A name the Admin typed is never replaced.
     field.fill("my-flyer")
     page.locator("#id_file").set_input_files(str(picked))

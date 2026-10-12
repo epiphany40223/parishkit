@@ -9,6 +9,7 @@ time cell wraps. Layout is the same in every engine, so Chromium suffices.
 import pytest
 
 from .send_history_components import PAGE as HISTORY
+from .waits import eventually
 
 pytestmark = pytest.mark.parametrize("browser_engine", ["chromium"], indirect=True)
 
@@ -29,9 +30,10 @@ def open_at(page, origin, path, width):
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(origin + path)
     # The local-time script has rewritten every time before measuring.
-    page.wait_for_function(
+    eventually(
+        page,
         "[...document.querySelectorAll('time[data-local-instant]')]"
-        ".every(node => node.textContent !== node.getAttribute('datetime'))"
+        ".every(node => node.textContent !== node.getAttribute('datetime'))",
     )
     return page.locator("table.data-table")
 

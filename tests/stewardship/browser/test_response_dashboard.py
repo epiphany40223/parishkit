@@ -7,7 +7,7 @@ from django.urls import reverse
 
 from .response_dashboard_components import PATH
 from .test_charts import assert_clean, watch
-from .waits import has_text
+from .waits import eventually, has_text
 
 DIRECTORY = reverse("admin:family_directory")
 
@@ -53,9 +53,10 @@ def test_dashboard_renders_tiles_and_both_charts_cleanly(
     assert activity.locator("svg g.mark-symbol.role-mark path").count() == 12
     assert_clean(page, errors)
     page.set_viewport_size({"width": 390, "height": 844})
-    page.wait_for_function(
+    eventually(
+        page,
         "document.querySelector(\"[data-chart='response-activity-spec'] svg\")"
-        ".getBoundingClientRect().width < 390"
+        ".getBoundingClientRect().width < 390",
     )
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert_clean(page, errors)
@@ -121,7 +122,7 @@ def test_switches_refresh_the_dashboard_in_place(page, component_origin):
     page.set_viewport_size({"width": 1000, "height": 700})
     page.goto(component_origin + PATH)
     expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(2)
-    page.wait_for_function(FITTED)
+    eventually(page, FITTED)
     page.evaluate("window.__dashboardMarker = 1")
     day = page.locator('[data-in-place="grain-day"]')
     day.scroll_into_view_if_needed()
@@ -134,7 +135,7 @@ def test_switches_refresh_the_dashboard_in_place(page, component_origin):
     heading = page.locator("#activity-heading")
     expect(heading).to_have_text("Response activity by day")
     expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(2)
-    page.wait_for_function(FITTED)
+    eventually(page, FITTED)
     assert page.evaluate("window.__dashboardMarker") == 1
     assert abs(page.evaluate("window.scrollY") - before) < 2
     assert page.evaluate("document.activeElement.dataset.inPlace") == "grain-day"
