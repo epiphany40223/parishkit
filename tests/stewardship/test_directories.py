@@ -369,7 +369,10 @@ def test_testing_notice_links_the_test_page_only_when_given(administrator):
     ],
 )
 def test_population_header_follows_the_response_choice(response, active):
-    """The header drops "Active registered" when inactive Families may be listed."""
+    """The header drops "Active registered" when inactive Families may be listed.
+
+    It names neither the campaign (#1125) nor the internal data load number.
+    """
     from uuid import UUID
 
     html = render_to_string(
@@ -384,8 +387,9 @@ def test_population_header_follows_the_response_choice(response, active):
     )
     header = html.split('<p id="directory-population" data-table-sync>')[1]
     header = header.split("</p>")[0]
-    assert ("Active registered Families from ParishSoft data load" in header) is active
-    assert "Families from ParishSoft data load 3" in header
+    assert ("Active registered Families from ParishSoft data as of" in header) is active
+    assert "Families from ParishSoft data as of" in header
+    assert "Campaign" not in header and "data load" not in header
 
 
 def test_directory_headings_and_pages_post_private_filters():

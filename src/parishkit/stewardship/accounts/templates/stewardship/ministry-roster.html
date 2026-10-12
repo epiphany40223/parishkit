@@ -6,7 +6,6 @@
 <p>{% translate "Member DUID, Family DUID and Ministry DUID are ParishSoft's ID numbers, each in its own column so you can sort or copy it. A Member the Family added on the form is not in ParishSoft yet, so their Member DUID shows New Member; add them to the Family first. Times use your computer's time zone." %}</p>
 <p>{% translate "If a Family answered again after a change was resolved, the change stays listed, with Yes under Replaced by a later response, since it still has to be entered. If the new request was resolved too, the same change is listed twice: enter it in ParishSoft once, then mark both. Ministry narrows the list to one Ministry; the downloads follow it." %}</p>
 <p>{% translate "The downloads carry the same columns as the list, for the list's Show choice, in every row rather than one page." %}</p>{% endaboutpage %}
-<p>{{ metadata.name }}</p>
 <p><a href="{% url 'admin:ministry_followup' %}">{% translate "Ministry follow-up" %}</a></p>
 {% comment %}The answer to a row's tick. Its two lines are reserved while empty, so the notice appearing never moves the table under the pointer (no layout shift).{% endcomment %}<div id="roster-notice" class="action-status" data-table-sync>{% if changed %}<p>{% translate "That mark was changed by someone else first, so nothing was recorded. The list shows its current state." %}</p>{% endif %}</div>
 {% if not mutable %}<p class="notice">{% translate "Other campaign work is under way, so the Entered in ParishSoft mark cannot be changed until it finishes." %}</p>{% endif %}

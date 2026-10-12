@@ -42,33 +42,45 @@ def test_multi_campaign_control_is_an_unavailable_described_control():
     )
 
 
+def test_copy_campaign_is_the_greyed_multi_campaign_control():
+    """Copy campaign stays greyed until #145; its old action is gone."""
+    source = (TEMPLATES / "campaign-settings.html").read_text()
+    assert '{% multi_campaign_control "copy-campaign" _("Copy campaign") %}' in source
+    retired = ("admin:campaign_clone", "clone_sources", "Create campaign draft")
+    assert not [text for text in retired if text in source]
+
+
+def test_only_copy_campaign_uses_the_multi_campaign_control():
+    """The greyed "Choose a retained campaign" control was removed (#1125)."""
+    users = sorted(
+        path.name
+        for path in TEMPLATES.rglob("*.html")
+        if "{% multi_campaign_control" in path.read_text()
+    )
+    assert users == ["campaign-settings.html"]
+    for path in TEMPLATES.rglob("*.html"):
+        assert "Choose a retained campaign" not in path.read_text(), path.name
+
+
 @pytest.mark.parametrize(
-    ("template", "control", "retired"),
+    "template",
     [
-        (
-            "campaign-settings.html",
-            '{% multi_campaign_control "copy-campaign" _("Copy campaign") %}',
-            ("admin:campaign_clone", "clone_sources", "Create campaign draft"),
-        ),
-        (
-            "participation.html",
-            '{% multi_campaign_control "choose-campaign" '
-            '_("Choose a retained campaign") %}',
-            ("picker_url", "admin:report_campaigns"),
-        ),
-        (
-            "ministry-report.html",
-            '{% multi_campaign_control "choose-campaign" '
-            '_("Choose a retained campaign") %}',
-            ("admin:ministry_report_campaigns",),
-        ),
+        "directory.html",
+        "financial-report.html",
+        "information.html",
+        "limitations-report.html",
+        "ministry-followup.html",
+        "ministry-report.html",
+        "ministry-roster.html",
+        "participation.html",
     ],
 )
-def test_templates_grey_out_their_multi_campaign_control(template, control, retired):
-    """Each named control is the greyed one; its old link or action is gone."""
+def test_report_pages_do_not_name_the_campaign(template):
+    """No report page opens with the campaign's name (#1125): there is one
+    campaign, so the line tells the reader nothing."""
     source = (TEMPLATES / template).read_text()
-    assert control in source
-    assert not [text for text in retired if text in source]
+    for name in ("{{ metadata.name }}", "{{ campaign.active_configuration.name }}"):
+        assert name not in source
 
 
 def test_no_template_links_a_retired_multi_campaign_page():

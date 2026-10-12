@@ -7,7 +7,6 @@
 <p>{% translate "Family names come from ParishSoft data as of" %} <time datetime="{{ metadata.source_as_of|date:'c' }}" data-local-instant>{{ metadata.source_as_of|date:'c' }}</time> ({% translate "data load" %} {{ metadata.source_generation|number }}).</p>
 <p>{% translate "Times and the submitted-date filters use your computer's time zone: a date filter covers that whole day, from midnight to midnight." %}</p>
 <p>{% translate "Family DUID is the Family's ID number in ParishSoft, shown in its own column so you can copy it." %}</p>{% endaboutpage %}
-<p>{{ metadata.name }}</p>
 <p><a href="{% url 'admin:participation' %}">{% translate "Participation" %}</a></p>
 {% if not mutable %}<p class="notice" id="information-locked">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so follow-up edits and new exports are unavailable until it finishes or is cancelled; going live can take days. You can still read the requests and their history." %}</p>{% endif %}
 {% if item %}
