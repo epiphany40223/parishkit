@@ -1584,6 +1584,8 @@ summary rather than an invalid-request error
 Neither list nor its export shows a resolved request's **Entered in
 ParishSoft** tick; it is read and set on
 [Roster changes to enter](../admin-portal/spec.md#roster-changes-to-enter).
+Ministry leaders never see the tick anywhere
+([follow-up workflows](../admin-portal/spec.md#follow-up-workflows)).
 
 Follow-up has no assignee, so neither list nor its exports show one; see
 [Follow-up workflows](../admin-portal/spec.md#follow-up-workflows).

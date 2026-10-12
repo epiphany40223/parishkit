@@ -159,19 +159,36 @@ def test_every_named_column_sorts_both_ways():
         ), key
 
 
-def test_queue_status_cell_says_one_short_line():
-    """The follow-up queue's Status cell says only Entered or Not yet
-    entered; who and when are on the request page."""
+def tick_html(row, **context):
+    """The roster tick template rendered for one row and context."""
     from django.template.loader import render_to_string
 
+    return render_to_string(
+        "stewardship/roster-tick.html", {"row": row, "roster_key": "k"} | context
+    ).strip()
+
+
+def test_queue_status_cell_says_one_short_line():
+    """The follow-up queue's Status cell says only Entered or Not yet
+    entered, and never draws the form; who and when are on the request
+    page."""
+
     def cell(**values):
-        """The tick as the queue's Status cell draws it."""
+        """The tick as the queue's Status cell draws it for Staff."""
         row = roster_row(roster_eligible=True, source_resolved=False) | values
-        return render_to_string(
-            "stewardship/roster-tick.html",
-            {"row": row, "can_tick": False, "compact": True},
-        ).strip()
+        return tick_html(row, can_tick=True, compact=True, mutable=True)
 
     assert cell() == "<br>Entered"
     assert cell(roster_entered=False) == "<br>Not yet entered"
     assert "staff@example.org" not in cell()
+
+
+def test_a_leader_sees_no_tick_at_all():
+    """A Ministry leader (no can_tick) gets nothing: no state, who, when or
+    form, on the request page or in the queue (#1160)."""
+    for entered in (True, False):
+        row = roster_row(
+            roster_eligible=True, source_resolved=False, roster_entered=entered
+        )
+        for compact in (True, False):
+            assert tick_html(row, can_tick=False, compact=compact, mutable=True) == ""

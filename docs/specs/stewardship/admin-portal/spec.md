@@ -5010,12 +5010,17 @@ request resolved by a person as *joined* or *leave confirmed* carries an
 page and on [Roster changes to enter](#roster-changes-to-enter); who and when
 are kept as history. A request resolved because the ParishSoft roster already
 shows the change (it has a resolution source) needs no tick and shows
-*Already in ParishSoft*. Ministry leaders see the tick, read-only, on their
-own Ministries' requests; the follow-up queue's Status column says only
-"Entered" or "Not yet entered", one line, with who and when on the request's
-page. Ministry leaders never see Roster changes to enter: their per-Ministry
-view of the same changes is the follow-up queue filtered by their Ministry
-and Status *Resolved*, which shows each request's mark. A resolved request is a closed outcome
+*Already in ParishSoft*. For Staff and Admin, the follow-up queue's Status
+column says only "Entered" or "Not yet entered", one line, with who and when
+on the request's page. Ministry leaders have no ParishSoft access, so they
+never see the tick
+([#1160](https://github.com/epiphany40223/parishkit/issues/1160)): no mark,
+who, when or form on their request pages and no Status line in their queue,
+and the server refuses their set or clear (the view, the service and the SQL
+guard each check). Their page help and the Status field's help say Staff
+enter roster changes in ParishSoft, where Staff and Admin read "update
+ParishSoft yourself". Ministry leaders never see Roster changes to enter
+either. A resolved request is a closed outcome
 that a later Family response never replaces (a new request for the same
 change is a separate request), so the tick stays with the request it was
 made on. The tick is not a field on the request: each set or clear is an
