@@ -4,8 +4,14 @@
 {% block content %}{% comment %}
 New user and Edit user (#952; user_views._entry). One page with three fields:
 Email (typed on New, shown on Edit, where it never changes), Name and Role.
-Review posts here and shows the review, whose Apply posts to Users; a refused
-review draws this page again with each error at its field and the summary.
+Review posts here without a page load (data-review-open, UX conventions
+"Review dialog", #750): while the answer is prepared the form is inert and
+busy; an accepted review opens the shared review dialog below with
+user-review.html, whose Apply posts to Users and follows the change, then
+returns to Users, whose status line says what was applied. A review refused
+for a field's value keeps the dialog shut: ui-v1.js marks each field and
+shows the summary from this page drawn again with the errors. Any other
+refusal (a stale page, a refused Apply) shows inside the dialog.
 Each field's error line is reserved (.field-error-line), so a message coming
 and going never moves the controls below it (no layout shift).
 On New, users-v2.js asks the server (user_name_suggestions, a CSRF POST) when
@@ -26,8 +32,8 @@ Sign-in activity button (#953), posting the identity, never in an address.
 {% endcomment %}
 <h1>{% if new %}{% translate "New user" %}{% else %}{% translate "Edit user" %}{% endif %}</h1>
 {% aboutpage "user-entry" %}<p>{% translate "A user is one email address with a Name and one role. The person signs in with the account of that address. The Name is a label for this portal; it is not tied to a ParishSoft Member." %}</p>
-<p>{% translate "Review shows what would change; nothing takes effect until you apply it and the status says Applied. Making someone an Administrator also tells every other Administrator." %}</p>{% endaboutpage %}
-<form method="post" action="{{ post_url }}" class="user-entry" id="user-entry-form"{% if not new %} data-require-change="base_digest"{% endif %}{% if new %} data-user-entry data-names-url="{{ names_url }}" data-names-none="{% translate 'No ParishSoft Member lists this address.' %}" data-names-found="{% translate 'Suggested from ParishSoft: {names}' %}" data-names-waiting="{% translate 'Looking up ParishSoft names for this address…' %}" data-names-failed="{% translate "Couldn't look up ParishSoft names. Enter the Name yourself." %}"{% endif %}>{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}">
+<p>{% translate "Review shows what would change; nothing takes effect until you apply it and the status says Applied. Then you return to Users. Making someone an Administrator also tells every other Administrator." %}</p>{% endaboutpage %}
+<form method="post" action="{{ post_url }}" class="user-entry" id="user-entry-form" data-review-open="user-review"{% if not new %} data-require-change="base_digest"{% endif %}{% if new %} data-user-entry data-names-url="{{ names_url }}" data-names-none="{% translate 'No ParishSoft Member lists this address.' %}" data-names-found="{% translate 'Suggested from ParishSoft: {names}' %}" data-names-waiting="{% translate 'Looking up ParishSoft names for this address…' %}" data-names-failed="{% translate "Couldn't look up ParishSoft names. Enter the Name yourself." %}"{% endif %}>{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}">
 {{ form.non_field_errors }}
 <div class="field">{% if new %}<label for="{{ form.email.auto_id }}">{{ form.email.label }}</label>
 {{ form.email }}
@@ -47,6 +53,7 @@ Sign-in activity button (#953), posting the identity, never in an address.
 <div class="field-error-line" role="status"><ul class="errorlist" id="{{ form.role.auto_id }}_error"{% if not form.role.errors %} hidden{% endif %}>{% for error in form.role.errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div></fieldset>
 <p>{% if new %}{% button type="submit" %}{% translate "Review" %}{% endbutton %}{% else %}{% button type="submit" autocomplete="off" %}{% translate "Review" %}{% endbutton %}{% endif %} <a href="{{ list_url }}">{% translate "Cancel" %}</a>{% if not new %} <span class="help unchanged-hint" data-unchanged-hint data-idle>{% translate "Change the Name or role to review it." %}</span>{% endif %}</p>
 </form>
+{% if new %}{% translate "Review new user" as review_title %}{% else %}{% translate "Review user change" as review_title %}{% endif %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="user-review" title=review_title apply_url=apply_url return_url=list_url outcome_id="users-outcome" fallback="user-entry-form" %}
 {% if identities %}<section class="panel" id="user-sign-in-activity" tabindex="-1" aria-labelledby="user-sign-in-activity-title">
 <h2 id="user-sign-in-activity-title">{% translate "Sign-in activity" %}</h2>
 <p>{% blocktranslate count counter=identities|length %}This address has one recorded sign-in account.{% plural %}This address has {{ counter }} recorded sign-in accounts.{% endblocktranslate %}</p>
