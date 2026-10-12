@@ -26,6 +26,13 @@ checks need no database:
   drawn again with the send date's error and the summary, as the server does;
   ``NEW_STALE``: New, whose Review answers 409 with a refusal in the server's
   words (``STALE_REFUSAL``).
+- ``DATES``: the date-change review (Campaign settings' proposed end date,
+  ``DATES_END``, with every schedule's editor); its Review answers with the
+  review for the shared review dialog (#750), whose Apply posts to ``LIST``
+  (Applied at once) and then returns there. ``DATES_INVALID``: the same page,
+  whose Review answers 400 with the page drawn again with Reminder 2 outside
+  the campaign, its editor open and the view's summary; ``DATES_STALE``: the
+  same page, whose Review answers 409 (``STALE_REFUSAL``).
 
 ``POSTS`` lists the fixture server's answers to the pages' POSTs; it is
 filled in by ``components``, before the server starts.
@@ -46,15 +53,23 @@ from parishkit.stewardship.accounts.schedule_entry_views import (
     entry_times,
 )
 from parishkit.stewardship.accounts.schedule_forms import (
+    Schedules,
+    ScheduleWindow,
     email_names,
     schedule_order,
     window_text,
 )
-from parishkit.stewardship.accounts.schedule_table import SORTING, schedule_rows
+from parishkit.stewardship.accounts.schedule_table import (
+    SORTING,
+    attach,
+    schedule_rows,
+)
+from parishkit.stewardship.accounts.schedule_views import _summary as dates_summary
 from parishkit.stewardship.web.tables import whole_table
 
 from ..campaign_factory import campaign, schedule
 from ..content_factory import content
+from ..test_schedule_forms import data_for
 
 # Between the invitation (October 1, 2054) and the reminders, so the list
 # shows a sent row next to upcoming ones.
@@ -80,9 +95,28 @@ DATE_REFUSAL = "Choose a date within the campaign."
 DELETE = "/schedule-list/deletion"
 APPLIED = "/schedule-change-applied"
 NOT_APPLIED = "/schedule-change-failed"
+DATES = "/schedule-dates"
+DATES_INVALID = "/schedule-dates-invalid"
+DATES_STALE = "/schedule-dates-stale"
+# The end date Campaign settings proposes; the saved one is October 31.
+DATES_END = "2054-10-25"
 # The refusal's own explanation, which the dialog shows.
 REFUSAL = "Reminders need an initial invitation."
 POSTS = {}
+# A stale page's refusal, in the server's words.
+POSTS_STALE = (
+    409,
+    None,
+    json.dumps(
+        {
+            "errors": [{"code": "stale_version"}],
+            "refusal": {
+                "message": STALE_REFUSAL,
+                "fix": "Reload the page to start again.",
+            },
+        }
+    ),
+)
 
 
 def _data():
@@ -204,6 +238,63 @@ def _invalid(values, owner, emails, rows):
     return render_to_string("stewardship/schedule-entry.html", values | context)
 
 
+def _dates(values, owner, emails, rows, *, post_url, data=None):
+    """The date-change review with ``DATES_END`` proposed, as ``_page`` draws it.
+
+    With ``data`` the forms are bound and validated, and the page is the
+    refused Review's answer, with the view's own summary.
+    """
+    window = ScheduleWindow(
+        data,
+        previous=owner["values"],
+        editable=True,
+        prefix="window",
+        proposed=None if data else {"end_date": DATES_END},
+    )
+    schedules = Schedules(
+        data,
+        previous=rows,
+        templates=list(emails),
+        campaign_id=owner["id"],
+        campaign=owner["values"],
+        prefix="schedules",
+        email_links=True,
+    )
+    if data is not None:
+        window.is_valid()
+        schedules.is_valid()
+    context = {
+        "campaign": {"pk": owner["id"], "active_configuration": owner["values"]},
+        "window": window,
+        "schedules": schedules,
+        "schedule_rows": attach(schedules, owner["values"], {}, NOW),
+        "base_digest": "a" * 64,
+        "editable": True,
+        "post_url": post_url,
+        "list_url": LIST,
+    }
+    if data is not None:
+        context["errors"] = dates_summary(window, schedules)
+    return render_to_string("stewardship/schedule-reconcile.html", values | context)
+
+
+def _dates_refused(values, owner, emails, rows):
+    """``DATES_INVALID``'s answer: Reminder 2 moved after the campaign ends."""
+    data = data_for(rows)
+    data.update(
+        {
+            "base_digest": "a" * 64,
+            "window-timezone": owner["values"]["timezone"],
+            "window-start_date": owner["values"]["start_date"],
+            "window-end_date": DATES_END,
+            "schedules-2-date": "2054-11-15",
+        }
+    )
+    return _dates(
+        values, owner, emails, rows, post_url=f"{DATES_INVALID}/review", data=data
+    )
+
+
 def _review(owner, changes, *, new=True, blocking=0):
     """The review dialog's fragment for ``changes`` (schedule-review.html)."""
     return render_to_string(
@@ -215,6 +306,32 @@ def _review(owner, changes, *, new=True, blocking=0):
             "blocking": blocking,
             "preview": None if blocking else "synthetic-preview",
             "new": new,
+        },
+    )
+
+
+def _dates_review(owner, first):
+    """The date-change review's fragment: the new end date and a re-planned
+    reminder."""
+    return render_to_string(
+        "stewardship/schedule-review.html",
+        {
+            "campaign": {"pk": owner["id"], "active_configuration": owner["values"]},
+            "changes": [
+                {
+                    "label": "Reminder",
+                    "operation": "update",
+                    "before": describe(first["values"], owner["values"]),
+                    "after": describe(first["values"], owner["values"]),
+                    "impact": {"cancellable": 3, "occurrences": 1},
+                }
+            ],
+            "window_changes": {"end_date"},
+            "before_window": owner["values"],
+            "after_window": owner["values"] | {"end_date": DATES_END},
+            "blocking": 0,
+            "preview": "synthetic-preview",
+            "dates": True,
         },
     )
 
@@ -303,6 +420,18 @@ def components(context, admin):
             values, owner, emails, rows, post_url=f"{NEW_INVALID}/review"
         ),
         NEW_STALE: _entry(values, owner, emails, rows, post_url=f"{NEW_STALE}/review"),
+        DATES: (
+            "text/html",
+            _dates(values, owner, emails, rows, post_url=f"{DATES}/review"),
+        ),
+        DATES_INVALID: (
+            "text/html",
+            _dates(values, owner, emails, rows, post_url=f"{DATES_INVALID}/review"),
+        ),
+        DATES_STALE: (
+            "text/html",
+            _dates(values, owner, emails, rows, post_url=f"{DATES_STALE}/review"),
+        ),
     }
     review = _review(owner, [_added(owner, reminders[0]["values"])])
     edit_review = _review(
@@ -370,19 +499,16 @@ def components(context, admin):
                 None,
                 _invalid(values, owner, emails, rows),
             ),
-            f"{NEW_STALE}/review": (
-                409,
+            f"{NEW_STALE}/review": POSTS_STALE,
+            f"{DATES}/review": (200, None, _dates_review(owner, first)),
+            f"{DATES_INVALID}/review": (
+                400,
                 None,
-                json.dumps(
-                    {
-                        "errors": [{"code": "stale_version"}],
-                        "refusal": {
-                            "message": STALE_REFUSAL,
-                            "fix": "Reload the page to start again.",
-                        },
-                    }
-                ),
+                _dates_refused(values, owner, emails, rows),
             ),
+            f"{DATES_STALE}/review": POSTS_STALE,
+            # The date-change review's Apply confirms on the list.
+            LIST: (303, APPLIED, ""),
             APPLY: (303, APPLIED, ""),
             APPLY_PENDING: (303, PENDING, ""),
         }

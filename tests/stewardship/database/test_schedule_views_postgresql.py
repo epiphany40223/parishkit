@@ -1,5 +1,6 @@
 """Exact combined schedule/date previews through real Admin sessions and installer."""
 
+import re
 from datetime import timedelta
 from html import unescape
 from types import SimpleNamespace
@@ -111,7 +112,10 @@ def test_shortened_draft_requires_every_stranded_mailing_to_be_reconciled(
     assert ConfigurationChangeRequest.objects.count() == before
     data[f"schedules-{indexes['reminder']}-DELETE"] = "on"
     preview = post(browser, path, data)
-    assert flow_steps(preview.content) == (STEPS, "Review")
+    # The review is the shared review dialog's fragment, not a step page
+    # (#750): the page's step indicator stays at Make changes.
+    assert b"data-review-answer" in preview.content
+    assert flow_steps(preview.content) is None
     proposal = token(preview)
     accepted = post(browser, path, {"action": "confirm", "preview": proposal})
     apply(store, accepted)
@@ -354,19 +358,76 @@ def test_proposed_dates_page_posts_to_its_clean_path(auth_service, google):
     """Campaign settings hands dates over in the query; the forms must drop it.
 
     A POST that still carries the query string is refused, so both the editor
-    and its preview post to the bare path and carry the dates as fields.
+    and its review dialog's Apply post to the bare path and carry the dates as
+    fields.
     """
     store = auth_service.store
     campaign, path = setup(store)
     browser, _ = signed_in()
     page = browser.get(f"{path}?start_date=2054-09-30")
     assert page.status_code == 200
-    assert f'action="{path}"'.encode() in page.content
+    body = page.content.decode()
+    assert f'<form method="post" action="{path}" id="schedule-dates-form"' in body
+    assert f'<form method="post" action="{path}" data-review-apply>' in body
+    assert f'data-review-return="{path}"' in body
     data, _ = fields(store, campaign)
     data["window-start_date"] = "2054-09-30"
     preview = post(browser, path, data)
-    assert f'action="{path}"'.encode() in preview.content
+    assert b"data-review-answer" in preview.content
     token(preview)
+
+
+def test_date_change_review_opens_the_review_dialog(auth_service, google):
+    """The date-change review answers the dialog and keeps every safeguard (#750).
+
+    Proposed dates are drawn as the fields' values with the saved ones beside
+    them, so the page's change gate offers Review for the proposal and holds
+    it once reverted. An accepted Review is the dialog's fragment, whose
+    status line names the change; a refusal of the posted values is the page
+    again with a summary linking each problem (a stranded schedule's to its
+    editor); an unchanged Review is a plain refusal, never a form message.
+    """
+    store = auth_service.store
+    campaign, path = setup(store)
+    saved = campaign.active_configuration.values
+    browser, _ = signed_in()
+    page = browser.get(f"{path}?end_date=2054-10-20").content.decode()
+    assert re.search(
+        r'name="window-end_date" value="2054-10-20"[^>]*'
+        rf'data-saved-value="{saved["end_date"]}"',
+        page,
+    )
+    assert "data-saved-value" not in re.search(
+        r'<input[^>]*name="window-start_date"[^>]*>', page
+    ).group(0)
+    assert 'data-review-open="schedule-dates-review"' in page
+    assert 'data-require-change="base_digest"' in page
+    data, indexes = fields(store, campaign)
+    before = ConfigurationChangeRequest.objects.count()
+    # Unchanged: a plain refusal (no form), which the dialog shows.
+    unchanged = post(browser, path, data)
+    assert unchanged.status_code == 400
+    assert 'id="schedule-dates-form"' not in unchanged.content.decode()
+    assert "Nothing has changed" in unescape(unchanged.content.decode())
+    # A stranded reminder: the page again, its summary linking the editor.
+    data["window-end_date"] = "2054-10-20"
+    refused = post(browser, path, data)
+    assert refused.status_code == 400
+    text = refused.content.decode()
+    assert "data-error-summary" in text and 'id="schedule-dates-form"' in text
+    anchors = re.findall(r"<section[^>]*data-error-summary.*?</section>", text, re.S)
+    assert anchors and '<a href="#' in anchors[0]
+    data[f"schedules-{indexes['reminder']}-DELETE"] = "on"
+    preview = post(browser, path, data)
+    assert preview.status_code == 200
+    review = unescape(preview.content.decode())
+    assert 'data-review-done="Dates and mail schedules changed."' in review
+    assert "Campaign window" in review and "<h3>" in review
+    assert "<h1" not in review
+    assert ConfigurationChangeRequest.objects.count() == before
+    apply(store, post(browser, path, {"action": "confirm", "preview": token(preview)}))
+    campaign.refresh_from_db()
+    assert campaign.active_configuration.values["end_date"] == "2054-10-20"
 
 
 def test_read_pages_never_wait_behind_the_work_lock(auth_service, google):

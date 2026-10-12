@@ -142,6 +142,12 @@ class ScheduleWindow(forms.Form):
             self.fields["overlap_confirmed"].template_name = OVERLAP_TEMPLATE
         for name, field in self.fields.items():
             field.disabled = not editable and name not in open_fields
+        # A proposed date is drawn as the field's value, but it is not saved:
+        # the field carries the saved value too, which the page's change
+        # gate compares with, so Review changes is available for the
+        # proposal and unavailable again once it is reverted (#750).
+        for name in proposed or {}:
+            self.fields[name].widget.attrs["data-saved-value"] = str(previous[name])
 
     @property
     def open_fields(self):
