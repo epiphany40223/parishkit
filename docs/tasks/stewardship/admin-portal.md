@@ -628,6 +628,18 @@ deleted ID, a file in use refused before the prompt with nothing deleted,
 renaming with the link unchanged, the current name recording nothing, an
 invalid or taken name, a missing file, read-only and Staff sessions
 refused, an ended session) and the unchanged hosted files page suite.
+The third adds `content list` and `content history`, the Pages and emails
+and Content history pages' reads, in `parishkit.stewardship.admin_content`,
+through the catalog's campaign check and row builder and the history
+page's read (moved into `content_history.retained_content`), with no
+schema change; proven by `tests/stewardship/test_admin_content.py` (golden
+documents, catalog flags, no event), `tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py` and
+`tests/stewardship/database/test_admin_content_cli_postgresql.py` (the
+page's rows for a read-only session, a held campaign `stale_version`, no
+current campaign, a retained revision's sample, an unknown revision, no
+event, a Staff reader denied, an ended session) and the unchanged content
+page suites.
 
 ## ADM-12: Admin navigation overhaul
 
