@@ -289,8 +289,9 @@ and Admin confirmation.
 
 ## End-to-end sequence
 
-Steps 2 and 3 describe the setup split (#142). Until Create the campaign
-ships ([#786](https://github.com/epiphany40223/parishkit/issues/786)), the
+Steps 2 and 3 describe the setup split (#142). Until the setup wizard's
+campaign pages are removed
+([#142](https://github.com/epiphany40223/parishkit/issues/142)), the
 setup wizard still collects the first campaign and finishing setup creates it
 with its Family codes. Publishing census changes in step 7 is not built yet
 (#528).

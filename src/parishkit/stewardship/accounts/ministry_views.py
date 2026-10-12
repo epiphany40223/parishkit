@@ -46,6 +46,7 @@ from .admin_editing import (
     principal as admin_principal,
 )
 from .authentication import runtime
+from .campaign_create_views import created_campaign_refresh
 from .configuration_models import MinistryActivity
 from .configuration_request_reads import receipt as configuration_receipt
 from .limiting import LimiterUnavailable
@@ -458,6 +459,7 @@ def configuration_request(request, request_id):
                 {
                     "receipt": receipt,
                     "follow_url": in_place_follow(request.GET, receipt.request_id),
+                    "refresh_key": created_campaign_refresh(receipt),
                 },
             )
             response["Cache-Control"] = "no-store"
