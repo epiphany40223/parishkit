@@ -41,13 +41,17 @@ STATUS_LABELS = {
     # may still send it, and a draft that never went live never will.
     "missed": _("Not sent yet"),
     "repeats": _("Repeats"),
+    # One send of a digest whose time has passed (the Campaign calendar,
+    # #469); the list's digest row itself always repeats.
+    "passed": _("Past"),
 }
 # A schedule in one of these states has run, is running, or has work
 # prepared ahead of its time: it sent its email, failed to, or settled every
 # Family without one of its own. Moving it would make a new
 # revision and plan the send again, so the page shows it read-only; the
-# server still blocks changes to work in progress on its own.
-PAST = frozenset({"preparing", "sending", "sent", "failed", "done"})
+# server still blocks changes to work in progress on its own. "passed" is
+# one past send of a digest on the Campaign calendar, shown read-only too.
+PAST = frozenset({"preparing", "sending", "sent", "failed", "done", "passed"})
 
 
 @dataclass(frozen=True)

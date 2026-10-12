@@ -2359,6 +2359,7 @@ def component_origin():
         ("phone-v1.js", "application/javascript"),
         ("live-status-v1.js", "application/javascript"),
         ("refresh-schedule-v1.js", "application/javascript"),
+        ("calendar-v1.js", "application/javascript"),
         ("session-v1.js", "application/javascript"),
         ("local-sign-in-v1.js", "application/javascript"),
         ("open-form-v1.js", "application/javascript"),

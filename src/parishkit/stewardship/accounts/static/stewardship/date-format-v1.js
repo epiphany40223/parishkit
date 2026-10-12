@@ -104,5 +104,9 @@
   // 10:05 PM", the review dialog's status line).
   const time = (date) => clock(date);
 
-  window.ParishDates = Object.freeze({instant, date: calendar, time, localize, style});
+  // A month and year, such as a month grid's caption ("October 2054"); month
+  // is 1-based. The same in every style, since none abbreviates a lone month.
+  const month = (year, number) => `${MONTHS[number - 1]} ${year}`;
+
+  window.ParishDates = Object.freeze({instant, date: calendar, time, month, localize, style});
 })();

@@ -40,6 +40,10 @@ checks need no database:
   whose Review answers 400 with the page drawn again with Reminder 2 outside
   the campaign, its editor open and the view's summary; ``DATES_STALE``: the
   same page, whose Review answers 409 (``STALE_REFUSAL``).
+- ``CALENDAR``: the read-only Campaign calendar (#469) of the same schedules
+  plus a daily digest at 7:00 AM, the invitation sent, with the weekly digest
+  expanded to each Monday and the daily one to each day through November 1
+  (the day after the campaign closes), its first four days already past.
 
 ``POSTS`` lists the fixture server's answers to the pages' POSTs; it is
 filled in by ``components``, before the server starts.
@@ -53,6 +57,10 @@ from django.http import QueryDict
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts import schedule_email
+from parishkit.stewardship.accounts.schedule_calendar_views import (
+    WEEK,
+    calendar_sends,
+)
 from parishkit.stewardship.accounts.schedule_changes import (
     EMAIL_DOES_NOT_FIT,
     describe,
@@ -113,6 +121,7 @@ NOT_APPLIED = "/schedule-change-failed"
 DATES = "/schedule-dates"
 DATES_INVALID = "/schedule-dates-invalid"
 DATES_STALE = "/schedule-dates-stale"
+CALENDAR = "/schedule-calendar"
 # The end date Campaign settings proposes; the saved one is October 31.
 DATES_END = "2054-10-25"
 # The refusal's own explanation, which the dialog shows.
@@ -199,6 +208,33 @@ def _list(values, owner, emails, rows, *, sort="when", **extra):
     return (
         "text/html",
         render_to_string("stewardship/schedule-settings.html", values | context),
+    )
+
+
+def _calendar(values, owner, emails, rows):
+    """The Campaign calendar for ``rows`` and a daily digest (invitation sent)."""
+    names = email_names([row for row in emails if row["values"]["kind"] == "email"])
+    summary = {rows[0]["id"]: {"delivered": 1031, "failed": 2}}
+    email = next(row for row in emails if row["values"]["slot"] == "daily_digest")
+    daily = schedule(
+        owner["id"],
+        kind="daily_digest",
+        date=None,
+        time="07:00:00",
+        template_version=email["id"],
+        subject=email["values"]["subject"],
+    )
+    rows = sorted([*rows, daily], key=schedule_order)
+    context = {
+        "campaign": {"pk": owner["id"], "active_configuration": owner["values"]},
+        "values": owner["values"],
+        "sends": calendar_sends(rows, owner["values"], summary, NOW, names),
+        "weekdays": WEEK,
+        "list_url": LIST,
+    }
+    return (
+        "text/html",
+        render_to_string("stewardship/schedule-calendar.html", values | context),
     )
 
 
@@ -465,6 +501,7 @@ def components(context, admin):
         ),
         REFUSED: _list(values, owner, emails, rows, delete_url=f"{REFUSED}/deletion"),
         FAILED: _list(values, owner, emails, rows, delete_url=f"{FAILED}/deletion"),
+        CALENDAR: _calendar(values, owner, emails, rows),
         APPLIED: _status(values, "applied"),
         NOT_APPLIED: _status(values, "failed", failure_code="stale_base"),
         NEW: _entry(values, owner, emails, rows, post_url=f"{NEW}/review"),

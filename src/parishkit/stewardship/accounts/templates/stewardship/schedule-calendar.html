@@ -1,0 +1,53 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
+{% block title %}{% translate "Campaign calendar" %}{% endblock %}
+{% block head %}<script src="{% static 'stewardship/calendar-v1.js' %}" defer></script>{% endblock %}
+{% block content %}{% comment %}
+The Campaign calendar (#469; schedule_calendar_views). Read-only. The table of
+sends is the page's text equivalent and its source: each row carries its
+browser-local send time (<time data-local-instant>), its name, status and,
+for a schedule that has not run, its Edit page (data-edit-url).
+calendar-v1.js reads those rows and draws them as month grids into
+[data-calendar], one per month from the campaign's first day (or first send)
+to its last day (or last send), cloning the <template> below so the weekday
+headings stay translated. The campaign's first and last days are calendar
+dates, never shifted into a time zone.
+{% endcomment %}
+<h1>{% translate "Campaign calendar" %}</h1>
+{% aboutpage "schedule-calendar" %}<p>{% translate "Every email the campaign's mail schedules send, by date: the Initial invitation, each reminder, and every day or week of the Admin digests. Times are in your computer's time zone. Edit opens a schedule that has not run yet; New scheduled email and Delete are on Dates and mail schedules. This page changes nothing." %}</p>{% endaboutpage %}
+<p>{{ campaign.active_configuration.name }}</p>
+<p class="campaign-dates">{% blocktranslate trimmed with start=values.start_date|parish_date end=values.end_date|parish_date %}Campaign dates: {{ start }} – {{ end }}{% endblocktranslate %}</p>
+{% if sends %}
+<section class="panel" aria-labelledby="calendar-months-title">
+<h2 id="calendar-months-title">{% translate "By month" %}</h2>
+<div class="calendar-months" data-calendar data-start="{{ values.start_date }}" data-end="{{ values.end_date }}" data-opens="{% translate 'Campaign opens' %}" data-closes="{% translate 'Campaign closes' %}" data-today="{% translate 'Today' %}"></div>
+<template id="calendar-month"><div class="table-scroll" tabindex="0" role="region"><table class="calendar-month"><caption></caption><thead><tr>{% for short, long in weekdays %}<th scope="col"><span aria-hidden="true">{{ short }}</span><span class="visually-hidden">{{ long }}</span></th>{% endfor %}</tr></thead><tbody></tbody></table></div></template>
+<p class="help">{% translate "The table below lists the same emails as text." %}</p>
+</section>
+{% translate "Every email by date" as caption %}
+<section class="panel" aria-labelledby="calendar-sends-title">
+<h2 id="calendar-sends-title">{{ caption }}</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-labelledby="calendar-sends-caption">
+<table class="data-table whole-words calendar-sends">
+  <caption id="calendar-sends-caption" class="visually-hidden">{{ caption }}</caption>
+  <thead><tr>
+    <th scope="col">{% translate "When" %}</th>
+    <th scope="col">{% translate "Schedule" %}</th>
+    <th scope="col">{% translate "Email to send" %}</th>
+    <th scope="col">{% translate "Status" %}</th>
+    <th scope="col">{% translate "Actions" %}</th>
+  </tr></thead>
+  <tbody>
+  {% for send in sends %}<tr data-calendar-send data-label="{{ send.label }}" data-status="{{ send.status_label }}" data-schedule-state="{{ send.status }}"{% if send.read_only %} class="schedule-past"{% else %} data-edit-url="{{ send.edit_url }}"{% endif %}>
+    <td class="nowrap"><time datetime="{{ send.due|instant }}" data-local-instant data-compact>{{ send.due|instant }}</time></td>
+    <th scope="row">{{ send.label }}</th>
+    <td>{{ send.email }}</td>
+    <td><span class="status-badge{% if send.status == 'upcoming' %} status-badge-on{% endif %}">{{ send.status_label }}</span></td>
+    {% if send.read_only %}{% table_actions name=send.label %}{% else %}{% table_actions name=send.label edit=send.edit_url %}{% endif %}
+  </tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+</section>
+{% else %}<p>{% translate "No emails are scheduled yet." %} <a href="{{ list_url }}">{% translate "Add one on Dates and mail schedules." %}</a></p>{% endif %}
+<p><a href="{{ list_url }}">{% translate "Return to Dates and mail schedules" %}</a></p>
+{% endblock %}
