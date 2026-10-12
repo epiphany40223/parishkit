@@ -11,12 +11,14 @@ style what is there:
   header and numbers the pages.
 - ``style_details`` gives label/value blocks (the "Report information" sheet,
   a Ministry's details above its table) one label style.
+- ``describe`` names the report in the workbook's document properties.
 
 Colors are the Admin portal's (``ui-v1.css``); banding is a conditional
 format, so no cell gains a formula or a changed value.
 """
 
 import io
+from datetime import UTC
 
 from openpyxl import Workbook
 from openpyxl.formatting.rule import FormulaRule
@@ -25,7 +27,7 @@ from openpyxl.utils import get_column_letter
 
 from parishkit.stewardship.web.design_tokens import COLORS, hex6
 
-from .information_rendering import xlsx_cell
+from .information_rendering import visible_text, xlsx_cell
 
 
 def _color(token):
@@ -57,6 +59,10 @@ SAMPLE_ROWS = 500
 LINE_HEIGHT = 13.0
 # Excel's tallest row, in points; a taller height is invalid in the file.
 MAX_ROW_HEIGHT = 409.0
+# The author every workbook's document properties name. It is the software,
+# not the parish or a person: the same in every deployment, and true of a
+# file whose request may have come from any Admin user.
+CREATOR = "ParishKit Stewardship"
 
 
 def _length(value):
@@ -215,6 +221,24 @@ def _print_setup(sheet, title, *, landscape=True):
     sheet.oddFooter.center.text = "Page &P of &N"
 
 
+def describe(book, title, *, created=None):
+    """Name the report in ``book``'s document properties (#926).
+
+    Excel's File > Info and file browsers show these; without them every
+    workbook claims to be an untitled file by "openpyxl". ``created`` is
+    the report's request or download time, so a retried rendering of one
+    request states the same creation time, as a PDF's CreationDate does.
+    openpyxl itself stamps Modified with the time the file is saved.
+    """
+    properties = book.properties
+    # A parish-configured label can hold characters XML cannot store.
+    properties.title = visible_text(str(title))
+    properties.creator = properties.lastModifiedBy = CREATOR
+    if created is not None:
+        # The file stores a UTC time; openpyxl wants it without a zone.
+        properties.created = created.astimezone(UTC).replace(tzinfo=None)
+
+
 def table_workbook(headings, rows, *, sheet_title, freeze_first_column=False):
     """One styled sheet of ``headings`` over ``rows``, as XLSX bytes.
 
@@ -231,6 +255,7 @@ def table_workbook(headings, rows, *, sheet_title, freeze_first_column=False):
         for column, value in enumerate(values, start=1):
             xlsx_cell(sheet, row_number, column, value)
     style_table(sheet, freeze_first_column=freeze_first_column, title=sheet_title)
+    describe(book, sheet_title)
     output = io.BytesIO()
     book.save(output)
     return output.getvalue()

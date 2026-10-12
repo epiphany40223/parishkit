@@ -8,7 +8,7 @@ from openpyxl import Workbook
 
 from .information_rendering import MONEY_FORMAT, excel_amount, xlsx_cell
 from .participation import participation_columns, participation_table
-from .xlsx_design import style_information, style_table
+from .xlsx_design import describe, style_information, style_table
 
 
 def _cell(sheet, row, column, value):
@@ -81,5 +81,12 @@ def participation_xlsx(document, output):
         _cell(metadata, index, 1, label)
         _cell(metadata, index, 2, value)
     style_information(metadata, title="Participation")
+    # Titled as the chart PDF's page title is, naming the population (the
+    # chart files' own Title property stays "Family participation").
+    describe(
+        book,
+        f"Family participation — {document.scope_label}",
+        created=document.requested_at,
+    )
     book.save(output)
     book.close()

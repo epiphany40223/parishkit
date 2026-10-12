@@ -187,7 +187,13 @@ wrapped, and a landscape print setup that fits one page wide, repeats the
 heading row and numbers the pages. Label/value blocks ("Report information"
 sheets and a packet's Ministry details) use one tinted label style; a
 packet's Ministry detail values span the width of the member table below
-them. Styling never changes a cell's value or type.
+them. Styling never changes a cell's value or type. Every report
+workbook's document properties (Excel's File > Info) name its report as its
+PDF's page title does and "ParishKit Stewardship" as its author. Its
+creation time is a queued report's request time, or Limitations' download
+time, as its PDF's is, so a retried rendering states the same time. The
+[past-campaign archive workbook](../campaign-history/spec.md#archive-workbook-format) is not a
+report download and is not covered.
 
 Charts follow the [chart conventions](../ui-conventions/spec.md#charts).
 
@@ -1635,9 +1641,11 @@ report reads through `stewardship_limitations_report_v1`, which migration
 `search` and `show` values and returns each Member row's Member DUID.
 
 The filtered result downloads immediately as CSV (Members, then Families),
-XLSX (one sheet each) or PDF (one table each under the page's table heading,
-the Families table starting on a new page, in the shared page frame with
-both counts), in a chosen display timezone. Each table has its page table's
+XLSX (one sheet each, then a "Report information" sheet stating what the
+PDF's page frame states: parish, campaign, download time and zone, both
+counts and the privacy line) or PDF (one table each under the page's table
+heading, the Families table starting on a new page, in the shared page frame
+with both counts), in a chosen display timezone. Each table has its page table's
 columns, names and order: Member, Member DUID, Family, Family DUID, Cannot
 participate in ministries and Latest response for Members, and Family, Family DUID and
 Latest response for Families (every listed Family cannot attend, so, as on

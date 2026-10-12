@@ -219,7 +219,13 @@ def test_native_page_and_downloads(response_service, google, settings):
         assert response.status_code == 200
         assert response["Content-Disposition"].endswith(".xlsx")
         book = load_workbook(io.BytesIO(body))
-        assert book.sheetnames == ["Members", "Families"]
+        assert book.sheetnames == ["Members", "Families", "Report information"]
+        # The workbook names its report, parish and campaign (#926).
+        assert book.properties.title == "Limitations"
+        details = dict(book["Report information"].iter_rows(values_only=True))
+        assert details["Report"] == "Limitations"
+        assert details["Parish"] and details["Campaign"]
+        assert details["Members in this file"] == f"{book['Members'].max_row - 1:,}"
         assert [cell.value for cell in book["Members"][1]] == [
             "Member",
             "Member DUID",

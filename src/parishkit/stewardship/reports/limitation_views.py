@@ -346,31 +346,29 @@ def export(request, campaign_id):
     def render(result, query, extra):
         """The chosen file format, with times in the chosen timezone.
 
-        The PDF also names the parish and campaign in its page header and
-        dates itself in the parish's date format, lent explicitly, as the
-        Census changes download does.
+        The PDF's page header and the XLSX's "Report information" sheet
+        also name the parish, campaign and download time; the PDF dates
+        itself in the parish's date format, lent explicitly, as the Census
+        changes download does.
         """
-        if extra["format"] == "pdf":
-            parish = (
-                SystemConfiguration.objects.select_related(
-                    "active_configuration__parish"
-                )
-                .get()
-                .active_configuration.parish
-            )
-            campaign = Campaign.objects.select_related("active_configuration").get(
-                pk=campaign_id
-            )
-            with dates.using(parish.date_format):
-                return limitations_pdf(
-                    result,
-                    extra["zone"],
-                    parish=parish.name,
-                    campaign=campaign.active_configuration.name,
-                    as_of=database_now(),
-                )
+        if extra["format"] == "csv":
+            return limitations_csv(result, extra["zone"])
+        parish = (
+            SystemConfiguration.objects.select_related("active_configuration__parish")
+            .get()
+            .active_configuration.parish
+        )
+        campaign = Campaign.objects.select_related("active_configuration").get(
+            pk=campaign_id
+        )
+        context = dict(
+            parish=parish.name,
+            campaign=campaign.active_configuration.name,
+            as_of=database_now(),
+        )
         if extra["format"] == "xlsx":
-            return limitations_xlsx(result, extra["zone"])
-        return limitations_csv(result, extra["zone"])
+            return limitations_xlsx(result, extra["zone"], **context)
+        with dates.using(parish.date_format):
+            return limitations_pdf(result, extra["zone"], **context)
 
     return _respond(request, campaign_id, export=True, render=render)
