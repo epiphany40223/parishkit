@@ -39,7 +39,12 @@ pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
 
-FORM_TOP = "document.getElementById('settings-form').getBoundingClientRect().top"
+# Where the form sits on the page, not in the window: Review may scroll its
+# Apply button into view (in-place controls), which moves nothing on the page.
+FORM_TOP = (
+    "document.getElementById('settings-form').getBoundingClientRect().top"
+    " + window.scrollY"
+)
 # Where Review sits on the page: typing may scroll the field into view.
 REVIEW_TOP = (
     "document.querySelector('#settings-form button[type=submit]')"
