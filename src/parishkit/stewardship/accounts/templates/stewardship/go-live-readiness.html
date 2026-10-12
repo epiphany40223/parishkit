@@ -55,6 +55,14 @@
 {% button type="submit" %}{% translate "Start Testing cleanup" %}{% endbutton %}</form>
 {% else %}<div class="notice" data-cleanup-step-up><p>{% if local_environment %}{% translate "For your security, confirm your sign-in before starting cleanup. You need to have signed in within the last five minutes. Then select Check readiness and public web address again." %}{% else %}{% translate "For your security, confirm it's you with Google before starting cleanup. You need to have signed in within the last five minutes. You will come back to this page; then select Check readiness and public web address again." %}{% endif %}</p>{% url 'admin:go_live' as here %}{% include 'stewardship/components/reauthenticate.html' with next=here %}</div>{% endif %}
 </section>
+{% else %}
+{% comment %}Until a passing check signs a cleanup preview, Start Testing
+cleanup is shown unavailable, named by the step still needed, rather than
+left out (#563).{% endcomment %}
+<section class="panel"><h2>{% translate "Start irreversible Testing cleanup" %}</h2>
+<p role="status" id="cleanup-unavailable">{% if problems %}{% translate "Cleanup can't start yet. Fix the configuration and data checks above, then select Check readiness and public web address again." %}{% elif origin_verified is False %}{% translate "Cleanup can't start yet. Fix the public web address, then select Check readiness and public web address again." %}{% else %}{% translate "Cleanup can't start yet. Select Check readiness and public web address first; cleanup can start once every check passes." %}{% endif %}</p>
+<p>{% button type="button" disabled=True aria-describedby="cleanup-unavailable" %}{% translate "Start Testing cleanup" %}{% endbutton %}</p>
+</section>
 {% endif %}
 <p><a href="">{% translate "Refresh readiness preview" %}</a></p>
 {% endblock %}

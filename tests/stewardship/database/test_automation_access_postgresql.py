@@ -160,8 +160,9 @@ def test_approving_from_access_first_asks_for_a_fresh_sign_in(auth_service, goog
     stale_sign_in()
     page = browser.get(ACCESS)
     assert b"Confirm with Google" in page.content
-    assert b'<button type="button" disabled>Approve a session</button>' in (
-        page.content
+    assert (
+        b'<button type="button" disabled aria-describedby="approve-unavailable">'
+        b"Approve a session</button>" in page.content
     )
     assert b'href="/admin/users/automation/approval/"' not in page.content
 

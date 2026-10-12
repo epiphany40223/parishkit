@@ -1304,7 +1304,13 @@ def test_stale_sign_in_keeps_the_review_and_never_looks_sent(family_test):
         assert not page.context["fresh"]
         assert page.context["signed_in_minutes"] >= 10
         assert b"Confirm with Google" in page.content
-        assert b"Send these Family tests" not in page.content
+        # Send is shown unavailable, named by the sign-in reason (#563),
+        # with no confirm form to post.
+        assert b'name="action" value="confirm"' not in page.content
+        assert (
+            b'disabled aria-describedby="family-test-fresh-reason">'
+            b"Send these Family tests" in page.content
+        )
         # The old signed review still reaches the server, stale: refused and
         # explained, with the DUIDs kept for after the step-up.
         with web_login():

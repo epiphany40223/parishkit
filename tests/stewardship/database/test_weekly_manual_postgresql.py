@@ -291,3 +291,23 @@ def test_manual_form_explains_a_missing_weekly_schedule(response_service, google
         assert b"Queue new manual report" not in page.content
         assert WeeklyManualRequest.objects.count() == 0
         assert TaskRun.objects.count() == before
+
+
+def test_manual_form_shows_queue_unavailable_while_a_digest_is_unresolved(
+    live_response_service, google
+):
+    """An earlier digest still being delivered is found on GET, as the guard
+    would refuse it: Queue is shown unavailable with why, and nothing runs."""
+    with campaign_clock(INSTANT):
+        allocated(live_response_service)
+        browser, _ = signed_in()
+        path = reverse("admin:weekly_digest_manual")
+        before = TaskRun.objects.count()
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            page = browser.get(path)
+        assert page.status_code == 200
+        assert b"still being prepared or delivered" in page.content
+        assert b'disabled aria-describedby="manual-unavailable"' in page.content
+        assert b'name="acknowledge"' not in page.content
+        assert TaskRun.objects.count() == before
+        assert not WeeklyManualRequest.objects.exists()
