@@ -582,6 +582,7 @@ SPEC_ORDER = [
     "branding_settings",
     "ministries",
     "hosted_files",
+    "past_campaigns",
     "source_refresh",
     "parishsoft_fixes",
     # Users and access

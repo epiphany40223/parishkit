@@ -73,6 +73,7 @@ TEMPLATES = {
     "ministries": "ministries.html",
     "hosted_files": "hosted-files.html",
     "hosted_file_rename": "hosted-file-rename.html",
+    "past_campaigns": "past-campaigns.html",
     "source_refresh": "source-refresh.html",
     "users": "users.html",
     "user_new": "user-entry.html",

@@ -144,6 +144,12 @@ LEDGER = {
     "hosted_files": command("files list"),
     "hosted_file_delete": command("files delete"),
     "hosted_file_rename": command("files rename"),
+    # Past campaigns (#1018): the page's list, Review (the workbook comes on
+    # standard input), Apply and Remove, through the same import service.
+    "past_campaigns": command("history list"),
+    "past_campaign_review": command("history preview"),
+    "past_campaign_import": command("history confirm"),
+    "past_campaign_removal": command("history remove"),
     # Reviews and removals happen on the page itself (#750).
     "artwork_settings": pending("PR 10", "artwork show", "artwork remove"),
     "branding_settings": pending("PR 10", "branding show", "branding confirm"),
@@ -363,8 +369,6 @@ LEDGER = {
 }
 # Commands whose page lands in a later pull request: they cover no admin:
 # route yet, so the parity test accepts them by name until the page's route
-# joins the ledger as their "command" entry. Past campaigns' import commands
-# come first (#1018 slice 2); the page itself is slice 4.
-AHEAD_OF_PAGE = frozenset(
-    {"history list", "history preview", "history confirm", "history remove"}
-)
+# joins the ledger as their "command" entry. Empty now: Past campaigns'
+# import commands (#1018 slice 2) were the first, until their page (slice 4).
+AHEAD_OF_PAGE = frozenset()

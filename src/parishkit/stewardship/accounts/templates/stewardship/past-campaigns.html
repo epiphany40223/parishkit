@@ -1,0 +1,60 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Past campaigns" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Past campaigns" %}</h1>
+{% aboutpage "past-campaigns" %}<p>{% translate "Campaign comparison compares this campaign with the past campaigns imported here. Each past campaign is one archive file: an Excel workbook (.xlsx) in the stewardship archive format, one per campaign year, kept in the parish's restricted archive folder. The files of earlier campaigns were converted from the old system's exports; later campaigns will be exported from this system when they close." %}</p>
+<p>{% translate "Add a year by choosing its file and Review. Review checks the whole file and shows what it holds and what Apply will do; nothing is imported until you choose Apply. A file that cannot be imported lists its problems by sheet and cell, never the values in them. Add several years one file at a time." %}</p>
+<p>{% translate "A file for a year that is already imported replaces that year, after you confirm it; this is also how a corrected file is imported. A partial file (exported while its campaign was still running) never replaces a final one. The same file imported again changes nothing. Remove deletes a year's figures; the year can be imported again later." %}</p>
+<p>{% translate "The files hold each Family's giving, so they are private. Only the totals, the pledge bands and, when Keep Family rows is ticked, each Family's id and first response day are kept here; the file itself is not kept. Nothing about a single Family leaves the Admin portal: the comparison shows totals only." %}</p>
+<p>{% translate "A file can be up to 20 MB. A file of the full 20 MB needs about 6 Mbit/s of upload speed; a typical 2 MB file needs well under 1 Mbit/s." %}</p>{% endaboutpage %}
+{% comment %}
+The imported years are an action table (ui-conventions, "Row actions and
+confirmation"): its region holds the Remove form, the table and the
+confirmation dialog, which posts here and then redraws every region from
+data-refresh-url (this page's address, so a Review card shown stays). The
+review region below the form shows the Review card, a refusal's located
+problems or what Apply did; the Review form and Apply act in place and
+answer with this page (past_campaign_views).
+{% endcomment %}<div id="{{ table.anchor }}" data-table-region data-refresh-url="{{ refresh_url }}">
+{% if table.rows %}<form method="post" action="{% url 'admin:past_campaign_removal' %}" id="past-campaign-actions" data-row-actions>{% csrf_token %}
+<div class="table-scroll" tabindex="0" role="region" aria-labelledby="past-campaigns-caption">
+<table class="data-table whole-words">
+<caption id="past-campaigns-caption">{% translate "Imported campaigns" %}</caption>
+<thead><tr>{% translate "Year" as heading %}{% sort_heading table "year" heading %}{% translate "Campaign" as heading %}{% sort_heading table "campaign" heading %}{% translate "Final or partial" as heading %}{% sort_heading table "final" heading %}{% translate "Day 1" as heading %}{% sort_heading table "start" heading %}{% translate "Days" as heading %}{% sort_heading table "days" heading "numeric" %}{% translate "Families responded" as heading %}{% sort_heading table "families" heading "numeric" %}{% translate "Annual pledges" as heading %}{% sort_heading table "pledged" heading "numeric" %}{% translate "Active Families" as heading %}{% sort_heading table "active" heading "numeric" %}{% translate "Family rows kept" as heading %}{% sort_heading table "kept" heading %}{% translate "Imported" as heading %}{% sort_heading table "imported" heading %}<th scope="col">{% translate "Actions" %}</th></tr></thead>
+<tbody>{% for row in table.rows %}<tr>
+<th scope="row">{{ row.label }}</th>
+<td>{{ row.archive.campaign_name }}</td>
+<td>{% if row.archive.is_final %}{% translate "Final" %}{% else %}{% translate "Partial" %}{% endif %}</td>
+<td class="nowrap">{{ row.day_1 }}</td>
+<td class="numeric">{{ row.days }}</td>
+<td class="numeric">{{ row.families }}</td>
+<td class="numeric nowrap">{{ row.pledged }}</td>
+<td class="numeric nowrap">{{ row.active }} {% blocktranslate asvar tip with source=row.provenance %}Counted from: {{ source }}{% endblocktranslate %}{% include "stewardship/components/toggletip.html" with tip_id="provenance-"|add:row.label tip_text=tip %}</td>
+<td>{% if row.archive.family_rows_kept %}{% translate "Yes" %}{% else %}{% translate "No" %}{% endif %}</td>
+<td><time datetime="{{ row.archive.imported_at|instant }}" data-local-instant data-compact>{{ row.archive.imported_at|instant }}</time>{% if row.imported_by %}<span class="cell-detail">{% translate "by" %} {{ row.imported_by.0 }}<wbr>{{ row.imported_by.1 }}</span>{% endif %}</td>
+{% table_actions name=row.label delete=row.remove_value confirm="past-campaign-remove" field="archive" verb="remove" %}
+</tr>{% endfor %}</tbody>
+</table>
+</div>
+</form>
+{% translate "Remove {name}?" as title_one %}{% translate "Remove {count} years?" as title_many %}{% translate "The year's figures and kept Family rows are deleted, and Campaign comparison stops showing the year. A record of the import (its year, file checksum, counts, and who removed it and when) is kept." as body %}{% translate "This cannot be undone, but the year's file can be imported again later." as caution %}{% translate "Remove" as accept %}
+{% include "stewardship/components/confirm-dialog.html" with dialog_id="past-campaign-remove" form_id="past-campaign-actions" fallback="past-campaigns-caption" title_one=title_one title_many=title_many body=body caution=caution accept=accept done_one=_("Removed {name}.") done_many=_("Removed {count} years.") %}
+{% else %}<p id="past-campaigns-caption" tabindex="-1">{% translate "No past campaigns are imported yet. Add a year's archive file below." %}</p>{% endif %}
+{% if tombstones %}<details class="technical-details"><summary>{% translate "Technical details" %}</summary>
+<div class="table-scroll" tabindex="0" role="region" aria-labelledby="past-campaign-files-caption">
+<table class="data-table whole-words"><caption id="past-campaign-files-caption">{% translate "Every import, with its file and SHA-256 checksum" %}</caption>
+<thead><tr><th scope="col">{% translate "Year" %}</th><th scope="col">{% translate "State" %}</th><th scope="col">{% translate "File" %}</th><th scope="col">{% translate "SHA-256" %}</th><th scope="col">{% translate "Removed" %}</th></tr></thead>
+<tbody>{% for row in tombstones %}<tr><th scope="row">{{ row.archive.campaign_year }}</th><td>{% if row.archive.state == "active" %}{% translate "Imported" %}{% else %}{% translate "Removed or replaced" %}{% endif %}</td><td>{{ row.archive.file_name|default:"—" }}</td><td><code>{{ row.archive.checksum }}</code></td><td>{% if row.archive.removed_at %}<time datetime="{{ row.archive.removed_at|instant }}" data-local-instant data-compact>{{ row.archive.removed_at|instant }}</time>{% if row.removed_by %} {% blocktranslate with who=row.removed_by %}by {{ who }}{% endblocktranslate %}{% endif %}{% else %}—{% endif %}</td></tr>{% endfor %}</tbody>
+</table></div></details>{% endif %}
+</div>
+<form id="archive-upload" method="post" action="{% url 'admin:past_campaign_review' %}#archive-review" enctype="multipart/form-data" class="panel" data-in-place data-csrf-header data-require-complete data-in-place-message="{% translate 'Review ready.' %}">{% csrf_token %}
+<h2>{% translate "Add an archive file" %}</h2>
+<div data-missing-hint="{% translate 'Choose an archive file (.xlsx) to review it.' %}"><label for="archive-file">{% translate "Archive file" %}</label>
+<p class="help" id="archive-file-help">{% translate "One campaign's .xlsx file, up to 20 MB." %}</p>
+<input type="file" id="archive-file" name="file" accept=".xlsx" required aria-describedby="archive-file-help" data-max-bytes="{{ max_bytes }}" data-too-large="{% translate 'Choose a file no larger than 20 MB.' %}"></div>
+<div class="label-row"><label id="keep-family-rows-label"><input type="checkbox" name="keep_family_rows" value="yes" checked> {% translate "Keep Family rows" %}</label> {% translate "Keeps each responding Family's id and first response day, which the renewal figure on Campaign comparison needs. The rows never leave the Admin portal, and no pledge is kept with them." as keep_tip %}{% include "stewardship/components/toggletip.html" with tip_id="keep-family-rows-tip" tip_label_id="keep-family-rows-label" tip_text=keep_tip %}</div>
+{% if year_problem %}{% button type="submit" enabled=False aria-describedby="archive-year-reason" %}{% translate "Review" %}{% endbutton %}<p class="help" id="archive-year-reason">{% translate "Unavailable: this campaign's year can't be worked out, so last year can't be told apart." %} <a href="{% url 'admin:campaign_settings' %}">{% translate "Set the year label in Campaign settings" %}</a></p>
+{% else %}{% button type="submit" aria-describedby="archive-review-hint" %}{% translate "Review" %}{% endbutton %}<p class="help" id="archive-review-hint" data-complete-hint="reserve"></p>{% endif %}
+</form>
+<div id="archive-review" data-in-place-region data-keep-height>{% include "stewardship/past-campaigns-review.html" %}</div>
+{% endblock %}
