@@ -228,6 +228,9 @@ FROZEN = {
     "0065_staff_entered.sql": (
         "0c9ab0d7e4a2f102ec7c5e498e57bf34d9eecf302e5a2cf6974dec6a35ff258e"
     ),
+    "0066_financial_staff_entered.sql": (
+        "6b13a5dc9fa5f012710b9ac7e44ce36a98ac9cf5a999d5b9c64b02152943d9fe"
+    ),
 }
 
 

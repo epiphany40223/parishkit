@@ -1713,7 +1713,8 @@ name), Family DUID in its own sortable column
 pledge, Frequency, Approximate installment, Share methods (selected
 share-option labels with any Other text), the ParishSoft comparison pledge
 and contribution aggregates, Latest response (the time the Family last
-updated its response) and last First response (when it first responded).
+updated its response), First response (when it first responded) and,
+as the last column, Entered by Staff (described below).
 The page and every export format (CSV, XLSX, PDF) have exactly these
 columns in this order (the Administrator's decisions B1 and E1, #932): the
 report lists only active Families, so no format has a Family status
@@ -1733,6 +1734,13 @@ metadata that describes them, so a downloaded file names its figures as the
 page does. The exports also name each Family as the page does, from the
 snapshot their capture was read from, choosing the name form once per file
 as the [Additional information](#additional-information) exports do.
+Entered by Staff says Yes when Staff entered the Family's current response
+through [Open form](#family-timeline) (#529), and No when the Family
+submitted it, so an earlier response Staff entered and the Family later
+replaced shows No; it names no Staff member. The page's help says so, since
+the response lists' column of the same name counts every response Staff
+entered. A file captured before frozen migration 0066 added the marker to
+the projection leaves the column blank, never No (#794).
 
 Filters include active/inactive, first/latest submission dates, pledge range,
 zero/nonzero/cannot contribute, frequency, and share method. Summary shows
