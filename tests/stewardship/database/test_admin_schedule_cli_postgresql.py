@@ -41,6 +41,7 @@ from .test_admin_status_cli_postgresql import runner, without_web_runtimes
 from .test_background_grants_postgresql import task_login
 from .test_campaign_views_postgresql import post
 from .test_parish_views_postgresql import token as page_token
+from .test_schedule_entry_postgresql import setup as with_saved_emails
 from .test_schedule_views_postgresql import fields, pending
 from .test_schedule_views_postgresql import setup as campaign_with_reminder
 
@@ -297,6 +298,77 @@ def test_times_take_the_pages_common_forms(admin, google):
     assert problem["field"] == f"schedules.{identifier}.time"
     assert problem["code"] == "invalid"
     assert "with AM or PM the hour runs from 1 to 12" in problem["message"]
+
+
+def test_a_repeat_adds_ordinary_reminders_strictly(admin, google):
+    """A repeat (#469) adds one reminder per date, or refuses a date that won't fit."""
+    store = admin.service.store
+    # A draft whose reminder sends a saved reminder email, as the page needs.
+    _, emails = with_saved_emails(store)
+    _, secret, _ = paired(admin.service)
+    # Mondays from October 5 to 19, 2054, at 10 AM with the saved reminder's email.
+    rule = {
+        "frequency": "weekly",
+        "start": "2054-10-05",
+        "end": "2054-10-19",
+        "weekdays": [0],
+    }
+    entry = {
+        "repeat": rule,
+        "time": "10am",
+        "template_version": emails["reminder"]["id"],
+    }
+    code, document = preview(admin, secret, {"schedules": [entry]})
+    assert code == 0, document
+    added = document["result"]["changes"]
+    assert [change["operation"] for change in added] == ["add"] * 3
+    assert [change["after"]["date"] for change in added] == [
+        "2054-10-05",
+        "2054-10-12",
+        "2054-10-19",
+    ]
+    assert {change["kind"] for change in added} == {"reminder"}
+    assert {change["after"]["time"] for change in added} == {"10:00:00"}
+    code, confirmed = confirm(admin, secret, document["result"]["preview"]["token"])
+    assert code == 0, confirmed
+    request = confirmed["result"]["request"]["request_id"]
+    install_request(store, request_id=UUID(request), correlation_id=uuid4())
+    assert ScheduleDefinition.objects.filter(kind="reminder").count() == 4
+
+    # Unlike the page's panel, the command adds every date, so one that does
+    # not fit refuses the whole change. The 5th of each month from October:
+    # November 5 is after the campaign closes, named by its date.
+    fifths = {
+        "frequency": "monthly",
+        "start": "2054-10-02",
+        "end": "2054-11-30",
+        "monthly": {"day": 5},
+    }
+    code, document = preview(
+        admin, secret, {"schedules": [entry | {"repeat": fifths, "time": "11:00"}]}
+    )
+    assert code == 1 and document["error"]["code"] == "invalid"
+    [problem] = document["error"]["fields"]
+    assert problem["field"] == "schedules.new0.2054-11-05.date"
+    assert "within the campaign" in problem["message"]
+    # October 1, 2054 is a Thursday, the invitation's day; 8 AM is before it.
+    # A rule between schedules is the form set's, as for rows added one by one.
+    thursdays = rule | {"start": "2054-10-01", "end": "2054-10-08", "weekdays": [3]}
+    early = entry | {"repeat": thursdays, "time": "08:00"}
+    code, document = preview(admin, secret, {"schedules": [early]})
+    assert code == 1 and document["error"]["code"] == "invalid"
+    [problem] = document["error"]["fields"]
+    assert problem["field"] == "schedules"
+    assert "after the initial invitation" in problem["message"]
+    # Sundays from October 18: the 25th at 9 AM is the saved reminder's
+    # moment. A clash between schedules is the form set's too.
+    sundays = rule | {"start": "2054-10-18", "end": "2054-10-25", "weekdays": [6]}
+    clash = entry | {"repeat": sundays, "time": "09:00"}
+    code, document = preview(admin, secret, {"schedules": [clash]})
+    assert code == 1 and document["error"]["code"] == "invalid"
+    [problem] = document["error"]["fields"]
+    assert problem["field"] == "schedules", problem
+    assert ScheduleDefinition.objects.filter(kind="reminder").count() == 4
 
 
 def test_bad_tokens_change_nothing(admin, google, monkeypatch):

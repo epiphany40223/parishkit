@@ -1834,7 +1834,19 @@ nothing. It takes `--expected-version` (the `version` of `schedule show`,
 the page's hidden base digest) and `--changes`, a JSON change document bound
 to the page's own forms: a saved schedule named by `id` keeps what the
 document leaves out, `delete` removes it, an entry without `id` adds one,
-and saved schedules it does not name stay unchanged. For a live campaign
+and saved schedules it does not name stay unchanged. A `repeat` entry
+([#469](https://github.com/epiphany40223/parishkit/issues/469)) takes a
+repeat rule, a `time` and a `template_version` and adds one ordinary
+reminder per date the rule gives, expanded by the server's copy of the
+page's rules (see
+[New and Edit scheduled email](../admin-portal/spec.md#new-and-edit-scheduled-email)),
+as if the document listed each one. Unlike the page's panel, which leaves
+out the dates that do not fit, the command adds every date, so a date the
+forms refuse refuses the whole change and is named by its date
+(`schedules.new<n>.<YYYY-MM-DD>.<field>`), while a conflict between
+schedules is the form set's plain `schedules` error. A rule that gives no
+dates or more than 30, or that would skip a month without its day of the
+month (named in the error), is `invalid`. The rule is not saved. For a live campaign
 the document's `window` may change `end_date` alone, as the page allows
 ([#912](https://github.com/epiphany40223/parishkit/issues/912)), and
 `schedule confirm` binds its exceptional end-edit intent and records

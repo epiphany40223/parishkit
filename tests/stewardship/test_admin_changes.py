@@ -296,6 +296,130 @@ def test_an_empty_document_changes_nothing_and_is_well_formed():
     assert admin_changes.parse_changes("{}") == {"window": {}, "schedules": []}
 
 
+def weekly(**rule):
+    """A repeat rule: Mondays and Thursdays through the factory campaign."""
+    return {
+        "frequency": "weekly",
+        "start": START.isoformat(),
+        "end": END.isoformat(),
+        "weekdays": [0, 3],
+    } | rule
+
+
+def test_a_repeat_adds_one_labelled_reminder_per_date():
+    """Each date of the rule is an ordinary reminder with the entry's values."""
+    document = {
+        "schedules": [
+            {"kind": "daily_digest", "time": "07:00", "template_version": TEMPLATE},
+            {"repeat": weekly(), "time": "9am", "template_version": TEMPLATE},
+            {"kind": "reminder", "date": REMINDER_DAY, "time": "10:00"},
+        ]
+    }
+    rows = admin_changes.parse_changes(json.dumps(document))["schedules"]
+    days = [row["date"] for row in rows[1:-1]]
+    # The shared fixture's first case: October 2054's Mondays and Thursdays.
+    assert days[:3] == ["2054-10-01", "2054-10-05", "2054-10-08"]
+    assert len(days) == 9
+    assert all(
+        row["kind"] == "reminder"
+        and row["time"] == "9am"
+        and row["template_version"] == TEMPLATE
+        for row in rows[1:-1]
+    )
+    # A repeat counts as one added entry: plain entries keep their numbers.
+    labels = [row[admin_changes.LABEL] for row in rows]
+    assert labels == ["new0", *(f"new1.{day}" for day in days), "new2"]
+
+
+def test_repeated_reminders_are_posted_and_named_by_date():
+    """The forms read the repeat's reminders as rows added one by one."""
+    owner = campaign_record()
+    document = {
+        "schedules": [
+            {
+                "repeat": weekly(end="2054-10-08"),
+                "time": "09:00:00",
+                "template_version": TEMPLATE,
+            }
+        ]
+    }
+    data, identifiers = bind(document, [], owner["values"])
+    assert identifiers == ["new0.2054-10-01", "new0.2054-10-05", "new0.2054-10-08"]
+    assert data["schedules-TOTAL_FORMS"] == "3"
+    assert [data[f"schedules-{index}-date"] for index in range(3)] == [
+        "2054-10-01",
+        "2054-10-05",
+        "2054-10-08",
+    ]
+    assert data["schedules-2-kind"] == "reminder"
+    assert data["schedules-2-template_version"] == TEMPLATE
+    # The label is never posted.
+    assert not any(admin_changes.LABEL in name for name in data)
+
+
+@pytest.mark.parametrize(
+    ("repeat", "message"),
+    [
+        (weekly(end="2054-09-30"), "The last date is before the first."),
+        (weekly(start="2054-10-32"), "Choose the first and last dates"),
+        (weekly(end="2055-12-31"), "Repeat over at most a year."),
+        (weekly(weekdays=[]), "Choose at least one day of the week."),
+        (weekly(weekdays=[7]), "Choose at least one day of the week."),
+        (weekly(weekdays=[True]), "Choose at least one day of the week."),
+        (weekly(frequency="hourly"), "Choose how often to repeat."),
+        # Never a crash: a list or object among the weekdays is refused.
+        (weekly(weekdays=[[0]]), "Choose at least one day of the week."),
+        (weekly(weekdays=[{}]), "Choose at least one day of the week."),
+        (
+            weekly(frequency="monthly") | {"monthly": {"day": 5, "ordinal": 2}},
+            "Choose a day of the month",
+        ),
+        # Strict: a month the rule would skip is named, not dropped.
+        (
+            weekly(frequency="monthly", start="2054-08-01", end="2054-12-31")
+            | {"monthly": {"day": 31}},
+            "is not in September 2054, November 2054;",
+        ),
+        (weekly(frequency="monthly"), "Choose a day of the month"),
+        ("weekly", "Choose the first and last dates"),
+        # A range that ends before the chosen day gives nothing.
+        (
+            weekly(frequency="monthly", end="2054-10-04") | {"monthly": {"day": 5}},
+            "this one gives 0 dates",
+        ),
+        (weekly(frequency="daily"), "this one gives 31 dates"),
+    ],
+)
+def test_a_repeat_rule_that_adds_nothing_or_too_much_is_invalid(repeat, message):
+    """Refused before any form is bound, with the page's words where it has them."""
+    document = {"schedules": [{"repeat": repeat, "time": "09:00"}]}
+    with pytest.raises(ValueError, match=message):
+        admin_changes.parse_changes(json.dumps(document))
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        {"repeat": weekly(), "kind": "reminder"},
+        {"repeat": weekly(), "date": "2054-10-05"},
+        {"repeat": weekly(), "id": SCHEDULE},
+        {"repeat": weekly(), "time": 9},
+    ],
+)
+def test_a_repeat_takes_only_its_rule_time_and_email(entry):
+    """No kind (always a reminder), date or id; values typed as elsewhere."""
+    with pytest.raises(ValueError, match="A repeat takes only"):
+        admin_changes.parse_changes(json.dumps({"schedules": [entry]}))
+
+
+def test_expanded_repeats_still_fit_the_pages_form():
+    """Four rules of 30 dates each are more rows than the page takes."""
+    daily = weekly(frequency="daily", end="2054-10-30")
+    document = {"schedules": [{"repeat": daily}] * 4}
+    with pytest.raises(ValueError, match="schedules are not valid"):
+        admin_changes.parse_changes(json.dumps(document))
+
+
 def saved(owner, **values):
     """A saved schedule record of ``owner``."""
     return schedule_record(owner["id"], template_version=TEMPLATE, **values)
