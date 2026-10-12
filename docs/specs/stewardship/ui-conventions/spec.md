@@ -1327,12 +1327,18 @@ its time keeps that time when it is posted back unchanged.
   shares the buttons' line, so their labels do not wrap. A field hidden by
   another choice (a mail type that takes no time, a refresh frequency without
   set times) does not hold Save, and a `formnovalidate` button stays usable.
-- A list field (the ParishSoft refresh times) reads each entry. Entries are
-  separated by commas, semicolons or spaces, and by new lines in a value
-  posted without the page (a one-line text box drops line breaks from pasted
+- A list field (the refresh schedule's Edit as text lists, a multi-line
+  `textarea`) reads each entry. Entries are separated by commas, semicolons,
+  spaces or new lines (a one-line list box drops line breaks from pasted
   text). A suffix standing alone after a space (`2 pm`) belongs to the entry
-  before it, but not across a comma or semicolon (`2, pm` is refused). A time
-  listed twice is reported in the reading and saved once.
+  before it, but not across a comma, semicolon or new line (`2, pm` is
+  refused). A time listed twice is reported in the reading and saved once.
+  The reading names each time for a list of up to eight; a longer list reads
+  as its count and range ("Reads as 91 times, from 00:15 (12:15 AM) to 23:45
+  (11:45 PM)"), so the line stays short as the Admin types. A list typed one
+  time per line keeps one time per line when focus leaves it.
+- A field out of view does not hold Save: one hidden by another choice, or
+  inside a closed `details` panel (Edit as text).
 - A list field whose blank stands for a value says so: a blank entry, or
   one of only separators such as `,`, reads "Blank reads as 02:00 (2:00 AM)"
   and saves that value. A blank single time has no reading; whether it is
@@ -1360,13 +1366,19 @@ are in the parish's time zone, the recorded exception to the browser-local
 rule that those rules describe (see also
 [ParishSoft refresh schedule settings](../admin-portal/spec.md#parishsoft-refresh-schedule-settings)).
 
-**Fields.**
+**Fields.** Every Admin time of day is a shared time entry field: a form's
+`FlexibleTimeField` or `FlexibleTimeListField`, or a hand-drawn `input` or
+`textarea` marked `data-time-entry`. No page draws its own reading; a guard
+test (`tests/stewardship/test_time_entry_guard.py`) fails on a new time box
+without the mark ([#1117](https://github.com/epiphany40223/parishkit/issues/1117)).
 
 | Page | Field | Entry |
 | --- | --- | --- |
-| ParishSoft settings | At these times (full refresh) | List, parish time |
+| ParishSoft refresh schedule | Each rule's At, From and To; each skip's At, From and To | One time, refresh schedule time |
+| ParishSoft refresh schedule, Edit as text | Full refresh times; Quick update times | List, refresh schedule time |
 | New and Edit scheduled email | Send time | One time, browser time |
 | The date-change review; first-campaign Mail schedules | Send time | One time, campaign time |
+| First-campaign Mail schedules, Repeat a reminder | Send time | One time, campaign time |
 | Ministry follow-up | Contact attempt time | One time, browser time zone |
 | Logs, reports | Date filters | Dates only, no time of day |
 

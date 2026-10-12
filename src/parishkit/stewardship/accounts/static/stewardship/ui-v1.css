@@ -948,6 +948,14 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
    instead of a tall single column; each keeps its 44px touch target. */
 .repeat-days { display: flex; flex-wrap: wrap; column-gap: 1.25rem; }
 .repeat-days > label { display: inline-block; }
+/* The Repeat panel's Send time reading (#1117) reserves two lines, and on
+   desktop takes the field's full width rather than the short-field 14rem,
+   so a refusal such as "“9xx” isn't a time. Try 2:00 PM, …" appearing moves
+   nothing below it. */
+.schedule-repeat .time-reading { min-height: 3.2em; min-height: 2lh; }
+@media (min-width: 48rem) {
+  .schedule-repeat > div:has(> input[data-time-entry=time]) > .time-reading { max-width: none; }
+}
 /* The repeat summary reserves two lines, so its text appearing, changing or
    wrapping on a phone never moves the Add button below it (#469). */
 .repeat-summary { min-height: 3.2em; min-height: 2lh; margin-block: .5rem 0; font-weight: 600; }
@@ -1038,6 +1046,9 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 .schedule-switch { margin-block: 1.25rem; }
 .schedule-switch label { display: inline; margin: 0; }
 .schedule-text textarea { min-height: 3.5rem; }
+/* Each Edit as text list with its time reading (#1117) keeps a paragraph's
+   spacing and holds its margins, as a region refresh-schedule-v1.js steadies. */
+.schedule-text > div { display: flow-root; margin-block: 0 1rem; }
 .schedule-stale, .schedule-text-error { min-height: 1lh; }
 /* What refresh-schedule-v1.js redraws or resizes holds its children's
    margins, so its box's height is all the room it takes: the script keeps
