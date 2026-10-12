@@ -64,16 +64,20 @@ def _json(value, *, status=200):
     return JsonResponse(value, status=status, headers={"Cache-Control": "no-store"})
 
 
-def _body(request, fields):
-    """Reject unknown/duplicate fields; identifiers and filters stay out of URLs."""
+def _body(request, fields, *, optional=frozenset()):
+    """Reject unknown/duplicate fields; identifiers and filters stay out of URLs.
+
+    Every name in ``fields`` must be sent once; one in ``optional`` may be
+    sent once or left out (then it is missing from the result).
+    """
     supplied = set(request.POST) - {"csrfmiddlewaretoken"}
     if (
         request.GET
-        or supplied != set(fields)
+        or supplied - set(optional) != set(fields)
         or any(len(request.POST.getlist(field)) != 1 for field in request.POST)
     ):
         raise ValueError("Invalid export request fields.")
-    return {field: request.POST[field] for field in fields}
+    return {field: request.POST[field] for field in supplied}
 
 
 def _principal(request, store, *, read_only=False, ministry_jobs=False):

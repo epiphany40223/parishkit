@@ -233,15 +233,18 @@ def test_an_email_changed_since_the_preview_is_refused(
 NAMES_EVENT = "admin_cmd_export_family_test_names"
 
 
-def names_preview(admin, secret, family_test, *duids, key, fmt=None):  # noqa: F811
+def names_preview(admin, secret, family_test, *duids, key, fmt=None, zone="UTC"):  # noqa: F811
     """``test families-preview --names`` for ``duids`` under ``key``.
 
     ``fmt`` adds ``--format``; without it the command's default (CSV).
+    ``zone`` is the ``--timezone``; None leaves it out (the parish's, #1127).
     """
     argv = ["test", "families-preview", revision(family_test)]
     for duid in duids:
         argv += ["--family", str(duid)]
-    argv += ["--names", "--timezone", "UTC", "--request-key", str(key)]
+    argv += ["--names", "--request-key", str(key)]
+    if zone is not None:
+        argv += ["--timezone", zone]
     if fmt is not None:
         argv += ["--format", fmt]
     return admin(*argv, secret=secret)
@@ -446,12 +449,32 @@ def test_the_constraint_still_refuses_a_png_names_export(admin, family_test):  #
         transaction.set_rollback(True)
 
 
-def test_names_need_the_time_zone_and_a_testing_review(admin, family_test):  # noqa: F811
-    """--names without --timezone is a usage error; refusals export nothing."""
+def test_names_without_a_zone_use_the_parish_zone(admin, family_test):  # noqa: F811
+    """The names file has no times in its rows, so --timezone is optional.
+
+    Without it the file's capture and request times use the parish's time
+    zone (#1127): a host command has no browser zone to send.
+    """
+    from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+    from parishkit.stewardship.reports.export_models import ExportRequest
+
+    _, secret, _ = paired(admin.service)
+    code, document, _ = names_preview(
+        admin, secret, family_test, 1, key=uuid4(), zone=None
+    )
+    assert code == 0, document
+    parish = SystemConfiguration.objects.values_list(
+        "active_configuration__parish__timezone", flat=True
+    ).get()
+    request = ExportRequest.objects.get(report="family_test_names")
+    assert request.browser_timezone == parish
+    assert names_trail() == (1, 1, 1)
+
+
+def test_names_need_a_testing_review(admin, family_test):  # noqa: F811
+    """--timezone needs --names; refusals export nothing."""
     _, secret, _ = paired(admin.service)
     argv = ["test", "families-preview", revision(family_test), "--family", "1"]
-    code, document, _ = admin(*argv, "--names", secret=secret)
-    assert code == 2 and document["error"]["code"] == "usage", document
     code, document, _ = admin(*argv, "--timezone", "UTC", secret=secret)
     assert code == 2 and document["error"]["code"] == "usage", document
     # --format chooses the names file's format, so it needs --names.

@@ -161,6 +161,36 @@ def browser_zone(zone):
         raise UnknownZone("Unknown time zone.") from None
 
 
+def unasked_zone(zone, fallback):
+    """The zone a download that asks for none uses: the browser's, else ``fallback``.
+
+    A download whose rows hold no exact action times does not ask for a time
+    zone (#1127, ui-conventions "Downloaded files"); its form posts the
+    browser's zone silently (``data-browser-zone``) for the frame times. The
+    choice was never the reader's, so nothing is refused for it: a missing,
+    empty or unknown name (no Intl, "Etc/Unknown", a tab from before the
+    change) falls back to ``fallback``, which the file names. The export
+    views pass the parish's zone (:func:`parish_zone`); the Participation
+    page's own address parsing passes UTC.
+    """
+    return zone if type(zone) is str and zone in timezone_names() else fallback
+
+
+def parish_zone():
+    """The active configuration's parish time zone, or UTC before setup.
+
+    The fallback for a download that asks for no zone when the browser sent
+    none it knows (:func:`unasked_zone`), and for a host command, which has
+    no browser. Imported lazily: the web helpers load before the models.
+    """
+    from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+
+    zone = SystemConfiguration.objects.values_list(
+        "active_configuration__parish__timezone", flat=True
+    ).first()
+    return zone or "UTC"
+
+
 def refuse_zoneless_dates(parameters, expected):
     """Refuse an export form from a page loaded before its dates had a zone.
 

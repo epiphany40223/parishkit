@@ -96,7 +96,6 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
             "sort=name",
             "scope=current&scope=historical",
             "family=Private-name",
-            "timezone=missing",
         ):
             response, _ = read(browser, path + "?" + query)
             assert response.status_code == 400

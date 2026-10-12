@@ -12,7 +12,8 @@
     if (Array.from(select.options).some(option => option.value === zone)) select.value = zone;
   });
   // A form marked data-keep-choices (the Family timeline's export, which an
-  // in-place sort or mode change redraws) keeps what the user picked: each
+  // in-place sort or mode change redraws, and the Family directory's, whose
+  // time zone slot every in-place refresh redraws) keeps what the user picked: each
   // menu's last choice, by id, is put back on the fresh menu when offered.
   const kept = new Map();
   document.addEventListener("change", (event) => {

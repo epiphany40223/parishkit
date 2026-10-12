@@ -438,7 +438,15 @@ def preview_families(caller, service, revision_id, duids, *, request_key):
 
 
 def preview_families_with_names(
-    caller, service, revision_id, duids, *, request_key, zone, context, format="csv"
+    caller,
+    service,
+    revision_id,
+    duids,
+    *,
+    request_key,
+    zone=None,
+    context,
+    format="csv",
 ):
     """``test families-preview --names``: the review, and its names as a file.
 
@@ -461,6 +469,10 @@ def preview_families_with_names(
     revision, DUIDs, format and time zone returns the same export (``export``
     unchanged, no new event); the same key for another selection is
     ``invalid``, as the export forms' 409.
+
+    The file's rows hold no times, so ``zone`` is optional (#1127): None
+    uses the parish's time zone for the file's capture and request times,
+    as a host command has no browser zone to send.
     """
     from django.core import signing
     from django.core.exceptions import ObjectDoesNotExist
@@ -476,6 +488,7 @@ def preview_families_with_names(
     from .audit.schemas import Action
     from .reports.export_models import ExportRequest
     from .reports.family_test_names import create_family_test_names_export
+    from .web.dates import parish_zone
 
     parsed = parse_family_duids(" ".join(str(duid) for duid in duids))
     if not parsed:
@@ -501,6 +514,7 @@ def preview_families_with_names(
             except LookupError as error:
                 # Not used by a current schedule: the page's refusal.
                 raise PermissionError(str(error)) from None
+            file_zone = zone or parish_zone()
             repeat = ExportRequest.objects.filter(
                 requester_id=actor.identity, request_key=request_key
             ).exists()
@@ -510,7 +524,7 @@ def preview_families_with_names(
                 campaign_id=campaign_id,
                 revision_id=revision_id,
                 families=[(choice.duid, choice.name) for choice in preview.families],
-                browser_timezone=zone,
+                browser_timezone=file_zone,
                 request_key=request_key,
                 format=format,
             )

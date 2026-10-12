@@ -1,5 +1,6 @@
 """Three-engine private native directories and accessible contacts."""
 
+import re
 from uuid import UUID
 
 import pytest
@@ -146,7 +147,9 @@ def test_complete_directory_export_controls_are_private_native_and_gated(
         # The export controls are collapsed until asked for.
         assert not page.get_by_label("Export format").is_visible()
         page.get_by_text("Export complete results").click()
-        assert page.get_by_label("Export timezone").input_value() == "America/Detroit"
+        # A code list without response columns has no times in its rows, so
+        # it asks for no zone and sends the browser's unasked (#1127).
+        assert page.get_by_label("Export timezone").count() == 0
         visible(page.get_by_text("51 estimated matching Families", exact=False))
         page.get_by_label(
             "Search by Family name, any member's name, DUID, envelope number or address"
@@ -162,6 +165,8 @@ def test_complete_directory_export_controls_are_private_native_and_gated(
             "search=Example" in sent.value.post_data
             and "format=xlsx" in sent.value.post_data
         )
+        assert sent.value.post_data.count("browser_timezone=") == 1
+        assert "browser_timezone=America%2FDetroit" in sent.value.post_data
         assert (
             "page=" not in sent.value.post_data
             and "Unsaved" not in sent.value.post_data
@@ -337,3 +342,84 @@ def test_mailing_columns_page_draws_reach_locked(page, component_origin):
     page.get_by_label("Include mailing columns").uncheck()
     assert reach.is_enabled() and reach.input_value() == "any"
     assert reach.bounding_box() == before
+
+
+def test_export_time_zone_follows_the_applied_response_columns(page, component_origin):
+    """Only the code list with response columns asks for a time zone (#1127).
+
+    Applying Include response columns brings the export's time zone field
+    in; applying without them takes it away again, and the browser's zone
+    is then sent unasked. The field is the last of its row with its help in
+    a toggletip, so the format menu and the Queue button do not move within
+    the export options (no layout shift); a re-sort keeps the zone the reader
+    chose. The columns line above the form
+    lists more columns with the response columns, so positions are compared
+    within the options fieldset.
+    """
+    from playwright.sync_api import expect
+
+    page.goto(component_origin + "/family-directory")
+    page.get_by_text("Export complete results").click()
+    zone = page.get_by_label("Export timezone")
+    options = page.locator("#table-export fieldset")
+    controls = (
+        page.get_by_label("Export format"),
+        page.get_by_role("button", name="Queue complete export"),
+        page.locator("#table-export .help").first,
+    )
+
+    def boxes():
+        """Where the export options' controls sit within their fieldset.
+
+        One flat list, so callers compare it with a sub-pixel tolerance:
+        Firefox can lay the same box out a few hundred-thousandths of a
+        pixel apart after a redraw, which no reader sees as a shift.
+        """
+        frame = options.bounding_box()
+        return [
+            value
+            for box in (item.bounding_box() for item in controls)
+            for value in (
+                box["x"] - frame["x"],
+                box["y"] - frame["y"],
+                box["width"],
+                box["height"],
+            )
+        ]
+
+    def apply(fixture):
+        """Apply the filters, answered with the ``fixture`` page."""
+        page.unroute("**/families/")
+        page.route(
+            "**/families/",
+            lambda route: route.fulfill(
+                response=route.fetch(url=component_origin + fixture, method="GET")
+            ),
+        )
+        page.get_by_role("button", name="Apply filters").click()
+
+    assert zone.count() == 0
+    before = boxes()
+    page.get_by_label("Include response columns").check()
+    apply("/directory-responses")
+    visible(zone)
+    assert page.locator("#table-export input[name=responses]").input_value() == "yes"
+    assert boxes() == pytest.approx(before, abs=0.5)
+    # A re-sort redraws the zone slot with the rows; the form is marked
+    # data-keep-choices, so the zone the reader chose is put back.
+    zone.select_option("America/Detroit")
+    zone.evaluate("node => { node.dataset.drawn = 'before'; }")
+    page.get_by_role("button", name=re.compile(r"^Family \(sort")).click()
+    expect(page.locator("#directory-export-timezone:not([data-drawn])")).to_have_count(
+        1
+    )
+    expect(zone).to_have_value("America/Detroit")
+    page.get_by_label("Include response columns").uncheck()
+    apply("/family-directory")
+    expect(zone).to_have_count(0)
+    assert boxes() == pytest.approx(before, abs=0.5)
+    # The browser's zone goes unasked, once.
+    hidden = page.locator("#table-export input[name=browser_timezone]")
+    assert hidden.count() == 1 and hidden.input_value() == page.evaluate(
+        "Intl.DateTimeFormat().resolvedOptions().timeZone"
+    )

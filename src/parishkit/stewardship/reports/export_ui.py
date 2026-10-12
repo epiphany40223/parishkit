@@ -24,6 +24,7 @@ from parishkit.stewardship.jobs.queue_wait import queue_wait
 from parishkit.stewardship.jobs.storage import TaskRetryConflict
 from parishkit.stewardship.observability import debug_swallowed
 from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.web.dates import parish_zone, unasked_zone
 from parishkit.stewardship.web.responses import campaign_response
 
 from .directories import REACH, testing_codes_context
@@ -137,7 +138,9 @@ def create(request, campaign_id):
         service = runtime()
         principal = _principal(request, service.store)
         values = _body(
-            request, {"fact_set_id", "format", "browser_timezone", "request_key"}
+            request,
+            {"fact_set_id", "format", "request_key"},
+            optional={"browser_timezone"},
         )
         job = create_export(
             service.store,
@@ -145,7 +148,11 @@ def create(request, campaign_id):
             campaign_id=campaign_id,
             fact_set_id=UUID(values["fact_set_id"]),
             format=values["format"],
-            browser_timezone=values["browser_timezone"],
+            # The page asks for no zone (#1127): the one it was drawn in,
+            # else the parish's.
+            browser_timezone=unasked_zone(
+                values.get("browser_timezone"), parish_zone()
+            ),
             request_key=UUID(values["request_key"]),
         )
         return _redirect(job.pk)
