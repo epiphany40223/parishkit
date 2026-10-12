@@ -75,7 +75,13 @@ def test_the_catalog_lists_every_command_with_its_flags():
     }
     refresh = {"refresh start", "refresh status"}
     portal = {"portal maintenance show", "portal maintenance set"}
-    configuration = {"files list", "files delete", "files rename"}
+    configuration = {
+        "files list",
+        "files delete",
+        "files rename",
+        "content list",
+        "content history",
+    }
     tests = {
         "test sample-preview",
         "test sample",

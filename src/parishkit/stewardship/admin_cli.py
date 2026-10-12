@@ -44,8 +44,9 @@ export`` (PR 8a, in ``admin_reports``), the export lifecycle (PR 8b, in
 Family-level exports (PR 8e, in ``admin_family_exports``), the Family
 portal maintenance switch (PR 7a, in ``admin_portal``), ``report
 source-form`` (in ``admin_source_form``), ``report data-to-fix`` (in
-``admin_data_to_fix``) and ``files list``, ``files
-delete`` and ``files rename`` (PR 10, in ``admin_hosted_files``). A
+``admin_data_to_fix``), ``files list``, ``files
+delete`` and ``files rename`` (PR 10, in ``admin_hosted_files``) and
+``content list`` and ``content history`` (PR 10, in ``admin_content``). A
 command that streams a file (``logs export`` and
 ``export download --stream``) writes the file's bytes, and nothing else, to
 standard output, and its document to standard error. Other areas join the same
@@ -1134,6 +1135,20 @@ def portal_maintenance_show(args, preamble, runtime, context):
     from .admin_portal import read_maintenance
 
     return read_maintenance(context["caller"], runtime)
+
+
+def content_list(args, preamble, runtime, context):
+    """The Pages and emails page's list for the current campaign (PR 10)."""
+    from .admin_content import read_content_list
+
+    return read_content_list(context["caller"], runtime)
+
+
+def content_history(args, preamble, runtime, context):
+    """The Content history page, and one revision's sample (PR 10)."""
+    from .admin_content import read_content_history
+
+    return read_content_history(context["caller"], runtime, args.revision)
 
 
 def files_list(args, preamble, runtime, context):
@@ -2240,6 +2255,15 @@ def _history_remove_options(parser):
     )
 
 
+def _content_history_options(parser):
+    """Options of ``content history``: one retained revision's sample."""
+    parser.add_argument(
+        "--revision",
+        type=_uuid,
+        help="a retained page or email, by its entries id: print its sample",
+    )
+
+
 def _files_delete_options(parser):
     """Options of ``files delete``: the files, by ``files list`` id."""
     parser.add_argument("file_id", type=_uuid, nargs="+", metavar="FILE_ID")
@@ -3342,10 +3366,37 @@ def _portal_specs():
 
 
 def _file_specs():
-    """The hosted file library (PR 10, ``admin_hosted_files``)."""
+    """The hosted file library (PR 10, ``admin_hosted_files``) and content reads.
+
+    The content reads (``admin_content``) are the Pages and emails and
+    Content history pages' reads; like ``files list``, any session runs
+    them and they record nothing, as the pages' GETs record nothing.
+    """
+    from .admin_content import ContentHistory, ContentList
     from .admin_hosted_files import FileDeletion, FileRename, HostedFileLibrary
 
     return (
+        CommandSpec(
+            "content list",
+            "List the current campaign's pages and emails and their state.",
+            content_list,
+            "read_only",
+            False,
+            ContentList.field_names(),
+            10,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "content history",
+            "List the current campaign's retained pages and emails.",
+            content_history,
+            "read_only",
+            False,
+            ContentHistory.field_names(),
+            10,
+            options=(_content_history_options,),
+            audit_event=None,
+        ),
         # The page's GET records no event.
         CommandSpec(
             "files list",

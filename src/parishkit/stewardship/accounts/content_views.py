@@ -135,6 +135,8 @@ def catalog_entries(configuration, campaign):
         )
         pages.append(
             {
+                # The slot names the page to ``pk-admin content list`` (#463).
+                "slot": slot,
                 "label": label,
                 "url": reverse("admin:content_edit", args=["page", slot]),
                 "state": _content_state(record),
@@ -204,6 +206,7 @@ def catalog_entries(configuration, campaign):
             )
         emails.append(
             {
+                "slot": slot,
                 "label": label,
                 # Element IDs of the table's form, Delete dialog and heading
                 # (where focus goes when the row that opened it is gone).

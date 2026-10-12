@@ -1633,7 +1633,9 @@ signatures:
   hosted file page's row builder was already request-free; `files delete`
   and `files rename` only add a `record` callback to
   `hosted_file_uses.delete_many` and `rename`, so the command's event shares
-  their transaction.
+  their transaction. `content list` needed none (the catalog's row builder
+  was already request-free); `content history` moved the history page's
+  read into `content_history.retained_content`, which the page now calls.
 - **PR 11:** user, event and follow-up actions from their views (the users
   model of #952 replaces the rule actions; #922 retired the assignment and
   Chairperson actions).
@@ -1809,7 +1811,7 @@ none.
 | `configuration_request` | `config request show --watch` (PR 4); `config request cancel` ([#944](https://github.com/epiphany40223/parishkit/pull/944)), an operator recovery with no page button |
 | `campaign_settings`, `campaign_clone` | `campaign show`, `campaign preview`, `campaign confirm`, `campaign clone` (PR 10); until #145, creating or copying a campaign is refused, except the first campaign through [Create the campaign](../admin-portal/spec.md#create-the-campaign) (#142) ([navigation rule 10](../admin-portal/spec.md#navigation-rules)): commands that go through `confirm` and `_target`, or call `refuse_campaign_creation`, will get the same refusal as the pages; `privileged_actions.configuration_request` has no such check |
 | `campaign_ministries`, `share_settings`, `reminder_workgroup` | `campaign ministries`, `campaign shares`, `campaign no-reminders-workgroup` (PR 10) |
-| `content_catalog`, `content_edit`, `content_revision`, `content_delete`, `content_history`, `content_history_revision`, `content_plain_text` | `content list`, `content show`, `content preview`, `content confirm`, `content history` (PR 10) |
+| `content_catalog`, `content_edit`, `content_revision`, `content_delete`, `content_history`, `content_history_revision`, `content_plain_text` | `content list`, `content history` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); `content show`, `content preview`, `content confirm` (PR 10) |
 | `parish_settings`, `ministries` | `parish`, `ministries` (PR 10) |
 | `hosted_files`, `hosted_file_delete`, `hosted_file_rename` | `files list`, `files delete`, `files rename` ([#463](https://github.com/epiphany40223/parishkit/issues/463)) |
 | `artwork_settings` (its upload and removal reviews, #750) | `artwork show`, `artwork remove` (PR 10) |
@@ -1924,6 +1926,29 @@ per file, `hosted_file_slug_changed`) and its own `admin_cmd_files_delete`
 or `admin_cmd_files_rename` in one transaction, only when something
 changed. No fresh gate and the in-use refusal as `invalid` are defaults,
 pending Administrator confirmation.
+
+`content list` is the Pages and emails page's list, through the page's
+own pieces (`content_views._campaign` over `campaign_views._state`, then
+`catalog_entries`), and `content history [--revision ID]` the Content
+history page, through the page's own `content_history.retained_content`.
+Both are Administrators only (`CONFIGURE`), as the pages, admitted
+passively so any session scope reads, with no event, as the pages' GETs
+record none. Both read the current campaign, as the pages do; none is
+`not_available`. `content list` prints the applied configuration's
+`version` (the base a content change is previewed against) and, in the
+page's order, each Family page's slot, name, text state (`empty`,
+`default` or `custom`) and re-save notice, and each mail type's emails
+with their id, subject, excerpt, the schedules that send them, whether
+they can be deleted, text state and re-save notice. As on the page,
+background work holding the campaign is `stale_version`. `content
+history` prints the campaign's state and retained configuration version
+and each retained page and email (id, kind, slot, name, subject); with
+`--revision`, that revision's fictional sample (`subject`, `html`,
+`text`), as the page shows it, or `not_available` for an ID the campaign
+did not retain. Content is the campaign's own text, never a Family's. A
+configuration refusal is `unavailable`. The
+[operator guide](../../../guides/stewardship-admin-automation.md#pages-and-emails)
+lists the fields.
 
 ### Production transition and withdrawal
 
@@ -2924,8 +2949,9 @@ exactly the commands that exist.
 - **PR 9, operations,** in three parts. **PR 9a:** task retries. **PR 9b:**
   delivery reads and resolution. **PR 9c:** `resend` and refusal clearing, at
   the prompt.
-- **PR 10, other configuration:** campaign, content, Ministries, parish,
-  hosted files (`files list`, `files delete`, `files rename`), artwork, branding confirmation, integration settings with the
+- **PR 10, other configuration:** campaign, content (`content list` and
+  `content history` first), Ministries, parish, hosted files (`files list`,
+  `files delete`, `files rename`), artwork, branding confirmation, integration settings with the
   backup folder probe, and secret replacement: integration key replacement,
   finish switching and the backup key change, with the wrapper's secret
   input.
