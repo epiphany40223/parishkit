@@ -4652,8 +4652,14 @@ The rows are newest first by default, the selection's own order, which no
 heading shows; Member and Ministry sort through the selection's own orders,
 and the selection's oldest-first order is no longer offered. Member DUID,
 Request, Status and Last contact do not sort, since the selection has no
-order for them. A long Member or Ministry name is cut short
-with an ellipsis on one line and shown whole in its title. Member names read
+order for them. A long Member name is cut short with an ellipsis on one
+line; a long Ministry name wraps to at most two lines, ending in an
+ellipsis only when even two are too few, so a leader can tell similar
+Ministries apart without hovering
+([#1136](https://github.com/epiphany40223/parishkit/issues/1136)). A name
+cut short shows whole in a tip on hover, keyboard focus and tap
+([table fit and row
+height](../ui-conventions/spec.md#table-fit-and-row-height)). Member names read
 "Last, first", as the
 [Member-name rule](../ui-conventions/spec.md#family-and-member-names) asks,
 so the Member sort orders by surname; the search also finds the "first last"
@@ -4677,8 +4683,9 @@ The queue page is compact
 ([#1064](https://github.com/epiphany40223/parishkit/issues/1064)). Its
 filters share one compact filter bar that takes two rows at laptop
 widths; at phone width each field takes its own row.
-Every row of the table is one line, per [table fit and row
-height](../ui-conventions/spec.md#table-fit-and-row-height): a cell
+Every row of the table is one line, or two where a long Ministry name wraps
+(#1136), per [table fit and row
+height](../ui-conventions/spec.md#table-fit-and-row-height): any other cell
 holds one short value that does not wrap, so a table wider than the page
 scrolls sideways inside its own box. Request reads Join or Leave, and "Leave
 (cannot participate)" for a Member who cannot participate in any ministries,

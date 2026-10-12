@@ -78,6 +78,11 @@ POSTS = {
 }
 
 
+# A long Ministry name with the digit prefix some parishes use, which is
+# plain text (#971); it wraps onto two lines in the queue (#1136).
+LONG_MINISTRY = "105-Religious Education Catechists and Aides"
+
+
 def _table(rows, query, total, campaign):
     """The shared POST navigator/heading model the queue view builds (#203)."""
     return report_table(
@@ -205,7 +210,8 @@ def components(context, admin):
     # a leave from a Member who cannot participate, every status with its
     # outcome (the longest is "Declined / no longer interested"), a Member
     # added on the form, a Ministry since removed from the campaign, long
-    # names, and requests with no contact recorded.
+    # names (Ministry names as long as the longest in use, one with a digit
+    # prefix, #1136), and requests with no contact recorded.
     states = [
         ("new", None),
         ("in_progress", None),
@@ -225,9 +231,11 @@ def components(context, admin):
                 member_name=f"Member{number} Bartholomew-Fitzgerald <Example>",
                 member_duid=None if number == 4 else 100000 + number,
                 ministry_name=(
-                    "Hospitality and welcome ministry for the parish"
-                    if number % 2
-                    else "Choir"
+                    "Choir"
+                    if number % 2 == 0
+                    else LONG_MINISTRY
+                    if number % 4 == 1
+                    else "Hospitality and welcome ministry for the parish"
                 ),
                 ministry_duid=1000 + number,
                 in_campaign=number != 6,

@@ -1729,13 +1729,21 @@ Administrator asked for one-line rows on #952). A long email or Name is cut
 off with "…"; the full value stays the cell's text, appears in a `title`
 tooltip, and is shown whole on the user's Edit page
 ([Users table](../admin-portal/spec.md#users-table), #952, #963).
-The Ministry follow-up queue does the same for a long Member or Ministry
-name, with the shared `cell-ellipsis` class, so a long Ministry name never
-makes its row several lines tall
-([Follow-up workflows](../admin-portal/spec.md#follow-up-workflows), #932);
-since [#1064](https://github.com/epiphany40223/parishkit/issues/1064) its
-other cells do not wrap either, so every row is one line and the table
-scrolls sideways in its own box when it is wider than the page.
+The Ministry follow-up queue does the same for a long Member name, with the
+shared `cell-ellipsis` class
+([Follow-up workflows](../admin-portal/spec.md#follow-up-workflows), #932).
+Its Ministry name, which a leader scans to tell similar Ministries apart,
+wraps instead to at most two lines (`cell-clamp`), so a name as long as any
+in use shows whole; only a name too long even for two lines ends in "…"
+([#1136](https://github.com/epiphany40223/parishkit/issues/1136)). In the
+queue a name cut short shows whole in a tip on hover, keyboard focus and
+tap (a cut Ministry name joins the tab order for that), not in a bare
+`title`, which keyboard and touch cannot reach; the whole name stays the
+cell's text for screen readers. Since
+[#1064](https://github.com/epiphany40223/parishkit/issues/1064) the queue's
+other cells do not wrap, so a row is one line, or two where a Ministry name
+wraps, and the table scrolls sideways in its own box when it is wider than
+the page.
 
 ## Downloaded files
 

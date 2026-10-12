@@ -399,13 +399,57 @@ def test_followup_sort_heading_posts_privately(page, component_origin):
     assert "ministry=9" in body and "?" not in sent.value.url
 
 
+def test_clipped_name_tip_never_swallows_the_next_tap(browser_engine, component_origin):
+    """On a touch screen a tap on a cut Ministry name shows its tip, and the
+    next tap, even on a link drawn under the tip, hides the tip and opens
+    the link (#1136)."""
+    from playwright.sync_api import expect
+
+    context = browser_engine.new_context(
+        has_touch=True, viewport={"width": 1280, "height": 900}
+    )
+    try:
+        page = context.new_page()
+        page.goto(component_origin + "/followup-all")
+        name = page.locator("tbody tr").nth(1).locator(".cell-clamp")
+        name.tap()
+        tip = page.locator(".admin-tip.is-shown")
+        expect(tip).to_have_text(name.text_content())
+        # A link where the tip is drawn, under it.
+        page.evaluate(
+            """() => {
+                const box = document.querySelector('.admin-tip.is-shown')
+                    .getBoundingClientRect();
+                const link = document.createElement('a');
+                link.href = '#under-the-tip';
+                link.id = 'under-the-tip';
+                link.textContent = 'Under the tip';
+                Object.assign(link.style, {
+                    position: 'fixed', zIndex: '1', display: 'block',
+                    left: box.left + 'px', top: box.top + 'px',
+                    width: box.width + 'px', height: box.height + 'px',
+                });
+                document.body.append(link);
+            }"""
+        )
+        box = tip.bounding_box()
+        page.touchscreen.tap(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        expect(tip).to_have_count(0)
+        assert page.evaluate("location.hash") == "#under-the-tip"
+    finally:
+        context.close()
+
+
 def test_followup_columns_follow_the_shared_order(page, component_origin):
     """The queue's columns follow the shared order (#932): the Member leads
     and the Member DUID has its own column (a Member added on the form reads
     New Member). By Administrator decision (#1064) there is no Ministry DUID
     or Submitted column.
-    A long Ministry name is cut short with an ellipsis on one line, shown
-    whole in its title, and never widens the page."""
+    A Ministry name too long even for two lines (#1136) ends in an
+    ellipsis on its second line, joins the tab order and shows whole in a
+    tip on keyboard focus, and never widens the page."""
+    from playwright.sync_api import expect
+
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + "/followup-all")
     headings = page.locator("thead th").all_inner_texts()
@@ -423,13 +467,20 @@ def test_followup_columns_follow_the_shared_order(page, component_origin):
     assert first.nth(0).inner_text() == "Example <Member>"
     assert first.nth(1).inner_text() == "12345"
     assert second.nth(1).inner_text() == "New Member"
-    name = second.nth(2).locator(".cell-ellipsis")
-    assert name.get_attribute("title").endswith("<end>")
-    assert name.evaluate(
-        "e => e.scrollWidth > e.clientWidth"
-        " && getComputedStyle(e).textOverflow === 'ellipsis'"
-        # One line: under two font sizes tall, whatever the line height.
-        " && e.getBoundingClientRect().height"
-        " < 2 * parseFloat(getComputedStyle(e).fontSize)"
-    )
+    name = second.nth(2).locator(".cell-clamp")
+    assert name.text_content().endswith("<end>")
+    assert name.evaluate("e => e.scrollHeight > e.clientHeight")
+    # Two lines: twice the first row's one-line name, whatever the font.
+    short = first.nth(2).locator(".cell-clamp")
+    height = name.bounding_box()["height"]
+    assert abs(height - 2 * short.bounding_box()["height"]) <= 2, height
+    assert name.get_attribute("tabindex") == "0"
+    # The short name in the first row fits, so it stays out of the tab order.
+    assert short.get_attribute("tabindex") is None
+    name.focus()
+    expect(page.locator(".admin-tip.is-shown")).to_have_text(name.text_content())
+    # A resize keeps focus on the name and its tip shown beside it.
+    page.set_viewport_size({"width": 1100, "height": 900})
+    assert name.evaluate("e => document.activeElement === e")
+    expect(page.locator(".admin-tip.is-shown")).to_have_count(1)
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
