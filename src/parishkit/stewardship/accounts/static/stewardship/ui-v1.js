@@ -654,6 +654,9 @@
     }
     checkTimeField(field, {quiet, announce: true});
     gateTimes(field.form);
+    // The rewrite fires no input event: check again whether the form still
+    // differs from its saved values ("6am" back to the saved "06:00").
+    gateChange(field.form);
   });
   // Another control can show, hide, enable or clear a time field without an
   // event on it (a schedule's mail type, the refresh frequency), and the
@@ -781,8 +784,11 @@
   // (a UTC instant; a digest's next send), and its date, time and weekday
   // are filled from it here, in this browser's zone, before the time entry
   // first reads the time. A refused page has none: its fields hold what was
-  // typed. Without a zone Review and save stays unavailable and
-  // [data-zone-missing] says why.
+  // typed. The filled values are also made the fields' defaults: they are
+  // the saved schedule as this browser shows it, which the change gate
+  // (data-require-change, below) compares the form with, so Review changes
+  // stays unavailable until the reader changes one (#750). Without a zone
+  // Review changes stays unavailable and [data-zone-missing] says why.
   // localParts: a moment (ms) as this browser's {date, time, weekday}, the
   // time canonical as the time entry writes it and Monday 0.
   const localParts = (moment) => {
@@ -821,12 +827,21 @@
     if (Number.isNaN(moment)) return;
     const parts = localParts(moment);
     const field = (name) => form.querySelector(`[name="schedule-${name}"]`);
+    // Set a field's value and its default (a select's default option) alike.
+    const settle = (node, value) => {
+      if (node instanceof HTMLSelectElement) {
+        [...node.options].forEach((option) => { option.defaultSelected = option.value === value; });
+      } else {
+        node.defaultValue = value;
+      }
+      node.value = value;
+    };
     // Only fields the saved schedule uses hold a value to convert.
-    if (field("date")?.value) field("date").value = parts.date;
-    if (field("weekday")?.value) field("weekday").value = String(parts.weekday);
+    if (field("date")?.value) settle(field("date"), parts.date);
+    if (field("weekday")?.value) settle(field("weekday"), String(parts.weekday));
     const time = field("time");
     if (time) {
-      time.value = parts.time;
+      settle(time, parts.time);
       // A legacy time with seconds may be posted back unchanged (#631).
       if (time.dataset.timeKept) time.dataset.timeKept = parts.time;
     }
@@ -3578,7 +3593,7 @@
   // The review dialog of Admin editors (UX conventions, "Review dialog",
   // #750): components/confirm-dialog.html with review=True, opened by a form
   // marked data-review-open="<dialog id>" (New and Edit user, Import
-  // Ministry leaders).
+  // Ministry leaders, New and Edit scheduled email).
   //
   // Review posts the form, submitter included, without a page load. Until
   // the answer arrives the form is inert and aria-busy, and its Review
@@ -3639,11 +3654,29 @@
   const formUrl = (form) => new URL(form.getAttribute("action") || "", document.baseURI).href;
   const showFieldErrors = (form, parsed) => {
     const fresh = parsed.getElementById(form.id);
+    // A list placed by an earlier answer (below) that this one does not
+    // repeat is out of date: its field's mark and message clear.
+    form.querySelectorAll(".errorlist[data-review-placed]").forEach((placed) => {
+      if (fresh.querySelector(`#${CSS.escape(placed.id)}`)) return;
+      const control = form.querySelector(`#${CSS.escape(placed.id.replace(/_error$/, ""))}`);
+      if (control?.hasAttribute("data-field-error")) clearFieldError(control);
+      placed.hidden = true;
+    });
     // Each reserved error line takes the answer's messages. Its element
     // stays, since a page script may hold it (users-v2.js's Email line).
+    // A form that reserves no line (Django draws a field's list only with
+    // an error: New and Edit scheduled email) gets the answer's list where
+    // Django draws it, just before its control (<field id>_error; or before
+    // the control's label, for a checkbox inside one).
     fresh.querySelectorAll(".errorlist[id]").forEach((list) => {
-      const live = form.querySelector(`#${CSS.escape(list.id)}`);
-      if (!live) return;
+      let live = form.querySelector(`#${CSS.escape(list.id)}`);
+      if (!live) {
+        const control = form.querySelector(`#${CSS.escape(list.id.replace(/_error$/, ""))}`);
+        if (!control) return;
+        live = document.importNode(list, true);
+        live.setAttribute("data-review-placed", "");
+        (control.closest("label") || control).before(live);
+      }
       live.replaceChildren(...[...list.childNodes].map((node) => document.importNode(node, true)));
       live.hidden = list.hidden;
     });
@@ -3736,9 +3769,19 @@
     const parsed = new DOMParser().parseFromString(answer.text, "text/html");
     const review = answer.response.ok && parsed.querySelector("[data-review-answer]");
     if (review) {
-      // An earlier refusal's summary no longer applies.
+      // An earlier refusal no longer applies: its summary goes, and so do
+      // the marks and messages it left on fields the reader did not edit
+      // since (the server's, never a live check's, data-field-error="client",
+      // which holds Review until it clears by itself). Reserved lines stay,
+      // hidden and empty; a list showFieldErrors placed is hidden too.
       document.querySelectorAll("[data-error-summary]").forEach((node) => {
         if (!node.closest(REGIONS)) node.remove();
+      });
+      form.querySelectorAll('[data-field-error=""]').forEach((node) => {
+        if (node.hasAttribute("data-field-error")) clearFieldError(node);
+      });
+      form.querySelectorAll(".errorlist[data-review-placed]").forEach((placed) => {
+        placed.hidden = true;
       });
       openReview(dialog, form, opener, review, null);
     } else if (answer.response.status === 400 && form.id && parsed.getElementById(form.id)) {
@@ -4319,7 +4362,7 @@
   // (#558): the saved mailings and the campaign's first and last moments
   // come as UTC instants, and every timed check compares moments
   // (localMoment). The dates that fit are kept as hidden
-  // repeat-dates fields, which Review and save posts; the server checks each
+  // repeat-dates fields, which Review changes posts; the server checks each
   // date as an ordinary reminder. Repeat and its rule show only for a
   // Reminder; with another mail type nothing of the rule is posted as a
   // date, and the server refuses a repeat that is not a reminder anyway.

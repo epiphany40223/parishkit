@@ -169,6 +169,7 @@ REVIEWS = (
     "content-preview.html",
     "content-settings.html",
     "schedule-preview.html",
+    "schedule-review.html",
     "user-review.html",
     "user-leader-import.html",
 )
