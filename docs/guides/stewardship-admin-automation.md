@@ -717,6 +717,48 @@ another file uses, is exit 1 (`invalid`) with the page's message for the
 current name changes nothing; otherwise System logs show the page's
 `hosted_file_slug_changed` and the command's `admin_cmd_files_rename`.
 
+## Pages and emails
+
+`content list` is the **Pages and emails** page's list for the current
+campaign, and `content history` its **Content history** page. Like the
+pages, they need an Administrator; a session of any scope may run them,
+and they record nothing in System logs, as opening the pages records
+nothing. With no current campaign, each is exit 1 (`not_available`).
+
+```sh
+pk-admin content list
+pk-admin content history [--revision ID]
+```
+
+`content list` prints `campaign_id`, `version` (the applied
+configuration's version) and, in the page's order, `pages` and `emails`:
+
+| Field | What it holds |
+| --- | --- |
+| `pages[].slot`, `emails[].slot` | The page or mail type, such as `welcome` or `reminder` |
+| `pages[].name`, `emails[].name` | Its name on the page, such as "Family welcome" |
+| `pages[].state` | `empty`, `default` (the default text) or `custom` |
+| `emails[].scheduled` | Whether schedules send this mail type (invitations and reminders) |
+| `emails[].singleton` | The confirmation email, which has exactly one text |
+| `emails[].revisions` | Its emails: `id`, `subject`, `excerpt` (the start of its text), `used_by` (the schedules that send it, named as on Dates and mail schedules), `deletable`, `state` (`default` or `custom`) and `resave` |
+| `resave` | Null, or the page's re-save notice: `removed` (markup today's cleaning drops), `lost` (placeholders only that markup held) and `blocked` (the page's "Can't be sent until fixed") |
+
+A confirmation email that is only a retired closing note has a null `id`,
+as the page lists it. While background work, such as a mail send, holds
+the campaign, the page refuses and so does `content list`: exit 1
+(`stale_version`); try again later.
+
+`content history` prints `campaign_id`, `state` (the campaign's),
+`configuration_id` (the retained configuration version the page names in
+its technical details) and `entries`, each retained page and email with
+its `id`, `kind` (`page` or `email`), `slot`, `name` and `subject`. With
+`--revision` and an entry's `id`, `revision` holds that entry's `id`,
+`kind`, `slot`, `name` and `sample`: the page's fictional sample, its
+`subject`, `html` and `text`; without it, `revision` is null. An ID the
+campaign did not retain, a purged campaign, or a campaign whose retained
+configuration is gone is exit 1 (`not_available`). Editing and deleting
+content stay on the page for now.
+
 ## Past campaigns
 
 The `history` commands import the archive workbooks of past campaigns for
@@ -1697,3 +1739,6 @@ pk-admin users import-leaders --confirm --token -
 - `pk-admin/1` (#1018): additive. `report comparison [--day N]`, the
   Campaign comparison page's figures (any session; its event), with the
   small-count protection.
+- `pk-admin/1` (#463): additive. `content list` and `content history
+  [--revision ID]`, the Pages and emails and Content history pages' reads
+  (any session, Administrators only, no event).

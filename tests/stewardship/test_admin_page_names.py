@@ -432,6 +432,9 @@ ALLOWED = {
         "accounts/templates/stewardship/go-live-families.html",
         "Families with Testing submissions",
     ),
+    # ``pk-admin content list`` (#463) is a command's name, as ``files
+    # list``, not the retired wording for the Pages and emails page.
+    ("admin_cli.py", "content list"),
 }
 
 COMMENT = re.compile(r"{% comment %}.*?{% endcomment %}|{#.*?#}", re.S)
