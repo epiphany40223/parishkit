@@ -1,0 +1,9 @@
+{% comment %}
+  The reserved status line of a page an Admin editor's review dialog ends on
+  (UX conventions, "Review dialog", #750; components/confirm-dialog.html with
+  review=True). Once a change is applied, ui-v1.js writes what was applied
+  and when ("User added. Applied at 3:42 PM.") and moves focus here. It is a
+  polite live region whose one line of space is always kept, and a long line
+  is cut short with an ellipsis, so it never moves a control (no layout
+  shift). It sits outside every in-place region, so a redraw keeps it.
+{% endcomment %}<p class="review-outcome" id="{{ outcome_id }}" role="status" tabindex="-1" data-review-outcome></p>

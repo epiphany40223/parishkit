@@ -19,17 +19,29 @@ The browser checks need no database:
   ``DELETE_PENDING``, which redirects there.
 - ``LIST``'s second table lists ``LEADERS``, three ParishSoft Ministry
   leaders without a user (#952 slice 6), and counts two with no email. Its
-  Import selected and Import all post to ``IMPORT``, which answers with
-  ``LEADER_REVIEW``, the Import Ministry leaders review of two of them with
-  one skipped.
+  Import selected and Import all post to ``IMPORT``, which answers with the
+  Import Ministry leaders review fragment of two of them with one skipped,
+  for the review dialog (#750), with one more hidden field (``extra``)
+  besides its preview. Its Apply posts to ``APPLY``, which
+  redirects to the Applied status page, after which both tables are
+  redrawn from ``LIST``'s refresh address.
 - ``NEW``: New user. Its Email lookup posts to ``NAMES``, which answers two
   ParishSoft names; ``NEW_TAKEN``'s posts to ``NAMES_TAKEN``, which answers
   that the address is already a user. Review posts to ``REVIEW_POST``, which
-  answers with ``REVIEW``.
+  answers with the New user review fragment; the dialog's Apply posts to
+  ``APPLY`` (Applied at once), then returns to ``LIST``.
+- ``NEW_PENDING``: New user whose Apply posts to ``APPLY_PENDING``, whose
+  change stays Applying; ``NEW_INVALID``: Review posts to
+  ``REVIEW_INVALID``, which answers 400 with the page drawn again with the
+  Name's error and the summary; ``NEW_STALE``: Review posts to
+  ``REVIEW_STALE``, which answers 409 with a refusal in the server's words;
+  ``NEW_REFUSED``: Apply posts to ``APPLY_REFUSED``, which answers 400 with
+  the request's own refusal (``APPLY_REFUSAL``), as a self-demotion is.
 - ``EDIT_ONLY``: Edit user for the only Administrator: the lower roles are
   unavailable with the reason; ``EDIT_OWN``: the reader's own Edit user
   while another Administrator remains, the same; ``EDIT``: Edit user for
-  the Ministry leader, with two identities, one disabled.
+  the Ministry leader, with two identities, one disabled, whose Review posts
+  to ``EDIT_REVIEW``, which answers with the change of that user's role.
 
 ``POSTS`` lists the fixture server's answers to the pages' POSTs; it is
 filled in by ``components``, before the server starts.
@@ -73,14 +85,24 @@ NEW_TAKEN = "/user-new-taken"
 NAMES = "/user-names"
 NAMES_TAKEN = "/user-names-taken"
 REVIEW_POST = "/user-new/review"
-REVIEW = "/user-review"
+REVIEW_INVALID = "/user-new/review-invalid"
+REVIEW_STALE = "/user-new/review-stale"
+EDIT_REVIEW = "/user-edit/review"
+NEW_PENDING = "/user-new-pending"
+NEW_INVALID = "/user-new-invalid"
+NEW_STALE = "/user-new-stale"
+NEW_REFUSED = "/user-new-refused"
+APPLY_REFUSED = "/users/apply-refused"
+APPLY_REFUSAL = "You can't remove your own Administrator role."
+APPLY = "/users/apply"
+APPLY_PENDING = "/users/apply-pending"
+STALE_REFUSAL = "Another Administrator changed the users meanwhile."
 EDIT = "/user-edit"
 EDIT_ONLY = "/user-edit-only"
 EDIT_OWN = "/user-edit-own"
 # The signed-in Administrator the pages are drawn for.
 READER = "admin@example.org"
 IMPORT = "/users/leaders/import"
-LEADER_REVIEW = "/user-leader-review"
 LONG_EMAIL = "a-very-long-address-for-the-parish-office-staff@stewardship.example.org"
 LONG_NAME = "Montgomery-Fitzwilliam, Bartholomew Alexander Christopher"
 SUGGESTED = ["Smith, Ann", "Smith, Bob"]
@@ -176,13 +198,25 @@ def _list(
                 "leaders": leader_table,
                 "leaders_unreachable": 2 if leaders else 0,
                 "import_url": IMPORT,
+                "apply_url": APPLY,
             },
         ),
     )
 
 
-def _entry(values, records, *, record=None, names_url=NAMES, post=REVIEW_POST):
-    """New user, or Edit user for ``record``."""
+def _entry(
+    values,
+    records,
+    *,
+    record=None,
+    names_url=NAMES,
+    post=REVIEW_POST,
+    apply=APPLY,
+    form=None,
+    errors=None,
+):
+    """New user, or Edit user for ``record``; ``form`` and ``errors`` draw a
+    refused Review as ``user_views._entry_page`` does."""
     users = saved_users(records)
     current = None if record is None else users[record["id"]]
     initial = (
@@ -198,7 +232,7 @@ def _entry(values, records, *, record=None, names_url=NAMES, post=REVIEW_POST):
     ]
     context = _entry_context(
         Request(post),
-        UserForm(initial=initial, new=record is None),
+        form or UserForm(initial=initial, new=record is None),
         user=current,
         user_id=None if record is None else record["id"],
         users=users,
@@ -206,7 +240,14 @@ def _entry(values, records, *, record=None, names_url=NAMES, post=REVIEW_POST):
         identities=known,
         own_email=READER,
     )
-    context |= {"post_url": post, "list_url": LIST, "names_url": names_url}
+    context |= {
+        "post_url": post,
+        "list_url": LIST,
+        "names_url": names_url,
+        "apply_url": apply,
+    }
+    if errors:
+        context["errors"] = errors
     return (
         "text/html",
         render_to_string("stewardship/user-entry.html", values | context),
@@ -223,20 +264,32 @@ def components(context, admin):
     )
     review = render_to_string(
         "stewardship/user-review.html",
-        values
-        | {
+        {
             "change": change,
             "before_role": None,
             "after_role": "Staff",
             "preview": "synthetic-preview",
-            "post_url": LIST,
-            "list_url": LIST,
         },
     )
+    (edited,), _patch = plan_changes(
+        records, [{"id": LEADER["id"], "name": "Leader, Lee", "role": "staff"}]
+    )
+    edit_review = render_to_string(
+        "stewardship/user-review.html",
+        {
+            "change": edited,
+            "before_role": "Ministry leader",
+            "after_role": "Staff",
+            "preview": "synthetic-preview",
+        },
+    )
+    # New user refused for its Name, drawn again as the server draws it.
+    invalid = UserForm({"email": "new@example.org", "name": " ", "role": "staff"})
+    assert invalid.is_valid()
+    invalid.add_error("name", "Enter a name.")
     leader_review = render_to_string(
         "stewardship/user-leader-import.html",
-        values
-        | {
+        {
             "added": LEADERS[:2],
             "skipped": [
                 {
@@ -248,9 +301,13 @@ def components(context, admin):
             "remaining": 0,
             "limit": 100,
             "preview": "synthetic-preview",
-            "post_url": LIST,
-            "list_url": LIST,
         },
+    )
+    # Another hidden field, as a later editor's version would be: Apply
+    # posts every hidden field of the review, not only its preview.
+    leader_review = leader_review.replace(
+        "data-review-preview>",
+        'data-review-preview><input type="hidden" name="extra" value="kept">',
     )
     status = render_to_string(
         "stewardship/configuration-request.html",
@@ -267,13 +324,15 @@ def components(context, admin):
         f"{LIST}?users_size=50&users_sort=email": _list(values, records),
         DELETED: _list(values, [ADMIN, SECOND, STAFF], refresh=DELETED),
         SINGLE: _list(values, [ADMIN], refresh=SINGLE, leaders=[]),
-        LEADER_REVIEW: ("text/html", leader_review),
         NEW: _entry(values, records),
         NEW_TAKEN: _entry(values, records, names_url=NAMES_TAKEN),
-        EDIT: _entry(values, records, record=LEADER, post=EDIT),
+        EDIT: _entry(values, records, record=LEADER, post=EDIT_REVIEW),
+        NEW_PENDING: _entry(values, records, apply=APPLY_PENDING),
+        NEW_INVALID: _entry(values, records, post=REVIEW_INVALID),
+        NEW_STALE: _entry(values, records, post=REVIEW_STALE),
+        NEW_REFUSED: _entry(values, records, apply=APPLY_REFUSED),
         EDIT_ONLY: _entry(values, [ADMIN, STAFF], record=ADMIN, post=EDIT_ONLY),
         EDIT_OWN: _entry(values, records, record=ADMIN, post=EDIT_OWN),
-        REVIEW: ("text/html", review),
         APPLIED: ("text/html", status),
         PENDING: ("text/html", pending),
         LIST_PENDING: _list(values, records, delete=DELETE_PENDING),
@@ -295,6 +354,46 @@ def components(context, admin):
                 ),
             ),
             REVIEW_POST: (200, None, review),
+            EDIT_REVIEW: (200, None, edit_review),
+            REVIEW_INVALID: (
+                400,
+                None,
+                _entry(
+                    values,
+                    records,
+                    post=REVIEW_INVALID,
+                    form=invalid,
+                    errors=[{"message": "Enter a name.", "field_id": "id_name"}],
+                )[1],
+            ),
+            REVIEW_STALE: (
+                409,
+                None,
+                json.dumps(
+                    {
+                        "errors": [{"code": "stale"}],
+                        "refusal": {
+                            "message": STALE_REFUSAL,
+                            "fix": "Reload the page to start again.",
+                        },
+                    }
+                ),
+            ),
+            APPLY: (303, APPLIED, ""),
+            APPLY_PENDING: (303, PENDING, ""),
+            APPLY_REFUSED: (
+                400,
+                None,
+                json.dumps(
+                    {
+                        "errors": [{"code": "invalid"}],
+                        "refusal": {
+                            "message": APPLY_REFUSAL,
+                            "fix": "Nothing was changed.",
+                        },
+                    }
+                ),
+            ),
             IMPORT: (200, None, leader_review),
         }
     )

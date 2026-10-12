@@ -4,7 +4,9 @@ The table sits below the users table on ``users`` (``user_views.users``
 draws it with ``leaders_context``); Import selected and Import all post the
 ticked addresses here, to ``user_leader_import``
 (``/admin/users/leaders/import/``), which answers with the **Import
-Ministry leaders** review. Its Apply posts the signed review to Users, which
+Ministry leaders** review, a fragment the Users page shows in the shared
+review dialog (UX conventions, "Review dialog", #750). The dialog's Apply
+posts the signed review to Users, which
 records it as one configuration change like any other user change
 (``user_views._audit_change`` adds the import's audit rows).
 
@@ -30,7 +32,6 @@ from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.refusals import UserFacingError, unexpected_fields
 from parishkit.stewardship.web.tables import paginate
 
-from . import admin_navigation
 from .admin_editing import error_response, principal, sign_preview
 from .authentication import runtime
 from .leader_import import (
@@ -137,7 +138,8 @@ def user_leader_import(request):
     configuration and signs the review for one Apply on Users. Anyone who
     became a user meanwhile, or is no longer listed, is skipped and named
     on the review. With nobody left to import the review says so and offers
-    no Apply. Nothing is recorded here but the definer's own audit event.
+    no Apply. The answer is a fragment for the review dialog, not a page.
+    Nothing is recorded here but the definer's own audit event.
     """
     from .user_views import ERRORS, SALT, _users
 
@@ -176,7 +178,6 @@ def user_leader_import(request):
                     salt=SALT,
                     extra={"leader_import": True},
                 )
-        admin_navigation.place(request, flow="change", step="review")
         response = render(
             request,
             "stewardship/user-leader-import.html",
@@ -189,8 +190,6 @@ def user_leader_import(request):
                 "remaining": plan.remaining,
                 "limit": ENTRY_LIMIT,
                 "preview": token,
-                "post_url": reverse("admin:users"),
-                "list_url": reverse("admin:users"),
             },
         )
         _recheck(request, service, actor)

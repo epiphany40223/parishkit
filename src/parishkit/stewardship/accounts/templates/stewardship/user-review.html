@@ -1,28 +1,27 @@
-{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
-{% block title %}{% translate "Review user change" %}{% endblock %}
-{% block content %}{% comment %}
-The review of one New or Edit user change (#952; user_views._review): each
-changed value before and after, then Apply, which posts the signed review to
-Users and follows the change's status there; Cancel returns to Users with
-nothing changed. A review lasts fifteen minutes, as every review does.
-{% endcomment %}
-<h1>{% translate "Review user change" %}</h1>
-<section class="panel" aria-labelledby="user-review-title">
-<h2 id="user-review-title"><span class="cell-ellipsis" title="{{ change.email }}">{{ change.email }}</span></h2>
+{% load i18n %}{% comment %}
+The review of one New or Edit user change (#952; user_views._review), drawn
+in the shared review dialog (UX conventions, "Review dialog", #750), never
+as a page of its own: user-entry.html's Review posts without a page load and
+ui-v1.js moves this fragment's content into the dialog's body. It shows each
+changed value before and after; the signed preview (data-review-preview) is
+what the dialog's Apply posts to Users, and data-review-done starts the
+status line Users shows once the change is applied. A review lasts fifteen
+minutes, as every review does.
+{% endcomment %}<div data-review-answer data-review-done="{% if change.operation == 'add' %}{% translate 'User added.' %}{% else %}{% translate 'User changed.' %}{% endif %}">
+<h3><span class="cell-ellipsis" title="{{ change.email }}">{{ change.email }}</span></h3>
 {% if change.operation == "add" %}<p>{% translate "This adds a new user." %}</p>{% endif %}
+<div class="table-scroll" tabindex="0" role="region" aria-labelledby="user-review-caption">
 <table class="data-table">
-  <caption class="visually-hidden">{% translate "What changes" %}</caption>
+  <caption id="user-review-caption" class="visually-hidden">{% translate "What changes" %}</caption>
   <thead><tr><th scope="col">{% translate "Field" %}</th><th scope="col">{% translate "Now" %}</th><th scope="col">{% translate "After this change" %}</th></tr></thead>
   <tbody>
   {% if change.operation == "add" or "name" in change.changed %}<tr><th scope="row">{% translate "Name" %}</th><td>{% if change.before %}{{ change.before.name }}{% else %}{% translate "(none)" %}{% endif %}</td><td>{{ change.after.name }}</td></tr>{% endif %}
   {% if change.operation == "add" or "role" in change.changed %}<tr><th scope="row">{% translate "Role" %}</th><td>{% if before_role %}{{ before_role }}{% else %}{% translate "(none)" %}{% endif %}</td><td>{{ after_role }}</td></tr>{% endif %}
   </tbody>
 </table>
+</div>
 {% if change.grants_administrator %}<p class="notice">{% translate "This makes the person an Administrator, who can see and change everything, including users. Every Administrator is told by email and on their Home page." %}</p>{% endif %}
 {% if change.removes_administrator %}<p class="notice">{% translate "This person is no longer an Administrator from their next request." %}</p>{% endif %}
-<p>{% translate "Applying saves this change. It takes effect once the status says Applied." %}</p>
-</section>
-<form method="post" action="{{ post_url }}">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}">
-<p>{% button type="submit" %}{% translate "Apply" %}{% endbutton %} <a href="{{ list_url }}">{% translate "Cancel" %}</a></p>
-</form>
-{% endblock %}
+<p>{% translate "Nothing changes until you choose Apply." %}</p>
+<input type="hidden" name="preview" value="{{ preview }}" data-review-preview>
+</div>
