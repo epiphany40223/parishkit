@@ -1059,6 +1059,12 @@
         const said = control.getAttribute(shown ? "data-message-on" : "data-message-off");
         if (said) return said;
       }
+      // A form whose answer says itself what happened (a saved change or a
+      // refusal, #528) names the element of the fresh page that says it;
+      // that text is announced instead of a fixed message.
+      const from = owner.getAttribute("data-in-place-message-from");
+      const told = from && squeeze(document.getElementById(from)?.textContent || "");
+      if (told) return told;
       const message = owner.getAttribute("data-in-place-message");
       if (message) return [message, tableCount(fresh)].filter(Boolean).join(" ");
       // A form without a message names what was done by its button's text
@@ -3336,6 +3342,52 @@
     announce(fillIn(chosen.length === 1 ? dialog.dataset.doneOne : dialog.dataset.doneMany,
       state.values));
   };
+
+  // A submit button that asks first (#528): data-confirm-submit="<dialog id>"
+  // opens that components/confirm-dialog.html <dialog>, named by the button's
+  // data-confirm-name. Confirm submits the button's own form with that button
+  // (requestSubmit), so it goes through the form's usual path, in place
+  // included; Cancel, Escape or closing the dialog sends nothing, and focus
+  // returns to the button. Used where one row's form posts with the page's
+  // own filters, which the action tables' dialog cannot carry.
+  let askedSubmit = null;
+  const wiredSubmits = new WeakSet();
+  document.addEventListener("click", (event) => {
+    if (!(event.target instanceof Element)) return;
+    const button = event.target.closest("[data-confirm-submit]");
+    if (!button || button.disabled || !button.form) return;
+    const dialog = document.getElementById(button.dataset.confirmSubmit);
+    if (!(dialog instanceof HTMLDialogElement)) return;
+    event.preventDefault();
+    wireDialog(dialog);
+    if (!wiredSubmits.has(dialog)) {
+      wiredSubmits.add(dialog);
+      dialog.querySelector("[data-confirm-accept]")?.addEventListener("click", () => {
+        const state = askedSubmit?.dialog === dialog ? askedSubmit : null;
+        if (!state) return;
+        askedSubmit = null;
+        dialog.close();
+        state.button.form?.requestSubmit(state.button);
+      });
+      dialog.addEventListener("close", () => {
+        const state = askedSubmit?.dialog === dialog ? askedSubmit : null;
+        askedSubmit = null;
+        if (state?.button.isConnected) state.button.focus();
+      });
+    }
+    dialog.querySelector("[data-confirm-title]").textContent = fillIn(
+      dialog.dataset.titleOne, {name: button.dataset.confirmName || ""});
+    const error = dialog.querySelector("[data-confirm-error]");
+    error.hidden = true;
+    dialog.querySelector("[data-confirm-status]").textContent = "";
+    dialog.querySelectorAll("[data-confirm-accept], [data-confirm-cancel]").forEach((control) => {
+      control.disabled = false;
+    });
+    askedSubmit = {dialog, button};
+    dialog.showModal();
+    // The safe choice takes focus first.
+    dialog.querySelector("[data-confirm-cancel]")?.focus();
+  });
 
   // Repeating reminders (#469). expandRecurrence turns a repeat rule into
   // the calendar dates it produces. Dates are civil days, computed with UTC

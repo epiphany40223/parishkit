@@ -20,6 +20,7 @@ import io
 import json
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
+from types import SimpleNamespace
 
 from django.db import connection
 from django.utils.datastructures import MultiValueDict
@@ -27,6 +28,7 @@ from django.utils.datastructures import MultiValueDict
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.responses.census import FAMILY_FIELDS
+from parishkit.stewardship.responses.census_resolution import allowed
 from parishkit.stewardship.responses.comparison import ADDRESS_COMPONENTS
 from parishkit.stewardship.responses.member_census import MEMBER_FIELDS
 from parishkit.stewardship.responses.member_requests import REQUEST_FIELDS
@@ -75,7 +77,9 @@ ROUTES = ("any", "automatic", "by_hand")
 KINDS = ("any", "contact", "moved", "deceased", "new_member")
 EARLIEST, LATEST = date(2000, 1, 1), date(2999, 12, 31)
 # The download's columns: the page's columns, names and order (#932), so
-# Member DUID sits right after Who in every format.
+# Member DUID sits right after Who in every format. The latest Entered in
+# ParishSoft, Ignore or Reopen (#528) follows Submitted, as on the page: who,
+# when and its note.
 HEADINGS = (
     "Family",
     "Family DUID",
@@ -88,23 +92,32 @@ HEADINGS = (
     "How it reaches ParishSoft",
     "Status",
     "Submitted",
+    "Recorded by",
+    "Recorded at",
+    "Note",
 )
-# Relative PDF column widths, in percent of the page's body width. A
-# compact time ("Sep 30, 2026 12:04 PM") and the longest status ("Being
-# published") stay on one line; the values Families typed and ParishSoft
-# holds share the rest, long ones wrapping within their column.
+# Relative PDF column widths, in percent of the page's body width. Fourteen
+# columns share one landscape page, so a compact time ("Sep 30, 2026
+# 12:04 PM") keeps its date on one line and its time on the next, and a
+# status may take two lines ("Being" / "published"); a whole DUID and
+# "Automatic" stay on one line. The resolution's who and note get room of
+# their own, and the values Families typed and ParishSoft holds share the
+# rest, long ones wrapping within their column.
 PDF_WEIGHTS = {
-    "Family": 8,
+    "Family": 5,
     "Family DUID": 7,
-    "Who": 9,
-    "Member DUID": 8,
-    "What changed": 8,
-    "ParishSoft now": 9,
-    "Family's answer": 9,
-    "Edited value": 7,
-    "How it reaches ParishSoft": 7,
-    "Status": 12,
-    "Submitted": 16,
+    "Who": 5,
+    "Member DUID": 7,
+    "What changed": 5,
+    "ParishSoft now": 6,
+    "Family's answer": 6,
+    "Edited value": 4,
+    "How it reaches ParishSoft": 8,
+    "Status": 8,
+    "Submitted": 10,
+    "Recorded by": 9,
+    "Recorded at": 10,
+    "Note": 10,
 }
 PRIVACY = "Sensitive parish report. Share only with authorized recipients."
 
@@ -196,7 +209,8 @@ SELECT p.id::text, p.entity_kind, p.entity_key, p.field,
         nullif(btrim(concat_ws(' ',
             nullif(btrim(sm.canonical::jsonb->>'firstName'),''),
             nullif(btrim(sm.canonical::jsonb->>'lastName'),''))),'')) AS member_name,
-    sc.snapshot_id
+    sc.snapshot_id,
+    p.version, latest.action, latest.note, latest.created_at, latest.email
 FROM stewardship_campaign c
 LEFT JOIN stewardship_source_current sc ON sc.singleton
 JOIN stewardship_submission s ON s.campaign_id=c.id AND s.mode='live'
@@ -208,6 +222,13 @@ LEFT JOIN stewardship_source_family fp ON fp.id=fm.payload_id
 LEFT JOIN stewardship_snapshot_member mm ON p.entity_kind='member'
     AND mm.snapshot_id=sc.snapshot_id AND mm.source_key=p.entity_key
 LEFT JOIN stewardship_source_member sm ON sm.id=mm.payload_id
+-- The latest Staff or Admin resolution (#528), with who made it.
+LEFT JOIN LATERAL (
+    SELECT r.action, r.note, r.created_at, u.email
+    FROM stewardship_proposal_resolution r
+    LEFT JOIN stewardship_portal_user u ON u.id=r.actor_id
+    WHERE r.proposal_id=p.id ORDER BY r.expected_version DESC LIMIT 1
+) latest ON true
 WHERE c.id=%s AND p.handling<>'report-only'
 ORDER BY f.family_duid, s.submitted_at, p.entity_kind,
     p.entity_key, p.field
@@ -232,6 +253,11 @@ COLUMNS = (
     "family_name",
     "member_name",
     "snapshot_id",
+    "version",
+    "resolution_action",
+    "resolution_note",
+    "resolution_at",
+    "resolution_by",
 )
 
 JSON_COLUMNS = ("baseline_value", "submitted_value", "current_value", "admin_value")
@@ -267,7 +293,8 @@ def automatic(row):
     Only fields the handling registry marks API-writable, and never a Family
     address: no verified ParishSoft address read exists, so publication could
     neither detect a conflict nor confirm the write (reports spec, "Manual
-    census resolution"). Those are worked by hand until one does.
+    census resolution"). Those are worked by hand until one does. The
+    resolution service applies the same rule (``census_resolution.by_hand``).
     """
     return row["handling"] == "api" and row["entity_kind"] != "family"
 
@@ -386,6 +413,23 @@ def shape(row):
     else:
         shown["who"] = row["member_name"] or "Unavailable name"
     shown["status_label"] = STATUSES[shown["status"]]
+    # What a person may record on this row now (#528): the page offers only
+    # these, and the service and SQL check them again. Reopen is the
+    # Administrator's; the page shows it only to them.
+    state = SimpleNamespace(
+        handling=row["handling"],
+        entity_kind=row["entity_kind"],
+        execution=row["execution"],
+        decision=row["decision"],
+    )
+    shown["can_resolve"] = allowed(state, "entered")
+    shown["can_reopen"] = allowed(state, "reopened")
+    if isinstance(shown.get("resolution_at"), str):
+        shown["resolution_at"] = datetime.fromisoformat(shown["resolution_at"])
+    if shown.get("resolution_action") and not shown.get("resolution_by"):
+        # The actor's portal user row is gone; the Additional information
+        # queue words its completer the same way.
+        shown["resolution_by"] = "Former portal user"
     shown["route_label"] = "Automatic" if shown["automatic"] else "By hand"
     if isinstance(shown["submitted_at"], str):
         shown["submitted_at"] = datetime.fromisoformat(shown["submitted_at"])
@@ -457,8 +501,9 @@ def iso_time(moment):
 def export_rows(result, zone, *, time_text=iso_time):
     """The filtered rows as plain text, times in the requested timezone.
 
-    ``time_text`` words the Submitted time already placed in ``zone``: ISO
-    8601 for CSV and XLSX, the parish's compact date format for the PDF.
+    ``time_text`` words the Submitted and Recorded at times already placed
+    in ``zone``: ISO 8601 for CSV and XLSX, the parish's compact date format
+    for the PDF.
     """
     return [
         (
@@ -473,6 +518,12 @@ def export_rows(result, zone, *, time_text=iso_time):
             row["route_label"],
             row["status_label"],
             time_text(row["submitted_at"].astimezone(zone)),
+            # The latest Entered in ParishSoft, Ignore or Reopen (#528).
+            row.get("resolution_by") or "",
+            time_text(row["resolution_at"].astimezone(zone))
+            if row.get("resolution_at")
+            else "",
+            row.get("resolution_note") or "",
         )
         for row in result["rows"]
     ]
@@ -507,7 +558,7 @@ def census_pdf(result, zone, *, parish, campaign, as_of):
 
     The table is ``HEADINGS`` over ``export_rows``: the CSV's and XLSX's
     columns and values, so the three files never disagree (#966); only the
-    Submitted time reads in the parish's compact date format.
+    Submitted and Recorded at times read in the parish's compact date format.
     The page frame names the parish and campaign, the download time
     ``as_of`` in ``zone`` and the row count; values are drawn in full, long
     ones wrapping within their column. The caller lends the parish's date

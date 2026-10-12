@@ -2117,7 +2117,7 @@ file is regenerated from the retained capture, in its original format.
 | `find_family` | Permanent: a search by name; the command line takes no text that names a Family, and `export directory` is the file. This follows the pending "no search" default (PR 8e); if the Administrator allows searches, it becomes `--filter search=` on `export directory` |
 | `family_timeline` | One Family's timeline, so export only: `export family-timeline` (PR 8g; it needs a new export kind, a schema change, proposed on #463) |
 | `limitations_export` | `export limitations` (PR 8h, with #752's audit fields) |
-| `census_changes`, `census_changes_export` | `report census`, counts; Family-level rows only as `export census` (PR 8h) |
+| `census_changes`, `census_changes_export` | `report census`, counts; Family-level rows only as `export census` (PR 8h). A row's Entered in ParishSoft, Ignore and Reopen ([#528](https://github.com/epiphany40223/parishkit/issues/528)) post to `census_changes`; their command, `census resolve PROPOSAL_ID --action entered\|ignored\|reopened`, comes with PR 8h through the same `census_resolution` service |
 | `report_export_create`, `report_export`, `report_export_cancel`, `report_export_retry`, `report_export_regenerate`, `report_export_download` | `export create`, `export status --watch`, `export cancel`, `export retry`, `export regenerate`, `export download --stream` (PR 8b); an exact request's status, cancel and retry, which these pages also serve, are `export exact status --watch`, `export exact cancel` and `export exact retry` (PR 8h) |
 | `report_exact_create` | `export exact create` (PR 8h); the handed-off file through `export fetch` |
 | `daily_digest_snapshot` | `digest daily SNAPSHOT_ID` (PR 8d) |

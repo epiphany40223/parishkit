@@ -348,6 +348,11 @@ input[data-time-entry=list] { max-width: 24rem; }
    coming or going never moves what follows (no layout shift; the Restore
    review's held-email rows, #537). */
 .reserve-line { min-height: 1.6em; min-height: 1lh; }
+/* The answer to a row's action on a worklist (#528, Census changes and Roster
+   changes to enter): two lines kept while empty, so the answer appearing
+   never moves the table under the pointer. */
+.action-status { min-height: 3.2em; min-height: 2lh; margin-block: .5rem; font-weight: 600; }
+.action-status > p { margin: 0; }
 select:not([multiple]):not([size]) { max-width: 26rem; }
 select[multiple], select[size] { max-width: 40rem; }
 textarea { max-width: 56rem; }

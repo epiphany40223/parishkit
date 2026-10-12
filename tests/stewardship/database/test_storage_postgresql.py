@@ -496,6 +496,12 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             )
             for child in ("day", "band", "family")
         },
+        # A census change's resolution history (#528): its guard admits
+        # INSERT only, under its own name.
+        "stewardship_proposal_resolution": (
+            "stewardship_proposal_resolution_guard",
+            "stewardship_proposal_resolution_guard_v1",
+        ),
         "stewardship_directory_export_snapshot": (
             "directory_export_capture",
             "stewardship_directory_export_capture_v1",
@@ -799,6 +805,7 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
                 "stewardship_family_mail_preparation",
                 "stewardship_fact_build_receipt",
                 "stewardship_weekly_manual_request",
+                "stewardship_proposal_resolution",
             }
             expected_type = 31 if table in conditional_insert_guards else 27
             assert row[:2] == (function, expected_type), table
