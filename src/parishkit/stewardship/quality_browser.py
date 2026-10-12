@@ -16,8 +16,9 @@ from .quality_pytest import failures_path
 from .quality_sharding import BROWSER_ENGINES, browser_label, parse_browser_runs
 
 # 50 minutes for all of one job's partitions together; a job's tests usually
-# take about 15. Setup usually takes 1 to 2 minutes, so this leaves 10 minutes
-# of the 60-minute job limit for setup and post-job steps, and this bounded
+# take about 28 to 31 (#1151). Setup usually takes 1 to 2 minutes, so this
+# leaves 10 minutes of the 60-minute job limit for setup and post-job steps,
+# and this bounded
 # timeout, not the job cancel, reports a hang. (One 2026-09-30 mirror outage
 # spent 17 minutes installing; only a long hang in that same run would now
 # reach the job cancel.) Raised from 38 minutes when slow runners ran a
@@ -35,11 +36,11 @@ def partition_limit(remaining, later, count):
     Each of a job's COUNT partitions reserves an equal share of JOB_SECONDS,
     and LATER partitions still to run keep theirs, so a slow partition cannot
     starve the ones after it; time an earlier partition left unused rolls
-    forward to the next. Shares are equal, not proportional to need: the
-    estimates are WebKit-scale for every engine, but Chromium really runs
-    much faster than WebKit. So BROWSER_JOBS runs WebKit last, where it gets
-    its own share plus whatever Chromium left unused. A one-partition job
-    gets the whole budget.
+    forward to the next. Shares are equal, not proportional to need: a
+    Chromium partition needs well under its share and its WebKit partner
+    about 1.6 times as long (#1151). So BROWSER_JOBS runs WebKit last, where
+    it gets its own share plus whatever Chromium left unused. A
+    one-partition job gets the whole budget.
     """
     return max(1, remaining - later * JOB_SECONDS / count)
 
@@ -192,7 +193,7 @@ def main():
     parser.add_argument(
         "--runs",
         required=True,
-        help='Partitions to run, such as "chromium:1/2 webkit:1/2"',
+        help='Partitions to run, such as "chromium:1/3 webkit:1/3"',
     )
     args = parser.parse_args()
     try:

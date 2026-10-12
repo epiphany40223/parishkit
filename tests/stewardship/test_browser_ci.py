@@ -23,9 +23,9 @@ from parishkit.stewardship.quality_pytest import (
     failures_path,
 )
 from parishkit.stewardship.quality_sharding import (
-    BROWSER_CASE_SECONDS,
+    BROWSER_ENGINE_SECONDS,
     BROWSER_ENGINES,
-    BROWSER_FILE_SECONDS,
+    BROWSER_FILE_EXTRA_SECONDS,
     BROWSER_JOBS,
     browser_estimate,
     browser_partition,
@@ -112,13 +112,30 @@ def test_engine_jobs_split_whole_files_disjointly_and_exhaustively(count):
 
 
 def test_engine_jobs_balance_recorded_file_seconds():
-    """Recorded hints, not case counts, decide where a slow file goes."""
-    slow = max(BROWSER_FILE_SECONDS, key=BROWSER_FILE_SECONDS.get)
-    # Without hints the slow file's single case would weigh least; with them it
-    # outweighs everything else, so it takes job one alone.
+    """Recorded extra seconds, not case counts, decide where a slow file goes."""
+    slow = max(BROWSER_FILE_EXTRA_SECONDS, key=BROWSER_FILE_EXTRA_SECONDS.get)
+    # By case count the slow file's single case would weigh least; with its
+    # extra seconds it outweighs everything else, so it takes job one alone.
     cases = split_cases({slow: 1, "test_a.py": 20, "test_b.py": 20})
     assert browser_partition(cases, "webkit", 1, 2) == [f"tests/x/{slow}::test[0]"]
     assert len(browser_partition(cases, "webkit", 2, 2)) == 40
+
+
+def test_engine_jobs_count_each_files_fixed_cost():
+    """Every file pays a fixed setup cost, so many small files outweigh cases.
+
+    Before #1151 a file weighed only its cases, so ten one-case files looked
+    lighter than one twelve-case file and all landed in one job.
+    """
+    small = {f"test_s{n}.py": 1 for n in range(10)}
+    cases = split_cases(small | {"test_big.py": 12})
+    jobs = [browser_partition(cases, "webkit", n, 2) for n in (1, 2)]
+    estimates = [browser_estimate(job, "webkit") for job in jobs]
+    # Without fixed costs the big file (12 cases) would face 10 one-case
+    # files in the other job; with them the small files split between jobs.
+    assert all(any("test_s" in node for node in job) for job in jobs)
+    # Greedy placement leaves the jobs within one small file of each other.
+    assert max(estimates) - min(estimates) <= sum(BROWSER_ENGINE_SECONDS["webkit"])
 
 
 @pytest.mark.parametrize(
@@ -280,7 +297,7 @@ def test_collection_hook_keeps_exact_owner_and_reports(selection_config):
     selection_config.hook.pytest_deselected.assert_called_once_with(items=removed)
     reporter = selection_config.pluginmanager.get_plugin.return_value
     reporter.write_line.assert_called_once_with(
-        "CI_BROWSER_PARTITION chromium: 1 out of 3 (33.3%) cases, estimated 2 s"
+        "CI_BROWSER_PARTITION chromium: 1 out of 3 (33.3%) cases, estimated 11 s"
     )
 
 
@@ -391,9 +408,11 @@ def test_real_engine_jobs_equal_the_engine_share(probe):
         assert len({node.split("::")[0] for node in manifest(result)}) == 1
         jobs.extend(manifest(result))
     assert sorted(jobs) == sorted(manifest(whole))
-    # Each job logs its estimate against its measured execution time.
+    # Each job logs its WebKit estimate against its measured execution time.
+    estimate = f"{browser_estimate(manifest(result), 'webkit'):,.0f}"
     assert re.search(
-        r"CI_BROWSER_TIMING webkit 2/2: estimated 3 s, actual \d+ s", result.stdout
+        rf"CI_BROWSER_TIMING webkit 2/2: estimated {estimate} s, actual \d+ s",
+        result.stdout,
     )
     result = run_probe(
         probe, "--ci-browser-engine=webkit", "--ci-browser-partition=1/3"
@@ -724,15 +743,27 @@ def test_split_engine_runner_requires_its_own_job(probe, capfd):
     assert "CI_BROWSER_COMPLETE webkit 2/2: 2 executed cases" in capfd.readouterr().out
 
 
-def test_browser_estimate_sums_file_hints_and_case_defaults():
-    """Known files use their recorded seconds; others the per-case default."""
-    known = next(iter(BROWSER_FILE_SECONDS))
+@pytest.mark.parametrize("engine", BROWSER_ENGINES)
+def test_browser_estimate_sums_engine_costs_and_file_extras(engine):
+    """Each file costs its engine's fixed and per-case seconds plus any extra."""
+    per_file, per_case = BROWSER_ENGINE_SECONDS[engine]
+    known = next(iter(BROWSER_FILE_EXTRA_SECONDS))
     nodes = [f"tests/x/{known}::a", f"tests/x/{known}::b"]
     nodes += [f"tests/x/test_new.py::{n}" for n in "abc"]
-    assert browser_estimate(nodes) == (
-        BROWSER_FILE_SECONDS[known] + 3 * BROWSER_CASE_SECONDS
+    assert browser_estimate(nodes, engine) == pytest.approx(
+        2 * per_file + 5 * per_case + BROWSER_FILE_EXTRA_SECONDS[known]
     )
-    assert browser_estimate([]) == 0
+    assert browser_estimate([], engine) == 0
+
+
+def test_browser_estimates_are_engine_scale():
+    """WebKit, measured about 1.6 times Chromium (#1151), is estimated so."""
+    nodes = [f"tests/x/test_{n}.py::case[{c}]" for n in range(20) for c in range(8)]
+    chromium, firefox, webkit = (
+        browser_estimate(nodes, engine) for engine in BROWSER_ENGINES
+    )
+    assert firefox < chromium < webkit
+    assert 1.4 < webkit / chromium < 2
 
 
 @pytest.mark.parametrize(

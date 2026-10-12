@@ -8,46 +8,49 @@ BROWSER_ENGINES = ("chromium", "firefox", "webkit")
 # The browser CI jobs (#627), one workflow matrix entry each; every entry
 # runs its ENGINE:INDEX/COUNT partitions in turn. test_browser_ci.py requires
 # the matrix to equal this and every engine's partitions to appear exactly
-# once. Measured before the split (2026-10-06 full runs): one job per engine,
-# with test steps of a median 22.6 minutes (WebKit), 14.5 (Firefox) and 7.8
-# (Chromium), plus 1-2 minutes of setup. Halving WebKit and Chromium and
-# pairing the halves gives three jobs of about 15 minutes of tests each, so
-# the WebKit long pole is gone without adding a runner slot. WebKit, the
-# slowest engine, runs last in its job so it inherits whatever time Chromium
-# leaves of its reserved share (quality_browser.partition_limit, #1112).
+# once. Measured in October 2026 (#1151), all of an engine's cases take about
+# 3,340 s of tests on WebKit, 2,130 on Chromium and 1,570 to 1,750 on Firefox.
+# Firefox runs whole; WebKit and Chromium are each split in three and paired,
+# so every job has about 1,650 to 1,850 s of tests, near 60% of
+# quality_browser.JOB_SECONDS. (Three jobs, halving WebKit and Chromium, ran
+# at 2,958 s of 3,000 on slow runners.) WebKit, the slowest engine, runs last
+# in its job so it inherits whatever time Chromium leaves of its reserved
+# share (quality_browser.partition_limit, #1112).
 BROWSER_JOBS = (
     "firefox:1/1",
-    "chromium:1/2 webkit:1/2",
-    "chromium:2/2 webkit:2/2",
+    "chromium:1/3 webkit:1/3",
+    "chromium:2/3 webkit:2/3",
+    "chromium:3/3 webkit:3/3",
 )
 
-# Scheduling hints only: median WebKit seconds per test file, from CI runs
-# 37532589327, 37539678473 and 37543609615. Other files weigh
-# BROWSER_CASE_SECONDS per case. Hints never select or exclude a test; they
-# only balance whole files (which keeps module-scoped fixtures together)
-# across an engine's jobs. Engines differ in speed but not much in shape.
-BROWSER_FILE_SECONDS = {
-    "test_components.py": 235,
-    "test_family_pages.py": 60,
-    "test_about_page.py": 48,
-    "test_automation.py": 48,
-    "test_family_financial.py": 46,
-    "test_family_service.py": 38,
-    "test_system_logs.py": 37,
-    "test_family_response.py": 36,
-    "test_in_place.py": 34,
-    "test_table_sorting.py": 32,
-    "test_family_acceptance.py": 31,
-    "test_send_progress.py": 31,
-    "test_followup_in_place.py": 27,
-    "test_member_census.py": 26,
-    "test_time_entry.py": 24,
-    "test_ministry_followup.py": 24,
-    "test_content_editor.py": 21,
-    "test_family_census.py": 21,
-    "test_member_requests.py": 20,
+# Scheduling hints only, fitted to the per-test CI_PROGRESS seconds of CI runs
+# 38257793840 and 38265706112 (#1151). A test file costs its engine's fixed
+# seconds (opening pages and module fixtures) plus its per-case seconds for
+# each case, plus any BROWSER_FILE_EXTRA_SECONDS: fixed waits in that file
+# that cost about the same on every engine. Each recorded file fit within
+# about 13 s. Hints never select or exclude a test; they only balance whole
+# files (which keeps module-scoped fixtures together) across an engine's
+# partitions, and give each partition's logged estimate.
+BROWSER_ENGINE_SECONDS = {
+    # engine: (seconds per file, seconds per case)
+    "chromium": (11, 0.35),
+    "firefox": (8, 0.53),
+    "webkit": (13, 1.22),
 }
-BROWSER_CASE_SECONDS = 1.5
+BROWSER_FILE_EXTRA_SECONDS = {
+    "test_system_health.py": 121,
+    "test_family_pledge_walks.py": 51,
+    "test_about_page.py": 38,
+    "test_live_status_in_place.py": 30,
+    "test_refresh_schedule_editor.py": 23,
+    "test_settings_in_place.py": 21,
+    "test_send_progress.py": 19,
+    "test_family_acceptance.py": 17,
+    "test_schedule_fields.py": 15,
+    "test_live_end_date.py": 12,
+    "test_campaign_comparison.py": 11,
+    "test_time_entry.py": 11,
+}
 
 
 def parse_browser_partition(value):
@@ -89,16 +92,19 @@ def browser_files(nodes):
     return files
 
 
-def browser_file_seconds(path, size):
-    """Recorded seconds for a known file, else SIZE cases at the default."""
+def browser_file_seconds(path, size, engine):
+    """Estimated ENGINE seconds for the test file PATH with SIZE cases."""
+    per_file, per_case = BROWSER_ENGINE_SECONDS[engine]
     name = path.rsplit("/", 1)[-1]
-    return BROWSER_FILE_SECONDS.get(name, size * BROWSER_CASE_SECONDS)
+    return per_file + size * per_case + BROWSER_FILE_EXTRA_SECONDS.get(name, 0)
 
 
-def browser_estimate(nodes):
-    """Estimated WebKit-scale seconds for NODES, the sum the split balances."""
+def browser_estimate(nodes, engine):
+    """Estimated ENGINE seconds for NODES, the sum the split balances."""
     files = browser_files(nodes)
-    return sum(browser_file_seconds(path, len(group)) for path, group in files.items())
+    return sum(
+        browser_file_seconds(path, len(group), engine) for path, group in files.items()
+    )
 
 
 def browser_partition(cases, engine, index=1, count=1):
@@ -109,9 +115,9 @@ def browser_partition(cases, engine, index=1, count=1):
     from every partition. Ordinary local runs do not call this selector.
 
     With COUNT above one, the engine's cases are further split into COUNT
-    disjoint jobs by whole test file: heaviest file first (by the hints
-    above), each to the least-loaded job, ties broken by name and job number.
-    The split depends only on the collected node IDs, never their order, so
+    disjoint jobs by whole test file: heaviest file first (by the engine's
+    hints above), each to the least-loaded job, ties broken by name and job
+    number. The split depends only on the collected node IDs, never their order, so
     every job computes the same assignment and together they run every case
     exactly once. A job that would receive no files fails instead.
     """
@@ -142,7 +148,7 @@ def browser_partition(cases, engine, index=1, count=1):
 
     def weight(path):
         """This file's scheduling estimate."""
-        return browser_file_seconds(path, len(files[path]))
+        return browser_file_seconds(path, len(files[path]), engine)
 
     loads = [0] * count
     mine = []

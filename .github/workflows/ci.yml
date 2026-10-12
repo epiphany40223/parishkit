@@ -294,14 +294,19 @@ jobs:
     # post-job steps.
     timeout-minutes: 60
     # One job per quality_sharding.BROWSER_JOBS entry (#627): Firefox whole,
-    # and WebKit (the slowest engine) and Chromium each halved by test file,
-    # one half of each per job, so three jobs of similar length. WebKit runs
-    # last so it inherits Chromium's unused budget (#1112). Each job installs
-    # only its engines and must prove every partition ran all of its cases.
+    # and WebKit (the slowest engine) and Chromium each split in three by test
+    # file, one third of each per job, so four jobs of similar length, each
+    # near 60% of the test budget (#1151). WebKit runs last so it inherits
+    # Chromium's unused budget (#1112). Each job installs only its engines and
+    # must prove every partition ran all of its cases.
     strategy:
       fail-fast: false
       matrix:
-        runs: ["firefox:1/1", "chromium:1/2 webkit:1/2", "chromium:2/2 webkit:2/2"]
+        runs:
+          - "firefox:1/1"
+          - "chromium:1/3 webkit:1/3"
+          - "chromium:2/3 webkit:2/3"
+          - "chromium:3/3 webkit:3/3"
     env:
       BROWSER_RUNS: ${{ matrix.runs }}
     steps:

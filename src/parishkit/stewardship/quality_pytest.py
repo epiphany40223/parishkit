@@ -190,7 +190,7 @@ class BrowserSelection:
             f"CI_BROWSER_PARTITION {browser_label(self.engine, *self.partition)}: "
             f"{len(selected):,} out of "
             f"{len(cases):,} ({len(selected) / len(cases):.1%}) cases, "
-            f"estimated {browser_estimate(self.selected):,.0f} s"
+            f"estimated {browser_estimate(self.selected, self.engine):,.0f} s"
         )
         # Timed from here, so the actual figure is execution, like the estimate.
         self.started = time.monotonic()
@@ -212,12 +212,12 @@ class BrowserSelection:
         """A successful early exit must not turn incomplete execution green.
 
         Also log estimated against actual seconds, pass or fail, so drifting
-        BROWSER_FILE_SECONDS hints show up in ordinary job logs.
+        browser cost hints (quality_sharding) show up in ordinary job logs.
         """
         if self.started is not None:
             self.config.pluginmanager.get_plugin("terminalreporter").write_line(
                 f"CI_BROWSER_TIMING {browser_label(self.engine, *self.partition)}: "
-                f"estimated {browser_estimate(self.selected):,.0f} s, "
+                f"estimated {browser_estimate(self.selected, self.engine):,.0f} s, "
                 f"actual {time.monotonic() - self.started:,.0f} s"
             )
         if exitstatus != 0:
