@@ -240,6 +240,9 @@ FROZEN = {
     "0069_member_names_last_first.sql": (
         "fab50a02a867f282e4d8704f879a67082252e5eeb105d41989a9f98c591862f0"
     ),
+    "0070_ministry_leader_changes.sql": (
+        "a8eb331a607d66ecb320782b46cfcf06451f47ea9eaab7fd34229359ca69f3d8"
+    ),
 }
 
 

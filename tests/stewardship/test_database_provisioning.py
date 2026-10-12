@@ -300,10 +300,13 @@ def test_grants_wait_for_the_users_swap_closures_functions(
     for function in (MEMBER_NAMES_FOR_FUNCTION, LEADERS_WITHOUT_USER_FUNCTION):
         named = [s for s in statements if function in s]
         assert len(named) == (1 if applied else 0), function
-    # Everything else is granted either way.
-    assert len(statements) == len(
-        grant_statements(tmp_path, monkeypatch, CLOSURE_FUNCTIONS.values())[1]
-    ) - (0 if applied else len(CLOSURE_FUNCTIONS))
+    # Everything else is granted either way. A routine may go to several
+    # logins (#1034's recorder to two), so the statements that wait are
+    # those naming one, not one per routine.
+    full = grant_statements(tmp_path, monkeypatch, CLOSURE_FUNCTIONS.values())[1]
+    closure = [s for s in full if any(f in s for f in CLOSURE_FUNCTIONS)]
+    assert len(closure) >= len(CLOSURE_FUNCTIONS)
+    assert len(statements) == len(full) - (0 if applied else len(closure))
 
 
 def test_grants_wait_for_the_users_swap_closures_tables(tmp_path, monkeypatch):
