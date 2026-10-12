@@ -263,6 +263,7 @@ SLASHLESS_EXPECTED = {
     "/admin/users": "/admin/users/",
     "/admin/users/new": "/admin/users/new/",
     f"/admin/users/{T}/edit": f"/admin/users/{T}/edit/",
+    "/admin/users/sessions": "/admin/users/sessions/",
     "/admin/users/automation": "/admin/users/automation/",
     "/admin/users/automation/approval": "/admin/users/automation/approval/",
     # Responses and reports pages without their trailing slash (NAV-11).

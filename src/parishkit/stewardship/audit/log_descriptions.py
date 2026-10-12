@@ -123,8 +123,15 @@ DESCRIPTIONS = {
         "A portal user signed in again, which ended their previous session."
     ),
     "admin_revoked": _(
-        "A portal user's session was ended because their access was removed "
-        "or all sessions were signed out."
+        "A portal user's session was ended because their access was removed, "
+        "all sessions were signed out, or an Administrator signed it out on "
+        "Signed-in sessions."
+    ),
+    # Recorded beside that session's admin_revoked, naming who did it (#953).
+    "admin_session_signed_out": _(
+        "An Administrator signed out someone's portal session on Signed-in "
+        "sessions. The actor is the Administrator; the person's own entry is "
+        "the session ending beside it."
     ),
     # Admin automation sessions (ADM-11): the host command line acting as an
     # Administrator who approved it once in the browser.
@@ -765,6 +772,7 @@ DIRECT_AUDIT_TYPES = frozenset(
         "admin_privileges_changed",
         "admin_reauthenticated",
         "admin_revoked",
+        "admin_session_signed_out",
         "admin_step_up",
         "admin_timeout",
         "catchup_failed",

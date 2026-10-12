@@ -1,0 +1,46 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Signed-in sessions" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Signed-in sessions" %}</h1>
+{% aboutpage "signed-in-sessions" %}
+<p>{% translate "Each row is one browser signed in to the Admin portal now, by an Administrator, Staff member or Ministry leader. A session ends when its person signs out, after 60 minutes without use, or 12 hours after sign-in, whichever comes first." %}</p>
+<p>{% translate "Sign out, in a row's Actions column, ends that session at once: the person's next click goes to the sign-in page, and they can sign in again with Google if they still have access. To stop someone signing in again, delete their user on the Users page." %}</p>
+<p>{% translate "Your own session in this browser has no Sign out here; use Sign out at the top of the page. Command-line sessions are listed on Automation access instead." %}</p>
+<p>{% translate "Signed in is the person's latest confirmation with Google. Every sign-in and sign-out is recorded in System logs under Sign-in activity. Choose a column heading to sort the table by it; choose it again to reverse the order." %}</p>
+{% endaboutpage %}
+{% comment %}
+  #953: every live interactive Admin session. The table is an action table
+  (admin-portal spec, "Row actions and confirmation", #879): a row's Sign out
+  (the revoke icon) opens the confirmation dialog, which posts the session
+  with the table's form and then redraws the region from data-refresh-url,
+  in place. Sort headings refresh the region in place too (#488). The
+  reader's own current session has no action: the page's Sign out ends it.
+  There is no bulk bar: signing a session out is one deliberate choice.
+  A Sign out that found its session already ended redirects here with
+  outcome=already_ended; the hidden data-confirm-announce line is what the
+  dialog then announces instead of "Signed out …" (ui-v1.js).
+{% endcomment %}{% if already_ended %}<p hidden data-confirm-announce>{% translate "That session had already ended; the list is up to date." %}</p>{% endif %}
+<section class="panel" aria-labelledby="sessions-heading">
+  <h2 id="sessions-heading" tabindex="-1">{% translate "Live sessions" %}</h2>
+  <div id="sessions-table" data-table-region data-refresh-url="{{ refresh_url }}">
+  {% if table.rows %}
+  <form method="post" action="{% url 'admin:signed_in_sessions' %}{% if state_query %}?{{ state_query }}{% endif %}#sessions-table" id="signed-in-actions" data-row-actions>{% csrf_token %}
+  <div class="table-scroll" tabindex="0" role="region" aria-labelledby="sessions-caption">
+  <table><caption id="sessions-caption">{% translate "Browsers signed in to the Admin portal now" %}</caption>
+  <thead><tr>{% translate "User" as heading %}{% sort_heading table "user" heading %}{% translate "Signed in" as heading %}{% sort_heading table "signed_in" heading %}{% translate "Last activity" as heading %}{% sort_heading table "activity" heading %}{% translate "Expires" as heading %}{% sort_heading table "expires" heading %}<th scope="col">{% translate "Actions" %}</th></tr></thead>
+  <tbody>{% for row in table.rows %}<tr>
+    <th scope="row">{{ row.email|default:_("unknown") }}{% if row.current %} ({% translate "you, this browser" %}){% endif %}</th>
+    <td><time datetime="{{ row.authenticated_at|instant }}" data-local-instant>{{ row.authenticated_at|instant }}</time></td>
+    <td><time datetime="{{ row.last_activity_at|instant }}" data-local-instant>{{ row.last_activity_at|instant }}</time></td>
+    <td><time datetime="{{ row.expires_at|instant }}" data-local-instant>{{ row.expires_at|instant }}</time></td>
+    {% if row.current %}<td class="table-actions"></td>{% else %}{% table_actions name=row.label delete=row.id confirm="session-sign-out" field="session_id" verb="sign_out" %}{% endif %}
+  </tr>{% endfor %}</tbody>
+  </table>
+  </div>
+  </form>
+  {% translate "Sign out {name}?" as title_one %}{% translate "Sign out {count} sessions?" as title_many %}{% translate "The session ends at once; its person's next click goes to the sign-in page." as body %}{% translate "They can sign in again with Google if they still have access. To remove access, delete their user on the Users page." as caution %}{% translate "Sign out" as accept %}
+  {% include "stewardship/components/confirm-dialog.html" with dialog_id="session-sign-out" form_id="signed-in-actions" fallback="sessions-heading" title_one=title_one title_many=title_many body=body caution=caution accept=accept done_one=_("Signed out {name}.") done_many=_("Signed out {count} sessions.") %}
+  {% else %}<p>{% translate "No one is signed in now." %}</p>{% endif %}
+  </div>
+</section>
+{% endblock %}

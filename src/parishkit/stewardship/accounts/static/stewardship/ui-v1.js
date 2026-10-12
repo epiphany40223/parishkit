@@ -3424,7 +3424,13 @@
       || document.getElementById(fallback) || document.querySelector("main h1");
     target?.focus({preventScroll: true});
     target?.scrollIntoView({block: "nearest"});
-    announce(fillIn(chosen.length === 1 ? dialog.dataset.doneOne : dialog.dataset.doneMany,
+    // An action that turned out to change nothing says so on the page its
+    // answer redirects to, in a hidden data-confirm-announce line (Signed-in
+    // sessions: the session had already ended, #953). That line is said
+    // instead of the dialog's own "done" words, which would claim a change.
+    const outcome = new DOMParser().parseFromString(answer.text, "text/html")
+      .querySelector("[data-confirm-announce]")?.textContent.trim();
+    announce(outcome || fillIn(chosen.length === 1 ? dialog.dataset.doneOne : dialog.dataset.doneMany,
       state.values));
   };
 
