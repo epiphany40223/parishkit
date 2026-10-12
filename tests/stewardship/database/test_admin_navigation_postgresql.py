@@ -486,10 +486,13 @@ def test_building_the_menu_adds_only_the_open_counts_query(
     assert counted in processors
     monkeypatch.setitem(engine.__dict__, "template_context_processors", processors)
     browser, _ = signed_in()
-    # A report page every role may open. An Administrator's or Staff
-    # member's draft has no Ministry module, so it renders its "no reports"
-    # page; a leader's draft asks about Ministry 9, so the report renders.
-    response, content = read(browser, reverse("admin:ministry_report"))
+    # A report page the role may open now. An Administrator's or Staff
+    # member's draft has no Ministry module, so Ministry requests is greyed
+    # out for them (its page shows that reason, #1128) and they read Emailed
+    # reports, which needs no campaign; a leader's draft asks about Ministry
+    # 9, so Ministry requests renders.
+    page = "ministry_report" if role == "ministry_leader" else "emailed_reports"
+    response, content = read(browser, reverse(f"admin:{page}"))
     assert response.status_code == 200
     assert b'aria-label="Administration"' in content
     before, now = CHROME_QUERIES[(role, draft)]

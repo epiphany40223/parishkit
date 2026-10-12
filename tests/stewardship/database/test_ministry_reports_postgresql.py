@@ -710,10 +710,12 @@ def test_only_the_current_campaign_is_reported_within_each_scope(
         == "applied"
     )
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        # The current campaign has no Ministry step: nothing to report.
+        # The current campaign has no Ministry step: the greyed menu entry's
+        # reason, and nothing reported (#1128).
         response, body = read(admin, current)
-        assert response.status_code == 200 and "Retry-After" not in response
-        assert EMPTY in body and b"Unassigned campaign" not in body
+        assert response.status_code == 409 and "Retry-After" not in response
+        assert b"does not include Ministry stewardship" in body
+        assert b"Unassigned campaign" not in body
 
 
 def test_legacy_timezone_alias_submits_and_reports(monkeypatch, request):

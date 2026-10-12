@@ -152,7 +152,10 @@ def test_withdrawal_http_is_exact_atomic_and_preserves_cleanup(scheduled, monkey
         result = item.browser.get(item.path)
         assert b"Go-live cancelled" in result.content
         assert not result.context["available"]
-        assert item.browser.get(reverse("admin:production_progress")).status_code == 403
+        # Back in Testing, its greyed menu entry's reason (#1128).
+        progress = item.browser.get(reverse("admin:production_progress"))
+        assert progress.status_code == 409
+        assert b"Production has not been confirmed" in progress.content
         # Old signed activation intent cannot reactivate the withdrawn campaign.
         replay = confirm(
             *item.activation_arguments, token=item.activation_token, typed="Production"

@@ -33,6 +33,7 @@ from parishkit.stewardship.campaigns.configuration import REMINDER_WORKGROUP_NAM
 from parishkit.stewardship.campaigns.domain import CampaignState
 from parishkit.stewardship.campaigns.lifecycle import structural_edit_admitted
 from parishkit.stewardship.web.error_pages import ERROR_PAGE_ATTRIBUTE
+from parishkit.stewardship.web.refusals import UserFacingUnavailable
 
 from .policy import Capability
 
@@ -333,7 +334,22 @@ class MenuItem(NamedTuple):
     reason: str | None = None
 
 
+# The reasons an entry is greyed out. Each is one string, shown in the menu's
+# tip and, word for word, on the page itself when it is opened directly
+# (``greyed_entry``, #1128), so the two cannot drift apart.
 NO_CAMPAIGN = _("No current campaign")
+ARCHIVED = _("The campaign is archived")
+FINANCIAL_MISSING = _("This campaign does not include Financial stewardship")
+MINISTRY_MISSING = _("This campaign does not include Ministry stewardship")
+CENSUS_MISSING = _("This campaign does not include the census")
+STRUCTURE_FIXED = _(
+    "Can be changed only in Testing mode, before the campaign goes live"
+)
+ALREADY_LIVE = _("Only a draft campaign can go live; this one already has")
+NOT_CONFIRMED = _(
+    "Production has not been confirmed for this campaign; start at Go-live readiness"
+)
+PRODUCTION_ONLY = _("Available in Production mode")
 
 
 def _never(state):
@@ -351,7 +367,7 @@ def _unarchived(state):
     if not state.campaign:
         return NO_CAMPAIGN
     if state.campaign.state == "archived":
-        return _("The campaign is archived")
+        return ARCHIVED
     return None
 
 
@@ -372,11 +388,9 @@ def _module(module, missing):
     return reason
 
 
-FINANCIAL = _module(
-    "financial", _("This campaign does not include Financial stewardship")
-)
-MINISTRY = _module("ministry", _("This campaign does not include Ministry stewardship"))
-CENSUS = _module("census", _("This campaign does not include the census"))
+FINANCIAL = _module("financial", FINANCIAL_MISSING)
+MINISTRY = _module("ministry", MINISTRY_MISSING)
+CENSUS = _module("census", CENSUS_MISSING)
 
 
 def _structural(module_reason):
@@ -399,7 +413,7 @@ def _structural(module_reason):
             locked=campaign.structural_locked,
         ):
             return None
-        return _("Can be changed only in Testing mode, before the campaign goes live")
+        return STRUCTURE_FIXED
 
     return reason
 
@@ -409,7 +423,7 @@ def _draft(state):
     if not state.campaign:
         return NO_CAMPAIGN
     if state.campaign.state != "draft":
-        return _("Only a draft campaign can go live; this one already has")
+        return ALREADY_LIVE
     return None
 
 
@@ -424,10 +438,7 @@ def _confirmed(state):
     if not state.campaign:
         return NO_CAMPAIGN
     if state.mode != "production" or state.campaign.state == "draft":
-        return _(
-            "Production has not been confirmed for this campaign; "
-            "start at Go-live readiness"
-        )
+        return NOT_CONFIRMED
     return None
 
 
@@ -435,7 +446,7 @@ def _production(state):
     """Pause and resume mail acts on real mail, so Production only."""
     if not state.campaign:
         return NO_CAMPAIGN
-    return None if state.mode == "production" else _("Available in Production mode")
+    return None if state.mode == "production" else PRODUCTION_ONLY
 
 
 @dataclass(frozen=True)
@@ -522,6 +533,74 @@ MENU_NAMES = frozenset(entry.name for entry in MENU)
 # Each entry's reason check by page, for a page that greys out its own link
 # to another menu page exactly as the menu does (Data to fix in ParishSoft).
 MENU_REASONS = {entry.name: entry.reason for entry in MENU}
+
+
+# Where a greyed-out page opened directly leads (#1128): the menu entry that
+# changes what the reason names, linked only while the viewer's menu offers
+# it. A module is chosen on Campaign settings; Production starts at Go-live
+# readiness; a campaign that has gone live is followed on Production
+# activation. Other reasons (no current campaign, an archived campaign, a
+# structure fixed once the campaign went live) have no page that undoes them,
+# so their page offers only the usual way back and Home.
+FORWARD = (
+    (FINANCIAL_MISSING, "campaign_settings"),
+    (MINISTRY_MISSING, "campaign_settings"),
+    (CENSUS_MISSING, "campaign_settings"),
+    (NOT_CONFIRMED, "go_live"),
+    (PRODUCTION_ONLY, "go_live"),
+    (ALREADY_LIVE, "production_progress"),
+)
+
+
+class Greyed(NamedTuple):
+    """A menu page the viewer may open by role but not now, and its way forward.
+
+    ``label`` is the page's name and ``reason`` the menu entry's own reason
+    string; ``forward`` is ``(label, url)`` of the entry that changes it, or
+    None when the viewer's menu does not offer one now.
+    """
+
+    label: str
+    reason: str
+    forward: tuple | None
+
+    def refusal(self):
+        """The page's refusal: the menu's reason, word for word, and a way on.
+
+        The heading names the page, the message is the reason as a sentence
+        (the menu's tips have no final stop), and the link, when there is
+        one, opens the entry that changes it. The error page adds the usual
+        way back and Home.
+        """
+        reason = str(self.reason)
+        label, url = self.forward or (None, None)
+        return UserFacingUnavailable(
+            reason if reason.endswith(".") else f"{reason}.",
+            title=_("%(page)s isn't available right now") % {"page": self.label},
+            fix=_(
+                "This page opens again once that changes. Until then, choose "
+                "another page from the menu."
+            ),
+            link=url,
+            link_label=_("Go to %(page)s") % {"page": label} if url else None,
+        )
+
+
+def greyed_entry(name, items):
+    """Why menu page ``name`` is greyed out for this viewer now, or None.
+
+    ``items`` is the viewer's menu (``menu``). An entry the viewer's role
+    hides is not in it, so a page refused by role is never explained here:
+    its own view refuses it as before. The reason is matched by identity,
+    since each check returns one of the module's reason strings.
+    """
+    item = next((entry for entry in items if entry.name == name), None)
+    if item is None or item.reason is None:
+        return None
+    offered = {entry.name: entry.url for entry in items if entry.url}
+    target = next((page for reason, page in FORWARD if reason is item.reason), None)
+    forward = (PAGES[target].label, offered[target]) if target in offered else None
+    return Greyed(item.label, item.reason, forward)
 
 
 def menu(state, may_open):
