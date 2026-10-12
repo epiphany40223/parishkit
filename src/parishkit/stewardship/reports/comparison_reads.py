@@ -226,9 +226,38 @@ def _archive_years(archives, days, bands, number, financial):
                 renewal=renewal,
                 distribution=distribution,
                 notes=notes(archive),
+                series=tuple(figures(rows[day]) for day in sorted(rows)),
             )
         )
     return years
+
+
+def current_series(document, start, last, financial):
+    """The current campaign's days 1 to ``last`` (a date) from its fact rows.
+
+    The day-by-day charts draw these: Families responded, the cohort
+    denominator and, with Financial stewardship, the pledge total, each the
+    participation graph's own figure. A day whose population is unavailable
+    is left out of the series; the charts draw it as a null point, so the
+    line breaks there and the table shows "—" (``comparison_charts.
+    year_points``). A day without a pledge total has none.
+    """
+    days = []
+    for fact in document.days:
+        if not start <= fact.local_date <= last or not fact.population_available:
+            continue
+        pledged = fact.pledge_total if financial and fact.pledge_available else None
+        days.append(
+            Day(
+                (fact.local_date - start).days + 1,
+                fact.local_date,
+                fact.cumulative_responses,
+                fact.cohort_denominator,
+                None,
+                pledged,
+            )
+        )
+    return tuple(sorted(days, key=lambda day: day.day))
 
 
 def notes(archive):
@@ -358,6 +387,9 @@ def read_comparison(guard, campaign_id, *, day=None):
                     if financial and found is not None and at_day.pledged is not None
                     else None
                 ),
+                series=current_series(
+                    document, projection.start_date, latest[1], financial
+                ),
             )
         guard.check()
         return Comparison(
@@ -371,4 +403,5 @@ def read_comparison(guard, campaign_id, *, day=None):
             current=current,
             imported=tuple(imported),
             last_year=last_year,
+            latest_day=latest[0] if latest else None,
         )
