@@ -326,6 +326,12 @@ LEADERS_WITHOUT_USER_FUNCTION = "stewardship_leaders_without_user_v1(text, uuid)
 # reads them, for an Administrator only, without any grant on the email's
 # rendering (its subject and body).
 RECIPIENTS_FUNCTION = "stewardship_delivery_recipients_v1(uuid, uuid)"
+# The campaign comparison report's figures that read each Family's own rows
+# (#1018): web learns only their aggregates, never a kept archive Family's id.
+COMPARISON_FUNCTION = "stewardship_campaign_comparison_v1(uuid, date, numeric[], uuid)"
+ARCHIVE_RENEWAL_FUNCTION = (
+    "stewardship_campaign_archive_renewal_v1(uuid, uuid, integer)"
+)
 # Each definer routine above that a migration in the users swap's closure
 # creates (#952), with that migration. `migrate --users-upgrade-base` leaves
 # the closure pending, and database-grants runs on that base before the
@@ -339,6 +345,11 @@ CLOSURE_FUNCTIONS = {
         "0015_leaders_without_user",
     ),
     RECIPIENTS_FUNCTION: ("stewardship_jobs", "0022_mail_message_recipients"),
+    # The campaign comparison report's figures (0067, #1018) follow 0066.
+    **dict.fromkeys(
+        (COMPARISON_FUNCTION, ARCHIVE_RENEWAL_FUNCTION),
+        ("stewardship_reports", "0018_campaign_comparison"),
+    ),
 }
 
 
@@ -388,12 +399,6 @@ def pending_tables(applied):
     return frozenset(
         table for table, migration in CLOSURE_TABLES.items() if migration not in applied
     )
-# The campaign comparison report's figures that read each Family's own rows
-# (#1018): web learns only their aggregates, never a kept archive Family's id.
-COMPARISON_FUNCTION = "stewardship_campaign_comparison_v1(uuid, date, numeric[], uuid)"
-ARCHIVE_RENEWAL_FUNCTION = (
-    "stewardship_campaign_archive_renewal_v1(uuid, uuid, integer)"
-)
 
 
 def runtime_functions(role, *, target=None):

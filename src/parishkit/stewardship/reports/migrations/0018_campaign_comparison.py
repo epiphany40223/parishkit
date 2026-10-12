@@ -9,6 +9,13 @@ Families, quartiles, pledge bands and renewal at the end of one day) and
 another's Families). No table or model changes, so there are no state
 operations. Reversing needs its own forward migration, so, like the
 baseline, it has no reverse operation.
+
+It depends on the reports app's migration that installs the previous frozen
+file (0066), so the files apply in prefix order and Django keeps a single
+leaf. That puts it in the users swap's closure (#952): `migrate
+--users-upgrade-base` never applies it, so both functions are registered in
+``runtime_grants.CLOSURE_FUNCTIONS`` and granted only once it is applied. It
+alters no table.
 """
 
 from pathlib import Path
@@ -25,12 +32,11 @@ FROZEN_SQL = (
 
 class Migration(migrations.Migration):
     dependencies = [
-        # The migration that installs 0059, the archive tables these functions
-        # read (#1048, slice 2). Files 0060 to 0066 are assigned to other open
-        # pull requests; when any of them lands first, this moves to the
-        # migration that installs the highest of them, so the frozen files
-        # apply in prefix order.
-        ("stewardship_reports", "0013_campaign_archives"),
+        # The migration that installs the previous frozen file (0066, #794).
+        # The archive tables these functions read (0059, #1048) come before
+        # it. It follows the users swap, so `migrate --users-upgrade-base`
+        # never applies this file.
+        ("stewardship_reports", "0017_financial_staff_entered"),
     ]
 
     operations = [migrations.RunSQL(FROZEN_SQL.read_text(encoding="utf-8"))]
