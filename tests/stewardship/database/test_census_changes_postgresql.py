@@ -16,8 +16,9 @@ from parishkit.stewardship.responses.models import ProposedChange
 
 from ..census_factory import address
 from ..policy_factory import address as rule_address
-from .auth_builders import signed_in
+from .auth_builders import signed_in, unguarded
 from .campaign_builders import change
+from .family_name_cases import DEFAULT, NAME_CASES, seed_name_cases
 from .leader_builders import promote_leaders
 from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
@@ -90,6 +91,44 @@ def test_worklist_reads_proposals_with_their_status(response_service):
     assert worklist(harness, status="all", search="no such name")["rows"] == []
     with pytest.raises(PermissionError):
         worklist(harness, LEADER)
+
+
+def test_family_names_follow_the_shared_name_cases(response_service):
+    """The Family name comes from the shared SQL lookup, so every shared edge
+    case (Unicode padding, inactive or missing heads, surname fallbacks) reads
+    as snapshot_family_names gives it, and a Family missing from the current
+    snapshot is Unavailable Family (#932)."""
+    from parishkit.stewardship.source.snapshot_models import SourceCurrent
+
+    harness = response_service
+    start(harness)
+    harness = activate_response_service(harness)
+    submit_live(harness)
+    (home,) = worklist(harness)["rows"]
+    duid = home["family_duid"]
+    snapshot = SourceCurrent.objects.values_list("snapshot_id", flat=True).get()
+
+    def drop_family():
+        """Remove the Family's row from the current snapshot."""
+        # Snapshot rows are immutable through the ORM; only raw SQL in
+        # replica mode, as a superuser could, removes one.
+        with unguarded(), connection.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM stewardship_snapshot_family "
+                "WHERE snapshot_id=%s AND source_key=%s",
+                [snapshot, str(duid)],
+            )
+
+    drop_family()
+    assert worklist(harness)["rows"][0]["family_name"] == "Unavailable Family"
+    for case in NAME_CASES:
+        # Each case's head Member DUIDs are distinct, so earlier cases' heads
+        # can stay in the snapshot.
+        drop_family()
+        (expected,) = seed_name_cases(snapshot, (case,), first=duid).values()
+        if expected == DEFAULT:
+            expected = "Unavailable Family"
+        assert worklist(harness)["rows"][0]["family_name"] == expected, case[0]
 
 
 def test_native_page_and_downloads(response_service, google, settings):
