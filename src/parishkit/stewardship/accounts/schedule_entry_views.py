@@ -12,6 +12,9 @@ views act on them:
   The page shows and takes send times in the browser's time zone, which the
   page script posts as ``zone``; ``schedule_local`` converts them to and
   from the campaign-local values a schedule keeps (#558).
+- **Edit this schedule's email**, on Edit only, edits the schedule's own
+  email (``schedule_email``, #446): a changed email is added as a new email
+  that only this schedule sends, in the same reviewed change.
 - **Delete** answers the list's confirmation dialog: it removes the chosen
   schedules in one configuration change.
 
@@ -61,14 +64,21 @@ from parishkit.stewardship.web.refusals import (
     unexpected_fields,
 )
 
-from . import admin_navigation, schedule_local
+from . import admin_navigation, schedule_email, schedule_local
 from .admin_editing import confirm_intent, error_response, form_action, principal
 from .authentication import runtime
 from .campaign_mail import admits_test_mail
+from .content_forms import sample_banner, sample_render
 from .content_views import _records
 from .limiting import LimiterUnavailable
 from .policy import Capability, allows
-from .schedule_changes import NO_CHANGES, build_preview, confirm_scope, preview_salt
+from .schedule_changes import (
+    EMAIL_DOES_NOT_FIT,
+    NO_CHANGES,
+    build_preview,
+    confirm_scope,
+    preview_salt,
+)
 from .schedule_forms import (
     WEEKDAYS,
     ScheduleForm,
@@ -129,6 +139,10 @@ ZONE_MISSING = _(
 UNCHANGED = _(
     "Nothing has changed. Change the date, time or email, then choose Review changes."
 )
+# The signed review of an edited email carries its text; the Pages and emails
+# editor refuses a preview this large too (content_views._preview).
+PREVIEW_LIMIT = 256_000
+TOO_LARGE = _("This email is too large to save. Shorten it, then try again.")
 
 
 class RepeatRule(forms.Form):
@@ -240,7 +254,9 @@ def _changeable(saved, campaign, identifiers):
         )
 
 
-def review(service, actor, state, campaign, editable, entries, *, base_digest):
+def review(
+    service, actor, state, campaign, editable, entries, *, base_digest, content=()
+):
     """Bind a change document to the review's forms and build the review.
 
     ``entries`` are the change document's schedules (``admin_changes``): a
@@ -249,6 +265,9 @@ def review(service, actor, state, campaign, editable, entries, *, base_digest):
     ``(context, window, schedules, identifiers)``: ``context`` is
     ``build_preview``'s review, or None with the errors on the bound forms,
     and ``identifiers`` names each form (a saved ID, or ``new<n>``).
+    ``content`` lists the content records the change adds (an edited email,
+    ``schedule_email.copy``); the forms offer them as saved emails, so an
+    entry may send one.
     """
     # The schedule commands' own binding, so the page and the command line
     # cannot read the same change differently.
@@ -267,7 +286,10 @@ def review(service, actor, state, campaign, editable, entries, *, base_digest):
     schedules = Schedules(
         data,
         prefix="schedules",
-        templates=_records(state[0], campaign.pk),
+        templates=[
+            *_records(state[0], campaign.pk),
+            *({"id": row["id"], "values": row["values"]} for row in content),
+        ],
         campaign_id=campaign.pk,
         campaign=values,
         previous=saved,
@@ -281,6 +303,7 @@ def review(service, actor, state, campaign, editable, entries, *, base_digest):
         schedules,
         base_digest=base_digest,
         salt=preview_salt(campaign.pk),
+        content=content,
     )
     return context, window, schedules, identifiers
 
@@ -405,6 +428,8 @@ def _fields(new):
     names = {"base_digest", ZONE, *(f"{ENTRY}-{name}" for name in ENTRY_FIELDS)}
     if new:
         names.update(f"repeat-{name}" for name in REPEAT_FIELDS)
+    else:
+        names.update({schedule_email.EDIT, *schedule_email.FIELDS})
     return names
 
 
@@ -485,15 +510,16 @@ def _check_repeat(entry, repeat):
         )
 
 
-def _summary(entry, repeat):
+def _summary(entry, repeat, email=None):
     """The page's error summary: every message, linked to its field.
 
     The shared summary (components/errors.html) takes focus when the refused
     page loads, so the reader hears what to fix and can jump to each field.
+    ``email`` is Edit's email form while it is in use (bound), else None.
     """
     errors = []
-    for form in (entry, repeat):
-        if form is None:
+    for form in (entry, repeat, email):
+        if form is None or not form.is_bound:
             continue
         for field, messages in form.errors.items():
             target = None if field == "__all__" else form[field].auto_id
@@ -506,7 +532,11 @@ def _summary(entry, repeat):
 def _entry_page(request, context, *, status=200):
     """Render New or Edit scheduled email; a refusal gets its summary."""
     if status == 400:
-        context = context | {"errors": _summary(context["entry"], context["repeat"])}
+        context = context | {
+            "errors": _summary(
+                context["entry"], context["repeat"], context.get("email")
+            )
+        }
     response = render(
         request, "stewardship/schedule-entry.html", context, status=status
     )
@@ -543,7 +573,9 @@ def _entry(request, campaign_id, schedule_id=None):
     stale page, a read-only schedule, an unchanged Edit) is a plain refusal
     the dialog shows. The posted date and time are in the browser's zone
     (``zone``) and are converted to the campaign's before the review, so its
-    rules compare the moments the Admin chose.
+    rules compare the moments the Admin chose. On Edit, a ticked "Edit this
+    schedule's email" with changed text adds the new email to the same
+    review, and the schedule sends it (``schedule_email``).
     """
     service = runtime()
     actor = principal(request, service)
@@ -572,20 +604,30 @@ def _entry(request, campaign_id, schedule_id=None):
         if not new:
             _changeable(saved, campaign, {str(schedule_id)})
             schedule = next(row for row in saved if row["id"] == str(schedule_id))
+        records = _records(state[0], campaign.pk)
         entry = entry_form(
             posted,
-            _records(state[0], campaign.pk),
+            records,
             saved,
             schedule,
             kept=_kept(posted, schedule, values, now),
             test_mail=admits_test_mail(state[0].mode, campaign),
         )
         repeat = RepeatRule(posted, prefix="repeat") if new else None
+        # Edit only: the schedule's own email (New picks a saved one).
+        toggle, email, sources = (
+            (None, None, None)
+            if new
+            else schedule_email.editor(posted, records, schedule, campaign.pk)
+        )
         context = {
             "campaign": campaign,
             "values": values,
             "entry": entry,
             "repeat": repeat,
+            "email_toggle": toggle,
+            "email": email,
+            "email_sources": sources,
             "new": new,
             "schedule": schedule,
             "base_digest": state[0].active_configuration.digest,
@@ -598,7 +640,11 @@ def _entry(request, campaign_id, schedule_id=None):
         admin_navigation.place(request, flow="change", step="edit")
         if posted is None:
             return _entry_page(request, context)
-        valid = entry.is_valid() & (repeat is None or repeat.is_valid())
+        valid = (
+            entry.is_valid()
+            & (repeat is None or repeat.is_valid())
+            & (email is None or not email.is_bound or email.is_valid())
+        )
         if valid:
             _check_repeat(entry, repeat)
             valid = repeat is None or not repeat.errors
@@ -624,6 +670,20 @@ def _entry(request, campaign_id, schedule_id=None):
                 % {"window": window_text(values)},
             )
             return _entry_page(request, context, status=400)
+        added = (
+            schedule_email.copy(
+                email,
+                records,
+                entry.cleaned_data["template_version"],
+                campaign_id=campaign.pk,
+                kind=schedule["values"]["kind"],
+            )
+            if email is not None and email.is_bound
+            else None
+        )
+        if added is not None:
+            # The schedule sends the new email; nothing else changes.
+            entries = [row | {"template_version": added["id"]} for row in entries]
         reviewed, window, schedules, identifiers = review(
             service,
             actor,
@@ -632,6 +692,7 @@ def _entry(request, campaign_id, schedule_id=None):
             editable,
             entries,
             base_digest=request.POST.get("base_digest"),
+            content=[added] if added else (),
         )
         if reviewed is None and str(NO_CHANGES) in _messages(window.non_field_errors()):
             # Only Edit can post its schedule as saved. Its change gate keeps
@@ -639,6 +700,12 @@ def _entry(request, campaign_id, schedule_id=None):
             # that bypasses the page script: a plain refusal, which the
             # review dialog shows (UX conventions, "Review dialog", #750).
             raise UserFacingError(UNCHANGED, fix=_("Nothing was changed."))
+        if reviewed is None and str(EMAIL_DOES_NOT_FIT) in _messages(
+            window.non_field_errors()
+        ):
+            # The whole candidate refused the edited email: say so there.
+            schedule_email.refuse(email, EMAIL_DOES_NOT_FIT)
+            return _entry_page(request, context, status=400)
         if reviewed is None:
             repeating = repeat is not None and repeat.cleaned_data["repeat"]
             days = _days(entry, repeat) if repeating else None
@@ -650,6 +717,11 @@ def _entry(request, campaign_id, schedule_id=None):
                 _targets(entries, schedule, days),
             )
             return _entry_page(request, context, status=400)
+        if added is not None:
+            if len(reviewed["preview"] or "") > PREVIEW_LIMIT:
+                schedule_email.refuse(email, TOO_LARGE)
+                return _entry_page(request, context, status=400)
+            reviewed = reviewed | {"email": _sample(service, campaign, added)}
         # The review dialog's fragment, never a page: its Apply confirms on
         # Dates and mail schedules (the form's dialog names it), and the
         # dialog then returns there.
@@ -658,6 +730,24 @@ def _entry(request, campaign_id, schedule_id=None):
             "stewardship/schedule-review.html",
             reviewed | {"new": new},
         )
+
+
+def _sample(service, campaign, added):
+    """The new email as the review shows it: a fictional sample.
+
+    Filled in with the parish's values and made-up Family values, with the
+    campaign banner the real send would carry, exactly as the Pages and
+    emails review shows a proposed email.
+    """
+    from parishkit.stewardship.jobs.campaign_mail_values import document_parish
+
+    values = campaign.active_configuration.values
+    return sample_render(
+        added["values"],
+        parish=document_parish(service.store.active().document()),
+        campaign=values,
+        banner=sample_banner(values, added["values"]["slot"]),
+    )
 
 
 def mailings(saved, schedule, campaign_zone, now):

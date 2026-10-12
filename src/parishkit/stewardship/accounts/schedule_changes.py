@@ -38,6 +38,13 @@ DOES_NOT_FIT = (
     "affected schedules, or change at most 100 records per request."
 )
 
+# The same, for a change that adds a schedule's own edited email
+# (``schedule_email``): the Edit page shows it on the email's fields.
+EMAIL_DOES_NOT_FIT = _(
+    "Check this email's content and placeholders. If they are right, check "
+    "the schedule's date and time against the campaign's rules."
+)
+
 
 def preview_salt(campaign_id):
     """The signing salt of one campaign's schedule previews.
@@ -72,7 +79,7 @@ def describe(values, campaign):
 
 
 def build_preview(
-    service, actor, state, campaign, window, schedules, *, base_digest, salt
+    service, actor, state, campaign, window, schedules, *, base_digest, salt, content=()
 ):
     """Validate the complete candidate, including each stranded or reordered mailing.
 
@@ -83,7 +90,10 @@ def build_preview(
     on the forms; otherwise the review: each change (with its schedule
     ``id``, which the page's template does not show), the window before and
     after, the count of work that blocks it and, when nothing blocks it, the
-    signed ``preview`` the confirmation takes.
+    signed ``preview`` the confirmation takes. ``content`` lists content
+    records the change adds first (a schedule's own edited email,
+    ``schedule_email``), which the schedules' forms already offer; they are
+    validated, signed and applied with the schedules in the one request.
     """
     configuration = state[0]
     digest = configuration.active_configuration.digest
@@ -130,10 +140,13 @@ def build_preview(
     if not patch:
         window.add_error(None, NO_CHANGES)
         return None
+    # An added email comes before the schedule that sends it.
+    patch = [*content, *patch]
     try:
         build_candidate(base, patch, candidate_id=uuid4())
     except (ConfigError, ValueError):
-        window.add_error(None, DOES_NOT_FIT)
+        # With an added email, the email is the likelier cause (#446).
+        window.add_error(None, EMAIL_DOES_NOT_FIT if content else DOES_NOT_FIT)
         return None
     summary = work_summary(campaign.pk)
     prior = {row["id"]: row["values"] for row in schedules.previous}
