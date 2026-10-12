@@ -681,6 +681,9 @@ NON_PAGES = frozenset(
         # Campaign settings' live end-date check (#944), a fragment the
         # page reads.
         "campaign_end_date_check",
+        # New and Edit scheduled email's test of an unsaved edit (#446), a
+        # POST the page script makes.
+        "schedule_email_test",
         "report_exact_create",
         "report_export_cancel",
         "report_export_create",

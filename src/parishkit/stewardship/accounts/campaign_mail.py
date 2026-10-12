@@ -133,12 +133,16 @@ def live(row):
         return cursor.fetchone() == (True,)
 
 
-def prepare(request, service, campaign_id, revision_id, *, request_key=None):
+def prepare(request, service, campaign_id, revision_id, *, request_key=None, text=None):
     """Preview explicit fictional mail for Testing or paused-delivery recovery.
 
     The shared SQL admission owner also permits the current paused Production
     campaign. Routing remains the configured test recipient, never a Family;
     this does not release schedules, restore holds or the live delivery pause.
+    ``text`` (``subject``, ``html``, ``text``) replaces the saved email's text
+    for a test of an unsaved edit (``request_edited``, #446); it is rendered
+    exactly as the saved text would be, and the row still names the saved
+    email the edit started from.
     """
     if any(not isinstance(value, UUID) for value in (campaign_id, revision_id)):
         raise ValueError("An exact campaign and email revision are required.")
@@ -191,7 +195,8 @@ def prepare(request, service, campaign_id, revision_id, *, request_key=None):
                 document_parish(version.canonical_document)["name"],
             ),
             **sample_render(
-                {key: getattr(template, key) for key in ("subject", "html", "text")},
+                text
+                or {key: getattr(template, key) for key in ("subject", "html", "text")},
                 parish=document_parish(version.canonical_document),
                 campaign=campaign.active_configuration.values,
                 confirmation=template.slot == "confirmation",
@@ -327,30 +332,85 @@ def request_sample(
         )
         if preview.binding() != binding:
             raise StaleRecordError("Review a fresh campaign test preview.")
-        rows = CampaignMailTest.objects.filter(campaign_id=campaign_id)
-        if rows.filter(state__in=["queued", "submitting"]).exists():
-            raise StaleRecordError("A campaign test is already pending.")
-        if not acknowledge_unknown and rows.filter(state="delivery_unknown").exists():
-            raise ValueError("A prior test may have arrived; acknowledge another send.")
-        row = preview.row
+        return _queue(actor, preview, acknowledge_unknown)
 
-        def admit(action, status):
-            """Intake owns the same configuration/work lock through Task and journal."""
-            return (
-                action == "enqueue"
-                and status.task_type == TASK_TYPE
-                and status.domain_request_id == row.pk
-                and live(row)
-            )
 
-        task = enqueue(
-            task_type=TASK_TYPE,
-            domain_request_id=row.pk,
-            actor_id=actor.identity,
-            correlation_id=current_correlation(),
-            admit=admit,
-            idempotency_key=row.pk,
+class TestPending(StaleRecordError):
+    """A send refused while another campaign test is on its way.
+
+    A ``StaleRecordError``, as before, so every caller answers it as it did;
+    the scheduled email pages' test of an unsaved edit (#446) explains it in
+    its own words.
+    """
+
+    __test__ = False  # Not a pytest test class, despite its name.
+
+
+class TestUncertain(ValueError):
+    """A send refused while an earlier test may have arrived, unacknowledged.
+
+    A ``ValueError``, as before; the scheduled email pages' test of an
+    unsaved edit (#446) asks for the acknowledgment.
+    """
+
+    __test__ = False  # Not a pytest test class, despite its name.
+
+
+def _queue(actor, preview, acknowledge_unknown):
+    """Record one previewed test and its task, under the caller's work lock.
+
+    The limits every test send shares: one pending test per campaign, and an
+    explicit acknowledgment while an earlier test may have arrived. The row's
+    insert is admitted by the same SQL guard and audited by its trigger.
+    """
+    row = preview.row
+    rows = CampaignMailTest.objects.filter(campaign_id=row.campaign_id)
+    if rows.filter(state__in=["queued", "submitting"]).exists():
+        raise TestPending("A campaign test is already pending.")
+    if not acknowledge_unknown and rows.filter(state="delivery_unknown").exists():
+        raise TestUncertain("A prior test may have arrived; acknowledge another send.")
+
+    def admit(action, status):
+        """Intake owns the same configuration/work lock through Task and journal."""
+        return (
+            action == "enqueue"
+            and status.task_type == TASK_TYPE
+            and status.domain_request_id == row.pk
+            and live(row)
         )
-        row.task_id = task.run_id
-        row.save(force_insert=True)
-        return row
+
+    task = enqueue(
+        task_type=TASK_TYPE,
+        domain_request_id=row.pk,
+        actor_id=actor.identity,
+        correlation_id=current_correlation(),
+        admit=admit,
+        idempotency_key=row.pk,
+    )
+    row.task_id = task.run_id
+    row.save(force_insert=True)
+    return row
+
+
+def request_edited(
+    request, service, campaign_id, revision_id, text, *, acknowledge_unknown=False
+):
+    """Queue one test of unsaved email text, without saving it (#446).
+
+    New and Edit scheduled email send the text of "Edit this schedule's
+    email" as it is now. ``text`` is the cleaned ``subject``, ``html`` and
+    ``text`` (``schedule_email``'s form, checked against the mail type of
+    ``revision_id``, the saved email the edit started from). The test is the
+    one Preview and test email sends (``prepare``: fictional sample, Testing
+    recipient, SQL admission) with that text in place of the saved text, and
+    takes the same limits and audit (``_queue``). There is no reviewed
+    preview: the text is on the page, and each request is a new test, so a
+    repeat is refused while the first is pending. Nothing is saved, and no
+    Family code, link or credential is read or made.
+    """
+    if type(acknowledge_unknown) is not bool:
+        raise ValueError("Invalid campaign test command.")
+    with work_transaction():
+        actor = principal(request, service)
+        preview = prepare(request, service, campaign_id, revision_id, text=text)
+        return _queue(actor, preview, acknowledge_unknown)

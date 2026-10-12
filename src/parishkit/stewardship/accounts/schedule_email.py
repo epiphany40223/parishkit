@@ -24,6 +24,7 @@ in both parts, as the content rules require.
 from uuid import uuid4
 
 from django import forms
+from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from . import setup_help
@@ -37,6 +38,9 @@ EDIT = "edit_email"
 FIELDS = ("subject", "html", "generate_text", "text")
 # New scheduled email's posted mail type (schedule_entry_views' form prefix).
 KIND = "schedule-kind"
+# Why "Send a test of this text" waits (#446): the page draws it for its
+# script, and the send refuses with it, so the two always read the same.
+NO_EMAIL = _("Choose an email to send first.")
 NEW_TEXT_HELP = _(
     "For an Initial invitation or a Reminder, both the formatted and "
     "plain-text versions must include {{ family_code }} and {{ family_url }}, "
@@ -151,6 +155,28 @@ def editor(data, records, schedule, campaign_id):
         "defaults": {each: _source(values) for each, values in defaults.items()},
     }
     return toggle, form, sources
+
+
+def test_context(admitted, campaign_id):
+    """What the page's "Send a test of this text" needs (#446, slice 3c).
+
+    ``admitted`` is whether the campaign admits test mail now
+    (``campaign_mail.admits_test_mail``); while it does not, the button is
+    drawn unavailable with that reason. ``unknown`` is whether an earlier
+    test's result is uncertain, so the page draws the acknowledgment the
+    send needs. The send itself is ``schedule_email_test``.
+    """
+    from .campaign_mail import NOT_OPEN
+    from .campaign_mail_models import CampaignMailTest
+
+    return {
+        "url": reverse("admin:schedule_email_test"),
+        "no_email": NO_EMAIL,
+        "closed": None if admitted else NOT_OPEN,
+        "unknown": CampaignMailTest.objects.filter(
+            campaign_id=campaign_id, state="delivery_unknown"
+        ).exists(),
+    }
 
 
 def refuse(form, message):

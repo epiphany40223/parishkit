@@ -16,6 +16,8 @@ views act on them:
   email (``schedule_email``, #446): a changed email is added as a new email
   that only this schedule (on New, every reminder its repeat adds) sends, in
   the same reviewed change.
+  Its **Send a test of this text** sends the unsaved text as a test, saving
+  nothing (``schedule_email_test``).
 - **Delete** answers the list's confirmation dialog: it removes the chosen
   schedules in one configuration change.
 
@@ -607,13 +609,14 @@ def _entry(request, campaign_id, schedule_id=None):
             _changeable(saved, campaign, {str(schedule_id)})
             schedule = next(row for row in saved if row["id"] == str(schedule_id))
         records = _records(state[0], campaign.pk)
+        test_mail = admits_test_mail(state[0].mode, campaign)
         entry = entry_form(
             posted,
             records,
             saved,
             schedule,
             kept=_kept(posted, schedule, values, now),
-            test_mail=admits_test_mail(state[0].mode, campaign),
+            test_mail=test_mail,
         )
         repeat = RepeatRule(posted, prefix="repeat") if new else None
         # The schedule's own email (#446): on New, of the posted mail type.
@@ -628,6 +631,8 @@ def _entry(request, campaign_id, schedule_id=None):
             "email_toggle": toggle,
             "email": email,
             "email_sources": sources,
+            # Send a test of this text (#446, schedule_email_test).
+            "email_test": schedule_email.test_context(test_mail, campaign.pk),
             "new": new,
             "schedule": schedule,
             "base_digest": state[0].active_configuration.digest,

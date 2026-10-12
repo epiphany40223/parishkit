@@ -83,9 +83,14 @@ PROBLEMS = {
         "sent until fixed”: its Family code or link is only inside markup that "
         "sending removes."
     ),
+    # A test of unsaved text from a scheduled email's page (#446) counts as a
+    # test of the email it started from; any later save changes the
+    # configuration, so a new test is needed then.
     "family_test_mail_required": _(
         "Preview and successfully send a selected Family email "
-        "using the current configuration."
+        "using the current configuration. A test of unsaved text sent from a "
+        "scheduled email counts as a test of the email it started from; "
+        "saving any change afterwards means sending a new test."
     ),
     "family_test_mail_pending": _("Wait for the pending Family email test to finish."),
     "campaign_closed": _("The campaign closing instant has passed. Review its dates."),

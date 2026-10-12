@@ -27,6 +27,7 @@ from .schedule_list_components import (
     DATES_INVALID,
     DATES_STALE,
     EDIT,
+    EDIT_CLOSED,
     EDIT_DIGEST,
     EDIT_EMAIL_REFUSED,
     EDIT_INITIAL,
@@ -39,12 +40,14 @@ from .schedule_list_components import (
     NEW_PENDING,
     NEW_REPEAT,
     NEW_STALE,
+    NOT_OPEN,
     REFUSAL,
     REFUSED,
     STALE_REFUSAL,
+    TEST_SEND,
 )
 from .test_components import axe_violations
-from .waits import eventually, has_attribute, hidden, visible
+from .waits import eventually, has_attribute, hidden, same_place, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -1222,4 +1225,221 @@ def test_regenerated_plain_text_is_no_change(page, component_origin):
     # Choosing to edit the plain text makes it count again.
     page.get_by_label("Generate plain text from HTML").uncheck()
     assert button.is_enabled()
+    assert not failures
+
+
+TEST = "Send a test of this text"
+REQUIRED = "This field is required."
+MISSING = "HTML is missing {{ family_code }}."
+QUEUED_LINE = re.compile(
+    r"^Test queued at \d{1,2}:\d{2}\s?[AP]M for the Testing recipient\. "
+    r"Check the Testing mailbox\.$"
+)
+
+
+def answer_tests(page, answers):
+    """Answer "Send a test of this text" with ``answers`` in turn.
+
+    Each answer is ``(status, body)``, or None for no answer at all; the
+    posted fields of each request are collected in the returned list.
+    """
+    sent = []
+    queue = list(answers)
+
+    def reply(route):
+        sent.append(posted(route.request))
+        status, body = queue.pop(0) or (None, None)
+        if status is None:
+            route.abort()
+        else:
+            route.fulfill(
+                status=status, content_type="application/json", body=json.dumps(body)
+            )
+
+    page.route("**" + TEST_SEND, reply)
+    return sent
+
+
+def test_a_test_of_the_unsaved_text_is_sent_in_place(
+    page, component_origin, axe_source
+):
+    """The fields are posted as they are, nothing reloads, the line says so.
+
+    Only the email's fields and the chosen email are sent, never the
+    schedule's own fields or the edit checkbox; the status line keeps its
+    space, so the answer moves nothing below it either.
+    """
+    page.set_viewport_size({"width": 1280, "height": 900})
+    generated_text(page)
+    page.goto(component_origin + EDIT)
+    failures = watch(page)
+    sent = answer_tests(page, [(200, {"queued": True})])
+    page.get_by_label("Edit this schedule's email").check()
+    subject = page.locator('[name="subject"]')
+    visible(subject)
+    subject.fill("Last call")
+    button = page.get_by_role("button", name=TEST)
+    status = page.locator("[data-schedule-email-test-status]")
+    assert button.is_enabled() and status.inner_text() == ""
+    assert button.get_attribute("aria-describedby") == "schedule-email-test-status"
+    assert status.bounding_box()["height"] > 0
+    review_at = page_top(page.get_by_role("button", name=REVIEW))
+    assert axe_violations(page, axe_source) == []
+    button.click()
+    eventually(
+        page,
+        "/^Test queued/.test(document.querySelector("
+        "'[data-schedule-email-test-status]').textContent)",
+    )
+    assert QUEUED_LINE.match(status.inner_text())
+    assert "is-error" not in (status.get_attribute("class") or "")
+    assert same_place(page_top(page.get_by_role("button", name=REVIEW)), review_at)
+    fields = sent[0]
+    chosen = page.locator('[name="schedule-template_version"]').input_value()
+    assert fields["template_version"] == [chosen]
+    assert fields["subject"] == ["Last call"]
+    assert "A second reminder." in fields["html"][0]
+    # Reminder 1's email has hand-written plain text, which is sent.
+    assert fields["text"][0].startswith("Hand-written: a second reminder.")
+    assert "generate_text" not in fields
+    for name in ("edit_email", "acknowledge_unknown", "schedule-time", "base_digest"):
+        assert name not in fields
+    # The typing, the page and Review changes are as they were.
+    assert subject.input_value() == "Last call"
+    assert page.evaluate("window.notReloaded")
+    assert page.get_by_role("button", name=REVIEW).is_enabled()
+    assert not failures
+
+
+def test_a_refused_test_says_why_and_an_uncertain_one_asks_first(
+    page, component_origin
+):
+    """Field problems and refusals show in the line; nothing is resent.
+
+    An uncertain earlier test shows the confirmation below the line, and the
+    button waits for it; the next send carries it.
+    """
+    page.set_viewport_size({"width": 1280, "height": 900})
+    generated_text(page)
+    page.goto(component_origin + EDIT)
+    failures = watch(page)
+    sent = answer_tests(
+        page,
+        [
+            (
+                400,
+                {
+                    "errors": [
+                        {"field": "Email subject", "message": REQUIRED},
+                        {"field": None, "message": MISSING},
+                    ]
+                },
+            ),
+            (
+                409,
+                {
+                    "unknown": True,
+                    "refusal": {
+                        "message": "An earlier test may have arrived.",
+                        "fix": "Tick the confirmation below.",
+                    },
+                },
+            ),
+            (200, {"queued": True}),
+            None,
+        ],
+    )
+    page.get_by_label("Edit this schedule's email").check()
+    button = page.get_by_role("button", name=TEST)
+    status = page.locator("[data-schedule-email-test-status]")
+    box = page.get_by_label(
+        "A previous test may have arrived; I want to send another test."
+    )
+    hidden(box)
+    button.click()
+    eventually(
+        page,
+        "/can't be sent/.test(document.querySelector("
+        "'[data-schedule-email-test-status]').textContent)",
+    )
+    assert status.inner_text() == (
+        "This text can't be sent as a test. Email subject: This field is "
+        "required. HTML is missing {{ family_code }}."
+    )
+    assert "is-error" in status.get_attribute("class")
+    assert button.is_enabled()
+    button_at = page_top(button)
+    button.click()
+    visible(box)
+    assert same_place(page_top(button), button_at)
+    assert status.inner_text() == (
+        "An earlier test may have arrived. Tick the confirmation below."
+    )
+    assert button.is_disabled() and not box.is_checked()
+    eventually(page, "document.activeElement?.id === 'schedule-email-test-acknowledge'")
+    box.check()
+    assert button.is_enabled() and status.inner_text() == ""
+    box.uncheck()
+    assert button.is_disabled()
+    assert status.inner_text() == "Tick the confirmation below to send another test."
+    box.check()
+    button.click()
+    eventually(
+        page,
+        "/^Test queued/.test(document.querySelector("
+        "'[data-schedule-email-test-status]').textContent)",
+    )
+    assert sent[2]["acknowledge_unknown"] == ["on"]
+    assert "acknowledge_unknown" not in sent[0]
+    # No answer at all: the test may be on its way, so it is not repeated.
+    button.click()
+    eventually(
+        page,
+        "/could not be reached/.test(document.querySelector("
+        "'[data-schedule-email-test-status]').textContent)",
+    )
+    assert len(sent) == 4
+    # The confirmation is never posted with a Review.
+    page.locator('[name="subject"]').fill("Last call")
+    with page.expect_request(lambda request: request.url.endswith("/review")) as review:
+        page.get_by_role("button", name=REVIEW).click()
+    assert "acknowledge_unknown" not in posted(review.value)
+    assert not failures
+
+
+def test_the_test_waits_for_an_email_and_for_an_open_campaign(page, component_origin):
+    """Unavailable with its reason until an email is chosen, or while closed."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    generated_text(page)
+    page.goto(component_origin + NEW)
+    failures = watch(page)
+    page.locator('[name="schedule-kind"]').select_option("reminder")
+    page.get_by_label("Edit this schedule's email").check()
+    button = page.get_by_role("button", name=TEST)
+    status = page.locator("[data-schedule-email-test-status]")
+    visible(button)
+    assert button.is_disabled()
+    assert status.inner_text() == "Choose an email to send first."
+    choice = page.locator('[name="schedule-template_version"]')
+    choice.select_option(
+        choice.locator('option[data-kind="reminder"]').first.get_attribute("value")
+    )
+    assert button.is_enabled() and status.inner_text() == ""
+    choice.select_option("")
+    assert button.is_disabled()
+    assert status.inner_text() == "Choose an email to send first."
+    # Another mail type empties Email to send from script, with no change
+    # event of its own: the button waits again, saying why.
+    choice.select_option(
+        choice.locator('option[data-kind="reminder"]').first.get_attribute("value")
+    )
+    assert button.is_enabled() and status.inner_text() == ""
+    page.locator('[name="schedule-kind"]').select_option("daily_digest")
+    assert choice.input_value() == ""
+    assert button.is_disabled()
+    assert status.inner_text() == "Choose an email to send first."
+    page.goto(component_origin + EDIT_CLOSED)
+    page.get_by_label("Edit this schedule's email").check()
+    visible(button)
+    assert button.is_disabled() and status.inner_text() == NOT_OPEN
     assert not failures

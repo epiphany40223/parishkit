@@ -109,3 +109,53 @@ def test_every_schedulable_email_previews_in_a_testing_draft(campaign_test, slot
         preview = browser.get(test_path)
         assert preview.status_code == 200, preview.content
         assert preview.context["form"]["preview_token"].value()
+
+
+def test_live_campaign_offers_no_test_of_unsaved_text_until_paused(scheduled):
+    """Send a test of this text (#446) follows the same admission as the link.
+
+    While live delivery runs, New draws the button's reason (data-closed)
+    and the server refuses a send with the same explanation; pausing opens
+    both. Nothing is queued while it is refused.
+    """
+    from parishkit.stewardship.accounts.campaign_mail_models import CampaignMailTest
+    from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+
+    item = scheduled
+    new_page = reverse("admin:schedule_new")
+    send = reverse("admin:schedule_email_test")
+    revision = commands.page(*item.arguments)["test_template"]
+    values = {
+        "template_version": revision,
+        "subject": "Edited",
+        "html": "<p>{{ family_code }} {{ family_url }}</p>",
+        "generate_text": "on",
+        "csrfmiddlewaretoken": item.browser.cookies["pk_admin_csrf"].value,
+    }
+    tests = CampaignMailTest.objects.count()
+    with web_login():
+        entry = item.browser.get(new_page)
+        assert f'data-closed="{NOT_OPEN}"'.encode() in entry.content
+        refused = item.browser.post(send, values)
+        assert refused.status_code == 404, refused.content
+        assert refused.json()["refusal"]["message"] == NOT_OPEN
+        assert CampaignMailTest.objects.count() == tests
+        _, token = commands.preview_pause(*item.arguments, reason="Check sender")
+        commands.confirm(*item.arguments, token=token)
+        entry = item.browser.get(new_page)
+        assert b"data-closed" not in entry.content
+        # Paused, the same text is sent: to the Testing recipient only,
+        # with the sample's fictional Family values.
+        values["html"] = (
+            "<p>For {{ family_name }}: {{ family_code }} {{ family_url }}</p>"
+        )
+        sent = item.browser.post(send, values)
+        assert sent.status_code == 200, sent.content
+    row = CampaignMailTest.objects.latest("created_at")
+    assert CampaignMailTest.objects.count() == tests + 1
+    assert str(row.template.record_id) == str(revision)
+    recipient = SystemConfiguration.objects.get().testing_recipient
+    assert recipient and row.mail["recipient"] == recipient
+    for body in (row.mail["html"], row.mail["text"]):
+        assert "For Sample" in body and "sample-household-link" in body
+        assert "{{" not in body
