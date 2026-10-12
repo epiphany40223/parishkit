@@ -804,10 +804,88 @@ layout; where the deployment YAML overrides a path, use that path instead.
    upgrade admissions require, and captures the restored state.
 10. **Delete the decrypted copies.** Once the review in step 8 is complete,
     securely delete `database.pgdump`, `files.tar` and the staging directory
-    on the host and on the machine that holds the private key. They hold
+    on the host and on the machine that holds the private key, and any
+    `pk-restore-*` directory left in the PostgreSQL store
+    (`run/persistent/postgresql` by default) by an interrupted
+    [scripted restore](#scripted-same-host-restore), which deletes them on
+    its next run too. They hold
     every Family's data and every credential in plain form; the sealed set
     off the host is the copy to keep. Keep the moved-aside trees only until
     the restored deployment is accepted, then delete them the same way.
+
+### Scripted same-host restore
+
+On the deployment's own host (a rollback to a set, or the same-host drill
+on the validation deployment),
+[`tools/stewardship-ops/pk-restore`](../../tools/stewardship-ops/pk-restore)
+runs steps 1, 2's check, 4, 6, 7 and 8 above in order and stops for the
+Restore review (#608). Step 2's opening of the set (on the machine with the
+key), 9 and 10 stay manual, and so does a replacement or disposable drill
+host, which it does not support yet. Run it as root, after copying the
+decrypted files to the host:
+
+```text
+sudo tools/stewardship-ops/pk-restore plan --confirm-deployment UUID \
+  --set /opt/parishkit/backups/SET_NAME \
+  --database-dump DECRYPTED/database.pgdump --files-tar DECRYPTED/files.tar
+```
+
+`plan` prints the steps and runs nothing; `run` with the same options
+does them, after asking for the UUID to be typed again. Before anything
+stops, it refuses unless:
+
+- the UUID is the database's provisioning marker;
+- no crontab (root's, the `sudo` user's, `/etc/crontab`, `/etc/cron.d`) and
+  no systemd timer names a backup, `rsync` or `rclone` job (the
+  operating system's own `dpkg-db-backup` timer is ignored). Scripts in
+  `/etc/cron.daily` and its siblings, anacron, `at` jobs, other users'
+  crontabs and jobs on other machines are not checked: disable those
+  yourself;
+- the decrypted files match the manifest, and the manifest's SHA-256 is
+  the digest the deployment recorded for the set;
+- the archive holds only the restored trees and the record, and each
+  tree's destination is on the runtime root's filesystem (a path override
+  elsewhere is restored by hand);
+- the pulled image (the manifest's `image`, or `--image` for an older set)
+  carries its digest, loads the deployment YAML (`validate-deployment`;
+  see step 7 for a field that release does not know) and its
+  `restore-check` answers `match`;
+- there is room for the extracted files, the converted dump and the load
+  (about twice the database's size).
+
+It also collects the image's static files into `cache/static.next` then,
+while the site still serves, and deletes plaintext dump copies an earlier
+run left in the PostgreSQL store. It moves every replaced tree, and
+`cache/static`, aside as `NAME.pre-restore-STAMP`, never deleting one. It
+copies the dump into the PostgreSQL store as the database container's own
+user, on disk beside the data directory rather than in the container's
+memory-backed `/tmp`, converts it, deletes the dump copy, checks the room
+again (about twice the database's size, beside the converted SQL), and
+deletes the SQL once the load ends. `retarget-image` runs without the
+bulk Family send switch, so it is off after the restore. Every Docker call
+runs under a time limit, and a kill is logged with what, the limit and the
+elapsed time; each step is logged to `logs/restore-STAMP.log` as well.
+
+After a failure it names the step to resume at with `--from STEP` (4, 6
+or 7; the checks and step 1 always run, and step 7, which `restore-begin`
+makes safe to repeat, also covers a failure in step 8). A failure or a
+signal during step 6 stops the copy, conversion or load at once (including
+the `pg_restore` inside the container), ends the load's database session
+and reports whether the load committed. The proof is the public schema's
+comment, `pk-restore:SET_NAME:MANIFEST_SHA256`, which the load's own
+transaction sets last, together with no `stewardship_backup_run` row
+started at or after the set's start: the comment stays after a restore and
+is copied into later backups, but a fresh load holds no such row. A full
+run, `--from 4` and `--from 6` need the set's own row (no restored database
+holds it) and the set not loaded; `--from 6` also needs step 4's files in
+place; `--from 7` needs the set loaded. A database with neither (an older
+restore, or a set the deployment never recorded) is refused: restore it by
+hand. On the
+[local laptop environment](stewardship-local-environment.md) the image is
+the set's local build tag, as a local deploy uses: nothing is pulled and
+no digest is checked, and a fake-clock deployment is refused. The script's
+header comment lists every option. When it finishes, continue with step 8's review and
+release, then steps 9 and 10.
 
 ## Comparing a set with another release
 
