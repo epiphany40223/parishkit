@@ -227,6 +227,7 @@ SLASHLESS_EXPECTED = {
     "/admin/campaign/images/logo": "/admin/campaign/images/logo/",
     "/admin/campaign/schedules": "/admin/campaign/schedules/",
     "/admin/campaign/schedules/addition": "/admin/campaign/schedules/addition/",
+    "/admin/campaign/schedules/calendar": "/admin/campaign/schedules/calendar/",
     f"/admin/campaign/schedules/{T}": f"/admin/campaign/schedules/{T}/",
     "/admin/campaign/share-options": "/admin/campaign/share-options/",
     f"/admin/campaign/{REMINDER_WORKGROUP_SLUG}": (

@@ -528,7 +528,30 @@ td > :last-child { margin-bottom: 0; }
    schedule that already sent is muted and has no control. */
 .schedule-table tr[data-schedule-choose] { cursor: pointer; }
 .schedule-table tr[data-schedule-choose]:hover { background: var(--accent-soft); }
-.schedule-table tr.schedule-past { color: var(--muted); }
+.schedule-table tr.schedule-past, .calendar-sends tr.schedule-past { color: var(--muted); }
+/* Campaign calendar (#469): month grids drawn by calendar-v1.js. Each grid
+   keeps a readable width and scrolls inside its .table-scroll region on a
+   phone; days hold short lines (time and schedule name) that wrap between
+   words. Today and the campaign's first and last days are named in words.
+   A muted send (one that has run, or a digest day that has passed) is told
+   apart by color in the grid, by its status read to screen readers there,
+   and by its status in words in the table below. */
+.calendar-months { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+.calendar-month { width: 100%; min-width: 42rem; table-layout: fixed; border-collapse: collapse; }
+.calendar-month caption { text-align: start; font-weight: 650; padding-block: .25rem; }
+.calendar-month th, .calendar-month td { border: 1px solid var(--border); padding: .3rem .4rem; overflow-wrap: normal; }
+/* Positioned, so the grid's visually hidden text (weekday names, a send's
+   status) is clipped by its scrolling region instead of widening the page
+   on a phone. */
+.calendar-months .table-scroll { position: relative; }
+.calendar-month td { height: 4.5rem; vertical-align: top; font-size: .875rem; }
+.calendar-month td[aria-current="date"] { background: var(--accent-soft); }
+.calendar-day { display: block; font-weight: 650; }
+.calendar-marker { display: block; color: var(--accent-strong); font-weight: 600; }
+.calendar-month ul { list-style: none; margin: 0; padding: 0; }
+.calendar-month li { margin-block: .15rem; }
+.calendar-month li.schedule-past { color: var(--muted); }
+.calendar-month tbody tr:hover { background: none; }
 .schedule-editing { color: var(--muted); font-weight: 400; }
 /* The note keeps its space while idle, so showing it never re-wraps the cell
    and moves the row's button under the pointer (#736). */

@@ -27,6 +27,7 @@ from ..accounts import (
     content_views,
     go_live_views,
     reminder_workgroup_views,
+    schedule_calendar_views,
     schedule_entry_views,
     schedule_views,
     share_views,
@@ -111,6 +112,12 @@ patterns = [
         "campaign/schedules/deletion/",
         schedule_entry_views.schedule_delete,
         "schedule_delete",
+    ),
+    # The read-only Campaign calendar (#469), also before the UUID address.
+    _page(
+        "campaign/schedules/calendar/",
+        schedule_calendar_views.schedule_calendar,
+        "schedule_calendar",
     ),
     _page(
         "campaign/schedules/<uuid:schedule_id>/",

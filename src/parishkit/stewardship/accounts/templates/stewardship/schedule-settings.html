@@ -2,7 +2,8 @@
 {% block title %}{% translate "Dates and mail schedules" %}{% endblock %}
 {% block content %}{% comment %}
 The scheduled emails list (#878; schedule_views._list). The campaign dates take
-one line; New scheduled email opens schedule-entry.html. The table is an action
+one line; New scheduled email opens schedule-entry.html, and the link beside
+it the read-only Campaign calendar (schedule-calendar.html, #469). The table is an action
 table (admin-portal spec, "Row actions and confirmation", #879): its region
 (id table.anchor) holds the selection form, the bulk bar, the table and the
 confirmation dialog, and is what ui-v1.js redraws, from data-refresh-url (this
@@ -19,7 +20,7 @@ redraw keeps it) then says what was applied and when, and takes focus.
 <p>{% translate "New scheduled email adds a schedule; Edit changes one that has not run yet. Either shows what would change in a review before you apply it, and nothing takes effect until it says Applied; then you return here. Delete asks first, then removes the schedule; email already sent is never recalled." %}</p>{% endaboutpage %}
 <p>{{ campaign.active_configuration.name }}</p>
 <p class="campaign-dates">{% blocktranslate trimmed with start=values.start_date|parish_date end=values.end_date|parish_date %}Campaign dates: {{ start }} – {{ end }}{% endblocktranslate %}{% if editable %} · <a href="{% url 'admin:campaign_settings' %}">{% translate "Change the dates in Campaign settings" %}</a>{% elif end_live %} · <a href="{% url 'admin:campaign_settings' %}#end-date">{% translate "Change the end date in Campaign settings" %}</a>{% endif %}</p>
-<p>{% button href=new_url %}{% translate "New scheduled email" %}{% endbutton %}</p>
+<p>{% button href=new_url %}{% translate "New scheduled email" %}{% endbutton %} <a href="{% url 'admin:schedule_calendar' %}">{% translate "Campaign calendar" %}</a></p>
 {% include "stewardship/components/review-outcome.html" with outcome_id="schedules-outcome" %}
 {% translate "Scheduled emails" as caption %}
 <section id="{{ table.anchor }}" class="panel" data-table-region data-refresh-url="{{ refresh_url }}" aria-labelledby="schedule-table-title">

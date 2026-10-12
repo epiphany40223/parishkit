@@ -120,6 +120,9 @@ LEDGER = {
     "schedule_new": command("schedule preview", "schedule confirm"),
     "schedule_edit": command("schedule show", "schedule preview", "schedule confirm"),
     "schedule_delete": command("schedule preview", "schedule confirm"),
+    # The read-only calendar of every send (#469) draws the saved schedules
+    # and campaign dates that ``schedule show`` lists.
+    "schedule_calendar": command("schedule show"),
     # Change status; ``config request cancel`` (#944) is the operator's way
     # out of a stuck live end-date change, which the page offers no button for.
     "configuration_request": command("config request show", "config request cancel"),

@@ -791,6 +791,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `schedule_settings` | Dates and mail schedules | Menu: Dates and mail schedules | Administrator | Mail schedules and campaign dates; Mail schedules | `/admin/campaign/schedules/` | (same) |  |
 | `schedule_new` | New scheduled email | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/addition/` | (same) | Its review confirms through Dates and mail schedules. |
 | `schedule_edit` | Edit scheduled email | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/<schedule>/` | (same) | The New page filled in; refuses a read-only schedule. |
+| `schedule_calendar` | Campaign calendar | Dates and mail schedules | Administrator | (new, #469) | `/admin/campaign/schedules/calendar/` | (same) | Read-only; every send by date. |
 | `schedule_delete` | Delete scheduled emails | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/deletion/` (POST only) | (same) | The table's confirmation dialog posts here. |
 | `share_settings` | Share options | Menu: Share options | Administrator | How Families will share | `/admin/campaign/share-options/` | (same) | Gains a Return link and About panel. |
 | `reminder_workgroup` | No-reminders WorkGroup | Menu: No-reminders WorkGroup | Administrator | (new, #861) | `/admin/campaign/no-reminders-workgroup/` | (same) | Edit, review, apply; stays editable while live. |
@@ -2212,7 +2213,8 @@ The regular **Dates and mail schedules** page
 its heading, About panel and campaign name, one line gives the campaign dates
 (with a link to change them in Campaign settings while they may still change).
 There is no separate campaign window panel. **New scheduled email**, above the
-table, opens the [New scheduled email page](#new-and-edit-scheduled-email).
+table, opens the [New scheduled email page](#new-and-edit-scheduled-email), and
+the link beside it the read-only [Campaign calendar](#campaign-calendar).
 
 The **Scheduled emails** table
 ([#448](https://github.com/epiphany40223/parishkit/issues/448)) is an
@@ -2431,8 +2433,44 @@ page shows them again. The page script's expansion runs the shared case table
 only: a saved reminder is changed one at a time. The first-campaign step keeps
 its **Repeat a reminder** panel below the schedule rows, which appends one
 ordinary reminder row per date to its form. Remembering a series for later
-"this and following" edits, and a campaign calendar view, are later slices
-of #469.
+"this and following" edits, and editing from the
+[campaign calendar](#campaign-calendar), are later slices of #469.
+
+#### Campaign calendar
+
+**Campaign calendar** (`/admin/campaign/schedules/calendar/`,
+[#469](https://github.com/epiphany40223/parishkit/issues/469)), opened by the
+link beside New scheduled email, shows every email the saved schedules send,
+by date. It is read-only: it changes nothing and offers no New or Delete. It
+reads the current schedules: the Initial invitation, each reminder, and every
+day or week of the Daily and Weekly Admin digests, expanded the way the
+scheduler evaluates them (a Daily Admin digest's last send is the day after
+the campaign closes).
+
+- **By month** draws one month grid per month, Sunday first, from the
+  campaign's first day (or its first send, if earlier) to its last day (or
+  its last send). Each day lists its sends with their time and schedule name,
+  and notes Today and the campaign's first and last days ("Campaign opens",
+  "Campaign closes") in words, not only in color.
+- **Every email by date** is the same sends as a table, the grids' text
+  equivalent: when, the schedule ("Reminder 2"), the email it sends, its
+  status and Edit. The status is the scheduled emails table's, from the same
+  counts-only work summary; each day or week of a digest shows the digest's
+  "Repeats" until its time has passed, then "Past". Every send of a digest is
+  listed, however long the campaign.
+
+A send's time is browser-local, like every Admin time (the
+[browser-local time rule](../ui-conventions/spec.md#dates-and-times)), and the
+grids place it on its day in the browser's zone; table cells use the compact
+date form. The campaign's dates are calendar dates and are never shifted. A
+send of a schedule that has not run links to its Edit scheduled email page,
+in the grid and through Edit in the table; a schedule that has run, or has work
+prepared, is listed muted and not linked, as on the list, and so is a digest's
+send whose time has passed (editing the digest changes only its later sends).
+A muted send is told apart by its status, in words in the table and read to
+screen readers in the grid. A week view,
+Production activation and go-live milestones, ParishSoft refresh times, the
+backup window and editing from the calendar are later slices of #469.
 
 ### Ministry leader roles
 
