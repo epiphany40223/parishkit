@@ -148,6 +148,8 @@ PAGES = {
     # One schedule's page (#878): New, or Edit filled in from a saved one.
     "schedule_new": Page("campaign", _("New scheduled email"), "schedule_settings"),
     "schedule_edit": Page("campaign", _("Edit scheduled email"), "schedule_settings"),
+    # Every send by date, read-only (#469), opened from the list.
+    "schedule_calendar": Page("campaign", _("Campaign calendar"), "schedule_settings"),
     # Answers only the list's confirmation dialog, with a change's status.
     "schedule_delete": Page(
         "campaign",
