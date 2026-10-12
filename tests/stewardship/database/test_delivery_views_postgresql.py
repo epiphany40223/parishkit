@@ -740,7 +740,12 @@ def test_authority_is_rechecked_after_render(family_mail, google, monkeypatch): 
 
 
 def test_web_cannot_read_render_or_sealed_substitution(family_mail):  # noqa: F811
-    """Metadata grants do not quietly become general outbox read authority."""
+    """Metadata grants do not quietly become general outbox read authority.
+
+    The Mail message page's recipient addresses come only through the narrow
+    definer function (#1024); the table grant is unchanged, so the web login
+    still cannot select any rendering column, recipients included.
+    """
     uncertain(family_mail)
     from django.db import DatabaseError
 
@@ -748,6 +753,8 @@ def test_web_cannot_read_render_or_sealed_substitution(family_mail):  # noqa: F8
         for sql in (
             "SELECT sealed_substitutions FROM stewardship_outbox_message",
             "SELECT html FROM stewardship_outbox_render",
+            "SELECT intended_recipients FROM stewardship_outbox_render",
+            "SELECT routed_recipients FROM stewardship_outbox_render",
             "SELECT evidence_note FROM stewardship_outbox_event",
         ):
             with (
@@ -757,6 +764,117 @@ def test_web_cannot_read_render_or_sealed_substitution(family_mail):  # noqa: F8
             ):
                 cursor.execute(sql)
             assert error.value.__cause__.sqlstate == "42501"
+
+
+RECIPIENTS = "SELECT kind, address FROM stewardship_delivery_recipients_v1(%s,%s)"
+
+
+def recipients_as(service, message_id, actor_id, *, exact=True):
+    """Call the recipients function as ``service``'s login; its rows or SQLSTATE."""
+    from django.db import DatabaseError
+
+    with task_login(service, exact=exact):
+        try:
+            with transaction.atomic(), connection.cursor() as cursor:
+                cursor.execute(RECIPIENTS, (message_id, actor_id))
+                return cursor.fetchall()
+        except DatabaseError as error:
+            return error.__cause__.sqlstate
+
+
+def test_mail_message_page_shows_only_the_recipient_addresses(
+    family_mail,  # noqa: F811
+    google,
+):
+    """#1024: the web login reads one email's recipient addresses through the
+    definer function, for an Administrator only, and nothing else of its
+    rendering; the Mail message page shows them under the Family line."""
+    from parishkit.stewardship.jobs.outbox_models import OutboxRender
+
+    message = uncertain(family_mail)
+    render = OutboxRender.objects.filter(message=message).latest("created_at")
+    expected = [("intended", value) for value in render.intended_recipients] + [
+        ("routed", value) for value in render.routed_recipients
+    ]
+    assert render.intended_recipients
+    browser, _ = signed_in()
+    admin = PortalUser.objects.get(email="admin@example.org").pk
+    # Only the addresses, as (kind, address) rows in stored order.
+    assert recipients_as(ServiceRole.WEB, message.pk, admin) == expected
+    assert recipients_as(ServiceRole.WEB, uuid4(), admin) == []
+    # A Staff user, an unknown or missing actor, and a disabled
+    # Administrator are refused, as are logins without EXECUTE and a login
+    # that has EXECUTE but is not the web login.
+    rule = address("staff@example.org", ("staff",))
+    change(
+        family_mail.service.store,
+        family_mail.service.store.active(),
+        uuid4(),
+        [{"operation": "add", "section": "login_rules", **rule}],
+    )
+    google[0].update(email="staff@example.org", sub="synthetic-staff")
+    signed_in()
+    staff = PortalUser.objects.get(email="staff@example.org").pk
+    for actor in (staff, uuid4(), None):
+        assert recipients_as(ServiceRole.WEB, message.pk, actor) == "42501"
+    for service in (ServiceRole.WORKER, ServiceRole.MAIL_DISPATCH):
+        assert recipients_as(service, message.pk, admin) == "42501"
+    assert recipients_as(ServiceRole.WEB, message.pk, admin, exact=False) == "42501"
+    # The page names them under the Family line, before the attempt history.
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        page = browser.get(f"/admin/mail/outgoing/{message.pk}/")
+    assert page.status_code == 200
+    html = page.content.decode()
+    line = (
+        '<p id="email-recipients">To: '
+        + ", ".join(escape(value) for value in render.intended_recipients)
+        + "</p>"
+    )
+    assert line in html
+    assert html.index("Family DUID:") < html.index(line) < html.index("Attempt history")
+    assert render.subject not in html
+    # Routed elsewhere only in Testing mode; this email's lists agree.
+    assert (render.routed_recipients != render.intended_recipients) == (
+        'id="email-routed"' in html
+    )
+    PortalUser.objects.filter(pk=admin).update(disabled=True, version=F("version") + 1)
+    assert recipients_as(ServiceRole.WEB, message.pk, admin) == "42501"
+
+
+def test_a_refused_recipient_read_leaves_the_page_to_its_recheck(
+    family_mail,  # noqa: F811
+    google,
+    monkeypatch,
+):
+    """#1024: when the recipients function refuses (the Administrator was
+    demoted after the page admitted them), the read returns None inside a
+    savepoint, so the page is not a database error: its final authority
+    recheck refuses the answer instead, and nothing is audited."""
+    from parishkit.stewardship.jobs import delivery_views
+    from parishkit.stewardship.jobs.delivery_reads import email_recipients
+
+    message = uncertain(family_mail)
+    browser, _ = signed_in()
+    admin = PortalUser.objects.get(email="admin@example.org").pk
+    # Directly: a refused actor gives None and the transaction stays usable.
+    with task_login(ServiceRole.WEB, exact=True), transaction.atomic():
+        assert email_recipients(message.pk, uuid4()) is None
+        assert OutboxMessage.objects.filter(pk=message.pk).exists()
+    original = delivery_views.read_detail
+
+    def demoted(*args, **kwargs):
+        """Read the page, then disable its Administrator before the recipients."""
+        result = original(*args, **kwargs)
+        PortalUser.objects.filter(pk=admin).update(
+            disabled=True, version=F("version") + 1
+        )
+        return result
+
+    monkeypatch.setattr(delivery_views, "read_detail", demoted)
+    response = browser.get(f"/admin/mail/outgoing/{message.pk}/")
+    assert response.status_code == 403
+    assert str(message.pk).encode() not in response.content
+    assert not AuditEvent.objects.filter(event_type="delivery_viewed").exists()
 
 
 def test_verified_clearance_form_is_audited_and_replay_safe(response_service, google):
