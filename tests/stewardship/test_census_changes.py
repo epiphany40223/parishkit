@@ -361,8 +361,9 @@ def test_page_shows_member_duid_beside_who():
     ]
     positions = [html.index(f">{heading}<") for heading in headings]
     assert positions == sorted(positions)
-    # The downloads have exactly the page's columns, in its order (#932).
-    assert page_headings(html) == list(HEADINGS)
+    # The downloads have exactly the page's columns, in its order (#932),
+    # except the page's last, Actions, which has no file column (#528).
+    assert page_headings(html) == [*HEADINGS, "Actions"]
     assert '<td class="numeric">41</td>' in html
     assert '<td class="numeric">New Member</td>' in html
 
