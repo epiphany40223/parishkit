@@ -1,13 +1,15 @@
 """Complete financial captures, immutable money and ownership under real roles."""
 
 import json
+import re
 from dataclasses import asdict
 from datetime import timedelta
 from io import BytesIO
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from django.db import DatabaseError, connection
+from django.db import DatabaseError, connection, transaction
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from openpyxl import load_workbook
@@ -505,3 +507,45 @@ def test_only_the_current_response_counts_as_entered_by_staff(response_service):
         2: False,
         6: False,
     }
+
+
+MIGRATIONS = Path(__file__).resolve().parents[3] / (
+    "src/parishkit/stewardship/schema/migrations"
+)
+
+
+def test_migration_self_check_refuses_the_old_financial_body():
+    """0066's DO block fails on 0045's financial projection (the latest body
+    before it, without staff_entered); on the installed body it passes.
+
+    The old body runs inside a rolled-back transaction, so the installed
+    function is left as the full migration made it.
+    """
+    text = (MIGRATIONS / "0066_financial_staff_entered.sql").read_text(encoding="utf-8")
+    check = re.search(r"^DO \$check\$.*?\$check\$;", text, re.M | re.S)[0]
+    old = (MIGRATIONS / "0045_report_duid_sorts.sql").read_text(encoding="utf-8")
+    start = old.index(
+        "CREATE OR REPLACE FUNCTION public.stewardship_financial_report_v1("
+    )
+    body = old[start : old.index("END $$;", start) + len("END $$;")]
+    assert "staff_entered" not in body
+    with connection.cursor() as cursor:
+        # The grants the DO block compares against, as the file records them.
+        cursor.execute(
+            "SELECT set_config('stewardship.migration_0066_acl', (SELECT"
+            " count(*)||':'||coalesce(string_agg(p.proname||'='||"
+            "coalesce(p.proacl::text,'default'),';' ORDER BY p.proname),'')"
+            " FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace"
+            " WHERE n.nspname='public' AND"
+            " p.proname='stewardship_financial_report_v1'), false)"
+        )
+        cursor.execute(check)
+        with transaction.atomic():
+            cursor.execute(body)
+            with (
+                pytest.raises(DatabaseError, match="not installed as declared"),
+                transaction.atomic(),
+            ):
+                cursor.execute(check)
+            transaction.set_rollback(True)
+        cursor.execute(check)
