@@ -87,16 +87,17 @@ if [[ " $* " == *" exec -T "* ]]; then
                 *"shobj_description"*)
                     echo "${FAKE_MARKER-parishkit-stewardship:$FAKE_UUID}" ;;
                 *"obj_description"*)
-                    if [ -n "${FAKE_COMMENT+x}" ]; then comment=$FAKE_COMMENT
-                    else comment=$(cat "$FAKE_STATE/comment" 2>/dev/null); fi
-                    expected=$(sed -n "s/.* = '\(pk-restore:[^']*\)' AND .*/\1/p" \
-                        <<<"$*")
+                    if [ -n "${FAKE_COMMENT+x}" ]; then echo "$FAKE_COMMENT"
+                    else cat "$FAKE_STATE/comment" 2>/dev/null; fi ;;
+                *"started_at >= "*)
                     later=${FAKE_LATER_ROWS:-}
                     if [ -z "$later" ]; then
                         if [ -e "$FAKE_STATE/comment" ]; then later=0; else later=1; fi
                     fi
-                    if [ "$comment" = "$expected" ] && [ "$later" = 0 ]; then echo t
-                    else echo f; fi ;;
+                    if [ "$later" = 0 ]; then echo f; else echo t; fi ;;
+                *"relnamespace"*)
+                    if [ -n "${FAKE_RELATIONS:-}" ]; then echo "$FAKE_RELATIONS"
+                    elif [ -e "$FAKE_STATE/comment" ]; then echo 5; else echo 0; fi ;;
                 *"manifest_digest"*)
                     [ -e "$FAKE_STATE/comment" ] || echo "${FAKE_RECORDED-}" ;;
                 *"pg_database_size"*) echo "${FAKE_DBSIZE:-1024}" ;;
@@ -113,6 +114,24 @@ if [[ " $* " == *" exec -T "* ]]; then
     exit 0
 fi
 case "$*" in
+    *" --entrypoint pg_restore "*)
+        # The set's runtime row, as pg_restore --data-only prints it.
+        printf 'COPY public.stewardship_system_configuration %s FROM stdin;\n' \
+            '(created_at, id, mode)'
+        printf '2026-10-10\t%s\ttesting\n\\.\n' "${FAKE_SET_ID:-$FAKE_UUID}" ;;
+    "ps --all --format "*) printf '%b' "${FAKE_ALL:-}" ;;
+    "ps --all --filter "*) printf '%s\n' ${FAKE_CREATED:-postgres valkey web} ;;
+    *" ps --all --quiet web") echo webid ;;
+    *"NetworkSettings.Networks"*)
+        networks=${FAKE_NETWORKS-stewardship_backend stewardship_application-egress}
+        for n in $networks; do
+            grep -qxF "$n" "$FAKE_STATE/disconnected" 2>/dev/null || echo "$n"
+        done ;;
+    "network inspect "*)
+        case $last in *backend | *proxy) echo true ;; *) echo false ;; esac ;;
+    "network disconnect "*)
+        [ -n "${FAKE_STUCK:-}" ] || echo "$3" >>"$FAKE_STATE/disconnected" ;;
+    *"PortBindings"*) echo "${FAKE_PORTS:-0} ${FAKE_PUBLISH_ALL:-false}" ;;
     "compose ls"*) echo '[{"Name":"stewardship","ConfigFiles":"'"$FAKE_COMPOSE"'"}]' ;;
     *" ps --services --status running") printf '%s\n' postgres valkey web caddy ;;
     *" config --services") printf '%s\n' postgres valkey web worker scheduler caddy ;;
@@ -201,6 +220,20 @@ def host(tmp_path):
         'echo "/dev/x 99999999 1 $free 1% /"\n',
     )
     stub(bin_dir, "sleep", "#!/usr/bin/env bash\nexit 0\n")
+    # This host's name and addresses, and what the public origin resolves to.
+    stub(
+        bin_dir,
+        "hostname",
+        "#!/usr/bin/env bash\n"
+        'if [ "${1:-}" = -I ]; then echo "${FAKE_ADDRESSES-10.0.0.5}"; '
+        'else echo "${FAKE_HOSTNAME:-drillbox}"; fi\n',
+    )
+    stub(
+        bin_dir,
+        "getent",
+        '#!/usr/bin/env bash\n[ -n "${FAKE_RESOLVES-203.0.113.9}" ] || exit 2\n'
+        'echo "${FAKE_RESOLVES-203.0.113.9} STREAM $2"\n',
+    )
     # pg_restore --file=SQL DUMP, as the container's would convert it.
     stub(bin_dir, "pg_restore", '#!/usr/bin/env bash\ncp "$2" "${1#--file=}"\n')
     stub(
@@ -223,8 +256,21 @@ def host(tmp_path):
         "media": str(root / "run" / "persistent" / "media"),
         "postgresql": str(store),
         "cache": str(root / "cache"),
+        "backups": str(root / "backups"),
+        "logs": str(root / "logs"),
+        "reports": str(root / "reports"),
+        "run": str(root / "run"),
+        "persistent_root": str(root / "run" / "persistent"),
+        "caddy": str(root / "run" / "persistent" / "caddy"),
+        "valkey": str(root / "run" / "persistent" / "valkey"),
     }
-    document = {"deployment": {"paths": paths, "postgres": {"name": "stw"}}}
+    document = {
+        "deployment": {
+            "paths": paths,
+            "postgres": {"name": "stw"},
+            "public_origin": "https://stewardship.example.org",
+        }
+    }
     (services / "web.yaml").write_text(json.dumps(document))
     # The set's own rendering, marked so a test can tell it was restored.
     set_web = json.dumps({**document, "set": True}).encode()
@@ -947,3 +993,502 @@ def test_an_image_without_automation_sessions_skips_revoking(host):
     result, calls = restore(host, FAKE_HELP=help_text)
     assert result.returncode == 0, output(result)
     assert not any("revoke-automation-sessions" in c for c in calls)
+
+
+# --- A replacement host (--replacement) and a drill host (--drill) ---------
+
+HELP_NEW_HOST = HELP.replace("restore-begin}", "restore-begin,database-roles}")
+
+
+@pytest.fixture
+def new_host(host):
+    """The same set, restored onto a host with no runtime root yet.
+
+    The drill marker (a test hook) names the stand-in hostname, so --drill
+    admits this host; the set's own web.yaml (in files.tar) names the paths
+    and the public origin, which resolves to another host's address unless
+    FAKE_RESOLVES says otherwise ("" for no address).
+    """
+    shutil.rmtree(host["root"])
+    marker = host["tmp"] / "restore-drill-host"
+    marker.write_text("parishkit-restore-drill-host drillbox\n")
+    host["env"]["PK_RESTORE_DRILL_MARKER"] = str(marker)
+    host["env"]["PK_RESTORE_TEST_HOOKS"] = "1"
+    host["env"]["FAKE_HELP"] = HELP_NEW_HOST
+    host["marker"] = marker
+    return host
+
+
+def new(host, *extra, mode="run", typed=UUID, **fake):
+    """Run pk-restore --replacement with the recorded manifest digest."""
+    return restore(
+        host,
+        "--replacement",
+        "--manifest-digest",
+        sha256(host["manifest"]),
+        *extra,
+        mode=mode,
+        typed=typed,
+        **fake,
+    )
+
+
+def changed(host, calls):
+    """Whether anything past the checks happened on the new host."""
+    lock = host["root"] / "run" / "startup.lock"
+    return lock.exists() or any(
+        " up " in c or "database-roles" in c or "collect-static" in c for c in calls
+    )
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        ("--replacement",),
+        ("--drill",),
+        ("--manifest-digest", "0" * 64),
+        ("--replacement", "--manifest-digest", "not-hex"),
+    ],
+)
+def test_replacement_usage_errors_run_nothing(host, extra):
+    """--replacement needs a digest; the digest is only for --replacement."""
+    result, calls = restore(host, *extra)
+    assert result.returncode == 2, output(result)
+    assert calls == []
+
+
+def test_the_local_environment_has_no_replacement(host):
+    """The laptop environment restores in place only."""
+    (host["root"] / ".parishkit-local").write_text("")
+    host["yaml"].write_text("profile: local\n")
+    tag = "parishkit-stewardship-local:" + "a" * 40 + "-1"
+    result, calls = new(host, "--image", tag)
+    assert result.returncode == 2, output(result)
+    assert "no replacement host" in output(result)
+    assert calls == []
+
+
+@pytest.mark.parametrize("drill", [False, True])
+def test_the_replacement_plan_runs_nothing(new_host, drill):
+    """`plan` lists steps 3 to 8 and creates nothing, not even the root."""
+    extra = ("--drill",) if drill else ()
+    result, calls = new(new_host, *extra, mode="plan")
+    assert result.returncode == 0, output(result)
+    assert calls == []
+    assert not new_host["root"].exists()
+    for text in ("\n3. ", "\n4. ", "\n5. ", "\n6. ", "\n7. ", "\n8. "):
+        assert text in result.stdout
+    assert ("web alone" in result.stdout) is drill
+    assert ("drill marker" in result.stdout) is drill
+
+
+def test_a_replacement_prepares_the_host_and_creates_the_roles(new_host):
+    """Steps 3, 4, 5, 6, 7 and 8 in order onto a host with nothing yet."""
+    root = new_host["root"]
+    result, calls = new(new_host)
+    assert result.returncode == 0, output(result)
+
+    def first(text):
+        return next(i for i, c in enumerate(calls) if text in c)
+
+    order = [
+        "ps --all --format",
+        "pull --quiet " + IMAGE,
+        " validate-deployment --config /run/operator.yaml",
+        " restore-check --manifest /set/manifest.json",
+        "--entrypoint pg_restore",
+        " collect-static --destination ",
+        " up --detach --wait postgres valkey",
+        f"database-provision database-roles --config {root}/config/services/"
+        f"database-provision.yaml --confirm-deployment {UUID}",
+        "shobj_description",
+        "cat > /var/lib/postgresql/pk-restore-",
+        "-e PGAPPNAME=pk-restore postgres",
+        " retarget-image --config /run/operator.yaml --image " + IMAGE,
+        " pull --quiet",
+        "admin-recovery restore-begin",
+        " up --detach --wait web caddy",
+        "pk-stewardship health",
+    ]
+    positions = [first(text) for text in order]
+    assert positions == sorted(positions)
+    # A new host has nothing to stop and nothing to move aside.
+    assert not stopped(calls[: first("--single-transaction")])
+    assert not list(root.rglob("*.pre-restore-*"))
+    # Step 3's directories and the startup interlock, private to the owner.
+    for name in ("backups", "cache", "logs", "reports", "run"):
+        assert (root / name).stat().st_mode & 0o777 == 0o700
+    for name in ("caddy/config", "caddy/data", "postgresql", "valkey"):
+        assert (root / "run" / "persistent" / name).is_dir()
+    lock = root / "run" / "startup.lock"
+    assert lock.read_text() == "parishkit-stewardship-startup-v1\n"
+    assert lock.stat().st_mode & 0o777 == 0o600
+    # The set's files are in place, and the static files were collected.
+    assert (root / "credentials" / "key").read_text() == "set key\n"
+    assert json.loads(new_host["record"].read_text()) == {"image": IMAGE}
+    assert [p.name for p in (root / "cache" / "static").iterdir()] == ["app.js"]
+    assert (new_host["tmp"] / "state" / "comment").read_text().strip() == (
+        loaded_marker(new_host)
+    )
+    assert list(new_host["store"].iterdir()) == []
+    assert len(list((root / "logs").glob("restore-*.log"))) == 1
+
+
+def test_an_unrecorded_digest_goes_ahead_and_says_so(new_host):
+    """Without the printed digest nothing proves the set's origin."""
+    result, _ = restore(
+        new_host, "--replacement", "--manifest-digest", "unrecorded", mode="run"
+    )
+    assert result.returncode == 0, output(result)
+    assert "nothing proves where set" in output(result)
+
+
+@pytest.mark.parametrize(
+    ("setup", "fake", "extra", "typed", "message"),
+    [
+        (
+            None,
+            {"FAKE_ALL": "stewardship|web|/srv/x/compose.json\\n"},
+            (),
+            UUID,
+            "a container of project stewardship",
+        ),
+        ("store", {}, (), UUID, "already has a database"),
+        ("config", {}, (), UUID, "already holds a deployment"),
+        ("record", {}, (), UUID, "already holds a deployment"),
+        (
+            None,
+            {"FAKE_SET_ID": "00000000-0000-4000-8000-00000000000f"},
+            (),
+            UUID,
+            "runtime row names another",
+        ),
+        (None, {}, (), "00000000-0000-4000-8000-000000000001", "typed UUID"),
+        (None, {"FAKE_CRONTAB": "0 2 * * * rclone copy a b"}, (), UUID, "cron"),
+        (None, {"FAKE_HELP": HELP}, (), UUID, "no database-roles"),
+        (None, {"FAKE_CHECK": "3"}, (), UUID, "use_image"),
+        (None, {"FAKE_FREE": "1000"}, (), UUID, "KiB free"),
+        (None, {}, ("--compose", "/elsewhere/compose.json"), UUID, "not inside"),
+    ],
+)
+def test_every_replacement_guard_refuses_before_anything_changes(
+    new_host, setup, fake, extra, typed, message
+):
+    """A failed check exits 1, says why and has prepared nothing."""
+    root = new_host["root"]
+    if setup == "store":
+        new_host["store"].mkdir(parents=True)
+        (new_host["store"] / "PG_VERSION").write_text("18\n")
+    elif setup == "config":
+        (root / "config").mkdir(parents=True)
+    elif setup == "record":
+        root.mkdir()
+        new_host["record"].write_text("{}\n")
+    result, calls = new(new_host, *extra, typed=typed, **fake)
+    assert result.returncode == 1, output(result)
+    assert message in output(result)
+    assert "nothing changed" in output(result)
+    assert not changed(new_host, calls)
+
+
+def test_a_wrong_manifest_digest_refuses(new_host):
+    """The manifest must be the one the backup printed."""
+    result, calls = restore(
+        new_host, "--replacement", "--manifest-digest", "0" * 64, mode="run"
+    )
+    assert result.returncode == 1, output(result)
+    assert "not the manifest the backup recorded" in output(result)
+    assert not changed(new_host, calls)
+
+
+def test_a_path_outside_the_root_is_restored_by_hand(new_host):
+    """Every path of the set must be under the runtime root."""
+    with tarfile.open(new_host["files"]) as archive:
+        document = json.loads(archive.extractfile("config/services/web.yaml").read())
+    document["deployment"]["paths"]["media"] = "/srv/media"
+    write_tar(
+        new_host["files"],
+        {**SET_FILES, "config/services/web.yaml": json.dumps(document).encode()},
+    )
+    manifest = json.loads(new_host["manifest"].read_text())
+    manifest["files"]["plaintext_sha256"] = sha256(new_host["files"])
+    new_host["manifest"].write_text(json.dumps(manifest))
+    result, calls = new(new_host)
+    assert result.returncode == 1, output(result)
+    assert "outside" in output(result)
+    assert not changed(new_host, calls)
+
+
+def test_a_failed_role_step_resumes_at_five(new_host):
+    """A failure in step 5 names --from 5, which then finishes the restore."""
+    result, _ = new(new_host, FAKE_FAIL="database-roles")
+    assert result.returncode == 1, output(result)
+    assert "run again with --from 5" in output(result)
+    result, calls = new(new_host, "--from", "5")
+    assert result.returncode == 0, output(result)
+    # Steps 3 and 4 are not repeated; the static files are collected again.
+    assert not any("startup.lock" in c for c in calls)
+    assert any(" collect-static " in c for c in calls)
+    assert any("database-roles" in c for c in calls)
+    assert any("--single-transaction" in c for c in calls)
+
+
+def test_a_failed_load_on_a_new_host_did_not_commit_and_resumes_at_six(new_host):
+    """An empty database answers that the load did not commit."""
+    result, _ = new(new_host, FAKE_FAIL="--single-transaction")
+    assert result.returncode == 1, output(result)
+    assert "did not commit" in output(result)
+    assert "run again with --from 6" in output(result)
+    result, calls = new(new_host, "--from", "6")
+    assert result.returncode == 0, output(result)
+    assert not any("database-roles" in c for c in calls)
+
+
+def test_from_five_needs_the_files_restored(new_host):
+    """--from 5 before step 4 finished refuses."""
+    result, calls = new(new_host, "--from", "5")
+    assert result.returncode == 1, output(result)
+    assert "step 4 did not finish" in output(result)
+    assert not changed(new_host, calls)
+
+
+def test_from_six_refuses_a_database_with_other_data(new_host):
+    """A replacement loads only into an empty database."""
+    result, _ = new(new_host, FAKE_FAIL="--single-transaction")
+    assert result.returncode == 1
+    result, calls = new(new_host, "--from", "6", FAKE_RELATIONS="40")
+    assert result.returncode == 1, output(result)
+    assert "already holds data" in output(result)
+    assert not any("--single-transaction" in c for c in calls)
+
+
+def test_from_seven_on_a_new_host_needs_the_set_loaded(new_host):
+    """--from 7 checks the load's own proof."""
+    result, _ = new(new_host, FAKE_FAIL="retarget-image")
+    assert result.returncode == 1
+    assert "run again with --from 7" in output(result)
+    result, calls = new(new_host, "--from", "7", FAKE_COMMENT="")
+    assert result.returncode == 1, output(result)
+    assert "has not loaded" in output(result)
+    result, calls = new(new_host, "--from", "7")
+    assert result.returncode == 0, output(result)
+    assert not any("--single-transaction" in c for c in calls)
+
+
+def test_a_drill_starts_web_alone_with_no_route_out(new_host):
+    """No caddy, no pull, and web is cut off from egress before it starts."""
+    result, calls = new(new_host, "--drill")
+    assert result.returncode == 0, output(result)
+
+    def first(text):
+        return next(i for i, c in enumerate(calls) if text in c)
+
+    order = [
+        "admin-recovery restore-begin",
+        " create web",
+        "network disconnect stewardship_application-egress webid",
+        "PortBindings",
+        "start webid",
+        "pk-stewardship health",
+        "ps --all --filter",
+    ]
+    positions = [first(text) for text in order]
+    assert positions == sorted(positions)
+    assert not any("caddy" in c and (" up " in c or " start " in c) for c in calls)
+    assert not any(" up " in c and " web" in c for c in calls)
+    assert not any("compose" in c and c.endswith(" pull --quiet") for c in calls)
+    assert not any("network disconnect stewardship_backend" in c for c in calls)
+    assert "Destroy this host" in result.stdout
+
+
+def test_a_drill_resolving_elsewhere_runs(new_host):
+    """An origin that resolves to another host's address is not this host."""
+    result, _ = new(new_host, "--drill", FAKE_RESOLVES="203.0.113.9")
+    assert result.returncode == 0, output(result)
+
+
+@pytest.mark.parametrize(
+    ("marker", "fake", "message"),
+    [
+        (None, {}, "is missing"),
+        ("parishkit-restore-drill-host otherbox\n", {}, "does not mark this host"),
+        ("parishkit-restore-drill-host\n", {}, "does not mark this host"),
+        (
+            "parishkit-restore-drill-host stewardship.example.org\n",
+            {"FAKE_HOSTNAME": "stewardship.example.org"},
+            "the set's public origin",
+        ),
+        (
+            "parishkit-restore-drill-host drillbox\n",
+            {"FAKE_RESOLVES": "10.0.0.5"},
+            "resolves to this host",
+        ),
+    ],
+)
+def test_every_drill_guard_refuses_before_anything_changes(
+    new_host, marker, fake, message
+):
+    """Without the drill marker, or on the origin's own host, nothing runs."""
+    if marker is None:
+        new_host["marker"].unlink()
+    else:
+        new_host["marker"].write_text(marker)
+    result, calls = new(new_host, "--drill", **fake)
+    assert result.returncode == 1, output(result)
+    assert message in output(result)
+    assert "nothing changed" in output(result)
+    assert not changed(new_host, calls)
+
+
+def test_a_drill_against_a_live_deployment_refuses(host):
+    """A host that holds a deployment (Production's shape) is never drilled."""
+    marker = host["tmp"] / "restore-drill-host"
+    marker.write_text("parishkit-restore-drill-host drillbox\n")
+    result, calls = restore(
+        host,
+        "--drill",
+        "--manifest-digest",
+        sha256(host["manifest"]),
+        PK_RESTORE_DRILL_MARKER=str(marker),
+        PK_RESTORE_TEST_HOOKS="1",
+        FAKE_HELP=HELP_NEW_HOST,
+    )
+    assert result.returncode == 1, output(result)
+    assert "already holds a deployment" in output(result)
+    assert not stopped(calls)
+    assert not any(" up " in c or "pull" in c for c in calls)
+
+
+@pytest.mark.parametrize(
+    ("fake", "message"),
+    [
+        ({"FAKE_STUCK": "1"}, "which is not internal"),
+        ({"FAKE_PORTS": "1"}, "publishes a port"),
+        ({"FAKE_PUBLISH_ALL": "true"}, "publishes a port"),
+    ],
+)
+def test_a_drill_web_with_a_route_out_never_starts(new_host, fake, message):
+    """web starts only once it is on internal networks alone."""
+    result, calls = new(new_host, "--drill", **fake)
+    assert result.returncode == 1, output(result)
+    assert message in output(result)
+    assert not any(c.startswith("start ") for c in calls)
+    # The web it created and refused is removed.
+    assert "rm --force webid" in calls
+
+
+def test_a_drill_with_other_containers_refuses(new_host):
+    """Only postgres, valkey and web may exist on a drill host."""
+    result, _ = new(new_host, "--drill", FAKE_CREATED="postgres valkey web caddy")
+    assert result.returncode == 1, output(result)
+    assert "other containers (caddy)" in output(result)
+
+
+def test_a_drill_needs_the_origin_to_resolve(new_host):
+    """An origin that does not resolve cannot be shown not to be this host."""
+    result, calls = new(new_host, "--drill", FAKE_RESOLVES="")
+    assert result.returncode == 1, output(result)
+    assert "does not resolve" in output(result)
+    assert not changed(new_host, calls)
+
+
+def test_the_drill_marker_path_is_fixed_without_the_test_hook(new_host):
+    """PK_RESTORE_DRILL_MARKER counts only for the tests' own hook."""
+    result, calls = new(new_host, "--drill", PK_RESTORE_TEST_HOOKS="")
+    assert result.returncode == 1, output(result)
+    assert "/etc/parishkit/restore-drill-host" in output(result)
+    assert not changed(new_host, calls)
+
+
+def test_a_renderer_named_project_under_the_root_is_refused(new_host):
+    """A project started without -p (any name) from the root counts too."""
+    compose = new_host["root"] / "config" / "services" / "compose.json"
+    listing = f"parishkit-stewardship|postgres|{compose}\\n"
+    result, calls = new(new_host, FAKE_ALL=listing)
+    assert result.returncode == 1, output(result)
+    assert "project parishkit-stewardship" in output(result)
+    assert not changed(new_host, calls)
+
+
+def test_an_unlistable_store_is_refused(new_host):
+    """A store that cannot be listed is never taken for an empty one."""
+    if os.geteuid() == 0:
+        pytest.skip("root lists any directory")
+    new_host["store"].mkdir(parents=True)
+    new_host["store"].chmod(0)
+    try:
+        result, calls = new(new_host)
+    finally:
+        new_host["store"].chmod(0o700)
+    assert result.returncode == 1, output(result)
+    assert "cannot list" in output(result)
+    assert not changed(new_host, calls)
+
+
+@pytest.mark.parametrize(
+    ("drill", "service", "admitted"),
+    [
+        (False, "caddy", True),
+        (True, "caddy", False),
+        (False, "worker", False),
+        (False, "mail-dispatch", False),
+    ],
+)
+def test_a_resume_admits_only_the_restore_containers(
+    new_host, drill, service, admitted
+):
+    """--from 5 refuses a background or (drilling) caddy container."""
+    extra = ("--drill",) if drill else ()
+    result, _ = new(new_host, *extra, FAKE_FAIL="database-roles")
+    assert result.returncode == 1, output(result)
+    compose = new_host["root"] / "config" / "services" / "compose.json"
+    listing = "".join(
+        f"stewardship|{name}|{compose}\\n" for name in ("postgres", "valkey", service)
+    )
+    result, calls = new(new_host, *extra, "--from", "5", FAKE_ALL=listing)
+    assert (result.returncode == 0) is admitted, output(result)
+    if not admitted:
+        assert "a resume admits only" in output(result)
+        assert not any("database-roles" in c for c in calls)
+
+
+def test_another_project_from_the_root_is_refused_on_resume(new_host):
+    """A resume never runs beside a second project from the same root."""
+    result, _ = new(new_host, FAKE_FAIL="database-roles")
+    assert result.returncode == 1
+    compose = new_host["root"] / "config" / "services" / "compose.json"
+    result, calls = new(
+        new_host,
+        "--from",
+        "5",
+        FAKE_ALL=f"parishkit-stewardship|postgres|{compose}\\n",
+    )
+    assert result.returncode == 1, output(result)
+    assert "also runs from" in output(result)
+    assert not any("database-roles" in c for c in calls)
+
+
+@pytest.mark.parametrize(
+    ("fake", "message"),
+    [
+        ({"FAKE_FAIL": "NetworkSettings.Networks"}, "cannot list web's networks"),
+        ({"FAKE_NETWORKS": ""}, "web is on no network"),
+    ],
+)
+def test_a_drill_web_whose_networks_cannot_be_shown_never_starts(
+    new_host, fake, message
+):
+    """A failed or empty network listing refuses; it never passes vacuously."""
+    result, calls = new(new_host, "--drill", **fake)
+    assert result.returncode == 1, output(result)
+    assert message in output(result)
+    assert not any(c.startswith("start ") for c in calls)
+    assert "rm --force webid" in calls
+
+
+def test_a_drill_host_with_no_address_is_refused(new_host):
+    """An empty hostname -I cannot show this host is not the origin's."""
+    result, calls = new(new_host, "--drill", FAKE_ADDRESSES="")
+    assert result.returncode == 1, output(result)
+    assert "lists no address" in output(result)
+    assert not changed(new_host, calls)

@@ -1,20 +1,26 @@
 #!/usr/bin/env bash
 #
-# Restore a sealed backup set onto the deployment's own host (#608): the
-# backup runbook's "Restore for real" steps 1, 2 (the check), 4, 6, 7 and 8
-# in order, stopping for the Administrator's Restore review. See
-# docs/guides/stewardship-backup-runbook.md#scripted-same-host-restore.
+# Restore a sealed backup set (#608): the backup runbook's "Restore for
+# real" steps in order, stopping for the Administrator's Restore review. On
+# the deployment's own host it runs steps 1, 2 (the check), 4, 6, 7 and 8;
+# with --replacement, onto a new host, it adds steps 3 and 5; with --drill,
+# on a disposable drill host, it starts web alone with no route out. See
+# docs/guides/stewardship-backup-runbook.md#scripted-same-host-restore and
+# #scripted-replacement-and-drill-restore.
 #
 #   pk-restore plan OPTIONS
 #       Check the options and the manifest and print every step `run` would
 #       take. Runs no Docker command and changes nothing.
 #   pk-restore run OPTIONS
 #       Run the steps. Asks for the deployment UUID to be typed (one line
-#       on standard input) after confirming it against the database.
+#       on standard input) after confirming it against the database (or,
+#       with --replacement, against the set's own runtime row).
 #
 # Options:
 #   --confirm-deployment UUID  the deployment's UUID (required); it must be
-#                              the database's provisioning marker
+#                              the database's provisioning marker (with
+#                              --replacement: the id of the set's runtime
+#                              row, read from the dump)
 #   --set DIR                  the sealed set's directory, named by its start
 #                              in UTC (YYYYMMDDTHHMMSSZ); only its
 #                              manifest.json is read (required)
@@ -27,16 +33,28 @@
 #                              /etc/parishkit/stewardship-deployment.yaml)
 #   --runtime-root DIR         the runtime root (default $PARISHKIT_ROOT,
 #                              else /opt/parishkit)
-#   --project NAME             the Compose project (default stewardship)
+#   --project NAME             the Compose project (default stewardship,
+#                              the name the deploy tool and pk-admin use;
+#                              the renderer's own `name:` is
+#                              parishkit-stewardship, which -p overrides)
 #   --compose FILE             the rendered Compose file (default: the one
-#                              the project runs under); it must be inside
-#                              the runtime root's config tree
+#                              the project runs under; with --replacement,
+#                              ROOT/config/services/compose.json); it must
+#                              be inside the runtime root's config tree
 #   --log-dir DIR              where the run's log goes (default ROOT/logs)
-#   --from STEP                resume at step 4, 6 or 7 after a fixed
+#   --from STEP                resume at step 4, 6 or 7 (with
+#                              --replacement: 4, 5, 6 or 7) after a fixed
 #                              failure; the checks and step 1 always run.
 #                              Step 7 is safe to repeat (restore-begin
 #                              reports the open review, #799), so there is
 #                              no resume at step 8.
+#   --replacement              restore onto a new host (runbook steps 3 and
+#                              5); see "Replacement host" below
+#   --manifest-digest HEX      with --replacement (required): the manifest
+#                              SHA-256 the backup printed, kept off the host;
+#                              `unrecorded` goes ahead without that proof
+#   --drill                    a disposable drill host: --replacement plus
+#                              the drill rules below
 #
 # Before anything stops, `run` refuses unless: the UUID matches the database
 # marker and is typed again; no cron job (root's and SUDO_USER's crontabs,
@@ -80,8 +98,47 @@
 # in, runs revoke-automation-sessions when the image has it, and
 # restore-begin; 8 starts web and caddy only and waits for web's health.
 # The scheduler, worker, mail-dispatch and installers stay stopped until
-# the Restore review is released. A replacement or disposable drill host is
-# not supported yet: follow the runbook by hand there.
+# the Restore review is released.
+#
+# Replacement host (--replacement): the paths, the database name and the
+# public origin come from the set's own config/services/web.yaml, whose
+# root must be --runtime-root with every path under it. Before anything
+# changes it refuses unless this host holds no deployment: no container of
+# the project, and none of any project whose Compose file is under the
+# runtime root (the renderer's parishkit-stewardship included); an absent
+# or empty PostgreSQL store; and (a full run) no config, credentials, media
+# or provisioning record. --confirm-deployment
+# must be the id of the set's runtime row, which the image's pg_restore
+# reads from the dump offline, and the manifest's SHA-256 must be
+# --manifest-digest. Step 1 has nothing to stop on a new host; 3 creates
+# the runtime root's other directories (owned by the owner, mode 0700) and
+# run/startup.lock and collects the static files; 4 as above; 5 starts
+# postgres and valkey and runs database-roles, after which the database
+# marker must be the UUID; 6, 7 and 8 as above. The log directory (and the
+# runtime root) is created first when missing. --from 5 and 6 need step 4's
+# record in place and an empty application schema (or, for 5, an empty
+# store, or postgres running); --from 7 needs the set loaded; and every
+# resume refuses a container of the project other than postgres, valkey,
+# web and (not drilling) caddy.
+#
+# Drill host (--drill, never Production): it also refuses unless
+# /etc/parishkit/restore-drill-host is a regular file owned by root holding
+# exactly `parishkit-restore-drill-host HOSTNAME` for this host's
+# `hostname`, this host is not named for the set's public origin, and that
+# name resolves (getent ahosts) to addresses none of which is this host's
+# (hostname -I). A name that does not resolve is refused: the check cannot
+# tell then. hostname -I lists only the interfaces' addresses, so a public
+# address the provider maps in by NAT (a reserved or floating IP) is not
+# seen: that check is a backstop, and the marker is the guard. Only
+# postgres, valkey and web are ever created: step 7 skips the pull (the
+# image is already here) and step 8 creates web, disconnects it from every
+# non-internal network, checks that only internal ones remain and nothing
+# is published, starts it, and checks both again. A refusal after web was
+# created removes it. restore-begin still runs: it writes only this copy of
+# the database and keeps Family sign-in and Family mail closed there. It
+# ends after web's health check: destroy the host (runbook step 10).
+# Container egress is blocked on the host before the run (the runbook's
+# DOCKER-USER rule); the host's own pulls and DNS still work.
 #
 # Every Docker call runs under a time limit; a kill is logged with what was
 # stopped, the limit and the elapsed time. Each step is logged with a
@@ -103,9 +160,12 @@
 #
 # Environment: PK_RESTORE_BACKUP_WAIT, how long to wait for a running
 # backup-worker before refusing (default 900 seconds; a Drive copy can run
-# for hours). For tests: PK_RESTORE_OWNER, the owner of restored files and
-# the user of offline containers (default 10001:10001); PK_RESTORE_CRON_DIR
-# (default /etc/cron.d) and PK_RESTORE_CRONTAB (default /etc/crontab).
+# for hours). For tests only, with PK_RESTORE_TEST_HOOKS=1:
+# PK_RESTORE_DRILL_MARKER, another drill marker file, whose owner is then
+# not checked. For tests:
+# PK_RESTORE_OWNER, the owner of restored files and the user of offline
+# containers (default 10001:10001); PK_RESTORE_CRON_DIR (default
+# /etc/cron.d) and PK_RESTORE_CRONTAB (default /etc/crontab).
 #
 # Exit status: 0 when web is up for the Restore review; 1 for a refusal or
 # a failed step (the message says what state remains and how to resume);
@@ -138,6 +198,7 @@ LIMIT_COPY=900
 LIMIT_CONVERT=1800
 LIMIT_LOAD=3600
 LIMIT_START=600
+LIMIT_RESOLVE=30
 # Free space beyond the files themselves, in KiB, and how many times its
 # compressed custom-format size the converted SQL may take.
 MARGIN_KIB=524288
@@ -154,10 +215,16 @@ case $mode in
     *) bad "the first word must be plan or run" ;;
 esac
 uuid="" set_dir="" dump="" tar="" image="" compose="" log_dir="" from=1
+replace=0 drill=0 recorded_digest="" made="" created_web=""
 yaml=/etc/parishkit/stewardship-deployment.yaml
 root=${PARISHKIT_ROOT:-/opt/parishkit}
 project=stewardship
 while [ "$#" -gt 0 ]; do
+    # The two switches take no value.
+    case $1 in
+        --replacement) replace=1 && shift && continue ;;
+        --drill) replace=1 drill=1 && shift && continue ;;
+    esac
     [ "$#" -ge 2 ] || bad "$1 needs a value"
     case $1 in
         --confirm-deployment) uuid=$2 ;;
@@ -170,16 +237,25 @@ while [ "$#" -gt 0 ]; do
         --project) project=$2 ;;
         --compose) compose=$2 ;;
         --log-dir) log_dir=$2 ;;
+        --manifest-digest) recorded_digest=$2 ;;
         --from)
             case $2 in
-                4 | 6 | 7) from=$2 ;;
-                *) bad "--from must be 4, 6 or 7 (a full run takes no --from)" ;;
+                4 | 5 | 6 | 7) from=$2 ;;
+                *) bad "--from must be 4, 5, 6 or 7 (a full run takes no --from)" ;;
             esac
             ;;
         *) bad "unknown option $1" ;;
     esac
     shift 2
 done
+if [ "$replace" -eq 1 ]; then
+    [[ $recorded_digest =~ ^([0-9a-f]{64}|unrecorded)$ ]] ||
+        bad "--replacement needs --manifest-digest: the manifest SHA-256 the backup printed (64 lowercase hex), or unrecorded"
+else
+    [ "$from" -ne 5 ] || bad "--from 5 (the roles) is only for --replacement"
+    [ -z "$recorded_digest" ] ||
+        bad "--manifest-digest is only for --replacement; on the same host the database holds the recorded digest"
+fi
 [[ $uuid =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] ||
     bad "--confirm-deployment must be the deployment's UUID (lowercase)"
 [ -n "$set_dir" ] || bad "--set is required"
@@ -224,9 +300,43 @@ dump_sha=$(jq -r '.database.plaintext_sha256 // empty' "$manifest")
 tar_sha=$(jq -r '.files.plaintext_sha256 // empty' "$manifest")
 [[ $dump_sha =~ ^[0-9a-f]{64}$ && $tar_sha =~ ^[0-9a-f]{64}$ ]] ||
     refuse "$manifest lacks the files' plaintext digests"
+[ "$local_mode" -eq 0 ] || [ "$replace" -eq 0 ] ||
+    bad "the local environment has no replacement host; restore it in place, without --replacement or --drill"
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 services=$root/config/services
 
+if [ "$mode" = plan ] && [ "$replace" -eq 1 ]; then
+    # The replacement (and drill) order; the checks run in `run`.
+    if [ "$drill" -eq 1 ]; then
+        what="disposable drill host" start="web alone, with no route out (never caddy or anything else)"
+        guard="this host carries the drill marker for its own name and is not the set's public origin host; "
+        pull="(no pull: the image is already here)"
+    else
+        what="replacement host" start="web and caddy only" guard="" pull="pull"
+    fi
+    cat <<EOF
+pk-restore plan: restore set $set_name onto a new $what, project $project at $root
+  with image $image
+Checks, before anything changes: ${guard}no container of the project
+  exists, the PostgreSQL store is empty and (a full run) no deployment
+  tree or record is here; the set's runtime row is deployment $uuid
+  (typed again); the manifest's SHA-256 is --manifest-digest; no backup,
+  rsync or rclone cron job or timer; database.pgdump and files.tar match
+  the manifest; the archive holds only config, credentials, media and the
+  provisioning record; the image is pulled and carries its digest; the
+  deployment YAML loads in it; its restore-check answers match; there is
+  room for the files, the converted dump and the load.
+EOF
+    [ "$from" -gt 4 ] || echo "3. Create the runtime root's other directories and run/startup.lock, owned by $owner; collect the static files into cache/static.next."
+    [ "$from" -gt 4 ] || echo "4. Put the set's config, credentials, media and provisioning record in place, owned by $owner."
+    [ "$from" -lt 5 ] || echo "1. Stop every online service (postgres and valkey keep running)."
+    [ "$from" -gt 5 ] || echo "5. Start postgres and valkey; database-roles --confirm-deployment $uuid; the database marker must then be $uuid."
+    [ "$from" -gt 6 ] || echo "6. Copy the dump into the PostgreSQL store, convert it with pg_restore, delete the dump copy, then replace the public schema in one psql transaction that marks the schema as set $set_name; delete the SQL."
+    echo "7. retarget-image to $image, $pull, move cache/static.next in, revoke-automation-sessions (when the image has it), restore-begin --backup-at $set_name."
+    echo "8. Start $start and wait for web's health."
+    echo "Log: $log_dir/restore-STAMP.log"
+    exit 0
+fi
 if [ "$mode" = plan ]; then
     # Only the order and the inputs; the checks themselves run in `run`.
     if [ "$from" -le 6 ]; then
@@ -262,6 +372,16 @@ EOF
     exit 0
 fi
 
+if [ "$replace" -eq 1 ] && [ "$log_dir" = "$root/logs" ] && [ ! -e "$log_dir" ]; then
+    # A new host has no runtime root yet: create it and its logs directory
+    # (step 3's own) to hold the log from the first line on.
+    for dir in "$root" "$log_dir"; do
+        [ ! -e "$dir" ] || continue
+        mkdir -m 0700 "$dir" || refuse "cannot create $dir"
+        chown "$owner" "$dir" || refuse "cannot give $dir to $owner; run as root (sudo)"
+        made="$made $dir"
+    done
+fi
 { [ -d "$log_dir" ] && [ ! -L "$log_dir" ]; } || refuse "$log_dir is not a directory (--log-dir)"
 log=$log_dir/restore-$stamp.log
 (umask 077 && : >"$log") || refuse "cannot write $log"
@@ -288,8 +408,9 @@ stage=""
 copies=""
 job=""
 resume_hint() {
-    # How to continue after a failure in step $1.
-    if [ "$1" -le 1 ]; then echo "run again without --from"; else echo "run again with --from $1"; fi
+    # How to continue after a failure in step $1 (step 3, a new host's
+    # preparation, is safe to repeat from the start).
+    if [ "$1" -le 3 ]; then echo "run again without --from"; else echo "run again with --from $1"; fi
 }
 finish() {
     # What a failure leaves depends on the phase; the log has the rest. A
@@ -312,9 +433,23 @@ finish() {
         fi
         remove_copies || echo "==> Could not delete the plaintext copies; delete $store_dir/pk-restore-* by hand."
     fi
+    if [ "$rc" -ne 0 ] && [ -n "$created_web" ]; then
+        # A drill's web that did not pass every check never stays.
+        if force_remove "$created_web" "the drill's web container"; then
+            echo "==> Removed the drill's web container"
+        else
+            echo "==> Could not remove the drill's web container $created_web; remove it by hand (docker rm --force)."
+        fi
+    fi
     if [ "$rc" -ne 0 ]; then
         case $phase in
-            check) echo "==> Refused before anything stopped; nothing changed." ;;
+            check)
+                if [ -n "$made" ]; then
+                    echo "==> Refused before anything stopped; nothing changed but the empty directories made for this log:$made."
+                else
+                    echo "==> Refused before anything stopped; nothing changed."
+                fi
+                ;;
             stopped)
                 at=$current
                 # Step 7 is safe to repeat, so a failure in step 8 resumes there.
@@ -369,10 +504,22 @@ step() {
     echo "==> $(date -u +%H:%M:%S) (+$((now - last))s) $*"
     last=$now
 }
+force_remove() {
+    # force_remove CONTAINER WHAT: docker rm --force under a 60-second
+    # limit (not `limited`, which itself removes one-offs); a kill is
+    # logged with what, the limit and the elapsed time.
+    local started rc=0
+    started=$(date -u +%s)
+    timeout --kill-after=10 60 docker rm --force "$1" >/dev/null 2>&1 || rc=$?
+    if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+        echo "TIMEOUT: removing $2 killed after $(($(date -u +%s) - started))s (limit 60s)" >&2
+    fi
+    return "$rc"
+}
 stop_oneoff() {
     # Kill and remove the named one-off container, if one is running.
     [ -n "$oneoff_name" ] || return 0
-    timeout 60 docker rm --force "$oneoff_name" >/dev/null 2>&1 || true
+    force_remove "$oneoff_name" "one-off container $oneoff_name" || true
     echo "    one-off container $oneoff_name removed ($1)" >&2
     oneoff_name=""
 }
@@ -427,12 +574,21 @@ loaded_marker="pk-restore:$set_name:$manifest_sha"
 # The set's start, as PostgreSQL reads a timestamp with a time zone.
 set_time="${set_name:0:4}-${set_name:4:2}-${set_name:6:2} ${set_name:9:2}:${set_name:11:2}:${set_name:13:2}+00"
 
-step "Checking (nothing changes until step 1 but cache/static.next and stale dump copies)"
-if [ -z "$compose" ]; then
+if [ "$replace" -eq 1 ]; then
+    step "Checking (nothing changes until step 3)"
+else
+    step "Checking (nothing changes until step 1 but cache/static.next and stale dump copies)"
+fi
+if [ -z "$compose" ] && [ "$replace" -eq 1 ]; then
+    # A new host runs no project yet: the set's own rendering (step 4).
+    compose=$services/compose.json
+elif [ -z "$compose" ]; then
     compose=$(limited "$LIMIT_QUERY" "docker compose ls" docker compose ls --all --format json |
         jq -r --arg p "$project" '.[] | select(.Name == $p) | .ConfigFiles | split(",")[0]')
 fi
-{ [ -n "$compose" ] && [ -f "$compose" ]; } || refuse "project $project has no Compose file; pass --compose"
+if [ "$replace" -eq 0 ]; then
+    { [ -n "$compose" ] && [ -f "$compose" ]; } || refuse "project $project has no Compose file; pass --compose"
+fi
 # The project must be this runtime root's: its Compose file is rendered
 # into the root's config tree (and comes back there in step 4).
 case $compose in
@@ -443,26 +599,6 @@ dc=(docker compose -f "$compose" -p "$project")
 pg=("${dc[@]}" exec -T postgres)
 echo "    project $project, $compose"
 
-# The deployment's own paths, from the rendered web document (the runtime
-# root must be the one given), read before step 4 replaces it.
-web_yaml=$services/web.yaml
-path() { jq -er --arg n "$1" '.deployment.paths[$n]' "$web_yaml"; }
-[ "$(path root)" = "$root" ] || refuse "$web_yaml is not for the runtime root $root"
-database=$(jq -er '.deployment.postgres.name' "$web_yaml")
-[[ $database =~ ^[a-z_][a-z0-9_]*$ ]] || refuse "the database name in $web_yaml is not a plain name"
-config_dir=$(path config)
-credentials_dir=$(path credentials)
-media_dir=$(path media)
-store_dir=$(path postgresql)
-static_dir=$(path cache)/static
-record=$root/.stewardship-provisioned.json
-case $static_dir in
-    *[,\"]*) refuse "$static_dir must not contain a comma or a double quote" ;;
-esac
-
-running=$(limited "$LIMIT_QUERY" "listing running services" "${dc[@]}" ps --services --status running </dev/null)
-grep -qxF postgres <<<"$running" ||
-    refuse "postgres is not running; start it with: docker compose ... up --detach --wait postgres valkey"
 query() {
     # One query as the cluster's operator login; prints the answer.
     limited "$LIMIT_QUERY" "the database query" "${pg[@]}" \
@@ -475,11 +611,18 @@ set_loaded() {
     # load's transaction) and no backup started at or after the set's start
     # (a fresh load holds none; the marker alone survives into later
     # backups). Prints no otherwise; fails when the database cannot answer.
-    local answer
-    answer=$(query "SELECT coalesce(obj_description('public'::regnamespace, 'pg_namespace'), '') = '$loaded_marker' AND NOT EXISTS (SELECT 1 FROM stewardship_backup_run WHERE started_at >= '$set_time'::timestamptz)")
-    case $answer in
-        t) echo yes ;;
-        f) echo no ;;
+    # The comment is read first, so an empty database (a new host's, or
+    # one whose load rolled back) answers no without the table.
+    local comment later
+    comment=$(query "SELECT coalesce(obj_description('public'::regnamespace, 'pg_namespace'), '')") || return 1
+    if [ "$comment" != "$loaded_marker" ]; then
+        echo no
+        return 0
+    fi
+    later=$(query "SELECT EXISTS (SELECT 1 FROM stewardship_backup_run WHERE started_at >= '$set_time'::timestamptz)") || return 1
+    case $later in
+        f) echo yes ;;
+        t) echo no ;;
         *) return 1 ;;
     esac
 }
@@ -514,75 +657,321 @@ remove_copies() {
     limited "$LIMIT_QUERY" "deleting the dump copies" "${pg[@]}" \
         sh -c "rm -rf $STORE_INSIDE/pk-restore-*" </dev/null
 }
-marker=$(query "SELECT shobj_description(oid, 'pg_database') FROM pg_database WHERE datname = current_database()")
-[ "$marker" = "parishkit-stewardship:$uuid" ] ||
-    refuse "the database is not deployment $uuid's (its provisioning marker differs)"
-printf 'Type the deployment UUID to restore set %s over it: ' "$set_name"
-typed=""
-read -r typed || true
-echo
-[ "$typed" = "$uuid" ] || refuse "the typed UUID does not match --confirm-deployment"
-# Nothing after the answer reads the terminal.
-exec </dev/null
-
-# Cron and timers: a backup that starts mid-restore archives a mix and is
-# copied off the host; the runbook disables those jobs until step 9.
-# Debian and Ubuntu's own dpkg-db-backup timer (it keeps copies of the
-# package database in /var/backups) is no such job and is ignored.
-jobs=$(
-    {
-        crontab -l -u root 2>/dev/null || true
-        [ -z "${SUDO_USER:-}" ] || crontab -l -u "$SUDO_USER" 2>/dev/null || true
-        cat "${PK_RESTORE_CRONTAB:-/etc/crontab}" 2>/dev/null || true
-        cat "${PK_RESTORE_CRON_DIR:-/etc/cron.d}"/* 2>/dev/null || true
-        if command -v systemctl >/dev/null; then
-            # Only the timer listing's own dpkg-db-backup row, by its last
-            # two columns (the timer and the unit it activates).
-            { systemctl list-timers --all --no-legend --no-pager 2>/dev/null || true; } |
-                grep -vE '[[:space:]]dpkg-db-backup\.timer[[:space:]]+dpkg-db-backup\.service[[:space:]]*$' || true
-        fi
-    } | grep -v '^[[:space:]]*#' | grep -iE 'backup|rsync|rclone' || true
-)
-[ -z "$jobs" ] ||
-    refuse "disable the backup and off-host copy cron jobs and timers first (re-enable them in step 9):
+confirm_typed() {
+    # The UUID typed again; nothing after the answer reads the terminal.
+    local typed=""
+    printf 'Type the deployment UUID to restore set %s over it: ' "$set_name"
+    read -r typed || true
+    echo
+    [ "$typed" = "$uuid" ] || refuse "the typed UUID does not match --confirm-deployment"
+    exec </dev/null
+}
+check_jobs() {
+    # Cron and timers: a backup that starts mid-restore archives a mix and
+    # is copied off the host; the runbook disables those jobs until step 9.
+    # Debian and Ubuntu's own dpkg-db-backup timer (it keeps copies of the
+    # package database in /var/backups) is no such job and is ignored.
+    local jobs
+    jobs=$(
+        {
+            crontab -l -u root 2>/dev/null || true
+            [ -z "${SUDO_USER:-}" ] || crontab -l -u "$SUDO_USER" 2>/dev/null || true
+            cat "${PK_RESTORE_CRONTAB:-/etc/crontab}" 2>/dev/null || true
+            cat "${PK_RESTORE_CRON_DIR:-/etc/cron.d}"/* 2>/dev/null || true
+            if command -v systemctl >/dev/null; then
+                # Only the timer listing's own dpkg-db-backup row, by its last
+                # two columns (the timer and the unit it activates).
+                { systemctl list-timers --all --no-legend --no-pager 2>/dev/null || true; } |
+                    grep -vE '[[:space:]]dpkg-db-backup\.timer[[:space:]]+dpkg-db-backup\.service[[:space:]]*$' || true
+            fi
+        } | grep -v '^[[:space:]]*#' | grep -iE 'backup|rsync|rclone' || true
+    )
+    [ -z "$jobs" ] ||
+        refuse "disable the backup and off-host copy cron jobs and timers first (re-enable them in step 9):
 $jobs"
-
-[ "$(sha256 "$dump")" = "$dump_sha" ] || refuse "$dump does not match the manifest's database digest"
-[ "$(sha256 "$tar")" = "$tar_sha" ] || refuse "$tar does not match the manifest's files digest"
-
-# Only the archived trees and the record, with no absolute or parent path.
-listing=$(tar -tf "$tar")
-members=$(sed 's#^\./##; s#/$##' <<<"$listing")
-unexpected=$(grep -vE '^(config|credentials|media)(/|$)|^\.stewardship-provisioned\.json$' <<<"$members" || true)
-unexpected+=$(grep -E '(^|/)\.\.(/|$)' <<<"$members" || true)
-[ -z "$unexpected" ] || refuse "$tar holds members a backup never writes"
-for member in config credentials media .stewardship-provisioned.json; do
-    grep -qxF "$member" <<<"$members" || refuse "$tar lacks $member"
-done
-record_member=$(grep -E '^(\./)?\.stewardship-provisioned\.json$' <<<"$listing")
-
-# The database's state must be the one --from implies (header comment).
-loaded=$(set_loaded) || refuse "cannot read the public schema's comment or stewardship_backup_run"
-recorded=$(query "SELECT manifest_digest FROM stewardship_backup_run WHERE to_char(started_at AT TIME ZONE 'UTC', 'YYYYMMDD\"T\"HH24MISS\"Z\"') = '$set_name'") ||
-    refuse "cannot read stewardship_backup_run"
-unknown_state="this database does not hold set $set_name's row and was not loaded from it (an older restore, or a set this deployment never recorded); restore it by hand (runbook, Restore for real)"
-if [ "$from" -le 6 ]; then
-    [ "$loaded" = no ] ||
-        refuse "step 6 already loaded set $set_name; run again with --from 7"
-    [ -n "$recorded" ] || refuse "$unknown_state"
-    [ "$manifest_sha" = "$recorded" ] ||
-        refuse "$manifest is not the manifest this deployment recorded for $set_name"
-    echo "    manifest digest matches the recorded set"
-elif [ "$loaded" = no ]; then
-    [ -z "$recorded" ] || refuse "step 6 has not loaded set $set_name; run again with --from 6"
-    refuse "$unknown_state"
-fi
-if [ "$from" -eq 6 ]; then
-    for dir in "$config_dir" "$credentials_dir" "$media_dir"; do
-        [ -d "$dir" ] || refuse "$dir is missing: step 4 did not finish; run again with --from 4"
+}
+check_files() {
+    # The decrypted files are the manifest's, and the archive holds only
+    # the archived trees and the record, with no absolute or parent path.
+    local listing members unexpected member
+    [ "$(sha256 "$dump")" = "$dump_sha" ] || refuse "$dump does not match the manifest's database digest"
+    [ "$(sha256 "$tar")" = "$tar_sha" ] || refuse "$tar does not match the manifest's files digest"
+    listing=$(tar -tf "$tar")
+    members=$(sed 's#^\./##; s#/$##' <<<"$listing")
+    unexpected=$(grep -vE '^(config|credentials|media)(/|$)|^\.stewardship-provisioned\.json$' <<<"$members" || true)
+    unexpected+=$(grep -E '(^|/)\.\.(/|$)' <<<"$members" || true)
+    [ -z "$unexpected" ] || refuse "$tar holds members a backup never writes"
+    for member in config credentials media .stewardship-provisioned.json; do
+        grep -qxF "$member" <<<"$members" || refuse "$tar lacks $member"
     done
+    record_member=$(grep -E '^(\./)?\.stewardship-provisioned\.json$' <<<"$listing")
+    archive_members=$members
+    archive_listing=$listing
+}
+read_paths() {
+    # The deployment's own paths and database name, from a rendered web
+    # document (the runtime root must be the one given).
+    path() { jq -er --arg n "$1" '.deployment.paths[$n]' "$web_yaml"; }
+    [ "$(path root)" = "$root" ] || refuse "$web_yaml is not for the runtime root $root"
+    database=$(jq -er '.deployment.postgres.name' "$web_yaml")
+    [[ $database =~ ^[a-z_][a-z0-9_]*$ ]] || refuse "the database name in $web_yaml is not a plain name"
+    config_dir=$(path config)
+    credentials_dir=$(path credentials)
+    media_dir=$(path media)
+    store_dir=$(path postgresql)
+    static_dir=$(path cache)/static
+    record=$root/.stewardship-provisioned.json
+    case $static_dir in
+        *[,\"]*) refuse "$static_dir must not contain a comma or a double quote" ;;
+    esac
+}
+existing() {
+    # The path itself or its nearest ancestor that exists (for df).
+    local place=$1
+    while [ ! -e "$place" ]; do place=$(dirname "$place"); done
+    echo "$place"
+}
+store_empty() {
+    # Whether the PostgreSQL store holds nothing yet (a new host's); a store
+    # that cannot be listed refuses rather than counting as empty.
+    local entries
+    [ -e "$store_dir" ] || [ -L "$store_dir" ] || return 0
+    { [ -d "$store_dir" ] && [ ! -L "$store_dir" ]; } || refuse "$store_dir is not a directory"
+    entries=$(ls -A "$store_dir") || refuse "cannot list $store_dir"
+    [ -z "$entries" ]
+}
+postgres_running() {
+    # Whether this project's postgres service runs; a failed listing refuses.
+    local running
+    running=$(limited "$LIMIT_QUERY" "listing running services" "${dc[@]}" ps --services --status running </dev/null) ||
+        refuse "cannot list the running services"
+    grep -qxF postgres <<<"$running"
+}
+oneoff() {
+    # oneoff WHAT SERVICE ARGS...: a named `docker compose run` one-off, so a
+    # time limit can remove the container itself.
+    local what=$1
+    shift
+    oneoff_name=$project-restore-$stamp-$1
+    limited "$LIMIT_OFFLINE" "$what" "${dc[@]}" run --name "$oneoff_name" --rm -T "$@"
+    oneoff_name=""
+}
+collect_static() {
+    # The image's static files, collected into cache/static.next (this
+    # command's own staging tree) and moved in at step 7.
+    rm -rf "$static_dir.next"
+    mkdir -m 0700 "$static_dir.next"
+    chown "$owner" "$static_dir.next"
+    limited "$LIMIT_OFFLINE" "collect-static" "${isolated[@]}" \
+        --mount "type=bind,source=$static_dir.next,target=$static_dir.next" \
+        "$image" collect-static --destination "$static_dir.next" | tail -1
+}
+drill_marker() {
+    # A drill runs only where the operator marked this very host as a
+    # disposable drill host; Production never carries the marker, and a
+    # backup never brings it (it is outside the runtime root).
+    # The file is fixed; only the tests (PK_RESTORE_TEST_HOOKS=1) name
+    # another, whose owner is then not checked.
+    local file=/etc/parishkit/restore-drill-host name
+    if [ "${PK_RESTORE_TEST_HOOKS:-}" = 1 ] && [ -n "${PK_RESTORE_DRILL_MARKER:-}" ]; then
+        file=$PK_RESTORE_DRILL_MARKER
+    fi
+    name=$(hostname) || refuse "cannot read this host's name"
+    { [ -f "$file" ] && [ ! -L "$file" ]; } ||
+        refuse "--drill runs only on a disposable host marked as one: $file is missing (runbook, Restore drill)"
+    if [ "$file" = /etc/parishkit/restore-drill-host ]; then
+        [ -n "$(find "$file" -maxdepth 0 -user 0)" ] || refuse "$file is not owned by root"
+    fi
+    [ "$(cat "$file")" = "parishkit-restore-drill-host $name" ] ||
+        refuse "$file does not mark this host ($name) as a drill host"
+    echo "    drill host marker names $name"
+}
+drill_origin() {
+    # Never on the public origin's own host: neither its name nor any of
+    # the addresses that name resolves to may be this host's. A name that
+    # does not resolve is refused, since the check cannot tell then. This
+    # host's addresses are its interfaces' (hostname -I), which miss a
+    # public address mapped in by NAT (a reserved or floating IP): the
+    # address check is a backstop, and the drill marker is the guard.
+    local origin origin_host addresses mine address own fqdn
+    origin=$(jq -er '.deployment.public_origin' "$web_yaml") || refuse "$web_yaml names no public origin"
+    origin_host=${origin#*://}
+    origin_host=${origin_host%%/*}
+    case $origin_host in
+        \[*)
+            origin_host=${origin_host#[}
+            origin_host=${origin_host%%]*}
+            ;;
+        *) origin_host=${origin_host%%:*} ;;
+    esac
+    lower() { tr '[:upper:]' '[:lower:]' <<<"$1"; }
+    # hostname -f asks the resolver, so it runs under a time limit; a host
+    # with no full name is checked by its short one alone.
+    fqdn=$(limited "$LIMIT_RESOLVE" "hostname -f" hostname -f) || fqdn=""
+    for own in "$(hostname)" "$fqdn"; do
+        [ "$(lower "$own")" != "$(lower "$origin_host")" ] ||
+            refuse "this host is named $origin_host, the set's public origin: never drill on the live host"
+    done
+    mine=$(hostname -I) || refuse "cannot list this host's addresses (hostname -I)"
+    [ -n "${mine//[[:space:]]/}" ] || refuse "hostname -I lists no address for this host"
+    addresses=$(limited "$LIMIT_RESOLVE" "getent ahosts $origin_host" getent ahosts "$origin_host") ||
+        refuse "the public origin $origin_host does not resolve here, so this host cannot be shown not to be it; let the host resolve it (runbook, Restore drill)"
+    addresses=$(awk '{ print $1 }' <<<"$addresses" | sort -u)
+    [ -n "$addresses" ] || refuse "the public origin $origin_host resolves to no address"
+    for address in $addresses; do
+        for own in $mine; do
+            [ "$address" != "$own" ] ||
+                refuse "the public origin $origin_host resolves to this host ($address): never drill on the live host"
+        done
+    done
+    echo "    this host is not the public origin's ($origin_host)"
+}
+check_containers() {
+    # Every container on the host that belongs to this deployment: of the
+    # project, or of any project whose Compose file is under the runtime
+    # root (a project started without -p is named parishkit-stewardship,
+    # the renderer's own name). Before step 4 there must be none; a resume
+    # admits only this project's postgres, valkey and web (and caddy, not
+    # when drilling), never another project's.
+    local listing name service files file ours allowed="postgres valkey web"
+    local -a list
+    [ "$drill" -eq 1 ] || allowed="$allowed caddy"
+    listing=$(limited "$LIMIT_QUERY" "listing every container" docker ps --all --format \
+        '{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.service"}}|{{.Label "com.docker.compose.project.config_files"}}') ||
+        refuse "cannot list this host's containers"
+    while IFS='|' read -r name service files; do
+        [ -n "$name$files" ] || continue
+        ours=0
+        [ "$name" != "$project" ] || ours=1
+        IFS=',' read -r -a list <<<"$files"
+        for file in "${list[@]}"; do
+            case $file in "$root" | "$root"/*) ours=1 ;; esac
+        done
+        [ "$ours" -eq 1 ] || continue
+        [ "$from" -ge 5 ] ||
+            refuse "a container of project $name (service $service) from $root exists on this host; --replacement restores only onto a new host"
+        [ "$name" = "$project" ] ||
+            refuse "project $name also runs from $root; remove its containers first"
+        case " $allowed " in
+            *" $service "*) ;;
+            *) refuse "project $project has a $service container; a resume admits only $allowed: remove it first" ;;
+        esac
+    done <<<"$listing"
+}
+replacement_state() {
+    # A new host holds no deployment; a resume finds the state its step
+    # needs (header comment, Replacement host).
+    local marker relations dir
+    check_containers
+    if [ "$from" -le 4 ]; then
+        store_empty || refuse "$store_dir is not empty: this host already has a database; --replacement restores only onto a new host"
+        if [ "$from" -eq 1 ]; then
+            for dir in "$config_dir" "$credentials_dir" "$media_dir" "$record"; do
+                if [ -e "$dir" ] || [ -L "$dir" ]; then
+                    refuse "$dir exists: this host already holds a deployment; --replacement restores only onto a new host"
+                fi
+            done
+        fi
+        return 0
+    fi
+    [ -f "$compose" ] || refuse "the restored files have no $compose: step 4 did not finish; run again with --from 4"
     tar -xOf "$tar" "$record_member" | cmp -s - "$record" ||
         refuse "$record is not the set's: step 4 did not finish; run again with --from 4"
+    if [ "$from" -eq 5 ] && store_empty; then
+        return 0
+    fi
+    postgres_running ||
+        refuse "postgres is not running; start it with: docker compose ... up --detach --wait postgres valkey"
+    marker=$(query "SELECT shobj_description(oid, 'pg_database') FROM pg_database WHERE datname = current_database()") ||
+        refuse "cannot read the database's provisioning marker"
+    if [ "$from" -eq 5 ] && [ -z "$marker" ]; then
+        :
+    else
+        [ "$marker" = "parishkit-stewardship:$uuid" ] ||
+            refuse "the database is not deployment $uuid's (its provisioning marker differs)"
+    fi
+    relations=$(query "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public'") ||
+        refuse "cannot count the application schema's tables"
+    if [ "$from" -eq 7 ]; then
+        if ! { [ "$relations" != 0 ] && [ "$(set_loaded)" = yes ]; }; then
+            refuse "step 6 has not loaded set $set_name; run again with --from 6"
+        fi
+    elif [ "$relations" != 0 ]; then
+        [ "$(set_loaded 2>/dev/null || echo no)" != yes ] ||
+            refuse "step 6 already loaded set $set_name; run again with --from 7"
+        refuse "the database already holds data: --replacement loads only into an empty one"
+    fi
+}
+
+if [ "$replace" -eq 1 ]; then
+    [ "$drill" -eq 0 ] || drill_marker
+    check_jobs
+    check_files
+    # The set's own rendering names the paths, the database and the origin.
+    web_member=$(grep -E '^(\./)?config/services/web\.yaml$' <<<"$archive_listing") ||
+        refuse "$tar lacks config/services/web.yaml"
+    web_yaml=$work/web.yaml
+    tar -xOf "$tar" "$web_member" >"$web_yaml"
+    read_paths
+    while read -r name; do
+        case $name in
+            "$root" | "$root"/*) ;;
+            *) refuse "the set's path $name is outside $root; restore onto this host by hand (runbook, step 3)" ;;
+        esac
+        case $name in
+            */../* | */..) refuse "the set's path $name holds .." ;;
+        esac
+    done < <(jq -r '.deployment.paths[]' "$web_yaml")
+    grep -qxF "${compose#"$root"/}" <<<"$archive_members" ||
+        refuse "the set has no ${compose#"$root"/} (--compose)"
+    [ -z "$(tar -xOf "$tar" "$record_member" | jq -r '.bind_source_root // empty')" ] ||
+        refuse "the set was provisioned with --bind-source-root; restore it by hand"
+    [ "$drill" -eq 0 ] || drill_origin
+    replacement_state
+    if [ "$recorded_digest" = unrecorded ]; then
+        echo "WARNING: no recorded manifest digest: nothing proves where set $set_name came from; say so in the restore notes"
+    else
+        [ "$manifest_sha" = "$recorded_digest" ] ||
+            refuse "$manifest is not the manifest the backup recorded (--manifest-digest)"
+        echo "    manifest digest matches the recorded one"
+    fi
+else
+    # The deployment's own paths, from the rendered web document, read
+    # before step 4 replaces it.
+    web_yaml=$services/web.yaml
+    read_paths
+    postgres_running ||
+        refuse "postgres is not running; start it with: docker compose ... up --detach --wait postgres valkey"
+    marker=$(query "SELECT shobj_description(oid, 'pg_database') FROM pg_database WHERE datname = current_database()")
+    [ "$marker" = "parishkit-stewardship:$uuid" ] ||
+        refuse "the database is not deployment $uuid's (its provisioning marker differs)"
+    confirm_typed
+    check_jobs
+    check_files
+
+    # The database's state must be the one --from implies (header comment).
+    loaded=$(set_loaded) || refuse "cannot read the public schema's comment or stewardship_backup_run"
+    recorded=$(query "SELECT manifest_digest FROM stewardship_backup_run WHERE to_char(started_at AT TIME ZONE 'UTC', 'YYYYMMDD\"T\"HH24MISS\"Z\"') = '$set_name'") ||
+        refuse "cannot read stewardship_backup_run"
+    unknown_state="this database does not hold set $set_name's row and was not loaded from it (an older restore, or a set this deployment never recorded); restore it by hand (runbook, Restore for real)"
+    if [ "$from" -le 6 ]; then
+        [ "$loaded" = no ] ||
+            refuse "step 6 already loaded set $set_name; run again with --from 7"
+        [ -n "$recorded" ] || refuse "$unknown_state"
+        [ "$manifest_sha" = "$recorded" ] ||
+            refuse "$manifest is not the manifest this deployment recorded for $set_name"
+        echo "    manifest digest matches the recorded set"
+    elif [ "$loaded" = no ]; then
+        [ -z "$recorded" ] || refuse "step 6 has not loaded set $set_name; run again with --from 6"
+        refuse "$unknown_state"
+    fi
+    if [ "$from" -eq 6 ]; then
+        for dir in "$config_dir" "$credentials_dir" "$media_dir"; do
+            [ -d "$dir" ] || refuse "$dir is missing: step 4 did not finish; run again with --from 4"
+        done
+        tar -xOf "$tar" "$record_member" | cmp -s - "$record" ||
+            refuse "$record is not the set's: step 4 did not finish; run again with --from 4"
+    fi
 fi
 
 if [ "$local_mode" -eq 1 ]; then
@@ -602,7 +991,9 @@ else
 fi
 help=$(limited "$LIMIT_QUERY" "the image's command list" "${isolated[@]}" "$image" --help)
 has_command() { grep -qE "[{,]$1[,}]" <<<"$help"; }
-for name in validate-deployment retarget-image collect-static restore-check restore-begin; do
+needed=(validate-deployment retarget-image collect-static restore-check restore-begin)
+[ "$replace" -eq 0 ] || needed+=(database-roles)
+for name in "${needed[@]}"; do
     has_command "$name" ||
         refuse "$image has no $name; restore this set by hand (runbook, Restore limitations in v1)"
 done
@@ -613,18 +1004,20 @@ limited "$LIMIT_OFFLINE" "validate-deployment" "${isolated[@]}" \
     "$image" validate-deployment --config /run/operator.yaml >/dev/null ||
     refuse "the deployment YAML does not load in $image; remove the fields that release does not know (runbook, Rollback)"
 # restore-check reads only the manifest (and, for a set from before #608,
-# the dump), copied into a directory the container's user can read.
+# the dump), copied into a directory the container's user can read; a
+# replacement also reads the set's deployment id from the dump.
 cp "$manifest" "$work/manifest.json"
 check_args=(--manifest /set/manifest.json)
 if ! jq -e 'has("migrations")' "$manifest" >/dev/null; then
-    cp "$dump" "$work/database.pgdump"
     check_args+=(--dump /set/database.pgdump)
+fi
+if [ "${#check_args[@]}" -gt 2 ] || [ "$replace" -eq 1 ]; then
+    cp "$dump" "$work/database.pgdump"
 fi
 chown -R "$owner" "$work"
 status=0
 report=$(limited "$LIMIT_OFFLINE" "restore-check" "${isolated[@]}" \
     --mount "type=bind,source=$work,target=/set,readonly" "$image" restore-check "${check_args[@]}") || status=$?
-rm -f "$work/database.pgdump"
 echo "    restore-check: $report"
 case $status in
     0) ;;
@@ -632,20 +1025,47 @@ case $status in
     4) refuse "the set has the users swap pending; restore it by hand (runbook, step 2)" ;;
     *) refuse "restore-check refused (exit $status)" ;;
 esac
+if [ "$replace" -eq 1 ]; then
+    # The id of the set's one runtime row is the deployment's UUID. Only
+    # the id is kept from pg_restore's output; nothing else is printed.
+    rows=$(limited "$LIMIT_OFFLINE" "reading the set's deployment id" "${isolated[@]}" \
+        --mount "type=bind,source=$work,target=/set,readonly" --entrypoint pg_restore "$image" \
+        --data-only --table=stewardship_system_configuration --file=- /set/database.pgdump) ||
+        refuse "cannot read the set's runtime row from the dump"
+    set_id=$(awk '
+        /^COPY public\.stewardship_system_configuration / {
+            sub(/^[^(]*\(/, ""); sub(/\).*$/, "")
+            n = split($0, columns, ", ")
+            for (i = 1; i <= n; i++) if (columns[i] == "id") column = i
+            copying = 1
+            next
+        }
+        /^\\\.$/ { copying = 0 }
+        copying && column { split($0, fields, "\t"); print fields[column] }
+    ' <<<"$rows")
+    [ "$set_id" = "$uuid" ] || refuse "set $set_name is not deployment $uuid's (its runtime row names another)"
+    echo "    the set's runtime row is deployment $uuid"
+    confirm_typed
+fi
+rm -f "$work/database.pgdump"
 
-# Plaintext copies an earlier run left in the PostgreSQL store go first,
-# so they neither linger nor count against the room below.
-remove_copies || refuse "cannot delete earlier dump copies from the PostgreSQL store"
+if [ "$replace" -eq 0 ] || [ "$from" -ge 5 ]; then
+    # Plaintext copies an earlier run left in the PostgreSQL store go
+    # first, so they neither linger nor count against the room below.
+    if [ "$replace" -eq 0 ] || postgres_running; then
+        remove_copies || refuse "cannot delete earlier dump copies from the PostgreSQL store"
+    fi
+fi
 
 # Room. Each restored tree is moved, not copied, from the staging
 # directory under the runtime root, so every destination must be on the
 # root's filesystem. The extracted files need room there; the dump, its SQL
 # and the load (about twice the database: the new tables and their WAL,
-# while the old ones stay until the commit) need it in the PostgreSQL
-# store; summed when the two share a filesystem. Step 6 checks again with
-# the real SQL size.
+# while the old ones stay until the commit; on a new host, about twice the
+# SQL) need it in the PostgreSQL store; summed when the two share a
+# filesystem. Step 6 checks again with the real SQL size.
 kib() { echo $((($1 + 1023) / 1024)); }
-available() { df -Pk "$1" | awk 'NR == 2 { print $4, $6 }'; }
+available() { df -Pk "$(existing "$1")" | awk 'NR == 2 { print $4, $6 }'; }
 read -r free_root mount_root <<<"$(available "$root")"
 if [ "$from" -le 4 ]; then
     for dir in "$config_dir" "$credentials_dir" "$media_dir"; do
@@ -662,9 +1082,15 @@ fi
 need_root=0 need_store=0
 [ "$from" -gt 4 ] || need_root=$(($(kib "$(wc -c <"$tar")") + MARGIN_KIB))
 if [ "$from" -le 6 ]; then
-    database_bytes=$(query "SELECT pg_database_size(current_database())")
-    [[ $database_bytes =~ ^[0-9]+$ ]] || refuse "cannot read the database's size"
-    need_store=$(($(kib "$(wc -c <"$dump")") * (SQL_FACTOR + 1) + 2 * $(kib "$database_bytes") + MARGIN_KIB))
+    dump_kib=$(kib "$(wc -c <"$dump")")
+    if [ "$replace" -eq 1 ]; then
+        load_kib=$((2 * dump_kib * SQL_FACTOR))
+    else
+        database_bytes=$(query "SELECT pg_database_size(current_database())")
+        [[ $database_bytes =~ ^[0-9]+$ ]] || refuse "cannot read the database's size"
+        load_kib=$((2 * $(kib "$database_bytes")))
+    fi
+    need_store=$((dump_kib * (SQL_FACTOR + 1) + load_kib + MARGIN_KIB))
 fi
 read -r free_store mount_store <<<"$(available "$store_dir")"
 if [ "$mount_root" = "$mount_store" ]; then
@@ -677,15 +1103,10 @@ fi
     refuse "$mount_store has ${free_store} KiB free; the dump, its SQL and the load need ${need_store} KiB"
 
 # Collected while the site still serves, as an upgrade does; moved in at
-# step 7. cache/static.next is this command's own staging tree.
-rm -rf "$static_dir.next"
-mkdir -m 0700 "$static_dir.next"
-chown "$owner" "$static_dir.next"
-limited "$LIMIT_OFFLINE" "collect-static" "${isolated[@]}" \
-    --mount "type=bind,source=$static_dir.next,target=$static_dir.next" \
-    "$image" collect-static --destination "$static_dir.next" | tail -1
+# step 7. A new host's full run (or --from 4) collects them in step 3,
+# once cache/ exists.
+if [ "$replace" -eq 0 ] || [ "$from" -ge 5 ]; then collect_static; fi
 
-step "1. Stopping every online service"
 backup_running() {
     # The running backup-worker's container ids; a failed listing refuses.
     limited "$LIMIT_QUERY" "listing backup-worker" docker ps --quiet \
@@ -693,25 +1114,58 @@ backup_running() {
         --filter "label=com.docker.compose.service=backup-worker" ||
         refuse "cannot list running backup-worker containers"
 }
-waited=$(date -u +%s)
-while :; do
+if [ "$replace" -eq 0 ] || [ "$from" -ge 5 ]; then
+    # A new host (a replacement's steps 3 and 4) has nothing to stop: the
+    # checks found no container of the project.
+    step "1. Stopping every online service"
+    waited=$(date -u +%s)
+    while :; do
+        backups=$(backup_running)
+        [ -n "$backups" ] || break
+        if [ "$(($(date -u +%s) - waited))" -ge "$LIMIT_BACKUP_WAIT" ]; then
+            echo "TIMEOUT: waiting for the running backup-worker gave up after $(($(date -u +%s) - waited))s (limit ${LIMIT_BACKUP_WAIT}s)"
+            refuse "a backup is still running; run again after it finishes"
+        fi
+        echo "    a backup-worker is running; waiting"
+        sleep 10
+    done
+    phase=stopped
+    services_list=$(limited "$LIMIT_QUERY" "listing services" "${dc[@]}" config --services)
+    # shellcheck disable=SC2207 # service names hold no whitespace
+    online=($(grep -vxE 'postgres|valkey' <<<"$services_list" || true))
+    [ "${#online[@]}" -gt 0 ] || refuse "$compose lists no online services"
+    limited "$LIMIT_STOP" "stopping the online services" "${dc[@]}" stop "${online[@]}"
     backups=$(backup_running)
-    [ -n "$backups" ] || break
-    if [ "$(($(date -u +%s) - waited))" -ge "$LIMIT_BACKUP_WAIT" ]; then
-        echo "TIMEOUT: waiting for the running backup-worker gave up after $(($(date -u +%s) - waited))s (limit ${LIMIT_BACKUP_WAIT}s)"
-        refuse "a backup is still running; run again after it finishes"
+    [ -z "$backups" ] || refuse "a backup-worker started meanwhile; run again after it finishes"
+fi
+
+if [ "$replace" -eq 1 ] && [ "$from" -le 4 ]; then
+    phase=stopped
+    current=3
+    step "3. Preparing this host"
+    prepare() {
+        # One runtime directory, owned by the deployment and private.
+        [ -d "$1" ] || mkdir -p "$1"
+        chmod 0700 "$1"
+        chown "$owner" "$1"
+    }
+    for name in root backups cache logs reports run persistent_root caddy postgresql valkey; do
+        prepare "$(path "$name")"
+    done
+    prepare "$(path caddy)/config"
+    prepare "$(path caddy)/data"
+    lock=$(path run)/startup.lock
+    if [ -e "$lock" ] || [ -L "$lock" ]; then
+        if ! { [ -f "$lock" ] && [ ! -L "$lock" ] && [ "$(cat "$lock")" = parishkit-stewardship-startup-v1 ]; }; then
+            refuse "$lock is not the startup interlock's file"
+        fi
+    else
+        (umask 077 && printf 'parishkit-stewardship-startup-v1\n' >"$lock")
     fi
-    echo "    a backup-worker is running; waiting"
-    sleep 10
-done
-phase=stopped
-services_list=$(limited "$LIMIT_QUERY" "listing services" "${dc[@]}" config --services)
-# shellcheck disable=SC2207 # service names hold no whitespace
-online=($(grep -vxE 'postgres|valkey' <<<"$services_list" || true))
-[ "${#online[@]}" -gt 0 ] || refuse "$compose lists no online services"
-limited "$LIMIT_STOP" "stopping the online services" "${dc[@]}" stop "${online[@]}"
-backups=$(backup_running)
-[ -z "$backups" ] || refuse "a backup-worker started meanwhile; run again after it finishes"
+    chmod 0600 "$lock"
+    chown "$owner" "$lock"
+    collect_static
+fi
 
 move_aside() {
     # Move a path aside under a name that does not exist yet; never delete.
@@ -735,11 +1189,25 @@ if [ "$from" -le 4 ]; then
     rmdir "$stage"
     stage=""
 fi
-current=6
 [ -f "$compose" ] || refuse "the restored files have no $compose"
 
+if [ "$replace" -eq 1 ] && [ "$from" -le 5 ]; then
+    current=5
+    step "5. Starting postgres and valkey and creating the roles"
+    limited "$LIMIT_START" "starting postgres and valkey" "${dc[@]}" up --detach --wait postgres valkey
+    oneoff "database-roles" database-provision database-roles \
+        --config "$services/database-provision.yaml" --confirm-deployment "$uuid"
+    marker=$(query "SELECT shobj_description(oid, 'pg_database') FROM pg_database WHERE datname = current_database()")
+    [ "$marker" = "parishkit-stewardship:$uuid" ] ||
+        refuse "the database's provisioning marker is not deployment $uuid's after database-roles"
+fi
+
+current=6
 if [ "$from" -le 6 ]; then
     step "6. Restoring the database (one transaction)"
+    # A new host's store may hold copies an interrupted run left before
+    # postgres ran for the checks to delete them.
+    [ "$replace" -eq 0 ] || remove_copies || refuse "cannot delete earlier dump copies from the PostgreSQL store"
     # Every copy is written by the postgres container's own user on disk in
     # its store, beside its data directory and never inside it (never the
     # memory-backed /tmp), and deleted on any outcome (finish).
@@ -769,10 +1237,18 @@ if [ "$from" -le 6 ]; then
         limited "$LIMIT_QUERY" "writing the load marker" "${pg[@]}" sh -c "umask 077 && cat > $inside/suffix.sql"
     # Room again, now that the SQL is on disk at its real size: the load
     # needs about twice the database (the new tables and their WAL, while
-    # the old ones stay until the commit).
-    database_bytes=$(query "SELECT pg_database_size(current_database())")
-    [[ $database_bytes =~ ^[0-9]+$ ]] || refuse "cannot read the database's size"
-    need=$((2 * $(kib "$database_bytes") + MARGIN_KIB))
+    # the old ones stay until the commit); on a new host, whose database is
+    # empty, about twice the SQL.
+    if [ "$replace" -eq 1 ]; then
+        sql_bytes=$(limited "$LIMIT_QUERY" "measuring the SQL" "${pg[@]}" sh -c "wc -c < $inside/restore.sql" </dev/null)
+        sql_bytes=${sql_bytes//[[:space:]]/}
+        [[ $sql_bytes =~ ^[0-9]+$ ]] || refuse "cannot read the converted SQL's size"
+        need=$((2 * $(kib "$sql_bytes") + MARGIN_KIB))
+    else
+        database_bytes=$(query "SELECT pg_database_size(current_database())")
+        [[ $database_bytes =~ ^[0-9]+$ ]] || refuse "cannot read the database's size"
+        need=$((2 * $(kib "$database_bytes") + MARGIN_KIB))
+    fi
     read -r free_store mount_store <<<"$(available "$store_dir")"
     [ "$free_store" -ge "$need" ] ||
         refuse "$mount_store has ${free_store} KiB free beside the converted SQL; the load needs ${need} KiB"
@@ -789,21 +1265,18 @@ if [ "$from" -le 6 ]; then
 fi
 
 current=7
-oneoff() {
-    # oneoff WHAT SERVICE ARGS...: a named `docker compose run` one-off, so a
-    # time limit can remove the container itself.
-    local what=$1
-    shift
-    oneoff_name=$project-restore-$stamp-$1
-    limited "$LIMIT_OFFLINE" "$what" "${dc[@]}" run --name "$oneoff_name" --rm -T "$@"
-    oneoff_name=""
-}
 step "7. Pointing at $image"
 limited "$LIMIT_OFFLINE" "retarget-image" "${isolated[@]}" \
     --mount "type=bind,source=$root,target=$root" \
     --mount "type=bind,source=$yaml,target=/run/operator.yaml,readonly" \
     "$image" retarget-image --config /run/operator.yaml --image "$image"
-[ "$local_mode" -eq 1 ] || limited "$LIMIT_PULL" "docker compose pull" "${dc[@]}" pull --quiet
+if [ "$drill" -eq 1 ]; then
+    # The image is here from the checks; a drill fetches nothing more
+    # than step 5's postgres and valkey images (the host's own pulls).
+    echo "    drill: no pull (the image is already here)"
+elif [ "$local_mode" -eq 0 ]; then
+    limited "$LIMIT_PULL" "docker compose pull" "${dc[@]}" pull --quiet
+fi
 move_aside "$static_dir"
 mv "$static_dir.next" "$static_dir"
 if has_command revoke-automation-sessions; then
@@ -816,8 +1289,58 @@ oneoff "restore-begin" admin-recovery restore-begin \
     --config "$services/admin-recovery.yaml" --backup-at "$set_name"
 
 current=8
-step "8. Starting web and caddy for the Restore review"
-limited "$LIMIT_START" "starting web and caddy" "${dc[@]}" up --detach --wait web caddy
+if [ "$drill" -eq 1 ]; then
+    step "8. Starting web alone, with no route out (drill)"
+    # Created, cut off from every network that is not internal, checked,
+    # and only then started: web never has a route to a mail provider,
+    # Google or ParishSoft, and no published port.
+    limited "$LIMIT_START" "creating web" "${dc[@]}" create web
+    web_id=$(limited "$LIMIT_QUERY" "finding web" "${dc[@]}" ps --all --quiet web)
+    [ -n "$web_id" ] || refuse "docker compose created no web container"
+    # From here a refusal removes web (finish).
+    created_web=$web_id
+    networks() {
+        # The names of web's networks, one a line (a Go template).
+        # shellcheck disable=SC2016
+        limited "$LIMIT_QUERY" "listing web's networks" docker inspect \
+            --format '{{range $name, $network := .NetworkSettings.Networks}}{{println $name}}{{end}}' "$web_id"
+    }
+    internal() {
+        [ "$(limited "$LIMIT_QUERY" "inspecting network $1" docker network inspect --format '{{.Internal}}' "$1")" = true ]
+    }
+    isolated_web() {
+        # web is on internal networks only and publishes nothing.
+        local network published names
+        names=$(web_networks) || exit 1
+        for network in $names; do
+            internal "$network" || refuse "web is on $network, which is not internal"
+        done
+        published=$(limited "$LIMIT_QUERY" "listing web's ports" docker inspect \
+            --format '{{len .HostConfig.PortBindings}} {{.HostConfig.PublishAllPorts}}' "$web_id")
+        [ "$published" = "0 false" ] || refuse "web publishes a port ($published)"
+    }
+    web_networks() {
+        # web's networks, captured so a failed listing refuses rather than
+        # leaving an empty loop that checks nothing; web always has one.
+        local names
+        names=$(networks) || refuse "cannot list web's networks"
+        [ -n "${names//[[:space:]]/}" ] || refuse "web is on no network; docker compose created it wrongly"
+        echo "$names"
+    }
+    names=$(web_networks) || exit 1
+    for network in $names; do
+        internal "$network" && continue
+        limited "$LIMIT_QUERY" "disconnecting web from $network" docker network disconnect "$network" "$web_id"
+        echo "    disconnected web from $network"
+    done
+    isolated_web
+    limited "$LIMIT_START" "starting web" docker start "$web_id" >/dev/null
+    # And again once it runs: nothing may have joined it on the way.
+    isolated_web
+else
+    step "8. Starting web and caddy for the Restore review"
+    limited "$LIMIT_START" "starting web and caddy" "${dc[@]}" up --detach --wait web caddy
+fi
 healthy=0
 for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
     if limited "$LIMIT_QUERY" "web's health check" "${dc[@]}" exec -T web \
@@ -828,6 +1351,25 @@ for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
     [ "$attempt" -eq 12 ] || sleep 5
 done
 [ "$healthy" -eq 1 ] || refuse "web did not turn healthy; see docker compose ... logs web"
+if [ "$drill" -eq 1 ]; then
+    # Nothing but the three may exist on a drill host.
+    created=$(limited "$LIMIT_QUERY" "listing the project's containers" docker ps --all \
+        --filter "label=com.docker.compose.project=$project" \
+        --format '{{.Label "com.docker.compose.service"}}' | sort -u)
+    extra=$(grep -vxE 'postgres|valkey|web' <<<"$created" || true)
+    [ -z "$extra" ] || refuse "the drill host has other containers ($extra); stop them and destroy the host"
+    step "Drill: restored set $set_name with $image; web is healthy with no route out."
+    cat <<'EOF'
+Next, by hand (runbook, Restore drill and step 10):
+  - Record the date, the set, the manifest digest, the restore-check
+    report and the outcome (no host addresses or deployment identifiers).
+  - Never start caddy, the scheduler, worker, mail-dispatch, installers or
+    backup-worker here, nor install any cron job.
+  - Destroy this host and its disks, then delete the decrypted copies on
+    the machine that holds the key.
+EOF
+    exit 0
+fi
 step "Restored set $set_name with $image; web is healthy."
 cat <<'EOF'
 Next, by hand (runbook, Restore for real, steps 8-10):
