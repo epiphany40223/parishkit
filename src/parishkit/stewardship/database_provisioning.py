@@ -442,11 +442,14 @@ def provision_grants(configuration, deployment_id):
     still pending, so a definer routine, a table or a column one of those
     migrations adds is not granted yet (``pending_functions``,
     ``pending_tables``, ``pending_columns``); the grants after the full
-    migration add it.
+    migration add it. A column grant one of those migrations revokes is
+    still held there, so it is tolerated, never granted, until then
+    (``pending_revokes``).
     """
     from .runtime_grants import (
         pending_columns,
         pending_functions,
+        pending_revokes,
         pending_tables,
         runtime_functions,
         runtime_grants,
@@ -500,7 +503,12 @@ def provision_grants(configuration, deployment_id):
             if role is ServiceRole.BACKUP_WORKER:
                 _admit_reader(cursor, login, tables, columns)
             else:
-                _admit_existing_grants(cursor, login, tables, columns)
+                _admit_existing_grants(
+                    cursor,
+                    login,
+                    tables,
+                    _with_tolerated(columns, pending_revokes(role, applied)),
+                )
             for table, privileges in tables.items():
                 cursor.execute(
                     sql.SQL("GRANT {} ON public.{} TO {}").format(
@@ -531,6 +539,18 @@ def provision_grants(configuration, deployment_id):
                     )
                 )
     return {"database_grants_provisioned": True}
+
+
+def _with_tolerated(columns, tolerated):
+    """A copy of ``columns`` that also admits the ``tolerated`` column grants."""
+    admitted = {
+        table: {privilege: set(names) for privilege, names in privileges.items()}
+        for table, privileges in columns.items()
+    }
+    for table, privileges in tolerated.items():
+        for privilege, names in privileges.items():
+            admitted.setdefault(table, {}).setdefault(privilege, set()).update(names)
+    return admitted
 
 
 def _writer_guard_digest():

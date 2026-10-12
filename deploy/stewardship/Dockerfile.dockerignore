@@ -97,6 +97,7 @@
 !src/parishkit/stewardship/schema/migrations/0070_ministry_leader_changes.sql
 !src/parishkit/stewardship/schema/migrations/0071_comparison_exports.sql
 !src/parishkit/stewardship/schema/migrations/0072_digest_comparison.sql
+!src/parishkit/stewardship/schema/migrations/0073_dispatch_token_access.sql
 !src/parishkit/stewardship/schema/due_work_health.sql
 !src/parishkit/stewardship/schema/family_dispatch.sql
 !src/parishkit/stewardship/schema/production.sql

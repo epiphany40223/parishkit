@@ -343,6 +343,13 @@ COMPARISON_FUNCTION = "stewardship_campaign_comparison_v1(uuid, date, numeric[],
 ARCHIVE_RENEWAL_FUNCTION = (
     "stewardship_campaign_archive_renewal_v1(uuid, uuid, integer)"
 )
+# Mail dispatch's one token read (#389 L1): the ciphertext and digest of
+# one unsent Family message's own link token, only while the caller's
+# delivery task for that message is live. Mail dispatch holds the token
+# private key, so it has no read grant on the ciphertext columns themselves.
+DISPATCH_TOKEN_FUNCTION = (
+    "stewardship_dispatch_family_token_v1(uuid, uuid, uuid, bigint, uuid)"
+)
 # Each definer routine above that a migration in the users swap's closure
 # creates (#952), with that migration. `migrate --users-upgrade-base` leaves
 # the closure pending, and database-grants runs on that base before the
@@ -368,6 +375,8 @@ CLOSURE_FUNCTIONS = {
     ),
     # Ministry leader changes (0070, #1034) follow 0069.
     LEADER_CHANGES_FUNCTION: ("stewardship_accounts", "0018_leader_changes"),
+    # Mail dispatch's one token read (0073, #389 L1) follows 0072.
+    DISPATCH_TOKEN_FUNCTION: ("stewardship_jobs", "0025_dispatch_token_access"),
 }
 
 
@@ -419,6 +428,25 @@ CLOSURE_COLUMNS = {
 }
 
 
+# Column grants an earlier release declared that a migration in the users
+# swap's closure revokes, with that migration: role -> table -> privilege ->
+# columns. On the users upgrade's base the login still holds them, and this
+# release no longer declares them, so database-grants tolerates exactly
+# these (never grants them) until their migration is applied
+# (``pending_revokes``); the migration then revokes them, and the grants
+# after the full migration admit only what is declared.
+CLOSURE_REVOKES = {
+    ("stewardship_jobs", "0025_dispatch_token_access"): {
+        ServiceRole.MAIL_DISPATCH: {
+            "stewardship_family_token": {"SELECT": frozenset({"ciphertext"})},
+            "stewardship_rehearsal_credential": {
+                "SELECT": frozenset({"token_ciphertext"})
+            },
+        },
+    },
+}
+
+
 def pending_functions(applied):
     """The registry routines whose creating migration is not in ``applied``.
 
@@ -447,6 +475,25 @@ def pending_columns(applied):
     )
 
 
+def pending_revokes(role, applied):
+    """The column grants ``role`` may still hold until a pending revoke applies.
+
+    ``applied`` is the ``(app, name)`` pairs of ``django_migrations``; the
+    answer has ``runtime_grants``' column shape (table -> privilege ->
+    columns), for admission only.
+    """
+    tolerated = {}
+    for migration, roles in CLOSURE_REVOKES.items():
+        if migration in applied:
+            continue
+        for table, privileges in roles.get(role, {}).items():
+            for privilege, names in privileges.items():
+                tolerated.setdefault(table, {}).setdefault(privilege, set()).update(
+                    names
+                )
+    return tolerated
+
+
 def runtime_functions(role, *, target=None):
     """Return the definer routines this login may EXECUTE.
 
@@ -470,6 +517,8 @@ def runtime_functions(role, *, target=None):
     leaders who are no user yet for the Users page's import. Web reads the
     campaign comparison report's aggregates (#1018), and so does the general
     worker, for the daily digest's Compared with past campaigns section.
+    Mail dispatch reads the one link token of a Family message it holds a
+    live delivery claim on (#389 L1).
     """
     role = _identity_role(role, target)
     if role is ServiceRole.CREDENTIAL_INSTALLER:
@@ -496,6 +545,7 @@ def runtime_functions(role, *, target=None):
                 MINISTRY_CATALOG_FUNCTION,
                 LEADER_CHANGES_FUNCTION,
             },
+            ServiceRole.MAIL_DISPATCH: {DISPATCH_TOKEN_FUNCTION},
             ServiceRole.WORKER: {
                 SESSION_PURGE_FUNCTION,
                 READ_GUARD_KILLS_FUNCTION,
