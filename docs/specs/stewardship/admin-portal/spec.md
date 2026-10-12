@@ -1927,10 +1927,11 @@ The command line offers the same schedule, validation and preview (see the
 ### Ministry activity management
 
 Admins can mark a Ministry inactive or reactivate it through an Admin web
-screen. The screen lists the current Ministry catalog with name, Ministry
-DUID, local active/inactive state and campaign inclusion, and supports
-searching and filtering by name, DUID and status, in a shared
-[Admin table](../ui-conventions/spec.md#admin-tables).
+screen. The screen lists the current Ministry catalog with name, local
+active/inactive state and campaign inclusion, and supports searching by name
+and filtering by status, in a shared
+[Admin table](../ui-conventions/spec.md#admin-tables); it shows no Ministry
+DUID ([table column order](../ui-conventions/spec.md#table-column-order)).
 Admins select one or more Ministries and activate or inactivate them together.
 Saves use the ordinary versioned YAML configuration-request workflow, with
 optimistic concurrency, an impact preview (shown in the
@@ -2052,7 +2053,9 @@ The Admin home page shows Administrators with configuration access a
 "ParishSoft Ministry changes" panel listing the changes recorded by promoted
 snapshots from the last seven days (at most five refreshes, newest first). A
 rename shows the old and the new full names and reads nothing into either
-(#971). The panel links to Ministry activity, where an Administrator can mark
+(#971). Every entry names its Ministry and never shows its DUID
+([table column order](../ui-conventions/spec.md#table-column-order)). The
+panel links to Ministry activity, where an Administrator can mark
 a retired Ministry inactive.
 
 While the current campaign is in draft, scheduled or open, entries for
@@ -2103,8 +2106,8 @@ A closed or archived campaign's selections never change.
 
 The review lists each added and removed Ministry, with each one's submitted
 answers (current join and stop requests) and open follow-up requests (the
-removed Ministries' table has Ministry, Ministry DUID in its own column, then
-the two counts), and the number of Families with a form open now. Every
+removed Ministries' table has Ministry, then the two counts; each Ministry
+is named, never shown by its DUID), and the number of Families with a form open now. Every
 open form lists every offered Ministry, so all of those Families get the
 usual changed-baseline review before they can submit; the review cannot be
 narrowed to fewer Families. No mail is
@@ -4333,7 +4336,10 @@ default Name the new user gets), Member DUID, Email, Ministries led (a short
 list cut off with a count, such as "Choir, Ushers and 3 more") and Role,
 which is always Ministry leader. The import review's table heads the same
 column Member too, so each Member DUID follows its Member. Member, Member
-DUID and Email sort; Member is the default order.
+DUID and Email sort; Member is the default order. The Member DUID stays here
+at the Administrator's request (2026-10-12, pk-local batch 12,
+[#932](https://github.com/epiphany40223/parishkit/issues/932#issuecomment-6135336883)):
+it helps staff find a leader in ParishSoft.
 
 **Import selected** and **Import all** are available only while there is
 something to import (and Import selected only while a row is selected). The
@@ -4717,11 +4723,10 @@ The queue's columns follow the shared
 [table column order](../ui-conventions/spec.md#table-column-order)
 ([#932](https://github.com/epiphany40223/parishkit/issues/932)): Member (the
 row header, linking to the request), Member DUID, Ministry, Request (Join
-or Leave), Status and Last contact. It has no Ministry DUID or Submitted
-column (Administrator decision, 2026-10-11,
-[#1064](https://github.com/epiphany40223/parishkit/issues/1064)), a
-[recorded exception](../ui-conventions/spec.md#table-column-order) to the
-DUID rule, so the table is narrower; the request page shows when the
+or Leave), Status and Last contact. Like every Admin table it has no
+Ministry DUID, and it has no Submitted column (Administrator decision,
+2026-10-11, [#1064](https://github.com/epiphany40223/parishkit/issues/1064)),
+so the table is narrower; the request page shows when the
 request was submitted. A Member added
 on the form is not in ParishSoft yet, so their Member DUID reads "New
 Member". The installed selection orders the rows and returns each request's
@@ -4880,7 +4885,7 @@ and **Ministry** narrows it to one Ministry (a closed DUID value, no schema
 change). Its columns follow the
 [table column order](../ui-conventions/spec.md#table-column-order): Member,
 Member DUID ("New Member" for a Member added on the form), Family, Family
-DUID, Ministry, Ministry DUID, Request (Join or Leave), Resolved, Resolved by,
+DUID, Ministry, Request (Join or Leave), Resolved, Resolved by,
 Replaced by a later response (Yes when the Family answered again after the
 change was resolved), Entered in ParishSoft (Yes or Not yet), Entered by and
 Entered at, with the tick last; a resolver or marker whose portal user is
@@ -6011,8 +6016,10 @@ Only Admins access the combined log screen. It supports:
   narrower date range or the other order; and
 - CSV, XLSX or JSON Lines export of the filtered result (below).
 
-Ministry filtering takes a Ministry DUID and matches an entry whose detail
-names it as `ministry_duid` or in any sorted Ministry list, so it includes both
+Ministry filtering offers each Ministry of the current ParishSoft catalog by
+name (an inactive one marked "(inactive)") and never shows its DUID; the chosen Ministry's DUID (the filter's value,
+also in a link) matches an entry whose detail names it as `ministry_duid` or
+in any sorted Ministry list, so it includes both
 interactive event identifiers and the
 [retained export result scope](../reports/spec.md#ministry-change-summary),
 including after campaign-detail purge. ADM-08/RPT-09 own this log-query

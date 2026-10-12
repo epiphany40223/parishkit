@@ -26,7 +26,9 @@ PAGE_SIZE = 50
 # The installed selection (stewardship_ministry_report_v3, migration 0064,
 # through its actor-scoped stewardship_ministry_report_v4) orders and pages the
 # rows, so a heading can only choose one of its sort values. The summary sorts
-# by Ministry name or Ministry DUID (#960); Joining, Leaving, Unresolved and
+# by Ministry name or Ministry DUID (#960); the page shows no Ministry DUID
+# and so offers only the name heading (#1123), while the command line keeps
+# the DUID order. Joining, Leaving, Unresolved and
 # Follow-up progress are not sortable because the selection has no order for
 # them. Detail rows sort by Member name, Member DUID (a Member added on the
 # form, with no DUID yet, last either way) or submission time; the status and

@@ -120,8 +120,8 @@ def test_request_details_lead_with_member_and_member_duid():
     assert "DUID 12345" not in table
 
 
-def test_summary_puts_the_ministry_duid_in_its_own_column():
-    """The summary's Ministry name heads the row; its DUID follows alone."""
+def test_summary_names_each_ministry_without_its_duid():
+    """The summary's Ministry name heads the row; no Ministry DUID (#1123)."""
     summary = {
         "name": "Food pantry",
         "duid": 9,
@@ -135,21 +135,47 @@ def test_summary_puts_the_ministry_duid_in_its_own_column():
     html = ministry_page([], summaries=[summary])
     start = html.index("Current Ministry request summary")
     table = html[start : html.index("</table>", start)]
-    assert in_order(
-        table, 'class="numeric" data-sort-column="ministry_duid"', ">Joining</th>"
-    )
-    row = '<th scope="row">Food pantry<br>Active</th>\n<td class="numeric">9</td>'
-    assert row in table
-    assert "— DUID" not in table
+    assert in_order(table, 'data-sort-column="ministry"', ">Joining</th>")
+    assert '<th scope="row">Food pantry<br>Active</th>' in table
+    assert "DUID" not in table and 'class="numeric">9<' not in table
 
 
-def test_campaign_ministries_review_splits_the_ministry_duid():
-    """Ministries to remove: Ministry, Ministry DUID, then the counts."""
+def test_one_ministrys_export_line_names_the_ministry():
+    """One Ministry's export line names it, never its DUID (#1123)."""
+    summary = {
+        "name": "Food pantry",
+        "duid": 9,
+        "active": True,
+        "in_campaign": True,
+        "joining": 1,
+        "leaving": 0,
+        "unresolved": 1,
+        "progress": "0 of 1",
+    }
+    html = ministry_page([], summaries=[summary], ministry_id=9)
+    count = html[html.index('id="ministry-export-count"') :]
+    count = count[: count.index("</p>")]
+    assert "Prospective joiners — Food pantry." in count
+    assert "DUID" not in count
+
+
+def test_one_ministrys_export_line_without_its_summary():
+    """When the filters hide the Ministry's summary row, the line says so
+    rather than printing an empty name."""
+    html = ministry_page([], summaries=[], ministry_id=9)
+    count = html[html.index('id="ministry-export-count"') :]
+    count = count[: count.index("</p>")]
+    assert "Prospective joiners — Unavailable for these filters." in count
+    assert "— ." not in count
+
+
+def test_campaign_ministries_review_names_ministries_without_duids():
+    """Ministries to add and remove are named, never shown by DUID (#1123)."""
     html = render_to_string(
         "stewardship/campaign-ministries-review.html",
         {
             "review": {
-                "added": [],
+                "added": [{"name": "Choir", "duid": 8, "answers": 0}],
                 "removed": [
                     {"name": "Food pantry", "duid": 9, "answers": 1, "open": 1}
                 ],
@@ -157,12 +183,11 @@ def test_campaign_ministries_review_splits_the_ministry_duid():
             },
         },
     )
-    assert in_order(
-        html, ">Ministry</th>", '"numeric">Ministry DUID</th>', ">Submitted answers"
-    )
-    row = '<th scope="row">Food pantry</th><td class="numeric">9</td>'
-    row += "<td>1</td><td>1</td>"
+    assert in_order(html, ">Ministry</th>", ">Submitted answers")
+    assert "<li>Choir</li>" in html
+    row = '<th scope="row">Food pantry</th><td>1</td><td>1</td>'
     assert row in html
+    assert "DUID" not in html
 
 
 def test_packet_choices_are_labelled_by_full_name_only():

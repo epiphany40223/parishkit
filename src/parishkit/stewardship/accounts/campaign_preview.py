@@ -2,8 +2,6 @@
 
 from django.utils.translation import gettext_lazy as _
 
-from parishkit.stewardship.web.presentation import duid
-
 LABELS = {
     "name": _("Campaign name"),
     "year_label": _("Stewardship year label"),
@@ -34,16 +32,15 @@ SLOTS = {
 
 
 def _choices(ids, choices):
-    """Keep missing retained source IDs visible without inventing a replacement."""
+    """Name each chosen Ministry or fund, never its DUID (#1123).
+
+    A retained ID with no current choice stays visible as "Unavailable", so
+    the review still counts it, without inventing a replacement name.
+    """
     names = dict(choices)
-    return ", ".join(
-        _("%(name)s (DUID %(duid)s)")
-        % {
-            "name": names.get(str(key), _("Unavailable")),
-            "duid": duid(key),
-        }
-        for key in ids
-    ) or str(_("None"))
+    return ", ".join(str(names.get(str(key), _("Unavailable"))) for key in ids) or str(
+        _("None")
+    )
 
 
 def display_value(key, value, *, ministries=(), funds=()):

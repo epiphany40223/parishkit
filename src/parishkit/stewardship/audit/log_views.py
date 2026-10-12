@@ -17,10 +17,14 @@ from django.views.decorators.http import require_http_methods
 from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.authentication import runtime
 from parishkit.stewardship.accounts.limiting import LimiterUnavailable
+from parishkit.stewardship.accounts.ministry_activity import active_ministries
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.jobs.ownership import database_now
+from parishkit.stewardship.source.catalog_names import ministry_display_name
+from parishkit.stewardship.source.ministry_catalog import catalog_names
+from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.web.contracts import MESSAGES, ErrorCode
 from parishkit.stewardship.web.dates import UnknownZone
 from parishkit.stewardship.web.exports import download_headers, page_download
@@ -96,6 +100,44 @@ def _principal(request, store, *, final=False):
     return actor
 
 
+def choice_labels(names, active):
+    """``(DUID, label)`` pairs in label order from ``{DUID: name}``.
+
+    A Ministry outside ``active`` (marked inactive in the Admin portal) reads
+    "Name (inactive)", so it is told apart from an active Ministry of the
+    same name without showing either DUID (#1123). Two active Ministries
+    with one name keep one label: the DUID is never the tie-breaker.
+    """
+    choices = [
+        (duid, name if duid in active else _("%(name)s (inactive)") % {"name": name})
+        for duid, name in names.items()
+    ]
+    return sorted(choices, key=lambda choice: (str(choice[1]).casefold(), choice[0]))
+
+
+def ministry_choices(configuration):
+    """The promoted ParishSoft Ministries as ``(DUID, label)`` pairs, by label.
+
+    The Ministry filter matches the DUID entries record, but staff choose a
+    Ministry by its name and never see the DUID (#1123). Activity comes from
+    ``configuration``'s applied document, as on the Ministries page. With no
+    promoted snapshot there is nothing to choose from.
+    """
+    current = SourceCurrent.objects.first()
+    if current is None or current.snapshot_id is None:
+        return []
+    names = {
+        duid: ministry_display_name(duid, raw)
+        for duid, raw in catalog_names(current.snapshot_id).items()
+    }
+    active = active_ministries(
+        configuration.active_configuration.canonical_document,
+        organization_id=current.organization_id,
+        catalog_duids=frozenset(names),
+    )
+    return choice_labels(names, active)
+
+
 @require_http_methods(["GET", "POST"])
 def logs(request):
     """Capture a bounded page, render outside the transaction, then recheck.
@@ -124,6 +166,7 @@ def logs(request):
                 return _error(ErrorCode.UNAVAILABLE, 503)
             through = query.snapshot or database_now()
             table, depth_limited = load_page(query, through=through, mark_related=True)
+            ministries = ministry_choices(configuration)
         response = render(
             request,
             "stewardship/logs.html",
@@ -132,6 +175,7 @@ def logs(request):
                 table,
                 depth_limited=depth_limited,
                 linked=linked and bool(request.GET),
+                ministries=ministries,
             ),
         )
         with transaction.atomic():

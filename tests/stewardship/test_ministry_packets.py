@@ -314,22 +314,22 @@ def test_xlsx_has_one_literal_sheet_per_ministry_with_safe_distinct_names():
         "Report information",
     ]
     choir = book["Choir"]
-    # Pinned independently of the renderer: six header lines, one blank row,
-    # then headings on row 8. A header line added or lost must fail here.
-    assert [choir.cell(row, 1).value for row in range(1, 8)] == [
+    # Pinned independently of the renderer: five header lines, one blank row,
+    # then headings on row 7. A header line added or lost must fail here. The
+    # Ministry is named, with no Ministry DUID line (#1123).
+    assert [choir.cell(row, 1).value for row in range(1, 7)] == [
         "Ministry",
-        "Ministry DUID",
         "Chairs",
         "Stewardship campaign",
         "Stewardship year",
         "Stewardship period",
         None,
     ]
-    assert [cell.value for cell in choir[8]] == list(HEADINGS)
-    assert choir.cell(9, 1).value == "=Example Member"
-    assert choir.cell(9, 1).data_type == "s"  # A literal string, never a formula.
+    assert [cell.value for cell in choir[7]] == list(HEADINGS)
+    assert choir.cell(8, 1).value == "=Example Member"
+    assert choir.cell(8, 1).data_type == "s"  # A literal string, never a formula.
     # A selected but empty Ministry has its header and headings, no request rows.
-    assert book["Bereavement"].max_row == 8
+    assert book["Bereavement"].max_row == 7
     # An empty packet is still a valid workbook carrying its provenance.
     assert load_workbook(io.BytesIO(rendered(packet([]), "xlsx"))).sheetnames == [
         "Report information"
@@ -361,8 +361,8 @@ def test_pdf_starts_each_ministry_on_a_new_page_and_keeps_all_text():
     ]
     assert infos == [
         "About this report",
-        "Altar Servers (DUID 4)",
-        "Choir (DUID 9)",
+        "Altar Servers",
+        "Choir",
     ]
     assert all(title in firsts for title in infos)
     text = "\n".join(text for _, text in card_text(packet_records(document)))
@@ -437,7 +437,7 @@ def test_new_members_read_new_member_in_every_format():
     book = load_workbook(io.BytesIO(rendered(document, "xlsx")))
     try:
         cells = [
-            [row[duid] for row in book[name].iter_rows(min_row=9, values_only=True)]
+            [row[duid] for row in book[name].iter_rows(min_row=8, values_only=True)]
             for name in ("Choir", "Ushers")
         ]
         values = [
@@ -487,7 +487,7 @@ def test_xlsx_refuses_a_value_beyond_the_cell_limit_instead_of_truncating():
     limit = MAX_CELL_CHARACTERS
     fits = [dict(duid=9, name="Choir", chairs=["Q" * limit], rows=[])]
     book = load_workbook(io.BytesIO(rendered(packet(fits), "xlsx")))
-    assert len(book["Choir"].cell(3, 2).value) == limit
+    assert len(book["Choir"].cell(2, 2).value) == limit
     over = [dict(duid=9, name="Choir", chairs=["Q" * (limit + 1)], rows=[])]
     with pytest.raises(ValueError):
         rendered(packet(over), "xlsx")
@@ -506,9 +506,9 @@ def test_xlsx_refuses_a_value_beyond_the_cell_limit_instead_of_truncating():
     # The Ministry card is taller than a page: each later piece repeats its
     # title, marked continued.
     titles = [page[0].titles[0] for page in laid_out[1:]]
-    assert titles[0] == "Choir (DUID 9)"
+    assert titles[0] == "Choir"
     assert len(titles) > 2
-    assert all(title == "Choir (DUID 9) (continued)" for title in titles[1:])
+    assert all(title == "Choir (continued)" for title in titles[1:])
 
 
 def test_stewardship_year_is_the_configured_label_not_a_derived_date():

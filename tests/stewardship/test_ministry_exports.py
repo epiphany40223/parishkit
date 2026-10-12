@@ -289,10 +289,9 @@ def test_lists_follow_the_page_column_order(action, contact):
     assert report.rows[0][:2] == ("=Example Member", "12345")
     assert report.rows[0][-1].isoformat() == "2026-09-19T11:00:00-04:00"
     metadata = dict(report.metadata)
-    assert (metadata["Ministry"], metadata["Ministry DUID"]) == (
-        "Example Ministry",
-        "9",
-    )
+    # The Ministry is named; its DUID is neither a column nor a line (#1123).
+    assert metadata["Ministry"] == "Example Ministry"
+    assert "Ministry DUID" not in metadata
     assert "Ministry DUID" not in report.headings
 
 

@@ -248,8 +248,9 @@ def test_pages_list_tick_and_download_the_roster_changes(
             browser, export, {"format": "xlsx", "timezone": "UTC", "show": "all"}
         )
         sheet = load_workbook(io.BytesIO(body))["Roster changes"]
-        assert sheet["I1"].value == "Resolved by"
-        assert sheet["I2"].value == "admin@example.org" and sheet["K2"].value == "Yes"
+        # No Ministry DUID column (#1123), so Resolved by is the eighth.
+        assert sheet["H1"].value == "Resolved by" and sheet["E1"].value == "Ministry"
+        assert sheet["H2"].value == "admin@example.org" and sheet["J2"].value == "Yes"
         response, body = search(
             browser, export, {"format": "pdf", "timezone": "UTC", "show": "all"}
         )

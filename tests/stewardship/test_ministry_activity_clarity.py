@@ -179,10 +179,12 @@ def test_listing_sorts_every_column_on_the_server():
         return [row["name"] for row in table.rows]
 
     assert names("name") == ["Altar", "choir", "Ushers"]
-    assert names("-duid") == ["choir", "Altar", "Ushers"]
+    assert names("-name") == ["Ushers", "choir", "Altar"]
     assert names("included") == ["Ushers", "choir", "Altar"]
-    with pytest.raises(ValueError):
-        paginate(rows, {"sort": "payload__name"}, sorting=sorting)
+    # No Ministry DUID is shown, so none sorts (#1123).
+    for refused in ("payload__name", "duid", "-duid"):
+        with pytest.raises(ValueError):
+            paginate(rows, {"sort": refused}, sorting=sorting)
     html = render_to_string(
         "stewardship/ministries.html",
         {"table": paginate(rows, {"sort": "-name", "size": "25"}, sorting=sorting)},

@@ -182,16 +182,17 @@ def test_closed_action_parser_allows_only_named_multiselects():
 
 
 def test_confirmation_values_use_names_not_storage_repr():
-    """Source IDs retain comma formatting and optional UUIDs never become labels."""
+    """Ministries and funds read by name, never DUID (#1123), and optional UUIDs
+    never become labels."""
     assert (
         display_value("modules", ["census", "financial"])
         == "Census, Financial stewardship"
     )
     assert (
         display_value("ministry_duids", [1234], ministries=[("1234", "Choir")])
-        == "Choir (DUID 1234)"
+        == "Choir"
     )
-    assert display_value("ministry_duids", [1234]) == "Unavailable (DUID 1234)"
+    assert display_value("ministry_duids", [1234]) == "Unavailable"
     assert display_value("ministry_duids", []) == "None"
     assert display_value("content_versions", {"welcome": str(uuid4())}) == "Welcome"
     assert display_value("content_versions", {}) == "None"
@@ -207,7 +208,8 @@ def test_confirmation_values_use_names_not_storage_repr():
         "financial", financial(), funds=[("1", "Offertory"), ("2", "Prior year")]
     )
     assert "Upcoming: 2055-01-01 through 2055-12-31" in text
-    assert "Prior year (DUID 2)" in text and "overlap confirmed: No" in text
+    assert "Comparison funds: Prior year\n" in text and "DUID" not in text
+    assert "overlap confirmed: No" in text
     assert "overlap confirmed: Yes" in display_value(
         "financial", financial(overlap_confirmed=True)
     )

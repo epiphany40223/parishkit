@@ -828,7 +828,7 @@ def log_table(query, rows, *, through, action, number=1, total=None, capped=Fals
     )
 
 
-def page_context(query, table, *, depth_limited=False, linked=False):
+def page_context(query, table, *, depth_limited=False, linked=False, ministries=()):
     """The one template context, shared by the view and its browser fixtures.
 
     ``table`` is the page's ``web.tables.TablePage``; ``depth_limited`` says a
@@ -838,8 +838,12 @@ def page_context(query, table, *, depth_limited=False, linked=False):
     ``link`` is this view's own address: the page's address plus the
     filters a link may carry. ``link_zone`` names the zone a followed link's
     days are in; the page notes it when it is not the browser's own.
+    ``ministries`` is the Ministry filter's choices, ``(DUID, name)`` pairs
+    in name order: entries record a Ministry's DUID, but staff pick it by
+    name (#1123).
     """
     values = query.link_values()
+    listed = {str(duid) for duid, _name in ministries}
     return {
         "link": table.action + (f"?{urlencode(values)}" if values else ""),
         "link_zone": values.get("zone", "") if linked else "",
@@ -859,6 +863,11 @@ def page_context(query, table, *, depth_limited=False, linked=False):
         ],
         "events": EVENTS,
         "activities": ACTIVITY_LABELS,
+        "ministries": ministries,
+        # A filtered Ministry the current ParishSoft data no longer has (an
+        # old link or bookmark) stays chosen under a plain label, never its
+        # DUID, so applying the filters again keeps it.
+        "ministry_unlisted": bool(query.ministry) and query.ministry not in listed,
         # The conditional-field rules for the Show boxes (#953): the levels
         # are enabled for all activity and the groups with operational
         # entries, and Audit record is required for the audit-only groups.

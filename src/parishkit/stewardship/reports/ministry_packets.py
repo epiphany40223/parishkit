@@ -144,8 +144,8 @@ def packet_document(payload, parameters, *, parish_name, requested_at, timezone)
         PacketSection(
             name=entry["name"],
             details=(
+                # Named, never by its DUID (#1123).
                 ("Ministry", entry["name"]),
-                ("Ministry DUID", str(entry["duid"])),
                 # Removed from a live campaign, with requests kept (#342).
                 # Captures made before the flag existed carry no such key.
                 *(

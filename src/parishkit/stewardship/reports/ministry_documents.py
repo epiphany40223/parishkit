@@ -105,16 +105,12 @@ def ministry_document(payload, parameters, *, parish_name, requested_at, timezon
             "Known primary Family address; separate mailing address "
             "unavailable in source.",
         ),
-        # A list is one Ministry's, so its name and DUID head the file, as
-        # they head the page's list, rather than repeat on every row (#932).
+        # A list is one Ministry's, so its name heads the file, as it heads
+        # the page's list, rather than repeat on every row (#932). Its DUID
+        # is left out: staff know a Ministry by its name (#1123).
         (
             "Ministry",
             "\n".join(item["name"] for item in payload["summaries"])
-            or "Unavailable for these filters",
-        ),
-        (
-            "Ministry DUID",
-            "\n".join(str(item["duid"]) for item in payload["summaries"])
             or "Unavailable for these filters",
         ),
     )

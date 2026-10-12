@@ -5,11 +5,11 @@
   now. The review region's own heading, notes and Apply surround it.
 {% endcomment %}{% if review.added %}<section><h3>{% translate "Ministries to add" %}</h3>
 <p>{% translate "Families see these at their next visit. Families who already submitted are not asked again and get no email." %}</p>
-<ul>{% for ministry in review.added %}<li>{{ ministry.name }} ({% translate "DUID" %} {{ ministry.duid|duid }}){% if ministry.answers %}: {% blocktranslate count counter=ministry.answers %}{{ counter }} earlier answer will show again{% plural %}{{ counter }} earlier answers will show again{% endblocktranslate %}{% endif %}</li>{% endfor %}</ul></section>{% endif %}
+<ul>{% for ministry in review.added %}<li>{{ ministry.name }}{% if ministry.answers %}: {% blocktranslate count counter=ministry.answers %}{{ counter }} earlier answer will show again{% plural %}{{ counter }} earlier answers will show again{% endblocktranslate %}{% endif %}</li>{% endfor %}</ul></section>{% endif %}
 {% if review.removed %}<section><h3>{% translate "Ministries to remove" %}</h3>
 <p>{% translate "These leave the Family form. Nothing already answered is deleted: requests stay in Ministry follow-up until staff close them, and reports mark them No longer in this campaign." %}</p>
-<table><thead><tr><th scope="col">{% translate "Ministry" %}</th><th scope="col" class="numeric">{% translate "Ministry DUID" %}</th><th scope="col">{% translate "Submitted answers" %}</th><th scope="col">{% translate "Open follow-up requests" %}</th></tr></thead>
-<tbody>{% for ministry in review.removed %}<tr><th scope="row">{{ ministry.name }}</th><td class="numeric">{{ ministry.duid|duid }}</td><td>{{ ministry.answers|number }}</td><td>{{ ministry.open|number }}</td></tr>{% endfor %}</tbody></table></section>{% endif %}
+<table><thead><tr><th scope="col">{% translate "Ministry" %}</th><th scope="col">{% translate "Submitted answers" %}</th><th scope="col">{% translate "Open follow-up requests" %}</th></tr></thead>
+<tbody>{% for ministry in review.removed %}<tr><th scope="row">{{ ministry.name }}</th><td>{{ ministry.answers|number }}</td><td>{{ ministry.open|number }}</td></tr>{% endfor %}</tbody></table></section>{% endif %}
 <section><h3>{% translate "Families with a form open now" %}</h3>
 <p>{{ review.open_forms|number }}</p>
 <p>{% translate "Every open form lists every Ministry, so each of these Families is asked to review the updated form before submitting. No email is sent." %}</p></section>

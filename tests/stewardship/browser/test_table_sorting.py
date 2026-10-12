@@ -429,7 +429,7 @@ def test_get_filter_applies_in_place(page, component_origin):
     page.set_viewport_size(VIEWPORT)
     page.goto(component_origin + "/ministries")
     page.evaluate(MARK)
-    page.get_by_label("Search by name or DUID").fill("Lectors")
+    page.get_by_label("Search by name").fill("Lectors")
     offset = scroll_to_filters(page)
     with page.expect_request(lambda request: "q=Lectors" in request.url) as fetched:
         page.get_by_role("button", name="Filter").click()
@@ -459,7 +459,7 @@ def test_filter_with_no_matches_shows_the_empty_table(page, component_origin):
     """A filter that matches nothing swaps in the empty table and says so."""
     page.goto(component_origin + "/ministries")
     page.evaluate(MARK)
-    page.get_by_label("Search by name or DUID").fill("Nothing")
+    page.get_by_label("Search by name").fill("Nothing")
     page.get_by_role("button", name="Filter").click()
     visible(page.get_by_text("No Ministries match these filters."))
     assert ministry_names(page) == []
@@ -680,7 +680,6 @@ def test_followup_filter_refreshes_in_place_without_assignment(page, component_o
     [
         ("/financial-report", "Family DUID", "**/financial/", "sort=duid"),
         ("/information", "Family DUID", "**/information/", "sort=duid"),
-        ("/ministry-summary", "Ministry DUID", "**/ministries/", "sort=duid"),
         ("/ministry-detail", "Member DUID", "**/joining/", "sort=duid"),
     ],
 )

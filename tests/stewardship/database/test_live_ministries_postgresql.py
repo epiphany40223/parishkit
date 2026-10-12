@@ -286,9 +286,9 @@ def test_editor_previews_impact_and_audits_the_change(response_service, google):
     assert "Apply changes" in body
     assert digest(review) == digest(form)
     # One submitted join request for Ministry 9, still awaiting follow-up.
-    # The Ministry DUID has its own column (#932).
-    row = '<th scope="row">Food pantry</th><td class="numeric">9</td>'
-    assert row + "<td>1</td><td>1</td>" in body
+    # The Ministry is named, with no DUID column (#1123).
+    row = '<th scope="row">Food pantry</th>'
+    assert row + "<td>1</td><td>1</td>" in body and "DUID" not in body
     assert "Families with a form open now" in body
     token = re.search(r'name="preview" value="([^"]+)"', review.content.decode())
     before = set(ConfigurationChangeRequest.objects.values_list("pk", flat=True))

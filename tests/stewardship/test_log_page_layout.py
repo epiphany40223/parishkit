@@ -86,6 +86,32 @@ def _render(query=None, rows=None, *, linked=False):
     )
 
 
+def test_an_inactive_ministry_is_told_apart_from_its_namesake():
+    """Two Ministries named alike: the inactive one says so, and neither
+    label shows a DUID (#1123)."""
+    from parishkit.stewardship.audit.log_views import choice_labels
+
+    labels = choice_labels({4: "Choir", 9: "Choir", 2: "Ushers"}, {4, 2})
+    assert [(duid, str(label)) for duid, label in labels] == [
+        (4, "Choir"),
+        (9, "Choir (inactive)"),
+        (2, "Ushers"),
+    ]
+
+
+def _ministry_select(query, ministries):
+    """The Ministry filter's menu, rendered with these ``(DUID, name)`` choices."""
+    html = render_to_string(
+        "stewardship/logs.html",
+        page_context(
+            query,
+            log_table(query, [], through=NOW, action="/admin/system/logs/"),
+            ministries=ministries,
+        ),
+    )
+    return re.search(r'<select id="log-ministry".*?</select>', html, re.S).group(0)
+
+
 @pytest.mark.parametrize("level", [*(level.lower() for level in LEVELS), "audit"])
 def test_each_level_has_its_own_decorative_icon(level):
     """One matched icon per level, hidden from assistive technology."""
@@ -428,17 +454,24 @@ def test_a_followed_links_zone_is_noted_for_the_script_to_show():
     assert "data-link-zone" not in _render(LogQuery.parse({"text": "x"}), linked=True)
 
 
-def test_search_and_ministry_fields_gate_apply_with_their_own_hints():
-    """Search refuses an address and Ministry takes digits, each with a hint
-    the complete gate shows instead of the browser's bubble."""
+def test_search_gates_apply_and_ministry_is_chosen_by_name():
+    """Search refuses an address, with a hint the complete gate shows instead
+    of the browser's bubble; Ministry is a choice of names whose values are
+    the DUIDs entries record, never shown (#1123)."""
     html = _render(LogQuery.parse({"text": "lag", "ministry": "42"}))
     search = re.search(r'<input id="log-text"[^>]*>', html).group(0)
     assert 'pattern="[^@]*"' in search and 'value="lag"' in search
     assert 'name="text"' in search and 'maxlength="64"' in search
-    ministry = re.search(r'<input id="log-ministry"[^>]*>', html).group(0)
-    assert 'pattern="[1-9][0-9]{0,9}"' in ministry and 'value="42"' in ministry
     assert "Search text cannot hold an email address" in html
-    assert "Type a Ministry DUID as digits only, or clear it." in html
+    choices = [(42, "Choir"), (7, "Ushers")]
+    ministry = _ministry_select(LogQuery.parse({"ministry": "42"}), choices)
+    assert '<option value="42" selected>Choir</option>' in ministry
+    assert '<option value="7">Ushers</option>' in ministry
+    assert "DUID" not in ministry and ">42<" not in ministry
+    # A Ministry the current data no longer has stays chosen, by a label.
+    gone = _ministry_select(LogQuery.parse({"ministry": "99"}), choices)
+    assert '<option value="99" selected>A Ministry no longer in ParishSoft' in gone
+    assert "selected" not in _ministry_select(LogQuery(), choices)
     # The subject filter sits with the other identifiers, opened when used.
     subject = _render(LogQuery.parse({"subject": str(UUID(int=5))}))
     assert re.search(r'<details id="log-identifier-filters"[^>]* open>', subject)

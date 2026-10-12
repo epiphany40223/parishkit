@@ -406,10 +406,19 @@ def test_the_page_lists_the_leaders_below_the_users(deployment):
     # Server sorting with its own prefix, and only its own tokens.
     by_email = leaders_region(page(browser, USERS + "?leaders_sort=-email"))
     assert by_email.index("shared@example.org") < by_email.index("ann@example.org")
+    # The Member DUID column sorts too (kept at the Administrator's request,
+    # 2026-10-12, #932): 3 (valid@), 900, 901, 904 ascending.
+    by_duid = leaders_region(page(browser, USERS + "?leaders_sort=-member_duid"))
+    assert (
+        by_duid.index("parish@example.org")
+        < by_duid.index("shared@example.org")
+        < by_duid.index("ann@example.org")
+        < by_duid.index("valid@example.org")
+    )
     with web():
         assert browser.get(USERS + "?leaders_sort=role").status_code == 400
     # Each page view reads the leaders once, audited by the definer.
-    assert listed().count() == 2
+    assert listed().count() == 3
 
 
 def test_a_failed_leaders_read_leaves_the_users_table_usable(deployment, monkeypatch):
@@ -457,6 +466,11 @@ def test_import_selected_reviews_and_applies_one_change(deployment):
     assert "<h1" not in text and "<html" not in text and "<form" not in text
     assert 'data-review-done="Leaders imported."' in text
     assert "Example 1, Leader" in text and "Example 0, Leader" in text
+    # Each new user's Member DUID in its own column right after the Member
+    # (Administrator, 2026-10-12, #932).
+    assert re.search(r"Member</th>\s*<th[^>]*numeric[^>]*>Member DUID</th>", text)
+    assert '<td class="numeric">900</td>' in text
+    assert '<td class="numeric">901</td>' in text
     assert "Skipped" not in text
     # Nothing changed by reviewing.
     assert "ann@example.org" not in users(store)

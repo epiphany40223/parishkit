@@ -6,7 +6,7 @@
 {% aboutpage "ministries" %}<p>{% translate "This page turns Ministries on or off for parishioners." %}</p><p>{% translate "Inactive Ministries are hidden from parishioners. Existing participation and earlier requests are preserved. A Ministry leader sees the Ministries of their ParishSoft Ministry roles listed in Campaign settings; an inactive Ministry leaves its leaders' scope until it is active again." %}</p>{% endaboutpage %}
 <p>{% if campaign_link %}{% translate "Only activity changes here; choose this campaign's Ministries in" %} <a href="{{ campaign_link.url }}">{{ campaign_link.label }}</a>.{% else %}{% translate "Only activity changes here; choose a campaign's Ministries in Campaign settings → Ministry selections." %}{% endif %}</p>
 <form id="table-filters" data-table-sync method="get" class="filter-bar">
-  <div><label for="ministry-query">{% translate "Search by name or DUID" %}</label>
+  <div><label for="ministry-query">{% translate "Search by name" %}</label>
   <input id="ministry-query" name="q" value="{{ query }}" maxlength="200"></div>
   <div class="short"><label for="ministry-state">{% translate "Activity" %}</label>
   <select id="ministry-state" name="state">
@@ -33,7 +33,6 @@
     <thead><tr>
       <th scope="col" class="select-col"><input type="checkbox" data-select-all aria-label="{% translate 'Select every Ministry on this page' %}"></th>
       {% translate "Ministry" as heading %}{% sort_heading table "name" heading %}
-      {% translate "Ministry DUID" as heading %}{% sort_heading table "duid" heading "numeric" %}
       {% translate "Activity" as heading %}{% sort_heading table "active" heading %}
       {% translate "In current campaign" as heading %}{% sort_heading table "included" heading %}
     </tr></thead>
@@ -41,10 +40,9 @@
     {% for ministry in table.rows %}<tr>
       <td class="select-col"><input type="checkbox" name="ministry_duid" value="{{ ministry.duid }}" data-select-row aria-label="{% blocktranslate with name=ministry.name %}Select {{ name }}{% endblocktranslate %}"></td>
       <th scope="row">{{ ministry.name }}</th>
-      <td class="numeric">{{ ministry.duid|duid }}</td>
       <td>{% if ministry.active %}<span class="status-badge status-badge-on">{% translate "Active" %}</span>{% else %}<span class="status-badge">{% translate "Inactive" %}</span>{% endif %}</td>
       <td>{% if campaign_link %}<a href="{{ campaign_link.url }}">{% if ministry.included %}{% translate "Included" %}{% else %}{% translate "Not included" %}{% endif %}</a>{% elif ministry.included %}{% translate "Included" %}{% else %}{% translate "Not included" %}{% endif %}</td>
-    </tr>{% empty %}<tr><td colspan="5">{% translate "No Ministries match these filters." %}</td></tr>{% endfor %}
+    </tr>{% empty %}<tr><td colspan="4">{% translate "No Ministries match these filters." %}</td></tr>{% endfor %}
     </tbody>
   </table>
   </div>

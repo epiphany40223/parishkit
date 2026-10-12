@@ -127,14 +127,48 @@ def _catalog(configuration, source, previous):
         financial.get("comparison_fund_duids", [])
     )
 
-    def missing_choices(identifiers, kind):
-        """Retain saved IDs without borrowing names from an unavailable tenant."""
-        label = (
-            _("Ministry %(duid)s (unavailable; retained selection)")
+    def missing_choices(identifiers, kind, organization_id=None):
+        """Retain saved IDs, labelled by name and never by DUID (#1123).
+
+        With the configured tenant's source promoted (``organization_id``),
+        a saved Ministry or fund that its current data no longer has shows
+        the name it had in the latest promoted snapshot that still held it.
+        That is read through the snapshot, not the version rows: versions
+        are content-addressed and reused, so after a rename A, B, then A the
+        newest version row would say B. Without a promoted source, no name
+        is borrowed from an unavailable tenant, so the label only says it is
+        unavailable.
+        """
+        model, display = (
+            (SnapshotMinistry, ministry_display_name)
             if kind == "ministry"
-            else _("Fund %(duid)s (unavailable; retained selection)")
+            else (SnapshotFund, fund_display_name)
         )
-        return [(str(duid), label % {"duid": duid}) for duid in sorted(identifiers)]
+        known = {}
+        if organization_id is not None and identifiers:
+            # Earliest promotion first, so each DUID keeps its latest name.
+            for key, text in (
+                model.objects.filter(
+                    snapshot__organization_id=organization_id,
+                    snapshot__promoted_at__isnull=False,
+                    source_key__in=[str(duid) for duid in identifiers],
+                )
+                .order_by("snapshot__promoted_at")
+                .values_list("source_key", "payload__canonical")
+            ):
+                known[int(key)] = json.loads(text).get("name")
+        choices = []
+        for duid in sorted(identifiers):
+            if duid in known:
+                label = _("%(name)s (no longer in ParishSoft; retained selection)") % {
+                    "name": display(duid, known[duid])
+                }
+            elif kind == "ministry":
+                label = _("Unavailable Ministry (retained selection)")
+            else:
+                label = _("Unavailable fund (retained selection)")
+            choices.append((str(duid), label))
+        return choices
 
     integrations = configuration.active_configuration.canonical_document[
         "sections"
@@ -196,6 +230,7 @@ def _catalog(configuration, source, previous):
             missing_choices(
                 retained - {int(row.source_key) for row in rows},
                 "ministry" if model is SnapshotMinistry else "fund",
+                source.organization_id,
             )
         )
         choices.sort(key=lambda row: (row[1].casefold(), int(row[0])))
