@@ -15,8 +15,8 @@ campaigns/rows for the Ministries they lead (see
 The campaign selector and the default to the most recent retained campaign are
 superseded for the Admin portal by the [navigation
 decisions](../admin-portal/spec.md#navigation-decisions) 10, 15 and 19:
-reports show the current campaign and the selector links stay greyed out until
-the single-campaign change (#145). Exports keep their own identifiers.
+reports show the current campaign, with no selector link and no line naming
+the campaign (#1125). Exports keep their own identifiers.
 
 The comparison of the current campaign with past campaigns, and the archive
 workbook it imports, are specified in
@@ -1245,9 +1245,9 @@ submitted only.
 
 Population: with Response Any, Not submitted or No invitation delivered the
 rows are active Families only, and the page header reads "Active registered
-Families from ParishSoft data load N". Under every other choice the header
-reads "Families from ParishSoft data load N" and the rows are every campaign
-Family the funnel selects, so the matching count equals the
+Families from ParishSoft data as of *time*". Under every other choice the
+header reads "Families from ParishSoft data as of *time*" and the rows are
+every campaign Family the funnel selects, so the matching count equals the
 [dashboard](#response-dashboard)'s figure. A campaign Family the current
 ParishSoft data no longer lists as active and registered is then listed too,
 marked **No longer active in ParishSoft**. Its name and envelope number come
