@@ -196,4 +196,6 @@ def test_email_page_shows_its_recipients_without_moving(page, component_origin):
     page.locator("#delivery-history").get_by_role("link", name="Next page").click()
     page.locator("#delivery-history").get_by_text("Created").wait_for()
     assert "/delivery-paged?page=2" in page.url
-    assert recipients.evaluate(place) == before
+    # Within a pixel: Firefox reports sub-pixel scroll offsets that differ
+    # by float rounding after the swap.
+    assert recipients.evaluate(place) == pytest.approx(before, abs=1)
