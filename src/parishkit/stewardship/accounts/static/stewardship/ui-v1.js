@@ -401,12 +401,23 @@
   // Exposed read-only for the browser tests that run the shared fixture.
   window.ParishTimeEntry = Object.freeze({parseTime, parseTimes, timeReading, canonicalTime});
 
+  // The controls this code reads: a text box, or a textarea for a list that
+  // takes one time per line (the refresh schedule's Edit as text, #1117).
+  // Every Admin time of day is one of these, so every page shows the same
+  // reading (tests/stewardship/test_time_entry_guard.py keeps it so).
+  const TIME_FIELDS = ":is(input, textarea)[data-time-entry]";
   // Per field: its visible reading line, its visually hidden live region and
   // the timer that waits for a pause in typing.
   const timeParts = new WeakMap();
   const timeGateHints = new WeakMap();
   let timeGateCount = 0;
   const TIME_PAUSE = 500;
+  // A list reading names each time up to this many; a longer list is
+  // summarised (readTimeField).
+  const TIME_LIST_SHOWN = 8;
+  // A field out of view: hidden, or inside a closed <details> such as the
+  // refresh schedule's Edit as text.
+  const outOfView = (field) => Boolean(field.closest("[hidden], details:not([open])"));
   const readTimeEntry = (field) => (field.dataset.timeEntry === "list"
     ? parseTimes(field.value, Number(field.dataset.timeMax) || 0, field.dataset.timeBlank || "")
     : parseTime(field.value, field.dataset.timeKept || ""));
@@ -420,8 +431,16 @@
     if (result.error) return {message: result.message, invalid: true};
     if (!list) return {message: `Reads as ${timeReading(result.value)}`, invalid: false};
     if (!result.values.length) return {message: "", invalid: false};
-    const read = `${result.blank ? "Blank reads as" : "Reads as"} ${
-      result.values.map(timeReading).join(", ")}`;
+    // A long list (Edit as text can hold dozens of times, #1117) reads as
+    // its count and range, so the line stays a line or two and does not
+    // push the page about as the Admin types.
+    const sorted = [...result.values].sort((a, b) =>
+      canonicalTime(a).localeCompare(canonicalTime(b)));
+    const distinct = new Set(sorted.map(canonicalTime)).size;
+    const times = distinct > TIME_LIST_SHOWN
+      ? `${distinct} times, from ${timeReading(sorted[0])} to ${timeReading(sorted.at(-1))}`
+      : result.values.map(timeReading).join(", ");
+    const read = `${result.blank ? "Blank reads as" : "Reads as"} ${times}`;
     const repeated = result.duplicates.length
       ? `; ${result.duplicates.join(", ")} ${result.duplicates.length > 1 ? "are" : "is"
       } listed more than once and saved once` : "";
@@ -438,7 +457,7 @@
   // Clear the timers of every time field inside ``root``, or, with no root,
   // of every field no longer in the page.
   const cancelTimeChecks = (root) => {
-    if (root) root.querySelectorAll("input[data-time-entry]").forEach(cancelTimeCheck);
+    if (root) root.querySelectorAll(TIME_FIELDS).forEach(cancelTimeCheck);
     else [...timePending].filter((field) => !field.isConnected).forEach(cancelTimeCheck);
   };
   // Every change to a reading line goes through this, which a page that
@@ -467,7 +486,11 @@
     const parts = timeParts.get(field);
     if (!parts) return;
     const {message, invalid} = readTimeField(field);
-    field.setCustomValidity(invalid ? message : "");
+    // Out of view, the refusal still shows in its line but sets no custom
+    // validity: the browser would otherwise refuse the submit ("not
+    // focusable") with nothing the Admin can see. It is set again when the
+    // field comes back into view (the toggle listener, recheckTimes).
+    field.setCustomValidity(invalid && !outOfView(field) ? message : "");
     if (!invalid && field.matches("[data-browser-zone-field]")) zoneValidity(field);
     cancelTimeCheck(field);
     const marked = () => field.hasAttribute("data-field-error");
@@ -560,10 +583,11 @@
   // until the pause timer calls again, as the refusal it explains waits.
   const gateTimes = (form, {defer = false} = {}) => {
     if (!(form instanceof HTMLFormElement) || form.hasAttribute("data-require-complete")) return;
-    const fields = [...form.querySelectorAll("input[data-time-entry]")];
+    const fields = [...form.querySelectorAll(TIME_FIELDS)];
     if (!fields.length && !timeGateHints.has(form)) return;
-    const unread = fields.some((field) =>
-      !field.disabled && !field.closest("[hidden]") && !field.validity.valid);
+    // A field out of view holds nothing: the Admin could not see why.
+    const unread = fields.some((field) => !field.disabled
+      && !outOfView(field) && !field.validity.valid);
     // A formnovalidate button (a cancel or back action) stays usable.
     const buttons = [...form.elements].filter((node) => isSubmit(node) && !node.formNoValidate);
     let hint = timeGateHints.get(form);
@@ -597,7 +621,7 @@
     // A swap replaced some fields: their pending timers have nothing to do.
     cancelTimeChecks();
     const forms = new Set();
-    root.querySelectorAll("input[data-time-entry]").forEach((field) => {
+    root.querySelectorAll(TIME_FIELDS).forEach((field) => {
       if (timeParts.has(field)) return;
       const reading = document.createElement("p");
       reading.className = "time-reading";
@@ -622,16 +646,28 @@
   // a removed row's timers, through these. steadyReadings(hook) has each
   // later reading change made as hook(field, change), so that page can keep
   // what is under the pointer in place as a reading grows or shrinks.
+  // recheck(fields) reads those fields again silently, after the page
+  // script set their values itself (the Edit as text lists, refilled from
+  // each check's answer). Only those: a field elsewhere that the Admin is
+  // still typing in keeps waiting for its pause.
   window.ParishTimeFields = Object.freeze({
     wire: wireTimeEntry,
     cancel: cancelTimeChecks,
+    recheck: (fields) => {
+      const forms = new Set();
+      fields.forEach((field) => {
+        checkTimeField(field, {quiet: Boolean(serverTimeError(field))});
+        forms.add(field.form);
+      });
+      forms.forEach((form) => gateTimes(form, {defer: timePending.size > 0}));
+    },
     steadyReadings: (hook) => { aroundReading = hook; },
   });
   // Capture phase: the entry's validity is current before any form's own
   // input listener (the complete gate) runs.
   document.addEventListener("input", (event) => {
     const field = event.target;
-    if (!(field instanceof HTMLInputElement) || !timeParts.has(field)) return;
+    if (!timeParts.has(field)) return;
     clearServerTimeError(field);
     checkTimeField(field, {typing: true});
     gateTimes(field.form, {defer: true});
@@ -643,13 +679,15 @@
   // the server saves each time once). A blank entry stays blank.
   document.addEventListener("focusout", (event) => {
     const field = event.target;
-    if (!(field instanceof HTMLInputElement) || !timeParts.has(field)) return;
+    if (!timeParts.has(field)) return;
     const quiet = Boolean(serverTimeError(field));
     const result = readTimeEntry(field);
     const blank = field.dataset.timeEntry === "list" ? !splitTimes(field.value).length
       : !timeWords(field.value).length;
     if (!result.error && !blank) {
-      field.value = result.values ? result.values.map(canonicalTime).join(", ")
+      // A list typed one time per line (a textarea) stays one per line.
+      const joiner = /[\n\r]/.test(field.value) ? "\n" : ", ";
+      field.value = result.values ? result.values.map(canonicalTime).join(joiner)
         : canonicalTime(result.value);
     }
     checkTimeField(field, {quiet, announce: true});
@@ -663,7 +701,7 @@
   // back/forward cache can restore values silently: check again then.
   const recheckTimes = (form) => {
     if (!(form instanceof HTMLFormElement)) return;
-    form.querySelectorAll("input[data-time-entry]").forEach((field) =>
+    form.querySelectorAll(TIME_FIELDS).forEach((field) =>
       checkTimeField(field, {quiet: Boolean(serverTimeError(field))}));
     gateTimes(form);
   };
@@ -671,9 +709,15 @@
     if (event.target instanceof Element) recheckTimes(event.target.closest("form"));
   });
   window.addEventListener("pageshow", () => {
-    new Set([...document.querySelectorAll("input[data-time-entry]")].map((field) =>
+    new Set([...document.querySelectorAll(TIME_FIELDS)].map((field) =>
       field.form)).forEach(recheckTimes);
   });
+  // Opening or closing a <details> shows or hides the fields in it, which
+  // decides whether they hold Save (gateTimes). "toggle" does not bubble.
+  document.addEventListener("toggle", (event) => {
+    if (event.target instanceof HTMLDetailsElement
+      && event.target.querySelector(TIME_FIELDS)) recheckTimes(event.target.closest("form"));
+  }, true);
 
   // Shared Admin tables (web/tables.py, table-navigator.html and
   // table-selection.html). Row selection is per page: Select all and the
@@ -4193,7 +4237,6 @@
     const control = (name) => panel.querySelector(`[data-repeat="${name}"]`);
     const list = panel.querySelector("[data-repeat-dates]");
     const button = panel.querySelector("[data-repeat-add]");
-    const reading = panel.querySelector("[data-repeat-reading]");
     const email = control("email");
     // Only reminder emails, from the new-row template's own list.
     const reminders = [...template.content.querySelectorAll(
@@ -4216,12 +4259,10 @@
       || panel.dataset[`repeat${name === "start_date" ? "Start" : "End"}`];
     const update = () => {
       showRepeatParts(panel);
-      const time = parseTime(control("time").value);
-      reading.textContent = control("time").value.trim()
-        ? (time.error ? time.message : `Reads as ${timeReading(time.value)}`) : "";
-      // A time that does not read is shown as an error, like the row fields.
-      reading.classList.toggle("is-error",
-        Boolean(control("time").value.trim() && time.error));
+      // The send time is a shared time entry field (data-time-entry, #1117):
+      // its reading, refusal, blur rewrite and Save gate are drawn by that
+      // code; the panel only reads the same value from it.
+      const time = readTimeEntry(control("time"));
       const result = repeatDates({
         rule: repeatRule(panel),
         existing: mailings(),
@@ -4247,7 +4288,7 @@
       if (button.textContent !== label) button.textContent = label;
     };
     button.addEventListener("click", () => {
-      const sendTime = canonicalTime(parseTime(control("time").value).value);
+      const sendTime = canonicalTime(readTimeEntry(control("time")).value);
       const dates = [...ready];
       const added = dates.map((date) => {
         const row = addScheduleRow();
@@ -4561,7 +4602,7 @@
         return;
       }
       showRepeatParts(panel);
-      const reading = parseTime(time.value);
+      const reading = readTimeEntry(time); // The shared time entry's own reading.
       const result = repeatDates({
         rule: repeatRule(panel),
         existing,
