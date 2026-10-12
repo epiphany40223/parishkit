@@ -229,9 +229,64 @@ def test_participation_census_and_limitations_workbooks_share_the_style():
     assert tuple(cell.value for cell in sheet[1]) == HEADINGS
     assert_styled_table(sheet, first_column=True)
     shaped = shape_result(limitations_result())
-    book = load_workbook(io.BytesIO(limitations_xlsx(shaped, ZoneInfo("UTC"))))
+    book = load_workbook(
+        io.BytesIO(
+            limitations_xlsx(
+                shaped,
+                ZoneInfo("UTC"),
+                parish="P",
+                campaign="C",
+                as_of=datetime(2026, 10, 5, 14, tzinfo=UTC),
+            )
+        )
+    )
     for title in ("Members", "Families"):
         assert_styled_table(book[title], first_column=True)
+
+
+def test_every_workbook_names_its_report_in_its_properties():
+    """Each XLSX's document properties carry its title, author and request time.
+
+    Excel's File > Info shows them; openpyxl's defaults were an untitled
+    file by "openpyxl" created whenever it was rendered. Queued reports
+    state their request time, so every retried rendering agrees with the
+    PDF's CreationDate; direct downloads (Census changes, System logs)
+    carry the title and author only.
+    """
+    output = io.BytesIO()
+    render_directory(directory([family()]), output, format="xlsx")
+    packet_output = io.BytesIO()
+    render_packet(packet([]), packet_output, format="xlsx")
+    for document, body in (
+        (information(count=1), saved(information_xlsx, information(count=1))),
+        (directory([family()]), load_workbook(output)),
+        (packet([]), load_workbook(packet_output)),
+    ):
+        properties = body.properties
+        assert properties.title == document.title
+        assert properties.creator == properties.lastModifiedBy == xlsx_design.CREATOR
+        assert properties.created == document.requested_at.astimezone(UTC).replace(
+            tzinfo=None
+        )
+    document = participation()
+    properties = saved(participation_xlsx, document).properties
+    assert properties.title == f"Family participation — {document.scope_label}"
+    assert properties.creator == xlsx_design.CREATOR
+    assert properties.created == document.requested_at.astimezone(UTC).replace(
+        tzinfo=None
+    )
+    census = load_workbook(io.BytesIO(census_xlsx({"rows": []}, ZoneInfo("UTC"))))
+    assert census.properties.title == "Census changes"
+    assert census.properties.creator == xlsx_design.CREATOR
+
+
+def test_describe_escapes_what_xml_cannot_store():
+    """A parish label with a control character still saves as a title."""
+    book = Workbook()
+    xlsx_design.describe(book, "Active\x0bFamilies")
+    output = io.BytesIO()
+    book.save(output)
+    assert load_workbook(output).properties.title == "Active\\u000bFamilies"
 
 
 # --- PDF ------------------------------------------------------------------

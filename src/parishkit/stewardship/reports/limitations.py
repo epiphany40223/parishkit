@@ -56,6 +56,8 @@ PDF_WEIGHTS = {
     "Latest response": 8,
 }
 PRIVACY = "Sensitive parish report. Share only with authorized recipients."
+# The report's name in its files: the PDF title, XLSX headers and properties.
+TITLE = "Limitations"
 
 
 @dataclass(frozen=True, repr=False)
@@ -161,12 +163,37 @@ def limitations_csv(result, zone):
     return buffer.getvalue().encode("utf-8")
 
 
-def limitations_xlsx(result, zone):
-    """A workbook with one literal-text sheet each for Members and Families."""
+def report_information(members, families, zone, *, parish, campaign, as_of):
+    """The XLSX "Report information" rows: what the PDF's page frame states.
+
+    The parish and campaign, the download time ``as_of`` in ``zone`` (a
+    native date-time cell), both counts and the privacy line, labeled as
+    the response lists' downloads label them. The CSV holds only the two
+    tables, as every report's CSV holds only its table (#966).
+    """
+    return (
+        ("Report", TITLE),
+        ("Parish", parish),
+        ("Campaign", campaign),
+        ("Downloaded at", as_of.astimezone(zone)),
+        ("Display time zone", zone.key),
+        ("Members in this file", f"{len(members):,}"),
+        ("Families in this file", f"{len(families):,}"),
+        ("Privacy", PRIVACY),
+    )
+
+
+def limitations_xlsx(result, zone, *, parish, campaign, as_of):
+    """A literal-text sheet each for Members and Families, then report information.
+
+    ``parish`` and ``campaign`` are names and ``as_of`` the download time,
+    as for ``limitations_pdf``; the "Report information" sheet and the
+    workbook's document properties state them.
+    """
     # Imported here, like the other export writers, to keep web startup light.
     from openpyxl import Workbook
 
-    from .xlsx_design import style_table
+    from .xlsx_design import describe, style_information, style_table
 
     members, families = export_tables(result, zone)
     book = Workbook()
@@ -182,7 +209,16 @@ def limitations_xlsx(result, zone):
                 # is never a formula, and escapes characters XLSX cannot hold,
                 # such as a vertical tab pasted into a ParishSoft name.
                 xlsx_cell(sheet, row_number, column, value)
-        style_table(sheet, freeze_first_column=True, title=f"Limitations: {title}")
+        style_table(sheet, freeze_first_column=True, title=f"{TITLE}: {title}")
+    information = book.create_sheet("Report information")
+    rows = report_information(
+        members, families, zone, parish=parish, campaign=campaign, as_of=as_of
+    )
+    for row_number, values in enumerate(rows, start=1):
+        for column, value in enumerate(values, start=1):
+            xlsx_cell(information, row_number, column, value)
+    style_information(information, title=TITLE)
+    describe(book, TITLE, created=as_of)
     output = io.BytesIO()
     book.save(output)
     return output.getvalue()
@@ -215,7 +251,7 @@ def limitations_pdf(result, zone, *, parish, campaign, as_of):
         result, zone, time_text=lambda moment: dates.display_text(moment, compact=True)
     )
     frame = PdfFrame(
-        title="Limitations",
+        title=TITLE,
         eyebrow=f"{parish} · {campaign}",
         stamp=f"Downloaded {dates.display_text(as_of.astimezone(zone))} ({zone.key})",
         details=(

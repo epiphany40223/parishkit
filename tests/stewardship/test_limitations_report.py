@@ -19,6 +19,7 @@ from parishkit.stewardship.reports.limitations import (
     FAMILY_CAPTION,
     MEMBER_CAPTION,
     PDF_WEIGHTS,
+    PRIVACY,
     LimitationsQuery,
     limitations_csv,
     limitations_pdf,
@@ -38,6 +39,19 @@ MEMBER_HEADINGS = [
     "Latest response",
 ]
 FAMILY_HEADINGS = ["Family", "Family DUID", "Latest response"]
+# The writers read ``zone.key``, so tests pass a ZoneInfo, as the view does.
+UTC_ZONE = ZoneInfo("UTC")
+# The download context the view lends the XLSX and PDF writers.
+CONTEXT = dict(
+    parish="Example Parish",
+    campaign="Stewardship 2055",
+    as_of=datetime.fromisoformat(WHEN),
+)
+
+
+def workbook(shaped, zone=UTC_ZONE):
+    """The XLSX download of ``shaped``, opened."""
+    return load_workbook(io.BytesIO(limitations_xlsx(shaped, zone, **CONTEXT)))
 
 
 def result():
@@ -87,7 +101,7 @@ def test_downloads_match_the_page_columns():
     rows.pop(2)
     assert rows[2] == [] and rows[3] == FAMILY_HEADINGS
     assert rows[4] == ["Example", "10", WHEN]
-    book = load_workbook(io.BytesIO(limitations_xlsx(shaped, ZoneInfo("UTC"))))
+    book = workbook(shaped)
     assert [cell.value for cell in book["Members"][1]] == MEMBER_HEADINGS
     assert [cell.value for cell in book["Families"][1]] == FAMILY_HEADINGS
 
@@ -142,13 +156,42 @@ def test_pdf_prints_both_tables_with_the_csv_columns_and_rows(monkeypatch):
         assert sum(table.widths) == pytest.approx(pdf_design.BODY_WIDTH)
 
 
+def test_xlsx_report_information_states_what_the_pdf_frame_states():
+    """The workbook's "Report information" sheet (#926) names the download.
+
+    Like the other reports' workbooks, it states the parish, campaign,
+    download time in the chosen zone, both counts and the privacy line the
+    PDF's page frame shows; the CSV stays the two tables alone.
+    """
+    zone = ZoneInfo("America/Chicago")
+    book = workbook(shape_result(result()), zone)
+    assert book.sheetnames == ["Members", "Families", "Report information"]
+    sheet = book["Report information"]
+    rows = list(sheet.iter_rows(values_only=True))
+    assert rows == [
+        ("Report", "Limitations"),
+        ("Parish", "Example Parish"),
+        ("Campaign", "Stewardship 2055"),
+        # A native date-time cell, in the download's zone (9 AM Chicago).
+        ("Downloaded at", datetime(2026, 10, 5, 9, 0)),
+        ("Display time zone", "America/Chicago"),
+        ("Members in this file", "1"),
+        ("Families in this file", "1"),
+        ("Privacy", PRIVACY),
+    ]
+    assert sheet["B4"].is_date
+    assert sheet["A1"].font.b and sheet.page_setup.orientation == "portrait"
+    assert book.properties.title == "Limitations"
+    assert book.properties.created == datetime(2026, 10, 5, 14, 0)
+
+
 def test_exports_keep_formula_text_literal():
     """A parish-typed name such as =cmd is never a spreadsheet formula."""
     shaped = shape_result(result())
     shaped["members"][0]["member_name"] = "=cmd"
     rows = list(csv.reader(io.StringIO(limitations_csv(shaped, UTC).decode())))
     assert rows[1][0] == "'=cmd"
-    book = load_workbook(io.BytesIO(limitations_xlsx(shaped, ZoneInfo("UTC"))))
+    book = workbook(shaped)
     value = book["Members"]["A2"]
     assert value.data_type == "s" and value.value == "=cmd"
 
@@ -163,7 +206,7 @@ def test_xlsx_escapes_control_characters_in_source_names():
     raw["members"][0]["member_name"] = "Alex\x0bExample"
     raw["families"][0]["family_name"] = "Example\x0b"
     shaped = shape_result(raw)
-    book = load_workbook(io.BytesIO(limitations_xlsx(shaped, ZoneInfo("UTC"))))
+    book = workbook(shaped)
     member = book["Members"]["A2"]
     assert member.data_type == "s" and member.value == "Alex\\u000bExample"
     assert book["Families"]["A2"].value == "Example\\u000b"
