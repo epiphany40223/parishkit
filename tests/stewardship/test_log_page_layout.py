@@ -1,4 +1,4 @@
-"""System logs layout: level icons, compact filters, cross-links, hidden IDs."""
+"""System logs layout: level icons, compact filters, cross-link icons, no IDs."""
 
 import re
 from datetime import UTC, datetime
@@ -37,7 +37,7 @@ def _operational(level, index):
             "context": {"outcome": "failed"},
         }
     )
-    row.update(actor=None, actor_worker=True, task_subject=False)
+    row.update(actor=None, actor_worker=True, task_subject=False, has_related=True)
     return row
 
 
@@ -55,7 +55,12 @@ def _audit():
             "auditcontext__context": None,
         }
     )
-    row.update(actor="admin@example.org", actor_worker=False, task_subject=True)
+    row.update(
+        actor="admin@example.org",
+        actor_worker=False,
+        task_subject=True,
+        has_related=True,
+    )
     return row
 
 
@@ -262,36 +267,88 @@ def test_critical_rows_stand_out():
     assert html.count('class="log-row-critical"') == 1
 
 
-def test_identifiers_sit_under_closed_technical_details():
-    """Every identifier shown as text is inside a closed Technical details block.
-
-    Identifiers still travel in hidden inputs and links, which are not text.
-    """
+def test_log_rows_show_no_identifiers_or_technical_details():
+    """Rows hold no Technical details disclosure (#1065): the task page shows
+    a task's identifiers, and no identifier is page text anywhere. They still
+    travel in hidden inputs and links, which are not text."""
     html = _render()
-    assert html.count('<details class="technical-details">') == len(LEVELS) + 1
-    visible = re.sub(
-        r"<details class=\"technical-details\">.*?</details>", "", html, flags=re.S
-    )
-    visible = re.sub(r"<[^>]+>", " ", visible)
+    assert "technical-details" not in html
+    visible = re.sub(r"<[^>]+>", " ", html)
     assert not UUID_TEXT.search(visible)
 
 
-def test_entries_cross_link_by_correlation_actor_campaign_and_task():
-    """IDs become actions: related entries, same actor, same campaign, open task."""
+# Each cross-link icon's id suffix, accessible name and tooltip (#1065).
+LINK_LABELS = {
+    "related": "Show entries related to this entry",
+    "actor": "Show entries by the same actor",
+    "subject": "Show audit records about the same subject",
+    "campaign": "Show audit records for the same campaign",
+    "task": "Open this task",
+}
+
+
+def _links(html, row_id):
+    """Map each cross-link icon on one entry to its whole opening tag."""
+    return {
+        kind: tag
+        for tag, kind in re.findall(
+            rf'(<(?:button|a)\b[^>]*\bid="log-[a-z]+-{row_id}-(\w+)"[^>]*>)', html
+        )
+    }
+
+
+def test_entries_cross_link_through_named_icon_buttons():
+    """The cross-links are row icon buttons (#1065), each named for what it
+    shows with a matching tooltip, drawing its own inline icon; the task
+    icon is a link to the task page."""
     html = _render()
-    rows = len(LEVELS) + 1
-    assert html.count(">Show related entries</button>") == rows
-    assert html.count(">Same actor</button>") == rows
-    assert html.count(">Same campaign</button>") == 1
-    assert html.count(">Open task</a>") == 1
-    assert f'href="/admin/system/background/{UUID(int=304)}/">Open task</a>' in html
+    links = _links(html, UUID(int=300))
+    assert set(links) == set(LINK_LABELS)
+    for kind, tag in links.items():
+        label = LINK_LABELS[kind]
+        assert f'aria-label="{label}"' in tag and f'title="{label}"' in tag
+        assert "icon-button" in tag
+    task = links["task"]
+    assert task.startswith("<a ")
+    assert f'href="/admin/system/background/{UUID(int=304)}/"' in task
+    for kind in ("related", "actor", "subject", "campaign"):
+        assert links[kind].startswith('<button type="submit"')
+    # Every row's icons sit in the one Related cell's five fixed slots.
+    assert html.count('<div class="log-link-slots">') == len(LEVELS) + 1
     # A campaign filter only ever matches audit records, so it asks for them
     # alone: Audit record ticked, every level unticked (#601).
-    form = re.search(r"<form[^>]*>(?:(?!</form>).)*>Same campaign<", html, re.S)
+    form = re.search(
+        r"<form[^>]*log-link-campaign[^>]*>(?:(?!</form>).)*</form>", html, re.S
+    )
     hidden = dict(
         re.findall(r'<input type="hidden" name="(\w+)" value="([^"]*)"', form.group(0))
     )
     assert hidden == {"applied": "yes", "audit": "yes", "campaign": str(UUID(int=303))}
+
+
+@pytest.mark.parametrize(
+    ("change", "absent"),
+    [
+        ({"has_related": False}, {"related"}),
+        ({"actor_id": None}, {"actor"}),
+        # A task is the entry's subject, so no subject means no task either.
+        ({"subject_id": None, "task_subject": False}, {"subject", "task"}),
+        ({"campaign_id": None}, {"campaign"}),
+        ({"task_subject": False}, {"task"}),
+    ],
+)
+def test_an_icon_shows_only_when_it_has_something_to_link_to(change, absent):
+    """No related entries, actor, subject, campaign or task: no icon for it
+    (Administrator, 2026-10-11, #1065); the other icons stay."""
+    row = _audit() | change
+    links = _links(_render(rows=[row]), UUID(int=300))
+    assert set(links) == set(LINK_LABELS) - absent
+
+
+def test_operational_entries_show_only_related_and_actor_icons():
+    """Operational entries have no subject or campaign, so no icons for them."""
+    links = _links(_render(), UUID(int=100))
+    assert set(links) == {"related", "actor"}
 
 
 def test_identifier_filters_fold_away_unless_used():
