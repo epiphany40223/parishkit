@@ -150,6 +150,8 @@ HOSTED = {
     # Roster changes to enter.
     "roster-tick.html": ("ministry-followup.html",),
     "roster-tick-row.html": ("ministry-roster.html",),
+    # Past campaigns' review region (#1018): Apply sits inside it.
+    "past-campaigns-review.html": ("past-campaigns.html",),
 }
 
 

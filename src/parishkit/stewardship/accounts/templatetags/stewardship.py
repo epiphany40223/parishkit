@@ -176,7 +176,7 @@ def sort_heading(context, table, column, label, css_class=""):
 # The destructive row actions table_actions draws: each has its own icon and
 # words ("Delete Reminder 2", "Revoke nightly export"), the same size and the
 # same confirmation dialog.
-TABLE_ACTION_VERBS = {"delete", "revoke"}
+TABLE_ACTION_VERBS = {"delete", "revoke", "remove"}
 
 
 @register.inclusion_tag("stewardship/components/table-actions.html")
@@ -196,8 +196,9 @@ def table_actions(
     ``name`` names the row in each button's accessible name and tooltip;
     ``edit`` is the row's edit page; ``delete`` the value its destructive
     action posts as ``field`` once the dialog ``confirm`` names is
-    confirmed. ``verb`` names that action: "delete" (the default) or
-    "revoke" (Automation access). ``confirm_name`` is what the dialog's
+    confirmed. ``verb`` names that action: "delete" (the default),
+    "revoke" (Automation access) or "remove" (Past campaigns, whose Remove
+    keeps a tombstone). ``confirm_name`` is what the dialog's
     title and announcement call the row, when that needs more than ``name``
     (Users: the address with its Name and role); it defaults to ``name``.
     Leave out an action the row does not offer; a row with none gets an

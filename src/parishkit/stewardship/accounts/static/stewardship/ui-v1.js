@@ -1420,7 +1420,7 @@
         ...init,
         signal: controller.signal,
         credentials: "same-origin",
-        headers: {"X-Requested-With": "fetch"},
+        headers: {...init.headers, "X-Requested-With": "fetch"},
       });
       text = await response.text();
     } catch (error) {
@@ -1691,6 +1691,13 @@
         ?? form.getAttribute("enctype") ?? "").toLowerCase();
       const body = enctype === "multipart/form-data" ? fields : new URLSearchParams(fields);
       init = {method: "POST", body};
+      // A form marked data-csrf-header also sends its token in the
+      // X-CSRFToken header: its server checks only the header, so that an
+      // unauthorized upload is refused before its body is read (Past
+      // campaigns' Review, #1018).
+      const token = form.hasAttribute("data-csrf-header")
+        && form.querySelector('input[name="csrfmiddlewaretoken"]')?.value;
+      if (token) init.headers = {"X-CSRFToken": token};
       // A read-only table POST that got no answer is submitted natively; a
       // saving POST never is (refreshTable shows a note instead).
       load = () => HTMLFormElement.prototype.submit.call(form);
@@ -2568,6 +2575,25 @@
     });
   };
 
+  // A file field marked data-max-bytes (Past campaigns' archive, #1018)
+  // counts as in error while the chosen file is larger than that: its
+  // data-too-large text becomes the field's data-client-error, which the
+  // complete-before-submit gate above holds the form's buttons with and
+  // shows as its hint, so a file the server would refuse is never sent.
+  // Capture phase, so the field is marked before the gate's own change
+  // listener on the form runs. The server checks the size again.
+  document.addEventListener("change", (event) => {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement) || input.type !== "file"
+        || !input.hasAttribute("data-max-bytes")) return;
+    const file = input.files?.[0];
+    if (file && file.size > Number(input.dataset.maxBytes)) {
+      input.setAttribute("data-client-error", input.dataset.tooLarge || "This file is too large.");
+    } else {
+      input.removeAttribute("data-client-error");
+    }
+  }, true);
+
   // A field marked data-show-when="name=value" is shown only while the form's
   // control called "name" has that value, e.g. the daily refresh time only
   // for the once-a-day frequency; "name!=value" shows it for every other
@@ -2941,6 +2967,24 @@
     completeForms.forEach(gateComplete);
     notFutureChecks.forEach(({check}) => check());
     liveChecks.forEach(({check}) => check());
+  });
+  // An in-place answer that finishes a form's job carries
+  // data-clears-form="<form id>" (Past campaigns' Apply outcome, #1018):
+  // that form is reset as on a fresh page (a file field empties, boxes take
+  // their drawn defaults), a too-large mark on its file field goes with the
+  // file, and its complete gate runs again, so its buttons are held with
+  // the hint. reset() fires no input or change event, so no review is
+  // withdrawn by it. The hint's line is reserved, so nothing moves (#736).
+  document.addEventListener("parishkit:swap", (event) => {
+    if (!(event.target instanceof Element)) return;
+    within(event.target, "[data-clears-form]").forEach((mark) => {
+      const form = document.getElementById(mark.dataset.clearsForm);
+      if (!(form instanceof HTMLFormElement)) return;
+      form.reset();
+      form.querySelectorAll("input[type=file][data-client-error]")
+        .forEach((input) => input.removeAttribute("data-client-error"));
+      gateComplete(form);
+    });
   });
 
   // Optional modules are ordinary accessible fieldsets shown or hidden by

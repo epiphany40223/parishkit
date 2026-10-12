@@ -545,5 +545,18 @@ def test_table_actions_revoke_has_its_own_words_and_icon():
     assert 'class="button-secondary icon-button icon-button-danger"' in revoke
     with pytest.raises(template.TemplateSyntaxError):
         render_actions(
-            '{% table_actions name="x" delete="abc" confirm="d" verb="remove" %}'
+            '{% table_actions name="x" delete="abc" confirm="d" verb="erase" %}'
         )
+
+
+def test_table_actions_remove_has_its_own_words_and_icon():
+    """verb="remove" says Remove and draws its own icon (Past campaigns, #1018)."""
+    remove = render_actions(
+        '{% table_actions name="2025" delete="2025:2" confirm="past-campaign-remove" '
+        'field="archive" verb="remove" %}'
+    )
+    assert 'aria-label="Remove 2025"' in remove and 'title="Remove 2025"' in remove
+    assert 'name="archive" value="2025:2"' in remove
+    assert "Delete" not in remove and "Revoke" not in remove
+    # A circled minus: unlike Delete's bin and Revoke's crossed circle.
+    assert "<circle" in remove and 'd="M5 8h6"' in remove
