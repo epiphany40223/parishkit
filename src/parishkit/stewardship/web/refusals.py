@@ -57,7 +57,8 @@ class UserFacing:
     """Mixin giving an exception a safe ``refusal`` to show the Admin.
 
     ``link`` must be a server-owned same-origin path (for example from
-    ``reverse``); ``link_label`` names where it goes.
+    ``reverse``); ``link_label`` names where it goes. ``title`` is the page's
+    own heading, when the closed category's would mislead.
     """
 
     def __init__(self, message, *, fix=None, link=None, link_label=None, title=None):
@@ -98,6 +99,26 @@ class UserFacingGone(UserFacing, PermissionError):
     handlers that call it answer with the 410 page and its explanation,
     never a sign-in prompt.
     """
+
+
+class UserFacingUnavailable(UserFacing, StaleRecordError):
+    """A page its greyed-out menu entry says is unavailable right now (#1128).
+
+    HTTP 409 Conflict (the campaign's state or the mode does not allow it
+    now), with the closed ``not_available`` code rather than
+    ``stale_version`` (nothing changed, and reloading will not help) or
+    ``unavailable`` (an outage, retried later). It is a ``StaleRecordError``
+    so a handler that does not know it still answers 409 with its
+    explanation; ``unavailable_response`` and the handlers that call it use
+    the ``not_available`` code.
+    """
+
+
+def unavailable_response(error):
+    """The 409 response for a ``UserFacingUnavailable`` refusal."""
+    return validation_response(
+        [FieldError(ErrorCode.NOT_AVAILABLE)], status=409, refusal=error.refusal
+    )
 
 
 def gone_response(error):

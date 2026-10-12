@@ -151,6 +151,23 @@ def _preview(request, editor, service, actor, state, campaign, formset, salt):
     return _page(request, editor, configuration, campaign, formset, review=review)
 
 
+def _unavailable(editor, configuration, campaign):
+    """Why the list cannot be edited now: the menu entry's own reason (#1128).
+
+    A form opened before the campaign went live (or before the mode
+    changed) and sent afterwards is refused with the words the menu's
+    greyed entry and the page's direct visit show. A refusal the menu does
+    not grey out for (another change holding the settings queue) keeps the
+    editor's own message.
+    """
+    state = admin_navigation.MenuState(campaign, configuration.mode)
+    greyed = admin_navigation.MENU_REASONS[editor.page](state)
+    if greyed is None:
+        return StaleRecordError(editor.unavailable)
+    label = admin_navigation.PAGES[editor.page].label
+    return admin_navigation.Greyed(label, greyed, None).refusal()
+
+
 def option_settings(request, campaign_id, editor):
     """Current Admins may review and request changes only for an unlocked draft.
 
@@ -204,7 +221,7 @@ def option_settings(request, campaign_id, editor):
                 not editable
                 or editor.module not in campaign.active_configuration.values["modules"]
             ):
-                raise StaleRecordError(editor.unavailable)
+                raise _unavailable(editor, configuration, campaign)
             formset = ShareOptions(
                 request.POST if action == "preview" else None,
                 prefix="options",

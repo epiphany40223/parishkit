@@ -19,6 +19,10 @@ class ErrorCode(StrEnum):
     # A retired action, or an address naming a campaign that is no longer
     # current (navigation rule 10): it will not work again, so do not retry.
     GONE = "gone"
+    # The campaign's state or the mode does not allow this now (#1128): not
+    # an outage, so do not retry; the command line's refusal of the same
+    # case has the same name.
+    NOT_AVAILABLE = "not_available"
 
 
 MESSAGES = {
@@ -30,6 +34,7 @@ MESSAGES = {
     ),
     ErrorCode.DENIED: _("Access is unavailable. Sign in again."),
     ErrorCode.GONE: _("This is no longer available."),
+    ErrorCode.NOT_AVAILABLE: _("This is not available right now."),
 }
 
 

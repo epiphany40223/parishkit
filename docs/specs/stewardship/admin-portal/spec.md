@@ -672,8 +672,10 @@ narrow screen; the tip stays while the pointer is over it or the entry keeps
 focus, and Escape, or a tap elsewhere, dismisses it. The reason is also the
 entry's accessible description (`aria-describedby`), so screen readers
 announce it with the entry. The reason names what to do when there
-is something to do. An unavailable entry's page refuses a direct visit as it
-does today, with the same reason. The conditions come from the campaign
+is something to do. An unavailable entry's page, opened directly, shows the
+same reason and a way forward
+([unavailable menu pages](../ui-conventions/spec.md#unavailable-menu-pages)).
+The conditions come from the campaign
 state, modules and mode the chrome already reads, so building the menu adds
 no query. The one exception is the open counts on Additional information and
 Ministry follow-up ([Menu groups](#menu-groups)): one query reads both, only

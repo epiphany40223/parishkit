@@ -22,6 +22,7 @@ from parishkit.stewardship.observability import (
     debug_logging_enabled,
     emit_failure,
 )
+from parishkit.stewardship.web.refusals import unavailable_response
 
 from . import admin_navigation, family_maintenance
 from .authentication import runtime
@@ -198,6 +199,70 @@ def _navigation_items(actor, admin, campaign, configuration):
 
     state = admin_navigation.MenuState(campaign, configuration.mode)
     return admin_navigation.menu(state, may_open)
+
+
+def greyed_page(request, store):
+    """The reason page for a menu page its menu greys out right now, or None.
+
+    Opening a greyed-out entry's page directly (a bookmark, an old tab, a
+    typed address) shows the menu's own reason and a way forward rather
+    than whatever the page's refusal happens to say (ui-conventions,
+    "Unavailable menu pages", #1128). It runs from the access gate before the
+    view, for a GET or HEAD of a menu page only. POSTs keep their pages' own
+    in-place refusals.
+
+    Only a signed-in viewer whose role may open the entry gets the page. The
+    session is checked read-only, as the not-found page does: it renews no
+    idle time and rotates nothing. Anyone else (signed out, a session the
+    owning view would rotate or refuse, a role the entry is hidden from)
+    gets None, so the view runs and makes its own decision as before; a
+    command session's cookie in a browser is left to the view before any
+    session check, so its misuse is refused and recorded once. This
+    grants nothing and shows only the menu's own words. An entry available
+    now costs one query (the configuration and campaign) and no session check.
+    """
+    from .automation_sessions import MARKER
+    from .sessions import authenticated_admin
+
+    match = getattr(request, "resolver_match", None)
+    if (
+        request.method not in {"GET", "HEAD"}
+        or match is None
+        or match.namespace != admin_navigation.NAMESPACE
+        or match.url_name not in admin_navigation.MENU_NAMES
+    ):
+        return None
+    configuration = SystemConfiguration.objects.select_related(
+        "current_campaign__active_configuration"
+    ).first()
+    if configuration is None:
+        return None
+    campaign = _current_campaign(configuration)
+    state = admin_navigation.MenuState(campaign, configuration.mode)
+    if admin_navigation.MENU_REASONS[match.url_name](state) is None:
+        return None
+    # A command session's cookie used in a browser is refused (and its
+    # sessions revoked) by the view's own check; refusing it here too would
+    # record that refusal twice.
+    session = getattr(request, "session", None)
+    if session is None or session.get(MARKER) is not None:
+        return None
+    try:
+        actor = authenticated_admin(request, store=store, read_only=True)
+    except PermissionError:
+        return None
+    if not isinstance(actor, Principal) or not actor.roles:
+        return None
+    admin = allows(actor, Capability.CONFIGURE)
+    items = _navigation_items(actor, admin, campaign, configuration)
+    greyed = admin_navigation.greyed_entry(match.url_name, items)
+    if greyed is None:
+        # Hidden by role: the view authenticates and refuses on its own, so
+        # leave the request as it would have found it.
+        for name in ("principal", "portal_session"):
+            request.__dict__.pop(name, None)
+        return None
+    return unavailable_response(greyed.refusal())
 
 
 def first_entry_url(actor, section):

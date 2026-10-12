@@ -54,7 +54,8 @@ when it lands.
   [conditional fields](#conditional-fields),
   [single-campaign interim](#single-campaign-interim),
   [addresses and legacy URLs](#addresses-and-legacy-urls),
-  [not-found pages](#not-found-pages).
+  [not-found pages](#not-found-pages),
+  [unavailable menu pages](#unavailable-menu-pages).
 - Admin page layout: [page help](#page-help),
   [button labels](#button-labels), [shared visual style](#shared-visual-style),
   [time entry](#time-entry).
@@ -1129,6 +1130,42 @@ looks like a broken site. **Shared code.** `web/error_pages.py`
 (`BrowserErrorMiddleware`, and `not_found_response` (#930)) and
 `error.html`. **Precedent.** #927, #930. The general error-page rule is under
 [accessibility and client behavior](#accessibility-and-client-behavior).
+
+### Unavailable menu pages
+
+**Rule.** A page opened while its menu entry is greyed out (from a bookmark,
+an old tab or a typed address) says why, in the menu entry's own words, and
+offers a way forward; never a generic error such as "This information
+changed". Its heading names the page ("Share options isn't available right
+now"), its message is the entry's reason, and it links the entry that
+changes that reason when the viewer's menu offers it (Campaign settings for a missing module, Go-live
+readiness while Production is not confirmed or in Testing mode, Production
+activation once the campaign has gone live), besides the usual way back and
+Home. The answer is HTTP 409 Conflict (the state does not allow it now,
+never 404 or 403), and scripts get the closed `not_available` code (not
+`unavailable`, which means an outage to retry) with the same refusal. **Why.** Nothing changed and reloading does not help; the
+menu already knows why, so the page must not drift from it. **Shared
+code.** `admin_navigation.py` (each reason a named string, `FORWARD`,
+`greyed_entry`, `Greyed.refusal`), `admin_context.greyed_page` (run by the
+access gate), `web/refusals.py` (`UserFacingUnavailable`,
+`unavailable_response`); `test_admin_navigation.py` requires every entry
+with a reason check to be covered, and `test_greyed_pages_postgresql.py`
+opens one page per kind of reason. **Precedent.** #1128.
+
+- **One check, for every greyable entry.** The access gate runs it once,
+  before the view, for a GET or HEAD of any menu page whose reason check
+  returns a reason; a new entry with a reason check is covered without
+  further code. A POST keeps its page's own refusal; the Share options editor
+  refuses a form sent after the campaign went live with the same reason.
+- **Only for a viewer who sees the entry greyed.** The role still hides an
+  entry ([stable menu shape](../admin-portal/spec.md#stable-menu-shape)), so
+  a page the viewer's role may not open is refused by its own view (403) as
+  before, without the reason; a signed-out visitor, or a session the page
+  would rotate or end, also goes to the view. The session is checked
+  read-only, renewing no idle time.
+- **Server checks stay.** The page shows only the menu's words and grants
+  nothing; every view keeps its own checks, which still refuse anything the
+  gate lets through.
 
 ## Admin page layout and help
 
