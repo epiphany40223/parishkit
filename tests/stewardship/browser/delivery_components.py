@@ -220,6 +220,12 @@ def components(now):
         # The refused address its delivery recorded, linking its own page
         # (#1015).
         refused=[dict(id=REFUSAL_ID, address="head@example.org")],
+        # Whom it is for, read through the definer function (#1024): a
+        # Testing-mode email, routed to the Testing recipient instead.
+        recipients=dict(
+            intended=["head@example.org", "spouse@example.org"],
+            routed=["testing@example.org"],
+        ),
         # A decision is offered, so the "Resolve this email" section shows.
         decisions=True,
         commands=[
