@@ -24,10 +24,12 @@ from parishkit.stewardship.campaigns.models import Campaign, ScheduleDefinition
 from ..campaign_factory import campaign as campaign_record
 from ..campaign_factory import schedule
 from ..content_factory import content
+from ..policy_factory import address
 from .auth_builders import signed_in
 from .campaign_builders import add_draft, change
 from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_campaign_views_postgresql import apply, post
+from .test_content_views_postgresql import assert_lacks_capability
 from .test_parish_views_postgresql import token
 from .test_schedule_views_postgresql import pending
 
@@ -563,3 +565,36 @@ def test_a_sending_schedule_can_be_neither_changed_nor_deleted(
     assert refused.status_code == 403
     assert "already run" in json.loads(refused.content)["refusal"]["message"]
     assert ConfigurationChangeRequest.objects.count() == before
+
+
+def test_delete_needs_the_csrf_token_and_configure(auth_service, google):
+    """Without the CSRF token, or signed in as Staff, nothing is recorded (#879)."""
+    store = auth_service.store
+    setup(store)
+    staff = address("staff@example.org", roles=("staff",))
+    assert (
+        change(
+            store,
+            store.active(),
+            uuid4(),
+            [{"operation": "add", "section": "login_rules", **staff}],
+        ).state
+        == "applied"
+    )
+    reminder = definition("reminder")
+    values = {"base_digest": store.active().digest, "schedule_id": str(reminder.pk)}
+    before = ConfigurationChangeRequest.objects.count()
+    browser, _ = signed_in()
+    assert browser.post(DELETE, values).status_code == 403
+    # Staff sign in from their own Google account, so the Administrator's
+    # session stays signed in for the accepted post below.
+    google[0].update(sub="synthetic-staff-subject", email="staff@example.org")
+    staff_browser, _ = signed_in()
+    assert_lacks_capability(staff_browser, post(staff_browser, DELETE, values))
+    assert ConfigurationChangeRequest.objects.count() == before
+    reminder.refresh_from_db()
+    assert reminder.current_revision_id is not None
+    # The same post with the token, from the Administrator, is accepted, so
+    # the refusals above came from the missing token and capability alone.
+    accepted = post(browser, DELETE, values)
+    assert accepted.status_code == 302, accepted.content

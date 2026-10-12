@@ -11,13 +11,13 @@ from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.lifecycle import Action
-from parishkit.stewardship.campaigns.models import Campaign
+from parishkit.stewardship.campaigns.models import Campaign, CampaignWorkGate
 from parishkit.stewardship.deployment import ServiceRole
 
 from ..content_factory import content
 from ..policy_factory import address
 from ..test_content_forms import fields
-from .auth_builders import signed_in
+from .auth_builders import signed_in, unguarded
 from .campaign_builders import add_draft, change, command
 from .test_background_grants_postgresql import task_login
 from .test_campaign_views_postgresql import apply, post
@@ -922,3 +922,85 @@ def test_delete_refuses_a_sent_email_the_confirmation_or_a_bad_post(
     assert {used["id"], spare["id"]} <= saved_emails()
     # The address answers only the dialog's POST.
     assert browser.get(DELETE).status_code == 405
+
+
+def assert_lacks_capability(browser, response):
+    """``response`` refuses a signed-in user's missing capability (#879).
+
+    A post whose session has ended is refused with 403 too, but with the
+    "Your sign-in has ended" refusal. A capability refusal carries none, and
+    the same browser still opens the Admin home page, so its session is live.
+    """
+    assert response.status_code == 403, response.content
+    body = json.loads(response.content)
+    assert [error["code"] for error in body["errors"]] == ["denied"]
+    assert "refusal" not in body
+    assert browser.get("/admin/").status_code == 200
+
+
+def test_delete_needs_the_csrf_token_and_configure(auth_service, google):
+    """Without the CSRF token, or signed in as Staff, nothing is recorded (#879)."""
+    store = auth_service.store
+    campaign, _catalog, _schedule = setup(store)
+    spare = content(str(campaign.pk), kind="email", slot="initial", subject="Spare")
+    staff = address("staff@example.org", roles=("staff",))
+    added(store, campaign, spare)
+    assert (
+        change(
+            store,
+            store.active(),
+            uuid4(),
+            [{"operation": "add", "section": "login_rules", **staff}],
+        ).state
+        == "applied"
+    )
+    values = {"base_digest": store.active().digest, "revision_id": spare["id"]}
+    before = ConfigurationChangeRequest.objects.count()
+    browser, _ = signed_in()
+    assert browser.post(DELETE, values).status_code == 403
+    # Staff sign in from their own Google account, so the Administrator's
+    # session stays signed in for the accepted post below.
+    google[0].update(sub="synthetic-staff-subject", email="staff@example.org")
+    staff_browser, _ = signed_in()
+    assert_lacks_capability(staff_browser, post(staff_browser, DELETE, values))
+    assert ConfigurationChangeRequest.objects.count() == before
+    assert spare["id"] in saved_emails()
+    # The same post with the token, from the Administrator, is accepted, so
+    # the refusals above came from the missing token and capability alone.
+    accepted = post(browser, DELETE, values)
+    assert accepted.status_code == 302, accepted.content
+
+
+def test_delete_is_refused_while_campaign_work_holds_changes(auth_service, google):
+    """A held campaign refuses the dialog's Delete and keeps the email (#879)."""
+    store = auth_service.store
+    campaign, _catalog, _schedule = setup(store)
+    spare = content(str(campaign.pk), kind="email", slot="initial", subject="Spare")
+    added(store, campaign, spare)
+    # Purge preparation holds every content change. Reserving a real gate
+    # needs the exclusive maintenance window, so seed the row past its guard.
+    with unguarded():
+        gate = CampaignWorkGate.objects.create(
+            campaign=campaign, request_id=uuid4(), initiated_by_id=uuid4()
+        )
+    browser, _ = signed_in()
+    before = ConfigurationChangeRequest.objects.count()
+    response = post(
+        browser,
+        DELETE,
+        {"base_digest": store.active().digest, "revision_id": spare["id"]},
+    )
+    assert response.status_code == 409, response.content
+    refusal = json.loads(response.content)["refusal"]["message"]
+    assert "can't be edited right now" in refusal
+    assert ConfigurationChangeRequest.objects.count() == before
+    assert spare["id"] in saved_emails()
+    # Once the hold is gone, the same post is accepted: the hold alone refused.
+    with unguarded():
+        gate.delete()
+    accepted = post(
+        browser,
+        DELETE,
+        {"base_digest": store.active().digest, "revision_id": spare["id"]},
+    )
+    assert accepted.status_code == 302, accepted.content
