@@ -1144,6 +1144,13 @@ needs the Administrator's approval, the full verification pass and a fresh
 backup, and never changes a Family credential (see the runbook's
 [Comparing a set with another release](../../../guides/stewardship-backup-runbook.md#comparing-a-set-with-another-release)).
 
+A restore onto the deployment's own host can be run by the host-side
+`tools/stewardship-ops/pk-restore`, which follows the runbook's steps in
+order, refuses before anything stops unless the deployment UUID, the set's
+digests and `restore-check` all agree, never deletes a replaced tree, and
+stops for the Restore review (see the runbook's
+[Scripted same-host restore](../../../guides/stewardship-backup-runbook.md#scripted-same-host-restore)).
+
 Both modes verify manifest/digests, application/schema compatibility, credential
 availability, and the target-mode precondition before writing. They restore
 database/media/config, run permitted forward migrations, and require the
