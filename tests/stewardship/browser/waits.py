@@ -73,6 +73,36 @@ def has_text(locator, text):
     expect(locator).to_have_text(text)
 
 
+def has_value(locator, value):
+    """Assert that the field ``locator`` comes to hold ``value``, waiting.
+
+    Used for a value a script fills in, such as a suggested slug or a key
+    from a server answer; an immediate ``input_value`` would race the script.
+    """
+    from playwright.sync_api import expect
+
+    expect(locator).to_have_value(value)
+
+
+def has_count(locator, count):
+    """Assert that ``locator`` comes to match ``count`` elements, waiting.
+
+    Used after a redraw swaps rows or headings in place.
+    """
+    from playwright.sync_api import expect
+
+    expect(locator).to_have_count(count)
+
+
+def has_class(locator, name):
+    """Assert that ``locator`` comes to carry the CSS class ``name``, waiting."""
+    import re
+
+    from playwright.sync_api import expect
+
+    expect(locator).to_have_class(re.compile(rf"(^|\s){re.escape(name)}(\s|$)"))
+
+
 def recorded(page, requests, count, *, timeout=10000):
     """Wait until a route handler has appended ``count`` requests to ``requests``.
 

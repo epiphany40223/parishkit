@@ -3,7 +3,7 @@
 import pytest
 from django.urls import reverse
 
-from .waits import visible
+from .waits import eventually, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -236,7 +236,8 @@ def test_heading_tips_float_without_moving_the_table(
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     # The page scrolling keeps it with its button, still without moving the box.
     page.mouse.wheel(0, 40)
-    page.wait_for_function(
+    eventually(
+        page,
         """id => { const b = document.getElementById(id).getBoundingClientRect();
         const t = document.querySelector(`[aria-controls="${id}"]`)
             .getBoundingClientRect();

@@ -13,7 +13,7 @@ from .system_health_components import (
     PAGE,
     STEADY,
 )
-from .waits import visible
+from .waits import eventually, visible
 
 
 def expect(locator):
@@ -329,7 +329,8 @@ def test_the_button_catches_up_once_the_reader_leaves_it(page, component_origin)
     button = region.get_by_role("button", name="Take a backup now…")
     button.focus()
     # The first poll brings the waiting request; the focused button is left.
-    page.wait_for_function(
+    eventually(
+        page,
         """() => document.querySelector(
             '[data-live-status] template[data-live-mirror]'
         ).innerHTML.includes('disabled')""",

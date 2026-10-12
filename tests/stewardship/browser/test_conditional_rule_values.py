@@ -8,7 +8,7 @@ has none of them.
 
 import pytest
 
-from .waits import hidden, visible
+from .waits import available, hidden, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -54,7 +54,7 @@ def test_show_enabled_and_required_gates_compare_numbers_alike(page, component_o
         number.fill(value)
         number.dispatch_event("change")
 
-    page.wait_for_function("document.querySelector('#enabled').disabled === false")
+    available(enabled)
     hidden(shown)
     assert not needed.evaluate("node => node.required")
     for value in ("04321", "4321", "5", "5.0"):
