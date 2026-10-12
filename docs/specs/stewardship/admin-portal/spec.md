@@ -5901,7 +5901,9 @@ the page keeps Apply unavailable whenever a date is entered. The critical-event
 banner's link sends the browser's zone with a From day one day before its
 24-hour window, so the window is covered in every zone; when the browser
 reports no zone it sends no From day. Export
-requires choosing UTC or the browser's timezone (offered by the page); the
+requires choosing UTC or the browser's timezone (offered by the page), as every
+download whose rows hold exact action times asks
+([time zone question](../ui-conventions/spec.md#downloaded-files)); the
 file's timestamps carry their UTC offset. Logins/logouts, configuration, polls/tasks, each email and
 reason/recipient routing, report execution/export, errors, Family access,
 submission changes, workflow changes, publication, and purge are recorded.

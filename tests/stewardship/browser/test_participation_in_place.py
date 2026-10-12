@@ -139,7 +139,7 @@ def test_browser_zone_is_applied_in_place_once(page, component_origin):
     assert page.locator("[data-digest-values]").inner_text() == ""
     assert "Report options applied." not in page.locator("main").inner_text()
     page.goto(component_origin + REAL + "?timezone=UTC")
-    expect(page.locator("select[name=timezone]")).to_have_value("UTC")
+    expect(page.locator("input[data-report-zone]")).to_have_value("UTC")
     assert page.url.endswith("?timezone=UTC")
 
 

@@ -429,11 +429,16 @@ def families_preview_run(monkeypatch, argv):
     return calls, stderr.getvalue()
 
 
-def test_names_need_a_time_zone_and_print_a_new_key(monkeypatch):
-    """--names and --timezone go together; a new key is told before acting."""
-    for argv in (["--names"], ["--timezone", "UTC"]):
-        with pytest.raises(admin_cli.UsageError):
-            families_preview_run(monkeypatch, argv)
+def test_names_take_an_optional_time_zone_and_print_a_new_key(monkeypatch):
+    """--timezone needs --names, which no longer needs it (#1127).
+
+    A new key is told before acting.
+    """
+    with pytest.raises(admin_cli.UsageError):
+        families_preview_run(monkeypatch, ["--timezone", "UTC"])
+    calls, _ = families_preview_run(monkeypatch, ["--names"])
+    [(kind, values)] = calls
+    assert kind == "names" and values["zone"] is None
     calls, errors = families_preview_run(monkeypatch, [])
     assert [kind for kind, _ in calls] == ["plain"] and errors == ""
     calls, errors = families_preview_run(monkeypatch, ["--names", "--timezone", "UTC"])

@@ -102,7 +102,9 @@ def test_read_admission_refuses_a_campaign_that_is_not_current(monkeypatch, curr
         "page=１２",
         "sort=name",
         "email=private@example.org",
-        "timezone=invalid",
+        # An unknown zone falls back to UTC instead (#1127,
+        # test_export_time_zones.py); a repeated one is still refused.
+        "timezone=UTC&timezone=Asia/Tokyo",
         "size=7",
         "size=1000",
         "size=",

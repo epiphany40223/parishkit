@@ -78,7 +78,7 @@ and otherwise a summary that follows the filters (#484).{% endcomment %}
 <fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Packet options" %}</legend>
 <label><input type="checkbox" name="history" value="yes"> {% translate "Also include resolved and withdrawn requests" %}</label>
 <label for="ministry-packet-format">{% translate "Packet format" %}</label><select id="ministry-packet-format" name="format"><option value="pdf">PDF</option><option value="xlsx">XLSX</option><option value="csv">CSV</option></select>{% include 'stewardship/export-dates-help.html' %}
-<label for="ministry-packet-timezone">{% translate "Packet timezone" %}</label><select id="ministry-packet-timezone" name="browser_timezone" data-browser-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
+{# The packet holds contact dates but no exact action times, so it asks for no time zone (#1127): the browser's goes unasked (data-browser-zone, ui-v1.js) for its dates and frame times. #}<input type="hidden" name="browser_timezone" data-browser-zone>
 </fieldset>
 {% button type="submit" enabled=mutable aria-describedby=mutable|yesno:",ministry-export-locked" %}{% translate "Queue follow-up packet" %}{% endbutton %}</form></section>{% endif %}
 {% endblock %}

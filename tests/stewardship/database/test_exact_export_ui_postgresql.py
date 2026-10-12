@@ -53,7 +53,6 @@ def test_native_exact_retry_handoff_and_expired_regeneration(
         for invalid in (
             values | {"source_id": str(uuid4())},
             values | {"population_scope": "all"},
-            values | {"browser_timezone": "bad-zone"},
             values | {"request_key": "bad-key"},
         ):
             assert post(browser, path, invalid).status_code == 400

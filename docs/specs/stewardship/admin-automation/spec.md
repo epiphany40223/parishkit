@@ -2052,7 +2052,7 @@ pause, and closing work is the closed-campaign resolution. See
 | URL names | Command or exemption |
 | --- | --- |
 | `campaign_mail` | `test sample-preview`, `test sample` (PR 6b) |
-| `campaign_mail_families` | `test families-preview REVISION_ID --family DUID …` (with `--names --timezone ZONE`, the names as an export, [#817](https://github.com/epiphany40223/parishkit/issues/817)), `test families --token …`, `test status` (PR 6c) |
+| `campaign_mail_families` | `test families-preview REVISION_ID --family DUID …` (with `--names [--timezone ZONE]`, the names as an export, [#817](https://github.com/epiphany40223/parishkit/issues/817)), `test families --token …`, `test status` (PR 6c) |
 
 `test sample-preview REVISION_ID [--request-key UUID]` (PR 6b) is the
 Preview and test email page's review, through the page's own `prepare` and
@@ -2111,7 +2111,7 @@ only to the Testing recipient.
 
 The page shows each Family's name beside its DUID so the Administrator
 recognizes the Families; the command line prints none.
-`test families-preview … --names --timezone ZONE [--format FORMAT]
+`test families-preview … --names [--timezone ZONE] [--format FORMAT]
 [--request-key UUID]`
 ([#817](https://github.com/epiphany40223/parishkit/issues/817)) runs the
 same review and, in its transaction, captures the names the page's
@@ -2124,9 +2124,12 @@ null without `--names`). The file is CSV (the default), XLSX or PDF
 (`--format`, [#966](https://github.com/epiphany40223/parishkit/issues/966)),
 each with Family then Family DUID, in the page's order (the page's Reviewed
 Families table also shows each Family's status)
-([#932](https://github.com/epiphany40223/parishkit/issues/932)). `--names` and
-`--timezone` go together, and `--format` needs `--names` (`usage`
-otherwise); without `--request-key` the new key is written to standard error
+([#932](https://github.com/epiphany40223/parishkit/issues/932)). The rows
+hold no times, so `--timezone` is optional: it sets the file's capture and
+request times, which otherwise use the parish's time zone
+([time zone question](../ui-conventions/spec.md#downloaded-files),
+[#1127](https://github.com/epiphany40223/parishkit/issues/1127)). `--timezone`
+and `--format` need `--names` (`usage` otherwise); without `--request-key` the new key is written to standard error
 first. Unlike the plain review, it changes state: it admits as a form post
 (recording activity) and runs in the export commands' scope, and records the
 export service's `export_requested` and, only for a new export,

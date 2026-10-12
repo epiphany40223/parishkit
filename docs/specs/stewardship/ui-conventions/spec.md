@@ -118,7 +118,9 @@ decision, 2026-10-04).
 The rule covers schedule send times, campaign and financial date-times and
 report day buckets too (Administrator decision, 2026-10-04,
 [#558](https://github.com/epiphany40223/parishkit/issues/558)). A pure date
-with no time stays a calendar date and is never shifted. The rule governs how
+with no time stays a calendar date and is never shifted. A download asks for a
+time zone only when its rows hold exact action times
+([downloaded files](#downloaded-files)). The rule governs how
 Admin pages show and take times; system definitions such as the campaign-local
 day and the active window keep their campaign-zone definitions. Shown
 timestamps include a time zone abbreviation in detail views. A form that
@@ -1794,6 +1796,35 @@ Recorded exceptions to the rule above:
 
 Not data exports, so outside the rule: the deployment configuration
 document, hosted files (served as uploaded) and chart images.
+
+**Time zone question.** A download asks for a time zone only when its rows
+hold exact times of actions: submissions, log entries, staff actions,
+deliveries. Any other download (campaign dates, contact dates, no times at
+all) asks nothing: its form sends the browser's zone in a hidden
+`data-browser-zone` field, which sets the file's frame times (Captured at,
+Requested at, Source as of), and the file names that zone. The one exception
+is Participation: its export forms post the page's own `query.timezone`, the
+zone the page was drawn in, which `report-v1.js` fills with the browser's
+(the [participation graph](../reports/spec.md#participation-graph)). The
+server falls back to the parish's time zone rather than refusing a missing or
+unknown zone there, since the reader was never asked. **Why.** A zone question beside a file with no times
+in it is a choice that changes nothing the reader cares about (Administrator
+feedback, 2026-10-12). Log and timeline exports keep the choice because they
+are shared and compared against records kept in other zones. **Shared
+code.** `web.dates.unasked_zone` and `web.dates.parish_zone`; the `test_export_time_zones.py` guard lists
+which forms ask. **Precedent.**
+[#1127](https://github.com/epiphany40223/parishkit/issues/1127).
+
+Asking: System logs, Response lists, Financial stewardship, Limitations,
+Census changes, Additional information, one Ministry's joining or leaving
+lists, Roster changes to enter, the Family timeline, and the Family directory
+code list only while its response columns are included (the field comes and
+goes with that applied choice, as the last field of its row, so nothing
+moves). Not asking: the Ministry follow-up packet, the participation exports,
+the directory code list without response columns, the postal mail merge, and
+the Family test names file (`test families-preview --names`, which uses the
+parish's zone unless `--timezone` is given, as a host command has no
+browser).
 
 Current state: since the
 [#966](https://github.com/epiphany40223/parishkit/issues/966) column sweep,

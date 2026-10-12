@@ -126,6 +126,17 @@ def mailing_option(parameters):
     return values[0] == "yes"
 
 
+def export_asks_zone(query, postal):
+    """Whether the export form asks for a time zone (#1127).
+
+    Only the code list with response columns has exact times in its rows
+    (invitation delivered, link followed, form opened, submitted). The code
+    list without them and the postal mail merge have none, so their form
+    sends the browser's zone unasked for the file's frame times.
+    """
+    return query.responses == "yes" and not postal
+
+
 def _audit(principal, campaign_id, *, postal, outcome, count, total, query):
     """Record scope/count, never names, codes, search strings or viewed contacts.
 
@@ -370,6 +381,7 @@ def directory(request, campaign_id):
                     "mutable": mutable,
                     "request_key": uuid4(),
                     "export_timezones": sorted(timezone_names()),
+                    "export_asks_zone": export_asks_zone(query, postal),
                 }
             )
             return iter(

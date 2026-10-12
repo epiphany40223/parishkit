@@ -1,5 +1,7 @@
 """Native private search and accessible scoped Ministry report controls."""
 
+from urllib.parse import quote
+
 import pytest
 from django.urls import reverse
 
@@ -149,7 +151,9 @@ def test_ministry_packet_request_posts_its_selection(page, component_origin):
     page.get_by_label("Example <Ministry>", exact=False).check()
     page.get_by_label("Also include resolved and withdrawn requests").check()
     page.get_by_label("Packet format").select_option("xlsx")
-    page.get_by_label("Packet timezone").select_option("America/Detroit")
+    # The packet asks for no time zone (#1127): the browser's goes unasked.
+    assert page.get_by_label("Packet timezone").count() == 0
+    zone = page.evaluate("Intl.DateTimeFormat().resolvedOptions().timeZone")
     page.route(
         "**" + reverse("admin:ministry_packet"),
         lambda route: route.fulfill(body="Queued"),
@@ -160,6 +164,7 @@ def test_ministry_packet_request_posts_its_selection(page, component_origin):
     assert "selection=" not in body and body.count("ministries=") == 1
     assert "ministries=9" in body
     assert "history=yes" in body and "format=xlsx" in body
+    assert "browser_timezone=" + quote(zone, safe="") in body
     assert "request_key=00000000-0000-0000-0000-000000000060" in body
     assert "?" not in sent.value.url
     # Let the routed answer finish loading before the next navigation,

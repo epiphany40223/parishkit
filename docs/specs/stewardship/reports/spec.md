@@ -49,7 +49,11 @@ details and partial responses.
 
 Exports represent the complete filtered result, not merely the current page,
 unless the user explicitly selects rows. Before generation, the UI shows scope,
-row count estimate, format, timezone, and sensitive-data warning. Each export
+row count estimate, format and sensitive-data warning. It asks for a time zone
+only when the file's rows hold exact times of actions; any other download uses
+the browser's zone unasked and names it in the file (the
+[time zone question](../ui-conventions/spec.md#downloaded-files),
+[#1127](https://github.com/epiphany40223/parishkit/issues/1127)). Each export
 is audited with report, filters, requester, campaign, source snapshot, and row
 count, but not a duplicate of every exported value.
 
@@ -326,7 +330,11 @@ carries that provenance as metadata instead: the PNG's `Description` text
 chunk and the PDF's Info `Subject`, both holding the same "Source as of … Requested
 … (time zone)" text, without the internal source generation or submission
 cutoff numbers ([#966](https://github.com/epiphany40223/parishkit/issues/966)).
-The XLSX export keeps it in its "Report information" sheet.
+The XLSX export keeps it in its "Report information" sheet. Its rows hold
+campaign dates, not exact action times, so the page asks for no time zone:
+the "Source as of" and "Requested" times use the browser's zone, which the
+page supplies unasked and the file names
+([time zone question](../ui-conventions/spec.md#downloaded-files)).
 
 The participation CSV and XLSX exports carry one row per campaign date
 under the same columns, in this order: Campaign date, Population, First
@@ -1175,7 +1183,11 @@ export is retried like any failed render. Report details (parish, campaign, capt
 when it applies, Families in the file, filters applied and the privacy line "Sensitive: Family codes.
 Authorized recipients only.") are in the PDF header and footer and the XLSX
 "Report information" sheet, never in columns. The page's export panel names
-the file's columns for the current filters and mailing-columns choice. The
+the file's columns for the current filters and mailing-columns choice. It asks
+for a time zone only for the Family-code list with response columns, whose
+dates are times of actions; the code list without them and the postal mail
+merge use the browser's zone unasked for their capture times
+([time zone question](../ui-conventions/spec.md#downloaded-files)). The
 export's retained capture keeps only the private contact columns its file
 renders (#388 L6): the address for the mailing-columns file, phones for the
 list filtered to Families no campaign mail can reach, and the envelope number
@@ -1613,7 +1625,10 @@ XLSX, and PDF output.
 Recorded workflow values are prefilled; empty cells remain printable for human
 completion. Every format carries the report's privacy line. The XLSX is one workbook with a sheet per Ministry. PDF starts each
 Ministry on a new page. CSV is one file with a blank row and repeated headings
-between Ministries. No ZIP/per-Ministry files are required.
+between Ministries. No ZIP/per-Ministry files are required. The packet holds
+contact dates but no exact action times, so its form asks for no time zone:
+its dates and capture times use the browser's zone, sent unasked
+([time zone question](../ui-conventions/spec.md#downloaded-files)).
 
 ## Pending census changes
 
