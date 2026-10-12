@@ -1434,7 +1434,9 @@ Member or person names sorts by surname too (Administrator, 2026-10-10, on
 [#952](https://github.com/epiphany40223/parishkit/issues/952)); first used by
 the Users page's
 [leaders table](../admin-portal/spec.md#parishsoft-ministry-leaders-without-a-user)
-and [user Names](../admin-portal/spec.md#name-from-parishsoft) (#963).
+and [user Names](../admin-portal/spec.md#name-from-parishsoft) (#963), then by
+the [Ministry follow-up](../admin-portal/spec.md#follow-up-workflows) queue
+(migration 0069, #932).
 
 Recorded exception: System health's "Families the form cannot open" shows the
 Family's surname only (from the shared `family_display_name`), never the

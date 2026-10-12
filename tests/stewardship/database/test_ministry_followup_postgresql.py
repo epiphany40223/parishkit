@@ -292,6 +292,35 @@ def test_queue_rows_carry_each_members_duid(response_service):
     }
 
 
+def test_queue_names_members_last_first(response_service):
+    """Member names read "Last, first", so the Member sort orders by surname;
+    the search still finds the "first last" form (migration 0069, #932)."""
+    from parishkit.stewardship.source.snapshot_models import SourceCurrent
+    from parishkit.stewardship.source.version_models import SnapshotMember
+
+    harness = setup(response_service)
+    form = revisit(harness)
+    answers = answers_for(form)
+    identifier = str(uuid4())
+    answers["proposed_members"][identifier] = member(
+        first_name="Zed", last_name="Aardvark"
+    )
+    answers["ministries"]["proposed_members"][identifier] = {"join": [9]}
+    respond(harness, form, answers)
+    snapshot = SourceCurrent.objects.values_list("snapshot_id", flat=True).get()
+    three = SnapshotMember.objects.get(snapshot_id=snapshot, source_key="3")
+    record = json.loads(three.payload.canonical)
+    known = f"{record['lastName'].strip()}, {record['firstName'].strip()}"
+    staff = Principal(user("admin@example.org").pk, frozenset({"staff"}), frozenset())
+    rows = read(harness, staff, ministry="9", state="any", sort="name")["rows"]
+    assert [row["member_name"] for row in rows] == sorted(
+        ["Aardvark, Zed", known], key=str.lower
+    )
+    for text in ("Zed Aardvark", "aardvark, zed"):
+        (found,) = read(harness, staff, ministry="9", state="any", search=text)["rows"]
+        assert found["member_name"] == "Aardvark, Zed"
+
+
 def test_family_resubmission_retains_staff_work(response_service):
     """Same intent inherits state and history; withdrawal ends the workflow.
 
