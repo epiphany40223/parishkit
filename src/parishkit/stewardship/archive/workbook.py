@@ -13,8 +13,10 @@ consistency rules, and returns the validated rows or every located problem
 (up to 50). A problem names a sheet, a cell and the rule, never the value it
 found, the header text it found or an unknown key's name, because a value
 may be a Family identifier or an amount. ``build_workbook`` and
-``write_archive`` are the minimal writer the tests use; the end-of-campaign
-export (#1018 part (a)) will fill them with real data later.
+``write_archive`` are the writer: the tests use them with invented data, and
+the end-of-campaign export (``archive.export``, #1018 part (a)) with a
+campaign's own. Given ``as_of``, the saved package is re-packed so the same
+content always gives the same bytes (``repack``).
 
 The pledge band set and the quartile calculation of the comparison report
 live here too, beside the format, so a band-set change is one edit.
@@ -25,6 +27,7 @@ import json
 import math
 import re
 import warnings
+import zipfile
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
@@ -1801,13 +1804,62 @@ def build_workbook(metadata, sheets):
     return book
 
 
-def save_workbook(book):
-    """The bytes of a saved workbook."""
+# docProps/core.xml's creation and modification times, which openpyxl sets
+# to the time of the save.
+CORE_TIMES = re.compile(
+    r"(<dcterms:(?:created|modified)\b[^>]*>)[^<]*(</dcterms:(?:created|modified)>)"
+)
+CORE_PART = "docProps/core.xml"
+# Fixed so a re-pack never depends on zlib's default or the platform.
+COMPRESS_LEVEL = 6
+
+
+def repack(data, as_of):
+    """``data``'s package rewritten so its bytes depend only on its content.
+
+    openpyxl stamps the save time into ``docProps/core.xml`` and every ZIP
+    entry. The re-pack writes the parts in a fixed order (the content-types
+    part first, then by name), deflated at a fixed level, with every entry's
+    time and ``core.xml``'s created and modified times set to ``as_of``
+    (UTC, whole seconds), MS-DOS as the creating system and fixed owner
+    read-write permissions (``zipfile``'s own default), so retries of
+    one export write identical files (campaign-history spec, "Checks before
+    a file is offered").
+    """
+    instant = as_of.astimezone(UTC).replace(microsecond=0)
+    text = instant.strftime("%Y-%m-%dT%H:%M:%SZ")
+    stamp = instant.timetuple()[:6]
     output = BytesIO()
-    book.save(output)
+    with (
+        zipfile.ZipFile(BytesIO(data)) as source,
+        zipfile.ZipFile(output, "w") as target,
+    ):
+        names = sorted(
+            source.namelist(), key=lambda name: (name != "[Content_Types].xml", name)
+        )
+        for name in names:
+            part = source.read(name)
+            if name == CORE_PART:
+                part = CORE_TIMES.sub(
+                    lambda match: match.group(1) + text + match.group(2),
+                    part.decode("utf-8"),
+                ).encode("utf-8")
+            info = zipfile.ZipInfo(name, date_time=stamp)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.create_system = 0
+            info.external_attr = 0o600 << 16
+            target.writestr(info, part, compresslevel=COMPRESS_LEVEL)
     return output.getvalue()
 
 
-def write_archive(metadata, sheets):
-    """The bytes of one archive workbook (see ``build_workbook``)."""
-    return save_workbook(build_workbook(metadata, sheets))
+def save_workbook(book, *, as_of=None):
+    """The bytes of a saved workbook, re-packed at ``as_of`` when given."""
+    output = BytesIO()
+    book.save(output)
+    data = output.getvalue()
+    return data if as_of is None else repack(data, as_of)
+
+
+def write_archive(metadata, sheets, *, as_of=None):
+    """The bytes of one archive workbook (see ``build_workbook``, ``repack``)."""
+    return save_workbook(build_workbook(metadata, sheets), as_of=as_of)
