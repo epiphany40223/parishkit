@@ -824,7 +824,8 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `ministry_joiners` | Members joining | Ministry requests | Administrator, Staff, Ministry leader | Ministry requests — Prospective joiners; Joining | `/admin/reports/ministries/joining/` | (same) | Becomes a bookmarkable view of Ministry requests (#521). |
 | `ministry_leavers` | Members leaving | Ministry requests | Administrator, Staff, Ministry leader | Ministry requests — Requested leavers; Leaving | `/admin/reports/ministries/leaving/` | (same) | Becomes a bookmarkable view of Ministry requests (#521). |
 | `ministry_followup` | Ministry follow-up | Menu: Ministry follow-up | Administrator, Staff, Ministry leader | Follow-up | `/admin/reports/ministries/follow-up/` | (same) | No assignee column, filter or bulk assignment (#552). |
-| `ministry_followup_item` | Follow-up request | Ministry follow-up | Administrator, Staff, Ministry leader | Ministry follow-up (one request) | `/admin/reports/ministries/follow-up/<request>/` | (same) | Return to the queue keeps its filters and page. Status, notes and outcome only; no Assign to (#552). |
+| `ministry_followup_item` | Follow-up request | Ministry follow-up | Administrator, Staff, Ministry leader | Ministry follow-up (one request) | `/admin/reports/ministries/follow-up/<request>/` | (same) | Return to the queue keeps its filters and page. Status, notes and outcome only; no Assign to (#552). A resolved join or leave's Entered in ParishSoft tick posts to `follow-up/<request>/roster/` (#528). |
+| `ministry_roster` | Roster changes to enter | Ministry follow-up | Administrator, Staff | (new, #528) | (none) | `/admin/reports/ministries/follow-up/roster/` | [Roster changes to enter](#roster-changes-to-enter); its CSV/XLSX/PDF download (`roster/exports/`) is a non-page action. |
 | `family_directory` | Active parishioner family directory | Menu: Active parishioner family directory | Administrator, Staff | (same) | `/admin/reports/families/` | (same) |  |
 | `family_timeline` | Family timeline | Active parishioner family directory | Administrator, Staff | (new, #477) | `/admin/reports/families/<family>/` | (same) | Opened from each directory row and response list row (and Find a Family, NAV-19); `<family>` is the opaque campaign record id. Staff see the summary only. |
 | `emailed_reports` | Emailed reports | Menu: Emailed reports | Administrator, Staff | (new) | `/admin/reports/emailed/` | (same) | New page (decision 7, ADM-12.17): the current campaign's daily reports (and weekly reports for Administrators), newest first, each linking its page; Send a weekly report now is on it and returns to it, linking the report it produced. |
@@ -4369,10 +4370,6 @@ contact attempt that reaches the server without a usable zone (a page opened
 before this rule, for example) is refused in place like the other correctable
 refusals, keeping the typed values and asking the person to save again.
 
-Status: the roster paragraph below (the Ministry **Entered in ParishSoft**
-tick) is not built yet; it belongs to
-[#528](https://github.com/epiphany40223/parishkit/issues/528) (ADM-09).
-
 Manual census items may be marked resolved externally or ignored by Admin or
 Staff, with notes, on the
 [Census changes](../reports/spec.md#pending-census-changes) worklist
@@ -4384,18 +4381,62 @@ The ParishSoft API cannot change Ministry rosters, so a join or leave is
 always entered in ParishSoft by hand
 ([#528](https://github.com/epiphany40223/parishkit/issues/528), gap G28). A
 request resolved by a person as *joined* or *leave confirmed* carries an
-**Entered in ParishSoft** tick that Staff and Admin set or clear in place;
-who and when are kept as history. A request resolved because the ParishSoft
-roster already shows the change (it has a resolution source) needs no tick
-and shows *Already in ParishSoft*. Ministry leaders see the tick, read-only,
-on their own Ministries' requests. The follow-up queue offers a *Roster
-changes to enter* filter (resolved joins and leaves with no resolution
-source and not yet ticked), and the
-[Ministry change summary](../reports/spec.md#ministry-change-summary)'s
-joiner and leaver lists and their export show the tick, so staff can work
-through the roster changes in one list. The tick is a new field on the
-request and ships with its forward migration. Marking a request resolved
-never changes ParishSoft, and this tick only records that a person did.
+**Entered in ParishSoft** tick that Staff and Admin set or clear
+[in place](../ui-conventions/spec.md#in-place-controls), on the request's
+page and on [Roster changes to enter](#roster-changes-to-enter); who and when
+are kept as history. A request resolved because the ParishSoft roster already
+shows the change (it has a resolution source) needs no tick and shows
+*Already in ParishSoft*. Ministry leaders see the tick, read-only, on their
+own Ministries' requests; the follow-up queue's Status column says only
+"Entered" or "Not yet entered", one line, with who and when on the request's
+page. Ministry leaders never see Roster changes to enter: their per-Ministry
+view of the same changes is the follow-up queue filtered by their Ministry
+and Status *Resolved*, which shows each request's mark. A resolved request is a closed outcome
+that a later Family response never replaces (a new request for the same
+change is a separate request), so the tick stays with the request it was
+made on. The tick is not a field on the request: each set or clear is an
+immutable row of its own history table, added by forward migration 0061, and
+the request row never changes. Marking a request resolved never changes
+ParishSoft, and this tick only records that a person did.
+
+### Roster changes to enter
+
+**Roster changes to enter** (`/admin/reports/ministries/follow-up/roster/`,
+Administrators and Staff, linked from Ministry follow-up, which is its
+breadcrumb parent) is the list staff work from. It lists the resolved joins
+and leaves with no resolution source that are not yet ticked, or, with
+**Show** set to all, every one of them, to find and clear a mistaken mark,
+and **Ministry** narrows it to one Ministry (a closed DUID value, no schema
+change). Its columns follow the
+[table column order](../ui-conventions/spec.md#table-column-order): Member,
+Member DUID ("New Member" for a Member added on the form), Family, Family
+DUID, Ministry, Ministry DUID, Request (Join or Leave), Resolved, Resolved by,
+Replaced by a later response (Yes when the Family answered again after the
+change was resolved), Entered in ParishSoft (Yes or Not yet), Entered by and
+Entered at, with the tick last; a resolver or marker whose portal user is
+gone shows as "Former portal user"; times are browser-local in the compact date format. Every named
+column sorts in place, and Show, Ministry, sorting and paging travel in the
+address,
+since nothing on the list is private search text. A resolved change stays
+listed after the Family answers again (marked as replaced by a later
+response), since it still has to be entered. A tick there keeps the list's
+Show, Ministry, sort and page; a tick someone else changed first leaves the
+list as it is with a notice, which is what the page announces; the notice's
+two lines are kept while empty
+([no layout shift](../ui-conventions/spec.md#no-layout-shift)).
+
+Its CSV, XLSX and PDF downloads carry the page's columns, without the tick
+([downloaded files](../ui-conventions/spec.md#downloaded-files)), for every
+row of the chosen Show and Ministry, in the browser's time zone (the PDF in the parish's
+compact date format). The view and each download are audited as counts.
+
+The [Ministry change summary](../reports/spec.md#ministry-change-summary)
+does not show the tick: its stored export cannot carry it without replacing
+the export capture functions, and a page that showed what its downloads do
+not would break the downloaded-files rule. Roster changes to enter is where
+the tick is read and set; the Administrator may ask for the summary to carry
+it too, as its own forward migration
+([#528](https://github.com/epiphany40223/parishkit/issues/528)).
 
 ## System health
 

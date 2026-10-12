@@ -342,13 +342,17 @@ def test_the_command_compares_with_this_images_own_migrations(
     assert main(["restore-check", "--manifest", str(manifest)]) == 0
     report = json.loads(capsys.readouterr().out)
     assert report["result"] == "match"
-    manifest = files.manifest(migrations=current[:-1])
-    assert main(["restore-check", "--manifest", str(manifest)]) == 3
-    report = json.loads(capsys.readouterr().out)
-    assert report["not_in_backup"] == [current[-1]]
     # The users swap's closure, from this image's own migration graph.
     closure = restore_check.image_swap_closure()
     assert SWAP in closure
+    # A missing migration outside the closure is a plain gap (3). The last
+    # one on disk may be in the closure (#528's workflows 0002 is), so the
+    # last one outside it is left out.
+    outside = [pair for pair in current if tuple(pair) not in closure][-1]
+    manifest = files.manifest(migrations=[pair for pair in current if pair != outside])
+    assert main(["restore-check", "--manifest", str(manifest)]) == 3
+    report = json.loads(capsys.readouterr().out)
+    assert report["not_in_backup"] == [outside]
     pending = [pair for pair in current if tuple(pair) not in closure]
     manifest = files.manifest(migrations=pending)
     assert main(["restore-check", "--manifest", str(manifest)]) == 4

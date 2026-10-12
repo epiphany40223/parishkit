@@ -146,6 +146,10 @@ HOSTED = {
     # Outgoing mail's bulk review region (#382 M4): Confirm and Continue
     # sit inside it, and the bulk panel draws it.
     "delivery-bulk-review.html": ("delivery-bulk.html",),
+    # The roster tick (#528): on the request page, and on each row of
+    # Roster changes to enter.
+    "roster-tick.html": ("ministry-followup.html",),
+    "roster-tick-row.html": ("ministry-roster.html",),
 }
 
 

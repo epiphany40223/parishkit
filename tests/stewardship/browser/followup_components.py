@@ -62,6 +62,11 @@ NEXT_ITEM = (
 LAST_ITEM = reverse("admin:ministry_followup_item", args=[LAST_REQUEST])
 LAST_UPDATE = reverse("admin:ministry_followup_update", args=[LAST_REQUEST])
 QUEUE_VIEW = reverse("admin:ministry_followup") + f"?queue={TOKEN}"
+# A resolved join that takes the roster tick (#528), before and after it.
+TICK_REQUEST = UUID(int=101)
+TICK_ITEM = reverse("admin:ministry_followup_item", args=[TICK_REQUEST])
+TICK_POST = reverse("admin:ministry_followup_roster", args=[TICK_REQUEST])
+TICKED = TICK_ITEM + "?ticked=1"
 # The fixture server's answers to a Save (status, Location, body).
 POSTS = {
     UPDATE: (303, SAVED, ""),
@@ -69,6 +74,7 @@ POSTS = {
     GATE_UPDATE: (303, GATED, ""),
     ADVANCE_UPDATE: (303, NEXT_ITEM, ""),
     LAST_UPDATE: (303, QUEUE_VIEW, ""),
+    TICK_POST: (303, TICKED, ""),
 }
 
 
@@ -281,6 +287,30 @@ def components(context, admin):
             form=form,
             history=[revision],
             mutable=False,
+        ),
+        # A resolved join's roster tick, before and after it is set (#528).
+        TICK_ITEM: values
+        | dict(
+            item=closed
+            | dict(id=str(TICK_REQUEST), roster_eligible=True, roster_sequence=0),
+            can_tick=True,
+            roster_key=UUID(int=102),
+            history=[],
+        ),
+        TICKED: values
+        | dict(
+            item=closed
+            | dict(
+                id=str(TICK_REQUEST),
+                roster_eligible=True,
+                roster_entered=True,
+                roster_sequence=1,
+                roster_by="staff@example.org",
+                roster_at=moment,
+            ),
+            can_tick=True,
+            roster_key=UUID(int=103),
+            history=[],
         ),
         # Save and next: the next request follows; the last has none, so
         # Save and next returns to the remembered queue view.

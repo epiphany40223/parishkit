@@ -104,6 +104,7 @@ TEMPLATES = {
     "ministry_leavers": "ministry-report.html",
     "ministry_followup": "ministry-followup.html",
     "ministry_followup_item": "ministry-followup.html",
+    "ministry_roster": "ministry-roster.html",
     "family_directory": "directory.html",
     "emailed_reports": "emailed-reports.html",
     "family_timeline": "family-timeline.html",
@@ -300,14 +301,8 @@ def _former_names():
 
 
 # Links still using a former name because an open PR edits the same line
-# (#520 tracks the rename). Renamed once that PR lands.
-FORMER_NAME_LINKS = {
-    # #1042 adds a Roster changes link to this line.
-    (
-        "ministry-followup.html",
-        "Ministry reports, including authorized Member contact details",
-    ),
-}
+# (#520 tracks the rename). Renamed once that PR lands; none are pending.
+FORMER_NAME_LINKS = set()
 
 
 def test_page_links_do_not_use_a_former_name():

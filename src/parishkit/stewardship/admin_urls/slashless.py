@@ -85,6 +85,7 @@ SLASHLESS = (
     ("reports/ministries/leaving", "ministry_leavers"),
     ("reports/ministries/follow-up", "ministry_followup"),
     ("reports/ministries/follow-up/<uuid:request_id>", "ministry_followup_item"),
+    ("reports/ministries/follow-up/roster", "ministry_roster"),
     ("reports/families", "family_directory"),
     ("reports/families/<uuid:family_id>", "family_timeline"),
     ("reports/exports/<uuid:request_id>", "report_export"),

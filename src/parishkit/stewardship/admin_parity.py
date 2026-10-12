@@ -307,6 +307,10 @@ LEDGER = {
     "ministry_followup": pending("PR 11", "followup"),
     "ministry_followup_item": pending("PR 11", "followup"),
     "ministry_followup_update": pending("PR 11", "followup"),
+    # The roster Entered in ParishSoft tick and its list (#528).
+    "ministry_followup_roster": pending("PR 11", "followup roster-entered"),
+    "ministry_roster": pending("PR 8g", "report roster"),
+    "ministry_roster_export": pending("PR 8g", "export roster"),
     # Integrations and credentials.
     "integrations": pending("PR 10", "integration show"),
     "integration_settings": pending(
