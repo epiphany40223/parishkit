@@ -1433,7 +1433,8 @@ orders. In v1 that covers:
 - the Additional information queue (Family, Family DUID and Submitted);
 - the Ministry report (Ministry and Ministry DUID; Member, Member DUID and
   Submitted in one Ministry's view);
-- the Ministry follow-up queue (Member, Ministry and Submitted).
+- the Ministry follow-up queue (Member and Ministry; newest first by default,
+  with no Submitted column to show it, #1064).
 
 Extending those vocabularies is a schema change; the DUID sorts of the
 financial, Additional information and Ministry tables came with one
@@ -1640,6 +1641,14 @@ heading (Family, Member or Ministry; Census changes heads its Member column
 Who). The one DUID column apart from its name is the recorded exception
 below.
 
+Recorded exception: the Ministry follow-up queue has no Ministry DUID
+column, though it shows the Ministry name (Administrator decision,
+2026-10-11, [#1064](https://github.com/epiphany40223/parishkit/issues/1064),
+[#932](https://github.com/epiphany40223/parishkit/issues/932)), and no
+Submitted column, so its one-line rows take less width; the Ministry report
+shows the Ministry DUID and the request page the submission time
+([Follow-up workflows](../admin-portal/spec.md#follow-up-workflows)).
+
 Recorded exception: Families the form cannot open shows a Member DUID with
 no Member name on purpose: the name itself may be the value the form
 refuses, and that page never shows one
@@ -1711,7 +1720,10 @@ tooltip, and is shown whole on the user's Edit page
 The Ministry follow-up queue does the same for a long Member or Ministry
 name, with the shared `cell-ellipsis` class, so a long Ministry name never
 makes its row several lines tall
-([Follow-up workflows](../admin-portal/spec.md#follow-up-workflows), #932).
+([Follow-up workflows](../admin-portal/spec.md#follow-up-workflows), #932);
+since [#1064](https://github.com/epiphany40223/parishkit/issues/1064) its
+other cells do not wrap either, so every row is one line and the table
+scrolls sideways in its own box when it is wider than the page.
 
 ## Downloaded files
 

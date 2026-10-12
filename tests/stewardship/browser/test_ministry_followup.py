@@ -380,10 +380,11 @@ def test_followup_contact_waits_for_a_known_browser_zone(
 
 
 def test_followup_sort_heading_posts_privately(page, component_origin):
-    """A heading re-sorts the queue by POST, keeping private filters."""
+    """A heading re-sorts the queue by POST, keeping private filters. The
+    default order (newest first) has no column to show it (#1064), so no
+    heading is marked sorted."""
     page.goto(component_origin + "/followup-queue")
-    heading = page.get_by_role("columnheader", name="Submitted")
-    assert heading.get_attribute("aria-sort") == "descending"
+    assert page.locator("thead th[aria-sort]").count() == 0
     page.route("**/follow-up/", lambda route: route.fulfill(body="Sorted"))
     # "Member" alone would also match the Member DUID heading.
     member = page.locator("th[data-sort-column='member']")
@@ -395,9 +396,10 @@ def test_followup_sort_heading_posts_privately(page, component_origin):
 
 
 def test_followup_columns_follow_the_shared_order(page, component_origin):
-    """The queue's columns follow the shared order (#932): the Member leads,
-    each DUID has its own column (a Member added on the form reads New
-    Member), and the submitted time has its own column after the request.
+    """The queue's columns follow the shared order (#932): the Member leads
+    and the Member DUID has its own column (a Member added on the form reads
+    New Member). By Administrator decision (#1064) there is no Ministry DUID
+    or Submitted column.
     A long Ministry name is cut short with an ellipsis on one line, shown
     whole in its title, and never widens the page."""
     page.set_viewport_size({"width": 1280, "height": 900})
@@ -408,19 +410,15 @@ def test_followup_columns_follow_the_shared_order(page, component_origin):
         "Member",
         "Member DUID",
         "Ministry",
-        "Ministry DUID",
         "Request",
         "Status",
-        "Submitted",
         "Last contact",
     ]
     rows = page.locator("tbody tr")
     first, second = (rows.nth(n).locator("th, td") for n in (0, 1))
     assert first.nth(0).inner_text() == "Example <Member>"
     assert first.nth(1).inner_text() == "12345"
-    assert first.nth(3).inner_text() == "9"
     assert second.nth(1).inner_text() == "New Member"
-    assert second.nth(3).inner_text() == "11"
     name = second.nth(2).locator(".cell-ellipsis")
     assert name.get_attribute("title").endswith("<end>")
     assert name.evaluate(

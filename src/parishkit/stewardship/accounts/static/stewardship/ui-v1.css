@@ -893,6 +893,19 @@ th:not([aria-sort]) .sort-indicator { opacity: .45; }
 :where(.admin-body) th, :where(.admin-body) td { padding: .5rem .85rem; }
 /* Narrower filter fields, so a short filter form fits on one row. */
 :where(.admin-body) .filter-bar > div { flex-basis: 18rem; }
+/* The Ministry follow-up queue (#1064). Its six filters take two rows at
+   laptop widths, Search the widest; the fields grow to fill each row, and
+   at phone width each takes its own. Its table keeps every row one line:
+   the cells that are not names never wrap (.nowrap), and a Ministry's
+   "Removed" badge sits beside its ellipsized name, which gives up its
+   width first. The names are a little narrower than elsewhere so the
+   table fits beside the Admin menu at laptop width. */
+.followup-filters > div { flex: 1 1 12rem; }
+.followup-filters > div.followup-search { flex: 2 1 26rem; }
+.followup-table .cell-ellipsis { max-width: 13rem; }
+.cell-with-badge { position: relative; display: flex; align-items: center; gap: .4rem; }
+.cell-with-badge > .cell-ellipsis { min-width: 0; }
+.cell-with-badge > .status-badge { flex: none; }
 /* Keep the phone-width cell padding from the narrow-screen rules above,
    which the compact rule just before would otherwise override. */
 @media (max-width: 36rem) {
