@@ -83,6 +83,9 @@ def test_signing_out_asks_then_acts_in_place(page, component_origin):
     row = region.locator("tr").filter(has_text="zed@example.org")
     button = row.get_by_role("button", name="Sign out zed@example.org’s session")
     assert button.get_attribute("title") == "Sign out zed@example.org’s session"
+    # Read the row's session now: once the POST is answered the table redraws
+    # without this row, and the locator would then wait for it in vain.
+    session_id = button.get_attribute("value")
     posts = []
     page.on(
         "request",
@@ -100,7 +103,7 @@ def test_signing_out_asks_then_acts_in_place(page, component_origin):
         dialog.get_by_role("button", name="Sign out", exact=True).click()
     fields = parse_qs(sent.value.post_data or "")
     assert set(fields) == {"csrfmiddlewaretoken", "session_id"}
-    assert fields["session_id"] == [button.get_attribute("value")]
+    assert fields["session_id"] == [session_id]
     has_text(
         page.get_by_role("status").filter(has_text="Signed out zed@example.org"),
         "Signed out zed@example.org’s session.",
