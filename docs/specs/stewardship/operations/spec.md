@@ -667,19 +667,21 @@ Administrator may override.
       that moment, records its own audit event for each lookup (that
       Administrator and the number of names returned, never the address)
       and refuses a 61st lookup by one Administrator within an hour, counted
-      from those events. The session check does not stop a compromised web
-      database login: `stewardship_portal_session.session_id` is the raw
-      Django session key, and web can read it and `django_session`, so it can
-      present any live Administrator session's key. What holds against it is
-      the per-Administrator cap and the audit: at most 60 addresses' names an
-      hour for each Administrator with a live session, each lookup traced to
-      that Administrator. Storing the session keys hashed is
-      [#995](https://github.com/epiphany40223/parishkit/issues/995). The
-      Users page's ParishSoft Ministry leaders table (migration 0054) has
-      the same session check and audit but takes no address: with a live
-      Administrator's session key, a compromised web login learns the
-      leaders without a user (names, Member DUIDs, addresses and
-      Ministries), exactly what the page shows that Administrator. The page
+      from those events. Since migration 0057
+      ([#995](https://github.com/epiphany40223/parishkit/issues/995)) the
+      database holds only a digest of each Admin session key and the
+      definer compares the digest of the key it is handed, so a compromised
+      web database login cannot replay a session value it reads from
+      `stewardship_portal_session` or `django_session`; it would need a key
+      from a live browser cookie. Against a login that holds such a key,
+      the per-Administrator cap and the audit still hold: at most 60
+      addresses' names an hour for each Administrator with a live session,
+      each lookup traced to that Administrator. The Users page's ParishSoft
+      Ministry leaders table (migration 0054, replaced by 0057 the same
+      way) has the same session check and audit but takes no address: with
+      a live Administrator's session key, it shows the leaders without a
+      user (names, Member DUIDs, addresses and Ministries), exactly what the
+      page shows that Administrator. The page
       also limits
       each Administrator's lookups per minute and refuses them while the
       limiter is unavailable. SQL's activation guard

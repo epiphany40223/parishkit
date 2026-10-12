@@ -22,9 +22,11 @@ from django.utils.cache import patch_vary_headers
 from django.utils.http import http_date
 
 from parishkit.stewardship.audit.models import AuditEvent
-from parishkit.stewardship.web.namespaces import cookie_namespace
+from parishkit.stewardship.web.namespaces import ADMIN_PREFIX, cookie_namespace
 
 from .admin_caller import AUTOMATION, WEB, as_caller
+from .admin_session_store import STORED_FORM, stored_key
+from .admin_session_store import SessionStore as AdminSessionStore
 from .models import AdminRevocation, PortalSession, PortalUser
 from .policy import current_principal
 from .session_policy import (
@@ -51,7 +53,18 @@ class NamespacedSessionMiddleware:
     def __call__(self, request):
         """Django save/expiry semantics without per-request global setting changes."""
         name, _, path = cookie_namespace(request)
-        request.session = self.store(request.COOKIES.get(name))
+        # Admin keys are stored only as digests (#995); Family keys are not.
+        key = request.COOKIES.get(name)
+        if path == ADMIN_PREFIX:
+            store = AdminSessionStore
+        else:
+            store = self.store
+            # A Family cookie holding an Admin digest (read from the
+            # database) must not open that Admin row's Django session.
+            # No Family key has this form, so no Family session is lost.
+            if key is not None and STORED_FORM.fullmatch(key):
+                key = None
+        request.session = store(key)
         response = self.get_response(request)
         session = request.session
         if session.accessed:
@@ -170,7 +183,7 @@ def _rotate_authority(caller, row, principal, now):
     a web caller rotates; the caller also rotates the request's CSRF token.
     """
     _revoke(row, now, "admin_privileges_changed")
-    session = import_module(settings.SESSION_ENGINE).SessionStore()
+    session = AdminSessionStore()
     session["principal"] = str(row.principal_id)
     session["recovery_epoch"] = caller.session.get("recovery_epoch")
     session["authority_fingerprint"] = _authority_fingerprint(principal)
@@ -181,7 +194,7 @@ def _rotate_authority(caller, row, principal, now):
     session.modified = False
     session.stewardship_persisted = True
     replacement = PortalSession.objects.create(
-        session_id=session.session_key,
+        session_id=session.stored_key,
         principal_id=row.principal_id,
         authenticated_at=row.authenticated_at,
         last_activity_at=row.last_activity_at,
@@ -218,12 +231,12 @@ def end_admin(request, *, reason="admin_logout"):
     with transaction.atomic():
         row = (
             PortalSession.objects.select_for_update()
-            .filter(session_id=request.session.session_key)
+            .filter(session_id=stored_key(request.session))
             .first()
         )
         if row:
             _revoke(row, database_now(), reason)
-    request.session = import_module(settings.SESSION_ENGINE).SessionStore()
+    request.session = AdminSessionStore()
 
 
 def create_admin_session(
@@ -235,10 +248,13 @@ def create_admin_session(
     sign-in; an Admin automation command passes none (a new store is made)
     and adds its automation marker through ``data``. Neither ends another
     session here, and neither records an audit event here. Returns the
-    session store and the row.
+    session store and the row. The store must be the Admin store, which
+    keeps only the key's digest (#995); any other store is refused.
     """
     if session is None:
-        session = import_module(settings.SESSION_ENGINE).SessionStore()
+        session = AdminSessionStore()
+    if not isinstance(session, AdminSessionStore):
+        raise TypeError("An Admin session needs the Admin session store.")
     session["principal"] = str(principal.identity)
     session["recovery_epoch"] = revocation_epoch()
     session["authority_fingerprint"] = _authority_fingerprint(principal)
@@ -247,7 +263,7 @@ def create_admin_session(
     session.set_expiry(expires_at)
     session.save()
     row = PortalSession.objects.create(
-        session_id=session.session_key,
+        session_id=session.stored_key,
         principal_id=principal.identity,
         authenticated_at=authenticated_at,
         last_activity_at=now,
@@ -379,7 +395,7 @@ def authenticated_admin(
         query = PortalSession.objects.all()
         if not read_only:
             query = query.select_for_update()
-        row = query.filter(session_id=caller.session.session_key).first()
+        row = query.filter(session_id=stored_key(caller.session)).first()
         if row is None or row.revoked_at is not None:
             return None
         now = database_now()

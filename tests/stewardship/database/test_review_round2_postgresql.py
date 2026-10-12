@@ -12,6 +12,7 @@ from django.http import HttpResponse
 from django.test import Client, RequestFactory
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.accounts.admin_session_store import digest
 from parishkit.stewardship.accounts.authentication import GoogleCallback
 from parishkit.stewardship.accounts.credential_database import admit_web_staging_grants
 from parishkit.stewardship.accounts.cryptography import KEY_ID
@@ -143,7 +144,7 @@ def test_anonymous_oauth_expiry_is_short_without_shortening_reauthentication(
     """Abandoned starts are short-lived; an existing Admin keeps its fixed deadline."""
     client = Client(enforce_csrf_checks=True)
     start(client)
-    anonymous = Session.objects.get(pk=client.cookies["pk_admin"].value)
+    anonymous = Session.objects.get(pk=digest(client.cookies["pk_admin"].value))
     assert (
         timedelta(minutes=14)
         < anonymous.expire_date - database_now()

@@ -287,20 +287,21 @@ MEMBER_NAMES_FUNCTION = "stewardship_member_names_v1()"
 # The New user page's Name default (#952 slice 5): the ordered names of the
 # current ParishSoft Members listing one typed address. Web learns only the
 # names, never another contact field. The definer refuses unless the
-# caller's Admin session is live and its user an Administrator now, but web
-# can read raw Admin session keys (stewardship_portal_session.session_id is
-# the Django session key), so against a compromised web login what holds is
-# the cap of 60 lookups an hour for each Administrator and an audit event
-# per lookup. Hashing the session keys is #995.
+# caller's Admin session is live and its user an Administrator now. Since
+# #995 (migration 0057) the database stores only a digest of each Admin
+# session key and the definer digests the key it is handed, so a session
+# value web can read is no key; against a login that holds a live cookie's
+# key, the cap of 60 lookups an hour for each Administrator and an audit
+# event per lookup still hold.
 MEMBER_NAMES_FOR_FUNCTION = "stewardship_member_names_for_v1(text, text, uuid)"
 # The Users page's ParishSoft Ministry leaders without a user (#952 slice 6):
 # each leader address that is no user yet, with the Name, Member DUID and
 # Ministries the table shows, and a count of leaders with no usable address.
 # It takes no address, so it is no oracle; it answers only a live
-# Administrator session (the same check, and the same #995 caveat, as the
-# Name lookup) and audits every call with the number of rows. It has no
-# rate cap, deliberately: one call already returns everything, so repeated
-# calls disclose nothing more; the audit and #995 are the protections.
+# Administrator session (the same digest check as the Name lookup, #995)
+# and audits every call with the number of rows. It has no rate cap,
+# deliberately: one call already returns everything, so repeated calls
+# disclose nothing more; the audit and the digest check are the protections.
 LEADERS_WITHOUT_USER_FUNCTION = "stewardship_leaders_without_user_v1(text, uuid)"
 # Each definer routine above that a migration in the users swap's closure
 # creates (#952), with that migration. `migrate --users-upgrade-base` leaves

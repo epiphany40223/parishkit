@@ -15,6 +15,7 @@ import pytest
 from django.db import DatabaseError, connection
 
 from parishkit.stewardship.accounts import user_views
+from parishkit.stewardship.accounts.admin_session_store import digest
 from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.accounts.policy_models import PolicySecurityEvent, PortalUser
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
@@ -542,21 +543,24 @@ def test_name_lookup_checks_the_address_and_suggests_names(converted):
         assert post(browser, NAMES + "?email=x", {"email": "x"}).status_code == 400
     # The web login runs the definer itself; it holds no Member grant.
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        assert member_names(live_key(), "shared@example.org") == [
+        assert member_names(live_key(browser), "shared@example.org") == [
             "Example 1, Leader",
             "Example 0, Leader",
         ]
 
 
-def live_key(email="admin@example.org"):
-    """The Django session key of this address's live Admin session."""
-    return (
-        PortalSession.objects.filter(
-            revoked_at=None, principal_id=PortalUser.objects.get(email=email).id
-        )
-        .latest("authenticated_at")
-        .session_id
-    )
+def live_key(browser):
+    """The Admin session key this browser's cookie carries (#995).
+
+    The database stores only its digest (``stored``), which the definer
+    refuses like any other unknown key.
+    """
+    return browser.cookies["pk_admin"].value
+
+
+def stored(key):
+    """The ``stewardship_portal_session.session_id`` of a session key."""
+    return digest(key)
 
 
 def lookups(email="admin@example.org"):
@@ -586,20 +590,24 @@ def test_the_name_lookup_definer_is_installed_as_declared():
 
 
 def test_the_definer_answers_only_a_live_administrator_session(converted):
-    """No key, a made-up key or an ended session: refused, nothing audited."""
+    """No key, a made-up key, the stored session_id or an ended session:
+    refused, nothing audited."""
     from django.utils import timezone
 
-    store, _browser = converted
-    key = live_key()
+    store, browser = converted
+    key = live_key(browser)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        for refused in (None, "", "not-a-session-key", "x" * 40):
+        # The stored digest names no session: the definer digests what it gets.
+        for refused in (None, "", "not-a-session-key", "x" * 40, stored(key)):
             with pytest.raises(DatabaseError, match="live Administrator session"):
                 member_names(refused, "x@example.org")
         assert member_names(key, "x@example.org") == []
     assert lookups().count() == 1
     # A revoked session no longer answers, even under the owner.
     with unguarded():
-        PortalSession.objects.filter(session_id=key).update(revoked_at=timezone.now())
+        PortalSession.objects.filter(session_id=stored(key)).update(
+            revoked_at=timezone.now()
+        )
     with (
         task_login(ServiceRole.WEB, exact=True, reconnect=True),
         pytest.raises(DatabaseError, match="live Administrator session"),
@@ -615,8 +623,8 @@ def test_a_session_from_before_a_recovery_is_refused(converted):
     unrevoked here (the recovery's own trigger would revoke it), so only the
     definer's recovery check refuses it.
     """
-    _store, _browser = converted
-    key = live_key()
+    _store, browser = converted
+    key = live_key(browser)
     with unguarded(), connection.cursor() as cursor:
         cursor.execute(
             "INSERT INTO stewardship_admin_revocation "
@@ -637,9 +645,9 @@ def test_a_staff_session_is_refused(auth_service, google):
     grant_role(auth_service.store, "reader@example.org", "staff")
     convert(auth_service.store)
     google[0]["email"] = "reader@example.org"
-    _browser, login = signed_in()
+    browser, login = signed_in()
     assert login.status_code == 302
-    key = live_key("reader@example.org")
+    key = live_key(browser)
     with (
         task_login(ServiceRole.WEB, exact=True, reconnect=True),
         pytest.raises(DatabaseError, match="live Administrator session"),
@@ -652,8 +660,8 @@ def test_each_lookup_is_audited_and_the_61st_in_an_hour_refused(converted):
     """One audit event per lookup, by count; 60 an hour per Administrator."""
     from datetime import timedelta
 
-    _store, _browser = converted
-    key = live_key()
+    _store, browser = converted
+    key = live_key(browser)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         for number in range(60):
             assert member_names(key, f"person{number}@example.org") == []

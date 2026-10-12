@@ -9,13 +9,13 @@ from threading import Event
 from uuid import uuid4
 
 import pytest
-from django.contrib.sessions.backends.db import SessionStore
 from django.core import signing
 from django.db import DatabaseError, connection
 from django.db.models import F
 from django.test import RequestFactory
 from django.urls import reverse
 
+from parishkit.stewardship.accounts.admin_session_store import SessionStore
 from parishkit.stewardship.accounts.confirmation_commands import (
     SALT,
     confirm,

@@ -52,12 +52,9 @@ def admin_session(browser):
     The admin cookie is not Django's default session cookie name, so the test
     client's own ``session`` property cannot see it.
     """
-    from importlib import import_module
+    from parishkit.stewardship.accounts.admin_session_store import SessionStore
 
-    from django.conf import settings
-
-    store = import_module(settings.SESSION_ENGINE).SessionStore
-    return store(session_key=browser.cookies["pk_admin"].value)
+    return SessionStore(session_key=browser.cookies["pk_admin"].value)
 
 
 def reviewed(browser):

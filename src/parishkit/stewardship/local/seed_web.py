@@ -65,11 +65,37 @@ class SeedWebRefused(ConfigError):
     """A real entry point refused the seeder's request."""
 
 
-def _session_store():
-    """A fresh Django session for one browser-like actor."""
+def _session_store(path):
+    """A fresh Django session for one browser-like actor at ``path``.
+
+    As the web middleware does, an Admin path gets the Admin store, which
+    keeps only its key's digest (#995); a Family path gets Django's store.
+    """
     from django.conf import settings
 
+    from parishkit.stewardship.accounts.admin_session_store import SessionStore
+    from parishkit.stewardship.web.namespaces import ADMIN_PREFIX
+
+    if path.startswith(ADMIN_PREFIX):
+        return SessionStore()
     return import_module(settings.SESSION_ENGINE).SessionStore()
+
+
+def _reopened_admin_store(stored):
+    """Reopen an Admin session from its stored key, for the seeder only.
+
+    The database holds only a digest of an Admin key (#995), so the cookie
+    key cannot be recovered. The seeder, which already runs with the
+    database's own rights, reopens its own unfinished wizard session by
+    using the stored key as is. Nothing on the web path constructs this.
+    """
+    from parishkit.stewardship.accounts.admin_session_store import SessionStore
+
+    class Reopened(SessionStore):
+        def _db_key(self, session_key):
+            return session_key
+
+    return Reopened(session_key=stored)
 
 
 def new_request(path="/admin/", *, method="get", data=None, session=None):
@@ -86,7 +112,7 @@ def new_request(path="/admin/", *, method="get", data=None, session=None):
         request = factory.post(path, data or {}, secure=True)
     else:
         request = factory.get(path, secure=True)
-    request.session = session if session is not None else _session_store()
+    request.session = session if session is not None else _session_store(path)
     request.client_address = ip_address(SEEDER_ADDRESS)
     request.internal_request = False
     return request
@@ -534,7 +560,6 @@ def resume_wizard(service, email):
     seeder's Admin is a known identity, so its attempt's Django session is
     reopened from the PortalSession row and the run continues where it was.
     """
-    from django.conf import settings
 
     from parishkit.stewardship.accounts.local_sign_in import SUBJECT_PREFIX
     from parishkit.stewardship.accounts.models import PortalSession, PortalUser
@@ -560,8 +585,7 @@ def resume_wizard(service, email):
     ).first()
     if session is None:
         return None
-    store = import_module(settings.SESSION_ENGINE).SessionStore
-    return new_request(session=store(session_key=session.session_id)), attempt.pk
+    return new_request(session=_reopened_admin_store(session.session_id)), attempt.pk
 
 
 def run_wizard(
