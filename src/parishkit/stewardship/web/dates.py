@@ -8,9 +8,9 @@ step: ``tests/stewardship/test_date_format.py`` pins the Python table and the
 browser tests pin the JS one against the same examples.
 
 US styles pair with a 12-hour clock; European and ISO styles with a 24-hour
-clock. Each style has a compact variant for dense tables (logs, background
-work, deliveries): long month names shorten and numeric years drop to two
-digits, while ISO stays ISO.
+clock. Each style has a compact variant for Admin table cells
+(ui-conventions#date-format): long month names shorten and numeric years
+drop to two digits, while ISO stays ISO.
 """
 
 import re
@@ -120,7 +120,8 @@ def format_time(value, style=None):
 def format_instant(value, timezone, style=None, *, compact=False):
     """Render an aware instant in ``timezone``, e.g. "January 5, 2027 at 3:04 PM EST".
 
-    Compact timestamps (dense table cells) drop the time-zone abbreviation.
+    Compact timestamps (Admin table cells, ui-conventions#date-format) drop the
+    time-zone abbreviation.
     """
     if not isinstance(value, datetime) or value.utcoffset() is None:
         raise ValueError("Timestamp formatting requires a timezone-aware instant.")

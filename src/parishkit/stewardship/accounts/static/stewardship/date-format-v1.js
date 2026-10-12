@@ -82,8 +82,8 @@
       Boolean(options && options.compact));
   }
 
-  // Rewrite every <time data-local-instant> in scope; data-compact marks the
-  // dense-table cells (logs, background work, deliveries), data-precise adds
+  // Rewrite every <time data-local-instant> in scope; data-compact marks
+  // Admin table cells (ui-conventions#date-format), data-precise adds
   // seconds and the zone name (System logs), and data-time-only a recent
   // instant shown as its clock time ("started 10:00 PM").
   function localize(scope) {

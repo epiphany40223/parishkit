@@ -61,8 +61,8 @@
 <td>{{ row.frequency_label }}</td><td>{% if row.installment.available %}{{ row.installment.display }}{% endif %}</td>
 <td>{% for share in row.shares %}{{ share.label }}{% if share.text %}: {{ share.text }}{% endif %}{% if not forloop.last %}<br>{% endif %}{% empty %}{% translate "None chosen" %}{% endfor %}</td>
 <td>{{ row.source_pledge.display }}</td><td>{{ row.source_contributions.display }}</td>
-<td><time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant>{{ row.submitted_at|date:'c' }}</time></td>
-<td><time datetime="{{ row.first_submitted_at|date:'c' }}" data-local-instant>{{ row.first_submitted_at|date:'c' }}</time></td></tr>
+<td><time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant data-compact>{{ row.submitted_at|date:'c' }}</time></td>
+<td><time datetime="{{ row.first_submitted_at|date:'c' }}" data-local-instant data-compact>{{ row.first_submitted_at|date:'c' }}</time></td></tr>
 {% empty %}<tr><td colspan="10">{% translate "No matching pledges. Try Any status and Any amount, or clear the search and date filters." %}</td></tr>{% endfor %}</tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 </div>
