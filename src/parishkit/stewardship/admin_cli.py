@@ -52,7 +52,8 @@ command that streams a file (``logs export`` and
 standard output, and its document to standard error. Other areas join the same
 subparser tree in later pull requests, each listed in the catalog with the
 pull request that added it. ``report roster`` (in ``admin_roster``) counts
-the Roster changes to enter list (#463).
+the Roster changes to enter list, and ``report census`` (in
+``admin_census``) the Census changes list (#463).
 """
 
 import argparse
@@ -1771,6 +1772,26 @@ def report_roster(args, preamble, runtime, context):
     )
 
 
+def report_census(args, preamble, runtime, context):
+    """The Census changes list, as counts only (#463)."""
+    from .admin_census import read_census
+
+    return read_census(
+        context["caller"],
+        runtime,
+        {
+            "status": args.status,
+            # The page's "Show history" box: "yes" when ticked.
+            "history": "yes" if args.history else None,
+            "route": args.route,
+            "kind": args.kind,
+            "start": args.start,
+            "end": args.end,
+            "zone": args.zone,
+        },
+    )
+
+
 def report_source_form(args, preamble, runtime, context):
     """Families the form cannot open, by DUID only (#774)."""
     from .admin_source_form import read_source_form
@@ -2708,6 +2729,25 @@ def _report_roster_options(parser):
     )
 
 
+def _report_census_options(parser):
+    """Options of ``report census``: the page's filters, without its search."""
+    parser.add_argument(
+        "--status",
+        help="open (default: the work to do), to_review, to_do, conflict, "
+        "being_published, published, already, entered, ignored or all",
+    )
+    parser.add_argument(
+        "--history",
+        action="store_true",
+        help="count superseded and cancelled changes too",
+    )
+    parser.add_argument("--route", help="any (default), automatic or by_hand")
+    parser.add_argument(
+        "--kind", help="any (default), contact, moved, deceased or new_member"
+    )
+    _date_options(parser)
+
+
 def _snapshot_option(parser):
     """The retained report, by the id in its page's address."""
     parser.add_argument("snapshot_id", type=_uuid, metavar="SNAPSHOT_ID")
@@ -3526,6 +3566,7 @@ def _report_specs():
     (``admin_digests``) and PR 8e the Family-level exports
     (``admin_family_exports``).
     """
+    from .admin_census import CensusReport
     from .admin_data_to_fix import DataToFixReport
     from .admin_digests import DailyDigest, DigestList, WeeklyDigest, WeeklyRequest
     from .admin_exact_exports import ExactChange, ExactStatus
@@ -3918,6 +3959,20 @@ def _report_specs():
             8,
             options=(_report_roster_options,),
             audit_event="roster_changes_viewed",
+        ),
+        # Census changes (#528): counts only; its rows name Families and
+        # Members with their contact details, so they stay on the page and
+        # its downloads.
+        CommandSpec(
+            "report census",
+            "Count the census changes Families reported, by status.",
+            report_census,
+            "read_only",
+            False,
+            CensusReport.field_names(),
+            8,
+            options=(_report_census_options,),
+            audit_event="census_changes_viewed",
         ),
         # System health's Families the form cannot open (#774): counts and
         # DUIDs only, Administrators only, as the page.

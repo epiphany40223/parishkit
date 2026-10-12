@@ -16,6 +16,7 @@ from uuid import UUID
 import pytest
 
 from parishkit.stewardship import (
+    admin_census,
     admin_cli,
     admin_data_to_fix,
     admin_report_reads,
@@ -23,6 +24,7 @@ from parishkit.stewardship import (
     admin_source_form,
 )
 from parishkit.stewardship.jobs.send_history import SendKey
+from parishkit.stewardship.reports.census_changes import CensusQuery
 from parishkit.stewardship.reports.money import MoneyAmount
 
 from .test_admin_reads import FORBIDDEN, members
@@ -309,6 +311,59 @@ def roster(show="all", ministry=None):
     return admin_roster.roster_model(CAMPAIGN, show, ministry, rows)
 
 
+def census_row(kind, *, automatic):
+    """One worded ``census_changes`` row, with the Family and Member it names."""
+    return {
+        "family_name": "Private Family",
+        "family_duid": 70,
+        "who": "Private Member",
+        "member_duid": 3,
+        "kind": kind,
+        "automatic": automatic,
+        "family_answer": "private@example.org",
+        "parishsoft_now": "Private Street",
+        "resolution_by": "private@example.org",
+        "resolution_note": "Private note",
+    }
+
+
+def census(history=""):
+    """Three kept rows and the page's summary, by its wording, zeros left out."""
+    rows = [
+        census_row("contact", automatic=True),
+        census_row("moved", automatic=False),
+        census_row("contact", automatic=False),
+    ]
+    summary = [("To review", 1), ("To do", 2), ("Published", 4)]
+    if history:
+        summary.append(("Superseded", 1))
+    query = CensusQuery.parse({"status": "all", "history": history})
+    return admin_census.census_model(
+        CAMPAIGN, query, {"rows": rows, "summary": summary, "administrator": True}
+    )
+
+
+CENSUS_FILTERS = {
+    "status": "all",
+    "history": "",
+    "route": "any",
+    "kind": "any",
+    "start": "",
+    "end": "",
+    "zone": "",
+}
+CENSUS_STATUSES = {
+    "to_review": 1,
+    "to_do": 2,
+    "conflict": 0,
+    "being_published": 0,
+    "published": 4,
+    "already": 0,
+    "entered": 0,
+    "ignored": 0,
+}
+
+
 MINISTRY = {
     "ministry": 9,
     "name": "Choir",
@@ -498,6 +553,30 @@ GOLDEN = {
             "ministries": [],
         },
     ),
+    "report census": (
+        census,
+        {
+            "campaign_id": str(CAMPAIGN),
+            # The page's filters, never its search.
+            "filters": CENSUS_FILTERS,
+            "matching": 3,
+            "routes": {"automatic": 1, "by_hand": 2},
+            "kinds": {"contact": 2, "moved": 1, "deceased": 0, "new_member": 0},
+            # Every status the summary covers, zeros included; no history.
+            "statuses": CENSUS_STATUSES,
+        },
+    ),
+    "report census (history)": (
+        lambda: census("yes"),
+        {
+            "campaign_id": str(CAMPAIGN),
+            "filters": CENSUS_FILTERS | {"history": "yes"},
+            "matching": 3,
+            "routes": {"automatic": 1, "by_hand": 2},
+            "kinds": {"contact": 2, "moved": 1, "deceased": 0, "new_member": 0},
+            "statuses": CENSUS_STATUSES | {"superseded": 1, "cancelled": 0},
+        },
+    ),
     "report ministry (requests)": (
         ministry_list,
         {
@@ -574,6 +653,9 @@ def test_every_report_command_has_its_models_fields():
         # Roster changes to enter (#528), under Ministry follow-up: not a
         # report menu entry, so ``report list`` does not offer it.
         "report roster": admin_roster.RosterReport,
+        # Census changes (#528), a campaign report menu entry, so ``report
+        # list`` offers it (its read is in ``admin_census``).
+        "report census": admin_census.CensusReport,
     }
     reports = {spec.name for spec in admin_cli.COMMANDS if spec.name[:7] == "report "}
     assert reports == set(models)
@@ -606,6 +688,9 @@ def test_the_report_commands_name_menu_entries():
         ["report", "roster", "--show", "entered"],
         ["report", "roster", "--ministry", "09"],
         ["report", "roster", "--campaign", str(CAMPAIGN)],
+        ["report", "census", "--search", "Private"],
+        ["report", "census", "--campaign", str(CAMPAIGN)],
+        ["report", "census", "--history", "yes"],
     ],
 )
 def test_options_outside_the_pages_vocabulary_are_usage_errors(argv):

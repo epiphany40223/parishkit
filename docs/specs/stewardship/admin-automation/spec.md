@@ -2144,7 +2144,7 @@ file is regenerated from the retained capture, in its original format.
 | `family_timeline`, `family_timeline_export` | One Family's timeline, so export only: the page's new export form and `export family-timeline FAMILY_RECORD_ID` (PR 8g, migration 0063); [fresh-gated](#fresh-gated-actions-from-the-command-line) |
 | `family_open_form` (new, #529) | Permanent: Open form signs this browser in to the Family form for a Family on the phone, a browser hand-off by nature; Families' responses are read through `report responses` and the response list exports |
 | `limitations_export` | `export limitations` (PR 8h, with #752's audit fields) |
-| `census_changes`, `census_changes_export` | `report census`, counts; Family-level rows only as `export census` (PR 8h). A row's Entered in ParishSoft, Ignore and Reopen ([#528](https://github.com/epiphany40223/parishkit/issues/528)) post to `census_changes`; their command, `census resolve PROPOSAL_ID --action entered\|ignored\|reopened`, comes with PR 8h through the same `census_resolution` service |
+| `census_changes`, `census_changes_export` | `report census`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); Family-level rows only as `export census` (PR 8h). A row's Entered in ParishSoft, Ignore and Reopen ([#528](https://github.com/epiphany40223/parishkit/issues/528)) post to `census_changes`; their command, `census resolve PROPOSAL_ID --action entered\|ignored\|reopened`, comes with PR 8h through the same `census_resolution` service |
 | `report_export_create`, `report_export`, `report_export_cancel`, `report_export_retry`, `report_export_regenerate`, `report_export_download` | `export create`, `export status --watch`, `export cancel`, `export retry`, `export regenerate`, `export download --stream` (PR 8b); an exact request's status, cancel and retry, which these pages also serve, are `export exact status --watch`, `export exact cancel` and `export exact retry` (PR 8h) |
 | `report_exact_create` | `export exact create` (PR 8h); the handed-off file through `export fetch` |
 | `daily_digest_snapshot` | `digest daily SNAPSHOT_ID` (PR 8d) |
@@ -2197,6 +2197,24 @@ and the stored keys for share options are defaults, pending
 Administrator confirmation; the
 [operator guide](../../../guides/stewardship-admin-automation.md#reports)
 lists the fields and options.
+
+`report census` ([#463](https://github.com/epiphany40223/parishkit/issues/463))
+is Census changes through the page's own pieces: its admission
+(`census_change_views._principal`, the census capability, so Administrators
+and Staff, never a Ministry leader), passive so any session scope reads,
+then the shared report read (current campaign, `admit_report_read`, the
+campaign read guard and the session recheck), the page's `CensusQuery`
+with every filter but the search (`--status`, `--history`, `--route`,
+`--kind`, and `--start`, `--end` and `--zone` as `report information`
+takes them) and the page's `census_changes`. The filters are parsed once
+the reader is admitted, so a refused one is `invalid` after the session
+recheck. Its rows name Families and Members with their contact details, so
+it prints counts only: the rows the filters keep, by route and by kind,
+and the page's summary by status key. It records the page's
+`census_changes_viewed` with a `count` of 0, and `report list` offers it,
+as the menu does. The
+[operator guide](../../../guides/stewardship-admin-automation.md#reports)
+lists the fields.
 
 The digest commands (PR 8d) read a retained report an emailed digest
 links to from its stored snapshot, through its page's own functions

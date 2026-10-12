@@ -19,6 +19,8 @@ functions the page itself uses, and prints counts and aggregates only:
   ``limitations_report``), without their Family and Member rows;
 - ``report information`` is the information queue's matching count
   (``information_page``);
+- ``report census`` (in ``admin_census``, #463) is the Census changes
+  list's counts (``census_changes``);
 - ``report ministry`` is the Ministry summary (``ministry_page``), or with
   ``--ministry`` one Ministry's join or leave request count.
 
@@ -52,6 +54,7 @@ REPORT_COMMANDS = {
     "campaign_comparison": "report comparison",
     "financial_report": "report financial",
     "limitations_report": "report limitations",
+    "census_changes": "report census",
     "information_queue": "report information",
     "ministry_report": "report ministry",
 }
