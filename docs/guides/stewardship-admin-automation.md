@@ -944,12 +944,13 @@ The filters are the page's: `--show` (`debug`, `info`, `warning`, `error`,
 plus audit records, as the page first shows), `--activity` (the page's
 Activity choice: `family_mail` lists outgoing email steps, resolutions,
 pauses, tests and mail provider failures, and `parishsoft` ParishSoft
-refreshes, quick updates, failures and holds, both with operational entries
-too; the rest are audit records only, so keep `audit` among the `--show`
-kinds: `sign_in` lists every Admin portal sign-in event, `configuration`
-every settings, schedule, user, file and key change, `downloads` report and
-export requests and downloads, `security` widened access, automation
-sessions, restored access and encryption key changes, and `family_portal`
+refreshes, quick updates, failures, holds and Ministry leader changes,
+both with operational entries too; the rest are audit records only, so keep
+`audit` among the `--show` kinds: `sign_in` lists every Admin portal sign-in
+event, `configuration` every settings, schedule, user, file and key change,
+`downloads` report and export requests and downloads, `security` widened
+access, automation sessions, restored access and encryption key changes,
+and `family_portal`
 Family sign-ins, responses, links and maintenance), `--event`
 (one type, exactly), `--actor`, `--correlation`, `--campaign` and
 `--subject` (UUIDs; a campaign or subject keeps only audit records),

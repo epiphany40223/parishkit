@@ -69,6 +69,10 @@ class Action(StrEnum):
     EXPORT_CANCELLED = "export_cancelled"
     EXPORT_DOWNLOADED = "export_downloaded"
     SOURCE_PROMOTED = "source_promoted"
+    # A promotion or a configuration activation changed who leads which
+    # Ministry (#1034): ``count`` is the (address, Ministry) pairs gained,
+    # ``matching_count`` those lost; never an address or a Member.
+    MINISTRY_LEADERS_CHANGED = "ministry_leaders_changed"
     CHAIR_RECONCILED = "chair_reconciled"
     SOURCE_REJECTED = "source_rejected"
     SOURCE_SUPERSEDED = "source_superseded"
