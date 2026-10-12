@@ -115,6 +115,29 @@ listed in the GitHub job summary. The child pytest runs in its own process
 group, and the kill ends the whole group, so no orphaned Playwright driver or
 browser slows the next partition.
 
+## Local Linux Firefox and WebKit runs (#1156)
+
+Firefox and WebKit behave differently on Linux than on macOS. Linux has
+different default fonts (so text wraps at different widths), and wheel
+scrolling and Tab focus differ too. Most cross-engine train failures came from
+this. `tools/stewardship-preflight.py --browsers` (see the
+[pre-flight guide](../development/stewardship.md#pre-flight-before-a-release-train))
+runs the changed browser test files for Firefox and WebKit in the
+`mcr.microsoft.com/playwright/python:v1.62.0-noble` image, as CI's engines see
+them. A file whose cases run only in Chromium is left out.
+
+- The first run builds a local `parishkit-preflight-browser:<hash>` image. It
+  adds `fonts-dejavu-core` to match the CI runner's layout, the locked Python
+  requirements, and axe-core at its locked version and integrity. Later runs
+  reuse it until a requirements file or `package-lock.json` changes.
+- Each run copies the checkout, including uncommitted and untracked files, into
+  a fresh container. Nothing in the worktree changes, and no `node_modules`
+  symlink is needed.
+- pytest runs with `--require-no-skips` and `-k "firefox or webkit"`, as CI
+  would for those engines.
+- The container has a unique name. On timeout (`--browser-timeout`, default
+  1,800 seconds) the script removes exactly that container.
+
 ## Evidence
 
 The selector uses each collected item's actual `browser_engine` parameter.

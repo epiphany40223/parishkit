@@ -248,6 +248,10 @@ it; it checks this before watching the CI run and refuses without them.
 
 For a nightly train:
 
+- Run [`tools/stewardship-preflight.py --browsers --base origin/main`](../development/stewardship.md#pre-flight-before-a-release-train)
+  on the assembled train branch, and dispatch only when it passes. Each PR
+  should already have passed it on its own, but cross-PR collisions only show
+  up on the merged tree.
 - Include the version-bump PR in the train. A bump merged after the train's
   full run changes `pyproject.toml`, which is not docs-safe, so the release
   would need another full run.
