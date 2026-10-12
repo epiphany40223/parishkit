@@ -2775,27 +2775,8 @@
     const pad = (number) => String(number).padStart(2, "0");
     return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
   };
-  // File size (#563). A file input marked data-max-bytes refuses a chosen
-  // file larger than that many bytes at once, with the field's
-  // data-max-bytes-message: the field is marked invalid, and a
-  // data-require-complete form holds its button with that message
-  // (data-client-error). The server still checks every upload.
-  const wireMaxBytes = (root) => {
-    within(root, "input[type=file][data-max-bytes]").forEach((input) => {
-      const check = () => {
-        const limit = Number(input.dataset.maxBytes);
-        const large = [...(input.files || [])].some((file) => file.size > limit);
-        const message = large ? (input.dataset.maxBytesMessage || "This file is too large.") : "";
-        input.setCustomValidity(message);
-        if (large) input.dataset.clientError = message;
-        else delete input.dataset.clientError;
-        input.setAttribute("aria-invalid", String(large));
-      };
-      // On the input itself, so the gate sees it for the same change.
-      input.addEventListener("change", check);
-      check();
-    });
-  };
+  // File size (#563): data-max-bytes is wired by wireMaxBytes, below with
+  // the Parish logos' size checks (#1062), which it shares.
   // A pattern for a textarea (#563), which has no pattern attribute of its
   // own: data-pattern="[^@]*" must match the whole value, or the field is
   // invalid with its data-missing-hint, so the browser marks it on blur and
@@ -3100,7 +3081,20 @@
           rule = "total";
         }
         input.setCustomValidity(message);
+        // A data-require-complete form holds its button with this as its
+        // hint (Hosted files, Campaign images, #563).
+        if (message) input.dataset.clientError = message;
+        else delete input.dataset.clientError;
         let error = document.getElementById(errorId);
+        // A field with no reserved error line of its own (only Parish logos'
+        // file-size-field.html has one) is marked invalid and says why in
+        // its form's hint; adding a line would move what follows it.
+        if (!error) {
+          if (message) input.dataset.sizeRule = rule;
+          else delete input.dataset.sizeRule;
+          input.setAttribute("aria-invalid", String(Boolean(message)));
+          return;
+        }
         if (!message) {
           if (input.dataset.sizeRule && input.hasAttribute("data-field-error")) {
             clearFieldError(input);
@@ -3109,12 +3103,6 @@
           return;
         }
         input.dataset.sizeRule = rule;
-        if (!error) {
-          error = document.createElement("ul");
-          error.className = "errorlist";
-          error.id = errorId;
-          input.after(error);
-        }
         error.hidden = false;
         error.replaceChildren(Object.assign(document.createElement("li"), {textContent: message}));
         const ids = (input.getAttribute("aria-describedby") || "").split(/\s+/)
@@ -3129,6 +3117,9 @@
       sizeChecks.get(form).push(check);
       input.addEventListener("change", () => window.setTimeout(() => {
         sizeChecks.get(form).forEach((other) => other(other === check));
+        // The gate answered this change before the check ran: answer again
+        // with the field's new data-client-error (or none).
+        gateComplete(form);
       }, 0));
     });
   };
@@ -3150,7 +3141,6 @@
     wireShowWhen(root);
     wireLockedWhen(root);
     wireNotBefore(root);
-    wireMaxBytes(root);
     wirePattern(root);
     wireComplete(root);
     wireNotFuture(root);
