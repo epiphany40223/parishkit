@@ -4204,6 +4204,18 @@ status ([navigation rule 5](#navigation-rules)). If a poll is running, no
 concurrent poll starts; one manual full refresh may be queued to follow it.
 Repeated clicks return/link to the existing queued run.
 
+On the page itself, Refresh now acts
+[in place](../ui-conventions/spec.md#in-place-controls): only the region
+holding the button and the run below it is redrawn, so nothing above the
+button moves. The requested run is remembered in the signed-in session, never
+in the URL, until another refresh is requested or the sign-in ends; a run that
+can no longer be read is forgotten. Below the button the page shows that run's
+live status, the same status region its Background task page shows, polled
+through the task's passive status read, with a link to that Background task
+page for the history and technical details. When the run ends, the page
+re-reads itself in place, so the data age above and the request key are
+fresh. The breadcrumb is the way back; the page has no Cancel link.
+
 The refresh page and the "Run a full refresh now" button say that a full
 refresh re-reads everything (including Ministry rosters and giving) and usually
 takes a few minutes, while the automatic quick updates read only the

@@ -1,8 +1,13 @@
 """The manual refresh confirmation page: accessible, plain, posts its key."""
 
+from uuid import UUID
+
 import pytest
 
-from .waits import visible
+from .live_status_components import REFRESH, REFRESH_REQUESTED, TASK_STATUS
+from .test_in_place import MARK, MARKED, VIEWPORT
+from .test_live_status_in_place import answer_reads
+from .waits import has_text, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -15,7 +20,13 @@ def test_refresh_confirmation_is_accessible_and_states_what_happens(
 ):
     """Both wordings pass the accessibility scan and say what a request does."""
     page.set_viewport_size({"width": width, "height": 900})
-    for path in ("/source-refresh", "/source-refresh-running", "/source-refresh-late"):
+    # The last shows the run this sign-in requested (#521).
+    for path in (
+        "/source-refresh",
+        "/source-refresh-running",
+        "/source-refresh-late",
+        REFRESH_REQUESTED,
+    ):
         page.goto(component_origin + path)
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         page.evaluate(axe_source)
@@ -26,7 +37,8 @@ def test_refresh_confirmation_is_accessible_and_states_what_happens(
             == []
         )
         assert page.get_by_role("button", name="Refresh now").count() == 1
-        assert page.get_by_role("link", name="Cancel").count() == 1
+        # The breadcrumb is the way back (#521): no hand-written Cancel.
+        assert page.get_by_role("link", name="Cancel").count() == 0
     page.goto(component_origin + "/source-refresh")
     # "ParishSoft data as of" and the connection line, each one time (#510).
     assert page.locator("time[data-local-instant]").count() == 2
@@ -77,3 +89,55 @@ def test_the_request_posts_its_key(page, component_origin):
     body = sent.value.post_data
     assert "request_key=" in body and "csrfmiddlewaretoken=" in body
     assert sent.value.url.endswith("/admin/parish/parishsoft-refresh/")
+
+
+def test_refresh_now_stays_on_the_page_and_follows_the_run(page, component_origin):
+    """Refresh now stays on Refresh from ParishSoft (navigation rule 5, #521).
+
+    The request posts in place and follows the server's redirect back to the
+    page: no reload, nothing above the button moves, focus stays on the
+    button, and the requested run's live status appears below it. When the
+    run's passive status poll finds it finished, the page is re-read once in
+    place, so the data age above and the request key are fresh too.
+    """
+    page.set_viewport_size(VIEWPORT)
+    page.goto(component_origin + REFRESH)
+    page.evaluate(MARK)
+    button = page.get_by_role("button", name="Refresh now")
+    before = button.bounding_box()
+    data_age = page.locator("section.panel time[data-local-instant]").first
+    first_age = data_age.get_attribute("datetime")
+    assert page.get_by_role("heading", name="Current status").count() == 0
+    button.click()
+    has_text(
+        page.get_by_role("status").filter(has_text="Refresh requested."),
+        "Refresh requested.",
+    )
+    region = page.locator("#refresh-run")
+    visible(region.get_by_role("heading", name="Current status"))
+    visible(region.get_by_text("of 4,000 records checked"))
+    visible(region.get_by_role("link", name="View this refresh's Background task"))
+    assert page.evaluate(MARKED) == "kept"
+    assert page.url == component_origin + REFRESH_REQUESTED + "#refresh-run"
+    assert button.bounding_box()["y"] == before["y"]
+    assert page.evaluate("document.activeElement.textContent.trim()") == "Refresh now"
+    # The run finishes: the poll brings the finished status, and the page is
+    # re-read once, in place, for the panel above and a fresh key.
+    polls = answer_reads(
+        page, component_origin, TASK_STATUS, "/live-task-finished-status"
+    )
+    reads = answer_reads(
+        page, component_origin, REFRESH_REQUESTED, "/live-refresh-finished"
+    )
+    visible(region.get_by_text("Finished successfully."))
+    key = page.locator("input[name=request_key]")
+    visible(region.get_by_text("4,000 records checked, 12 changed."))
+    page.wait_for_function(
+        "key => document.querySelector('input[name=request_key]').value === key",
+        arg=str(UUID(int=522)),
+    )
+    assert key.input_value() == str(UUID(int=522))
+    assert data_age.get_attribute("datetime") != first_age
+    assert page.evaluate(MARKED) == "kept"
+    page.wait_for_timeout(3000)
+    assert len(polls) >= 1 and len(reads) == 1, (polls, reads)
