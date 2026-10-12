@@ -46,7 +46,9 @@ portal maintenance switch (PR 7a, in ``admin_portal``), ``report
 source-form`` (in ``admin_source_form``), ``report data-to-fix`` (in
 ``admin_data_to_fix``), ``files list``, ``files
 delete`` and ``files rename`` (PR 10, in ``admin_hosted_files``) and
-``content list`` and ``content history`` (PR 10, in ``admin_content``). A
+``content list`` and ``content history`` (PR 10, in ``admin_content``),
+and ``parish show``, ``ministries list``, ``branding show`` and ``campaign
+shares`` (PR 10, in ``admin_settings``). A
 command that streams a file (``logs export`` and
 ``export download --stream``) writes the file's bytes, and nothing else, to
 standard output, and its document to standard error. Other areas join the same
@@ -1155,6 +1157,34 @@ def content_history(args, preamble, runtime, context):
     return read_content_history(context["caller"], runtime, args.revision)
 
 
+def parish_show(args, preamble, runtime, context):
+    """The Parish settings page's profile (PR 10)."""
+    from .admin_settings import read_parish
+
+    return read_parish(context["caller"], runtime)
+
+
+def ministries_list(args, preamble, runtime, context):
+    """The Ministries page's catalog, every row (PR 10)."""
+    from .admin_settings import read_ministries
+
+    return read_ministries(context["caller"], runtime)
+
+
+def branding_show(args, preamble, runtime, context):
+    """The current parish logos Parish logos draws (PR 10)."""
+    from .admin_settings import read_branding
+
+    return read_branding(context["caller"], runtime)
+
+
+def campaign_shares(args, preamble, runtime, context):
+    """A campaign's Share options and whether the page edits them (PR 10)."""
+    from .admin_settings import read_shares
+
+    return read_shares(context["caller"], runtime, args.campaign)
+
+
 def files_list(args, preamble, runtime, context):
     """The Hosted files page's library, with each file's uses (PR 10)."""
     from .admin_hosted_files import read_library
@@ -2058,7 +2088,7 @@ def _task_show_options(parser):
 
 
 def _schedule_options(parser):
-    """Options of ``schedule show`` and ``go-live readiness``: the campaign."""
+    """Options of ``schedule show``, ``go-live readiness`` and ``campaign shares``."""
     parser.add_argument(
         "--campaign", type=_uuid, help="the campaign (default: the current one)"
     )
@@ -3530,6 +3560,53 @@ def _file_specs():
     )
 
 
+def _settings_specs():
+    """The configuration pages' reads (PR 10, ``admin_settings``).
+
+    Parish settings, Ministries, Parish logos and Share options: like
+    ``files list``, any session runs them and they record nothing, as the
+    pages' GETs record nothing. Their changes come later in PR 10.
+    """
+    from .admin_settings import BrandingShow, CampaignShares, MinistryList, ParishShow
+
+    def read(name, summary, handler, model, options=()):
+        """One read's catalog entry: read-only, no state change, no event."""
+        return CommandSpec(
+            name,
+            summary,
+            handler,
+            "read_only",
+            False,
+            model.field_names(),
+            10,
+            options=options,
+            audit_event=None,
+        )
+
+    return (
+        read("parish show", "Show the parish profile.", parish_show, ParishShow),
+        read(
+            "ministries list",
+            "List the Ministry catalog and each Ministry's activity.",
+            ministries_list,
+            MinistryList,
+        ),
+        read(
+            "branding show",
+            "Show the current parish logos.",
+            branding_show,
+            BrandingShow,
+        ),
+        read(
+            "campaign shares",
+            "Show a campaign's Share options.",
+            campaign_shares,
+            CampaignShares,
+            options=(_schedule_options,),
+        ),
+    )
+
+
 def _history_specs():
     """Past campaigns (#1018): the archive import, the page's actions.
 
@@ -4124,6 +4201,7 @@ COMMANDS = (
     + _test_specs()
     + _portal_specs()
     + _file_specs()
+    + _settings_specs()
     + _operation_specs()
     + _report_specs()
     + _users_specs()

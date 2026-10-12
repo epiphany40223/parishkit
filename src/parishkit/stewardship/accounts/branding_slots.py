@@ -264,6 +264,16 @@ def _chosen(parish):
     }
 
 
+def current_assets(parish):
+    """The current Parish's logo asset rows, keyed by asset id.
+
+    Parish logos draws these (in label order) and ``pk-admin branding
+    show`` prints them (in slot order). The record holds plain ids, not
+    foreign keys, so a size whose row is missing is simply absent.
+    """
+    return BrandingAsset.objects.in_bulk(list(_chosen(parish).values()))
+
+
 def _current(parish, media_root, labels):
     """The current logo's normalized bytes for each size in ``labels`` that
     has one stored and readable, keyed by size.

@@ -57,6 +57,7 @@ from .branding_slots import (
     changed_sizes,
     check_slot,
     complete_bundle,
+    current_assets,
     file_size,
     missing_message,
 )
@@ -394,15 +395,10 @@ def _page(request, service, configuration, form, *, status=200, redraw=False, **
     apply (#196), all on this page. ``redraw`` marks the form and the
     current logos to be redrawn even by Apply's answer.
     """
-    current = configuration.active_configuration.parish
-    assets = BrandingAsset.objects.filter(
-        pk__in=[
-            current.large_logo_id,
-            current.menu_logo_id,
-            current.icon_logo_id,
-            current.favicon_id,
-        ]
-    ).order_by("label")
+    assets = sorted(
+        current_assets(configuration.active_configuration.parish).values(),
+        key=lambda asset: asset.label,
+    )
     step = "review" if region.get("review") else "edit"
     if region.get("receipt"):
         step = "apply"

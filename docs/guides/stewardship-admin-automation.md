@@ -771,6 +771,44 @@ campaign did not retain, a purged campaign, or a campaign whose retained
 configuration is gone is exit 1 (`not_available`). Editing and deleting
 content stay on the page for now.
 
+## Parish, Ministry, logo and Share option settings
+
+`parish show`, `ministries list`, `branding show` and `campaign shares`
+are the reads of **Parish settings**, **Ministries**, **Parish logos**
+and **Share options**. Like the pages, they need an Administrator; a
+session of any scope may run them, and they record nothing in System
+logs, as opening the pages records nothing. Each prints `version`, the
+applied configuration's version. Changing these settings stays on the
+pages for now.
+
+```sh
+pk-admin parish show
+pk-admin ministries list
+pk-admin branding show
+pk-admin campaign shares [--campaign ID]
+```
+
+| Field | What it holds |
+| --- | --- |
+| `parish` (`parish show`) | The profile the page's editor shows: `name`, `website`, `timezone`, `phone` (stored as `+1` and ten digits), `online_giving_url` (null when unset) and `date_format` |
+| `campaign_id` (`ministries list`) | The current campaign, or null without one |
+| `snapshot_id` | The ParishSoft data the Ministry catalog comes from |
+| `ministries` | Every Ministry, by name as on the page: its ParishSoft `duid`, `name`, `active` (offered to parishioners) and `included` (in the current campaign) |
+| `logos` | The current logos the page shows, in the order `large`, `menu`, `icon`, `favicon`: `slot`, `id`, `width` and `height` (pixels), `size` (bytes) and `sha256` |
+| `campaign_id` (`campaign shares`) | The campaign, the current one unless `--campaign` names another |
+| `editable` | Whether the page would edit the options now: an unlocked current Testing draft that no background work holds, with the financial module |
+| `financial` | Whether the campaign has the financial module |
+| `options` | Its Share options in order: `id`, `name` (the option's label) and `free_text` |
+
+`ministries list` prints every Ministry, not one page of the table;
+filter it with `jq`. Without ParishSoft data for the configured
+organization, the page cannot show a catalog and `ministries list` is
+exit 3 (`unavailable`). Unlike the Share options page, which only edits
+and refuses a locked campaign, `campaign shares` reads a live or ended
+campaign's options too, with `editable` false. With no current campaign,
+or an unknown one, `campaign shares` is exit 1 (`not_available`). Logo
+images stay on the page.
+
 ## Past campaigns
 
 The `history` commands import the archive workbooks of past campaigns for
@@ -1843,3 +1881,7 @@ pk-admin users import-leaders --confirm --token -
   are both required, and without them the command is exit 1 (`invalid`).
   One Ministry's join and leave lists are unchanged. The only readers are
   Administrator-run assistants.
+- `pk-admin/1` (#463): additive. `parish show`, `ministries list`,
+  `branding show` and `campaign shares [--campaign ID]`, the Parish
+  settings, Ministries, Parish logos and Share options pages' reads (any
+  session, Administrators only, no event).

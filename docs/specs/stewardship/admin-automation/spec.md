@@ -1636,6 +1636,10 @@ signatures:
   their transaction. `content list` needed none (the catalog's row builder
   was already request-free); `content history` moved the history page's
   read into `content_history.retained_content`, which the page now calls.
+  `parish show`, `ministries list` and `campaign shares` needed none: the
+  pages' profile, catalog and campaign-target reads were already
+  request-free; `branding show` moved the logo page's current-logo query
+  into `branding_slots.current_assets`, which the page now calls.
 - **PR 11:** user, event and follow-up actions from their views (the users
   model of #952 replaces the rule actions; #922 retired the assignment and
   Chairperson actions).
@@ -1813,12 +1817,12 @@ none.
 | `campaign_end_date_check` | `schedule preview` (PR 4): Campaign settings' no-save live check of a live campaign's end date answers what a preview of that end date would refuse |
 | `configuration_request` | `config request show --watch` (PR 4); `config request cancel` ([#944](https://github.com/epiphany40223/parishkit/pull/944)), an operator recovery with no page button |
 | `campaign_settings`, `campaign_create`, `campaign_clone` | `campaign show`, `campaign preview`, `campaign confirm`, `campaign clone` (PR 10); until #145, creating or copying a campaign is refused, except the first campaign through [Create the campaign](../admin-portal/spec.md#create-the-campaign) (#142) ([navigation rule 10](../admin-portal/spec.md#navigation-rules)): commands that go through `confirm` and `_target`, or call `refuse_campaign_creation`, will get the same refusal as the pages; `privileged_actions.configuration_request` has no such check |
-| `campaign_ministries`, `share_settings`, `reminder_workgroup` | `campaign ministries`, `campaign shares`, `campaign no-reminders-workgroup` (PR 10) |
+| `campaign_ministries`, `share_settings`, `reminder_workgroup` | `campaign shares` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), the Share options read; `campaign ministries`, `campaign no-reminders-workgroup` and Share option changes (PR 10) |
 | `content_catalog`, `content_edit`, `content_revision`, `content_delete`, `content_history`, `content_history_revision`, `content_plain_text` | `content list`, `content history` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); `content show`, `content preview`, `content confirm` (PR 10) |
-| `parish_settings`, `ministries` | `parish`, `ministries` (PR 10) |
+| `parish_settings`, `ministries` | `parish show`, `ministries list` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); their changes (PR 10) |
 | `hosted_files`, `hosted_file_delete`, `hosted_file_rename` | `files list`, `files delete`, `files rename` ([#463](https://github.com/epiphany40223/parishkit/issues/463)) |
 | `artwork_settings` (its upload and removal reviews, #750) | `artwork show`, `artwork remove` (PR 10) |
-| `branding_settings`: **Apply changes** on its in-place logo review (#750) | `branding show`, `branding confirm --expected-version …`, a configuration request for logos already uploaded (PR 10) |
+| `branding_settings`: **Apply changes** on its in-place logo review (#750) | `branding show` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); `branding confirm --expected-version …`, a configuration request for logos already uploaded (PR 10) |
 | `hosted_file_upload`, `artwork_upload`, `branding_settings` uploads | Pending: file uploads; a later PR may accept `--file` |
 | `branding_asset` | Permanent: image previews and bytes for the browser |
 
@@ -1965,6 +1969,29 @@ and each retained page and email (id, kind, slot, name, subject); with
 did not retain. Content is the campaign's own text, never a Family's. A
 configuration refusal is `unavailable`. The
 [operator guide](../../../guides/stewardship-admin-automation.md#pages-and-emails)
+lists the fields.
+
+`parish show`, `ministries list`, `branding show` and `campaign shares
+[--campaign ID]` are the reads of Parish settings, Ministries, Parish
+logos and Share options, through the pages' own pieces: the profile the
+parish editor fills (`parish_views._profile` and its defaults), the
+Ministry catalog (`ministry_views._state`), the logos the logo page draws
+(`branding_slots.current_assets`, printed in slot order; a slot whose
+asset row is missing is left out, as on the page), and the campaign state and
+target check of the option editor (`campaign_views._state` and
+`_target`). All four are Administrators only (`CONFIGURE`), admitted
+passively so any session scope reads, with no event, as the pages' GETs
+record none, and each prints the applied configuration's `version`, the
+base a later change is previewed against. `ministries list` prints every
+catalog row (`duid`, `name`, `active`, `included`) in the page's order
+rather than one page of the table; no promoted catalog for the configured
+organization is `unavailable`, as the page answers 503. `campaign shares`
+defaults to the current campaign (none, or an unknown campaign, is
+`not_available`) and prints the page's `editable` check with the options;
+unlike the page, which only edits and refuses a locked campaign, it reads
+a locked or live campaign too, with `editable` false. The values are the
+parish's and the campaign's own, never a Family's. The
+[operator guide](../../../guides/stewardship-admin-automation.md#parish-ministry-logo-and-share-option-settings)
 lists the fields.
 
 ### Production transition and withdrawal
@@ -3022,7 +3049,9 @@ exactly the commands that exist.
   delivery reads and resolution. **PR 9c:** `resend` and refusal clearing, at
   the prompt.
 - **PR 10, other configuration:** campaign, content (`content list` and
-  `content history` first), Ministries, parish, hosted files (`files list`,
+  `content history` first), Ministries, parish, logos and Share options
+  (`parish show`, `ministries list`, `branding show` and `campaign shares`
+  first), hosted files (`files list`,
   `files delete`, `files rename`), artwork, branding confirmation, integration settings with the
   backup folder probe, and secret replacement: integration key replacement,
   finish switching and the backup key change, with the wrapper's secret
