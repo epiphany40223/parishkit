@@ -40,15 +40,15 @@
 <section class="panel" aria-labelledby="code-heading">
   <h2 id="code-heading">{% translate "Enter the user code" %}</h2>
   {% if not fresh %}
-  <p>{% translate "For security, confirm your sign-in before approving a session. You will come back to this page, where the code still works for ten minutes after it was shown." %}</p>
+  <p id="approval-unavailable">{% translate "For security, confirm your sign-in before approving a session. You will come back to this page, where the code still works for ten minutes after it was shown." %}</p>
   {% include 'stewardship/components/reauthenticate.html' with next=next %}
   {% endif %}
   {% if refused %}<p class="notice notice-error" role="alert">{% translate "That code does not match a pending request for your address. Check the code, and that the operator entered your address; a code expires ten minutes after it was shown." %}</p>{% endif %}
   <form method="post">{% csrf_token %}
     <input type="hidden" name="action" value="lookup">
     <label for="automation-code">{% translate "User code" %}</label>
-    <input id="automation-code" name="code" autocomplete="off" spellcheck="false" maxlength="16" required{% if not fresh %} disabled{% endif %}>
-    {% button type="submit" enabled=fresh %}{% translate "Continue" %}{% endbutton %}
+    <input id="automation-code" name="code" autocomplete="off" spellcheck="false" maxlength="16" required{% if not fresh %} disabled aria-describedby="approval-unavailable"{% endif %}>
+    {% button type="submit" enabled=fresh aria-describedby=fresh|yesno:",approval-unavailable" %}{% translate "Continue" %}{% endbutton %}
   </form>
   <p><a href="{{ back }}">{{ back_label }}</a></p>
 </section>

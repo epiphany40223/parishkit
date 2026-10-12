@@ -259,8 +259,10 @@ def button(parser, token):
     (``data-bulk-action``) or a value of True renders as a bare attribute,
     except that an ``aria-*`` attribute always spells its state: True and
     False render as "true" and "false" (ARIA reads a bare aria-pressed as an
-    empty, invalid token). Any other value is escaped, and omitted only when
-    it is None or False.
+    empty, invalid token), and an empty one is left out, so
+    ``aria-describedby=reason`` names a reason only while there is one
+    (#563). Any other value is escaped, and omitted only when it is None or
+    False.
     ``href`` makes the button a link styled as one, which takes no ``type``
     and cannot be disabled (a link has no disabled state); a <button> must
     name its ``type``.
@@ -328,6 +330,8 @@ class ButtonNode(template.Node):
                 parts.append(f" {name}" if value else "")
             elif name.startswith("aria-") and isinstance(value, bool):
                 parts.append(f' {name}="{str(value).lower()}"')
+            elif name.startswith("aria-") and value == "":
+                continue
             elif value is True:
                 parts.append(f" {name}")
             elif value is not None and value is not False:

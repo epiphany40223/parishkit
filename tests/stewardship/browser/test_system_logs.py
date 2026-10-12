@@ -508,7 +508,9 @@ def test_a_half_typed_date_says_why_apply_waits(page, component_origin, label):
     state = field.evaluate("node => [node.value, node.validity.badInput]")
     if state[1]:
         assert apply.is_disabled()
-        has_text(hint, f"Enter a whole {label} date, or clear it.")
+        # Through's hint also names the date order it checks (#563).
+        order = ", no earlier than From" if label == "Through" else ""
+        has_text(hint, f"Enter a whole {label} date{order}, or clear it.")
         assert "save" not in hint.inner_text()
     else:
         # The keys were ignored: no date, so nothing to wait for.

@@ -101,6 +101,17 @@ class ParishForm(forms.Form):
         max_length=2048,
         required=False,
         assume_scheme="https",
+        # The browser refuses an http:// address at once (#563); the server
+        # (clean_online_giving_url) stays the authority.
+        widget=forms.URLInput(
+            attrs={
+                "pattern": "[Hh][Tt][Tt][Pp][Ss]://.+",
+                "data-missing-hint": _(
+                    "Use an https:// address, for example "
+                    "https://giving.example.org/parish, or leave it blank."
+                ),
+            }
+        ),
         help_text=_(
             "Optional. The page where Families can give online. Emails and pages "
             "can link to it with the online_giving_url placeholder."

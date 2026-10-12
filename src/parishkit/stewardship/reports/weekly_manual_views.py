@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from django import forms
 from django.core.exceptions import ObjectDoesNotExist
-from django.db import DatabaseError, IntegrityError
+from django.db import DatabaseError, IntegrityError, connection
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
@@ -56,6 +56,29 @@ def _has_weekly_schedule(campaign_id):
     ).exists()
 
 
+# The guard's "resolved prior work" term (weekly_manual.sql), read on GET so
+# a digest still being prepared or delivered shows the button unavailable
+# with why, instead of a refusal after submit (#563). The epoch is read
+# exactly as the guard reads it: the campaign's one credentials row (unique
+# per campaign), in Testing mode only. The guard still decides every
+# submission.
+_UNRESOLVED = (
+    "SELECT stewardship_weekly_digest_unresolved_v1(d.id, %(mode)s, "
+    "(SELECT CASE WHEN %(mode)s='testing' THEN k.rehearsal_epoch_id END "
+    "FROM stewardship_campaign_credentials k WHERE k.campaign_id=d.campaign_id)) "
+    "FROM stewardship_schedule_definition d WHERE d.campaign_id=%(campaign)s "
+    "AND d.kind='weekly_digest' AND d.current_revision_id IS NOT NULL"
+)
+
+
+def _digest_unresolved(campaign_id, mode):
+    """Whether an earlier weekly digest is still being prepared or delivered."""
+    with connection.cursor() as cursor:
+        cursor.execute(_UNRESOLVED, {"mode": mode, "campaign": campaign_id})
+        row = cursor.fetchone()
+    return bool(row and row[0])
+
+
 def _blocked(request, campaign, reason, status):
     """Explain why no manual report can be queued, and where to fix it."""
     response = render(
@@ -100,6 +123,10 @@ def request_report(request, campaign_id):
         campaign = runtime_row.current_campaign
         if not _has_weekly_schedule(campaign_id):
             return _blocked(request, campaign, "no_schedule", 409)
+        if request.method == "GET" and _digest_unresolved(
+            campaign_id, runtime_row.mode
+        ):
+            return _blocked(request, campaign, "in_progress", 200)
         form = ManualReportForm(
             request.POST if request.method == "POST" else None,
             initial={

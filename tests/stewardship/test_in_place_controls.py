@@ -265,7 +265,12 @@ def test_information_reopen_confirmation_shows_only_when_unticking():
     group = re.search(r'<div data-show-when="followed_up!=yes"[^>]*>', text).group(0)
     assert 'data-required-when-shown="confirm_clear"' in group
     assert "data-missing-hint=" in group
-    assert 'aria-describedby="information-save-hint"' in text
+    # Save names its hint, and also the locked notice while other campaign
+    # work holds edits (#563).
+    assert (
+        'aria-describedby=mutable|yesno:"information-save-hint,'
+        'information-save-hint information-locked"' in text
+    )
     hint = '<p class="help" id="information-save-hint" data-complete-hint hidden>'
     assert hint in text
 

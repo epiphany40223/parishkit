@@ -126,7 +126,14 @@ def test_repeating_the_current_state_changes_nothing(auth_service, google):
 def test_a_message_with_an_email_address_is_refused(auth_service, google):
     """The note is the Administrator's text, never a container for addresses."""
     browser, _ = signed_in()
-    assert change(browser, "close", "Write to office@example.org").status_code == 400
+    refused = change(browser, "close", "Write to office@example.org")
+    assert refused.status_code == 400
+    # The page comes back with the message kept and the reason at the
+    # field, not on an error page (#563).
+    assert b"The Family portal is open" in refused.content
+    assert b'aria-invalid="true"' in refused.content
+    assert b"cannot contain an email address" in refused.content
+    assert b"Write to office@example.org</textarea>" in refused.content
     assert events() == []
     assert not maintenance(family("get", "/"))
 
@@ -137,6 +144,12 @@ def test_changing_the_switch_needs_a_fresh_sign_in(auth_service, google, monkeyp
 
     browser, _ = signed_in()
     monkeypatch.setattr(sessions, "FRESH_SECONDS", -1)
+    # The page shows both change buttons unavailable, named by the sign-in
+    # step (#563); a submit anyway is still refused.
+    page = browser.get(ROUTE)
+    assert b'aria-describedby="maintenance-close-hint maintenance-fresh-reason"' in (
+        page.content
+    )
     response = change(browser, "close")
     assert response.status_code == 403
     assert events() == []
