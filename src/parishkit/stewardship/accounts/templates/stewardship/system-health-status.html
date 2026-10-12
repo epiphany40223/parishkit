@@ -10,7 +10,10 @@
   here changes from one poll to the next unless the state does, so an
   unchanged poll leaves the region alone: "Last checked" sits outside it
   (live-status-v1.js updates it), and how long ago the last backup finished
-  is counted in the browser (time[data-live-since]).
+  is counted in the browser (time[data-live-since]). The daily limit's resume
+  time is shown only while the 24-hour count is at the limit, as a clock
+  time (it is always within the next 24 hours), with "tomorrow" when it
+  falls on the browser's next calendar day.
 {% endcomment %}<div data-live-status="system-health"{% if status_url %} data-live-url="{{ status_url }}"{% endif %} data-live-interval="{{ poll_interval }}" data-live-refresh-label="{% translate 'Refresh System health' %}" data-live-announce="{{ health.announcement }}" data-live-pending>
 <section class="panel" aria-labelledby="health-problems-heading" data-health-problems>
 {% if health.problems %}<h2 id="health-problems-heading">{% blocktranslate count count=health.problems|length trimmed %}{{ count }} problem needs attention{% plural %}{{ count }} problems need attention{% endblocktranslate %}</h2>
@@ -32,7 +35,7 @@
 {% if health.planning_held %}<li><strong>{% translate "Planning is held." %}</strong> {% translate "No new Family emails are being prepared right now, because the campaign is not open for sending (for example, a campaign change is being applied). Preparation continues by itself when the hold ends." %} <a href="{% url 'admin:family_email_progress' %}">{% translate "Family email progress" %}</a></li>{% endif %}
 {% if health.retry_waiting %}<li><strong>{% translate "Waiting to retry:" %}</strong> {% blocktranslate count count=health.retry_waiting trimmed %}{{ count }} Family email waits to retry after a temporary refusal{% plural %}{{ count }} Family emails wait to retry after a temporary refusal{% endblocktranslate %}{% if health.next_retry_at %}; {% translate "the next retry is due at" %} <time datetime="{{ health.next_retry_at|instant }}" data-local-instant>{{ health.next_retry_at|instant }}</time>{% endif %}. <a href="{% url 'admin:deliveries' %}?state=retry_wait">{% translate "Outgoing mail: waiting to retry" %}</a></li>{% endif %}
 </ul>{% else %}<p>{% translate "Nothing is holding Family email back." %}</p>{% endif %}
-<p data-daily-count>{% blocktranslate with sent=health.daily_sent|number limit=health.daily_limit|number count count=health.daily_sent trimmed %}Emails went to {{ sent }} recipient in the last 24 hours. Family invitations, reminders and Family tests stop at {{ limit }}.{% plural %}Emails went to {{ sent }} recipients in the last 24 hours. Family invitations, reminders and Family tests stop at {{ limit }}.{% endblocktranslate %}</p>
+<p data-daily-count>{% blocktranslate with sent=health.daily_sent|number limit=health.daily_limit|number count count=health.daily_sent trimmed %}Emails went to {{ sent }} recipient in the last 24 hours. Family invitations, reminders and Family tests stop at {{ limit }}.{% plural %}Emails went to {{ sent }} recipients in the last 24 hours. Family invitations, reminders and Family tests stop at {{ limit }}.{% endblocktranslate %}{% if health.daily_resume_at %} <span data-daily-resume>{% translate "Sending resumes at about" %} <time datetime="{{ health.daily_resume_at|instant }}" data-local-instant data-time-only data-time-day>{{ health.daily_resume_at|instant }}</time>.</span>{% endif %}</p>
 {% if health.send_active %}<p>{% translate "A Family email send is in progress." %} <a href="{% url 'admin:family_email_progress' %}">{% translate "Family email progress" %}</a></p>{% endif %}
 </section>
 

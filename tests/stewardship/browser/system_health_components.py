@@ -118,6 +118,7 @@ def health(now, *, troubled, backup_at=None, waiting=False):
         next_retry_at=now + timedelta(minutes=3) if troubled else None,
         daily_sent=1612 if troubled else 240,
         daily_limit=1600,
+        daily_resume_at=now + timedelta(hours=5, minutes=10) if troubled else None,
         incidents=incidents,
         refresh=refresh,
         refused_at=now - timedelta(hours=3) if troubled else None,

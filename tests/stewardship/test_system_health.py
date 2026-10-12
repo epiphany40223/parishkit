@@ -210,6 +210,7 @@ def health(**values):
             "next_retry_at": None,
             "daily_sent": 0,
             "daily_limit": 1600,
+            "daily_resume_at": None,
             "incidents": {},
             "refresh": FullRefreshStatus(NOW, None, False),
             "refused_at": None,
@@ -376,6 +377,31 @@ def test_the_status_region_states_problems_and_panels_in_words():
         {"health": health(daily_sent=1), "pause": None, "poll_interval": 10000},
     )
     assert "Emails went to 1 recipient in the last 24 hours." in one
+    # Below the limit nothing waits for it, so no resume time is shown.
+    assert "data-daily-resume" not in healthy and "data-daily-resume" not in one
+
+
+def test_the_resume_time_shows_only_while_the_count_is_at_the_limit():
+    """At the limit the count line says when sending resumes, as a local clock time."""
+    resume = NOW + timedelta(hours=5, minutes=10)
+    body = render_to_string(
+        "stewardship/system-health-status.html",
+        {
+            "health": health(daily_sent=1612, daily_resume_at=resume),
+            "pause": None,
+            "poll_interval": 10000,
+        },
+    )
+    line = body.split("data-daily-count>", 1)[1].split("</p>", 1)[0]
+    assert "Sending resumes at about" in line
+    # The browser shows it in its own time zone as a clock time (it is always
+    # within the next 24 hours); the server never labels it with a zone.
+    stamp = resume.isoformat()
+    assert (
+        f'<time datetime="{stamp}" data-local-instant data-time-only data-time-day>'
+        in line
+    )
+    assert "UTC" not in line
 
 
 def test_the_daily_limit_shown_is_where_family_mail_stops():
@@ -385,6 +411,21 @@ def test_the_daily_limit_shown_is_where_family_mail_stops():
     limit = health().daily_limit
     assert over_daily_limit("initial", limit) is True
     assert over_daily_limit("initial", limit - 1) is False
+
+
+def test_the_resume_function_uses_the_family_limit():
+    """0076 fixes the Family limit in its body; it must be the mail sender's."""
+    from pathlib import Path
+
+    from parishkit.stewardship.jobs import family_mail_dispatch as dispatch
+
+    sql = (
+        Path(dispatch.__file__).resolve().parents[1]
+        / "schema/migrations/0076_daily_send_resume.sql"
+    ).read_text(encoding="utf-8")
+    limit = dispatch.DAILY_SEND_LIMIT - dispatch.RESERVED_SENDS
+    assert sql.count(f"<{limit}") == 2 and sql.count(f">={limit}") == 1
+    assert limit == health().daily_limit
 
 
 def test_a_stopped_mail_sender_links_the_deployment_runbook():

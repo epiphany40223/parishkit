@@ -54,7 +54,8 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         MINISTRY_CATALOG_FUNCTION,
         LEADER_CHANGES_FUNCTION,
     }
-    # Web also reads the 24-hour Family mail count for System health (ADM-13),
+    # Web also reads the 24-hour Family mail count and when it falls below the
+    # Family limit for System health (ADM-13, #530),
     # checks a secret request's automation sign-in (ADM-11 PR 5) and reads a
     # user's role-derived Ministry scope (#922), the users upgrade
     # preview's identities and Member names, New user's Name lookup and the
@@ -65,6 +66,7 @@ def test_only_the_config_installer_may_read_the_catalog_function():
     assert runtime_functions(ServiceRole.WEB) == {
         FAMILY_LOGIN_FUNCTION,
         "stewardship_family_daily_sends_v1()",
+        "stewardship_family_daily_resume_v1()",
         AUTOMATION_FRESH_FUNCTION,
         LEADER_SCOPE_FUNCTION,
         "stewardship_portal_identities_v1()",

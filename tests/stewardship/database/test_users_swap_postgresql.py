@@ -377,6 +377,10 @@ CLOSURE_CREATED = {
         "stewardship_jobs",
         "0025_dispatch_token_access",
     ),
+    "public.stewardship_family_daily_resume_v1()": (
+        "stewardship_jobs",
+        "0026_daily_send_resume",
+    ),
 }
 
 

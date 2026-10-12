@@ -272,6 +272,9 @@ SESSION_PURGE_FUNCTION = "stewardship_admin_session_purge_v1(uuid[])"
 # The mail consumers' 24-hour Family mail count, for System health (ADM-13):
 # one number, without the web reading any routed recipient address.
 DAILY_SENDS_FUNCTION = "stewardship_family_daily_sends_v1()"
+# When that count falls below the Family limit ("Sending resumes at about
+# 3:10 PM", #530): one instant, for the same reason.
+DAILY_RESUME_FUNCTION = "stewardship_family_daily_resume_v1()"
 # Whether a sign-in instant recorded on a secret request is a live full-scope
 # automation session's (ADM-11 PR 5): the web's intake guard and each
 # credential installer's staged-to-testing guard call it, and the installers
@@ -377,6 +380,8 @@ CLOSURE_FUNCTIONS = {
     LEADER_CHANGES_FUNCTION: ("stewardship_accounts", "0018_leader_changes"),
     # Mail dispatch's one token read (0073, #389 L1) follows 0072.
     DISPATCH_TOKEN_FUNCTION: ("stewardship_jobs", "0025_dispatch_token_access"),
+    # The daily limit's resume time (0076, #530) follows 0075.
+    DAILY_RESUME_FUNCTION: ("stewardship_jobs", "0026_daily_send_resume"),
 }
 
 
@@ -497,14 +502,14 @@ def pending_revokes(role, applied):
 def runtime_functions(role, *, target=None):
     """Return the definer routines this login may EXECUTE.
 
-    Web signs Families in, reads the 24-hour Family mail count (System
-    health) and, for an Administrator, one email's recipient addresses
-    and what its latest attempt recorded for each (its Mail message page,
-    #1024, #806); the configuration installer checks that a Ministry
-    added to a live campaign is in the promoted catalog, without source
-    grants; the general worker purges the Django sessions
-    of ended Admin sessions, counts an export's read-guard stops and
-    prunes old task events.
+    Web signs Families in, reads the 24-hour Family mail count and when
+    it falls below the Family limit (System health) and, for an
+    Administrator, one email's recipient addresses and what its latest
+    attempt recorded for each (its Mail message page, #1024, #806); the
+    configuration installer checks that a Ministry added to a live
+    campaign is in the promoted catalog, without source grants; the general
+    worker purges the Django sessions of ended Admin sessions, counts an
+    export's read-guard stops and prunes old task events.
     Web and the parishsoft, google_workspace and slack credential installers
     check a secret request's automation sign-in instant (ADM-11 PR 5). Web,
     the general worker and the download login read a user's role-derived
@@ -530,6 +535,7 @@ def runtime_functions(role, *, target=None):
             ServiceRole.WEB: {
                 FAMILY_LOGIN_FUNCTION,
                 DAILY_SENDS_FUNCTION,
+                DAILY_RESUME_FUNCTION,
                 AUTOMATION_FRESH_FUNCTION,
                 LEADER_SCOPE_FUNCTION,
                 PORTAL_IDENTITIES_FUNCTION,

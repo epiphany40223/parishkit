@@ -260,6 +260,12 @@
         node.textContent = node.dateTime;
         localize(node.parentNode);
       });
+      // A coming time worded against today ("3:10 PM tomorrow") is worded
+      // again on every check, so it stays right across midnight. Only its
+      // text changes, which the markup comparison ignores.
+      region.querySelectorAll("time[data-time-day]").forEach((node) => {
+        localize(node.parentNode);
+      });
     }
 
     function scrollKey(node, index) {

@@ -476,7 +476,9 @@ class SystemHealth(ReadModel):
     and ``planning_held`` come from Family email progress. ``daily_sent`` is
     the 24-hour recipient count the mail senders compare with the daily
     limit, and ``daily_limit`` the share of it Family invitations, reminders
-    and Family tests may use (ADM-13 PR 2c).
+    and Family tests may use (ADM-13 PR 2c); ``daily_resume_at`` is when that
+    count falls below ``daily_limit`` again, or None while it is below
+    (#530).
     """
 
     checked_at: datetime
@@ -494,6 +496,7 @@ class SystemHealth(ReadModel):
     next_retry_at: datetime | None
     daily_sent: int
     daily_limit: int
+    daily_resume_at: datetime | None
     incidents: dict
     refresh: object
     refused_at: datetime | None
@@ -945,6 +948,7 @@ def read_health(store):
     from .jobs.family_mail_dispatch import (
         DAILY_SEND_LIMIT,
         RESERVED_SENDS,
+        daily_resume,
         daily_sends,
     )
     from .jobs.send_reads import read_progress
@@ -971,6 +975,7 @@ def read_health(store):
         backup_request = _backup_request(now)
         retry_waiting, next_retry_at = _retries()
         daily_sent = daily_sends()
+        daily_resume_at = daily_resume()
         progress = read_progress()
         send = None if progress is None else progress["send"]
         production = configuration.mode == "production"
@@ -1008,6 +1013,7 @@ def read_health(store):
         # limit less the sends kept for receipts, reports and alerts, as
         # family_mail_dispatch.over_daily_limit compares it.
         daily_limit=DAILY_SEND_LIMIT - RESERVED_SENDS,
+        daily_resume_at=daily_resume_at,
         incidents=incidents,
         refresh=refresh,
         refused_at=refused_at,
