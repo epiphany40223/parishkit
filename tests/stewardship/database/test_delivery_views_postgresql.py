@@ -825,18 +825,33 @@ def test_mail_message_page_shows_only_the_recipient_addresses(
         page = browser.get(f"/admin/mail/outgoing/{message.pk}/")
     assert page.status_code == 200
     html = page.content.decode()
+    # Each address the email was sent to is followed by its latest attempt's
+    # outcome (#806): this email's provider could not say whether it
+    # arrived. In Production that is the To: line; in Testing mode, the
+    # Testing line.
+    production = render.routed_recipients == render.intended_recipients
+    suffix = " (not sure it arrived)"
     line = (
         '<p id="email-recipients">To: '
-        + ", ".join(escape(value) for value in render.intended_recipients)
+        + ", ".join(
+            escape(value) + (suffix if production else "")
+            for value in render.intended_recipients
+        )
         + "</p>"
     )
     assert line in html
     assert html.index("Family DUID:") < html.index(line) < html.index("Attempt history")
     assert render.subject not in html
-    # Routed elsewhere only in Testing mode; this email's lists agree.
+    # Routed elsewhere only in Testing mode.
     assert (render.routed_recipients != render.intended_recipients) == (
         'id="email-routed"' in html
     )
+    if not production:
+        assert (
+            '<p id="email-routed">Testing mode sends it to: '
+            + ", ".join(escape(value) + suffix for value in render.routed_recipients)
+            + "</p>"
+        ) in html
     PortalUser.objects.filter(pk=admin).update(disabled=True, version=F("version") + 1)
     assert recipients_as(ServiceRole.WEB, message.pk, admin) == "42501"
 
@@ -858,7 +873,7 @@ def test_a_refused_recipient_read_leaves_the_page_to_its_recheck(
     admin = PortalUser.objects.get(email="admin@example.org").pk
     # Directly: a refused actor gives None and the transaction stays usable.
     with task_login(ServiceRole.WEB, exact=True), transaction.atomic():
-        assert email_recipients(message.pk, uuid4()) is None
+        assert email_recipients(message.pk, uuid4(), message.state) is None
         assert OutboxMessage.objects.filter(pk=message.pk).exists()
     original = delivery_views.read_detail
 
@@ -970,6 +985,10 @@ def test_delivery_forms_apply_once_with_current_session_and_csrf(
             result = browser.get(path)
             assert b"&lt;script&gt;evidence&lt;/script&gt;" in result.content
             assert b"<script>evidence</script>" not in result.content
+            # The provider's "not sure it arrived" follows the address only
+            # while the email still is; any resolution but a note settles it
+            # (#806).
+            assert (b"(not sure it arrived)" in result.content) == (action == "note")
             if action == "accept":
                 assert b"Retry is not available right now" not in result.content
             if action == "confirm_unsent":

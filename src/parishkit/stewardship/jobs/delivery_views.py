@@ -382,7 +382,7 @@ def delivery_detail(request, message_id):
         (delivery,) = with_family_names([data["delivery"]], current_snapshot())
         return dict(
             delivery=delivery,
-            recipients=email_recipients(message_id, actor.identity),
+            recipients=email_recipients(message_id, actor.identity, delivery["state"]),
             refused=email_refusals(message_id),
             events=data["events"],
             task=data["task"],

@@ -1438,6 +1438,27 @@ login. The page's `delivery_viewed` audit record names the actor and the
 email, so the read needs no audit of its own. The table grant is unchanged:
 the web login still cannot `SELECT` any rendering column.
 
+The same page says what the latest attempt recorded for each address
+([#806](https://github.com/epiphany40223/parishkit/issues/806)). An attempt's
+evidence (`stewardship_outbox_event.evidence_note`, outside the web login's
+grants) lists only which positions of its rendering's routed envelope the
+provider refused for now or for good.
+`stewardship_delivery_recipient_outcomes_v1(message, actor)` (frozen
+migration 0068), a `SECURITY DEFINER` function with the same fixed search
+path, caller checks, grants and audit as the recipients read, returns for the
+same newest rendering one row per routed address in stored order: the address
+and an outcome, `refused_permanently` or `refused_for_now` for a listed
+position, else `delivered` if that rendering's latest finished attempt was
+accepted, `unknown` if the provider could not say, and `not_delivered`
+otherwise. It reads the evidence only through
+`stewardship_family_smtp_result_v1`, which validates it against its own
+rendering, and returns no rows when there is no rendering, no finished
+attempt on it, or no valid evidence. No evidence, status or provider text
+leaves it, and every address it returns is one the recipients read already
+returns to the same caller. The page uses the outcomes only when their
+addresses are exactly the routed list it read, since the two reads are
+separate statements.
+
 ### Campaign read guards
 
 Every campaign-detail read, report query, partial response, and generated-file

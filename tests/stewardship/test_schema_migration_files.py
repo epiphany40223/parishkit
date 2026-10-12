@@ -234,6 +234,9 @@ FROZEN = {
     "0067_campaign_comparison.sql": (
         "7470b2e51d474af17f85e91f44ed495be29480d658d70eb7b34a08a15da0b2d8"
     ),
+    "0068_mail_message_address_outcomes.sql": (
+        "6f76e80ef26948ae028524217b023adcc5faa32f1142ae620760524c77d56333"
+    ),
 }
 
 
