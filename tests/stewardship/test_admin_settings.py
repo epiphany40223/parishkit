@@ -232,9 +232,11 @@ def test_the_catalog_entries(name, model, options):
 
 
 def test_the_ledger_covers_the_pages():
-    """Each page is covered by its read; its changes are still owed."""
+    """Each page is covered by its read; its changes are still owed.
+
+    Parish settings' changes are covered too (``test_admin_parish``).
+    """
     for route, name in (
-        ("parish_settings", "parish show"),
         ("ministries", "ministries list"),
         ("branding_settings", "branding show"),
         ("share_settings", "campaign shares"),

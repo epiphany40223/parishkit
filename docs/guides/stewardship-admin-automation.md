@@ -779,8 +779,9 @@ are the reads of **Parish settings**, **Ministries**, **Parish logos**
 and **Share options**. Like the pages, they need an Administrator; a
 session of any scope may run them, and they record nothing in System
 logs, as opening the pages records nothing. Each prints `version`, the
-applied configuration's version. Changing these settings stays on the
-pages for now.
+applied configuration's version. Changing the parish profile is
+`parish preview` and `parish confirm` (below); changing the other settings
+stays on the pages for now.
 
 ```sh
 pk-admin parish show
@@ -809,6 +810,38 @@ and refuses a locked campaign, `campaign shares` reads a live or ended
 campaign's options too, with `editable` false. With no current campaign,
 or an unknown one, `campaign shares` is exit 1 (`not_available`). Logo
 images stay on the page.
+
+`parish preview` and `parish confirm` are the Parish settings page's
+**Review** and **Apply**, as `schedule preview` and `schedule confirm` are
+for schedules. They need a full-scope session. The change document has
+the shape of `parish show`'s `parish`, with only the fields to change; the
+others keep their values, and `"online_giving_url": null` removes the
+giving link. No other field may be null, and `date_format` must name a
+style. Type a telephone any common way; it is stored as `+1` and
+ten digits.
+
+```sh
+VERSION=$(pk-admin parish show | jq -r .result.version)
+pk-admin parish preview --expected-version "$VERSION" \
+  --changes '{"parish": {"phone": "(212) 555-1234"}}'
+pk-admin parish confirm --token TOKEN
+```
+
+| Field | What it holds |
+| --- | --- |
+| `version` (`parish preview`) | The configuration version the change was reviewed against |
+| `changes` | Each changed `field`, with its stored value `before` and `after` |
+| `notes` | The page's review notes, such as that a timezone change does not move existing campaigns |
+| `preview.token` | What `parish confirm --token` takes, valid for fifteen minutes |
+| `created`, `request` (`parish confirm`) | As `schedule confirm` prints them; follow the change with `config request show --watch` |
+
+A field the page refuses, a document that changes nothing, or an unknown
+field is exit 1 (`invalid`), with each problem in `error.fields`
+(`parish.phone`, or `parish` for the change as a whole). A version that is
+no longer current, or an expired token, is exit 1 (`stale_version`): read
+`parish show` again. `parish confirm` records `admin_cmd_parish_confirm`
+in System logs with the request; repeating it with the same token returns
+the same request.
 
 ## Past campaigns
 
@@ -1887,3 +1920,6 @@ pk-admin users import-leaders --confirm --token -
   `branding show` and `campaign shares [--campaign ID]`, the Parish
   settings, Ministries, Parish logos and Share options pages' reads (any
   session, Administrators only, no event).
+- `pk-admin/1` (#463): additive. `parish preview` and `parish confirm`,
+  the Parish settings page's Review and Apply (full scope, Administrators
+  only); `parish confirm` records `admin_cmd_parish_confirm`.

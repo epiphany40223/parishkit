@@ -154,7 +154,7 @@ LEDGER = {
     "content_history": command("content history"),
     "content_history_revision": command("content history"),
     "content_plain_text": pending("PR 10", "content show"),
-    "parish_settings": command("parish show", owed="PR 10"),
+    "parish_settings": command("parish show", "parish preview", "parish confirm"),
     "ministries": command("ministries list", owed="PR 10"),
     "hosted_files": command("files list"),
     "hosted_file_delete": command("files delete"),
