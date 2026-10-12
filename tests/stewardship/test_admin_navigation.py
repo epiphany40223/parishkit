@@ -1212,3 +1212,46 @@ def test_a_failed_open_counts_query_leaves_the_menu_without_numbers(monkeypatch)
     assert savepoints == [True]
     assert emit[1]["event"] is Event.REPORT_SHAPING_FAILED
     assert emit[1]["level"] == logging.WARNING
+
+
+SETTINGS_TEMPLATE = (
+    Path(navigation.__file__).parent / "templates/stewardship/campaign-settings.html"
+)
+
+
+def test_campaign_settings_body_links_no_menu_entry():
+    """Campaign settings' body never repeats a menu entry as a link (#1118).
+
+    The menu is how the Administrator moves between pages; the body links
+    only pages the menu does not offer, such as Content history, its child.
+    """
+    source = SETTINGS_TEMPLATE.read_text()
+    linked = set(re.findall(r"""\{% url ['"]admin:(\w+)['"]""", source))
+    assert linked, "the template's links were not found"
+    assert not linked & navigation.MENU_NAMES
+    assert "content_history" in linked
+    assert "linked above" not in source
+
+
+@pytest.mark.parametrize(
+    "name,campaign,mode",
+    [
+        # Each page Campaign settings' body used to link, in a state where the
+        # body showed that link: the menu now offers it there instead.
+        ("content_catalog", "draft", "testing"),
+        ("content_catalog", "active", "production"),
+        ("schedule_settings", "draft", "testing"),
+        ("schedule_settings", "archived", "production"),
+        ("share_settings", "draft", "testing"),
+        ("go_live", "draft", "testing"),
+        ("production_progress", "active", "production"),
+        ("production_progress", "scheduled", "production"),
+    ],
+)
+def test_pages_campaign_settings_no_longer_links_stay_in_the_menu(name, campaign, mode):
+    """Each removed body link's page is an available menu entry where it was."""
+    urls = {
+        item.name: item.url
+        for item in _menu("administrator", CAMPAIGNS[campaign], mode)
+    }
+    assert urls[name] == reverse(f"admin:{name}")
