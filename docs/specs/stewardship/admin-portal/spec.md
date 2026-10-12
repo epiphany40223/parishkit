@@ -1052,17 +1052,18 @@ Multi-step flows also show a step indicator under the trail: a numbered list
 with the current step marked `aria-current="step"` and each step's state in
 text. It is orientation only and links nothing, so it cannot skip a review or
 confirmation. The flows are: making a settings change (Make changes, Review,
-Apply) on every settings editor (campaign settings, Campaign Ministries, Copy
+Apply) on every settings editor (Campaign Ministries, Copy
 campaign, pages and emails, dates and mail schedules, share options,
 campaign images, Parish settings, Parish logos, each integration,
-Ministries and Finish switching), New user and Edit user (whose review
-and Apply are in the
+Ministries and Finish switching), Campaign settings, New user and Edit user
+(whose review and Apply are in the
 [review dialog](../ui-conventions/spec.md#review-dialog), so the page
 stays at Make changes) and every change's status
 page; going live (Check readiness, Testing cleanup, Family links, Confirm
 Production, Activation); sending to chosen Families (Choose Families, Review,
-Send and follow); and report exports (Choose report, Prepare file, Download). A
-locked campaign's read-only settings page is not in a flow. Import Ministry
+Send and follow); and report exports (Choose report, Prepare file, Download).
+Campaign settings with nothing open to change (a closed campaign's) is not
+in a flow. Import Ministry
 leaders, reviewed in that dialog over Users, shows no step indicator. An
 error page never shows a step or a placed trail. Placement and steps are
 presentation only and grant nothing.
@@ -2109,7 +2110,8 @@ A live campaign's structural settings are locked (see
 [Campaign configuration](#campaign-configuration)), with one reviewed
 exemption: while the current campaign is scheduled or active, an
 Administrator may change its Ministry selections. Campaign settings links a
-live campaign to its own Campaign Ministries page, which offers only
+live campaign, from a **Change Campaign Ministries** button under its locked
+Ministry list, to its own Campaign Ministries page, which offers only
 the Ministry list and goes through the usual edit, review, apply flow as an
 ordinary configuration request, reviewed in the
 [review dialog](../ui-conventions/spec.md#review-dialog); until #750
@@ -2198,11 +2200,11 @@ The server checks all conditions in the draft-creation transaction; stale or
 direct requests cannot bypass them.
 
 Every editor in this section reviews and applies through the
-[review dialog](../ui-conventions/spec.md#review-dialog). Campaign settings, until #750 converts it, reviews and applies its
-changes [in place](../ui-conventions/spec.md#in-place-controls) under its
-form, as Parish settings does.
-Its Review changes button, like Save and continue on the wizard's First
-campaign step, stays unavailable, with the hint described under
+[review dialog](../ui-conventions/spec.md#review-dialog); the
+[Campaign settings page](#campaign-settings-page) says how Campaign
+settings does.
+On a draft, its Review changes button, like Save and continue on the
+wizard's First campaign step, stays unavailable, with the hint described under
 [Bootstrap and first-Admin wizard](#bootstrap-and-first-admin-wizard),
 until at least one module is ticked. While Financial stewardship is ticked
 it also waits for both financial periods, their funds and, while shown, the
@@ -2270,26 +2272,28 @@ A live campaign's end date
 ([#912](https://github.com/epiphany40223/parishkit/issues/912)) changes in
 two places, both for the current Production campaign while it is scheduled
 or open, before its closing instant and while no background work holds
-campaign changes. Campaign settings shows a **Change the end date** panel:
-one date field, **Review changes** and the page's in-place review and Apply.
-While background work holds campaign changes, the panel stays, saying only
-that the end date can change once that work finishes, and a review posted
-meanwhile is refused as locked. Its
+campaign changes. On the [Campaign settings page](#campaign-settings-page)
+the end date stays open, reviewed with the page's one **Review changes** in
+the review dialog. While background work holds campaign changes, the field
+stays where it is, disabled, its tip saying only that the end date can
+change once that work finishes, and a review posted meanwhile is refused as
+locked. Its
 review is the Dates and mail schedules review of the same change, built from
 the saved schedules left as they are; it names the end date before and
 after and every digest re-planned for the new dates, and notes that Family
 codes and links already sent keep working until the new end date. A date
-that has passed, falls on or before the campaign's start date, is
-unchanged, or would need the financial-period overlap acknowledged again is
-refused. When the new date would leave an invitation or Reminder outside
-the campaign, the review is refused with a link to the combined date-change
-review above, on Dates and mail schedules, with the proposed date filled in
-and only the end date open.
+that has passed, falls on or before the campaign's start date, or
+would need the financial-period overlap acknowledged again is
+refused, at the field. When the new date would leave an invitation or
+Reminder outside the campaign, the review is refused at the field, naming
+the combined date-change review above, on Dates and mail schedules, which
+the live check below links, with the proposed date filled in and only the
+end date open.
 
 The date is checked as it is typed, so **Review changes** is available only when there is something to review and
 it can be reviewed. While the field is empty or holds the saved date,
-Review waits, with the gate's hint after it saying to choose a (different)
-end date, and no error is shown. Any other date is posted, after a short
+Review waits, with the gate's hint after it (to choose the new end date, or
+to change a setting), and no error is shown. Any other date is posted, after a short
 pause, to a no-save live check that applies the Review's own checks,
 including stranded mail, and records nothing. Typing another date takes any
 earlier error away at once, since it was about the earlier date. While the
@@ -2318,10 +2322,61 @@ request). The configuration installer applies it with that intent's owning
 admission; see the [campaign data model](../data/spec.md#campaign). A change
 the installer refuses (the campaign changed or closed, a date passed, or
 closing or other campaign work started first) ends as **Not applied**, and
-its status on the page, and on Change status, says which, or quotes the
+its status in the review dialog, and on Change status, says which, or quotes the
 reason of an Administrator's cancellation. The end
 date never changes the Family token generation, and Family pages and later
 emails that show the end date use the new one.
+
+### Campaign settings page
+
+Campaign settings
+([#1119](https://github.com/epiphany40223/parishkit/issues/1119)) is one
+editor. Every setting it edits (name, year label, time zone, dates,
+modules, additional information, Ministry selections and leader roles,
+financial periods and funds) is shown once, in the same place and order in
+every campaign state. There is no second, read-only copy of the settings.
+
+- **Open or locked in place.** A setting that can change now is open. Every
+  other one stays where it is, disabled, with the reason in its "i" tip
+  ([conditional fields](../ui-conventions/spec.md#conditional-fields)),
+  never in a line of its own: a draft's settings while background work or
+  going live holds them, every setting but the end date and the
+  [Ministry leader roles](#ministry-leader-roles) once the campaign is live,
+  and every setting once it has closed. A live end date that background
+  work alone holds says it can change once that work finishes. A disabled
+  setting is not sent, and the server keeps its saved value whatever is
+  posted, so a locked setting never changes through this page. Until
+  Campaign Ministries joins the page, a live campaign's Ministry list names
+  its own editor ([changing a live campaign's
+  Ministries](#changing-a-live-campaigns-ministries)), linked by a
+  **Change Campaign Ministries** button under the list.
+- **One Review changes.** The page has exactly one **Review changes**,
+  unavailable until the form holds a real change, with its hint after it
+  ([review dialog](../ui-conventions/spec.md#review-dialog)); with nothing
+  open (a closed campaign) the hint says that nothing on the page can
+  change now and that each greyed-out setting's "i" says why. Review and
+  Apply happen in the review dialog, titled "Review campaign settings".
+  Once the change is applied, the form is redrawn in place at the new
+  version and the status line under it says "Campaign settings changed."
+  and when.
+- **What one Review covers.** On a draft, one Review covers every changed
+  setting, applied as one change, except that a change of the dates alone,
+  while the campaign has schedules, leads to Dates and mail schedules'
+  combined review instead (and dates changed with other settings are
+  refused, to be reconciled there first). On a live campaign, one Review
+  covers a changed end date and changed Ministry leader roles together: one
+  configuration request with one campaign update holding both values,
+  applied together or not at all (decision 2 on #1119). Its review lists the
+  end date, the digests re-planned for it and the leader roles, with the end
+  date's notes.
+- **Refusals.** A Review refused for a value (a required field, an end date
+  that has passed or strands mail) stays on the form, the field marked with
+  the reason and the summary shown. Any other refusal (settings changed
+  elsewhere, an out-of-date preview, background work, mail being sent now,
+  a change the installer refused when it ran) shows in the dialog. A Review
+  that changes a setting locked since the page was loaded (background work
+  began, the draft went live, the campaign closed) is refused in the dialog
+  with that setting's reason, so no change is ever quietly dropped.
 
 ### Dates and mail schedules
 
@@ -2614,10 +2669,10 @@ the roles in effect unchanged writes nothing, so a campaign keeps following
 the default until someone changes it.
 
 A draft changes them with its other settings. A live (scheduled, active or
-closed) campaign that asks about Ministries shows them in their own small
-form, the only campaign setting there besides the Ministry selections link;
-its review and apply happen [in place](../ui-conventions/spec.md#in-place-controls) under that form,
-as the draft's do. Who leads which Ministry, and why, is in the
+closed) campaign that asks about Ministries keeps them open on the
+[Campaign settings page](#campaign-settings-page), where the page's one
+Review may change them alone or with the end date, as one change. Who leads
+which Ministry, and why, is in the
 [data specification](../data/spec.md#ministry-leaders).
 
 ### Default content

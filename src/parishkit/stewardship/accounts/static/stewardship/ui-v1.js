@@ -3246,6 +3246,9 @@
   };
   wireConditional(document);
   document.addEventListener("parishkit:swap", (event) => {
+    // A swapped region's old forms are gone: their live checks go too, so a
+    // page restored from history never posts a check for a removed field.
+    liveChecks = liveChecks.filter(({form}) => form.isConnected);
     wireConditional(event.target);
     // A swapped part of a gated form (Hosted files' Upload line, #563) brings
     // fresh buttons: the form's gate holds them again at once.
@@ -3259,6 +3262,7 @@
     patternChecks.forEach(({check}) => check());
     completeForms.forEach(gateComplete);
     notFutureChecks.forEach(({check}) => check());
+    liveChecks = liveChecks.filter(({form}) => form.isConnected);
     liveChecks.forEach(({check}) => check());
   });
   // An in-place answer that finishes a form's job carries
@@ -3287,7 +3291,22 @@
   // back/forward cache can restore a module's tick without a change event,
   // so every group is set again on pageshow (#563); otherwise a restored
   // Financial tick could leave its fields disabled and unsent.
-  document.querySelectorAll("[data-campaign-form]").forEach((form) => {
+  //
+  // Campaign settings' form is redrawn in place once its change is applied
+  // (#1119), so this wiring, the period end filling and the overlap
+  // confirmation below all run again for each swapped region
+  // (parishkit:swap), as well as at load. A pageshow re-run skips what a
+  // swap removed.
+  let campaignUpdates = []; // {node, update} for each wired group
+  // Entries of groups a swap removed are dropped, never run.
+  const pruneCampaignUpdates = () => {
+    campaignUpdates = campaignUpdates.filter(({node}) => node.isConnected);
+  };
+  window.addEventListener("pageshow", () => {
+    pruneCampaignUpdates();
+    campaignUpdates.forEach(({update}) => update());
+  });
+  const wireCampaignModules = (root) => within(root, "[data-campaign-form]").forEach((form) => {
     form.querySelectorAll("[data-campaign-module]").forEach((group) => {
       const toggle = document.getElementById(group.dataset.campaignModule);
       if (!toggle) return;
@@ -3307,10 +3326,11 @@
         gateComplete(form);
       }
       toggle.addEventListener("change", update);
-      window.addEventListener("pageshow", update);
+      campaignUpdates.push({node: group, update});
       update();
     });
   });
+  wireCampaignModules(document);
 
   // A financial period is one year: entering its start fills an empty end
   // with the day before the first anniversary (Feb 29 anniversaries fall on
@@ -3331,7 +3351,7 @@
       String(end.getUTCMonth() + 1).padStart(2, "0"),
       String(end.getUTCDate()).padStart(2, "0")].join("-");
   };
-  document.querySelectorAll("input[data-fills-end]").forEach((start) => {
+  const wireFillsEnd = (root) => within(root, "input[data-fills-end]").forEach((start) => {
     const end = start.form?.elements[start.dataset.fillsEnd];
     if (!(end instanceof HTMLInputElement)) return;
     const note = document.createElement("span");
@@ -3354,6 +3374,7 @@
       if (event.isTrusted) note.textContent = "";
     });
   });
+  wireFillsEnd(document);
 
   // The overlap confirmation is needed only while the financial period and
   // the campaign share at least one day (campaign_forms.overlaps). Hidden, it
@@ -3361,7 +3382,7 @@
   // renders it visible whenever it is needed, so this is only a convenience.
   // Restored dates (the back/forward cache) fire no event: pageshow checks
   // again (#563).
-  document.querySelectorAll("[data-overlap-confirmation]").forEach((group) => {
+  const wireOverlap = (root) => within(root, "[data-overlap-confirmation]").forEach((group) => {
     const form = group.closest("form");
     const box = group.querySelector('input[type="checkbox"]');
     if (!form || !box) return;
@@ -3386,8 +3407,16 @@
     };
     form.addEventListener("input", update);
     form.addEventListener("change", update);
-    window.addEventListener("pageshow", update);
+    campaignUpdates.push({node: group, update});
     update();
+  });
+  wireOverlap(document);
+  document.addEventListener("parishkit:swap", (event) => {
+    if (!(event.target instanceof Element)) return;
+    pruneCampaignUpdates();
+    wireCampaignModules(event.target);
+    wireFillsEnd(event.target);
+    wireOverlap(event.target);
   });
 
   // The chosen email, described under a schedule's email list (#446): the
@@ -3731,6 +3760,9 @@
       if (isRegion(copy)) swapRegion(other, copy);
     });
     syncControls(fresh);
+    // A redrawn form takes its new saved values (and version) at once, so
+    // its Review changes waits for the next real change (#1119).
+    gateChanges();
   };
   const acceptConfirm = async (state) => {
     const {dialog, form, chosen} = state;
@@ -3990,6 +4022,17 @@
     reviewing.delete(form);
     if (!answer) {
       openReview(dialog, form, opener, null, REVIEW_UNREACHABLE);
+      return;
+    }
+    // A Review the server answers with another page ends on that page, for
+    // a form marked data-review-redirects only: Campaign settings' change of
+    // a draft's dates alone leads to Dates and mail schedules' combined
+    // review (#1119). Any other editor's redirect is not a review.
+    const answered = new URL(answer.response.url || formUrl(form), document.baseURI);
+    if (form.hasAttribute("data-review-redirects")
+      && answer.response.ok && answer.response.redirected && sameOrigin(answered.href)
+      && answered.pathname !== new URL(formUrl(form)).pathname) {
+      window.location.assign(answered.href);
       return;
     }
     const parsed = new DOMParser().parseFromString(answer.text, "text/html");

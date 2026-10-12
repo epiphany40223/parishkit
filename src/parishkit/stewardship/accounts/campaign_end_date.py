@@ -1,15 +1,16 @@
-"""Campaign settings' in-place review of a live campaign's end date (#912).
+"""Campaign settings' review of a live campaign's end date (#912).
 
 A live campaign's settings are locked, but its end date may still move
-(``campaigns.live_end_date``). Campaign settings offers that one field, with
-the page's in-place Review and Apply (#532). The review is the Dates and mail
-schedules review of the same change (``schedule_changes.build_preview``),
-built from the campaign's saved schedules left as they are, so both pages
-(and ``pk-admin schedule preview``) validate the same candidate and sign the
-same preview. When the new date would leave an invitation or Reminder outside
-the campaign, the review is refused with a link to that page's combined
-date-change review, where each such mailing is rescheduled or removed in the
-same change.
+(``campaigns.live_end_date``). Campaign settings leaves that field open, and
+its one Review changes (#1119) reviews it in the shared review dialog. The
+review is the Dates and mail schedules review of the same change
+(``schedule_changes.build_preview``), built from the campaign's saved
+schedules left as they are, so both pages (and ``pk-admin schedule
+preview``) validate the same candidate and sign the same preview. A Ministry
+leader role change made in the same Review joins that campaign update
+(``extra``). When the new date would leave an invitation or Reminder outside
+the campaign, the review is refused, naming that page's combined date-change
+review, where each such mailing is rescheduled or removed in the same change.
 """
 
 from django import forms
@@ -36,6 +37,23 @@ BLOCKING = _(
     "Email from an affected schedule is being sent now, or its result is "
     "unknown. Review again once it has finished."
 )
+# Saved mail the new date would strand, and where it is resolved.
+STRANDED = _(
+    "Some scheduled emails would no longer fit the campaign, such as "
+    "invitations or Reminders after the new end date."
+)
+STRANDED_FIX = _(
+    "Change the end date together with those mailings on Dates and mail "
+    "schedules: reschedule or delete each one there."
+)
+STRANDED_LINK = _("Change the end date and its mailings")
+# What the page says while the live check (#944) is out or cannot answer.
+CHECKING = _("Checking the end date…")
+CHECK_FAILED = _(
+    "Couldn't check this end date. Check your connection, then change the "
+    "date or reload the page."
+)
+SIGNED_OUT = _("Your sign-in has ended. Sign in again, then reload the page.")
 
 
 class LiveEndDateForm(forms.Form):
@@ -69,17 +87,22 @@ def signed_for(token, campaign_id):
     return True
 
 
-def end_review(service, actor, state, campaign, form, live_at):
-    """Review the posted end date; return ``admin_editing.review_region`` kwargs.
+def end_review(service, actor, state, campaign, form, live_at, *, extra=None):
+    """Review the posted end date; return the review or why it is refused.
 
     ``state`` is ``campaign_views._state``'s and ``live_at`` the instant
-    ``schedule_reads.live_end_at`` found the change open at. Returns
-    ``{"review": ...}`` with the signed preview, or ``{"refusal": ...}``
-    (with a ``link`` when mail must be resolved first), or ``{}`` when the
-    form itself is invalid (its errors are the region's summary).
+    ``schedule_reads.live_end_at`` found the change open at. ``extra`` maps
+    other live-editable campaign values changed in the same Review (the
+    Ministry leader roles, #1119) to their new values; they join the one
+    campaign update, and the review describes them after the end date.
+    Returns ``{"review": ...}`` with the signed preview, or
+    ``{"refusal": ...}`` (with a ``link`` when mail must be resolved first),
+    or ``{}`` when the form itself is invalid.
     """
     from parishkit.stewardship.admin_changes import form_data
 
+    from .campaign_preview import describe_changes
+    from .campaign_views import _with_leader_roles
     from .content_views import _records
     from .schedule_forms import Schedules, ScheduleWindow
     from .schedule_reads import campaign_schedules
@@ -123,6 +146,7 @@ def end_review(service, actor, state, campaign, form, live_at):
         schedules,
         base_digest=digest,
         salt=preview_salt(campaign.pk),
+        campaign_values=extra,
     )
     if context is None:
         if stranded(schedules):
@@ -136,22 +160,8 @@ def end_review(service, actor, state, campaign, form, live_at):
                 + urlencode({"end_date": end_date})
             )
             return {
-                "refusal": Refusal(
-                    _(
-                        "Some scheduled emails would no longer fit the "
-                        "campaign, such as invitations or Reminders after the "
-                        "new end date."
-                    ),
-                    fix=_(
-                        "Change the end date together with those mailings on "
-                        "Dates and mail schedules: reschedule or delete each "
-                        "one there."
-                    ),
-                ),
-                "link": {
-                    "url": url,
-                    "label": _("Change the end date and its mailings"),
-                },
+                "refusal": Refusal(STRANDED, fix=STRANDED_FIX),
+                "link": {"url": url, "label": STRANDED_LINK},
             }
         # Any other problem, with the date or a saved schedule, in its own
         # words (the window's, then each schedule's).
@@ -175,6 +185,7 @@ def end_review(service, actor, state, campaign, form, live_at):
                     "after": parish_date(form.cleaned_data["end_date"]),
                 },
                 *replanned,
+                *describe_changes(_with_leader_roles(previous), extra or {}),
             ],
             "notes": [FAMILY_ACCESS, CAMPAIGN_END_TEXT],
             "preview": context["preview"],
@@ -233,3 +244,26 @@ def end_check(service, actor, state, campaign, form, live_at):
     else:
         texts = [refusal.message] if link else [refusal.message, refusal.fix]
     return {"message": " ".join(str(text) for text in texts if text), "link": link}
+
+
+def longest_answer():
+    """The longest words the end date's reserved line may show (#1119).
+
+    The line keeps room for these, sized by an invisible copy of them
+    (``.field-error-size``), so no answer of the live check, nor a refused
+    Review's error, ever needs more room than the line has and moves the
+    settings below it: stranded mail with its link, a page out of date, a
+    check that cannot answer, or an end date that can no longer change.
+    """
+    stale = stale_page().refusal
+    return max(
+        (
+            f"{STRANDED} {STRANDED_LINK}",
+            f"{STRANDED} {STRANDED_FIX}",
+            f"{stale.message} {stale.fix}",
+            str(CHECK_FAILED),
+            str(SIGNED_OUT),
+            str(END_LOCKED),
+        ),
+        key=len,
+    )

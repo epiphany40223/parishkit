@@ -11,7 +11,6 @@ from django.test import Client
 from parishkit.stewardship.accounts.campaign_forms import initial_fields
 from parishkit.stewardship.accounts.campaign_views import SALT
 from parishkit.stewardship.accounts.configuration_installation import install_request
-from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.campaigns.lifecycle import Action
 from parishkit.stewardship.campaigns.models import Campaign
@@ -25,7 +24,7 @@ from .auth_builders import signed_in
 from .campaign_builders import add_draft, change, command
 from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_background_grants_postgresql import task_login
-from .test_parish_views_postgresql import digest, region, token
+from .test_parish_views_postgresql import digest, token
 from .test_source_families_postgresql import (
     publish,
     source_singletons,  # noqa: F401
@@ -245,15 +244,34 @@ def test_live_lock_invalidates_preview_without_a_yaml_change(auth_service, googl
         post(browser, url(row), {"action": "confirm", "preview": proposal}).status_code
         == 409
     )
-    assert post(browser, url(row), fields(store, row, name="Locked")).status_code == 409
     response = browser.get(url(row))
-    assert response.status_code == 200 and b"read-only" in response.content
-    assert b"data-campaign-form" not in response.content
-    # Only the end date stays editable once live (#912): its form is the
-    # page's one change, the first step of edit, review, apply (#196).
-    assert response.content.count(b"Review changes") == 1
-    assert b'id="end-date"' in response.content
+    assert response.status_code == 200
+    body = response.content.decode()
+    # One editor (#1119): no read-only copy, every setting once, and the one
+    # Review changes. Only the end date stays open once live (#912); every
+    # other setting is disabled where it stands, its reason in its tip.
+    assert "read-only" not in body and 'id="end-date"' not in body
+    assert body.count(">Review changes</button>") == 1
+    assert body.count('name="name"') == 1
+    assert re.search(r'<input type="text" name="name"[^>]*disabled', body)
+    assert re.search(r'<input type="date" name="end_date"[^>]*>', body)
+    assert not re.search(r'<input type="date" name="end_date"[^>]*disabled', body)
+    assert "scheduled or live in Production" in body
     assert flow_steps(response.content) == (STEPS, "Make changes")
+    # A locked setting never changes, whatever is posted: a changed value
+    # for it is refused with the reason, and nothing is recorded.
+    locked = post(
+        browser,
+        url(row),
+        {
+            "action": "preview",
+            "name": "Locked",
+            "end_date": row.active_configuration.values["end_date"],
+            "base_digest": digest(response),
+        },
+    )
+    assert locked.status_code == 409
+    assert locked.json()["refusal"]["message"] == LOCKED_NOW
 
 
 def test_source_replacement_requires_fresh_preview(auth_service, google):
@@ -269,9 +287,8 @@ def test_source_replacement_requires_fresh_preview(auth_service, google):
     publish(source())
     refused = post(browser, url(row), {"action": "confirm", "preview": proposal})
     assert refused.status_code == 409
-    # Refused in place (#532): the page again, explained in its review region.
-    assert "This preview is out of date." in region(refused.content)
-    assert b'id="settings-form"' in refused.content
+    # Refused in the review dialog (#1119): the server's words, as JSON.
+    assert refused.json()["refusal"]["message"] == "This preview is out of date."
     assert ConfigurationChangeRequest.objects.count() == requests
 
 
@@ -499,48 +516,58 @@ def test_campaign_edit_cannot_strand_existing_initial_mail(auth_service, google)
     assert row.active_configuration.start_date.isoformat() == "2054-10-01"
 
 
-def test_review_and_apply_stay_on_campaign_settings(auth_service, google):
-    """Campaign settings reviews, applies and follows a change in place (#532).
+def test_review_and_apply_in_the_review_dialog(auth_service, google):
+    """Campaign settings reviews in the shared review dialog (#1119, #750).
 
-    The review keeps its exact content beside the form, the step indicator
-    follows each step, and the confirmed change's status is drawn on the
-    page itself, polling Change status's passive read.
+    Review answers the dialog's fragment, never a page; Apply records the
+    change and answers with its Change status, which the dialog follows.
     """
     store = auth_service.store
     add_draft(store, store.active(), uuid4())
     row = Campaign.objects.get()
     browser, _ = signed_in()
     page = browser.get(url(row))
+    body = page.content.decode()
     assert flow_steps(page.content) == (STEPS, "Make changes")
-    assert b"data-in-place data-table-sync" in page.content
-    review = post(browser, url(row), fields(store, row, name="Renamed in place"))
-    assert flow_steps(review.content) == (STEPS, "Review")
-    shown = region(review.content)
-    assert "Review your changes" in shown and "Renamed in place" in shown
+    assert 'data-review-open="campaign-review"' in body
+    assert '<dialog id="campaign-review"' in body
+    assert body.count(">Review changes</button>") == 1
+    assert "data-in-place data-table-sync" not in body
+    review = post(browser, url(row), fields(store, row, name="Renamed in dialog"))
+    shown = review.content.decode()
+    assert review.status_code == 200 and "data-review-answer" in shown
+    assert "<html" not in shown and "Renamed in dialog" in shown
+    assert 'data-review-done="Campaign settings changed."' in shown
     response = post(browser, url(row), {"action": "confirm", "preview": token(review)})
     request_id = requested(response)
-    assert response["Location"] == (f"{url(row)}?request={request_id}#settings-review")
-    # Reading the change's status (the page's own quiet refresh once it is
-    # applied) is passive: it never renews idle time, as Change status.
-    activity = PortalSession.objects.get().last_activity_at
-    status = browser.get(response["Location"])
-    assert PortalSession.objects.get().last_activity_at == activity
-    assert flow_steps(status.content) == (STEPS, "Apply")
-    assert "Applying your change" in region(status.content)
-    assert "?in_place=campaign_settings" in region(status.content)
+    assert urlsplit(response["Location"]).path == f"/admin/changes/{request_id}/"
     apply(store, response)
     row.refresh_from_db()
-    assert row.active_configuration.name == "Renamed in place"
-    assert "Applied: your change is saved" in region(
-        browser.get(response["Location"]).content
-    )
+    assert row.active_configuration.name == "Renamed in dialog"
+    # The page the dialog redraws from shows the applied value.
+    assert 'value="Renamed in dialog"' in browser.get(url(row)).content.decode()
+
+
+def test_a_refused_review_shows_its_errors_on_the_form(auth_service, google):
+    """A Review refused for the values posted is the page again (status 400)
+    with each error at its field and the summary, which the page script
+    marks on the form; the dialog stays shut (#750)."""
+    store = auth_service.store
+    add_draft(store, store.active(), uuid4())
+    row = Campaign.objects.get()
+    browser, _ = signed_in()
+    refused = post(browser, url(row), fields(store, row, name=""))
+    assert refused.status_code == 400
+    body = refused.content.decode()
+    assert 'id="settings-form"' in body and "data-error-summary" in body
+    assert 'id="id_name_error"' in body
 
 
 def test_a_refused_apply_keeps_the_reviewed_version(auth_service, google):
-    """A confirmation refused because the settings changed elsewhere keeps the
-    form at the reviewed version (#532 review): the next Review is refused
-    too, until a reload brings the current settings, so it can never quietly
-    propose undoing the other change."""
+    """A confirmation refused because the settings changed elsewhere is shown
+    in the dialog and leaves the form at the reviewed version: the next
+    Review from it is refused too, until a reload brings the current
+    settings, so it can never quietly propose undoing the other change."""
     store = auth_service.store
     add_draft(store, store.active(), uuid4())
     row = Campaign.objects.get()
@@ -563,44 +590,10 @@ def test_a_refused_apply_keeps_the_reviewed_version(auth_service, google):
     )
     refused = post(browser, url(row), {"action": "confirm", "preview": proposal})
     assert refused.status_code == 409
-    assert "This preview is out of date." in region(refused.content)
-    assert digest(refused) == values["base_digest"] != store.active().digest
-    again = post(browser, url(row), values | {"base_digest": digest(refused)})
+    assert refused.json()["refusal"]["message"] == "This preview is out of date."
+    again = post(browser, url(row), values)
     assert again.status_code == 409
     assert digest(browser.get(url(row))) == store.active().digest
-
-
-def test_a_pending_campaign_change_keeps_its_reviewed_version(auth_service, google):
-    """Until it is applied, Apply's answer draws the form at the version the
-    change was reviewed at, not one committed elsewhere (#751 review)."""
-    store = auth_service.store
-    add_draft(store, store.active(), uuid4())
-    row = Campaign.objects.get()
-    browser, _ = signed_in()
-    values = fields(store, row, name="Reviewed name")
-    proposal = token(post(browser, url(row), values))
-    response = post(browser, url(row), {"action": "confirm", "preview": proposal})
-    parish = store.active().document()["sections"]["parish"][0]
-    change(
-        store,
-        store.active(),
-        uuid4(),
-        [
-            {
-                "operation": "update",
-                "section": "parish",
-                "id": parish["id"],
-                "values": {"name": "Changed elsewhere"},
-            }
-        ],
-    )
-    page = browser.get(response["Location"], HTTP_X_REQUESTED_WITH="fetch")
-    assert digest(page) == values["base_digest"] != store.active().digest
-    # A full load uses the current version, so a Review is accepted.
-    reloaded = browser.get(response["Location"])
-    assert digest(reloaded) == store.active().digest
-    again = post(browser, url(row), fields(store, row, name="After reload"))
-    assert again.status_code == 200 and "Review your changes" in region(again.content)
 
 
 def live_ministry_campaign(store):
@@ -625,122 +618,99 @@ def live_ministry_campaign(store):
     return Campaign.objects.get()
 
 
-def leader_post(browser, row, roles, *, version):
-    """The live leader-role form's Review, as a browser posts it."""
-    return post(
-        browser,
-        url(row),
-        {
-            "action": "preview",
-            "editor": "leader_roles",
-            "ministry_leader_roles": roles,
-            "base_digest": version,
-        },
-    )
+def live_post(browser, row, roles, *, version, end_date=None):
+    """A live campaign's Review, as a browser posts it: only the open fields.
 
-
-def leader_region(body):
-    """The leader-role panel's own in-place review region (#922, E2).
-
-    The region may carry more attributes after its marker, such as
-    data-keep-height (#768, #973).
+    The locked settings are disabled, so a browser never sends them; the end
+    date is sent whenever it is open, at the saved date unless changed.
     """
-    body = body.decode()
-    start = re.search(
-        r'<div id="leader-roles-review" data-in-place-region[ >]', body
-    ).start()
-    return body[start : body.index("</div>", start)]
+    data = {"action": "preview", "ministry_leader_roles": roles, "base_digest": version}
+    if end_date is not None:
+        data["end_date"] = end_date
+    return post(browser, url(row), data)
 
 
-def test_a_live_campaign_changes_its_leader_roles_in_place(auth_service, google):
-    """A live campaign keeps one editable leader-role form (#922), reviewed and
-    applied in place under it; every other setting stays read-only.
+def test_a_live_campaign_changes_its_leader_roles_on_the_page(auth_service, google):
+    """A live campaign's leader roles stay open (#922) in the one editor
+    (#1119), reviewed in the dialog; every other setting stays locked.
     """
     store = auth_service.store
     row = live_ministry_campaign(store)
     browser, _ = signed_in()
     page = browser.get(url(row))
     body = page.content.decode()
-    assert "read-only" in body
-    assert 'name="editor" value="leader_roles"' in body
-    # Review waits for a changed role, as on the other settings forms (#921).
-    assert re.search(
-        r'<form [^>]*data-require-change="base_digest"[^>]*>(?:\s*<input[^>]*>)*?'
-        r'\s*<input type="hidden" name="editor" value="leader_roles">',
-        body,
-    )
-    # ... and says why while it waits, with the shared hint (#924).
+    assert "read-only" not in body and 'name="editor"' not in body
+    # Review waits for a changed role, as on the other settings forms (#921),
+    # and says why while it waits, with the shared hint (#924).
+    assert 'data-require-change="base_digest"' in body
     assert "Change a setting to review it." in body
-    assert body.count('id="leader_ministry_leader_roles_0"') == 1
+    assert body.count('id="id_ministry_leader_roles_0"') == 1
     assert "sees the reports and follow-up of each Ministry" in body
     for role in ("Chairperson", "Staff"):
-        assert re.search(
-            rf'value="{role}"[^>]*id="leader_ministry_leader_roles_\d+"[^>]*checked',
-            body,
-        ), role
+        tag = re.search(rf'<input [^>]*value="{role}"[^>]*>', body).group(0)
+        assert "checked" in tag and "disabled" not in tag, role
+    # The Ministry list itself is locked here, with where it changes.
+    assert re.search(r'<select name="ministry_duids"[^>]*disabled', body)
+    assert "Change Campaign Ministries" in body
     version = digest(page)
-    for roles, message in (
-        ([], "Choose at least one role."),
-        (["Chairperson", "Staff"], "No settings have changed."),
-        (["Pastor"], "Select a valid choice"),
-    ):
-        refused = leader_post(browser, row, roles, version=version)
-        assert refused.status_code == 400 and message in refused.content.decode()
-    review = leader_post(browser, row, ["Chairperson"], version=version)
+    end = row.active_configuration.values["end_date"]
+    open_end = 'name="end_date"' in body and not re.search(
+        r'<input type="date" name="end_date"[^>]*disabled', body
+    )
+    saved_end = end if open_end else None
+    refused = live_post(browser, row, [], version=version, end_date=saved_end)
+    assert refused.status_code == 400 and "Choose at least one role." in (
+        refused.content.decode()
+    )
+    unchanged = live_post(
+        browser, row, ["Chairperson", "Staff"], version=version, end_date=saved_end
+    )
+    assert unchanged.status_code == 400
+    assert unchanged.json()["refusal"]["message"] == "No settings have changed."
+    invalid = live_post(browser, row, ["Pastor"], version=version, end_date=saved_end)
+    assert invalid.status_code == 400 and "Select a valid choice" in (
+        invalid.content.decode()
+    )
+    review = live_post(
+        browser, row, ["Chairperson"], version=version, end_date=saved_end
+    )
     # A second Review of the same version, refused below once the first is
     # applied.
-    later = leader_post(browser, row, ["Staff"], version=version)
-    shown = leader_region(review.content)
+    later = live_post(browser, row, ["Staff"], version=version, end_date=saved_end)
+    shown = review.content.decode()
+    assert "data-review-answer" in shown
     assert "Ministry leader roles" in shown and "Chairperson, Staff" in shown
-    # Its Apply answers into the leader-role panel's own region (E2).
-    assert 'action="#leader-roles-review"' in shown
-    assert 'data-review-of="leader-roles-form"' in shown
     response = post(browser, url(row), {"action": "confirm", "preview": token(review)})
-    assert response["Location"].endswith("#settings-review")
     apply(store, response)
     row.refresh_from_db()
     assert row.active_configuration.values["ministry_leader_roles"] == ["Chairperson"]
-    # The change's status shows under the leader-role panel, not under the
-    # end date's (Administrator decision E2) ...
-    status = browser.get(response["Location"])
-    assert "Change status" in leader_region(status.content)
-    # Its heading's id is its region's, so the two regions never share one.
-    assert status.content.decode().count('id="leader-roles-review-status-title"') == 1
-    assert 'id="settings-review-status-title"' not in status.content.decode()
-    # ... and so does a refused Apply (a preview now out of date).
     stale = post(browser, url(row), {"action": "confirm", "preview": token(later)})
     assert stale.status_code == 409
-    assert "This preview is out of date." in leader_region(stale.content)
-    # The other settings stay locked whatever the browser posts.
-    assert post(browser, url(row), fields(store, row, name="Locked")).status_code == 409
+    assert stale.json()["refusal"]["message"] == "This preview is out of date."
 
 
 def test_a_draft_changes_its_leader_roles_with_its_other_settings(auth_service, google):
-    """A draft edits the roles in its own form, with Ministry stewardship (#922)."""
+    """A draft edits the roles with its other settings and Ministry stewardship."""
     store = auth_service.store
     add_draft(store, store.active(), uuid4())
     row = Campaign.objects.get()
     browser, _ = signed_in()
     body = browser.get(url(row)).content.decode()
     assert 'id="id_ministry_leader_roles_0"' in body
-    assert 'name="editor"' not in body
     review = post(
         browser,
         url(row),
         fields(store, row, ministry=True, ministry_leader_roles=["Staff"]),
     )
-    assert "Ministry leader roles" in region(review.content)
+    assert "Ministry leader roles" in review.content.decode()
     confirmed = post(browser, url(row), {"action": "confirm", "preview": token(review)})
     apply(store, confirmed)
     row.refresh_from_db()
     assert row.active_configuration.values["ministry_leader_roles"] == ["Staff"]
-    # A draft cannot use the live form.
-    refused = leader_post(browser, row, ["Chairperson"], version=store.active().digest)
-    assert refused.status_code == 409
 
 
 def test_a_live_campaign_without_ministries_has_no_leader_roles(auth_service, google):
-    """No leader-role form, and none accepted, when the campaign has no Ministries."""
+    """No open leader roles, and none accepted, when there are no Ministries."""
     store = auth_service.store
     add_draft(store, store.active(), uuid4())
     row = Campaign.objects.get()
@@ -748,6 +718,33 @@ def test_a_live_campaign_without_ministries_has_no_leader_roles(auth_service, go
     command(row, uuid4(), Action.ACTIVATE)
     browser, _ = signed_in()
     page = browser.get(url(row))
-    assert 'name="editor"' not in page.content.decode()
-    refused = leader_post(browser, row, ["Staff"], version=digest(page))
+    body = page.content.decode()
+    assert not re.search(r'name="ministry_leader_roles"(?![^>]*disabled)[^>]*>', body)
+    requests = ConfigurationChangeRequest.objects.count()
+    end = row.active_configuration.values["end_date"]
+    refused = live_post(browser, row, ["Staff"], version=digest(page), end_date=end)
+    assert refused.status_code in (400, 409)
+    assert ConfigurationChangeRequest.objects.count() == requests
+
+
+LOCKED_NOW = "Some settings you changed can no longer change now."
+
+
+def test_a_draft_locked_after_loading_refuses_its_review(auth_service, google):
+    """A draft that goes live between loading the page and its Review is
+    refused (409) with the reason, never reviewed with its changes quietly
+    dropped (#1119 review); nothing is recorded."""
+    store = auth_service.store
+    add_draft(store, store.active(), uuid4())
+    row = Campaign.objects.get()
+    browser, _ = signed_in()
+    page = browser.get(url(row))
+    data = fields(store, row, name="Changed before going live")
+    command(row, uuid4(), Action.ACTIVATE)
+    requests = ConfigurationChangeRequest.objects.count()
+    refused = post(browser, url(row), data | {"base_digest": digest(page)})
     assert refused.status_code == 409
+    refusal = refused.json()["refusal"]
+    assert refusal["message"] == LOCKED_NOW
+    assert "scheduled or live in Production" in refusal["fix"]
+    assert ConfigurationChangeRequest.objects.count() == requests
