@@ -4,10 +4,11 @@ Administrators and Staff (``CAMPAIGN_REPORT``) compare the current campaign
 with the imported past campaigns at the current campaign's last complete
 day: headline tiles, the day-by-day, final-results and pledge-distribution
 charts (``comparison_charts``), the pledge distribution tables (current
-campaign included, since this page is inside the Admin portal), every
-number and the data notes. Its download form (slice 6) posts the day shown
-to ``comparison_export_views``, which applies the small-count protection
-before anything leaves the portal.
+campaign included, since this page is inside the Admin portal; each
+imported year's chart and table in a closed disclosure, #1161), every
+number and the data notes (also closed by default). Its download form
+(slice 6) posts the day shown to ``comparison_export_views``, which applies
+the small-count protection before anything leaves the portal.
 
 **Compare on day** moves the comparison day N with the one query parameter
 the page takes, ``day=<integer>`` from 1 to the current comparison day (a
@@ -39,7 +40,6 @@ from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.observability import Event, emit_failure
-from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.presentation import number
 from parishkit.stewardship.web.report_errors import report_unavailable
@@ -47,7 +47,7 @@ from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.security import private_response
 
 from .comparison import distribution_rows, table_rows, tiles
-from .comparison_charts import day_charts, distribution_charts, final_charts
+from .comparison_charts import day_charts, distribution_chart, final_charts
 from .comparison_reads import DayOutOfRange, read_comparison
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES, _principal
@@ -136,12 +136,9 @@ def page_context(comparison, principal, *, refused=False, mutable=True):
         else [],
         "day_charts": day_charts(comparison),
         "final_charts": final_charts(comparison),
-        "distribution_charts": distribution_charts(comparison, BAND_EDGES),
         "tiles": tiles(comparison),
         "rows": table_rows(comparison),
-        "distributions": distribution_rows(comparison, BAND_EDGES)
-        if comparison.financial
-        else [],
+        "distributions": distributions(comparison, BAND_EDGES),
         # The years the tiles' averages cover: those with a value on day N
         # (a partial year after its last day is left out).
         "average_years": years_label(
@@ -150,11 +147,42 @@ def page_context(comparison, principal, *, refused=False, mutable=True):
         "can_import": allows(principal, Capability.CONFIGURE)
         and allows(principal, Capability.FINANCIAL_DETAIL),
         # The download form (slice 6): a fresh one-time key per page, so a
-        # reused form is the shared 409, and the export time zones.
+        # reused form is the shared 409. Its files hold days, not action
+        # times, so it asks for no time zone (#1161).
         "mutable": mutable,
         "request_key": uuid4(),
-        "export_timezones": sorted(timezone_names()),
     }
+
+
+def distributions(comparison, edges):
+    """Each year's pledge-band table entry with its chart, current year first.
+
+    The page shows the current campaign's entry and keeps each imported
+    year's in a closed disclosure (#1161), so an entry carries its own
+    chart (``distribution_chart``, None when it has no bands to draw),
+    whether it is the current campaign's, and a ``key`` for its element
+    ids ("current", or the imported year). Empty without Financial
+    stewardship.
+    """
+    if not comparison.financial:
+        return []
+    years = {
+        year.label: year
+        for year in (comparison.current, *comparison.imported)
+        if year is not None
+    }
+    result = []
+    for entry in distribution_rows(comparison, edges):
+        year = years[entry["year"]]
+        result.append(
+            entry
+            | {
+                "chart": distribution_chart(year, edges),
+                "current": year.current,
+                "key": "current" if year.current else str(year.year),
+            }
+        )
+    return result
 
 
 @require_GET

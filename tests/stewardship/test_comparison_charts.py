@@ -439,7 +439,9 @@ def test_without_financial_stewardship_no_pledge_chart():
     assert [chart.key for chart in charts.final_charts(built)] == [
         "comparison-final-families"
     ]
-    assert charts.distribution_charts(built, BAND_EDGES) == []
+    from parishkit.stewardship.reports.comparison_views import distributions
+
+    assert distributions(built, BAND_EDGES) == []
 
 
 def test_nothing_to_draw_draws_nothing():
@@ -449,7 +451,7 @@ def test_nothing_to_draw_draws_nothing():
     )
     assert charts.day_charts(built) == []
     assert charts.final_charts(built) == []
-    assert charts.distribution_charts(built, BAND_EDGES) == []
+    assert charts.distribution_chart(built.current, BAND_EDGES) is None
 
 
 # --------------------------------------------------------- final results
@@ -491,40 +493,52 @@ def test_final_bars_mark_the_current_campaign_so_far_and_lighter():
 # ---------------------------------------------------- pledge distribution
 
 
-def test_band_charts_stack_shares_from_the_smallest_band():
-    """Per year, shares of Families and of dollars by band, adding to 100%."""
-    found = charts.distribution_charts(comparison(), BAND_EDGES)
-    families, dollars = found
-    assert families.key == "comparison-bands-families"
-    rows = families.spec["data"]["values"]
+def test_band_charts_stack_each_years_shares_from_the_smallest_band():
+    """Per year, its shares of Families and of dollars by band, each 100%.
+
+    One chart per year (#1161): the page shows the current campaign's and
+    keeps each imported year's in a closed disclosure, so each key names
+    its year.
+    """
+    built = comparison()
+    current = charts.distribution_chart(built.current, BAND_EDGES)
     # The current campaign's bands too: this chart stays in the portal.
-    assert {row["name"] for row in rows} == {"2052", "2054", "2055 (so far)"}
-    for name in ("2052", "2054", "2055 (so far)"):
+    assert current.key == "comparison-bands"
+    assert current.title == "Pledge bands, 2055 (so far)"
+    rows = current.spec["data"]["values"]
+    assert {row["name"] for row in rows} == {"Families", "Dollars pledged"}
+    for name in ("Families", "Dollars pledged"):
         shares = [row["share"] for row in rows if row["name"] == name]
         assert sum(shares) == pytest.approx(1)
         assert len(shares) == len(BAND_EDGES) + 1
-    current = [row for row in rows if row["name"] == "2055 (so far)"]
-    assert current[0]["shown"] == "42.9%" and current[0]["families"] == "3"
-    assert families.spec["encoding"]["order"]["field"] == "band"
-    assert families.spec["encoding"]["color"]["scale"]["range"] == list(
+    families = [row for row in rows if row["name"] == "Families"]
+    assert families[0]["shown"] == "42.9%" and families[0]["amount"] == "3 Families"
+    # The dollars bar's tooltip gives the band's dollars, not its Families.
+    dollars = [row for row in rows if row["name"] == "Dollars pledged"]
+    assert dollars[0]["amount"] == "$300.00 pledged"
+    assert current.spec["encoding"]["order"]["field"] == "band"
+    assert current.spec["encoding"]["color"]["scale"]["range"] == list(
         charts.BAND_COLORS
     )
+    oldest = next(year for year in built.imported if year.year == 2052)
+    found = charts.distribution_chart(oldest, BAND_EDGES)
+    assert found.key == "comparison-bands-2052"
     # Dollars: band 1 of 2052 holds $100 of $1,900.
-    assert dollars.table.headings[1] == "Under $250"
-    assert dollars.table.rows[0][:3] == ("2052", "5.3%", "94.7%")
-    assert dollars.notes == (charts.NOMINAL_DOLLARS,)
+    assert found.table.headings[1] == "Under $250"
+    assert found.table.rows[1][:3] == ("Dollars pledged", "5.3%", "94.7%")
+    assert found.notes == (charts.NOMINAL_DOLLARS,)
 
 
 def test_band_charts_leave_out_a_year_with_older_bands():
-    """A year imported with an older band set has no bars, only its reason."""
+    """A year imported with an older band set has no chart, only its reason."""
     older = year(
         2054,
         series([10, 20], pledged=100),
         distribution=Distribution(10, Decimal(1000), (), None, OLDER_BANDS),
     )
+    assert charts.distribution_chart(older, BAND_EDGES) is None
     built = comparison(imported=(older,))
-    rows = charts.distribution_charts(built, BAND_EDGES)[0].spec["data"]["values"]
-    assert {row["name"] for row in rows} == {"2055 (so far)"}
+    assert charts.distribution_chart(built.current, BAND_EDGES) is not None
 
 
 # ----------------------------------------------------------- the engine
@@ -534,12 +548,17 @@ def test_every_spec_is_json_compiles_and_renders():
     """The chart engine's Vega-Lite compiles each spec and draws it, wide
     and narrow, with no container (the server renderer's case)."""
     built = comparison()
+    bands = [
+        charts.distribution_chart(found, BAND_EDGES)
+        for found in (built.current, *built.imported)
+    ]
     documents = (
         charts.day_charts(built)
         + charts.final_charts(built)
-        + charts.distribution_charts(built, BAND_EDGES)
+        + [chart for chart in bands if chart is not None]
     )
-    assert len(documents) == 7
+    # Three day-by-day, two final, and the bands of 2055, 2054 and 2052.
+    assert len(documents) == 8
     for document in documents:
         text = json.dumps(document.spec)
         vl_convert.vegalite_to_vega(text)

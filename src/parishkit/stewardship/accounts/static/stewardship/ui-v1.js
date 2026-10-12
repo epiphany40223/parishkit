@@ -1212,6 +1212,14 @@
     fresh.querySelectorAll("input[data-select-row]").forEach((box) => {
       if (chosen.has(box.value)) box.checked = true;
     });
+    // A disclosure marked data-keep-open (Campaign comparison's prior years'
+    // pledge bands and data notes, #1161) stays open in the fresh copy when
+    // the reader had opened it, so changing the day does not fold away what
+    // they were reading.
+    region.querySelectorAll("details[data-keep-open][id][open]").forEach((node) => {
+      const copy = fresh.querySelector(`details[data-keep-open]#${CSS.escape(node.id)}`);
+      if (copy) copy.open = true;
+    });
     // Charts keep their space until the fresh ones are drawn (chart-v1.js).
     if (window.ParishCharts) window.ParishCharts.hold(region, fresh);
     // A data-keep-height region (a settings page's review region) keeps the

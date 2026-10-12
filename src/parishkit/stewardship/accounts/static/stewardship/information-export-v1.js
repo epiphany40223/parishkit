@@ -5,9 +5,8 @@
   try { zone = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (_) { return; }
   // Each export's time zone menu starts on this browser's zone when it offers
   // it. An in-place refresh (ui-v1.js's parishkit:swap) draws a fresh menu,
-  // as the Family timeline's export form inside its table region and the
-  // Campaign comparison's download form inside the region Compare on day
-  // refreshes are, so the fresh one is preselected too.
+  // as the Family timeline's export form inside its table region is, so the
+  // fresh one is preselected too.
   const choose = (root) => root.querySelectorAll("[data-information-timezone]").forEach((select) => {
     if (Array.from(select.options).some(option => option.value === zone)) select.value = zone;
   });

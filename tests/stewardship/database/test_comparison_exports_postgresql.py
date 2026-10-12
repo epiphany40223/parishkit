@@ -38,6 +38,7 @@ from parishkit.stewardship.reports.export_models import (
 )
 from parishkit.stewardship.reports.export_services import TASK_TYPE, export_status
 from parishkit.stewardship.reports.export_tasks import export_handler
+from parishkit.stewardship.web.dates import parish_zone
 
 from ..export_urls import export_action
 from .auth_builders import signed_in
@@ -328,6 +329,51 @@ def test_a_capture_needs_its_request_and_never_changes(scenario):  # noqa: F811
             cursor.execute(statement + " WHERE id=%s", [snapshot.pk])
 
 
+def test_download_form_takes_the_browsers_zone_unasked(
+    scenario,  # noqa: F811
+    settings,
+    tmp_path,
+):
+    """The form asks for no time zone: the browser's, else the parish's (#1161).
+
+    The files hold campaign days and dates, no action times, so the page
+    sends the browser's zone in a hidden field; a missing, empty or unknown
+    one falls back to the parish's time zone instead of being refused.
+    """
+    harness, _, browser, _ = scenario
+    imported(scenario)
+    root = tmp_path / "comparison-reports"
+    root.mkdir(mode=0o700)
+    settings.STEWARDSHIP_REPORTS_ROOT = root
+    with day_two(harness), task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = read(browser, reverse("admin:campaign_comparison"))
+        assert response.status_code == 200
+        hidden = b'<input type="hidden" name="browser_timezone" data-browser-zone>'
+        assert hidden in body
+        assert b'id="comparison-timezone"' not in body
+        parish = parish_zone()
+        for zone, expected in (
+            (None, parish),
+            ("", parish),
+            ("Etc/Unknown", parish),
+            ("Asia/Tokyo", "Asia/Tokyo"),
+        ):
+            fields = {"day": "2", "format": "csv", "request_key": str(uuid4())}
+            if zone is not None:
+                fields["browser_timezone"] = zone
+            assert post(browser, ROUTE, fields).status_code == 302, zone
+            request = ExportRequest.objects.get(request_key=fields["request_key"])
+            assert request.browser_timezone == expected, zone
+        # A repeated zone is still a malformed form.
+        fields = {
+            "day": "2",
+            "format": "csv",
+            "request_key": str(uuid4()),
+            "browser_timezone": ["UTC", "Asia/Tokyo"],
+        }
+        assert post(browser, ROUTE, fields).status_code == 400
+
+
 def test_cli_export_comparison_is_the_page_form(scenario, cli):  # noqa: F811
     """``export comparison`` makes the same capture and records its events."""
     harness, _, _, actor = scenario
@@ -343,6 +389,13 @@ def test_cli_export_comparison_is_the_page_form(scenario, cli):  # noqa: F811
         request = ExportRequest.objects.get(pk=result["export"]["id"])
         assert request.report == "campaign_comparison"
         assert request.parameters == {"day": 2}
+        assert request.browser_timezone == "UTC"
+        # The file holds days, not times, so the zone is optional (#1161):
+        # without it the parish's time zone is used.
+        code, document = run("export", "comparison", "--format", "csv")
+        assert code == 0 and document["result"]["created"], document
+        request = ExportRequest.objects.get(pk=document["result"]["export"]["id"])
+        assert request.browser_timezone == parish_zone()
         code, document = run(
             "export",
             "comparison",
@@ -369,7 +422,7 @@ def test_cli_export_comparison_is_the_page_form(scenario, cli):  # noqa: F811
         AuditContext.objects.filter(
             event__event_type="admin_cmd_export_comparison"
         ).count()
-        == 2
+        == 3
     )
     assert {
         context["count"]

@@ -14,8 +14,8 @@ the summary and exact-values table that stand in for the picture.
 - **Final results by year:** Families responded and annual pledges, one
   horizontal bar per year, the current campaign lighter and labelled
   "so far".
-- **Pledge distribution:** 100% stacked bars per year of the share of
-  pledging Families, and of the dollars pledged, in each pledge band.
+- **Pledge distribution:** per year, two 100% stacked bars: the share of
+  its pledging Families, and of its dollars pledged, in each pledge band.
 
 Everything here is a pure function of ``comparison.Comparison``: nothing
 reads the database or the clock. These charts appear only on the Admin
@@ -44,7 +44,7 @@ from parishkit.stewardship.web.presentation import number
 
 from .chart_assets import VEGA_LITE_SCHEMA
 from .chart_specs import WIDTH, ChartDocument, ChartTable
-from .comparison import band_label, share_text, value_text, years_label
+from .comparison import band_label, money_text, share_text, value_text, years_label
 
 # The day-by-day charts' plot height in CSS pixels. Fixed, so the end
 # labels can be spaced in pixels (``spread``); only the width follows the
@@ -940,38 +940,33 @@ def short_band_label(band, edges):
     return f"${whole(edges[band - 2])}–{whole(edges[band - 1])}"
 
 
-DISTRIBUTIONS = (
-    (
-        "families",
-        "Share of pledging Families by pledge band",
-        "Share of pledging Families",
-    ),
-    ("dollars", "Share of dollars pledged by pledge band", "Share of dollars pledged"),
-)
+# Each year's chart: one 100% stacked bar of its pledging Families by band,
+# and one of its dollars pledged, so the two shares sit side by side.
+DISTRIBUTIONS = (("families", "Families"), ("dollars", "Dollars pledged"))
 
 
-def distribution_chart(key, title, axis, comparison, edges):
-    """One 100% stacked bar chart of the pledge bands, or None."""
-    years = sorted(comparison.imported, key=lambda year: year.year)
-    if comparison.current is not None:
-        years.append(comparison.current)
-    shown = [
-        year
-        for year in years
-        if year.distribution is not None
-        and year.distribution.reason is None
-        and year.distribution.pledging
-        and year.distribution.bands
-    ]
-    if not shown:
+def distribution_chart(year, edges):
+    """One year's pledge bands as two 100% stacked bars, or None.
+
+    The bars are the share of the year's pledging Families, and of its
+    dollars pledged, in each band, from the smallest. The page shows the
+    current campaign's chart and keeps each imported year's in a closed
+    disclosure (campaign-history spec, "Page layout"), so the chart is
+    per year; its key names the year so each disclosure's chart is
+    distinct. A year with no bands to draw (a reason, an older band set or
+    no pledging Family) has none.
+    """
+    found = year.distribution
+    if found is None or found.reason is not None:
         return None
+    if not (found.pledging and found.bands):
+        return None
+    name = short_label(year)
     labels = [short_band_label(band, edges) for band in range(1, len(edges) + 2)]
+    by_band = {band.band: band for band in found.bands}
     rows, table = [], []
-    for year in shown:
-        found = year.distribution
-        name = short_label(year)
-        cells = [name]
-        by_band = {band.band: band for band in found.bands}
+    for key, bar in DISTRIBUTIONS:
+        cells = [bar]
         for band in range(1, len(edges) + 2):
             entry = by_band.get(band)
             families = entry.families if entry else 0
@@ -985,30 +980,26 @@ def distribution_chart(key, title, axis, comparison, edges):
             cells.append(text)
             rows.append(
                 {
-                    "name": name,
+                    "name": bar,
                     "band": band,
                     "label": labels[band - 1],
                     "range": band_label(band, edges),
                     "share": float(part) / float(whole) if whole else 0.0,
                     "shown": text,
-                    "families": number(families),
+                    # What the bar's share is of: the band's Families on
+                    # the Families bar, its dollars on the dollars bar.
+                    "amount": f"{number(families)} Families"
+                    if key == "families"
+                    else f"{money_text(total)} pledged",
                 }
             )
         table.append(tuple(cells))
-    names = [short_label(year) for year in shown]
+    title = f"Pledge bands, {name}"
     summary = (
-        f"{title}, {number(len(labels))} bands from the smallest pledges, for "
-        f"{names[0]}"
-        + (f" to {names[-1]}" if len(names) > 1 else "")
-        + ". The exact values table lists every share."
+        f"{title}: the share of pledging Families and of dollars pledged in "
+        f"each of {number(len(labels))} bands from the smallest pledges. The "
+        "exact values table lists every share."
     )
-    tooltip = [
-        {"field": "name", "title": "Year"},
-        {"field": "range", "title": "Annual pledge"},
-        {"field": "shown", "title": axis},
-    ]
-    if key == "families":
-        tooltip.append({"field": "families", "title": "Families"})
     spec = {
         "$schema": VEGA_LITE_SCHEMA,
         "description": summary,
@@ -1022,7 +1013,7 @@ def distribution_chart(key, title, axis, comparison, edges):
             "y": {
                 "field": "name",
                 "type": "nominal",
-                "sort": names,
+                "sort": [bar for _, bar in DISTRIBUTIONS],
                 "title": None,
                 "axis": {"labelLimit": 120},
             },
@@ -1030,7 +1021,7 @@ def distribution_chart(key, title, axis, comparison, edges):
                 "field": "share",
                 "type": "quantitative",
                 "stack": "zero",
-                "title": axis,
+                "title": "Share",
                 "scale": {"domain": [0, 1], "nice": False},
                 "axis": {
                     "format": ".0%",
@@ -1052,28 +1043,22 @@ def distribution_chart(key, title, axis, comparison, edges):
                 },
             },
             "order": {"field": "band", "type": "quantitative", "sort": "ascending"},
-            "tooltip": tooltip,
+            "tooltip": [
+                {"field": "range", "title": "Annual pledge"},
+                {"field": "name", "title": "Share of"},
+                {"field": "shown", "title": "Share"},
+                {"field": "amount", "title": "In this band"},
+            ],
         },
     }
     return ChartDocument(
-        f"comparison-bands-{key}",
+        "comparison-bands" + ("" if year.current else f"-{year.year}"),
         title,
         summary,
         spec,
         ChartTable(
-            ("Year", *(band_label(b, edges) for b in range(1, len(edges) + 2))),
+            ("Share of", *(band_label(b, edges) for b in range(1, len(edges) + 2))),
             tuple(table),
         ),
         (NOMINAL_DOLLARS,),
     )
-
-
-def distribution_charts(comparison, edges):
-    """The two pledge-band charts, when Financial stewardship has bands."""
-    if not comparison.financial:
-        return []
-    charts = [
-        distribution_chart(key, title, axis, comparison, edges)
-        for key, title, axis in DISTRIBUTIONS
-    ]
-    return [chart for chart in charts if chart is not None]

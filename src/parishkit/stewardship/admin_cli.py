@@ -2788,7 +2788,7 @@ FAMILY_EXPORT_FORMATS = ("csv", "xlsx", "pdf")
 
 
 def _export_comparison_options(parser):
-    """Options of ``export comparison``: the day, format, zone and key."""
+    """Options of ``export comparison``: the day, format, optional zone and key."""
     parser.add_argument(
         "--day",
         type=int,
@@ -2797,8 +2797,8 @@ def _export_comparison_options(parser):
     parser.add_argument("--format", required=True, choices=FAMILY_EXPORT_FORMATS)
     parser.add_argument(
         "--timezone",
-        required=True,
-        help="the time zone of the file's request time, for example America/New_York",
+        help="the time zone of the file's request time, for example "
+        "America/New_York (default: the parish's time zone)",
     )
     _request_key_option(parser)
 

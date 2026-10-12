@@ -95,15 +95,22 @@
     });
   };
   // Draw every pending chart in ``root`` (the document, or a region swapped
-  // in place), and let go of views whose figures were replaced.
+  // in place), and let go of views whose figures were replaced. A chart in
+  // a closed disclosure (Campaign comparison's prior years, #1161) waits:
+  // its panel has no width until it opens, and Vega would measure the
+  // container as empty. Opening the disclosure draws it (below).
   const render = (root) => {
     forget();
     const charts = [...root.querySelectorAll("[data-chart][data-chart-state=pending]")];
     if (root instanceof Element && root.matches("[data-chart][data-chart-state=pending]")) {
       charts.unshift(root);
     }
-    charts.forEach(draw);
+    charts.filter((chart) => !chart.closest("details:not([open])")).forEach(draw);
   };
+  // "toggle" does not bubble, so listen in the capture phase.
+  document.addEventListener("toggle", (event) => {
+    if (event.target instanceof HTMLDetailsElement && event.target.open) render(event.target);
+  }, true);
   // Before ``fresh`` replaces ``old`` (an in-place refresh), give each chart
   // in it the height its predecessor of the same key had, until it is drawn:
   // otherwise the empty views collapse for a moment and the page under the

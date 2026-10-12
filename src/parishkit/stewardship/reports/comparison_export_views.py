@@ -9,10 +9,13 @@ answers with the export's status page, where the shared lifecycle
 publishes, downloads, cancels, retries and regenerates it.
 
 The form posts exactly ``day`` (the page's comparison day, blank before day
-1 has ended), ``format``, ``browser_timezone`` and ``request_key``, each
-once, and no query. A day that is not a whole number from 1 to the current
-comparison day is refused (400) with a way back to the page; a reused form
-is the shared 409.
+1 has ended), ``format`` and ``request_key``, each once, and no query, plus
+at most one ``browser_timezone``. The files hold campaign days and dates, no
+exact action times, so the form asks for no time zone (#1161, ui-conventions
+"Downloaded files"): the browser's, posted unasked, sets the file's request
+time, and a missing or unknown one falls back to the parish's. A day that
+is not a whole number from 1 to the current comparison day is refused (400)
+with a way back to the page; a reused form is the shared 409.
 """
 
 from uuid import UUID
@@ -25,6 +28,7 @@ from django.views.decorators.http import require_POST
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.observability import debug_swallowed
 from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.web.dates import parish_zone, unasked_zone
 
 from .comparison_exports import create_comparison_export, read_capture
 from .comparison_reads import DayOutOfRange
@@ -35,7 +39,7 @@ from .export_views import SAFE_FAILURES, _principal
 from .facts import FactUnavailable
 from .read_admission import admit_report_read
 
-FIELDS = frozenset({"day", "format", "browser_timezone", "request_key"})
+FIELDS = frozenset({"day", "format", "request_key"})
 
 
 def _error(*, status):
@@ -74,7 +78,7 @@ def create(request, campaign_id):
         parameters.pop("csrfmiddlewaretoken", None)
         if (
             request.GET
-            or set(parameters) != FIELDS
+            or set(parameters) - {"browser_timezone"} != FIELDS
             or any(len(parameters.getlist(key)) != 1 for key in parameters)
         ):
             raise ValueError("Invalid comparison download fields.")
@@ -90,7 +94,9 @@ def create(request, campaign_id):
             campaign_id=campaign_id,
             day=shown,
             format=values["format"],
-            browser_timezone=values["browser_timezone"],
+            browser_timezone=unasked_zone(
+                parameters.get("browser_timezone"), parish_zone()
+            ),
             request_key=request_key,
             document=document,
         )

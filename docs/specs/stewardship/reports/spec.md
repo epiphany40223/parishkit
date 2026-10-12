@@ -240,7 +240,10 @@ own renderer):
   load, since a specification carries its data inline. A chart follows its
   panel's width and is measured again whenever the panel changes width after
   it was drawn; charts in a region refreshed in place are drawn again, keeping
-  their space until they are. The Vega, Vega-Lite
+  their space until they are; a chart in a closed disclosure is drawn when
+  the disclosure opens, since its panel has no width before then
+  ([#1161](https://github.com/epiphany40223/parishkit/issues/1161)). The
+  Vega, Vega-Lite
   and vega-embed bundles are vendored under the static files, each pinned by
   SHA-256 with its version and source URL, with the license notices of
   everything they bundle (`reports/chart_assets.py`). vl-convert reports the
