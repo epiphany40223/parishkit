@@ -177,7 +177,7 @@ def create_packet(request, campaign_id):
                 TOO_MANY,
                 fix=TOO_MANY_FIX,
                 link=reverse("admin:ministry_report"),
-                link_label=_("Back to Ministry requests"),
+                link_label=_("Return to Ministry requests"),
             ),
         )
     except ValueError:
