@@ -38,6 +38,7 @@ sections:
     "Family engagement": [DAT-04, RPT-03]
     "Administration user and policy": [DAT-05]
     "Ministry leaders": [DAT-05, ADM-07]
+    "Ministry leader changes": [DAT-05, DAT-07]
     "Submission": [DAT-06]
     "Proposed changes": [DAT-06, DAT-08]
     "Follow-up records": [DAT-07]

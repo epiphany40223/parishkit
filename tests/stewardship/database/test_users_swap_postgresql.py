@@ -245,9 +245,9 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # Objects a later closure migration's frozen file creates with plain CREATE,
 # which a full migration would otherwise fail to create again: #970's 0056,
 # #995's 0057, #1024's 0058, #1018's 0059, #528's 0060 and 0061, #530's
-# 0062, #463's 0063, #558's 0064, #529's 0065, #794's 0066, #1018's 0067
-# and #806's 0068 follow 0055 (#993), so they are in the swap's closure
-# too.
+# 0062, #463's 0063, #558's 0064, #529's 0065, #794's 0066, #1018's 0067,
+# #806's 0068, #932's 0069 and #1034's 0070 follow 0055 (#993), so they are
+# in the swap's closure too.
 # Each is dropped while the swap is pending (with the trigger that uses it)
 # and, unless the test's full migration made it again, installed again
 # afterwards from its migration's frozen file. The tables 0059 to 0063
@@ -261,6 +261,10 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # 0066 creates nothing and only replaces a function in place. 0067 creates
 # the two campaign comparison functions and alters no table. 0068 creates
 # the Mail message page's per-address outcome read and alters no table.
+# 0069 creates nothing and only replaces a function in place. 0070 creates
+# the leader definition at given pointers and the change recorder, and
+# re-points stewardship_ministry_leaders_v1 at the former
+# (``before_leader_changes``), which is put back on 0042's body.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -341,6 +345,14 @@ CLOSURE_CREATED = {
     "public.stewardship_delivery_recipient_outcomes_v1(uuid,uuid)": (
         "stewardship_jobs",
         "0024_mail_message_address_outcomes",
+    ),
+    **dict.fromkeys(
+        (
+            "public.stewardship_ministry_leaders_at_v1(uuid,uuid,uuid)",
+            "public.stewardship_ministry_leader_changes_v1"
+            "(uuid,uuid,uuid,uuid,uuid,uuid,uuid)",
+        ),
+        ("stewardship_accounts", "0018_leader_changes"),
     ),
 }
 
@@ -444,6 +456,23 @@ def before_staff_entered():
     ]
 
 
+def before_leader_changes():
+    """The statements that put the leader definition back as it was before 0070.
+
+    #1034's 0070 turns ``stewardship_ministry_leaders_v1`` into a wrapper
+    over its new ``stewardship_ministry_leaders_at_v1``. Dropping that
+    (``CLOSURE_CREATED``) leaves the wrapper calling nothing, so this puts
+    0042's body back, as on production's base; 0070's frozen file (or the
+    full migration) records the leaders with it and replaces it again.
+    """
+    text = (MIGRATIONS / "migrations/0042_ministry_leaders_from_roles.sql").read_text(
+        encoding="utf-8"
+    )
+    start = text.index("CREATE FUNCTION public.stewardship_ministry_leaders_v1()")
+    body = text[start : text.index("END $$;", start) + len("END $$;")]
+    return [body.replace("CREATE FUNCTION", "CREATE OR REPLACE FUNCTION", 1)]
+
+
 @contextmanager
 def swap_pending():
     """Put the database in the state `migrate --users-upgrade-base` leaves.
@@ -461,7 +490,8 @@ def swap_pending():
     before 0063 (``before_timeline_exports``), the report export capture
     triggers as they were before 0064 (``before_report_local_days``) and
     submissions and the context check as they were before 0065
-    (``before_staff_entered``, each ``CLOSURE_ALTERED`` column).
+    (``before_staff_entered``, each ``CLOSURE_ALTERED`` column) and the
+    leader definition as it was before 0070 (``before_leader_changes``).
     """
     from django.db.migrations.loader import MigrationLoader
 
@@ -492,6 +522,7 @@ def swap_pending():
             *before_timeline_exports(),
             *before_report_local_days(),
             *before_staff_entered(),
+            *before_leader_changes(),
         ):
             cursor.execute(statement)
     try:
@@ -548,6 +579,14 @@ def closure_functions_absent():
     with connection.cursor() as cursor:
         for function in CLOSURE_FUNCTIONS:
             cursor.execute(f"DROP FUNCTION IF EXISTS public.{function}")
+        # Those migrations' frozen files may also create routines outside the
+        # registry (0070's leader copy, #1034); the base lacks them too, and
+        # each file must install whole again below.
+        for key in set(CLOSURE_FUNCTIONS.values()):
+            module = sys.modules[migrations[key].__module__]
+            text = Path(module.FROZEN_SQL).read_text(encoding="utf-8")
+            for name in re.findall(r"^CREATE FUNCTION public\.(\w+)\(", text, re.M):
+                cursor.execute(f"DROP FUNCTION IF EXISTS public.{name}")
     try:
         yield
     finally:

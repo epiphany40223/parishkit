@@ -73,6 +73,15 @@ DESCRIPTIONS = {
         "detail says which. Check the ParishSoft settings; if they are right, "
         "the next scheduled refresh tries again."
     ),
+    # Counts only (#1034): which addresses gained or lost a Ministry is in
+    # the retained ParishSoft data, never in the log.
+    "ministry_leaders_changed": _(
+        "Who leads which Ministry changed, after new ParishSoft data or a "
+        "change to the campaign's Ministry leader roles or Ministries, or to "
+        "which Ministries are active. Count is how many leader address and "
+        "Ministry pairs were added and Matching count how many were removed; "
+        "a leader's changed email address counts once each way."
+    ),
     "chair_reconciled": _("Ministry chairs were matched to the new ParishSoft data."),
     "facts_verified": _("Report totals were recalculated and checked."),
     # Sign-in and sessions.

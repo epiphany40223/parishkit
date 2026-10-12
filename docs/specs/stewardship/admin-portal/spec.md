@@ -5659,7 +5659,11 @@ every `'<prefix>_'||` an installed audit-writing function builds to be a
 - **ParishSoft refreshes** (`parishsoft`): full refreshes and quick updates
   promoted, rejected, superseded or turned into a full reload
   (`source_promoted`, `source_rejected`, `source_superseded`,
-  `source_fallback_requested`), `chair_reconciled`, `admin_cmd_refresh_start`
+  `source_fallback_requested`), the count-only Ministry leader changes they
+  cause (`ministry_leaders_changed`, also recorded when a settings change
+  changes who leads; see [Ministry
+  leaders](../data/spec.md#ministry-leader-changes)), `chair_reconciled`,
+  `admin_cmd_refresh_start`
   and the setup load (`setup_source_started`, `setup_source_completed`), and
   the operational failures and holds (`source_refresh_invalid`,
   `source_provider_failed`, `source_credential_failed`,

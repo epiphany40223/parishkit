@@ -397,6 +397,16 @@ class DatabaseMaterializer:
                 actor_id=self.actor_id,
                 correlation_id=self.correlation_id,
             )
+        from parishkit.stewardship.campaigns.leader_changes import (
+            leader_pointers,
+            record_leader_changes,
+        )
+
+        # The pointers Ministry leadership derives from, read before SQL
+        # moves the configuration pointer, for the count-only audit below
+        # (#1034): leader roles, Ministries and Ministry activity all change
+        # Ministry leaders' scope without a ParishSoft refresh.
+        leaders = leader_pointers()
         activation = ConfigurationActivation.objects.create(
             configuration_id=selected.version_id,
             predecessor_id=runtime.active_configuration_id,
@@ -413,6 +423,10 @@ class DatabaseMaterializer:
         record_seed_evidence(activation, self.request)
         # SQL inserts Applied, safe audit, and the runtime pointer in this
         # same transaction. A failure in any effect rolls them all back.
+        # The leader comparison is best-effort and never fails activation.
+        record_leader_changes(
+            leaders, subject_id=self.request.pk if self.request else None
+        )
 
     def _campaign_admission(self):
         """Exceptional edits require fresh owning proof, even after YAML selection."""
