@@ -113,10 +113,12 @@ def source_step(execution):
     behind each. Those steps publish nothing. A fetch admission only
     reserves the source lease for the request; a staging batch writes only
     its own attempt's snapshot membership and immutable payload versions,
-    which become source truth only at promotion. Snapshot completion and
-    promotion stay ``execution.effect()`` steps under the exclusive lock and
-    re-verify the attempt's whole scope there, so a transition that commits
-    while staging runs is always seen before anything is published.
+    which become source truth only at promotion. Validating the staged corpus
+    only reads it, so it is a source step too (#895). The ready transition
+    that freezes the validation, and promotion, stay ``execution.effect()``
+    steps under the exclusive lock and re-verify the attempt's whole scope
+    there, so a transition that commits while staging runs is always seen
+    before anything is published.
 
     The step keeps every ownership check: the execution's control lock, the
     task root and run locked with the claim's fence (``lock_task_claim``), and
