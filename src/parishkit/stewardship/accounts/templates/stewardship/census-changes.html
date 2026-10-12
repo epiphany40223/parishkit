@@ -48,7 +48,7 @@
 <td>{{ row.edited }}</td>
 <td>{{ row.route_label }}</td>
 <td>{{ row.status_label }}</td>
-<td><time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant>{{ row.submitted_at|date:'c' }}</time></td></tr>
+<td><time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant data-compact>{{ row.submitted_at|date:'c' }}</time></td></tr>
 {% empty %}<tr><td colspan="11">{% translate "No matching census changes." %}</td></tr>{% endfor %}</tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=table label=pages_label %}
 </div>

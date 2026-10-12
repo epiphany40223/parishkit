@@ -268,6 +268,76 @@ def test_templates_never_format_dates_themselves():
     assert offenders == []
 
 
+# A table body cell: <td>, or a row header <th scope="row">. Column headings
+# (<th scope="col">, sort_heading) are headings and keep the full form.
+TABLE_CELL = re.compile(r"<(td|th)\b([^>]*)>(.*?)</\1>", re.S)
+
+
+def table_cell_dates(text):
+    """Each table body cell's date or time markup that is not compact (#1093)."""
+    found = []
+    for tag, attributes, body in TABLE_CELL.findall(text):
+        if tag == "th" and 'scope="row"' not in attributes:
+            continue
+        found += [
+            "<time … data-local-instant> without data-compact"
+            for node in re.findall(r"<time\b[^>]*>", body)
+            if "data-local-instant" in node and "data-compact" not in node
+        ]
+        found += re.findall(r"\|parish_date\b", body)
+    return found
+
+
+def test_table_cells_use_the_compact_date_form():
+    """Guard: dates and times in Admin table cells use the compact form (#1093).
+
+    Long forms stay in headings, sentences and detail panels; see
+    ui-conventions/spec.md#date-format.
+
+    Limits: it scans each template's own text, so cells built by an
+    ``{% include %}`` or a template tag, and bare ``<th>`` cells (no
+    ``scope="row"``), are not checked. It also cannot tell a detail panel
+    nested in a cell (``<details>`` inside a ``<td>``) from the cell itself,
+    so a date there is required to be compact too.
+    """
+    offenders = [
+        f"{path.name}: {found}"
+        for path in sorted(PACKAGE.rglob("templates/**/*.html"))
+        for found in table_cell_dates(path.read_text())
+    ]
+    assert offenders == []
+
+
+def test_table_cell_guard_catches_long_forms():
+    """The guard itself: long cells are caught, compact cells and headings pass."""
+    long_instant = '<td><time datetime="x" data-local-instant>x</time></td>'
+    long_day = '<th scope="row">{{ day|parish_date }}</th>'
+    assert len(table_cell_dates(long_instant + long_day)) == 2
+    assert (
+        table_cell_dates(
+            '<td><time datetime="x" data-local-instant data-compact>x</time></td>'
+            '<th scope="row">{{ day|parish_date_compact }}</th>'
+            '<th scope="col">{{ start|parish_date }}</th>'
+            '<p><time datetime="x" data-local-instant>x</time></p>'
+        )
+        == []
+    )
+
+
+def test_compact_template_filter_for_table_cells():
+    """parish_date_compact takes dates and ISO text like parish_date (#1093)."""
+    template = Template(
+        "{% load stewardship %}{{ day|parish_date_compact }}|"
+        "{{ text|parish_date_compact }}|{{ bad|parish_date_compact }}|"
+        "{{ missing|parish_date_compact }}"
+    )
+    context = Context({"day": DAY, "text": "2027-06-30", "bad": "soon"})
+    with dates.using("eu_dot"):
+        assert template.render(context) == "05.01.27|30.06.27|soon|"
+    with dates.using("us_long"):
+        assert template.render(context).startswith("Jan 5, 2027|Jun 30, 2027|")
+
+
 def test_scripts_format_dates_only_through_the_shared_formatter():
     """Guard: only date-format-v1.js builds date text from a Date."""
     pattern = re.compile(

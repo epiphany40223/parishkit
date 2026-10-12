@@ -43,7 +43,7 @@
 <h2 id="events-heading">{% translate "Timeline" %}</h2>
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="events-caption"><table class="data-table"><caption id="events-caption">{% translate "Everything recorded for this Family" %}</caption>
 <thead><tr>{% translate "When" as heading %}{% sort_heading table "when" heading %}<th scope="col">{% translate "What happened" %}</th><th scope="col">{% translate "Details" %}</th></tr></thead><tbody>
-{% for event in table.rows %}<tr><td><time datetime="{{ event.at|instant }}" data-local-instant>{{ event.at|instant }}</time></td><th scope="row">{% if event.message_id %}<a href="{% url 'admin:delivery' event.message_id %}">{{ event.what }}</a>{% else %}{{ event.what }}{% endif %}</th><td>{{ event.detail }}</td></tr>
+{% for event in table.rows %}<tr><td><time datetime="{{ event.at|instant }}" data-local-instant data-compact>{{ event.at|instant }}</time></td><th scope="row">{% if event.message_id %}<a href="{% url 'admin:delivery' event.message_id %}">{{ event.what }}</a>{% else %}{{ event.what }}{% endif %}</th><td>{{ event.detail }}</td></tr>
 {% empty %}<tr><td colspan="3">{% translate "Nothing recorded for this Family yet. Emails, sign-ins and submissions appear here as they happen." %}</td></tr>{% endfor %}</tbody></table></div>
 </section>{% endif %}
 {% endif %}
