@@ -600,10 +600,10 @@ def test_read_guard_never_rotates_privilege_transition(
     auth_service, google, monkeypatch
 ):
     """Streaming reauthorization fails closed if its prior admission became stale."""
-    from django.contrib.sessions.backends.db import SessionStore
     from django.test import RequestFactory
 
     from parishkit.stewardship.accounts import sessions
+    from parishkit.stewardship.accounts.admin_session_store import SessionStore
     from parishkit.stewardship.accounts.policy import Principal
 
     browser, _ = signed_in()

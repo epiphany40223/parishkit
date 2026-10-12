@@ -462,9 +462,10 @@ def test_concurrent_same_confirmation_creates_one_cleanup_request(ready_cleanup)
     from concurrent.futures import ThreadPoolExecutor
     from threading import Barrier
 
-    from django.contrib.sessions.backends.db import SessionStore
     from django.db import connections
     from django.test import RequestFactory
+
+    from parishkit.stewardship.accounts.admin_session_store import SessionStore
 
     request, service, campaign = ready_cleanup
     with web_login():

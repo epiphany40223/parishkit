@@ -12,6 +12,7 @@ from uuid import UUID
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 
+from .admin_session_store import stored_key
 from .bootstrap_schema import BOOTSTRAP_SCHEMAS
 from .models import PortalSession
 from .policy import Capability, allows
@@ -63,7 +64,7 @@ def _owned(request, service, attempt_id=None):
     if service.configured():
         raise PermissionError("Completed setup cannot be cancelled.")
     session = PortalSession.objects.filter(
-        session_id=request.session.session_key
+        session_id=stored_key(request.session)
     ).first()
     if session is None:
         raise PermissionError("Setup cancellation requires its original login.")

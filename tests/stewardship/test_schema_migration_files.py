@@ -201,6 +201,9 @@ FROZEN = {
     "0056_retire_talents.sql": (
         "c6a94fcef747669bca87da2f38767cb7c38927645fc6530b93be277036816118"
     ),
+    "0057_admin_session_key_digests.sql": (
+        "d6e3df87eb59fcae5f3e99d79de1d4830c32fa4270dc0bbc89e0979ed678578f"
+    ),
 }
 
 

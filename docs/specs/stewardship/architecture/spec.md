@@ -467,6 +467,21 @@ namespace has its own session and CSRF cookies (`pk_family` and
 sign-in or CSRF rotation in one never invalidates the other's open pages (see
 the [CSRF namespaces guide](../../../guides/stewardship-csrf-namespaces.md)).
 
+The database never holds a usable Admin session key
+([#995](https://github.com/epiphany40223/parishkit/issues/995)). The `pk_admin`
+cookie carries the key, but the Admin session store keeps the Django session
+and its Admin session record only under a digest of it (the first 40
+hexadecimal digits of its SHA-256), and digests every presented key before
+looking it up. A stored value read from the database or a backup is therefore
+useless as a cookie, and a SQL check that is handed a session key compares
+its digest (`stewardship_admin_session_key_v1`) with the stored one, so a
+stored value fails there too. An insert guard refuses an Admin session record
+under an undigested key. Session keys are long random values, so an unkeyed
+digest cannot be reversed by search and SQL needs no secret to compute it.
+The upgrade that introduced this ended every Admin session stored before it,
+recording `admin_revoked`; Administrators signed in again. Family sessions are
+unchanged and keep Django's own storage.
+
 ## Family credential security
 
 Each participating Family receives one Production eight-character code per

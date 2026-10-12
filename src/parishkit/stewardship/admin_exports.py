@@ -252,13 +252,14 @@ def _command_scope(caller, service, actor, *, campaign_id=None):
     wins it is seen before the effect; the Administrator is rechecked before
     and after it, and a session that ended rolls the effect back (exit 5).
     """
+    from .accounts.admin_session_store import stored_key
     from .accounts.models import PortalSession
     from .campaigns.work_locks import export_transaction, work_transaction
 
     lock = export_transaction(campaign_id) if campaign_id else work_transaction()
     with lock:
         PortalSession.objects.select_for_update().filter(
-            session_id=caller.session.session_key
+            session_id=stored_key(caller.session)
         ).first()
         _same(_recheck(caller, service.store, actor), actor)
         yield
