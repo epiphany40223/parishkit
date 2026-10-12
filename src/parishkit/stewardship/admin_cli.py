@@ -56,7 +56,8 @@ standard output, and its document to standard error. Other areas join the same
 subparser tree in later pull requests, each listed in the catalog with the
 pull request that added it. ``report roster`` (in ``admin_roster``) counts
 the Roster changes to enter list, and ``report census`` (in
-``admin_census``) the Census changes list (#463).
+``admin_census``) the Census changes list (#463). ``artwork show`` (PR 10,
+in ``admin_artwork``) reads Campaign images.
 """
 
 import argparse
@@ -1208,6 +1209,13 @@ def campaign_shares(args, preamble, runtime, context):
     from .admin_settings import read_shares
 
     return read_shares(context["caller"], runtime, args.campaign)
+
+
+def artwork_show(args, preamble, runtime, context):
+    """The current campaign's images, as Campaign images draws them (PR 10)."""
+    from .admin_artwork import read_artwork
+
+    return read_artwork(context["caller"], runtime)
 
 
 def files_list(args, preamble, runtime, context):
@@ -3684,6 +3692,28 @@ def _settings_specs():
     )
 
 
+def _artwork_specs():
+    """The Campaign images page's read (PR 10, ``admin_artwork``).
+
+    Like ``branding show``, any session runs it and it records nothing, as
+    the page's GET records nothing. ``artwork remove`` comes later in PR 10.
+    """
+    from .admin_artwork import ArtworkShow
+
+    return (
+        CommandSpec(
+            "artwork show",
+            "Show the current campaign's banner and page icons.",
+            artwork_show,
+            "read_only",
+            False,
+            ArtworkShow.field_names(),
+            10,
+            audit_event=None,
+        ),
+    )
+
+
 def _history_specs():
     """Past campaigns (#1018): the archive import, the page's actions.
 
@@ -4283,6 +4313,7 @@ COMMANDS = (
     + _report_specs()
     + _users_specs()
     + _history_specs()
+    + _artwork_specs()
 )
 BY_NAME = {spec.name: spec for spec in COMMANDS}
 

@@ -772,6 +772,30 @@ campaign did not retain, a purged campaign, or a campaign whose retained
 configuration is gone is exit 1 (`not_available`). Editing and deleting
 content stay on the page for now.
 
+## Campaign images
+
+`artwork show` is the read of **Campaign images**: the current campaign's
+email banner and Family page icons. Like the page, it needs an
+Administrator; a session of any scope may run it, and it records nothing
+in System logs, as opening the page records nothing.
+
+```sh
+pk-admin artwork show
+```
+
+| Field | What it holds |
+| --- | --- |
+| `version` | The applied configuration's version |
+| `campaign_id` | The current campaign |
+| `images` | Every slot, in the page's order `banner`, `welcome`, `member`, `financial`, `closing`: `slot`, `name` (the page's label), `unavailable` and `image` |
+| `unavailable` | Null, or the page's reason the slot cannot take an upload now (its Family page is not shown for this campaign's modules); a current image can still be removed on the page |
+| `image` | Null without a current image, or its `id`, `width` and `height` (pixels), `size` (bytes) and `sha256` |
+
+Scripts should test whether `unavailable` is null, not match its text:
+the wording is the page's and may change. With no current campaign,
+`artwork show` is exit 1 (`not_available`).
+Uploading and removing images stay on the page for now.
+
 ## Parish, Ministry, logo and Share option settings
 
 `parish show`, `ministries list`, `branding show` and `campaign shares`
@@ -1923,3 +1947,5 @@ pk-admin users import-leaders --confirm --token -
 - `pk-admin/1` (#463): additive. `parish preview` and `parish confirm`,
   the Parish settings page's Review and Apply (full scope, Administrators
   only); `parish confirm` records `admin_cmd_parish_confirm`.
+- `pk-admin/1` (#463): additive. `artwork show`, the Campaign images
+  page's read (any session, Administrators only, no event).
