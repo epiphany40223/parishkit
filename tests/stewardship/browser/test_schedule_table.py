@@ -62,7 +62,7 @@ def test_table_lists_schedules_in_sending_order(
     # Send times are browser-local instants, not raw ISO text.
     when = first.locator("time[data-local-instant]")
     assert when.inner_text() != when.get_attribute("datetime")
-    assert "October 1, 2054" in when.inner_text()
+    assert "Oct 1, 2054" in when.inner_text()  # compact table-cell form (#1093)
     assert "Every Monday" in rows(page).nth(3).inner_text()
     # Every saved editor starts closed; only the blank new row shows, and it
     # reads "New schedule".

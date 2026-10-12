@@ -165,12 +165,18 @@ settings (issue #221): US long ("January 1, 2027", the default), US medium,
 US numeric (month first), European long, European medium, European numeric
 (day first, with slashes or dots) or ISO 8601. US styles pair with a 12-hour
 clock and the others with a 24-hour clock. Admin pages, Family pages, email
-and page placeholders, and PDF exports all use it; dense tables such as
-System logs, background work and deliveries use its compact variant (short
-month names or two-digit years, no time-zone abbreviation), except that System
-logs rows add seconds and the time-zone abbreviation, with no UTC offset, so
-entries can be compared exactly
-([Logs](../admin-portal/spec.md#logs)). Background output
+and page placeholders, and PDF exports all use it. Every date or time inside
+an Admin table cell (row headers included) uses its compact variant (short
+month names or two-digit years, no time-zone abbreviation), still in the
+browser's time zone, so rows stay short and columns narrow (Administrator,
+2026-10-11, #1093). The full form stays in headings, sentences, summaries and
+detail panels, and downloads keep their own formats (below). System logs rows
+add seconds and the time-zone abbreviation to the compact form, with no UTC
+offset, so entries can be compared exactly
+([Logs](../admin-portal/spec.md#logs)). In templates a table cell's
+`<time data-local-instant>` carries `data-compact` (and an in-place refresh
+re-renders it the same way); a calendar date uses the `parish_date_compact`
+filter; `tests/stewardship/test_date_format.py` guards both. Background output
 uses the format of the configuration it pinned, not whichever is active when
 it runs (issue #280): a PDF export uses its requesting configuration, a daily
 or weekly digest its snapshot's configuration, and a receipt the configuration
@@ -1426,8 +1432,9 @@ never shows Member values (open #965).
 sideways inside its own box, never the whole page. Rows stay short: a cell
 holds one value, long text wraps within a sensible width, and detail that
 makes rows several lines tall belongs on the item's own page or in a
-disclosure. **Why.** A page that scrolls sideways hides its own controls; tall
-rows make a table unscannable. **Shared code.** The `table-scroll` class in
+disclosure. Dates and times in cells use the compact
+[date format](#date-format). **Why.** A page that scrolls sideways hides its
+own controls; tall rows make a table unscannable. **Shared code.** The `table-scroll` class in
 `ui-v1.css`; the button-label browser test at 320 px and 1280 px.
 **Precedent.** #614, #952 (Portal users' rows wrapping to several lines).
 
