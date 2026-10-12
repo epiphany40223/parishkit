@@ -14,6 +14,7 @@ from uuid import UUID
 
 from parishkit.config import ConfigError
 
+from . import series_schema as series
 from . import source_cadence_schema as cadence
 from . import users_schema as users
 from .authority import ConfigurationVersion, parse_version
@@ -158,12 +159,20 @@ def _build_v4_candidate(base, patch, *, candidate_id):
 
 
 def _build_v5_candidate(
-    base, patch, *, candidate_id, schema=CONTENT_SCHEMA, policy_change=None
+    base,
+    patch,
+    *,
+    candidate_id,
+    schema=CONTENT_SCHEMA,
+    policy_change=None,
+    extra=frozenset(),
 ):
     """Add immutable content while retaining policy, campaign and Ministry fences.
 
     ``policy_change`` replaces the sign-in rules' change check for the users
     form (#952), whose list has its own; every other fence is the same.
+    ``extra`` names sections a later schema adds to the editable set, as the
+    users form adds remembered reminder series (#469).
     """
     from parishkit.stewardship.campaigns.configuration import validate_campaign_change
 
@@ -182,6 +191,7 @@ def _build_v5_candidate(
             "schedules",
             "ministries",
             "content",
+            *extra,
         },
     )
     old, new = base.document(), result.candidate.document()
@@ -523,6 +533,27 @@ def credential_request_schema(document):
     )
 
 
+def _users_schema(base, patch=()):
+    """The users-form schema of a candidate built from ``base`` and ``patch``.
+
+    ``campaign-series-v11`` (#469) when the base has the remembered reminder
+    series section or the patch edits it, otherwise ``users-v10``. Only the
+    base and patch decide, so a retry rebuilds the same candidate, and every
+    request stored before series existed rebuilds exactly as it did.
+    """
+    if not isinstance(base, ConfigurationVersion):
+        raise TypeError("An explicit configuration version is required.")
+    if series.SECTION in base.document()["sections"] or (
+        type(patch) is list
+        and any(
+            type(item) is dict and item.get("section") == series.SECTION
+            for item in patch
+        )
+    ):
+        return series.SCHEMA
+    return users.SCHEMA
+
+
 def _build_users_candidate(base, patch, *, candidate_id):
     """Ordinary Admin edits of a users configuration (#952 slice 3).
 
@@ -530,20 +561,29 @@ def _build_users_candidate(base, patch, *, candidate_id):
     rule in place of the sign-in rules' provenance rules: a user keeps its
     address. The base must already be in the users form, as ``_build_records``
     revalidates it under the users schema; only the offline upgrade converts.
+    The same format edits remembered reminder series (#469), whose candidate
+    is ``campaign-series-v11`` (``_users_schema``); a series never moves to
+    another campaign.
     """
-    return _build_v5_candidate(
+    result = _build_v5_candidate(
         base,
         patch,
         candidate_id=candidate_id,
-        schema=users.SCHEMA,
+        schema=_users_schema(base, patch),
         policy_change=users.validate_user_change,
+        extra={series.SECTION},
     )
+    series.validate_series_change(base.document(), result.candidate.document())
+    return result
 
 
 def _build_users_credential_candidate(base, patch, *, candidate_id):
-    """Fingerprint-only selection over a users configuration (#952)."""
+    """Fingerprint-only selection over a users configuration (#952).
+
+    The candidate keeps the base's users-form schema (``_users_schema``).
+    """
     return _build_credential_candidate(
-        base, patch, candidate_id=candidate_id, schema=users.SCHEMA
+        base, patch, candidate_id=candidate_id, schema=_users_schema(base)
     )
 
 
@@ -555,7 +595,8 @@ def _build_users_recovery_candidate(base, patch, *, candidate_id):
     changes nothing else about them. Every other user and every other
     section stays as it was. Over a users bootstrap (#993), recovery during
     initial setup, the candidate stays a users bootstrap: the base's own
-    schema, which ``_build_records`` also revalidates the base under.
+    schema, which ``_build_records`` also revalidates the base under. A
+    configuration with remembered reminder series (#469) keeps them.
     """
     result = _build_records(
         base,
@@ -564,7 +605,7 @@ def _build_users_recovery_candidate(base, patch, *, candidate_id):
         schema=(
             USERS_BOOTSTRAP_SCHEMA
             if schema_for(base.document()) == USERS_BOOTSTRAP_SCHEMA
-            else users.SCHEMA
+            else _users_schema(base)
         ),
         sections={"login_rules"},
     )

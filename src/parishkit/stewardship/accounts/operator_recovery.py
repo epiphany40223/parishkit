@@ -33,9 +33,11 @@ from .runtime_models import SystemConfiguration
 
 # Each base configuration schema's recovery request format. A users
 # bootstrap (#993) uses the users format, whose candidate keeps the base's
-# schema, so recovery works during initial setup too.
+# schema, so recovery works during initial setup too, and so does a
+# configuration with remembered reminder series (#469).
 RECOVERY_SCHEMAS = {
     users.SCHEMA: users.RECOVERY_SCHEMA,
+    users.SERIES_SCHEMA: users.RECOVERY_SCHEMA,
     USERS_BOOTSTRAP_SCHEMA: users.RECOVERY_SCHEMA,
     "source-cadence-v8": "operator-recovery-cadence-v8",
     "bootstrap-policy-v1": "operator-recovery-bootstrap-v1",

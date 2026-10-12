@@ -219,13 +219,34 @@ REPLACED = sorted(
 )
 
 
+# Functions 0055 replaced that a later file replaced again: 0075 (#469)
+# added campaign-series-v11 to their schema lists. 0055's own bodies are put
+# back, in each test's rolled-back transaction, for 0055's check to judge.
+LATER = (
+    "stewardship_policy_complete_v1",
+    "stewardship_policy_projection_v1",
+    "stewardship_users_form_v1",
+)
+
+
 def earlier_definition(name):
     """The function's real body before 0055, as CREATE OR REPLACE."""
-    source = (
+    return definition(
         (MIGRATIONS / EARLIER[name]).read_text(encoding="utf-8")
         if name in EARLIER
-        else FIXTURE.read_text(encoding="utf-8")
+        else FIXTURE.read_text(encoding="utf-8"),
+        name,
     )
+
+
+def own_definitions(cursor):
+    """Install 0055's own bodies of the functions a later file replaced."""
+    for name in LATER:
+        cursor.execute(definition(SETUP_USERS, name))
+
+
+def definition(source, name):
+    """One function's definition in ``source``, as CREATE OR REPLACE."""
     start = re.search(
         rf"^CREATE (?:OR REPLACE )?FUNCTION public\.{name}\(", source, re.M
     ).start()
@@ -244,6 +265,7 @@ def check_refuses(statement, message):
         connection.cursor() as cursor,
     ):
         cursor.execute("SET LOCAL check_function_bodies = false")
+        own_definitions(cursor)
         cursor.execute(statement)
         cursor.execute(CHECK)
 
@@ -252,7 +274,11 @@ def test_the_closing_check_passes_on_the_installed_schema():
     """The check is the one the migration ran; it still holds afterwards."""
     assert len(REPLACED) == 21
     with transaction.atomic(), connection.cursor() as cursor:
+        own_definitions(cursor)
         cursor.execute(CHECK)
+        # Never commit 0055's bodies over 0075's: later tests (the schema
+        # baseline's) must see the installed definitions.
+        transaction.set_rollback(True)
 
 
 @pytest.mark.parametrize("name", REPLACED)

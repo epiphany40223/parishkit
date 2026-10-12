@@ -27,6 +27,12 @@ UPGRADE_REQUEST_SCHEMA = "operator-upgrade-users-v10"
 REQUEST_SCHEMA = "users-patch-v10"
 CREDENTIAL_SCHEMA = "integration-credential-users-v10"
 RECOVERY_SCHEMA = "operator-recovery-users-v10"
+# The users form plus remembered reminder series (#469, ``series_schema``).
+# The three request formats above build its candidates too, so every rule of
+# the users form holds for it, and SQL treats it as the users form.
+SERIES_SCHEMA = "campaign-series-v11"
+# The post-setup schemas in the users form.
+FORM_SCHEMAS = frozenset({SCHEMA, SERIES_SCHEMA})
 # Set by the release that swaps the SQL sign-in functions and brings the
 # Users page (#952 slices 4 and 5, shipped together): web, workers and
 # scheduler refuse to start on a configuration of sign-in rules
@@ -160,7 +166,7 @@ def require_users_form(runtime, *, enabled=None):
         and runtime.current_campaign_id is None
         and not runtime.restore_review_required
     )
-    if schema not in {SCHEMA, USERS_BOOTSTRAP_SCHEMA} and not in_setup:
+    if schema not in {*FORM_SCHEMAS, USERS_BOOTSTRAP_SCHEMA} and not in_setup:
         raise ConfigError(
             "The configuration still holds sign-in rules; run upgrade-users first."
         )

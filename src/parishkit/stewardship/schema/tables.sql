@@ -566,7 +566,7 @@ CREATE TABLE public.stewardship_configuration_version (
     CONSTRAINT configuration_not_own_predecessor CHECK ((NOT ((predecessor_id = id) AND (predecessor_id IS NOT NULL)))),
     CONSTRAINT configuration_schema_v1 CHECK ((schema_version = 1)),
     CONSTRAINT configuration_valid_digests CHECK ((((digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((normalized_digest)::text ~ '^[0-9a-f]{64}$'::text))),
-    CONSTRAINT configuration_validation_schema CHECK (((validation_schema)::text = ANY ((ARRAY['parish-integrations-v1'::character varying, 'foundation-policy-v2'::character varying, 'campaign-foundation-v3'::character varying, 'bootstrap-policy-v1'::character varying, 'ministry-activity-v4'::character varying, 'campaign-content-v5'::character varying, 'source-cadence-v8'::character varying, 'users-v10'::character varying, 'bootstrap-users-v10'::character varying])::text[]))),
+    CONSTRAINT configuration_validation_schema CHECK (((validation_schema)::text = ANY ((ARRAY['parish-integrations-v1'::character varying, 'foundation-policy-v2'::character varying, 'campaign-foundation-v3'::character varying, 'bootstrap-policy-v1'::character varying, 'ministry-activity-v4'::character varying, 'campaign-content-v5'::character varying, 'source-cadence-v8'::character varying, 'users-v10'::character varying, 'bootstrap-users-v10'::character varying, 'campaign-series-v11'::character varying])::text[]))),
     CONSTRAINT stewardship_configuration_version_schema_version_check CHECK ((schema_version >= 0))
 );
 
