@@ -245,6 +245,13 @@ hr { border: 0; border-top: 1px solid var(--border); margin-block: 2rem; }
 /* Report stat tiles (the response dashboard): a count per tile, wrapping. */
 .stat-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .75rem; list-style: none; margin: 0 0 1.25rem; padding: 0; }
 .stat-tile { display: flex; flex-direction: column; gap: .2rem; padding: .85rem 1rem; border: 1px solid var(--border); border-radius: var(--radius-small); background: var(--paper-soft); }
+/* The Campaign comparison's Compare on day (#1018): a short day field with
+   its button beside it, wrapping under it on the narrowest phones. A <p>,
+   not a <div>, so the desktop rule that stacks a form's short fields into
+   columns leaves it alone. */
+.compare-day-row { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: .25rem 0; }
+.compare-day-row > * { margin: 0; }
+.compare-day .compare-day-row input { width: 7rem; }
 .stat-label { font-weight: 600; }
 .stat-value { font-size: 1.75rem; font-weight: 650; line-height: 1.2; font-variant-numeric: tabular-nums; }
 .stat-detail { color: var(--muted); font-size: .875rem; }
