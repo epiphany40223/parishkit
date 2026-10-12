@@ -811,7 +811,12 @@ def begin_submission(
             else:
                 template = UUID(row.revision.values["template_version"])
             render, sealed, mail = current_content(
-                message, template, scope, private=private, public_origin=public_origin
+                message,
+                template,
+                scope,
+                claim=claim,
+                private=private,
+                public_origin=public_origin,
             )
 
         def admit(action, identity, status, proposal=None):

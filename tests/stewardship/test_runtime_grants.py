@@ -465,3 +465,27 @@ def test_column_admission_rejects_any_extra_column(actual):
     else:
         with pytest.raises(ConfigError, match="column grants"):
             admit_columns(database, {}, {"table": {"SELECT": {"id"}}})
+
+
+def test_mail_dispatch_reads_tokens_only_through_the_claimed_token_definer():
+    """No login but the token owners reads link-token ciphertext (#389 L1).
+
+    Mail dispatch holds the token private key, so it gets one claimed
+    message's token through the definer, never the ciphertext columns.
+    """
+    from parishkit.stewardship.runtime_grants import (
+        DISPATCH_TOKEN_FUNCTION,
+        runtime_functions,
+    )
+
+    tables, columns = runtime_grants(ServiceRole.MAIL_DISPATCH)
+    assert "stewardship_family_token" not in tables
+    assert "stewardship_rehearsal_credential" not in tables
+    assert "ciphertext" not in columns["stewardship_family_token"]["SELECT"]
+    assert (
+        "token_ciphertext" not in columns["stewardship_rehearsal_credential"]["SELECT"]
+    )
+    assert runtime_functions(ServiceRole.MAIL_DISPATCH) == {DISPATCH_TOKEN_FUNCTION}
+    for _, _, role, target in database_identities():
+        if role is not ServiceRole.MAIL_DISPATCH:
+            assert DISPATCH_TOKEN_FUNCTION not in runtime_functions(role, target=target)

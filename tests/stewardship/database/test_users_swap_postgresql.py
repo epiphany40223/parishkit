@@ -272,7 +272,8 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # columns and replaces the audit context check and the two campaign
 # comparison functions in place (``before_digest_comparison``), so
 # ``CLOSURE_ALTERED`` puts it back, after 0067's file has made the two
-# functions again.
+# functions again. 0073 creates mail dispatch's one token read and alters
+# no table; its column revokes are no-ops when run again.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -368,6 +369,10 @@ CLOSURE_CREATED = {
             "public.stewardship_comparison_export_binding_v1()",
         ),
         ("stewardship_reports", "0020_comparison_exports"),
+    ),
+    "public.stewardship_dispatch_family_token_v1(uuid,uuid,uuid,bigint,uuid)": (
+        "stewardship_jobs",
+        "0025_dispatch_token_access",
     ),
 }
 
@@ -742,13 +747,17 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
     as the admin-recovery login with exactly the grants it gave; the full
     migration then installs the swap, the Name lookup and the archive
     tables, and the grants again give web the lookup (#952), the tables
-    and the digest ready row's comparison column (#1018).
+    and the digest ready row's comparison column (#1018). Mail dispatch
+    still holds the earlier release's ciphertext reads on the base, which
+    database-grants admits there; the full migration's 0073 revokes them
+    (#389 L1), and after it the same reads would be refused as excess.
     """
     from django.core.management import call_command
 
     from parishkit.stewardship.runtime_grants import (
         CLOSURE_COLUMNS,
         CLOSURE_FUNCTIONS,
+        DISPATCH_TOKEN_FUNCTION,
         MEMBER_NAMES_FOR_FUNCTION,
     )
 
@@ -770,7 +779,10 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
                 "AND attname=%s AND NOT attisdropped",
                 [f"public.{table}", column],
             )
+        with connection.cursor() as cursor:
+            cursor.execute(EARLIER_MAIL_TOKEN_READS)
         assert grants() == {"database_grants_provisioned": True}
+        assert mail_reads_ciphertext()
         with connection.cursor() as cursor:
             cursor.execute("SET SESSION AUTHORIZATION pk_stewardship_admin_recovery")
         result = operator_commands.upgrade_users_command(
@@ -805,6 +817,36 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
                 "SELECT has_column_privilege('pk_stewardship_web', %s, %s, 'SELECT')",
                 [f"public.{table}", column],
             ), column
+        assert not mail_reads_ciphertext()
+        assert scalar(
+            "SELECT has_function_privilege('pk_stewardship_mail_dispatch', %s, "
+            "'EXECUTE')",
+            [f"public.{DISPATCH_TOKEN_FUNCTION}"],
+        )
+        with connection.cursor() as cursor:
+            cursor.execute(EARLIER_MAIL_TOKEN_READS)
+        with pytest.raises(ConfigError, match="column grants exceed"):
+            grants()
+
+
+# The earlier release's mail-dispatch reads of both token ciphertexts, which
+# migration 0073 revokes (#389 L1).
+EARLIER_MAIL_TOKEN_READS = (
+    "GRANT SELECT (ciphertext) ON public.stewardship_family_token "
+    "TO pk_stewardship_mail_dispatch; "
+    "GRANT SELECT (token_ciphertext) ON public.stewardship_rehearsal_credential "
+    "TO pk_stewardship_mail_dispatch"
+)
+
+
+def mail_reads_ciphertext():
+    """Whether mail dispatch may read both token ciphertext columns."""
+    return scalar(
+        "SELECT has_column_privilege('pk_stewardship_mail_dispatch', "
+        "'public.stewardship_family_token', 'ciphertext', 'SELECT') "
+        "AND has_column_privilege('pk_stewardship_mail_dispatch', "
+        "'public.stewardship_rehearsal_credential', 'token_ciphertext', 'SELECT')"
+    )
 
 
 def catalog(cursor):
