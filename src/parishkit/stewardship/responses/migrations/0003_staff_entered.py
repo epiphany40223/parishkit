@@ -7,6 +7,13 @@ an Open form handoff; NULL for every Family's own response), replaces
 ``stewardship_safe_context_v1`` so the audit context admits the response
 lists' new "Entered by Staff" sort tokens, and ends with a DO block that
 refuses to commit unless both are installed as described.
+
+It depends on the reports app's migration that installs the previous frozen
+file (0064, the report local days), so the files apply in prefix order and
+Django keeps a single leaf. That puts it in the users swap's closure (#952):
+`migrate --users-upgrade-base` never applies it. It creates no table and no
+definer routine, and the web login's table-level grants on submissions
+already cover the new column, so nothing is registered in ``runtime_grants``.
 The state operation records the column in Django's model state, so
 ``makemigrations --check`` stays clean. Reversing needs its own forward
 migration, so, like the baseline, it has no reverse operation.
@@ -26,13 +33,11 @@ FROZEN_SQL = (
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("stewardship_responses", "0001_initial"),
-        # The migration that installed the previous frozen file, so the
-        # files apply in prefix order. 0050 (#933) is main's latest today;
-        # 0051-0064 are reserved for PRs planned to land first, so this
-        # dependency is re-chained to the migration installing 0064 when
-        # this lands after them.
-        ("stewardship_reports", "0012_directory_response_filters"),
+        ("stewardship_responses", "0002_proposal_resolution"),
+        # The migration that installs the previous frozen file (0064, #558),
+        # so the files apply in prefix order. It follows the users swap, so
+        # `migrate --users-upgrade-base` never applies this file.
+        ("stewardship_reports", "0016_report_local_days"),
     ]
 
     operations = [

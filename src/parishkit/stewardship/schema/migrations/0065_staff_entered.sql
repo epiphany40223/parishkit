@@ -20,7 +20,8 @@
 -- The submitted and more-than-once response lists gain an "Entered by
 -- Staff" column, which sorts like the others, so the audit context check
 -- admits its two sort tokens:
---   stewardship_safe_context_v1      replaced: 0050's body plus
+--   stewardship_safe_context_v1      replaced: 0059's body (the latest,
+--                                    with its archive words) plus
 --                                    'staff_entered' and '-staff_entered'
 --                                    among the report_sort tokens
 -- It keeps its identity and attributes (IMMUTABLE, its search_path, not
@@ -43,7 +44,7 @@ SELECT set_config('stewardship.migration_0065_acl', (
 
 ALTER TABLE "stewardship_submission" ADD COLUMN "entered_by_id" uuid NULL;
 
--- The audit context check, 0050's body plus the response lists' two new sort
+-- The audit context check, 0059's body plus the response lists' two new sort
 -- tokens.
 CREATE OR REPLACE FUNCTION public.stewardship_safe_context_v1(schema_name text, payload jsonb) RETURNS boolean
     LANGUAGE plpgsql IMMUTABLE
@@ -65,7 +66,8 @@ BEGIN
             'previous_ministry_duids','added_ministry_duids','removed_ministry_duids',
             'decision','review_reason','file_slug','previous_file_slug','file_kind','file_size','file_fingerprint',
             'report_mode','report_filter','talent_option_id','snapshot_id',
-            'report_sort','directory_data_check','directory_response_columns']
+            'report_sort','directory_data_check','directory_response_columns',
+            'archive_year','archive_days','archive_family_rows']
         WHEN 'boundary' THEN ARRAY['occurrence_id','kind','intended_unix_microseconds','actual_unix_microseconds','lag_microseconds','before_state','after_state']
         WHEN 'schedule' THEN ARRAY['definition_id','previous_revision_id','selected_revision_id','cancelled_messages','skipped_occurrences','failed_occurrences','delivered_slots']
         WHEN 'timeout' THEN ARRAY['task_id','task_type','attempt','limit_seconds','elapsed_seconds','what','helper','count','outcome']
@@ -149,11 +151,13 @@ BEGIN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('read_guard','lease','retention_budget','drive_copy_budget',
                 'drive_retry_budget','drive_request','drive_probe_wait',
                 'statement_timeout','lock_timeout','transaction_timeout','mail_helper','source_helper','provider_check',
-                'renewal_drain','control_lock','web_drain','web_heartbeat','configuration_activation','web_probe','source_load_budget') THEN RETURN false; END IF;
+                'renewal_drain','control_lock','web_drain','web_heartbeat','configuration_activation','web_probe','source_load_budget',
+                'archive_check') THEN RETURN false; END IF;
         ELSIF key='helper' THEN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('readiness_delivery_worker','readiness_notification_worker',
                 'family_delivery_worker','digest_delivery_worker','weekly_delivery_worker','operational_mail_worker',
-                'operational_slack_worker','security_mail_worker','provider_check_worker','parishsoft_http_worker') THEN RETURN false; END IF;
+                'operational_slack_worker','security_mail_worker','provider_check_worker','parishsoft_http_worker',
+                'archive_check_worker') THEN RETURN false; END IF;
         -- An Administrator's decision on a suspended Chairperson seed: a closed
         -- word, and the reason entered for it, bounded text refused when it
         -- carries an address-like token, since this context holds no
@@ -237,8 +241,9 @@ BEGIN
         RAISE EXCEPTION 'existing submissions must stay entered by their Families';
     END IF;
     -- The action context admits the new sort tokens, still admits the
-    -- earlier ones and contexts (the body is whole, not just this change),
-    -- and still refuses unknown tokens and wrong types.
+    -- earlier ones and contexts, including 0059's archive words (the body is
+    -- whole, not just this change), and still refuses unknown tokens and
+    -- wrong types.
     IF NOT public.stewardship_safe_context_v1(
            'action', '{"report_mode": "production", "report_filter": "all",
                        "report_sort": "staff_entered"}'::jsonb)
@@ -251,6 +256,11 @@ BEGIN
                        "directory_response_columns": true}'::jsonb)
        OR NOT public.stewardship_safe_context_v1(
            'failure', '{"failure": "admin_command", "command": "export create"}'::jsonb)
+       OR NOT public.stewardship_safe_context_v1(
+           'action', '{"archive_year": 2026, "archive_days": 40,
+                       "archive_family_rows": 0}'::jsonb)
+       OR NOT public.stewardship_safe_context_v1(
+           'timeout', '{"what": "archive_check", "helper": "archive_check_worker"}'::jsonb)
        OR public.stewardship_safe_context_v1(
            'action', '{"report_sort": "staff"}'::jsonb)
        OR public.stewardship_safe_context_v1(

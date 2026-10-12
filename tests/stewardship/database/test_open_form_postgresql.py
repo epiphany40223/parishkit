@@ -12,9 +12,11 @@ the Admin's name. Requests run as the restricted web login.
 import html
 import re
 from dataclasses import replace
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from django.db import DatabaseError, connection, transaction
 from django.test import Client
 
 from parishkit.stewardship.accounts import assisted_entry
@@ -281,3 +283,65 @@ def test_back_returns_to_the_page_open_form_was_clicked_on(
         assert response.status_code == 200 and secret, given
         found = RETURN.search(response.content).group(1).decode()
         assert html.unescape(found) == expected, given
+
+
+MIGRATIONS = Path(__file__).resolve().parents[3] / (
+    "src/parishkit/stewardship/schema/migrations"
+)
+
+
+def context_body(name):
+    """``stewardship_safe_context_v1``'s whole definition in frozen file ``name``."""
+    text = (MIGRATIONS / name).read_text(encoding="utf-8")
+    start = text.index("CREATE OR REPLACE FUNCTION public.stewardship_safe_context_v1")
+    return text[start : text.index("$_$;", start) + 4]
+
+
+# The token change 0065 makes to the response lists' report_sort list.
+SORTS = "'problem','-problem')"
+STAFF_SORTS = "'problem','-problem','staff_entered','-staff_entered')"
+
+
+@pytest.mark.parametrize(
+    "older",
+    [
+        # Every database before 0065: 0059's body, the latest replacement.
+        lambda: context_body("0059_campaign_archives.sql"),
+        # A stale rebuild from 0050's body, which would drop 0059's archive
+        # words while adding the staff sort tokens.
+        lambda: context_body("0050_directory_response_filters.sql").replace(
+            SORTS, STAFF_SORTS
+        ),
+    ],
+    ids=["0059", "0050-plus-staff-sorts"],
+)
+def test_migration_self_check_refuses_an_older_context_body(older):
+    """0065's DO block fails on 0059's context body and on 0050's with only
+    the staff sort tokens added; on the installed body it passes.
+
+    Each older body runs inside a rolled-back transaction, so the installed
+    function is left as the full migration made it.
+    """
+    text = (MIGRATIONS / "0065_staff_entered.sql").read_text(encoding="utf-8")
+    check = re.search(r"^DO \$check\$.*?\$check\$;", text, re.M | re.S)[0]
+    body = older()
+    assert body.count(STAFF_SORTS) + body.count(SORTS) == 1
+    with connection.cursor() as cursor:
+        # The grants the DO block compares against, as the file records them.
+        cursor.execute(
+            "SELECT set_config('stewardship.migration_0065_acl', (SELECT"
+            " string_agg(p.proname||'='||coalesce(p.proacl::text,'default'),';'"
+            " ORDER BY p.proname) FROM pg_proc p JOIN pg_namespace n ON"
+            " n.oid=p.pronamespace WHERE n.nspname='public' AND"
+            " p.proname='stewardship_safe_context_v1'), false)"
+        )
+        cursor.execute(check)
+        with transaction.atomic():
+            cursor.execute(body)
+            with (
+                pytest.raises(DatabaseError, match="Entered by Staff sorts"),
+                transaction.atomic(),
+            ):
+                cursor.execute(check)
+            transaction.set_rollback(True)
+        cursor.execute(check)
