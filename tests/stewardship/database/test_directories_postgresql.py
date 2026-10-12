@@ -1279,3 +1279,39 @@ def test_find_a_family_lists_exact_envelope_or_duid_matches_first(response_servi
     assert found["total"] > 50 and statements <= 3, statements
     assert 13 not in [row["family_duid"] for row in found["rows"]]
     assert found["total"] == page(harness, search="13")["total"]
+
+
+def test_testing_without_a_rehearsal_is_refused_not_shown_as_production(
+    live_response_service, google
+):
+    """With no active rehearsal, Testing is a 409, never Production (#933).
+
+    The live campaign's rehearsal ended at go-live. An Administrator is not
+    offered the switch; an old Testing link and a Testing export (whatever
+    rehearsal its form names) get the "no longer active" page, and nothing
+    is queued.
+    """
+    from parishkit.stewardship.reports.export_models import ExportRequest
+
+    from .test_export_views_postgresql import post
+
+    browser, login = signed_in()
+    assert login.status_code == 302
+    route = reverse("admin:family_directory")
+    export = reverse("admin:family_directory_export")
+    fields = DirectoryQuery(mode="testing").form_values() | dict(
+        format="csv", browser_timezone="UTC", request_key=str(uuid4())
+    )
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = read(browser, route)
+        assert response.status_code == 200 and b'id="directory-mode"' not in body
+        for response, body in (
+            read(browser, route + "?response=submitted&mode=testing"),
+            search(browser, route, {"mode": "testing"}),
+        ):
+            assert response.status_code == 409
+            assert b"That Testing rehearsal is no longer active" in body
+        response = post(browser, export, fields | {"rehearsal": str(uuid4())})
+        assert response.status_code == 409
+        assert b"That Testing rehearsal is no longer active" in response.content
+    assert not ExportRequest.objects.exists()

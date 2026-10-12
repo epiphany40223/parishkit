@@ -628,3 +628,216 @@ def test_directory_tags_a_current_response_staff_entered():
     assert html.count("(entered by Staff)") == 1
     assert html.index("Assisted") < html.index("(entered by Staff)")
     assert html.index("(entered by Staff)") < html.index(">Own<")
+
+
+def test_testing_mode_is_a_closed_link_preset_admitted_for_administrators():
+    """The Testing switch (#933): a closed value, audited, Administrators only.
+
+    ``mode`` travels in links (the dashboard's Testing presets), in the
+    address bar after an in-place answer and in the audit; any other value
+    is refused, and a Staff member asking for Testing is refused too.
+    """
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.reports.directories import admit_mode
+    from parishkit.stewardship.reports.directory_views import (
+        LINK_PRESETS,
+        page_address,
+    )
+
+    assert "mode" in LINK_PRESETS
+    assert DirectoryQuery.parse(QueryDict("")).mode == "production"
+    query = DirectoryQuery.parse(QueryDict("response=submitted&mode=testing"))
+    assert query.mode == "testing"
+    with pytest.raises(ValueError):
+        DirectoryQuery.parse(QueryDict("mode=live"))
+    with pytest.raises(ValueError):
+        DirectoryQuery.parse(QueryDict("mode=testing&mode=testing"))
+    values = query.audit_values()
+    assert values["report_mode"] == "testing"
+    assert sanitize(ContextKind.ACTION, values)["report_mode"] == "testing"
+    assert DirectoryQuery().audit_values()["report_mode"] == "production"
+    route = reverse("admin:family_directory")
+    assert page_address(route, query, postal=False) == (
+        route + "?response=submitted&mode=testing"
+    )
+    assert page_address(route, DirectoryQuery(mode="testing"), postal=False) == (
+        route + "?mode=testing"
+    )
+    # Search text still makes it the bare page, mode or not.
+    private = DirectoryQuery(mode="testing", search="Adams")
+    assert page_address(route, private, postal=False) == route
+    administrator = SimpleNamespace(roles=frozenset({"administrator"}))
+    staff = SimpleNamespace(roles=frozenset({"staff"}))
+    admit_mode(administrator, "testing")
+    admit_mode(staff, "production")
+    with pytest.raises(PermissionError):
+        admit_mode(staff, "testing")
+
+
+def test_testing_selection_pins_the_active_rehearsal(monkeypatch):
+    """A Testing selection names its rehearsal; Production keeps its shape.
+
+    The page and the export capture read the same parameters, so one result
+    never mixes modes (#933). With no active rehearsal there is nothing to
+    read, and the selection is refused rather than shown as Production.
+    """
+    from uuid import UUID
+
+    from parishkit.stewardship.reports import response_dashboard
+    from parishkit.stewardship.reports.directories import NoRehearsal
+
+    epoch = UUID(int=7)
+    monkeypatch.setattr(response_dashboard, "rehearsal_epoch", lambda campaign: epoch)
+    campaign = uuid4()
+    production = selection_parameters(
+        campaign, DirectoryQuery(response="submitted"), postal=False, mac=None
+    )
+    assert "mode" not in production and "epoch" not in production
+    assert "mode" not in production["filters"]
+    testing = selection_parameters(
+        campaign,
+        DirectoryQuery(response="submitted", mode="testing"),
+        postal=False,
+        mac=None,
+    )
+    assert testing == production | {"mode": "testing", "epoch": str(epoch)}
+    # An export form names the rehearsal its page showed: that one, or none.
+    testing_query = DirectoryQuery(response="submitted", mode="testing")
+    assert (
+        selection_parameters(
+            campaign, testing_query, postal=False, mac=None, rehearsal=epoch
+        )
+        == testing
+    )
+    with pytest.raises(NoRehearsal):
+        selection_parameters(
+            campaign, testing_query, postal=False, mac=None, rehearsal=UUID(int=8)
+        )
+    monkeypatch.setattr(response_dashboard, "rehearsal_epoch", lambda campaign: None)
+    with pytest.raises(NoRehearsal):
+        selection_parameters(
+            campaign, DirectoryQuery(mode="testing"), postal=False, mac=None
+        )
+
+
+@pytest.mark.parametrize("testing", [False, True])
+def test_testing_view_is_labelled_and_leaves_out_production_responses(testing):
+    """A Testing view says so and drops Responded, which reads Production.
+
+    The switch itself is drawn only when offered (``can_test``): Staff and
+    an Administrator with no rehearsal get a hidden Production field.
+    """
+    from uuid import UUID
+
+    from parishkit.stewardship.reports.directories import MODES
+
+    def page(**context):
+        """The directory page with one Family row."""
+        return render_to_string(
+            "stewardship/directory.html",
+            {
+                "campaign_id": UUID(int=80),
+                "metadata": {"source_generation": 1},
+                "total": 1,
+                "modes": MODES,
+                "table": _table(
+                    [
+                        {
+                            "family_name": "Example",
+                            "display_name": "Example",
+                            "family_duid": 1,
+                            "responded": True,
+                        }
+                    ]
+                ),
+                "query": DirectoryQuery(mode="testing" if testing else "production"),
+                "testing_responses": testing,
+            }
+            | context,
+        )
+
+    offered = page(can_test=True)
+    assert '<select id="directory-mode" name="mode"' in offered
+    assert 'id="directory-mode-tip"' in offered
+    selected = "testing" if testing else "production"
+    assert f'<option value="{selected}" selected>' in offered
+    hidden = page(can_test=False)
+    assert 'id="directory-mode"' not in hidden
+    # No hidden stand-in either: an in-place answer drawn after the
+    # rehearsal ended would add it next to a switch still on the page, and
+    # every later Apply would send mode twice (400). Without one the form
+    # sends nothing, which is Production.
+    filters = hidden.split('id="table-filters"')[1].split("</form>")[0]
+    assert 'name="mode"' not in filters
+    assert ("data-testing-responses" in hidden) is testing
+    assert (">Responded</th>" in hidden) is not testing
+
+
+@pytest.mark.parametrize("mode", [None, "production", "testing"])
+def test_directory_exports_audit_and_admit_their_mode(monkeypatch, mode):
+    """Each directory export's audit names its mode; Testing is Admin only.
+
+    Captures from before the Testing switch have no ``mode`` and are
+    Production (#933). A Staff requester (or one who stopped being an
+    Administrator) can no longer download or regenerate a Testing export.
+    """
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.audit.schemas import Action
+    from parishkit.stewardship.reports import export_services
+    from parishkit.stewardship.reports.export_models import ExportRequest
+
+    parameters = {"filters": {}, "postal": False, "exact": False, "family_id": None}
+    if mode is not None:
+        parameters["mode"] = mode
+    requester = uuid4()
+    request = ExportRequest(
+        campaign_id=uuid4(),
+        report="family_directory",
+        parameters=parameters,
+        requester_id=requester,
+    )
+    recorded = []
+    monkeypatch.setattr(
+        export_services,
+        "record_action",
+        lambda action, **evidence: recorded.append(evidence["context"]),
+    )
+    export_services.audit(Action.EXPORT_REQUESTED, request, requester, outcome="x")
+    shown = mode or "production"
+    assert recorded == [{"outcome": "x", "report_mode": shown}]
+    assert sanitize(ContextKind.ACTION, {"report_mode": shown})
+    monkeypatch.setattr(export_services, "allows", lambda principal, need: True)
+    for roles, admitted in (({"administrator"}, True), ({"staff"}, shown != "testing")):
+        principal = SimpleNamespace(identity=requester, roles=frozenset(roles))
+        monkeypatch.setattr(
+            export_services,
+            "current_principal",
+            lambda store, user, principal=principal: principal,
+        )
+        if admitted:
+            assert export_services.authorize(None, requester, request=request)
+        else:
+            with pytest.raises(PermissionError):
+                export_services.authorize(None, requester, request=request)
+
+
+@pytest.mark.parametrize(
+    "report, mode, name",
+    [
+        ("family_directory", None, "family_directory.csv"),
+        ("family_directory", "production", "family_directory.csv"),
+        ("family_directory", "testing", "family_directory-testing.csv"),
+        ("postal_outreach", "testing", "postal_outreach-testing.csv"),
+        ("ministry", "testing", "ministry.csv"),
+    ],
+)
+def test_a_testing_export_says_so_in_its_file_name(report, mode, name):
+    """A CSV has no report details, so its name carries the mode (#933)."""
+    from parishkit.stewardship.reports.export_models import ExportRequest
+    from parishkit.stewardship.reports.export_views import file_name
+
+    parameters = {"filters": {}} | ({"mode": mode} if mode else {})
+    job = ExportRequest(report=report, format="csv", parameters=parameters)
+    assert file_name(job) == name

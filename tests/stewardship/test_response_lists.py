@@ -460,13 +460,23 @@ def test_dashboard_links_each_list_with_its_count(monkeypatch):
 
     from .test_chart_specs import metrics
 
+    # Every link opens the directory's preset now, Testing included (#933).
+    directory = reverse("admin:family_directory")
     shown = family_lists(DashboardQuery("testing"), metrics())
     assert [(item["url"], item["count"]) for item in shown] == [
-        (BASE + "submitted/?mode=testing", 3),
-        (BASE + "started/?mode=testing", 1),
-        (BASE + "not-opened/?mode=testing", 1),
-        (BASE + "more-than-once/?mode=testing", 1),
-        (BASE + "data-quality/?mode=testing", None),
+        (
+            directory + "?response=submitted&responses=yes&sort=submitted&mode=testing",
+            3,
+        ),
+        (directory + "?response=started&responses=yes&mode=testing", 1),
+        (directory + "?response=never-opened&responses=yes&mode=testing", 1),
+        (
+            directory
+            + "?response=more-than-once&responses=yes&sort=submissions_desc"
+            + "&mode=testing",
+            1,
+        ),
+        (directory + "?check=anything&mode=testing", None),
     ]
     # Only the list without a length says what it holds.
     assert [bool(item["description"]) for item in shown] == [False] * 4 + [True]
