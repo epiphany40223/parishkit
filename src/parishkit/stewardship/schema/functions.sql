@@ -10339,6 +10339,7 @@ CREATE FUNCTION public.stewardship_task_type_login_v1(task_type text) RETURNS te
         THEN 'pk_stewardship_worker'
         WHEN task_type IN (
             'campaign_mail_test',
+            'family_address_retry',
             'outbox_delivery',
             'setup_mail_test')
         THEN 'pk_stewardship_mail_dispatch'

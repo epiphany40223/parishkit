@@ -241,6 +241,11 @@ OUTCOME_LABELS = {
     "refused_permanently": _("refused permanently"),
     "unknown": _("not sure it arrived"),
     "not_delivered": _("not delivered"),
+    # From the email's follow-up to its addresses refused for now (#806
+    # slice 2, stewardship_delivery_address_retries_v1, frozen migration
+    # 0077): still being tried, or a try whose outcome is unknown.
+    "retrying": _("refused for now, trying again"),
+    "retry_unknown": _("not sure it arrived"),
 }
 # The email states after which nothing more is sent for it.
 FINAL_STATES = frozenset({"delivered", "permanent_failure", "cancelled"})
@@ -304,8 +309,9 @@ def email_recipients(message_id, actor_id, state):
     given the email's current ``state`` (#806, see ``address_outcomes`` and
     ``outcome_label``), or None where there is none to show.
     ``reached`` is ``(delivered, total)`` when an accepted attempt reached
-    only some of its addresses, and ``refused_for_now`` says whether any
-    address was refused for now.
+    only some of its addresses, ``refused_for_now`` says whether any
+    address was refused for now and not tried again, and ``retrying``
+    whether any is still being tried again (#806 slice 2).
 
     Returns None when either definer read refuses (see ``_definer_rows``).
     """
@@ -316,6 +322,13 @@ def email_recipients(message_id, actor_id, state):
     outcomes = None if rows is None else address_outcomes(message_id, actor_id)
     if outcomes is None:
         return None
+    # An address refused for now may have been followed up since (#806):
+    # what the follow-up did replaces the attempt's "refused for now".
+    if any(pair[1] == "refused_for_now" for pair in outcomes):
+        follow_ups = address_follow_ups(message_id, actor_id)
+        if follow_ups is None:
+            return None
+        outcomes = followed_up(outcomes, follow_ups)
     recipients = {"intended": [], "routed": []}
     for kind, address in rows:
         recipients[kind].append(address)
@@ -343,7 +356,39 @@ def email_recipients(message_id, actor_id, state):
         (delivered, len(found)) if 0 < delivered < len(found) else None
     )
     recipients["refused_for_now"] = "refused_for_now" in found
+    recipients["retrying"] = "retrying" in found
     return recipients
+
+
+def followed_up(outcomes, follow_ups):
+    """``outcomes`` with each followed-up position's outcome replaced.
+
+    ``follow_ups`` are ``(position, outcome)`` pairs indexing the same
+    routed envelope; a position outside it is ignored.
+    """
+    merged = list(outcomes)
+    for position, outcome in follow_ups:
+        if 0 <= position < len(merged):
+            merged[position] = (merged[position][0], outcome)
+    return merged
+
+
+def address_follow_ups(message_id, actor_id):
+    """What the email's follow-up did for each address refused for now.
+
+    Read through ``stewardship_delivery_address_retries_v1`` (frozen
+    migration 0077, #806), with the same caller checks as the outcomes read,
+    for the same attempt: ``(position, outcome)`` pairs, the outcome being
+    "delivered", "refused_permanently", "retrying", "retry_unknown" or
+    "refused_for_now" (given up). None of them when the attempt opened no
+    follow-up. Returns None when refused (see ``_definer_rows``).
+    """
+    rows = _definer_rows(
+        "SELECT envelope_position, outcome"
+        " FROM public.stewardship_delivery_address_retries_v1(%s,%s)",
+        (message_id, actor_id),
+    )
+    return None if rows is None else [tuple(row) for row in rows]
 
 
 def address_outcomes(message_id, actor_id):

@@ -40,6 +40,8 @@ def test_only_the_config_installer_may_read_the_catalog_function():
     """The definer catalog read is granted to one login; web keeps Family login."""
     from parishkit.stewardship.deployment import ServiceRole
     from parishkit.stewardship.runtime_grants import (
+        ADDRESS_RETRY_OPEN_FUNCTION,
+        ADDRESS_RETRY_TOKEN_FUNCTION,
         AUTOMATION_FRESH_FUNCTION,
         FAMILY_LOGIN_FUNCTION,
         LEADER_CHANGES_FUNCTION,
@@ -61,8 +63,8 @@ def test_only_the_config_installer_may_read_the_catalog_function():
     # preview's identities and Member names, New user's Name lookup and the
     # Users page's ParishSoft leaders without a user (#952) and, for an
     # Administrator, one email's recipient addresses (#1024) and each one's
-    # latest outcome (#806), and the campaign comparison report's aggregates
-    # (#1018).
+    # latest outcome and any follow-up retry (#806), and the campaign
+    # comparison report's aggregates (#1018).
     assert runtime_functions(ServiceRole.WEB) == {
         FAMILY_LOGIN_FUNCTION,
         "stewardship_family_daily_sends_v1()",
@@ -77,6 +79,7 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         "stewardship_campaign_comparison_v1(uuid, date, numeric[], uuid)",
         "stewardship_campaign_archive_renewal_v1(uuid, uuid, integer)",
         "stewardship_delivery_recipient_outcomes_v1(uuid, uuid)",
+        "stewardship_delivery_address_retries_v1(uuid, uuid)",
     }
     # The worker's definer routines purge ended Admin sessions (ADM-11),
     # count an export's read-guard stops (#386) and read a user's
@@ -93,9 +96,12 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         "stewardship_campaign_archive_renewal_v1(uuid, uuid, integer)",
     }
     assert runtime_functions("download") == {LEADER_SCOPE_FUNCTION}
-    # Mail dispatch reads one claimed message's link token (0073, #389).
+    # Mail dispatch reads one claimed message's link token (0073, #389) and
+    # opens and re-tokens an address follow-up send (0077, #806).
     assert runtime_functions(ServiceRole.MAIL_DISPATCH) == {
-        "stewardship_dispatch_family_token_v1(uuid, uuid, uuid, bigint, uuid)"
+        "stewardship_dispatch_family_token_v1(uuid, uuid, uuid, bigint, uuid)",
+        ADDRESS_RETRY_OPEN_FUNCTION,
+        ADDRESS_RETRY_TOKEN_FUNCTION,
     }
     assert runtime_functions(ServiceRole.SCHEDULER) == frozenset()
 

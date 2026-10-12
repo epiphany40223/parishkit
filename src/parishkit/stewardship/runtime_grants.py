@@ -340,6 +340,18 @@ RECIPIENTS_FUNCTION = "stewardship_delivery_recipients_v1(uuid, uuid)"
 # What each of those addresses' latest attempt recorded (#806), for the same
 # page and caller, without any grant on the attempt's evidence.
 RECIPIENT_OUTCOMES_FUNCTION = "stewardship_delivery_recipient_outcomes_v1(uuid, uuid)"
+# What a delivered email's follow-up to its addresses refused for now did
+# (#806 slice 2), for the same page and caller: positions and words only.
+ADDRESS_RETRIES_FUNCTION = "stewardship_delivery_address_retries_v1(uuid, uuid)"
+# Mail dispatch opens that follow-up (and its task, which it may not insert
+# itself) under its live delivery claim, and reads the Family's link token
+# for it under the follow-up's own claim, both in frozen migration 0077.
+ADDRESS_RETRY_OPEN_FUNCTION = (
+    "stewardship_address_retry_open_v1(uuid, uuid, bigint, uuid, text, text, integer)"
+)
+ADDRESS_RETRY_TOKEN_FUNCTION = (
+    "stewardship_address_retry_token_v1(uuid, uuid, uuid, bigint, uuid)"
+)
 # The campaign comparison report's figures that read each Family's own rows
 # (#1018): web learns only their aggregates, never a kept archive Family's id.
 COMPARISON_FUNCTION = "stewardship_campaign_comparison_v1(uuid, date, numeric[], uuid)"
@@ -382,6 +394,15 @@ CLOSURE_FUNCTIONS = {
     DISPATCH_TOKEN_FUNCTION: ("stewardship_jobs", "0025_dispatch_token_access"),
     # The daily limit's resume time (0076, #530) follows 0075.
     DAILY_RESUME_FUNCTION: ("stewardship_jobs", "0026_daily_send_resume"),
+    # Address follow-ups (0077, #806) follow 0076.
+    **dict.fromkeys(
+        (
+            ADDRESS_RETRIES_FUNCTION,
+            ADDRESS_RETRY_OPEN_FUNCTION,
+            ADDRESS_RETRY_TOKEN_FUNCTION,
+        ),
+        ("stewardship_jobs", "0027_address_retry"),
+    ),
 }
 
 
@@ -416,6 +437,8 @@ CLOSURE_TABLES = {
         "stewardship_reports",
         "0020_comparison_exports",
     ),
+    # A delivered email's follow-ups to addresses refused for now (0077, #806).
+    "stewardship_outbox_address_retry": ("stewardship_jobs", "0027_address_retry"),
 }
 
 
@@ -523,7 +546,9 @@ def runtime_functions(role, *, target=None):
     campaign comparison report's aggregates (#1018), and so does the general
     worker, for the daily digest's Compared with past campaigns section.
     Mail dispatch reads the one link token of a Family message it holds a
-    live delivery claim on (#389 L1).
+    live delivery claim on (#389 L1). Web reads what a delivered email's
+    follow-up to its addresses refused for now did (#806); mail dispatch
+    opens that follow-up and reads its link token.
     """
     role = _identity_role(role, target)
     if role is ServiceRole.CREDENTIAL_INSTALLER:
@@ -546,12 +571,17 @@ def runtime_functions(role, *, target=None):
                 COMPARISON_FUNCTION,
                 ARCHIVE_RENEWAL_FUNCTION,
                 RECIPIENT_OUTCOMES_FUNCTION,
+                ADDRESS_RETRIES_FUNCTION,
             },
             ServiceRole.CONFIG_INSTALLER: {
                 MINISTRY_CATALOG_FUNCTION,
                 LEADER_CHANGES_FUNCTION,
             },
-            ServiceRole.MAIL_DISPATCH: {DISPATCH_TOKEN_FUNCTION},
+            ServiceRole.MAIL_DISPATCH: {
+                DISPATCH_TOKEN_FUNCTION,
+                ADDRESS_RETRY_OPEN_FUNCTION,
+                ADDRESS_RETRY_TOKEN_FUNCTION,
+            },
             ServiceRole.WORKER: {
                 SESSION_PURGE_FUNCTION,
                 READ_GUARD_KILLS_FUNCTION,

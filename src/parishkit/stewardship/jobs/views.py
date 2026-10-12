@@ -224,6 +224,7 @@ TASK_NAMES = {
     "weekly_digest_finalize": _("Finishing the weekly Admin report"),
     "family_mail_prepare": _("Preparing Family emails"),
     "family_mail_test": _("Test email for chosen Families"),
+    "family_address_retry": _("Sending an email again to an address refused for now"),
     "operational_collect": _("Collecting system alerts"),
     "operational_prepare": _("Preparing system alert email"),
     "operational_slack": _("Posting system alerts to Slack"),
