@@ -1,0 +1,25 @@
+{% load i18n stewardship %}{% comment %}
+Edit scheduled email's own email (#446, schedule_email). The checkbox shows
+the fields (data-show-when, which also disables them while hidden, so an
+unticked page posts no email text). They open below the checkbox, so ticking
+it moves nothing above or under the pointer. ui-v1.js fills them from the
+email chosen in Email to send when the box is ticked, and again when the
+choice changes while the reader has not edited them; Reset to the default
+text fills the built-in default. The texts come from
+data-schedule-email-sources (json_script). "Generate plain text from HTML"
+is the content editors' own panel and script (data-plain-text), so the
+plain text a save stores is shown as it is typed. The HTML source is edited
+directly; the visual editor and the campaign banner choice stay on Pages and
+emails.
+{% endcomment %}<div class="schedule-email" data-schedule-email>
+<div>{{ email_toggle.edit_email.as_field_group }}</div>
+<fieldset class="panel" data-show-when="edit_email=on"><legend>{% translate "This schedule's email" %}</legend>
+<p class="help">{% translate "These fields start from the email chosen in Email to send. Once you edit them or reset them to the default text, choosing another email keeps your text; to start again from a saved email, choose Cancel and edit this schedule again. Only this schedule sends what you save here." %}</p>
+<p>{% button type="button" variant="secondary" data-schedule-email-reset %}{% translate "Reset to the default text" %}{% endbutton %}</p>
+{{ email.non_field_errors }}
+<div>{{ email.subject.as_field_group }}</div>
+<div>{{ email.html.as_field_group }}</div>
+<div data-plain-text data-plain-text-url="{% url 'admin:content_plain_text' %}">{{ email.generate_text.as_field_group }}<p class="help" data-generated-note hidden>{% translate "Generated from the HTML version. This is the plain text a save will store." %} {% button type="button" variant="secondary" data-edit-plain-text %}{% translate "Edit plain text" %}{% endbutton %}</p><p class="help" data-generated-unavailable hidden role="status">{% translate "The generated plain text could not be shown just now; saving still generates it from the HTML version." %}</p>{{ email.text.as_field_group }}</div>
+</fieldset>
+{{ email_sources|json_script:"schedule-email-sources" }}
+</div>

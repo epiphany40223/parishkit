@@ -28,6 +28,9 @@ from .schedule_list_components import (
     DATES_STALE,
     EDIT,
     EDIT_DIGEST,
+    EDIT_EMAIL_REFUSED,
+    EDIT_INITIAL,
+    EMAIL_REFUSAL,
     FAILED,
     LIST,
     NEW,
@@ -889,3 +892,260 @@ def test_a_stale_date_change_is_refused_in_the_dialog(page, component_origin):
     shown.get_by_role("button", name="Cancel").click()
     hidden(shown)
     assert page.locator('[name="window-end_date"]').input_value() == DATES_END
+
+
+def generated_text(page):
+    """Answer the plain-text preview as the server does, from the posted HTML.
+
+    The text is the HTML with its tags removed, which is what the server's
+    generation gives for these single-paragraph emails.
+    """
+
+    def answer(route):
+        html = parse_qs(route.request.post_data or "")["html"][0]
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(
+                {"html": html, "text": re.sub("<[^>]+>", "", html), "removed": []}
+            ),
+        )
+
+    page.route("**/content/plain-text", answer)
+
+
+def page_top(locator):
+    """Where ``locator`` sits on the page, whatever the scroll position."""
+    return locator.evaluate(
+        "(node) => node.getBoundingClientRect().top + window.scrollY"
+    )
+
+
+def test_edit_offers_the_schedules_own_email_below_its_choice(
+    page, component_origin, axe_source
+):
+    """Ticking fills the fields from the chosen email; nothing above moves.
+
+    Choosing the other reminder email fills them again until they are
+    edited, after which a choice keeps the typed text; Reset to the default
+    text fills the default. The fields post only while the box is ticked.
+    """
+    page.set_viewport_size({"width": 1280, "height": 900})
+    generated_text(page)
+    page.goto(component_origin + EDIT)
+    failures = watch(page)
+    box = page.get_by_label("Edit this schedule's email")
+    subject = page.locator('[name="subject"]')
+    html = page.locator('[name="html"]')
+    text = page.locator('[name="text"]')
+    hidden(subject)
+    choice = page.locator('[name="schedule-template_version"]')
+    above, box_at = page_top(choice), page_top(box)
+    box.check()
+    visible(subject)
+    # Opening the fields moves nothing above them or under the pointer.
+    assert (page_top(choice), page_top(box)) == (above, box_at)
+    # Reminder 1 sends the second reminder email, with hand-written plain
+    # text, so generation starts unticked.
+    generate = page.get_by_label("Generate plain text from HTML")
+    assert subject.input_value() == "reminder mail"
+    assert "A second reminder." in html.input_value()
+    assert not generate.is_checked()
+    assert text.input_value().startswith("Hand-written: a second reminder.")
+    assert axe_violations(page, axe_source) == []
+    # The other reminder email fills the fields while they are unedited.
+    saved = choice.input_value()
+    other = [
+        value
+        for value in choice.locator('option[data-kind="reminder"]').evaluate_all(
+            "(nodes) => nodes.map((node) => node.value)"
+        )
+        if value != saved
+    ][0]
+    choice.select_option(other)
+    assert "Welcome to {{ parish_name }}." in html.input_value()
+    assert generate.is_checked()
+    # Typed text is kept when another email is chosen.
+    subject.fill("Last call")
+    choice.select_option(saved)
+    assert subject.input_value() == "Last call"
+    assert "Welcome to {{ parish_name }}." in html.input_value()
+    reset = page.get_by_role("button", name="Reset to the default text")
+    reset_at = page_top(reset)
+    reset.click()
+    assert page_top(reset) == reset_at
+    assert subject.input_value() not in {"Last call", "reminder mail", ""}
+    assert "{{ family_code }}" in html.input_value()
+    # Generated plain text follows the HTML as it is typed.
+    html.fill("<p>Still time. {{ family_code }} {{ family_url }}</p>")
+    eventually(
+        page,
+        "document.querySelector('[name=\"text\"]').value"
+        " === 'Still time. {{ family_code }} {{ family_url }}'",
+    )
+    subject.fill("Last call")
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("button", name=REVIEW).click()
+    fields = posted(sent.value)
+    assert fields["edit_email"] == ["on"]
+    assert fields["subject"] == ["Last call"]
+    assert fields["html"] == ["<p>Still time. {{ family_code }} {{ family_url }}</p>"]
+    assert fields["generate_text"] == ["on"]
+    # Generated text is the server's to make; it is not posted.
+    assert "text" not in fields
+    visible(page.locator("dialog[data-review-dialog]"))
+    assert not failures
+
+
+def test_an_unticked_email_editor_posts_no_email_fields(page, component_origin):
+    """Ticked and unticked again, the page posts only the schedule."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    generated_text(page)
+    page.goto(component_origin + EDIT)
+    failures = watch(page)
+    box = page.get_by_label("Edit this schedule's email")
+    box.check()
+    page.locator('[name="subject"]').fill("Changed")
+    box.uncheck()
+    hidden(page.locator('[name="subject"]'))
+    page.locator('[name="schedule-time"]').fill("10:30")
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("button", name=REVIEW).click()
+    fields = posted(sent.value)
+    for name in ("edit_email", "subject", "html", "generate_text", "text"):
+        assert name not in fields
+    assert fields["schedule-time"] == ["10:30"]
+    assert not failures
+    # New picks a saved email; only Edit offers the schedule's own.
+    page.goto(component_origin + NEW)
+    assert page.get_by_label("Edit this schedule's email").count() == 0
+
+
+def test_a_never_ticked_email_editor_posts_no_email_fields(page, component_origin):
+    """Hand-written plain text stays unsent while the box was never ticked.
+
+    Reminder 1's email has hand-written plain text, so "Generate plain text
+    from HTML" starts unticked and the plain-text panel leaves its field
+    editable; inside the hidden group it must stay disabled even after the
+    first load's pageshow.
+    """
+    page.set_viewport_size({"width": 1280, "height": 900})
+    generated_text(page)
+    page.goto(component_origin + EDIT)
+    failures = watch(page)
+    assert not page.get_by_label("Edit this schedule's email").is_checked()
+    assert page.locator('[name="text"]').is_disabled()
+    page.locator('[name="schedule-time"]').fill("10:30")
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("button", name=REVIEW).click()
+    fields = posted(sent.value)
+    for name in ("edit_email", "subject", "html", "generate_text", "text"):
+        assert name not in fields
+    assert fields["schedule-time"] == ["10:30"]
+    assert not failures
+
+
+def test_the_schedules_own_email_counts_toward_review_changes(page, component_origin):
+    """The email's fields count as changes; the checkbox alone does not.
+
+    Ticking "Edit this schedule's email" shows the saved email's text, which
+    is no change; editing it makes Review changes available, and putting it
+    back or unticking the box makes it unavailable again (#446, #750).
+    """
+    page.set_viewport_size({"width": 1280, "height": 900})
+    generated_text(page)
+    page.goto(component_origin + EDIT)
+    failures = watch(page)
+    button = page.get_by_role("button", name=REVIEW)
+    assert button.is_disabled()
+    box = page.get_by_label("Edit this schedule's email")
+    box.check()
+    subject = page.locator('[name="subject"]')
+    visible(subject)
+    assert button.is_disabled()
+    subject.fill("Last call")
+    assert button.is_enabled()
+    subject.fill("reminder mail")
+    assert button.is_disabled()
+    html = page.locator('[name="html"]')
+    saved = html.input_value()
+    html.fill(saved.replace("A second reminder.", "Still time."))
+    assert button.is_enabled()
+    box.uncheck()
+    assert button.is_disabled()
+    assert not failures
+
+
+def test_a_refused_email_is_marked_at_its_html_source(page, component_origin):
+    """A refusal of the whole edited email stays on the form, at the HTML.
+
+    The dialog stays shut; the message is placed before the HTML source, which
+    is marked invalid and described by it, and the summary links to it.
+    """
+    page.set_viewport_size({"width": 1280, "height": 900})
+    generated_text(page)
+    page.goto(component_origin + EDIT_EMAIL_REFUSED)
+    failures = watch(page)
+    page.get_by_label("Edit this schedule's email").check()
+    page.locator('[name="subject"]').fill("Refused")
+    page.get_by_role("button", name=REVIEW).click()
+    summary = page.locator("[data-error-summary]")
+    visible(summary)
+    eventually(page, "document.activeElement?.matches('[data-error-summary]')")
+    assert not page.locator("dialog[data-review-dialog]").is_visible()
+    html = page.locator('[name="html"]')
+    message = page.locator("#id_html_error")
+    visible(message)
+    assert message.inner_text() == EMAIL_REFUSAL
+    assert html.get_attribute("aria-invalid") == "true"
+    assert "id_html_error" in html.get_attribute("aria-describedby")
+    link = summary.locator('a[href="#id_html"]')
+    assert link.inner_text() == EMAIL_REFUSAL
+    link.click()
+    eventually(page, "document.activeElement?.name === 'html'")
+    # The reader's text stays.
+    assert page.locator('[name="subject"]').input_value() == "Refused"
+    assert not failures
+
+
+def test_regenerated_plain_text_is_no_change(page, component_origin):
+    """Generated plain text is not sent, so the gate does not count it.
+
+    The Initial invitation's email opens with "Generate plain text from HTML"
+    ticked; today's generation answers differently from its saved text (an
+    older email), and ticking the box alone still leaves Review unavailable.
+    """
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.route(
+        "**/content/plain-text",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps({"html": "", "text": "Regenerated.", "removed": []}),
+        ),
+    )
+    page.goto(component_origin + EDIT_INITIAL)
+    failures = watch(page)
+    button = page.get_by_role("button", name=REVIEW)
+    text = page.locator('[name="text"]')
+    # Its saved text, which the generated preview replaces on load.
+    saved = text.evaluate("(node) => node.defaultValue")
+    assert saved != "Regenerated."
+    page.get_by_label("Edit this schedule's email").check()
+    assert page.get_by_label("Generate plain text from HTML").is_checked()
+    eventually(
+        page, "document.querySelector('[name=\"text\"]').value === 'Regenerated.'"
+    )
+    assert button.is_disabled()
+    # The gate runs again on the next edit, with the regenerated text shown;
+    # a subject typed and put back is still no change.
+    subject = page.locator('[name="subject"]')
+    original = subject.input_value()
+    subject.fill("Changed")
+    assert button.is_enabled()
+    subject.fill(original)
+    assert button.is_disabled()
+    # Choosing to edit the plain text makes it count again.
+    page.get_by_label("Generate plain text from HTML").uncheck()
+    assert button.is_enabled()
+    assert not failures
