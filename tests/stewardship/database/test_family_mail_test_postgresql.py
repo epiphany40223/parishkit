@@ -1386,3 +1386,151 @@ def test_reviewed_families_show_the_surname_and_heads(family_test):
         assert known["name"].startswith(f"{surname}, ")
     assert unknown["duid"] == 999999 and unknown["name"] == ""
     assert known["name"].encode() in page.content
+
+
+def test_revoked_admin_or_unscheduled_template_cancels_a_prepared_test(family_test):
+    """Dispatch rechecks the ticket's durable scope, not only preparation (#382 L6).
+
+    A later publish alone does not cancel a prepared test; losing the
+    requesting Administrator's authority, or the template leaving every
+    current invitation and reminder schedule while the configuration still
+    carries it, cancels it unsent before any provider call.
+    """
+    harness, browser, path, _ = family_test
+    for _ in range(3):
+        request_tickets(browser, path, [1])
+    first, second, third = prepare_tests(harness)
+    requester = FamilyMailTest.objects.get(outbox_id=first.pk).requested_by_id
+    definition = ScheduleDefinition.objects.get()
+    replacement = content(
+        str(harness.campaign.pk),
+        kind="email",
+        slot="initial",
+        html="<p>Replaced {{ family_code }} {{ family_url }}</p>",
+        text="Replaced {{ family_code }} {{ family_url }}",
+    )
+    store = harness.service.store
+    assert (
+        change(
+            store,
+            store.active(),
+            uuid4(),
+            [{"operation": "add", "section": "content", **replacement}],
+        ).state
+        == "applied"
+    )
+    assert deliver(harness, first) is not None
+    assert first.state == "delivered"
+    PortalUser.objects.filter(pk=requester).update(
+        disabled=True, version=F("version") + 1
+    )
+    assert deliver(harness, second) is None
+    assert second.state == "cancelled" and second.reason == "scope_replaced"
+    assert second.attempt == 0
+    # Re-enabling is refused in SQL (#306); only the owner can undo it.
+    with unguarded():
+        PortalUser.objects.filter(pk=requester).update(
+            disabled=False, version=F("version") + 1
+        )
+    original = FamilyMailTest.objects.get(outbox_id=third.pk).template.record_id
+    assert (
+        change(
+            store,
+            store.active(),
+            uuid4(),
+            [
+                {
+                    "operation": "update",
+                    "section": "schedules",
+                    "id": str(definition.pk),
+                    "values": {
+                        "template_version": replacement["id"],
+                        "subject": replacement["values"]["subject"],
+                    },
+                }
+            ],
+        ).state
+        == "applied"
+    )
+    # The configuration still carries the template; no schedule uses it.
+    from parishkit.stewardship.accounts.content_models import ContentVersion
+    from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+
+    assert ContentVersion.objects.filter(
+        configuration_id=SystemConfiguration.objects.get().active_configuration_id,
+        record_id=original,
+    ).exists()
+    assert deliver(harness, third) is None
+    assert third.state == "cancelled" and third.reason == "scope_replaced"
+    assert third.attempt == 0
+    assert FamilyMailTest.objects.filter(state="prepared").count() == 3
+
+
+def go_live_gate(campaign, value):
+    """Set or clear the go-live gate as the schema owner, guards suspended.
+
+    Only the owned go-live journal may set it at runtime; this disposable
+    fixture edit isolates dispatch's response to the gate itself.
+    """
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(
+            "ALTER TABLE stewardship_campaign_credentials DISABLE TRIGGER USER"
+        )
+        cursor.execute(
+            "UPDATE stewardship_campaign_credentials SET go_live_gate=%s "
+            "WHERE campaign_id=%s",
+            [value, campaign.pk],
+        )
+        cursor.execute(
+            "ALTER TABLE stewardship_campaign_credentials ENABLE TRIGGER USER"
+        )
+
+
+def test_go_live_gate_holds_a_prepared_test_without_cancelling(family_test):
+    """The shared scope refuses during a go-live gate; dispatch must only hold.
+
+    The gate is checked before the durable scope (#382 L6), so the test
+    stays pending with no attempt spent and is live again once the gate clears.
+    """
+    from parishkit.stewardship.jobs.family_mail_dispatch import (
+        FamilyDeliveryHeld,
+        disposition,
+    )
+
+    harness, browser, path, _ = family_test
+    request_tickets(browser, path, [1])
+    (message,) = prepare_tests(harness)
+    go_live_gate(harness.campaign, True)
+    with pytest.raises(FamilyDeliveryHeld, match="campaign authority"):
+        deliver(harness, message)
+    message.refresh_from_db()
+    assert message.state == "pending" and message.attempt == 0
+    assert FamilyMailTest.objects.get(outbox_id=message.pk).state == "prepared"
+    go_live_gate(harness.campaign, False)
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True), work_transaction():
+        assert disposition(message) is None
+
+
+@pytest.mark.parametrize("waiting", ["pending", "retry_wait"])
+def test_test_held_behind_an_uncertain_email_says_why(family_test, waiting):
+    """A test waiting on another "Not sure it arrived" email names that wait."""
+    harness, browser, path, _ = family_test
+    request_tickets(browser, path, [1])
+    request_tickets(browser, path, [1])
+    first, second = prepare_tests(harness)
+    if waiting == "retry_wait":
+        # A definite non-acceptance first, then the sibling turns uncertain.
+        deliver(harness, second, Status.TRANSIENT)
+        assert second.state == "retry_wait"
+    deliver(harness, first, Status.UNKNOWN)
+    assert first.state == "delivery_unknown"
+    with web_login():
+        page = browser.get(path)
+    assert page.status_code == 200, page.content
+    items = {item["id"]: item for item in page.context["items"]}
+    held = items[FamilyMailTest.objects.get(outbox_id=second.pk).pk]
+    uncertain = items[FamilyMailTest.objects.get(outbox_id=first.pk).pk]
+    assert held["message_state"] == waiting and held["behind_unknown"]
+    assert "until then this test waits" in held["label"]
+    assert not uncertain["behind_unknown"]
+    assert uncertain["label"] == "Not sure it arrived"

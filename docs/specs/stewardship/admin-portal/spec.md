@@ -2659,7 +2659,9 @@ server-side session across that
 review returns for the Administrator to confirm; nothing is sent automatically.
 A stale confirmation is refused with a page that says nothing was sent. After a
 send, the page confirms how many tests were requested and refreshes their
-status while any is still on its way.
+status while any is still on its way. A test waiting behind another Testing
+email to the same Family that is marked "Not sure it arrived" says so and
+points to Outgoing mail; until that email is resolved there, the test waits.
 
 Every other fresh-authentication action refused from a submitted form says that
 nothing was done or sent and offers the same step-up; forms that carry a secret,

@@ -100,6 +100,13 @@ def _action(request):
 
 def _label(item):
     """Describe a ticket by its message once one exists, never by stale intent."""
+    if item["behind_unknown"]:
+        # Held until the Admin settles the other email; it still counts
+        # toward the ten-test limit and Testing cleanup until then.
+        return _(
+            "Waiting: another email to this Family is marked “Not sure it "
+            "arrived”. Resolve it on Outgoing mail; until then this test waits."
+        )
     if item["message_state"] is not None:
         return MESSAGE_LABELS.get(item["message_state"], _("Unknown status"))
     if item["state"] == "prepared":

@@ -744,7 +744,9 @@ including the chosen-Family test sends (outbox purpose `family_test`, Testing
 mode only), which never create or satisfy a scheduled occurrence. The general
 worker's `family_mail_test` task prepares each one; a restore review, a campaign
 work gate or a dirty or stale source population holds it without spending its
-retry budget, while a lasting loss of scope, a Family that stays ineligible
+retry budget, while a lasting loss of scope (at dispatch too: the requesting
+Administrator's authority, or the template leaving every current invitation
+and reminder schedule), a Family that stays ineligible
 after a clean reconciliation or preparation that keeps failing cancels it, so
 no test message is left unfinished. A scheduler sweep settles tickets whose
 task ended.
