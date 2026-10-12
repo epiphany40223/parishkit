@@ -26,12 +26,18 @@ The change document (default, pending Administrator confirmation) is JSON::
      "schedules": [{"id": "<saved>", "time": "10:00:00"},
                    {"id": "<saved>", "delete": true},
                    {"kind": "reminder", "date": "...", "time": "...",
-                    "template_version": "<uuid>"}]}
+                    "template_version": "<uuid>"},
+                   {"repeat": {"frequency": "weekly", "start": "...",
+                               "end": "...", "weekdays": [0, 3]},
+                    "time": "...", "template_version": "<uuid>"}]}
 
 A saved schedule named by ``id`` keeps every field the document leaves out;
 ``delete`` removes it; an entry without ``id`` adds a schedule. Saved
 schedules the document does not name stay as they are: as on the page,
-omission never removes one. ``window`` (any of its fields) changes the
+omission never removes one. A ``repeat`` entry (#469) adds one ordinary
+reminder per date its rule gives (``campaigns.recurrence``), each with the
+entry's ``time`` and ``template_version``, exactly as if the document listed
+them one by one. ``window`` (any of its fields) changes the
 campaign's dates only while they may still change; for a live campaign
 (scheduled or open in Production, #912) only ``end_date`` may change, and
 confirming it binds the exceptional end-date intent as the page does.
@@ -39,12 +45,14 @@ confirming it binds the exceptional end-date intent as the page does.
 
 import json
 from dataclasses import dataclass
+from datetime import date
 from uuid import UUID
 
 from django.db import DatabaseError
 from django.http import QueryDict
 
 from .admin_reads import NotAvailable, ReadModel, _held, _recheck, config_request
+from .campaigns.recurrence import canonical_rule, expand
 
 # The page's limits: a signed preview of at most 256,000 characters, and a
 # formset of at most 101 rows.
@@ -53,6 +61,25 @@ CHANGES_LIMIT = 256_000
 ROW_LIMIT = 101
 WINDOW_FIELDS = ("timezone", "start_date", "end_date", "overlap_confirmed")
 ROW_FIELDS = ("kind", "date", "time", "weekday", "template_version")
+# A repeat entry's members besides its rule (#469). It always adds
+# reminders, so it takes no kind, and its rule gives the dates.
+REPEAT_FIELDS = ("time", "template_version")
+# The most reminders one repeat adds, as on New scheduled email
+# (schedule_entry_views.REPEAT_LIMIT).
+REPEAT_LIMIT = 30
+# The page script's messages for each rule ``recurrence.expand`` refuses.
+RULE_ERRORS = {
+    "dates": "Choose the first and last dates to repeat on.",
+    "order": "The last date is before the first.",
+    "span": "Repeat over at most a year.",
+    "weekdays": "Choose at least one day of the week.",
+    "monthly": "Choose a day of the month from 1 to 31, or a weekday.",
+    "frequency": "Choose how often to repeat.",
+}
+# The internal key naming an added entry in field errors: ``new<n>``, or
+# ``new<n>.<date>`` for one date of a repeat. A document cannot carry it,
+# since parse_changes refuses unknown members before adding it.
+LABEL = "_label"
 # What each field of a change document may hold, as JSON.
 FIELD_TYPES = {
     "timezone": (str,),
@@ -92,14 +119,59 @@ def _typed(name, value):
     return isinstance(value, FIELD_TYPES[name])
 
 
+def _repeat(entry, label):
+    """The reminder entries a ``repeat`` entry adds, one per date of its rule.
+
+    The rule must be valid in every member (``canonical_rule`` admits no
+    stray types), skip no month for want of its day, and give from one to
+    REPEAT_LIMIT dates; otherwise this is a ``ValueError`` with the page's
+    message where it has one. Unlike the page's panel, which leaves out the
+    dates that do not fit, every date is added: automation should not drop a
+    date silently, so a date the forms refuse refuses the whole change, named
+    ``<label>.<date>``, and so does a month the rule would skip.
+    """
+    if set(entry) - {"repeat", *REPEAT_FIELDS} or not all(
+        _typed(name, entry[name]) for name in REPEAT_FIELDS if name in entry
+    ):
+        raise ValueError("A repeat takes only its rule, time and template_version.")
+    rule = canonical_rule(entry["repeat"])
+    if rule is None:
+        # canonical_rule refuses exactly the rules expand names an error for.
+        raise ValueError(RULE_ERRORS[expand(entry["repeat"])["error"]])
+    expanded = expand(rule)
+    if expanded["missing"]:
+        months = ", ".join(
+            date.fromisoformat(f"{month}-01").strftime("%B %Y")
+            for month in expanded["missing"]
+        )
+        raise ValueError(
+            f"The repeat's day of the month is not in {months}; choose a day "
+            "every month in the range has, or a shorter range."
+        )
+    dates = expanded["dates"]
+    if not 1 <= len(dates) <= REPEAT_LIMIT:
+        raise ValueError(
+            f"A repeat adds from 1 to {REPEAT_LIMIT} reminders; this one gives "
+            f"{len(dates)} dates."
+        )
+    fields = {name: entry[name] for name in REPEAT_FIELDS if name in entry}
+    return [
+        {"kind": "reminder", "date": day, **fields, LABEL: f"{label}.{day}"}
+        for day in dates
+    ]
+
+
 def parse_changes(text):
     """Parse and check the shape of a change document; values are the forms' job.
 
     Refuses (``ValueError``, ``invalid``) anything but an object with
     ``window`` and ``schedules``, unknown or mistyped members, a ``delete``
     without a saved ``id``, a repeated ``id``, a ``kind`` on a saved
-    schedule (its mail type never changes), an empty new entry and more rows
-    than the page takes. Returns ``{"window": dict, "schedules": list}``.
+    schedule (its mail type never changes), an empty new entry, a repeat
+    ``_repeat`` refuses, and more rows than the page takes, before or after
+    the repeats are expanded. Returns ``{"window": dict, "schedules": list}``:
+    each repeat is replaced by its reminders, and each added entry carries
+    its ``LABEL``.
     """
     if len(text) > CHANGES_LIMIT:
         raise ValueError("The change document is too long.")
@@ -120,7 +192,13 @@ def parse_changes(text):
     if not isinstance(rows, list) or len(rows) > ROW_LIMIT:
         raise ValueError("The change document's schedules are not valid.")
     seen = set()
+    entries = []
+    added = 0
     for row in rows:
+        if isinstance(row, dict) and "repeat" in row:
+            entries.extend(_repeat(row, f"new{added}"))
+            added += 1
+            continue
         if (
             not isinstance(row, dict)
             or set(row) - {"id", "delete", *ROW_FIELDS}
@@ -140,7 +218,13 @@ def parse_changes(text):
             row["delete"] is not True or "id" not in row or set(row) != {"id", "delete"}
         ):
             raise ValueError("Only a saved schedule can be deleted, by id alone.")
-    return {"window": window, "schedules": rows}
+        if "id" not in row:
+            row = row | {LABEL: f"new{added}"}
+            added += 1
+        entries.append(row)
+    if len(entries) > ROW_LIMIT:
+        raise ValueError("The change document's schedules are not valid.")
+    return {"window": window, "schedules": entries}
 
 
 def _text(value):
@@ -210,7 +294,9 @@ def form_data(changes, previous, campaign, *, editable, base_digest, end_only=Fa
         index = len(rows) + offset
         for name in ROW_FIELDS:
             data[f"schedules-{index}-{name}"] = _text(entry.get(name))
-        identifiers.append(f"new{offset}")
+        # parse_changes labels each added entry (a repeat's by its date);
+        # the pages' own entries are numbered here.
+        identifiers.append(entry.get(LABEL, f"new{offset}"))
     initial = _window_initial(campaign)
     window = initial | changes["window"]
     if not editable:
