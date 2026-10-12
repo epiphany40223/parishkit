@@ -6,6 +6,8 @@ not checked: the Family's Testing credential exists only while the rehearsal
 epoch is active, and the Family portal keeps its own date gates.
 """
 
+from django.db import connection
+
 from parishkit.stewardship.accounts.content_models import ContentVersion
 from parishkit.stewardship.campaigns.credential_models import (
     CampaignCredentialState,
@@ -26,6 +28,7 @@ TICKET_FIELDS = (
     "campaign_id",
     "configuration_id",
     "template_id",
+    "requested_by_id",
     "rehearsal_epoch_id",
     "outbox_id",
     "state",
@@ -65,12 +68,39 @@ def family_test_template(message):
     )
 
 
+def _ticket_scope_live(ticket, configuration_id, template_version_id):
+    """The ticket's durable SQL scope, judged against the current configuration.
+
+    ``stewardship_family_test_scope_v1`` is the check the ticket guard, the
+    preparation worker and the queued-ticket sweep already share: the
+    requesting Administrator still holds live Administrator authority, and a
+    current invitation or reminder schedule still uses the template. A
+    prepared test re-renders from the active configuration, so it is checked
+    with that configuration's version of the template record rather than the
+    one the Admin reviewed; a later publish alone does not cancel it (#382 L6).
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT public.stewardship_family_test_scope_v1(%s,%s,%s,%s,%s)",
+            [
+                configuration_id,
+                ticket.campaign_id,
+                template_version_id,
+                ticket.requested_by_id,
+                ticket.rehearsal_epoch_id,
+            ],
+        )
+        return cursor.fetchone() == (True,)
+
+
 def family_test_disposition(message):
     """Cancel a test whose scope is gone for good; hold only on temporary gates.
 
     An unsent test that nothing will ever settle would block Testing cleanup,
-    so every durable loss (mode, campaign, epoch, template record, lasting
-    Family ineligibility after a clean reconciliation) is a cancellation.
+    so every durable loss (mode, campaign, epoch, template record, the
+    template leaving every current invitation and reminder schedule, the
+    requesting Administrator's authority, lasting Family ineligibility after
+    a clean reconciliation) is a cancellation, recorded as definitely unsent.
     """
     from .family_mail_dispatch import FamilyDeliveryHeld
 
@@ -78,6 +108,16 @@ def family_test_disposition(message):
     scope = _scope(message.campaign_id)
     runtime, campaign = scope.runtime, scope.campaign
     population = CampaignCredentialState.objects.filter(campaign=campaign).first()
+    template = (
+        ContentVersion.objects.filter(
+            configuration_id=runtime.active_configuration_id,
+            campaign_id=campaign.pk,
+            kind="email",
+            record_id=family_test_template(message),
+        )
+        .values_list("pk", flat=True)
+        .first()
+    )
     # Mode, campaign, draft state and epoch are irreversible for this message,
     # as is a configuration that no longer carries the ticket's template record.
     if (
@@ -89,12 +129,7 @@ def family_test_disposition(message):
         or not RehearsalEpoch.objects.filter(
             pk=ticket.rehearsal_epoch_id, campaign=campaign, state="active"
         ).exists()
-        or not ContentVersion.objects.filter(
-            configuration_id=runtime.active_configuration_id,
-            campaign_id=campaign.pk,
-            kind="email",
-            record_id=family_test_template(message),
-        ).exists()
+        or template is None
     ):
         return "scope_replaced"
     if (
@@ -105,6 +140,10 @@ def family_test_disposition(message):
         .exists()
     ):
         raise FamilyDeliveryHeld("Family test awaits current campaign authority.")
+    # Checked after the temporary gates: the shared SQL scope also refuses
+    # during a go-live gate, which holds a test rather than cancelling it.
+    if not _ticket_scope_live(ticket, runtime.active_configuration_id, template):
+        return "scope_replaced"
     if (
         population.population_dirty
         or not SourceCurrent.objects.filter(

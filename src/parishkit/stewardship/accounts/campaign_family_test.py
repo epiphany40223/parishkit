@@ -386,11 +386,37 @@ def request_tests(
         return rows
 
 
+def _behind_unknown(campaign_id, messages):
+    """Which waiting tests sit behind another Testing email marked not sure.
+
+    Dispatch holds a test while any other Testing email to the same Family is
+    ``delivery_unknown`` (``family_test_disposition``). Nothing settles that
+    by itself, so the page says so instead of only "Still sending" (#382 L6).
+    A ``submitting`` sibling is not named: it settles within minutes.
+    """
+    waiting = {
+        message["family_id"]
+        for message in messages.values()
+        if message["state"] in {"pending", "retry_wait"}
+    }
+    if not waiting:
+        return set()
+    return set(
+        OutboxMessage.objects.filter(
+            campaign_id=campaign_id,
+            mode="testing",
+            family_id__in=waiting,
+            state="delivery_unknown",
+        ).values_list("family_id", flat=True)
+    )
+
+
 def recent_tickets(campaign_id, *, limit=25):
     """Status rows for the page: sequence, ticket state, message state and DUID.
 
     A queued ticket still names its Family; a prepared one is followed through
-    its outbox message, which keeps the Family until Testing cleanup.
+    its outbox message, which keeps the Family until Testing cleanup. A
+    waiting message also says whether it is held behind an uncertain email.
     """
     rows = list(
         FamilyMailTest.objects.filter(campaign_id=campaign_id)
@@ -411,6 +437,7 @@ def recent_tickets(campaign_id, *, limit=25):
             pk__in=[row.outbox_id for row in rows if row.outbox_id is not None]
         ).values("id", "state", "family_id")
     }
+    behind = _behind_unknown(campaign_id, messages)
     duids = dict(
         FamilyCampaign.objects.filter(
             pk__in={
@@ -431,6 +458,9 @@ def recent_tickets(campaign_id, *, limit=25):
                 "sequence": row.sequence,
                 "state": row.state,
                 "message_state": None if message is None else message["state"],
+                "behind_unknown": message is not None
+                and message["state"] in {"pending", "retry_wait"}
+                and family_id in behind,
                 "duid": duids.get(family_id),
             }
         )
