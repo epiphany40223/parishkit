@@ -302,6 +302,103 @@
       "expected": {
         "error": "frequency"
       }
+    },
+    {
+      "name": "a day and a weekday of the month together",
+      "rule": {
+        "frequency": "monthly",
+        "start": "2054-10-01",
+        "end": "2054-10-31",
+        "monthly": {
+          "day": 5,
+          "ordinal": 2,
+          "weekday": 1
+        }
+      },
+      "expected": {
+        "error": "monthly"
+      }
+    },
+    {
+      "name": "an out-of-range day with a valid weekday of the month",
+      "rule": {
+        "frequency": "monthly",
+        "start": "2054-10-01",
+        "end": "2054-10-31",
+        "monthly": {
+          "day": 40,
+          "ordinal": 2,
+          "weekday": 1
+        }
+      },
+      "expected": {
+        "error": "monthly"
+      }
+    },
+    {
+      "name": "a list among the weekdays",
+      "rule": {
+        "frequency": "weekly",
+        "start": "2054-10-01",
+        "end": "2054-10-31",
+        "weekdays": [
+          [
+            0
+          ]
+        ]
+      },
+      "expected": {
+        "error": "weekdays"
+      }
+    },
+    {
+      "name": "an object among the weekdays",
+      "rule": {
+        "frequency": "weekly",
+        "start": "2054-10-01",
+        "end": "2054-10-31",
+        "weekdays": [
+          {}
+        ]
+      },
+      "expected": {
+        "error": "weekdays"
+      }
+    },
+    {
+      "name": "a weekday out of range",
+      "rule": {
+        "frequency": "weekly",
+        "start": "2054-10-01",
+        "end": "2054-10-31",
+        "weekdays": [
+          0,
+          7
+        ]
+      },
+      "expected": {
+        "error": "weekdays"
+      }
+    },
+    {
+      "name": "weekdays a daily rule does not use are ignored",
+      "rule": {
+        "frequency": "daily",
+        "start": "2054-10-05",
+        "end": "2054-10-06",
+        "weekdays": [
+          [
+            0
+          ]
+        ]
+      },
+      "expected": {
+        "dates": [
+          "2054-10-05",
+          "2054-10-06"
+        ],
+        "missing": []
+      }
     }
   ]
 }

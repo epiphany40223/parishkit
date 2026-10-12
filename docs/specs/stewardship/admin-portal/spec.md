@@ -2484,7 +2484,10 @@ invitations and
 reminders](../background-processing/spec.md#family-invitations-and-reminders)).
 The server checks each date as it checks any reminder, and refuses more than 30
 at once. The rule itself is not saved; its fields are posted only so a refused
-page shows them again. The page script's expansion runs the shared case table
+page shows them again. The page script's expansion and the server's
+(`campaigns/recurrence.py`, used by the command line's
+[repeat entry](../admin-automation/spec.md#schedules-and-configuration)) both
+run the shared case table
 `tests/stewardship/fixtures/recurrence_cases.json`. Repeat is offered on New
 only: a saved reminder is changed one at a time. The first-campaign step keeps
 its **Repeat a reminder** panel below the schedule rows, which appends one
