@@ -551,7 +551,7 @@ def test_a_requested_backup_reads_as_the_page_words_it():
     assert status("expired", age=40, done=40) == "restored"
     for code, words in (
         ("waiting", "is waiting for the server"),
-        ("held", "is waiting for the email send to finish"),
+        ("held", "was held while a Family email send was in progress"),
         ("not_picked_up", "The server did not pick up the backup requested at"),
         ("running", "is running; it started at"),
         ("did_not_finish", "did not finish."),

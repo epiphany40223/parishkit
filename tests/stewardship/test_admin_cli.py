@@ -65,6 +65,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "go-live progress",
         "system health",
     }
+    # Take a backup now (ADM-13 PR 3b), catalogued with System health.
+    health = {"system backup-now"}
     changes = {
         "schedule preview",
         "schedule confirm",
@@ -142,6 +144,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert set(entries) == (
         session
         | reads
+        | health
         | changes
         | refresh
         | tests
@@ -181,6 +184,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
             in {
                 "test families",
                 "portal maintenance set",
+                "system backup-now",
                 "export regenerate",
                 "export financial",
                 "export directory",
@@ -333,6 +337,12 @@ def test_the_catalog_lists_every_command_with_its_flags():
         assert "--campaign" in campaign, name
     assert entries["task show"]["arguments"] == ["TASK_ID"]
     assert entries["system health"]["audit_event"] == "system_health_viewed"
+    # Take a backup now: full scope, keyed, fresh-gated, always asks.
+    backup = entries["system backup-now"]
+    assert backup["scope"] == "full" and backup["changes_state"]
+    assert backup["fresh_gated"] and backup["prompts"] and backup["request_key"]
+    assert backup["audit_event"] == "admin_cmd_system_backup_now"
+    assert backup["result_fields"] == ["request_id", "created", "status", "created_at"]
     for name in ("send progress", "go-live progress", "system health"):
         watch = {option["name"] for option in entries[name]["options"]}
         assert {"--watch", "--timeout"} <= watch, name
@@ -524,6 +534,7 @@ def test_every_state_change_has_a_registered_described_event():
         if (entry["audit_event"] or "").startswith("admin_cmd_")
     ]
     assert events == [
+        "admin_cmd_system_backup_now",
         "admin_cmd_schedule_confirm",
         "admin_cmd_config_request_cancel",
         "admin_cmd_refresh_start",

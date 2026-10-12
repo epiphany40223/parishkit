@@ -379,6 +379,12 @@ UNGROUPED_REASONS = {
         "rehearsal_invalidated",
         "catchup_failed",
     ),
+    # Take a backup now (#530): no group is about backups yet; the request's
+    # own progress is on System health's Backups panel.
+    "Asking the server to take a backup now; System health follows it": (
+        "backup_requested",
+        "admin_cmd_system_backup_now",
+    ),
     "Reviewing a restore from backup, an operator's recovery": (
         "restore_review_started",
         "restore_review_released",
