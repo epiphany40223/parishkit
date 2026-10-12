@@ -3,10 +3,9 @@ The body of a schedule change's review (schedule_changes.build_preview's
 context): the campaign window and financial acknowledgment when they change,
 then each schedule's change with its current and proposed schedule and its
 affected work, and, while sends block the change, why there is no Apply.
-Shared by the date-change review page (schedule-preview.html, headings from
-level 2) and the review dialog of New and Edit scheduled email
-(schedule-review.html, #750, headings from level 3 under the dialog's
-title). ``level`` is the level of each section's heading, ``sublevel`` that of
+Drawn by the review dialog of New and Edit scheduled email and of the
+date-change review (schedule-review.html, #750, headings from level 3 under
+the dialog's title). ``level`` is the level of each section's heading, ``sublevel`` that of
 the headings inside a section.
 {% endcomment %}<p class="notice">{% translate "Email already sent cannot be recalled." %}</p>
 {% if window_changes %}<section class="panel"><h{{ level }}>{% translate "Campaign window" %}</h{{ level }}><p>{% translate "Current:" %} {{ before_window.start_date|parish_date }} – {{ before_window.end_date|parish_date }} ({{ before_window.timezone }})</p><p>{% translate "Proposed:" %} {{ after_window.start_date|parish_date }} – {{ after_window.end_date|parish_date }} ({{ after_window.timezone }})</p></section>{% endif %}

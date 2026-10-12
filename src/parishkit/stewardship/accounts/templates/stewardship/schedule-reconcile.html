@@ -1,17 +1,37 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
 {% block title %}{% translate "Dates and mail schedules" %}{% endblock %}
-{% block content %}
+{% block content %}{% comment %}
+The date-change review (schedule_views._page): the proposed campaign dates
+(from Campaign settings, or a live end date's stranded mailings) with every
+schedule's editor, reviewed and applied together. Review changes posts here
+without a page load (data-review-open, UX conventions "Review dialog", #750):
+while the answer is prepared the form is inert and busy; an accepted review
+opens the shared review dialog below with schedule-review.html, whose Apply
+posts the signed preview to Dates and mail schedules, follows the change and
+then returns to the list, where the status line says what was applied. A
+review refused for the values posted keeps the dialog shut: ui-v1.js marks
+each field, shows the summary and opens the editors the answer opened. Any
+other refusal (a stale page, sends in progress, a refused Apply) shows inside
+the dialog.
+Review changes stays unavailable until the form differs from the saved
+values (data-require-change): proposed dates are drawn as the fields' values
+but carry the saved ones (data-saved-value, ScheduleWindow), so the page
+opens with Review available and reverting the dates makes it unavailable
+again. A blank added schedule is no change. Its hint keeps its space, so it
+never moves the page.
+{% endcomment %}
 <h1>{% translate "Dates and mail schedules" %}</h1>
 {% aboutpage "schedules" %}{% include 'stewardship/schedule-guide.html' with window_text=schedules.window_text campaign_timezone=schedules.timezone %}
-<p>{% translate "Preview checks all schedules together and shows what would change; nothing takes effect until you confirm and the status says Applied." %}</p>{% endaboutpage %}
+<p>{% translate "Review changes shows what would change and the work it affects; nothing takes effect until you choose Apply and it says Applied." %}</p>{% endaboutpage %}
 <p>{{ campaign.active_configuration.name }}</p>
-{% if window.proposed %}<p class="notice">{% translate "The proposed dates below have not been saved. Resolve the schedules and review the complete change before confirming." %}</p>{% endif %}
+{% if window.proposed %}<p class="notice">{% translate "The proposed dates below have not been saved. Resolve the schedules and review the complete change before applying it." %}</p>{% endif %}
 <p><a href="{% url 'admin:content_catalog' %}">{% translate "Create or edit email templates and their subjects" %}</a></p>
-<form method="post" action="{{ post_url }}">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}">
+<form method="post" action="{{ post_url }}" id="schedule-dates-form" data-review-open="schedule-dates-review" data-require-change="base_digest">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}">
 <fieldset class="panel"><legend>{% translate "Campaign window" %}</legend>
 <p class="help">{% translate "If you change the campaign dates, change or delete every mailing that would fall outside the new dates." %}</p>{% if window.live_at %}<p class="notice">{% translate "This campaign is live, so only its end date can change. Family codes and links keep working until the end date you choose." %}</p>{% elif not editable %}{% translate "They lock once the campaign goes live, and while other campaign work is running. You can still change schedules that have not sent yet. A live campaign's end date can change here while it is open and no other campaign work is running." as locked_tip %}<div class="label-row notice"><span id="window-locked">{% translate "The campaign dates and time zone can't be changed here right now." %}</span>{% include "stewardship/components/toggletip.html" with tip_id="window-locked-tip" tip_label_id="window-locked" tip_text=locked_tip %}</div>{% endif %}{{ window.as_div }}</fieldset>
 {% include 'stewardship/schedule-table.html' %}
 {% include 'stewardship/schedule-fields.html' %}
-{% button type="submit" %}{% translate "Preview changes and affected work" %}{% endbutton %}</form>
+<p>{% translate "Change the dates or a schedule to review it." as unchanged_hint %}{% include 'stewardship/components/review-changes-button.html' with hint=unchanged_hint %}</p></form>
+{% translate "Review dates and mail schedules" as review_title %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="schedule-dates-review" title=review_title apply_url=list_url return_url=list_url outcome_id="schedules-outcome" fallback="schedule-dates-form" %}
 <p><a href="{% url 'admin:campaign_settings' %}">{% translate "Return to Campaign settings" %}</a></p>
 {% endblock %}
