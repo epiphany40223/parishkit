@@ -106,7 +106,11 @@ retries return the same request/status, while key reuse with a different
 payload is rejected. Status responses include the request's applied-version
 ID/digest only after matching YAML/database activation. Lookup and retry
 require current authorization; idempotency is not a bypass of role, CSRF, or
-activation guards. [User changes](../admin-portal/spec.md#portal-user-management)
+activation guards. A retry by the same Administrator with the same capability
+returns its original request even when the confirming page's own scope check
+would now refuse a new one (for example, Create the campaign once its campaign
+exists, or an editor whose settings changed since the review), because no
+second change is recorded (#142). [User changes](../admin-portal/spec.md#portal-user-management)
 are ordinary requests made by Review and Apply; the user-management autosave
 queue this paragraph once served is retired (#952).
 

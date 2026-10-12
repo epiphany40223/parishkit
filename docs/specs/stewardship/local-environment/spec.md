@@ -584,7 +584,7 @@ meaningful data set. It requires a completed setup wizard and the one
 campaign, rather than creating a second one. Today that campaign is the
 wizard's first campaign, which finishing setup creates with its Family codes.
 Once the setup split ships
-([#786](https://github.com/epiphany40223/parishkit/issues/786)), it will be
+([#142](https://github.com/epiphany40223/parishkit/issues/142)), it will be
 created by [Create the campaign](../admin-portal/spec.md#create-the-campaign)
 and loaded by its full ParishSoft refresh. The seed,
 `families`, `--response-scale` and `now` fully determine the timeline (see
@@ -1137,7 +1137,7 @@ as pre-launch dev deploys did. Until the image carries the
 `fake` at 17 days behind real time. The step-by-step account is in the
 [developer guide](../../../guides/stewardship-local-environment.md). The developer then completes the
 real setup wizard, including its campaign pages, since that is part of what
-the environment tests. Once #786 removes those pages, the developer instead
+the environment tests. Once #142 removes those pages, the developer instead
 completes the wizard and then Create the campaign, pressing Load the
 campaign's ParishSoft data afterwards. `up` also
 builds the [fake-clock](#fake-clock) images and does all of this in fake-clock
@@ -1169,7 +1169,7 @@ whose late-added Family may not be promoted, and `reseed` is the recovery
 either way. `reseed [--response-scale m]` restores the post-setup snapshot
 (which also restores the fake configuration) and then runs `seed`. The
 post-setup snapshot is taken once the campaign exists with its Family codes
-(today at the end of setup; after #786, after Create the campaign and its
+(today at the end of setup; after #142, after Create the campaign and its
 refresh), so it always holds the unseeded campaign the seeder requires. A
 deployment set up in normal mode cannot be seeded: its rows are stamped at
 real time and the seed's clock would have to start before them; `seed`
@@ -1187,7 +1187,7 @@ the deployment runbook's post-wizard step: once the credential installers
 report `awaiting_ack`, it recreates `worker` and `mail-dispatch` from
 `compose.json` and acknowledges each request inside them, which lets the
 installer complete setup and create the campaign with its Family codes. When
-#786 removes the wizard's campaign pages, `wizard` will instead run
+#142 removes the wizard's campaign pages, `wizard` will instead run
 [Create the campaign](../admin-portal/spec.md#create-the-campaign) through
 that page's own service layer after setup, add the Initial schedule through
 the schedule editor's service layer, request the campaign's full ParishSoft

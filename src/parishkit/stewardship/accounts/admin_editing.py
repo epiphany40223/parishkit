@@ -185,6 +185,7 @@ def confirm(
     fresh=False,
     in_place=False,
     view=None,
+    first_campaign=False,
 ):
     """Admit one exact intent from the page; redirect to its request status.
 
@@ -208,6 +209,7 @@ def confirm(
         capability=capability,
         attach=attach,
         fresh=fresh,
+        first_campaign=first_campaign,
     )
     admin_navigation.remember_origin(request, receipt.request_id)
     if in_place:
@@ -328,6 +330,8 @@ def review_region(
     when the page names where to resolve them, as a live end-date review does
     for mail (#912). ``view`` is the page's own view parameters (see
     ``IN_PLACE_VIEWS``), which the status read hands on to the follow-up.
+    With ``page`` None (Create the campaign) the status polls Change status
+    without naming a page, so it never refreshes the page once applied.
     """
     if message is not None:
         errors = [{"field_id": None, "message": message}]
@@ -344,11 +348,9 @@ def review_region(
         errors = summary_errors(form) if form is not None and form.is_bound else []
     status_url = None
     if receipt is not None:
-        status_url = (
-            reverse("admin:configuration_request", args=[receipt.request_id])
-            + "?"
-            + urlencode({"in_place": page, **(view or {})})
-        )
+        status_url = reverse("admin:configuration_request", args=[receipt.request_id])
+        if page is not None:
+            status_url += "?" + urlencode({"in_place": page, **(view or {})})
     return {
         "review": review,
         "review_errors": errors,
@@ -396,6 +398,7 @@ def confirm_intent(
     capability=Capability.CONFIGURE,
     attach=None,
     fresh=False,
+    first_campaign=False,
 ):
     """Admit one exact intent; identical retries return the original receipt.
 
@@ -408,8 +411,11 @@ def confirm_intent(
     the signed preview inside the request's own durable transaction, and is
     never called on a retry. With ``fresh``, the sign-in must also still be
     fresh (``require_fresh``) when rechecked under the work lock, so a
-    sign-in that ages while waiting for the lock is refused. Returns the
-    request's ``RequestStatus``.
+    sign-in that ages while waiting for the lock is refused.
+    ``first_campaign`` is Create the campaign's confirmation (#142): its
+    intent must add exactly one campaign, and its ``current_scope`` refuses
+    unless the deployment still has none. Returns the request's
+    ``RequestStatus``.
     """
     if len(token) > 256_000:
         raise ValueError("Invalid configuration preview.")
@@ -417,8 +423,9 @@ def confirm_intent(
     if intent["actor"] != str(actor.identity):
         raise PermissionError("Preview belongs to another Administrator.")
     # Until #145 no editor may add a campaign, even with a preview signed
-    # before New campaign and Copy campaign were retired (rule 10).
-    refuse_campaign_creation(intent["patch"])
+    # before New campaign and Copy campaign were retired (rule 10). Create the
+    # campaign adds the first one; each salt keeps its previews apart.
+    refuse_campaign_creation(intent["patch"], first=first_campaign)
     key = UUID(intent["key"])
 
     def admit():
@@ -429,11 +436,16 @@ def confirm_intent(
                 return False
             if fresh:
                 require_fresh(caller)
-            configuration, snapshot = current_scope(service)
             existing = ConfigurationChangeRequest.objects.filter(
                 actor_id=actor.identity, request_key=key
             ).exists()
-            if not existing and (
+            if existing:
+                # An identical retry returns the original receipt (record_request
+                # finds it by key) even when the page's own admission no longer
+                # holds, such as Create the campaign once its campaign exists.
+                return True
+            configuration, snapshot = current_scope(service)
+            if (
                 configuration.active_configuration.digest != intent["base"]
                 or (str(snapshot) if snapshot is not None else None)
                 != intent["snapshot"]
