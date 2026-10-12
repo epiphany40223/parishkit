@@ -1045,11 +1045,14 @@ The options are the pages' own, and a value the page would refuse is exit 1
   and `--grain` (`auto`, `hour` or `day`).
 - `report information`: `--disposition` (`current_actionable`, the
   default, `superseded`, `withdrawn` or `all`), `--needed` and
-  `--completed` (`any`, `yes` or `no`), and `--start` and `--end` (days).
+  `--completed` (`any`, `yes` or `no`), and `--start` and `--end` (days
+  in the time zone `--zone` names, for example `America/New_York`, which
+  is required with them, as the page takes days in your browser's zone).
 - `report ministry`: `--activity`, `--sort`, `--page` and `--size` for the
   summary; `--ministry DUID` with `--requests join` or `--requests leave`
   counts one Ministry's list, and takes `--state`, `--history` (`current`
-  or `all`) and `--start` and `--end`.
+  or `all`) and `--start`, `--end` and `--zone`, as `report information`
+  takes them.
 
 No command takes a search: searches match names. A report the campaign does
 not include (Financial or Ministry stewardship), or no current campaign, is
@@ -1263,7 +1266,10 @@ pk-admin export fetch EXPORT_ID
   named as its form names it, for example `amount=nonzero`, `active=active`
   or `frequency=monthly` for the financial export, `disposition=all` or
   `needed=yes` for the information export, and `activity=active` (or,
-  with `--ministry`, `state=unresolved`) for the Ministry export. A filter
+  with `--ministry`, `state=unresolved`) for the Ministry export. Dates
+  (`start=` and `end=` on the information and Ministry exports) are days in
+  a time zone, so `zone=` is required with them, for example
+  `--filter start=2026-11-01 --filter zone=America/New_York`. A filter
   the page would refuse is exit 1 (`invalid`), and so are `page` and
   `size`, which the page's export form never sends. A search is refused:
   what you type there names a Family, and it would stay in your shell's
@@ -1661,3 +1667,10 @@ pk-admin users import-leaders --confirm --token -
   actions ahead of the page (Administrators only; their events).
 - `pk-admin/1` (#463, ADM-11 PR 8g): additive. `export family-timeline`
   (full scope, Administrators only, fresh-gated, prompts; its event).
+- `pk-admin/1` (#558): a change of meaning, kept on version 1. The
+  information and Ministry report dates are now days in the viewer's time
+  zone, as on their pages: `report information` and `report ministry` take
+  `--zone`, required with `--start` or `--end` (without it they are exit 1,
+  `invalid`), and their `filters` gain `zone`; the information and
+  Ministry exports need `--filter zone=…` with dates. Their only readers
+  are Administrator-run assistants.

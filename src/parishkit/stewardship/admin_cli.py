@@ -1710,6 +1710,7 @@ def report_information(args, preamble, runtime, context):
             "completed": args.completed,
             "start": args.start,
             "end": args.end,
+            "zone": args.zone,
         },
     )
 
@@ -1724,6 +1725,7 @@ def report_ministry(args, preamble, runtime, context):
         "state": args.state,
         "start": args.start,
         "end": args.end,
+        "zone": args.zone,
         "sort": args.sort,
         "page": None if args.page is None else str(args.page),
         "size": None if args.size is None else str(args.size),
@@ -2576,12 +2578,18 @@ def _report_responses_options(parser):
 
 
 def _date_options(parser):
-    """--start and --end: submitted on or after, and on or before, a day."""
+    """--start, --end and --zone: submitted on or after, and on or before, a
+    day in a time zone, as the pages take them in the browser's zone (#558)."""
     parser.add_argument(
         "--start", metavar="DATE", help="submitted on or after this day (YYYY-MM-DD)"
     )
     parser.add_argument(
         "--end", metavar="DATE", help="submitted on or before this day (YYYY-MM-DD)"
+    )
+    parser.add_argument(
+        "--zone",
+        help="the time zone --start and --end days fall in (required with them), "
+        "for example America/New_York",
     )
 
 

@@ -43,6 +43,7 @@ def test_native_filters_keep_private_state_and_reject_duplicates():
             "search": "Private Member",
             "history": "all",
             "start": "2026-01-01",
+            "zone": "America/New_York",
             "page": "2",
         },
         detail=True,
@@ -62,6 +63,21 @@ def test_native_filters_keep_private_state_and_reject_duplicates():
     ):
         with pytest.raises(ValueError):
             MinistryQuery.parse(values)
+
+
+def test_dates_need_the_browsers_zone_and_an_unused_zone_is_dropped():
+    """Days are the viewer's browser zone (#558): never guessed, never another."""
+    from parishkit.stewardship.web.dates import UnknownZone
+
+    for zone in ("", "Etc/Unknown", "../../etc/passwd", "EST5EDT "):
+        with pytest.raises(UnknownZone):
+            MinistryQuery.parse({"end": "2026-01-01", "zone": zone}, detail=True)
+    query = MinistryQuery.parse({"zone": "Etc/Unknown"}, detail=True)
+    assert query.zone == "" and query.form_values()["zone"] == ""
+    query = MinistryQuery.parse(
+        {"start": "2026-01-01", "zone": "Asia/Kathmandu"}, detail=True
+    )
+    assert query.form_values()["zone"] == "Asia/Kathmandu"
 
 
 @pytest.mark.parametrize(

@@ -1,7 +1,7 @@
 """Closed Ministry filters and a privacy-safe report projection."""
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 
 from django.db import connection
@@ -11,8 +11,10 @@ from django.utils.translation import gettext_lazy as _
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
+from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.dates import UnknownZone
 from parishkit.stewardship.web.presentation import out_of
 from parishkit.stewardship.web.refusals import UserFacingDenied
 from parishkit.stewardship.web.tables import PAGE_SIZES, Sorting
@@ -21,7 +23,8 @@ from .directories import address_lines
 from .information import parse_page
 
 PAGE_SIZE = 50
-# The installed selection (schema/ministry_reports.sql) orders and pages the
+# The installed selection (stewardship_ministry_report_v3, migration 0064,
+# through its actor-scoped stewardship_ministry_report_v4) orders and pages the
 # rows, so a heading can only choose one of its sort values. The summary sorts
 # by Ministry name or Ministry DUID (#960); Joining, Leaving, Unresolved and
 # Follow-up progress are not sortable because the selection has no order for
@@ -63,9 +66,16 @@ STATES = {
 # Row labels. Follow-up has no assignee (#552); a request still stored as
 # `assigned` from before then reads as New, because that state only ever
 # meant "has an assignee". Screens, exports and packets share these labels.
-# The frozen report selection (schema/ministry_reports.sql) still returns each
+# The frozen report selection (stewardship_ministry_report_v3) still returns each
 # row's assignee email; nothing renders it any more.
 STATE_LABELS = STATES | {"assigned": STATES["new"]}
+# Dates arrived without the browser's zone (a tab opened before #558, or a
+# zone the server's catalog lacks); they are never read in another zone.
+ZONE_MESSAGE = (
+    "The dates came without your computer's time zone. Go back, reload the "
+    "page and apply the filters again; if this repeats, check your computer's "
+    "time zone setting.\n"
+)
 # A Ministry an Administrator removed from a live campaign whose requests are
 # kept (#342); SQL marks it in_campaign false.
 NOT_IN_CAMPAIGN = "No longer in this campaign"
@@ -90,6 +100,9 @@ class MinistryQuery:
     start: str = ""
     end: str = ""
     sort: str = "name"
+    # The browser's IANA time zone, which the page script fills (#558): Start
+    # and End are whole days there.
+    zone: str = ""
     page: int = 1
     # Rows per page (web/tables.py PAGE_SIZES). The selection takes any
     # LIMIT; "All" is not offered, so a page view stays bounded.
@@ -132,6 +145,13 @@ class MinistryQuery:
                 raise ValueError("Invalid Ministry date filter.")
         if query.start and query.end and query.start > query.end:
             raise ValueError("Invalid Ministry date interval.")
+        if query.zone not in timezone_names():
+            # A date needs the browser's zone (a blank one from a tab opened
+            # before #558, or one outside the catalog, is never guessed).
+            # Without dates the zone is unused, and an unknown one is dropped.
+            if query.start or query.end:
+                raise UnknownZone("Ministry date filters need the browser's zone.")
+            query = replace(query, zone="")
         return query
 
     def form_values(self):
@@ -253,7 +273,7 @@ def within_principal(principal, capability, operational, ministries):
 def ministry_page(campaign_id, query, principal, *, ministry_id=None, action="join"):
     """Read under the response guard using its freshly resolved actor, not a cookie.
 
-    SQL derives the actor's current role scope (stewardship_ministry_report_v2,
+    SQL derives the actor's current role scope (stewardship_ministry_report_v4,
     #389 L3) and intersects it with campaign selection before reading
     requests; Python's scope is a pre-check and a cross-check. Contact
     redaction occurs inside the query, before detached values reach the
@@ -274,7 +294,7 @@ def ministry_page(campaign_id, query, principal, *, ministry_id=None, action="jo
         raise ValueError("Invalid Ministry action.")
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT stewardship_ministry_report_v2("
+            "SELECT stewardship_ministry_report_v4("
             "campaign_uuid => %s, filters => %s::jsonb, actor_uuid => %s, "
             "ministry_id => %s, request_action => %s, "
             "page_limit => %s, page_offset => %s)::text",

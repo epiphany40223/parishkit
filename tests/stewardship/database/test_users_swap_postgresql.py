@@ -245,14 +245,16 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # Objects a later closure migration's frozen file creates with plain CREATE,
 # which a full migration would otherwise fail to create again: #970's 0056,
 # #995's 0057, #1024's 0058, #1018's 0059, #528's 0060 and 0061, #530's
-# 0062 and #463's 0063 follow 0055 (#993), so they are in the swap's
-# closure too.
+# 0062, #463's 0063 and #558's 0064 follow 0055 (#993), so they are in the
+# swap's closure too.
 # Each is dropped while the swap is pending (with the trigger that uses it)
 # and, unless the test's full migration made it again, installed again
 # afterwards from its migration's frozen file. The tables 0059 to 0063
 # create (runtime_grants.CLOSURE_TABLES) are dropped and installed again with
 # their guard functions, as the base lacks them too. 0063 also alters the
-# export request (``before_timeline_exports``), which is put back first.
+# export request (``before_timeline_exports``), which is put back first, and
+# 0064 re-points the two report export capture triggers
+# (``before_report_local_days``), which are put back on the v1 captures.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -310,6 +312,19 @@ CLOSURE_CREATED = {
         "stewardship_reports",
         "0015_timeline_exports",
     ),
+    **dict.fromkeys(
+        (
+            "public.stewardship_browser_day_start_v1(date,text)",
+            "public.stewardship_information_report_v2(uuid,jsonb,integer,uuid,integer)",
+            "public.stewardship_ministry_report_v3"
+            "(uuid,jsonb,boolean,bigint[],integer,text,integer,integer)",
+            "public.stewardship_ministry_report_v4"
+            "(uuid,jsonb,uuid,integer,text,integer,integer)",
+            "public.stewardship_information_export_capture_v2()",
+            "public.stewardship_ministry_export_capture_v2()",
+        ),
+        ("stewardship_reports", "0016_report_local_days"),
+    ),
 }
 
 
@@ -357,6 +372,31 @@ def before_timeline_exports():
     ]
 
 
+def before_report_local_days():
+    """The statements that put the report export captures back before 0064.
+
+    #558's 0064 re-points the information and Ministry export snapshots'
+    capture triggers at its v2 capture functions. Dropping those functions
+    (``CLOSURE_CREATED``) drops the triggers with them, so these create
+    them again on the v1 captures, as on production's base; 0064's frozen
+    file (or the full migration) re-points them when it installs again.
+    """
+    text = (MIGRATIONS / "migrations/0064_report_local_days.sql").read_text(
+        encoding="utf-8"
+    )
+    statements = [
+        text[start : text.index(";", start) + 1]
+        for start in (
+            text.index(f"CREATE OR REPLACE TRIGGER {name}_export_capture ")
+            for name in ("information", "ministry")
+        )
+    ]
+    assert all(s.count("_export_capture_v2()") == 1 for s in statements)
+    return [
+        s.replace("_export_capture_v2()", "_export_capture_v1()") for s in statements
+    ]
+
+
 @contextmanager
 def swap_pending():
     """Put the database in the state `migrate --users-upgrade-base` leaves.
@@ -370,8 +410,9 @@ def swap_pending():
     check) and its row are put back: a transactional test's flush touches
     neither function bodies nor that table, so later tests would otherwise
     see this state. Each ``CLOSURE_CREATED`` object and ``CLOSURE_TABLES``
-    table is dropped meanwhile, and the export request is put back as it
-    was before 0063 (``before_timeline_exports``).
+    table is dropped meanwhile, the export request is put back as it was
+    before 0063 (``before_timeline_exports``) and the report export capture
+    triggers as they were before 0064 (``before_report_local_days``).
     """
     from django.db.migrations.loader import MigrationLoader
 
@@ -397,7 +438,7 @@ def swap_pending():
             cursor.execute(f"DROP TABLE public.{table} CASCADE")
         for function in CLOSURE_CREATED:
             cursor.execute(f"DROP FUNCTION {function} CASCADE")
-        for statement in before_timeline_exports():
+        for statement in (*before_timeline_exports(), *before_report_local_days()):
             cursor.execute(statement)
     try:
         yield

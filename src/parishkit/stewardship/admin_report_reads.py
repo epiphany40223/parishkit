@@ -822,7 +822,8 @@ def read_information(caller, service, filters):
     """``report information``: how many information items match the filters.
 
     ``filters`` are the queue's non-identifying filters (``disposition``,
-    ``needed``, ``completed``, ``start``, ``end``; None when not given),
+    ``needed``, ``completed``, ``start``, ``end`` and the ``zone`` the days fall
+    in, required with them (#558); None when not given),
     parsed by the page's ``InformationQuery`` (a refusal is ``invalid``).
     Records the page's ``information_viewed``, started and then succeeded.
     """
@@ -906,7 +907,8 @@ def read_ministry(caller, service, filters, *, ministry, requests):
     """``report ministry``: the Ministry summary, or one list's request count.
 
     ``filters`` are the page's (``activity``, ``history``, ``state``,
-    ``start``, ``end``, ``sort``, ``page``, ``size``; None when not given),
+    ``start``, ``end``, ``zone`` (required with dates, #558), ``sort``,
+    ``page``, ``size``; None when not given),
     parsed by the page's ``MinistryQuery``, which refuses detail filters on
     the summary (``invalid``). With ``ministry`` (a Ministry DUID, which the
     page bounds to 1 through 2**31 - 1) and ``requests`` (``join`` or
