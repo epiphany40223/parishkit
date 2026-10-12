@@ -1,5 +1,6 @@
 """Slack can be set up, replaced and removed after setup from its own page."""
 
+import re
 from dataclasses import replace
 from types import MappingProxyType
 from uuid import UUID, uuid4
@@ -258,9 +259,17 @@ def test_a_failed_slack_add_can_finish_switching(slack):
 
 
 def test_settings_alone_cannot_set_up_slack(slack):
-    """Without a token, Slack is not added and nothing is queued."""
+    """Without a token, Slack is not added and nothing is queued.
+
+    The page requires the token while Slack is not set up, and a request
+    without one is redrawn with the refusal at the token field and the
+    channel kept, not sent to an error page (#563).
+    """
     browser, store = slack["browser"], slack["service"].store
     page = browser.get(URL)
+    (field,) = re.findall(r'<input[^>]*name="candidate"[^>]*>', page.content.decode())
+    assert " required" in field
+    assert "data-require-complete" in page.content.decode()
     response = post(
         browser,
         URL,
@@ -273,5 +282,42 @@ def test_settings_alone_cannot_set_up_slack(slack):
         },
     )
     assert response.status_code == 400
+    html = response.content.decode()
+    (field,) = re.findall(r'<input[^>]*name="candidate"[^>]*>', html)
+    assert 'aria-invalid="true"' in field
+    assert "Paste the Slack bot token to set up Slack." in html
+    assert 'value="C0123ABC"' in html
+    # The error summary, focused on load, links to the token field.
+    assert re.search(
+        r'data-error-summary.*?<a href="#id_candidate">Paste the Slack bot token',
+        html,
+        re.S,
+    )
     assert not ConfigurationChangeRequest.objects.exists()
+    assert not SecretReplacementRequest.objects.exists()
+
+
+def test_a_refused_slack_set_up_keeps_its_token_required(slack):
+    """A token sent with a malformed channel is refused at the channel, and
+    the redrawn token field stays required, with its hint, for the gate."""
+    browser, store = slack["browser"], slack["service"].store
+    page = browser.get(URL)
+    response = post(
+        browser,
+        URL,
+        {
+            "action": "preview",
+            "base_digest": store.active().digest,
+            "channel_id": "general",
+            "intent": hidden(page, "intent"),
+            "candidate": TOKEN.decode(),
+        },
+    )
+    assert response.status_code == 400
+    html = response.content.decode()
+    (field,) = re.findall(r'<input[^>]*name="candidate"[^>]*>', html)
+    assert " required" in field
+    assert 'data-missing-hint="Paste the Slack bot token to set up Slack."' in field
+    assert TOKEN.decode() not in html
+    assert re.search(r'data-error-summary.*?<a href="#id_channel_id">', html, re.S)
     assert not SecretReplacementRequest.objects.exists()

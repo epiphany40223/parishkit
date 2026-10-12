@@ -3,6 +3,7 @@
 import hashlib
 import json
 import logging
+import re
 from datetime import timedelta
 from types import SimpleNamespace
 from uuid import uuid4
@@ -984,8 +985,16 @@ def test_test_access_refusals_say_what_to_fix(workspace):
 
 
 def test_test_access_without_workspace_links_to_its_setup(auth_service, google):
-    """Test access before Workspace mail says why and links to that page."""
+    """Test access before Workspace mail says why and links to that page.
+
+    The page shows it unavailable, named by that reason (#563); a request
+    sent anyway is refused with the same reason.
+    """
     browser, _ = signed_in()
+    page = browser.get(URL).content.decode()
+    (button,) = re.findall(r"<button[^>]*>(?=Test access)", page)
+    assert " disabled" in button and 'aria-describedby="backup-test-reason"' in button
+    assert "Google Workspace mail to be set up first" in page
     response = page_post(browser, {"action": "test", "target": LINK})
     assert response.status_code == 400
     assert (

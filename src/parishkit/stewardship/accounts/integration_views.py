@@ -179,6 +179,24 @@ def _checked(request, service, response):
     return response
 
 
+def _summary(*forms):
+    """The error summary of a refused settings page, linking each field (#563).
+
+    The page script focuses the summary on load, so a refusal at a field far
+    down the page (the key field) is announced; each item links to its field.
+    """
+    return [
+        {
+            "message": message,
+            "field_id": None if name == "__all__" else form[name].auto_id,
+        }
+        for form in forms
+        if form is not None and form.is_bound
+        for name, messages in form.errors.items()
+        for message in messages
+    ]
+
+
 def _page(request, configuration, target, *, form=None, credential=None, status=200):
     """Show editable settings, the optional new-key field and one status line."""
     record = _optional(configuration, target)
@@ -209,7 +227,9 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
     unavailable = False
     if target in ROTATING_TARGETS and credential is None and not pending:
         try:
-            credential = _inline_credential_form(configuration, request, target)
+            credential = _inline_credential_form(
+                configuration, request, target, required=not configured
+            )
         except IntegrationUnavailable:
             # Settings stay editable while the key installer is unavailable.
             unavailable = True
@@ -231,6 +251,11 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
             "summary": latest,
             "pending": pending,
             "configured": configured,
+            "errors": _summary(form, credential) if status == 400 else [],
+            # Save waits for every required field (#563). ParishSoft's
+            # refresh schedule editor gates Save itself (refresh-schedule-v1.js,
+            # whose gate does not share the page script's), so it keeps that.
+            "complete_gate": form.schedule is None,
             "removable": configured and target in REMOVABLE,
             "configuration": configuration,
             "full_refresh": (
@@ -370,8 +395,12 @@ def _test_access(request, configuration, actor):
     return HttpResponseRedirect(request.path)
 
 
-def _inline_credential_form(configuration, request, target):
-    """Sign a fresh request identity for the page's optional new-key field."""
+def _inline_credential_form(configuration, request, target, *, required=False):
+    """Sign a fresh request identity for the page's new-key field.
+
+    ``required`` is true for an optional integration that is not set up yet,
+    whose key is what sets it up (#563).
+    """
     _handoff(target)
     intent = signing.dumps(
         {
@@ -383,7 +412,29 @@ def _inline_credential_form(configuration, request, target):
         },
         salt=CREDENTIAL_SALT,
     )
-    return InlineCredentialForm(target, initial={"intent": intent})
+    return InlineCredentialForm(target, initial={"intent": intent}, required=required)
+
+
+def _refused_key(configuration, request, target, message=None):
+    """The new-key field redrawn with a refusal at the field (#563).
+
+    The field is bound empty, with a freshly signed intent, so the page shows
+    the error beside the key field (``aria-invalid``, described by the
+    message) and never shows the pasted key again. Without ``message``, the
+    refusal is the missing key of an integration not set up yet; ``message``
+    is any other reason the key could not be saved.
+    """
+    blank = _inline_credential_form(
+        configuration, request, target, required=message is None
+    )
+    credential = InlineCredentialForm(
+        target,
+        {"intent": blank.initial["intent"], "candidate": ""},
+        required=message is None,
+    )
+    if credential.is_valid():
+        credential.add_error("candidate", message)
+    return credential
 
 
 def _save(request, service, configuration, actor, target):
@@ -396,8 +447,12 @@ def _save(request, service, configuration, actor, target):
     form = _form(target, request.POST, stored=_optional(configuration, target))
     credential = InlineCredentialForm(target, request.POST)
     if not (form.is_valid() and credential.is_valid()):
+        # Redrawn as the first draw does: an optional integration not set up
+        # yet keeps its key required, with its hint and the complete gate.
         credential = InlineCredentialForm(
-            target, initial={"intent": request.POST.get("intent", "")}
+            target,
+            initial={"intent": request.POST.get("intent", "")},
+            required=_optional(configuration, target) is None,
         )
         return _page(
             request,
@@ -421,15 +476,24 @@ def _save(request, service, configuration, actor, target):
     record = _optional(configuration, target)
     if form.schedule is not None and form.schedule.changed:
         # A key save never changes the refresh schedule: change it first.
-        raise UserFacingError(
-            _(
-                "Nothing was saved: a new key and a refresh schedule "
-                "change cannot be saved together here."
+        # The refusal is shown at the key field, with the schedule edits
+        # kept on the redrawn page (#563); the key itself is never shown.
+        return _page(
+            request,
+            configuration,
+            target,
+            form=form,
+            credential=_refused_key(
+                configuration,
+                request,
+                target,
+                _(
+                    "Nothing was saved: a new key and a refresh schedule change "
+                    "can't be saved together. Leave this empty and save the "
+                    "schedule change first, then paste the new key again."
+                ),
             ),
-            fix=_(
-                "Leave the key field empty and save the refresh schedule "
-                "change first. Then paste the new key and save again."
-            ),
+            status=400,
         )
     settings = form.public_settings()
     from .key_files import MAX_FILE_BYTES
@@ -457,10 +521,21 @@ def _preview(request, service, actor, target):
     configuration = editable_configuration(service)
     if target == "backup":
         _refuse_drive_in_local()
-    if _optional(configuration, target) is None and target != "backup":
-        raise ValueError("Paste the key to set up this integration.")
     record = _optional(configuration, target) or _unset(target)
     form = _form(target, request.POST, stored=_optional(configuration, target))
+    if record["id"] is None and target != "backup":
+        # An optional integration is set up by its key (#563): the page
+        # requires it, and a request without one is redrawn with the
+        # refusal at the key field and the other entries kept.
+        form.is_valid()
+        return _page(
+            request,
+            configuration,
+            target,
+            form=form,
+            credential=_refused_key(configuration, request, target),
+            status=400,
+        )
     if not form.is_valid():
         return _page(request, configuration, target, form=form, status=400)
     if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:

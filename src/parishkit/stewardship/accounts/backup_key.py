@@ -267,6 +267,16 @@ def _render(request, configuration, *, status=200, **context):
         fresh = False
     # Pasting and proving a new key are the first step of the change (#196).
     admin_navigation.place(request, flow="change", step="edit")
+    # A refusal shows at its field and in the page's error summary, which
+    # the page script focuses on load so it is announced (#563).
+    errors = [
+        {"message": context[name], "field_id": field_id}
+        for name, field_id in (
+            ("key_error", "backup-key-public"),
+            ("code_error", "backup-key-code"),
+        )
+        if context.get(name)
+    ]
     response = render(
         request,
         "stewardship/backup-key.html",
@@ -275,6 +285,7 @@ def _render(request, configuration, *, status=200, **context):
             "breadcrumb_label": LABEL,
             "current": key_status(configuration),
             "fresh": fresh,
+            "errors": errors,
             **context,
         },
         status=status,

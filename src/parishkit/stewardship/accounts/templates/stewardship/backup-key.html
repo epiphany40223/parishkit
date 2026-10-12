@@ -42,21 +42,21 @@
 <li>{% translate "On the key machine, run backup-prove with the new private key and paste the line when it waits for input:" %}<br><code>docker run --rm -i --network none --user "$(id -u):$(id -g)" --read-only --cap-drop ALL --security-opt no-new-privileges:true --mount type=bind,source=KEY_DIRECTORY,target=/keys,readonly IMAGE backup-prove --key /keys/NEW_PRIVATE_KEY_FILE</code></li>
 <li>{% translate "Type the code it prints below. The code proves the private key opens what is sealed to this public key; the private key itself never leaves your machine." %}</li>
 </ol>
-<form method="post" autocomplete="off">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="intent" value="{{ intent }}">
-{% if code_error %}<p class="notice notice-error" role="alert">{{ code_error }}</p>{% endif %}
+{# Each step waits for a well-formed entry (data-require-complete and a pattern the server's rule also admits, #563), with the hint after the button; a refusal is shown at its field. The code is read leniently (any case, spaces or dashes), as normalize_code reads it. #}<form method="post" autocomplete="off" data-require-complete>{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="intent" value="{{ intent }}">
 <div><label for="backup-key-code">{% translate "Code from backup-prove" %}</label>
-<input type="text" id="backup-key-code" name="code" maxlength="40" autocomplete="off" spellcheck="false" required></div>
-{% button type="submit" %}{% translate "Check code and review" %}{% endbutton %}</form>
+<input type="text" id="backup-key-code" name="code" maxlength="40" autocomplete="off" spellcheck="false" required pattern="[\s\-]*(?:[0-9A-Za-z][\s\-]*){12}" data-missing-hint="{% translate 'Type the 12-character code backup-prove printed.' %}"{% if code_error %} aria-invalid="true" aria-describedby="backup-key-code-error"{% endif %}>
+{% if code_error %}<ul class="errorlist" id="backup-key-code-error"><li>{{ code_error }}</li></ul>{% endif %}</div>
+{% button type="submit" aria-describedby="backup-key-code-hint" %}{% translate "Check code and review" %}{% endbutton %}<p class="help" id="backup-key-code-hint" data-complete-hint hidden></p></form>
 <p><a href="{% url 'admin:integration_settings' 'backup_key' %}">{% translate "Start over" %}</a></p>
 </section>
 {% else %}
-<form method="post" class="panel" autocomplete="off">{% csrf_token %}<input type="hidden" name="action" value="challenge">
+<form method="post" class="panel" autocomplete="off" data-require-complete>{% csrf_token %}<input type="hidden" name="action" value="challenge">
 <h2>{% translate "Replace the key" %}</h2>
 {% if not fresh %}<p class="help">{% if local_environment %}{% translate "For security, replacing the key asks you to confirm your sign-in first if you have not signed in within the last five minutes." %}{% else %}{% translate "For security, replacing the key asks you to confirm your Google sign-in first if you have not signed in within the last five minutes." %}{% endif %}</p>{% endif %}
-{% if key_error %}<p class="notice notice-error" role="alert">{{ key_error }}</p>{% endif %}
 <div><label for="backup-key-public">{% translate "New public key" %}</label>
-<input type="text" id="backup-key-public" name="public_key" maxlength="200" autocomplete="off" spellcheck="false" required>
-<p class="help">{% translate "The public_key value from backup-keygen: one line of 44 characters ending in =. Never paste the private key." %}</p></div>
-{% button type="submit" %}{% translate "Continue" %}{% endbutton %}</form>
+<input type="text" id="backup-key-public" name="public_key" maxlength="200" autocomplete="off" spellcheck="false" required pattern="\s*[A-Za-z0-9+\/]{43}=\s*" data-missing-hint="{% translate 'Paste the public_key value: one line of 44 characters ending in =.' %}" aria-describedby="backup-key-public-help{% if key_error %} backup-key-public-error{% endif %}"{% if key_error %} aria-invalid="true"{% endif %}>
+<p class="help" id="backup-key-public-help">{% translate "The public_key value from backup-keygen: one line of 44 characters ending in =. Never paste the private key." %}</p>
+{% if key_error %}<ul class="errorlist" id="backup-key-public-error"><li>{{ key_error }}</li></ul>{% endif %}</div>
+{% button type="submit" aria-describedby="backup-key-public-hint" %}{% translate "Continue" %}{% endbutton %}<p class="help" id="backup-key-public-hint" data-complete-hint hidden></p></form>
 {% endif %}
 {% endblock %}
