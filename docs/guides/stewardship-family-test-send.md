@@ -38,7 +38,10 @@ how staff use it.
   credential substitutions and creates the outbox message, in one transaction.
   Preparation rechecks that the requesting Administrator is still enabled, the
   configuration still active and the template still in use. The mail-dispatch
-  worker then sends it like any Family message.
+  worker then sends it like any Family message, and before each attempt
+  rechecks that Administrator's authority and that a current invitation or
+  reminder schedule still uses the template (#382); a later publish alone does
+  not cancel it.
 - **Temporary gates hold; lasting loss ends it.** A restore review, a campaign
   work gate or a dirty or stale source population holds the ticket or message
   without spending its retry budget. A lasting loss of scope (mode, campaign,
@@ -48,7 +51,10 @@ how staff use it.
   than left pending. The scheduler settles tickets whose task ended.
 - **Resolution.** An unknown outcome can be confirmed delivered or recorded as
   not sent. With the cancellations above, no test message can be left
-  unfinished to block Production readiness. Resend and retry are refused.
+  unfinished to block Production readiness. Resend and retry are refused. A
+  test held behind another Testing email to the same Family that is marked
+  "Not sure it arrived" says so on the page; it counts toward the ten and
+  waits for Testing cleanup until that email is resolved on Outgoing mail.
 
 It does not open the portal outside the campaign dates, does not satisfy the
 readiness check (the fictional sample still does), and is deleted by Testing
