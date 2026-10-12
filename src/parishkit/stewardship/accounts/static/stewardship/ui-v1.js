@@ -3058,7 +3058,8 @@
   // and is a polite live region, so it is announced and moves nothing
   // (file-size-field.html). The field is marked in error, and its custom
   // validity keeps the browser from sending the form until another file is
-  // chosen.
+  // chosen. A field with no data-max-bytes-message (Past campaigns'
+  // archive, #1018) uses its data-too-large text, or a plain refusal.
   // The reverse proxy refuses a request body over 6 MB before the page
   // could explain why, so this check is what keeps such a refusal on the
   // form; the server still checks every upload. The check runs after the
@@ -3088,7 +3089,10 @@
         let message = "";
         let rule = "";
         if (file && file.size > Number(input.dataset.maxBytes)) {
-          message = input.dataset.maxBytesMessage.replace("{size}", fileSize(file.size));
+          // A field marked before #1062 (Past campaigns' archive, #1018)
+          // words its refusal in data-too-large instead.
+          message = (input.dataset.maxBytesMessage || input.dataset.tooLarge
+            || "This file is too large.").replace("{size}", fileSize(file.size));
           rule = "own";
         } else if (file && limit && total > limit
           && (edited || input.dataset.sizeRule === "total")) {

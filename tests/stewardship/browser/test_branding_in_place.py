@@ -236,3 +236,26 @@ def test_switching_modes_never_leaves_a_silent_refusal(page, component_origin):
     expect(error).to_have_text("Favicon: the file is 257 KB; the limit is 256 KB.")
     expect(favicon).to_have_attribute("aria-invalid", "true")
     assert favicon.evaluate("node => node.validationMessage") != ""
+
+
+def test_a_size_field_without_its_own_message_still_refuses(page, component_origin):
+    """A data-max-bytes field marked before #1062 has no
+    data-max-bytes-message (Past campaigns' archive words its refusal in
+    data-too-large, #1018): an oversized file is still refused, in that
+    text, rather than the check failing on the missing message."""
+    from playwright.sync_api import expect
+
+    errors = []
+    page.on("pageerror", lambda error: errors.append(error))
+    page.goto(component_origin + PAGE)
+    page.get_by_label("Each size separately").check()
+    favicon = page.locator("#id_favicon")
+    favicon.evaluate(
+        "node => { node.removeAttribute('data-max-bytes-message');"
+        " node.dataset.tooLarge = 'Choose a smaller file.'; }"
+    )
+    favicon.set_input_files(png(256 * 1024 + 1))
+    refusal = "Choose a smaller file."
+    expect(page.locator("#id_favicon_error")).to_have_text(refusal)
+    assert favicon.evaluate("node => node.validationMessage") == refusal
+    assert errors == []
