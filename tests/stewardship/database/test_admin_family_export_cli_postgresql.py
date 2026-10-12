@@ -37,6 +37,10 @@ from .test_financial_source_postgresql import financial_source
 from .test_information_followup_postgresql import search
 from .test_ministry_reports_postgresql import setup as ministry_setup
 from .test_response_http_postgresql import load_form
+from .test_response_lists_postgresql import (  # noqa: F401
+    funnel,
+    quality_funnel,
+)
 from .test_runtime_auth_grants_postgresql import web_login
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -471,3 +475,66 @@ def test_the_directory_export_refusals(
         rotation.rollback()
     code, document = run("export", "directory", *base)
     assert code == 0, document
+    # No Testing rehearsal (it ended at go-live): the page's 409, nothing made.
+    before = ExportRequest.objects.count()
+    code, document = run("export", "directory", *base, "--filter", "mode=testing")
+    assert code == 1 and document["error"]["code"] == "stale_version", document
+    assert ExportRequest.objects.count() == before
+
+
+def test_a_testing_directory_export_from_the_command_line(
+    quality_funnel,  # noqa: F811
+    google,
+    cli,  # noqa: F811
+    reports_root,
+    with_keyrings,
+):
+    """``--filter mode=testing`` exports the active rehearsal (#933).
+
+    An Administrator's command pins the rehearsal active when it runs and
+    its audit says Testing. Once that Administrator is Staff, the command
+    has no usable session: nothing is made.
+    """
+    from uuid import uuid4 as fresh
+
+    from ..policy_factory import address
+    from .campaign_builders import change
+
+    harness, epoch = quality_funnel
+    signed_in()
+    run = cli()
+    with_keyrings(lambda names: (harness.rings.mac,))
+    base = ("--format", "csv", "--timezone", "UTC", "--yes")
+    argv = ("export", "directory", *base, "--filter", "mode=testing")
+    code, document = run(*argv, "--filter", "response=submitted")
+    assert code == 0, document
+    made = ExportRequest.objects.get(pk=document["result"]["export"]["id"])
+    assert made.parameters["mode"] == "testing"
+    assert made.parameters["epoch"] == str(epoch)
+    assert (
+        AuditContext.objects.get(
+            event__event_type="export_requested", event__subject_id=made.pk
+        ).context["report_mode"]
+        == "testing"
+    )
+    # The Administrator becomes Staff (another Administrator stays).
+    store = harness.service.store
+    other = address("other@example.org")
+    patch = [{"operation": "add", "section": "login_rules", **other}]
+    assert change(store, store.active(), fresh(), patch).state == "applied"
+    rule = next(
+        item
+        for item in store.active().document()["sections"]["login_rules"]
+        if item["values"].get("email") == "admin@example.org"
+    )
+    demoted = address("admin@example.org", roles=("staff",))
+    # Removed, then added back as Staff: one patch may not name an address
+    # twice.
+    patch = [{"operation": "remove", "section": "login_rules", "id": rule["id"]}]
+    assert change(store, store.active(), fresh(), patch).state == "applied"
+    patch = [{"operation": "add", "section": "login_rules", **demoted}]
+    assert change(store, store.active(), fresh(), patch).state == "applied"
+    before = ExportRequest.objects.count()
+    code, document = run(*argv)
+    assert code == 5 and document["error"]["code"] == "session_ended", document
+    assert ExportRequest.objects.count() == before

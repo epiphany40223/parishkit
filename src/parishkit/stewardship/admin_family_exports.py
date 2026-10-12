@@ -404,16 +404,37 @@ def export_directory(
     the running web's (``credential_mismatch``, exit 2, otherwise); the
     credential inventory must be current (``key_set_lock``), or the request
     is ``unavailable``, as the page's 503.
+
+    ``--filter mode=testing`` exports the campaign's active Testing
+    rehearsal as the page does (#933); the command reads the rehearsal
+    active when it runs. With none, it is the page's 409: ``stale_version``.
     """
+    from functools import wraps
+
     from django.db import transaction
 
     from .accounts.cryptography import CryptographicError
     from .accounts.sessions import require_fresh
     from .audit.schemas import Action
-    from .reports.directories import DirectoryQuery
+    from .reports.directories import DirectoryQuery, NoRehearsal
     from .reports.directory_exports import admit_directory, create_directory_export
     from .reports.directory_views import _principal
+    from .storage import StaleRecordError
 
+    def rehearsal_conflict(step):
+        """No active Testing rehearsal is the page's 409, ``stale_version``."""
+
+        @wraps(step)
+        def checked(*args):
+            """Run ``step``, reporting a missing rehearsal as a conflict."""
+            try:
+                return step(*args)
+            except NoRehearsal:
+                raise StaleRecordError("No Testing rehearsal is active.") from None
+
+        return checked
+
+    @rehearsal_conflict
     def parse(actor, campaign_id):
         """The form's filters, the repeat check, then the key for a new request.
 
@@ -433,7 +454,7 @@ def export_directory(
             # The service's admission first, as it runs before its own repeat
             # check: a bound key on a refused campaign gets the page's
             # refusal, not a comparison of the selection (``invalid``).
-            admit_directory(service.store, actor.identity, campaign_id)
+            admit_directory(service.store, actor.identity, campaign_id, mode=query.mode)
             previous = _directory_repeat(
                 actor,
                 campaign_id,
@@ -450,6 +471,7 @@ def export_directory(
         (mac,) = service.keyrings(DIRECTORY_KEYRINGS)
         return query, mac
 
+    @rehearsal_conflict
     def create(actor, campaign_id, parsed):
         """The page's fresh gate, then its service, or the export a repeated
         key already made."""
@@ -462,7 +484,7 @@ def export_directory(
             # A repeated key: the service's own admission, inside the same
             # export lock, then the record the key already made, compared as
             # the service compares it, with no key read.
-            admit_directory(service.store, actor.identity, campaign_id)
+            admit_directory(service.store, actor.identity, campaign_id, mode=query.mode)
             previous = _directory_repeat(
                 actor,
                 campaign_id,
