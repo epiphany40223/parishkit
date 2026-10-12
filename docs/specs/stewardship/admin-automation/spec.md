@@ -2125,6 +2125,7 @@ file is regenerated from the retained capture, in its original format.
 | `weekly_digest_manual` | `digest weekly-request` (PR 8d) |
 | `emailed_reports` | `digest list [--requested KEY]`: the Emailed reports page's lists, ids and dates only (PR 8d follow-up) |
 | `logs`, `logs_export` | `logs list`, `logs export` (PR 8a) |
+| (Past campaigns, no page yet) | `history list`, `history preview -`, `history confirm`, `history remove` ([#1018](https://github.com/epiphany40223/parishkit/issues/1018) slice 2, [campaign history](../campaign-history/spec.md#command-line)), ahead of the page (slice 4): `admin_parity.AHEAD_OF_PAGE` lists them until its route joins the ledger |
 
 `logs list` and `logs export` read through `audit.log_reads`, the functions
 the System logs page and its download use, with every one of the page's

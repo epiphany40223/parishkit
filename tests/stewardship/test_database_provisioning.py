@@ -12,12 +12,16 @@ from parishkit.stewardship.accounts.key_files import write_private
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.runtime_grants import (
     CLOSURE_FUNCTIONS,
+    CLOSURE_TABLES,
     LEADERS_WITHOUT_USER_FUNCTION,
     MEMBER_NAMES_FOR_FUNCTION,
 )
 from parishkit.stewardship.runtime_identities import database_identities
 
 from .test_runtime_topology import configuration_at
+
+# Every migration the users swap's closure registries wait for, as applied.
+CLOSURE_APPLIED = {*CLOSURE_FUNCTIONS.values(), *CLOSURE_TABLES.values()}
 
 
 class Cursor:
@@ -269,9 +273,7 @@ def test_grant_provisioning_uses_only_explicit_table_and_column_registry(
     tmp_path, monkeypatch
 ):
     """Schema ownership is not translated into runtime ALL or wildcard grants."""
-    configuration, statements = grant_statements(
-        tmp_path, monkeypatch, CLOSURE_FUNCTIONS.values()
-    )
+    configuration, statements = grant_statements(tmp_path, monkeypatch, CLOSURE_APPLIED)
     assert statements
     assert all(statement.startswith("GRANT ") for statement in statements)
     assert all(
@@ -302,6 +304,25 @@ def test_grants_wait_for_the_users_swap_closures_functions(
     assert len(statements) == len(
         grant_statements(tmp_path, monkeypatch, CLOSURE_FUNCTIONS.values())[1]
     ) - (0 if applied else len(CLOSURE_FUNCTIONS))
+
+
+def test_grants_wait_for_the_users_swap_closures_tables(tmp_path, monkeypatch):
+    """On the users upgrade's base, a table the swap's closure adds waits.
+
+    The base lacks the table (its migration is pending, #1018's archives),
+    so naming it would fail; with the migration recorded, web gets its table
+    and column grants, and nothing else changes.
+    """
+    _, waiting = grant_statements(tmp_path, monkeypatch, CLOSURE_FUNCTIONS.values())
+    _, granted = grant_statements(tmp_path, monkeypatch, CLOSURE_APPLIED)
+    for table in CLOSURE_TABLES:
+        assert not [s for s in waiting if f'"{table}"' in s], table
+        assert [s for s in granted if f'"{table}" TO "pk_stewardship_web"' in s], table
+    assert set(waiting) < set(granted)
+    assert all(
+        any(f'"{table}"' in s for table in CLOSURE_TABLES)
+        for s in set(granted) - set(waiting)
+    )
 
 
 @pytest.mark.parametrize("installed", ["current", "older", "missing"])

@@ -400,7 +400,16 @@ The checks, in order:
 3. **Cells.** Every cell has its column's type, range and enumeration; no
    formula cells; required cells are not blank; the conditional rules in the
    column tables hold (such as `annual_pledge` against `pledge_status`, and
-   `installment_source` against `installment_amount`).
+   `installment_source` against `installment_amount`). Stored values fit
+   their columns, so an accepted file never fails on save:
+   `campaign_name` is at most 200 characters, `timezone` at most 64,
+   `active_families_provenance`, `source_system` and `dedup_rule` at most
+   10,000 each, `active_families` at most 2,147,483,647, the `note.*` and
+   kept `count.*` values at most 256 KB together (as their stored JSON
+   object), and the pledged total below $10,000,000,000,000,000 (a
+   `numeric(18, 2)` column). The isolated helper's reply is checked to the
+   same limits before anything is stored; a reply that breaks one is
+   refused as "could not be checked".
 4. **Consistency.** Each rule below holds for every one of the seven
    converted 2020–2026 files (the percentage rule once they are regenerated
    with measured counts).
@@ -434,15 +443,29 @@ The checks, in order:
 5. **Year.** A file whose `campaign_year` is the current campaign's
    stewardship year is refused: the report reads the current campaign live,
    and a second copy of it would be compared with itself. The current
-   campaign's stewardship year is the Campaign settings year label, or,
-   without one, the start year of the campaign's upcoming financial period
-   (the year Families pledge for, as `campaign_year` in
-   `web/presentation.py` resolves it). The start-date fallback that function
-   uses for a campaign without a financial period is not used here, since it
-   names the year the campaign runs in (2026 for Stewardship 2027). When
-   neither gives a single four-digit year (no label and no financial period,
-   or a label such as "2026–2027"), every import is refused with that reason
-   and a link to Campaign settings, because "last year" cannot be resolved.
+   campaign's stewardship year is the year Families pledge for, as the
+   archive's `campaign_year` is:
+   - the Campaign settings year label, when it is one four-digit year and
+     the campaign has no financial period or the label is one of the
+     calendar years the financial period covers (a July–June period starting
+     in 2026 may be labelled 2027);
+   - otherwise the start year of the campaign's upcoming financial period,
+     when there is no label, or when a four-digit label lies outside a period
+     that falls within one calendar year. Such a label names something else,
+     such as the year the campaign runs in (2026 on a 2027-01-01 to
+     2027-12-31 period), so Production's Stewardship 2027, held in autumn
+     2026 with label 2027 and a 2027 calendar-year period, refuses only a
+     2027 file.
+
+   This follows `campaign_year` in `web/presentation.py` except in two
+   ways. The start-date fallback that function uses for a campaign without
+   a financial period is not used here, since it names the year the
+   campaign runs in (2026 for Stewardship 2027). And a label outside the
+   financial period gives way to the period, as described above. When
+   no single year results (no label and no financial period, a label such
+   as "2026–2027", or a four-digit label outside a period that spans two
+   calendar years), every import is refused with that reason and a link to
+   Campaign settings, because "last year" cannot be resolved.
 6. **Notes.** The `note.*` values and the provenance and dedup texts are
    shown on the Review card in full, because they become the report's data
    notes. A value longer than 500 characters, or one containing a
@@ -961,8 +984,20 @@ linked to #1018 (the last one closes part (b)).
    change. The Administrator can check the seven converted files at once.
 2. **Storage and command-line import.** The forward migration (including
    the pledge-distribution band rows and quartiles), the import service with
-   preview, confirm and remove, the ingress route exception for Review,
-   and the `pk-admin history` commands. Past years can be loaded by the operator the same day.
+   preview, confirm and remove, and the `pk-admin history` commands. Past
+   years can be loaded by the operator the same day. The ingress route
+   exception for Review moves to slice 4, with the upload route it serves.
+   As built: a preview's `preview.token` is its pending archive row,
+   bound to the Administrator who reviewed it; each Review first deletes
+   expired previews (the housekeeping the trigger admits), skipping any an
+   Apply holds, and the child rows' guard locks their archive before
+   admitting a delete, so an Apply and housekeeping never split an import
+   from its rows; and a
+   Review killed at its time limit leaves a `helper_timed_out` entry naming
+   `archive_check` and the helper `archive_check_worker`. The command line
+   needs no page route yet: the route-parity ledger lists the `history`
+   commands as ahead of their page (`admin_parity.AHEAD_OF_PAGE`) until
+   slice 4.
 3. **Comparison figures.** The metric service, the SQL function (in its own
    forward migration) for pledging Families, renewal, the current median
    and the current campaign's pledge distribution,

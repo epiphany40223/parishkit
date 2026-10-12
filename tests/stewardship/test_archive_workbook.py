@@ -344,6 +344,13 @@ def _drop_key(metadata, sheets):
     return [row for row in metadata if row[0] != "active_families"], sheets
 
 
+def _long_notes(metadata, sheets):
+    """Nine 30,000-character notes: each fits a cell, together past 256 KB."""
+    for number in range(2, 11):
+        metadata = set_metadata(metadata, f"note.{number:02}", "x" * 30_000)
+    return metadata, sheets
+
+
 def _many_problems(metadata, sheets):
     for row in sheets["ministry_responses"] * 10:
         sheets["ministry_responses"].append({**row, "member_slot": 0})
@@ -445,6 +452,22 @@ CHANGES = {
     ),
     "duplicate Family": (_duplicate_family, None, "family_key"),
     "problem cap": (_many_problems, None, "range"),
+    # The stored columns' limits (migration 0059): an accepted file never
+    # fails on save.
+    "long campaign name": (_metadata("campaign_name", "n" * 201), None, "length"),
+    "active_families past an integer": (
+        _metadata("active_families", 2**31),
+        None,
+        "range",
+    ),
+    "long provenance": (
+        _metadata("active_families_provenance", "p" * 10_001),
+        None,
+        "length",
+    ),
+    "long source system": (_metadata("source_system", "s" * 10_001), None, "length"),
+    "long dedup rule": (_metadata("dedup_rule", "d" * 10_001), None, "length"),
+    "notes past 256 KB": (_long_notes, None, "notes_size"),
 }
 
 
@@ -464,6 +487,33 @@ def test_each_rule_refuses_without_echoing_values(case):
             re.fullmatch(r"metadata!A\d+: key not defined in version 1\.0", p.text)
             for p in error.problems
         )
+
+
+def test_values_at_the_stored_limits_are_accepted():
+    """The limits are inclusive: each value at its column's limit reads."""
+    metadata, sheets = campaign()
+    for key, value in (
+        ("campaign_name", "n" * 200),
+        ("active_families_provenance", "p" * 10_000),
+        ("source_system", "s" * 10_000),
+        ("dedup_rule", "d" * 10_000),
+    ):
+        metadata = set_metadata(metadata, key, value)
+    for number in range(2, 10):
+        metadata = set_metadata(metadata, f"note.{number:02}", "x" * 30_000)
+    archive = read_archive(workbook_bytes(metadata, sheets))
+    assert len(archive.metadata["campaign_name"]) == 200
+    stored = {**archive.notes, **archive.other_counts}
+    assert workbook.stored_notes_bytes(stored) <= workbook.STORED_NOTES_BYTES
+
+
+def test_a_pledged_total_past_the_stored_amount_is_refused(monkeypatch):
+    """The total is checked against numeric(18, 2), here lowered to reach it."""
+    monkeypatch.setattr(workbook, "STORED_MONEY_LIMIT", Decimal(1000))
+    error = refused(workbook_bytes())
+    assert "families: the pledged total is out of range" in [
+        p.text for p in error.problems
+    ]
 
 
 def test_problems_stop_at_fifty_and_count_the_rest():

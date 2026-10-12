@@ -374,6 +374,12 @@ def test_all_concrete_mutable_records_have_enabled_guard(db):
             "stewardship_ministry_request_guard",
             "stewardship_ministry_request_guard_v1",
         ),
+        # An imported campaign archive (#1018): only pending to active and
+        # active to removed, with its own full-row comparison.
+        "stewardship_campaign_archive": (
+            "stewardship_campaign_archive_guard",
+            "stewardship_campaign_archive_guard_v1",
+        ),
     }
     assert models
     with connection.cursor() as cursor:
@@ -482,6 +488,14 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
     # Shared guards must still prove their actual enabled row-level contracts;
     # nonstandard names are not exceptions to SQL immutability.
     shared_immutable_guards = {
+        # An imported campaign archive's rows (#1018) share one guard.
+        **{
+            f"stewardship_campaign_archive_{child}": (
+                f"stewardship_campaign_archive_{child}_guard",
+                "stewardship_campaign_archive_child_guard_v1",
+            )
+            for child in ("day", "band", "family")
+        },
         "stewardship_directory_export_snapshot": (
             "directory_export_capture",
             "stewardship_directory_export_capture_v1",
@@ -631,6 +645,20 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
     )
 
     time_retention_contracts = {
+        # An imported campaign archive's rows (#1018) go only with a pending
+        # preview (housekeeping) or a removed import, locking the archive so
+        # a racing Apply cannot strip an active one; nothing else.
+        **dict.fromkeys(
+            (
+                "stewardship_campaign_archive_day",
+                "stewardship_campaign_archive_band",
+                "stewardship_campaign_archive_family",
+            ),
+            "BEGINIFTG_OP='DELETE'ANDEXISTS(SELECT1FROMpublic.stewardship_campaign_archivea"
+            "WHEREa.id=OLD.archive_idANDa.stateIN('pending','removed')FORSHARE)"
+            "THENRETURNOLD;"
+            "ENDIF;RAISEEXCEPTION",
+        ),
         "stewardship_source_slot_decision": (
             "BEGINIFTG_OP='DELETE'ANDOLD.due_at<statement_timestamp()"
             f"-interval'{SLOT_DECISION_RETENTION_DAYS}days'THENRETURNOLD;ENDIF;"

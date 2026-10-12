@@ -59,7 +59,11 @@ def test_every_command_of_this_release_covers_a_route():
         for command in entry.detail
     }
     session = {"login start", "login wait", "logout", "whoami", "sessions", "commands"}
-    assert {spec.name for spec in admin_cli.COMMANDS} - session == covered
+    ahead = admin_parity.AHEAD_OF_PAGE
+    assert {spec.name for spec in admin_cli.COMMANDS} - session - ahead == covered
+    # A command ahead of its page is in the catalog and covers no route yet.
+    assert ahead <= {spec.name for spec in admin_cli.COMMANDS}
+    assert not ahead & covered
 
 
 def test_every_ledger_route_is_in_the_spec_inventory():

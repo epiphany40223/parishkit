@@ -198,6 +198,16 @@ class Action(StrEnum):
     ADMIN_CMD_EXPORT_EXACT_CREATE = "admin_cmd_export_exact_create"
     ADMIN_CMD_EXPORT_EXACT_CANCEL = "admin_cmd_export_exact_cancel"
     ADMIN_CMD_EXPORT_EXACT_RETRY = "admin_cmd_export_exact_retry"
+    # Imported past-campaign archives (#1018): a Review's preview, an Apply
+    # (or a replacement's removal of the year's earlier import) and a
+    # removal; and the history commands that make them.
+    CAMPAIGN_ARCHIVE_PREVIEWED = "campaign_archive_previewed"
+    CAMPAIGN_ARCHIVE_IMPORTED = "campaign_archive_imported"
+    CAMPAIGN_ARCHIVE_REPLACED = "campaign_archive_replaced"
+    CAMPAIGN_ARCHIVE_REMOVED = "campaign_archive_removed"
+    ADMIN_CMD_HISTORY_PREVIEW = "admin_cmd_history_preview"
+    ADMIN_CMD_HISTORY_CONFIRM = "admin_cmd_history_confirm"
+    ADMIN_CMD_HISTORY_REMOVE = "admin_cmd_history_remove"
 
 
 # Closed field identifiers are operational metadata, never census values.
@@ -379,6 +389,12 @@ FIELDS = {
         "snapshot_id",
         # A response list's sort order (#851): its closed sort token.
         "report_sort",
+        # An imported campaign archive (#1018): its pledge year, and how many
+        # day and kept Family rows it holds (counts; the file's SHA-256 is
+        # file_fingerprint and its Families responded is count).
+        "archive_year",
+        "archive_days",
+        "archive_family_rows",
     },
 }
 
@@ -583,6 +599,9 @@ TIMEOUT_KINDS = frozenset(
         # A full ParishSoft load stopped at its own time bound (#834;
         # source.failures.record_load_budget).
         "source_load_budget",
+        # The archive workbook check's helper killed at its time limit
+        # during a Review (#1018; archive.imports).
+        "archive_check",
     }
 )
 # The helper processes a deadline can kill (#293), by their entry point;
@@ -599,6 +618,8 @@ TIMEOUT_HELPERS = frozenset(
         "security_mail_worker",
         "provider_check_worker",
         "parishsoft_http_worker",
+        # The archive workbook check (#1018; archive.check_worker).
+        "archive_check_worker",
     }
 )
 

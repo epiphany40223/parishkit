@@ -5694,7 +5694,8 @@ BEGIN
             'previous_ministry_duids','added_ministry_duids','removed_ministry_duids',
             'decision','review_reason','file_slug','previous_file_slug','file_kind','file_size','file_fingerprint',
             'report_mode','report_filter','talent_option_id','snapshot_id',
-            'report_sort','directory_data_check','directory_response_columns']
+            'report_sort','directory_data_check','directory_response_columns',
+            'archive_year','archive_days','archive_family_rows']
         WHEN 'boundary' THEN ARRAY['occurrence_id','kind','intended_unix_microseconds','actual_unix_microseconds','lag_microseconds','before_state','after_state']
         WHEN 'schedule' THEN ARRAY['definition_id','previous_revision_id','selected_revision_id','cancelled_messages','skipped_occurrences','failed_occurrences','delivered_slots']
         WHEN 'timeout' THEN ARRAY['task_id','task_type','attempt','limit_seconds','elapsed_seconds','what','helper','count','outcome']
@@ -5778,11 +5779,13 @@ BEGIN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('read_guard','lease','retention_budget','drive_copy_budget',
                 'drive_retry_budget','drive_request','drive_probe_wait',
                 'statement_timeout','lock_timeout','transaction_timeout','mail_helper','source_helper','provider_check',
-                'renewal_drain','control_lock','web_drain','web_heartbeat','configuration_activation','web_probe','source_load_budget') THEN RETURN false; END IF;
+                'renewal_drain','control_lock','web_drain','web_heartbeat','configuration_activation','web_probe','source_load_budget',
+                'archive_check') THEN RETURN false; END IF;
         ELSIF key='helper' THEN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('readiness_delivery_worker','readiness_notification_worker',
                 'family_delivery_worker','digest_delivery_worker','weekly_delivery_worker','operational_mail_worker',
-                'operational_slack_worker','security_mail_worker','provider_check_worker','parishsoft_http_worker') THEN RETURN false; END IF;
+                'operational_slack_worker','security_mail_worker','provider_check_worker','parishsoft_http_worker',
+                'archive_check_worker') THEN RETURN false; END IF;
         -- An Administrator's decision on a suspended Chairperson seed: a closed
         -- word, and the reason entered for it, bounded text refused when it
         -- carries an address-like token, since this context holds no

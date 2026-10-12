@@ -246,3 +246,7 @@ def test_wizard_campaign_values_pass_the_campaign_validator():
     assert values["financial"]["comparison_fund_duids"] == [300]
     # The real validator admits them (it raises ConfigError otherwise).
     configuration.campaign_values(values)
+    # The year label is the year Families pledge for, the financial period's
+    # year, as Production labels Stewardship 2027 (held in autumn 2026).
+    assert values["year_label"] == "2027"
+    assert values["financial"]["start"].startswith(values["year_label"])
