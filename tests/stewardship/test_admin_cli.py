@@ -120,6 +120,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "report limitations",
         "report information",
         "report ministry",
+        "report roster",
         "report source-form",
         "report data-to-fix",
         "digest list",
@@ -471,6 +472,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "report limitations": "talents_report_viewed",
         "report information": "information_viewed",
         "report ministry": "ministry_report_viewed",
+        "report roster": "roster_changes_viewed",
         "report source-form": "source_form_viewed",
         "report data-to-fix": "data_to_fix_viewed",
     }

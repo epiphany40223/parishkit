@@ -2460,7 +2460,7 @@ never prepares or sends twice.
 | `security_event_acknowledge`, `critical_events_acknowledge` | `events list`, `events acknowledge` (PR 11) |
 | `information_update`, `ministry_followup`, `ministry_followup_item`, `ministry_followup_update` | `followup …` (PR 11); follow-up has no assignment ([#552](https://github.com/epiphany40223/parishkit/issues/552)) |
 | `ministry_followup_roster` | A resolved join or leave's Entered in ParishSoft tick ([#528](https://github.com/epiphany40223/parishkit/issues/528)): `followup roster-entered REQUEST_ID --set\|--clear` (PR 11), through the same `workflows.roster` service |
-| `ministry_roster`, `ministry_roster_export` | Roster changes to enter ([#528](https://github.com/epiphany40223/parishkit/issues/528)): `report roster`, counts; rows only as `export roster` (PR 8g) |
+| `ministry_roster`, `ministry_roster_export` | Roster changes to enter ([#528](https://github.com/epiphany40223/parishkit/issues/528)): `report roster`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); rows only as `export roster` (PR 8g) |
 
 The users commands (#952) call the same service functions as the
 [Users page](../admin-portal/spec.md#portal-user-management), with its
@@ -2510,6 +2510,22 @@ sign-in. The command shapes are defaults, pending Administrator confirmation.
 `portal_users_viewed`, with the number of users printed. They print Admin
 portal users' own addresses and Names, which the page shows; they are not
 Family data.
+
+`report roster [--show todo|all] [--ministry DUID]` is Roster changes to
+enter through the page's own pieces: its admission
+(`ministry_roster_views._principal`, Administrators and Staff, never a
+Ministry leader), passive so any session scope reads, then the shared
+report read (current campaign, `admit_report_read`, the campaign read
+guard and the session recheck) and the page's `roster_rows` with the
+page's Show and Ministry choices. A Ministry DUID outside the page's range
+is `invalid`. Its rows name Members and Families, so it prints counts
+only: the list's rows, joins, leaves, rows already marked Entered in
+ParishSoft and rows a later response replaced, overall and per Ministry
+(DUID and name). It records the page's `roster_changes_viewed` with the
+page's context members and a `count` of 0, as the other report reads
+count the rows they display. The
+[operator guide](../../../guides/stewardship-admin-automation.md#reports)
+lists the fields.
 
 ### Integrations and credentials
 

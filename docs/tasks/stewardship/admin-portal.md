@@ -578,7 +578,19 @@ page and the command making the same record and event, the worker's file
 with the code, the stream equal to the page's download, Staff denied, the
 capture's SQL refusals), the schema baseline and upgrade parity suites and
 the timeline browser test. The in-memory downloads (Limitations, response
-lists, when PR #752 lands) follow.
+lists, when PR #752 lands) follow. Another follow-up (#463) adds `report
+roster`, Roster changes to enter counted, in
+`parishkit.stewardship.admin_roster`, through the page's own admission and
+`roster_rows` under the shared report read, with no schema change; proven
+by `tests/stewardship/test_admin_report_reads.py` (the golden documents
+without Member, Family or resolver, the catalog, usage errors),
+`tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py` and
+`tests/stewardship/database/test_admin_roster_cli_postgresql.py` (the
+page's list counted with its Show and Ministry choices, the page's event,
+an out-of-range Ministry `invalid` with nothing recorded, read-only and
+Staff readers, a Ministry leader denied, an ended session, no current
+campaign).
 A follow-up (#682) lets `delivery resolve` retry Family emails too, loading
 the web's general and public token keyrings only for that, checked against
 the web's published receipts; proven by `tests/stewardship/test_admin_cli.py`,

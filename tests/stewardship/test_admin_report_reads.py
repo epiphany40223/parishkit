@@ -19,6 +19,7 @@ from parishkit.stewardship import (
     admin_cli,
     admin_data_to_fix,
     admin_report_reads,
+    admin_roster,
     admin_source_form,
 )
 from parishkit.stewardship.jobs.send_history import SendKey
@@ -276,6 +277,38 @@ PARTICIPATION = {
         }
     ],
 }
+
+
+def roster_row(ministry, name, action, *, entered=False, latest=True):
+    """One ``roster_rows`` row, with the Member, Family and resolver it names."""
+    return {
+        "id": UUID(int=len(name) + ministry),
+        "member_name": "Private Member",
+        "member_duid": 3,
+        "family_name": "Private Family",
+        "family_duid": 70,
+        "ministry_duid": ministry,
+        "ministry_name": name,
+        "action": action,
+        "resolved_at": NOW,
+        "resolved_by": "private@example.org",
+        "latest": latest,
+        "roster_entered": entered,
+        "roster_by": "private@example.org" if entered else "",
+        "roster_at": NOW if entered else None,
+    }
+
+
+def roster(show="all", ministry=None):
+    """Two Ministries' resolved changes, in the selection's newest-first order."""
+    rows = [
+        roster_row(9, "Choir", "join", entered=True),
+        roster_row(4, "Food pantry", "leave"),
+        roster_row(9, "Choir", "leave", latest=False),
+    ]
+    return admin_roster.roster_model(CAMPAIGN, show, ministry, rows)
+
+
 MINISTRY = {
     "ministry": 9,
     "name": "Choir",
@@ -417,6 +450,54 @@ GOLDEN = {
             "summaries": [MINISTRY],
         },
     ),
+    "report roster": (
+        roster,
+        {
+            "campaign_id": str(CAMPAIGN),
+            "show": "all",
+            "ministry": None,
+            "matching": 3,
+            "joins": 1,
+            "leaves": 2,
+            "entered": 1,
+            "replaced": 1,
+            # By Ministry DUID; each Ministry's counts, never a Member.
+            "ministries": [
+                {
+                    "ministry": 4,
+                    "name": "Food pantry",
+                    "matching": 1,
+                    "joins": 0,
+                    "leaves": 1,
+                    "entered": 0,
+                    "replaced": 0,
+                },
+                {
+                    "ministry": 9,
+                    "name": "Choir",
+                    "matching": 2,
+                    "joins": 1,
+                    "leaves": 1,
+                    "entered": 1,
+                    "replaced": 1,
+                },
+            ],
+        },
+    ),
+    "report roster (empty)": (
+        lambda: admin_roster.roster_model(CAMPAIGN, "todo", 9, []),
+        {
+            "campaign_id": str(CAMPAIGN),
+            "show": "todo",
+            "ministry": 9,
+            "matching": 0,
+            "joins": 0,
+            "leaves": 0,
+            "entered": 0,
+            "replaced": 0,
+            "ministries": [],
+        },
+    ),
     "report ministry (requests)": (
         ministry_list,
         {
@@ -488,6 +569,9 @@ def test_every_report_command_has_its_models_fields():
         "report source-form": admin_source_form.SourceFormReport,
         # Data to fix in ParishSoft (#1011), a Parish data page, likewise.
         "report data-to-fix": admin_data_to_fix.DataToFixReport,
+        # Roster changes to enter (#528), under Ministry follow-up: not a
+        # report menu entry, so ``report list`` does not offer it.
+        "report roster": admin_roster.RosterReport,
     }
     reports = {spec.name for spec in admin_cli.COMMANDS if spec.name[:7] == "report "}
     assert reports == set(models)
@@ -495,6 +579,7 @@ def test_every_report_command_has_its_models_fields():
         "report list",
         "report source-form",
         "report data-to-fix",
+        "report roster",
     }
     for name, model in models.items():
         assert entries[name]["result_fields"] == list(model.field_names()), name
@@ -516,6 +601,9 @@ def test_the_report_commands_name_menu_entries():
         ["report", "ministry", "--requests", "maybe"],
         ["report", "participation", "--campaign", str(CAMPAIGN)],
         ["report", "information", "--search", "Private"],
+        ["report", "roster", "--show", "entered"],
+        ["report", "roster", "--ministry", "09"],
+        ["report", "roster", "--campaign", str(CAMPAIGN)],
     ],
 )
 def test_options_outside_the_pages_vocabulary_are_usage_errors(argv):
