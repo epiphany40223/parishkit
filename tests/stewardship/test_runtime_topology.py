@@ -613,12 +613,22 @@ def test_source_consumer_adds_no_service_to_any_compose_variant(
     assert split_source(rendered)
 
 
-def test_ingress_admits_large_bodies_only_for_hosted_file_uploads(tmp_path):
-    """Hosted files (#346): 11 MB on the upload route, 6 MB elsewhere, buffered."""
+def test_ingress_admits_large_bodies_only_for_the_two_upload_routes(tmp_path):
+    """Hosted files (#346): 11 MB on their upload route, buffered when served.
+    Past campaigns (#1018): 21 MiB on the archive Review, the view's own
+    bound. Every other route keeps 6 MB."""
+    from parishkit.stewardship.reports.past_campaign_views import MAX_REVIEW_REQUEST
+
     output = render_caddy(configuration_at(tmp_path, production=True))
     assert "@hosted_file_upload path /admin/parish/files/uploads/\n" in output
     assert "request_body @hosted_file_upload {\n            max_size 11MB" in output
-    assert "@ordinary_body not path /admin/parish/files/uploads/\n" in output
+    assert "@archive_review path /admin/parish/past-campaigns/review/\n" in output
+    assert "request_body @archive_review {\n            max_size 21MiB" in output
+    assert MAX_REVIEW_REQUEST == 21 * 1024 * 1024
+    assert (
+        "@ordinary_body not path /admin/parish/files/uploads/ "
+        "/admin/parish/past-campaigns/review/\n"
+    ) in output
     assert "request_body @ordinary_body {\n            max_size 6MB" in output
     assert "@hosted_file path /files/*" in output
     hosted = output.index("reverse_proxy @hosted_file")

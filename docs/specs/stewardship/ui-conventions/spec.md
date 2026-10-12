@@ -371,7 +371,11 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   have made, follows the server's Post/Redirect/Get redirect, and replaces
   every region the fetched page shares with this one, plus the counts,
   summaries, links and form state outside them that follow the view; views
-  keep rendering whole pages, so no partial-page endpoint exists. A link
+  keep rendering whole pages, so no partial-page endpoint exists. A form
+  marked `data-csrf-header` also sends its CSRF token in the `X-CSRFToken`
+  header, for a route that checks only the header so that it can refuse a
+  request before reading its body (Past campaigns' archive Review,
+  [campaign history](../campaign-history/spec.md#validation)). A link
   marked `data-in-place-only` replaces only the region it names: the history
   pages of an information item and a Ministry follow-up request sit inside
   the item's panel, and paging them must not replace the Save follow-up form
@@ -669,6 +673,12 @@ their reason is visible text in a reserved line beside or below them, so
 ticking a row never moves anything ([Admin tables](#admin-tables);
 Administrator decision, 2026-10-10;
 [#879](https://github.com/epiphany40223/parishkit/issues/879)).
+
+A file field marked `data-max-bytes` (with its message in
+`data-too-large`) counts as missing while the chosen file is larger, so the
+complete-before-submit gate below holds the form's button with that message
+as its hint; first used by Past campaigns' archive file (20 MiB). The server
+checks the size again.
 
 Wherever a form requires an acknowledgment checkbox (finishing setup, a test
 that may already have arrived, chosen-Family tests, Testing cleanup,

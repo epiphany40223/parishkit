@@ -300,7 +300,7 @@ Remove row action. Below it, **Add an archive file** takes one `.xlsx` file
 and a **Keep Family rows** checkbox, ticked by default, whose field tip
 says the rows are needed for the renewal figure and never leave the Admin
 portal. The About this page panel explains the archive files, where they come
-from and the privacy rule, and that a file of the full 20 MB needs about
+from and the privacy rule, and that a file of the full 20 MiB needs about
 6 Mbit/s of upload speed (a typical 2 MB file needs well under 1 Mbit/s).
 Several years are added one file at a time.
 The slice that adds this page, and the one that adds the report, add their
@@ -322,7 +322,16 @@ status](../ui-conventions/spec.md#review-apply-and-change-status):
    [in place](../ui-conventions/spec.md#in-place-controls). Replacing a
    year needs an acknowledgement checkbox on the card ("This replaces the
    2025 figures already imported"), so Apply stays unavailable until it is
-   ticked.
+   ticked. For a file already imported Apply has nothing to do, so it is
+   unavailable, named by the visible reason `imported by <who> on
+   <when>` (the earlier import's Administrator and local time;
+   [prerequisite gates](../ui-conventions/spec.md#prerequisite-gates);
+   [Administrator decision 12](#administrator-decisions)).
+   Once Apply has answered (imported, replaced or already imported), the
+   file choice is cleared and Keep Family rows ticked again, so Review is
+   unavailable with its hint until the next file is chosen, as on a fresh
+   page. The hint's line is reserved, so clearing the file moves nothing ([no
+   layout shift](../ui-conventions/spec.md#no-layout-shift)).
 
 **Remove** is a [row action with
 confirmation](../ui-conventions/spec.md#row-actions-and-confirmation): it
@@ -346,30 +355,30 @@ entry](../operations/spec.md#observability-and-health), under the new
 timeout name `archive_check`, naming the limit and the elapsed time. The
 `archive-check` command runs the same helper.
 
-**The upload route.** One Review request carries one file, at most 20 MB.
+**The upload route.** One Review request carries one file, at most 20 MiB.
 `POST /admin/parish/past-campaigns/review/` is the second route allowed a
-body larger than the ingress default: Caddy admits up to 21 MB there (the
+body larger than the ingress default: Caddy admits up to 21 MiB there (the
 file plus form overhead; see [production
 ingress](../operations/spec.md#production-ingress-and-tls), set in
 `runtime_ingress.py` beside the hosted-file upload route). The view
 follows the hosted-file upload's protections and adds two:
 
 - it accepts POST only, and refuses a missing `Content-Length` or one over
-  21 MB before reading any of the body;
+  21 MiB before reading any of the body;
 - before anything reads the body (`request.POST` or `request.FILES`), it
   checks the user's role (an Administrator with `CONFIGURE` and
   `FINANCIAL_DETAIL`) and the CSRF token, which the page script sends in
   the `X-CSRFToken` request header (the Admin portal [requires
   JavaScript](../ui-conventions/spec.md#javascript-requirement)), so an
-  unauthorized request never makes the server read or spool 21 MB;
+  unauthorized request never makes the server read or spool 21 MiB;
 - it then takes a deployment-wide, non-blocking lock for archive Reviews;
   while another Review holds it, the request is refused at once with "Another
   archive is being checked; try again in a minute". One archive at a time
   bounds this route's spool in the web container's `/tmp` tmpfs to one
-  21 MB file, where Django's upload settings spool files over 5 MB, as for
+  21 MiB file, where Django's upload settings spool files over 5 MB, as for
   hosted files;
 - the proxy's 30-second body-read timeout is shared by every route and stays
-  unchanged, so a 20 MB file needs about 6 Mbit/s of upload speed, which
+  unchanged, so a 20 MiB file needs about 6 Mbit/s of upload speed, which
   the About panel says.
 
 The whole request fits well inside the web server's 370-second request
@@ -382,9 +391,9 @@ The checks, in order:
 
 1. **Size and package.** The file size; the zip directory's declared sizes
    as an early refusal only (they can lie); then every part is read once as
-   a stream that counts the bytes actually decompressed and stops at 100 MB
-   for one part or 300 MB in all, and, for each part once it has
-   decompressed more than 1 MB, at more than 100 decompressed bytes per
+   a stream that counts the bytes actually decompressed and stops at 100 MiB
+   for one part or 300 MiB in all, and, for each part once it has
+   decompressed more than 1 MiB, at more than 100 decompressed bytes per
    compressed byte of that part (the converted files' highest is about 15,
    in the Ministry answers sheet). The hosted-files OOXML checks and the part allowlist above apply.
    Every XML part is refused if it contains a document type declaration or
@@ -489,9 +498,11 @@ version 1.0"). The list says when more problems were cut off.
 The SHA-256 of the uploaded bytes identifies the file:
 
 - A file whose checksum matches a stored, not removed import is **Already
-  imported**: Apply changes nothing and says when and by whom it was
-  imported. Repeating an Apply, from the page or the command line, is
-  therefore harmless.
+  imported**: the page shows Apply unavailable, saying by whom and when it
+  was imported (Administrator decision 12). An Apply of it that is posted
+  anyway (a crafted request, or `history confirm`) still answers
+  `already` and changes nothing, so repeating an Apply, from the page or
+  the command line, is harmless.
 - One import is active per `campaign_year`. A different file for a year that
   already has one is a **Replace**: Apply removes the old import (as Remove
   does) and stores the new one in the same transaction. A partial file never
@@ -863,7 +874,7 @@ importing them.
 | Situation | Behavior |
 | --- | --- |
 | File not an `.xlsx`, too large, macro-bearing, with a part off the allowlist or an external relationship, or unreadable | Refused at Review with the reason; nothing stored |
-| More than one file, no `Content-Length`, or a body over 21 MB | Refused before the body is read |
+| More than one file, no `Content-Length`, or a body over 21 MiB | Refused before the body is read |
 | No role or CSRF header | Refused before the body is read |
 | Another archive Review in progress | Refused at once; try again shortly |
 | Decompression limit, compression ratio, document type or entity declaration | Refused as unsafe to read |
@@ -871,7 +882,7 @@ importing them.
 | Wrong schema, version, sheet or header | Refused naming the sheet and the expected header, never the text found |
 | Current campaign's stewardship year cannot be resolved | Every import refused, linking Campaign settings |
 | Cell or consistency errors | Refused with up to 50 located problems |
-| Same checksum already imported | Already imported; Apply changes nothing |
+| Same checksum already imported | Already imported: Apply unavailable, naming who imported it and when; a posted Apply answers `already` and changes nothing |
 | Year already imported, different file | Replace, with acknowledgement; a partial never replaces a final |
 | Current campaign's year | Refused with the reason |
 | Two Applies race | One wins; the other is refused as stale |
@@ -997,9 +1008,9 @@ linked to #1018 (the last one closes part (b)).
    from its rows; and a
    Review killed at its time limit leaves a `helper_timed_out` entry naming
    `archive_check` and the helper `archive_check_worker`. The command line
-   needs no page route yet: the route-parity ledger lists the `history`
+   needed no page route yet: the route-parity ledger listed the `history`
    commands as ahead of their page (`admin_parity.AHEAD_OF_PAGE`) until
-   slice 4.
+   slice 4, whose routes they now cover.
 3. **Comparison figures.** The metric service, the SQL function (in its own
    forward migration) for pledging Families, renewal, the current median
    and the current campaign's pledge distribution,
@@ -1026,6 +1037,22 @@ linked to #1018 (the last one closes part (b)).
    page exists (slice 4).
 4. **Past campaigns page.** The upload page with Review, Apply, replacement
    and Remove.
+   As built: Review posts to `review/` and, once the preview is stored,
+   answers with a redirect to the page naming it (`?preview=<id>`, an
+   import's own id, never a Family's), so the card is the page's own
+   state and survives a reload; a refused file answers with the page and
+   its problems in place. The view is marked `csrf_header_only`, so the
+   middleware takes the token from the `X-CSRFToken` header alone (the
+   form is marked `data-csrf-header`), and it closes the spooled upload
+   inside the Review lock, before the helper runs. Apply posts to
+   `imports/` and answers with the page naming the outcome
+   (`?applied=<id>&outcome=…`); Remove posts the confirmation dialog's
+   `<year>:<version>` to `removal/`. For a file already imported Apply is
+   unavailable, as decision 12 records. The table's Active Families
+   cell carries the count's provenance in a toggletip, and every import's
+   file name and SHA-256, tombstones included, are under Technical
+   details. Review is unavailable, with the reason and a link to Campaign
+   settings, while the current campaign's year cannot be resolved.
 5. **Charts and day control.** The three day-by-day charts, the final-results
    bars, the pledge-distribution stacked bars and Compare on day.
 6. **Downloads.** CSV, XLSX and the one-page PDF summary, with the
@@ -1072,5 +1099,10 @@ The Administrator accepted every proposed default on October 11, 2026
 9. **Digest section:** off by default; when on, in the daily digest only.
 10. **Sending to leadership:** the one-page PDF download, which the
     Administrator emails. No public link.
-11. **Upload limits:** 20 MB per file, 300 MB uncompressed and 500,000 rows,
-    about ten times the largest converted file.
+11. **Upload limits:** 20 MiB per file, 300 MiB uncompressed and 500,000
+    rows, about ten times the largest converted file.
+12. **A file already imported** (Administrator decision, 2026-10-11, on
+    the slice 4 review): the Review card shows Apply unavailable with the
+    reason `imported by <who> on <when>`, rather than an Apply that does
+    nothing; the server's Apply still answers `already` with nothing
+    changed if one is posted ([idempotency](#idempotency-and-replacement)).

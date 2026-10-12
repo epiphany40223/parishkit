@@ -561,7 +561,9 @@ placeholder reference mentions `{{ file.<slug> }}` and links to this page.
 - **Ingress**: only `POST /admin/parish/files/uploads/` admits a request body
   of up to 11 MB (a 10 MB file plus form overhead); its old address
   `/admin/files/upload` is not kept (#864). Every other route keeps the 6 MB
-  `request_body` limit in [production ingress](../operations/spec.md#production-ingress-and-tls).
+  `request_body` limit in [production ingress](../operations/spec.md#production-ingress-and-tls),
+  except the past-campaign archive Review
+  ([campaign history](../campaign-history/spec.md#validation)).
   The view refuses a `Content-Length` over 11 MB before reading the body.
   Django's file-upload settings keep spooling files over 5 MB to the web
   container's `/tmp` tmpfs. The proxy's 30-second body-read timeout is
@@ -672,8 +674,8 @@ Unit and database tests must cover:
 11. Permissions and audit: Staff and Ministry leaders are denied every Admin
     route. Uploads, slug changes and deletions write their audit events with
     only closed fields.
-12. Ingress rendering: the upload route admits 11 MB, every other route 6 MB,
-    and `/files/` responses are buffered.
+12. Ingress rendering: the upload route admits 11 MB, every other route 6 MB
+    (the archive Review aside), and `/files/` responses are buffered.
 
 A browser test uploads a PDF and an image, copies both placeholders into a
 page's content, sees the image and downloads the PDF from the Family page,

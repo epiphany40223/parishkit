@@ -222,7 +222,7 @@ Upload/body/time limits protect the app without blocking configured logo/export
 workflows. Two routes have a larger body limit: hosted-file uploads (11 MB),
 defined with the buffering of `/files/` responses by
 [hosted files](../hosted-files/spec.md#operations), and the past-campaign
-archive Review (21 MB, one file per request), defined by
+archive Review (21 MiB, one file per request), defined by
 [campaign history](../campaign-history/spec.md#validation). Both refuse an
 oversize `Content-Length` before reading the body; the 30-second body-read
 timeout is shared by every route. The official stock
