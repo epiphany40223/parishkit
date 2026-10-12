@@ -171,7 +171,7 @@ def information_xlsx(document, output):
     from openpyxl import Workbook
     from openpyxl.styles import Alignment
 
-    from .xlsx_design import style_information, style_table
+    from .xlsx_design import describe, style_information, style_table
 
     book = Workbook()
     try:
@@ -198,6 +198,7 @@ def information_xlsx(document, output):
             xlsx_cell(metadata, index, 1, key)
             xlsx_cell(metadata, index, 2, value)
         style_information(metadata, title=document.title)
+        describe(book, document.title, created=document.requested_at)
         book.save(output)
     finally:
         book.close()
