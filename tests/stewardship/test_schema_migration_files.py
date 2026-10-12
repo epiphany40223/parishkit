@@ -244,7 +244,7 @@ FROZEN = {
         "a8eb331a607d66ecb320782b46cfcf06451f47ea9eaab7fd34229359ca69f3d8"
     ),
     "0071_comparison_exports.sql": (
-        "c2bc8ab5667898f9f0a6a8dea654be7ab66f8246d8dc06b269251ba307fb8925"
+        "458439a4ce633a15ec9bf32b5a38ffced7ee0fcda75f9bdd3503cf88bd8e8c58"
     ),
 }
 

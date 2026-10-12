@@ -24,15 +24,18 @@
 --     deferred binding to an export request;
 --   - adds stewardship_export_request.comparison_snapshot_id with its
 --     deferrable foreign key and index;
---   - replaces export_report_known with 0049's list (the latest; the
---     family_test_names arm in CSV, XLSX or PDF) plus the campaign_comparison
---     arm (CSV, XLSX or PDF), every earlier arm also requiring the new column
---     to be NULL, in the form PostgreSQL deparses Django's declaration;
+--   - replaces export_report_known with 0063's list (the latest; 0049's
+--     family_test_names arm in CSV, XLSX or PDF and 0063's family_timeline
+--     arm) plus the campaign_comparison arm (CSV, XLSX or PDF), every
+--     earlier arm also requiring the new column to be NULL, in the form
+--     PostgreSQL deparses Django's declaration;
 --   - replaces stewardship_export_request_guard_v1 and
 --     stewardship_export_publication_guard_v1 with their latest bodies
---     (0037's, which exports.sql carries) plus one branch each for the new
---     kind. stewardship_export_request_authorized_v1 needs no change: its
---     ELSE branch (Administrators and Staff) is the page's own access.
+--     (0063's, with its family_timeline branches, which exports.sql
+--     carries) plus one branch each for the new kind.
+--     stewardship_export_request_authorized_v1 (last replaced by 0063)
+--     needs no change: its ELSE branch (Administrators and Staff) is the
+--     page's own access.
 -- Neither replaced guard is SECURITY DEFINER in the baseline, and CREATE OR
 -- REPLACE keeps that; the check at the end confirms it. Grants follow from
 -- reports/export_grants.py through the upgrade's database-grants step. No
@@ -185,15 +188,17 @@ ALTER TABLE public.stewardship_export_request ADD CONSTRAINT export_comparison_s
 CREATE INDEX export_comparison_snapshot ON stewardship_export_request(comparison_snapshot_id);
 
 -- The known report kinds, in the form PostgreSQL deparses the model's
--- declaration: 0049's arms (the latest; family_test_names in CSV, XLSX or
--- PDF), each now also requiring no comparison capture, plus
--- campaign_comparison, which requires one. ADD CONSTRAINT validates the
--- existing rows, which all leave the new column NULL.
+-- declaration: 0063's arms (the latest; family_test_names in CSV, XLSX or
+-- PDF and family_timeline with its timeline capture), each now also
+-- requiring no comparison capture, plus campaign_comparison, which requires
+-- one and no timeline capture. ADD CONSTRAINT validates the existing rows,
+-- which all leave the new column NULL.
 ALTER TABLE public.stewardship_export_request DROP CONSTRAINT export_report_known;
-ALTER TABLE public.stewardship_export_request ADD CONSTRAINT export_report_known CHECK ((((comparison_snapshot_id IS NULL) AND (directory_snapshot_id IS NULL) AND (fact_set_id IS NOT NULL) AND (family_test_names_snapshot_id IS NULL) AND (financial_snapshot_id IS NULL) AND (information_snapshot_id IS NULL) AND (ministry_snapshot_id IS NULL) AND ((report)::text = 'participation'::text)) OR ((comparison_snapshot_id IS NULL) AND (directory_snapshot_id IS NULL) AND (fact_set_id IS NULL) AND (family_test_names_snapshot_id IS NULL) AND (financial_snapshot_id IS NULL) AND ((format)::text = ANY ((ARRAY['csv'::character varying, 'xlsx'::character varying, 'pdf'::character varying])::text[])) AND (information_snapshot_id IS NOT NULL) AND (ministry_snapshot_id IS NULL) AND ((report)::text = 'additional_information'::text)) OR ((comparison_snapshot_id IS NULL) AND (directory_snapshot_id IS NOT NULL) AND (fact_set_id IS NULL) AND (family_test_names_snapshot_id IS NULL) AND (financial_snapshot_id IS NULL) AND ((format)::text = ANY ((ARRAY['csv'::character varying, 'xlsx'::character varying, 'pdf'::character varying])::text[])) AND (information_snapshot_id IS NULL) AND (ministry_snapshot_id IS NULL) AND ((report)::text = ANY ((ARRAY['family_directory'::character varying, 'postal_outreach'::character varying])::text[]))) OR ((comparison_snapshot_id IS NULL) AND (directory_snapshot_id IS NULL) AND (fact_set_id IS NULL) AND (family_test_names_snapshot_id IS NULL) AND (financial_snapshot_id IS NULL) AND ((format)::text = ANY ((ARRAY['csv'::character varying, 'xlsx'::character varying, 'pdf'::character varying])::text[])) AND (information_snapshot_id IS NULL) AND (ministry_snapshot_id IS NOT NULL) AND ((report)::text = 'ministry'::text)) OR ((comparison_snapshot_id IS NULL) AND (directory_snapshot_id IS NULL) AND (fact_set_id IS NULL) AND (family_test_names_snapshot_id IS NULL) AND (financial_snapshot_id IS NOT NULL) AND ((format)::text = ANY ((ARRAY['csv'::character varying, 'xlsx'::character varying, 'pdf'::character varying])::text[])) AND (information_snapshot_id IS NULL) AND (ministry_snapshot_id IS NULL) AND ((report)::text = 'financial'::text)) OR ((comparison_snapshot_id IS NULL) AND (directory_snapshot_id IS NULL) AND (fact_set_id IS NULL) AND (family_test_names_snapshot_id IS NOT NULL) AND (financial_snapshot_id IS NULL) AND ((format)::text = ANY ((ARRAY['csv'::character varying, 'xlsx'::character varying, 'pdf'::character varying])::text[])) AND (information_snapshot_id IS NULL) AND (ministry_snapshot_id IS NULL) AND ((report)::text = 'family_test_names'::text)) OR ((comparison_snapshot_id IS NOT NULL) AND (directory_snapshot_id IS NULL) AND (fact_set_id IS NULL) AND (family_test_names_snapshot_id IS NULL) AND (financial_snapshot_id IS NULL) AND ((format)::text = ANY ((ARRAY['csv'::character varying, 'xlsx'::character varying, 'pdf'::character varying])::text[])) AND (information_snapshot_id IS NULL) AND (ministry_snapshot_id IS NULL) AND ((report)::text = 'campaign_comparison'::text))));
+ALTER TABLE public.stewardship_export_request ADD CONSTRAINT export_report_known CHECK ((((comparison_snapshot_id IS NULL) AND (directory_snapshot_id IS NULL) AND (fact_set_id IS NOT NULL) AND (family_test_names_snapshot_id IS NULL) AND (financial_snapshot_id IS NULL) AND (information_snapshot_id IS NULL) AND (ministry_snapshot_id IS NULL) AND ((report)::text = 'participation'::text) AND (timeline_snapshot_id IS NULL)) OR ((comparison_snapshot_id IS NULL) AND (directory_snapshot_id IS NULL) AND (fact_set_id IS NULL) AND (family_test_names_snapshot_id IS NULL) AND (financial_snapshot_id IS NULL) AND ((format)::text = ANY ((ARRAY['csv'::character varying, 'xlsx'::character varying, 'pdf'::character varying])::text[])) AND (information_snapshot_id IS NOT NULL) AND (ministry_snapshot_id IS NULL) AND ((report)::text = 'additional_information'::text) AND (timeline_snapshot_id IS NULL)) OR ((comparison_snapshot_id IS NULL) AND (directory_snapshot_id IS NOT NULL) AND (fact_set_id IS NULL) AND (family_test_names_snapshot_id IS NULL) AND (financial_snapshot_id IS NULL) AND ((format)::text = ANY ((ARRAY['csv'::character varying, 'xlsx'::character varying, 'pdf'::character varying])::text[])) AND (information_snapshot_id IS NULL) AND (ministry_snapshot_id IS NULL) AND ((report)::text = ANY ((ARRAY['family_directory'::character varying, 'postal_outreach'::character varying])::text[])) AND (timeline_snapshot_id IS NULL)) OR ((comparison_snapshot_id IS NULL) AND (directory_snapshot_id IS NULL) AND (fact_set_id IS NULL) AND (family_test_names_snapshot_id IS NULL) AND (financial_snapshot_id IS NULL) AND ((format)::text = ANY ((ARRAY['csv'::character varying, 'xlsx'::character varying, 'pdf'::character varying])::text[])) AND (information_snapshot_id IS NULL) AND (ministry_snapshot_id IS NOT NULL) AND ((report)::text = 'ministry'::text) AND (timeline_snapshot_id IS NULL)) OR ((comparison_snapshot_id IS NULL) AND (directory_snapshot_id IS NULL) AND (fact_set_id IS NULL) AND (family_test_names_snapshot_id IS NULL) AND (financial_snapshot_id IS NOT NULL) AND ((format)::text = ANY ((ARRAY['csv'::character varying, 'xlsx'::character varying, 'pdf'::character varying])::text[])) AND (information_snapshot_id IS NULL) AND (ministry_snapshot_id IS NULL) AND ((report)::text = 'financial'::text) AND (timeline_snapshot_id IS NULL)) OR ((comparison_snapshot_id IS NULL) AND (directory_snapshot_id IS NULL) AND (fact_set_id IS NULL) AND (family_test_names_snapshot_id IS NOT NULL) AND (financial_snapshot_id IS NULL) AND ((format)::text = ANY ((ARRAY['csv'::character varying, 'xlsx'::character varying, 'pdf'::character varying])::text[])) AND (information_snapshot_id IS NULL) AND (ministry_snapshot_id IS NULL) AND ((report)::text = 'family_test_names'::text) AND (timeline_snapshot_id IS NULL)) OR ((comparison_snapshot_id IS NULL) AND (directory_snapshot_id IS NULL) AND (fact_set_id IS NULL) AND (family_test_names_snapshot_id IS NULL) AND (financial_snapshot_id IS NULL) AND ((format)::text = ANY ((ARRAY['csv'::character varying, 'xlsx'::character varying, 'pdf'::character varying])::text[])) AND (information_snapshot_id IS NULL) AND (ministry_snapshot_id IS NULL) AND ((report)::text = 'family_timeline'::text) AND (timeline_snapshot_id IS NOT NULL)) OR ((comparison_snapshot_id IS NOT NULL) AND (directory_snapshot_id IS NULL) AND (fact_set_id IS NULL) AND (family_test_names_snapshot_id IS NULL) AND (financial_snapshot_id IS NULL) AND ((format)::text = ANY ((ARRAY['csv'::character varying, 'xlsx'::character varying, 'pdf'::character varying])::text[])) AND (information_snapshot_id IS NULL) AND (ministry_snapshot_id IS NULL) AND ((report)::text = 'campaign_comparison'::text) AND (timeline_snapshot_id IS NULL))));
 
--- The two export guards: their latest bodies (0037's, which exports.sql
--- carries) plus the comparison branch.
+-- The two export guards: their latest bodies (0063's, with its
+-- family_timeline branches, which exports.sql carries) plus the comparison
+-- branch.
 CREATE OR REPLACE FUNCTION public.stewardship_export_request_guard_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE facts stewardship_daily_fact_set%ROWTYPE;
@@ -202,6 +207,7 @@ DECLARE facts stewardship_daily_fact_set%ROWTYPE;
         ministry stewardship_ministry_export_snapshot%ROWTYPE;
         financial stewardship_financial_export_snapshot%ROWTYPE;
         names stewardship_family_test_names_export_snapshot%ROWTYPE;
+        timeline stewardship_timeline_export_snapshot%ROWTYPE;
         comparison stewardship_comparison_export_snapshot%ROWTYPE;
         handoff boolean; inputs_valid boolean:=false;
 BEGIN
@@ -264,6 +270,14 @@ BEGIN
                 OR EXISTS(SELECT 1 FROM stewardship_export_request prior
                     WHERE prior.family_test_names_snapshot_id=names.id
                       AND prior.requester_id=NEW.requester_id));
+    ELSIF NEW.report='family_timeline' THEN
+        -- One Family's timeline (migration 0063): Administrator only, as
+        -- the page's full view, so any current Administrator may also
+        -- regenerate another's capture.
+        SELECT * INTO timeline FROM stewardship_timeline_export_snapshot WHERE id=NEW.timeline_snapshot_id;
+        inputs_valid:=timeline.id IS NOT NULL AND timeline.campaign_id=NEW.campaign_id
+            AND NEW.parameters=timeline.parameters
+            AND stewardship_export_authorized_v1(NEW.requester_id,true);
     ELSIF NEW.report='campaign_comparison' THEN
         -- The Campaign comparison (migration 0071): its own capture, for
         -- the requester who captured it, an Administrator, or a requester
@@ -324,6 +338,9 @@ BEGIN
            OR (request.report='family_test_names' AND EXISTS(
                SELECT 1 FROM stewardship_family_test_names_export_snapshot s
                WHERE s.id=request.family_test_names_snapshot_id AND s.row_count=NEW.row_count))
+           OR (request.report='family_timeline' AND EXISTS(
+               SELECT 1 FROM stewardship_timeline_export_snapshot s
+               WHERE s.id=request.timeline_snapshot_id AND s.row_count=NEW.row_count))
            OR (request.report='campaign_comparison' AND EXISTS(
                SELECT 1 FROM stewardship_comparison_export_snapshot s
                WHERE s.id=request.comparison_snapshot_id AND s.row_count=NEW.row_count)))
@@ -338,12 +355,13 @@ END $$;
 -- Refuse to commit unless every part above is installed: the table, its
 -- indexes and guards, the column with its key and index, the widened kinds,
 -- and the two replaced guards with their comparison branch (and 0037's
--- names branch), neither of them SECURITY DEFINER. The constraint is also
--- evaluated against synthetic rows, as 0049's check does: a comparison
--- request in each download format is admitted and a PNG one refused, one
--- without its capture or with another capture too is refused, and 0049's
--- names formats still hold. No temporary objects: the migration login has
--- no TEMP grant.
+-- names and 0063's timeline branches), neither of them SECURITY DEFINER.
+-- The constraint is also evaluated against synthetic rows, as 0049's and
+-- 0063's checks do: a comparison request in each download format is
+-- admitted and a PNG one refused, one without its capture or with another
+-- capture (a financial or a timeline one) too is refused, and 0049's names
+-- and 0063's timeline formats still hold. No temporary objects: the
+-- migration login has no TEMP grant.
 DO $check$
 DECLARE definition text; expression text; fmt text; admitted boolean; probe json;
 BEGIN
@@ -381,10 +399,13 @@ BEGIN
     IF definition IS NULL
        OR position('''campaign_comparison''::text' IN definition)=0
        OR position('''family_test_names''::text' IN definition)=0
+       OR position('''family_timeline''::text' IN definition)=0
        OR (length(definition)-length(replace(definition,'comparison_snapshot_id IS NULL','')))
-          /length('comparison_snapshot_id IS NULL')<>6
+          /length('comparison_snapshot_id IS NULL')<>7
        OR (length(definition)-length(replace(definition,'family_test_names_snapshot_id IS NULL','')))
-          /length('family_test_names_snapshot_id IS NULL')<>6
+          /length('family_test_names_snapshot_id IS NULL')<>7
+       OR (length(definition)-length(replace(definition,'timeline_snapshot_id IS NULL','')))
+          /length('timeline_snapshot_id IS NULL')<>7
     THEN
         RAISE EXCEPTION 'Migration 0071: export_report_known does not admit the comparison kind';
     END IF;
@@ -396,7 +417,9 @@ BEGIN
             json_build_object('report','campaign_comparison','format',fmt,
                 'comparison_snapshot_id','00000000-0000-4000-8000-000000000000'),
             json_build_object('report','family_test_names','format',fmt,
-                'family_test_names_snapshot_id','00000000-0000-4000-8000-000000000000')])
+                'family_test_names_snapshot_id','00000000-0000-4000-8000-000000000000'),
+            json_build_object('report','family_timeline','format',fmt,
+                'timeline_snapshot_id','00000000-0000-4000-8000-000000000000')])
         LOOP
             EXECUTE format(
                 'SELECT %s FROM json_populate_record(NULL::public.stewardship_export_request, $1) AS stewardship_export_request',
@@ -414,7 +437,13 @@ BEGIN
             'financial_snapshot_id','00000000-0000-4000-8000-000000000000'),
         json_build_object('report','financial','format','csv',
             'comparison_snapshot_id','00000000-0000-4000-8000-000000000000',
-            'financial_snapshot_id','00000000-0000-4000-8000-000000000000')])
+            'financial_snapshot_id','00000000-0000-4000-8000-000000000000'),
+        json_build_object('report','campaign_comparison','format','csv',
+            'comparison_snapshot_id','00000000-0000-4000-8000-000000000000',
+            'timeline_snapshot_id','00000000-0000-4000-8000-000000000000'),
+        json_build_object('report','family_timeline','format','csv',
+            'comparison_snapshot_id','00000000-0000-4000-8000-000000000000',
+            'timeline_snapshot_id','00000000-0000-4000-8000-000000000000')])
     LOOP
         EXECUTE format(
             'SELECT %s FROM json_populate_record(NULL::public.stewardship_export_request, $1) AS stewardship_export_request',
@@ -429,6 +458,7 @@ BEGIN
                           'stewardship_export_publication_guard_v1')
           AND position('stewardship_comparison_export_snapshot' IN prosrc)>0
           AND position('stewardship_family_test_names_export_snapshot' IN prosrc)>0
+          AND position('stewardship_timeline_export_snapshot' IN prosrc)>0
           AND NOT prosecdef)<>2
     THEN
         RAISE EXCEPTION 'Migration 0071: the export guards were not replaced';

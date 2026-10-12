@@ -568,6 +568,21 @@ def _function(text, name):
     return text[start : text.index("$$;", text.index("AS $$", start)) + len("$$;")]
 
 
+def as_0063_left_them(cursor):
+    """Put back 0063's own export check and guards over later files' copies.
+
+    0071 (#1018) widens all three with the Campaign comparison, which 0063's
+    DO block, written before it, does not count. The caller rolls these
+    statements back.
+    """
+    text = (MIGRATIONS / "0063_timeline_exports.sql").read_text(encoding="utf-8")
+    for line in text.splitlines():
+        if line.startswith("ALTER TABLE public.stewardship_export_request"):
+            cursor.execute(line)
+    for name in ("request_guard", "publication_guard"):
+        cursor.execute(_function(text, f"stewardship_export_{name}_v1"))
+
+
 @pytest.mark.parametrize("old", ["constraint", "request_guard", "publication_guard"])
 def test_migration_check_refuses_the_previous_definitions(old):
     """0063's DO block passes as installed and fails on each earlier part.
@@ -594,12 +609,14 @@ def test_migration_check_refuses_the_previous_definitions(old):
         statements = [_function(earlier, f"stewardship_export_{old}_v1")]
         assert "stewardship_timeline_export_snapshot" not in statements[0]
     with transaction.atomic(), connection.cursor() as cursor:
+        as_0063_left_them(cursor)
         cursor.execute(check)  # The installed definitions pass.
         with pytest.raises(DatabaseError, match="Migration 0063"), transaction.atomic():
             for statement in statements:
                 cursor.execute(statement)
             cursor.execute(check)
         cursor.execute(check)  # Rolled back to the installed definitions.
+        transaction.set_rollback(True)
 
 
 def test_an_ended_rehearsals_export_is_made_again_not_regenerated(
@@ -748,8 +765,10 @@ def test_migration_check_refuses_the_previous_authorization():
     assert current.count(branch) == 1
     previous = current.replace(branch, "")
     with transaction.atomic(), connection.cursor() as cursor:
+        as_0063_left_them(cursor)
         cursor.execute(check)
         with pytest.raises(DatabaseError, match="Migration 0063"), transaction.atomic():
             cursor.execute(previous)
             cursor.execute(check)
         cursor.execute(check)
+        transaction.set_rollback(True)

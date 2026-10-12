@@ -13,12 +13,15 @@ model, field, constraint and indexes, so ``makemigrations --check`` stays
 clean. Reversing needs its own forward migration, so it has no reverse
 operation.
 
-It depends on the migration that installs the latest frozen file before
-it, so the files apply in prefix order. Files 0068 to 0070 are assigned to
-other pull requests that were not merged when this was written; whichever
-of them (or any other file below 0071) merges last before this one becomes
-its dependency (a re-chain), so the files still apply in prefix order and
-Django keeps a single leaf.
+It depends on the migration that installs the previous frozen file
+(0070, ``stewardship_accounts.0018_leader_changes``, #1034) and on the
+reports app's previous migration (0019), so the files apply in prefix order
+and Django keeps a single leaf. That puts it in the users swap's closure
+(#952): `migrate --users-upgrade-base` never applies it, so its definer
+functions are registered in ``runtime_grants.CLOSURE_FUNCTIONS`` and granted
+only once it is applied, and the users swap test puts 0063's export guards
+and ``export_report_known`` back while the swap is pending
+(``before_comparison_exports``).
 """
 
 import uuid
@@ -40,14 +43,12 @@ FROZEN_SQL = (
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("stewardship_accounts", "0011_portal_users"),
-        ("stewardship_campaigns", "0010_restore_holds_after_release"),
-        ("stewardship_jobs", "0021_alert_local_time"),
-        # The reports app's previous migration, which also installs the
-        # latest frozen file on this branch (0067). Re-chain it onto the
-        # migration that installs the latest file below 0071 before this
-        # merges; see the docstring.
-        ("stewardship_reports", "0014_campaign_comparison"),
+        # The reports app's previous migration (0069, #932).
+        ("stewardship_reports", "0019_member_names_last_first"),
+        # The migration that installs the previous frozen file (0070, #1034),
+        # so the files apply in prefix order. It follows the users swap, so
+        # `migrate --users-upgrade-base` never applies this file.
+        ("stewardship_accounts", "0018_leader_changes"),
     ]
 
     operations = [
@@ -137,6 +138,7 @@ class Migration(migrations.Migration):
                                 ("information_snapshot__isnull", True),
                                 ("ministry_snapshot__isnull", True),
                                 ("report", "participation"),
+                                ("timeline_snapshot__isnull", True),
                             ),
                             models.Q(
                                 ("comparison_snapshot__isnull", True),
@@ -148,6 +150,7 @@ class Migration(migrations.Migration):
                                 ("information_snapshot__isnull", False),
                                 ("ministry_snapshot__isnull", True),
                                 ("report", "additional_information"),
+                                ("timeline_snapshot__isnull", True),
                             ),
                             models.Q(
                                 ("comparison_snapshot__isnull", True),
@@ -159,6 +162,7 @@ class Migration(migrations.Migration):
                                 ("information_snapshot__isnull", True),
                                 ("ministry_snapshot__isnull", True),
                                 ("report__in", ("family_directory", "postal_outreach")),
+                                ("timeline_snapshot__isnull", True),
                             ),
                             models.Q(
                                 ("comparison_snapshot__isnull", True),
@@ -170,6 +174,7 @@ class Migration(migrations.Migration):
                                 ("information_snapshot__isnull", True),
                                 ("ministry_snapshot__isnull", False),
                                 ("report", "ministry"),
+                                ("timeline_snapshot__isnull", True),
                             ),
                             models.Q(
                                 ("comparison_snapshot__isnull", True),
@@ -181,6 +186,7 @@ class Migration(migrations.Migration):
                                 ("information_snapshot__isnull", True),
                                 ("ministry_snapshot__isnull", True),
                                 ("report", "financial"),
+                                ("timeline_snapshot__isnull", True),
                             ),
                             models.Q(
                                 ("comparison_snapshot__isnull", True),
@@ -192,6 +198,19 @@ class Migration(migrations.Migration):
                                 ("information_snapshot__isnull", True),
                                 ("ministry_snapshot__isnull", True),
                                 ("report", "family_test_names"),
+                                ("timeline_snapshot__isnull", True),
+                            ),
+                            models.Q(
+                                ("comparison_snapshot__isnull", True),
+                                ("directory_snapshot__isnull", True),
+                                ("fact_set__isnull", True),
+                                ("family_test_names_snapshot__isnull", True),
+                                ("financial_snapshot__isnull", True),
+                                ("format__in", ("csv", "xlsx", "pdf")),
+                                ("information_snapshot__isnull", True),
+                                ("ministry_snapshot__isnull", True),
+                                ("report", "family_timeline"),
+                                ("timeline_snapshot__isnull", False),
                             ),
                             models.Q(
                                 ("comparison_snapshot__isnull", False),
@@ -203,6 +222,7 @@ class Migration(migrations.Migration):
                                 ("information_snapshot__isnull", True),
                                 ("ministry_snapshot__isnull", True),
                                 ("report", "campaign_comparison"),
+                                ("timeline_snapshot__isnull", True),
                             ),
                             _connector="OR",
                         ),
