@@ -1071,6 +1071,7 @@ pk-admin report ministry
 pk-admin report ministry --ministry 9 --requests join --state unresolved
 pk-admin report source-form
 pk-admin report data-to-fix
+pk-admin report roster --show all --ministry 9
 ```
 
 | Command | The page | What it prints |
@@ -1150,6 +1151,20 @@ count now, such as no current campaign or a campaign without the census.
 A section that cannot count never fails the command. It prints counts
 only, never a name or address, and records the page's "viewed" event with
 the total it printed. A restore under review is exit 3 (`unavailable`).
+
+`report roster` counts **Roster changes to enter**, the resolved Ministry
+joins and leaves that staff enter in ParishSoft by hand. Like the page,
+Administrators and Staff may run it, from a session of any scope; a
+Ministry leader is refused (`denied`). Its options are the page's:
+`--show todo` (the default: not yet marked Entered in ParishSoft) or
+`--show all` (marked ones too), and `--ministry DUID` for one Ministry. It
+prints `show`, `ministry` (null without `--ministry`), `matching` (the
+list's rows), `joins`, `leaves`, `entered` (already marked; 0 with `--show
+todo`), `replaced` (the page's "Replaced by a later response") and
+`ministries`: the same counts for each Ministry on the list, by DUID
+(`ministry`) with its `name`. Each row names a Member and a Family, so the
+rows stay on the page and its downloads. It records the page's "viewed"
+event with a count of 0.
 
 ## Digests
 
@@ -1742,3 +1757,6 @@ pk-admin users import-leaders --confirm --token -
 - `pk-admin/1` (#463): additive. `content list` and `content history
   [--revision ID]`, the Pages and emails and Content history pages' reads
   (any session, Administrators only, no event).
+- `pk-admin/1` (#463): additive. `report roster [--show todo|all]
+  [--ministry DUID]`, the Roster changes to enter list's counts (any
+  session, Administrators and Staff, the page's event).
