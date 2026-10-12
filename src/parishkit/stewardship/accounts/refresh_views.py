@@ -4,10 +4,12 @@ An Administrator asks for an immediate full refresh from a confirmation page.
 The confirmation records one durable refresh command bound to a key the page
 chose, so a repeated submission returns the same run, and the domain owner
 coalesces the request behind any refresh already waiting for the same window:
-no concurrent poll starts, one manual full load may follow a running one, and
-the Administrator is taken to the run's own status page either way. Nothing
-here reads ParishSoft or holds a lock while waiting; the background service
-does the work and the status page reports its phases.
+no concurrent poll starts, and one manual full load may follow a running one.
+Either way the Administrator stays on Refresh from ParishSoft (navigation rule
+5, #521): the run is remembered in the signed-in session, never in the URL,
+and the page shows its live status below the Refresh now button. Nothing here
+reads ParishSoft or holds a lock while waiting; the background service does
+the work and the status region reports its phases.
 """
 
 from uuid import uuid4
@@ -23,6 +25,7 @@ from django.views.decorators.http import require_http_methods
 from parishkit.config import ConfigError
 from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
 from parishkit.stewardship.jobs.operational_sources import configured_policy
+from parishkit.stewardship.jobs.views import REFRESH_RUN, _task_read
 from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.source.errors import (
     SourceOrganizationChanged,
@@ -42,6 +45,13 @@ from .authentication import runtime
 from .limiting import LimiterUnavailable
 from .policy import Capability, allows
 from .sessions import authenticated_admin
+
+# The session key that remembers the run this sign-in last requested, so the
+# page can show it after the Post/Redirect/Get (navigation rule 5).
+RUN_KEY = "stewardship_refresh_run"
+# The page's region that shows the form and that run; Refresh now posts in
+# place to it, and its id is the redirect's fragment.
+RUN_REGION = REFRESH_RUN
 
 
 class RefreshForm(forms.Form):
@@ -88,19 +98,45 @@ def read_refresh_page(service):
     }
 
 
+def _run(request):
+    """The live status context of the run this sign-in last requested, or {}.
+
+    It is read as the Background task page reads it, unaudited, with the
+    page's own Background work rechecks, and points the status region's
+    poller at the task's passive status fragment, which never renews idle
+    time. A run that can no longer be read (removed by retention, or the
+    reader no longer allowed) is forgotten rather than shown as an error.
+    """
+    task_id = request.session.get(RUN_KEY)
+    if not isinstance(task_id, str):
+        return {}
+    result, context = _task_read(request, task_id)
+    if context is None:
+        if result.status_code in {403, 404}:
+            del request.session[RUN_KEY]
+        return {}
+    return context | {
+        "run_task_id": task_id,
+        # The poll asks for this page's wording of the region (#521).
+        "status_url": reverse("admin:background_task_status", args=[task_id])
+        + "?view=refresh",
+    }
+
+
 def _page(request, service):
-    """The confirmation page: the latest refresh, what is pending, a fresh key."""
+    """The confirmation page: the latest refresh, what is pending, a fresh key,
+    and the status of the run this sign-in last requested."""
     configuration, values = read_refresh_page(service)
     request._stewardship_display_configuration = configuration
     return render(
         request,
         "stewardship/source-refresh.html",
-        {**values, "request_key": uuid4()},
+        {**values, **_run(request), "request_key": uuid4()},
     )
 
 
 def _request(request, service, actor):
-    """Record the command under the page's key and go to its run."""
+    """Record the command under the page's key and show its run on this page."""
     form = RefreshForm(request.POST)
     if not form.is_valid():
         raise ValueError("Invalid refresh form.")
@@ -108,9 +144,8 @@ def _request(request, service, actor):
     if key.version != 4:
         raise ValueError("Invalid refresh key.")
     receipt = request_manual_refresh(request, service, actor, key)
-    return HttpResponseRedirect(
-        reverse("admin:background_task_page", args=[receipt.task_root_id])
-    )
+    request.session[RUN_KEY] = str(receipt.task_root_id)
+    return HttpResponseRedirect(reverse("admin:source_refresh") + f"#{RUN_REGION}")
 
 
 def request_manual_refresh(caller, service, actor, key):

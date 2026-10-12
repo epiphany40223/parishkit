@@ -142,7 +142,8 @@ HOSTED = {
     "integration-summary.html": ("integration-settings.html",),
     "settings-review.html": REVIEW_PAGES,
     "configuration-request-status.html": REVIEW_PAGES,
-    "background-task-status.html": ("background-task.html",),
+    # Refresh from ParishSoft shows the run it requested (#521).
+    "background-task-status.html": ("background-task.html", "source-refresh.html"),
     # Outgoing mail's bulk review region (#382 M4): Confirm and Continue
     # sit inside it, and the bulk panel draws it.
     "delivery-bulk-review.html": ("delivery-bulk.html",),
@@ -163,10 +164,10 @@ def test_every_in_place_control_names_its_region_as_a_fragment():
     data-table-region, literally or as {{ table.anchor }}) in the same
     template, or, for a fragment template listed in HOSTED, in the page
     template that draws it around the control. A hosted fragment template
-    may name its region ``{{ region_id|default:'…' }}``: each host's region is
-    then the default, or the region_id its include passes (Campaign
-    settings' leader-role panel, #922). The earlier data-region-link name is
-    gone."""
+    may name its region ``{{ region_id|default:'…' }}``: each include's
+    region is then the region_id it passes (Campaign settings' leader-role
+    panel, #922; Refresh from ParishSoft's run, #521), else the default.
+    The earlier data-region-link name is gone."""
     found = 0
     for path in sorted(TEMPLATES.rglob("*.html")):
         text = path.read_text()
@@ -191,12 +192,21 @@ def test_every_in_place_control_names_its_region_as_a_fragment():
                     ), (path.name, fragment)
                     continue
                 assert path.name in HOSTED, path.name
-                passed = re.findall(
-                    rf"\{{% include 'stewardship/{re.escape(path.name)}'"
-                    r' with [^%]*region_id="([\w-]+)"',
-                    host,
-                )
-                for region in [named.group(1), *passed]:
+                # Each include of the fragment names the region_id it
+                # passes, or else the default.
+                # Either quote may delimit the included name.
+                includes = [
+                    tag.group(0)
+                    for tag in re.finditer(
+                        rf"\{{% include (['\"])stewardship/{re.escape(path.name)}\1"
+                        r"[^%]*%\}",
+                        host,
+                    )
+                ]
+                assert includes, (path.name, "never included")
+                for include in includes:
+                    passed = re.search(r"\bregion_id=([\"'])([\w-]+)\1", include)
+                    region = passed.group(2) if passed else named.group(1)
                     assert names_region(host, region), (path.name, region)
     assert found >= 8
 
