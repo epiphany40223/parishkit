@@ -6,12 +6,14 @@ from uuid import UUID
 from django.template.loader import render_to_string
 from django.urls import reverse
 
+from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.reports.ministries import (
     DETAIL_SORTING,
     STATES,
     SUMMARY_SORTING,
     MinistryQuery,
 )
+from parishkit.stewardship.reports.ministry_views import queue_links
 from parishkit.stewardship.web.tables import report_table
 
 from .information_components import DATED_ZONE
@@ -97,6 +99,11 @@ def components(context, admin):
     # (#533): here a second Ministry the first summary page leaves out.
     more = [dict(values["summaries"][0], duid=10, name="Another Ministry")]
     summaries = more + values["summaries"]
+    # Each count's link to the follow-up queue (#1133), as the view builds
+    # it for a reader who may follow up every Ministry.
+    staff = Principal(UUID(int=97), frozenset({"staff"}))
+    for summary in summaries:
+        summary["queue_links"] = queue_links(staff, summary)
     choices = [{"duid": row["duid"], "name": row["name"]} for row in summaries]
     summary = values | dict(
         ministry_id=None,

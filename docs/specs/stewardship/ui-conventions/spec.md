@@ -1431,7 +1431,14 @@ non-private filters ([Logs](../admin-portal/spec.md#logs)). A control on
 another page that opens such a report narrowed by a private value (Edit
 user's "Sign-in activity", narrowed to one Google identity) is a link-styled
 button posting a small CSRF form with that value as a hidden field, never a
-link carrying it. A report whose rows an installed SQL selection
+link carrying it. A count in a table cell that opens the list it counts is
+a **count link**: the list opens filtered so it shows exactly the rows
+counted, its filter controls showing that choice; a zero count, or one the
+reader may not open, is plain text, not a link; and the link's accessible
+name names its row ("3 join requests for Choir"), since the visible number
+alone is ambiguous out of context. So far only
+[Ministry requests](../reports/spec.md#ministry-change-summary) has them
+(#1133). A report whose rows an installed SQL selection
 orders offers that selection's sort orders on the columns they order and its
 page sizes; its other columns do not sort, since the schema owns those
 orders. In v1 that covers:

@@ -1,5 +1,6 @@
 """Assigned-leader reporting without granting parish-wide campaign access."""
 
+from urllib.parse import urlencode
 from uuid import uuid4
 
 from django.core.exceptions import ObjectDoesNotExist
@@ -12,6 +13,7 @@ from django.views.decorators.http import require_http_methods
 
 from parishkit.stewardship.accounts.admin_navigation import PAGES
 from parishkit.stewardship.accounts.authentication import denial, runtime
+from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
@@ -82,6 +84,36 @@ def _audit(actor, campaign_id, query, outcome, count=0, total=0, scope=()):
                 campaign_id=campaign_id,
                 context=context,
             )
+
+
+# What each summary count opens in Ministry follow-up (#1133): the queue's
+# own filter names and closed values, so the queue shows exactly the
+# requests counted. Joining and Leaving count every current request of that
+# kind, whatever its status, so they choose Any status; Unresolved is the
+# queue's default status with either request, the Home panel's address.
+QUEUE_FILTERS = {
+    "joining": {"action": "join", "state": "any"},
+    "leaving": {"action": "leave", "state": "any"},
+    "unresolved": {},
+}
+
+
+def queue_links(actor, summary):
+    """The follow-up queue addresses one summary row's counts link to (#1133).
+
+    A count links only when it is not zero and the reader may follow up
+    that Ministry, the check the queue itself makes on the link: a Ministry
+    leader gets links only for the Ministries they lead. The address carries
+    only the Ministry number and closed filter values, never a search.
+    """
+    if not allows(actor, Capability.MINISTRY_FOLLOWUP, ministry_id=summary["duid"]):
+        return {}
+    base = reverse("admin:ministry_followup")
+    return {
+        count: f"{base}?{urlencode({'ministry': summary['duid']} | values)}"
+        for count, values in QUEUE_FILTERS.items()
+        if summary[count]
+    }
 
 
 @require_http_methods(["GET", "POST"])
@@ -181,6 +213,8 @@ def report(request, campaign_id, *, action=None):
             if moved is not None:
                 query = moved
                 result = read()
+            for summary in result["summaries"]:
+                summary["queue_links"] = queue_links(actor, summary)
             count = len(
                 result["rows"] if ministry_id is not None else result["summaries"]
             )

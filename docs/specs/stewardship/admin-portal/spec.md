@@ -731,12 +731,15 @@ The counts are exact: each is the queue's own selection, with the leader's
 scope and default filters, read for one Ministry and action without its
 rows, so the panel never counts a request the queue would not list for that
 leader. The link carries only the Ministry number (`?ministry=<DUID>`); the
-queue accepts that one closed value by GET, checked against the person's
-current scope (a number outside it is refused), so Back and reload work.
+queue accepts that closed value by GET
+([follow-up workflows](#follow-up-workflows) lists what such a link may
+carry), checked against the person's current scope (a number outside it is
+refused), so Back and reload work.
 The queue then remembers that view like any other, so its request links,
 Save and next, and each request page's "Return to Ministry follow-up" link
-keep that Ministry. Every other queue filter, search above all, stays
-private POST state. The command line's status read does not
+keep that Ministry. Search and every filter other than those
+[follow-up workflows](#follow-up-workflows) lists stay private POST state.
+The command line's status read does not
 compute the panel.
 
 Home also shows one **Today** line for each role. Its contents are a
@@ -4589,10 +4592,22 @@ Both follow-up queues remember the view the reader is working through
 remembers its applied filters, sort, page and page size in the signed-in
 session (never in the URL), as a change's origin is remembered (navigation
 rule 5). Links carry only an opaque token, and the session keeps the last 20
-views. The one exception is the Ministry number on the "Open requests" link
-of Home's [My Ministries panel](#home-page), which opens the Ministry
-follow-up queue for that Ministry; the queue then remembers that view under
-a token like any other. A link the queue cannot use (a malformed or
+views. The one exception is a link that opens the Ministry follow-up queue
+for one Ministry by GET: the "Open requests" link of Home's
+[My Ministries panel](#home-page) carries only the Ministry number
+(`?ministry=<DUID>`), and the counts on
+[Ministry requests](../reports/spec.md#ministry-change-summary) add the
+queue's own closed Request and Status values
+(`?ministry=<DUID>&action=join&state=any`,
+`?ministry=<DUID>&action=leave&state=any`, or the Ministry alone for
+Unresolved,
+[#1133](https://github.com/epiphany40223/parishkit/issues/1133)), so the
+queue shows exactly the requests counted. Such a link may carry only
+`ministry`, `action` and `state`, each a single value the queue's filter
+form accepts, never a search; a token and a Ministry never travel
+together. The Ministry is checked against the person's current follow-up
+scope, and one outside it is refused. The queue then remembers that view
+under a token like any other. A link the queue cannot use (a malformed or
 out-of-date address) says so in plain words and links back to the queue,
 without asking the reader to reload it. An item opened from the queue carries the token, so its "Return to"
 link reopens the same filters, sort and page. A token the session no longer
