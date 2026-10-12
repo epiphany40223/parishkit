@@ -1004,6 +1004,23 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 .review-dialog .dialog-body > :first-child { margin-top: 0; }
 .review-dialog [data-confirm-accept][data-recorded] { visibility: hidden; }
 .review-outcome { min-height: 1.6em; margin: .5rem 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The Basic / Advanced mode toggle (#1121, components/editor-mode.html): a
+   segmented pair of radios with a visible label, at the top of the editor.
+   Both segments are always bold and fixed in size, so choosing one changes
+   only colours and never moves anything (no layout shift). The radio itself
+   covers its segment, invisible, so the native radio group keeps its
+   keyboard behaviour (arrow keys) and its accessible name. */
+fieldset.editor-mode { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; margin-block: 0 1rem; padding: 0; border: 0; border-radius: 0; background: none; }
+fieldset.editor-mode > legend { float: none; width: auto; margin: 0; padding: 0; font-size: 1rem; }
+.editor-mode-options { display: inline-flex; border: var(--button-border-width) solid var(--accent); border-radius: var(--radius-small); overflow: hidden; }
+.editor-mode-options label:has(> input[type=radio]) { display: inline-flex; align-items: center; min-height: var(--button-min-height); margin: 0; padding: .5rem 1.25rem; color: var(--accent); font-weight: 650; }
+.editor-mode-options label + label { border-inline-start: var(--button-border-width) solid var(--accent); }
+.editor-mode-options label:has(> input[type=radio]) > input { inset: 0; width: 100%; height: 100%; opacity: 0; }
+.editor-mode-options label:has(> input:checked) { background: var(--accent); color: var(--paper); }
+.editor-mode-options label:has(> input:focus-visible) { outline: 3px solid var(--focus); outline-offset: -6px; }
+/* The Basic panel is a <fieldset> so one disabled attribute keeps its
+   controls unsent while Advanced is shown; it draws no box of its own. */
+fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0; background: none; }
 .campaign-dates { margin-block: .25rem .5rem; }
 /* The scheduled emails table keeps readable columns on a phone: it scrolls
    sideways inside its .table-scroll region rather than breaking words. */
