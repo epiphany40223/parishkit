@@ -1,0 +1,13 @@
+{% comment %}
+A file field whose size the page checks as a file is chosen (data-max-bytes
+in ui-v1.js; Parish logos, #1062). It is Django's field group, or the
+toggletip one (field-tip.html) when the field has a tip, with the field's
+errors in a reserved line: the server's errors and the page's own size
+refusal share the one .errorlist (id "<field id>_error", as Django names
+it), whose line keeps its height while empty so a message coming or going
+never moves the fields below, and which is a polite live region so a screen
+reader hears the page's refusal.
+{% endcomment %}{% if field.field.tip %}<div class="label-row">{{ field.tip_label }}{% include "stewardship/components/toggletip.html" with tip_id=field.tip_id tip_label_id=field.tip_label_id tip_text=field.field.tip %}</div>{% else %}{{ field.label_tag }}{% endif %}
+{% if field.help_text %}<div class="helptext"{% if field.auto_id %} id="{{ field.auto_id }}_helptext"{% endif %}>{{ field.help_text|safe }}</div>{% endif %}
+<div class="field-error-line" role="status"><ul class="errorlist" id="{{ field.auto_id }}_error"{% if not field.errors %} hidden{% endif %}>{% for error in field.errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div>
+{{ field }}

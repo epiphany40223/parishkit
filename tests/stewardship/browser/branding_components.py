@@ -14,7 +14,8 @@ served by the fixture server:
 
 ``REFUSED`` is the page refusing an upload (400), the field error in the
 form and its summary in the review region; a browser test answers the
-upload's POST with it.
+upload's POST with it. ``REFUSED_SIZE`` refuses a favicon uploaded on its
+own (#1062), with "Each size separately" still chosen.
 """
 
 from types import SimpleNamespace as Value
@@ -23,7 +24,7 @@ from uuid import UUID
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts.admin_editing import review_region
-from parishkit.stewardship.accounts.branding_views import LogoForm
+from parishkit.stewardship.accounts.branding_views import LogoUploadForm
 
 PAGE = "/admin/parish/logos/"
 BUNDLE = UUID("75000000-0000-4000-8000-0000000000d1")
@@ -33,6 +34,10 @@ PENDING = f"{PAGE}?request={REQUEST}"
 SETTLED = f"{PAGE}?request={REQUEST}&settled=1"
 STATUS = "/branding-in-place-status"
 REFUSED = "/branding-in-place-refused"
+REFUSED_SIZE = "/branding-in-place-refused-size"
+SIZE_ERROR = (
+    "Favicon: the image is 400 × 120 pixels; a favicon must be square (within 10%)."
+)
 STEPS = ("Make changes", "Review", "Apply")
 POSTS = {
     PAGE: (303, f"{REVIEW}#settings-review", ""),
@@ -59,7 +64,13 @@ def components(context, admin):
     """Every page above, keyed by the exact path and query it is fetched at."""
     sizes = {"favicon": 32, "icon": 128, "large": 512, "menu": 64}
     assets = [
-        Value(pk=UUID(int=200 + index), label=label, width=size, height=size)
+        Value(
+            pk=UUID(int=200 + index),
+            label=label,
+            width=size,
+            height=size,
+            changed=label == "favicon",
+        )
         for index, (label, size) in enumerate(sizes.items())
     ]
     pending = Value(state="staged", request_id=REQUEST, failure_code="")
@@ -67,7 +78,7 @@ def components(context, admin):
 
     def page(step, current, form=None, **region):
         """Parish logos at ``step`` with ``current`` logos and the region."""
-        form = form or LogoForm(initial={"base_digest": "a" * 64})
+        form = form or LogoUploadForm(initial={"base_digest": "a" * 64})
         values = review_region("branding_settings", form, **region)
         if region.get("receipt"):
             values["status_url"] = STATUS
@@ -85,8 +96,14 @@ def components(context, admin):
             ),
         )
 
-    refused = LogoForm(data={"base_digest": "a" * 64}, files={})
+    refused = LogoUploadForm(data={"base_digest": "a" * 64}, files={})
     refused.is_valid()
+    # The server's refusal of a favicon uploaded on its own; the fixture
+    # server never reads the file, so the error is the one check_slot gives.
+    refused_size = LogoUploadForm(data={"base_digest": "a" * 64, "mode": "each"})
+    refused_size.is_valid()
+    refused_size.errors.clear()
+    refused_size.add_error("favicon", SIZE_ERROR)
     return {
         PAGE: page(0, []),
         REVIEW: page(
@@ -110,4 +127,5 @@ def components(context, admin):
         ),
         SETTLED: page(2, assets, receipt=applied),
         REFUSED: page(0, [], refused),
+        REFUSED_SIZE: page(0, [], refused_size),
     }
