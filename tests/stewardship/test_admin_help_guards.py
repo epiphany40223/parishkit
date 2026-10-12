@@ -99,12 +99,10 @@ INTRO_ALLOWED = {
     # The step-up names its return page when it is another page (#547).
     "error.html": 61,
     "setup.html": 46,
-    "ministries.html": 22,
     "denied.html": 31,
     "go-live-readiness.html": 24,
     "delivery-control.html": 24,
     "availability.html": 21,
-    "limitations-report-error.html": 16,
 }
 
 # Labels for internal identifiers and worker bookkeeping. They may appear
