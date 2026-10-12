@@ -6,6 +6,7 @@
     <h2 id="home-health-heading">{% blocktranslate count count=dashboard.health_problems|length trimmed %}{{ count }} system problem needs attention{% plural %}{{ count }} system problems need attention{% endblocktranslate %}</h2>
     <ul class="health-problems">{% for problem in dashboard.health_problems %}<li class="notice notice-error" data-problem="{{ problem.kind }}">{% include "stewardship/system-health-problem.html" %} <a href="{% url 'admin:system_health' %}">{% translate "System health" %}</a></li>{% endfor %}</ul>
   </section>{% endif %}
+  {% if dashboard.held_emails %}<p class="notice" data-home-held-emails>{% blocktranslate count n=dashboard.held_emails trimmed %}{{ n }} email held after a restore is not decided, so it is not sent. A held invitation also stops that Family's reminders.{% plural %}{{ n }} emails held after a restore are not decided, so they are not sent. A held invitation also stops that Family's reminders.{% endblocktranslate %} <a href="{% url 'admin:held_emails' %}">{% translate "Decide held emails" %}</a></p>{% endif %}
   <section class="panel">
     {% if dashboard.campaign %}
     <h2>{{ dashboard.campaign.active_configuration.name }}</h2>

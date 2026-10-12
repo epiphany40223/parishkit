@@ -89,7 +89,12 @@ def components(context, admin):
         ``step["panel"]`` names the panel whose control was used (held emails
         or release), where the view draws the step's outcome.
         """
-        values = {"review": state, "step": step, "release_ready": not state.needed}
+        values = {
+            "review": state,
+            "step": step,
+            "release_ready": not state.needed,
+            "page_url": PAGE,
+        }
         return (
             "text/html",
             render_to_string(

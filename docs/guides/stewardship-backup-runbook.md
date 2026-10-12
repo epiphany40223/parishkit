@@ -935,9 +935,9 @@ limitations remain:
   after each large send as well as nightly.
 - **An undecided invitation keeps the Family's reminders back.** After
   release, emails nobody decided on stay held, and the Restore review page is
-  gone. The database admits decisions after release, but the page for them
-  is still to come (#757). The release preview says how many Families this
-  affects.
+  gone. Home then links to the **Held emails** page (under Mail and Family
+  portal), where an Administrator decides them the same way (#757). The
+  release preview says how many Families this affects.
 - **Mid-hand-off emails are not held.** An email the provider was being given
   at the backup is settled from the delivery warning on Background work after
   release.
