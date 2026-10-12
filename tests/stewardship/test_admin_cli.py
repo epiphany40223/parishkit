@@ -87,6 +87,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "ministries list",
         "branding show",
         "campaign shares",
+        "artwork show",
     }
     tests = {
         "test sample-preview",

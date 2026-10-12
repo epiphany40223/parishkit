@@ -1636,6 +1636,8 @@ signatures:
   their transaction. `content list` needed none (the catalog's row builder
   was already request-free); `content history` moved the history page's
   read into `content_history.retained_content`, which the page now calls.
+  `artwork show` moved Campaign images' current-image query into
+  `artwork_views.current_images`, which the page now calls.
   `parish show`, `ministries list` and `campaign shares` needed none: the
   pages' profile, catalog and campaign-target reads were already
   request-free; `branding show` moved the logo page's current-logo query
@@ -1823,7 +1825,7 @@ none.
 | `content_catalog`, `content_edit`, `content_revision`, `content_delete`, `content_history`, `content_history_revision`, `content_plain_text` | `content list`, `content history` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); `content show`, `content preview`, `content confirm` (PR 10) |
 | `parish_settings`, `ministries` | `parish show`, `parish preview`, `parish confirm`, `ministries list` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the Ministries changes (PR 10) |
 | `hosted_files`, `hosted_file_delete`, `hosted_file_rename` | `files list`, `files delete`, `files rename` ([#463](https://github.com/epiphany40223/parishkit/issues/463)) |
-| `artwork_settings` (its upload and removal reviews, #750) | `artwork show`, `artwork remove` (PR 10) |
+| `artwork_settings` (its upload and removal reviews, #750) | `artwork show` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); `artwork remove` (PR 10) |
 | `branding_settings`: **Apply changes** on its in-place logo review (#750) | `branding show` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); `branding confirm --expected-version …`, a configuration request for logos already uploaded (PR 10) |
 | `hosted_file_upload`, `artwork_upload`, `branding_settings` uploads | Pending: file uploads; a later PR may accept `--file` |
 | `branding_asset` | Permanent: image previews and bytes for the browser |
@@ -1971,6 +1973,22 @@ and each retained page and email (id, kind, slot, name, subject); with
 did not retain. Content is the campaign's own text, never a Family's. A
 configuration refusal is `unavailable`. The
 [operator guide](../../../guides/stewardship-admin-automation.md#pages-and-emails)
+lists the fields.
+
+`artwork show` is the read of Campaign images, through the page's own
+pieces: the current-campaign check (`artwork_views._campaign`), the
+current images (`artwork_views.current_images`) and the upload
+availability check (`artwork_views.unavailable`). It
+is Administrators only (`CONFIGURE`), admitted passively so any session
+scope reads, records no event, and prints the applied configuration's
+`version`. It prints the current `campaign_id` and every slot in the
+page's order, each with its label, the page's reason it cannot take an
+upload (or null) and its current image's stored facts (or null; a slot
+whose asset row is missing is null, as the page draws it empty). No
+current campaign is `not_available`; an archived current campaign still
+reads, on the page and the command line alike. The images are the
+campaign's own artwork, never a Family's. The
+[operator guide](../../../guides/stewardship-admin-automation.md#campaign-images)
 lists the fields.
 
 `parish show`, `ministries list`, `branding show` and `campaign shares

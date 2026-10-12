@@ -166,7 +166,7 @@ LEDGER = {
     "past_campaign_import": command("history confirm"),
     "past_campaign_removal": command("history remove"),
     # Reviews and removals happen on the page itself (#750).
-    "artwork_settings": pending("PR 10", "artwork show", "artwork remove"),
+    "artwork_settings": command("artwork show", owed="PR 10"),
     "branding_settings": command("branding show", owed="PR 10"),
     "hosted_file_upload": permanent(UPLOAD),
     "artwork_upload": permanent(UPLOAD),
