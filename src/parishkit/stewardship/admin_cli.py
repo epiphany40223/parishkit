@@ -1258,6 +1258,32 @@ def history_remove(args, preamble, runtime, context):
     )
 
 
+def system_backup_now(args, preamble, runtime, context):
+    """Take a backup now, as System health's button does (ADM-13 PR 3b).
+
+    The page needs a recent sign-in, so this always prompts, with the
+    page's preview (the last backup and its size, off-site copies,
+    retention, a send in progress), before any transaction; a request
+    already live or a restore under review is refused before the prompt.
+    ``--request-key`` names the request, so a repeat returns the first.
+    The session stands in for the page's recent sign-in, as the request's
+    guard admits.
+    """
+    from .system_health import backup_now, backup_preview_lines
+
+    # A repeat with the key of a request already recorded asks nothing and
+    # returns that request, as the page's repeated confirmation does.
+    lines = backup_preview_lines(runtime.store, key=args.request_key)
+    if lines is not None:
+        confirm(context, lines)
+    return backup_now(
+        context["caller"],
+        runtime,
+        key=_request_key(args, context),
+        context=context,
+    )
+
+
 def portal_maintenance_set(args, preamble, runtime, context):
     """Close or reopen the Family portal, as its page's buttons do (PR 7a).
 
@@ -2041,6 +2067,17 @@ def _uuid4(value):
     return parsed
 
 
+def _backup_now_options(parser):
+    """Options of ``system backup-now``: the request key, a version 4 UUID,
+    which becomes the request's identity, as the page's preview key does."""
+    parser.add_argument(
+        "--request-key",
+        type=_uuid4,
+        help="a UUID that makes a repeat safe (default: a new one, "
+        "written to standard error)",
+    )
+
+
 def _refresh_start_options(parser):
     """Options of ``refresh start``: the request key, a version 4 UUID."""
     parser.add_argument(
@@ -2811,7 +2848,7 @@ def _read_specs():
         TaskList,
         TaskShow,
     )
-    from .system_health import SystemHealth
+    from .system_health import BackupNow, SystemHealth
 
     return (
         CommandSpec(
@@ -2907,6 +2944,20 @@ def _read_specs():
             options=(_watch_options,),
             audit_event="system_health_viewed",
             watch=True,
+        ),
+        # Take a backup now (ADM-13 PR 3b): keyed, fresh-gated, prompting.
+        CommandSpec(
+            "system backup-now",
+            "Ask the server to take a backup now, as System health does.",
+            system_backup_now,
+            "full",
+            True,
+            BackupNow.field_names(),
+            3,
+            options=(_backup_now_options,),
+            fresh_gated=True,
+            prompts=True,
+            request_key=True,
         ),
         CommandSpec(
             "go-live progress",

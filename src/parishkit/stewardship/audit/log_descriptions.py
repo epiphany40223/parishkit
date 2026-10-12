@@ -168,6 +168,10 @@ DESCRIPTIONS = {
         "An automation session sent a test of one email for chosen Families "
         "to the Testing recipient, as the Send to chosen Families page does."
     ),
+    "admin_cmd_system_backup_now": _(
+        "An automation session asked the server to take a backup now, as "
+        "System health's Take a backup now does."
+    ),
     "admin_cmd_portal_maintenance_set": _(
         "An automation session closed or reopened the Family portal for "
         "maintenance, as the Family portal availability page does."
@@ -315,6 +319,7 @@ DESCRIPTIONS = {
         "An Administrator opened the list of Families the form cannot open."
     ),
     "data_to_fix_viewed": _("Someone opened Data to fix in ParishSoft."),
+    "backup_requested": _("An Administrator asked the server to take a backup now."),
     "background_viewed": _("An Administrator opened Background work."),
     "delivery_viewed": _("An Administrator opened Outgoing mail."),
     "delivery_bulk_resolved": _(

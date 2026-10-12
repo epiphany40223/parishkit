@@ -321,6 +321,26 @@ send count `daily_sent` and the `daily_limit` Family email stops at, the open
 `refused_counts`, the newest backup and the `offsite` copy's state. The
 pause's reason and who paused it, and the page's sentences, are not in it.
 
+### `system backup-now`
+
+System health's **Take a backup now**. It needs a full-scope session and
+always prompts (or takes `--yes`), showing the page's preview: when the
+last backup finished and its size, whether it will also be copied
+off-site, that it follows the usual retention, and that it waits while a
+Family email send is in progress. It is refused (exit 1, `stale_version`) while a
+request is waiting or running or a restore is under review. The session
+stands in for the page's recent sign-in. `--request-key UUID` (a version 4
+UUID, written to standard error when not given) names the request, so a
+repeat returns the first one (`created` false). It prints `request_id`,
+`created`, `status` (as the Backups panel words it; `waiting` until the
+server's five-minute check picks it up) and `created_at`, and records
+`backup_requested` and `admin_cmd_system_backup_now`. Follow it with
+`system health --watch 60` (`backup_request`).
+
+```text
+pk-admin system backup-now
+```
+
 ### Watching and errors
 
 `--watch SECONDS` (2 to 300) on `task show`, `send progress`,
@@ -1477,6 +1497,9 @@ pk-admin users import-leaders --confirm --token -
   `connection_at` instead.
 - `pk-admin/1` (ADM-13 PR 2b, #530): additive. `system health`, with
   `--watch`.
+- `pk-admin/1` (ADM-13 PR 3b, #530): additive. `system backup-now`
+  (keyed, fresh-gated, always prompts), and `system health`'s
+  `backup_request` with the newest request's state.
 - `pk-admin/1` (ADM-11 PR 9a): additive. `task retry`, the first command
   that takes `--request-key`, and `error.request_id` on its unknown
   outcome, holding the key.
