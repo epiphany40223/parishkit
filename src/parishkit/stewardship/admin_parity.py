@@ -111,6 +111,9 @@ LEDGER = {
     "automation_notices": permanent(
         "the human side of the automation interface: acknowledging notices"
     ),
+    # Listing and signing out other people's browser sessions (#953) is
+    # session chrome too; the operator's offline recovery signs everyone out.
+    "signed_in_sessions": permanent(SESSION_CHROME),
     # Source refresh.
     "source_refresh": command("refresh start", "refresh status"),
     "background_task_page": command("task show"),

@@ -3557,8 +3557,9 @@
   // status until it is applied. The dialog is busy from the start: Cancel
   // and Escape do nothing until the answer. onRecorded runs once the server
   // has recorded the change. A review dialog's Apply shows no spinner (its
-  // width would move Cancel beside it): its progress is the status line's. Returns true once it is applied; otherwise
-  // refuseConfirm has said why in the dialog, and it returns false.
+  // width would move Cancel beside it): its progress is the status line's.
+  // Returns the POST's answer ({response, text}) once it is applied;
+  // otherwise refuseConfirm has said why in the dialog, and it returns false.
   const followChange = async (state, url, body, onRecorded) => {
     const {dialog} = state;
     state.busy = true;
@@ -3610,7 +3611,7 @@
         {href: statusUrl, text: "See the change's status"});
       return false;
     }
-    return true;
+    return answer;
   };
   // The page at address after an applied change, parsed, or null when it
   // could not be read: the change is applied, so an ordinary load of the
@@ -3643,7 +3644,9 @@
       if (!fields.has(name) && typeof value === "string") body.append(name, value);
     });
     chosen.forEach((item) => body.append(item.field, item.value));
-    if (!await followChange(state, form.action, body)) return;
+    // The answer's page may carry a data-confirm-announce line (below).
+    const answer = await followChange(state, form.action, body);
+    if (!answer) return;
     // Applied: redraw every region from the table's own address.
     const region = form.closest(REGIONS);
     const fresh = await freshPage(region?.dataset.refreshUrl || window.location.href);
@@ -3656,7 +3659,13 @@
       || document.getElementById(fallback) || document.querySelector("main h1");
     target?.focus({preventScroll: true});
     target?.scrollIntoView({block: "nearest"});
-    announce(fillIn(chosen.length === 1 ? dialog.dataset.doneOne : dialog.dataset.doneMany,
+    // An action that turned out to change nothing says so on the page its
+    // answer redirects to, in a hidden data-confirm-announce line (Signed-in
+    // sessions: the session had already ended, #953). That line is said
+    // instead of the dialog's own "done" words, which would claim a change.
+    const outcome = new DOMParser().parseFromString(answer.text, "text/html")
+      .querySelector("[data-confirm-announce]")?.textContent.trim();
+    announce(outcome || fillIn(chosen.length === 1 ? dialog.dataset.doneOne : dialog.dataset.doneMany,
       state.values));
   };
 

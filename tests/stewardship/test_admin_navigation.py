@@ -587,6 +587,7 @@ SPEC_ORDER = [
     "parishsoft_fixes",
     # Users and access
     "users",
+    "signed_in_sessions",
     "automation_access",
     # System
     "system_health",
