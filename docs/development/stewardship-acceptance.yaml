@@ -43,6 +43,7 @@ sections:
     "Follow-up records": [DAT-07]
     "Content and email templates": [DAT-07]
     "Job, outbox, audit, and purge records": [DAT-07, DAT-09]
+    "Outbox recipient reads": [DAT-07, DAT-09]
     "Campaign read guards": [DAT-09]
     "Admin page snapshots": [DAT-09]
     "Export admission order": [DAT-09, BG-08]

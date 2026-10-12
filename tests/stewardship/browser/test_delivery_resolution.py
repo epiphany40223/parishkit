@@ -172,3 +172,28 @@ def test_email_without_a_decision_keeps_its_note_form_closed(page, component_ori
     disclosure.locator("summary").click()
     assert page.locator("#evidence-note").is_visible()
     assert "Not sure it arrived, which" not in page.locator("main").inner_text()
+
+
+def test_email_page_shows_its_recipients_without_moving(page, component_origin):
+    """#1024: the recipient addresses sit under the Family line, with the
+    Testing recipient named when the email was routed there; they are in
+    the page as served and stay put while the history pages in place."""
+    page.goto(component_origin + "/delivery-paged")
+    main = page.locator("main")
+    text = main.inner_text()
+    line = "To: head@example.org, spouse@example.org"
+    assert line in text
+    assert "Testing mode sends it to: testing@example.org" in text
+    assert (
+        text.index("Family DUID:") < text.index(line) < text.index("Refused addresses:")
+    )
+    # The line's place in the document (not the viewport, which paging may
+    # scroll) and size are unchanged after the history pages in place.
+    recipients = page.locator("#email-recipients")
+    place = "e => { const r = e.getBoundingClientRect();"
+    place += " return [r.left, r.top + window.scrollY, r.width, r.height]; }"
+    before = recipients.evaluate(place)
+    page.locator("#delivery-history").get_by_role("link", name="Next page").click()
+    page.locator("#delivery-history").get_by_text("Created").wait_for()
+    assert "/delivery-paged?page=2" in page.url
+    assert recipients.evaluate(place) == before

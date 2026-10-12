@@ -1406,6 +1406,27 @@ evidence remain current, and no campaign mutation occurred after their
 snapshot. Failure performs no deletion and atomically enters
 `failed_pre_delete`, releases the gate, and leaves the Campaign `archived`.
 
+#### Outbox recipient reads
+
+An email's intended and routed recipient lists are stored with its rendering
+(`stewardship_outbox_render`), beside its subject and body. The web login has
+no grant on that table, so no Admin page reads an email's content. The one
+exception is the [Mail message page](../admin-portal/spec.md#mail-message-page),
+which shows whom the email was for
+([#1024](https://github.com/epiphany40223/parishkit/issues/1024)). It reads
+them through `stewardship_delivery_recipients_v1(message, actor)`, a
+`SECURITY DEFINER` function with a fixed search path (frozen migration 0058).
+The function returns only the addresses of the message's newest rendering,
+one row each, with kind `intended` or `routed`, in stored order, and no other
+column of the rendering. It refuses (SQLSTATE `42501`) any session login but
+the web login or the schema owner, and any actor that
+`stewardship_export_authorized_v1(actor, true)` does not admit as an enabled
+Administrator, which is the same SQL check the page's resolution commands
+make. PUBLIC has no EXECUTE; `database-grants` grants it only to the web
+login. The page's `delivery_viewed` audit record names the actor and the
+email, so the read needs no audit of its own. The table grant is unchanged:
+the web login still cannot `SELECT` any rendering column.
+
 ### Campaign read guards
 
 Every campaign-detail read, report query, partial response, and generated-file

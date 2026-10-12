@@ -44,6 +44,7 @@ from .delivery_reads import (
     ACTION_LABELS,
     REFUSAL_SORTING,
     current_snapshot,
+    email_recipients,
     email_refusals,
     read_detail,
     read_listing,
@@ -147,6 +148,10 @@ def _retry_inputs(purpose):
 def _page(request, template, load, *, subject=None, status=200):
     """Capture bounded metadata, render outside locks, then recheck disclosure.
 
+    ``load(actor)`` reads the page's context inside the transaction; it gets
+    the admitted Administrator, whom a definer read names as its caller
+    (the Mail message page's recipients, #1024).
+
     ``status`` is the answer's status: an in-place command refused with an
     error summary answers with this page and a 4xx status (#562).
     """
@@ -157,7 +162,7 @@ def _page(request, template, load, *, subject=None, status=200):
             configuration = SystemConfiguration.objects.first()
             if configuration is None or configuration.restore_review_required:
                 return _error(ErrorCode.UNAVAILABLE, 503)
-            context, count = load()
+            context, count = load(actor)
         response = render(request, template, context, status=status)
         with transaction.atomic():
             current = _principal(request, service.store, final=True)
@@ -238,7 +243,7 @@ def delivery_list(request):
     if isinstance(bulk, HttpResponse):
         return bulk
 
-    def load():
+    def load(actor):
         """Capture one filtered page without reading any private message payload."""
         data = read_listing(request.GET)
         values = data["values"]
@@ -360,22 +365,24 @@ def _available():
 def delivery_detail(request, message_id):
     """Immutable attempt metadata is distinct from the latest Task execution."""
 
-    def load():
+    def load(actor):
         """Pin history's upper version to the selected message observation.
 
         The page names the email by its purpose and its Family's name (from
-        the latest ParishSoft data, as Outgoing mail reads it) and lists the
-        refused addresses its delivery recorded (#1015). ``commands`` are the
-        offered resolutions; ``decisions`` says whether any of them changes
-        the email (anything but a bare evidence note), which decides whether
-        the page shows the "Resolve this email" section or only the closed
-        note form.
+        the latest ParishSoft data, as Outgoing mail reads it), its
+        recipient addresses (read for ``actor`` through the definer function,
+        #1024) and the refused addresses its delivery recorded (#1015).
+        ``commands`` are the offered resolutions; ``decisions`` says whether
+        any of them changes the email (anything but a bare evidence note),
+        which decides whether the page shows the "Resolve this email" section
+        or only the closed note form.
         """
         data = read_detail(message_id, request.GET)
         window = data["window"]
         (delivery,) = with_family_names([data["delivery"]], current_snapshot())
         return dict(
             delivery=delivery,
+            recipients=email_recipients(message_id, actor.identity),
             refused=email_refusals(message_id),
             events=data["events"],
             task=data["task"],
@@ -397,7 +404,7 @@ def delivery_detail(request, message_id):
 def refusal_list(request):
     """Show unresolved Family-scoped addresses; no hidden cross-Family clearance."""
 
-    def load():
+    def load(actor):
         """Read only a bounded current unresolved-address page."""
         data = read_refusals(request.GET)
         return dict(
@@ -420,7 +427,7 @@ def refusal_list(request):
 def refusal_detail(request, refusal_id):
     """Pin the source generation in a CSRF-protected explicit verification form."""
 
-    def load():
+    def load(actor):
         """Capture retained evidence and the generation the Admin must verify,
         with the Family's name from the latest ParishSoft data (#935)."""
         data = read_refusal(refusal_id, request.GET)

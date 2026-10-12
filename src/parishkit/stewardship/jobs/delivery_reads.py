@@ -232,6 +232,30 @@ def email_refusals(message_id):
     return list(newest.values())
 
 
+def email_recipients(message_id, actor_id):
+    """One email's recipient addresses, for its Mail message page (#1024).
+
+    The addresses live only in the email's rendering, which the web login
+    may not read; ``stewardship_delivery_recipients_v1`` (frozen migration
+    0058) returns them, and nothing else from the rendering, only when
+    ``actor_id`` is an Administrator, refusing anyone else with a database
+    error. Returns ``{"intended": [...], "routed": [...]}``, each list in
+    its stored order: whom the email is for, and where it was sent (the
+    same addresses in Production; the Testing recipient in Testing mode).
+    Both lists are empty for an email with no rendering yet.
+    """
+    recipients = {"intended": [], "routed": []}
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT kind, address"
+            " FROM public.stewardship_delivery_recipients_v1(%s,%s)",
+            (message_id, actor_id),
+        )
+        for kind, address in cursor.fetchall():
+            recipients[kind].append(address)
+    return recipients
+
+
 def offered_actions(state, task_state, *, campaign_state, can_resolve, can_retry):
     """The resolutions a message's page offers now, in the page's order.
 

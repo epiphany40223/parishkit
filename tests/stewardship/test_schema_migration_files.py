@@ -204,6 +204,9 @@ FROZEN = {
     "0057_admin_session_key_digests.sql": (
         "d6e3df87eb59fcae5f3e99d79de1d4830c32fa4270dc0bbc89e0979ed678578f"
     ),
+    "0058_mail_message_recipients.sql": (
+        "79dcb6c6775b88134195e00f3ad773c04cdd93466387ed996bad65f313be6b50"
+    ),
 }
 
 
