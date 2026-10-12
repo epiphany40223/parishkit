@@ -145,8 +145,10 @@ def test_every_row_but_your_own_has_sign_out(page):
     assert (
         f'<div id="sessions-table" data-table-region data-refresh-url="{PAGE}">' in html
     )
-    # Times are browser-local instants, never a server-formatted zone.
+    # Times are browser-local instants, never a server-formatted zone, in
+    # the compact form every Admin table cell uses (#1093).
     assert html.count("data-local-instant") == 6
+    assert html.count("data-local-instant data-compact") == 6
     assert "UTC" not in html.split("<table", 1)[1]
 
 
