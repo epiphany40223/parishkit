@@ -1208,7 +1208,9 @@ sign-in gets the
 [step-up](../architecture/spec.md#identity-and-session-security), which
 queues nothing and returns to the directory (or the export's status page);
 the filters, being private form state, are applied again. The export panel
-says so before the Administrator or Staff member queues one. Interactive report execution and exports are audited at
+says so before the Administrator or Staff member queues one, when their
+sign-in is already older than that
+([page help](../ui-conventions/spec.md#page-help)). Interactive report execution and exports are audited at
 report, campaign, actor, filter, and row-count granularity without copying
 codes into the audit payload. Exact-code-search audit records omit the raw filter and store
 only a keyed fingerprint when correlation is operationally necessary.

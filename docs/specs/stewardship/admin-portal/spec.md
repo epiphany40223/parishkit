@@ -129,7 +129,9 @@ recipient for Google Workspace, Slack settings for the Slack token). Like
 [secret replacement](#parish-and-integration-configuration), they require
 fresh Google authentication (a sign-in less than five minutes old); an older
 sign-in is offered "Confirm with Google", which keeps the setup, so the order
-does not need to race that window. The source load, logos and administrative
+does not need to race that window. The pages mention that rule only when the
+sign-in is already older
+([page help](../ui-conventions/spec.md#page-help)). The source load, logos and administrative
 access follow, then review, the email and Slack tests and the final
 confirmation. Every page shows a compact progress stepper: the current step by
 number and name, the count of completed steps and a slim track (each segment

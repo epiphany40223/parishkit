@@ -8,6 +8,7 @@ from django.utils.html import conditional_escape, format_html
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext as _
 
+from parishkit.stewardship.accounts.sessions import freshness
 from parishkit.stewardship.campaigns import single_campaign
 from parishkit.stewardship.campaigns.configuration import REMINDER_WORKGROUP_NAME
 from parishkit.stewardship.web import dates, presentation
@@ -33,6 +34,23 @@ def reminder_workgroup_name():
     Templates take it from its one source, so renaming it is one line.
     """
     return _(REMINDER_WORKGROUP_NAME)
+
+
+@register.simple_tag(takes_context=True)
+def fresh_sign_in(context):
+    """Whether a step-up gated action would be admitted now (#1159).
+
+    ``{% fresh_sign_in as fresh %}`` lets a page show its "needs a sign-in
+    from the last five minutes" explanation only when the reader would be
+    asked to confirm, without each view computing it. It reuses the views'
+    own ``freshness`` check, so every page answers the same way. A context
+    without a request or a signed-in session is not fresh, so the hint shows.
+    It is presentation only: each gated command still calls ``require_fresh``,
+    and a sign-in that ages after the page is drawn gets that step-up answer,
+    which explains itself.
+    """
+    request = getattr(context, "request", None)
+    return request is not None and freshness(request)[0]
 
 
 def _calendar(value):

@@ -573,13 +573,16 @@ def test_stale_key_save_page_says_nothing_was_done(working):
     the page says nothing was done and the key must be entered again.
     """
     browser, store = working["browser"], working["service"].store
-    # The page warns before Save, even when rendered fresh (a sign-in can age
-    # while the page is open), that a step-up discards the pasted key.
-    hint = b"the pasted key is not kept: paste it again when you come back"
-    assert hint in browser.get(URL).content
+    # The page warns that a step-up discards what was entered (the pasted
+    # key included) only when Save would ask for one (#1159); a sign-in that
+    # ages after a fresh render gets this refusal page, which says the same.
+    hint = b"what you entered is not kept: enter it again when you return"
+    assert hint not in browser.get(URL).content
     stale_sign_in()
     page = browser.get(URL)
     assert hint in page.content
+    # One step-up notice, not one for the settings and another for the key.
+    assert page.content.count(b"the last five minutes") == 1
     fields = {
         "action": "preview",
         "base_digest": store.active().digest,
