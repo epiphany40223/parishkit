@@ -1,0 +1,14 @@
+{% load i18n stewardship %}{% comment %}
+  A resolved Ministry request's Entered in ParishSoft tick (#528) on its own
+  page and in the follow-up queue: its state, who and when, and, on the
+  request page for Admin and Staff on a campaign that admits changes, the
+  form that sets or clears it, answering with the request's panel in place.
+  A Ministry leader sees the text only. Roster changes to enter draws its
+  own row form (roster-tick-row.html).
+
+  - row: a follow-up row or request with the roster_* fields (workflows.roster.mark).
+  - compact: the follow-up queue's Status cell: one short line ("Entered"
+    or "Not yet entered"); who and when are on the request page.
+{% endcomment %}{% if compact %}{% if row.roster_entered %}<br>{% translate "Entered" %}{% elif row.roster_eligible %}<br>{% translate "Not yet entered" %}{% endif %}{% elif row.roster_entered %}<p>{% translate "Entered in ParishSoft" %}{% if row.roster_by %} {% translate "by" %} {{ row.roster_by }}{% endif %}{% if row.roster_at %}, <time datetime="{{ row.roster_at|date:'c' }}" data-local-instant>{{ row.roster_at|date:'c' }}</time>{% endif %}</p>{% elif row.roster_eligible %}<p>{% translate "Not yet entered in ParishSoft" %}</p>{% elif row.source_resolved %}<p>{% translate "Already in ParishSoft" %}</p>{% endif %}
+{% if row.roster_eligible and can_tick and mutable %}<form method="post" action="{% url 'admin:ministry_followup_roster' row.id %}#followup-item" data-in-place data-in-place-message="{% if row.roster_entered %}{% translate 'Mark cleared.' %}{% else %}{% translate 'Marked entered in ParishSoft.' %}{% endif %}">{% csrf_token %}<input type="hidden" name="sequence" value="{{ row.roster_sequence|add:1 }}"><input type="hidden" name="entered" value="{% if row.roster_entered %}no{% else %}yes{% endif %}"><input type="hidden" name="request_key" value="{{ roster_key }}"><input type="hidden" name="return_to" value="item">{% if queue_token %}<input type="hidden" name="queue" value="{{ queue_token }}">{% endif %}
+{% if row.roster_entered %}{% button type="submit" variant="secondary" %}{% translate "Clear Entered in ParishSoft" %}{% endbutton %}{% else %}{% button type="submit" %}{% translate "Mark entered in ParishSoft" %}{% endbutton %}{% endif %}</form>{% endif %}

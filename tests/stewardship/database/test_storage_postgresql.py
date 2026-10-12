@@ -502,6 +502,11 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             "stewardship_proposal_resolution_guard",
             "stewardship_proposal_resolution_guard_v1",
         ),
+        # A roster tick's history (#528): INSERT only, under its own name.
+        "stewardship_ministry_roster_entry": (
+            "stewardship_ministry_roster_entry_guard",
+            "stewardship_ministry_roster_entry_guard_v1",
+        ),
         "stewardship_directory_export_snapshot": (
             "directory_export_capture",
             "stewardship_directory_export_capture_v1",
@@ -806,6 +811,7 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
                 "stewardship_fact_build_receipt",
                 "stewardship_weekly_manual_request",
                 "stewardship_proposal_resolution",
+                "stewardship_ministry_roster_entry",
             }
             expected_type = 31 if table in conditional_insert_guards else 27
             assert row[:2] == (function, expected_type), table

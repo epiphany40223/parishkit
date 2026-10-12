@@ -215,6 +215,10 @@ PAGES = {
     "ministry_followup_item": Page(
         "reports", _("Follow-up request"), "ministry_followup"
     ),
+    # Resolved Ministry joins and leaves to enter in ParishSoft by hand (#528).
+    "ministry_roster": Page(
+        "reports", _("Roster changes to enter"), "ministry_followup"
+    ),
     "family_directory": Page("reports", _("Active parishioner family directory")),
     # One Family's summary and timeline (#477), opened from its directory row.
     "family_timeline": Page("reports", _("Family timeline"), "family_directory"),
@@ -559,6 +563,8 @@ NON_PAGES = frozenset(
         "maintenance",
         "ministry_export",
         "ministry_followup_update",
+        "ministry_followup_roster",
+        "ministry_roster_export",
         "ministry_packet",
         "participation_chart",
         # The ParishSoft refresh schedule editor's live check (#632), a

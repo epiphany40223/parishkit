@@ -1,6 +1,7 @@
 """Private native Ministry follow-up queue, history and optimistic editing."""
 
 from dataclasses import replace
+from urllib.parse import urlencode
 from uuid import UUID, uuid4
 
 from django.core.exceptions import ObjectDoesNotExist
@@ -31,7 +32,12 @@ from parishkit.stewardship.time_entry import (
 from parishkit.stewardship.web.contracts import expected_version, filters
 from parishkit.stewardship.web.dates import UnknownZone, browser_instant
 from parishkit.stewardship.web.responses import campaign_response
-from parishkit.stewardship.web.tables import PAGE_SIZES, report_table
+from parishkit.stewardship.web.tables import (
+    PAGE_SIZES,
+    paginate,
+    report_table,
+    table_parameters,
+)
 from parishkit.stewardship.workflows.followup import (
     FollowupRefusal,
     WorkflowChange,
@@ -43,6 +49,12 @@ from parishkit.stewardship.workflows.models import (
     OPEN_STATES,
     STAFF_STATES,
     MinistryRequest,
+)
+from parishkit.stewardship.workflows.roster import (
+    can_tick,
+    mark,
+    roster_marks,
+    set_roster_entered,
 )
 
 from .export_services import admit_campaign
@@ -390,6 +402,11 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None):
             if moved is not None:
                 query = moved
                 result = followup_page(campaign_id, query, principal)
+            # The roster tick (#528): read for the shown rows only, so the
+            # frozen queue selection is unchanged.
+            marks = roster_marks(row["id"] for row in result["rows"])
+            for row in result["rows"]:
+                mark(row, marks)
             mutable = True
             try:
                 admit_campaign(campaign_id, mutating=True)
@@ -478,6 +495,9 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None):
                 previous_history=history_page - 1 if history_page > 1 else None,
                 next_history=history_page + 1 if more_history else None,
                 request_key=uuid4(),
+                roster_key=uuid4(),
+                # Admin and Staff set the tick; a Ministry leader sees it only.
+                can_tick=can_tick(principal),
                 states=STATES,
                 staff_states=[(key, STATES[key]) for key in STAFF_STATES],
                 # Only Resolved takes a chosen outcome (change_values), and
@@ -735,5 +755,76 @@ def update(request, campaign_id, request_id):
                 args=[following if advance else request_id],
             )
         return with_queue(url, token)
+
+    return _mutation(request, campaign_id, request_id, work)
+
+
+@require_POST
+def roster(request, campaign_id, request_id):
+    """Set or clear one resolved request's Entered in ParishSoft tick (#528).
+
+    The answer is the page the tick was drawn on, Post/Redirect/Get, so it
+    refreshes in place: the request's own page (keeping its queue token), or
+    Roster changes to enter (``return_to=roster``), which keeps the list's
+    own Show, sort, page and page size from the tick form, so the reader
+    stays where they were. A tick someone else changed first is a conflict:
+    on the request page a 409, as a stale follow-up save is; on the list,
+    the list again with a notice (``changed=1``), so the reader never leaves
+    it.
+    """
+    # Lazy: the list's module reads the follow-up selection from this one.
+    from .ministry_roster_views import SHOW
+    from .ministry_roster_views import SORTING as ROSTER_SORTING
+
+    view_fields = {"show", "ministry", *table_parameters()}
+
+    def work(store, actor):
+        """Validate the closed form, record the tick and name the answer."""
+        values = filters(
+            request.POST,
+            allowed={
+                "sequence",
+                "entered",
+                "request_key",
+                "return_to",
+                "queue",
+                "csrfmiddlewaretoken",
+                *view_fields,
+            },
+        )
+        back = values.get("return_to", "item")
+        if values.get("entered") not in {"yes", "no"} or back not in {"item", "roster"}:
+            raise ValueError("Invalid roster tick.")
+        view = {key: values[key] for key in sorted(view_fields) if key in values}
+        if view.get("show", "todo") not in SHOW or (
+            view.get("ministry") and not valid_ministry(view["ministry"])
+        ):
+            raise ValueError("Invalid roster list choice.")
+        # Refuse a bad sort, page or size now, as the list itself would.
+        paging = {
+            key: value for key, value in view.items() if key not in {"show", "ministry"}
+        }
+        paginate([], paging, sorting=ROSTER_SORTING)
+        token = queue_token(values.get("queue", ""))
+        _in_campaign(campaign_id, [request_id])
+        listed = reverse("admin:ministry_roster")
+        try:
+            set_roster_entered(
+                store,
+                actor,
+                request_id,
+                sequence=expected_version(values.get("sequence", "")),
+                entered=values["entered"] == "yes",
+                request_key=UUID(values.get("request_key", "")),
+            )
+        except StaleRecordError:
+            if back != "roster":
+                raise
+            return f"{listed}?{urlencode(view | {'changed': '1'})}"
+        if back == "roster":
+            return f"{listed}?{urlencode(view)}" if view else listed
+        return with_queue(
+            reverse("admin:ministry_followup_item", args=[request_id]), token
+        )
 
     return _mutation(request, campaign_id, request_id, work)

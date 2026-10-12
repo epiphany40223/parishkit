@@ -2417,6 +2417,8 @@ never prepares or sends twice.
 | `chair_confirmations`, `chair_reviews`, `assignments` | Retired by #922: removed with Ministry assignments and Chairperson flows; no commands are built |
 | `security_event_acknowledge`, `critical_events_acknowledge` | `events list`, `events acknowledge` (PR 11) |
 | `information_update`, `ministry_followup`, `ministry_followup_item`, `ministry_followup_update` | `followup …` (PR 11); follow-up has no assignment ([#552](https://github.com/epiphany40223/parishkit/issues/552)) |
+| `ministry_followup_roster` | A resolved join or leave's Entered in ParishSoft tick ([#528](https://github.com/epiphany40223/parishkit/issues/528)): `followup roster-entered REQUEST_ID --set\|--clear` (PR 11), through the same `workflows.roster` service |
+| `ministry_roster`, `ministry_roster_export` | Roster changes to enter ([#528](https://github.com/epiphany40223/parishkit/issues/528)): `report roster`, counts; rows only as `export roster` (PR 8g) |
 
 The users commands (#952) call the same service functions as the
 [Users page](../admin-portal/spec.md#portal-user-management), with its

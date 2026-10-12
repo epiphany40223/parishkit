@@ -37,7 +37,12 @@ from openpyxl import load_workbook
 
 import parishkit.stewardship
 from parishkit.stewardship.audit import log_reads
-from parishkit.stewardship.reports import family_test_names, limitations, pdf_design
+from parishkit.stewardship.reports import (
+    family_test_names,
+    limitations,
+    ministry_roster_views,
+    pdf_design,
+)
 from parishkit.stewardship.reports.census_changes import (
     CensusQuery,
     census_csv,
@@ -74,6 +79,7 @@ from .test_ministry_packets import item as member
 from .test_ministry_packets import packet
 from .test_participation_rendering import document as participation
 from .test_response_lists import NEW_YORK, details_of, rows_of
+from .test_roster import roster_row
 
 # The export worker's report kinds, each with the cases below that render
 # it. "ministry" covers its summary, both lists and the multi-Ministry packet.
@@ -427,6 +433,21 @@ def case_census_changes(monkeypatch):
     seen = pdf_capture(
         monkeypatch,
         lambda: census_pdf(result, zone, parish="P", campaign="C", as_of=SUBMITTED),
+    )
+    return headers[0], headers, sheets, seen["table"], labels
+
+
+def case_ministry_roster(monkeypatch):
+    """Roster changes to enter (#528)."""
+    zone = ZoneInfo("America/Chicago")
+    rows = [roster_row()]
+    headers = csv_headers(ministry_roster_views.roster_csv(rows, zone))
+    sheets, labels = xlsx_headers(ministry_roster_views.roster_xlsx(rows, zone))
+    seen = pdf_capture(
+        monkeypatch,
+        lambda: ministry_roster_views.roster_pdf(
+            rows, zone, parish="P", campaign="C", as_of=SUBMITTED
+        ),
     )
     return headers[0], headers, sheets, seen["table"], labels
 
