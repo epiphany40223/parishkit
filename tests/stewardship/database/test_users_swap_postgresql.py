@@ -300,6 +300,8 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # 0085 (#530) creates the example Families table (in CLOSURE_TABLES, which
 # the worker writes and web reads) with its guard and its invoker
 # visibility function, and alters no table.
+# 0086 (#895) creates the worker-only snapshot statistics definer and alters
+# nothing.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -449,6 +451,10 @@ CLOSURE_CREATED = {
             "public.stewardship_source_drop_example_attempt_v1()",
         ),
         ("stewardship_source", "0009_drop_examples"),
+    ),
+    "public.stewardship_source_snapshot_analyze_v1(uuid)": (
+        "stewardship_source",
+        "0010_snapshot_statistics",
     ),
 }
 

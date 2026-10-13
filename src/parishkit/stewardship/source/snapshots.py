@@ -9,10 +9,11 @@ provider call or mutable cache is part of publication.
 import hashlib
 import json
 import logging
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 
-from django.db import connection, transaction
+from django.db import DatabaseError, connection, transaction
 
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
@@ -28,6 +29,13 @@ from .version_models import ENTITY_MODELS
 # Per-statement bound for source promotion, which runs under the global
 # work-order lock. Generous next to the seconds real promotions take.
 PROMOTION_STATEMENT_SECONDS = 120
+# Bounds for refreshing the staged corpus's statistics (``analyze_staging``),
+# outside the work-order lock. ANALYZE waits only for another VACUUM or
+# ANALYZE of the same table (PostgreSQL cancels an autovacuum that blocks
+# it after deadlock_timeout) and takes tens of milliseconds at 1,100
+# Families, so either limit means something else is wrong.
+ANALYZE_LOCK_SECONDS = 5
+ANALYZE_STATEMENT_SECONDS = 30
 
 RELATIONSHIPS = {
     "member": {"family_key": "family"},
@@ -269,6 +277,64 @@ class SnapshotEvidence:
     counts: dict
     content_digest: str
     cursor: str
+
+
+def analyze_staging(snapshot_id, claim, *, admit, task_id=None):
+    """Refresh the membership tables' planner statistics for a staged corpus.
+
+    A source refresh calls this in a source step after its last staging
+    batch, outside the global work-order lock (#895, change 8). Without it
+    the snapshot guard re-derives the corpus evidence under that lock, in the
+    ready transition, with statistics that predate every staged row: about
+    1 s at 1,100 Families instead of about 0.1 s. Validation reads the same
+    rows, so it runs after this too.
+
+    The worker may not ANALYZE these tables itself; the definer
+    ``stewardship_source_snapshot_analyze_v1`` does, as the schema owner,
+    and only for a snapshot that is still staging with its live fenced owner.
+    The snapshot is locked here first, in the usual order, as staging does.
+
+    It is only an optimization: the completion trigger still analyzes the
+    tables after the ready transition. So if another session's VACUUM or
+    ANALYZE keeps it waiting past ``ANALYZE_LOCK_SECONDS``, or it runs past
+    ``ANALYZE_STATEMENT_SECONDS``, the savepoint rolls back, the timeout log
+    records what stopped it, its limit and the time it took, and this
+    returns False so the refresh goes on as it did before. Any other error
+    propagates. Returns True once the statistics are refreshed.
+    """
+    from parishkit.stewardship.audit.timeouts import record_timeout
+    from parishkit.stewardship.jobs.broker import sql_timeout_kind
+
+    _staging(snapshot_id, claim, admit)
+    started = time.monotonic()
+    try:
+        with transaction.atomic(), connection.cursor() as cursor:
+            cursor.execute(f"SET LOCAL lock_timeout = '{ANALYZE_LOCK_SECONDS}s'")
+            cursor.execute(
+                f"SET LOCAL statement_timeout = '{ANALYZE_STATEMENT_SECONDS}s'"
+            )
+            cursor.execute(
+                "SELECT public.stewardship_source_snapshot_analyze_v1(%s)",
+                [snapshot_id],
+            )
+            return cursor.fetchone()[0] is True
+    except DatabaseError as error:
+        kind = sql_timeout_kind(error)
+        if kind not in {"lock_timeout", "statement_timeout"}:
+            raise
+        record_timeout(
+            Event.TASK_TIMED_OUT,
+            what=kind,
+            level="WARNING",
+            task_id=task_id,
+            limit_seconds=(
+                ANALYZE_LOCK_SECONDS
+                if kind == "lock_timeout"
+                else ANALYZE_STATEMENT_SECONDS
+            ),
+            elapsed_seconds=time.monotonic() - started,
+        )
+        return False
 
 
 def validate_snapshot(snapshot_id, claim, *, expected_counts, cursor, admit):

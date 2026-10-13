@@ -983,6 +983,24 @@ trusted no more than the worker's statuses are today. What remains is
 Python-side cost in the locked Family update and the effects' repeated
 attempt checks, each a few tens of milliseconds.
 
+The guard's check was also slow for a reason of its own: it ran with planner
+statistics that predate the new snapshot. The completion trigger analyzes
+the membership tables only after the ready transition, so the guard planned
+its corpus queries as if the new snapshot had no rows. At 1,100 Families
+that held the lock for 1.1–1.2 s on every refresh after the first, about
+1 s of it in `stewardship_source_corpus_evidence`. Migration 0086 (#895)
+adds the worker-only definer `stewardship_source_snapshot_analyze_v1`, and
+a refresh calls it in its own source step after the last staging batch.
+`ANALYZE` needs table ownership, and the `MAINTAIN` alternative would also
+let the worker lock the tables in any mode, so the definer runs as the
+schema owner. It refuses unless the snapshot is still staging with its live
+fenced owner. `ANALYZE` takes `SHARE UPDATE EXCLUSIVE`, which no read,
+write or row lock conflicts with. A wait past 5 s, or a run past 30 s, is
+logged as a timeout and the refresh goes on with today's statistics. The
+trigger still analyzes at completion, for setup loading and as a safety
+net. The ready transition now holds the lock for 110–120 ms, and the guard's
+check takes 26–30 ms of that.
+
 **Change 4** is only an optimization. A hint is advisory, and the consumer
 rechecks admission under its own locks, so a skipped re-check costs nothing.
 However, the due-work health sample counts each admitted row. A row skipped
