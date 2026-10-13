@@ -177,8 +177,10 @@ def test_every_export_command_has_a_golden_document():
         "export family-timeline",
         # The Campaign comparison's download (#1018, slice 6).
         "export comparison",
+        # The Census changes download (#463).
+        "export census",
     }
-    from parishkit.stewardship import admin_exact_exports
+    from parishkit.stewardship import admin_census_export, admin_exact_exports
 
     models = {
         "export status": admin_exports.ExportStatus,
@@ -187,6 +189,7 @@ def test_every_export_command_has_a_golden_document():
         "export exact create": admin_exact_exports.ExactChange,
         "export exact cancel": admin_exact_exports.ExactChange,
         "export exact retry": admin_exact_exports.ExactChange,
+        "export census": admin_census_export.CensusExport,
     }
     for name in exports:
         model = models.get(name, admin_exports.ExportChange)
