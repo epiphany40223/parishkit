@@ -26,45 +26,16 @@ def ministry(name, duid, *, included):
     return {"duid": duid, "name": name, "active": True, "included": included}
 
 
-def _current(monkeypatch, campaign):
-    """Make ``campaign`` the row the link helper reads for the current campaign."""
-    query = SimpleNamespace(first=lambda: campaign)
-    objects = SimpleNamespace(
-        select_related=lambda *_: SimpleNamespace(filter=lambda **_: query)
-    )
-    monkeypatch.setattr(ministry_views, "Campaign", SimpleNamespace(objects=objects))
-
-
-def _campaign(state, *, locked):
-    """A current campaign in ``state`` that asks about Ministries."""
-    return SimpleNamespace(
-        pk=CAMPAIGN,
-        state=state,
-        structural_locked=locked,
-        active_configuration=SimpleNamespace(values={"modules": ["ministry"]}),
-    )
-
-
-def test_campaign_link_opens_where_the_selections_change(monkeypatch):
-    """A draft changes them on Campaign settings; a live campaign on its own page.
-
-    Campaign Ministries sits under Ministries (one home per concept), so
-    Ministries links it directly while the campaign is live (NAV-10).
-    """
+def test_campaign_link_opens_where_the_selections_change():
+    """A draft's and a live campaign's selections both change on Campaign
+    settings' Ministry selections (#1119); with no campaign there is none."""
     current = SimpleNamespace(current_campaign_id=CAMPAIGN)
-    _current(monkeypatch, _campaign("draft", locked=False))
     assert campaign_ministries_link(current) == LINK
-    _current(monkeypatch, _campaign("active", locked=True))
-    assert campaign_ministries_link(current) == {
-        "url": "/admin/parish/ministries/campaign/",
-        "label": "Campaign Ministries",
-    }
     assert campaign_ministries_link(SimpleNamespace(current_campaign_id=None)) is None
 
 
-def test_listing_links_campaign_ministries_while_live():
-    """A live campaign's selections link straight to Campaign Ministries."""
-    link = {"url": "/admin/parish/ministries/campaign/", "label": "Campaign Ministries"}
+def test_listing_links_campaign_settings_ministry_selections():
+    """The listing's selections link to Campaign settings' Ministry list."""
     html = render_to_string(
         "stewardship/ministries.html",
         {
@@ -76,12 +47,10 @@ def test_listing_links_campaign_ministries_while_live():
             ),
             "query": "",
             "state": "all",
-            "campaign_link": link,
+            "campaign_link": LINK,
         },
     )
-    link = '<a href="/admin/parish/ministries/campaign/">Campaign Ministries</a>'
-    assert link in html
-    assert "Ministry selections" not in html
+    assert f'<a href="{URL}">' in html
 
 
 def test_preview_explains_that_activation_does_not_include():

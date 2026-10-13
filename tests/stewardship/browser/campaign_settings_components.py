@@ -11,13 +11,15 @@ and locks it (``campaign_views.lock_settings``):
   fixture server redirects to ``APPLIED``, the change's status page,
   Applied. The form's region is then redrawn from ``DRAFT_SETTLED``, the
   renamed campaign at version ``"b" * 64``.
-- ``LIVE``: a live campaign that asks about Ministries. Its end date (#912)
-  and Ministry leader roles (#922) are open; every other setting is
-  disabled where it stands, with the reason in its tip, and the Ministry
-  list names Change Campaign Ministries. The end date is checked as it is
+- ``LIVE``: a live campaign that asks about Ministries. Its end date (#912),
+  Ministry leader roles (#922) and Ministry list (#342) are open; every
+  other setting is disabled where it stands, with the reason in its tip.
+  The end date is checked as it is
   typed (#944; ``settings_components.END_CHECKS`` answer). Its Review is
   answered with ``LIVE_REVIEW`` (an end date and a leader-role change in one
-  review) or ``LIVE_REFUSED`` (the page with the end date's own error);
+  review), ``LIVE_MINISTRIES_REVIEW`` (a Ministry removed, with its impact),
+  ``LIVE_MIXED`` (a Ministry change made with another, refused as JSON
+  for the dialog) or ``LIVE_REFUSED`` (the page with the end date's own error);
   Apply posts to ``LIVE``, which the fixture server redirects to
   ``APPLIED``; ``LIVE_REFUSING`` is the same page whose Apply is answered
   with ``NOT_APPLIED``, the status of a change the installer refused.
@@ -27,6 +29,7 @@ and locks it (``campaign_views.lock_settings``):
 ``POSTS`` lists the fixture server's answers to the pages' Apply POSTs.
 """
 
+import json
 from types import SimpleNamespace
 from uuid import UUID
 
@@ -42,7 +45,8 @@ from parishkit.stewardship.accounts.campaign_forms import CampaignSettingsForm
 from parishkit.stewardship.accounts.campaign_views import (
     LOCKED_CLOSED,
     LOCKED_LIVE,
-    MINISTRIES_ELSEWHERE,
+    MINISTRIES_ALONE,
+    MINISTRIES_ALONE_FIX,
     end_check_words,
     lock_settings,
 )
@@ -53,6 +57,8 @@ DRAFT_REFUSED = "/campaign-settings-editor-refused"
 DRAFT_SETTLED = "/campaign-settings-editor-settled"
 LIVE = "/campaign-settings-live"
 LIVE_REVIEW = "/campaign-settings-live-review"
+LIVE_MINISTRIES_REVIEW = "/campaign-settings-live-ministries-review"
+LIVE_MIXED = "/campaign-settings-live-mixed"
 LIVE_REFUSED = "/campaign-settings-live-refused"
 LIVE_REFUSING = "/campaign-settings-live-refusing"
 LOCKED = "/campaign-settings-locked"
@@ -78,7 +84,7 @@ VALUES = {
 }
 LIVE_VALUES = VALUES | {"ministry": True, "ministry_duids": ["4", "9"]}
 # The live campaign's open settings.
-LIVE_OPEN = frozenset({"end_date", "ministry_leader_roles"})
+LIVE_OPEN = frozenset({"end_date", "ministry_leader_roles", "ministry_duids"})
 POSTS = {}
 
 
@@ -130,7 +136,7 @@ def components(context, admin):
                     "open": opened,
                     "end_saved": "2054-10-31" if live else None,
                     "end_check": end_check_words() if live else None,
-                    "ministries_live": live,
+                    "live_ministries": live,
                     "page_url": path,
                     "refresh_url": refresh or path,
                     "errors": summary_errors(form) if form.is_bound else [],
@@ -145,10 +151,9 @@ def components(context, admin):
             data=data,
             open_fields=LIVE_OPEN,
             reason=LOCKED_LIVE,
-            reasons={"ministry_duids": MINISTRIES_ELSEWHERE},
         )
 
-    def review(changes, notes=()):
+    def review(changes, notes=(), ministries=None):
         """The review dialog's fragment for ``changes``."""
         return (
             "text/html",
@@ -157,6 +162,7 @@ def components(context, admin):
                 {
                     "review": {
                         "changes": changes,
+                        "ministries": ministries,
                         "notes": list(notes),
                         "preview": "synthetic-signed-intent",
                     }
@@ -237,6 +243,28 @@ def components(context, admin):
             [FAMILY_ACCESS, CAMPAIGN_END_TEXT],
         ),
         LIVE_REFUSED: page(late, state="active", path=LIVE, live=True),
+        LIVE_MINISTRIES_REVIEW: review(
+            [],
+            ministries={
+                "added": [],
+                "removed": [
+                    {"name": "Food pantry", "duid": 9, "answers": 1, "open": 1}
+                ],
+                "open_forms": 3,
+            },
+        ),
+        LIVE_MIXED: (
+            "application/json",
+            json.dumps(
+                {
+                    "errors": [{"code": "invalid"}],
+                    "refusal": {
+                        "message": str(MINISTRIES_ALONE),
+                        "fix": str(MINISTRIES_ALONE_FIX),
+                    },
+                }
+            ),
+        ),
         LOCKED: page(
             _form(
                 LIVE_VALUES,

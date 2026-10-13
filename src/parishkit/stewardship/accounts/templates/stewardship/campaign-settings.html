@@ -28,7 +28,7 @@ in every campaign state (navigation rule 1).
 {% endcomment %}
 <h1>{% translate "Campaign settings" %}</h1>
 {% aboutpage "campaign-settings" %}<p>{% translate "Campaign settings decide what the Family form asks (census, Ministries, a pledge, additional information) and when the campaign runs. Page text and email templates, mail schedules and share choices each have their own page in the Campaign setup menu: Pages and emails, Dates and mail schedules, and Share options." %}</p>
-<p>{% translate "Each setting is shown once. A setting that can't change now is greyed out where it is, and its i button says why. Once the campaign is live, only its end date and Ministry leader roles can change here." %}</p>
+<p>{% translate "Each setting is shown once. A setting that can't change now is greyed out where it is, and its i button says why. Once the campaign is live, only its end date, Ministry leader roles and Ministries can change here; a Ministry change is reviewed on its own." %}</p>
 <p>{% translate "Review changes shows everything you changed on this page in one review; nothing is saved until you choose Apply and it says Applied." %}</p>{% endaboutpage %}
 <p>{{ campaign.active_configuration.name }} — {{ campaign.state|capfirst }}</p>
 <p>{% multi_campaign_control "copy-campaign" _("Copy campaign") %}</p>

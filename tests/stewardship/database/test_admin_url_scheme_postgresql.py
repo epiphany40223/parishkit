@@ -194,7 +194,6 @@ def test_new_campaign_pages_refuse_without_a_current_campaign(auth_service, goog
         ("production_withdrawal", []),
         ("campaign_mail", [uuid4()]),
         ("campaign_mail_families", [uuid4()]),
-        ("campaign_ministries", []),
     ):
         response = browser.get(reverse(f"admin:{name}", args=args))
         assert 400 <= response.status_code < 500, (name, response.status_code)
@@ -214,7 +213,6 @@ def test_new_campaign_pages_refuse_without_a_current_campaign(auth_service, goog
         ("production_progress", [], {"control": "x"}),
         ("production_withdrawal", [], {"action": "confirm", "preview": "x"}),
         ("campaign_mail", [uuid4()], {"preview_token": "x"}),
-        ("campaign_ministries", [], {"action": "preview"}),
     ):
         response = browser.post(reverse(f"admin:{name}", args=args), values | csrf)
         assert 400 <= response.status_code < 500, (name, response.status_code)

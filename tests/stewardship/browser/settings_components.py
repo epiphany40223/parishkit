@@ -28,9 +28,7 @@ Campaign settings reviews in the review dialog (#1119) and is served by
 ``campaign_settings_components``; the live end date's check (#944) there is
 answered, by date, with one of ``END_CHECKS``' answers (the real check
 fragment): none, a past date, a date before the start, or mail the date
-would strand. A live campaign's Campaign
-Ministries (#750) is served at ``MINISTRIES`` (the editor, whose Apply leads
-to ``MINISTRIES_PENDING``) and ``MINISTRIES_REVIEW`` (its impact review).
+would strand.
 Ministries' row selection (#750) is served at ``MINISTRY_TABLE`` (page 1
 of 30 Ministries, 25 to a page, whose Apply leads to
 ``MINISTRY_TABLE_PENDING``), ``MINISTRY_TABLE_REVIEW`` (its review of
@@ -46,9 +44,6 @@ from uuid import UUID
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts.admin_editing import review_region
-from parishkit.stewardship.accounts.campaign_ministry_views import (
-    LiveMinistriesForm,
-)
 from parishkit.stewardship.accounts.ministry_views import CATALOG_SORTING
 from parishkit.stewardship.accounts.parish_views import TIMEZONE_NOTE, ParishForm
 from parishkit.stewardship.accounts.share_forms import (
@@ -71,11 +66,6 @@ SHARE_APPLIED = "/share-in-place-applied"
 SHARE_STATUS = "/share-in-place-status"
 SHARE_PENDING = f"{SHARE}?request={REQUEST}"
 SHARE_SETTLED = f"{SHARE}?request={REQUEST}&settled=1"
-MINISTRIES = "/campaign-ministries-in-place"
-MINISTRIES_REVIEW = "/campaign-ministries-in-place-review"
-MINISTRIES_PENDING = f"{MINISTRIES}?request={REQUEST}"
-# A live campaign's offered Ministries; both are selected.
-MINISTRY_CHOICES = [("4", "Community outreach"), ("9", "Food pantry")]
 MINISTRY_TABLE = "/ministries-in-place"
 MINISTRY_TABLE_REVIEW = "/ministries-in-place-review"
 MINISTRY_TABLE_PAGE2 = "/ministries-in-place-page-2"
@@ -103,7 +93,6 @@ COMBINED_REVIEW = "/admin/campaign/schedules/?end_date=2054-10-20"
 POSTS = {
     SETTINGS: (303, PENDING, ""),
     SHARE: (303, SHARE_PENDING, ""),
-    MINISTRIES: (303, MINISTRIES_PENDING, ""),
     MINISTRY_TABLE: (303, MINISTRY_TABLE_PENDING, ""),
     # A Review answered with a redirect to another page, which does not draw
     # the review region (Campaign settings' dates-only change, #532).
@@ -168,31 +157,6 @@ def components(context, admin):
     reviewed.is_valid()
     refused = ParishForm(data=renamed | {"phone": "123"})
     refused.is_valid()
-
-    def ministries(step, **region):
-        """A live campaign's Campaign Ministries at ``step`` (#750), both
-        offered Ministries selected, with ``region``'s review context."""
-        form = LiveMinistriesForm(
-            initial={"ministry_duids": ["4", "9"], "base_digest": "a" * 64},
-            ministries=MINISTRY_CHOICES,
-        )
-        return (
-            "text/html",
-            render_to_string(
-                "stewardship/campaign-ministries.html",
-                context
-                | {
-                    "admin_chrome": admin | {"flow_steps": _steps(step)},
-                    "campaign": {
-                        "pk": REQUEST,
-                        "state": "active",
-                        "active_configuration": {"name": "Sample campaign"},
-                    },
-                    "form": form,
-                }
-                | review_region("campaign_ministries", None, **region),
-            ),
-        )
 
     def ministry_table(step, page="1", rows=MINISTRY_ROWS, **region):
         """Ministries at ``step``: ``page`` of ``rows``, 25 to a page, with
@@ -319,21 +283,6 @@ def components(context, admin):
             ),
         ),
         SETTLED: page(editor("b" * 64), 2, receipt=applied),
-        MINISTRIES: ministries(0),
-        MINISTRIES_REVIEW: ministries(
-            1,
-            review={
-                "template": "stewardship/campaign-ministries-review.html",
-                "notes": [],
-                "added": [],
-                "removed": [
-                    {"name": "Food pantry", "duid": 9, "answers": 1, "open": 1}
-                ],
-                "open_forms": 3,
-                "preview": "synthetic-signed-intent",
-            },
-        ),
-        MINISTRIES_PENDING: ministries(2, receipt=pending),
         MINISTRY_TABLE: ministry_table(0),
         MINISTRY_TABLE_REVIEW: ministry_table(
             1,

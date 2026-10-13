@@ -73,7 +73,6 @@ SLASHLESS = (
     ),
     ("campaign/production", "production_progress"),
     ("campaign/production/cancellation", "production_withdrawal"),
-    ("parish/ministries/campaign", "campaign_ministries"),
     ("reports", "reports"),
     ("reports/responses", "response_dashboard"),
     ("reports/responses/<slug:key>", "response_list"),

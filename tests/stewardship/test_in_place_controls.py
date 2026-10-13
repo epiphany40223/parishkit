@@ -125,7 +125,6 @@ def test_presence_refresh_refreshes_the_list_in_place():
 SETTINGS_PAGES = (
     "parish-settings.html",
     "share-settings.html",
-    "campaign-ministries.html",
     "reminder-workgroup.html",
 )
 # Ministries reviews its row selection, and Campaign images and Parish logos

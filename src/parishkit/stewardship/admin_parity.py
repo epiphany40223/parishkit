@@ -134,7 +134,12 @@ LEDGER = {
     # out of a stuck live end-date change, which the page offers no button for.
     "configuration_request": command("config request show", "config request cancel"),
     "campaign_settings": pending(
-        "PR 10", "campaign show", "campaign preview", "campaign confirm"
+        "PR 10",
+        "campaign show",
+        "campaign preview",
+        "campaign confirm",
+        # A live campaign's Ministries joined this page (#1119).
+        "campaign ministries",
     ),
     # The live end-date check validates what ``schedule preview`` reviews.
     "campaign_end_date_check": command("schedule preview"),
@@ -144,7 +149,6 @@ LEDGER = {
     # (and ``refuse_campaign_creation(first=True)``), as this page does.
     "campaign_create": pending("PR 10", "campaign preview", "campaign confirm"),
     "campaign_clone": pending("PR 10", "campaign clone"),
-    "campaign_ministries": pending("PR 10", "campaign ministries"),
     "share_settings": command("campaign shares", owed="PR 10"),
     "reminder_workgroup": pending("PR 10", f"campaign {REMINDER_WORKGROUP_SLUG}"),
     "content_catalog": command("content list"),

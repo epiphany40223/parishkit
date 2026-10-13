@@ -5,8 +5,8 @@ the current campaign's id (``current_campaign``). Form actions sit under
 their page as nouns (``removal/``, ``confirmation/``, ``cancellation/``); an
 image upload posts to its slot. Part A (NAV-9) moved the settings, content,
 image and schedule pages; part B (NAV-10) the test email pages, the go-live
-chain, Production activation and Cancel go-live. Campaign Ministries moved
-under Parish data's Ministries (``parish.py``). Copy campaign keeps its
+chain, Production activation and Cancel go-live. Campaign Ministries joined
+Campaign settings (#1119). Copy campaign keeps its
 refusal (decision 18) at its new address.
 """
 

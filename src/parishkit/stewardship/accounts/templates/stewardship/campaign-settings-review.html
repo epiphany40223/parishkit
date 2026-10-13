@@ -6,18 +6,21 @@ without a page load and ui-v1.js moves this fragment's content into the
 dialog's body. It lists every setting the Review changes, current and
 proposed, then the change's notes: a live campaign's end date, with the
 digests re-planned for it, and its Ministry leader roles, changed in the
-same Review, are one change, applied together or not at all. The signed
-preview (data-review-preview) is what the dialog's Apply posts to Campaign
-settings, and data-review-done starts the status line the page shows once
-the change is applied. A review lasts fifteen minutes, as every review does.
+same Review, are one change, applied together or not at all. A live
+campaign's Ministry change, reviewed on its own, shows its impact instead
+(campaign-ministries-review.html). The signed preview (data-review-preview)
+is what the dialog's Apply posts to Campaign settings, and data-review-done
+starts the status line the page shows once the change is applied. A review
+lasts fifteen minutes, as every review does.
 {% endcomment %}<div data-review-answer data-review-done="{% translate 'Campaign settings changed.' %}">
-<div class="table-scroll" tabindex="0" role="region" aria-labelledby="campaign-review-caption">
+{% if review.changes %}<div class="table-scroll" tabindex="0" role="region" aria-labelledby="campaign-review-caption">
 <table class="data-table">
   <caption id="campaign-review-caption" class="visually-hidden">{% translate "What changes" %}</caption>
   <thead><tr><th scope="col">{% translate "Setting" %}</th><th scope="col">{% translate "Now" %}</th><th scope="col">{% translate "After this change" %}</th></tr></thead>
   <tbody>{% for change in review.changes %}<tr><th scope="row">{{ change.label }}</th><td>{{ change.before|default_if_none:'—'|linebreaksbr }}</td><td>{{ change.after|default_if_none:'—'|linebreaksbr }}</td></tr>{% endfor %}</tbody>
 </table>
-</div>
+</div>{% endif %}
+{% if review.ministries %}{% include 'stewardship/campaign-ministries-review.html' with ministries=review.ministries %}{% endif %}
 {% for note in review.notes %}<p class="notice" role="note">{{ note }}</p>{% endfor %}
 <p>{% if review.changes|length > 1 %}{% translate "These changes apply together, or none do." %} {% endif %}{% translate "Nothing changes until you choose Apply." %}</p>
 <input type="hidden" name="preview" value="{{ review.preview }}" data-review-preview>

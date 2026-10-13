@@ -26,13 +26,15 @@ from .settings_components import (
 )
 from .test_in_place import MARK, MARKED
 from .test_settings_in_place import answer_reviews
-from .waits import has_attribute, hidden, visible
+from .waits import has_attribute, hidden, same_place, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
 
 # Where Review sits on the page: typing may scroll the field into view.
+# Compared with same_place: Linux Firefox may report the same place a
+# ten-thousandth of a pixel apart.
 REVIEW_TOP = (
     "document.querySelector('#settings-form button[type=submit]')"
     ".getBoundingClientRect().top + window.scrollY"
@@ -126,7 +128,7 @@ def test_a_date_that_cannot_be_reviewed_says_why_at_the_field(
     assert "id_end_date_error" in field.get_attribute("aria-describedby").split()
     assert review.is_disabled()
     assert message in page.locator("#settings-complete-hint").inner_text()
-    assert page.evaluate(REVIEW_TOP) == top
+    assert same_place(page.evaluate(REVIEW_TOP), top)
     link = error.get_by_role("link", name="Change the end date and its mailings")
     if message == STRANDING:
         # Mail is resolved with the date in the combined review.
@@ -138,7 +140,7 @@ def test_a_date_that_cannot_be_reviewed_says_why_at_the_field(
     enabled(review)
     has_attribute(field, "aria-invalid", "false")
     assert "id_end_date_error" not in (field.get_attribute("aria-describedby") or "")
-    assert page.evaluate(REVIEW_TOP) == top
+    assert same_place(page.evaluate(REVIEW_TOP), top)
     assert checked == [typed, "2054-11-15"]
     assert page.evaluate(MARKED) == "kept"
 
@@ -191,7 +193,7 @@ def test_a_check_that_cannot_answer_keeps_review_held(
     # Nothing is known to be wrong with the date itself.
     assert field.get_attribute("aria-invalid") != "true"
     assert "id_end_date_error" in field.get_attribute("aria-describedby").split()
-    assert page.evaluate(REVIEW_TOP) == top
+    assert same_place(page.evaluate(REVIEW_TOP), top)
     # Showing the page again checks again, and now it answers.
     failing.clear()
     page.evaluate(RESTORE)
@@ -207,7 +209,7 @@ def test_a_check_that_cannot_answer_keeps_review_held(
     field.fill("2054-10-20")
     visible(error.get_by_text(STRANDING))
     assert checked == ["2054-10-20", "2054-10-20", "2054-11-15", "2054-10-20"]
-    assert page.evaluate(REVIEW_TOP) == top
+    assert same_place(page.evaluate(REVIEW_TOP), top)
     assert page.evaluate(MARKED) == "kept"
 
 

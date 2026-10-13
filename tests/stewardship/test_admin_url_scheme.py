@@ -251,7 +251,6 @@ SLASHLESS_EXPECTED = {
     "/admin/campaign/production/cancellation": (
         "/admin/campaign/production/cancellation/"
     ),
-    "/admin/parish/ministries/campaign": "/admin/parish/ministries/campaign/",
     "/admin/mail/controls": "/admin/mail/controls/",
     "/admin/mail/family-progress": "/admin/mail/family-progress/",
     "/admin/mail/family-history": "/admin/mail/family-history/",
@@ -459,9 +458,6 @@ def test_the_go_live_chain_names_no_campaign():
     assert confirmation.startswith(links) and confirmation.endswith("/confirmation/")
     withdrawal = reverse("admin:production_withdrawal")
     assert withdrawal.startswith(reverse("admin:production_progress"))
-    # One home per concept: Campaign Ministries runs through Ministries.
-    assert reverse("admin:campaign_ministries").startswith(reverse("admin:ministries"))
-    assert navigation.PAGES["campaign_ministries"].parent == "ministries"
 
 
 @pytest.mark.parametrize(

@@ -12,9 +12,6 @@ import pytest
 from parishkit.stewardship.accounts.share_forms import default_share_options
 
 from .settings_components import (
-    MINISTRIES,
-    MINISTRIES_PENDING,
-    MINISTRIES_REVIEW,
     PENDING,
     REFUSED,
     REQUEST,
@@ -238,48 +235,6 @@ def test_a_review_that_leads_to_another_page_drops_the_region_fragment(
     page.get_by_label("Parish name").fill("Renamed Parish")
     page.get_by_role("button", name="Review changes").click()
     page.wait_for_url(component_origin + "/in-place-other")
-
-
-def test_campaign_ministries_are_reviewed_and_applied_in_place(page, component_origin):
-    """A live campaign's Ministry selections (#750): Review changes waits for
-    a change, Review shows the impact under the form and takes focus, and
-    Apply shows the change's status there. Nothing reloads, the form never
-    moves and keeps the reader's selections, and the indicator follows."""
-    reviews = answer_reviews(
-        page, component_origin, MINISTRIES_REVIEW, address=MINISTRIES
-    )
-    posts = count_requests(page, "POST", MINISTRIES)
-    page.goto(component_origin + MINISTRIES)
-    page.evaluate(MARK)
-    hint = "Change a Ministry selection to review it."
-    expect_review(page, enabled=False, hint=hint)
-    selections = page.get_by_label("Included Ministries")
-    selections.select_option(["4"])
-    expect_review(page, enabled=True, hint=hint)
-    top = page.evaluate(FORM_PLACE)
-    page.get_by_role("button", name="Review changes").click()
-    visible(page.get_by_role("heading", name="Review your changes"))
-    assert len(reviews) == 1
-    assert "ministry_duids=4" in reviews[0]
-    assert "ministry_duids=9" not in reviews[0]
-    assert page.evaluate(FOCUSED, "#settings-review-title")
-    panel = page.locator("#settings-review")
-    assert "Ministries to remove" in panel.inner_text()
-    assert "Food pantry" in panel.inner_text()
-    assert current_step(page) == "Review"
-    assert page.url == component_origin + MINISTRIES
-    assert page.evaluate(FORM_PLACE) == pytest.approx(top, abs=1)
-    page.get_by_role("button", name="Apply changes").click()
-    visible(panel.get_by_role("heading", name="Change status"))
-    assert page.evaluate(FOCUSED, "#settings-review-status-title")
-    assert current_step(page) == "Apply"
-    assert page.url == f"{component_origin}{MINISTRIES_PENDING}#settings-review"
-    assert page.evaluate(FORM_PLACE) == pytest.approx(top, abs=1)
-    assert selections.evaluate(
-        "select => [...select.selectedOptions].map(option => option.value)"
-    ) == ["4"]
-    assert page.evaluate(MARKED) == "kept"
-    assert len(posts) == 2
 
 
 def test_parish_settings_review_waits_for_a_change(page, component_origin):
