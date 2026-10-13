@@ -3,7 +3,9 @@
 A refused address's page is also served at its real address (``REFUSAL``),
 with a "cleared" view (``CLEARED``), and the fixture server answers its
 clearance POST with a real Post/Redirect/Get redirect (``POSTS``), for the
-in-place clearance test (#935).
+in-place clearance test (#935). A delivered Production email's page is
+served at its real address too (``DELIVERED``), with a "reported" view
+(``REPORTED``), for the in-place bounce report (#806 slice 4).
 """
 
 from datetime import timedelta
@@ -23,7 +25,13 @@ CLEAR = reverse("admin:delivery_refusal_clear", args=[REFUSAL_ID])
 CLEARED = REFUSAL + "?cleared=1"
 # The fixture server's answer to Clear verified refusal (status, Location,
 # body), as the view answers it.
-POSTS = {CLEAR: (303, CLEARED, "")}
+# A delivered Production email whose bounce an Administrator reports in
+# place (#806 slice 4), and the page the report's redirect answers with.
+DELIVERED_ID = UUID(int=806)
+DELIVERED = reverse("admin:delivery", args=[DELIVERED_ID])
+BOUNCE = reverse("admin:delivery_bounce_report", args=[DELIVERED_ID])
+REPORTED = DELIVERED + "?reported=1"
+POSTS = {CLEAR: (303, CLEARED, ""), BOUNCE: (303, REPORTED, "")}
 
 
 def components(now):
@@ -307,6 +315,72 @@ def components(now):
             ),
         ),
     )
+    # A delivered Production email: Report a bounced address offers both
+    # addresses (#806 slice 4), at its real address so the form posts in
+    # place; after the report, the panel lists it and offers the other.
+    bounce_page = delivery | dict(
+        delivery=page_message | dict(id=DELIVERED_ID, state="delivered"),
+        refused=[],
+        decisions=False,
+        commands=[dict(id=uuid4(), action="note", label="Save evidence note")],
+        recipients=dict(
+            intended=production,
+            routed=production,
+            intended_rows=[(address, "delivered") for address in production],
+            routed_rows=[(address, "delivered") for address in production],
+            reached=None,
+            refused_for_now=False,
+        ),
+        # Long enough history that the panel sits below the fold.
+        events=[dict(attempt=1, action="accept", state="delivered", created_at=now)]
+        * 12,
+    )
+    bounce = dict(
+        addresses=production,
+        unavailable=None,
+        reported=[],
+        command_id=uuid4(),
+        last=None,
+    )
+    # The Family's only address left is one of those offered, so a notice
+    # names it before the button.
+    yield (
+        DELIVERED,
+        "delivery",
+        bounce_page | dict(bounce=bounce | dict(last="head@example.org")),
+    )
+    yield (
+        REPORTED,
+        "delivery",
+        bounce_page
+        | dict(
+            bounce=bounce
+            | dict(
+                addresses=["spouse@example.org"],
+                reported=[
+                    dict(
+                        id=REFUSAL_ID,
+                        address="head@example.org",
+                        created_at=now,
+                        cleared=False,
+                    )
+                ],
+            )
+        ),
+    )
+    # Not delivered yet: the panel says why Report bounce is unavailable.
+    yield (
+        "/delivery-bounce-unavailable",
+        "delivery",
+        delivery
+        | dict(
+            bounce=bounce
+            | dict(
+                unavailable="Available once this email is delivered: only a "
+                "delivered email can bounce."
+            )
+        ),
+    )
     # A message retried after a failure: each recorded change is one short
     # row of the attempt history table, newest first (#934).
     yield (
@@ -372,6 +446,31 @@ def components(now):
         command_id=uuid4(),
     )
     yield "/delivery-refusal", "delivery-refusal", detail
+    # A reported bounce (#806 slice 4): marked in the list, and its page
+    # names the report, its time and the Administrator's note.
+    reported = refusal | dict(
+        kind="reported_bounce",
+        evidence_note="Bounce arrived 10/12: mailbox not found.",
+    )
+    yield (
+        "/delivery-refusals-bounce",
+        "delivery-refusals",
+        dict(
+            table=window_table(
+                PageWindow(1, 25),
+                [reported],
+                False,
+                total=(1, False),
+                sorting=REFUSAL_SORTING,
+                sort=REFUSAL_SORTING.default,
+            )
+        ),
+    )
+    yield (
+        "/delivery-refusal-bounce",
+        "delivery-refusal",
+        detail | dict(refusal=reported, family_name=refusal["family_name"]),
+    )
     named = detail | dict(family_name=refusal["family_name"])
     yield REFUSAL, "delivery-refusal", named
     yield (

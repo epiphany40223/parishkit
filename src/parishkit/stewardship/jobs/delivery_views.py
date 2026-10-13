@@ -38,11 +38,12 @@ from parishkit.stewardship.web.tables import (
 )
 
 from . import delivery_bulk
-from .delivery_admin import clear_recipient_refusal
+from .delivery_admin import clear_recipient_refusal, report_recipient_bounce
 from .delivery_metadata import DELIVERY_SORTING, STATES
 from .delivery_reads import (
     ACTION_LABELS,
     REFUSAL_SORTING,
+    bounce_panel,
     current_snapshot,
     email_recipients,
     email_refusals,
@@ -384,14 +385,19 @@ def delivery_detail(request, message_id):
         ``commands`` are the offered resolutions; ``decisions`` says whether
         any of them changes the email (anything but a bare evidence note),
         which decides whether the page shows the "Resolve this email" section
-        or only the closed note form.
+        or only the closed note form. ``bounce`` is the "Report a bounced
+        address" panel (#806 slice 4), or None where it does not apply.
         """
         data = read_detail(message_id, request.GET)
         window = data["window"]
         (delivery,) = with_family_names([data["delivery"]], current_snapshot())
+        recipients = email_recipients(message_id, actor.identity, delivery["state"])
         return dict(
             delivery=delivery,
-            recipients=email_recipients(message_id, actor.identity, delivery["state"]),
+            recipients=recipients,
+            bounce=bounce_panel(
+                delivery, recipients, can_change="note" in data["actions"]
+            ),
             refused=email_refusals(message_id),
             events=data["events"],
             task=data["task"],
@@ -490,6 +496,56 @@ def clear_refusal(request, refusal_id):
                 verified=request.POST["verified"] == "yes",
             )
         response = redirect("admin:delivery_refusal", refusal_id=refusal_id)
+        response["Cache-Control"] = "no-store"
+        return response
+    except (StaleRecordError, TaskRetryConflict):
+        return _error(ErrorCode.STALE, 409)
+    except PermissionError:
+        return _error(ErrorCode.DENIED, 403)
+    except MISSING_TARGET:
+        return _error(ErrorCode.INVALID, 404)
+    except DatabaseError as error:
+        return _database_error(error)
+    except UNAVAILABLE:
+        return _error(ErrorCode.UNAVAILABLE, 503)
+    except ValueError:
+        return _error(ErrorCode.INVALID, 400)
+
+
+@require_POST
+@sensitive_post_parameters("note")
+def bounce_report(request, message_id):
+    """Report that a delivered email bounced at one address (#806 slice 4).
+
+    The Mail message page's in-place form; an explicit current-Admin command
+    that never runs in a GET. It needs the address, a note and the tick, as
+    the page's gate does, and answers with the page again (Post/Redirect/
+    Get), whose bounce panel lists the report. No fresh sign-in, as for
+    Clear verified refusal: the report only sets an address aside, touches
+    no credential, and clearing undoes it.
+    """
+    try:
+        service = runtime()
+        actor = _principal(request, service.store, activity=True)
+        names = {"command_id", "address", "note", "observed"}
+        supplied = set(request.POST) - {"csrfmiddlewaretoken"}
+        if (
+            request.GET
+            or supplied != names
+            or any(len(request.POST.getlist(key)) != 1 for key in request.POST)
+        ):
+            raise ValueError("Invalid bounce report fields.")
+        with _command_scope(request, service, actor):
+            report_recipient_bounce(
+                service.store,
+                actor.identity,
+                message_id=message_id,
+                address=request.POST["address"],
+                command_id=UUID(request.POST["command_id"]),
+                note=request.POST["note"],
+                observed=request.POST["observed"] == "yes",
+            )
+        response = redirect("admin:delivery", message_id=message_id)
         response["Cache-Control"] = "no-store"
         return response
     except (StaleRecordError, TaskRetryConflict):

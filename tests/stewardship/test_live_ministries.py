@@ -66,8 +66,9 @@ def test_only_the_config_installer_may_read_the_catalog_function():
     # preview's identities and Member names, New user's Name lookup and the
     # Users page's ParishSoft leaders without a user (#952) and, for an
     # Administrator, one email's recipient addresses (#1024) and each one's
-    # latest outcome and any follow-up retry (#806), and the campaign
-    # comparison report's aggregates (#1018).
+    # latest outcome and any follow-up retry (#806) and records a reported
+    # bounce (#806 slice 4), and the campaign comparison report's aggregates
+    # (#1018).
     assert runtime_functions(ServiceRole.WEB) == {
         FAMILY_LOGIN_FUNCTION,
         "stewardship_family_daily_sends_v1()",
@@ -83,6 +84,7 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         "stewardship_campaign_archive_renewal_v1(uuid, uuid, integer)",
         "stewardship_delivery_recipient_outcomes_v1(uuid, uuid)",
         "stewardship_delivery_address_retries_v1(uuid, uuid)",
+        "stewardship_report_recipient_bounce_v1(uuid, uuid, text, uuid, text)",
         DEBUG_OFF_FUNCTION,
     }
     # The worker's definer routines purge ended Admin sessions (ADM-11),

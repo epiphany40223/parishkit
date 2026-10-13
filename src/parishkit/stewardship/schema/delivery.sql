@@ -948,6 +948,42 @@ CREATE FUNCTION public.stewardship_recipient_refusal_guard_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 BEGIN
     PERFORM pg_advisory_xact_lock(736220,1);
+    -- An Administrator's bounce report (#806 slice 4, migration 0081),
+    -- written only by stewardship_report_recipient_bounce_v1 for the web
+    -- login: the actor is an enabled Administrator now, the note is more
+    -- than spaces, the event is a delivered attempt of a Production-routed
+    -- email of a Family in the current campaign, which is not archived and
+    -- admits Admin changes (as Clear verified refusal requires), the
+    -- address is one of that attempt's routed and intended recipients, and
+    -- the Family has no unresolved refusal of it already.
+    IF NEW.kind='reported_bounce' THEN
+        IF session_user<>'pk_stewardship_web' OR NEW.actor_id IS NULL
+           OR public.stewardship_export_authorized_v1(NEW.actor_id,true) IS NOT TRUE
+           OR NEW.address<>lower(NEW.address) OR btrim(NEW.evidence_note)=''
+           OR NOT EXISTS (
+            SELECT 1 FROM public.stewardship_outbox_event e
+            JOIN public.stewardship_outbox_message m ON m.id=e.message_id
+            JOIN public.stewardship_outbox_render r ON r.id=e.render_id
+            JOIN public.stewardship_family_campaign f ON f.id=m.family_id
+            JOIN public.stewardship_system_configuration cfg ON cfg.current_campaign_id=f.campaign_id
+            JOIN public.stewardship_campaign c ON c.id=f.campaign_id
+            JOIN public.stewardship_campaign_credentials k ON k.campaign_id=f.campaign_id
+            JOIN public.stewardship_source_snapshot s ON s.id=k.source_snapshot_id
+            WHERE e.id=NEW.event_id AND m.family_id=NEW.family_id
+              AND f.family_duid=NEW.family_duid AND s.organization_id=NEW.organization_id
+              AND m.mode='production' AND m.routing='production' AND e.state='delivered'
+              AND c.state<>'archived' AND public.stewardship_export_admitted_v1(c.id,true)
+              AND r.routed_recipients ? NEW.address AND r.intended_recipients ? NEW.address
+           ) OR EXISTS (
+            SELECT 1 FROM public.stewardship_recipient_refusal refusal
+            WHERE refusal.organization_id=NEW.organization_id
+              AND refusal.family_duid=NEW.family_duid AND refusal.address=NEW.address
+              AND NOT EXISTS (SELECT 1 FROM public.stewardship_recipient_resolution resolution
+                  WHERE resolution.refusal_id=refusal.id)
+           ) THEN RAISE EXCEPTION 'Bounce report requires a delivered Production address'
+            USING ERRCODE='23514'; END IF;
+        RETURN NEW;
+    END IF;
     -- The evidence is either the event's own definitive refusal, attributed
     -- to the event's actor, or (#806, migration 0079) the latest outcome of
     -- the follow-up that this accepted attempt opened for the addresses it

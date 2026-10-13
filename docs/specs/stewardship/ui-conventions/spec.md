@@ -697,12 +697,13 @@ checks the size again.
 
 Wherever a form requires an acknowledgment checkbox (finishing setup, a test
 that may already have arrived, chosen-Family tests, Testing cleanup,
-withdrawal, refusal removal, manual reports, duplicate resends, resetting all
-pages and emails to their default text), the page script keeps the form's
-primary button disabled until the box is checked, and the server refuses a
-missing acknowledgment. While the button waits, a short hint directly after
-it (named by the button's `aria-describedby`) says to tick the confirmation,
-so only content below the button moves when it clears. A form that arrives
+withdrawal, refusal removal, bounce reports, manual reports, duplicate
+resends, resetting all pages and emails to their default text), the page
+script keeps the form's primary button disabled until the box is checked,
+and the server refuses a missing acknowledgment. While the button waits, a
+short hint directly after it (named by the button's `aria-describedby`) says
+to tick the confirmation, so only content below the button moves when it
+clears. A form that arrives
 through an in-place update is gated the same way (#563).
 
 More generally, a form whose fields depend on other choices keeps its submit

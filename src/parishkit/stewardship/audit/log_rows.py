@@ -227,6 +227,7 @@ ACTIVITY_TYPES = {
         *built_types("delivery_held_"),
         "delivery_bulk_resolved",
         "restore_hold_resolved",
+        "recipient_bounce_reported",
         "recipient_refusal_cleared",
         "admin_cmd_delivery_resolve",
         "admin_cmd_delivery_resend",

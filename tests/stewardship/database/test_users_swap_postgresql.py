@@ -285,7 +285,10 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # definers. Its widened operational event check is replaced again by a
 # rerun, harmlessly. 0080 (#530) creates the large-change acceptance table
 # (in CLOSURE_TABLES, which the worker reads) with its guard and its invoker
-# lifetime function, and alters no table.
+# lifetime function, and alters no table. 0081 (#806) creates the web-only
+# bounce report definer, adds the refusal table's kind and evidence_note
+# columns and replaces the refusal guard (``before_bounce_report``), so
+# ``CLOSURE_ALTERED`` puts it back too.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -416,6 +419,10 @@ CLOSURE_CREATED = {
         ),
         ("stewardship_source", "0008_drop_acceptance"),
     ),
+    "public.stewardship_report_recipient_bounce_v1(uuid,uuid,text,uuid,text)": (
+        "stewardship_jobs",
+        "0030_bounce_report",
+    ),
 }
 
 
@@ -431,6 +438,10 @@ CLOSURE_ALTERED = {
     ("stewardship_daily_digest_ready", "comparison"): (
         "stewardship_reports",
         "0021_digest_comparison",
+    ),
+    ("stewardship_recipient_refusal", "kind"): (
+        "stewardship_jobs",
+        "0030_bounce_report",
     ),
 }
 
@@ -503,6 +514,29 @@ def before_comparison_exports():
         ),
         "ALTER TABLE public.stewardship_export_request "
         "DROP COLUMN comparison_snapshot_id",
+    ]
+
+
+def before_bounce_report():
+    """The statements that put the refusal table and its guard before 0081.
+
+    #806's 0081 adds ``kind`` and ``evidence_note`` to
+    ``stewardship_recipient_refusal`` (with the check over them, which goes
+    with them) and replaces its guard with 0079's body plus the reported
+    bounce branch. These drop the columns and put 0079's body back, as on
+    production's base; its definer is dropped with the other
+    ``CLOSURE_CREATED`` objects, and 0081's frozen file (or the full
+    migration) installs all of it again.
+    """
+    text = (MIGRATIONS / "migrations/0079_retry_refusal.sql").read_text(
+        encoding="utf-8"
+    )
+    return [
+        *(
+            "ALTER TABLE public.stewardship_recipient_refusal DROP COLUMN " + column
+            for column in ("kind", "evidence_note")
+        ),
+        _replaced(text, "stewardship_recipient_refusal_guard_v1"),
     ]
 
 
@@ -613,8 +647,10 @@ def swap_pending():
     triggers as they were before 0064 (``before_report_local_days``) and
     submissions and the context check as they were before 0065
     (``before_staff_entered``, each ``CLOSURE_ALTERED`` column) and the
-    leader definition as it was before 0070 (``before_leader_changes``), and
-    the digest ready row as it was before 0072 (``before_digest_comparison``).
+    leader definition as it was before 0070 (``before_leader_changes``), the
+    digest ready row as it was before 0072 (``before_digest_comparison``),
+    and the refusal table and its guard as they were before 0081
+    (``before_bounce_report``).
     """
     from django.db.migrations.loader import MigrationLoader
 
@@ -642,6 +678,7 @@ def swap_pending():
         for function in CLOSURE_CREATED:
             cursor.execute(f"DROP FUNCTION {function} CASCADE")
         for statement in (
+            *before_bounce_report(),
             *before_digest_comparison(),
             *before_comparison_exports(),
             *before_timeline_exports(),

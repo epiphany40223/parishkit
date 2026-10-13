@@ -1316,8 +1316,8 @@ is `pending`, `submitting`, `retry_wait`, `delivery_unknown`, `delivered`,
 Until a terminal state, credential substitutions needed for retry are
 separately sealed with application-level encryption and a versioned key ID;
 only the dispatch worker may decrypt them. Terminal handling scrubs the sealed
-values. Provider acceptance means sent; bounce processing is outside the first
-release.
+values. Provider acceptance means sent; the system does not read bounces, but
+an Administrator can report one (see `RecipientRefusal` below).
 
 `AddressRetry` (`stewardship_outbox_address_retry`, frozen migration 0077,
 [#806](https://github.com/epiphany40223/parishkit/issues/806)) is a delivered
@@ -1354,6 +1354,28 @@ the same claim. A follow-up's permanent refusal of an address is a
 the same message and rendering, lists the address's position as refused
 permanently in its latest outcome, recorded by the refusal's own worker and
 task run.
+
+An Administrator's report that a delivered email bounced at one address
+([#806](https://github.com/epiphany40223/parishkit/issues/806) slice 4,
+frozen migration 0081) is a `RecipientRefusal` too, so it sets the address
+aside for that Family exactly as a provider refusal does. The refusal's
+`kind` is `provider` (every refusal mail dispatch records, and every row
+before 0081) or `reported_bounce`, and its `evidence_note` is empty for a
+provider refusal and, for a report, the Administrator's note (more than
+spaces, at most 2000 characters); the `recipient_refusal_kind` check ties
+them together. A report names the email's newest delivered event and is
+written only by `stewardship_report_recipient_bounce_v1`, a `SECURITY
+DEFINER` function only the web login may execute (web keeps SELECT only on
+the table). It records the refusal and a `recipient_bounce_reported` audit
+event in one transaction. The refusal guard admits a report only from the
+web login, for an enabled Administrator actor, with a note, naming a
+`delivered` event of a Production-routed email of a Family in the current
+campaign (not archived and admitting Admin changes), for an address in that
+event's routed and intended recipients that the Family has no unresolved
+refusal of. Clearing and ParishSoft-correction resolution work as for any
+refusal; a cleared report cannot be filed again against the same email
+(one refusal per email and address). No code, link, token or rendering
+changes.
 
 The OutboxMessage pause hold records a pause independently of schedule
 membership, including directly created submission receipts. Held messages keep

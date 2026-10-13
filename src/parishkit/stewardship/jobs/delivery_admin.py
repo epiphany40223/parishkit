@@ -96,3 +96,87 @@ def clear_recipient_refusal(
         return RecipientRefusalResolution.objects.create(
             id=command_id, correlation_id=uuid4(), **intent
         )
+
+
+def report_recipient_bounce(
+    store,
+    user_id,
+    *,
+    message_id,
+    address,
+    command_id,
+    note,
+    observed,
+):
+    """Record an Administrator's report that a delivered email bounced (#806).
+
+    The report sets ``address`` aside for the email's Family exactly as a
+    provider's permanent refusal does: it is a ``RecipientRefusal`` of kind
+    ``reported_bounce``, naming the email's newest delivered attempt, with
+    the Administrator's note. ``observed`` is the form's tick ("I saw a
+    bounce message for this address"). Nothing is sent and no Family code,
+    link or rendering changes; Clear verified refusal undoes it.
+
+    ``command_id`` becomes the refusal's id, so a repeat with the same intent
+    returns the original report and another intent is refused. An address
+    the Family already has an unresolved refusal of, or an email that is not
+    a delivered Production Family email, is ``StaleRecordError``.
+    PostgreSQL's definer (``stewardship_report_recipient_bounce_v1``) and the
+    refusal guard check everything again, and write the audit event and the
+    Family's deliverability in the same transaction; web has no INSERT on the
+    refusal table.
+    """
+    from .delivery_reads import recording_message
+    from .outbox_models import OutboxMessage
+
+    if any(not isinstance(value, UUID) for value in (user_id, message_id, command_id)):
+        raise ValueError("A bounce report requires canonical identities.")
+    if (
+        observed is not True
+        or type(address) is not str
+        or not 0 < len(address) <= 254
+        or address != address.strip().lower()
+    ):
+        raise ValueError("A bounce report requires an address and the tick.")
+    note = evidence_note(note)
+    with work_transaction():
+        authorize(store, user_id)
+        previous = (
+            RecipientRefusal.objects.annotate(message_id=recording_message())
+            .filter(pk=command_id)
+            .first()
+        )
+        if previous is not None:
+            intent = ("reported_bounce", message_id, address, user_id, note)
+            if (
+                previous.kind,
+                previous.message_id,
+                previous.address,
+                previous.actor_id,
+                previous.evidence_note,
+            ) != intent:
+                raise ValueError("Bounce report command is already bound.")
+            return previous
+        message = OutboxMessage.objects.values(
+            "state", "mode", "family__family_duid"
+        ).get(pk=message_id)
+        if (
+            message["state"] != "delivered"
+            or message["mode"] != "production"
+            or message["family__family_duid"] is None
+        ):
+            raise StaleRecordError("Only a delivered Family email can bounce.")
+        if (
+            RecipientRefusal.objects.filter(
+                family_duid=message["family__family_duid"], address=address
+            )
+            .exclude(pk__in=RecipientRefusalResolution.objects.values("refusal_id"))
+            .exists()
+        ):
+            raise StaleRecordError("This address is already set aside.")
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT stewardship_report_recipient_bounce_v1(%s,%s,%s,%s,%s)",
+                (command_id, message_id, address, user_id, note),
+            )
+        return RecipientRefusal.objects.get(pk=command_id)

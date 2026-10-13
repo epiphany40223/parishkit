@@ -536,3 +536,29 @@ def test_only_the_worker_reads_large_change_acceptances():
         assert table not in columns, role
     # It follows the users swap, so its grant waits for its migration.
     assert CLOSURE_TABLES[table] == ("stewardship_source", "0008_drop_acceptance")
+
+
+def test_only_web_records_a_reported_bounce():
+    """A bounce report (#806 slice 4) is written only through its definer.
+
+    Web executes it and keeps only SELECT on the refusal table, so it cannot
+    insert a refusal of either kind directly; no other login executes it.
+    The definer follows the users swap, so its grant waits for its migration.
+    """
+    from parishkit.stewardship.runtime_grants import (
+        BOUNCE_REPORT_FUNCTION,
+        CLOSURE_FUNCTIONS,
+        runtime_functions,
+    )
+
+    for _, _, role, target in database_identities():
+        if role is ServiceRole.MIGRATION:
+            continue
+        granted = BOUNCE_REPORT_FUNCTION in runtime_functions(role, target=target)
+        assert granted == (role is ServiceRole.WEB), role
+    tables, _ = runtime_grants(ServiceRole.WEB)
+    assert tables["stewardship_recipient_refusal"] == {"SELECT"}
+    assert CLOSURE_FUNCTIONS[BOUNCE_REPORT_FUNCTION] == (
+        "stewardship_jobs",
+        "0030_bounce_report",
+    )
