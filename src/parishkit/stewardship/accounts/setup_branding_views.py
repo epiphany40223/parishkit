@@ -91,6 +91,8 @@ def setup_branding(request):
                         graphics,
                         base_digest=service.store.active().digest,
                         setup_attempt_id=draft.status.attempt_id,
+                        # The setup step takes one image (#1062).
+                        mode="basic",
                     )
                     save_section(
                         request,

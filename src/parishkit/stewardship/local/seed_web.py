@@ -603,6 +603,7 @@ def stage_logo(request, service, attempt_id):
         prepare_graphics(image),
         base_digest=service.store.active().digest,
         setup_attempt_id=attempt_id,
+        mode="basic",
     )
 
 
