@@ -10,18 +10,23 @@ No path approves a census change yet (the ADM-09 review page comes later),
 so ``approve`` sets a decision as the schema owner with triggers off.
 """
 
+import threading
 from datetime import timedelta
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from django.db import DatabaseError, connection, transaction
+from django.db import DatabaseError, connection, connections, transaction
 
 from parishkit.stewardship.audit.models import AuditContext, AuditEvent
+from parishkit.stewardship.audit.schemas import Action, ActorKind
+from parishkit.stewardship.audit.schemas import Outcome as AuditOutcome
+from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.responses.models import (
     ProposedChange,
+    PublicationConfirmation,
     PublicationEntity,
     PublicationField,
     PublicationOutcome,
@@ -283,6 +288,92 @@ def test_confirmation_refusals(ready):
     approve(first)
     with pytest.raises(DatabaseError, match="changed since preflight"):
         confirm(harness, admin, third, session)
+
+
+def test_plans_older_than_an_hour_are_never_confirmed(ready):
+    """The confirmation window is 60 minutes from the plan's transaction."""
+    harness, admin, _, _, first, session = ready
+    record = plan(admin, [first], [writing(first)])
+    owner(
+        "UPDATE stewardship_publication_plan "
+        "SET created_at=created_at-interval '61 minutes' WHERE id=%s",
+        [record.pk],
+    )
+    with pytest.raises(DatabaseError, match="too old"):
+        confirm(harness, admin, record, session)
+    owner(
+        "UPDATE stewardship_publication_plan "
+        "SET created_at=created_at+interval '2 minutes' WHERE id=%s",
+        [record.pk],
+    )
+    confirm(harness, admin, record, session)
+
+
+def raw_confirmation(admin, record, session):
+    """Insert one confirmation as the schema owner, outside the work order."""
+    return PublicationConfirmation.objects.create(
+        actor_id=admin,
+        plan=record,
+        session_id=session.pk,
+        authenticated_at=session.authenticated_at,
+        request_key=uuid4(),
+        **confirmation_counts(record.pk),
+    )
+
+
+def test_concurrent_overlapping_confirmations_serialize(ready):
+    """Two plans of one change confirmed at once: the second waits on the
+    guard's own lock (not the work order, which it skips) and then sees the
+    first, so both cannot pass the overlap check."""
+    _, admin, _, _, first, session = ready
+    one = plan(admin, [first], [writing(first)])
+    two = plan(admin, [first], [writing(first)])
+    held, release, errors = threading.Event(), threading.Event(), {}
+
+    def hold_first():
+        """Confirm ``one`` with its audit, then wait before committing."""
+        try:
+            with work_transaction():
+                confirmation = raw_confirmation(admin, one, session)
+                record_action(
+                    Action.CENSUS_PUBLICATION_CONFIRMED,
+                    actor_kind=ActorKind.PORTAL_USER,
+                    actor_id=admin,
+                    subject_id=confirmation.pk,
+                    campaign_id=one.campaign_id,
+                    current_parish=True,
+                    context={"outcome": AuditOutcome.CHANGED, "count": 1},
+                )
+                held.set()
+                release.wait(30)
+        except Exception as error:  # surfaced by the assertion below
+            errors["first"] = error
+        finally:
+            held.set()
+            connections.close_all()
+
+    def race_second():
+        """Insert ``two``'s confirmation while ``one``'s is uncommitted."""
+        try:
+            with transaction.atomic():
+                raw_confirmation(admin, two, session)
+        except Exception as error:
+            errors["second"] = error
+        finally:
+            connections.close_all()
+
+    holder = threading.Thread(target=hold_first)
+    holder.start()
+    assert held.wait(30) and "first" not in errors, errors
+    racer = threading.Thread(target=race_second)
+    racer.start()
+    racer.join(2)
+    assert racer.is_alive(), errors  # blocked on the advisory lock
+    release.set()
+    holder.join(30)
+    racer.join(30)
+    assert "first" not in errors, errors
+    assert "still writing" in str(errors.get("second")), errors
 
 
 def test_testing_mode_plans_are_never_confirmed(ready):
