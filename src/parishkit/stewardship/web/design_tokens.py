@@ -18,6 +18,8 @@ COLORS = {
     "paper": "#fff",
     "paper-soft": "#f3f6f5",
     "border": "#dfe3e2",
+    # The unfilled part of a progress track (setup stepper, Family step bar).
+    "track": "#d3dbd9",
     "control-border": "#7a8a90",
     "accent": "#115e56",
     "accent-strong": "#0c4a44",

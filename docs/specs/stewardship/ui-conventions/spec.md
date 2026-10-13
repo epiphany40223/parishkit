@@ -1461,7 +1461,11 @@ The portal and the emails share one visual style
 - **Design tokens:** `web/design_tokens.py` is the one source of the
   colours, corner radii, fonts and button shape. The portal stylesheet
   declares them as CSS custom properties, and a unit test fails if the two
-  disagree, including any `var()` fallback in another stylesheet. Email
+  disagree, including any `var()` fallback in another stylesheet. The other
+  stylesheets (the setup wizard, the report pages and the session dialog)
+  load after it and read the tokens directly, with no hex colour and no
+  fallback; only the vendored chart tooltip rules are exempt. The setup
+  wizard's Back and Continue buttons take the shared button shape. Email
   components read the same module and inline the values, because mail
   programs cannot load the stylesheet.
 - **Buttons:** templates draw every button, and every link styled as one,

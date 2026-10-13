@@ -1,6 +1,7 @@
 /* Initial-setup wizard: progress stepper, Back/Continue actions and field help.
-   Loaded only by the setup templates. Colors fall back to the shared palette so
-   this file keeps working if the shared stylesheet renames its tokens. */
+   Loaded only by the setup templates, after ui-v1.css, so it reads the shared
+   design tokens (#732) directly: no hex colours and no var() fallbacks. The
+   Back/Continue buttons take the shared button shape (--button-*). */
 .setup-sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
@@ -10,24 +11,24 @@
 /* The shared theme styles every "main nav" as a row of bordered buttons;
    the stepper is a card with its own layout and plain links instead. */
 .setup-stepper {
-  display: block; color: var(--ink, #1b2a31);
-  margin-block: 0 1.25rem; padding: .75rem 1rem .25rem; background: var(--paper, #fff);
-  border: 1px solid var(--border, #dfe3e2); border-radius: .75rem;
+  display: block; color: var(--ink);
+  margin-block: 0 1.25rem; padding: .75rem 1rem .25rem; background: var(--paper);
+  border: 1px solid var(--border); border-radius: var(--radius);
 }
 .setup-stepper-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: .15rem 1rem; }
 .setup-stepper-summary p { margin: 0; }
 .setup-stepper-current { flex: 1 1 14rem; }
-.setup-stepper-count, .setup-overview-link { color: var(--muted, #4f5e66); font-size: .925rem; }
+.setup-stepper-count, .setup-overview-link { color: var(--muted); font-size: .925rem; }
 .setup-stepper .setup-overview-link a {
   display: inline-block; min-height: 0; padding: .6rem 0; border: 0; background: none;
-  color: var(--link, #155a8a); font-weight: 500; text-decoration: underline;
+  color: var(--link); font-weight: 500; text-decoration: underline;
 }
 .setup-track { display: flex; gap: 3px; margin-block: .6rem .15rem; }
-.setup-track span { position: relative; flex: 1 1 0; min-width: 0; height: .45rem; border-radius: 999px; background: #d3dbd9; }
+.setup-track span { position: relative; flex: 1 1 0; min-width: 0; height: .45rem; border-radius: 999px; background: var(--track); }
 /* A taller invisible hover target for each segment's title, without changing layout. */
 .setup-track span::before { content: ""; position: absolute; inset: -.4rem -1.5px; }
-.setup-track .setup-track-done { background: var(--accent, #115e56); }
-.setup-track .setup-track-current { background: var(--gold, #b5862e); }
+.setup-track .setup-track-done { background: var(--accent); }
+.setup-track .setup-track-current { background: var(--gold); }
 .setup-stepper-list { margin: 0; padding: 0; border: 0; background: transparent; }
 .setup-stepper-list[open] { padding-bottom: .5rem; }
 .setup-steps { list-style: none; margin: 0; padding: 0; columns: 2 19rem; column-gap: 1.5rem; }
@@ -35,10 +36,10 @@
 .setup-steps a, .setup-step-box {
   border: 0; background: none; font-weight: inherit;
   display: grid; grid-template-columns: 1.6rem minmax(0, 1fr); column-gap: .6rem; align-items: center;
-  min-height: 44px; padding: .3rem .5rem; border-radius: .5rem;
-  color: var(--ink, #1b2a31); text-decoration: none;
+  min-height: 44px; padding: .3rem .5rem; border-radius: var(--radius-small);
+  color: var(--ink); text-decoration: none;
 }
-.setup-steps a:hover { background: var(--accent-soft, #e4f0ee); }
+.setup-steps a:hover { background: var(--accent-soft); }
 .setup-steps a:hover .setup-step-label { text-decoration: underline; }
 .setup-step-number {
   grid-row: span 2; display: inline-flex; align-items: center; justify-content: center;
@@ -46,14 +47,14 @@
   font-weight: 700; font-size: .8rem;
 }
 .setup-step-label { font-weight: 600; line-height: 1.3; }
-.setup-step-status { font-size: .8125rem; line-height: 1.3; color: var(--muted, #4f5e66); }
+.setup-step-status { font-size: .8125rem; line-height: 1.3; color: var(--muted); }
 .setup-step-done .setup-step-number {
-  background: var(--accent, #115e56); border-color: var(--accent, #115e56); color: var(--paper, #fff);
+  background: var(--accent); border-color: var(--accent); color: var(--paper);
 }
-.setup-step-blocked .setup-step-box, .setup-step-locked .setup-step-box { color: var(--muted, #4f5e66); }
+.setup-step-blocked .setup-step-box, .setup-step-locked .setup-step-box { color: var(--muted); }
 .setup-step-blocked .setup-step-number, .setup-step-locked .setup-step-number { border-style: dashed; }
 .setup-steps [aria-current="step"] {
-  background: var(--accent-soft, #e4f0ee); box-shadow: inset 4px 0 0 var(--accent, #115e56);
+  background: var(--accent-soft); box-shadow: inset 4px 0 0 var(--accent);
 }
 /* Back/Continue: identical on every wizard page. Back is secondary and first;
    the primary action (button or link) is last and right-aligned. They share
@@ -64,22 +65,22 @@
 }
 .setup-actions > * { margin: 0; }
 .setup-back, .setup-continue, .setup-actions > button {
-  display: inline-flex; align-items: center; justify-content: center; min-height: 44px;
-  box-sizing: border-box; padding: .6rem 1.1rem; border: 2px solid var(--accent, #115e56);
-  border-radius: .5rem; font-weight: 650; line-height: 1.3; text-align: center;
+  display: inline-flex; align-items: center; justify-content: center; min-height: var(--button-min-height);
+  box-sizing: border-box; padding: var(--button-padding); border: var(--button-border-width) solid var(--accent);
+  border-radius: var(--radius-small); font-weight: var(--button-weight); line-height: 1.3; text-align: center;
   text-decoration: none; box-shadow: none;
 }
-.setup-back { flex: 0 1 auto; min-width: 0; background: var(--paper, #fff); color: var(--accent, #115e56); }
+.setup-back { flex: 0 1 auto; min-width: 0; background: var(--paper); color: var(--accent); }
 .setup-continue, .setup-actions > button {
-  flex: 0 1 auto; margin-inline-start: auto; background: var(--accent, #115e56); color: var(--paper, #fff);
+  flex: 0 1 auto; margin-inline-start: auto; background: var(--accent); color: var(--paper);
 }
 .setup-continue, .setup-actions > button { min-width: 0; }
 @media (max-width: 26rem) {
   .setup-actions { flex-wrap: wrap; }
   .setup-continue, .setup-actions > button { flex: 1 1 100%; margin-inline-start: 0; }
 }
-.setup-back:hover { background: var(--accent-soft, #e4f0ee); color: var(--accent-strong, #0c4a44); }
-.setup-continue:hover { background: var(--accent-strong, #0c4a44); border-color: var(--accent-strong, #0c4a44); color: var(--paper, #fff); }
+.setup-back:hover { background: var(--accent-soft); color: var(--accent-strong); }
+.setup-continue:hover { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--paper); }
 /* Source-load progress: parts of the load and each downloaded collection.
    The status word always carries the meaning; the mark only reinforces it. */
 .setup-load-phases, .setup-load-collections { list-style: none; margin: 0 0 1rem; padding: 0; }
@@ -87,34 +88,34 @@
 .setup-load-phases li, .setup-load-collections li {
   display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between;
   gap: 0 .75rem; padding: .45rem .6rem .45rem 2rem; position: relative;
-  border-bottom: 1px solid var(--border, #dfe3e2);
+  border-bottom: 1px solid var(--border);
 }
-.setup-load-phases li { border: 1px solid var(--border, #dfe3e2); border-radius: .5rem; }
+.setup-load-phases li { border: 1px solid var(--border); border-radius: var(--radius-small); }
 .setup-load-phases li::before, .setup-load-collections li::before {
   position: absolute; left: .55rem; top: .5rem; width: 1rem; text-align: center;
-  font-weight: 700; content: "\2022"; color: var(--muted, #4f5e66);
+  font-weight: 700; content: "\2022"; color: var(--muted);
 }
-.setup-load-done::before { content: "\2713" !important; color: var(--accent, #115e56) !important; }
-.setup-load-active::before { content: "\25B8" !important; color: var(--ink, #1b2a31) !important; }
-.setup-load-active { background: var(--accent-soft, #e4f0ee); font-weight: 600; }
-.setup-load-waiting .setup-load-label { color: var(--muted, #4f5e66); }
+.setup-load-done::before { content: "\2713" !important; color: var(--accent) !important; }
+.setup-load-active::before { content: "\25B8" !important; color: var(--ink) !important; }
+.setup-load-active { background: var(--accent-soft); font-weight: 600; }
+.setup-load-waiting .setup-load-label { color: var(--muted); }
 .setup-load-status { font-size: .925rem; font-variant-numeric: tabular-nums; }
 /* Finishing setup: a step waiting on the server operator, or one that failed. */
-.setup-load-operator::before { content: "\23F8" !important; color: var(--ink, #1b2a31) !important; }
-.setup-load-operator { background: var(--warning-bg, #fdf5e1); border-color: var(--warning-border, #a86f00) !important; }
-.setup-load-failed::before { content: "\2715" !important; color: var(--error-ink, #8f1d12) !important; }
-.setup-load-failed { border-color: var(--error-border, #b42318) !important; background: var(--error-bg, #fcebe8); font-weight: 600; }
+.setup-load-operator::before { content: "\23F8" !important; color: var(--ink) !important; }
+.setup-load-operator { background: var(--warning-bg); border-color: var(--warning-border) !important; }
+.setup-load-failed::before { content: "\2715" !important; color: var(--error-ink) !important; }
+.setup-load-failed { border-color: var(--error-border) !important; background: var(--error-bg); font-weight: 600; }
 .setup-load-phases li p { margin: .25rem 0 0; font-size: .925rem; }
 .setup-load-result {
-  margin-block: 0 1.5rem; padding: 1rem 1.25rem; border: 2px solid var(--accent, #115e56);
-  border-radius: .75rem; background: var(--accent-soft, #e4f0ee);
+  margin-block: 0 1.5rem; padding: 1rem 1.25rem; border: 2px solid var(--accent);
+  border-radius: var(--radius); background: var(--accent-soft);
 }
 .setup-load-result h2 { margin-top: 0; }
 .setup-load-result .setup-actions { margin-block: .75rem 0; }
 .setup-progress { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1rem; margin-block: 0 1rem; }
 .setup-progress label { margin: 0; }
 .setup-progress progress { flex: 1 1 12rem; }
-.helptext { display: block; max-width: 70ch; margin-block: .25rem .75rem; color: var(--muted, #4f5e66); font-size: .925rem; }
+.helptext { display: block; max-width: 70ch; margin-block: .25rem .75rem; color: var(--muted); font-size: .925rem; }
 .setup-checklist li { margin-block: .25rem; }
 @media (forced-colors: active) {
   .setup-steps [aria-current="step"] { outline: 3px solid CanvasText; }
