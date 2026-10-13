@@ -20,6 +20,7 @@ from parishkit.stewardship.observability import debug_logging_enabled
 from .canonical import InvalidSourcePayload
 from .corpus import KINDS, normalize_core
 from .count_names import DERIVED_COUNTS, TREND_COLLECTIONS
+from .drop_examples import counted_keys
 from .giving import load_giving
 from .windows import RefreshWindow
 
@@ -59,6 +60,11 @@ class DestructiveSourceChange(InvalidSourcePayload):
     the refusal can record all of them (ADM-13). These are counts, never
     record values, so the refusal can be logged in ordinary output for the
     operator.
+
+    ``counted`` is the refused load's ``drop_examples.counted_keys`` (keys
+    only), from which the worker records a few example Families with the
+    refusal (ADM-13 PR 5c). Unlike the counts it identifies parish records,
+    so it is never logged: it stays in memory until the refusal is recorded.
     """
 
     def __init__(self, message, *, measure=None, before=None, after=None, checks=()):
@@ -66,6 +72,7 @@ class DestructiveSourceChange(InvalidSourcePayload):
         super().__init__(message)
         self.loss = (measure, before, after) if measure in LOSS_MEASURES else None
         self.checks = tuple(check for check in checks if isinstance(check, CountCheck))
+        self.counted = {}
 
 
 @dataclass(frozen=True)
@@ -205,25 +212,12 @@ def derived_counts(corpus):
     Portal-eligible, email-eligible and active-head Families come from the
     normalized Family rows; valid-email contacts from every contact row. The
     same function counts a new load and the current promoted snapshot, so the
-    two sides of the comparison cannot be defined differently.
+    two sides of the comparison cannot be defined differently. Each count is
+    the size of ``drop_examples.counted_keys``'s set, which the example
+    Families of a refusal are chosen from (ADM-13 PR 5c).
     """
-    families = corpus["family"].values()
-    return {
-        "portal_eligible_families": sum(
-            1 for row in families if row.get("portal_eligible") is True
-        ),
-        "email_eligible_families": sum(
-            1 for row in families if row.get("email_eligible") is True
-        ),
-        "active_head_families": sum(
-            1 for row in families if row.get("active_head_duids")
-        ),
-        "valid_email_contacts": sum(
-            1
-            for row in corpus["contact"].values()
-            if any(email.get("valid") is True for email in row.get("emails", ()))
-        ),
-    }
+    counted = counted_keys(corpus)
+    return {name: len(counted[name]) for name in DERIVED_COUNTS}
 
 
 def valid_derived_counts(value):
@@ -512,6 +506,9 @@ def load_full_source(
             maximum_drop_percent=maximum_drop_percent,
         )
     except DestructiveSourceChange as refusal:
+        # What the refused load counted, so the worker can record a few
+        # example Families with the refusal (keys only, never logged).
+        refusal.counted = counted_keys(corpus)
         # An empty load is refused at any setting, so it is never offered.
         if accept is None or refusal.loss is None or refusal.loss[0] == "empty":
             raise

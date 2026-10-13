@@ -396,7 +396,13 @@ def test_the_catalog_lists_every_command_with_its_flags():
     review = entries["system refresh-accept-preview"]
     assert review["scope"] == "full" and not review["changes_state"]
     assert review["audit_event"] is None and not review["prompts"]
-    assert review["result_fields"] == ["attempt_id", "refused_at", "counts", "preview"]
+    assert review["result_fields"] == [
+        "attempt_id",
+        "refused_at",
+        "counts",
+        "examples",
+        "preview",
+    ]
     accept = entries["system refresh-accept"]
     assert accept["scope"] == "full" and accept["changes_state"]
     assert accept["fresh_gated"] and accept["prompts"]

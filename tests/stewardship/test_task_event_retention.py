@@ -116,12 +116,13 @@ def test_any_other_error_propagates(monkeypatch):
 
 
 def test_the_maintenance_task_runs_the_prune(monkeypatch):
-    """_execute calls prune_task_events after its other steps."""
+    """_execute calls prune_task_events after its other steps, which include
+    deleting the example Families that may no longer be shown (#530)."""
     from contextlib import nullcontext
 
     from parishkit.stewardship import service_status
     from parishkit.stewardship.accounts import automation_sessions
-    from parishkit.stewardship.source import slot_decisions
+    from parishkit.stewardship.source import drop_examples, slot_decisions
 
     order = []
     monkeypatch.setattr(maintenance.connection, "in_atomic_block", False)
@@ -129,6 +130,9 @@ def test_the_maintenance_task_runs_the_prune(monkeypatch):
     monkeypatch.setattr(service_status, "prune_service_status", lambda: None)
     monkeypatch.setattr(
         slot_decisions, "prune_slot_decisions", lambda: order.append("slots")
+    )
+    monkeypatch.setattr(
+        drop_examples, "prune_drop_examples", lambda: order.append("examples")
     )
     monkeypatch.setattr(
         maintenance, "prune_task_events", lambda execution: order.append("prune")
@@ -140,4 +144,4 @@ def test_the_maintenance_task_runs_the_prune(monkeypatch):
         transition=lambda action: order.append(action),
     )
     maintenance._execute(execution)
-    assert order == ["s", "slots", "prune", "complete"]
+    assert order == ["s", "slots", "examples", "prune", "complete"]

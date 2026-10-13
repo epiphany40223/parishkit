@@ -414,7 +414,8 @@ of 2026-10-04 are recorded in the specification.
    sign-in, `source_drop_accepted` and the full refresh it asks for,
    `system refresh-accept-preview` and `system refresh-accept`, and the
    runbook updates; **5c** the example Families (their own table, deletion
-   rules and migration).
+   rules and frozen migration 0085, the preview's list and the command's
+   DUIDs).
 7. **PR 6, turn off debug logging.** The debug-off switch and its guard
    (migration), the in-process override, children's environment, the
    `debug-off-clear` operator command, **Allow debug logging again**

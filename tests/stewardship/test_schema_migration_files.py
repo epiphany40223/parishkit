@@ -285,6 +285,9 @@ FROZEN = {
     "0084_campaign_archive_exports.sql": (
         "66b7ce60794446eeda1d2c61627da569489c4908a05bc2a1457cb2bd3738a8d8"
     ),
+    "0085_drop_examples.sql": (
+        "77666b75f3cbd17203b7ece92aec07bc81fb0ab8c50032e77cae48defb11743a"
+    ),
 }
 
 

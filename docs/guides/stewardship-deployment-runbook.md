@@ -982,6 +982,17 @@ Administrator then accepts a refused large change on System health, as
 describes; the `PARISHKIT_SOURCE_MAX_DROP_PERCENT` override stays as the
 server operator's emergency path.
 
+### Example Families of a refused large change (#530)
+
+The release that adds the example Families to **Accept this change once**
+has a schema change: frozen file 0085 creates the example table, its guard
+and the function that says which examples may be shown. With the
+[scripted upgrade](#scripted-upgrade) set `STEWARDSHIP_SCHEMA_CHANGE=1`;
+step 4 runs `migration` and then `database-grants`, which gives the worker
+its reads, inserts and deletes of examples and the web login its reads. No
+other step is needed. Only refusals recorded after the upgrade have
+examples; the preview of an earlier refusal says none are available.
+
 ### Preparing reminders ahead (BG-12)
 
 The release that prepares bulk-send reminders before their due time

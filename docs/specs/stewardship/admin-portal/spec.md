@@ -5231,14 +5231,13 @@ the problems list, the six panels, the status fragment, Home's problem lines,
 Families the form cannot open, the daily limit's 24-hour count and resume
 time, and the
 `system health` command. Three of the four actions have landed: **Take a
-backup now** (PR 3), **Accept this change once** (PR 5a and 5b; the example
-Families, PR 5c, are not built yet) and **Turn off debug logging** (PR 6a
+backup now** (PR 3), **Accept this change once** (PR 5a to 5c, with its
+example Families) and **Turn off debug logging** (PR 6a
 and 6b; Testing's **Allow debug logging again** is not built yet). For
 **Clear the halt** (PR 4) no panel offers a button yet; its problem sentence
 names the runbook step instead, and that step, listed under
 [runbook steps the page replaces](#runbook-steps-the-page-replaces), remains
-the way to do it. Some panel details arrive with those pull requests too: a
-halt's kind (PR 4) and the example Families of a refused change (PR 5c).
+the way to do it. A halt's kind arrives with PR 4.
 
 ### System health page
 
@@ -5860,17 +5859,28 @@ requires today.
 2. **Example Families** ([decision 4](#system-health-decisions)). When it
    records a refused full refresh, the worker also records up to five
    example Families for each failing count that concerns Families, Members
-   or contacts: Families present and counted in the baseline but missing,
-   or no longer counted, in the refused load (for a Member or contact count,
-   the Family the lost record belonged to). Each example holds only the
-   Family's DUID and its name as the active parishioner family directory shows it, taken from
-   the baseline. Ministry, roster and fund counts have no examples, and a
-   tenant-mismatch refusal records none. The examples go in a new
-   parish-level table that the worker's login writes and deletes and the
-   web login reads. It belongs to no campaign, so campaign purge does not
-   touch it. Nothing else from the refused load is kept: the worker discards
-   it as it does today. Backups gain no new personal data, because each
-   name already exists in the promoted baseline that every backup holds.
+   or contacts: Families present and counted in the current promoted data
+   but missing, or no longer counted, in the refused load (for a Member or
+   contact count, the Family the lost record belonged to), lowest Family
+   DUID first, each once per count. Each example holds only the
+   Family's DUID and its name as the active parishioner family directory
+   shows it, taken from the current promoted data; never which Member or
+   address was lost. Ministry, roster and fund counts have no examples, nor
+   does a load with no Families or no Members (it can never be accepted),
+   and a tenant-mismatch refusal records none. The worker compares the
+   refused load's record keys, which travel with the refusal in memory
+   only, with the current data in the refusal's own transaction; if that
+   fails (or there is no usable current data) the refusal is recorded
+   without examples, and the preview says none are available. The
+   examples go in a new parish-level table (frozen migration 0085) that the
+   worker's login writes and deletes and the web login reads; its SQL guard
+   admits a row only from the worker, for a count that failed whose drop
+   count was recorded no earlier than the inserting transaction began (in
+   practice the refusal's own transaction), and nobody changes one. It belongs to no campaign,
+   so campaign purge does not touch it. Nothing else from the refused load
+   is kept: the worker discards it as it does today. Backups gain no new
+   personal data, because each name already exists in the promoted data
+   that every backup holds.
 3. Confirming records a one-time acceptance (a new row: the refused run,
    every recorded count's before and after values, who, when and the fresh
    sign-in instant) and requests a full refresh, as **Refresh now** does.
@@ -5914,16 +5924,19 @@ requires today.
    accepted counts at the normal limit and the acceptance never weakens the
    check of a count it did not cover.
 6. **Examples are deleted** when their refusal is no longer the newest full
-   refresh's outcome, when a full refresh is promoted, when the acceptance
-   ends, or seven days after the refusal, whichever comes first. These four
-   triggers and the seven days are the default, pending Administrator
-   confirmation; decision 4 says only that examples are kept until the
-   decision or their expiry. The worker's housekeeping deletes them, and the
-   page and the command never show an example whose deletion condition is
-   already met, even before housekeeping runs. A restore can bring back
-   examples from the backup; the page hides them by the same conditions,
-   and the restore procedure deletes them. Their retention is listed with
-   the other bounded cleanup in
+   refresh's outcome, when a full refresh is promoted, when the refusal is
+   accepted (the decision), or seven days after the refusal, whichever
+   comes first. These four triggers and the seven days are the default,
+   pending Administrator confirmation (asked on
+   [#530](https://github.com/epiphany40223/parishkit/issues/530)); decision
+   4 says only that examples are kept until the decision or their expiry.
+   One SQL function names the one refusal whose examples may still be
+   shown; the worker's hourly housekeeping deletes every other example, and
+   the page and the command read only that refusal's, so they never show an
+   example whose deletion condition is already met, even before
+   housekeeping runs. A restore can bring back examples from the backup;
+   the page hides them by the same conditions, and the restore procedure
+   deletes them. Their retention is listed with the other bounded cleanup in
    [temporary retention and housekeeping](../operations/spec.md#temporary-retention-and-housekeeping).
 
 **Preview.** Every recorded count, with its before and after values and the
@@ -5931,12 +5944,16 @@ share it fell by, marking the ones that failed. It says that records
 missing from ParishSoft leave the campaign's data after the refresh, and
 that a mistake in ParishSoft should be fixed there, followed by **Refresh
 now**. Under each failing count it lists the example Families (name and
-DUID; PR 5c, not built yet), which only Administrators see, since only they
-may open the page.
+Family DUID), or says none are available for a failing Family, Member
+or contact count; what they are and when they are deleted is in an "i"
+toggletip. Only Administrators see them, since only they may open the
+page. The examples are part of the preview, drawn with it, so nothing
+appears or moves after it.
 Example names never appear in a log line, an audit context, the refusal's
 log entry or a notice. Opening the preview records no event (see
-**Audit** below); the preview's command prints the counts (and, with PR
-5c, the example DUIDs) without names, as the automation spec's
+**Audit** below); the preview's command prints the counts and the example
+Family DUIDs (`examples`, by count) without names, as the automation
+spec's
 [personal data rule](../admin-automation/spec.md#personal-data-on-the-command-line)
 requires.
 

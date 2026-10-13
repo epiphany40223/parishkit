@@ -775,6 +775,21 @@ layout; where the deployment YAML overrides a path, use that path instead.
 
    A set taken under a release without backup requests has no such table,
    and the command reports that the relation does not exist; skip it then.
+   Then delete the example Families of a refused large ParishSoft change
+   the set holds (a few Family names and DUIDs that System health shows
+   while a refusal is current; see
+   [Accepting a large ParishSoft change](stewardship-launch-runbooks.md#accepting-a-large-parishsoft-change)).
+   The page already hides any whose refusal is no longer current, and the
+   worker's hourly maintenance deletes them once the site is released, so
+   this only removes them sooner:
+
+   ```sh
+   docker compose ... exec -T postgres psql --username pk_stewardship_operator \
+     --dbname DATABASE_NAME -v ON_ERROR_STOP=1 -c "DELETE FROM stewardship_source_drop_example"
+   ```
+
+   A set taken under a release without example Families has no such table;
+   skip it then.
 7. **Point at the set's image.** Run `retarget-image` back to the image the
    backup was taken under, in that image, then `pull`. The manifest's
    `image` is its complete reference and `application_version` its release;

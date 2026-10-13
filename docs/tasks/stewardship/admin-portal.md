@@ -1137,7 +1137,7 @@ Specification: [System health](../../specs/stewardship/admin-portal/spec.md#syst
 - [ ] ADM-13.02 — PR 2: add the read-only System health page, with its read command or its pending exemption.
 - [ ] ADM-13.03 — PR 3: add Take a backup now through a durable request and request mode (migration), with its command or its pending exemption.
 - [ ] ADM-13.04 — PR 4: add Clear the halt with halt identities, the mailbox check and the clear signal (migration), with its commands or their pending exemption.
-- [ ] ADM-13.05 — PR 5: add Accept this change once, bound to every recorded count, with example Families (migration), with its commands or their pending exemption.
+- [x] ADM-13.05 — PR 5: add Accept this change once, bound to every recorded count, with example Families (migration), with its commands or their pending exemption.
 - [ ] ADM-13.06 — PR 6: add the debug-off switch, its in-process override, its host clear command and Allow debug logging again (Testing only, refused in Production) (migration), with its command or its pending exemption.
 
 Evidence: In progress. ADM-13.00 is this docs-only change: the Admin portal
@@ -1207,7 +1207,7 @@ they are answered in place, refusals and the step-up answered inside the
 section, and the commands owed by ADM-11 PR 5,
 checked by `tests/stewardship/database/test_backup_now_postgresql.py` and
 `tests/stewardship/browser/test_system_health.py`.
-ADM-13.05 is in progress in parts. Part 5a adds the frozen forward migration
+ADM-13.05 landed in three parts. Part 5a adds the frozen forward migration
 `0080_drop_acceptance.sql` (`stewardship_source.0008`): the acceptance
 record and its guard, the shared SQL lifetime check and the worker's read
 grant; the full refresh honoring a live acceptance within the reviewed
@@ -1234,8 +1234,26 @@ refresh-accept`, and the launch and deployment runbook updates (the
 operator override as the emergency path), checked by
 `tests/stewardship/database/test_accept_once_postgresql.py`,
 `tests/stewardship/test_system_health.py` and
-`tests/stewardship/browser/test_system_health.py`. Part 5c (the example
-Families) remains.
+`tests/stewardship/browser/test_system_health.py`. Part 5c adds the
+frozen forward migration `0085_drop_examples.sql` (`stewardship_source.0009`):
+the example Families table and its guard (the worker only, for a count
+that failed whose drop count was recorded no earlier than the inserting
+transaction began, never for an empty load; nobody changes one), and the one SQL function naming the refusal whose examples
+may be shown, with the worker's insert, read and delete grants and the
+web's read grant; the worker recording up to five example Families (DUID
+and directory name, from the current data) per failing Family, Member or
+contact count with each refusal (`parishkit.stewardship.source.drop_examples`),
+best effort; the hourly maintenance deleting every example that may no
+longer be shown (superseded, promoted over, accepted, or seven days old);
+the preview listing them under each failing count with an "i" toggletip;
+`system refresh-accept-preview`'s `examples` (DUIDs only); and the
+operations spec, launch, backup and deployment runbook updates, checked by
+`tests/stewardship/test_source_drop_examples.py`,
+`tests/stewardship/database/test_source_drop_examples_postgresql.py`,
+`tests/stewardship/database/test_accept_once_postgresql.py`,
+`tests/stewardship/test_system_health.py`,
+`tests/stewardship/browser/test_system_health.py`, the runtime-grant and
+users swap tests and the regenerated schema baseline.
 ADM-13.06 is in progress in parts. Part 6a adds the frozen forward migration
 `0078_debug_off_switch.sql` (`stewardship_jobs.0028`): the switch record and
 its guard, the one-boolean read every runtime login may run, the

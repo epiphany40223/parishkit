@@ -141,6 +141,12 @@ WEB_READ_TABLES = frozenset(
         # large change, when and until when, and the counts reviewed; counts
         # and identifiers only, no parish data.
         "stewardship_source_drop_acceptance",
+        # Accept this change once's example Families (ADM-13 PR 5c): the
+        # DUID and directory name of a few Families a refused change would
+        # remove or change. The web already reads every Family's directory
+        # name and DUID from the snapshot; the page shows only the examples
+        # stewardship_source_drop_example_attempt_v1() still allows.
+        "stewardship_source_drop_example",
     ]
 )
 
@@ -496,6 +502,9 @@ CLOSURE_TABLES = {
         "stewardship_source",
         "0008_drop_acceptance",
     ),
+    # A refused large change's example Families (0085, #530), which the
+    # worker records and deletes and web reads.
+    "stewardship_source_drop_example": ("stewardship_source", "0009_drop_examples"),
 }
 
 
@@ -740,6 +749,11 @@ def runtime_grants(role, *, target=None):
             # check fails reads the live one. Counts and identifiers only; its
             # guard admits no write from this login.
             tables["stewardship_source_drop_acceptance"] = {"SELECT"}
+            # Its example Families (ADM-13 PR 5c): recorded with the
+            # refusal, and deleted by the hourly maintenance once they may
+            # no longer be shown. The guard admits no update, and inserts
+            # only in the refusal's own transaction.
+            tables["stewardship_source_drop_example"] = {"SELECT", "INSERT", "DELETE"}
             add_service_status_housekeeping_grants(tables, columns)
         else:
             add_service_status_writer_grants(tables, columns)

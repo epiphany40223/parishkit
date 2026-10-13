@@ -2602,7 +2602,7 @@ lists the fields and refusals.
 | `system`, `system_health`, `system_health_status` (ADM-13) | `system health`, `system health --watch`, counts and states only |
 | `system_health` POST, Take a backup now (ADM-13 PR 3b) | `system backup-now [--request-key UUID]` (fresh-gated, always prompts); its progress is `system health` `backup_request`, with `--watch` |
 | `system_mail_check`, `system_mail_clear` (ADM-13) | `system mail-clear-preview` (starts the mailbox check and waits for it), `system mail-clear --token …` |
-| `system_health` POST, Accept this change once (ADM-13 PR 5b) | `system refresh-accept-preview` (the page's preview: every recorded count and `preview.token`), `system refresh-accept --token …` (fresh-gated, always prompts with the page's tick box); its effect is `system health`'s `drop_acceptance`, with `--watch` |
+| `system_health` POST, Accept this change once (ADM-13 PR 5b, 5c) | `system refresh-accept-preview` (the page's preview: every recorded count, the example Family DUIDs without names, and `preview.token`), `system refresh-accept --token …` (fresh-gated, always prompts with the page's tick box); its effect is `system health`'s `drop_acceptance`, with `--watch` |
 | `system_health` POST, Turn off debug logging (ADM-13 PR 6b) | `system debug-off [--request-key UUID]` (fresh-gated, always prompts); its effect is `system health`'s `debug_switch` and each process's `debug_logging`, with `--watch` |
 | `system_debug_allow` (ADM-13, not built yet) | `system debug-allow` (Testing only) |
 | `source_form` ([#774](https://github.com/epiphany40223/parishkit/issues/774)) | `report source-form`, counts and DUIDs only ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the host's `pk-stewardship source-form-check` lists the same Families |
@@ -2649,8 +2649,8 @@ as the fresh sign-in), recording `debug_logging_turned_off` and
 `admin_cmd_system_debug_off`. `system refresh-accept-preview` and `system
 refresh-accept` (ADM-13 PR 5b) are Accept this change once, as `artwork
 remove-preview` and `artwork remove` are their page's review and Apply: the
-preview prints the page's counts and its signed binding, and changes and
-records nothing; the confirmation takes that token, prompts with the counts
+preview prints the page's counts, its example Families' DUIDs (never their
+names, PR 5c) and its signed binding, and changes and records nothing; the confirmation takes that token, prompts with the counts
 that fell too far and the page's tick box, records the acceptance with the
 page's `accept_change` (the acceptance's guard admits the session as the
 fresh sign-in) and asks for a full refresh, recording `source_drop_accepted`

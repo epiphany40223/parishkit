@@ -580,3 +580,25 @@ def test_web_reads_only_which_task_a_refused_attempt_ran():
     # It already acknowledges critical problems from the banner.
     assert tables["stewardship_critical_event_ack"] == {"SELECT", "INSERT"}
     assert "SELECT" in tables["stewardship_operational_log"]
+
+
+def test_the_worker_records_and_web_reads_example_families():
+    """A refused large change's example Families (ADM-13 PR 5c, #530): the
+    worker records them with the refusal and its hourly maintenance deletes
+    them; web reads them for System health's preview. No login may update
+    one, and no other login holds any grant on them."""
+    from parishkit.stewardship.runtime_grants import CLOSURE_TABLES
+
+    table = "stewardship_source_drop_example"
+    for _, _, role, target in database_identities():
+        if role is ServiceRole.MIGRATION:
+            continue
+        grants, columns = runtime_grants(role, target=target)
+        expected = {
+            ServiceRole.WEB: {"SELECT"},
+            ServiceRole.WORKER: {"SELECT", "INSERT", "DELETE"},
+        }.get(role, set())
+        assert grants.get(table, set()) == expected, role
+        assert table not in columns, role
+    # It follows the users swap, so its grants wait for its migration.
+    assert CLOSURE_TABLES[table] == ("stewardship_source", "0009_drop_examples")

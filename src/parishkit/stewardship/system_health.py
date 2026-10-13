@@ -26,7 +26,7 @@ argument, so they are unit tested without a database.
 """
 
 import logging
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 from datetime import datetime, timedelta
 from functools import cache
 
@@ -1732,18 +1732,46 @@ class AcceptPreview:
     ``token`` is the signed binding the confirmation posts: the new
     acceptance's key, the refused attempt and every recorded count as
     reviewed. ``counts`` are the refusal's ``DropCount`` values, in the
-    panel's order; counts only, no parish data.
+    panel's order; counts only. ``examples`` maps a failing count's measure
+    to its example Families, ``(family_duid, family_name)`` pairs (ADM-13 PR
+    5c): parish data, shown only to the Administrator on the page, never
+    logged, and on the command line by DUID only. The binding does not
+    cover them: they only help the Administrator check the change.
     """
 
     token: str
     attempt_id: object
     refused_at: datetime
     counts: tuple
+    examples: dict = field(default_factory=dict)
 
     @property
     def failed(self):
         """The counts that fell too far."""
         return tuple(count for count in self.counts if count.failed)
+
+    @property
+    def rows(self):
+        """Each count with what the page lists under it: ``(count, examples,
+        expected)``. ``expected`` is whether a failing count gets examples at
+        all (Families, Members and contacts do; ministries, rosters and funds
+        do not), so the page can say when none are available."""
+        from .source.drop_examples import EXAMPLE_MEASURES
+
+        return tuple(
+            (
+                count,
+                self.examples.get(count.measure, ()),
+                count.failed and count.measure in EXAMPLE_MEASURES,
+            )
+            for count in self.counts
+        )
+
+    @property
+    def expects_examples(self):
+        """Whether any count that fell too far gets example Families, so
+        the page explains them only when it can list some."""
+        return any(expected for _, _, expected in self.rows)
 
 
 class AcceptanceRefused(ActionRefused):
@@ -1856,14 +1884,17 @@ def _accept_preview(actor):
     from uuid import uuid4
 
     from .campaigns.work_locks import read_transaction
+    from .source.drop_examples import shown_examples
 
     with read_transaction():
         attempt, refused_at, counts = _open_refusal()
+        examples = shown_examples(attempt)
     return AcceptPreview(
         token=_sign(actor, uuid4(), attempt, counts),
         attempt_id=attempt,
         refused_at=refused_at,
         counts=counts,
+        examples=examples,
     )
 
 
@@ -2029,14 +2060,17 @@ class RefreshAcceptPreview(ReadModel):
     change once, for the newest refusal.
 
     ``counts`` are every recorded count (``measure``, ``before``, ``after``,
-    ``limit_percent``, ``failed``), counts only; ``preview.token`` is the
-    signed binding ``system refresh-accept --token`` takes, valid for 15
+    ``limit_percent``, ``failed``), counts only; ``examples`` maps each
+    failing count with example Families to their Family DUIDs, without
+    names (the automation spec's personal data rule); ``preview.token`` is
+    the signed binding ``system refresh-accept --token`` takes, valid for 15
     minutes and for this Administrator only.
     """
 
     attempt_id: object
     refused_at: str
     counts: list
+    examples: dict
     preview: dict
 
 
@@ -2054,6 +2088,10 @@ def refresh_accept_preview(caller, service):
         attempt_id=preview.attempt_id,
         refused_at=plain(preview.refused_at),
         counts=[_members(count) for count in preview.counts],
+        examples={
+            measure: [duid for duid, _ in pairs]
+            for measure, pairs in preview.examples.items()
+        },
         preview={"token": preview.token},
     )
 

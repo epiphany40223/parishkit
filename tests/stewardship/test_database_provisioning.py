@@ -36,9 +36,11 @@ CLOSURE_APPLIED = {
 BOTH = set(CLOSURE_FUNCTIONS.values()) & set(CLOSURE_TABLES.values())
 # The login that writes each closure table: web (the large-change
 # acceptances, 0080, since System health's button, ADM-13 PR 5b), except the
-# address follow-ups (0077), which mail dispatch updates.
+# address follow-ups (0077), which mail dispatch updates, and a refused
+# change's example Families (0085, ADM-13 PR 5c), which the worker records.
 TABLE_WRITERS = {
     "stewardship_outbox_address_retry": "pk_stewardship_mail_dispatch",
+    "stewardship_source_drop_example": "pk_stewardship_worker",
 }
 
 

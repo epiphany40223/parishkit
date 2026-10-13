@@ -516,7 +516,8 @@ def test_accept_this_change_once_previews_and_confirms_in_place(
 ):
     """Preview, the tick box, then confirm, each in #accept-change right
     under the refusal; no heading above the region or of it moves, and the
-    page is never reloaded (ADM-13 PR 5b)."""
+    page is never reloaded (ADM-13 PR 5b). The preview lists the example
+    Families under the failing count (PR 5c)."""
     _routed(
         page,
         component_origin,
@@ -534,17 +535,29 @@ def test_accept_this_change_once_previews_and_confirms_in_place(
     expect(confirm).to_be_visible()
     visible(region.get_by_text("Families with an email address"))
     visible(region.get_by_text("44%"))
+    # The example Families come with the preview, under the failing count
+    # (PR 5c), so nothing appears or moves after it is drawn.
+    examples = region.locator('[data-accept-examples="email_eligible_families"]')
+    expect(
+        examples.get_by_role("row", name="Example, Ann and Bob 1201")
+    ).to_be_visible()
+    expect(examples.get_by_role("row", name="Sample, Carol 1202")).to_be_visible()
     assert places() == []
     # Confirm waits for the tick box, with its reason after it.
     expect(confirm).to_be_disabled()
     visible(region.get_by_text("Tick the box to confirm that you checked this"))
     region.get_by_label("I checked this in ParishSoft, and the change is real.").check()
     expect(confirm).to_be_enabled()
-    # The rules are one click away, in a toggletip.
-    region.get_by_role("button", name="More information").click()
+    # The rules are one click away, in a toggletip, and so is what the
+    # examples are and when they are deleted.
+    region.locator('[aria-controls="accept-change-rules-tip"]').click()
     visible(region.get_by_text("the limit itself is not raised"))
     page.keyboard.press("Escape")
     expect(region.locator("#accept-change-rules-tip")).to_be_hidden()
+    region.locator('[aria-controls="accept-change-examples-tip"]').click()
+    visible(region.get_by_text("Only Administrators see them"))
+    page.keyboard.press("Escape")
+    expect(region.locator("#accept-change-examples-tip")).to_be_hidden()
     page.evaluate(axe_source)
     assert (
         page.evaluate("""async () => (await axe.run(document, {
