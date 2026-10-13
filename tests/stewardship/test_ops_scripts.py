@@ -25,6 +25,7 @@ ROOT = Path(__file__).resolve().parents[2]
 OPS = ROOT / "tools" / "stewardship-ops"
 SCRIPTS = (
     "ci-watch.sh",
+    "merge-train.sh",
     "release.sh",
     "predeploy-check.sh",
     "send-monitor.sh",
@@ -1474,3 +1475,373 @@ def test_a_finished_call_leaves_no_watcher(tmp_path):
     assert result.returncode == 0, result.stderr
     stray = subprocess.run(["pgrep", "-f", "sleep 4242"], capture_output=True)
     assert stray.returncode == 1, stray.stdout
+
+
+# ---------------------------------------------------------------------------
+# merge-train.sh (#158), in a temporary repository like the release helper's.
+# The scripted gh answers the train's full CI run (FAKE_RUN_STATE, and
+# FAKE_ATTEMPT), and per pull request N: its base (stacked when N is in
+# FAKE_STACKED, until `pr edit` retargets it), draft state (FAKE_DRAFT) and
+# head (FAKE_HEAD_N); `pr merge` really merges the pinned head into the bare
+# remote's main through a scratch clone, after first landing an unrelated
+# commit there when N is FAKE_INTRUDE, and fails for every N in
+# FAKE_MERGE_FAIL; each branch has one unfinished run, 90N.
+FAKE_MERGE_GH = r"""
+echo "gh $*" >>"$FAKE_DIR/gh.calls"
+pr=$3
+case "$*" in
+    "run list"*ci.yml*displayTitle*)
+        IFS='|' read -r st co _ <<<"${FAKE_RUN_STATE:-completed|success|}"
+        printf '[{"databaseId":7,"headSha":"%s","status":"%s",' "$FAKE_TRAIN" "$st"
+        printf '"conclusion":"%s","displayTitle":"CI (jobs: all)",' "$co"
+        printf '"event":"workflow_dispatch","attempt":%s}]\n' "${FAKE_ATTEMPT:-1}" ;;
+    "run list"*--branch*)
+        branch=$(printf '%s\n' "$@" | grep -A1 -x -- --branch | tail -n 1)
+        echo "90${branch#pr-}" ;;
+    "run cancel"*) ;;
+    "pr view"*baseRefName*)
+        if [[ " ${FAKE_STACKED-} " == *" $pr "* ]] &&
+            [ ! -e "$FAKE_DIR/edited.$pr" ]; then
+            echo "pr-$((pr - 1))"
+        else
+            echo main
+        fi ;;
+    "pr edit"*) touch "$FAKE_DIR/edited.$pr" ;;
+    "pr view"*isDraft*)
+        if [[ " ${FAKE_DRAFT-} " == *" $pr "* ]] && [ ! -e "$FAKE_DIR/ready.$pr" ]; then
+            echo true
+        else
+            echo false
+        fi ;;
+    "pr ready"*) touch "$FAKE_DIR/ready.$pr" ;;
+    "pr view"*headRefOid*) eval "echo \"\$FAKE_HEAD_$pr\"" ;;
+    "pr view"*headRefName*) echo "pr-$pr" ;;
+    "pr view"*mergeStateStatus*)
+        echo '{"mergeable":"MERGEABLE","mergeStateStatus":"BLOCKED"}' ;;
+    "pr merge"*)
+        if [[ " ${FAKE_MERGE_FAIL-} " == *" $pr "* ]]; then
+            echo "Pull request is not mergeable" >&2; exit 1
+        fi
+        sha=$(printf '%s\n' "$@" | grep -A1 -x -- --match-head-commit | tail -n 1)
+        clone=$FAKE_DIR/clone
+        [ -d "$clone" ] || git clone -q "$FAKE_REMOTE" "$clone"
+        git -C "$clone" fetch -q origin
+        git -C "$clone" checkout -q -B main origin/main
+        if [ "${FAKE_INTRUDE-}" = "$pr" ]; then
+            git -C "$clone" commit -q --allow-empty -m "someone else"
+        fi
+        git -C "$clone" fetch -q origin "$sha"
+        # GitHub's own message, never the train's "Merge #N": the same
+        # parents, tree, author and second would otherwise make this the
+        # train's own merge commit, which a resumed run reads as unmerged.
+        git -C "$clone" merge -q --no-ff -m "Merge pull request #$pr" "$sha"
+        git -C "$clone" push -q origin main ;;
+    *) echo "unexpected gh $*" >&2; exit 9 ;;
+esac
+"""
+
+
+def train_repo(tmp_path, extra=False):
+    """main, two stacked PR branches, and a train merging both in order.
+
+    With extra, the train also holds a commit no pull request carries, so
+    merging the pull requests cannot reproduce its tree.
+    """
+    if shutil.which("git") is None:
+        pytest.skip("git is not installed")
+    work, remote = tmp_path / "work", tmp_path / "remote.git"
+    git("init", "-q", "--bare", "-b", "main", str(remote), cwd=tmp_path)
+    git("init", "-q", "-b", "main", str(work), cwd=tmp_path)
+    ops = work / "tools" / "stewardship-ops"
+    ops.mkdir(parents=True)
+    for name in ("merge-train.sh", "lib.sh", "release_evidence.py"):
+        shutil.copy(OPS / name, ops / name)
+    git("add", "-A", cwd=work)
+    git("commit", "-q", "-m", "base", cwd=work)
+    git("remote", "add", "origin", GITHUB_URL, cwd=work)
+    git("config", f"url.{remote}.insteadOf", GITHUB_URL, cwd=work)
+    heads = {}
+    for n in (1, 2):
+        git("checkout", "-q", "-b", f"pr-{n}", cwd=work)
+        (work / f"change{n}.txt").write_text(f"{n}\n")
+        git("add", "-A", cwd=work)
+        git("commit", "-q", "-m", f"change {n}", cwd=work)
+        heads[n] = git("rev-parse", "HEAD", cwd=work)
+    git("checkout", "-q", "-b", "train", "main", cwd=work)
+    for n in (1, 2):
+        git("merge", "-q", "--no-ff", "-m", f"Merge #{n}", f"pr-{n}", cwd=work)
+    if extra:
+        (work / "extra.txt").write_text("not in any pull request\n")
+        git("add", "-A", cwd=work)
+        git("commit", "-q", "-m", "train-only fix", cwd=work)
+    git("checkout", "-q", "main", cwd=work)
+    git("push", "-q", "origin", "main", "pr-1", "pr-2", "train", cwd=work)
+    return work, remote, heads, git("rev-parse", "train", cwd=work)
+
+
+def run_merge_train(tmp_path, work, *args, **env):
+    """Run the copied merge-train.sh; return (result, gh calls)."""
+    import sys
+
+    bin_dir = tmp_path / "bin"
+    executable_stub(bin_dir, "gh", FAKE_MERGE_GH)
+    result = subprocess.run(
+        ["bash", str(work / "tools" / "stewardship-ops" / "merge-train.sh"), *args],
+        env=clean_env(
+            tmp_path,
+            bin_dir,
+            FAKE_DIR=str(tmp_path),
+            FAKE_REMOTE=str(work.parent / "remote.git"),
+            STEWARDSHIP_PYTHON=sys.executable,
+            STEWARDSHIP_MERGE_TRIES="2",
+            # No real pause between merge attempts.
+            STEWARDSHIP_POLL_SECONDS="0",
+            **GIT_ENV,
+            **env,
+        ),
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    return result, lines(tmp_path / "gh.calls")
+
+
+def train_env(heads, train, **extra):
+    """The scripted gh's view of a train's pull requests."""
+    return {
+        "FAKE_TRAIN": train,
+        "FAKE_HEAD_1": heads[1],
+        "FAKE_HEAD_2": heads[2],
+        **extra,
+    }
+
+
+def test_merge_train_merges_in_order_and_proves_the_tree(tmp_path):
+    """Stacked and draft PRs merge in order; main ends on the train's tree.
+
+    Each pull request's unfinished runs are cancelled, but no push to main:
+    main-tree-evidence is main's check.
+    """
+    work, remote, heads, train = train_repo(tmp_path)
+    result, calls = run_merge_train(
+        tmp_path,
+        work,
+        "origin/train",
+        f"1:{heads[1][:9]}",
+        f"2:{heads[2]}",
+        **train_env(heads, train, FAKE_STACKED="2", FAKE_DRAFT="2"),
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    out = result.stdout
+    assert "evidence: full CI run 7 on " + train in out
+    assert "RERUN" not in out
+    assert out.index("merged #1") < out.index("merged #2") < out.index("TREE-EQUAL")
+    assert git("rev-parse", "main^{tree}", cwd=remote) == git(
+        "rev-parse", "train^{tree}", cwd=remote
+    )
+    merges = [c for c in calls if c.startswith("gh pr merge")]
+    assert merges == [
+        f"gh pr merge {n} --repo epiphany40223/parishkit --admin --merge "
+        f"--match-head-commit {heads[n]}"
+        for n in (1, 2)
+    ]
+    assert "gh pr edit 2 --repo epiphany40223/parishkit --base main" in calls
+    assert "gh pr ready 2 --repo epiphany40223/parishkit" in calls
+    assert not [c for c in calls if c.startswith(("gh pr edit 1", "gh pr ready 1"))]
+    cancels = [c for c in calls if c.startswith("gh run cancel")]
+    assert cancels == [
+        "gh run cancel 901 --repo epiphany40223/parishkit",
+        "gh run cancel 902 --repo epiphany40223/parishkit",
+    ]
+    assert not [c for c in calls if "--branch main" in c]
+
+
+def test_merge_train_names_a_re_run_evidence_run(tmp_path):
+    """A train run that passed after a re-run is named for the train record."""
+    work, _, heads, train = train_repo(tmp_path)
+    result, _ = run_merge_train(
+        tmp_path,
+        work,
+        train,
+        f"1:{heads[1]}",
+        f"2:{heads[2]}",
+        **train_env(heads, train, FAKE_ATTEMPT="2"),
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "RERUN: full CI run 7 passed on attempt 2" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "state,needle",
+    [
+        ("completed|failure|", "(completed/failure), not a completed success"),
+        ("in_progress||", "(in_progress/-), not a completed success"),
+    ],
+)
+def test_merge_train_refuses_a_train_without_a_passing_run(tmp_path, state, needle):
+    """Nothing merges unless the train's full run completed successfully."""
+    work, _, heads, train = train_repo(tmp_path)
+    result, calls = run_merge_train(
+        tmp_path,
+        work,
+        train,
+        f"1:{heads[1]}",
+        f"2:{heads[2]}",
+        **train_env(heads, train, FAKE_RUN_STATE=state),
+    )
+    assert result.returncode == 1
+    assert needle in result.stderr
+    assert not [c for c in calls if c.startswith("gh pr")]
+
+
+def test_merge_train_refuses_bad_arguments_before_gh(tmp_path):
+    """Usage errors exit 2; a malformed PR:SHA is refused before gh."""
+    work, _, heads, train = train_repo(tmp_path)
+    for n, (args, code, needle) in enumerate(
+        (
+            ((train,), 2, "usage:"),
+            ((train, "1"), 1, "must be PR:SHA"),
+            ((train, f"x:{heads[1]}"), 1, "must be PR:SHA"),
+            (("no-such-ref", f"1:{heads[1]}"), 1, "is not a commit"),
+            ((train, f"1:{heads[2]}", f"2:{'1' * 40}"), 1, "is not in the train"),
+        )
+    ):
+        result, calls = run_merge_train(tmp_path / str(n), work, *args)
+        assert result.returncode == code, args
+        assert needle in result.stderr, args
+        assert calls == [], args
+
+
+def test_merge_train_refuses_a_train_built_on_an_older_main(tmp_path):
+    """main moved since the train was built: rebuild it, merge nothing."""
+    work, _, heads, train = train_repo(tmp_path)
+    git("commit", "-q", "--allow-empty", "-m", "later", cwd=work)
+    git("push", "-q", "origin", "main", cwd=work)
+    result, calls = run_merge_train(
+        tmp_path,
+        work,
+        train,
+        f"1:{heads[1]}",
+        f"2:{heads[2]}",
+        **train_env(heads, train),
+    )
+    assert result.returncode == 1
+    assert "main moved since the train was built" in result.stderr
+    assert calls == []
+
+
+def test_merge_train_refuses_a_head_that_moved(tmp_path):
+    """A PR whose head is no longer the tested one is left untouched."""
+    work, _, heads, train = train_repo(tmp_path)
+    env = train_env(heads, train, FAKE_STACKED="2", FAKE_DRAFT="2")
+    env["FAKE_HEAD_2"] = "f" * 40
+    result, calls = run_merge_train(
+        tmp_path, work, train, f"1:{heads[1]}", f"2:{heads[2]}", **env
+    )
+    assert result.returncode == 1
+    assert f"#2's head is now {'f' * 40}, not the tested {heads[2]}" in result.stderr
+    assert [c for c in calls if c.startswith("gh pr merge")] == [
+        f"gh pr merge 1 --repo epiphany40223/parishkit --admin --merge "
+        f"--match-head-commit {heads[1]}"
+    ]
+    # Checked before it is retargeted or marked ready.
+    assert not [c for c in calls if c.startswith(("gh pr edit", "gh pr ready"))]
+
+
+def test_merge_train_stops_when_main_moves_during_the_merges(tmp_path):
+    """Another commit landing on main mid-train stops the sequence."""
+    work, _, heads, train = train_repo(tmp_path)
+    result, calls = run_merge_train(
+        tmp_path,
+        work,
+        train,
+        f"1:{heads[1]}",
+        f"2:{heads[2]}",
+        **train_env(heads, train, FAKE_INTRUDE="1"),
+    )
+    assert result.returncode == 1
+    assert "MAIN-MOVED: after merging #1" in result.stdout
+    assert "TREE-" not in result.stdout
+    assert not [c for c in calls if c.startswith("gh pr merge 2")]
+
+
+def test_merge_train_fails_when_the_tree_differs(tmp_path):
+    """TREE-DIFFERS is a failure, not a note (#158)."""
+    work, _, heads, train = train_repo(tmp_path, extra=True)
+    result, _ = run_merge_train(
+        tmp_path,
+        work,
+        train,
+        f"1:{heads[1]}",
+        f"2:{heads[2]}",
+        **train_env(heads, train),
+    )
+    assert result.returncode == 1
+    assert "merged #2" in result.stdout
+    assert "TREE-DIFFERS: main " in result.stdout
+    assert "TREE-EQUAL" not in result.stdout
+
+
+def test_merge_train_gives_up_after_its_merge_attempts(tmp_path):
+    """A PR that will not merge stops the train, saying how long it tried."""
+    work, _, heads, train = train_repo(tmp_path)
+    result, calls = run_merge_train(
+        tmp_path,
+        work,
+        train,
+        f"1:{heads[1]}",
+        f"2:{heads[2]}",
+        **train_env(heads, train, FAKE_MERGE_FAIL="1"),
+    )
+    assert result.returncode == 1
+    assert "gave up merging #1: limit 2 attempts, elapsed " in result.stderr
+    assert "Could not merge #1" in result.stderr
+    assert len([c for c in calls if c.startswith("gh pr merge 1")]) == 2
+    assert not [c for c in calls if c.startswith("gh pr merge 2")]
+
+
+def test_merge_train_resumes_a_train_that_stopped_partway(tmp_path):
+    """A re-run with the same arguments skips the PRs already merged."""
+    work, remote, heads, train = train_repo(tmp_path)
+    args = (train, f"1:{heads[1]}", f"2:{heads[2]}")
+    first, _ = run_merge_train(
+        tmp_path, work, *args, **train_env(heads, train, FAKE_MERGE_FAIL="2")
+    )
+    assert first.returncode == 1 and "merged #1" in first.stdout
+    (tmp_path / "gh.calls").unlink()
+    second, calls = run_merge_train(tmp_path, work, *args, **train_env(heads, train))
+    assert second.returncode == 0, second.stdout + second.stderr
+    assert "already merged #1" in second.stdout
+    assert "TREE-EQUAL" in second.stdout
+    assert [c for c in calls if c.startswith("gh pr merge")] == [
+        f"gh pr merge 2 --repo epiphany40223/parishkit --admin --merge "
+        f"--match-head-commit {heads[2]}"
+    ]
+    assert git("rev-parse", "main^{tree}", cwd=remote) == git(
+        "rev-parse", "train^{tree}", cwd=remote
+    )
+    # Fully merged: a third run only proves the tree again.
+    third, calls = run_merge_train(
+        tmp_path / "again", work, *args, **train_env(heads, train)
+    )
+    assert third.returncode == 0, third.stdout + third.stderr
+    assert "already merged #2" in third.stdout and "TREE-EQUAL" in third.stdout
+    assert not [c for c in calls if c.startswith("gh pr")]
+
+
+def test_merge_train_refuses_to_resume_out_of_order(tmp_path):
+    """main merging a listed head out of train order is not a resumable prefix."""
+    work, _, heads, train = train_repo(tmp_path)
+    git("merge", "-q", "--no-ff", "-m", "Merge #2 alone", heads[2], cwd=work)
+    git("push", "-q", "origin", "main", cwd=work)
+    result, calls = run_merge_train(
+        tmp_path,
+        work,
+        train,
+        f"1:{heads[1]}",
+        f"2:{heads[2]}",
+        **train_env(heads, train),
+    )
+    assert result.returncode == 1
+    assert f"where the train has #1's {heads[1]}" in result.stderr
+    assert calls == []
