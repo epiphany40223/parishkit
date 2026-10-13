@@ -1818,8 +1818,8 @@ exports. A Family that is not in the current campaign is exit 1
 #### Campaign comparison
 
 `export comparison` is the Campaign comparison page's **Download**: the
-Every number table as CSV or XLSX, or, as PDF, the one-page summary
-(headline figures and day-by-day charts) followed by that table. It needs
+Every number table as CSV or XLSX, or, as PDF, the summary (headline
+figures and full-width day-by-day charts) followed by that table. It needs
 a full-scope session and records the page's `campaign_comparison_exported`
 (with the comparison day) plus `admin_cmd_export_comparison`.
 

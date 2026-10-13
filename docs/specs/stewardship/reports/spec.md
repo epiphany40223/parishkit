@@ -149,9 +149,9 @@ grid of address cards. The [participation chart](#participation-graph)'s PDF
 is one page with the chart in the frame's body, titled with the population
 scope; like its picture it states no request or capture time. The
 [Campaign comparison](../campaign-history/spec.md#downloads-and-sharing)
-PDF is a summary page (headline tiles and day-by-day charts) followed by
-its table, whose type is set smaller (`pdf_design.Table` scale) so its
-fifteen columns of figures fit. The
+PDF is a summary (headline tiles, then full-width day-by-day charts that
+flow onto following pages) followed by its table, whose type is set
+smaller (`pdf_design.Table` scale) so its fifteen columns of figures fit. The
 [Family timeline](#timeline-export)'s PDF is an infographic sheet
 (`reports/timeline_pdf.py`): under the title, every page names the Family,
 its DUID, envelope number and mode. Page one shows one card per Summary line

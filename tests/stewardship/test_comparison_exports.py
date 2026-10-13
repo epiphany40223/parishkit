@@ -346,15 +346,18 @@ def test_xlsx_cells_are_typed_and_its_information_names_the_notes():
         book.close()
 
 
-def test_pdf_is_the_one_page_summary_then_the_table(monkeypatch):
-    """Page 1: tiles and day-by-day charts; then the table, in the frame."""
+def test_pdf_is_the_summary_then_the_charts_then_the_table(monkeypatch):
+    """Page 1: tiles and a chart; page 2: two charts; then the table."""
     found = document()
     pages = frames(
         monkeypatch, lambda output: render_comparison(found, output, format="pdf")
     )
-    assert len(pages) == 2
+    assert len(pages) == 3
     assert_framed(pages, "Campaign comparison")
-    summary, table = pages
+    summary, charts, table = pages
+    titles = [chart["title"] for chart in found.charts]
+    assert titles[0] in summary
+    assert titles[1] in charts and titles[2] in charts
     assert "Families responded" in summary and "$200.00" in summary
     assert any(WITHHELD in value for value in summary)
     assert any(value.startswith("Day 3 of Stewardship 2055") for value in summary)
@@ -408,11 +411,71 @@ def test_pdf_summary_stays_inside_the_page_body(monkeypatch):
     monkeypatch.setattr(PdfPages, "savefig", save)
     render_comparison(report, io.BytesIO(), format="pdf")
     assert len(seen) == 3
+    # Each chart's plot spans nearly the whole body width, as on the page.
+    for left, _, right, _ in seen:
+        assert right - left > 0.9 * pdf_design.BODY_WIDTH
     for left, top, right, bottom in seen:
         assert left >= pdf_design.MARGIN - 0.5
         assert right <= pdf_design.PAGE_WIDTH - pdf_design.MARGIN + 0.5
         assert top >= frame.body_top
         assert bottom <= frame.body_bottom
+
+
+@pytest.mark.parametrize("financial", [True, False])
+def test_charts_are_full_width_and_never_overlap(financial):
+    """Every chart box is the body's width, inside the body, apart.
+
+    On the summary page the charts sit below the tiles and above the notes;
+    on a later page they start below the header and end above the footer.
+    """
+    from parishkit.stewardship.reports.comparison_documents import (
+        LEGEND_ROW,
+        NOTE_PITCH,
+        TILE_PAD,
+        chart_layout,
+        notes_lines,
+        tile_width,
+        tiles_height,
+    )
+
+    report = document(financial=financial)
+    frame = pdf_design.PdfFrame.for_document(report, details=(report.data_line,))
+    tiles_top, notes_top, pages = chart_layout(report, frame)
+    tiles_bottom = tiles_top + tiles_height(
+        report.tiles, tile_width(report.tiles) - 2 * TILE_PAD
+    )
+    assert notes_top + NOTE_PITCH * len(notes_lines(report)) <= frame.body_bottom
+    placed = [entry for _, entries in pages for entry in entries]
+    assert [chart for chart, _ in placed] == list(report.charts)
+    assert pages[0][1], "the summary page holds at least one chart"
+    for index, (legend_top, entries) in enumerate(pages):
+        floor = tiles_bottom if index == 0 else frame.body_top
+        ceiling = notes_top if index == 0 else frame.body_bottom
+        assert legend_top >= floor
+        previous = legend_top + LEGEND_ROW
+        for _, (x, y, width, height) in entries:
+            assert x == pdf_design.MARGIN and width == pdf_design.BODY_WIDTH
+            # The chart's title is drawn just above its box.
+            assert y >= previous and y + height <= ceiling
+            previous = y + height
+    assert len(pages) == 2
+
+
+def test_two_charts_fill_a_later_page_despite_float_rounding():
+    """A body whose bounds round badly still holds two charts per page.
+
+    The two charts end exactly at the body's bottom; without a tolerance
+    float rounding (as with these bounds) put each on a page of its own.
+    """
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.reports.comparison_documents import chart_layout
+
+    report = document()
+    top, bottom = 42.093, 560.166
+    frame = SimpleNamespace(body_top=top, body_bottom=bottom, body_height=bottom - top)
+    _, _, pages = chart_layout(report, frame)
+    assert len(pages[1][1]) == 2
 
 
 def test_without_financial_stewardship_no_pledge_figure_leaves():
@@ -444,7 +507,8 @@ def test_before_day_one_the_files_hold_final_results_only():
     found = document(early)
     assert found.day is None and found.tiles == ()
     assert "Day 1 has not ended yet" in found.data_line
-    assert len(re.findall(rb"/Type /Page\b", render(found, "pdf"))) == 2
+    # The summary page, a page of charts, then the table.
+    assert len(re.findall(rb"/Type /Page\b", render(found, "pdf"))) == 3
 
 
 @pytest.mark.parametrize(
