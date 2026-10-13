@@ -21,6 +21,7 @@ from parishkit.parishsoft import (
 )
 from parishkit.parishsoft_http_worker import LOCAL_SOURCE_BASE_URL
 from parishkit.parishsoft_transport import (
+    BoundedPublicationSession,
     BoundedSourceSession,
     ExactSourceResponse,
     InvalidSourceResponse,
@@ -721,7 +722,7 @@ def test_empty_success_frame_cannot_become_a_valid_empty_collection(monkeypatch)
         session().get(request()["url"], timeout=30)
 
 
-def serve(monkeypatch, *frames, perform):
+def serve(monkeypatch, *frames, perform, key_frame=None):
     """Run the real helper loop on in-memory pipes with a fake keep-alive Session."""
     sessions = []
 
@@ -732,7 +733,7 @@ def serve(monkeypatch, *frames, perform):
 
     monkeypatch.setattr(helper, "new_session", new_session)
     monkeypatch.setattr(helper, "perform", perform)
-    lines = [{"api_key": "SYNTHETIC-PRIVATE-KEY"}, *frames]
+    lines = [key_frame or {"api_key": "SYNTHETIC-PRIVATE-KEY"}, *frames]
     stdin = io.BytesIO(b"".join(json.dumps(line).encode() + b"\n" for line in lines))
     output = io.BytesIO()
     return helper.serve(stdin, output), output.getvalue(), sessions
@@ -746,7 +747,7 @@ def wire(**overrides):
 def test_helper_serves_many_requests_on_one_session(monkeypatch):
     """One Session (and its connections) serves every request until EOF."""
     replies = iter([(200, b"[1]"), (404, b""), (200, b"[]")])
-    perform = Mock(side_effect=lambda session, value: next(replies))
+    perform = Mock(side_effect=lambda session, value, **_: next(replies))
     status, output, sessions = serve(
         monkeypatch, wire(), wire(), wire(), perform=perform
     )
@@ -793,3 +794,75 @@ def test_deadline_stop_is_reported_to_the_owner(launches):
     current.close()
     with pytest.raises(TypeError):
         session(on_timeout="not callable")
+
+
+CONTACT = DEFAULT_API_BASE_URL + "/members/5/contact"
+
+
+def test_only_a_write_started_helper_admits_the_member_contact_put():
+    """The one PUT (#528, BG-09) needs a helper started for publication; no
+    other PUT, and no write to the Family contact, is ever admitted."""
+    put = request(method="PUT", url=CONTACT, parameters={"firstName": "Pat"})
+    assert helper.validate_request(put, contact_writes=True)
+    for writes in (False, 1, "true"):
+        with pytest.raises(ValueError, match="operation"):
+            helper.validate_request(put, contact_writes=writes)
+    for url in (
+        DEFAULT_API_BASE_URL + "/families/5/contact",
+        DEFAULT_API_BASE_URL + "/members/0/contact",
+        DEFAULT_API_BASE_URL + "/members/5/contact/extra",
+        DEFAULT_API_BASE_URL + "/members/search",
+    ):
+        with pytest.raises(ValueError, match="operation"):
+            helper.validate_request(request(method="PUT", url=url), contact_writes=True)
+
+
+def test_helper_writes_only_when_its_key_frame_says_so(monkeypatch):
+    """A helper started without ``contact_writes`` refuses a PUT frame whatever
+    its parent sends; one started with it passes the admission to perform."""
+    perform = Mock(return_value=(204, b""))
+    put = wire(method="PUT", url=CONTACT)
+    status, output, _ = serve(monkeypatch, put, perform=perform)
+    assert status == 0 and perform.call_args.kwargs == {"contact_writes": False}
+    status, output, _ = serve(
+        monkeypatch,
+        put,
+        perform=perform,
+        key_frame={"api_key": "SYNTHETIC-PRIVATE-KEY", "contact_writes": True},
+    )
+    assert (status, output) == (0, b"204 0\n")
+    assert perform.call_args.kwargs == {"contact_writes": True}
+    for frame in (
+        {"api_key": "SYNTHETIC-PRIVATE-KEY", "contact_writes": False},
+        {"api_key": "SYNTHETIC-PRIVATE-KEY", "contact_writes": 1},
+        {"api_key": "SYNTHETIC-PRIVATE-KEY", "other": True},
+    ):
+        status, output, _ = serve(monkeypatch, put, perform=perform, key_frame=frame)
+        assert (status, output) == (1, b"ERROR\n")
+
+
+def test_real_perform_refuses_a_put_without_write_admission():
+    """``perform`` validates before any HTTP call, so the read helper cannot PUT."""
+    http = Mock()
+    with pytest.raises(ValueError, match="operation"):
+        helper.perform(http, request(method="PUT", url=CONTACT))
+    http.request.assert_not_called()
+
+
+def test_only_the_publication_session_has_a_put(monkeypatch):
+    """The refresh's session has no PUT; the publication session's helper is
+    started with writes, and an empty 2xx answer to its PUT is a success."""
+    assert not any(name.lower().startswith("put") for name in dir(BoundedSourceSession))
+    writer = BoundedPublicationSession(
+        before_request=lambda seconds: None, check=lambda: None, profile="production"
+    )
+    writer.headers["x-api-key"] = "SYNTHETIC-PRIVATE-KEY"
+    assert writer._helper.contact_writes and not session()._helper.contact_writes
+    writer._helper.bind("SYNTHETIC-PRIVATE-KEY")
+    assert b'"contact_writes":true' in writer._helper._key_frame()
+    monkeypatch.setattr(transport, "_exchange", lambda *args, **kwargs: b"204\n")
+    assert writer.put(CONTACT, json={"firstName": "Pat"}, timeout=30).status_code == 204
+    with pytest.raises(InvalidSourceResponse, match="no JSON body"):
+        writer.get(request()["url"], timeout=30)
+    with pytest.raises(ValueError):
+        session()._request("PUT", CONTACT, {}, 30)

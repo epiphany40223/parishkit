@@ -1,7 +1,9 @@
 """Opt-in finite read transport for callers that own durable source leases.
 
 Ordinary ParishKit clients keep their existing Session behavior. This adapter
-intentionally supports only the shared v2 corpus/change-feed read endpoints.
+intentionally supports only the shared v2 corpus/change-feed read endpoints,
+plus, in ``BoundedPublicationSession`` alone, the Member contact PUT that
+census publication sends (#528, BG-09).
 Each session lazily starts one persistent helper process and reuses it (and
 its keep-alive HTTPS connections) for later requests. Provider credentials go
 to that helper once over stdin, never argv, an environment variable or a
@@ -112,10 +114,15 @@ class _SourceHelper:
     The package must be installed, including in development.
     """
 
-    def __init__(self):
-        """Start with no process and no retained credential."""
+    def __init__(self, *, contact_writes=False):
+        """Start with no process and no retained credential.
+
+        ``contact_writes`` starts the process with the Member contact PUT
+        admitted; only ``BoundedPublicationSession`` sets it.
+        """
         self.process = None
         self.key = None
+        self.contact_writes = contact_writes is True
 
     def __repr__(self):
         """The retained key never enters diagnostics."""
@@ -165,7 +172,14 @@ class _SourceHelper:
         # Deadline enforcement relies on never blocking on either pipe.
         os.set_blocking(process.stdin.fileno(), False)
         os.set_blocking(process.stdout.fileno(), False)
-        return json.dumps({"api_key": self.key}, separators=(",", ":")).encode() + b"\n"
+        return self._key_frame()
+
+    def _key_frame(self):
+        """The helper's first stdin line: the key, and whether it may PUT."""
+        frame = {"api_key": self.key}
+        if self.contact_writes:
+            frame["contact_writes"] = True
+        return json.dumps(frame, separators=(",", ":")).encode() + b"\n"
 
     def _idle_ok(self):
         """An idle helper must be alive with nothing unsolicited on stdout.
@@ -357,7 +371,8 @@ class BoundedSourceSession:
                     "api_key": self.headers.get("x-api-key"),
                     "timeout": timeout,
                     "profile": self.profile,
-                }
+                },
+                contact_writes=self._helper.contact_writes,
             )
             # The key reaches the helper only in its start frame, not per request.
             payload = json.dumps(
@@ -385,7 +400,7 @@ class BoundedSourceSession:
             raise SourceTransportError("Source response status is invalid.")
         response = ExactSourceResponse()
         response.status_code = int(status)
-        if 200 <= response.status_code < 300 and not body:
+        if 200 <= response.status_code < 300 and not body and method != "PUT":
             raise InvalidSourceResponse("Source response contains no JSON body.")
         response.url = url  # No query strings, request headers or original request.
         response.encoding = "utf-8"
@@ -397,3 +412,33 @@ class BoundedSourceSession:
 def _valid_status(status):
     """Require an exact three-digit HTTP status, never arbitrary helper text."""
     return len(status) == 3 and status.isdigit() and 100 <= int(status) <= 599
+
+
+class BoundedPublicationSession(BoundedSourceSession):
+    """The one session that may send ParishSoft's Member contact PUT (#528).
+
+    It is a ``BoundedSourceSession`` whose helper starts with the contact PUT
+    admitted, so the same hooks fence every read and the write. Only the
+    census publication gateway (``stewardship.responses.publication_gateway``)
+    constructs it, and a test pins that; the refresh's session has no PUT and
+    its helper refuses one. The write itself is used only by the BG-09 worker,
+    which refuses unless publication is switched on.
+    """
+
+    def __init__(self, *, before_request, check, profile, on_timeout=None):
+        """Bind the owning hooks, as the read session does, with writes admitted."""
+        super().__init__(
+            before_request=before_request,
+            check=check,
+            profile=profile,
+            on_timeout=on_timeout,
+        )
+        self._helper = _SourceHelper(contact_writes=True)
+
+    def __repr__(self):
+        """Credentials held in Session-compatible headers never enter diagnostics."""
+        return "BoundedPublicationSession()"
+
+    def put(self, url, *, json, timeout):
+        """Send one Member contact PUT; the helper refuses any other endpoint."""
+        return self._request("PUT", url, json, timeout)

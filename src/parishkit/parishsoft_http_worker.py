@@ -1,4 +1,4 @@
-"""Private persistent process for bounded, read-only ParishSoft transport.
+"""Private persistent process for bounded ParishSoft transport.
 
 The parent owns fencing, retries and each request's wall-clock deadline. This
 process has no SQL connection, configuration arguments or credential
@@ -8,6 +8,11 @@ reply is one frame (see ``main``) with a status and a bounded body. A single
 ``requests.Session`` keeps TLS connections alive between requests. The helper
 never follows redirects or emits provider/exception text to diagnostics, and
 it exits when stdin closes or its parent process disappears.
+
+It is read-only unless its key frame also carries ``"contact_writes": true``,
+which only the census publication session sends (#528, BG-09). Such a
+helper additionally admits the one Member contact PUT; every other helper
+refuses any PUT frame, whatever its parent asks.
 """
 
 import json
@@ -65,10 +70,17 @@ READ_GETS = re.compile(
     r"ministry/(?:type/list|[1-9][0-9]*/minister/list)|"
     r"offering/(?:[1-9][0-9]*/funds|pledge/list|contributiondetail/list))"
 )
+# The one write (#528, BG-09): ParishSoft's v2 Member contact PUT. The Family
+# contact PUT stays refused until a verified Family address read exists.
+CONTACT_WRITES = re.compile(r"members/[1-9][0-9]{0,17}/contact")
 
 
-def validate_request(value):
-    """Reject arbitrary origins/methods, redirects, large input and extra options."""
+def validate_request(value, *, contact_writes=False):
+    """Reject arbitrary origins/methods, redirects, large input and extra options.
+
+    ``contact_writes`` admits the Member contact PUT too; only a helper
+    started for census publication passes it.
+    """
     if type(value) is not dict or set(value) != REQUEST_FIELDS | {"api_key"}:
         raise ValueError("Invalid bounded source request.")
     method, url = value["method"], value["url"]
@@ -79,6 +91,11 @@ def validate_request(value):
     if not (
         (method == "POST" and endpoint in READ_POSTS)
         or (method == "GET" and READ_GETS.fullmatch(endpoint))
+        or (
+            contact_writes is True
+            and method == "PUT"
+            and CONTACT_WRITES.fullmatch(endpoint)
+        )
     ):
         raise ValueError("Unsupported bounded source operation.")
     key = value["api_key"]
@@ -107,15 +124,17 @@ def new_session(api_key):
     return session
 
 
-def perform(session, request):
+def perform(session, request, *, contact_writes=False):
     """Buffer at most one bounded decoded response, never a provider error body.
+
+    A successful PUT may answer with no body; every read must have one.
 
     Socket timeouts are additional protection; the parent can kill this process
     even during DNS resolution or a continually trickling HTTP response. Fully
     reading a success body returns its connection to the Session's keep-alive
     pool; an unread error body closes that connection instead.
     """
-    request = validate_request(request)
+    request = validate_request(request, contact_writes=contact_writes)
     options = {
         "params" if request["method"] == "GET" else "json": request["parameters"]
     }
@@ -134,7 +153,7 @@ def perform(session, request):
             if len(body) + len(chunk) > MAX_RESPONSE_BYTES:
                 raise InvalidSourceResponse("Source response exceeds its byte bound.")
             body.extend(chunk)
-        if not body:
+        if not body and request["method"] != "PUT":
             raise InvalidSourceResponse("Source response has no JSON body.")
         return response.status_code, bytes(body)
 
@@ -177,14 +196,19 @@ def serve(stdin, stdout):
         first = read_line(stdin)
         if first is None:
             return 0
-        if set(first) != {"api_key"}:
+        if set(first) not in ({"api_key"}, {"api_key", "contact_writes"}) or (
+            first.get("contact_writes", True) is not True
+        ):
             raise ValueError("Invalid bounded source key frame.")
         key = first["api_key"]
+        writes = "contact_writes" in first
         with new_session(key) as session:
             while (frame := read_line(stdin)) is not None:
                 if set(frame) != REQUEST_FIELDS:
                     raise ValueError("Invalid bounded source request.")
-                status, body = perform(session, frame | {"api_key": key})
+                status, body = perform(
+                    session, frame | {"api_key": key}, contact_writes=writes
+                )
                 stdout.write(b"%d %d\n" % (status, len(body)) + body)
                 stdout.flush()
         return 0
