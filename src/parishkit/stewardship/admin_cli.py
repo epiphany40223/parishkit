@@ -1922,6 +1922,43 @@ def report_census(args, preamble, runtime, context):
     )
 
 
+def census_resolve(args, preamble, runtime, context):
+    """Record a Census changes row's outcome, as its Record outcome does (#463).
+
+    Without ``--request-key`` a new key is made and written to standard error
+    before anything is done, so a run that crashes can be repeated with it.
+    Entered in ParishSoft cannot be undone, so, as the page's confirmation
+    dialog does, it asks first (or takes ``--yes``); Ignore and Reopen can
+    be undone and ask nothing, as on the page.
+    """
+    from .admin_census import resolve_census
+    from .responses.census_resolution import MAX_NOTE
+
+    key = _request_key(args, context)
+    # The page strips the note it posts; so does a note read from standard
+    # input (``_input``).
+    note = _input(args.note, context, MAX_NOTE * 4).strip()
+    if args.action == "entered":
+        confirm(
+            context,
+            (
+                f"Mark census change {args.proposal_id} (version "
+                f"{args.expected_version}) as entered in ParishSoft.",
+                "Entered in ParishSoft cannot be undone.",
+            ),
+        )
+    return resolve_census(
+        context["caller"],
+        runtime,
+        args.proposal_id,
+        action=args.action,
+        expected_version=args.expected_version,
+        note=note,
+        request_key=key,
+        context=context,
+    )
+
+
 def report_source_form(args, preamble, runtime, context):
     """Families the form cannot open, by DUID only (#774)."""
     from .admin_source_form import read_source_form
@@ -2927,6 +2964,37 @@ def _report_census_options(parser):
     _date_options(parser)
 
 
+# A census change's outcomes (``responses.models.RESOLUTION_ACTIONS``),
+# spelled out because the parser is built before Django is set up; a test
+# keeps them equal.
+CENSUS_ACTIONS = ("entered", "ignored", "reopened")
+
+
+def _census_resolve_options(parser):
+    """Options of ``census resolve``: a Census changes row's Record outcome."""
+    parser.add_argument("proposal_id", type=_uuid, metavar="PROPOSAL_ID")
+    parser.add_argument(
+        "--action",
+        required=True,
+        choices=CENSUS_ACTIONS,
+        help="entered (Entered in ParishSoft), ignored (Ignore) or reopened "
+        "(Reopen, Administrators only)",
+    )
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_version,
+        help="the change's version, as its row on the page holds it",
+    )
+    parser.add_argument(
+        "--note",
+        default="",
+        help="an optional note (required to reopen), or - to read it from "
+        "standard input (needs --yes)",
+    )
+    _request_key_option(parser)
+
+
 def _snapshot_option(parser):
     """The retained report, by the id in its page's address."""
     parser.add_argument("snapshot_id", type=_uuid, metavar="SNAPSHOT_ID")
@@ -3894,7 +3962,7 @@ def _report_specs():
     (``admin_digests``) and PR 8e the Family-level exports
     (``admin_family_exports``).
     """
-    from .admin_census import CensusReport
+    from .admin_census import CensusReport, CensusResolve
     from .admin_data_to_fix import DataToFixReport
     from .admin_digests import DailyDigest, DigestList, WeeklyDigest, WeeklyRequest
     from .admin_exact_exports import ExactChange, ExactStatus
@@ -4313,6 +4381,22 @@ def _report_specs():
             8,
             options=(_report_census_options,),
             audit_event="census_changes_viewed",
+        ),
+        # A row's Entered in ParishSoft, Ignore and Reopen (#528): the
+        # page's service, keyed by the page's request key.
+        CommandSpec(
+            "census resolve",
+            "Record a census change's outcome, as its row's Record outcome does.",
+            census_resolve,
+            "full",
+            True,
+            CensusResolve.field_names(),
+            8,
+            options=(_census_resolve_options,),
+            # Only Entered in ParishSoft, which cannot be undone, asks.
+            prompts=True,
+            request_key=True,
+            expected_version=True,
         ),
         # System health's Families the form cannot open (#774): counts and
         # DUIDs only, Administrators only, as the page.

@@ -17,12 +17,20 @@ page's summary of every status. The rows themselves stay on the page and
 its downloads (a later ``export census``). It records the page's
 ``census_changes_viewed``; as the other report reads, the event's
 ``count`` is the rows the command displayed, which is none.
+
+``census resolve`` is a row's Record outcome (Entered in ParishSoft, Ignore
+or Reopen, #528), through the page's own admission and the page's own
+service (``census_resolution.resolve_census_change``), keyed by the page's
+request key. It prints ids, versions and states, never the note, the
+Family, the Member or the value.
 """
 
 from dataclasses import dataclass
 from uuid import UUID
 
-from .admin_reads import ReadModel, _recheck
+from django.db import DatabaseError, IntegrityError
+
+from .admin_reads import NotAvailable, ReadModel, _held, _recheck
 
 
 @dataclass(frozen=True)
@@ -122,3 +130,179 @@ def read_census(caller, service, filters):
     return _report(
         caller, service, principal=_principal, read=read, audit=audit, admit=admit
     )
+
+
+@dataclass(frozen=True)
+class CensusResolve(ReadModel):
+    """The resolution a ``census resolve`` recorded, or found for its key.
+
+    ``resolution`` is the immutable record (``id``, ``proposal_id``,
+    ``action``, ``expected_version``, ``created_at``), never its note;
+    ``proposal`` is the change's state as the command's transaction left it
+    (``id``, ``version``, ``decision``, ``execution``).
+    """
+
+    created: bool
+    request_key: UUID
+    resolution: dict
+    proposal: dict
+
+
+def racing_write(error):
+    """Whether ``error`` is the page's racing second resolution.
+
+    A second resolution of the same version is a unique violation, raised at
+    its insert, so nothing committed; the page reports it as stale, and so
+    does the command. Any other database refusal (a guard or audit
+    mismatch) is not dressed up as the race.
+    """
+    from .reports.census_change_views import UNIQUE_VIOLATION
+
+    return (
+        isinstance(error, IntegrityError)
+        and getattr(error.__cause__, "sqlstate", None) == UNIQUE_VIOLATION
+    )
+
+
+def _admit_resolve(caller, store, *, final=False):
+    """The page's admission of a resolution post, or refuse.
+
+    The page's own ``_principal`` (the census capability, never a Ministry
+    leader), recording activity as its post does. ``command_scope`` repeats
+    it (``final``) inside the transaction as a read-only recheck that writes
+    nothing. A session that ended is exit 5 (``session_ended``), not the
+    page's refusal.
+    """
+    from .accounts.automation_sessions import SessionUnusable
+    from .accounts.sessions import authenticated_admin
+    from .reports.census_change_views import _principal
+
+    try:
+        return _principal(caller, store, read_only=final)
+    except PermissionError:
+        if authenticated_admin(caller, store=store, read_only=True) is None:
+            raise SessionUnusable("session_ended") from None
+        raise
+
+
+def resolve_census(
+    caller,
+    service,
+    proposal_id,
+    *,
+    action,
+    expected_version,
+    note,
+    request_key,
+    context,
+):
+    """``census resolve``: a Census changes row's Record outcome.
+
+    Admits as the page's post does, then in the page's command scope (the
+    session row locked, the admission repeated around the effect) checks
+    the current campaign as the page does (``admit_report_read``), finds
+    the Live change in it (another campaign's, or an unknown one, is
+    ``not_available``, as the page refuses it) and calls the page's
+    ``resolve_census_change``, which checks the action's capability
+    (Reopen is the Administrator's), the version and the row's state, and
+    records the page's ``census_change_updated``. The command's
+    ``admin_cmd_census_resolve`` joins the same transaction, only when the
+    key is new: a repeat with the same intent returns the first resolution
+    (``created`` false), another intent is ``invalid``. The campaign is
+    checked first, so a repeat after the current campaign changed is
+    ``not_available``, as the page no longer lists the change.
+
+    A change updated since ``expected_version`` is ``stale_version``, as is
+    the page's racing second write (a unique violation); an action the
+    row's state does not allow, or a Reopen without a note, is ``invalid``
+    (the page's 400). ``context["request_id"]`` is the key, so an exit-6
+    document names it; ``context["committed"]`` is set once the resolution
+    may have committed.
+    """
+    from .accounts.policy import Capability
+    from .admin_report_reads import _current, _refusal, _refusals
+    from .audit.schemas import Action, ActorKind, Outcome
+    from .audit.services import record_action
+    from .jobs.task_retries import command_scope
+    from .observability import _guard_refusal
+    from .reports.read_admission import admit_report_read
+    from .responses.census_resolution import resolve_census_change
+    from .responses.models import ProposalResolution, ProposedChange
+    from .storage import StaleRecordError
+
+    actor = _admit_resolve(caller, service.store)
+    context["request_id"] = str(request_key)
+    written = []
+
+    def step():
+        """The page's resolution in its command scope, with the command's event."""
+        # A step repeated after an activating change starts over: nothing
+        # from an earlier attempt, which rolled back, counts as written.
+        written.clear()
+        with command_scope(caller, service, actor, admit=_admit_resolve):
+            campaign_id = _current()
+            try:
+                admit_report_read(campaign_id)
+            except _refusals() as error:
+                _refusal(caller, service, actor, error)
+            # The page's own lookup: a Live change of this campaign.
+            if (
+                not ProposedChange.objects.filter(
+                    pk=proposal_id, submission__campaign_id=campaign_id
+                )
+                .filter(submission__mode="live")
+                .exists()
+            ):
+                raise NotAvailable("No such census change.")
+            # The work-order lock the scope holds serializes concurrent
+            # repeats, so this tells a repeat from a new key.
+            repeat = ProposalResolution.objects.filter(
+                actor_id=actor.identity, request_key=request_key
+            ).exists()
+            receipt = resolve_census_change(
+                service.store,
+                actor.identity,
+                proposal_id,
+                expected_version=expected_version,
+                request_key=request_key,
+                action=action,
+                note=note,
+            )
+            if not repeat:
+                record_action(
+                    Action.ADMIN_CMD_CENSUS_RESOLVE,
+                    actor_kind=ActorKind.PORTAL_USER,
+                    actor_id=actor.identity,
+                    subject_id=caller.automation_session_id,
+                    context={"outcome": Outcome.SUCCEEDED},
+                )
+                written.append(True)
+            # Read back inside the transaction: the database's creation
+            # time, and the change's state as this command leaves it.
+            resolution = ProposalResolution.objects.values(
+                "id", "proposal_id", "action", "expected_version", "created_at"
+            ).get(pk=receipt.pk)
+            proposal = ProposedChange.objects.values(
+                "id", "version", "decision", "execution"
+            ).get(pk=proposal_id)
+        return CensusResolve(
+            created=not repeat,
+            request_key=request_key,
+            resolution=resolution,
+            proposal=proposal,
+        )
+
+    try:
+        model = _held(step)
+    except DatabaseError as error:
+        if racing_write(error):
+            raise StaleRecordError("The census change was updated first.") from None
+        if written and not _guard_refusal(error):
+            context["committed"] = True
+        raise
+    except (NotAvailable, PermissionError) as error:
+        # A session that ended meanwhile is exit 5, not the refusal.
+        _recheck(caller, service.store, actor, Capability.VIEW_CENSUS)
+        raise error
+    context["committed"] = True
+    return model
