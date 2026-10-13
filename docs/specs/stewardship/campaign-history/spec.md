@@ -967,22 +967,42 @@ first, explanation in the About this page panel.
    lighter and labeled "so far". Pointing anywhere on a year's row, not
    only at its bar, shows the year, whether its figures are final, partial
    or so far, and the value, so a short bar still reads.
-5. **Pledge distribution:** a 100% stacked bar per year of pledging
-   Families by band and a second of the total pledged by band, both
-   ordered from the smallest band, with a band table (Families, share of
-   Families, total, share of total) per year and a quartile line per year
-   (first quartile, median, third quartile, mean). The section's note says
-   amounts are nominal dollars.
+5. **Pledge distribution:** per year, a chart of two 100% stacked bars,
+   one of its pledging Families by band and one of its total pledged by
+   band, both ordered from the smallest band, with a band table (Families,
+   share of Families, total, share of total) and a quartile line (first
+   quartile, median, third quartile, mean). The current campaign's chart
+   and table show; each imported year's sit in a closed disclosure
+   ("2026 pledge bands"), newest first, after the current campaign's, so
+   opening one moves nothing above it (Administrator feedback, 2026-10-12,
+   [#1161](https://github.com/epiphany40223/parishkit/issues/1161)). A
+   chart in a closed disclosure is drawn when it opens, since its panel
+   has no width before then, and an opened disclosure stays open through
+   Compare on day ([in-place
+   controls](../ui-conventions/spec.md#in-place-controls)). Every year's quartiles stay in the Every number table.
+   The section's note says amounts are nominal dollars.
 6. **Every number:** a table with one row per year (current first): year,
    day 1 date, days, Families at day N, percent at day N, pledges at day N,
    average pledge at day N, renewal at day N, final Families, final percent,
    final pledges, final average pledge, and the final first quartile, median
    and third quartile.
-7. **Data notes:** the permanent note on the two kinds of denominator, then
-   for each year its source system, the active count's provenance, the dedup
-   rule and its `note.*` rows, escaped and each cut
-   to 500 characters. These texts stay on this page (see
-   [privacy](#privacy)).
+7. **Data notes:** a disclosure whose summary, "Data notes", names the
+   section, closed by default since the notes are long
+   ([#1161](https://github.com/epiphany40223/parishkit/issues/1161)), and
+   last on the page, so opening it moves nothing above it. It holds the
+   permanent note on the two kinds of denominator, then each imported
+   year's notes: its source system, the active count's provenance, the
+   dedup rule and its `note.*` rows, escaped and each cut to 500
+   characters. The notes are consolidated (Administrator decision,
+   2026-10-13, on
+   [#1161](https://github.com/epiphany40223/parishkit/issues/1161)): a
+   note that every imported year has alike, the same heading and text, is
+   shown once under "Every imported year", and each year, newest first,
+   then lists only its own notes; a year with none of its own is left out,
+   and a lone imported year's notes are all its own. These texts stay on
+   this page (see [privacy](#privacy)), and an opened disclosure stays
+   open through Compare on day ([in-place
+   controls](../ui-conventions/spec.md#in-place-controls)).
 
 A **Compare on day** control, an [in-place
 control](../ui-conventions/spec.md#in-place-controls) over the closed range 1
@@ -1009,7 +1029,11 @@ aggregates only, apply the [small-count
 protection](#pledge-distribution), carry none of the free-text notes, and
 record
 `campaign_comparison_exported` like other exports. No public or
-unauthenticated link exists.
+unauthenticated link exists. The files hold campaign days and dates, no
+exact action times, so the download form asks for no time zone: the
+browser's sets the file's request time, else the parish's, under the
+[time zone question](../ui-conventions/spec.md#downloaded-files) rule
+([#1161](https://github.com/epiphany40223/parishkit/issues/1161)).
 
 ### Digest section
 
@@ -1168,8 +1192,11 @@ committed.
 - **Pages:** role access (Staff see the report, not Past campaigns; Ministry
   leaders see neither), Review/Apply in place, the replacement
   acknowledgement gate, the Compare on day control without reload, the
-  `day` value range, `no-store`, the audit events, and the chart
-  accessibility checks of the chart engine in a browser test.
+  `day` value range, `no-store`, the audit events, the chart
+  accessibility checks of the chart engine in a browser test, and (also a
+  browser test) the current campaign's pledge bands shown while each
+  imported year's and the data notes start closed and open on request,
+  the shared notes shown once and each year's own after them.
 - **Downloads and digest:** the three formats carry the same columns and
   aggregates only, with no note text; a saved digest page shows the stored
   section unchanged after a later import and a removal; the chart

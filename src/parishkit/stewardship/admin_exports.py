@@ -439,7 +439,10 @@ def create_comparison_command(caller, service, *, day, fmt, zone, request_key, c
     ``campaign_comparison_exported``. A day it has no figures for is
     ``not_available``. Like the page, it is for Administrators and Staff;
     the command line is the Administrator's. The file is fetched with
-    ``export fetch``.
+    ``export fetch``. The file holds days, not action times, so the page
+    asks for no zone (#1161): without ``--timezone`` (``zone`` None) its
+    request time uses the parish's time zone, as a host command has no
+    browser; a zone given is checked as the service checks any.
     """
     from .admin_report_reads import _current
     from .audit.schemas import Action
@@ -447,6 +450,7 @@ def create_comparison_command(caller, service, *, day, fmt, zone, request_key, c
     from .reports.comparison_reads import DayOutOfRange
     from .reports.export_models import ExportRequest
     from .reports.read_admission import admit_report_read
+    from .web.dates import parish_zone
 
     if day is not None and (type(day) is not int or day < 1):
         raise ValueError("--day must be a whole number from 1.")
@@ -481,7 +485,7 @@ def create_comparison_command(caller, service, *, day, fmt, zone, request_key, c
                 campaign_id=campaign_id,
                 day=shown,
                 format=fmt,
-                browser_timezone=zone,
+                browser_timezone=zone or parish_zone(),
                 request_key=request_key,
                 document=document,
             )

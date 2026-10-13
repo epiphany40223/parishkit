@@ -384,7 +384,9 @@ def test_charts_and_compare_on_day(scenario):
         assert last == [(1, "1"), (2, "2"), (3, "3"), (4, "3 (final)")]
         pledged = chart_spec(text, "pledged")
         assert {r["line"] for r in pledged["data"]["values"]} == lines
-        for key in ("final-families", "final-pledged", "bands-families"):
+        # This campaign's pledge bands chart; each imported year's has its
+        # own in a closed disclosure (#1161).
+        for key in ("final-families", "final-pledged", "bands"):
             chart_spec(text, key)
         # Compare on day 1: the tiles and the rule move to day 1.
         response, body = get(browser, route + "?day=1")

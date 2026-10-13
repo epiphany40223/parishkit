@@ -352,7 +352,16 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   statistics and export panels are all regions, paging or sorting the daily
   table refreshes all three from the same answer: an export format chosen
   but not yet used, an open "Technical details" and the chart's inspected
-  date return to their defaults, as an ordinary load would leave them. A checkbox marked
+  date return to their defaults, as an ordinary load would leave them. A
+  disclosure marked `details[data-keep-open][id]` is the exception: one the
+  reader opened stays open in the fresh copy of its region, so a refresh
+  does not fold away what they were reading (the
+  [Campaign comparison](../campaign-history/spec.md#page-layout)'s prior
+  years' pledge bands and data notes,
+  [#1161](https://github.com/epiphany40223/parishkit/issues/1161)). A chart
+  inside a closed disclosure is drawn when the disclosure opens, since its
+  panel has no width before then
+  ([chart engine](../reports/spec.md#chart-engine)). A checkbox marked
   `data-submit-on-change` submits its own `form[data-in-place]` as soon as it
   changes, with no Apply button (the Admin portal requires script), and keeps
   focus. Each page records the state it shows on the box. The box submits
@@ -2080,7 +2089,9 @@ lists, Roster changes to enter, the Family timeline, and the Family directory
 code list only while its response columns are included (the field comes and
 goes with that applied choice, as the last field of its row, so nothing
 moves). Not asking: the Ministry follow-up packet, the participation exports,
-the directory code list without response columns, the postal mail merge, and
+the Campaign comparison downloads
+([#1161](https://github.com/epiphany40223/parishkit/issues/1161)), the
+directory code list without response columns, the postal mail merge, and
 the Family test names file (`test families-preview --names`, which uses the
 parish's zone unless `--timezone` is given, as a host command has no
 browser).

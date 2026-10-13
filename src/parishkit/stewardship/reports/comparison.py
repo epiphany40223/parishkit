@@ -330,6 +330,30 @@ def years_label(years):
     return f"{numbers[0]}–{numbers[-1]}"
 
 
+def data_notes(years):
+    """The data notes consolidated: (shared, per-year) for the page.
+
+    ``shared`` is the (label, text) pairs every imported year has alike, in
+    the first year's order, shown once; there are none with fewer than two
+    years, since one year's notes are its own. ``per_year`` is (year, pairs)
+    for each year, newest first as given, with only the pairs not shared;
+    a year with nothing of its own is left out. The Administrator asked for
+    one section that states the common notes once (2026-10-13, #1161),
+    instead of repeating them under every year.
+    """
+    if len(years) < 2:
+        shared = ()
+    else:
+        common = set.intersection(*(set(year.notes) for year in years))
+        shared = tuple(pair for pair in years[0].notes if pair in common)
+    per_year = tuple(
+        (year.year, own)
+        for year in years
+        if (own := tuple(pair for pair in year.notes if pair not in shared))
+    )
+    return shared, per_year
+
+
 def tiles(comparison, *, outside=False):
     """The headline tiles, one per metric, in the spec's order.
 

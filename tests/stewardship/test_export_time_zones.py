@@ -47,12 +47,11 @@ ASKS = {
     ("ministry-report.html", "admin:ministry_export"): True,
     ("ministry-roster.html", "admin:ministry_roster_export"): True,
     ("family-timeline.html", "export.url"): True,
-    # The comparison download (#1018, slice 6) keeps its zone menu here
-    # pending a #1127 review of whether its request time alone needs one.
-    ("campaign-comparison.html", "admin:campaign_comparison_export"): True,
     ("ministry-report.html", "admin:ministry_packet"): False,
     ("participation.html", "admin:report_export_create"): False,
     ("participation.html", "admin:report_exact_create"): False,
+    # Campaign days and dates, no action times (#1161).
+    ("campaign-comparison.html", "admin:campaign_comparison_export"): False,
 }
 # The Family directory asks only for the code list with response columns.
 CONDITIONAL = ("directory.html", "admin:family_directory_export")

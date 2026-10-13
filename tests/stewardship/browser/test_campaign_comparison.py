@@ -6,7 +6,9 @@ give each headline tile its full wording as its accessible text, and
 explain a "—" with a keyboard-reachable toggletip. Its charts (slice 5)
 draw under the real CSP with no text drawn over other text and nothing cut
 off at either width, and Compare on day changes the day in place without
-moving the control under the pointer.
+moving the control under the pointer. Each imported year's pledge bands
+and the data notes start closed and open on request, drawing their charts
+then (#1161).
 """
 
 import pytest
@@ -14,6 +16,7 @@ import pytest
 from .comparison_components import DAY_5, PAGE
 from .test_charts import assert_clean, watch
 from .test_components import axe_violations
+from .waits import eventually
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "webkit"], indirect=True
@@ -24,12 +27,19 @@ PAGES = [
     "/campaign-comparison-crowded",
     "/campaign-comparison-empty",
 ]
-# The charts each page draws: three day by day, two final results and two
-# pledge distributions with Financial stewardship; without it, two and one.
+# The charts each page draws at first: three day by day, two final results
+# and this campaign's pledge bands with Financial stewardship; without it,
+# two and one. Each imported year's pledge bands chart waits in its closed
+# disclosure (#1161): three more on the first page, seven when crowded.
 CHARTS = {
-    "/campaign-comparison": 7,
-    "/campaign-comparison-crowded": 7,
+    "/campaign-comparison": 6,
+    "/campaign-comparison-crowded": 6,
     "/campaign-comparison-empty": 3,
+}
+PRIOR = {
+    "/campaign-comparison": 3,
+    "/campaign-comparison-crowded": 7,
+    "/campaign-comparison-empty": 0,
 }
 MARK = "document.querySelector('h1').dataset.mark = 'kept'"
 MARKED = "document.querySelector('h1').dataset.mark"
@@ -42,6 +52,7 @@ COLLISIONS = """() => {
   for (const view of document.querySelectorAll("[data-chart-view]")) {
     const edge = view.getBoundingClientRect();
     const svg = view.querySelector("svg");
+    if (!svg) continue;  // Not drawn yet: in a closed disclosure.
     const frame = svg.getBoundingClientRect();
     if (frame.left < edge.left - 1 || frame.right > edge.right + 1) {
       found.push(["chart wider than its view", view.dataset.chartTitle]);
@@ -83,17 +94,30 @@ def expect(locator):
 @pytest.mark.parametrize("path", PAGES)
 @pytest.mark.parametrize("width", [320, 1280])
 def test_page_is_accessible_and_fits(page, component_origin, axe_source, path, width):
-    """No axe violation and no sideways page scroll; tables scroll in place."""
+    """No axe violation and no sideways page scroll; tables scroll in place.
+
+    The checks run again with every disclosure open, so the imported years'
+    pledge bands, drawn only when opened, fit their panels too.
+    """
     page.set_viewport_size({"width": width, "height": 900})
     errors = watch(page)
     page.goto(component_origin + path)
     rendered = page.locator("[data-chart][data-chart-state=rendered]")
     expect(rendered).to_have_count(CHARTS[path])
-    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
-    # The published infographic's lessons: at phone width no label is drawn
-    # over another, and no chart or label runs past its panel.
-    assert page.evaluate(COLLISIONS) == []
-    assert axe_violations(page, axe_source) == []
+    for opened in (False, True):
+        if opened:
+            for summary in page.locator(
+                "details.comparison-year > summary, details.comparison-notes > summary"
+            ).all():
+                summary.click()
+            expect(rendered).to_have_count(CHARTS[path] + PRIOR[path])
+        assert page.evaluate(
+            "document.documentElement.scrollWidth <= window.innerWidth"
+        )
+        # The published infographic's lessons: at phone width no label is
+        # drawn over another, and no chart or label runs past its panel.
+        assert page.evaluate(COLLISIONS) == []
+        assert axe_violations(page, axe_source) == []
     assert_clean(page, errors)
 
 
@@ -107,7 +131,7 @@ def test_dark_mode_keeps_the_light_theme_and_its_contrast(
     """
     page.emulate_media(color_scheme="dark")
     page.goto(component_origin + "/campaign-comparison")
-    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(7)
+    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(6)
     assert page.evaluate("matchMedia('(prefers-color-scheme: dark)').matches")
     assert page.evaluate("getComputedStyle(document.body).colorScheme") in (
         "light",
@@ -127,7 +151,7 @@ def test_charts_show_each_year_and_their_exact_values(page, component_origin):
     """The lines, end labels, day rule, tooltips and tables of the charts."""
     errors = watch(page)
     page.goto(component_origin + "/campaign-comparison")
-    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(7)
+    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(6)
     families = page.locator("[data-chart='comparison-families-spec']")
     view = families.locator("[data-chart-view]")
     assert view.get_attribute("aria-label") == "Families responded by campaign day"
@@ -198,9 +222,10 @@ def test_charts_show_each_year_and_their_exact_values(page, component_origin):
     expect(tooltip).to_be_visible()
     expect(tooltip).to_contain_text("2027 (so far)")
     page.mouse.move(0, 0)
-    bands = page.locator("[data-chart='comparison-bands-dollars-spec'] + .chart-table")
+    # This campaign's pledge bands: one bar of Families, one of dollars.
+    bands = page.locator("[data-chart='comparison-bands-spec'] + .chart-table")
     bands.locator("summary").click()
-    expect(bands.locator("tbody tr")).to_have_count(4)
+    expect(bands.locator("tbody tr")).to_have_count(2)
     assert_clean(page, errors)
 
 
@@ -214,7 +239,7 @@ def test_compare_on_day_changes_the_day_in_place(page, component_origin):
     page.set_viewport_size({"width": 1280, "height": 900})
     errors = watch(page)
     page.goto(component_origin + PAGE)
-    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(7)
+    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(6)
     page.evaluate(MARK)
     field = page.get_by_label("Compare on day")
     button = page.get_by_role("button", name="Compare", exact=True)
@@ -233,7 +258,7 @@ def test_compare_on_day_changes_the_day_in_place(page, component_origin):
     page.wait_for_url(component_origin + DAY_5 + "#comparison-report")
     report = page.locator("#comparison-report")
     expect(report.locator("p").first).to_contain_text("Day 5 of Stewardship 2027")
-    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(7)
+    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(6)
     assert page.evaluate(MARKED) == "kept"
     assert page.evaluate("window.scrollY") == scrolled
     assert button.bounding_box() == before
@@ -242,6 +267,87 @@ def test_compare_on_day_changes_the_day_in_place(page, component_origin):
     families = page.locator("[data-chart='comparison-families-spec']")
     assert "Day 5" in families.locator("svg text").all_text_contents()
     expect(families.locator("figcaption")).to_contain_text("On day 5:")
+    assert_clean(page, errors)
+
+
+def test_prior_years_pledge_bands_open_on_request(page, component_origin):
+    """This campaign's bands show; each imported year's open on request.
+
+    Each imported year's chart and table sit in a closed disclosure after
+    this campaign's (#1161), newest first. Opening one draws its chart to
+    its panel's width and moves nothing above it, and an opened one stays
+    open, drawn, through Compare on day.
+    """
+    page.set_viewport_size({"width": 1280, "height": 900})
+    errors = watch(page)
+    page.goto(component_origin + PAGE)
+    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(6)
+    current = page.locator("[data-chart='comparison-bands-spec']")
+    expect(current).to_be_visible()
+    expect(current).to_have_attribute("data-chart-state", "rendered")
+    expect(page.locator("#bands-current-caption")).to_be_visible()
+    years = page.locator("details.comparison-year")
+    assert [
+        text.strip() for text in years.locator("> summary").all_text_contents()
+    ] == ["2026 pledge bands", "2025 pledge bands", "2024 pledge bands"]
+    for index in range(3):
+        expect(years.nth(index)).not_to_have_attribute("open", "")
+    last_year = page.locator("#bands-2026")
+    chart = last_year.locator("[data-chart='comparison-bands-2026-spec']")
+    caption = last_year.locator("#bands-2026-caption")
+    expect(caption).to_be_hidden()
+    # Not drawn while closed: its panel has no width yet.
+    expect(chart).to_have_attribute("data-chart-state", "pending")
+    summary = last_year.locator("> summary")
+    summary.scroll_into_view_if_needed()
+    above = page.locator("#bands-current-caption").bounding_box()
+    at = summary.bounding_box()
+    summary.click()
+    expect(chart).to_have_attribute("data-chart-state", "rendered")
+    expect(caption).to_be_visible()
+    assert page.locator("#bands-current-caption").bounding_box() == above
+    assert summary.bounding_box() == at
+    # Drawn to its panel's width, not to the empty closed one.
+    view = chart.locator("[data-chart-view]")
+    width = view.evaluate("e => e.clientWidth")
+    drawn = float(view.locator("svg").get_attribute("width"))
+    assert width > 300 and abs(drawn - width) <= 1
+    # The panel repeats no heading: its disclosure's summary names it.
+    expect(last_year.locator("h3")).to_have_count(0)
+    # Closed, narrowed, and opened again: the chart follows the new width.
+    summary.click()
+    expect(caption).to_be_hidden()
+    page.set_viewport_size({"width": 900, "height": 900})
+    summary.click()
+    expect(caption).to_be_visible()
+    narrower = view.evaluate("e => e.clientWidth")
+    assert 300 < narrower < width
+    # Polled from here: the page's CSP refuses wait_for_function's eval.
+    eventually(
+        page,
+        """([node, target]) => {
+          const svg = node.querySelector("svg");
+          return !!svg && Math.abs(Number(svg.getAttribute("width")) - target) <= 1;
+        }""",
+        arg=[view.element_handle(), narrower],
+    )
+    page.set_viewport_size({"width": 1280, "height": 900})
+    # The other years stay closed and undrawn.
+    expect(page.locator("#bands-2025 [data-chart]")).to_have_attribute(
+        "data-chart-state", "pending"
+    )
+    # Compare on day keeps the opened year (and the data notes) open.
+    page.locator("details.comparison-notes > summary").click()
+    page.get_by_label("Compare on day").fill("5")
+    with page.expect_request(lambda request: request.url.endswith(DAY_5)):
+        page.get_by_role("button", name="Compare", exact=True).click()
+    expect(page.locator("#comparison-report p").first).to_contain_text("Day 5 of")
+    expect(page.locator("#bands-2026")).to_have_attribute("open", "")
+    expect(page.locator("#comparison-notes")).to_have_attribute("open", "")
+    expect(page.locator("#bands-2025")).not_to_have_attribute("open", "")
+    expect(
+        page.locator("#bands-2026 [data-chart='comparison-bands-2026-spec']")
+    ).to_have_attribute("data-chart-state", "rendered")
     assert_clean(page, errors)
 
 
@@ -292,9 +398,23 @@ def test_tables_and_notes(page, component_origin):
     expect(
         page.locator("caption", has_text="Stewardship 2027 (so far)")
     ).to_contain_text("median $1,000.00")
-    expect(
-        page.get_by_text("Converted from <three> invented exports").first
-    ).to_be_visible()
+    # The data notes start closed (#1161) and open by their summary.
+    notes = page.locator("details.comparison-notes")
+    note = notes.get_by_text("Converted from <three> invented exports")
+    expect(note).to_be_hidden()
+    expect(notes).not_to_have_attribute("open", "")
+    notes.locator("> summary").click()
+    expect(note).to_be_visible()
+    # Consolidated (#1161, 2026-10-13): the notes every year shares show
+    # once, then each year only its own note, newest first.
+    expect(note).to_have_count(1)
+    expect(notes.get_by_text("Invented old system")).to_have_count(1)
+    expect(notes.locator("h3")).to_have_text(
+        ["Every imported year", "2026", "2025", "2024"]
+    )
+    expect(notes.locator("h3 + dl").nth(1)).to_have_text(
+        "note.02Invented note for 2026 only"
+    )
     # An Administrator manages the imported years on Past campaigns.
     expect(
         page.get_by_role(
@@ -308,8 +428,9 @@ def test_download_follows_the_day_shown(page, component_origin):
 
     Its columns are the page's Every number headings (the downloads' own
     list, ``comparison_exports.headings``). After Compare on day refreshes
-    the report in place, the form posts the new day and still has the
-    browser's time zone selected (#1018, slice 6).
+    the report in place, the form posts the new day (#1018, slice 6). The
+    files hold days, not times, so the form asks for no time zone; it posts
+    the browser's, unasked, before and after the refresh (#1161).
     """
     from django.urls import reverse
 
@@ -325,7 +446,9 @@ def test_download_follows_the_day_shown(page, component_origin):
     assert shown == headings(comparison())
     form = page.locator("#comparison-download")
     expect(form.locator("input[name=day]")).to_have_value("12")
-    zone = page.locator("#comparison-timezone")
+    expect(page.locator("#comparison-timezone")).to_have_count(0)
+    expect(form.get_by_label("Time zone", exact=True)).to_have_count(0)
+    zone = form.locator("input[type=hidden][name=browser_timezone]")
     expect(zone).to_have_value("America/Los_Angeles")
     assert page.get_by_label("Format", exact=True).locator(
         "option"
