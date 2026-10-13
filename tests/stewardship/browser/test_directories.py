@@ -6,7 +6,7 @@ from uuid import UUID
 import pytest
 from django.urls import reverse
 
-from .waits import visible
+from .waits import same_place, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -365,7 +365,8 @@ def test_export_time_zone_follows_the_applied_response_columns(page, component_o
     controls = (
         page.get_by_label("Export format"),
         page.get_by_role("button", name="Queue complete export"),
-        page.locator("#table-export .help").first,
+        # The format help's "i" button (#1158), beside the format label.
+        page.locator("#table-export .toggletip-button").first,
     )
 
     def boxes():
@@ -423,3 +424,104 @@ def test_export_time_zone_follows_the_applied_response_columns(page, component_o
     assert hidden.count() == 1 and hidden.input_value() == page.evaluate(
         "Intl.DateTimeFormat().resolvedOptions().timeZone"
     )
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_export_format_help_is_a_toggletip(page, component_origin, width):
+    """The format's dates-and-money help opens beside its label (#1158).
+
+    As a line under the menu, the help wrapped into a tall narrow column in
+    the filter bar's short cell. As a toggletip the cell stays one field
+    tall, the menu is still described by the full help, and opening the tip
+    moves no control in the export options.
+    """
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + "/family-directory")
+    page.get_by_text("Export complete results").click()
+    menu = page.get_by_label("Export format")
+    visible(menu)
+    assert menu.get_attribute("aria-describedby") == "directory-format-tip"
+    tip = page.locator("#directory-format-tip")
+    assert tip.is_hidden() and "ISO 8601" in tip.text_content()
+    assert "$ sign" in tip.text_content()
+    assert page.locator("#table-export p.help", has_text="ISO 8601").count() == 0
+    cell = page.locator("#table-export .filter-bar > div.short").first
+    # A label row and a menu (about 6rem); the old help line made it 15+ lines.
+    assert cell.bounding_box()["height"] < 8 * 16
+    controls = page.locator("#table-export :is(label, select, button)")
+
+    options = page.locator("#table-export fieldset")
+
+    def boxes():
+        """Where every export label and control sits within the options.
+
+        Relative to the fieldset, since opening the tip may scroll the page.
+        """
+        frame = options.bounding_box()
+        found = (controls.nth(i).bounding_box() for i in range(controls.count()))
+        return [
+            (box["x"] - frame["x"], box["y"] - frame["y"], box["width"], box["height"])
+            for box in found
+            if box
+        ]
+
+    before = boxes()
+    button = page.locator("#table-export .toggletip-button").first
+    button.click()
+    visible(tip)
+    # Linux Firefox may report the same place a ten-thousandth of a pixel apart.
+    assert same_place(boxes(), before)
+    page.keyboard.press("Escape")
+    assert tip.is_hidden()
+
+
+@pytest.mark.parametrize("width", [320, 375, 1280])
+def test_filter_bar_tips_sit_beside_their_labels(page, component_origin, width):
+    """Every filter-bar "i" sits on its label's line (pk-local batch 12).
+
+    In the filter bar's narrow short cell a long label filled the cell, so
+    its "i" wrapped under it: Include mailing columns, Include response
+    columns and Campaign mail can reach. Those cells take an ordinary
+    field's width, as Include history on Census changes does, so each label
+    and its "i" share one line on a phone and on a desktop. Every tip label
+    in the filter bar is checked, so a new long one in a short cell fails
+    here too, and opening a tip still moves nothing.
+    """
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + "/family-directory")
+    labels = page.locator("#table-filters .label-row > label")
+    ids = [labels.nth(i).get_attribute("id") for i in range(labels.count())]
+    assert {"directory-reach-label", "directory-mailing-label"} <= set(ids)
+    for label_id in ids:
+        label = page.locator(f"#{label_id}")
+        button = page.locator(f"#{label_id} + .toggletip .toggletip-button")
+        visible(button)
+        text, tip = label.bounding_box(), button.bounding_box()
+        # One line: the label is at most one 44px row and the "i" is beside
+        # it, vertically inside the label's box rather than under it.
+        assert text["height"] < 50, label_id
+        assert tip["x"] >= text["x"] + text["width"], label_id
+        assert (
+            text["y"] <= tip["y"] + tip["height"] / 2 <= text["y"] + text["height"]
+        ), label_id
+
+    def boxes():
+        """Every filter-bar field and control's page box, to catch any shift.
+
+        Page, not viewport, coordinates: on a phone the click scrolls the
+        "i" into view first, which is not a layout shift.
+        """
+        return page.locator(
+            "#table-filters > div, #table-filters select, #table-filters button"
+        ).evaluate_all(
+            "els => els.filter(e => !e.closest('.toggletip')).map(e => {"
+            " const r = e.getBoundingClientRect();"
+            " return [r.x, r.y + scrollY, r.width, r.height]; })"
+        )
+
+    before = boxes()
+    page.locator("#directory-reach-label + .toggletip .toggletip-button").click()
+    visible(page.locator("#directory-reach-tip"))
+    # Linux Firefox may report the same place a ten-thousandth of a pixel apart.
+    assert same_place(boxes(), before)
+    page.keyboard.press("Escape")
