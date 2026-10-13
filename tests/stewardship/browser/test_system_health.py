@@ -1,5 +1,7 @@
 """System health in a real browser (ADM-13, #530): accessible, live and quiet."""
 
+import re
+
 import pytest
 
 from .system_health_components import (
@@ -9,6 +11,10 @@ from .system_health_components import (
     BACKUP_REQUESTED,
     BACKUP_STEP_UP,
     DATED,
+    DEBUG_PAGE,
+    DEBUG_PREVIEW,
+    DEBUG_SET,
+    DEBUG_STEP_UP,
     HEALTHY,
     PAGE,
     STEADY,
@@ -232,26 +238,42 @@ def test_last_checked_does_not_advance_while_a_swap_is_held(page, component_orig
     expect(checked).not_to_have_attribute("datetime", first, timeout=30000)
 
 
-def _routed(page, component_origin, answers):
+def _routed(page, component_origin, answers, shown=None):
     """Answer the page's own POSTs as the view would, by the posted action.
 
-    ``answers`` maps an action to ``(status, component path)``; GETs of the
-    page go to the component server unchanged.
+    ``answers`` maps an action to ``(status, component path)``. GETs of the
+    page go to the component server unchanged, or, with ``shown``, are
+    answered with that component, so another state of the page is served at
+    the page's real address.
     """
     from urllib.request import urlopen
 
-    bodies = {}
-    for action, (status, path) in answers.items():
+    def body(path):
+        """The component at ``path``, as text."""
         with urlopen(component_origin + path) as response:
-            bodies[action] = (status, response.read().decode())
+            return response.read().decode()
+
+    bodies = {
+        action: (status, body(path)) for action, (status, path) in answers.items()
+    }
+    first = None if shown is None else body(shown)
 
     def respond(route):
         """Fulfil a POST from ``answers``; let anything else through."""
         if route.request.method != "POST":
-            route.continue_()
+            if first is None:
+                route.continue_()
+            else:
+                route.fulfill(status=200, content_type="text/html", body=first)
             return
         data = route.request.post_data or ""
-        action = next(name for name in bodies if f"action={name}" in data)
+        # The action's whole value, so "preview" never matches
+        # "debug_off_preview".
+        action = next(
+            name
+            for name in bodies
+            if re.search(rf"(^|&)action={re.escape(name)}(&|$)", data)
+        )
         status, body = bodies[action]
         route.fulfill(status=status, content_type="text/html", body=body)
 
@@ -372,3 +394,110 @@ def test_the_button_catches_up_once_the_reader_leaves_it(page, component_origin)
     page.evaluate("document.activeElement.blur()")
     expect(button).to_be_disabled(timeout=30000)
     visible(region.get_by_text("and is waiting."))
+
+
+def test_turn_off_debug_logging_previews_and_confirms_in_place(
+    page, component_origin, axe_source
+):
+    """Preview, then confirm, each swapped into #debug-off; focus follows;
+    nothing above the region moves (ADM-13 PR 6b)."""
+    _routed(
+        page,
+        component_origin,
+        {
+            "debug_off_preview": (200, DEBUG_PREVIEW),
+            "debug_off_confirm": (200, DEBUG_SET),
+        },
+        shown=DEBUG_PAGE,
+    )
+    page.goto(component_origin + BACKUP_PAGE)
+    kept = _not_reloaded(page)
+    region = page.locator("#debug-off")
+    heading = region.get_by_role("heading", name="Turn off debug logging")
+
+    def place():
+        """The heading's place in the document, wherever the page is scrolled."""
+        return heading.evaluate("e => e.getBoundingClientRect().top + window.scrollY")
+
+    top = place()
+    region.get_by_role("button", name="Turn off debug logging…").click()
+    confirm = page.get_by_role("button", name="Confirm: turn off debug logging")
+    expect(confirm).to_be_visible()
+    expect(confirm).to_be_focused()
+    visible(region.get_by_text("Debug logging is on in: Web portal."))
+    assert place() == top
+    # The help is one click away, in a toggletip.
+    region.get_by_role("button", name="More information").click()
+    visible(region.get_by_text("using pk-stewardship debug-off-clear"))
+    page.evaluate(axe_source)
+    assert (
+        page.evaluate("""async () => (await axe.run(document, {
+        runOnly: {type: 'tag', values: ['wcag2a','wcag2aa','wcag21aa','wcag22aa']}
+    })).violations.map(({id,impact}) => ({id,impact}))""")
+        == []
+    )
+    confirm.click()
+    done = region.locator("[data-debug-off-set] time")
+    expect(done).to_be_visible()
+    # Shown in the browser's own time zone, never as the ISO instant.
+    stamp = done.get_attribute("datetime")
+    expect(done).not_to_have_text(stamp)
+    assert "UTC" not in region.inner_text()
+    assert kept()
+    assert place() == top
+    assert page.evaluate(
+        "document.getElementById('debug-off').contains(document.activeElement)"
+    )
+
+
+def test_a_stale_sign_in_offers_the_step_up_in_the_debug_region(page, component_origin):
+    """The "For your security" notice and Confirm with Google, in place."""
+    _routed(
+        page,
+        component_origin,
+        {"debug_off_preview": (403, DEBUG_STEP_UP)},
+        shown=DEBUG_PAGE,
+    )
+    page.goto(component_origin + BACKUP_PAGE)
+    kept = _not_reloaded(page)
+    region = page.locator("#debug-off")
+    region.get_by_role("button", name="Turn off debug logging…").click()
+    expect(region.get_by_role("button", name="Confirm with Google")).to_be_visible()
+    visible(region.get_by_text("For your security"))
+    assert kept()
+    assert '"errors"' not in page.content()
+
+
+def test_the_debug_button_follows_a_switch_set_elsewhere(page, component_origin):
+    """The poll greys the button, naming who set the switch and when."""
+    page.goto(component_origin + DEBUG_PAGE)
+    region = page.locator("#debug-off")
+    button = region.get_by_role("button", name="Turn off debug logging…")
+    expect(button).to_be_enabled()
+    expect(button).to_be_disabled(timeout=30000)
+    reason = region.locator("#debug-off-reason")
+    expect(reason).to_contain_text("Debug logging was turned off by other@example.org")
+    stamp = reason.locator("time").get_attribute("datetime")
+    expect(reason.locator("time")).not_to_have_text(stamp)
+    # The panel above says the same, and that the server's setting is on.
+    panel = page.locator('[data-debug-switch="set"]')
+    expect(panel).to_contain_text("still says “on”")
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_the_debug_region_is_accessible_at_phone_and_desktop_widths(
+    page, component_origin, axe_source, width
+):
+    """Its button and its preview pass axe and fit a phone without scrolling."""
+    page.set_viewport_size({"width": width, "height": 900})
+    for path in (DEBUG_PAGE, DEBUG_PREVIEW):
+        page.goto(component_origin + path)
+        assert page.locator("#debug-off").count() == 1
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        page.evaluate(axe_source)
+        assert (
+            page.evaluate("""async () => (await axe.run(document, {
+            runOnly: {type: 'tag', values: ['wcag2a','wcag2aa','wcag21aa','wcag22aa']}
+        })).violations.map(({id,impact}) => ({id,impact}))""")
+            == []
+        )

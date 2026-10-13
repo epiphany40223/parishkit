@@ -4892,15 +4892,15 @@ delivers it. Status: the read-only page has landed (PR 1 and PR 2a–2c of the
 the problems list, the six panels, the status fragment, Home's problem lines,
 Families the form cannot open, the daily limit's 24-hour count and resume
 time, and the
-`system health` command. None of the
-four actions is built yet (PR 3 to PR 6), so no panel offers a button; each
-problem sentence names the runbook step instead, and the steps listed under
+`system health` command. Two of the four actions have landed: **Take a
+backup now** (PR 3) and **Turn off debug logging** (PR 6a and 6b; Testing's
+**Allow debug logging again** is not built yet). For the other two (PR 4
+and PR 5) no panel offers a button yet; each problem sentence names the
+runbook step instead, and the steps listed under
 [runbook steps the page replaces](#runbook-steps-the-page-replaces) remain
-the way to do these things. Some panel details arrive with those pull
-requests too: the last backup's
-size and version and the requested backups (PR 3), a halt's kind (PR 4), the
-example Families of a refused change (PR 5) and the debug-off switch
-(PR 6).
+the way to do those things. Some panel details arrive with those pull
+requests too: a halt's kind (PR 4) and the example Families of a refused
+change (PR 5).
 
 ### System health page
 
@@ -5640,8 +5640,8 @@ switch stays set until it is cleared.
    commands) read it when they connect. In practice every new database
    connection reads it. A process started without the setting never reads
    it, because the switch can only turn debug logging off. The read
-   answers only whether the switch is set; no process login reads who set
-   it.
+   answers only whether the switch is set; of the process logins, only the
+   web login reads the switch record itself, for the panel's who and when.
 3. **Child processes.** A process passes its effective state to every
    helper subprocess it starts: while the switch is set, it removes
    `PARISHKIT_DEBUG_LOGGING` from the helper's environment, so a helper
@@ -5659,17 +5659,25 @@ written stay in the logs; that the setting on the server still says "on"
 until the server operator recreates the services; and the startup gap
 above.
 
+**Where it appears.** The page draws the action only while some service
+has debug logging in effect when the page is drawn; once drawn it stays in
+place, and its button follows the 10-second status, so nothing moves under
+the pointer. Its help (only the server operator clears the switch, offline,
+and services started again afterwards log in debug form again where the
+server's setting is still on) is in an "i" toggletip.
+
 **Unavailable when** (greyed, with the reason): the switch is already set
 ("Debug logging was turned off by … at …"), or no service has debug logging
-in effect.
+in effect any more.
 
 **Checks (server):** the [shared rules](#shared-rules-for-health-actions)
 and the switch is not already set.
 
 **Confirmation:** a confirm button. Nothing typed.
 
-**Audit:** `debug_logging_turned_off`. Each process's WARNING log line
-records when it applied the switch.
+**Audit:** `debug_logging_turned_off`, and from the command line also
+`admin_cmd_system_debug_off`. Each process's WARNING log line records when
+it applied the switch.
 
 **Clearing the switch.** Clearing it lets processes started with the
 setting log in debug form again; it can never turn debug logging on in a
@@ -5679,9 +5687,14 @@ always clear it with a new operator command,
 profile, with the services stopped, then they are started again: only that
 login can be told apart in SQL from the web login, which `pk-admin` and the
 online operator commands share. The switch records that the server
-operator cleared it, and when.
-In Testing mode the page also offers **Allow debug logging again**, which
-clears the switch under the same rules and records `debug_logging_allowed`.
+operator cleared it, and when, and the command records
+`debug_logging_allowed` with `actor_kind` `operator` in the same
+transaction. That event names no subject: the admin-recovery login cannot
+read the switch it cleared. While debug logging is back in effect, the
+panel says when the server operator cleared the switch.
+In Testing mode the page will also offer **Allow debug logging again**
+(not built yet), which clears the switch under the same rules and records
+`debug_logging_allowed`.
 In Production the page never offers it, and the server refuses it
 ([decision 3](#system-health-decisions)): its SQL guard refuses unless the
 global mode is Testing, in addition to the shared checks. Turning debug

@@ -427,7 +427,9 @@ service still have debug logging on once the deployment is in Production,
 every Admin page shows a "Debug logging is on in Production" notice; step 1
 of the launch runbooks'
 [Production activation](stewardship-launch-runbooks.md#production-activation)
-checks every container before activation.
+checks every container before activation. An Administrator can also turn it
+off at once from System health, without recreating anything; see
+[turn off debug logging](#turn-off-debug-logging-530).
 
 ## Production activation
 
@@ -933,6 +935,37 @@ Rolling back: the previous image refuses the migrated database, so this is
 fail forward, as the general policy is. If the catastrophic case restores
 the pre-upgrade backup and redeploys the previous release, remove the
 request-mode cron line first.
+
+### Turn off debug logging (#530)
+
+The release that adds the debug-off switch is a schema and grant change:
+with the [scripted upgrade](#scripted-upgrade) set
+`STEWARDSHIP_SCHEMA_CHANGE=1`; the upgrade check reports `f` and step 4 runs
+migration (`stewardship_jobs.0028_debug_off_switch` installs frozen file
+0078: the `stewardship_debug_off_switch` table, its guard and its two
+functions, and refuses to commit unless all are installed as declared) and
+then `database-grants`, which gives the web login its switch reads and
+inserts, every service login the one-answer read of whether the switch is
+set, and the admin-recovery login the clear. No other step is needed.
+
+System health's **Turn off debug logging** sets the switch: every service
+started with `PARISHKIT_DEBUG_LOGGING=1` turns its own debug logging off
+within about a minute, without a restart, and the Debug logging panel says
+who set it and when. The switch stays set, and the setting on the server
+still says `1`, until you clear it. Only the server operator can clear it,
+offline, from the admin-recovery profile. With every online service
+stopped:
+
+```sh
+docker compose ... run --rm admin-recovery debug-off-clear --config RECOVERY_CONFIG
+```
+
+It prints `{"debug_off_cleared": true}` (or `false` when no switch was
+set), and records `debug_logging_allowed` in System logs as the server
+operator. Then start the services again: those whose setting is still on
+log in debug form again. To remove debug logging for good,
+recreate the services without the setting instead, as
+[pre-launch fast deploys](#pre-launch-fast-deploys) describes.
 
 ### Preparing reminders ahead (BG-12)
 

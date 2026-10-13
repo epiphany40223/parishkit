@@ -134,6 +134,9 @@ WEB_READ_TABLES = frozenset(
         # Take a backup now's requests (ADM-13 PR 3): who asked, when, and
         # what became of each; no path, host or credential.
         "stewardship_backup_request",
+        # Turn off debug logging (ADM-13 PR 6b): the panel says who set the
+        # debug-off switch and when; no path, host or credential.
+        "stewardship_debug_off_switch",
     ]
 )
 
@@ -161,6 +164,10 @@ WEB_INSERT_TABLES = frozenset(
         # Take a backup now (ADM-13 PR 3): its guard admits only a freshly
         # signed-in Administrator, one request at a time.
         "stewardship_backup_request",
+        # Turn off debug logging (ADM-13 PR 6b): its guard (0078) admits only
+        # a freshly signed-in Administrator, while no switch is set. The web
+        # cannot clear one: only the operator's offline definer does.
+        "stewardship_debug_off_switch",
         "stewardship_source_refresh_request",
         "stewardship_source_refresh_command",
         "stewardship_chair_seed_intent",
@@ -453,6 +460,8 @@ CLOSURE_TABLES = {
     ),
     # A delivered email's follow-ups to addresses refused for now (0077, #806).
     "stewardship_outbox_address_retry": ("stewardship_jobs", "0027_address_retry"),
+    # System health's debug-off switch (0078, #530), which web sets and reads.
+    "stewardship_debug_off_switch": ("stewardship_jobs", "0028_debug_off_switch"),
     # An Administrator's one-time acceptance of a refused large ParishSoft
     # change (0080, #530), which the worker reads.
     "stewardship_source_drop_acceptance": (

@@ -1441,6 +1441,29 @@ def system_backup_now(args, preamble, runtime, context):
     )
 
 
+def system_debug_off(args, preamble, runtime, context):
+    """Turn off debug logging, as System health's button does (ADM-13 PR 6b).
+
+    Like ``system backup-now``: it always prompts, with the page's preview
+    (the services with debug logging on, what stays in the logs, and that
+    only the server operator clears the switch), before any transaction;
+    a switch already set is refused before the prompt. ``--request-key``
+    names the switch, so a repeat returns the first. The session stands in
+    for the page's recent sign-in, as the switch's guard admits.
+    """
+    from .system_health import debug_off, debug_off_preview_lines
+
+    lines = debug_off_preview_lines(runtime.store, key=args.request_key)
+    if lines is not None:
+        confirm(context, lines)
+    return debug_off(
+        context["caller"],
+        runtime,
+        key=_request_key(args, context),
+        context=context,
+    )
+
+
 def portal_maintenance_set(args, preamble, runtime, context):
     """Close or reopen the Family portal, as its page's buttons do (PR 7a).
 
@@ -2356,6 +2379,17 @@ def _uuid4(value):
 def _backup_now_options(parser):
     """Options of ``system backup-now``: the request key, a version 4 UUID,
     which becomes the request's identity, as the page's preview key does."""
+    parser.add_argument(
+        "--request-key",
+        type=_uuid4,
+        help="a UUID that makes a repeat safe (default: a new one, "
+        "written to standard error)",
+    )
+
+
+def _debug_off_options(parser):
+    """Options of ``system debug-off``: the request key, a version 4 UUID,
+    which becomes the switch's identity, as the page's preview key does."""
     parser.add_argument(
         "--request-key",
         type=_uuid4,
@@ -3362,7 +3396,7 @@ def _read_specs():
         TaskList,
         TaskShow,
     )
-    from .system_health import BackupNow, SystemHealth
+    from .system_health import BackupNow, DebugOff, SystemHealth
 
     return (
         CommandSpec(
@@ -3469,6 +3503,20 @@ def _read_specs():
             BackupNow.field_names(),
             3,
             options=(_backup_now_options,),
+            fresh_gated=True,
+            prompts=True,
+            request_key=True,
+        ),
+        # Turn off debug logging (ADM-13 PR 6b): keyed, fresh-gated, prompting.
+        CommandSpec(
+            "system debug-off",
+            "Turn off debug logging in every service, as System health does.",
+            system_debug_off,
+            "full",
+            True,
+            DebugOff.field_names(),
+            3,
+            options=(_debug_off_options,),
             fresh_gated=True,
             prompts=True,
             request_key=True,

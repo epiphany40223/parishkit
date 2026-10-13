@@ -320,8 +320,11 @@ waits (`delivery_paused`, `planning_held`, `retry_waiting`), the 24-hour
 send count `daily_sent`, the `daily_limit` Family email stops at and
 `daily_resume_at`, when that count falls below the limit again (null while
 it is below), the open `incidents`, the ParishSoft `refresh` outcome, a refused load's
-`refused_counts`, the newest backup and the `offsite` copy's state. The
-pause's reason and who paused it, and the page's sentences, are not in it.
+`refused_counts`, the newest backup and the `offsite` copy's state, and
+the newest debug-off switch (`debug_switch`: `set_at`, and `cleared_at` and
+`cleared_by` once cleared, or null when none was ever set). The pause's
+reason and who paused it, who set the debug-off switch, and the page's
+sentences, are not in it.
 
 ### `system backup-now`
 
@@ -341,6 +344,29 @@ server's five-minute check picks it up) and `created_at`, and records
 
 ```text
 pk-admin system backup-now
+```
+
+### `system debug-off`
+
+System health's **Turn off debug logging**: it sets the debug-off switch,
+which turns debug logging off in every service within about a minute,
+until the server operator clears it offline (`pk-stewardship
+debug-off-clear`, in the
+[deployment runbook](stewardship-deployment-runbook.md#turn-off-debug-logging-530)).
+It needs a full-scope session and always prompts (or takes `--yes`),
+showing the page's preview: the services with debug logging on, that lines
+already written stay in the logs, that the server's setting still says on,
+and that only the server operator clears the switch. It is refused (exit 1,
+`stale_version`) while the switch is set. The session stands in for the
+page's recent sign-in. `--request-key UUID` (a version 4 UUID, written to
+standard error when not given) names the switch, so a repeat returns the
+first one (`created` false). It prints `switch_id`, `created`, `set_at`
+and `active` (whether that switch is still set), and records
+`debug_logging_turned_off` and `admin_cmd_system_debug_off`. Follow it with
+`system health --watch 60` (each process's `debug_logging`).
+
+```text
+pk-admin system debug-off
 ```
 
 ### Watching and errors
@@ -2113,6 +2139,9 @@ print is exit 1 (`invalid`).
 - `pk-admin/1` (ADM-13 PR 2c, #530): additive. `system health` gains
   `daily_sent` and `daily_limit`.
 - `pk-admin/1` (#530): additive. `system health` gains `daily_resume_at`.
+- `pk-admin/1` (ADM-13 PR 6b, #530): additive. `system debug-off` (keyed,
+  fresh-gated, always prompts), and `system health`'s `debug_switch` with
+  the newest debug-off switch.
 - `pk-admin/1` (#1018): additive. `history list`, `history preview -`
   (the workbook on standard input), `history confirm` (prompts for a
   replacement) and `history remove` (prompts), the Past campaigns page's

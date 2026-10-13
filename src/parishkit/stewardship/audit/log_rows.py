@@ -404,6 +404,14 @@ UNGROUPED_REASONS = {
         "backup_requested",
         "admin_cmd_system_backup_now",
     ),
+    # Turn off debug logging (#530): no group is about the server's logging;
+    # System health's Debug logging panel shows the switch.
+    "Turning debug logging off, or the server operator allowing it again; "
+    "System health shows the switch": (
+        "debug_logging_turned_off",
+        "admin_cmd_system_debug_off",
+        "debug_logging_allowed",
+    ),
     "Reviewing a restore from backup, an operator's recovery": (
         "restore_review_started",
         "restore_review_released",

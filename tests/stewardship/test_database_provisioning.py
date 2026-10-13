@@ -32,7 +32,7 @@ CLOSURE_APPLIED = {
     *CLOSURE_COLUMNS.values(),
 }
 # Migrations that create both a granted routine and a granted table (#806's
-# 0077): their table waits with their routines.
+# 0077, #530's 0078): their table waits with their routines.
 BOTH = set(CLOSURE_FUNCTIONS.values()) & set(CLOSURE_TABLES.values())
 # The login that writes each closure table: web, except the address
 # follow-ups (0077), which mail dispatch updates, and the large-change

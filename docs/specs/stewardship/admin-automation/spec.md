@@ -2598,7 +2598,8 @@ lists the fields and refusals.
 | `system_health` POST, Take a backup now (ADM-13 PR 3b) | `system backup-now [--request-key UUID]` (fresh-gated, always prompts); its progress is `system health` `backup_request`, with `--watch` |
 | `system_mail_check`, `system_mail_clear` (ADM-13) | `system mail-clear-preview` (starts the mailbox check and waits for it), `system mail-clear --token …` |
 | `system_refresh_accept` (ADM-13) | `system refresh-accept-preview`, `system refresh-accept --token …` |
-| `system_debug_off`, `system_debug_allow` (ADM-13) | `system debug-off`; `system debug-allow` (Testing only) |
+| `system_health` POST, Turn off debug logging (ADM-13 PR 6b) | `system debug-off [--request-key UUID]` (fresh-gated, always prompts); its effect is `system health`'s `debug_switch` and each process's `debug_logging`, with `--watch` |
+| `system_debug_allow` (ADM-13, not built yet) | `system debug-allow` (Testing only) |
 | `source_form` ([#774](https://github.com/epiphany40223/parishkit/issues/774)) | `report source-form`, counts and DUIDs only ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the host's `pk-stewardship source-form-check` lists the same Families |
 | `parishsoft_fixes` ([#1011](https://github.com/epiphany40223/parishkit/issues/1011)) | `report data-to-fix`, section counts only, as [Data to fix in ParishSoft](../admin-portal/spec.md#data-to-fix-command-and-downloads) describes |
 
@@ -2636,7 +2637,11 @@ lists the fields.
 now: it shows the page's preview at the prompt, records the request with
 the page's `request_backup` (the request's guard admits the session as the
 fresh sign-in) and records `backup_requested` and
-`admin_cmd_system_backup_now`. The other ADM-13 rows name routes and
+`admin_cmd_system_backup_now`. `system debug-off` (ADM-13 PR 6b) is Turn off
+debug logging, the same way: the page's preview at the prompt, the switch
+set with the page's `turn_off_debug` (the switch's guard admits the session
+as the fresh sign-in), recording `debug_logging_turned_off` and
+`admin_cmd_system_debug_off`. The other ADM-13 rows name routes and
 commands that do not exist yet: each action, its route and its command land together in their
 own ADM-13 pull request (PR 3 to PR 6); ADM-11 PR 5, which lets automation
 pass the fresh-sign-in check, has landed. The ADM-13 action routes will be
@@ -2902,7 +2907,9 @@ as the host operator (`actor_kind` `operator`), not as a portal user:
   `backup-keygen`, `backup-open`, `backup-prove`;
 - debug logging: `debug-off-clear`, which clears the System health
   [debug-off switch](../admin-portal/spec.md#turn-off-debug-logging)
-  (ADM-13), run offline from the admin-recovery profile;
+  (ADM-13), run offline from the admin-recovery profile; it records
+  `debug_logging_allowed` with `actor_kind` `operator` in the clear's
+  transaction;
 - smoke tests: `smoke`;
 - LOCAL and development only: `prepare-development`, `local-sign-in`,
   `local-seed`, `local-spike`, `local-spike-report`,

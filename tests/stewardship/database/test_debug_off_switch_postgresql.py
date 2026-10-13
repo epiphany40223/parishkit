@@ -4,9 +4,11 @@ The web login sets a switch only for a freshly signed-in Administrator, one
 at a time; nobody but the schema owner (the admin-recovery login's definer)
 clears it, and only once; nobody deletes it. Every runtime login reads it
 through its one-boolean definer, the backup login through pg_read_all_data,
-and a login with neither (the download login) cannot tell. A process started
-with debug logging honors it on a new connection and on its service status
-record, and the operator's offline ``debug-off-clear`` clears it.
+and a login with neither (the download login) cannot tell; only web, for
+System health's panel, reads the table itself. A process started with debug
+logging honors it on a new connection and on its service status record, and
+the operator's offline ``debug-off-clear`` clears it, recording
+``debug_logging_allowed`` as the operator in the same transaction.
 """
 
 import logging
@@ -26,6 +28,7 @@ from parishkit.stewardship import (
     runtime_database,
 )
 from parishkit.stewardship.accounts.models import PortalSession
+from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.debug_switch_models import DebugOffSwitch
 
@@ -61,10 +64,9 @@ def session():
 def web_with(*privileges):
     """The web login with ``privileges`` on the switch table added.
 
-    No login holds any grant on it in this release (System health's button,
-    ADM-13 PR 6b, adds the web's), so the guard is exercised under grants
-    added here, as the backup request tests widen a grant. Django reads the
-    set time back, so an insert needs SELECT too.
+    Web holds SELECT and INSERT (System health's button, ADM-13 PR 6b); the
+    guard is exercised under any further grants added here, as the backup
+    request tests widen a grant, so it is the boundary even then.
     """
     with task_login(ServiceRole.WEB, exact=True):
         with connection.cursor() as cursor:
@@ -193,11 +195,15 @@ def test_a_switch_keeps_who_set_it_and_is_cleared_once(auth_service):
     ],
 )
 def test_each_runtime_login_reads_the_switch_and_nothing_else(service):
-    """One boolean through the definer; the table itself stays unreadable."""
+    """One boolean through the definer; only web reads the table itself
+    (System health's panel says who set the switch and when)."""
     with task_login(service, exact=True):
         assert debug_switch.read_switch(connection) is False
-        with refused("permission denied"):
-            list(DebugOffSwitch.objects.all())
+        if service is ServiceRole.WEB:
+            assert list(DebugOffSwitch.objects.all()) == []
+        else:
+            with refused("permission denied"):
+                list(DebugOffSwitch.objects.all())
     owner_set()
     with task_login(service, exact=True):
         assert debug_switch.read_switch(connection) is True
@@ -256,7 +262,12 @@ def offline(monkeypatch):
 
 
 def test_the_operator_command_clears_the_switch(offline):
-    """``debug-off-clear`` admits the offline login, then clears and reports."""
+    """``debug-off-clear`` admits the offline login, then clears and reports.
+
+    The clear is audited as the operator (``debug_logging_allowed``, actor
+    kind ``operator``, no actor), once: a second run clears nothing and
+    records nothing.
+    """
     configuration = offline
     owner_set()
     with task_login(ServiceRole.ADMIN_RECOVERY, exact=True, reconnect=True):
@@ -267,6 +278,30 @@ def test_the_operator_command_clears_the_switch(offline):
             "debug_off_cleared": False
         }
     assert DebugOffSwitch.objects.get().cleared_by == "operator"
+    event = AuditEvent.objects.get(event_type="debug_logging_allowed")
+    assert event.actor_id is None and event.subject_id is None
+    context = AuditContext.objects.get(event=event)
+    assert (context.actor_kind, context.schema) == ("operator", "action")
+    assert context.context == {"outcome": "succeeded"}
+
+
+def test_the_operator_clear_and_its_audit_commit_together(offline, monkeypatch):
+    """A failed audit write leaves the switch set: one transaction."""
+    from parishkit.stewardship.audit import services
+
+    def broken(*args, **kwargs):
+        """The audit write fails after the clear ran."""
+        raise DatabaseError("audit unavailable")
+
+    monkeypatch.setattr(services, "record_operator_action", broken)
+    owner_set()
+    with (
+        task_login(ServiceRole.ADMIN_RECOVERY, exact=True, reconnect=True),
+        pytest.raises(DatabaseError, match="audit unavailable"),
+    ):
+        operator_commands.debug_off_clear_command(offline)
+    assert DebugOffSwitch.objects.get().cleared_at is None
+    assert not AuditEvent.objects.filter(event_type="debug_logging_allowed").exists()
 
 
 def test_the_operator_command_names_a_missing_grant(offline):

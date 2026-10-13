@@ -25,6 +25,7 @@ from parishkit.stewardship.source.data_age import Connection
 from parishkit.stewardship.source.refresh_status import FullRefreshStatus
 from parishkit.stewardship.system_health import (
     BackupRequestStatus,
+    DebugSwitchStatus,
     DropCount,
     Problem,
     Subject,
@@ -500,6 +501,9 @@ def system_health():
         offsite=SimpleNamespace(
             kind="uploaded", message="Copied.", at=NOW, last_copy_at=NOW
         ),
+        debug_switch=DebugSwitchStatus(
+            set_at=NOW, cleared_at=NOW, cleared_by="operator"
+        ),
     )
 
 
@@ -698,6 +702,11 @@ GOLDEN = {
                 "state": "uploaded",
                 "at": iso(NOW),
                 "last_copy_at": iso(NOW),
+            },
+            "debug_switch": {
+                "set_at": iso(NOW),
+                "cleared_at": iso(NOW),
+                "cleared_by": "operator",
             },
         },
     ),
@@ -984,6 +993,10 @@ ALLOWED = {
         "offsite",
         "state",
         "last_copy_at",
+        "debug_switch",
+        "set_at",
+        "cleared_at",
+        "cleared_by",
     },
     "status": {
         "as_of",

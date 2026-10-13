@@ -65,8 +65,9 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "go-live progress",
         "system health",
     }
-    # Take a backup now (ADM-13 PR 3b), catalogued with System health.
-    health = {"system backup-now"}
+    # Take a backup now (ADM-13 PR 3b) and Turn off debug logging (PR 6b),
+    # catalogued with System health.
+    health = {"system backup-now", "system debug-off"}
     changes = {
         "schedule preview",
         "schedule confirm",
@@ -213,6 +214,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
                 "test families",
                 "portal maintenance set",
                 "system backup-now",
+                "system debug-off",
                 "export regenerate",
                 "export financial",
                 "export directory",
@@ -374,6 +376,12 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert backup["fresh_gated"] and backup["prompts"] and backup["request_key"]
     assert backup["audit_event"] == "admin_cmd_system_backup_now"
     assert backup["result_fields"] == ["request_id", "created", "status", "created_at"]
+    # Turn off debug logging: the same shape, with the switch it set.
+    debug = entries["system debug-off"]
+    assert debug["scope"] == "full" and debug["changes_state"]
+    assert debug["fresh_gated"] and debug["prompts"] and debug["request_key"]
+    assert debug["audit_event"] == "admin_cmd_system_debug_off"
+    assert debug["result_fields"] == ["switch_id", "created", "set_at", "active"]
     for name in ("send progress", "go-live progress", "system health"):
         watch = {option["name"] for option in entries[name]["options"]}
         assert {"--watch", "--timeout"} <= watch, name
@@ -611,6 +619,7 @@ def test_every_state_change_has_a_registered_described_event():
     ]
     assert events == [
         "admin_cmd_system_backup_now",
+        "admin_cmd_system_debug_off",
         "admin_cmd_schedule_confirm",
         "admin_cmd_config_request_cancel",
         "admin_cmd_refresh_start",

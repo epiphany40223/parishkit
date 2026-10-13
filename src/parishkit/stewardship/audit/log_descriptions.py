@@ -204,6 +204,10 @@ DESCRIPTIONS = {
         "An automation session asked the server to take a backup now, as "
         "System health's Take a backup now does."
     ),
+    "admin_cmd_system_debug_off": _(
+        "An automation session turned debug logging off in every service, as "
+        "System health's Turn off debug logging does."
+    ),
     "admin_cmd_portal_maintenance_set": _(
         "An automation session closed or reopened the Family portal for "
         "maintenance, as the Family portal availability page does."
@@ -364,6 +368,14 @@ DESCRIPTIONS = {
     ),
     "data_to_fix_viewed": _("Someone opened Data to fix in ParishSoft."),
     "backup_requested": _("An Administrator asked the server to take a backup now."),
+    "debug_logging_turned_off": _(
+        "An Administrator set the debug-off switch, which turns debug logging "
+        "off in every service until the server operator clears it."
+    ),
+    "debug_logging_allowed": _(
+        "The debug-off switch was cleared, so services started with debug "
+        "logging may log in debug form again."
+    ),
     "background_viewed": _("An Administrator opened Background work."),
     "delivery_viewed": _("An Administrator opened Outgoing mail."),
     "delivery_bulk_resolved": _(
