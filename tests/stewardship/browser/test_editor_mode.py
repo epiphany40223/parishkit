@@ -12,7 +12,7 @@ modes alone is not a change. No real editor adopts the toggle yet (#1122,
 import pytest
 from django.template import engines
 
-from .waits import hidden, visible
+from .waits import focused, hidden, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -196,7 +196,7 @@ def test_no_basic_equivalent_asks_and_keep_advanced_changes_nothing(
     visible(dialog)
     keep = dialog.get_by_role("button", name="Keep Advanced")
     switch = dialog.get_by_role("button", name="Switch to Basic")
-    assert keep.evaluate("node => node === document.activeElement")
+    focused(keep)
     # Switching removes nothing, so it is a primary button, not a danger one.
     assert "button-danger" not in (switch.get_attribute("class") or "")
     assert toggle(page, "Advanced").is_checked()
@@ -209,7 +209,8 @@ def test_no_basic_equivalent_asks_and_keep_advanced_changes_nothing(
     visible(panel(page, "advanced"))
     hidden(panel(page, "basic"))
     assert page.locator("#times").input_value() == CUSTOM
-    assert toggle(page, "Advanced").evaluate("node => node === document.activeElement")
+    # Wait for it: the dialog hides as it closes, before its close event.
+    focused(toggle(page, "Advanced"))
 
 
 def test_switch_to_basic_needs_a_choice_and_back_is_lossless(page, component_origin):
@@ -222,7 +223,7 @@ def test_switch_to_basic_needs_a_choice_and_back_is_lossless(page, component_ori
     hidden(page.locator("dialog"))
     visible(panel(page, "basic"))
     assert toggle(page, "Basic").is_checked()
-    assert toggle(page, "Basic").evaluate("node => node === document.activeElement")
+    focused(toggle(page, "Basic"))
     assert not page.locator("input[name=preset]:checked").count()
     review = page.get_by_role("button", name="Review changes")
     assert review.is_disabled()
