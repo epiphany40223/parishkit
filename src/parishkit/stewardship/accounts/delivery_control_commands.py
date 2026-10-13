@@ -270,28 +270,10 @@ def page(request, service, campaign_id):
             fresh = True
         except PermissionError:
             fresh = False
-        current = inventory(campaign_id)
-        proof = health(campaign_id)
         return {
             "campaign": campaign,
-            "available": _available(campaign, runtime),
             "fresh": fresh,
-            "resume_available": _prestart_resume(campaign) or _family_resume(campaign),
-            "resolve_available": _action_available(campaign, "resolve"),
-            "inventory": current,
-            "resolution": resolution_choices(current, proof),
-            "next_due": next_due(campaign, _now()),
-            "health": proof,
-            "family_recovery": (
-                family_recovery_impact(campaign_id)
-                if campaign.delivery_paused
-                else None
-            ),
-            "digest_recovery": (
-                digest_recovery_impact(campaign_id)
-                if campaign.delivery_paused
-                else None
-            ),
+            **controls(campaign, runtime),
             "test_template": ContentVersion.objects.filter(
                 configuration_id=runtime.active_configuration_id,
                 campaign_id=campaign_id,
@@ -302,6 +284,34 @@ def page(request, service, campaign_id):
             .values_list("record_id", flat=True)
             .first(),
         }
+
+
+def controls(campaign, runtime):
+    """The page's count-only status of the current campaign's live mail.
+
+    Request-free, so the page (``page``) and ``pk-admin send controls`` read
+    the same inventory, sender check, availability, resolution choices, next
+    send and recovery impacts. The caller has admitted the reader and holds
+    the transaction; the recovery impacts are read only while paused, as the
+    page shows them only then.
+    """
+    current = inventory(campaign.pk)
+    proof = health(campaign.pk)
+    return {
+        "available": _available(campaign, runtime),
+        "resume_available": _prestart_resume(campaign) or _family_resume(campaign),
+        "resolve_available": _action_available(campaign, "resolve"),
+        "inventory": current,
+        "resolution": resolution_choices(current, proof),
+        "next_due": next_due(campaign, _now()),
+        "health": proof,
+        "family_recovery": (
+            family_recovery_impact(campaign.pk) if campaign.delivery_paused else None
+        ),
+        "digest_recovery": (
+            digest_recovery_impact(campaign.pk) if campaign.delivery_paused else None
+        ),
+    }
 
 
 def preview_pause(request, service, campaign_id, *, reason):

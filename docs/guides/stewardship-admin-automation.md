@@ -668,6 +668,40 @@ result is the new state, as `show` prints it. Asking for the state the
 portal is already in changes nothing and is exit 1 (`stale_version`): read
 it again with `show`.
 
+## Pause and resume mail
+
+`send controls` is the read of **Pause and resume mail**: whether live mail
+to Families is paused, what is queued or held, and what can be paused,
+resumed or resolved now. Like the page, it needs an Administrator; a
+session of any scope may run it, and it records nothing in System logs, as
+opening the page records nothing. It reads the current campaign only;
+without one it is exit 1 (`not_available`). Pausing, resuming and
+resolving held messages stay on the page for now.
+
+```sh
+pk-admin send controls
+```
+
+| Field | What it holds |
+| --- | --- |
+| `campaign_id` | The current campaign |
+| `available` | Whether the page offers its controls: the current campaign is live (Production) and scheduled, active or closed |
+| `paused` | Whether live delivery is paused |
+| `paused_at`, `reason` | When it was paused and the reason the pausing Administrator gave (both null when not paused) |
+| `inventory` | Live mail by state: `queued` (unsent, held or not), `held` (stopped by the pause), `submitting` (being handed to the mail service), `unknown` (not sure it arrived), `stranded` (held invitations and reminders a closed campaign will not send), and `types`, one entry per mail type: its `kind` and the same four counts |
+| `next_due` | The next scheduled send: `at` (null when none remain), `count` (schedules due then) and `types` (each `kind` and `count`); it counts schedules, not emails |
+| `health` | The provider and sender check a resume needs: `ready`, `checked_at` and `expires_at` |
+| `pause_available` | Whether the page offers Preview pause: `available` and not paused |
+| `resume_available`, `resolve_available` | Whether the page offers Preview resume, or Resolve held messages (a paused, closed campaign); both false unless `available` |
+| `resolution` | The Resolve held messages choices, null unless `resolve_available`: `types` (each `kind`, `name`, `held` and `cancellable`), and whether `release`, `cancel` and `clear` are offered |
+| `family_recovery` | While paused, the page's overdue Family email counts: `selected`, `coalesced`, `skipped`, `blocked`, `deferred` and `unmaterialized` (null unless `available` and paused) |
+| `report_recovery` | While paused, the page's overdue Admin digest counts: `selected`, `slots`, `unmaterialized`, `prepared` and `blocked` (null unless `available` and paused) |
+
+`paused`, `paused_at`, `reason`, `inventory`, `next_due` and `health` print
+whatever `available` says; the controls and choices follow the page, which
+draws them only when `available` is true. Every number is a count, apart
+from the reason; no recipient, message or mail-service response is printed.
+
 ## Hosted files
 
 `files list` is the **Hosted files** page's library: the files that pages
@@ -2033,3 +2067,5 @@ print is exit 1 (`invalid`).
 - `pk-admin/1` (#463): additive. `content show {page,email} SLOT
   [--revision ID] [--default]`, the content editor's read of one page's or
   email's text (any session, Administrators only, no event).
+- `pk-admin/1` (#463): additive. `send controls`, the Pause and resume
+  mail page's read (any session, Administrators only, no event).

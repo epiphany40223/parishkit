@@ -74,7 +74,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "config request cancel",
     }
     refresh = {"refresh start", "refresh status"}
-    portal = {"portal maintenance show", "portal maintenance set"}
+    portal = {"portal maintenance show", "portal maintenance set", "send controls"}
     configuration = {
         "files list",
         "files delete",

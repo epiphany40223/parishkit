@@ -1604,7 +1604,9 @@ signatures:
   (`request_manual_refresh`, `read_refresh_page`).
 - **PR 6b:** the sample test page's list as `campaign_mail.recent_tests`.
 - **PR 6c:** chosen-Family tests (`campaign_family_test`).
-- **PR 7:** `delivery_control_commands` onto the caller (PR 7b). The
+- **PR 7:** `delivery_control_commands` onto the caller (PR 7b); its
+  read, `send controls`, moved the page's status into a request-free
+  `delivery_control_commands.controls`, which the page now calls. The
   maintenance switch (PR 7a) needed none: `family_maintenance.current_state`
   and `set_closed` were already request-free, and the command adds the
   fresh gate in its own transaction; `set_closed` raises `AlreadySet` (a
@@ -2122,7 +2124,7 @@ PR 12 (default, pending Administrator confirmation).
 | --- | --- |
 | `family_email_progress`, `family_email_progress_status` | `send progress --watch` (PR 3a) |
 | `family_email_sends` | `send history` (PR 3a) |
-| `delivery_control` | `send pause-preview`, `send resume-preview`, `send resolve-preview`, `send confirm --token …` (PR 7b) |
+| `delivery_control` | `send controls` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), the page's read (any session; no event, as the page's read records none; see below); `send pause-preview`, `send resume-preview`, `send resolve-preview`, `send confirm --token …` (PR 7b) |
 | `family_portal` | `portal maintenance show` (any session; no event, as the page's read records none), `portal maintenance set --state closed\|open [--message TEXT\|-]` (PR 7a; see below) |
 
 `portal maintenance show` returns `closed`, `since`, `message` (the
@@ -2140,6 +2142,29 @@ returns the switch as `show` does. The switch has no version, so the
 command sets the requested state as the page does; the state it already
 has is the page's refusal, reported as `stale_version` with nothing
 recorded, which is also what a repeat after exit 6 sees.
+
+`send controls` is the read of
+[Pause and resume mail](../admin-portal/spec.md#live-delivery-pause),
+through the page's own request-free status
+(`delivery_control_commands.controls`), for the current campaign only (none
+is `not_available`). It is Administrators only (`CONFIGURE`), admitted
+passively so any session scope reads, with no event, as the page's GET
+records none. It prints counts, times and choices, never a recipient, a
+message or a provider response, and the pausing Administrator's own reason,
+as the page shows it. Mail types are values (`kind`) in lists, never member
+names. The facts print whatever the campaign: `paused`, `paused_at`,
+`reason`, the live mail `inventory` by state and type, `next_due` and the
+provider and sender check (`health`). What the page draws only under its
+`available` check (a current Production campaign that is scheduled, active
+or closed) follows the page's nesting: `pause_available`,
+`resume_available` and `resolve_available` are false without it; the
+Resolve held messages choices (`resolution`) are null unless
+`resolve_available`; and `family_recovery` and `report_recovery` (the
+overdue Admin digests) are null unless the campaign is also paused. The
+page's fresh sign-in hint is browser chrome and the fingerprints a preview
+binds are internal, so neither prints. The
+[operator guide](../../../guides/stewardship-admin-automation.md#pause-and-resume-mail)
+lists the fields.
 
 There is no separate "cancel" action today. Stopping a send is the delivery
 pause, and closing work is the closed-campaign resolution. See
@@ -3132,7 +3157,8 @@ exactly the commands that exist.
   export followed PR 8b (#817).
 - **PR 7, delivery controls,** in two parts. **PR 7a:** Family portal
   maintenance (`portal maintenance show` and `portal maintenance set`).
-  **PR 7b:** pause, resume and closed-campaign resolution.
+  **PR 7b:** pause, resume and closed-campaign resolution (`send controls`,
+  the page's read, first).
 - **PR 8, reports and exports,** in five parts. **PR 8a:** the log commands.
   **PR 8b:** the export lifecycle with streamed fetch (including the
   wrapper's `export fetch` and its tests). **PR 8c:** the aggregate report
