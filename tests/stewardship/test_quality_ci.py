@@ -15,9 +15,34 @@ from coverage import Coverage, CoverageData
 
 from parishkit.stewardship import quality_ci as ci
 from parishkit.stewardship import quality_sharding as sharding
-from parishkit.stewardship.quality_sharding import partition, tree_digest
+from parishkit.stewardship.quality_pytest import baseline_receipt
+from parishkit.stewardship.quality_sharding import (
+    baseline_partition,
+    nodes_digest,
+    partition,
+    tree_digest,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
+# A stand-in non-database baseline, as combine's own collection finds it.
+BASELINE = sorted(f"tests/test_b.py::test_{n}" for n in range(30))
+
+
+def write_baseline(directory, nodes=BASELINE):
+    """Write every baseline part's receipt for ``nodes``, as the parts would."""
+    for part in range(1, ci.BASELINE_PARTS + 1):
+        share = baseline_partition(nodes, part, ci.BASELINE_PARTS)
+        ci.baseline_evidence(directory, part).write_text(
+            json.dumps(baseline_receipt(part, ci.BASELINE_PARTS, nodes, share, share))
+        )
+
+
+def baseline_digests(directory):
+    """The shard receipt's digests of the baseline parts' receipts."""
+    return [
+        hashlib.sha256(ci.baseline_evidence(directory, part).read_bytes()).hexdigest()
+        for part in range(1, ci.BASELINE_PARTS + 1)
+    ]
 
 
 def workflow_partitions(job, count):
@@ -50,6 +75,10 @@ def test_workflow_partition_count_matches_required_combiner():
         f"PARTITIONS_PER_JOB={ci.PARTITIONS_PER_JOB} needs {jobs_needed} jobs"
     )
     assert workflow_partitions(shard, count) == list(range(1, count + 1))
+    # Job one also runs every baseline part beside its partitions (#1205).
+    assert len(ci.job_partitions(1, count)) + ci.BASELINE_PARTS <= (
+        ci.PARTITIONS_PER_JOB
+    ), "job one would run more pytest processes than any other job"
     run = next(
         step["run"]
         for step in shard["steps"]
@@ -239,9 +268,12 @@ def artifacts(root, tmp_path, monkeypatch, *, nodes=None, contexts=False):
     if nodes is None:
         nodes = [f"tests/stewardship/database/test_a.py::test_{n}" for n in range(20)]
     monkeypatch.setattr(ci, "database_collection", lambda root: sorted(nodes))
+    monkeypatch.setattr(ci, "baseline_collection", lambda root: list(BASELINE))
     for index in (1, 2):
         output = directory / str(index)
         output.mkdir(parents=True)
+        if index == 1:
+            write_baseline(output)
         data = output / "coverage.data"
         cov = Coverage(data_file=str(data), branch=True, config_file=False)
         cov.start()
@@ -265,10 +297,11 @@ def artifacts(root, tmp_path, monkeypatch, *, nodes=None, contexts=False):
         (output / "receipt.json").write_text(
             json.dumps(
                 {
-                    "schema": 1,
+                    "schema": 2,
                     "index": index,
                     "count": 2,
                     "baseline": index == 1,
+                    "baseline_sha256": baseline_digests(output) if index == 1 else [],
                     "root": str(root),
                     "tree": tree_digest(root),
                     "data_sha256": hashlib.sha256(data.read_bytes()).hexdigest(),
@@ -283,8 +316,99 @@ def test_real_coverage_union(repository, tmp_path, monkeypatch, capsys):
     """Opposite partial branches combine to 100%, rather than being averaged."""
     directory = artifacts(repository, tmp_path, monkeypatch)
     assert ci.combine(repository, directory, tmp_path / "combined.json", 2) == 0
-    assert "lines 100.00%; branches 100.00%" in capsys.readouterr().out
+    printed = capsys.readouterr().out
+    assert "lines 100.00%; branches 100.00%" in printed
+    assert (
+        f"All 30 baseline tests accounted for across {ci.BASELINE_PARTS} parts"
+        in printed
+    )
     assert (directory / "1/coverage.data").is_file()
+
+
+@pytest.mark.parametrize(
+    "problem",
+    ["missing", "digest", "share", "overlap", "unrun", "parts", "receipt_count"],
+)
+def test_incomplete_baseline_evidence_fails(repository, tmp_path, monkeypatch, problem):
+    """combine proves the baseline parts ran every collected test exactly
+    once (#1205): a missing, altered, partial or overlapping part, a test
+    no part ran, or a different split all fail, even with matching digests."""
+    directory = artifacts(repository, tmp_path, monkeypatch)
+    path = directory / "1/receipt.json"
+    receipt = json.loads(path.read_text())
+    first = ci.baseline_evidence(directory / "1", 1)
+    if problem == "missing":
+        ci.baseline_evidence(directory / "1", ci.BASELINE_PARTS).unlink()
+    elif problem == "digest":
+        first.write_text(first.read_text() + " ")
+    elif problem in {"share", "overlap"}:
+        # A self-consistent part that ran less, or more, than its share.
+        share = baseline_partition(BASELINE, 1, ci.BASELINE_PARTS)
+        share = share[1:] if problem == "share" else share + [BASELINE[-1]]
+        first.write_text(
+            json.dumps(baseline_receipt(1, ci.BASELINE_PARTS, BASELINE, share, share))
+        )
+        receipt["baseline_sha256"] = baseline_digests(directory / "1")
+    elif problem == "unrun":
+        # combine's own collection holds a test that no part collected.
+        extra = BASELINE + ["tests/test_b.py::test_unrun"]
+        monkeypatch.setattr(ci, "baseline_collection", lambda root: sorted(extra))
+    elif problem == "parts":
+        # Every part's receipt split the suite differently.
+        for part in range(1, ci.BASELINE_PARTS + 1):
+            ci.baseline_evidence(directory / "1", part).write_text(
+                json.dumps(
+                    baseline_receipt(
+                        part, ci.BASELINE_PARTS + 1, BASELINE, BASELINE, BASELINE
+                    )
+                )
+            )
+        receipt["baseline_sha256"] = baseline_digests(directory / "1")
+    elif problem == "receipt_count":
+        receipt["baseline_sha256"].pop()
+    path.write_text(json.dumps(receipt))
+    with pytest.raises((ValueError, OSError)):
+        ci.combine(repository, directory, tmp_path / "combined.json", 2)
+
+
+def test_partition_two_cannot_claim_baseline_evidence(
+    repository, tmp_path, monkeypatch
+):
+    """Only partition one runs the baseline; any other carries no parts."""
+    directory = artifacts(repository, tmp_path, monkeypatch)
+    path = directory / "2/receipt.json"
+    receipt = json.loads(path.read_text())
+    receipt["baseline_sha256"] = ["0" * 64] * ci.BASELINE_PARTS
+    path.write_text(json.dumps(receipt))
+    with pytest.raises(ValueError):
+        ci.combine(repository, directory, tmp_path / "combined.json", 2)
+
+
+@pytest.mark.parametrize("parts", [1, 2, 3, 5])
+def test_baseline_parts_split_every_test_once_and_evenly(parts):
+    """Baseline parts are disjoint, cover the suite, are independent of
+    collection order and differ in size by at most one test, whatever the
+    database hints say about tests the baseline only skips."""
+    nodes = [f"tests/test_{n % 7}.py::test_{n}" for n in range(101)]
+    nodes += [
+        "tests/stewardship/database/test_upgrade_parity_postgresql.py::test_slow",
+        "tests/stewardship/database/test_x.py::"
+        "test_closure_functions_list_every_granted_routine_the_swap_closure_adds",
+    ]
+    shares = [baseline_partition(nodes, part, parts) for part in range(1, parts + 1)]
+    assert sorted(node for share in shares for node in share) == sorted(nodes)
+    assert max(map(len, shares)) - min(map(len, shares)) <= 1
+    assert shares == [
+        baseline_partition(nodes[::-1], part, parts) for part in range(1, parts + 1)
+    ]
+
+
+def test_nodes_digest_is_order_free_and_unambiguous():
+    """The digest names a set of node IDs, however long or ordered."""
+    long = "tests/a.py::test[" + "x" * 1_000_000 + "]"
+    assert nodes_digest(["b", long]) == nodes_digest([long, "b"])
+    assert nodes_digest(["ab", "c"]) != nodes_digest(["a", "bc"])
+    assert nodes_digest([]) != nodes_digest([""])
 
 
 @pytest.mark.parametrize(
@@ -340,10 +464,15 @@ def test_incomplete_evidence_fails(repository, tmp_path, monkeypatch, problem):
         ci.combine(repository, directory, report, 2)
 
 
-def child_call(run, phase):
-    """The one stand-in ``run_child`` call for ``phase`` (baseline or database).
+# Each baseline part's run_child phase, such as "baseline 1/2".
+PARTS = [ci.baseline_label(part) for part in range(1, ci.BASELINE_PARTS + 1)]
 
-    Shard one starts both children at once, so call order is not fixed.
+
+def child_call(run, phase):
+    """The one stand-in ``run_child`` call for ``phase`` (a baseline part or
+    database).
+
+    Shard one starts all its children at once, so call order is not fixed.
     """
     (call,) = [call for call in run.call_args_list if call.kwargs["phase"] == phase]
     return call
@@ -358,10 +487,16 @@ def test_failed_shard_never_publishes_receipt(
     """A passing baseline cannot mask failed, empty or crashed database
     execution, nor the reverse, though both always run, each to its own
     deadline (#1200)."""
-    codes = {"baseline": baseline, "database": database}
+    # Only the last baseline part fails; the others pass.
+    last = ci.baseline_label(ci.BASELINE_PARTS)
     run = Mock(
         side_effect=lambda command, **kwargs: subprocess.CompletedProcess(
-            command, codes[kwargs["phase"]]
+            command,
+            database
+            if kwargs["phase"] == "database"
+            else baseline
+            if kwargs["phase"] == last
+            else 0,
         )
     )
     monkeypatch.setattr(ci, "run_child", run)
@@ -371,12 +506,12 @@ def test_failed_shard_never_publishes_receipt(
     assert ci.run_shard(repository, output, 1, 8) == (1 if failed < 0 else failed)
     assert ("SIGSEGV" in capsys.readouterr().err) is (failed < 0)
     assert not (output / "receipt.json").exists()
-    assert run.call_count == 2
+    assert run.call_count == 1 + ci.BASELINE_PARTS
     command = child_call(run, "database").args[0]
     assert "--require-postgresql-tests" in command
     assert "--ci-shard=1/8" in command
     assert "--require-no-skips" in command
-    for phase in ("baseline", "database"):
+    for phase in ("database", *PARTS):
         call = child_call(run, phase)
         assert not any(argument == "--cov-append" for argument in call.args[0])
         assert f"faulthandler_timeout={ci.STACK_DUMP_SECONDS}" in call.args[0]
@@ -644,9 +779,10 @@ def test_shard_passes_its_private_temporary_root(repository, tmp_path, monkeypat
     monkeypatch.setattr(ci, "run_child", run)
     ci.run_shard(repository, tmp_path / "shard", 1, 8, tmp_path / "temporary")
     database = child_call(run, "database").args[0]
-    baseline = child_call(run, "baseline").args[0]
     assert f"--basetemp={tmp_path / 'temporary'}" in database
-    assert f"--basetemp={tmp_path / 'temporary-baseline'}" in baseline
+    for part, phase in enumerate(PARTS, start=1):
+        baseline = child_call(run, phase).args[0]
+        assert f"--basetemp={tmp_path / f'temporary-baseline-{part}'}" in baseline
 
 
 def test_packed_job_refuses_output_inside_the_checkout(repository, monkeypatch):
@@ -717,19 +853,24 @@ def test_digest_rejects_symlinked_parent(repository, tmp_path):
 def test_successful_shard_baseline_and_deadline(
     repository, tmp_path, monkeypatch, index
 ):
-    """Only shard one measures the baseline. It runs beside the database
-    tests, each child with its own deadline, temporary root and coverage
-    file; the baseline's coverage is merged before the receipt (#1200)."""
+    """Only shard one measures the baseline. Its parts run beside the
+    database tests, each child with its own deadline, temporary root and
+    coverage file; every part's coverage is merged before the receipt,
+    which records each part's evidence by digest (#1200, #1205)."""
     output = tmp_path / "shard"
     nodes = [f"tests/stewardship/database/test_a.py::test_{n}" for n in range(20)]
-    # Shard one's two children must both be running before either finishes;
-    # run one after the other, the first would wait here until it broke.
-    together = ci.threading.Barrier(2 if index == 1 else 1, timeout=30)
+    # Shard one's children must all be running before any finishes; run one
+    # after the other, the first would wait here until it broke.
+    together = ci.threading.Barrier(
+        1 + ci.BASELINE_PARTS if index == 1 else 1, timeout=30
+    )
 
     def execute(command, **kwargs):
         """Stand in for successful children with complete execution artifacts."""
         together.wait()
         Path(kwargs["env"]["COVERAGE_FILE"]).write_bytes(b"raw data")
+        if kwargs["phase"] == PARTS[0]:
+            write_baseline(output)
         if kwargs["phase"] == "database":
             selected = partition(nodes, index, 2)
             (output / "tests.json").write_text(
@@ -748,28 +889,101 @@ def test_successful_shard_baseline_and_deadline(
     monkeypatch.setattr(ci, "run_child", run)
     monkeypatch.setattr(ci, "merge_coverage", merge)
     assert ci.run_shard(repository, output, index, 2, tmp_path / "tmp") == 0
-    assert run.call_count == (2 if index == 1 else 1)
+    assert run.call_count == (1 + ci.BASELINE_PARTS if index == 1 else 1)
     database = child_call(run, "database")
     assert database.kwargs["timeout"] == ci.SHARD_TIMEOUT
     assert database.kwargs["env"]["COVERAGE_FILE"] == str(output / "coverage.data")
     assert f"--basetemp={tmp_path / 'tmp'}" in database.args[0]
-    assert json.loads((output / "receipt.json").read_text())["baseline"] is (index == 1)
+    receipt = json.loads((output / "receipt.json").read_text())
+    assert receipt["baseline"] is (index == 1)
     if index == 1:
-        baseline = child_call(run, "baseline")
-        assert baseline.kwargs["timeout"] == ci.SHARD_TIMEOUT
-        assert baseline.kwargs["prefix"] == "[baseline] "
-        assert baseline.kwargs["lock"] is database.kwargs["lock"]
-        assert baseline.args[0][-2:] == [
-            "--ds=parishkit.stewardship.settings.test",
-            "tests",
+        assert receipt["baseline_sha256"] == baseline_digests(output)
+        for part, phase in enumerate(PARTS, start=1):
+            baseline = child_call(run, phase)
+            assert baseline.kwargs["timeout"] == ci.SHARD_TIMEOUT
+            assert baseline.kwargs["prefix"] == f"[{phase}] "
+            assert baseline.kwargs["lock"] is database.kwargs["lock"]
+            evidence = ci.baseline_evidence(output, part)
+            assert baseline.args[0][-4:] == [
+                "--ds=parishkit.stewardship.settings.test",
+                f"--ci-baseline={part}/{ci.BASELINE_PARTS}",
+                f"--ci-evidence={evidence}",
+                "tests",
+            ]
+            assert f"--basetemp={tmp_path / f'tmp-baseline-{part}'}" in baseline.args[0]
+            extra = output / f"baseline-{part}.coverage"
+            assert baseline.kwargs["env"]["COVERAGE_FILE"] == str(extra)
+        assert merge.call_args_list == [
+            ((output / "coverage.data", output / f"baseline-{part}.coverage"),)
+            for part in range(1, ci.BASELINE_PARTS + 1)
         ]
-        assert f"--basetemp={tmp_path / 'tmp-baseline'}" in baseline.args[0]
-        extra = output / "baseline.coverage"
-        assert baseline.kwargs["env"]["COVERAGE_FILE"] == str(extra)
-        merge.assert_called_once_with(output / "coverage.data", extra)
     else:
+        assert receipt["baseline_sha256"] == []
         assert "prefix" not in database.kwargs
         merge.assert_not_called()
+
+
+@pytest.mark.parametrize("problem", ["missing", "disagree", "short", "empty"])
+def test_shard_one_refuses_incomplete_baseline_parts(
+    repository, tmp_path, monkeypatch, problem
+):
+    """Every part must leave its receipt, the parts must have collected the
+    same suite, and their shares must add up to it; otherwise shard one
+    writes no receipt (#1205)."""
+    output = tmp_path / "shard"
+    nodes = [f"tests/stewardship/database/test_a.py::test_{n}" for n in range(20)]
+
+    def execute(command, **kwargs):
+        """Children all pass; the baseline parts' receipts are then spoiled."""
+        if kwargs["phase"] == "database":
+            selected = partition(nodes, 1, 8)
+            (output / "tests.json").write_text(
+                json.dumps(
+                    {"universe": nodes, "selected": selected, "completed": selected}
+                )
+            )
+            write_baseline(output)
+            last = ci.baseline_evidence(output, ci.BASELINE_PARTS)
+            if problem == "missing":
+                last.unlink()
+            elif problem == "disagree":
+                write_baseline(output, BASELINE[1:])
+                share = baseline_partition(BASELINE, 1, ci.BASELINE_PARTS)
+                ci.baseline_evidence(output, 1).write_text(
+                    json.dumps(
+                        baseline_receipt(1, ci.BASELINE_PARTS, BASELINE, share, share)
+                    )
+                )
+            elif problem == "short":
+                share = baseline_partition(
+                    BASELINE, ci.BASELINE_PARTS, ci.BASELINE_PARTS
+                )
+                last.write_text(
+                    json.dumps(
+                        baseline_receipt(
+                            ci.BASELINE_PARTS,
+                            ci.BASELINE_PARTS,
+                            BASELINE,
+                            share[1:],
+                            share[1:],
+                        )
+                    )
+                )
+            else:
+                last.write_text(
+                    json.dumps(
+                        baseline_receipt(
+                            ci.BASELINE_PARTS, ci.BASELINE_PARTS, BASELINE, [], []
+                        )
+                    )
+                )
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(ci, "run_child", Mock(side_effect=execute))
+    monkeypatch.setattr(ci, "merge_coverage", Mock())
+    with pytest.raises((ValueError, OSError)):
+        ci.run_shard(repository, output, 1, 8)
+    assert not (output / "receipt.json").exists()
 
 
 def test_baseline_timeout_fails_shard_one(repository, tmp_path, monkeypatch):
@@ -779,20 +993,23 @@ def test_baseline_timeout_fails_shard_one(repository, tmp_path, monkeypatch):
     output = tmp_path / "shard"
 
     def execute(command, **kwargs):
-        """The baseline times out; the database child passes completely."""
-        if kwargs["phase"] == "baseline":
+        """One baseline part times out; every other child passes completely."""
+        if kwargs["phase"] == PARTS[-1]:
             raise subprocess.TimeoutExpired(command, kwargs["timeout"])
-        selected = partition(nodes, 1, 8)
-        (output / "tests.json").write_text(
-            json.dumps({"universe": nodes, "selected": selected, "completed": selected})
-        )
+        if kwargs["phase"] == "database":
+            selected = partition(nodes, 1, 8)
+            (output / "tests.json").write_text(
+                json.dumps(
+                    {"universe": nodes, "selected": selected, "completed": selected}
+                )
+            )
         return subprocess.CompletedProcess(command, 0)
 
     run = Mock(side_effect=execute)
     monkeypatch.setattr(ci, "run_child", run)
     with pytest.raises(subprocess.TimeoutExpired):
         ci.run_shard(repository, output, 1, 8)
-    assert run.call_count == 2
+    assert run.call_count == 1 + ci.BASELINE_PARTS
     assert not (output / "receipt.json").exists()
 
 
@@ -812,38 +1029,41 @@ class StoppableChild:
 def test_database_failure_stops_the_running_baseline(
     repository, tmp_path, monkeypatch, capsys, problem, baseline_first
 ):
-    """An interrupt or launch failure on the database side kills the baseline
-    whether it had already started or starts afterwards, instead of letting
-    it run out its 30-minute deadline before the error surfaces."""
-    child = StoppableChild()
-    baseline_started = ci.threading.Event()
+    """An interrupt or launch failure on the database side kills every
+    baseline part whether it had already started or starts afterwards,
+    instead of letting it run out its 30-minute deadline before the error
+    surfaces."""
+    children = {phase: StoppableChild() for phase in PARTS}
+    baseline_started = ci.threading.Barrier(len(PARTS) + 1, timeout=30)
     database_failed = ci.threading.Event()
 
     def execute(command, *, phase, on_start=None, **kwargs):
-        """The baseline runs until killed; the database side fails."""
+        """The baseline parts run until killed; the database side fails."""
         if phase == "database":
             if baseline_first:
-                assert baseline_started.wait(30)
+                baseline_started.wait()
             database_failed.set()
             raise problem("database side failed")
         if not baseline_first:
             assert database_failed.wait(30)
-        on_start(child)
-        baseline_started.set()
-        assert child.killed.wait(30), "the baseline was never stopped"
+        on_start(children[phase])
+        if baseline_first:
+            baseline_started.wait()
+        assert children[phase].killed.wait(30), "the baseline was never stopped"
         return subprocess.CompletedProcess(command, -9)
 
     monkeypatch.setattr(ci, "run_child", Mock(side_effect=execute))
     with pytest.raises(problem):
         ci.run_shard(repository, tmp_path / "shard", 1, 8)
-    assert child.killed.is_set()
+    assert all(child.killed.is_set() for child in children.values())
     assert "Stopping the baseline" in capsys.readouterr().err
     assert not (tmp_path / "shard/receipt.json").exists()
 
 
 def test_database_timeout_waits_for_the_baseline(repository, tmp_path, monkeypatch):
     """A database timeout, already logged by run_child, lets the still-running
-    baseline finish on its own deadline, then is raised; nothing is killed."""
+    baseline parts finish on their own deadlines, then is raised; nothing is
+    killed."""
     child = StoppableChild()
     database_failed = ci.threading.Event()
     finished = []
@@ -861,7 +1081,7 @@ def test_database_timeout_waits_for_the_baseline(repository, tmp_path, monkeypat
     monkeypatch.setattr(ci, "run_child", Mock(side_effect=execute))
     with pytest.raises(subprocess.TimeoutExpired):
         ci.run_shard(repository, tmp_path / "shard", 1, 8)
-    assert finished == ["baseline"] and not child.killed.is_set()
+    assert sorted(finished) == PARTS and not child.killed.is_set()
     assert not (tmp_path / "shard/receipt.json").exists()
 
 
@@ -983,6 +1203,89 @@ def test_actual_plugin_execution_receipt(repository, tmp_path, monkeypatch, body
         assert ci.combine(repository, directory, tmp_path / "combined.json", 2) == 0
 
 
+def run_baseline_part(root, part, evidence, *options):
+    """Run one real baseline part of the probe suite under ``root``."""
+    return subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "tests",
+            "-q",
+            "--ds=parishkit.stewardship.settings.test",
+            f"--ci-baseline={part}/{ci.BASELINE_PARTS}",
+            f"--ci-evidence={evidence}",
+            *options,
+        ],
+        cwd=root,
+        env=ci.environment(),
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+
+
+@pytest.mark.parametrize("body", ["pass", "assert False"])
+def test_actual_plugin_baseline_parts(tmp_path, body):
+    """Real pytest hooks split a baseline into parts whose receipts, checked
+    against a real independent collection of the unsplit suite, prove every
+    test ran exactly once, skipped ones included (#1205). A failing part
+    writes no receipt."""
+    root = tmp_path / "probe"
+    (root / ci.DATABASE_TESTS).mkdir(parents=True)
+    shutil.copyfile(ROOT / "tests/conftest.py", root / "tests/conftest.py")
+    (root / "pytest.ini").write_text("[pytest]\n")
+    (root / "tests/test_probe.py").write_text(
+        "import pytest\n@pytest.mark.parametrize('n', range(20))\n"
+        "def test_probe(n):\n    pass\n"
+        "def test_failing():\n"
+        f"    {body}\n"
+    )
+    (root / ci.DATABASE_TESTS / "test_db.py").write_text(
+        "import pytest\n@pytest.mark.skip('needs PostgreSQL')\n"
+        "@pytest.mark.parametrize('n', range(5))\n"
+        "def test_db(n):\n    pass\n"
+    )
+    directory = tmp_path / "evidence"
+    directory.mkdir()
+    for part in range(1, ci.BASELINE_PARTS + 1):
+        evidence = ci.baseline_evidence(directory, part)
+        result = run_baseline_part(root, part, evidence)
+        failing = body != "pass" and "test_failing" in result.stdout
+        assert result.returncode == (1 if failing else 0), result.stdout
+        assert evidence.exists() is not failing
+        assert "CI_PROGRESS" not in result.stdout
+    if body != "pass":
+        return
+    universe = ci.baseline_collection(root)
+    assert len(universe) == 26
+    ci.verify_baseline(directory, baseline_digests(directory), universe)
+    with pytest.raises(ValueError, match="exactly once|complete share"):
+        ci.verify_baseline(directory, baseline_digests(directory), universe[1:])
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        ["--require-postgresql-tests"],
+        ["--ci-shard=1/2"],
+        ["--ci-baseline=0/2"],
+    ],
+)
+def test_actual_plugin_refuses_a_mixed_baseline_part(tmp_path, options):
+    """A baseline part is never a database gate or a database shard."""
+    root = tmp_path / "probe"
+    (root / "tests").mkdir(parents=True)
+    shutil.copyfile(ROOT / "tests/conftest.py", root / "tests/conftest.py")
+    (root / "pytest.ini").write_text("[pytest]\n")
+    (root / "tests/test_probe.py").write_text("def test_probe():\n    pass\n")
+    evidence = tmp_path / "baseline-1.json"
+    result = run_baseline_part(root, 1, evidence, *options)
+    assert result.returncode == pytest.ExitCode.USAGE_ERROR, result.stdout
+    assert not evidence.exists()
+
+
 @pytest.mark.parametrize("collect_only", [False, True])
 def test_module_skip_rejected_with_surviving_tests(tmp_path, collect_only):
     """A whole skipped module cannot disappear from a passing shard/universe."""
@@ -1020,7 +1323,9 @@ def selected_shard(repository, tmp_path, monkeypatch, index, nodes, subset, **op
     output = tmp_path / f"shard-{index}"
 
     def execute(command, **kwargs):
-        """Stand in for successful children; the database one writes evidence."""
+        """Stand in for successful children, each writing its evidence."""
+        if kwargs["phase"] == PARTS[0]:
+            write_baseline(output)
         if ci.DATABASE_TESTS in command:
             selected = partition(subset, index, 14)
             (output / "tests.json").write_text(

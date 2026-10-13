@@ -370,9 +370,9 @@ jobs:
   # (service pair N on the ports quality_ci.slot_ports assigns slot N-1),
   # because SQL roles are cluster-wide fixtures. Packing leaves runner slots
   # for other runs (#625). Job 1 runs only partition 1, beside the
-  # non-database baseline (#1200). To retune, change that constant or the
-  # count; the contract tests then name the matrix and service pairs to
-  # update here.
+  # non-database baseline's parts (#1200, #1205). To retune, change that
+  # constant or the count; the contract tests then name the matrix and
+  # service pairs to update here.
   stewardship-postgresql-shard:
     needs: validate
     if: ${{ needs.validate.outputs.postgresql != 'false' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)) }}

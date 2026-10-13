@@ -253,8 +253,14 @@ def estimated_seconds(nodeid):
     )
 
 
-def partition(nodeids: list[str], index: int, count: int) -> list[str]:
-    """Assign every unique test once, independently of collection ordering."""
+def partition(
+    nodeids: list[str], index: int, count: int, cost=estimated_seconds
+) -> list[str]:
+    """Assign every unique test once, independently of collection ordering.
+
+    ``cost`` estimates one node's seconds; the database hints above by
+    default. Whatever it returns, every node lands in exactly one partition.
+    """
     if (
         type(index) is not int
         or type(count) is not int
@@ -275,15 +281,41 @@ def partition(nodeids: list[str], index: int, count: int) -> list[str]:
     for node in sorted(
         nodeids,
         key=lambda node: (
-            -estimated_seconds(node),
+            -cost(node),
             hashlib.sha256(node.encode()).digest(),
             node,
         ),
     ):
         target = min(range(count), key=lambda shard: (loads[shard], shard))
         groups[target].append(node)
-        loads[target] += estimated_seconds(node)
+        loads[target] += cost(node)
     return sorted(groups[index - 1])
+
+
+def baseline_partition(nodeids: list[str], index: int, count: int) -> list[str]:
+    """Split the non-database baseline into ``count`` parts by node ID (#1205).
+
+    Every node weighs the same. The database hints above would misweight
+    the database tests, which the baseline collects and only skips, and no
+    non-database test is slow enough to unbalance a part on its own. The
+    stable digest order then deals the nodes out evenly, whatever order
+    pytest collected them in.
+    """
+    return partition(nodeids, index, count, cost=lambda node: 1)
+
+
+def nodes_digest(nodeids) -> str:
+    """Digest a set of node IDs, independently of their order.
+
+    Baseline evidence records these digests rather than the IDs themselves:
+    a few parametrized node IDs carry megabytes of test payload, and the
+    whole baseline's IDs come to about 18 MB.
+    """
+    digest = hashlib.sha256()
+    for node in sorted(nodeids):
+        body = node.encode("utf-8", "surrogatepass")
+        digest.update(len(body).to_bytes(8, "big") + body)
+    return digest.hexdigest()
 
 
 def tree_digest(root: Path) -> str:

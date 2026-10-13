@@ -343,9 +343,33 @@ instead of eleven. PostgreSQL runner-minutes stay about the same (six jobs of
 about 25 minutes instead of five of about 29 to 31), and the browser jobs
 remain a full run's critical path. When a partition again nears its deadline,
 raise the count (keeping job one's single partition: 16, 19, 22 and so on)
-rather than the deadline. When the baseline nears it, split the baseline
-([#1205](https://github.com/epiphany40223/parishkit/issues/1205)), which needs
-its own completeness evidence.
+rather than the deadline.
+
+The baseline then neared its own deadline
+([#1205](https://github.com/epiphany40223/parishkit/issues/1205)). In the
+thirteen successful full runs from October 11 to 13, it took 765 to 1,310 s,
+depending mostly on the runner. On slow runners that is about 78 ms a test,
+and the suite gained about 900 tests a day, so 25 minutes was days away. It is
+now split by node ID into `quality_ci.BASELINE_PARTS` (two) parts, which run
+at once beside partition one's database tests. Each part has its own deadline
+and its own coverage file. Job one then has three pytest processes, like the
+other jobs, and a contract test keeps it so. The split counts every test
+equally, because the database hints would give heavy weights to database tests
+that the baseline only skips.
+
+A single pytest run's exit status proves it ran the whole suite, but parts
+need receipts. Each part's receipt records the count and digest of the suite
+it collected, of its share and of the tests it completed after teardown. It
+stores digests, not node IDs, because a few parametrized node IDs carry
+megabytes of test data. `quality_ci combine` collects the unsplit baseline on
+its own, recomputes every part's share and requires each receipt to match. It
+also requires the shares to be disjoint and to add up to the whole collection.
+A missing, stale or partial part fails the gate. A stray receipt, such as
+`baseline-3.json` when there are two parts, is ignored, because only parts one
+to `BASELINE_PARTS` are read. When a part nears its
+deadline, raise `BASELINE_PARTS`. If job one would then hold more pytest
+processes than `PARTITIONS_PER_JOB`, the contract test fails; move parts to
+another slot first.
 
 Packing was expected to cut the PostgreSQL group from about 185
 runner-minutes (#625) to about 100. By October 2026 the suite had grown, and
