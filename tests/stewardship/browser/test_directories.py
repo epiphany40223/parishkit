@@ -6,7 +6,7 @@ from uuid import UUID
 import pytest
 from django.urls import reverse
 
-from .waits import visible
+from .waits import same_place, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -469,7 +469,8 @@ def test_export_format_help_is_a_toggletip(page, component_origin, width):
     button = page.locator("#table-export .toggletip-button").first
     button.click()
     visible(tip)
-    assert boxes() == before
+    # Linux Firefox may report the same place a ten-thousandth of a pixel apart.
+    assert same_place(boxes(), before)
     page.keyboard.press("Escape")
     assert tip.is_hidden()
 
@@ -521,5 +522,6 @@ def test_filter_bar_tips_sit_beside_their_labels(page, component_origin, width):
     before = boxes()
     page.locator("#directory-reach-label + .toggletip .toggletip-button").click()
     visible(page.locator("#directory-reach-tip"))
-    assert boxes() == before
+    # Linux Firefox may report the same place a ten-thousandth of a pixel apart.
+    assert same_place(boxes(), before)
     page.keyboard.press("Escape")
