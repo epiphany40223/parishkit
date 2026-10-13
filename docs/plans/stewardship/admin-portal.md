@@ -406,7 +406,15 @@ of 2026-10-04 are recorded in the specification.
 6. **PR 5, accept a large ParishSoft change once.** The one-time acceptance
    and its guard, and the example Families table with its deletion
    (migration), the drop check honoring the acceptance, the manifest
-   record and the launch runbook update. Security-focused review.
+   record and the launch runbook update. Security-focused review. It lands
+   in parts (plan posted on #530): **5a** the acceptance record and its
+   guard (frozen migration 0080), the shared lifetime check and the worker
+   honoring it; **5b** the web's grants (no migration: grants are
+   `database-grants`'), the button with its preview, tick box, fresh
+   sign-in, `source_drop_accepted` and the full refresh it asks for,
+   `system refresh-accept-preview` and `system refresh-accept`, and the
+   runbook updates; **5c** the example Families (their own table, deletion
+   rules and migration).
 7. **PR 6, turn off debug logging.** The debug-off switch and its guard
    (migration), the in-process override, children's environment, the
    `debug-off-clear` operator command, **Allow debug logging again**

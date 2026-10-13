@@ -940,16 +940,15 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
             "SELECT has_function_privilege('pk_stewardship_web', %s, 'EXECUTE')",
             [lookup],
         )
-        # Web inserts into each closure table, except the address follow-ups
-        # (0077, #806), which only mail dispatch reads and updates, and the
-        # large-change acceptances (0080, #530), which only the worker reads
-        # until System health's button (ADM-13 PR 5b) gives web its grants.
+        # Web inserts into each closure table (the large-change acceptances,
+        # 0080, since System health's button, ADM-13 PR 5b), except the
+        # address follow-ups (0077, #806), which only mail dispatch reads and
+        # updates.
         writers = {
             "stewardship_outbox_address_retry": (
                 "pk_stewardship_mail_dispatch",
                 "UPDATE",
             ),
-            "stewardship_source_drop_acceptance": ("pk_stewardship_worker", "SELECT"),
         }
         for table in CLOSURE_TABLES:
             login, privilege = writers.get(table, ("pk_stewardship_web", "INSERT"))

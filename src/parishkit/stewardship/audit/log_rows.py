@@ -146,7 +146,8 @@ EVENTS = tuple(sorted({item.value for item in Action} | {item.value for item in 
 #   alert emails are listed too; the page's help says so.
 # - ParishSoft refreshes: full refreshes and quick updates accepted,
 #   rejected, replaced or fallen back to a full reload, their failures and
-#   holds, and the Ministry leader changes they cause (#1034). That one type
+#   holds, an Administrator accepting a refused large change once, and the
+#   Ministry leader changes they cause (#1034). That one type
 #   is also recorded when a settings change (leader roles, Ministries or
 #   Ministry activity) changes who leads; it stays here, with the refreshes
 #   that cause most of them, because each type belongs to one group.
@@ -256,6 +257,9 @@ ACTIVITY_TYPES = {
         "source_tenant_mismatch",
         "source_destructive_change",
         "source_refresh_held",
+        # Accept this change once (ADM-13 PR 5b, #530) on System health.
+        "source_drop_accepted",
+        "admin_cmd_system_refresh_accept",
     ),
     "downloads": (
         *(

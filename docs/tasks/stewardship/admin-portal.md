@@ -1217,9 +1217,23 @@ trend of each count that failed starting again after it, checked by `tests/stewa
 `tests/stewardship/test_source_trend.py`,
 `tests/stewardship/database/test_source_drop_acceptance_postgresql.py`, the
 runtime-grant and users swap tests and the regenerated schema baseline.
-Part 5b (the preview, the button, the `source_drop_accepted` audit event,
-the web's grants, the panel lines, the command and the runbook update) and
-part 5c (the example Families) remain.
+Part 5b adds the web's insert and read grants on acceptances (a
+`database-grants` change; the table was already in the users swap's
+closure tables), Accept this change once on System health (drawn while the
+ParishSoft refresh panel shows a refused change: a preview of every count,
+the "I checked this in ParishSoft" tick box, the fresh sign-in step-up, a
+signed binding answered as "This changed since you looked" when the
+refusal changed, the `source_drop_accepted` audit event naming the
+acceptance, the full refresh it asks for, and the greyed button saying who
+accepted it, when and until when, or that the acceptance lapsed or that an
+empty load can never be accepted, kept current by the page's poll, all
+answered in place), `pk-admin system refresh-accept-preview` and `system
+refresh-accept`, and the launch and deployment runbook updates (the
+operator override as the emergency path), checked by
+`tests/stewardship/database/test_accept_once_postgresql.py`,
+`tests/stewardship/test_system_health.py` and
+`tests/stewardship/browser/test_system_health.py`. Part 5c (the example
+Families) remains.
 ADM-13.06 is in progress in parts. Part 6a adds the frozen forward migration
 `0078_debug_off_switch.sql` (`stewardship_jobs.0028`): the switch record and
 its guard, the one-boolean read every runtime login may run, the

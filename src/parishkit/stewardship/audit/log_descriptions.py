@@ -208,6 +208,10 @@ DESCRIPTIONS = {
         "An automation session turned debug logging off in every service, as "
         "System health's Turn off debug logging does."
     ),
+    "admin_cmd_system_refresh_accept": _(
+        "An automation session accepted a refused large ParishSoft change "
+        "once, as System health's Accept this change once does."
+    ),
     "admin_cmd_portal_maintenance_set": _(
         "An automation session closed or reopened the Family portal for "
         "maintenance, as the Family portal availability page does."
@@ -379,6 +383,10 @@ DESCRIPTIONS = {
     "debug_logging_allowed": _(
         "The debug-off switch was cleared, so services started with debug "
         "logging may log in debug form again."
+    ),
+    "source_drop_accepted": _(
+        "An Administrator accepted a refused large ParishSoft change once, so "
+        "the next full refresh may go through if no count falls further."
     ),
     "background_viewed": _("An Administrator opened Background work."),
     "delivery_viewed": _("An Administrator opened Outgoing mail."),

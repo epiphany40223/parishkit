@@ -154,6 +154,8 @@ class Action(StrEnum):
     # ``debug-off-clear`` records it with actor kind ``operator`` and no
     # subject (that login cannot read the switch it cleared).
     DEBUG_LOGGING_ALLOWED = "debug_logging_allowed"
+    # Accept this change once (ADM-13 PR 5b); the subject is the acceptance.
+    SOURCE_DROP_ACCEPTED = "source_drop_accepted"
     PRESENCE_VIEWED = "family_presence_viewed"
     # The operator's one-time engagement backfill (#477), with its counts.
     FAMILY_ENGAGEMENT_BACKFILLED = "family_engagement_backfilled"
@@ -242,6 +244,8 @@ class Action(StrEnum):
     ADMIN_CMD_SYSTEM_BACKUP_NOW = "admin_cmd_system_backup_now"
     # system debug-off: System health's Turn off debug logging (ADM-13 PR 6b).
     ADMIN_CMD_SYSTEM_DEBUG_OFF = "admin_cmd_system_debug_off"
+    # system refresh-accept: System health's Accept this change once (PR 5b).
+    ADMIN_CMD_SYSTEM_REFRESH_ACCEPT = "admin_cmd_system_refresh_accept"
     # files delete and files rename: the Hosted files page's row actions.
     ADMIN_CMD_FILES_DELETE = "admin_cmd_files_delete"
     ADMIN_CMD_FILES_RENAME = "admin_cmd_files_rename"

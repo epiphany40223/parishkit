@@ -26,6 +26,7 @@ from parishkit.stewardship.source.refresh_status import FullRefreshStatus
 from parishkit.stewardship.system_health import (
     BackupRequestStatus,
     DebugSwitchStatus,
+    DropAcceptanceStatus,
     DropCount,
     Problem,
     Subject,
@@ -38,6 +39,8 @@ from .campaign_factory import schedule as schedule_record
 
 NOW = datetime(2054, 10, 5, 14, tzinfo=UTC)
 CAMPAIGN = UUID("00000000-0000-4000-8000-000000000001")
+# Accept this change once (ADM-13 PR 5b): an acceptance.
+ACCEPTANCE = UUID("00000000-0000-4000-8000-0000000000a5")
 TASK = UUID("00000000-0000-4000-8000-000000000002")
 SCHEDULE = "00000000-0000-4000-8000-000000000003"
 TEMPLATE = "00000000-0000-4000-8000-000000000004"
@@ -504,6 +507,12 @@ def system_health():
         debug_switch=DebugSwitchStatus(
             set_at=NOW, cleared_at=NOW, cleared_by="operator"
         ),
+        drop_acceptance=DropAcceptanceStatus(
+            id=ACCEPTANCE,
+            created_at=NOW,
+            expires_at=NOW + timedelta(hours=24),
+            live=True,
+        ),
     )
 
 
@@ -707,6 +716,13 @@ GOLDEN = {
                 "set_at": iso(NOW),
                 "cleared_at": iso(NOW),
                 "cleared_by": "operator",
+            },
+            # Who accepted is the page's alone, never the document's.
+            "drop_acceptance": {
+                "id": str(ACCEPTANCE),
+                "created_at": iso(NOW),
+                "expires_at": iso(NOW + timedelta(hours=24)),
+                "live": True,
             },
         },
     ),
@@ -997,6 +1013,9 @@ ALLOWED = {
         "set_at",
         "cleared_at",
         "cleared_by",
+        "drop_acceptance",
+        "id",
+        "expires_at",
     },
     "status": {
         "as_of",
@@ -1239,12 +1258,19 @@ def test_every_command_has_a_golden_document_and_an_allowlist():
     """The nine read commands, no more and no fewer.
 
     ``system backup-now`` (ADM-13 PR 3b) is catalogued with PR 3's System
-    health group but changes state, so it has no golden read document.
+    health group but changes state, so it has no golden read document. Nor
+    has a preview such as ``system refresh-accept-preview`` (PR 5b, any
+    command whose result has ``preview``): it prints a signed binding
+    (``preview.token``), which this allowlist's
+    personal-data pattern refuses; tests/stewardship/test_system_health.py
+    checks its document.
     """
     reads = {
         spec.name
         for spec in admin_cli.COMMANDS
-        if spec.pr == 3 and not spec.changes_state
+        if spec.pr == 3
+        and not spec.changes_state
+        and "preview" not in spec.result_fields
     }
     assert reads == set(GOLDEN) == set(ALLOWED)
 

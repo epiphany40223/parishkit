@@ -5,6 +5,10 @@ import re
 import pytest
 
 from .system_health_components import (
+    ACCEPT_CHANGED,
+    ACCEPT_DONE,
+    ACCEPT_PAGE,
+    ACCEPT_PREVIEW,
     BACKUP_BUSY,
     BACKUP_PAGE,
     BACKUP_PREVIEW,
@@ -495,6 +499,114 @@ def test_the_debug_region_is_accessible_at_phone_and_desktop_widths(
     for path in (DEBUG_PAGE, DEBUG_PREVIEW):
         page.goto(component_origin + path)
         assert page.locator("#debug-off").count() == 1
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        page.evaluate(axe_source)
+        assert (
+            page.evaluate("""async () => (await axe.run(document, {
+            runOnly: {type: 'tag', values: ['wcag2a','wcag2aa','wcag21aa','wcag22aa']}
+        })).violations.map(({id,impact}) => ({id,impact}))""")
+            == []
+        )
+
+
+def test_accept_this_change_once_previews_and_confirms_in_place(
+    page, component_origin, axe_source
+):
+    """Preview, the tick box, then confirm, each in #accept-change; nothing
+    above the region moves, and the page is never reloaded (ADM-13 PR 5b)."""
+    _routed(
+        page,
+        component_origin,
+        {"accept_preview": (200, ACCEPT_PREVIEW), "accept_confirm": (200, ACCEPT_DONE)},
+        shown=ACCEPT_PAGE,
+    )
+    page.goto(component_origin + BACKUP_PAGE)
+    kept = _not_reloaded(page)
+    region = page.locator("#accept-change")
+    heading = region.get_by_role("heading", name="Accept this change once")
+
+    def place():
+        """The heading's place in the document, wherever the page is scrolled."""
+        return heading.evaluate("e => e.getBoundingClientRect().top + window.scrollY")
+
+    top = place()
+    region.get_by_role("button", name="Accept this change once…").click()
+    confirm = region.get_by_role("button", name="Confirm: accept this change once")
+    expect(confirm).to_be_visible()
+    visible(region.get_by_text("Families with an email address"))
+    visible(region.get_by_text("44%"))
+    # Firefox may report the same place a few millionths of a pixel apart.
+    assert abs(place() - top) < 0.5
+    # Confirm waits for the tick box, with its reason after it.
+    expect(confirm).to_be_disabled()
+    visible(region.get_by_text("Tick the box to confirm that you checked this"))
+    region.get_by_label("I checked this in ParishSoft, and the change is real.").check()
+    expect(confirm).to_be_enabled()
+    # The rules are one click away, in a toggletip.
+    region.get_by_role("button", name="More information").click()
+    visible(region.get_by_text("the limit itself is not raised"))
+    page.keyboard.press("Escape")
+    expect(region.locator("#accept-change-rules-tip")).to_be_hidden()
+    page.evaluate(axe_source)
+    assert (
+        page.evaluate("""async () => (await axe.run(document, {
+        runOnly: {type: 'tag', values: ['wcag2a','wcag2aa','wcag21aa','wcag22aa']}
+    })).violations.map(({id,impact}) => ({id,impact}))""")
+        == []
+    )
+    confirm.click()
+    expect(region.get_by_text("A full refresh was requested")).to_be_visible()
+    reason = region.locator("#accept-change-reason")
+    expect(reason).to_contain_text("Accepted by other@example.org at")
+    # Both times in the browser's own time zone, never as ISO instants.
+    for stamp in reason.locator("time").all():
+        expect(stamp).not_to_have_text(stamp.get_attribute("datetime"))
+    assert "UTC" not in region.inner_text()
+    assert kept()
+    # Firefox may report the same place a few millionths of a pixel apart.
+    assert abs(place() - top) < 0.5
+
+
+def test_a_changed_refusal_is_said_in_the_region(page, component_origin):
+    """ "This changed since you looked", never the database's words."""
+    _routed(
+        page,
+        component_origin,
+        {"accept_preview": (409, ACCEPT_CHANGED)},
+        shown=ACCEPT_PAGE,
+    )
+    page.goto(component_origin + BACKUP_PAGE)
+    kept = _not_reloaded(page)
+    region = page.locator("#accept-change")
+    region.get_by_role("button", name="Accept this change once…").click()
+    visible(region.get_by_text("This changed since you looked; review it again."))
+    assert kept()
+    assert '"errors"' not in page.content()
+
+
+def test_the_accept_button_follows_an_acceptance_given_elsewhere(
+    page, component_origin
+):
+    """The poll greys the button, naming who accepted, when and until when."""
+    page.goto(component_origin + ACCEPT_PAGE)
+    region = page.locator("#accept-change")
+    button = region.get_by_role("button", name="Accept this change once…")
+    expect(button).to_be_enabled()
+    expect(button).to_be_disabled(timeout=30000)
+    reason = region.locator("#accept-change-reason")
+    expect(reason).to_contain_text("Accepted by other@example.org at")
+    expect(reason).to_contain_text("The next full refresh will use it")
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_the_accept_region_is_accessible_at_phone_and_desktop_widths(
+    page, component_origin, axe_source, width
+):
+    """Its button and its preview pass axe and fit a phone without scrolling."""
+    page.set_viewport_size({"width": width, "height": 900})
+    for path in (ACCEPT_PAGE, ACCEPT_PREVIEW):
+        page.goto(component_origin + path)
+        assert page.locator("#accept-change").count() == 1
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         page.evaluate(axe_source)
         assert (

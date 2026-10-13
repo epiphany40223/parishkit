@@ -313,11 +313,19 @@ LEDGER = {
     "campaign_root": permanent(GROUP_ROOT),
     "mail_root": permanent(GROUP_ROOT),
     "parish_root": permanent(GROUP_ROOT),
-    # Take a backup now and Turn off debug logging post to the page;
-    # ``system backup-now`` and ``system debug-off`` are their commands (each
-    # row's guard admits a full-scope automation session as the fresh
-    # sign-in), and ``system health`` shows their progress.
-    "system_health": command("system health", "system backup-now", "system debug-off"),
+    # Take a backup now, Accept this change once and Turn off debug logging
+    # post to the page; ``system backup-now``, ``system
+    # refresh-accept-preview`` with ``system refresh-accept``, and ``system
+    # debug-off`` are their commands (each row's guard admits a full-scope
+    # automation session as the fresh sign-in), and ``system health`` shows
+    # their progress.
+    "system_health": command(
+        "system health",
+        "system backup-now",
+        "system refresh-accept-preview",
+        "system refresh-accept",
+        "system debug-off",
+    ),
     "system_health_status": command("system health"),
     # Families the form cannot open (#774): counts and DUIDs only.
     "source_form": command("report source-form"),

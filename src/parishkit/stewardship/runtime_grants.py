@@ -137,6 +137,10 @@ WEB_READ_TABLES = frozenset(
         # Turn off debug logging (ADM-13 PR 6b): the panel says who set the
         # debug-off switch and when; no path, host or credential.
         "stewardship_debug_off_switch",
+        # Accept this change once (ADM-13 PR 5b): who accepted the refused
+        # large change, when and until when, and the counts reviewed; counts
+        # and identifiers only, no parish data.
+        "stewardship_source_drop_acceptance",
     ]
 )
 
@@ -168,6 +172,11 @@ WEB_INSERT_TABLES = frozenset(
         # a freshly signed-in Administrator, while no switch is set. The web
         # cannot clear one: only the operator's offline definer does.
         "stewardship_debug_off_switch",
+        # Accept this change once (ADM-13 PR 5b): its guard (0080) admits
+        # only a freshly signed-in Administrator, for the newest refusal with
+        # its counts exactly as recorded, while no other acceptance is live.
+        # No login may update or delete one.
+        "stewardship_source_drop_acceptance",
         "stewardship_source_refresh_request",
         "stewardship_source_refresh_command",
         "stewardship_chair_seed_intent",
@@ -482,7 +491,7 @@ CLOSURE_TABLES = {
     # System health's debug-off switch (0078, #530), which web sets and reads.
     "stewardship_debug_off_switch": ("stewardship_jobs", "0028_debug_off_switch"),
     # An Administrator's one-time acceptance of a refused large ParishSoft
-    # change (0080, #530), which the worker reads.
+    # change (0080, #530), which web records and reads and the worker reads.
     "stewardship_source_drop_acceptance": (
         "stewardship_source",
         "0008_drop_acceptance",

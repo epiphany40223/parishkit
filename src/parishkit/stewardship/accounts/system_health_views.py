@@ -107,6 +107,7 @@ def _read(request, template, *, page):
             "pause": extra["pause"],
             "workgroup_missing": extra["workgroup_missing"],
             "debug_actor": extra["debug_actor"],
+            "accept_actor": extra["accept_actor"],
             "poll_interval": POLL_MILLISECONDS,
         }
         if page:
@@ -178,8 +179,13 @@ def system_health_status(request):
 
 
 # The form fields each action step accepts: Take a backup now's (ADM-13 PR
-# 3b) and Turn off debug logging's (PR 6b, named debug_off_*).
+# 3b), Accept this change once's (PR 5b, named accept_*; ``checked`` is the
+# "I checked this in ParishSoft" tick box) and Turn off debug logging's (PR
+# 6b, named debug_off_*).
 _ACTION_FIELDS = {
+    "accept_preview": {"action"},
+    "accept_confirm": {"action", "token", "checked"},
+    "accept_cancel": {"action"},
     "preview": {"action"},
     "confirm": {"action", "key"},
     "cancel": {"action"},
@@ -189,6 +195,9 @@ _ACTION_FIELDS = {
 }
 # What an in-place refusal is answered with (HTTP status, the region's words).
 _REFUSALS = {"reauthenticate": 403, "busy": 409, "invalid": 400, "denied": 403}
+# Each action's region (its template's context name) by its steps' prefix;
+# Take a backup now's steps have none.
+_REGIONS = (("accept_", "accept"), ("debug_off_", "debug_off"))
 
 
 def _step(action, request, service):
@@ -206,6 +215,17 @@ def _step(action, request, service):
         return {"preview": health_actions.preview_backup(request, service.store)}
     if action == "debug_off_preview":
         return {"preview": health_actions.preview_debug_off(request, service.store)}
+    if action == "accept_preview":
+        return {"preview": health_actions.preview_acceptance(request, service.store)}
+    if action == "accept_confirm":
+        # The tick box is the confirmation; the page's gate keeps Confirm
+        # unavailable until it is ticked, and this refuses a request without.
+        if request.POST.get("checked") != "yes":
+            raise ValueError("Accepting a change needs the tick box.")
+        row, created, refresh = health_actions.accept_change(
+            request, service, token=request.POST.get("token", "")
+        )
+        return {"requested": row, "created": created, "refresh": refresh}
     if action in {"confirm", "debug_off_confirm"}:
         record = (
             health_actions.request_backup
@@ -225,8 +245,9 @@ def _act(request):
     """An action's step, posted to the System health page itself.
 
     The answer is the whole page at its own address, so ui-v1.js swaps the
-    action's region (``#backup-now`` or ``#debug-off``) in place; the step's
-    result goes to the template as ``backup_now`` or ``debug_off``. A step
+    action's region (``#backup-now``, ``#accept-change`` or ``#debug-off``)
+    in place; the step's result goes to the template as ``backup_now``,
+    ``accept`` or ``debug_off``. A step
     the server refuses for a reason the reader can act on (a stale sign-in,
     a request already live or a switch already set, a malformed form) is
     answered the same way, the region saying why, with a status ui-v1.js
@@ -234,7 +255,11 @@ def _act(request):
     step-up, which returns to this page. Anything else (not an
     Administrator, the system unavailable) is the usual closed refusal. No
     step records a page view; confirming records the action's audit event
-    (``backup_requested`` or ``debug_logging_turned_off``).
+    (``backup_requested``, ``source_drop_accepted`` or
+    ``debug_logging_turned_off``). For Accept this change once, ``busy``
+    means the refusal reviewed changed (another refusal, a promoted full
+    refresh, an acceptance already given), which its region words as "This
+    changed since you looked".
     """
     from parishkit.config import ConfigError
     from parishkit.stewardship import system_health as health_actions
@@ -246,7 +271,9 @@ def _act(request):
     from .setup_views import _closed
 
     action = request.POST.get("action", "")
-    region = "debug_off" if action.startswith("debug_off_") else "backup_now"
+    region = next(
+        (name for prefix, name in _REGIONS if action.startswith(prefix)), "backup_now"
+    )
     result, status = None, 200
     try:
         service = runtime()
@@ -285,12 +312,15 @@ def _act(request):
                 "campaign_id": extra["campaign_id"],
                 "pause": extra["pause"],
                 "debug_actor": extra["debug_actor"],
+                "accept_actor": extra["accept_actor"],
                 "poll_interval": POLL_MILLISECONDS,
                 "status_url": reverse("admin:system_health_status"),
                 region: result,
-                # The debug logging region stays once the page has drawn it,
-                # so answering any of its steps keeps it in place.
+                # The debug logging and acceptance regions stay once the page
+                # has drawn them, so answering any of their steps keeps them
+                # in place.
                 "debug_off_shown": region == "debug_off",
+                "accept_shown": region == "accept",
             },
             status=status,
         )

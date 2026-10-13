@@ -65,9 +65,14 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "go-live progress",
         "system health",
     }
-    # Take a backup now (ADM-13 PR 3b) and Turn off debug logging (PR 6b),
-    # catalogued with System health.
-    health = {"system backup-now", "system debug-off"}
+    # Take a backup now (ADM-13 PR 3b), Accept this change once (PR 5b) and
+    # Turn off debug logging (PR 6b), catalogued with System health.
+    health = {
+        "system backup-now",
+        "system refresh-accept-preview",
+        "system refresh-accept",
+        "system debug-off",
+    }
     changes = {
         "schedule preview",
         "schedule confirm",
@@ -217,6 +222,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
                 "portal maintenance set",
                 "system backup-now",
                 "system debug-off",
+                "system refresh-accept",
                 "export regenerate",
                 "export financial",
                 "export directory",
@@ -385,6 +391,28 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert debug["fresh_gated"] and debug["prompts"] and debug["request_key"]
     assert debug["audit_event"] == "admin_cmd_system_debug_off"
     assert debug["result_fields"] == ["switch_id", "created", "set_at", "active"]
+    # Accept this change once: a preview that changes and records nothing,
+    # then its token's confirmation, fresh-gated and always asking.
+    review = entries["system refresh-accept-preview"]
+    assert review["scope"] == "full" and not review["changes_state"]
+    assert review["audit_event"] is None and not review["prompts"]
+    assert review["result_fields"] == ["attempt_id", "refused_at", "counts", "preview"]
+    accept = entries["system refresh-accept"]
+    assert accept["scope"] == "full" and accept["changes_state"]
+    assert accept["fresh_gated"] and accept["prompts"]
+    assert not accept["request_key"]
+    assert accept["audit_event"] == "admin_cmd_system_refresh_accept"
+    assert {option["name"]: option for option in accept["options"]}["--token"][
+        "required"
+    ]
+    assert accept["result_fields"] == [
+        "acceptance_id",
+        "created",
+        "created_at",
+        "expires_at",
+        "live",
+        "task_root_id",
+    ]
     for name in ("send progress", "go-live progress", "system health"):
         watch = {option["name"] for option in entries[name]["options"]}
         assert {"--watch", "--timeout"} <= watch, name
@@ -630,6 +658,7 @@ def test_every_state_change_has_a_registered_described_event():
     assert events == [
         "admin_cmd_system_backup_now",
         "admin_cmd_system_debug_off",
+        "admin_cmd_system_refresh_accept",
         "admin_cmd_schedule_confirm",
         "admin_cmd_config_request_cancel",
         "admin_cmd_refresh_start",

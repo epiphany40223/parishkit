@@ -2602,7 +2602,7 @@ lists the fields and refusals.
 | `system`, `system_health`, `system_health_status` (ADM-13) | `system health`, `system health --watch`, counts and states only |
 | `system_health` POST, Take a backup now (ADM-13 PR 3b) | `system backup-now [--request-key UUID]` (fresh-gated, always prompts); its progress is `system health` `backup_request`, with `--watch` |
 | `system_mail_check`, `system_mail_clear` (ADM-13) | `system mail-clear-preview` (starts the mailbox check and waits for it), `system mail-clear --token …` |
-| `system_refresh_accept` (ADM-13) | `system refresh-accept-preview`, `system refresh-accept --token …` |
+| `system_health` POST, Accept this change once (ADM-13 PR 5b) | `system refresh-accept-preview` (the page's preview: every recorded count and `preview.token`), `system refresh-accept --token …` (fresh-gated, always prompts with the page's tick box); its effect is `system health`'s `drop_acceptance`, with `--watch` |
 | `system_health` POST, Turn off debug logging (ADM-13 PR 6b) | `system debug-off [--request-key UUID]` (fresh-gated, always prompts); its effect is `system health`'s `debug_switch` and each process's `debug_logging`, with `--watch` |
 | `system_debug_allow` (ADM-13, not built yet) | `system debug-allow` (Testing only) |
 | `source_form` ([#774](https://github.com/epiphany40223/parishkit/issues/774)) | `report source-form`, counts and DUIDs only ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the host's `pk-stewardship source-form-check` lists the same Families |
@@ -2646,7 +2646,15 @@ fresh sign-in) and records `backup_requested` and
 debug logging, the same way: the page's preview at the prompt, the switch
 set with the page's `turn_off_debug` (the switch's guard admits the session
 as the fresh sign-in), recording `debug_logging_turned_off` and
-`admin_cmd_system_debug_off`. The other ADM-13 rows name routes and
+`admin_cmd_system_debug_off`. `system refresh-accept-preview` and `system
+refresh-accept` (ADM-13 PR 5b) are Accept this change once, as `artwork
+remove-preview` and `artwork remove` are their page's review and Apply: the
+preview prints the page's counts and its signed binding, and changes and
+records nothing; the confirmation takes that token, prompts with the counts
+that fell too far and the page's tick box, records the acceptance with the
+page's `accept_change` (the acceptance's guard admits the session as the
+fresh sign-in) and asks for a full refresh, recording `source_drop_accepted`
+and `admin_cmd_system_refresh_accept`. The other ADM-13 rows name routes and
 commands that do not exist yet: each action, its route and its command land together in their
 own ADM-13 pull request (PR 3 to PR 6); ADM-11 PR 5, which lets automation
 pass the fresh-sign-in check, has landed. The ADM-13 action routes will be
