@@ -1,7 +1,7 @@
 """Live-status pages at their real addresses, for in-place Refresh and Dismiss.
 
-#519 PR 7a: each page's Refresh link and an integration's Dismiss re-read
-the page itself, so the page is served where its controls lead. A test
+#519 PR 7a and 7b: each page's Refresh link and an integration's Dismiss
+re-read the page itself, so the page is served where its controls lead. A test
 answers the re-read with another of these pages (a route), so the fresh
 region differs; the integration's Dismiss is answered by the fixture server
 with a real Post/Redirect/Get redirect (``POSTS``).
@@ -29,6 +29,7 @@ from parishkit.stewardship.source.refresh_status import FullRefreshStatus
 from parishkit.stewardship.web.contracts import PageWindow
 from parishkit.stewardship.web.tables import window_table
 
+from .automation_components import canonical
 from .send_progress_components import _send
 from .step_up_components import render
 
@@ -47,6 +48,12 @@ DISMISS = reverse("admin:dismiss_credential_result", args=["parishsoft"])
 TASK_RUN = UUID(int=869)
 TASK_PAGE = reverse("admin:background_task_page", args=[TASK_RUN])
 TASK_STATUS = reverse("admin:background_task_status", args=[TASK_RUN])
+# A report export and a latest-data export, and a configuration change's
+# status, whose Refresh links re-read them in place (#519 PR 7b). The two
+# exports share one address form (the view draws whichever the job is).
+EXPORT = reverse("admin:report_export", args=[UUID(int=720)])
+EXACT = reverse("admin:report_export", args=[UUID(int=721)])
+CHANGE = reverse("admin:configuration_request", args=[UUID(int=722)])
 # Refresh from ParishSoft, which shows the run it requested (#521). The real
 # view redirects Refresh now back to the page itself and remembers the run in
 # the session; the static fixture server cannot remember, so its redirect
@@ -169,13 +176,77 @@ def components(context, admin):
             },
         )
 
-    def refresh_task(state, steps, *, fragment=False):
+    def refresh_task(state, steps, *, fragment=False, sort=None):
         """A ParishSoft refresh's task page (or its polled status fragment) in
         ``state``, with one history row per (action, state, phase, current)
-        of ``steps``, out of 4,000 records."""
+        of ``steps``, out of 4,000 records, its history sorted by ``sort``
+        (else the default)."""
         template = "background-task-status" if fragment else "background-task"
         return render_to_string(
-            f"stewardship/{template}.html", refresh_values(state, steps)
+            f"stewardship/{template}.html", refresh_values(state, steps, sort=sort)
+        )
+
+    def export(state, mutable=True):
+        """A participation export's page in ``state``; while ``mutable`` is
+        false, other campaign work holds its commands."""
+        job = SimpleNamespace(
+            pk=UUID(int=720),
+            format="xlsx",
+            requester_id=UUID(int=21),
+            parameters={"population_scope": "historical"},
+            fact_set=SimpleNamespace(source_generation=3, submission_watermark=4),
+            created_at=now.isoformat(),
+            browser_timezone="America/Los_Angeles",
+        )
+        return render_to_string(
+            "stewardship/report-export.html",
+            page
+            | {
+                "job": job,
+                "status": {"state": state},
+                "mutable": mutable,
+                "retry_key": UUID(int=723),
+                "report_url": "/participation",
+                "report_name": "Participation",
+            },
+        )
+
+    def exact(state, export_id=None):
+        """A latest-data export's page in ``state``; once its figures are
+        ready, ``export_id`` names the file's export."""
+        job = SimpleNamespace(
+            pk=UUID(int=721),
+            format="xlsx",
+            population_scope="current",
+            submission_watermark=4,
+            through_date=now.date(),
+            timezone_configuration=SimpleNamespace(timezone="America/New_York"),
+            browser_timezone="America/Los_Angeles",
+            created_at=now.isoformat(),
+        )
+        return render_to_string(
+            "stewardship/report-exact.html",
+            page
+            | {
+                "job": job,
+                "status": {"state": state, "export_id": export_id},
+                "source": {"generation": 3, "promoted_at": now.isoformat()},
+                "mutable": True,
+                "retry_key": UUID(int=724),
+                "report_url": "/participation",
+            },
+        )
+
+    def change(state):
+        """Change status for a Parish settings change in ``state``."""
+        return render_to_string(
+            "stewardship/configuration-request.html",
+            page
+            | {
+                "receipt": {"state": state, "request_id": UUID(int=722)},
+                "admin_chrome": admin
+                | {"back": {"label": "Parish settings", "url": "/parish-settings"}},
+            },
         )
 
     def refresh_page(state=None, steps=(), *, minutes=30):
@@ -203,8 +274,9 @@ def components(context, admin):
             },
         )
 
-    def refresh_values(state, steps):
-        """The task page's values for a refresh in ``state`` with ``steps``."""
+    def refresh_values(state, steps, *, sort=None):
+        """The task page's values for a refresh in ``state`` with ``steps``,
+        its history sorted by ``sort`` (else the default)."""
 
         def progress(phase, current):
             """A progress record as task_page builds it, worded for a refresh."""
@@ -254,7 +326,7 @@ def components(context, admin):
                 False,
                 total=(len(events), False),
                 sorting=EVENT_SORTING,
-                sort=EVENT_SORTING.default,
+                sort=sort or EVENT_SORTING.default,
             ),
         }
         return values
@@ -304,5 +376,28 @@ def components(context, admin):
         KEEP_STATUS: keep_page("two", "", key="b"),
         KEEP_EMPTY: keep_page("one", "", key="", status=KEEP_EMPTY_STATUS),
         KEEP_EMPTY_STATUS: keep_page("two", "<p data-filled>Filled</p>", key=""),
+        EXPORT: export("failed", mutable=False),
+        "/live-export-ready": export("ready"),
+        EXACT: exact("failed"),
+        "/live-exact-ready": exact("succeeded", export_id=UUID(int=725)),
+        CHANGE: change("staged"),
+        "/live-change-applied": change("applied"),
+    }
+    # Refresh task re-reads the task page with its history's view (#519 PR
+    # 7b): as first shown, and once sorted by Action, each read finds the
+    # run finished, sorted as it was asked.
+    shown = refresh_values("running", running)["history"]
+    action = shown.sort_target("action")
+    by_action = refresh_values("running", running, sort=action)["history"]
+    pages |= {
+        canonical(TASK_PAGE + "?" + shown.heading_query("action")): refresh_task(
+            "running", running, sort=action
+        ),
+        canonical(TASK_PAGE + "?" + shown.current_query): refresh_task(
+            "succeeded", finished
+        ),
+        canonical(TASK_PAGE + "?" + by_action.current_query): refresh_task(
+            "succeeded", finished, sort=action
+        ),
     }
     return {path: ("text/html", body) for path, body in pages.items()}
