@@ -23,7 +23,7 @@ from .followup_components import (
     BULK_QUEUE,
 )
 from .test_components import axe_violations
-from .waits import available, eventually, greyed, has_text, hidden, visible
+from .waits import available, eventually, greyed, has_text, hidden, same_place, visible
 
 # The instant every follow-up fixture shows (followup_components.py).
 FIXTURE = datetime(2026, 9, 19, 15, 4, tzinfo=UTC)
@@ -713,12 +713,15 @@ def test_a_refused_bulk_outcome_names_the_row_inside_the_dialog(page, component_
         "Mark Joining <Member> — Example <Ministry> as Declined / no longer interested?"
     )
     record = dialog.get_by_role("button", name="Record outcome")
+    # Measured where the reader sees it: the dialog scrolls inside the window
+    # on a short screen, and the click scrolls the button into view first.
+    record.scroll_into_view_if_needed()
     box = record.bounding_box()
     record.click()
     error = dialog.locator("[data-confirm-error]")
     visible(error)
     assert message in error.inner_text()
-    assert record.bounding_box() == box and record.is_disabled()
+    assert same_place(record.bounding_box(), box) and record.is_disabled()
     assert page.locator("input[data-select-row]:checked").count() == 1
     dialog.get_by_role("button", name="Cancel").click()
     hidden(dialog)
