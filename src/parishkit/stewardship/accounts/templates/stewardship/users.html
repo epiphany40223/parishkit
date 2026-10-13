@@ -59,7 +59,7 @@ time zone (data-compact, date-format-v1.js), as other dense tables do
     <td class="nowrap">{{ row.role_label }}</td>
     <td class="nowrap">{% if row.last_login %}<time datetime="{{ row.last_login|instant }}" data-local-instant data-compact>{{ row.last_login|instant }}</time>{% else %}{% translate "Never" %}{% endif %}</td>
     {% if row.deletable %}{% table_actions name=row.email edit=row.edit_url delete=row.id confirm="user-delete" field="user_id" confirm_name=row.confirm_name %}{% else %}{% table_actions name=row.email edit=row.edit_url %}{% endif %}
-  </tr>{% empty %}<tr><td colspan="5">{% translate "No users." %}</td></tr>{% endfor %}
+  </tr>{% empty %}<tr><td colspan="5">{% translate "No users yet. Select New user to add one." %}</td></tr>{% endfor %}
   </tbody>
 </table>
 </div>
@@ -118,7 +118,7 @@ counted, in a muted line.
       <td><span class="cell-ellipsis" title="{{ row.email }}">{{ row.email }}</span></td>
       <td><span class="cell-ellipsis" title="{{ row.ministry_names|join:', ' }}">{{ row.ministries_label }}</span></td>
       <td class="nowrap">{% translate "Ministry leader" %}</td>
-    </tr>{% empty %}<tr><td colspan="6">{% translate "No ParishSoft Ministry leader is waiting for a user." %}</td></tr>{% endfor %}
+    </tr>{% empty %}<tr><td colspan="6">{% translate "No ParishSoft Ministry leader is waiting for a user, so there is nothing to import. Every leader of this campaign's Ministries already has one, or has no usable email." %}</td></tr>{% endfor %}
     </tbody>
   </table>
   </div>

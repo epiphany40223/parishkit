@@ -245,7 +245,10 @@ def test_no_live_sessions_says_how_to_see_past_ones(page):
     )
     assert "automation-live-caption" not in html
     _, html = page("?ended=yes", rows=[])
-    assert "No live sessions.</p>" in html
+    assert (
+        "No live sessions. Select Approve a session to give a command line"
+        " Administrator access.</p>" in html
+    )
 
 
 @pytest.mark.parametrize(

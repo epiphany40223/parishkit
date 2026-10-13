@@ -19,7 +19,7 @@
 {% if weekly %}<div class="table-wrap"><table><thead><tr><th scope="col">{% translate "Report" %}</th><th scope="col">{% translate "Sent" %}</th></tr></thead><tbody>
 {% for row in weekly %}<tr><th scope="row"><a href="{% url 'admin:weekly_digest_snapshot' row.pk %}">{% translate "Weekly report" %}</a>{% if row.manual %} <span class="help">{% translate "(sent on request)" %}</span>{% endif %}</th><td><time datetime="{{ row.observed_at|date:'c' }}" data-local-instant data-compact>{{ row.observed_at|date:'c' }}</time></td></tr>{% endfor %}
 </tbody></table></div>{% if weekly|length >= shown %}<p class="help">{% blocktranslate %}Showing the {{ shown }} newest weekly reports.{% endblocktranslate %}</p>{% endif %}
-{% else %}<p>{% translate "No weekly reports yet." %}</p>{% endif %}
+{% else %}<p>{% translate "No weekly reports yet. One is sent each week a Weekly Admin digest is scheduled; Send a weekly report now sends one at once." %}</p>{% endif %}
 </section>{% endif %}
 {% endif %}
 {% endblock %}

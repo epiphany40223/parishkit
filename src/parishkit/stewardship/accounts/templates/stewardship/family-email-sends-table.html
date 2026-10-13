@@ -47,7 +47,7 @@
       <dt>{% reminder_workgroup_name as workgroup %}{% blocktranslate %}Skipped: {{ workgroup }}{% endblocktranslate %}</dt><dd>{{ row.send.counts.workgroup|number }}</dd>
       <dt>{% translate "Held" %}</dt><dd>{{ row.send.counts.waiting|number }}</dd>
     </dl></td>
-  </tr>{% empty %}<tr><td colspan="7">{% translate "No invitation or reminder has been sent in this campaign yet." %}</td></tr>{% endfor %}
+  </tr>{% empty %}<tr><td colspan="7">{% translate "No invitation or reminder has been sent in this campaign yet. Each send appears here as soon as it starts." %}</td></tr>{% endfor %}
   </tbody>
 </table>
 </div>

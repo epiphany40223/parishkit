@@ -23,7 +23,7 @@
 <ul>{% for item in items %}<li data-mail-id="{{ item.id }}">
 <time data-local-instant datetime="{{ item.created_at }}">{{ item.created_at }}</time> — <span data-mail-state role="status">{{ item.label }}</span>
 {% if not item.current %}<span>{% translate "Earlier setup revision" %}</span>{% endif %}
-</li>{% empty %}<li>{% translate "No test has been requested yet." %}</li>{% endfor %}</ul>
+</li>{% empty %}<li>{% translate "No test has been requested yet. Select Send Slack test below to send one." %}</li>{% endfor %}</ul>
 <p><a href="{% url 'admin:setup_notification' %}">{% translate "Reload test status" %}</a></p>
 </section>
 {% include 'stewardship/setup-test-actions.html' with send=_("Send Slack test") %}
