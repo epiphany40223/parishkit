@@ -245,7 +245,13 @@ def test_a_custom_schedule_asks_before_switching_to_basic(page, component_origin
     requests = answering(page, BASIC)
     page.goto(component_origin + "/refresh-schedule-basic")
     mode(page, "advanced")
-    page.locator('[name="rules-0-at"]').fill("03:00")
+    field = page.locator('[name="rules-0-at"]')
+    field.fill("03:00")
+    # Leave the field now, so its change event joins the typing's check.
+    # Left later (an engine that focuses the toggle on click, as Linux
+    # WebKit does), the change would ask again half a second on, a third
+    # check racing the Basic choice's below.
+    field.blur()
     recorded(page, requests, 1)
     contains(page.locator(STATUS), "of ParishSoft time a day")
     mode(page, "basic")
