@@ -64,6 +64,7 @@ when it lands.
   [row actions](#row-actions-and-confirmation),
   [column order](#table-column-order),
   [Family and Member names](#family-and-member-names),
+  [Members and Families no longer in ParishSoft](#members-and-families-no-longer-in-parishsoft),
   [table fit and row height](#table-fit-and-row-height).
 - [Downloaded files](#downloaded-files) and the
   [Family portal](#family-portal).
@@ -1974,6 +1975,63 @@ Recorded exception: System health's "Families the form cannot open" shows the
 Family's surname only (from the shared `family_display_name`), never the
 heads' names. The refused field can itself be a head's name, and that page
 never shows Member values (open #965).
+
+A Member or Family that the current ParishSoft data no longer has, or marks
+inactive or deceased, is named and marked as
+[the next convention](#members-and-families-no-longer-in-parishsoft) says.
+
+### Members and Families no longer in ParishSoft
+
+**Rule.** Every page and download says one thing, in the same words and with
+the same look, when the current ParishSoft data no longer has a Member or
+Family, or marks one inactive or deceased:
+
+- **Not in ParishSoft**: the data has no such Member or Family (deleted or
+  merged there), or the Member now belongs to another Family.
+- **Inactive in ParishSoft**: present, but marked inactive (for a Family:
+  no longer active and registered).
+- **Deceased in ParishSoft**: present, but marked deceased.
+- **Name not recorded in ParishSoft**: present, but with no usable name. This
+  is a gap in the data, not a removal, so it is worded as the name and has
+  no mark.
+
+The mark is the shared status badge. It sits beside the name, which stays in
+its cell; it never takes the place of a name that is known, so it never sorts
+among the names. Only when no name is known (the data no longer has the
+Member or Family) is the badge alone in the name cell, and the DUID beside
+it identifies the row. The badge's visible text is the whole phrase, so it
+needs no tooltip, and screen readers read the same words. Until downloads
+gain their own "ParishSoft status" column, a download puts the same words in
+the name cell, in parentheses after a known name. Older phrases ("Unavailable
+Member", "Unavailable Family", "Not in the latest ParishSoft data", "Not in
+current ParishSoft data", "Name not in the current ParishSoft data", "No
+longer active in ParishSoft") are retired. This convention is about the
+ParishSoft data only; a Family's own report on the form ("No longer in this
+household", deceased) is the Family's answer and is worded where it is
+shown.
+
+**Why.** Pages had six different phrases for the same fact, some looking
+exactly like a real name, so Staff could not tell a missing Member from one
+named "Unavailable" and could not tell whether two pages meant the same thing
+(Administrator, 2026-10-13).
+
+**Shared code.** The phrases and `source_status_label(status)` in
+`source/source_status.py`; the `{% source_status status %}` template tag in
+`accounts/templatetags/stewardship.py`, which renders the `status-badge`
+(nothing for a current Member or Family). The status keys are those of the
+SQL `stewardship_member_source_status_v1` (open PR #1218): `current`,
+`missing`, `moved`, `inactive` and `deceased`. A guard test keeps the retired
+phrases out of templates and Python.
+
+**Precedent.** [#1216](https://github.com/epiphany40223/parishkit/issues/1216)
+(Administrator, 2026-10-13, on #1131). Family pages use it since #1216's
+first change. The Ministry follow-up pages, Ministry requests and packets
+still print "Unavailable Member" from their installed SQL, and the
+financial and information reports print "Unavailable Family" for a Family the
+data no longer has; they move to it in later changes of #1216, after #1217.
+The Family timeline, Outgoing mail and Testing submissions still stand
+"Family" in for a blank surname, and move to "Name not recorded in
+ParishSoft" in a later change too.
 
 ### Table fit and row height
 

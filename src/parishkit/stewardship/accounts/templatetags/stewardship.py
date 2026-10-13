@@ -11,6 +11,7 @@ from django.utils.translation import gettext as _
 from parishkit.stewardship.accounts.sessions import freshness
 from parishkit.stewardship.campaigns import single_campaign
 from parishkit.stewardship.campaigns.configuration import REMINDER_WORKGROUP_NAME
+from parishkit.stewardship.source.source_status import source_status_label
 from parishkit.stewardship.web import dates, presentation
 from parishkit.stewardship.web.buttons import portal_classes
 from parishkit.stewardship.web.exports import DEFAULT_EXPORT_FORMAT
@@ -85,6 +86,26 @@ def export_format_options(*formats, disabled=""):
             )
             for name in ordered
         ),
+    )
+
+
+@register.simple_tag
+def source_status(status):
+    """The shared mark for a Member or Family no longer in ParishSoft (#1216).
+
+    Usage: ``{% source_status row.member_status %}`` or
+    ``{% source_status 'missing' %}``. Renders a ``status-badge`` whose text
+    is the whole phrase from ``source/source_status.py``, so screen readers
+    read the same words and no tooltip is needed; renders nothing for a
+    current one (``None`` or ``current``).
+    """
+    label = source_status_label(status)
+    if not label:
+        return ""
+    return format_html(
+        '<span class="status-badge" data-source-status="{}">{}</span>',
+        status,
+        _(label),
     )
 
 
