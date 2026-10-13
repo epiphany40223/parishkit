@@ -838,8 +838,12 @@ mechanism for now). Save is held while such an error stands only on forms
 that use the complete-before-submit gate above. Three shared checks in
 `ui-v1.js` cover the common cases (#563): `data-not-before="<start id>"` on
 an end date (or a text amount) keeps it no earlier than its start, as the
-report and System logs filters do; `data-max-bytes` on a file input refuses
-a file larger than the limit, or than the room left, at once (Hosted files);
+report and System logs filters and the campaign and financial period end
+dates on Campaign settings and Setup › First campaign do (an end on its
+start's own day and a financial period that isn't exactly one year are
+refused by the server, at the end field); `data-max-bytes` on a file input
+refuses a file larger than the limit, or than the room left, at once (Hosted
+files);
 and `data-pattern` gives a textarea, which has no `pattern` of its own, a
 rule to match (no "@" in the Family portal maintenance message).
 The server stays the authority: it checks every save, and its refusal is

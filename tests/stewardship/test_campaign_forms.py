@@ -7,6 +7,7 @@ from django.http import QueryDict
 
 from parishkit.stewardship.accounts.admin_editing import form_action
 from parishkit.stewardship.accounts.campaign_forms import (
+    DATE_PAIRS,
     FINANCIAL_REQUIRED,
     LEADER_ROLES_HELP,
     CampaignForm,
@@ -266,6 +267,44 @@ def test_the_page_requires_what_clean_requires_for_financial_stewardship():
         form = form_for(complete | {name: [] if name.endswith("duids") else ""})
         assert not form.is_valid()
         assert name in form.errors
+
+
+def test_each_end_date_takes_its_start_as_its_minimum_in_the_page():
+    """The page holds an end before its start (data-not-before, #563)."""
+    form = CampaignForm(prefix="draft")
+    for start, end in DATE_PAIRS:
+        attrs = form.fields[end].widget.attrs
+        assert attrs["data-not-before"] == f"id_draft-{start}"
+        assert attrs["data-missing-hint"]
+    # An empty period end keeps the financial fieldset's hint.
+    assert "data-empty-hint" not in form.fields["end_date"].widget.attrs
+    assert form.fields["financial_end"].widget.attrs["data-empty-hint"]
+    # A live campaign's end date has its own live check instead.
+    live = CampaignForm(whole=False)
+    assert "data-not-before" not in live.fields["end_date"].widget.attrs
+
+
+@pytest.mark.parametrize(
+    ("changes", "field", "start"),
+    [
+        ({"end_date": "2054-10-01"}, "end_date", "The campaign end date must be"),
+        ({"end_date": "2054-09-01"}, "end_date", "The campaign end date must be"),
+        ({"financial_end": "2055-12-30"}, "financial_end", "A financial period"),
+        ({"comparison_end": "2026-12-30"}, "comparison_end", "A financial period"),
+    ],
+)
+def test_date_refusals_are_shown_at_the_end_field(changes, field, start):
+    """An end before its start, or a period not one year long, is a field error.
+
+    Never the generic message at the top of the page (#563).
+    """
+    values = campaign(modules=["financial"], financial=financial())["values"]
+    complete = initial_fields(values, digest="a" * 64)
+    assert complete["start_date"] == "2054-10-01"
+    form = form_for(complete | changes)
+    assert not form.is_valid()
+    assert str(form.errors[field][0]).startswith(start)
+    assert "__all__" not in form.errors
 
 
 ROLE_CHOICES = [
