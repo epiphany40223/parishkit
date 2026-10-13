@@ -959,6 +959,10 @@ def finish_submission(identifier, claim, result, *, hold=False):
             lock_task_claim(claim)
             return candidate is action and status.message_id == message.pk
 
+        # The acceptance below scrubs the message's sealed code-and-link
+        # reference; a follow-up to addresses refused for now keeps a copy
+        # (#806, jobs/address_retry.py).
+        sealed = (message.sealed_substitutions, message.sealed_key_id)
         # Statistics a database refuses are dropped, never the outcome.
         result_status = settle_with_stats(
             lambda evidence: change_message(
@@ -1020,6 +1024,18 @@ def finish_submission(identifier, claim, result, *, hold=False):
                     address=message.render.routed_recipients[index],
                     actor_id=claim.worker_id,
                     correlation_id=claim.run_id,
+                )
+            from .address_retry import follows_up, open_follow_up
+
+            # Accepted, but some addresses refused only for now: send them
+            # the same email later, and only them (#806). Never undoes the
+            # acceptance: a follow-up that cannot be opened is only logged.
+            if action is DeliveryAction.ACCEPT and follows_up(message, result):
+                open_follow_up(
+                    event_id=event.pk,
+                    claim=claim,
+                    sealed=sealed[0],
+                    sealed_key=sealed[1],
                 )
         return result_status
 

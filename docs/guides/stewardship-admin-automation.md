@@ -772,6 +772,30 @@ campaign did not retain, a purged campaign, or a campaign whose retained
 configuration is gone is exit 1 (`not_available`). Editing and deleting
 content stay on the page for now.
 
+## Campaign images
+
+`artwork show` is the read of **Campaign images**: the current campaign's
+email banner and Family page icons. Like the page, it needs an
+Administrator; a session of any scope may run it, and it records nothing
+in System logs, as opening the page records nothing.
+
+```sh
+pk-admin artwork show
+```
+
+| Field | What it holds |
+| --- | --- |
+| `version` | The applied configuration's version |
+| `campaign_id` | The current campaign |
+| `images` | Every slot, in the page's order `banner`, `welcome`, `member`, `financial`, `closing`: `slot`, `name` (the page's label), `unavailable` and `image` |
+| `unavailable` | Null, or the page's reason the slot cannot take an upload now (its Family page is not shown for this campaign's modules); a current image can still be removed on the page |
+| `image` | Null without a current image, or its `id`, `width` and `height` (pixels), `size` (bytes) and `sha256` |
+
+Scripts should test whether `unavailable` is null, not match its text:
+the wording is the page's and may change. With no current campaign,
+`artwork show` is exit 1 (`not_available`).
+Uploading and removing images stay on the page for now.
+
 ## Parish, Ministry, logo and Share option settings
 
 `parish show`, `ministries list`, `branding show` and `campaign shares`
@@ -779,8 +803,9 @@ are the reads of **Parish settings**, **Ministries**, **Parish logos**
 and **Share options**. Like the pages, they need an Administrator; a
 session of any scope may run them, and they record nothing in System
 logs, as opening the pages records nothing. Each prints `version`, the
-applied configuration's version. Changing these settings stays on the
-pages for now.
+applied configuration's version. Changing the parish profile is
+`parish preview` and `parish confirm` (below); changing the other settings
+stays on the pages for now.
 
 ```sh
 pk-admin parish show
@@ -809,6 +834,38 @@ and refuses a locked campaign, `campaign shares` reads a live or ended
 campaign's options too, with `editable` false. With no current campaign,
 or an unknown one, `campaign shares` is exit 1 (`not_available`). Logo
 images stay on the page.
+
+`parish preview` and `parish confirm` are the Parish settings page's
+**Review** and **Apply**, as `schedule preview` and `schedule confirm` are
+for schedules. They need a full-scope session. The change document has
+the shape of `parish show`'s `parish`, with only the fields to change; the
+others keep their values, and `"online_giving_url": null` removes the
+giving link. No other field may be null, and `date_format` must name a
+style. Type a telephone any common way; it is stored as `+1` and
+ten digits.
+
+```sh
+VERSION=$(pk-admin parish show | jq -r .result.version)
+pk-admin parish preview --expected-version "$VERSION" \
+  --changes '{"parish": {"phone": "(212) 555-1234"}}'
+pk-admin parish confirm --token TOKEN
+```
+
+| Field | What it holds |
+| --- | --- |
+| `version` (`parish preview`) | The configuration version the change was reviewed against |
+| `changes` | Each changed `field`, with its stored value `before` and `after` |
+| `notes` | The page's review notes, such as that a timezone change does not move existing campaigns |
+| `preview.token` | What `parish confirm --token` takes, valid for fifteen minutes |
+| `created`, `request` (`parish confirm`) | As `schedule confirm` prints them; follow the change with `config request show --watch` |
+
+A field the page refuses, a document that changes nothing, or an unknown
+field is exit 1 (`invalid`), with each problem in `error.fields`
+(`parish.phone`, or `parish` for the change as a whole). A version that is
+no longer current, or an expired token, is exit 1 (`stale_version`): read
+`parish show` again. `parish confirm` records `admin_cmd_parish_confirm`
+in System logs with the request; repeating it with the same token returns
+the same request.
 
 ## Past campaigns
 
@@ -1887,3 +1944,8 @@ pk-admin users import-leaders --confirm --token -
   `branding show` and `campaign shares [--campaign ID]`, the Parish
   settings, Ministries, Parish logos and Share options pages' reads (any
   session, Administrators only, no event).
+- `pk-admin/1` (#463): additive. `parish preview` and `parish confirm`,
+  the Parish settings page's Review and Apply (full scope, Administrators
+  only); `parish confirm` records `admin_cmd_parish_confirm`.
+- `pk-admin/1` (#463): additive. `artwork show`, the Campaign images
+  page's read (any session, Administrators only, no event).

@@ -194,6 +194,7 @@ def test_background_assembly_binds_exact_keys_role_and_closed_registry(
             expected.add("setup_mail_test")
             expected.add("campaign_mail_test")
             expected.add("outbox_delivery")
+            expected.add("family_address_retry")
         assert set(runtime.handlers) == expected
         if role is ServiceRole.SCHEDULER:
             # The scheduler registers every type with its executing queue.
@@ -360,7 +361,12 @@ def test_mail_runtime_requires_working_key_except_for_coherent_bootstrap(
     )
     try:
         assert set(runtime.handlers) == (
-            {"setup_mail_test", "campaign_mail_test", "outbox_delivery"}
+            {
+                "setup_mail_test",
+                "campaign_mail_test",
+                "outbox_delivery",
+                "family_address_retry",
+            }
             if installed
             else {"setup_mail_test"}
         )

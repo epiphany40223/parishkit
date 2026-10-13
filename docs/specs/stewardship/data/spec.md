@@ -1319,6 +1319,37 @@ only the dispatch worker may decrypt them. Terminal handling scrubs the sealed
 values. Provider acceptance means sent; bounce processing is outside the first
 release.
 
+`AddressRetry` (`stewardship_outbox_address_retry`, frozen migration 0077,
+[#806](https://github.com/epiphany40223/parishkit/issues/806)) is a delivered
+Production invitation's or reminder's follow-up to the addresses one accepted
+attempt refused only for now (see
+[background processing](../background-processing/spec.md#addresses-refused-for-now)).
+It references the message, that attempt's event (unique, so at most one
+follow-up per attempt) and rendering, and its own `family_address_retry` task.
+It stores positions in that rendering's routed envelope, never addresses:
+`positions` (fixed: the attempt's refused-for-now positions), `remaining`
+(still to send) and `refused` (refused permanently), with the latest
+follow-up outcome as a status and positions. Its state is `waiting`,
+`submitting`, `finished`, `unknown`, `failed` or `cancelled`; the last four
+are terminal. Like the message, it keeps a copy of the message's sealed
+code-and-link reference (taken before the acceptance scrubbed the message's)
+until it ends, and the credential generation and link epoch it was sealed
+for. Only `stewardship_address_retry_open_v1`, a `SECURITY DEFINER` function
+mail dispatch calls under its live delivery claim, inserts a row and its task
+(no login may insert that task type). The guard
+`stewardship_address_retry_guard_v1` admits a change only from mail dispatch
+under the work-order lock and a live claim of the row's own task (or the
+recovery of an abandoned task after its provider deadline, which records
+`unknown`), keeps `remaining` shrinking and `refused` growing inside
+`positions`, checks each outcome against its move, and never deletes a row
+or changes an ended one. It admits "submitting" only in the scope the
+message itself would need to be sent, never for a row created at or before
+the runtime's `restore_activated_at` (a restore keeps credentials, so a
+restored follow-up may already have been sent), and never once a later
+invitation or reminder to the Family has been accepted. Mail dispatch reads the Family's link token for a
+waiting follow-up only through `stewardship_address_retry_token_v1`, bound to
+the same claim.
+
 The OutboxMessage pause hold records a pause independently of schedule
 membership, including directly created submission receipts. Held messages keep
 their ordinary pending/retry state; the hold is a separate dispatch-admission
@@ -1535,6 +1566,16 @@ leaves it, and every address it returns is one the recipients read already
 returns to the same caller. The page uses the outcomes only when their
 addresses are exactly the routed list it read, since the two reads are
 separate statements.
+
+When an address was refused for now, the page also reads what that attempt's
+follow-up did (#806, frozen migration 0077):
+`stewardship_delivery_address_retries_v1(message, actor)`, with the same
+fixed search path, caller checks, grants and audit, returns for the same
+attempt one row per followed-up position: the position and `delivered`,
+`refused_permanently`, `retrying` (still being tried), `retry_unknown` (a try
+whose outcome is unknown) or `refused_for_now` (the follow-up ended without
+reaching it). It returns no address and no rows when the attempt opened no
+follow-up; the page replaces those positions' outcomes with these.
 
 ### Campaign read guards
 

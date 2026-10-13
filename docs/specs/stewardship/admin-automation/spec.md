@@ -1636,10 +1636,14 @@ signatures:
   their transaction. `content list` needed none (the catalog's row builder
   was already request-free); `content history` moved the history page's
   read into `content_history.retained_content`, which the page now calls.
+  `artwork show` moved Campaign images' current-image query into
+  `artwork_views.current_images`, which the page now calls.
   `parish show`, `ministries list` and `campaign shares` needed none: the
   pages' profile, catalog and campaign-target reads were already
   request-free; `branding show` moved the logo page's current-logo query
   into `branding_slots.current_assets`, which the page now calls.
+  `parish preview` moved the parish page's review (after form validation)
+  into `parish_views.review_change`, which the page's Review now calls.
 - **PR 11:** user, event and follow-up actions from their views (the users
   model of #952 replaces the rule actions; #922 retired the assignment and
   Chairperson actions).
@@ -1819,9 +1823,9 @@ none.
 | `campaign_settings`, `campaign_create`, `campaign_clone` | `campaign show`, `campaign preview`, `campaign confirm`, `campaign clone` (PR 10); until #145, creating or copying a campaign is refused, except the first campaign through [Create the campaign](../admin-portal/spec.md#create-the-campaign) (#142) ([navigation rule 10](../admin-portal/spec.md#navigation-rules)): commands that go through `confirm` and `_target`, or call `refuse_campaign_creation`, will get the same refusal as the pages; `privileged_actions.configuration_request` has no such check |
 | `campaign_ministries`, `share_settings`, `reminder_workgroup` | `campaign shares` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), the Share options read; `campaign ministries`, `campaign no-reminders-workgroup` and Share option changes (PR 10) |
 | `content_catalog`, `content_edit`, `content_revision`, `content_delete`, `content_history`, `content_history_revision`, `content_plain_text` | `content list`, `content history` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); `content show`, `content preview`, `content confirm` (PR 10) |
-| `parish_settings`, `ministries` | `parish show`, `ministries list` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); their changes (PR 10) |
+| `parish_settings`, `ministries` | `parish show`, `parish preview`, `parish confirm`, `ministries list` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the Ministries changes (PR 10) |
 | `hosted_files`, `hosted_file_delete`, `hosted_file_rename` | `files list`, `files delete`, `files rename` ([#463](https://github.com/epiphany40223/parishkit/issues/463)) |
-| `artwork_settings` (its upload and removal reviews, #750) | `artwork show`, `artwork remove` (PR 10) |
+| `artwork_settings` (its upload and removal reviews, #750) | `artwork show` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); `artwork remove` (PR 10) |
 | `branding_settings`: **Apply changes** on its in-place logo review (#750) | `branding show` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); `branding confirm --expected-version …`, a configuration request for logos already uploaded (PR 10) |
 | `hosted_file_upload`, `artwork_upload`, `branding_settings` uploads | Pending: file uploads; a later PR may accept `--file` |
 | `branding_asset` | Permanent: image previews and bytes for the browser |
@@ -1971,6 +1975,22 @@ configuration refusal is `unavailable`. The
 [operator guide](../../../guides/stewardship-admin-automation.md#pages-and-emails)
 lists the fields.
 
+`artwork show` is the read of Campaign images, through the page's own
+pieces: the current-campaign check (`artwork_views._campaign`), the
+current images (`artwork_views.current_images`) and the upload
+availability check (`artwork_views.unavailable`). It
+is Administrators only (`CONFIGURE`), admitted passively so any session
+scope reads, records no event, and prints the applied configuration's
+`version`. It prints the current `campaign_id` and every slot in the
+page's order, each with its label, the page's reason it cannot take an
+upload (or null) and its current image's stored facts (or null; a slot
+whose asset row is missing is null, as the page draws it empty). No
+current campaign is `not_available`; an archived current campaign still
+reads, on the page and the command line alike. The images are the
+campaign's own artwork, never a Family's. The
+[operator guide](../../../guides/stewardship-admin-automation.md#campaign-images)
+lists the fields.
+
 `parish show`, `ministries list`, `branding show` and `campaign shares
 [--campaign ID]` are the reads of Parish settings, Ministries, Parish
 logos and Share options, through the pages' own pieces: the profile the
@@ -1993,6 +2013,29 @@ a locked or live campaign too, with `editable` false. The values are the
 parish's and the campaign's own, never a Family's. The
 [operator guide](../../../guides/stewardship-admin-automation.md#parish-ministry-logo-and-share-option-settings)
 lists the fields.
+
+`parish preview --expected-version … --changes …` and
+`parish confirm --token …` change the parish profile as `schedule
+preview` and `schedule confirm` change schedules, through the page's own
+form (`parish_views.ParishForm`), review (`parish_views.review_change`)
+and signed preview, so a token from either channel confirms on the other.
+The change document has the shape of `parish show`'s `parish` member,
+`{"parish": {...}}`, with any non-empty subset of its fields; a field it
+leaves out keeps its applied value, and a null `online_giving_url` removes
+the giving link; any other null, or a blank `date_format` (which the
+page's form reads as the default style), is `invalid` at that field. The
+preview prints each changed field's stored values
+`before` and `after`, the page's review `notes` and `preview.token`; it
+records nothing, as the page's Review records nothing. The page's field
+errors, no change, and a document the configuration refuses are `invalid`
+with `error.fields` (`parish.<field>`, or `parish` for the form as a
+whole); a version other than the applied one is `stale_version`.
+`parish confirm` records the configuration request as the page's Apply
+does, with `admin_cmd_parish_confirm` in the request's own transaction; a
+repeat returns the original request. Both need a full-scope session, as
+the page's posts record activity; neither is fresh-gated nor prompts, as
+the page asks for no recent sign-in. The command shapes are defaults,
+pending Administrator confirmation.
 
 ### Production transition and withdrawal
 
@@ -3051,7 +3094,7 @@ exactly the commands that exist.
 - **PR 10, other configuration:** campaign, content (`content list` and
   `content history` first), Ministries, parish, logos and Share options
   (`parish show`, `ministries list`, `branding show` and `campaign shares`
-  first), hosted files (`files list`,
+  first, then `parish preview` and `parish confirm`), hosted files (`files list`,
   `files delete`, `files rename`), artwork, branding confirmation, integration settings with the
   backup folder probe, and secret replacement: integration key replacement,
   finish switching and the backup key change, with the wrapper's secret

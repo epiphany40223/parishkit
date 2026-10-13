@@ -144,11 +144,8 @@ def test_each_address_shows_what_the_latest_attempt_recorded(response_service, g
         '<p id="email-recipients">To: first@example.org (delivered), '
         "second@example.org (refused for now)</p>"
     ) in html
-    assert (
-        '<p id="email-reached">Delivered to 1 of 2 addresses. An address refused'
-        " for now is not sent this email again.</p>"
-    ) in html
-    # Refused for good: the same count, without the refused-for-now note.
+    assert ('<p id="email-reached">Delivered to 1 of 2 addresses.</p>') in html
+    # Refused for good: the same count.
     html = page(browser, attempted(harness, permanent=(0,)))
     assert (
         "first@example.org (refused permanently), second@example.org (delivered)"

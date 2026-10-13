@@ -892,6 +892,25 @@ def _execute(
     # fail and leave the message to recovery as delivery_unknown (#365).
     drop_unusable()
     status = _settle(execution, message, result)
+    observe_outcome(circuit, result)
+    if status.state.value == "retry_wait":
+        execution.transition(
+            "retryable_failure",
+            retry_seconds=family_retry_seconds(message.pk, attempt, result),
+        )
+    else:
+        execution.transition(
+            "complete" if status.state.value == "delivered" else "permanent_failure"
+        )
+
+
+def observe_outcome(circuit, result):
+    """Let the mail circuit see one provider outcome, and say when it pauses.
+
+    Shared by Family messages and their address follow-ups (#806): an
+    outage pauses sending, a configuration refusal stops it, and a
+    mailbox-wide sending limit holds every Family send.
+    """
     if circuit.observe(result.health):
         if circuit.stopped:
             LOG.critical(
@@ -916,15 +935,6 @@ def _execute(
             "Google Workspace refused mail at its %s sending limit; sending "
             "pauses and resumes automatically.",
             result.limit,
-        )
-    if status.state.value == "retry_wait":
-        execution.transition(
-            "retryable_failure",
-            retry_seconds=family_retry_seconds(message.pk, attempt, result),
-        )
-    else:
-        execution.transition(
-            "complete" if status.state.value == "delivered" else "permanent_failure"
         )
 
 

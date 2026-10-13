@@ -12,10 +12,11 @@ from parishkit.stewardship.jobs import delivery_reads
 ADDRESSES = ["first@example.org", "second@example.org"]
 
 
-def recipients(monkeypatch, rows, outcomes, state="delivered"):
-    """``email_recipients`` over fixed recipient and outcome rows (None =
-    refused), for an email now in ``state``."""
-    answers = iter([rows, outcomes])
+def recipients(monkeypatch, rows, outcomes, state="delivered", follow_ups=()):
+    """``email_recipients`` over fixed recipient, outcome and follow-up rows
+    (None = refused), for an email now in ``state``. The follow-up read
+    (#806 slice 2) is made only when an address was refused for now."""
+    answers = iter([rows, outcomes, list(follow_ups)])
     monkeypatch.setattr(delivery_reads, "_definer_rows", lambda *args: next(answers))
     return delivery_reads.email_recipients("message", "actor", state)
 
@@ -137,3 +138,60 @@ def test_a_resolved_uncertain_email_shows_no_uncertain_label(monkeypatch):
         (ADDRESSES[1], "refused for now"),
     ]
     assert result["reached"] is None
+
+
+@pytest.mark.parametrize(
+    ("follow_ups", "label", "reached", "retrying", "given_up"),
+    [
+        # Still being tried: the page says so instead of "not sent again".
+        ([(1, "retrying")], "refused for now, trying again", (1, 2), True, False),
+        # The follow-up delivered it: every address is delivered.
+        ([(1, "delivered")], "delivered", None, False, False),
+        ([(1, "refused_permanently")], "refused permanently", (1, 2), False, False),
+        # An uncertain follow-up says so whatever the email's own state.
+        ([(1, "retry_unknown")], "not sure it arrived", (1, 2), False, False),
+        # Given up (or never followed up): not sent this email again.
+        ([(1, "refused_for_now")], "refused for now", (1, 2), False, True),
+        ([], "refused for now", (1, 2), False, True),
+    ],
+)
+def test_a_follow_up_replaces_refused_for_now(
+    monkeypatch, follow_ups, label, reached, retrying, given_up
+):
+    """What the follow-up to an address refused for now did (#806 slice 2)
+    replaces the attempt's label, and the count line says whether such an
+    address is still being tried."""
+    result = recipients(
+        monkeypatch,
+        listed(ADDRESSES, ADDRESSES),
+        [(ADDRESSES[0], "delivered"), (ADDRESSES[1], "refused_for_now")],
+        follow_ups=follow_ups,
+    )
+    assert labels(result["intended_rows"]) == [
+        (ADDRESSES[0], "delivered"),
+        (ADDRESSES[1], label),
+    ]
+    assert result["reached"] == reached
+    assert result["retrying"] is retrying
+    assert result["refused_for_now"] is given_up
+
+
+def test_a_refused_follow_up_read_refuses_the_whole_answer(monkeypatch):
+    """When the follow-up read is refused, so is the recipients answer."""
+    answers = iter(
+        [
+            listed(ADDRESSES, ADDRESSES),
+            [(ADDRESSES[0], "delivered"), (ADDRESSES[1], "refused_for_now")],
+            None,
+        ]
+    )
+    monkeypatch.setattr(delivery_reads, "_definer_rows", lambda *args: next(answers))
+    assert delivery_reads.email_recipients("message", "actor", "delivered") is None
+
+
+def test_follow_up_positions_outside_the_envelope_are_ignored():
+    """Only positions of the routed envelope are replaced."""
+    outcomes = [(ADDRESSES[0], "refused_for_now")]
+    assert delivery_reads.followed_up(
+        outcomes, [(0, "retrying"), (5, "delivered")]
+    ) == [(ADDRESSES[0], "retrying")]

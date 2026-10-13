@@ -154,7 +154,7 @@ LEDGER = {
     "content_history": command("content history"),
     "content_history_revision": command("content history"),
     "content_plain_text": pending("PR 10", "content show"),
-    "parish_settings": command("parish show", owed="PR 10"),
+    "parish_settings": command("parish show", "parish preview", "parish confirm"),
     "ministries": command("ministries list", owed="PR 10"),
     "hosted_files": command("files list"),
     "hosted_file_delete": command("files delete"),
@@ -166,7 +166,7 @@ LEDGER = {
     "past_campaign_import": command("history confirm"),
     "past_campaign_removal": command("history remove"),
     # Reviews and removals happen on the page itself (#750).
-    "artwork_settings": pending("PR 10", "artwork show", "artwork remove"),
+    "artwork_settings": command("artwork show", owed="PR 10"),
     "branding_settings": command("branding show", owed="PR 10"),
     "hosted_file_upload": permanent(UPLOAD),
     "artwork_upload": permanent(UPLOAD),

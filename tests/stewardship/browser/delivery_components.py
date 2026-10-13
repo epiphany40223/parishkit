@@ -51,6 +51,9 @@ def components(now):
         family_name="Castellanos, Maximiliana and Bartholomew",
         message_id=message["id"],
     )
+    # An email's own page has an About control beside its heading, which
+    # must fit on one line, so its Family's name is shorter than the list's.
+    page_message = message | dict(family_name="Castellanos, Maximiliana")
     task = dict(id=uuid4(), state="failed")
     yield (
         "/deliveries",
@@ -215,7 +218,7 @@ def components(now):
         ),
     )
     delivery = dict(
-        delivery=message,
+        delivery=page_message,
         task=task,
         # The refused address its delivery recorded, linking its own page
         # (#1015).
@@ -269,7 +272,7 @@ def components(now):
         "delivery",
         delivery
         | dict(
-            delivery=message | dict(state="delivered"),
+            delivery=page_message | dict(state="delivered"),
             refused=[],
             decisions=False,
             commands=[dict(id=uuid4(), action="note", label="Save evidence note")],
@@ -284,7 +287,7 @@ def components(now):
         "delivery",
         delivery
         | dict(
-            delivery=message | dict(state="delivered", mode="production"),
+            delivery=page_message | dict(state="delivered", mode="production"),
             refused=[],
             decisions=False,
             commands=[dict(id=uuid4(), action="note", label="Save evidence note")],

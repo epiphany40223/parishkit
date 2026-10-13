@@ -430,6 +430,31 @@ def test_all_concrete_mutable_records_have_enabled_guard(db):
                 assert "NEW.updated_at:=statement_timestamp()" in compact
                 assert "IFTG_OP='DELETE'THENRAISEEXCEPTION" in compact
                 continue
+            if table == "stewardship_outbox_address_retry":
+                # An address follow-up (#806): one INSERT/UPDATE/DELETE guard
+                # compares every column outside a "mutable" name list.
+                cursor.execute(
+                    "SELECT p.proname,t.tgtype,pg_get_functiondef(p.oid) "
+                    "FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid "
+                    "WHERE t.tgrelid=%s::regclass "
+                    "AND t.tgname='stewardship_address_retry_guard' "
+                    "AND t.tgenabled='O' AND NOT t.tgisinternal",
+                    [table],
+                )
+                row = cursor.fetchone()
+                assert row and row[:2] == ("stewardship_address_retry_guard_v1", 31)
+                compact = "".join(row[2].split())
+                assert "to_jsonb(NEW)-mutable" in compact
+                assert "to_jsonb(OLD)-mutable" in compact
+                assert "NEW.versionISDISTINCTFROMOLD.version+1" in compact
+                assert "IFTG_OP='DELETE'THENRAISEEXCEPTION" in compact
+                # No identity column may be named among the mutable ones.
+                names = re.search(r"mutabletext\[\]:=ARRAY\[([^\]]*)\]", compact)
+                assert names is not None
+                mutable = {name.strip("'") for name in names[1].split(",")}
+                for name in model.immutable_fields + model.write_once_fields:
+                    assert model._meta.get_field(name).column not in mutable
+                continue
             if table in response_contracts:
                 trigger, function = response_contracts[table]
                 cursor.execute(

@@ -554,6 +554,23 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
             ),
             pulse=heartbeat,
         )
+        # A delivered email's follow-up to addresses refused for now (#806)
+        # shares the Family handler's circuit: its pause, stop and limits.
+        from .jobs import family_mail_delivery_tasks
+        from .jobs.address_retry import TASK_TYPE as ADDRESS_RETRY
+        from .jobs.address_retry import retry_handler
+
+        handlers[ADDRESS_RETRY] = replace(
+            retry_handler(
+                store,
+                scheduler=role is ServiceRole.SCHEDULER,
+                credential_path=configuration.secrets.get("google_workspace"),
+                private=rings.get("token_private"),
+                public_origin=configuration.public_origin,
+                circuit=family_mail_delivery_tasks.FAMILY_CIRCUIT,
+            ),
+            pulse=heartbeat,
+        )
     broker = build_broker(
         endpoint=configuration.valkey,
         password=password,

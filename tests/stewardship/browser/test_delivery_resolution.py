@@ -131,15 +131,11 @@ def test_email_page_names_the_email_and_reads_in_the_requested_order(
     browser title leaves the Family's name out."""
     page.goto(component_origin + "/delivery")
     heading = page.get_by_role("heading", level=1)
-    assert heading.inner_text() == (
-        "Initial invitation to Castellanos, Maximiliana and Bartholomew"
-    )
+    assert heading.inner_text() == ("Initial invitation to Castellanos, Maximiliana")
     assert "Castellanos" not in page.title()
     main = page.locator("main")
     text = main.inner_text()
-    assert "Family: Castellanos, Maximiliana and Bartholomew · Family DUID: 12345" in (
-        text
-    )
+    assert "Family: Castellanos, Maximiliana · Family DUID: 12345" in (text)
     refused = main.get_by_role("link", name="head@example.org")
     assert refused.get_attribute("href").startswith("/admin/mail/refusals/")
     order = [
@@ -208,10 +204,9 @@ def test_email_page_shows_what_each_address_got(page, component_origin):
     page.goto(component_origin + "/delivery-partial")
     text = page.locator("main").inner_text()
     line = "To: head@example.org (delivered), spouse@example.org (refused for now)"
-    reached = (
-        "Delivered to 1 of 2 addresses. An address refused for now is not sent"
-        " this email again."
-    )
+    # The longer explanation of an address refused for now is in the page's
+    # About panel, so only the count shows here.
+    reached = "Delivered to 1 of 2 addresses."
     assert line in text and reached in text
     assert text.index(line) < text.index(reached) < text.index("Attempt history")
     assert "Testing mode sends it to" not in text
