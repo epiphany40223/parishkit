@@ -12,10 +12,12 @@ files"):
   amount (a dollar-formatted number in XLSX), the day 1 dates are dates,
   and a figure the page shows as "—" is a blank cell.
 - The PDF is the summary the Administrator sends leadership, in the shared
-  page frame (``pdf_design``): page 1 holds the headline tiles and the
-  day-by-day charts on one landscape page, and the Every number table
-  follows (one more page for any ordinary number of years), every cell in
-  the page's own words ("—" for an unknown figure).
+  page frame (``pdf_design``) on landscape pages: page 1 holds the
+  headline tiles, then the day-by-day charts, each as wide as the page
+  body as on the page, stacked and flowing onto the next page (two to a
+  page) when they no longer fit; the Every number table follows (one more
+  page for any ordinary number of years), every cell in the page's own
+  words ("—" for an unknown figure).
 
 Report details that only a file needs (report, parish, request time, time
 zone, notes on the withheld figures) are the report information; none is
@@ -193,6 +195,12 @@ TILE_LABEL = 7.5
 TILE_LINE = 7.0
 TILE_PITCH = 8.5
 CHART_GAP = 18.0
+# From the top of a page's chart area to its first chart's box: the legend
+# row, then room for the chart's title (drawn just above its box).
+LEGEND_ROW = 24.0
+# Full-width charts on a page of their own; the summary page holds as many
+# as fit below its tiles at the same height.
+CHARTS_PER_PAGE = 2
 NOTE_SIZE = 7.0
 NOTE_PITCH = 9.0
 # Each line role's drawing, as on the page (comparison_charts.STYLES): the
@@ -234,13 +242,20 @@ def tiles_height(tiles, width):
     return tallest * TILE_PITCH + 2 * TILE_PAD + 4
 
 
+def tile_width(tiles):
+    """Each tile's width: the row shares the body width, with gaps."""
+    from .pdf_design import BODY_WIDTH
+
+    return (BODY_WIDTH - TILE_GAP * (len(tiles) - 1)) / max(len(tiles), 1)
+
+
 def draw_tiles(canvas, tiles, top):
     """The headline tiles in one row: label, large figure, comparison lines."""
-    from .pdf_design import ACCENT_STRONG, BODY_WIDTH, BORDER, INK, MARGIN, MUTED
+    from .pdf_design import ACCENT_STRONG, BORDER, INK, MARGIN, MUTED
 
     if not tiles:
         return 0.0
-    width = (BODY_WIDTH - TILE_GAP * (len(tiles) - 1)) / len(tiles)
+    width = tile_width(tiles)
     inner = width - 2 * TILE_PAD
     height = tiles_height(tiles, inner)
     for index, tile in enumerate(tiles):
@@ -341,7 +356,9 @@ def draw_chart(canvas, chart, day, box):
         )
     axes.set_xlim(1, max(chart["last_day"], 2))
     axes.set_ylim(bottom=0)
-    axes.xaxis.set_major_locator(MaxNLocator(integer=True, nbins=6))
+    # More day ticks than a third-width chart had room for: the full-width
+    # plot spreads them out, as the page's chart does.
+    axes.xaxis.set_major_locator(MaxNLocator(integer=True, nbins=12))
     axes.yaxis.set_major_locator(MaxNLocator(nbins=5))
     axes.yaxis.set_major_formatter(axis_formatter(chart["kind"]))
     axes.tick_params(labelsize=6.5, colors=MUTED, length=2)
@@ -406,26 +423,66 @@ def notes_lines(document):
     ]
 
 
-def draw_summary(canvas, document, frame):
-    """Page 1: the tiles, then the day-by-day charts side by side, then notes."""
-    from .pdf_design import BODY_WIDTH, MARGIN, MUTED
+def chart_height(frame):
+    """Each chart's height: ``CHARTS_PER_PAGE`` charts fill a page's body."""
+    return (
+        frame.body_height - LEGEND_ROW - CHART_GAP * (CHARTS_PER_PAGE - 1) - 4
+    ) / CHARTS_PER_PAGE
 
-    top = frame.body_top + 4
-    top += draw_tiles(canvas, document.tiles, top) + 14
-    notes = notes_lines(document)
-    bottom = frame.body_bottom - NOTE_PITCH * len(notes) - 4
-    if document.charts:
-        draw_legend(canvas, document.charts, top + 6)
-        top += 16
-        count = len(document.charts)
-        width = (BODY_WIDTH - CHART_GAP * (count - 1)) / count
-        for index, chart in enumerate(document.charts):
-            x = MARGIN + index * (width + CHART_GAP)
-            draw_chart(
-                canvas, chart, document.day, (x, top + 8, width, bottom - top - 12)
-            )
-    y = bottom + NOTE_PITCH
-    for line in notes:
+
+def chart_layout(document, frame):
+    """Where the tiles, notes and each full-width chart go, page by page.
+
+    Returns ``(tiles_top, notes_top, pages)``: ``pages`` has one entry per
+    page that draws charts, the summary page first, each ``(legend_top,
+    [(chart, box), ...])`` with ``box`` as ``draw_chart`` takes it. Every
+    chart is ``BODY_WIDTH`` wide and the same height; the summary page
+    takes as many as fit between its tiles and its notes (possibly none),
+    and the rest follow ``CHARTS_PER_PAGE`` to a page. A page with no chart
+    has no legend, so the summary page's entry may be empty.
+    """
+    from .pdf_design import BODY_WIDTH, MARGIN
+
+    tiles_top = frame.body_top + 4
+    tiles = tiles_height(document.tiles, tile_width(document.tiles) - 2 * TILE_PAD)
+    notes_top = frame.body_bottom - NOTE_PITCH * len(notes_lines(document)) - 4
+    height = chart_height(frame)
+    top, bottom = tiles_top + tiles + 14, notes_top
+    pages, placed = [], []
+    for chart in document.charts:
+        y = top + LEGEND_ROW + len(placed) * (height + CHART_GAP)
+        # ``chart_height`` makes ``CHARTS_PER_PAGE`` charts end exactly at
+        # the body's bottom; the tolerance keeps float rounding from
+        # pushing the last of them onto a page of its own.
+        if y + height > bottom + 0.01:
+            # Next page: the whole body, below the frame's header.
+            pages.append((top, placed))
+            top, bottom, placed = frame.body_top + 4, frame.body_bottom, []
+            y = top + LEGEND_ROW
+        placed.append((chart, (MARGIN, y, BODY_WIDTH, height)))
+    pages.append((top, placed))
+    return tiles_top, notes_top, pages
+
+
+def draw_charts(canvas, document, page):
+    """One page's chart area: the shared legend, then its stacked charts."""
+    legend_top, placed = page
+    if not placed:
+        return
+    draw_legend(canvas, document.charts, legend_top + 6)
+    for chart, box in placed:
+        draw_chart(canvas, chart, document.day, box)
+
+
+def draw_summary(canvas, document, frame, layout):
+    """Page 1: the tiles, then the charts that fit below them, then notes."""
+    from .pdf_design import MARGIN, MUTED
+
+    tiles_top, notes_top, pages = layout
+    draw_tiles(canvas, document.tiles, tiles_top)
+    draw_charts(canvas, document, pages[0])
+    y = notes_top + NOTE_PITCH
+    for line in notes_lines(document):
         canvas.text(MARGIN, y, line, NOTE_SIZE, "regular", MUTED)
         y += NOTE_PITCH
 
@@ -479,9 +536,10 @@ def fitted_table(headings, rows):
 
 
 def comparison_pdf(document, output):
-    """The summary page, then the Every number table's pages.
+    """The summary page, any further chart pages, then the table's pages.
 
-    Paginates the table first so every page states its position.
+    Lays out the charts and paginates the table first so every page states
+    its position.
     """
     from . import pdf_design
 
@@ -493,16 +551,21 @@ def comparison_pdf(document, output):
     frame = pdf_design.PdfFrame.for_document(document, details=details)
     rows = [[page_text(value) for value in row] for row in document.rows]
     table = fitted_table(document.headings, rows)
-    pages = [("summary", None)] + [
-        ("table", page) for page in pdf_design.table_pages(table, rows, frame)
-    ]
+    layout = chart_layout(document, frame)
+    pages = (
+        [("summary", None)]
+        + [("charts", page) for page in layout[2][1:]]
+        + [("table", page) for page in pdf_design.table_pages(table, rows, frame)]
+    )
     draw_table = pdf_design.draw_table(table, frame)
 
     def draw(canvas, page):
         """Dispatch one page to its body."""
         kind, content = page
         if kind == "summary":
-            draw_summary(canvas, document, frame)
+            draw_summary(canvas, document, frame, layout)
+        elif kind == "charts":
+            draw_charts(canvas, document, content)
         else:
             draw_table(canvas, content)
 

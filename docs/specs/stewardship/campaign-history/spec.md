@@ -1045,9 +1045,12 @@ one with the participation graph's **Updating** notice.
 
 The page's data downloads as CSV, XLSX and PDF under the [downloaded files
 rule](../ui-conventions/spec.md#downloaded-files): the "Every number" table
-in all three, and the PDF adds the tiles and charts on one landscape page in
+in all three, and the PDF adds the tiles and charts on landscape pages in
 the shared [file design](../reports/spec.md#file-design), so the
-Administrator can send leadership a single summary. Downloads hold
+Administrator can send leadership a single summary. Each day-by-day chart
+is as wide as the page body, as on the page, under one legend row per
+page: page 1 holds the tiles and the charts that fit below them, and the
+rest follow two to a page before the table. Downloads hold
 aggregates only, apply the [small-count
 protection](#pledge-distribution), carry none of the free-text notes, and
 record
@@ -1377,9 +1380,10 @@ linked to #1018 (slice 7 completed part (b)).
    are numbers, money exact amounts, day 1 a date, a "—" a blank cell, and
    a value carried "(final)" keeps that mark as text (as an unavailable
    amount stays a word), so no cell is split. The PDF is the summary page,
-   with the headline tiles and the three day-by-day charts drawn in the
-   shared page frame, then the table in the frame's table style set at 80%
-   of body size so fifteen columns fit with no amount broken; the
+   with the headline tiles and the three day-by-day charts (full width,
+   flowing onto following pages) drawn in the shared page frame, then the
+   table in the frame's table style set at 80% of body size so fifteen
+   columns fit with no amount broken; the
    final-results and pledge-distribution charts stay on the page, as do
    the distribution tables. Outside the portal: a year with a withheld
    band shows Withheld for every average pledge, and the tiles' last-year
