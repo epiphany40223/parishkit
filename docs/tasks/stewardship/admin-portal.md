@@ -1206,3 +1206,17 @@ they are answered in place, refusals and the step-up answered inside the
 section, and the commands owed by ADM-11 PR 5,
 checked by `tests/stewardship/database/test_backup_now_postgresql.py` and
 `tests/stewardship/browser/test_system_health.py`.
+ADM-13.06 is in progress in parts. Part 6a adds the frozen forward migration
+`0078_debug_off_switch.sql` (`stewardship_jobs.0028`): the switch record and
+its guard, the one-boolean read every runtime login may run, the
+admin-recovery-only clear and the `debug_logging_switched_off` event; the
+in-process override (`parishkit.stewardship.debug_switch`) read on every new
+database connection and before each service status record, with the
+setting taken out of the process environment so helpers inherit none; and
+the offline `pk-stewardship debug-off-clear` command, checked by
+`tests/stewardship/test_debug_switch.py`,
+`tests/stewardship/database/test_debug_off_switch_postgresql.py`, the
+runtime-function tests, the users swap tests and the regenerated schema
+baseline. Part 6b (the button, its preview and audit, Allow debug logging
+again in Testing, the panel's who-and-when line, the banner's end condition
+and the runbook updates) remains.

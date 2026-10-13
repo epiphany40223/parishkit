@@ -2902,7 +2902,7 @@ as the host operator (`actor_kind` `operator`), not as a portal user:
   `backup-keygen`, `backup-open`, `backup-prove`;
 - debug logging: `debug-off-clear`, which clears the System health
   [debug-off switch](../admin-portal/spec.md#turn-off-debug-logging)
-  (ADM-13; not built yet, it lands with that switch);
+  (ADM-13), run offline from the admin-recovery profile;
 - smoke tests: `smoke`;
 - LOCAL and development only: `prepare-development`, `local-sign-in`,
   `local-seed`, `local-spike`, `local-spike-report`,

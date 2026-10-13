@@ -43,6 +43,7 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         ADDRESS_RETRY_OPEN_FUNCTION,
         ADDRESS_RETRY_TOKEN_FUNCTION,
         AUTOMATION_FRESH_FUNCTION,
+        DEBUG_OFF_FUNCTION,
         FAMILY_LOGIN_FUNCTION,
         LEADER_CHANGES_FUNCTION,
         LEADER_SCOPE_FUNCTION,
@@ -51,10 +52,12 @@ def test_only_the_config_installer_may_read_the_catalog_function():
     )
 
     # The installer and the worker also count the Ministry leader pairs
-    # an activation or a promotion gained and lost (#1034).
+    # an activation or a promotion gained and lost (#1034). Every runtime
+    # login reads whether the debug-off switch is set (0078, #530).
     assert runtime_functions(ServiceRole.CONFIG_INSTALLER) == {
         MINISTRY_CATALOG_FUNCTION,
         LEADER_CHANGES_FUNCTION,
+        DEBUG_OFF_FUNCTION,
     }
     # Web also reads the 24-hour Family mail count and when it falls below the
     # Family limit for System health (ADM-13, #530),
@@ -80,6 +83,7 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         "stewardship_campaign_archive_renewal_v1(uuid, uuid, integer)",
         "stewardship_delivery_recipient_outcomes_v1(uuid, uuid)",
         "stewardship_delivery_address_retries_v1(uuid, uuid)",
+        DEBUG_OFF_FUNCTION,
     }
     # The worker's definer routines purge ended Admin sessions (ADM-11),
     # count an export's read-guard stops (#386) and read a user's
@@ -94,6 +98,7 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         LEADER_CHANGES_FUNCTION,
         "stewardship_campaign_comparison_v1(uuid, date, numeric[], uuid)",
         "stewardship_campaign_archive_renewal_v1(uuid, uuid, integer)",
+        DEBUG_OFF_FUNCTION,
     }
     assert runtime_functions("download") == {LEADER_SCOPE_FUNCTION}
     # Mail dispatch reads one claimed message's link token (0073, #389) and
@@ -102,8 +107,9 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         "stewardship_dispatch_family_token_v1(uuid, uuid, uuid, bigint, uuid)",
         ADDRESS_RETRY_OPEN_FUNCTION,
         ADDRESS_RETRY_TOKEN_FUNCTION,
+        DEBUG_OFF_FUNCTION,
     }
-    assert runtime_functions(ServiceRole.SCHEDULER) == frozenset()
+    assert runtime_functions(ServiceRole.SCHEDULER) == {DEBUG_OFF_FUNCTION}
 
 
 def test_removal_reads_no_catalog(monkeypatch):

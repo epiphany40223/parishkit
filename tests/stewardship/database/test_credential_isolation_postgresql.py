@@ -86,6 +86,13 @@ def isolated_roles():
                         "stewardship_automation_fresh_principal_v1"
                         f'(uuid, timestamptz) TO "{role}"'
                     )
+                if role.startswith("pk_stewardship_credential_"):
+                    # As database-grants does: every installer reads whether
+                    # the debug-off switch is set (#530).
+                    cursor.execute(
+                        "GRANT EXECUTE ON FUNCTION public."
+                        f'stewardship_debug_logging_off_v1() TO "{role}"'
+                    )
                 cursor.execute(
                     "GRANT SELECT(active_configuration_id) ON "
                     f'stewardship_system_configuration TO "{role}"'

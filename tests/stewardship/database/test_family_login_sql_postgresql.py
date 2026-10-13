@@ -171,8 +171,8 @@ def test_web_admission_requires_exactly_the_login_function(family_service):  # n
     # a principal's role-derived Ministry scope (#922) and the count-only
     # record of Ministry leader pairs a promotion changed (#1034), plus the
     # campaign comparison's aggregates for the daily digest's "Compared
-    # with past campaigns" section (#1018); it never holds the Family login
-    # function.
+    # with past campaigns" section (#1018), and whether the debug-off switch
+    # is set (#530); it never holds the Family login function.
     assert runtime_functions(ServiceRole.WORKER) == {
         "stewardship_admin_session_purge_v1(uuid[])",
         "stewardship_read_guard_kills_v1(uuid)",
@@ -182,6 +182,7 @@ def test_web_admission_requires_exactly_the_login_function(family_service):  # n
         "(uuid, uuid, uuid, uuid, uuid, uuid, uuid)",
         "stewardship_campaign_comparison_v1(uuid, date, numeric[], uuid)",
         "stewardship_campaign_archive_renewal_v1(uuid, uuid, integer)",
+        "stewardship_debug_logging_off_v1()",
     }
     tables, columns = runtime_grants(ServiceRole.WEB)
     allowed = {table: set(grants) for table, grants in tables.items()}

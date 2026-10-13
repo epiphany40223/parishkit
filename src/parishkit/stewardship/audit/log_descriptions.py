@@ -428,6 +428,15 @@ DESCRIPTIONS = {
         "Production, turn it off: see the debug logging panel on System "
         "health."
     ),
+    # Process log only (#530).
+    "debug_logging_switched_off": _(
+        "The debug-off switch turned a service's debug logging off, so its "
+        "later log lines leave out free text and error details again. Lines "
+        "it wrote before stay in the logs. It stays off until the switch is "
+        "cleared. A process the service started while the switch was set "
+        "(such as mail dispatch's second consumer) has no debug logging, and "
+        "keeps none after the clear until the service is recreated."
+    ),
     # Process log only (#584); advice, never an operational incident.
     "refresh_lead_window_conflict": _(
         "A scheduled full ParishSoft refresh falls inside the two hours "

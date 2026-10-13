@@ -280,7 +280,10 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # creates the address follow-up table (in CLOSURE_TABLES) with its guard and
 # position check and three definers, and adds a task type to the two task
 # maps in place; the maps call nothing it creates, so they need no
-# ``before_*``.
+# ``before_*``. 0078 (#530) creates the debug-off switch table with its guard
+# and two definers. No login has a grant on that table, so it is not in
+# CLOSURE_TABLES; ``UNGRANTED_CLOSURE_TABLES`` drops it with the others. Its
+# widened operational event check is replaced again by a rerun, harmlessly.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -396,7 +399,21 @@ CLOSURE_CREATED = {
         ),
         ("stewardship_jobs", "0027_address_retry"),
     ),
+    **dict.fromkeys(
+        (
+            "public.stewardship_debug_off_switch_guard_v1()",
+            "public.stewardship_debug_logging_off_v1()",
+            "public.stewardship_debug_off_clear_v1()",
+        ),
+        ("stewardship_jobs", "0028_debug_off_switch"),
+    ),
 }
+
+
+# Tables a closure migration creates that no login is granted, so they are
+# not in runtime_grants.CLOSURE_TABLES; ``swap_pending`` drops them too, so
+# their frozen file can make them again.
+UNGRANTED_CLOSURE_TABLES = ("stewardship_debug_off_switch",)
 
 
 # Columns a later closure migration's frozen file adds to an existing table,
@@ -617,7 +634,7 @@ def swap_pending():
         assert USERS_SWAP in {(app, name) for app, name, _ in removed}
         for definition in old_definitions().values():
             cursor.execute(definition)
-        for table in CLOSURE_TABLES:
+        for table in (*CLOSURE_TABLES, *UNGRANTED_CLOSURE_TABLES):
             cursor.execute(f"DROP TABLE public.{table} CASCADE")
         for function in CLOSURE_CREATED:
             cursor.execute(f"DROP FUNCTION {function} CASCADE")
@@ -1134,7 +1151,7 @@ def test_recovery_works_before_during_and_after_the_conversion(tmp_path, monkeyp
             assert forge(portals[email].pk).principal_id == portals[email].pk, email
 
     with swap_pending():
-        with task_login(ServiceRole.ADMIN_RECOVERY):
+        with base_recovery_login(monkeypatch):
             # Before the conversion, with only the swap pending.
             preview = operator_commands.preview_recovery_command(
                 configuration,
@@ -1150,7 +1167,7 @@ def test_recovery_works_before_during_and_after_the_conversion(tmp_path, monkeyp
             "early@example.org", signed_in=False
         )
         assert forge(early.pk).principal_id == early.pk
-        with task_login(ServiceRole.ADMIN_RECOVERY):
+        with base_recovery_login(monkeypatch):
             result = operator_commands.upgrade_users_command(
                 configuration,
                 deployment_id=deployment,
@@ -1218,6 +1235,33 @@ def backup_command(monkeypatch, run_backup):
         startup_interlock, "StartupLease", lambda path, offline: nullcontext()
     )
     monkeypatch.setattr(backup, "run_backup", run_backup)
+
+
+@contextmanager
+def base_recovery_login(monkeypatch):
+    """The admin-recovery login as database-grants leaves it on the base.
+
+    A definer a closure migration creates (runtime_grants.CLOSURE_FUNCTIONS,
+    such as #530's debug-off switch read and clear) is granted only once it
+    exists (``pending_functions``), so the login's fixture grants skip each
+    one the database lacks; otherwise this is ``task_login``.
+    """
+    from . import test_background_grants_postgresql as background
+
+    real = background.runtime_functions
+
+    def base_functions(service, **kwargs):
+        """The login's definers without the closure ones not created yet."""
+        return frozenset(
+            function
+            for function in real(service, **kwargs)
+            if scalar("SELECT to_regprocedure(%s)", [f"public.{function}"])
+        )
+
+    with monkeypatch.context() as patch:
+        patch.setattr(background, "runtime_functions", base_functions)
+        with task_login(ServiceRole.ADMIN_RECOVERY):
+            yield
 
 
 @contextmanager
@@ -1396,7 +1440,7 @@ def test_a_swap_pending_backup_restores_into_the_same_state(
             assert all(reads_domain_rules(name) for name in REPLACED)
             # Admin-access recovery works on the restored database.
             configuration = offline_commands(monkeypatch, store)
-            with task_login(ServiceRole.ADMIN_RECOVERY):
+            with base_recovery_login(monkeypatch):
                 assert recover(configuration, deployment, "restored@example.org")[
                     "recovery_applied"
                 ]

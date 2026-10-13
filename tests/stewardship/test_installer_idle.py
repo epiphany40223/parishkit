@@ -33,7 +33,9 @@ class Admission:
 
     def __init__(self, monkeypatch):
         self.now, self.role = 1000.0, 41
-        self.database = SimpleNamespace()
+        # A real connection has a vendor; other connection_created hooks
+        # (the debug-off switch, #530) read it, and act only on PostgreSQL.
+        self.database = SimpleNamespace(vendor="sqlite")
         self.grants = Mock()
         monkeypatch.setattr(credential_database, "monotonic", lambda: self.now)
         monkeypatch.setattr(credential_database, "_identity", lambda _: self.role)

@@ -325,6 +325,9 @@ SELF_DESCRIBING = {
     # The process started with PARISHKIT_DEBUG_LOGGING=1 (#546); the switch
     # has no other value to report, and free text is what it warns about.
     Event.DEBUG_LOGGING_ENABLED,
+    # System health's debug-off switch turned that off again (#530); the
+    # event is the whole fact, and the switch row says who set it and when.
+    Event.DEBUG_LOGGING_SWITCHED_OFF,
 }
 
 

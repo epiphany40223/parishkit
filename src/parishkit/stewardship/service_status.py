@@ -4,7 +4,8 @@ Every online application process (each web worker, the worker and its source
 process, the scheduler, each mail consumer, the configuration installer and
 each credential installer) writes one ``stewardship_service_status`` row when
 it starts and refreshes it about every 60 seconds: its version, whether debug
-logging is in effect and, for a mail consumer, its Family mail sender's state.
+logging is in effect (after reading the debug-off switch, ``debug_switch``)
+and, for a mail consumer, its Family mail sender's state.
 The System health page reads the rows; a row more than three minutes old
 shows its process as not running.
 
@@ -24,6 +25,7 @@ from uuid import uuid4
 
 from parishkit import __version__
 
+from . import debug_switch
 from .observability import Event, debug_logging_enabled, emit_failure
 
 # How often a process refreshes its record.
@@ -96,6 +98,9 @@ class ServiceStatusReporter:
             if busy:
                 return False
             self.due = monotonic() + REPORT_SECONDS
+            # Read the debug-off switch first (outside any transaction; it
+            # never raises), so the record reports the effective state.
+            debug_switch.refresh(connection)
             started = monotonic()
             try:
                 self._write(connection)
