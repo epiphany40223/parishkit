@@ -1998,8 +1998,9 @@ response reference UUIDs, record ids and similar) are left out of every
 format, CSV included (Administrator decision, 2026-10-10,
 [#956](https://github.com/epiphany40223/parishkit/issues/956)). Every Admin
 PDF and XLSX shares one design in the portal's design tokens; a PDF lays the
-columns out as one table, record cards or address cards in a shared page
-frame. Identifiers a reader uses, such as Family and Member DUIDs and
+columns out as one table, record cards, address cards or an infographic
+sheet (the [Family timeline](../reports/spec.md#file-design)) in a shared
+page frame. Identifiers a reader uses, such as Family and Member DUIDs and
 envelope numbers, are not internal references and stay. **Why.** Staff print
 and share these files; internal references mean nothing to a reader, and a
 column that is in one format and not another makes the files disagree about

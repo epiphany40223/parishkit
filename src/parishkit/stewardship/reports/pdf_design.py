@@ -7,7 +7,8 @@ capture time in the header, and the privacy line, any Testing-mode note and
 "Page N of M" in the footer. Inside the frame a report draws one of three
 bodies: a table (``table_pages``/``draw_table``), field/value record cards
 (``record_pages``/``draw_record_page``, via ``write_records``) or a grid of
-address cards (``card_pages``/``draw_cards``).
+address cards (``card_pages``/``draw_cards``). The Family timeline draws an
+infographic body of its own on the same frame (``timeline_pdf``).
 
 Text is set in the DejaVu fonts matplotlib bundles, so no font is installed
 or downloaded. Wrapping measures each glyph's advance in those fonts and is
@@ -60,6 +61,8 @@ FONT_FILES = {
     "regular": "DejaVuSans.ttf",
     "bold": "DejaVuSans-Bold.ttf",
     "serif": "DejaVuSerif-Bold.ttf",
+    # A Family code, set apart from the words around it (timeline_pdf).
+    "mono": "DejaVuSansMono-Bold.ttf",
 }
 
 
@@ -84,7 +87,7 @@ def _font(face):
 
 
 @cache
-def _charmap(face):
+def charmap(face):
     """The code points one face can draw."""
     return frozenset(_font(face).get_charmap())
 
@@ -96,7 +99,7 @@ def pdf_glyphs():
     Values are drawn in the regular and the bold face (a bold label, a bold
     addressee), so a character must be in both to be safe everywhere.
     """
-    return _charmap("regular") & _charmap("bold")
+    return charmap("regular") & charmap("bold")
 
 
 _ADVANCES = {face: {} for face in FONT_FILES}
@@ -218,7 +221,7 @@ class PdfFrame:
 
     def _title_face(self):
         """The serif title face when it can draw every character, else sans bold."""
-        serif = _charmap("serif")
+        serif = charmap("serif")
         return "serif" if all(ord(c) in serif for c in safe(self.title)) else "bold"
 
     @cached_property
@@ -399,6 +402,28 @@ class Canvas:
                 facecolor=color,
                 edgecolor=edge or "none",
                 linewidth=0.75 if edge else 0,
+            )
+        )
+
+    def marker(self, x, y, shape, color, size, *, fill=None):
+        """Draw one matplotlib marker (``"o"``, ``"s"``, ``"^"`` ...) centred at (x, y).
+
+        ``size`` is the marker's width in points; ``color`` is its edge and
+        ``fill`` its face (``color`` when None, so the marker is solid).
+        """
+        from matplotlib.lines import Line2D
+
+        self.figure.add_artist(
+            Line2D(
+                (x / PAGE_WIDTH,),
+                (1 - y / PAGE_HEIGHT,),
+                transform=self.figure.transFigure,
+                marker=shape,
+                markersize=size,
+                markerfacecolor=fill or color,
+                markeredgecolor=color,
+                markeredgewidth=1.0,
+                linestyle="none",
             )
         )
 
@@ -1164,7 +1189,7 @@ def _draw_field(canvas, kind, label, text, label_x, value_x, end, baseline):
         canvas.text(value_x, baseline, text, BODY_SIZE, "regular", INK)
 
 
-def _fit(text, size, width, face):
+def fit_size(text, size, width, face):
     """The type size (at most ``size``) at which one line of text fits ``width``."""
     measured = text_width(text, size, face)
     return size if measured <= width else size * width / measured
@@ -1183,7 +1208,7 @@ def _draw_stats(canvas, stats, top):
             x + 8,
             top + 24,
             figure,
-            _fit(figure, STAT_SIZE, width - 16, "bold"),
+            fit_size(figure, STAT_SIZE, width - 16, "bold"),
             "bold",
             ACCENT_STRONG,
         )
@@ -1191,7 +1216,7 @@ def _draw_stats(canvas, stats, top):
             x + 8,
             top + 35,
             name,
-            _fit(name, LABEL_SIZE, width - 16, "regular"),
+            fit_size(name, LABEL_SIZE, width - 16, "regular"),
             "regular",
             MUTED,
         )

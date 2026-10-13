@@ -151,7 +151,20 @@ scope; like its picture it states no request or capture time. The
 [Campaign comparison](../campaign-history/spec.md#downloads-and-sharing)
 PDF is a summary page (headline tiles and day-by-day charts) followed by
 its table, whose type is set smaller (`pdf_design.Table` scale) so its
-fifteen columns of figures fit.
+fifteen columns of figures fit. The
+[Family timeline](#timeline-export)'s PDF is an infographic sheet
+(`reports/timeline_pdf.py`): under the title, every page names the Family,
+its DUID, envelope number and mode. Page one shows one card per Summary line
+in the page's order and words, the Family code's card set apart in the
+warning tint with a short sensitive-data notice (or the page's words when no
+code is shown), and one tile per kind of line (sign-ins and form opens,
+emails, emails not sent, form progress, submissions) with its marker and
+count. The timeline follows, oldest first, under the page's column headings
+When, What happened and Details: lines are grouped under day headings, and
+each shows its time, a marker on a vertical spine (a different shape per
+kind, never color alone), its words in bold and its detail. Later pages
+repeat the column headings, and a page that starts mid-day repeats that
+day's heading marked "(continued)".
 
 A field/value report (additional information, Ministry, financial, Family
 test names, packets) prints one card per record. Which columns each format
@@ -988,8 +1001,9 @@ information, with the page's words in the page's order (Family, Family DUID,
 Envelope number, the mode, Counted at, Submitted, Last email, Family code,
 Reminders, Campaign email can reach this Family, Furthest step reached, Last
 seen). As for every shared export, the CSV is the table alone; the XLSX's
-Report information sheet and the PDF's report card carry the rest, including
-the code. The page builds its timeline in
+Report information sheet and the PDF's summary cards carry the rest,
+including the code. The PDF is an infographic sheet
+([File design](#file-design)). The page builds its timeline in
 Python, so the web supplies that document; the capture trigger admits it only
 from the web login, for a current Administrator, an admitted campaign, the
 active configuration and a Family of that campaign (with its DUID), with the
