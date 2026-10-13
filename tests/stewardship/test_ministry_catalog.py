@@ -138,11 +138,13 @@ def test_the_notice_names_changes_and_links_to_ministry_activity():
         "stewardship/ministry-catalog-notice.html", {"notice": notice}
     )
     assert "ParishSoft Ministry changes" in html
-    assert "no longer in ParishSoft" in html and "Ministry 77 (DUID 77)" in html
-    assert "Lectors (DUID 12)" in html and "and 2 more" in html
-    assert "Greeters (DUID 77) — in the current campaign" in html
+    # Each Ministry is named, never shown by its DUID (#1123).
+    assert "no longer in ParishSoft" in html and "<li>Ministry 77</li>" in html
+    assert "<li>Lectors</li>" in html and "and 2 more" in html
+    assert "<li>Greeters — in the current campaign</li>" in html
     # The full new name, with no "possibly retired" guess (#971).
-    assert "Choir → X-Choir (DUID 3) — in the current campaign" in html
+    assert "Choir → X-Choir — in the current campaign" in html
+    assert "DUID" not in html
     assert "retired" not in html and "X-”" not in html
     assert 'href="/admin/parish/ministries/"' in html
     assert "/admin/campaign/settings/#ministry-selections" in html

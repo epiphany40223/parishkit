@@ -167,7 +167,9 @@ every column of its CSV and XLSX row. So that a page is easy to scan:
   The note on escaped characters appears only when the file contains one.
 - Each record card is titled "Name (DUID N)" ("Name (New Member)" for a
   Member added on the form), with its disposition, state or status in a
-  chip on the right.
+  chip on the right. A packet's Ministry details card is titled by the
+  Ministry's name alone, since no download shows a Ministry DUID
+  ([table column order](../ui-conventions/spec.md#table-column-order)).
 - The report card leaves out the digest-resolution note and the display
   and date-filter time zones (the page frame names the display time zone).
 - Blank fields are left out. A packet is completed by hand, so its blank
@@ -1488,7 +1490,8 @@ follow-up menu count read through the same function and cross-check, so neither
 shows more than the queue would.
 
 The sorted summary has the Ministry name (the row header, with its
-activity and campaign notes for Admin/Staff), Ministry DUID in its own column,
+activity and campaign notes for Admin/Staff; no Ministry DUID,
+[#1123](https://github.com/epiphany40223/parishkit/issues/1123)),
 join-request count, leave-request count, unresolved count, and follow-up
 progress. Counts use latest live request state while retaining links to
 superseded/history views.
@@ -1538,15 +1541,15 @@ Choir"). The lists are:
 
 Both lists and the summary follow the Admin table
 [column order](../admin-portal/spec.md#table-column-order), leading with the
-Member or the Ministry: each DUID has its
-own column next to its name, and a Member added on the form, who has no
-ParishSoft DUID yet, shows "New Member" there, followed by the note that the
-Member was added on the form and the proposed Member's reference under
-technical details; the row header is just the name. Both DUID columns sort
-in the installed selection's order
-([#960](https://github.com/epiphany40223/parishkit/issues/960)): the summary
-by Ministry DUID, and a list by Member DUID with a Member added on the form
-last in either direction. The CSV, XLSX and PDF of a list carry the same
+Member or the Ministry: a list's Member DUID has its
+own column next to the Member's name, and a Member added on the form, who has
+no ParishSoft DUID yet, shows "New Member" there, followed by the note that
+the Member was added on the form and the proposed Member's reference under
+technical details; the row header is just the name. The summary names each
+Ministry and shows no Ministry DUID. The Member DUID column sorts in the
+installed selection's order
+([#960](https://github.com/epiphany40223/parishkit/issues/960)), with a
+Member added on the form last in either direction. The CSV, XLSX and PDF of a list carry the same
 columns as each other, with no internal references
 ([#966](https://github.com/epiphany40223/parishkit/issues/966)), in the
 page's order: Member, Member DUID, Status, Outcome, the contact details or
@@ -1556,9 +1559,11 @@ Outcome; "Contact and demographics" is Gender, Age, Email, Phones and Known
 primary Family address), as the
 [downloaded files](../ui-conventions/spec.md#downloaded-files) convention
 allows. A list is always one Ministry's, so its
-Ministry name and Ministry DUID head the file in its report information, as
-they head the page's list, rather than repeat on every row
-([#932](https://github.com/epiphany40223/parishkit/issues/932)). A Member
+Ministry name heads the file in its report information, as it heads the
+page's list, rather than repeat on every row
+([#932](https://github.com/epiphany40223/parishkit/issues/932)); the
+Ministry DUID is left out
+([#1123](https://github.com/epiphany40223/parishkit/issues/1123)). A Member
 added on the form reads "New Member" in the Member DUID column, and the
 proposed Member's reference stays on the page's technical details. When two
 Members added on the form share a name, they read "New Member 1", "New
@@ -1630,7 +1635,7 @@ the page shown does not already hold the whole unfiltered summary). It shows
 only each Ministry's full name (no DUID,
 [#1123](https://github.com/epiphany40223/parishkit/issues/1123)) and no request data, so the report-view audit
 still records the Ministries of the summary rows shown. For each
-Ministry, output its name, chair names, stewardship period/year, and one row for
+Ministry, output its name (never its DUID), chair names, stewardship period/year, and one row for
 each latest effective `join` or `leave` MinistryRequest in that Ministry,
 including resolved/cancelled history only when the requester selects the
 history option. Rows contain:

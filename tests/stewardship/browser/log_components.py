@@ -21,6 +21,8 @@ from parishkit.stewardship.web.contracts import MESSAGES, ErrorCode
 
 # Where the in-place cross-link tests serve System logs (#519 PR 3).
 LIVE = "/logs-live"
+# The Ministry filter's choices as the view reads them: (DUID, name) pairs.
+MINISTRIES = ((42, "Choir"), (5, "Ushers"))
 
 # Entries whose context System logs explains in words (#633): a recovery,
 # late scheduled work and a ParishSoft call that will be retried.
@@ -142,7 +144,8 @@ def components(context, admin):
             "stewardship/logs.html",
             context
             | {"admin_chrome": admin}
-            | page_context(query, table, linked=linked),
+            # The Ministry filter's choices, by name (#1123).
+            | page_context(query, table, linked=linked, ministries=MINISTRIES),
         )
 
     everything = LogQuery.parse(

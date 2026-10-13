@@ -58,6 +58,8 @@ def test_download_times_are_in_the_chosen_zone_and_formulas_are_neutral():
     text = roster_csv([row], ZoneInfo("America/Chicago")).decode()
     table = list(csv.reader(io.StringIO(text)))
     assert tuple(table[0]) == HEADINGS
+    # The Ministry is named; its DUID is not a column (#1123).
+    assert "Ministry" in HEADINGS and "Ministry DUID" not in HEADINGS
     line = dict(zip(HEADINGS, table[1], strict=True))
     assert not line["Member"].startswith("=")
     assert line["Resolved"] == "2054-10-05T09:30:00-05:00"
@@ -128,7 +130,6 @@ def test_csv_xlsx_and_pdf_carry_the_same_columns_and_rows():
     for heading, text, lines in (
         ("Member DUID", "1234567", ["1234567"]),
         ("Family DUID", "1234567", ["1234567"]),
-        ("Ministry DUID", "1234567", ["1234567"]),
         ("Resolved", "Sep 30, 2026 12:04 PM", ["Sep 30, 2026", "12:04 PM"]),
         ("Entered at", "Sep 30, 2026 12:04 PM", ["Sep 30, 2026", "12:04 PM"]),
     ):
@@ -138,8 +139,9 @@ def test_csv_xlsx_and_pdf_carry_the_same_columns_and_rows():
 
 
 def test_every_named_column_sorts_both_ways():
-    """Member, Family and Ministry, their DUIDs, the request and the
-    resolution time sort in place; a New Member follows the numbered DUIDs."""
+    """Member, Family and Ministry, the Member and Family DUIDs, the request
+    and the resolution time sort in place; a New Member follows the numbered
+    DUIDs. No Ministry DUID is shown, so none sorts (#1123)."""
     rows = [
         roster_row(id="a", member_duid=7, family_duid=20, ministry_duid=5),
         roster_row(id="b", member_duid=None, family_duid=10, ministry_duid=9),
@@ -148,8 +150,8 @@ def test_every_named_column_sorts_both_ways():
     order = {
         "member_duid": ["c", "a", "b"],
         "duid": ["b", "a", "c"],
-        "ministry_duid": ["c", "a", "b"],
     }
+    assert "ministry_duid" not in SORTING.columns()
     for key, expected in order.items():
         assert [row["id"] for row in SORTING.sort_rows(rows, key)] == expected, key
         assert [row["id"] for row in SORTING.sort_rows(rows, f"-{key}")] == list(

@@ -28,8 +28,8 @@
 <dt>{% translate "ParishSoft data as of" %}</dt><dd>{% if statistics.source_as_of %}<time datetime="{{ statistics.source_as_of|date:'c' }}" data-local-instant>{{ statistics.source_as_of|date:'c' }}</time>{% else %}{% translate "Unavailable" %}{% endif %}</dd>
 {% for label,value in cards %}<dt>{{ label }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>
 {% if statistics.financial %}
-<p>{% translate "Upcoming pledge period:" %} {{ statistics.financial.upcoming.start|parish_date }} — {{ statistics.financial.upcoming.end|parish_date }}. {% translate "Fund DUIDs:" %} {% for fund in statistics.financial.upcoming.funds %}{{ fund|duid }}{% if not forloop.last %}, {% endif %}{% endfor %}.</p>
-<p>{% translate "Comparison period:" %} {{ statistics.financial.comparison.start|parish_date }} — {{ statistics.financial.comparison.end|parish_date }}. {% translate "Fund DUIDs:" %} {% for fund in statistics.financial.comparison.funds %}{{ fund|duid }}{% if not forloop.last %}, {% endif %}{% endfor %}.</p>
+<p>{% translate "Upcoming pledge period:" %} {{ statistics.financial.upcoming.start|parish_date }} — {{ statistics.financial.upcoming.end|parish_date }}. {% translate "Funds:" %} {{ fund_names.upcoming|join:", " }}.</p>
+<p>{% translate "Comparison period:" %} {{ statistics.financial.comparison.start|parish_date }} — {{ statistics.financial.comparison.end|parish_date }}. {% translate "Funds:" %} {{ fund_names.comparison|join:", " }}.</p>
 <p>{% translate "Giving observed at:" %} {% if statistics.giving %}<time datetime="{{ statistics.giving.observed_at|date:'c' }}" data-local-instant>{{ statistics.giving.observed_at|date:'c' }}</time> ({% translate "through" %} {{ statistics.giving.through_date|parish_date }}){% else %}{% translate "Unavailable" %}{% endif %}</p>
 {% endif %}
 <details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "ParishSoft data load" %}</dt><dd>{% if statistics.source_generation %}{{ statistics.source_generation|number }}{% else %}{% translate "Unavailable" %}{% endif %}</dd>

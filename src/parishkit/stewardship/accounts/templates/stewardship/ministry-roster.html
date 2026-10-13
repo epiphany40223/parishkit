@@ -3,7 +3,7 @@
 {% block content %}
 <h1>{% translate "Roster changes to enter" %}</h1>
 {% aboutpage "ministry-roster" %}<p>{% translate "Ministry joins and leaves that someone resolved as Joined or Left, which must be entered in ParishSoft by hand: the ParishSoft API cannot change Ministry rosters. Mark each one Entered in ParishSoft once it is; clear a mark made by mistake. Changes the ParishSoft roster already showed are not listed, since nothing is left to enter. Marking never changes ParishSoft. Opening this page and every download is recorded." %}</p>
-<p>{% translate "Member DUID, Family DUID and Ministry DUID are ParishSoft's ID numbers, each in its own column so you can sort or copy it. A Member the Family added on the form is not in ParishSoft yet, so their Member DUID shows New Member; add them to the Family first. Times use your computer's time zone." %}</p>
+<p>{% translate "Member DUID and Family DUID are ParishSoft's ID numbers, each in its own column so you can sort or copy it. A Member the Family added on the form is not in ParishSoft yet, so their Member DUID shows New Member; add them to the Family first. Times use your computer's time zone." %}</p>
 <p>{% translate "If a Family answered again after a change was resolved, the change stays listed, with Yes under Replaced by a later response, since it still has to be entered. If the new request was resolved too, the same change is listed twice: enter it in ParishSoft once, then mark both. Ministry narrows the list to one Ministry; the downloads follow it." %}</p>
 <p>{% translate "The downloads carry the same columns as the list, for the list's Show choice, in every row rather than one page." %}</p>{% endaboutpage %}
 <p><a href="{% url 'admin:ministry_followup' %}">{% translate "Ministry follow-up" %}</a></p>
@@ -24,15 +24,14 @@
 <div id="{{ table.anchor }}" data-table-region>
 {% translate "Roster change pages" as pages_label %}{% include "stewardship/table-navigator.html" with table=table label=pages_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Roster changes to enter' %}"><table>
-{# Columns in the shared order (UX conventions, "Table column order", #932): the Member leads, each name with its DUID in its own column, then the change, its resolution and its mark, and the tick last. #}
-<caption>{% translate "Roster changes to enter" %}</caption><thead><tr>{% translate "Member" as heading %}{% sort_heading table "member" heading %}{% translate "Member DUID" as heading %}{% sort_heading table "member_duid" heading "numeric" %}{% translate "Family" as heading %}{% sort_heading table "family" heading %}{% translate "Family DUID" as heading %}{% sort_heading table "duid" heading "numeric" %}{% translate "Ministry" as heading %}{% sort_heading table "ministry" heading %}{% translate "Ministry DUID" as heading %}{% sort_heading table "ministry_duid" heading "numeric" %}{% translate "Request" as heading %}{% sort_heading table "request" heading %}{% translate "Resolved" as heading %}{% sort_heading table "resolved" heading %}<th scope="col">{% translate "Resolved by" %}</th><th scope="col">{% translate "Replaced by a later response" %}</th><th scope="col">{% translate "Entered in ParishSoft" %}</th><th scope="col">{% translate "Entered by" %}</th><th scope="col">{% translate "Entered at" %}</th><th scope="col">{% translate "Actions" %}</th></tr></thead><tbody>
+{# Columns in the shared order (UX conventions, "Table column order", #932): the Member leads, the Member and Family names each with its DUID in its own column, the Ministry by name alone (#1123), then the change, its resolution and its mark, and the tick last. #}
+<caption>{% translate "Roster changes to enter" %}</caption><thead><tr>{% translate "Member" as heading %}{% sort_heading table "member" heading %}{% translate "Member DUID" as heading %}{% sort_heading table "member_duid" heading "numeric" %}{% translate "Family" as heading %}{% sort_heading table "family" heading %}{% translate "Family DUID" as heading %}{% sort_heading table "duid" heading "numeric" %}{% translate "Ministry" as heading %}{% sort_heading table "ministry" heading %}{% translate "Request" as heading %}{% sort_heading table "request" heading %}{% translate "Resolved" as heading %}{% sort_heading table "resolved" heading %}<th scope="col">{% translate "Resolved by" %}</th><th scope="col">{% translate "Replaced by a later response" %}</th><th scope="col">{% translate "Entered in ParishSoft" %}</th><th scope="col">{% translate "Entered by" %}</th><th scope="col">{% translate "Entered at" %}</th><th scope="col">{% translate "Actions" %}</th></tr></thead><tbody>
 {% for row in table.rows %}<tr>
 <th scope="row" id="member-{{ row.id }}"><a href="{% url 'admin:ministry_followup_item' row.id %}">{{ row.member_name }}</a></th>
 {% if row.member_duid %}<td class="numeric">{{ row.member_duid|duid }}</td>{% else %}<td>{% translate "New Member" %}</td>{% endif %}
 <td>{{ row.family_name }}</td>
 <td class="numeric">{% if row.family_duid %}{{ row.family_duid|duid }}{% endif %}</td>
 <td id="ministry-{{ row.id }}">{{ row.ministry_name }}</td>
-<td class="numeric">{{ row.ministry_duid|duid }}</td>
 <td>{% if row.action == 'join' %}{% translate "Join" %}{% else %}{% translate "Leave" %}{% endif %}</td>
 <td>{% if row.resolved_at %}<time datetime="{{ row.resolved_at|date:'c' }}" data-local-instant data-compact>{{ row.resolved_at|date:'c' }}</time>{% endif %}</td>
 <td>{{ row.resolved_by }}</td>
@@ -41,7 +40,7 @@
 <td>{% if row.roster_entered %}{{ row.roster_by }}{% endif %}</td>
 <td>{% if row.roster_entered and row.roster_at %}<time datetime="{{ row.roster_at|date:'c' }}" data-local-instant data-compact>{{ row.roster_at|date:'c' }}</time>{% endif %}</td>
 <td>{% include "stewardship/roster-tick-row.html" with row=row %}</td></tr>
-{% empty %}<tr><td colspan="14">{% translate "No roster changes to enter." %}</td></tr>{% endfor %}</tbody></table></div>
+{% empty %}<tr><td colspan="13">{% translate "No roster changes to enter." %}</td></tr>{% endfor %}</tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=table label=pages_label %}
 </div>
 {% endblock %}

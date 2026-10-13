@@ -322,9 +322,12 @@ def test_ministry_table_pages_and_keeps_filters(auth_service, google):
     body = browser.get(URL + "?size=25&page=9").content.decode()
     assert "Showing 1–2 of 2" in body and 'name="page" value="1"' in body
     assert "data-select-all" in body and "data-bulk-action" in body
-    body = browser.get(URL + "?q=5&state=active&size=all").content.decode()
+    body = browser.get(URL + "?q=Lect&state=active&size=all").content.decode()
     assert "Lectors" in body and "Choir" not in body
-    assert 'name="q" value="5"' in body
+    assert 'name="q" value="Lect"' in body
+    # Search is by name only: a Ministry DUID finds nothing (#1123).
+    body = browser.get(URL + "?q=5&state=all&size=all").content.decode()
+    assert "No Ministries match these filters." in body and "Lectors" not in body
 
 
 def test_bulk_change_is_one_request_and_skips_unchanged_rows(auth_service, google):
@@ -376,19 +379,19 @@ def test_the_table_view_is_kept_through_review_apply_and_follow_up(
     follow-up once the change is applied, which draws that same view."""
     publish(two_ministries())
     browser, _ = signed_in()
-    query = "?q=5&state=all&size=25&sort=-duid"
+    query = "?q=Lect&state=all&size=25&sort=-name"
     review = post(
         browser, {"action": "preview", "ministry_duid": "5", "active": "no"}, query
     )
     assert review.status_code == 200
-    assert 'name="q" value="5"' in review.content.decode()
+    assert 'name="q" value="Lect"' in review.content.decode()
     token = unescape(
         re.search(r'name="preview" value="([^"]+)"', review.content.decode()).group(1)
     )
     confirmed = post(browser, {"action": "confirm", "preview": token}, query)
     request = requested(confirmed)
     location = confirmed["Location"]
-    assert location.startswith(URL + "?q=5&state=all&size=25&sort=-duid&request=")
+    assert location.startswith(URL + "?q=Lect&state=all&size=25&sort=-name&request=")
     pending = browser.get(location)
     assert pending.status_code == 200
     status_url = unescape(
@@ -397,7 +400,7 @@ def test_the_table_view_is_kept_through_review_apply_and_follow_up(
     install_request(auth_service.store, request_id=request, correlation_id=uuid4())
     read = browser.get(status_url).content.decode()
     follow = unescape(re.search(r'data-live-follow[^>]*href="([^"]+)"', read).group(1))
-    assert follow.startswith(URL + "?q=5&state=all&size=25&sort=-duid&request=")
+    assert follow.startswith(URL + "?q=Lect&state=all&size=25&sort=-name&request=")
     settled = browser.get(follow.split("#")[0]).content.decode()
     assert "Lectors" in settled and "Choir" not in settled
     assert "Applied: your change is saved" in settled

@@ -71,8 +71,9 @@ FORMATS = {
 # already marked, so a mistaken mark can be found and cleared.
 SHOW = {"todo": "Not yet entered", "all": "All, including entered"}
 # The page's columns, in the shared order (UX conventions, "Table column
-# order"): the Member leads (each row is one Member's change), each name with
-# its DUID beside it, then the change, when and by whom it was resolved, and
+# order"): the Member leads (each row is one Member's change), the Member and
+# Family names each with its DUID beside it, then the Ministry by name alone
+# (no Ministry DUID, #1123), the change, when and by whom it was resolved, and
 # its Entered in ParishSoft mark. The page adds an Actions column last.
 HEADINGS = (
     "Member",
@@ -80,7 +81,6 @@ HEADINGS = (
     "Family",
     "Family DUID",
     "Ministry",
-    "Ministry DUID",
     "Request",
     "Resolved",
     "Resolved by",
@@ -95,10 +95,9 @@ HEADINGS = (
 PDF_WEIGHTS = {
     "Member": 9,
     "Member DUID": 7,
-    "Family": 8,
+    "Family": 11,
     "Family DUID": 7,
-    "Ministry": 9,
-    "Ministry DUID": 7,
+    "Ministry": 13,
     "Request": 6,
     "Resolved": 10,
     "Resolved by": 8,
@@ -131,7 +130,6 @@ SORTING = Sorting.by_column(
         "family": lambda row: (_text(row["family_name"]), row["family_duid"]),
         "duid": lambda row: row["family_duid"],
         "ministry": lambda row: (_text(row["ministry_name"]), row["ministry_duid"]),
-        "ministry_duid": lambda row: row["ministry_duid"],
         "request": lambda row: row["action"],
         "resolved": lambda row: row["resolved_at"],
     },
@@ -256,7 +254,6 @@ def export_rows(rows, zone, *, time_text=iso_time):
             row["family_name"],
             str(row["family_duid"]) if row["family_duid"] else "",
             row["ministry_name"],
-            str(row["ministry_duid"]),
             "Join" if row["action"] == "join" else "Leave",
             instant(row["resolved_at"]),
             row["resolved_by"],

@@ -60,7 +60,9 @@ matches, so a narrower range answers faster. Every read runs under the
 timeout; a trigram index is
 [#765](https://github.com/epiphany40223/parishkit/issues/765). The Ministry filter matches a single Ministry
 DUID or any Ministry list in the detail, which includes the retained result
-scope of a Ministry report download.
+scope of a Ministry report download. The page offers the current ParishSoft
+Ministries by name and never shows the DUID it filters by
+([#1123](https://github.com/epiphany40223/parishkit/issues/1123)).
 
 The type filter is an exact identifier, the same shape the audit table's own
 check constraint enforces, not a fixed list. Many audit types are written

@@ -1,6 +1,7 @@
 """Draft editor uses real Google sessions, YAML requests, SQL guards and source."""
 
 import re
+from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID, uuid4
 
@@ -15,6 +16,7 @@ from parishkit.stewardship.accounts.request_models import ConfigurationChangeReq
 from parishkit.stewardship.campaigns.lifecycle import Action
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.reports.workspace_views import fund_names
 
 from ..campaign_factory import campaign, financial
 from ..policy_factory import address
@@ -338,6 +340,74 @@ def test_inactive_selected_funds_do_not_block_unrelated_draft_edits(
         )
 
 
+def test_a_selection_gone_from_parishsoft_shows_its_last_name(auth_service, google):
+    """A saved Ministry or fund an earlier ParishSoft refresh had, but the
+    current one lacks, reads by its name in the latest promoted snapshot
+    that held it, never its DUID (#1123). Renamed A, B, then A again, it
+    reads A, though the version row for A is the older one."""
+    store = auth_service.store
+
+    def earlier(ministry, fund):
+        """The standard source plus Ministry 999 and fund 998 so named."""
+        data = source()
+        data.ministry_types[999] = {"id": 999, "name": ministry}
+        data.funds[998] = {
+            "fundId": 998,
+            "name": fund,
+            "active": True,
+            "fundStartDate": "2026-01-01T00:00:00",
+        }
+        return data
+
+    publish(earlier("Old outreach", "Old fund"))
+    publish(earlier("Renamed outreach", "Renamed fund"))
+    publish(earlier("Old outreach", "Old fund"))
+    publish(source())
+    row = campaign(
+        modules=["financial", "ministry"],
+        ministry_duids=[999],
+        financial=financial(fund_duids=[998], comparison_fund_duids=[998]),
+    )
+    change(
+        store,
+        store.active(),
+        uuid4(),
+        [{"operation": "add", "section": "campaigns", **row}],
+    )
+    current = Campaign.objects.get()
+    browser, _ = signed_in()
+    with task_login(ServiceRole.WEB):
+        page = browser.get(url(current))
+    assert page.status_code == 200
+    content = page.content.decode()
+    assert "Old outreach (no longer in ParishSoft; retained selection)" in content
+    assert "Old fund (no longer in ParishSoft; retained selection)" in content
+    assert "Renamed" not in content
+    assert "Ministry 999" not in content and "Fund 998" not in content
+
+
+def test_participation_names_each_periods_funds(auth_service):
+    """Participation's financial periods name their funds from the
+    statistics' own snapshot, never their DUIDs (#1123)."""
+    snapshot = publish(source())
+
+    def period(*funds):
+        """One financial period holding these fund DUIDs."""
+        return SimpleNamespace(funds=funds)
+
+    statistics = SimpleNamespace(
+        source_id=snapshot.pk,
+        financial=SimpleNamespace(upcoming=period(9), comparison=period(9, 77)),
+    )
+    with task_login(ServiceRole.WEB):
+        names = fund_names(statistics)
+    assert names == {
+        "upcoming": ["Offertory"],
+        "comparison": ["Offertory", "Unavailable fund"],
+    }
+    assert fund_names(SimpleNamespace(source_id=None, financial=None)) is None
+
+
 @pytest.mark.parametrize("with_source", [False, True])
 def test_missing_catalog_selections_survive_unrelated_edit(
     auth_service, google, with_source
@@ -365,8 +435,11 @@ def test_missing_catalog_selections_survive_unrelated_edit(
     with task_login(ServiceRole.WEB):
         page = browser.get(url(current))
         assert page.status_code == 200
-        assert b"Ministry 999 (unavailable; retained selection)" in page.content
-        assert b"Fund 998 (unavailable; retained selection)" in page.content
+        # Never shown by DUID (#1123); no name is borrowed for an ID the
+        # tenant's data never had.
+        assert b"Unavailable Ministry (retained selection)" in page.content
+        assert b"Unavailable fund (retained selection)" in page.content
+        assert b"999 (" not in page.content and b"998 (" not in page.content
         response = post(
             browser, url(current), fields(store, current, name="Updated name")
         )

@@ -189,8 +189,11 @@ def test_the_admin_home_page_shows_catalog_changes(auth_service, google):
     assert response.status_code == 200
     body = response.content.decode()
     assert "ParishSoft Ministry changes" in body
-    assert "Choir → X-Choir (DUID 3)</li>" in body and "possibly retired" not in body
-    assert "Greeters (DUID 8)" in body and "Lectors (DUID 9)" in body
+    # Named, never shown by DUID (#1123).
+    assert "Choir → X-Choir</li>" in body and "possibly retired" not in body
+    assert "<li>Greeters" in body and "<li>Lectors" in body
+    notice = body[body.index('id="ministry-catalog"') :]
+    assert "DUID" not in notice[: notice.index("</section>")]
 
 
 def test_a_real_delta_refresh_never_compares_the_catalog(tmp_path, monkeypatch):

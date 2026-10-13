@@ -1,15 +1,19 @@
-"""Admin tables keep every DUID in its own column (#932).
+"""Admin tables keep every DUID in its own column (#932), and show only
+Family and Member DUIDs (#1123).
 
-The UX conventions' "Table column order" section gives each Family,
-Member and Ministry DUID its own column beside the name. A table cell that
+The UX conventions' "Table column order" section gives each Family and
+Member DUID its own column beside the name. A table cell that
 prints a DUID beside another value ("Name<br>DUID 1234", "Name (DUID
 1234)", "{{ name }} {{ duid }}") cannot be sorted or scanned by DUID and
 copies badly into a spreadsheet, so this guard refuses one in any Admin
 template, except the tables a later slice of #932 (or the issue named) still
 has to split. A second check reads each table's column headings: every DUID
-heading is "Family DUID", "Member DUID" or "Ministry DUID" and sits right
-after the name it identifies. A third holds the shared ``numeric`` class on
-every DUID heading and every cell that prints only a DUID.
+heading is "Family DUID" or "Member DUID" and sits right after the name it
+identifies. A third holds the shared ``numeric`` class on every DUID heading
+and every cell that prints only a DUID. A fourth refuses any Ministry, fund
+or other non-Family, non-Member DUID shown anywhere in a template, and a
+fifth keeps the Member DUID to the pages where staff act on a Member in
+ParishSoft.
 
 Blind spot: the checks read template source, so a table whose columns come
 from a loop over a column list (``response-list.html``, where a
@@ -66,7 +70,6 @@ LABEL = re.compile(r'\{% translate "([^"]+)" %\}')
 NAMED_BY = {
     "Family DUID": {"Family"},
     "Member DUID": {"Member", "Who"},
-    "Ministry DUID": {"Ministry"},
 }
 # DUID columns that do not follow a name, on purpose, with the reason.
 APART = {
@@ -87,9 +90,7 @@ LABELLED_HEADING = re.compile(
 SORT_TAG = re.compile(r"\{% sort_heading \S+ \"[^\"]+\" heading\b[^%]*%\}")
 REPEATED = re.compile(r"<th\b[^>]*>\{\{ heading \}\}")
 # A plain DUID column heading, and its attributes.
-PLAIN_DUID = re.compile(
-    r'<th\b([^>]*)>\{% translate "(?:Family|Member|Ministry) DUID" %\}'
-)
+PLAIN_DUID = re.compile(r'<th\b([^>]*)>\{% translate "(?:Family|Member) DUID" %\}')
 # A cell that prints only a DUID (a ``*duid`` variable, optionally through
 # the ``duid`` filter), and its attributes.
 LONE_DUID = re.compile(r"<td\b([^>]*)>\{\{\s*[\w.]*duid\s*(?:\|\s*duid\s*)?\}\}</td>")
@@ -192,6 +193,109 @@ def test_duid_headings_and_cells_are_numeric(path):
     assert unaligned(path.read_text(encoding="utf-8")) == []
 
 
+# Template comments, which are never shown.
+COMMENT = re.compile(r"\{% comment %\}.*?\{% endcomment %\}|\{#.*?#\}", re.DOTALL)
+# A shown label for a DUID other than a Family's or a Member's: a named
+# Ministry, fund, WorkGroup or role DUID, an inline "(DUID n)", or a bare
+# "DUID" label, which names no record (#1123).
+OTHER_DUID_LABEL = re.compile(
+    r"(?:Ministry|Fund|WorkGroup|Workgroup|Role) DUIDs?\b"
+    r'|\(DUID |\{% translate "DUID" %\}'
+)
+# Printed values that hold a Family's DUID under a name that does not say
+# so: each template's rows are Families (the response lists' "id" column is
+# their Family DUID; the Family timeline's envelope number is printed with
+# the same plain-digits filter).
+FAMILY_ROWS = {
+    ("campaign-mail-families.html", "row.duid"),
+    ("campaign-mail-families.html", "item.duid"),
+    ("family-timeline.html", "identity.duid"),
+    ("family-timeline.html", "identity.envelope"),
+    ("go-live-families.html", "row.duid"),
+    ("presence.html", "row.duid"),
+    ("response-list.html", "value"),
+}
+# Bare "DUID" labels that name a Family's DUID in a line about one Family.
+FAMILY_LABELS = {"find-family-results.html": "a Family search result's DUID"}
+# The pages where staff act on a specific Member in ParishSoft, the only ones
+# that show a Member DUID (UX conventions, "Table column order", #1123), plus
+# the Users page's ParishSoft Ministry leaders table and its import review,
+# kept at the Administrator's request (2026-10-12, #932).
+MEMBER_DUID_PAGES = {
+    "census-changes.html",
+    "limitations-report.html",
+    "ministry-followup.html",
+    "ministry-report.html",
+    "ministry-roster.html",
+    "source-form.html",
+    "user-leader-import.html",
+    "users.html",
+}
+# A printed value and its filters.
+PRINTED = re.compile(r"\{\{\s*([\w.]+)\s*((?:\|[^}]*)?)\}\}")
+
+
+def shown_text(text):
+    """``text`` without comments, tags (attributes) or menu choices' markup."""
+    return NOT_SHOWN.sub("", COMMENT.sub("", text))
+
+
+def other_duids(name, text):
+    """Every shown non-Family, non-Member DUID label or value in ``text``."""
+    found = []
+    if name not in FAMILY_LABELS:
+        found += OTHER_DUID_LABEL.findall(COMMENT.sub("", text))
+    for variable, filters in PRINTED.findall(shown_text(text)):
+        is_duid = variable.lower().endswith("duid") or "|duid" in filters
+        named = "family" in variable or "member" in variable
+        if is_duid and not named and (name, variable) not in FAMILY_ROWS:
+            found.append(variable)
+    return found
+
+
+@pytest.mark.parametrize(
+    "path",
+    sorted(TEMPLATES.rglob("*.html")),
+    ids=lambda path: path.relative_to(TEMPLATES).as_posix(),
+)
+def test_no_template_shows_another_duid(path):
+    """Only Family and Member DUIDs are shown; a Ministry, fund or other
+    record is named, and its DUID stays in attributes and form values."""
+    name = path.relative_to(TEMPLATES).as_posix()
+    assert other_duids(name, path.read_text(encoding="utf-8")) == []
+
+
+@pytest.mark.parametrize(
+    "path",
+    sorted(TEMPLATES.rglob("*.html")),
+    ids=lambda path: path.relative_to(TEMPLATES).as_posix(),
+)
+def test_member_duid_only_where_staff_act_on_a_member(path):
+    """A Member DUID shows only on the agreed worklists and reports."""
+    name = path.relative_to(TEMPLATES).as_posix()
+    text = COMMENT.sub("", path.read_text(encoding="utf-8"))
+    shows = "Member DUID" in text or "member_duid" in shown_text(text)
+    assert not shows or name in MEMBER_DUID_PAGES
+
+
+@pytest.mark.parametrize(
+    ("text", "found"),
+    [
+        ('<td>{{ m.name }} ({% translate "DUID" %} {{ m.duid|duid }})</td>', 2),
+        ('{% translate "Ministry DUID" as heading %}', 1),
+        ('{% translate "Fund DUIDs:" %} {{ fund|duid }}', 2),
+        ('<td class="numeric">{{ row.ministry_duid|duid }}</td>', 1),
+        ('<td class="numeric">{{ row.family_duid|duid }}</td>', 0),
+        ('<input type="hidden" name="ministry" value="{{ ministry.duid }}">', 0),
+        ('<option value="{{ duid }}">{{ name }}</option>', 0),
+        ("{% comment %}Never its Ministry DUID (#1123).{% endcomment %}", 0),
+    ],
+)
+def test_guard_finds_other_duids(text, found):
+    """The check catches shown Ministry and fund DUIDs and spares the rest."""
+    assert len(other_duids("example.html", text)) == found
+
+
 @pytest.mark.parametrize(
     ("text", "found"),
     [
@@ -202,7 +306,7 @@ def test_duid_headings_and_cells_are_numeric(path):
             0,
         ),
         (
-            '{% translate "Ministry DUID" as heading %}{% if one %}<th scope="col">'
+            '{% translate "Member DUID" as heading %}{% if one %}<th scope="col">'
             '{{ heading }}</th>{% else %}{% sort_heading t "d" heading "numeric" %}'
             '{% endif %}<th scope="col">{% translate "Joining" %}</th></tr>',
             1,

@@ -1620,8 +1620,8 @@ orders. In v1 that covers:
 - Financial stewardship detail (Family, Family DUID, Annual pledge and
   latest response);
 - the Additional information queue (Family, Family DUID and Submitted);
-- the Ministry report (Ministry and Ministry DUID; Member, Member DUID and
-  Submitted in one Ministry's view);
+- the Ministry report (Ministry; Member, Member DUID and Submitted in one
+  Ministry's view);
 - the Ministry follow-up queue (Member and Ministry; newest first by default,
   with no Submitted column to show it, #1064).
 
@@ -1794,22 +1794,59 @@ inventory on #879 lists.
    the event time only for tables whose rows are events or log entries;
 3. the Family name (the row header), then **Family DUID** in its own column;
 4. the envelope number, when shown;
-5. the Member name, then **Member DUID** in its own column next to it;
-6. the Ministry name, then **Ministry DUID** in its own column;
+5. the Member name, then **Member DUID** in its own column next to it, on the
+   pages listed below;
+6. the Ministry name (never a Ministry DUID);
 7. everything else, including dates that are not the most relevant column;
 8. actions last.
 
+**Which DUIDs show.** The Admin portal and its downloads show only two kinds
+of ParishSoft DUID:
+
+- **Family DUID:** wherever a Family is named, in its own column; staff
+  search and match Families by it.
+- **Member DUID:** only where staff act on a specific Member in ParishSoft:
+  Census changes, Roster changes to enter, the Ministry follow-up queue, the
+  Ministry report's request details (and its join and leave downloads and
+  packets), the Limitations report, Families the form cannot open, and the
+  Users page's ParishSoft Ministry leaders table and its import review
+  (Administrator, 2026-10-12, so staff can find each leader in ParishSoft).
+  Elsewhere a Member is named without it.
+
+A Ministry, fund, WorkGroup, role or any other ParishSoft record is
+identified by its name, never its DUID: no column, inline "(DUID n)", detail
+line, picker label, help sentence or download column shows one. Where two
+Ministries can share a name in one list, a detail ParishSoft users recognise
+tells them apart, not the DUID: System logs' Ministry menu marks an inactive
+Ministry "(inactive)". Two active Ministries with the same name keep the
+same label, since the DUID is never the tie-breaker. A saved Ministry or fund the
+current ParishSoft data no longer has shows its name from the latest
+promoted ParishSoft data that still held it, and that it is no longer in
+ParishSoft. Internal identifiers stay in URLs,
+form values and hidden fields, which are not shown. The command line, its
+JSON output and audit and log entries keep DUIDs: operators and scripts
+match on them, and the command line is host-only
+([Admin automation](../admin-automation/spec.md)). The one display fallback
+left is the shared "Ministry n" or "Fund n" label for a record whose
+ParishSoft name is blank.
+
 A DUID never shares a cell with a name. When a table has both a Family name
-column and a DUID column, both sort. **Why.** A combined cell cannot be
-sorted or scanned by DUID, reads badly with a screen reader and copies badly
-into a spreadsheet; staff moving between pages should not re-learn each one.
-**Shared code.** `test_admin_table_columns.py` refuses a cell that prints a
-DUID label with a value (#941), and checks that every DUID heading is
-"Family DUID", "Member DUID" or "Ministry DUID" and follows the name it
-identifies. **Precedent.** #932 (Administrator,
+column and a DUID column, both sort. **Why.** ParishSoft users never see
+Ministry, fund or other record DUIDs in ParishSoft, so those numbers mean
+nothing to staff; Family and Member DUIDs are how staff find a record there.
+A combined cell cannot be sorted or scanned by DUID, reads badly with a
+screen reader and copies badly into a spreadsheet; staff moving between
+pages should not re-learn each one. **Shared code.**
+`test_admin_table_columns.py` refuses a cell that prints a DUID label with a
+value (#941), checks that every DUID heading is "Family DUID" or "Member
+DUID" and follows the name it identifies, refuses a Ministry, fund or bare
+"DUID" label in any Admin template, and allows a Member DUID only in the
+templates of the pages listed above. **Precedent.** #932 (Administrator,
 2026-10-09, corrected 2026-10-10 to "most relevant column first", and the
-2026-10-10 rule that the Family name and DUID columns both sort), #941
-and #950.
+2026-10-10 rule that the Family name and DUID columns both sort), #941, #950,
+and [#1123](https://github.com/epiphany40223/parishkit/issues/1123)
+(Administrator, 2026-10-12: no DUIDs but the Family DUID and, where staff
+act on a Member, the Member DUID).
 
 The guard test reads every Admin template, components included. In each
 `<td>` and each `<th>` whose attributes include `scope="row"`, it refuses a
@@ -1825,17 +1862,14 @@ sort heading passes `numeric`, and a plain DUID heading or a cell that prints
 only a DUID has it in its `class`.
 
 The same file also reads every table's column headings: each heading that
-names a DUID is one of the three above and comes right after its name's
-heading (Family, Member or Ministry; Census changes heads its Member column
-Who). The one DUID column apart from its name is the recorded exception
-below.
+names a DUID is one of the two above and comes right after its name's
+heading (Family or Member; Census changes heads its Member column Who). The
+one DUID column apart from its name is the recorded exception below.
 
-Recorded exception: the Ministry follow-up queue has no Ministry DUID
-column, though it shows the Ministry name (Administrator decision,
-2026-10-11, [#1064](https://github.com/epiphany40223/parishkit/issues/1064),
-[#932](https://github.com/epiphany40223/parishkit/issues/932)), and no
-Submitted column, so its one-line rows take less width; the Ministry report
-shows the Ministry DUID and the request page the submission time
+The Ministry follow-up queue also has no Submitted column (Administrator
+decision, 2026-10-11,
+[#1064](https://github.com/epiphany40223/parishkit/issues/1064)), so its
+one-line rows take less width; the request page shows the submission time
 ([Follow-up workflows](../admin-portal/spec.md#follow-up-workflows)).
 
 Recorded exception: Families the form cannot open shows a Member DUID with
@@ -1846,8 +1880,7 @@ refuses, and that page never shows one
 The three report tables an installed SQL selection orders
 ([Admin tables](#admin-tables)) sort their DUID columns through that
 selection: Financial stewardship detail and the Additional information queue
-(Family DUID), and the Ministry report (Ministry DUID, and Member DUID in one
-Ministry's view)
+(Family DUID), and the Ministry report (Member DUID in one Ministry's view)
 ([#960](https://github.com/epiphany40223/parishkit/issues/960)).
 
 ### Family and Member names
@@ -1855,7 +1888,8 @@ Ministry's view)
 **Rule.** Everywhere a table shows a Family's name, it is the Family's heads
 of household with the surname first ("Squyres, Tracy and Jeff"), so the
 column sorts by surname, built by the shared helper rather than by each page.
-A Member's name is shown with that Member's DUID beside it. **Why.** The
+A Member's name is shown with that Member's DUID beside it on the pages
+[Table column order](#table-column-order) lists. **Why.** The
 surname alone does not tell two Families apart, and the free-text mailing
 name is sometimes one person's given name. **Shared code.**
 `family_heads_name` in `source/family_names.py` (the rule); for a set of

@@ -35,10 +35,15 @@ from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.observability import Event
 
 from ..policy_factory import address
+from ..test_source_corpus import source
 from .auth_builders import signed_in
 from .campaign_builders import change
 from .role_grants import schema_owner, seed_user
 from .test_background_grants_postgresql import task_login
+from .test_source_families_postgresql import (
+    publish,
+    source_singletons,  # noqa: F401
+)
 
 pytestmark = pytest.mark.django_db(transaction=True)
 URL = "/admin/system/logs/"
@@ -965,6 +970,18 @@ def test_ministry_and_subject_filters(auth_service, google):
         about = post(browser, {"subject": str(made["subject"])})
         assert identifiers(about) == [made["reviewed"]] and levels(about) == []
         assert b'id="log-audit-' in about.content and b'-subject"' in about.content
+
+
+def test_the_ministry_filter_offers_names_not_duids(auth_service, google):
+    """The web role reads the promoted catalog for the Ministry filter, which
+    names each Ministry and keeps its DUID as the value only (#1123)."""
+    publish(source())
+    browser, _ = signed_in()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        body = post(browser, {"ministry": "4"}).content.decode()
+    menu = re.search(r'<select id="log-ministry".*?</select>', body, re.S).group(0)
+    assert '<option value="4" selected>Choir</option>' in menu
+    assert "DUID" not in menu
 
 
 def test_links_carry_only_non_identifying_filters(auth_service, google):

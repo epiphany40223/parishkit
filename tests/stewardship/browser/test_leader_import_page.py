@@ -86,6 +86,10 @@ def test_columns_follow_the_shared_order(page, component_origin):
         for text in region(page).locator("tbody th[scope=row]").all_inner_texts()
     ]
     assert names == [row["name"] for row in LEADERS]
+    # Each Member's DUID in its own column right after the name (#932).
+    assert region(page).locator("tbody td.numeric").all_inner_texts() == [
+        str(row["member_duid"]) for row in LEADERS
+    ]
     # A long Ministry list is cut short, whole in its tooltip.
     many = region(page).locator(".cell-ellipsis[title^='Choir, Food pantry']")
     assert many.inner_text() == "Choir, Food pantry and 3 more"
@@ -178,6 +182,18 @@ def test_import_selected_posts_only_the_ticked_addresses(page, component_origin)
     visible(dialog.get_by_role("heading", name="2 new users"))
     visible(dialog.get_by_role("heading", name="Skipped"))
     visible(dialog.get_by_role("button", name="Apply"))
+    # The review shows each new user's Member DUID in its own column right
+    # after the Member (Administrator, 2026-10-12, #932).
+    added = dialog.locator("table.leaders-table").first
+    assert added.locator("thead th").all_inner_texts() == [
+        "Member",
+        "Member DUID",
+        "Email",
+        "Role",
+    ]
+    assert added.locator("tbody td.numeric").all_inner_texts() == [
+        str(row["member_duid"]) for row in LEADERS[:2]
+    ]
 
 
 def test_header_checkbox_selects_every_leader(page, component_origin):

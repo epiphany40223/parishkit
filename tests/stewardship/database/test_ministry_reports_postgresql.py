@@ -158,7 +158,8 @@ def test_current_intent_history_and_contact_projection(response_service):
         (row["duid"], row["joining"], row["leaving"], row["unresolved"])
         for row in summary["summaries"]
     ] == [(4, 0, 1, 1), (9, 1, 0, 1)]
-    # The Ministry DUID column sorts the summary both ways (#960).
+    # The selection still sorts the summary by Ministry DUID both ways (#960),
+    # for the command line; the page shows no Ministry DUID (#1123).
     for sort, expected in (("duid", [4, 9]), ("duid_desc", [9, 4])):
         assert [
             row["duid"] for row in page(harness, sort=sort)["summaries"]
@@ -266,9 +267,9 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
         )
         assert b"/ministries/9/" not in body
         assert b'name="ministry" value="9"' in body
-        # The summary's Ministry DUID has its own column (#932).
-        assert b'<td class="numeric">9</td>' in body
-        assert b"\xe2\x80\x94 DUID 9</td>" not in body
+        # The summary names each Ministry and shows no DUID (#1123).
+        assert b'<td class="numeric">9</td>' not in body
+        assert b"Ministry DUID" not in body and b"DUID 9" not in body
         # Opening a Ministry's joining list (its Contact details) only
         # reads, so its control looks like a link; it stays a POST so the
         # Ministry never reaches a URL (pk-local batch 5). Food pantry has no
@@ -327,15 +328,12 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
         response, body = search(browser, route, {"ministry": "9", "sort": "duid_desc"})
         assert response.status_code == 200 and b"Member Middle Example" in body
         assert b'aria-sort="descending"' in body and b'value="duid"' in body
-        # The summary sorts by Ministry name or Ministry DUID (#960), within
-        # the leader's scope.
+        # The summary sorts by Ministry name (#960), within the leader's
+        # scope; it offers no Ministry DUID heading (#1123).
         response, body = search(browser, root, {"sort": "name_desc"})
         assert response.status_code == 200 and b"Food pantry" in body
         assert b"Choir" not in body and b'aria-sort="descending"' in body
-        assert b'name="sort" value="duid"' in body
-        response, body = search(browser, root, {"sort": "duid_desc"})
-        assert response.status_code == 200 and b"Food pantry" in body
-        assert b'aria-sort="descending"' in body
+        assert b'name="sort" value="duid"' not in body
         assert search(browser, root, {"sort": "newest"})[0].status_code == 400
         # A GET has no Ministry selection: back to the summary (#867),
         # dropping any query rather than echoing it.

@@ -1,5 +1,6 @@
 """Admin/Staff live reports with exact fact selection and response-owned guards."""
 
+import json
 from contextlib import ExitStack
 from urllib.parse import urlencode
 from uuid import uuid4
@@ -9,6 +10,7 @@ from django.db import DatabaseError, transaction
 from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET
 
 from parishkit.stewardship.accounts.admin_navigation import PAGES
@@ -20,6 +22,8 @@ from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.observability import Event, emit_failure
+from parishkit.stewardship.source.catalog_names import fund_display_name
+from parishkit.stewardship.source.version_models import SnapshotFund
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.responses import campaign_response
@@ -249,6 +253,37 @@ def daily_table(chart, presented, query):
     }
 
 
+def fund_names(statistics):
+    """Each financial period's fund names, read from the statistics' snapshot.
+
+    The page names the funds, never their DUIDs (#1123). A fund that
+    snapshot lacks reads "Unavailable fund". None without financial periods.
+    """
+    financial = statistics.financial
+    if financial is None:
+        return None
+    wanted = set(financial.upcoming.funds) | set(financial.comparison.funds)
+    rows = (
+        SnapshotFund.objects.filter(
+            snapshot_id=statistics.source_id,
+            source_key__in=[str(duid) for duid in wanted],
+        ).values_list("source_key", "payload__canonical")
+        if statistics.source_id
+        else ()
+    )
+    names = {
+        int(key): fund_display_name(int(key), json.loads(text).get("name"))
+        for key, text in rows
+    }
+    return {
+        period: [
+            names.get(duid, _("Unavailable fund"))
+            for duid in getattr(financial, period).funds
+        ]
+        for period in ("upcoming", "comparison")
+    }
+
+
 def _page_context(campaign_id, query, selected, principal):
     """Format detached shared observations; never recompute money in templates."""
     campaign = Campaign.objects.select_related("active_configuration").get(
@@ -266,6 +301,7 @@ def _page_context(campaign_id, query, selected, principal):
         "selection": selected,
         "statistics": statistics,
         "cards": statistics_cards(statistics),
+        "fund_names": fund_names(statistics),
         "export_key": uuid4(),
         "exact_key": uuid4(),
         "exact_row_count": max(

@@ -268,11 +268,12 @@ def _preview(request, state, principal):
 
 # Every data column sorts on the server over the whole catalog (read in
 # name order, so equal values keep that order); the selection column holds
-# controls, not data. Activity and inclusion sort "on" before "off".
+# controls, not data. Activity and inclusion sort "on" before "off". The
+# Ministry DUID is neither shown, sorted nor searched: staff know a Ministry
+# by its name (#1123).
 CATALOG_SORTING = Sorting.by_column(
     {
         "name": lambda row: row["name"].casefold(),
-        "duid": lambda row: row["duid"],
         "active": lambda row: not row["active"],
         "included": lambda row: not row["included"],
     },
@@ -294,10 +295,7 @@ def _listing(request, configuration, catalog, selected, *, status=200, **region)
     rows = [
         row
         for row in catalog
-        if (
-            query.casefold() in row["name"].casefold()
-            or (query.isdecimal() and query == str(row["duid"]))
-        )
+        if query.casefold() in row["name"].casefold()
         and (state == "all" or row["active"] == (state == "active"))
     ]
     table = paginate(
