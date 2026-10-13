@@ -54,12 +54,50 @@ TASK_STATUS = reverse("admin:background_task_status", args=[TASK_RUN])
 # is still this page to ui-v1.js).
 REFRESH = reverse("admin:source_refresh")
 REFRESH_REQUESTED = REFRESH + "?run=requested"
+# A bare status region holding a kept element (data-live-keep, #530): its
+# page, with a tick box and a button about "a", and the status it polls,
+# which moves on to step two and names "b". KEEP_EMPTY draws the kept
+# element empty, and its status fills it.
+KEEP = "/live-keep"
+KEEP_STATUS = "/live-keep/status"
+KEEP_EMPTY = "/live-keep-empty"
+KEEP_EMPTY_STATUS = "/live-keep-empty/status"
 # The fixture server's answers to Dismiss and Refresh now (status, Location,
 # body).
 POSTS = {
     DISMISS: (303, INTEGRATION + "?dismissed=1", ""),
     REFRESH: (303, REFRESH_REQUESTED + "#refresh-run", ""),
 }
+
+
+def keep_page(step, kept, *, key, status=None):
+    """A bare page (or, without ``status``, its polled fragment) whose
+    status region says ``step`` and holds a kept element with ``kept``
+    contents, naming ``key``."""
+    from django.templatetags.static import static
+
+    region = (
+        f'<div data-live-status="keep" data-live-interval="2000" data-live-pending'
+        f"{f' data-live-url={chr(34)}{status}{chr(34)}' if status else ''}>"
+        f"<p data-step>{step}</p>"
+        f'<div data-live-keep="box" data-live-keep-key="{key}">{kept}</div></div>'
+    )
+    if status is None:
+        return region
+    return (
+        '<!doctype html><html lang="en"><head><title>Kept</title>'
+        f'<script src="{static("stewardship/live-status-v1.js")}" defer></script>'
+        f"</head><body><main><h1>Kept</h1>{region}</main></body></html>"
+    )
+
+
+# What the kept element of KEEP holds: a tick box, and a part about "a" with
+# its reserved note and the button a change holds.
+KEPT = (
+    '<form><label><input type="checkbox" name="tick"> Tick</label>'
+    '<div data-live-keep-for="a"><p data-live-stale-note="Changed."></p>'
+    '<button type="submit" data-live-stale-holds>Go</button></div></form>'
+)
 
 
 def components(context, admin):
@@ -262,5 +300,9 @@ def components(context, admin):
         REFRESH: refresh_page(),
         REFRESH_REQUESTED: refresh_page("queued", running[:1]),
         "/live-refresh-finished": refresh_page("succeeded", finished, minutes=1),
+        KEEP: keep_page("one", KEPT, key="a", status=KEEP_STATUS),
+        KEEP_STATUS: keep_page("two", "", key="b"),
+        KEEP_EMPTY: keep_page("one", "", key="", status=KEEP_EMPTY_STATUS),
+        KEEP_EMPTY_STATUS: keep_page("two", "<p data-filled>Filled</p>", key=""),
     }
     return {path: ("text/html", body) for path, body in pages.items()}

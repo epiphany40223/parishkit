@@ -1087,8 +1087,8 @@ def read_health(store):
 
     Returns ``(model, page)``, where ``page`` holds what only the page shows
     (the current campaign's identifier for its links, who paused delivery
-    and why, who set the debug-off switch and who accepted the refused
-    change), or None while a restore is
+    and why, who set the debug-off switch, which refusal the panel shows
+    and who accepted it), or None while a restore is
     under review, when the page is withheld. The caller authorizes the
     reader before and after (the page's views).
     """
@@ -1140,6 +1140,9 @@ def read_health(store):
             "workgroup_missing": _workgroup_missing(campaign),
             "debug_actor": debug_actor,
             "accept_actor": accept_actor,
+            # Which refusal the panel shows, so an open Accept this change
+            # once preview of another one is marked changed (live-status).
+            "refused_attempt": refused_attempt,
         }
     model = SystemHealth(
         checked_at=now,

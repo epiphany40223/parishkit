@@ -202,6 +202,10 @@ def test_preview_tick_and_confirm_record_one_acceptance_and_a_refresh(parish, go
     assert region.count("data-accept-failed") == 2
     assert "1,084" in region and "44%" in region
     assert "I checked this in ParishSoft, and the change is real." in region
+    # The panel and the preview name the refusal, so a poll that shows
+    # another can mark the open preview changed.
+    assert f'data-refused-attempt="{attempt.pk}"' in page(browser)
+    assert f'data-live-keep-for="{attempt.pk}"' in region
     assert not SourceDropAcceptance.objects.exists()
     token = token_of(body)
 

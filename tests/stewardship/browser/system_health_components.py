@@ -62,6 +62,10 @@ ACCEPT_CHANGED = "/system-health-accept-changed"
 # A page drawn before any refusal, whose next poll brings one: the empty
 # kept element takes the Accept this change once region from the poll.
 ACCEPT_LATE = "/system-health-accept-late"
+# A page whose next poll shows a newer refusal than the one an open preview
+# reviews, so the preview is marked changed.
+ACCEPT_STALE = "/system-health-accept-stale"
+ACCEPT_STALE_STATUS = "/system-health-accept-stale/status"
 ACCEPT_LATE_STATUS = "/system-health-accept-late/status"
 # A healthy page whose next poll changes only a time's datetime attribute.
 DATED = "/system-health-dated"
@@ -85,6 +89,8 @@ def _row(now, service, process="main", *, age=0, **values):
     } | values
 
 
+# The refused attempt the pages show and their previews review.
+REFUSED_ATTEMPT = UUID(int=6)
 # The counts a refused large change recorded.
 REFUSED = (
     DropCount("family", 1090, 1084, 25, False),
@@ -231,6 +237,7 @@ def components(context, admin):
         switch=False,
         refused=False,
         accepted=False,
+        attempt=REFUSED_ATTEMPT,
         **extra,
     ):
         """Template context the view would build."""
@@ -250,6 +257,7 @@ def components(context, admin):
                 ),
                 "debug_actor": "other@example.org" if switch else None,
                 "accept_actor": "other@example.org" if accepted else None,
+                "refused_attempt": attempt if refused else None,
                 "campaign_id": None,
                 "pause": {"actor": "admin@example.org", "reason": "Checking a typo"}
                 if troubled
@@ -451,7 +459,7 @@ def components(context, admin):
                     accept={
                         "preview": AcceptPreview(
                             token="signed-binding",
-                            attempt_id=UUID(int=6),
+                            attempt_id=REFUSED_ATTEMPT,
                             refused_at=now - timedelta(hours=3),
                             counts=REFUSED,
                         )
@@ -476,6 +484,20 @@ def components(context, admin):
                     },
                     accept_shown=True,
                 ),
+            ),
+        ),
+        ACCEPT_STALE: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(False, refused=True, status_url=ACCEPT_STALE_STATUS),
+            ),
+        ),
+        ACCEPT_STALE_STATUS: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health-status.html",
+                values(False, refused=True, attempt=UUID(int=8)),
             ),
         ),
         ACCEPT_LATE: (

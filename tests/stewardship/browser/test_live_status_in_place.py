@@ -16,6 +16,8 @@ from .live_status_components import (
     DISMISS,
     FAMILY_TESTS,
     INTEGRATION,
+    KEEP,
+    KEEP_EMPTY,
     PROGRESS,
     PROGRESS_STATUS,
     TASK_PAGE,
@@ -27,6 +29,14 @@ from .waits import has_text, hidden, visible
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
+
+
+def expect(locator):
+    """Load the optional browser assertion library only after explicit opt-in."""
+    from playwright.sync_api import expect as browser_expect
+
+    return browser_expect(locator)
+
 
 FOCUSED = "selector => document.activeElement === document.querySelector(selector)"
 
@@ -226,3 +236,29 @@ def test_finished_task_shows_its_final_steps_in_place(page, component_origin):
     page.wait_for_timeout(3000)
     assert len(polls) == 1, polls
     assert len(reads) == 1, reads
+
+
+def test_a_kept_element_survives_swaps_and_marks_a_changed_part(page, component_origin):
+    """A kept element (data-live-keep, #530) is moved, not rebuilt, by a
+    swap: its tick and its focus stay and do not hold the swap. A part about
+    something the status no longer names is marked changed on its reserved
+    line, its button held. An empty kept element takes the fresh contents."""
+    page.goto(component_origin + KEEP)
+    box = page.get_by_label("Tick")
+    box.check()
+    box.focus()
+    page.evaluate("document.querySelector('[data-live-keep]').dataset.marked = 'yes'")
+    expect(page.locator("[data-step]")).to_have_text("two", timeout=15000)
+    kept = page.locator('[data-live-keep="box"]')
+    assert kept.get_attribute("data-marked") == "yes"
+    expect(box).to_be_checked()
+    expect(box).to_be_focused()
+    assert kept.get_attribute("data-live-keep-key") == "b"
+    expect(page.locator("[data-live-stale-note]")).to_have_text("Changed.")
+    expect(page.get_by_role("button", name="Go")).to_be_disabled()
+    assert page.locator("[data-live-keep-for][data-live-stale]").count() == 1
+
+    page.goto(component_origin + KEEP_EMPTY)
+    expect(page.locator("[data-live-keep] [data-filled]")).to_have_text(
+        "Filled", timeout=15000
+    )

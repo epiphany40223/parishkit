@@ -60,7 +60,7 @@
 <section class="panel" aria-labelledby="health-source-heading">
 <h2 id="health-source-heading">{% translate "ParishSoft refresh" %}</h2>
 {% include "stewardship/full-refresh-status.html" with status=health.refresh can_view_task=True can_refresh=False %}
-{% if health.refused_counts %}<div class="notice notice-error" data-refused-change>
+{% if health.refused_counts %}<div class="notice notice-error" data-refused-change data-refused-attempt="{{ refused_attempt|default:'' }}">
 <p>{% translate "A ParishSoft refresh was refused at" %} <time datetime="{{ health.refused_at|instant }}" data-local-instant>{{ health.refused_at|instant }}</time> {% translate "because some counts fell too far. The system keeps using the data it had." %}</p>
 <div class="table-scroll"><table><caption>{% translate "What the refused refresh counted" %}</caption>
 <thead><tr><th scope="col">{% translate "Count" %}</th><th scope="col" class="numeric">{% translate "Before" %}</th><th scope="col" class="numeric">{% translate "After" %}</th><th scope="col">{% translate "Result" %}</th></tr></thead>
@@ -69,7 +69,7 @@
 <p>{% translate "Check these numbers in ParishSoft first. Until the drop is fixed there, or accepted once with Accept this change once just below, every later refresh is refused too." %}</p>
 </div>{% endif %}
 {# Accept this change once (ADM-13 PR 5b), right under the refusal it answers. live-status-v1.js keeps this element's contents across polls (data-live-keep), so a poll never discards an open preview, and fills it from a poll only while it is empty (a refusal recorded after the page was drawn); the polled copy (no status_url) leaves its CSRF token empty for the script to fill, as a mirrored copy does. #}
-<div data-live-keep="accept-change">{% if health.refused_counts or accept or accept_shown %}{% if status_url %}{% include 'stewardship/system-health-accept.html' %}{% else %}{% include 'stewardship/system-health-accept.html' with mirrored=True %}{% endif %}{% endif %}</div>
+<div data-live-keep="accept-change" data-live-keep-key="{{ refused_attempt|default:'' }}">{% if health.refused_counts or accept or accept_shown %}{% if status_url %}{% include 'stewardship/system-health-accept.html' %}{% else %}{% include 'stewardship/system-health-accept.html' with mirrored=True %}{% endif %}{% endif %}</div>
 {# Accept this change once's button as of this update; live-status-v1.js copies it into its region (data-live-mirror). #}
 <template data-live-mirror="accept-button">{% include 'stewardship/system-health-accept-button.html' with mirrored=True %}</template>
 {% if health.incidents.source_tenant_mismatch %}<p class="notice notice-error">{% translate "The ParishSoft key reaches a different organization than before. Stop and check with the parish before changing anything, as “ParishSoft outage” in the launch runbooks describes." %}</p>{% endif %}

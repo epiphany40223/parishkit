@@ -745,6 +745,8 @@ FAILED = (
     DropCount("email_eligible_families", 900, 500, 25, True),
 )
 ACCEPTANCE = UUID("00000000-0000-4000-8000-0000000000a5")
+# The refused attempt the panel shows.
+REFUSED_ATTEMPT = UUID("00000000-0000-4000-8000-0000000000a6")
 # The problem that refusal opened, and an unrelated one.
 DROP_PROBLEM = Problem("source_destructive_change", at=NOW)
 LATE_PROBLEM = Problem("source_late", at=NOW)
@@ -780,6 +782,7 @@ def accept_page(
         ),
         "pause": None,
         "accept_actor": actor if acceptance is not None and acceptance.live else None,
+        "refused_attempt": REFUSED_ATTEMPT if counts else None,
         "poll_interval": 10000,
     } | values
     return render_to_string(
@@ -879,7 +882,7 @@ def test_the_accept_region_sits_right_under_the_refusal():
 
     def kept(body):
         """The kept element's markup, up to the end of its region."""
-        start = body.index('<div data-live-keep="accept-change">')
+        start = body.index('<div data-live-keep="accept-change"')
         return body[start : body.index("</section>", start)]
 
     request = RequestFactory().get("/admin/system/health/")
@@ -887,7 +890,10 @@ def test_the_accept_region_sits_right_under_the_refusal():
     panel = body[body.index('aria-labelledby="health-source-heading"') :]
     panel = panel[: panel.index("</section>\n\n")]
     # The refusal notice's last line, then at once the kept element.
-    before, after = panel.split('<div data-live-keep="accept-change">', 1)
+    before, after = panel.split(
+        f'<div data-live-keep="accept-change" data-live-keep-key="{REFUSED_ATTEMPT}">',
+        1,
+    )
     assert before.rstrip().endswith("every later refresh is refused too.</p>\n</div>")
     assert "data-refused-change" in before
     assert after.startswith('<section class="panel" id="accept-change"')
@@ -899,7 +905,7 @@ def test_the_accept_region_sits_right_under_the_refusal():
     assert re.search(token, polled).group(1) == ""
     # Nothing is drawn while no refusal is shown, but the kept element is.
     empty = accept_page(counts=())
-    assert '<div data-live-keep="accept-change"></div>' in empty
+    assert '<div data-live-keep="accept-change" data-live-keep-key=""></div>' in empty
     assert 'id="accept-change"' not in empty
 
 
@@ -943,6 +949,31 @@ def test_an_accepted_refusal_is_listed_but_not_counted():
     body = accept_page(problems=(DROP_PROBLEM,))
     assert "1 problem needs attention" in body
     assert "refused because some counts fell too far" in body
+
+
+def test_the_preview_and_the_panel_name_the_refusal():
+    """The refusal notice and the kept element name the refusal shown; the
+    preview names the one it reviews, with a reserved line and a Confirm
+    that live-status-v1.js holds once they differ."""
+    preview = AcceptPreview(
+        token="signed", attempt_id=uuid4(), refused_at=NOW, counts=FAILED
+    )
+    body = accept_page(accept={"preview": preview})
+    assert f'data-refused-attempt="{REFUSED_ATTEMPT}"' in body
+    assert (
+        f'<div data-live-keep="accept-change" data-live-keep-key="{REFUSED_ATTEMPT}">'
+        in body
+    )
+    region = body[body.index('id="accept-change"') :]
+    assert f'data-live-keep-for="{preview.attempt_id}"' in region
+    assert (
+        '<p class="reserve-lines-wrap" role="status" data-live-stale-note='
+        '"This changed since you looked; review it again."></p>' in region
+    )
+    confirm = region[: region.index("Confirm: accept this change once")]
+    assert "data-live-stale-holds" in confirm[confirm.rindex("<button") :]
+    # No refusal shown: the key is empty, so any open preview is stale.
+    assert 'data-live-keep-key=""' in accept_page(counts=())
 
 
 def test_an_acceptance_greys_the_button_with_who_when_and_until_when():

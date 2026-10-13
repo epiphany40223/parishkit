@@ -10,6 +10,7 @@ from .system_health_components import (
     ACCEPT_LATE,
     ACCEPT_PAGE,
     ACCEPT_PREVIEW,
+    ACCEPT_STALE,
     BACKUP_BUSY,
     BACKUP_PAGE,
     BACKUP_PREVIEW,
@@ -604,8 +605,9 @@ def _places(page, heading):
 
 
 def test_an_open_preview_survives_a_poll(page, component_origin):
-    """The poll swaps the status around the open preview: the preview, its
-    tick and the headings stay, and the poll keeps running afterwards."""
+    """The poll swaps the status around the open preview, even while its
+    tick box has focus: the preview, its tick, the box's focus and the
+    headings stay."""
     _routed(
         page,
         component_origin,
@@ -620,8 +622,9 @@ def test_an_open_preview_survives_a_poll(page, component_origin):
     expect(confirm).to_be_visible()
     box = region.get_by_label("I checked this in ParishSoft, and the change is real.")
     box.check()
-    # Focus off the box, so nothing holds the poll.
-    page.evaluate("document.activeElement.blur()")
+    # Focused, as Chromium and Firefox leave it after a click (WebKit does
+    # not, so the test puts it there): it must not hold the poll.
+    box.focus()
     places = _places(page, heading)
     page.evaluate("""() => {
         document.getElementById('accept-change').dataset.marked = 'yes';
@@ -635,13 +638,52 @@ def test_an_open_preview_survives_a_poll(page, component_origin):
             return !!mirror && mirror.innerHTML.includes('Accepted by');
         }""",
     )
-    # The same region element, its preview still open and ticked.
+    # The same region element, its preview still open, ticked and focused.
     assert region.get_attribute("data-marked") == "yes"
     expect(confirm).to_be_visible()
     expect(box).to_be_checked()
+    expect(box).to_be_focused()
     expect(confirm).to_be_enabled()
+    # The same refusal is shown, so the preview is not marked changed.
+    assert region.locator("[data-live-stale]").count() == 0
     assert places() == []
     _beside_the_refusal(page)
+
+
+def test_an_open_preview_of_an_older_refusal_is_marked_changed(page, component_origin):
+    """A poll showing another refusal marks the open preview "This changed
+    since you looked" on its reserved line and holds Confirm, ticked or
+    not; nothing moves."""
+    _routed(
+        page,
+        component_origin,
+        {"accept_preview": (200, ACCEPT_PREVIEW)},
+        shown=ACCEPT_STALE,
+    )
+    page.goto(component_origin + BACKUP_PAGE)
+    region = page.locator("#accept-change")
+    region.get_by_role("button", name="Accept this change once…").click()
+    confirm = region.get_by_role("button", name="Confirm: accept this change once")
+    expect(confirm).to_be_visible()
+    region.get_by_label("I checked this in ParishSoft, and the change is real.").check()
+    expect(confirm).to_be_enabled()
+    note = region.locator("[data-live-stale-note]")
+    expect(note).to_have_text("")
+    where = confirm.evaluate("e => e.getBoundingClientRect().top + window.scrollY")
+    heading = region.get_by_role("heading", name="Accept this change once")
+    places = _places(page, heading)
+    expect(note).to_have_text(
+        "This changed since you looked; review it again.", timeout=30000
+    )
+    expect(confirm).to_be_disabled()
+    # Unticking and ticking again (the tick box's own gate) does not free it.
+    box = region.get_by_label("I checked this in ParishSoft, and the change is real.")
+    box.uncheck()
+    box.check()
+    expect(confirm).to_be_disabled()
+    after = confirm.evaluate("e => e.getBoundingClientRect().top + window.scrollY")
+    assert abs(after - where) < 0.5
+    assert places() == []
 
 
 def test_a_refusal_shown_by_a_poll_brings_its_accept_region(page, component_origin):

@@ -108,6 +108,7 @@ def _read(request, template, *, page):
             "workgroup_missing": extra["workgroup_missing"],
             "debug_actor": extra["debug_actor"],
             "accept_actor": extra["accept_actor"],
+            "refused_attempt": extra["refused_attempt"],
             "poll_interval": POLL_MILLISECONDS,
         }
         if page:
@@ -313,6 +314,7 @@ def _act(request):
                 "pause": extra["pause"],
                 "debug_actor": extra["debug_actor"],
                 "accept_actor": extra["accept_actor"],
+                "refused_attempt": extra["refused_attempt"],
                 "poll_interval": POLL_MILLISECONDS,
                 "status_url": reverse("admin:system_health_status"),
                 region: result,

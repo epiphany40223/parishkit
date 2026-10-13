@@ -555,8 +555,11 @@
   // tag), so a disabled submit button without that mark when this script
   // starts (before any script could have disabled it) came back from an
   // earlier visit and is enabled again, as the server drew it.
+  // live-status-v1.js holds a kept preview's button for good once the
+  // status no longer shows what it reviews (data-live-stale-gated, #530).
   const GATE_MARKS = [
     "data-time-gated", "data-acknowledgment-gated", "data-complete-gated", "data-change-gated",
+    "data-live-stale-gated",
   ];
   const gated = (node) => GATE_MARKS.some((mark) => node.hasAttribute(mark));
   document.querySelectorAll("button[disabled], input[disabled]").forEach((node) => {

@@ -52,11 +52,20 @@
 // ParishSoft change, whose preview and tick box the Administrator may have
 // open (#530). Once the element has contents, every swap puts the live
 // element back in place of its fresh copy, so what is open in it, ticked or
-// focused stays; its contents never count as a change, and typing or
-// ticking in it does not hold later swaps (a focused control in it still
-// holds the swap, as anywhere in the region). An empty one (drawn before
-// there was anything to show) takes the fresh copy's contents, whose empty
-// CSRF field takes this page's token, as a mirrored copy's does.
+// focused stays; its contents never count as a change, and neither typing
+// nor focus in it holds later swaps: the focused element is moved, not
+// rebuilt, and takes focus again at once. An empty one (drawn before there
+// was anything to show) takes the fresh copy's contents, whose empty CSRF
+// field takes this page's token, as a mirrored copy's does.
+//
+// What a kept element shows may be about one thing the status names (the
+// refusal an open preview reviews): the fresh copy says which thing the
+// status shows now (data-live-keep-key), and a part of the kept contents
+// says which one it is about (data-live-keep-for). Once they differ, the part
+// is marked data-live-stale for good: its [data-live-stale-note] line, whose
+// space is already reserved, says so in the attribute's words, and each
+// [data-live-stale-holds] button is disabled, marked data-live-stale-gated
+// so ui-v1.js's other gates never enable it again.
 //
 // An in-place refresh (ui-v1.js, #519) can replace the region itself, such
 // as when Dismiss on an integration's settings page swaps in the page's
@@ -233,8 +242,10 @@
       const active = document.activeElement;
       const holding = selecting() && selectingSince
         && Date.now() - selectingSince < SELECTION_HOLD_MS;
+      // A control in a kept element never holds it: the swap moves that
+      // element and focuses the control again (adopt()).
       return edited || Boolean(holding) || Boolean(active && active !== region
-        && region.contains(active)
+        && region.contains(active) && !active.closest("[data-live-keep]")
         && active.matches("input, select, textarea, button, [contenteditable]"));
     }
 
@@ -287,10 +298,34 @@
         .map((node) => [node.getAttribute("data-live-keep"), node]));
       fresh.querySelectorAll("[data-live-keep]").forEach((copy) => {
         const kept = live.get(copy.getAttribute("data-live-keep"));
-        if (kept) copy.replaceWith(kept);
-        else fillToken(copy);
+        if (!kept) {
+          fillToken(copy);
+          return;
+        }
+        const key = copy.getAttribute("data-live-keep-key");
+        if (key !== null) {
+          kept.setAttribute("data-live-keep-key", key);
+          kept.querySelectorAll("[data-live-keep-for]").forEach((part) => {
+            if (part.getAttribute("data-live-keep-for") !== key) stale(part);
+          });
+        }
+        copy.replaceWith(kept);
       });
       return fresh;
+    }
+
+    function stale(part) {
+      // ``part`` is about something the status no longer shows: say so on
+      // its reserved line and hold its buttons (see the header).
+      if (part.hasAttribute("data-live-stale")) return;
+      part.setAttribute("data-live-stale", "");
+      const note = part.querySelector("[data-live-stale-note]");
+      if (note) note.textContent = note.getAttribute("data-live-stale-note");
+      part.querySelectorAll("[data-live-stale-holds]").forEach((button) => {
+        button.setAttribute("autocomplete", "off");
+        button.setAttribute("data-live-stale-gated", "");
+        button.disabled = true;
+      });
     }
 
     // The markup last adopted, so an unchanged poll leaves the live region
@@ -382,7 +417,13 @@
       }
       lastMarkup = freshMarkup;
       if (renews) started = Date.now();
-      const key = focusKey(document.activeElement);
+      // Focus in a kept element stays on the same element, which the swap
+      // moves (removing it from the document drops its focus); any other is
+      // found again in the new markup.
+      const active = document.activeElement;
+      const keptFocus = active && region.contains(active)
+        && active.closest("[data-live-keep]") ? active : null;
+      const key = keptFocus ? null : focusKey(active);
       // Wide tables scroll sideways inside .table-scroll; keep each one's
       // offset, matching tables by their caption (a table can come or go
       // above another one), else by position. The page's own scroll is left
@@ -421,6 +462,9 @@
       localize(region);
       elapsed();
       refocus(key);
+      if (keptFocus && keptFocus.isConnected && document.activeElement !== keptFocus) {
+        keptFocus.focus({ preventScroll: true });
+      }
       region.querySelectorAll(".table-scroll").forEach((node, index) => {
         const offset = sideways.get(scrollKey(node, index));
         if (offset) node.scrollLeft = offset;

@@ -371,6 +371,10 @@ input[data-time-entry=list] { max-width: 24rem; }
    coming or going never moves what follows (no layout shift; the Restore
    review's held-email rows, #537). */
 .reserve-line { min-height: 1.6em; min-height: 1lh; }
+/* An open preview the status has moved past (live-status-v1.js,
+   data-live-stale; System health's Accept this change once, #530) says so
+   on a reserved line (reserve-lines-wrap), in the error colour. */
+[data-live-stale-note] { color: var(--error-ink); font-weight: 600; }
 /* The answer to a row's action on a worklist (#528, Census changes and Roster
    changes to enter): two lines kept while empty, so the answer appearing
    never moves the table under the pointer. */
