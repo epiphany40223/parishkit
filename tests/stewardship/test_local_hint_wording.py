@@ -114,16 +114,10 @@ def pages():
                 "status_url": "/admin/integrations/slack/status",
             },
             (
-                "For security, saving a new key needs a Google sign-in from the"
-                " last five minutes. If yours is older when you choose Save, you"
-                " are asked to confirm it's you with Google first,",
                 "For security, saving or removing settings here needs a"
                 " Google sign-in from the last five minutes.",
             ),
             (
-                "For security, saving a new key needs a sign-in from the last five"
-                " minutes. If yours is older when you choose Save, you are asked"
-                " to confirm your sign-in first,",
                 "For security, saving or removing settings here needs a"
                 " sign-in from the last five minutes.",
             ),
@@ -291,3 +285,111 @@ def test_the_view_renders_local_wording_through_the_request(monkeypatch, setting
     assert response.status_code == 200
     assert pages()["family-portal-maintenance"][3][0] in page
     assert_no_google_sign_in(page)
+
+
+# The pages whose "needs a sign-in from the last five minutes" hint shows only
+# when the step-up would be asked for now (#1159). Family portal availability
+# takes ``fresh`` from its view; the others ask the ``fresh_sign_in`` tag.
+STEP_UP_HINTS = (
+    "setup",
+    "setup-credential",
+    "integration-settings",
+    "export-fresh-help",
+    "credential-selection",
+    "family-portal-maintenance",
+)
+
+
+def render_signed_in(name, local, age, monkeypatch):
+    """Render one page through a request whose sign-in is ``age`` old."""
+    from parishkit.stewardship.accounts import sessions
+
+    monkeypatch.setattr(sessions, "database_now", lambda: NOW)
+    template, values, _, _ = pages()[name]
+    page = CONTEXT | values | {"fresh": age <= timedelta(minutes=5)}
+    if local:
+        page["local_environment"] = True
+    request = RequestFactory().get("/admin/")
+    request.portal_session = Value(authenticated_at=NOW - age)
+    return flatten(render_to_string(template, page, request=request))
+
+
+@pytest.mark.parametrize("local", [False, True])
+@pytest.mark.parametrize("name", STEP_UP_HINTS)
+def test_step_up_hint_shows_only_when_the_sign_in_is_stale(name, local, monkeypatch):
+    """A fresh sign-in hides the hint; one over five minutes old shows it."""
+    _, _, production, local_sentences = pages()[name]
+    sentences = local_sentences if local else production
+    fresh = render_signed_in(name, local, timedelta(minutes=1), monkeypatch)
+    stale = render_signed_in(name, local, timedelta(minutes=6), monkeypatch)
+    for sentence in sentences:
+        assert sentence not in fresh
+        assert sentence in stale
+
+
+def test_fresh_pages_keep_their_other_rules(monkeypatch):
+    """Only the step-up sentence goes: the order and audit rules stay."""
+    setup = render_signed_in("setup-credential", False, timedelta(0), monkeypatch)
+    assert "the Slack token needs Slack turned on first." in setup
+    maintenance = render_signed_in(
+        "family-portal-maintenance", False, timedelta(0), monkeypatch
+    )
+    assert "Every change is recorded in the audit log." in maintenance
+
+
+# The integrations with a key field: ParishSoft and Slack drew a second
+# "For security" paragraph for the key under the settings one (pk-local
+# batch 12). The settings paragraph already says what you entered is not kept.
+KEY_PAGES = {
+    "parishsoft": "ParishSoft",
+    "slack": "Slack",
+}
+
+
+def integration_page(target, label):
+    """The settings page context for an integration with a key field."""
+    return {
+        "target": target,
+        "label": label,
+        "configured": True,
+        "form": IntegrationForm(target),
+        "credential": InlineCredentialForm(target),
+        "status_url": f"/admin/integrations/{target}/status",
+    }
+
+
+def step_up_notices(page):
+    """How many step-up notices a rendered page holds.
+
+    Every step-up hint names the five-minute (or "few minutes") window, so
+    counting that phrase counts the notices, whatever their wording.
+    The top notice of a page that also disables its buttons ("You need to
+    have signed in within the last five minutes") counts too.
+    """
+    return page.count("the last five minutes") + page.count("the last few minutes")
+
+
+@pytest.mark.parametrize("local", [False, True])
+@pytest.mark.parametrize("target", sorted(KEY_PAGES))
+def test_integration_key_page_shows_the_step_up_notice_once(target, local, monkeypatch):
+    """A stale sign-in sees one step-up notice on a key page, not two."""
+    from parishkit.stewardship.accounts import sessions
+
+    monkeypatch.setattr(sessions, "database_now", lambda: NOW)
+    page = CONTEXT | integration_page(target, KEY_PAGES[target])
+    page["local_environment"] = local
+    request = RequestFactory().get(f"/admin/system/integrations/{target}/")
+    request.portal_session = Value(authenticated_at=NOW - timedelta(minutes=6))
+    html = flatten(
+        render_to_string("stewardship/integration-settings.html", page, request=request)
+    )
+    assert step_up_notices(html) == 1
+    assert "what you entered is not kept" in html
+
+
+@pytest.mark.parametrize("local", [False, True])
+@pytest.mark.parametrize("name", STEP_UP_HINTS)
+def test_step_up_hint_shows_at_most_once(name, local, monkeypatch):
+    """Every page with a step-up hint shows it at most once when stale."""
+    page = render_signed_in(name, local, timedelta(minutes=6), monkeypatch)
+    assert step_up_notices(page) <= 1

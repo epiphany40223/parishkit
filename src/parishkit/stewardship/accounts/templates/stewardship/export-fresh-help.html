@@ -1,5 +1,7 @@
-{% load i18n %}{% comment %}
+{% load i18n stewardship %}{% comment %}
   The fresh sign-in hint for the export panels whose file holds Family codes
-  or financial detail (#547). It is always shown, since a sign-in can age
-  while the page is open. LOCAL has no Google sign-in (#649).
-{% endcomment %}<p class="help">{% if local_environment %}{% translate "For security, queuing this export needs a sign-in from the last five minutes. If yours is older, you are asked to confirm your sign-in first and nothing is queued: when you come back, apply your filters again and queue the export again." %}{% else %}{% translate "For security, queuing this export needs a Google sign-in from the last five minutes. If yours is older, you are asked to confirm it's you with Google first and nothing is queued: when you come back, apply your filters again and queue the export again." %}{% endif %}</p>
+  or financial detail (#547). It shows only when queuing would ask for a
+  step-up now (#1159): a sign-in that ages while the page is open gets the
+  step-up page on submit, which explains itself, so no timer reveals it later
+  (that would move the controls). LOCAL has no Google sign-in (#649).
+{% endcomment %}{% fresh_sign_in as fresh %}{% if not fresh %}<p class="help">{% if local_environment %}{% translate "For security, queuing this export needs a sign-in from the last five minutes. If yours is older, you are asked to confirm your sign-in first and nothing is queued: when you come back, apply your filters again and queue the export again." %}{% else %}{% translate "For security, queuing this export needs a Google sign-in from the last five minutes. If yours is older, you are asked to confirm it's you with Google first and nothing is queued: when you come back, apply your filters again and queue the export again." %}{% endif %}</p>{% endif %}

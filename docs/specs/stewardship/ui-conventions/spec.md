@@ -1379,6 +1379,21 @@ entry's (Administrator decision, 2026-10-11,
 [System logs](../admin-portal/spec.md#logs)). An empty list says what to do
 next rather than only that it is empty.
 
+A hint that an action needs a sign-in from the last five minutes (the
+step-up) shows only when re-authentication would actually be asked for: the
+server, drawing the page, finds the sign-in older than that. Pages ask with
+the shared `{% fresh_sign_in %}` template tag, or use their view's `fresh`
+value, both built on the same check every gated action makes; a fresh reader
+sees no such hint. A sign-in that ages after the page is drawn gets the
+step-up answer when the form is sent, which explains itself, so no timer
+reveals the hint later ([no layout shift](#no-layout-shift); Administrator
+decision, 2026-10-12,
+[#1159](https://github.com/epiphany40223/parishkit/issues/1159)). A page
+shows such a hint at most once: an integration page with a key field says
+once that what was entered, the pasted key included, is not kept, rather
+than repeating the hint for the key. The idle sign-out notice is not a
+step-up hint and is unaffected.
+
 Template tests guard these rules: one fails when a paragraph shown without a
 click holds a message longer than about two sentences (50 words), one fails
 when more than about one line (15 words) of help sentences shows between a
