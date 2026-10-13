@@ -288,7 +288,9 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # lifetime function, and alters no table. 0081 (#806) creates the web-only
 # bounce report definer, adds the refusal table's kind and evidence_note
 # columns and replaces the refusal guard (``before_bounce_report``), so
-# ``CLOSURE_ALTERED`` puts it back too.
+# ``CLOSURE_ALTERED`` puts it back too. 0082 (#1062) creates nothing; it adds
+# the branding bundle's mode column (``before_branding_bundle_mode``), so
+# ``CLOSURE_ALTERED`` puts it back.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -442,6 +444,10 @@ CLOSURE_ALTERED = {
     ("stewardship_recipient_refusal", "kind"): (
         "stewardship_jobs",
         "0030_bounce_report",
+    ),
+    ("stewardship_branding_bundle", "mode"): (
+        "stewardship_accounts",
+        "0021_branding_bundle_mode",
     ),
 }
 
@@ -611,6 +617,16 @@ def before_staff_entered():
     ]
 
 
+def before_branding_bundle_mode():
+    """The statement that puts branding bundles back as they were before 0082.
+
+    #1062's 0082 adds only ``stewardship_branding_bundle.mode`` (and its
+    check, which goes with the column), so dropping it is the production
+    base; 0082's frozen file (or the full migration) adds it again.
+    """
+    return ["ALTER TABLE public.stewardship_branding_bundle DROP COLUMN mode"]
+
+
 def before_leader_changes():
     """The statements that put the leader definition back as it was before 0070.
 
@@ -650,7 +666,8 @@ def swap_pending():
     leader definition as it was before 0070 (``before_leader_changes``), the
     digest ready row as it was before 0072 (``before_digest_comparison``),
     and the refusal table and its guard as they were before 0081
-    (``before_bounce_report``).
+    (``before_bounce_report``), and branding bundles as they were before 0082
+    (``before_branding_bundle_mode``).
     """
     from django.db.migrations.loader import MigrationLoader
 
@@ -685,6 +702,7 @@ def swap_pending():
             *before_report_local_days(),
             *before_staff_entered(),
             *before_leader_changes(),
+            *before_branding_bundle_mode(),
         ):
             cursor.execute(statement)
     try:

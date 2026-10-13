@@ -49,7 +49,7 @@ from .admin_editing import (
 )
 from .authentication import runtime
 from .branding_files import read_variant
-from .branding_models import BrandingAsset
+from .branding_models import BrandingAsset, BrandingBundle
 from .branding_slots import (
     MAX_TOTAL_BYTES,
     SLOTS,
@@ -117,7 +117,15 @@ class LogoForm(forms.Form):
         return value
 
 
-ONE, EACH = "one", "each"
+# The page's two modes (#1062; ui-conventions spec, "Basic and Advanced
+# modes"): Basic, one image resized for every size, and Advanced, each size
+# uploaded separately. The shared toggle (components/editor-mode.html) sends
+# the mode as editor_mode.
+BASIC, ADVANCED = "basic", "advanced"
+# The mode field of the page before the toggle (#1062 slices 1-2), which a
+# page left open across the deploy still posts: read for one release, when
+# editor_mode is absent, then removed by #1178.
+LEGACY_MODES = {"one": BASIC, "each": ADVANCED}
 # A file field with the page's size check and a reserved error line.
 SIZE_FIELD_TEMPLATE = "stewardship/file-size-field.html"
 # One image over its limit, in the server's and the page's words (ui-v1.js
@@ -128,25 +136,30 @@ LOGO_TOO_LARGE = _("Parish logo: the file is {size}; the limit is 5 MB.")
 class LogoUploadForm(LogoForm):
     """Parish logos' upload: one image for every size, or each size apart.
 
-    ``mode`` chooses (#1062): "one" is ``LogoForm``'s single upload, exactly
-    as before; "each" takes up to four files, one per size, each checked
-    against its own rules (``branding_slots``). The page shows only the
-    chosen mode's fields (data-show-when); the hidden ones are disabled, not
-    sent, and in any case ignored here. A post without ``mode`` is one
-    image, as every upload was before. The setup wizard keeps ``LogoForm``.
+    ``editor_mode`` chooses (#1062): Basic is ``LogoForm``'s single upload,
+    exactly as before, which the server turns into the four sizes; Advanced
+    takes up to four files, one per size, each checked against its own
+    rules (``branding_slots``). The page shows only the chosen mode's panel.
+    Basic's panel is disabled while hidden, so its image is not sent; the
+    hidden Advanced panel is still sent (the convention's recorded
+    exception), but a Basic upload ignores it, and the page empties it as a
+    Basic image is chosen. A post without a mode is Basic, as every upload
+    was before; one with only the earlier ``mode`` (one or each, from a page
+    opened before the toggle) is read as Basic or Advanced until #1178. The
+    setup wizard keeps ``LogoForm``.
+
+    ``stored_mode`` is the mode that saved the current logos
+    (``opening_mode``): an unbound form opens in it, and Advanced → Basic
+    asks first unless it is Basic. A bound form opens in the mode it was
+    sent from, so a refused upload keeps its fields and errors.
     """
 
-    mode = forms.ChoiceField(
-        label=_("Upload"),
-        choices=[
-            (ONE, _("One image for all sizes")),
-            (EACH, _("Each size separately")),
-        ],
-        widget=forms.RadioSelect,
+    editor_mode = forms.ChoiceField(
+        choices=[(BASIC, _("Basic")), (ADVANCED, _("Advanced"))],
         required=False,
-        initial=ONE,
+        widget=forms.HiddenInput,
     )
-    field_order = ["mode", "logo", *SLOTS]
+    field_order = ["logo", *SLOTS]
     # The browser's check of the files chosen together (ui-v1.js), in the
     # words of clean()'s own refusal; "{size}" is their total.
     max_total_bytes = MAX_TOTAL_BYTES
@@ -155,22 +168,25 @@ class LogoUploadForm(LogoForm):
         "5 MB. Upload the larger sizes on their own."
     )
 
-    def __init__(self, *args, **kwargs):
-        """Add one optional file field per size, shown only in "each" mode,
+    def __init__(self, *args, stored_mode=BASIC, **kwargs):
+        """Add one optional file field per size, drawn in the Advanced panel,
         with its one-line rule visible and the rest behind its "i" tip.
-        A post without a mode is redrawn with one image chosen, so a refused
-        one-image upload still shows its field and error."""
+        A post without a mode is drawn as Basic, so a refused one-image
+        upload still shows its field and error."""
         super().__init__(*args, **kwargs)
-        if self.is_bound and not self.data.get("mode"):
+        self.stored_mode = stored_mode
+        if self.is_bound and not self.data.get("editor_mode"):
+            # A page from before the toggle posts mode=one|each (#1178).
             self.data = self.data.copy()
-            self.data["mode"] = ONE
+            self.data["editor_mode"] = LEGACY_MODES.get(self.data.get("mode"), BASIC)
         logo = self.fields["logo"]
         logo.required = False
         logo.template_name = SIZE_FIELD_TEMPLATE
         logo.widget.attrs.update(
             {
-                "data-show-when": f"mode={ONE}",
-                "data-required-when-shown": "",
+                # Required in the browser only while Basic is shown: the
+                # Basic panel is disabled otherwise (complete-before-submit).
+                "required": True,
                 "data-max-bytes": MAX_IMAGE_BYTES,
                 "data-max-bytes-message": LOGO_TOO_LARGE,
             }
@@ -184,7 +200,6 @@ class LogoUploadForm(LogoForm):
                 widget=forms.FileInput(
                     attrs={
                         "accept": accept,
-                        "data-show-when": f"mode={EACH}",
                         # The browser refuses a file over its size's limit
                         # before sending it (ui-v1.js), in the server's words.
                         "data-max-bytes": slot.max_bytes,
@@ -200,10 +215,27 @@ class LogoUploadForm(LogoForm):
             self.fields[name] = field
         self.order_fields(self.field_order)
 
+    @property
+    def opened_mode(self):
+        """The mode the page is drawn in: the one sent, else the stored one."""
+        if self.is_bound:
+            return ADVANCED if self.data.get("editor_mode") == ADVANCED else BASIC
+        return self.stored_mode
+
+    @property
+    def stored_basic(self):
+        """Whether Basic can show the current logos (made from one image)."""
+        return self.stored_mode == BASIC
+
+    @property
+    def slot_fields(self):
+        """The Advanced panel's fields, one per size, in display order."""
+        return [self[name] for name in SLOTS]
+
     def clean_logo(self):
-        """The single image is checked only in one-image mode. A file over
-        the limit is refused in the words the page uses for it."""
-        if self.data["mode"] != ONE:
+        """The single image is checked only in Basic. A file over the limit
+        is refused in the words the page uses for it."""
+        if self.data["editor_mode"] != BASIC:
             return None
         value = self.cleaned_data.get("logo")
         if value is None:
@@ -214,16 +246,16 @@ class LogoUploadForm(LogoForm):
             )
         return super().clean_logo()
 
-    def clean_mode(self):
-        """No mode is one image, the only mode before #1062."""
-        return self.cleaned_data.get("mode") or ONE
+    def clean_editor_mode(self):
+        """No mode is Basic, the only mode before #1062."""
+        return self.cleaned_data.get("editor_mode") or BASIC
 
     def clean(self):
-        """In "each" mode check every chosen size against its rules, keeping
+        """In Advanced check every chosen size against its rules, keeping
         each normalized size in ``cleaned_data["sizes"]``; any refusal marks
         its field, so nothing is staged unless every chosen size passes."""
         values = super().clean()
-        if values.get("mode") != EACH:
+        if values.get("editor_mode") != ADVANCED:
             return values
         chosen = {name: values.get(name) for name in SLOTS if values.get(name)}
         if not chosen:
@@ -282,7 +314,17 @@ def _upload(request, service):
     ``(None, form)``, the bound form with its errors.
     """
     if (
-        set(request.POST) - {"base_digest", "csrfmiddlewaretoken", "mode"}
+        set(request.POST)
+        - {"base_digest", "csrfmiddlewaretoken", "editor_mode", "mode"}
+        or request.POST.get("editor_mode", BASIC) not in {BASIC, ADVANCED}
+        # The legacy mode field (until #1178), only alone and only its values.
+        or (
+            "mode" in request.POST
+            and (
+                "editor_mode" in request.POST
+                or request.POST["mode"] not in LEGACY_MODES
+            )
+        )
         or set(request.FILES) - {"logo", *SLOTS}
         or any(len(values) != 1 for _, values in request.POST.lists())
         or any(len(values) != 1 for _, values in request.FILES.lists())
@@ -291,7 +333,8 @@ def _upload(request, service):
     form = LogoUploadForm(request.POST, request.FILES)
     if form.is_valid():
         graphics = None
-        if form.cleaned_data["mode"] == EACH:
+        mode = form.cleaned_data["editor_mode"]
+        if mode == ADVANCED:
             # Sizes left empty keep the current logo's image (#1062). The
             # form's version is checked before the current logos are read,
             # so a page whose settings changed elsewhere is refused as any
@@ -317,6 +360,9 @@ def _upload(request, service):
                 media_root(),
                 graphics,
                 base_digest=form.cleaned_data["base_digest"],
+                # Parish logos opens in this mode once these logos are
+                # applied (#1062).
+                mode=mode,
             )
             query = urlencode({"review": identifier})
             return HttpResponseRedirect(
@@ -387,6 +433,24 @@ def _scope(request, bundle_id):
     return scope
 
 
+def opening_mode(parish):
+    """The mode Parish logos opens in for ``parish``'s current logos (#1062).
+
+    Basic when no logo is stored, or the stored bundle was saved from Basic
+    or before the mode was recorded (every such bundle was made from one
+    image: the setup step and the one-image upload); Advanced when it was
+    saved from Advanced, as its sizes need not share one image.
+    """
+    if parish is None or parish.large_logo_id is None:
+        return BASIC
+    mode = (
+        BrandingBundle.objects.filter(assets__pk=parish.large_logo_id)
+        .values_list("mode", flat=True)
+        .first()
+    )
+    return ADVANCED if mode == ADVANCED else BASIC
+
+
 def _page(request, service, configuration, form, *, status=200, redraw=False, **region):
     """Render the upload form, its review region and the current logos.
 
@@ -395,10 +459,14 @@ def _page(request, service, configuration, form, *, status=200, redraw=False, **
     apply (#196), all on this page. ``redraw`` marks the form and the
     current logos to be redrawn even by Apply's answer.
     """
+    current = configuration.active_configuration.parish
     assets = sorted(
-        current_assets(configuration.active_configuration.parish).values(),
+        current_assets(current).values(),
         key=lambda asset: asset.label,
     )
+    # The toggle opens in (and Advanced → Basic asks unless) the mode that
+    # saved the current logos.
+    form.stored_mode = opening_mode(current)
     step = "review" if region.get("review") else "edit"
     if region.get("receipt"):
         step = "apply"

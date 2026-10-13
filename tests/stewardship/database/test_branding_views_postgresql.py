@@ -401,7 +401,11 @@ def test_each_size_upload_changes_only_the_sizes_chosen(auth_service, google, me
         refused = post(
             browser,
             URL,
-            {"base_digest": digest, "mode": "each", "favicon": png(400, 120)},
+            {
+                "base_digest": digest,
+                "editor_mode": "advanced",
+                "favicon": png(400, 120),
+            },
         )
         assert refused.status_code == 400
         assert (
@@ -413,7 +417,11 @@ def test_each_size_upload_changes_only_the_sizes_chosen(auth_service, google, me
         result = post(
             browser,
             URL,
-            {"base_digest": digest, "mode": "each", "favicon": png(48, 48, "red")},
+            {
+                "base_digest": digest,
+                "editor_mode": "advanced",
+                "favicon": png(48, 48, "red"),
+            },
         )
         assert result.status_code == 302, result.content
         review = browser.get(result["Location"].split("#")[0])
@@ -433,7 +441,7 @@ def test_each_size_upload_changes_only_the_sizes_chosen(auth_service, google, me
         missing = post(
             browser,
             URL,
-            {"base_digest": digest, "mode": "each", "favicon": png(32, 32)},
+            {"base_digest": digest, "editor_mode": "advanced", "favicon": png(32, 32)},
         )
     assert missing.status_code == 400
     assert "Menu logo: there is no current image to keep." in unescape(
@@ -453,7 +461,7 @@ def test_each_size_upload_without_stored_logos_generates_from_large(
         refused = post(
             browser,
             URL,
-            {"base_digest": digest, "mode": "each", "favicon": png(32, 32)},
+            {"base_digest": digest, "editor_mode": "advanced", "favicon": png(32, 32)},
         )
         assert refused.status_code == 400
         assert (
@@ -466,7 +474,7 @@ def test_each_size_upload_without_stored_logos_generates_from_large(
             URL,
             {
                 "base_digest": digest,
-                "mode": "each",
+                "editor_mode": "advanced",
                 "large": png(600, 300),
                 "favicon": png(32, 32, "red"),
             },
@@ -501,7 +509,11 @@ def test_each_size_upload_and_apply_are_refused_after_settings_change(
         result = post(
             browser,
             URL,
-            {"base_digest": digest, "mode": "each", "favicon": png(32, 32, "red")},
+            {
+                "base_digest": digest,
+                "editor_mode": "advanced",
+                "favicon": png(32, 32, "red"),
+            },
         )
         assert result.status_code == 302, result.content
         staged = result["Location"].split("#")[0]
@@ -528,7 +540,7 @@ def test_each_size_upload_and_apply_are_refused_after_settings_change(
         stale = post(
             browser,
             URL,
-            {"base_digest": digest, "mode": "each", "favicon": png(32, 32)},
+            {"base_digest": digest, "editor_mode": "advanced", "favicon": png(32, 32)},
         )
         assert stale.status_code == 409
         assert "This page changed in another tab or session." in region(stale.content)
@@ -536,3 +548,84 @@ def test_each_size_upload_and_apply_are_refused_after_settings_change(
         refused = post(browser, staged, {"action": "confirm", "preview": token})
         assert refused.status_code == 409
         assert "Upload the logo again." in region(refused.content)
+
+
+def opened(page):
+    """The mode Parish logos is drawn in, and whether Basic can show the
+    current logos (the editor's data-stored-basic)."""
+    text = page.content.decode()
+    checked = re.search(
+        r'value="(basic|advanced)" data-editor-mode-choice checked', text
+    )
+    stored = re.search(r'data-stored-basic="(true|false)"', text)
+    return checked.group(1), stored.group(1)
+
+
+def test_the_page_opens_in_the_mode_that_saved_the_logos(auth_service, google, media):
+    """Each staged bundle records its mode (#1062): one image is Basic, sizes
+    uploaded separately are Advanced. The page opens in the mode that saved
+    the current logos, and only Basic logos have a Basic equivalent."""
+    browser, _ = signed_in()
+    with task_login(ServiceRole.WEB):
+        assert opened(browser.get(URL)) == ("basic", "true")
+        preview = stage(browser, auth_service)
+    assert BrandingBundle.objects.get().mode == "basic"
+    apply_staged(browser, auth_service, preview)
+    with task_login(ServiceRole.WEB):
+        assert opened(browser.get(URL)) == ("basic", "true")
+        digest = auth_service.store.active().digest
+        result = post(
+            browser,
+            URL,
+            {"base_digest": digest, "editor_mode": "advanced", "favicon": png(32, 32)},
+        )
+        assert result.status_code == 302, result.content
+        staged = result["Location"].split("#")[0]
+        # Staged, not applied: the current logos still came from one image.
+        assert opened(browser.get(URL)) == ("basic", "true")
+    assert BrandingBundle.objects.filter(mode="advanced").count() == 1
+    apply_staged(browser, auth_service, staged)
+    with task_login(ServiceRole.WEB):
+        assert opened(browser.get(URL)) == ("advanced", "false")
+        # A refused upload is drawn in the mode it was sent from.
+        refused = post(browser, URL, {"base_digest": digest, "editor_mode": "basic"})
+        assert refused.status_code == 400
+        assert opened(refused) == ("basic", "false")
+        # A mode the page never sends is refused outright.
+        crafted = post(browser, URL, {"base_digest": digest, "editor_mode": "each"})
+        assert crafted.status_code == 400
+        # The earlier mode field is read only alone, with its own values,
+        # until #1178 removes it.
+        for values in (
+            {"mode": "advanced"},
+            {"mode": "each", "editor_mode": "advanced"},
+        ):
+            refused = post(browser, URL, {"base_digest": digest} | values)
+            assert refused.status_code == 400
+    assert BrandingBundle.objects.count() == 2
+
+
+def test_a_page_from_before_the_toggle_still_uploads(auth_service, google, media):
+    """A Parish logos page opened before the toggle (#1062 slices 1-2) posts
+    mode=one|each; for one release (#1178) it is staged as Basic or Advanced."""
+    browser, _ = signed_in()
+    with task_login(ServiceRole.WEB):
+        digest = auth_service.store.active().digest
+        one = post(
+            browser, URL, {"base_digest": digest, "mode": "one", "logo": upload()}
+        )
+        assert one.status_code == 302, one.content
+    assert BrandingBundle.objects.get().mode == "basic"
+    apply_staged(browser, auth_service, one["Location"].split("#")[0])
+    with task_login(ServiceRole.WEB):
+        each = post(
+            browser,
+            URL,
+            {
+                "base_digest": auth_service.store.active().digest,
+                "mode": "each",
+                "favicon": png(32, 32, "red"),
+            },
+        )
+        assert each.status_code == 302, each.content
+    assert BrandingBundle.objects.filter(mode="advanced").count() == 1

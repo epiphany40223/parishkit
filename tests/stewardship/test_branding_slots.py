@@ -233,34 +233,37 @@ def upload(name, data):
 
 def bound(mode, **files):
     """The Parish logos form posted in ``mode`` with ``files``."""
-    data = {"base_digest": "a" * 64} | ({"mode": mode} if mode else {})
+    data = {"base_digest": "a" * 64} | ({"editor_mode": mode} if mode else {})
     return LogoUploadForm(
         data, {name: upload(name, value) for name, value in files.items()}
     )
 
 
 def test_one_image_mode_is_the_default_and_unchanged():
-    """No mode is one image, as before #1062: the single file is required,
-    and per-size files sent alongside are ignored."""
+    """No mode is Basic, one image, as before #1062: the single file is
+    required, and per-size files sent alongside are ignored."""
     form = bound(None)
     assert not form.is_valid()
     assert list(form.errors) == ["logo"]
     form = bound(None, logo=image(150, 80), favicon=image(400, 120))
     assert form.is_valid(), form.errors
-    assert form.cleaned_data["mode"] == "one"
+    assert form.cleaned_data["editor_mode"] == "basic"
+    assert "sizes" not in form.cleaned_data
+    form = bound("basic", logo=image(150, 80), favicon=image(400, 120))
+    assert form.is_valid(), form.errors
     assert "sizes" not in form.cleaned_data
 
 
 def test_each_size_mode_checks_every_chosen_size():
     """Every chosen size is checked; any refusal marks its own field, so
     nothing is staged; an empty upload asks for at least one size."""
-    form = bound("each")
+    form = bound("advanced")
     assert not form.is_valid()
     assert form.errors["large"] == ["Choose an image for at least one size to upload."]
-    form = bound("each", favicon=image(400, 120), icon=image(200, 200))
+    form = bound("advanced", favicon=image(400, 120), icon=image(200, 200))
     assert not form.is_valid()
     assert list(form.errors) == ["favicon"]
-    form = bound("each", favicon=image(32, 32), menu=image(256, 64))
+    form = bound("advanced", favicon=image(32, 32), menu=image(256, 64))
     assert form.is_valid(), form.errors
     assert set(form.cleaned_data["sizes"]) == {"favicon", "menu"}
     assert "logo" not in form.errors
@@ -269,40 +272,62 @@ def test_each_size_mode_checks_every_chosen_size():
 def test_each_size_mode_bounds_the_files_together():
     """The files chosen together stay under what one request can carry."""
     big = padded(image(600, 600), 4 * MB + 1)
-    form = bound("each", large=big, menu=padded(image(256, 64), MB))
+    form = bound("advanced", large=big, menu=padded(image(256, 64), MB))
     assert not form.is_valid()
     assert form.errors["large"] == [
         "Together the chosen files are 5.1 MB; one upload can carry at most "
         "5 MB. Upload the larger sizes on their own."
     ]
-    form = bound("each", large=padded(image(600, 600), 4 * MB), menu=image(256, 64))
+    form = bound("advanced", large=padded(image(600, 600), 4 * MB), menu=image(256, 64))
     assert form.is_valid(), form.errors
 
 
 def test_each_size_field_shows_its_rule_and_is_shown_only_in_its_mode():
     """Each size's one-line rule stays visible, the rest is behind its tip,
-    and the browser checks its byte limit in the server's words."""
+    and the browser checks its byte limit in the server's words. The one
+    image is required in the browser (only while its Basic panel is shown)."""
     form = LogoUploadForm(initial={"base_digest": "a" * 64})
     assert list(form.fields) == [
-        "mode",
         "logo",
         "large",
         "menu",
         "icon",
         "favicon",
         "base_digest",
+        "editor_mode",
     ]
-    assert form.fields["logo"].widget.attrs["data-show-when"] == "mode=one"
+    assert form.fields["logo"].widget.attrs["required"] is True
+    assert [field.name for field in form.slot_fields] == list(SLOTS)
     for name, slot in SLOTS.items():
         field = form.fields[name]
         assert field.help_text == slot.hint and field.tip == slot.tip
         attrs = field.widget.attrs
-        assert attrs["data-show-when"] == "mode=each"
+        assert "data-show-when" not in attrs
         assert attrs["data-max-bytes"] == slot.max_bytes
         assert attrs["data-max-bytes-message"].startswith(f"{slot.title}: the file")
     assert form.fields["favicon"].widget.attrs["accept"] == "image/png"
-    html = form.as_div()
-    assert 'value="each"' in html and "Each size separately" in html
+
+
+@pytest.mark.parametrize(
+    ("stored", "data", "opened"),
+    [
+        # Unbound: the mode that saved the current logos.
+        ("basic", None, "basic"),
+        ("advanced", None, "advanced"),
+        # Bound (a refused upload): the mode it was sent from, else Basic.
+        ("advanced", {}, "basic"),
+        ("basic", {"editor_mode": "advanced"}, "advanced"),
+        ("advanced", {"editor_mode": "basic"}, "basic"),
+    ],
+)
+def test_the_form_opens_in_the_stored_or_sent_mode(stored, data, opened):
+    """Which mode is drawn (#1062): the stored one, or the one sent."""
+    if data is None:
+        form = LogoUploadForm(initial={"base_digest": "a" * 64}, stored_mode=stored)
+    else:
+        form = LogoUploadForm({"base_digest": "a" * 64} | data, {}, stored_mode=stored)
+    assert form.opened_mode == opened
+    assert form.stored_basic is (stored == "basic")
 
 
 def test_a_bundle_takes_four_separate_sizes(tmp_path):
@@ -368,3 +393,19 @@ def test_one_image_over_its_limit_is_refused_in_the_pages_words():
     page = LogoUploadForm(initial={"base_digest": "a" * 64})
     template = page.fields["logo"].widget.attrs["data-max-bytes-message"]
     assert str(template).replace("{size}", "5.1 MB") == message
+
+
+@pytest.mark.parametrize(("legacy", "mode"), [("one", "basic"), ("each", "advanced")])
+def test_a_page_from_before_the_toggle_still_uploads(legacy, mode):
+    """The earlier mode field (one or each, #1062 slices 1-2) is read as
+    Basic or Advanced while editor_mode is absent, for one release (#1178)."""
+    form = LogoUploadForm(
+        {"base_digest": "a" * 64, "mode": legacy},
+        {
+            "favicon": upload("favicon", image(32, 32)),
+            "logo": upload("logo", image(150, 80)),
+        },
+    )
+    assert form.is_valid(), form.errors
+    assert form.cleaned_data["editor_mode"] == mode
+    assert form.opened_mode == mode

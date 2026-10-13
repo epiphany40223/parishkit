@@ -1373,10 +1373,28 @@ below the review region, refresh once the change is applied. An upload
 from a page whose settings changed elsewhere, and an Apply of logos that
 expired or were staged against settings changed since, are refused there.
 
-Parish logos take either one image, resized into all four sizes (the
-default), or each size uploaded separately (#1062): the large
+Parish logos take either one image, resized into all four sizes, or each
+size uploaded separately (#1062): the large
 logo, the menu logo beside the parish name on both portals, the icon and
-the favicon in the browser tab on both portals. Each size states its
+the favicon in the browser tab on both portals. The two are the page's
+[Basic and Advanced modes](../ui-conventions/spec.md#basic-and-advanced-modes)
+(#1062 slice 3): **Basic** is one image, resized for every size, and
+**Advanced** is each size uploaded separately. Each staged bundle records
+the mode that made it (`stewardship_branding_bundle.mode`, schema
+migration 0078; empty for campaign artwork and for bundles staged before
+it, all made from one image), and the page opens in the mode that saved
+the current logos: Basic when none are stored or they came from Basic (or
+before the mode was recorded; the setup step records Basic), Advanced when
+they came from Advanced. Basic has no equivalent for logos saved from
+Advanced or for a size chosen in Advanced, so switching to Basic then asks
+first ("Your custom logos have no basic equivalent.", with Keep Advanced
+and Switch to Basic); nothing is replaced until a Basic image is uploaded,
+reviewed and applied. Choosing a Basic image empties any size chosen in
+Advanced, since a Basic upload replaces all four; the server turns the one
+image into the four sizes. Upload and review is unavailable, with the reason
+under it, until a Basic image or at least one Advanced size is chosen. The
+upload sends the mode as `editor_mode`; an upload without one is Basic.
+Each size states its
 formats and limits beside its field and is refused, naming the size, the
 rule and what the file was, when it breaks them:
 

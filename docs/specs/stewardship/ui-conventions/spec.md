@@ -1028,7 +1028,7 @@ sent, and its errors clear. **Why.** Fields that do not apply invite wrong answe
 a form look longer than it is. **Shared code.** `ui-v1.js`: `data-show-when`,
 `data-required-when`, `data-required-when-shown`; re-applied on `pageshow`
 and after every in-place swap. A rule may name a radio group as well as a
-single control (Parish logos' upload mode, #1062). Where hiding a field would move the controls
+single control. Where hiding a field would move the controls
 around it, two gates keep it in place instead:
 
 - `data-enabled-when="name=value"` (#959) works like `data-show-when`

@@ -30,6 +30,12 @@ class BrandingBundle(MutableRecord):
     base = models.ForeignKey("AppliedConfigurationVersion", on_delete=models.PROTECT)
     expires_at = UTCDateTimeField()
     state = models.CharField(max_length=16, default="writing", db_default="writing")
+    # How a logo bundle's four sizes were made (#1062, schema migration
+    # 0082): "basic", one image resized for every size, or "advanced", the
+    # sizes uploaded separately. Parish logos opens in the mode that saved
+    # the current logos. Empty for campaign artwork and for bundles staged
+    # before the mode was recorded (all of them made from one image).
+    mode = models.CharField(max_length=8, null=True)
 
     class Meta(MutableRecord.Meta):
         db_table = "stewardship_branding_bundle"
@@ -43,6 +49,11 @@ class BrandingBundle(MutableRecord):
             models.CheckConstraint(
                 condition=models.Q(expires_at__gt=models.F("created_at")),
                 name="branding_bundle_interval",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(mode__isnull=True)
+                | models.Q(mode__in=["basic", "advanced"]),
+                name="branding_bundle_mode",
             ),
         ]
 

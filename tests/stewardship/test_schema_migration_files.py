@@ -276,6 +276,9 @@ FROZEN = {
     "0081_bounce_report.sql": (
         "623c61127b2d65b4a649815c84a4e757f2ef33201e445b543e5c1bba7328284a"
     ),
+    "0082_branding_bundle_mode.sql": (
+        "1743245bc1291cde5f96e54c3b83c34346aa73a47db56ce11f6eaf89694fb9b0"
+    ),
 }
 
 

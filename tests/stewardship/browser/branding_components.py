@@ -15,7 +15,11 @@ served by the fixture server:
 ``REFUSED`` is the page refusing an upload (400), the field error in the
 form and its summary in the review region; a browser test answers the
 upload's POST with it. ``REFUSED_SIZE`` refuses a favicon uploaded on its
-own (#1062), with "Each size separately" still chosen.
+own (#1062), drawn in Advanced, the mode it was sent from.
+
+``PAGE`` draws current logos saved from Basic (one image); ``ADVANCED_PAGE``
+draws the same page for current logos saved from Advanced, which opens in
+Advanced and asks before Basic (#1062, #1121).
 """
 
 from types import SimpleNamespace as Value
@@ -35,6 +39,7 @@ SETTLED = f"{PAGE}?request={REQUEST}&settled=1"
 STATUS = "/branding-in-place-status"
 REFUSED = "/branding-in-place-refused"
 REFUSED_SIZE = "/branding-in-place-refused-size"
+ADVANCED_PAGE = f"{PAGE}?stored=advanced"
 SIZE_ERROR = (
     "Favicon: the image is 400 × 120 pixels; a favicon must be square (within 10%)."
 )
@@ -76,9 +81,11 @@ def components(context, admin):
     pending = Value(state="staged", request_id=REQUEST, failure_code="")
     applied = Value(state="applied", request_id=REQUEST, failure_code="")
 
-    def page(step, current, form=None, **region):
-        """Parish logos at ``step`` with ``current`` logos and the region."""
+    def page(step, current, form=None, stored="basic", **region):
+        """Parish logos at ``step`` with ``current`` logos, saved from the
+        ``stored`` mode, and the region."""
         form = form or LogoUploadForm(initial={"base_digest": "a" * 64})
+        form.stored_mode = stored
         values = review_region("branding_settings", form, **region)
         if region.get("receipt"):
             values["status_url"] = STATUS
@@ -100,7 +107,9 @@ def components(context, admin):
     refused.is_valid()
     # The server's refusal of a favicon uploaded on its own; the fixture
     # server never reads the file, so the error is the one check_slot gives.
-    refused_size = LogoUploadForm(data={"base_digest": "a" * 64, "mode": "each"})
+    refused_size = LogoUploadForm(
+        data={"base_digest": "a" * 64, "editor_mode": "advanced"}
+    )
     refused_size.is_valid()
     refused_size.errors.clear()
     refused_size.add_error("favicon", SIZE_ERROR)
@@ -128,4 +137,5 @@ def components(context, admin):
         SETTLED: page(2, assets, receipt=applied),
         REFUSED: page(0, [], refused),
         REFUSED_SIZE: page(0, [], refused_size),
+        ADVANCED_PAGE: page(0, assets, stored="advanced"),
     }

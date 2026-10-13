@@ -68,13 +68,23 @@ def _owned(request, service, bundle_id, *, setup_attempt_id=None, passive=False)
 
 
 def stage_branding(
-    request, service, media_root, graphics, *, base_digest, setup_attempt_id=None
+    request,
+    service,
+    media_root,
+    graphics,
+    *,
+    base_digest,
+    setup_attempt_id=None,
+    mode=None,
 ):
     """Record ownership before writing files; publish receipts only after full fsync.
 
     Decode the bounded image before invoking this service. Failure leaves an
     unserved writing receipt for explicit or expiry cleanup, never an ambiguous
     partially applied logo. Filesystem exclusion spans both short SQL admissions.
+    ``mode`` records how a logo bundle was made, "basic" (one image) or
+    "advanced" (sizes uploaded separately), so Parish logos can open in that
+    mode (#1062); campaign artwork leaves it None.
     """
     with media_lock(media_root):
         with work_transaction():
@@ -89,6 +99,7 @@ def stage_branding(
                 base_id=configuration.active_configuration_id,
                 expires_at=database_now() + timedelta(hours=24),
                 correlation_id=current_correlation(),
+                mode=mode,
             )
         files = create_bundle(media_root, row.pk, graphics)
         with work_transaction():
