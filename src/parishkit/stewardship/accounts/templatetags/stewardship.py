@@ -4,10 +4,12 @@ import re
 from datetime import date, time
 
 from django import template
+from django.urls import reverse
 from django.utils.html import conditional_escape, format_html, format_html_join
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext as _
 
+from parishkit.stewardship.accounts import admin_navigation
 from parishkit.stewardship.accounts.sessions import freshness
 from parishkit.stewardship.campaigns import single_campaign
 from parishkit.stewardship.campaigns.configuration import REMINDER_WORKGROUP_NAME
@@ -310,6 +312,43 @@ def multi_campaign_control(control_id, label):
     shows the same tip, defined once in ``campaigns.single_campaign``.
     """
     return {"control_id": control_id, "label": label, "tip": single_campaign.TIP}
+
+
+@register.inclusion_tag("stewardship/components/menu-link.html", takes_context=True)
+def menu_link(context, name, label, query="", href=None, control_id=None):
+    """An in-page link to Admin page ``name``, greyed out as the menu greys it.
+
+    Navigation rule 6 links a page only when the viewer may open it now
+    (#1242). A menu page follows the viewer's own menu entry (the chrome's
+    ``entries``): linked while available, the shared greyed-out control
+    with the entry's reason while not, and plain text when the role hides
+    the entry. A page in ``admin_navigation.PAGE_REASONS`` is greyed out for
+    its reason the same way. ``query`` is appended to the link (a preset
+    filter), or ``href`` replaces it whole (a link the view built to that
+    page). ``control_id`` names a greyed control uniquely where the page
+    shows several links to one page. Without the Admin chrome (a fragment)
+    it is an ordinary link. Any other page is refused, so the tag never
+    links a page it cannot check.
+    """
+    if name not in admin_navigation.MENU_NAMES and name not in (
+        admin_navigation.PAGE_REASONS
+    ):
+        raise ValueError(f"menu_link cannot check page {name!r}.")
+    chrome = context.get("admin_chrome") or {}
+    url, reason = reverse(f"{admin_navigation.NAMESPACE}:{name}"), None
+    if name in admin_navigation.PAGE_REASONS and "menu_state" in chrome:
+        reason = admin_navigation.PAGE_REASONS[name](chrome["menu_state"])
+    elif name in admin_navigation.MENU_NAMES and "entries" in chrome:
+        item = chrome["entries"].get(name)
+        url, reason = (item.url, item.reason) if item else (None, None)
+    if url is not None:
+        url = href or url + query
+    return {
+        "label": label,
+        "url": None if reason else url,
+        "tip": reason,
+        "control_id": control_id or f"{name.replace('_', '-')}-link",
+    }
 
 
 # A {% button %} argument: a name (HTML attribute names keep their hyphens)

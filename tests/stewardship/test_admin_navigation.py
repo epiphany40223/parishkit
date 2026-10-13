@@ -5,6 +5,7 @@ import logging
 import re
 from contextlib import nullcontext
 from html.parser import HTMLParser
+from itertools import product
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
@@ -14,6 +15,18 @@ from django.template.loader import render_to_string
 from django.urls import get_resolver, reverse
 
 from parishkit.stewardship.accounts import admin_navigation as navigation
+
+
+@pytest.fixture(autouse=True)
+def _downloaded(monkeypatch):
+    """ParishSoft data has been downloaded, unless a test says otherwise.
+
+    The menu reads it from the database (``admin_context.menu_state``);
+    these tests run without one.
+    """
+    from parishkit.stewardship.accounts import admin_context
+
+    monkeypatch.setattr(admin_context, "parishsoft_downloaded", lambda: True)
 
 
 def _admin_patterns():
@@ -603,7 +616,7 @@ SHAPES = {
 }
 
 
-def _menu(role, campaign, mode):
+def _menu(role, campaign, mode, parishsoft_data=True):
     """The menu items ``portal_chrome`` would build for this situation."""
     from parishkit.stewardship.accounts import admin_context
     from parishkit.stewardship.accounts.policy import Capability, allows
@@ -614,6 +627,7 @@ def _menu(role, campaign, mode):
         allows(actor, Capability.CONFIGURE),
         campaign,
         SimpleNamespace(mode=mode),
+        parishsoft_data,
     )
 
 
@@ -753,6 +767,7 @@ REASONS = (
     navigation.ALREADY_LIVE,
     navigation.NOT_CONFIRMED,
     navigation.PRODUCTION_ONLY,
+    navigation.NO_SOURCE_DATA,
 )
 
 
@@ -780,8 +795,8 @@ def test_every_greyable_entry_has_a_direct_url_reason():
     }
     assert greyable >= {"share_settings", "go_live", "delivery_control"}
     shown = set()
-    for mode, name, campaign in _situations():
-        items = _menu("administrator", campaign, mode)
+    for (mode, name, campaign), data in product(_situations(), (True, False)):
+        items = _menu("administrator", campaign, mode, data)
         for item in items:
             greyed = navigation.greyed_entry(item.name, items)
             if item.reason is None:
@@ -789,7 +804,7 @@ def test_every_greyable_entry_has_a_direct_url_reason():
                 continue
             assert any(item.reason is reason for reason in REASONS), item
             assert item.name in greyable
-            assert greyed.reason is item.reason, (mode, name, item)
+            assert greyed.reason is item.reason, (mode, name, data, item)
             refusal = greyed.refusal().refusal
             assert str(refusal.message).rstrip(".") == str(item.reason)
             assert str(refusal.title) == f"{item.label} isn't available right now"
@@ -834,6 +849,59 @@ def test_way_forward_links_only_entries_the_viewer_is_offered():
         navigation.greyed_entry("financial_report", staff).refusal().refusal.link
         is None
     )
+    # No ParishSoft data yet: Refresh from ParishSoft fetches it (#1242),
+    # offered to Administrators only.
+    empty = _menu("administrator", CAMPAIGNS["draft"], "testing", False)
+    for name in ("ministries", "family_directory", "information_queue"):
+        assert navigation.greyed_entry(name, empty).forward == (
+            "Refresh from ParishSoft",
+            reverse("admin:source_refresh"),
+        )
+    empty = _menu("staff", CAMPAIGNS["draft"], "testing", False)
+    assert navigation.greyed_entry("family_directory", empty).forward is None
+
+
+def test_pages_listing_parishsoft_data_wait_for_the_first_download():
+    """Before the first download the pages that list ParishSoft data are
+    greyed out with one reason, after any campaign reason (#1242)."""
+    needs = {"ministries", "family_directory", "information_queue"}
+    for campaign in (CAMPAIGNS["draft"], None):
+        with_data = {i.name: i for i in _menu("administrator", campaign, "testing")}
+        without = {
+            i.name: i for i in _menu("administrator", campaign, "testing", False)
+        }
+        for name, item in without.items():
+            if name not in needs:
+                assert item == with_data[name], name
+            elif campaign is None and name != "ministries":
+                assert item.reason is navigation.NO_CAMPAIGN, name
+            else:
+                assert item.reason is navigation.NO_SOURCE_DATA, name
+                assert with_data[name].url, name
+    state = navigation.MenuState(None, "testing", lambda: False)
+    assert navigation.PAGE_REASONS["source_form"](state) is navigation.NO_SOURCE_DATA
+
+
+def test_menu_link_escapes_and_checks_only_known_pages():
+    """``menu_link`` escapes its label, plain-texts a page the viewer's menu
+    hides, and refuses a page it has no reason check for (#1242)."""
+    from django.template import engines
+
+    def render(source, chrome=None):
+        """Render ``source`` with the stewardship tags and optional chrome."""
+        template = engines["django"].from_string("{% load stewardship %}" + source)
+        context = {"label": "<b>&</b>"}
+        return template.render(context | ({"admin_chrome": chrome} if chrome else {}))
+
+    # A label from the view (template literals are trusted, as in Django).
+    label = '{% menu_link "family_directory" label %}'
+    assert render(label) == (
+        '<a href="/admin/reports/families/">&lt;b&gt;&amp;&lt;/b&gt;</a>'
+    )
+    # The viewer's menu has no directory entry: text, no link, no control.
+    assert render(label, {"entries": {}}) == "&lt;b&gt;&amp;&lt;/b&gt;"
+    with pytest.raises(ValueError, match="cannot check"):
+        render('{% menu_link "delivery_refusals" "Refused" %}')
 
 
 @pytest.mark.parametrize("role", ["staff", "ministry_leader"])

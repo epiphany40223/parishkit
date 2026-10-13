@@ -36,7 +36,7 @@ def _chrome(roles, campaign=CAMPAIGN, ministries=frozenset()):
     actor = Principal(UUID(int=1), frozenset(roles), ministries)
     admin = "administrator" in roles
     items = admin_context._navigation_items(
-        actor, admin, campaign, SimpleNamespace(mode="production")
+        actor, admin, campaign, SimpleNamespace(mode="production"), True
     )
     return admin_context._find_family(actor, items, campaign)
 

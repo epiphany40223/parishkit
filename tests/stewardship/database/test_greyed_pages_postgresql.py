@@ -3,16 +3,17 @@
 One test per kind of reason check (ui-conventions, "Unavailable menu pages"):
 no current campaign, an archived campaign, a missing module, a structure
 fixed once live, a campaign that already went live, an unconfirmed
-Production and Testing mode. Each opens the page as a browser would and
-finds the menu entry's own reason, never "This information changed". The
-pure guard that every greyable entry is covered is in
-``test_admin_navigation``.
+Production, Testing mode and no ParishSoft data yet (#1242). Each opens the
+page as a browser would and finds the menu entry's own reason, never "This
+information changed". The pure guard that every greyable entry is covered is
+in ``test_admin_navigation``.
 """
 
 from uuid import uuid4
 
 import pytest
 from django.db import connection
+from django.test.utils import CaptureQueriesContext
 
 from parishkit.stewardship.accounts import admin_navigation as navigation
 from parishkit.stewardship.campaigns.lifecycle import Action
@@ -22,6 +23,7 @@ from ..policy_factory import address
 from ..test_share_forms import data_for
 from .auth_builders import signed_in, unguarded
 from .campaign_builders import add_draft, change, command
+from .test_report_workspace_postgresql import read
 from .test_share_views_postgresql import setup as financial_draft
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -72,6 +74,65 @@ def _staff(store, google):
         ],
     )
     google[0]["email"] = "staff@example.org"
+
+
+def _greyed_link(body, name, reason):
+    """``body`` shows page ``name``'s in-page link greyed out with ``reason``."""
+    control = name.replace("_", "-")
+    assert f'href="/admin/{_path(name)}"' not in body
+    assert (
+        f'aria-describedby="{control}-link-tip" data-menu-tip>' in body
+        and f'<span class="admin-tip" id="{control}-link-tip" role="tooltip">'
+        f"{reason}</span>"
+        in body
+    ), name
+
+
+def test_no_parishsoft_data_leads_to_the_refresh(auth_service, google):
+    """Before the first ParishSoft download the pages that list its data say
+    so and lead to Refresh from ParishSoft, never "try again later" (503);
+    the pages that link them grey the links the way the menu does."""
+    store = auth_service.store
+    add_draft(store, store.active(), uuid4())
+    browser, _ = signed_in()
+    reason = navigation.NO_SOURCE_DATA
+    for name in ("ministries", "family_directory", "information_queue"):
+        with CaptureQueriesContext(connection) as queries:
+            _opened(browser, name, reason, "source_refresh")
+        # The access gate and the page's menu share one read of it.
+        reads = [q for q in queries if "stewardship_source_current" in q["sql"]]
+        assert len(reads) == 1, (name, reads)
+    # Families the form cannot open is not a menu page: its own view gives
+    # the same reason page after its access check.
+    response = browser.get(f"/admin/{_path('source_form')}", **PAGE)
+    body = response.content.decode()
+    assert response.status_code == 409, body
+    assert "Families the form cannot open isn&#x27;t available right now" in body
+    assert f"{reason}." in body
+    assert f'<a href="/admin/{_path("source_refresh")}">Go to Refresh from' in body
+    health = browser.get(f"/admin/{_path('system_health')}", **PAGE)
+    assert health.status_code == 200
+    _greyed_link(health.content.decode(), "source_form", reason)
+    # Participation greys the directory for the data, and Limitations
+    # because this draft has no Ministry stewardship.
+    # A streamed report: read through an abortable transport.
+    participation, body = read(browser, f"/admin/{_path('participation')}")
+    assert participation.status_code == 200
+    body = body.decode()
+    _greyed_link(body, "family_directory", reason)
+    _greyed_link(body, "limitations_report", navigation.MINISTRY_MISSING)
+    _greyed_link(body, "information_queue", reason)
+    assert f'<a href="/admin/{_path("response_dashboard")}">' in body
+
+
+def test_no_parishsoft_data_for_staff_has_no_way_on(auth_service, google):
+    """Staff are not offered Refresh from ParishSoft, so the reason page for
+    the directory before the first download has no link onward."""
+    store = auth_service.store
+    add_draft(store, store.active(), uuid4())
+    _staff(store, google)
+    browser, _ = signed_in()
+    _opened(browser, "family_directory", navigation.NO_SOURCE_DATA)
 
 
 def test_no_current_campaign(auth_service, google):

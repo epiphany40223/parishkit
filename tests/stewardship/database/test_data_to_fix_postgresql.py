@@ -224,7 +224,8 @@ def test_the_command_shows_staff_their_sections_only(
 def test_without_a_campaign_each_section_says_why(auth_service, google):
     """No current campaign: every block stays, refused addresses still count,
     and the directory and census links are greyed out as their menu entries
-    are, while the source-form list (which opens and says so) stays linked."""
+    are. No ParishSoft data has been downloaded either, so the source-form
+    list is greyed out with that reason, as System health's link is (#1242)."""
     browser, login = signed_in()
     assert login.status_code == 302
     response, body = get(browser, PAGE)
@@ -234,7 +235,9 @@ def test_without_a_campaign_each_section_says_why(auth_service, google):
     assert "No current campaign." in text
     assert "No refused addresses: campaign email reaches every address" in text
     assert text.count("No current campaign") >= 3
-    assert 'href="/admin/system/source-form/"' in text
+    assert 'href="/admin/system/source-form/"' not in text
+    assert 'id="data-to-fix-open-form_cannot_open-tip"' in text
+    assert "ParishSoft data has not been downloaded yet." in text
     assert 'id="data-to-fix-open-unreachable_families-tip"' in text
     assert 'id="data-to-fix-open-census_changes-tip"' in text
     # The menu greys Census changes out too, so no link to it anywhere.

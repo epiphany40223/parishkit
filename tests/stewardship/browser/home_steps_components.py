@@ -37,7 +37,10 @@ def components(context, admin):
     """Home as the index view renders it for an Administrator, with Next steps."""
     actor = Principal(UUID(int=1), frozenset({"administrator"}))
     configuration = SimpleNamespace(mode="production")
-    items = admin_context._navigation_items(actor, True, CAMPAIGN, configuration)
+    # ParishSoft data is present, so the menu runs no query (it would need a DB).
+    items = admin_context._navigation_items(
+        actor, True, CAMPAIGN, configuration, parishsoft_data=True
+    )
     sections, _breadcrumbs = admin_navigation.build(
         SimpleNamespace(
             url_name="index", namespace=admin_navigation.NAMESPACE, kwargs={}

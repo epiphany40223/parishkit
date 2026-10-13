@@ -493,14 +493,14 @@ Home, then these groups, each listing the entries the viewer's role may open:
 | Responses and reports | Financial stewardship | `/admin/reports/financial/` | Administrator, Staff | The campaign has no financial module |
 | Responses and reports | Limitations | `/admin/reports/limitations/` | Administrator, Staff | The campaign has no Ministry module |
 | Responses and reports | Census changes | `/admin/reports/census/` | Administrator, Staff | The campaign does not include the census |
-| Responses and reports | Additional information | `/admin/reports/information/` | Administrator, Staff | No current campaign |
+| Responses and reports | Additional information | `/admin/reports/information/` | Administrator, Staff | No current campaign, or ParishSoft data has not been downloaded yet |
 | Responses and reports | Ministry requests | `/admin/reports/ministries/` | Administrator, Staff, Ministry leader | The campaign has no Ministry module |
 | Responses and reports | Ministry follow-up | `/admin/reports/ministries/follow-up/` | Administrator, Staff, Ministry leader | The campaign has no Ministry module |
-| Responses and reports | Active parishioner family directory | `/admin/reports/families/` | Administrator, Staff | No current campaign |
+| Responses and reports | Active parishioner family directory | `/admin/reports/families/` | Administrator, Staff | No current campaign, or ParishSoft data has not been downloaded yet |
 | Responses and reports | Emailed reports | `/admin/reports/emailed/` | Administrator, Staff | Never |
 | Parish data | Parish settings | `/admin/parish/settings/` | Administrator | Never |
 | Parish data | Parish logos | `/admin/parish/logos/` | Administrator | Never |
-| Parish data | Ministries | `/admin/parish/ministries/` | Administrator | Never |
+| Parish data | Ministries | `/admin/parish/ministries/` | Administrator | ParishSoft data has not been downloaded yet |
 | Parish data | Hosted files | `/admin/parish/files/` | Administrator | Never |
 | Parish data | Past campaigns | `/admin/parish/past-campaigns/` | Administrator | Never |
 | Parish data | Refresh from ParishSoft | `/admin/parish/parishsoft-refresh/` | Administrator | Never |
@@ -682,8 +682,11 @@ is something to do. An unavailable entry's page, opened directly, shows the
 same reason and a way forward
 ([unavailable menu pages](../ui-conventions/spec.md#unavailable-menu-pages)).
 The conditions come from the campaign
-state, modules and mode the chrome already reads, so building the menu adds
-no query. The one exception is the open counts on Additional information and
+state, modules and mode the chrome already reads, and from whether
+ParishSoft data has been downloaded yet (#1242): one small query, run once
+per request and only when an entry's condition needs it, for a viewer whose
+menu has Ministries, Additional information or the directory. The other
+exception is the open counts on Additional information and
 Ministry follow-up ([Menu groups](#menu-groups)): one query reads both, only
 when the viewer's menu offers either entry as a link, once per request.
 
@@ -1009,7 +1012,12 @@ registry and the rendered pages.
    on Emailed reports with a link to the report; Cancel returns to the page it
    was pressed on, never Home unless the flow started there.
 6. **Messages link what they name.** A message that tells the reader to use
-   another page links that page when the viewer may open it.
+   another page links that page when the viewer may open it. A page is linked
+   only when the viewer may open it now: an in-page link to a page the menu
+   greys out is greyed out the same way, with the menu's reason (#1242), and
+   the navigation test fails on any followed link that answers an error,
+   apart from a short documented allow-list of fixture limits that may only
+   shrink.
 7. **Stable shape.** For each role, the menu's groups and entries are the same
    across modes and campaign states (setup pending excepted); an unavailable
    entry is greyed out with its reason, never removed, and stays reachable by

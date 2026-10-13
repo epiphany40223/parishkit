@@ -1,6 +1,7 @@
 """Capability-filtered Admin chrome; public/Family pages never query this context."""
 
 import contextlib
+import functools
 import logging
 from datetime import timedelta
 
@@ -59,7 +60,13 @@ def portal_chrome(request):
         return {"admin_chrome": _setup_chrome(actor, configuration, session)}
     admin = allows(actor, Capability.CONFIGURE)
     campaign = _current_campaign(configuration)
-    items = _navigation_items(actor, admin, campaign, configuration)
+    # One state for the menu and the pages' own links (``menu_link``), so the
+    # ParishSoft download is read at most once per request, shared with the
+    # access gate's reason check (``greyed_page``).
+    state = menu_state(campaign, configuration, request_downloaded(request))
+    items = _navigation_items(
+        actor, admin, campaign, configuration, state.parishsoft_data
+    )
     # Presentation only: reuse the instant the owning view read inside its own
     # read snapshot (never an earlier one from before a lock wait).
     now = getattr(request, "_stewardship_display_now", None) or database_now()
@@ -107,6 +114,10 @@ def portal_chrome(request):
             "home_current": bool(breadcrumbs) and len(breadcrumbs) == 1,
             "sections": sections,
             "breadcrumbs": breadcrumbs,
+            # The viewer's menu entries by page and the reason-check state,
+            # for in-page links greyed as the menu greys them (``menu_link``).
+            "entries": {item.name: item for item in items},
+            "menu_state": state,
             # A multi-step flow's step indicator, and where "Return to" goes.
             "flow_steps": admin_navigation.steps(placed),
             "back": admin_navigation.back(match, placed, items),
@@ -174,7 +185,48 @@ def _key_changes():
     ]
 
 
-def _navigation_items(actor, admin, campaign, configuration):
+def parishsoft_downloaded():
+    """Whether a ParishSoft download has been promoted to the current corpus.
+
+    One small singleton-row read. Pages that list ParishSoft data have
+    nothing to show until it is true (#1242).
+    """
+    from parishkit.stewardship.source.snapshot_models import SourceCurrent
+
+    return SourceCurrent.objects.filter(snapshot__isnull=False).exists()
+
+
+def request_downloaded(request):
+    """``parishsoft_downloaded``, read at most once for ``request``, lazily.
+
+    The access gate (``greyed_page``) and the chrome (``portal_chrome``)
+    both check it on the same request; sharing one cached answer keeps that
+    to a single query, and none when no entry's reason check asks.
+    """
+    found = getattr(request, "_stewardship_parishsoft_data", None)
+    if found is None:
+        found = functools.cache(parishsoft_downloaded)
+        request._stewardship_parishsoft_data = found
+    return found
+
+
+def menu_state(campaign, configuration, parishsoft_data=None):
+    """The menu's reason-check state: the one place that builds it.
+
+    ``parishsoft_data`` says whether ParishSoft data has been downloaded:
+    True or False when the caller already knows (unit tests), another
+    state's callable to share its answer, or None to read it on first use
+    only, once, so a menu with no entry that needs it (a Ministry
+    leader's) runs no query for it.
+    """
+    if parishsoft_data is None:
+        parishsoft_data = functools.cache(parishsoft_downloaded)
+    elif not callable(parishsoft_data):
+        parishsoft_data = functools.partial(bool, parishsoft_data)
+    return admin_navigation.MenuState(campaign, configuration.mode, parishsoft_data)
+
+
+def _navigation_items(actor, admin, campaign, configuration, parishsoft_data=None):
     """The menu entries the actor may open: ``MenuItem`` rows in menu order.
 
     Each entry uses the same capability the page itself checks, so the menu
@@ -183,6 +235,7 @@ def _navigation_items(actor, admin, campaign, configuration):
     state does not allow right now has no URL and carries its reason (the
     admin-portal spec's stable menu shape). Campaign entries follow the
     current campaign. ``admin`` is the caller's CONFIGURE decision, reused.
+    ``parishsoft_data`` is passed on to ``menu_state``.
     """
 
     def may_open(entry):
@@ -197,7 +250,7 @@ def _navigation_items(actor, admin, campaign, configuration):
             )
         )
 
-    state = admin_navigation.MenuState(campaign, configuration.mode)
+    state = menu_state(campaign, configuration, parishsoft_data)
     return admin_navigation.menu(state, may_open)
 
 
@@ -238,7 +291,7 @@ def greyed_page(request, store):
     if configuration is None:
         return None
     campaign = _current_campaign(configuration)
-    state = admin_navigation.MenuState(campaign, configuration.mode)
+    state = menu_state(campaign, configuration, request_downloaded(request))
     if admin_navigation.MENU_REASONS[match.url_name](state) is None:
         return None
     # A command session's cookie used in a browser is refused (and its
@@ -254,7 +307,10 @@ def greyed_page(request, store):
     if not isinstance(actor, Principal) or not actor.roles:
         return None
     admin = allows(actor, Capability.CONFIGURE)
-    items = _navigation_items(actor, admin, campaign, configuration)
+    # The reason check above may have read the download already; share it.
+    items = _navigation_items(
+        actor, admin, campaign, configuration, state.parishsoft_data
+    )
     greyed = admin_navigation.greyed_entry(match.url_name, items)
     if greyed is None:
         # Hidden by role: the view authenticates and refuses on its own, so
@@ -262,6 +318,32 @@ def greyed_page(request, store):
         for name in ("principal", "portal_session"):
             request.__dict__.pop(name, None)
         return None
+    return unavailable_response(greyed.refusal())
+
+
+def page_unavailable(actor, name):
+    """The greyed reason page for non-menu page ``name`` now, or None.
+
+    For a page in ``admin_navigation.PAGE_REASONS``, called by its view
+    after its own access check: when the page's reason applies, the answer
+    is the shared 409 reason page (#1128) with the menu's words and a link
+    to the page that changes it, if the viewer's menu offers it (#1242).
+    """
+    configuration = SystemConfiguration.objects.select_related(
+        "current_campaign__active_configuration"
+    ).first()
+    if configuration is None:
+        return None
+    campaign = _current_campaign(configuration)
+    state = menu_state(campaign, configuration)
+    reason = admin_navigation.PAGE_REASONS[name](state)
+    if reason is None:
+        return None
+    admin = allows(actor, Capability.CONFIGURE)
+    items = _navigation_items(
+        actor, admin, campaign, configuration, state.parishsoft_data
+    )
+    greyed = admin_navigation.greyed_page(name, reason, items)
     return unavailable_response(greyed.refusal())
 
 

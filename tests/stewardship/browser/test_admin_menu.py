@@ -318,3 +318,35 @@ def test_open_counts_read_with_their_entry(page, component_origin):
         assert layout() == before, name
         sidebar.locator("a", has_text=name).focus()
         assert layout() == before, name
+
+
+def test_an_in_page_link_is_greyed_out_as_its_menu_entry_is(page, component_origin):
+    """A page's own link to a page the menu greys out is the same greyed
+    control, in the line of text, with the menu's reason (#1242); showing the
+    tip moves nothing in the line."""
+    from playwright.sync_api import expect
+
+    from .menu_components import LINKS_PATH
+
+    page.set_viewport_size({"width": 390, "height": 800})
+    page.goto(component_origin + LINKS_PATH)
+    line = page.locator("#report-links")
+    directory = line.get_by_role("link", name="Active parishioner family directory")
+    assert directory.get_attribute("href") is None
+    expect(directory).to_have_attribute("aria-disabled", "true")
+    expect(directory).to_have_accessible_description(
+        "ParishSoft data has not been downloaded yet"
+    )
+    # Limitations is available here, so it stays an ordinary link.
+    limitations = line.get_by_role("link", name="Limitations")
+    assert limitations.get_attribute("href") == "/admin/reports/limitations/"
+    tip = page.locator("#" + directory.get_attribute("aria-describedby"))
+    hidden(tip)
+    before = [_box(limitations), _box(directory), line.bounding_box()["height"]]
+    directory.focus()
+    visible(tip)
+    assert [_box(limitations), _box(directory), line.bounding_box()["height"]] == (
+        before
+    )
+    page.keyboard.press("Escape")
+    hidden(tip)
