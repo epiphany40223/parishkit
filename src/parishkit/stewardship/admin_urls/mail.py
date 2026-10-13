@@ -1,11 +1,12 @@
 """Mail and Family portal group URLs: mail controls, progress, history, mail.
 
 Pages end in ``/``; their form actions and status fragment sit under them as
-nouns (``resolution/``, ``clearance/``, ``status/``). Pause and resume mail
-acts on the current campaign, so its campaign-free route hands the view the
-current campaign's id. The header's presence count is a JSON read that a
-script polls, so it keeps the ``/admin/presence`` address (decision 8);
-only the page moved, and any other read there is 404 (#864).
+nouns (``resolution/``, ``bounce-report/``, ``clearance/``, ``status/``).
+Pause and resume mail acts on the current campaign, so its campaign-free
+route hands the view the current campaign's id. The header's presence count
+is a JSON read that a script polls, so it keeps the ``/admin/presence``
+address (decision 8); only the page moved, and any other read there is 404
+(#864).
 """
 
 from django.http import Http404
@@ -54,6 +55,11 @@ patterns = [
         "mail/outgoing/<uuid:message_id>/resolution/",
         delivery_views.resolution_command,
         name="delivery_resolve",
+    ),
+    path(
+        "mail/outgoing/<uuid:message_id>/bounce-report/",
+        delivery_views.bounce_report,
+        name="delivery_bounce_report",
     ),
     path("mail/refusals/", delivery_views.refusal_list, name="delivery_refusals"),
     path(

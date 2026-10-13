@@ -2594,6 +2594,7 @@ lists the fields and refusals.
 | `retry_family_preparation`, `retry_daily_digest`, `retry_weekly_digest`, `retry_export_cleanup` | `task retry` (PR 9a) |
 | `deliveries`, `delivery`, `delivery_resolve` | `delivery list`, `delivery show`, `delivery resolve` (PR 9b), `delivery resend` (PR 9c) |
 | `delivery_refusals`, `delivery_refusal`, `delivery_refusal_clear` | `delivery refusals`, `delivery refusal-show` (PR 9b), `delivery refusal-clear` (PR 9c) |
+| `delivery_bounce_report` (#806 slice 4) | Deferred: `delivery bounce-report` is owed ([#1211](https://github.com/epiphany40223/parishkit/issues/1211)) |
 | `system`, `system_health`, `system_health_status` (ADM-13) | `system health`, `system health --watch`, counts and states only |
 | `system_health` POST, Take a backup now (ADM-13 PR 3b) | `system backup-now [--request-key UUID]` (fresh-gated, always prompts); its progress is `system health` `backup_request`, with `--watch` |
 | `system_mail_check`, `system_mail_clear` (ADM-13) | `system mail-clear-preview` (starts the mailbox check and waits for it), `system mail-clear --token …` |

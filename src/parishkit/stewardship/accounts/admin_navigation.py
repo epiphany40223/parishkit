@@ -643,6 +643,8 @@ NON_PAGES = frozenset(
         "critical_events_acknowledge",
         "daily_digest_chart",
         "daily_digest_download",
+        # The Mail message page's Report a bounce form (#806), a POST.
+        "delivery_bounce_report",
         "delivery_refusal_clear",
         "dismiss_credential_result",
         "delivery_resolve",

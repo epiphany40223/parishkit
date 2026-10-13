@@ -7,6 +7,7 @@ import pytest
 from parishkit.stewardship.jobs.delivery_admin import (
     clear_recipient_refusal,
     evidence_note,
+    report_recipient_bounce,
 )
 from parishkit.stewardship.jobs.delivery_metadata import family_duid
 from parishkit.stewardship.jobs.delivery_resolution import resolve_delivery
@@ -118,3 +119,34 @@ def test_clearance_rejects_invalid_intent_before_database(override):
     )
     with pytest.raises(ValueError):
         clear_recipient_refusal(None, uuid4(), **(values | override))
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        dict(message_id="not-an-id"),
+        dict(command_id=None),
+        dict(observed=False),
+        dict(observed="yes"),
+        dict(address=""),
+        dict(address=None),
+        dict(address="Mixed@Example.org"),
+        dict(address=" padded@example.org"),
+        dict(address="x" * 255),
+        dict(note=""),
+        dict(note=" \n"),
+        dict(note="x" * 2001),
+    ],
+)
+def test_bounce_report_rejects_invalid_intent_before_database(override):
+    """A bounce report (#806 slice 4) needs ids, one exact address, a note
+    and the tick, all checked before any policy or database work."""
+    values = dict(
+        message_id=uuid4(),
+        command_id=uuid4(),
+        address="head@example.org",
+        note="Bounce arrived 10/12: mailbox not found.",
+        observed=True,
+    )
+    with pytest.raises(ValueError):
+        report_recipient_bounce(None, uuid4(), **(values | override))

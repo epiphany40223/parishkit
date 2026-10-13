@@ -326,6 +326,11 @@ LEDGER = {
     # its own command because it asks for the page's acknowledgement at the
     # prompt (PR 9c); delivery resolve, which never prompts, does the rest.
     "delivery_resolve": command("delivery resolve", "delivery resend"),
+    # Report a bounced address (#806 slice 4): its command, which would ask
+    # for the page's acknowledgement at the prompt, is owed outside ADM-11.
+    "delivery_bounce_report": Parity(
+        "deferred", ("delivery bounce-report is owed, issue #1211",)
+    ),
     "delivery_refusals": command("delivery refusals"),
     "delivery_refusal": command("delivery refusal-show"),
     # Asks for the page's verification acknowledgement at the prompt.

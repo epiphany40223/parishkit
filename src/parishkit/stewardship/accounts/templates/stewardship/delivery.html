@@ -10,7 +10,8 @@ Admin evidence already recorded.{% endcomment %}
 {% block content %}
 <h1>{% if delivery.family_name %}{% blocktranslate trimmed with purpose=delivery.purpose|delivery_label name=delivery.family_name %}{{ purpose }} to {{ name }}{% endblocktranslate %}{% else %}{{ delivery.purpose|delivery_label }}{% endif %}</h1>
 {% aboutpage "mail-message" %}<p>{% translate "Each address shows what the latest attempt recorded for it. One email goes to all of a Family's addresses at once, and the provider can accept it for some while refusing others." %}</p>
-<p>{% translate "When an invitation or reminder is accepted but an address is refused for now, the same email, with the same code and link, is tried again automatically for that address only, for about 17 hours; the address then shows “refused for now, trying again” or what that try did. An address shown as just “refused for now” is not sent this email again." %}</p>{% endaboutpage %}
+<p>{% translate "When an invitation or reminder is accepted but an address is refused for now, the same email, with the same code and link, is tried again automatically for that address only, for about 17 hours; the address then shows “refused for now, trying again” or what that try did. An address shown as just “refused for now” is not sent this email again." %}</p>
+<p>{% translate "If a delivered email later bounces (a “delivery failed” reply arrives in the sending mailbox), report the address under Report a bounced address. It is then set aside for this Family, like an address the mail service refused, and listed on Refused addresses, where clearing it lets email go to it again. Reporting sends nothing and does not change the Family's code or link. The report shows in that panel at once; the Refused addresses line near the top shows it the next time the page is opened." %}</p>{% endaboutpage %}
 <p>{{ delivery.purpose|delivery_label }} · {{ delivery.mode|delivery_label }} · {{ delivery.state|delivery_label }}</p>
 {% if delivery.family__family_duid %}<p>{% translate "Family:" %} {% if delivery.family_name %}{{ delivery.family_name }}{% else %}<span class="help">{% translate "Not in current ParishSoft data" %}</span>{% endif %} · {% translate "Family DUID:" %} {{ delivery.family__family_duid|duid }}</p>
 {% else %}<p>{% translate "Administrator report" %}</p>{% endif %}
@@ -19,7 +20,7 @@ Admin evidence already recorded.{% endcomment %}
 {% if recipients.intended %}<p id="email-recipients">{% translate "To:" %} {% for address, outcome in recipients.intended_rows %}{{ address }}{% if outcome %} ({{ outcome }}){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
 {% if recipients.routed and recipients.routed != recipients.intended %}<p id="email-routed">{% translate "Testing mode sends it to:" %} {% for address, outcome in recipients.routed_rows %}{{ address }}{% if outcome %} ({{ outcome }}){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
 {% if recipients.reached %}<p id="email-reached">{% blocktranslate trimmed count total=recipients.reached.1 with reached=recipients.reached.0 %}Delivered to {{ reached }} of {{ total }} address.{% plural %}Delivered to {{ reached }} of {{ total }} addresses.{% endblocktranslate %}</p>{% endif %}
-{% if refused %}<p>{% translate "Refused addresses:" %} {% for refusal in refused %}<a href="{% url 'admin:delivery_refusal' refusal.id %}">{{ refusal.address }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+{% if refused %}<p>{% translate "Refused addresses:" %} {% for refusal in refused %}<a href="{% url 'admin:delivery_refusal' refusal.id %}">{{ refusal.address }}</a>{% if refusal.kind == 'reported_bounce' %} ({% translate "bounce reported" %}){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
 {# Attempts and Admin evidence share one page window: Previous and Next page refresh both regions in place (ui-v1.js, a[data-in-place], #519), whichever pager is used. The resolution forms sit between them, outside both regions, so typed evidence is kept. #}
 <div id="delivery-history" data-in-place-region>
 <h2 id="attempt-history-heading">{% translate "Attempt history" %}</h2>
@@ -71,6 +72,42 @@ form's heading, so the form draws no h3 of its own there.{% endcomment %}
 <p class="notice" id="retry-unavailable">{% translate "Retry is not available right now. It needs the campaign to be open, campaign email not paused, up-to-date ParishSoft data, and no other email already covering this one." %}</p>
 <p>{% button type="button" disabled=True aria-describedby="retry-unavailable" %}{{ retry_label }}{% endbutton %}</p></div>{% endif %}
 {% if decisions %}</section>{% elif commands %}</details>{% endif %}
+{% comment %}Report a bounced address (#806 slice 4): only for a Production
+Family email. It acts in place and replaces only its own region
+(data-in-place-only), so nothing above its button moves; the reports
+already recorded for this email are listed after the form, so a new one
+appears below the button. While a prerequisite is missing (the email is
+not delivered, the campaign accepts no changes, or every address is set
+aside) the button is shown unavailable with the reason (#563). Report
+waits for an address, a note that is more than spaces and the tick, as
+the server requires; the hint follows the button. After a report, focus
+goes to the list of reports below the button (data-in-place-focus), not to
+the panel's heading above it, which would scroll the page. When the
+Family has only one address left and it is offered, a notice names it, so
+the Administrator knows before reporting that the Family would get no
+campaign email. It is drawn with the page, so nothing appears on a choice,
+and it sits after the button: a report that leaves the Family no address
+removes it, and that must not move the button.{% endcomment %}
+{% if bounce %}<section id="bounce-report" aria-labelledby="bounce-heading" data-in-place-region>
+<h2 id="bounce-heading">{% translate "Report a bounced address" %}</h2>
+{% if bounce.unavailable %}<div class="panel"><p class="notice" id="bounce-unavailable">{{ bounce.unavailable }}</p>
+<p>{% button type="button" disabled=True aria-describedby="bounce-unavailable" %}{% translate "Report bounce" %}{% endbutton %}</p></div>
+{% else %}<form method="post" action="{% url 'admin:delivery_bounce_report' delivery.id %}#bounce-report" class="panel" data-in-place="bounce-report" data-in-place-only data-in-place-message="{% translate 'Bounce reported.' %}" data-require-complete>
+  {% csrf_token %}
+  <input type="hidden" name="command_id" value="{{ bounce.command_id }}">
+  <div class="label-row"><label for="bounce-address" id="bounce-address-label">{% translate "Address that bounced" %}</label>{% translate "Only this email's addresses that are not already set aside are listed. Report one address at a time." as address_tip %}{% include "stewardship/components/toggletip.html" with tip_id="bounce-address-tip" tip_label_id="bounce-address-label" tip_text=address_tip %}</div>
+  <select id="bounce-address" name="address" required aria-describedby="bounce-address-tip" data-missing-hint="{% translate 'Choose the address that bounced.' %}"><option value="">{% translate "Choose an address" %}</option>{% for address in bounce.addresses %}<option value="{{ address }}">{{ address }}</option>{% endfor %}</select>
+  <div class="label-row"><label for="bounce-note" id="bounce-note-label">{% translate "What did the bounce say?" %}</label>{% translate "For example the date it arrived and its short reason, such as “mailbox not found”. The note is kept with the refused address and shown on its page; it is not emailed to anyone." as note_tip %}{% include "stewardship/components/toggletip.html" with tip_id="bounce-note-tip" tip_label_id="bounce-note-label" tip_text=note_tip %}</div>
+  <textarea id="bounce-note" name="note" maxlength="2000" required aria-describedby="bounce-note-help bounce-note-tip" data-missing-hint="{% translate 'Describe the bounce.' %}"></textarea>
+  <p id="bounce-note-help" class="help">{% translate "Keep it brief. Do not paste the whole bounce message." %}</p>
+  <label><input type="checkbox" name="observed" value="yes" required data-acknowledgment data-missing-hint="{% translate 'Tick the box to confirm that you saw the bounce.' %}"> {% translate "I saw a bounce message for this address from this email." %}</label>
+  <p class="notice">{% translate "This Family's campaign email stops going to the address until the refusal is cleared on Refused addresses." %}</p>
+  {% button type="submit" aria-describedby="bounce-complete-hint" %}{% translate "Report bounce" %}{% endbutton %}<p class="help" id="bounce-complete-hint" data-complete-hint hidden></p>
+  {% if bounce.last %}<p class="notice" id="bounce-last">{% blocktranslate trimmed with address=bounce.last %}{{ address }} is this Family's only address left: if you report it, the Family gets no campaign email until it is cleared or ParishSoft is corrected.{% endblocktranslate %}</p>{% endif %}
+</form>{% endif %}
+{% if bounce.reported %}<h3 tabindex="-1" data-in-place-focus>{% translate "Bounces reported for this email" %}</h3>
+<ul>{% for report in bounce.reported %}<li><a href="{% url 'admin:delivery_refusal' report.id %}">{{ report.address }}</a> · <time datetime="{{ report.created_at|instant }}" data-local-instant>{{ report.created_at|instant }}</time>{% if report.cleared %} · {% translate "cleared" %}{% endif %}</li>{% endfor %}</ul>{% endif %}
+</section>{% endif %}
 <div id="delivery-evidence" data-in-place-region>
 <h2>{% translate "Admin evidence and decisions" %}</h2>
 {% for note in notes %}<section class="panel"><p>{{ note.action|delivery_label }} · <time datetime="{{ note.created_at|instant }}" data-local-instant>{{ note.created_at|instant }}</time></p><p>{{ note.evidence_note }}</p></section>

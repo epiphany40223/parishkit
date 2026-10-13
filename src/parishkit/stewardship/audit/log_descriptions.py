@@ -513,6 +513,11 @@ DESCRIPTIONS = {
     "production_cancel_requested": _(
         "An Administrator asked to stop clearing test data for the campaign going live."
     ),
+    "recipient_bounce_reported": _(
+        "An Administrator reported that a delivered email bounced at one "
+        "address, so campaign email to it stops for that Family until the "
+        "refusal is cleared."
+    ),
     "recipient_refusal_cleared": _(
         "An Administrator cleared a refused email address so email to it can resume."
     ),
@@ -846,6 +851,7 @@ DIRECT_AUDIT_TYPES = frozenset(
         "policy_denial_namespace_reset",
         "policy_security_event",
         "production_cancel_requested",
+        "recipient_bounce_reported",
         "recipient_refusal_cleared",
         "rehearsal_gate_released",
         "rehearsal_invalidated",

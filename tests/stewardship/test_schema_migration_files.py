@@ -273,6 +273,9 @@ FROZEN = {
     "0080_drop_acceptance.sql": (
         "556e938e39369cca5f02cb25fece5e4f9b110271431d40d4ce8420562c04a997"
     ),
+    "0081_bounce_report.sql": (
+        "623c61127b2d65b4a649815c84a4e757f2ef33201e445b543e5c1bba7328284a"
+    ),
 }
 
 

@@ -3745,7 +3745,7 @@ in the order the Administrator asked for
    mode does, "Testing mode sends it to:" names where. When the email's
    delivery recorded [refused addresses](#refused-addresses) that are still
    unresolved, they follow, each once and linking its newest refusal's
-   page. The recipient lists stay with the email's rendering, which the web
+   page; one an Administrator reported bounced says "(bounce reported)". The recipient lists stay with the email's rendering, which the web
    login never reads (see
    [Why sends are waiting](#why-sends-are-waiting)). This page is the one
    narrow exception
@@ -3786,8 +3786,7 @@ in the order the Administrator asked for
    validated delivery evidence and its follow-up through two more definer
    functions with the same caller checks (see
    [outbox recipient reads](../data/spec.md#outbox-recipient-reads)).
-   Setting a flaky address aside and reporting a bounce are later slices
-   of #806.
+   Setting a flaky address aside is a later slice of #806.
 4. **Attempt history**: one table of short rows, one per recorded change,
    newest first, with When leading as in any log, then the attempt number,
    what happened and the resulting state (#934).
@@ -3813,7 +3812,41 @@ in the order the Administrator asked for
    decide, such as a delivered email), the section is not shown; the note
    form waits in a closed "Add a note to this email's history" disclosure,
    whose summary is the form's only heading.
-8. **Admin evidence and decisions**: the notes and resolutions recorded on
+8. **Report a bounced address**, on a Production Family email only
+   ([#806](https://github.com/epiphany40223/parishkit/issues/806) slice 4).
+   When a delivered email later bounces (a non-delivery report arrives in
+   the sending mailbox, which the system never reads), an Administrator
+   chooses the address, says what the bounce said (the date and its short
+   reason, not the whole message) and ticks "I saw a bounce message for
+   this address from this email". **Report bounce** stays unavailable until
+   all three are given, with the hint after it. The address is then set
+   aside for that Family like a refused address: it is listed on
+   [Refused addresses](#refused-addresses) and stops receiving campaign
+   email until it is cleared there or ParishSoft's address changes. A
+   one-line notice beside the button says so, and when the Family's only
+   address left (its current ParishSoft addresses with no unresolved
+   refusal) is one of those offered, a second notice after the button names
+   it and says the Family would then get no campaign email (after the
+   button, so its removal by the report never moves the button). Only the email's addresses
+   the Family has no unresolved refusal of are offered. While the email is
+   not delivered, the campaign accepts no Admin changes, or every address
+   is already set aside, the button is shown unavailable with that reason.
+   The form acts [in place](../ui-conventions/spec.md#in-place-controls)
+   and replaces only its own region, so nothing above its button moves;
+   the bounces already reported for the email are listed after the form,
+   with browser-local times and "cleared" for a cleared one, each linking
+   its refused address page. The field help is in "i" toggletips. It needs
+   no fresh sign-in, like Clear verified refusal: it only sets an address
+   aside, changes no credential, and clearing undoes it. Reporting sends
+   nothing and does not change the Family's code or link; the Family's
+   other addresses keep receiving the same mail. The report is audited
+   (`recipient_bounce_reported`), and the Refused addresses line near the
+   top of the page shows it the next time the page is opened. Its command
+   line counterpart is owed
+   ([#1211](https://github.com/epiphany40223/parishkit/issues/1211)); see
+   [data](../data/spec.md#job-outbox-audit-and-purge-records) for the
+   record.
+9. **Admin evidence and decisions**: the notes and resolutions recorded on
    the email, newest first.
 
 The attempt history and the Admin evidence share one page window, as
@@ -3833,7 +3866,10 @@ every unresolved refused address: one an outgoing Production email's
 delivery recorded as refused permanently, either in the email's own
 attempt or in its
 [follow-up](../background-processing/spec.md#addresses-refused-for-now) to
-an address refused for now (listed against that email), which stops
+an address refused for now (listed against that email), or one an
+Administrator reported bounced on the
+[Mail message page](#mail-message-page) (listed against that email, marked
+"Bounce reported" under the address), which stops
 campaign email to that address for that Family until it is cleared or
 ParishSoft's address changes. It filters by an exact Family DUID (`?duid=`), which the
 [Outgoing mail](#outgoing-mail) mark uses. The columns follow the Admin
@@ -3859,6 +3895,8 @@ separate: a refusal is per address and outlives the email that recorded
 it, so it is not a row or a state of Outgoing mail.
 
 A refusal's own page names the address, the Family and its Family DUID,
+and, for a reported bounce, "Reported as bounced by an Administrator" with
+its browser-local time and the Administrator's note; it
 links that Family's refused addresses and the recording email, and offers
 the verified clearance: a required note saying how the mailbox was
 verified and a required confirmation, available only with current

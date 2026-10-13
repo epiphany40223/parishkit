@@ -353,6 +353,12 @@ RECIPIENT_OUTCOMES_FUNCTION = "stewardship_delivery_recipient_outcomes_v1(uuid, 
 # What a delivered email's follow-up to its addresses refused for now did
 # (#806 slice 2), for the same page and caller: positions and words only.
 ADDRESS_RETRIES_FUNCTION = "stewardship_delivery_address_retries_v1(uuid, uuid)"
+# An Administrator's report that a delivered email bounced at one address
+# (#806 slice 4): the report's only writer, so web keeps SELECT only on the
+# refusal table; the definer and the refusal guard admit it only from web.
+BOUNCE_REPORT_FUNCTION = (
+    "stewardship_report_recipient_bounce_v1(uuid, uuid, text, uuid, text)"
+)
 # Mail dispatch opens that follow-up (and its task, which it may not insert
 # itself) under its live delivery claim, and reads the Family's link token
 # for it under the follow-up's own claim, both in frozen migration 0077.
@@ -424,6 +430,8 @@ CLOSURE_FUNCTIONS = {
         (DEBUG_OFF_FUNCTION, DEBUG_OFF_CLEAR_FUNCTION),
         ("stewardship_jobs", "0028_debug_off_switch"),
     ),
+    # The bounce report (0081, #806) follows 0080.
+    BOUNCE_REPORT_FUNCTION: ("stewardship_jobs", "0030_bounce_report"),
 }
 
 
@@ -577,7 +585,8 @@ def runtime_functions(role, *, target=None):
     Mail dispatch reads the one link token of a Family message it holds a
     live delivery claim on (#389 L1). Web reads what a delivered email's
     follow-up to its addresses refused for now did (#806); mail dispatch
-    opens that follow-up and reads its link token.
+    opens that follow-up and reads its link token. Web records an
+    Administrator's report that a delivered email bounced (#806 slice 4).
     Every login a running service or an operator command uses reads whether
     the debug-off switch is set (#530); the offline admin-recovery login
     also clears it (``pk-stewardship debug-off-clear``). The backup login
@@ -607,6 +616,7 @@ def runtime_functions(role, *, target=None):
                 ARCHIVE_RENEWAL_FUNCTION,
                 RECIPIENT_OUTCOMES_FUNCTION,
                 ADDRESS_RETRIES_FUNCTION,
+                BOUNCE_REPORT_FUNCTION,
                 DEBUG_OFF_FUNCTION,
             },
             ServiceRole.CONFIG_INSTALLER: {

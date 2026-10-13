@@ -214,8 +214,9 @@ def email_refusals(message_id):
     rendering) and the refused addresses are the ones an Administrator acts
     on. Each address is listed once, by its newest refusal: a retry refused
     again records a second refusal of the same address, as
-    ``with_refusal_counts`` counts them. Returns ``[{"id", "address"}]`` in
-    address order; one query.
+    ``with_refusal_counts`` counts them. Returns ``[{"id", "address",
+    "kind"}]`` in address order, ``kind`` saying whether the provider refused
+    it or an Administrator reported it bounced (#806 slice 4); one query.
     """
     from .outbox_models import OutboxEvent
 
@@ -226,7 +227,7 @@ def email_refusals(message_id):
             event_id__in=OutboxEvent.objects.filter(message_id=message_id).values("id")
         )
         .order_by("address", "-created_at", "-id")
-        .values("id", "address")
+        .values("id", "address", "kind")
     ):
         newest.setdefault(row["address"], row)
     return list(newest.values())
@@ -407,6 +408,104 @@ def address_outcomes(message_id, actor_id):
         (message_id, actor_id),
     )
     return None if rows is None else [tuple(row) for row in rows]
+
+
+# Why the Mail message page's "Report a bounced address" is unavailable
+# (#806 slice 4), by the first missing prerequisite.
+BOUNCE_UNAVAILABLE = {
+    "not_delivered": _(
+        "Available once this email is delivered: only a delivered email can bounce."
+    ),
+    "closed": _(
+        "Not available right now. It needs a current campaign that accepts "
+        "changes and up-to-date ParishSoft data."
+    ),
+    "none_left": _("Every address of this email is already set aside."),
+}
+
+
+def bounce_panel(delivery, recipients, *, can_change):
+    """What the Mail message page's "Report a bounced address" panel shows.
+
+    Only a Production Family email has the panel (#806 slice 4); returns None
+    for Testing mail and Administrator reports. Otherwise returns
+    ``addresses``, the email's addresses an Administrator may report (those
+    the Family has no unresolved refusal of, and none recorded against the
+    email's newest delivered attempt, which a report would name),
+    ``unavailable``, the reason the report cannot be made now (a
+    ``BOUNCE_UNAVAILABLE`` text) or None, and ``reported``, the bounce
+    reports already recorded for this email, oldest first, each with
+    ``cleared`` when it has been cleared. ``last`` is the Family's only
+    address left, when it is one of the offered ones: its current recipients
+    (the ParishSoft addresses with no unresolved refusal, as the next email
+    would read them) are that one address, so reporting it would leave the
+    Family with no campaign email; otherwise None. ``recipients`` is
+    ``email_recipients``' answer (None when its definer refused, which
+    leaves no address to offer); ``can_change`` says the campaign accepts
+    Admin changes (the page offers its evidence note).
+    """
+    from django.db.models import Exists, OuterRef
+
+    from .outbox_models import OutboxEvent
+    from .recipient_models import RecipientRefusal, RecipientRefusalResolution
+
+    if delivery["mode"] != "production" or delivery["family__family_duid"] is None:
+        return None
+    events = OutboxEvent.objects.filter(message_id=delivery["id"])
+    reported = list(
+        RecipientRefusal.objects.filter(
+            kind="reported_bounce", event_id__in=events.values("id")
+        )
+        .annotate(
+            cleared=Exists(
+                RecipientRefusalResolution.objects.filter(refusal_id=OuterRef("pk"))
+            )
+        )
+        .order_by("created_at", "id")
+        .values("id", "address", "created_at", "cleared")
+    )
+    delivered = (
+        events.filter(state="delivered")
+        .order_by("-version")
+        .values_list("id", flat=True)
+        .first()
+    )
+    taken = set(
+        unresolved_refusals()
+        .filter(family_duid=delivery["family__family_duid"])
+        .values_list("address", flat=True)
+    ) | set(
+        RecipientRefusal.objects.filter(event_id=delivered).values_list(
+            "address", flat=True
+        )
+    )
+    shown = (recipients or {}).get("intended", [])
+    addresses = [address for address in dict.fromkeys(shown) if address not in taken]
+    with connection.cursor() as cursor:
+        # The Family's current, unrefused addresses, as preparation reads
+        # them (an invoker read of ParishSoft data web already reads).
+        cursor.execute(
+            "SELECT jsonb_array_elements_text("
+            "public.stewardship_family_mail_recipients_v1(%s))",
+            [delivery["family_id"]],
+        )
+        current = [address for (address,) in cursor.fetchall()]
+    last = current[0] if len(current) == 1 and current[0] in addresses else None
+    if delivery["state"] != "delivered" or delivered is None:
+        reason = "not_delivered"
+    elif not can_change:
+        reason = "closed"
+    elif not addresses:
+        reason = "none_left"
+    else:
+        reason = None
+    return dict(
+        addresses=addresses,
+        unavailable=BOUNCE_UNAVAILABLE[reason] if reason else None,
+        reported=reported,
+        last=last,
+        command_id=uuid4(),
+    )
 
 
 def offered_actions(state, task_state, *, campaign_state, can_resolve, can_retry):
@@ -619,7 +718,9 @@ def read_refusals(parameters):
     and the page names its Families from (``with_family_names``). Each row
     has the refusal's ``id``, ``created_at``, ``family_duid`` and
     ``address``, and ``message_id``: the email whose delivery recorded it
-    (#935). ``duid`` keeps one Family's refusals.
+    (#935), and ``kind``: ``reported_bounce`` for an Administrator's bounce
+    report (#806 slice 4), else ``provider``. ``duid`` keeps one Family's
+    refusals.
     """
     values, window = parse_window(parameters, {"duid"}, REFUSAL_SORTING)
     query = unresolved_refusals()
@@ -638,6 +739,7 @@ def read_refusals(parameters):
             "created_at",
             "family_duid",
             "address",
+            "kind",
             message_id=recording_message(),
         ),
         total,
