@@ -307,11 +307,25 @@ One campaign's live submissions (Test submissions never) and its ready
 historical [daily facts](../data/spec.md#campaign-daily-report-facts), read
 inside one read-only, repeatable-read transaction up to a **cutoff**:
 
-- For a `closed` or `archived` campaign, the end of its end date. The file
-  is final: `is_final` `TRUE`, named `stewardship-<year>.xlsx`.
-- Otherwise, the end of the last complete local day, the comparison
-  report's [comparison day](#alignment-by-campaign-day), never today's
-  unfinished day. The file is partial: `is_final` `FALSE`, named
+- The end of the last complete local day, the comparison report's
+  [comparison day](#alignment-by-campaign-day), never today's unfinished
+  day, and never past the end date.
+- For a `closed` or `archived` campaign the file is final: `is_final`
+  `TRUE`, named `stewardship-<year>.xlsx`. Once the end date has passed,
+  the cutoff is the end of the end date. A campaign closed before its end
+  date gets its final file cut off at its last full day, rather than
+  waiting for the end date (Administrator decision, 2026-10-13, on
+  [#1018](https://github.com/epiphany40223/parishkit/issues/1018); it
+  replaces the earlier default that the final file waits for the end
+  date). A final file is offered only while no live submission falls after
+  its cutoff; otherwise Download is unavailable with "Available tomorrow:
+  the campaign closed today, and today's responses are not in a complete
+  day yet." This refines that decision (review, 2026-10-13) so that a
+  "final" file never leaves out the closing day's responses and then
+  changes the next day. No close time is stored, so the submission test
+  is the exact rule: a campaign closed with no response that day is final
+  at once, and any other waits at most until the next day.
+- Otherwise the file is partial: `is_final` `FALSE`, named
   `stewardship-<year>-partial.xlsx`.
 
 The request pins two things, which every attempt and retry use: the cutoff
@@ -320,9 +334,12 @@ set's submission watermark (the highest campaign sequence it read). The
 export reads only live versions with a campaign sequence up to the
 watermark **and** submitted before the cutoff, as the fact calculation
 does. The watermark must cover every live version submitted before the
-cutoff; while it does not (a submission the facts have not yet absorbed),
-the export is not ready and waits for the next fact set, as a digest waits
-for its facts. The request's pin on that fact set protects it from
+cutoff, so a download is offered only with a fact set whose watermark
+does (the newest such set); while none does (a submission the facts have
+not yet absorbed), the download is unavailable with that reason, since a
+request pinned to a set that misses a response could never succeed. The
+worker checks the coverage again and fails rather than write a file
+without it. The request's pin on that fact set protects it from
 [fact compaction](../data/spec.md#derived-fact-retention) for the
 request's retention, like any export's.
 
@@ -382,9 +399,12 @@ day, and a `note.*` row says the campaign collected no pledges.
   is never offered. The check also catches a Family whose first submission
   precedes its entry into the cohort, which the fact rows count from entry.
 - **Reader.** The finished bytes are read back with the import's reader,
-  limits and consistency checks included, outside the database
-  transaction. A refusal fails the generation, naming the located problems
-  in the log (never a cell value).
+  limits and consistency checks included, in its isolated helper process,
+  which never touches the database: after the read's transaction for the
+  standalone writer, and, in the export worker, while the campaign read
+  guard is still held (the guard must outlast every file write). A refusal
+  fails the generation, naming the located problems in the log (never a
+  cell value).
 - **Reproducible bytes.** Every attempt and retry of one request writes the
   same bytes. The writer re-packs the workbook openpyxl saves, because
   openpyxl stamps the save time into `docProps/core.xml` and every ZIP
@@ -445,7 +465,10 @@ changes it:
    the financial detail shows, which changes the rule and needs format
    version 1.1.
 3. **When a file is final:** once the campaign is `closed` or `archived`
-   (default); alternatively only after #527's close-out.
+   (default); alternatively only after #527's close-out. A campaign closed
+   before its end date is final through its last full day, once no
+   response falls after it (Administrator decision, 2026-10-13, refined
+   the same day; see [what the export reads](#what-the-export-reads)).
 4. **Partial cutoff:** the last complete local day (default), as the
    comparison report uses.
 5. **Proposed Members' Ministry choices:** included with a blank
@@ -1110,11 +1133,11 @@ importing them.
 | No last year, no Family rows | The affected figure shows "—" with its reason |
 | Financial module off | Pledge figures, charts and columns are left out |
 | Checking a file exceeds its 60-second limit | Stopped, logged as a durable timeout entry naming the limit and the elapsed time, and refused as too large to check |
-| Archive download with no current campaign, before day 1 has ended, or with no Family responded by the cutoff | Download campaign archive unavailable with the reason; the command refuses |
+| Archive download with no current campaign, before day 1 has ended, for a closed campaign with a live submission after the cutoff (closed today with a response today), or with no Family responded by the cutoff | Download campaign archive unavailable with the reason; the command refuses |
 | Archive download with a stale sign-in | The step-up page, returning to Past campaigns; nothing queued |
 | Archive's derived `daily` disagrees with an available fact figure | The generation fails as a fact failure (retried, then failed with its reason); no file is offered |
 | A fact row's population or pledge total is unavailable | Not a disagreement: that figure is left unchecked for the day, and a `note.*` row counts such days |
-| No ready fact set's watermark yet covers every version submitted before the cutoff | Not ready: the export waits for the next fact set, as a digest waits for its facts |
+| No ready fact set's watermark yet covers every version submitted before the cutoff | Download campaign archive unavailable with that reason (the facts are recalculated automatically after responses); the worker's own coverage check fails a request rather than write a file without it |
 | The written archive fails the reader's checks | The generation fails, logging the located problems without cell values; no file is offered |
 
 ## Tests
@@ -1208,12 +1231,16 @@ committed.
   financial module, a proposed Member's Ministry choice, a Test submission
   and a submission after the cutoff (both left out) writes a file that the
   reader accepts and whose `daily` equals the fact series; the partial and
-  final cutoffs and names; a forced fact disagreement and a forced reader
+  final cutoffs and names, including a campaign closed before its end
+  date: unavailable on its closing day after a response that day, final
+  through the day before without one, and final through the closing day
+  the next day; a forced fact disagreement and a forced reader
   refusal fail the generation with no file, while an unavailable pledge
   total (financial module off, or a responding Family without a pledge)
   and an unavailable population are left unchecked with their note; a
   version above the watermark or after the cutoff is left out, and a
-  watermark short of the cutoff waits; a retry of one request gives the
+  fact set whose watermark is short of the cutoff is never offered (the
+  newest covering one is); a retry of one request gives the
   same SHA-256, and a regeneration a new `converted_at` and checksum; no
   respondent leaves the action unavailable; access (Staff, a Ministry
   leader and a stale sign-in refused, nothing queued); the request event
@@ -1425,6 +1452,31 @@ Part (a), the [archive export](#archive-export), follows in its own slices
   [fresh-gated actions](../admin-automation/spec.md#fresh-gated-actions-from-the-command-line)
   and [reports and exports](../admin-automation/spec.md#reports-and-exports)
   catalog, and the request event. It needs the human pk-local check.
+  As built: frozen file 0084 adds the arm to `export_report_known` (XLSX,
+  a fact set, no capture), a `campaign_archive` branch to the export
+  request and publication guards, the fact-pin guard (as for
+  Participation) and the request authorization (Administrators only),
+  and the general worker's definer read
+  `stewardship_campaign_archive_answers_v1`, which returns only the
+  archive's parts of each live answer under a fact set's pins (frequency,
+  the cannot-give box, the Ministry choices and the chosen Ministries'
+  names), so the worker needs no grant on the answers column. The request
+  pins the checked fact set (and so its submission watermark) through
+  `fact_set_id` and a fact pin, and its parameters are exactly the cutoff
+  date, the final mark and the stewardship year, which names the file.
+  The worker's campaign read guard runs this kind's read in a
+  repeatable-read transaction. A regeneration reuses the pins with a new
+  request time. A campaign closed before its end date is offered its
+  final file cut off at its last full day (Administrator decision,
+  2026-10-13, replacing the default posted on #1018 that the final file
+  waits for the end date). Download is unavailable, with the reason,
+  before day 1 has ended, for a closed campaign with a live submission
+  after the cutoff (until the next day), with no Family
+  responded, with no stewardship year, or while no ready fact set covers
+  the cutoff (holds its day and a watermark reaching every response
+  before it). A final request is admitted by the SQL guard only for a
+  closed or archived campaign; the stewardship year in its parameters is
+  the Python rule's (`year_from_values`), not bound in SQL.
 - **A3. Close-out.** The #527 wizard's archive step, built with #527 (after
   [#145](https://github.com/epiphany40223/parishkit/issues/145)).
 

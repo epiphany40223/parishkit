@@ -182,5 +182,9 @@ RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp
             -- One Family's full timeline is the page's Administrator view
             -- (migration 0063), for the requester as for anyone else.
             stewardship_export_authorized_v1(user_uuid,true)
+        WHEN request.report='campaign_archive' THEN
+            -- The campaign archive workbook holds each Family's giving
+            -- (migration 0084): Administrators only, as Past campaigns.
+            stewardship_export_authorized_v1(user_uuid,true)
         ELSE stewardship_export_authorized_v1(user_uuid) END
 $$;

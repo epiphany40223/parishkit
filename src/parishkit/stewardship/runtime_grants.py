@@ -374,6 +374,12 @@ COMPARISON_FUNCTION = "stewardship_campaign_comparison_v1(uuid, date, numeric[],
 ARCHIVE_RENEWAL_FUNCTION = (
     "stewardship_campaign_archive_renewal_v1(uuid, uuid, integer)"
 )
+# The campaign archive's parts of each live answer under one fact set's pins
+# (#1018 part (a)): the general worker writes the archive workbook without
+# any grant on the answers column.
+ARCHIVE_ANSWERS_FUNCTION = (
+    "stewardship_campaign_archive_answers_v1(uuid, timestamp with time zone)"
+)
 # Mail dispatch's one token read (#389 L1): the ciphertext and digest of
 # one unsent Family message's own link token, only while the caller's
 # delivery task for that message is live. Mail dispatch holds the token
@@ -432,6 +438,11 @@ CLOSURE_FUNCTIONS = {
     ),
     # The bounce report (0081, #806) follows 0080.
     BOUNCE_REPORT_FUNCTION: ("stewardship_jobs", "0030_bounce_report"),
+    # The campaign archive's answers read (0084, #1018).
+    ARCHIVE_ANSWERS_FUNCTION: (
+        "stewardship_reports",
+        "0023_campaign_archive_exports",
+    ),
 }
 
 
@@ -588,6 +599,8 @@ def runtime_functions(role, *, target=None):
     leaders who are no user yet for the Users page's import. Web reads the
     campaign comparison report's aggregates (#1018), and so does the general
     worker, for the daily digest's Compared with past campaigns section.
+    The general worker also reads the archive's parts of each live answer
+    to write the campaign archive workbook (#1018).
     Mail dispatch reads the one link token of a Family message it holds a
     live delivery claim on (#389 L1). Web reads what a delivered email's
     follow-up to its addresses refused for now did (#806); mail dispatch
@@ -646,6 +659,7 @@ def runtime_functions(role, *, target=None):
                 COMPARISON_FUNCTION,
                 ARCHIVE_RENEWAL_FUNCTION,
                 DEBUG_OFF_FUNCTION,
+                ARCHIVE_ANSWERS_FUNCTION,
             },
             "download": {LEADER_SCOPE_FUNCTION},
             ServiceRole.ADMIN_RECOVERY: {

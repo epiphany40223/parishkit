@@ -173,6 +173,17 @@ SITES = {
             "reports/export_services.py",
         },
     ),
+    "reports/archive_exports.py::create_archive_export": site(
+        # Download campaign archive, its regenerate and ``export archive``
+        # (#1018 part (a)).
+        "report_export",
+        WEB,
+        {
+            "admin_family_exports.py",
+            "reports/export_services.py",
+            "reports/past_campaign_views.py",
+        },
+    ),
     "reports/family_test_names.py::create_family_test_names_export": site(
         "report_export",
         WEB,

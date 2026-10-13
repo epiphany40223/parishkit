@@ -261,6 +261,7 @@ ACTIVITY_TYPES = {
         *(
             "admin_cmd_export_" + verb
             for verb in (
+                "archive",
                 "cancel",
                 "comparison",
                 "create",
@@ -282,6 +283,7 @@ ACTIVITY_TYPES = {
         "admin_cmd_digest_weekly_request",
         "weekly_manual_requested",
         "campaign_comparison_exported",
+        "campaign_archive_exported",
         "export_requested",
         "export_cancelled",
         "export_downloaded",

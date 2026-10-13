@@ -74,6 +74,14 @@ def authorize(store, user_id, *, request=None):
     elif isinstance(request, ExportRequest) and request.report == "family_timeline":
         # The full timeline is the page's Administrator view only.
         permitted = permitted and "administrator" in principal.roles
+    elif isinstance(request, ExportRequest) and request.report == "campaign_archive":
+        # The campaign archive holds each Family's giving: Past campaigns'
+        # access, an Administrator with financial detail (#1018).
+        permitted = (
+            permitted
+            and allows(principal, Capability.CONFIGURE)
+            and allows(principal, Capability.FINANCIAL_DETAIL)
+        )
     elif isinstance(request, ExportRequest) and request.report in FAMILY_CODE_REPORTS:
         # Codes need the directory page's own capability too, so a requester
         # who loses it can no longer download or regenerate an earlier export.
@@ -369,6 +377,18 @@ def regenerate_export(store, user_id, request_id, *, request_key):
                 browser_timezone=original.browser_timezone,
                 request_key=request_key,
                 snapshot=original.comparison_snapshot,
+            )
+        if original.report == "campaign_archive":
+            from .archive_exports import create_archive_export
+
+            # The same fact set, cutoff and final mark: the same records,
+            # with a new request time (converted_at).
+            return create_archive_export(
+                store,
+                user_id,
+                campaign_id=original.campaign_id,
+                request_key=request_key,
+                retained=original,
             )
         if original.report == "family_test_names":
             from .family_test_names import create_family_test_names_export

@@ -11,9 +11,10 @@ worktree may not be (the archive tests in CI cover the helper itself).
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from uuid import uuid4
 
 import pytest
-from django.db import transaction
+from django.db import connection, transaction
 
 from parishkit.stewardship.archive import check
 from parishkit.stewardship.archive.export import export_archive, read_source
@@ -109,13 +110,88 @@ def test_a_version_after_the_cutoff_is_left_out(scenario):
     assert export(ready).data == before.data
 
 
-def test_the_read_needs_its_own_transaction(scenario):
-    """The read-only, repeatable-read transaction must be the outermost one."""
+def test_the_read_runs_in_its_callers_transaction(scenario):
+    """``read_source`` needs a transaction; ``export_archive`` owns its own."""
     _, ready, *_ = scenario
-    with transaction.atomic(), pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError):
         read_source(
             ready.pk,
             cutoff_date=first_day(ready).local_date,
             final=False,
             converted_at=CONVERTED,
         )
+    with transaction.atomic(), pytest.raises(RuntimeError):
+        export(ready)
+
+
+def test_ministry_choices_carry_their_names_from_the_reviewed_snapshot(
+    response_service, google
+):
+    """A Member's leave and a proposed Member's join, with the Ministry's name.
+
+    The names come from the definer read's lookup in the version's reviewed
+    source snapshot (the invented corpus's Choir, Ministry 4); slots number
+    the existing Member first, then the proposed one.
+    """
+    from dataclasses import asdict
+
+    from parishkit.stewardship.archive.export import archive_sheets
+    from parishkit.stewardship.reports.materialization import materialize_fact_set
+    from parishkit.stewardship.source.snapshot_models import SourceSnapshot
+
+    from ..census_factory import member
+    from ..test_financial_answers import OPTIONS
+    from .response_builders import activate_response_service
+    from .test_fact_materialization_postgresql import allocation
+    from .test_financial_source_postgresql import financial_source
+    from .test_ministry_responses_postgresql import respond
+    from .test_response_http_postgresql import answers_for
+    from .test_source_snapshots_postgresql import permit
+
+    harness = response_service
+    financial_source(
+        harness,
+        modules=["census", "ministry", "financial"],
+        options=map(asdict, OPTIONS),
+        selected=(4,),
+    )
+    harness = activate_response_service(harness)
+    opened = harness.campaign.active_configuration.starts_at
+    proposed = str(uuid4())
+    with campaign_clock(opened + timedelta(hours=1)), web_login():
+        form = load_form(harness)
+        answers = answers_for(form)
+        answers["ministries"]["members"]["3"] = {"join": [], "leave": [4]}
+        answers["proposed_members"][proposed] = member()
+        answers["ministries"]["proposed_members"][proposed] = {"join": [4]}
+        answers["financial"] = {
+            "annual_pledge": "100",
+            "frequency": "annual",
+            "shares": {CHECK: ""},
+        }
+        respond(harness, form, answers)
+    newest = SourceSnapshot.objects.filter(state="promoted").latest("generation")
+    record, claim = allocation(harness, watermark=1, source=newest)
+    ready = materialize_fact_set(record.pk, claim, admit=permit, interactive=True)
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        source = read_source(
+            ready.pk,
+            cutoff_date=first_day(ready).local_date,
+            final=False,
+            converted_at=CONVERTED,
+        )
+    [version] = source.versions
+    assert version.ministry_names == {"4": "Choir"}
+    rows = archive_sheets(source)[3]
+    assert [
+        (
+            r["member_slot"],
+            r["member_id"],
+            r["ministry"],
+            r["ministry_code"],
+            r["response"],
+        )
+        for r in rows
+    ] == [(1, 3, "4", None, "leave"), (2, None, "4", None, "join")]

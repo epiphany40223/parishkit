@@ -155,6 +155,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "export family-timeline",
         # The Campaign comparison's download (#1018, slice 6).
         "export comparison",
+        # The campaign archive workbook (#1018 part (a)).
+        "export archive",
     }
     # The users commands (#952), in the users group (PR 11): the reads of
     # slice 2, the changes of slice 5 and the leaders import of slice 6.
@@ -220,6 +222,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
                 "export directory",
                 "export postal",
                 "export family-timeline",
+                "export archive",
             }
         ), name
         # A prompting command, and only one, takes --yes. Other branches add
@@ -551,6 +554,13 @@ def test_the_catalog_lists_every_command_with_its_flags():
         assert entry["audit_event"] == event and entry["arguments"] == ["SNAPSHOT_ID"]
     # The Family-level exports: full-scope, keyed changes that create an
     # export record (fetched with export fetch), never a search option.
+    # The campaign archive (#1018 part (a)) is the same kind of keyed,
+    # full-scope change with no options: one XLSX of the current campaign.
+    archive = entries["export archive"]
+    assert archive["scope"] == "full" and archive["changes_state"]
+    assert archive["request_key"] and not archive["streams"]
+    assert archive["result_fields"] == ["created", "request_key", "export"]
+    assert "--format" not in {option["name"] for option in archive["options"]}
     for name in (
         "export financial",
         "export information",
@@ -641,6 +651,7 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_export_cancel",
         "admin_cmd_export_retry",
         "admin_cmd_export_regenerate",
+        "admin_cmd_export_archive",
         "admin_cmd_export_financial",
         "admin_cmd_export_information",
         "admin_cmd_export_ministry",

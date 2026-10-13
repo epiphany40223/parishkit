@@ -282,6 +282,9 @@ FROZEN = {
     "0083_digest_funnel_charts.sql": (
         "ce82e08e8f9dcf45b9576ce760522af9c2ad6c9ee94119f5feb6eebc1ebe56e4"
     ),
+    "0084_campaign_archive_exports.sql": (
+        "66b7ce60794446eeda1d2c61627da569489c4908a05bc2a1457cb2bd3738a8d8"
+    ),
 }
 
 

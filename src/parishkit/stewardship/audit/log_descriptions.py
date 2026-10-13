@@ -301,6 +301,10 @@ DESCRIPTIONS = {
         "An automation session requested a postal mail-merge export, as the "
         "Family directory's export form does with mailing columns."
     ),
+    "admin_cmd_export_archive": _(
+        "An automation session requested a campaign archive workbook, as Past "
+        "campaigns' Download campaign archive does."
+    ),
     "admin_cmd_export_comparison": _(
         "An automation session requested a Campaign comparison download, as "
         "the Campaign comparison page's download form does."
@@ -393,6 +397,9 @@ DESCRIPTIONS = {
     "participation_viewed": _("Someone opened the participation report."),
     "campaign_comparison_viewed": _(
         "Someone opened the campaign comparison report (or ran report comparison)."
+    ),
+    "campaign_archive_exported": _(
+        "Someone requested a campaign archive workbook (or ran export archive)."
     ),
     "campaign_comparison_exported": _(
         "Someone requested a Campaign comparison download (or ran export comparison)."

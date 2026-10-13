@@ -182,6 +182,9 @@ def test_web_admission_requires_exactly_the_login_function(family_service):  # n
         "(uuid, uuid, uuid, uuid, uuid, uuid, uuid)",
         "stewardship_campaign_comparison_v1(uuid, date, numeric[], uuid)",
         "stewardship_campaign_archive_renewal_v1(uuid, uuid, integer)",
+        # The archive's parts of each live answer, for the campaign archive
+        # workbook (#1018 part (a)).
+        "stewardship_campaign_archive_answers_v1(uuid, timestamp with time zone)",
         "stewardship_debug_logging_off_v1()",
     }
     tables, columns = runtime_grants(ServiceRole.WEB)

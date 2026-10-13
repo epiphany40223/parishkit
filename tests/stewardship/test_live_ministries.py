@@ -100,6 +100,9 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         LEADER_CHANGES_FUNCTION,
         "stewardship_campaign_comparison_v1(uuid, date, numeric[], uuid)",
         "stewardship_campaign_archive_renewal_v1(uuid, uuid, integer)",
+        # The archive's parts of each live answer, for the campaign archive
+        # workbook (#1018 part (a)).
+        "stewardship_campaign_archive_answers_v1(uuid, timestamp with time zone)",
         DEBUG_OFF_FUNCTION,
     }
     assert runtime_functions("download") == {LEADER_SCOPE_FUNCTION}

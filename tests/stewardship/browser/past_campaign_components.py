@@ -8,9 +8,15 @@ with the page naming what was done (2025 replaced), and its Remove dialog
 posts to ``removal/`` and redraws from a page without 2025. ``-refused``
 answers its Review with the located problems, ``-year`` has Review
 unavailable for an unresolvable year, and ``-empty`` has nothing imported.
+Every page offers a partial campaign archive download (#1018 part (a))
+except ``-archive-closed``, which offers a campaign closed before its end
+date its final archive at once, ``-archive-unavailable``, which says why it
+cannot be made yet, and ``-archive-tomorrow``, a campaign closed today with a
+response today.
 ``POSTS`` lists the POST answers, filled in by ``components``.
 """
 
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
@@ -20,6 +26,11 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 
 from parishkit.stewardship.reports import past_campaign_views as views
+from parishkit.stewardship.reports.archive_exports import (
+    CLOSED_TODAY,
+    NO_RESPONSE,
+    ArchiveOffer,
+)
 from parishkit.stewardship.web.tables import whole_table
 
 PAGE = "/past-campaigns"
@@ -36,6 +47,23 @@ REMOVED = f"{PAGE}-removed"
 # The fixtures' file limit, so a small test file counts as too large.
 MAX_BYTES = 2048
 POSTS = {}
+# This campaign's archive: a partial download through day 9; a campaign
+# closed before its end date, final at once through its last full day
+# (Administrator decision, 2026-10-13); and one no Family has answered.
+OFFER = ArchiveOffer(
+    None,
+    campaign_id=UUID(int=4),
+    campaign_name="Stewardship 2027",
+    year=2027,
+    cutoff_date=date(2026, 10, 12),
+    day=9,
+    end_date=date(2026, 11, 30),
+    fact_set_id=UUID(int=5),
+)
+CLOSED = replace(OFFER, final=True)
+UNAVAILABLE = replace(OFFER, reason=NO_RESPONSE, fact_set_id=None)
+# Closed today with a response today: final only tomorrow (review, 2026-10-13).
+TOMORROW = replace(CLOSED, reason=CLOSED_TODAY, fact_set_id=None)
 
 
 def archive(year, *, final=True, pk=None, state="active", **fields):
@@ -85,6 +113,8 @@ def context_for(active, removed=(), **extra):
         "more_problems": 0,
         "year_problem": None,
         "max_bytes": MAX_BYTES,
+        "archive": OFFER,
+        "request_key": UUID(int=6),
     } | extra
 
 
@@ -173,4 +203,7 @@ def components(context, admin):
             )
         ),
         f"{PAGE}-empty": page(context_for([])),
+        f"{PAGE}-archive-closed": page(context_for([final], archive=CLOSED)),
+        f"{PAGE}-archive-unavailable": page(context_for([final], archive=UNAVAILABLE)),
+        f"{PAGE}-archive-tomorrow": page(context_for([final], archive=TOMORROW)),
     }

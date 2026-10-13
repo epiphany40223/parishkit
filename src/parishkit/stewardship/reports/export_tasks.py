@@ -246,6 +246,10 @@ def load_document(request, *, general=None, store=None):
         from .comparison_documents import load_comparison
 
         return load_comparison(request)
+    if request.report == "campaign_archive":
+        from .archive_exports import archive_document
+
+        return archive_document(request)
     facts = CampaignDailyFactSet.objects.get(
         pk=request.fact_set_id, campaign_id=request.campaign_id, state="ready"
     )
@@ -306,6 +310,8 @@ def _execute(execution, *, store, root, general=None):
             abort=_abort_render_worker,
             limits=BACKGROUND_LIMITS,
             timeout_task=execution.claim.run_id,
+            # The campaign archive's several reads see one snapshot (#1018).
+            repeatable_read=request.report == "campaign_archive",
         ) as guard,
     ):
         document = load_document(request, general=general, store=store)
@@ -340,6 +346,10 @@ def _execute(execution, *, store, root, general=None):
                 from .timeline_pdf import render_timeline
 
                 render_timeline(document, stream, format=request.format)
+            elif request.report == "campaign_archive":
+                from .archive_exports import render_archive
+
+                render_archive(document, stream)
             elif request.format == "csv":
                 participation_csv(document, stream)
             elif request.format == "xlsx":

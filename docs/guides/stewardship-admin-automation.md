@@ -1775,6 +1775,35 @@ pk-admin export comparison --day 8 --format xlsx --timezone America/New_York
   note is included. It is meant for parish leadership; still share it only
   with them.
 
+#### Campaign archive
+
+`export archive` is Past campaigns' **Download campaign archive**: the
+current campaign's archive workbook (one XLSX in the
+[campaign archive format](../specs/stewardship/campaign-history/spec.md#archive-workbook-format)),
+partial while the campaign runs (through yesterday) and final once it has
+closed: through its end date, or, for a campaign closed before its end
+date, through its last full day. That is at once when no response arrived
+on the day it closed, and otherwise the next day. It holds each Family's
+giving, so,
+like `export financial`, it asks at the prompt (or takes `--yes`) and needs
+a full-scope session in place of the page's recent sign-in. It records
+`campaign_archive_exported` (with the cutoff's campaign day) plus
+`admin_cmd_export_archive`, and the file is fetched with `export fetch`.
+
+```sh
+pk-admin export archive --yes
+```
+
+- It takes no format or time zone: the file is always the archive XLSX,
+  named `stewardship-<year>.xlsx` or `stewardship-<year>-partial.xlsx`.
+- When a download is unavailable now (before the first day has ended, a
+  campaign closed today with a response today, no Family responded yet, or
+  the report's daily figures still being calculated), it is exit 1
+  (`not_available`).
+- Keep the file only in the parish's restricted archive folder; only the
+  current campaign can be exported, so download the final file before the
+  next campaign is created.
+
 The Limitations download is not on the command line yet; use the page. The
 lists of Families behind the response counts are `export directory` with
 the directory's Response filters.
@@ -2175,6 +2204,9 @@ print is exit 1 (`invalid`).
   --format csv|xlsx|pdf --timezone ZONE`, the Campaign comparison page's
   download (full scope; `campaign_comparison_exported` and
   `admin_cmd_export_comparison`).
+- `pk-admin/1` (#1018 part (a)): additive. `export archive`, Past
+  campaigns' Download campaign archive (full scope, fresh-gated;
+  `campaign_archive_exported` and `admin_cmd_export_archive`).
 - `pk-admin/1` (#1018, slice 7): additive. `schedule show` lists each
   schedule's `comparison`, and a `schedule preview` change document may set
   a daily digest's `comparison`; `digest daily` prints its retained

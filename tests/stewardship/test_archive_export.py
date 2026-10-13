@@ -146,15 +146,25 @@ def metadata_of(data):
     return {row[0]: row[1] for row in sheet.iter_rows(min_row=2, values_only=True)}
 
 
-def test_the_cutoff_is_the_end_date_once_closed_and_else_the_last_complete_day():
-    """Closed or archived: final at the end date; otherwise yesterday, capped."""
+def test_the_cutoff_is_the_last_complete_day_capped_and_final_once_closed():
+    """Yesterday, capped at the end date; final for closed or archived.
+
+    A campaign closed before its end date gets its final file at once,
+    through its last full day (Administrator decision, 2026-10-13, #1018),
+    rather than waiting for the end date; today's unfinished day is never
+    in it. Once the end date has passed, the cutoff is the end date.
+    """
     end = START + timedelta(days=30)
     now = datetime(2054, 10, 9, 3, 0, tzinfo=UTC)  # 23:00 on Oct 8 in New York
-    assert archive_cutoff("closed", START, end, ZONE, now) == (end, True)
-    assert archive_cutoff("archived", START, end, ZONE, now) == (end, True)
-    assert archive_cutoff("active", START, end, ZONE, now) == (date(2054, 10, 7), False)
+    early = date(2054, 10, 7)
+    assert archive_cutoff("closed", START, end, ZONE, now) == (early, True)
+    assert archive_cutoff("archived", START, end, ZONE, now) == (early, True)
+    assert archive_cutoff("active", START, end, ZONE, now) == (early, False)
+    # Closed on day 1 has no full day yet; after it, day 1 is the cutoff.
+    assert archive_cutoff("closed", START, end, ZONE, at(1)) is None
     assert archive_cutoff("active", START, end, ZONE, at(1)) is None
     later = datetime(2054, 12, 1, tzinfo=UTC)
+    assert archive_cutoff("closed", START, end, ZONE, later) == (end, True)
     assert archive_cutoff("active", START, end, ZONE, later) == (end, False)
     assert export.archive_name(2055, True) == "stewardship-2055.xlsx"
     assert export.archive_name(2055, False) == "stewardship-2055-partial.xlsx"

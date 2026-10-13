@@ -402,6 +402,21 @@ class ExportRequest(ImmutableRecord):
                     timeline_snapshot__isnull=True,
                     comparison_snapshot__isnull=False,
                     format__in=("csv", "xlsx", "pdf"),
+                )
+                # The campaign archive workbook: one XLSX of a ready
+                # historical fact set, read by the worker under the
+                # request's pins, with no capture (migration 0084, #1018).
+                | models.Q(
+                    report="campaign_archive",
+                    fact_set__isnull=False,
+                    information_snapshot__isnull=True,
+                    directory_snapshot__isnull=True,
+                    ministry_snapshot__isnull=True,
+                    financial_snapshot__isnull=True,
+                    family_test_names_snapshot__isnull=True,
+                    timeline_snapshot__isnull=True,
+                    comparison_snapshot__isnull=True,
+                    format="xlsx",
                 ),
                 name="export_report_known",
             ),

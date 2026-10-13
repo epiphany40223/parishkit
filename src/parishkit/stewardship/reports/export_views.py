@@ -157,7 +157,12 @@ class Download:
 def file_name(job):
     """The download's file name: the report, "-testing" for a Testing
     rehearsal directory export (#933; a CSV has no report details to say
-    so), and the format."""
+    so), and the format. A campaign archive is named by the archive
+    format's convention, ``stewardship-<year>[-partial].xlsx`` (#1018)."""
+    if job.report == "campaign_archive":
+        from parishkit.stewardship.archive.export import archive_name
+
+        return archive_name(job.parameters["year"], job.parameters["final"])
     testing = job.report in FAMILY_CODE_REPORTS and directory_mode(job) == "testing"
     return f"{job.report}{'-testing' if testing else ''}.{job.format}"
 

@@ -1572,6 +1572,30 @@ def export_comparison(args, preamble, runtime, context):
     )
 
 
+def export_archive(args, preamble, runtime, context):
+    """Request the campaign archive workbook, as Past campaigns does (#1018).
+
+    It holds each Family's giving, so, like ``export financial``, it is a
+    fresh-gated action: the command asks at the confirmation prompt (or
+    takes ``--yes``) before a request key is made or any transaction opens.
+    """
+    from .admin_family_exports import export_archive as request
+
+    confirm(
+        context,
+        (
+            "Create the campaign archive: a workbook of each Family's responses "
+            "and giving for the current campaign.",
+        ),
+    )
+    return request(
+        context["caller"],
+        runtime,
+        request_key=_request_key(args, context),
+        context=context,
+    )
+
+
 def export_financial(args, preamble, runtime, context):
     """Request a financial report export, as its export form does (PR 8e).
 
@@ -4254,6 +4278,21 @@ def _report_specs():
         ),
         # The Family-level exports (PR 8e, ``admin_family_exports``): each
         # creates an export record, fetched with ``export fetch``.
+        # The campaign archive workbook (#1018 part (a)): Past campaigns'
+        # Download campaign archive.
+        CommandSpec(
+            "export archive",
+            "Request the campaign archive workbook, as Past campaigns does.",
+            export_archive,
+            "full",
+            True,
+            ExportChange.field_names(),
+            8,
+            options=(_request_key_option,),
+            request_key=True,
+            fresh_gated=True,
+            prompts=True,
+        ),
         CommandSpec(
             "export financial",
             "Request a financial report export, as its export form does.",
