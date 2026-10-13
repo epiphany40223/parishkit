@@ -101,18 +101,8 @@ ops_require_count STEWARDSHIP_POLL_SECONDS "$poll"
 checkout=$(CDPATH='' cd "$here/../.." && pwd)
 git=(git -C "$checkout")
 
-# 1. The remote is the repository gh acts on; the configured URL, not the
-# rewritten one, so a url.insteadOf mirror cannot hide another repository.
-url=$("${git[@]}" config --get "remote.$remote.url" || true)
-if [[ $url =~ ^(https://github\.com/|git@github\.com:|ssh://git@github\.com/)(.+)$ ]]; then
-    named=${BASH_REMATCH[2]%/}
-    named=${named%.git}
-else
-    named=""
-fi
-if [ "$named" != "$repo" ]; then
-    ops_refuse "Git remote $remote is '${url:-unset}', not GitHub's $repo (set STEWARDSHIP_GIT_REMOTE or STEWARDSHIP_GH_REPO)"
-fi
+# 1. The remote is the repository gh acts on.
+ops_require_github_remote "$checkout" "$remote" "$repo"
 
 # main's head, its committed version, and no existing tag.
 ops_limited 120 "git fetch of main" "${git[@]}" fetch -q --no-tags "$remote" "+refs/heads/main:refs/remotes/$remote/main"

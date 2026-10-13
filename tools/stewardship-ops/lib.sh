@@ -47,6 +47,21 @@ ops_require_count() {
     fi
 }
 
+# Refuse unless git remote $2 of the checkout $1 is GitHub's repository $3
+# (OWNER/NAME), the one gh acts on. The configured URL is read, not the
+# rewritten one, so a url.insteadOf mirror cannot hide another repository.
+ops_require_github_remote() {
+    local url named=""
+    url=$(git -C "$1" config --get "remote.$2.url" || true)
+    if [[ $url =~ ^(https://github\.com/|git@github\.com:|ssh://git@github\.com/)(.+)$ ]]; then
+        named=${BASH_REMATCH[2]%/}
+        named=${named%.git}
+    fi
+    if [ "$named" != "$3" ]; then
+        ops_refuse "Git remote $2 is '${url:-unset}', not GitHub's $3 (set STEWARDSHIP_GIT_REMOTE or STEWARDSHIP_GH_REPO)"
+    fi
+}
+
 # Refuse unless STEWARDSHIP_HOST is set, and refuse a project, database or
 # limit that is not plainly what it claims to be, before anything reaches
 # ssh. Values are %q-quoted for the host anyway; this keeps a typo from
