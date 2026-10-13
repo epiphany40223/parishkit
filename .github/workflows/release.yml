@@ -75,7 +75,7 @@ jobs:
           for attempt in $(seq 1 80); do
             selection="$(python tools/stewardship-ops/release_evidence.py select \
               --repo "${GITHUB_REPOSITORY}" --commit "${RELEASE_COMMIT}")"
-            read -r run status conclusion head docs <<<"${selection:-}" || true
+            read -r run status conclusion head docs run_attempt <<<"${selection:-}" || true
             case "${status:-}" in
               unreadable)
                 echo "::error::Full CI run ${run} is newer than any qualifying run, but its commit ${head} cannot be fetched (see the log above); restore the branch that holds it, or dispatch a full run on main and re-tag."
@@ -83,9 +83,15 @@ jobs:
               completed)
                 if test "${conclusion}" = success; then
                   echo "Full CI run ${run} passed on ${head} (${docs} docs-safe paths differ from ${RELEASE_COMMIT})."
+                  # A pass after re-running failed jobs is still evidence,
+                  # but the release names it so a rerun stays visible (#158).
+                  if test "${run_attempt:-1}" -gt 1; then
+                    echo "::warning::Full CI run ${run} passed on attempt ${run_attempt}: failed jobs were re-run before it passed."
+                  fi
                   echo "run=${run}" >> "$GITHUB_OUTPUT"
                   echo "commit=${head}" >> "$GITHUB_OUTPUT"
                   echo "docs=${docs}" >> "$GITHUB_OUTPUT"
+                  echo "attempt=${run_attempt:-1}" >> "$GITHUB_OUTPUT"
                   exit 0
                 fi
                 echo "::error::Full CI run ${run} on ${head}, the release evidence for ${RELEASE_COMMIT}, did not pass (${conclusion}); fix main and tag a passing commit."
@@ -126,6 +132,7 @@ jobs:
           EVIDENCE_RUN: ${{ steps.evidence.outputs.run }}
           EVIDENCE_COMMIT: ${{ steps.evidence.outputs.commit }}
           EVIDENCE_DOCS: ${{ steps.evidence.outputs.docs }}
+          EVIDENCE_ATTEMPT: ${{ steps.evidence.outputs.attempt }}
           DOCS_CHECKS: ${{ steps.docs.outputs.checks }}
         run: |
           if test -f RELEASE_NOTES.md; then
@@ -139,6 +146,10 @@ jobs:
           printf '\nRelease evidence: full CI run %s/%s/actions/runs/%s on commit `%s` (%s docs-safe paths differ from the tagged tree).\n' \
             "${GITHUB_SERVER_URL}" "${GITHUB_REPOSITORY}" "${EVIDENCE_RUN}" \
             "${EVIDENCE_COMMIT}" "${EVIDENCE_DOCS}" >> release-notes.md
+          if test "${EVIDENCE_ATTEMPT:-1}" -gt 1; then
+            printf 'That run passed on attempt %s, after its failed jobs were re-run.\n' \
+              "${EVIDENCE_ATTEMPT}" >> release-notes.md
+          fi
           if test -n "${DOCS_CHECKS}"; then
             printf 'Documentation checks on the tagged tree: %s.\n' "${DOCS_CHECKS}" >> release-notes.md
           fi

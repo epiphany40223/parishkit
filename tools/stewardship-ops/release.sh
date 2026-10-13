@@ -209,7 +209,7 @@ evidence() {
     if [ "$found" != 0 ]; then
         ops_refuse "Cannot look up the release evidence for $sha"
     fi
-    read -r chosen status conclusion head docs <<<"$line" || true
+    read -r chosen status conclusion head docs attempt <<<"$line" || true
 }
 
 # Documentation is a test input. When the evidence tree differs from main's
@@ -319,6 +319,10 @@ require_evidence() {
 require_evidence "After the watch"
 docs_checks
 ops_log "release evidence: CI run $run on $head ($docs docs-safe paths differ from $sha)"
+# A pass after re-running failed jobs is still evidence; say so (#158).
+if [ "${attempt:-1}" -gt 1 ]; then
+    ops_log "CI run $run passed on attempt $attempt, after its failed jobs were re-run"
+fi
 
 # 4. Confirm; then, immediately before tagging, check that no newer run
 # took its place as the one release.yml will check; tag and push.

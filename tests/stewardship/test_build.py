@@ -300,6 +300,9 @@ def test_release_requires_full_ci_of_the_release_tree_before_build():
     [
         ("", 1, "No full CI run exists"),
         ("77\tcompleted\tsuccess\tabc000\t2", 0, "Full CI run 77 passed on abc000"),
+        ("77\tcompleted\tsuccess\tabc000\t2\t1", 0, "Full CI run 77 passed on abc000"),
+        # A pass after a re-run of failed jobs is still evidence, named (#158).
+        ("77\tcompleted\tsuccess\tabc000\t2\t3", 0, "passed on attempt 3"),
         ("77\tcompleted\tfailure\tabc000\t0", 1, "did not pass (failure)"),
         ("77\tcompleted\tcancelled\tabc000\t0", 1, "did not pass (cancelled)"),
         ("77\tunreadable\tsuccess\tabc000\t0", 1, "cannot be fetched"),
@@ -335,11 +338,47 @@ def test_release_gate_acts_on_the_deciding_run(tmp_path, selection, code, messag
     assert result.returncode == code
     assert message in result.stdout
     if code == 0:
+        attempt = "3" if "attempt 3" in message else "1"
         assert output.read_text().splitlines() == [
             "run=77",
             "commit=abc000",
             "docs=2",
+            f"attempt={attempt}",
         ]
+    assert ("::warning::" in result.stdout) == ("attempt 3" in message)
+
+
+def test_release_notes_name_a_re_run_evidence_attempt(tmp_path):
+    """The release notes say when the evidence run passed after a re-run."""
+    release = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
+    (notes,) = [
+        step
+        for step in release["jobs"]["validate-build"]["steps"]
+        if step.get("name") == "Generate release notes"
+    ]
+    assert notes["env"]["EVIDENCE_ATTEMPT"] == "${{ steps.evidence.outputs.attempt }}"
+    for attempt, named in (("1", False), ("2", True)):
+        (tmp_path / "RELEASE_NOTES.md").write_text("Notes.\n")
+        result = subprocess.run(
+            ["bash", "-e", "-c", notes["run"]],
+            cwd=tmp_path,
+            env={
+                "PATH": os.environ["PATH"],
+                "GITHUB_REF_NAME": "v1.2.3",
+                "GITHUB_SERVER_URL": "https://github.com",
+                "GITHUB_REPOSITORY": "owner/repository",
+                "EVIDENCE_RUN": "77",
+                "EVIDENCE_COMMIT": "abc000",
+                "EVIDENCE_DOCS": "0",
+                "EVIDENCE_ATTEMPT": attempt,
+            },
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, result.stderr
+        text = (tmp_path / "release-notes.md").read_text()
+        assert ("passed on attempt 2" in text) == named
 
 
 def test_release_gate_waits_for_a_pending_run(tmp_path):
