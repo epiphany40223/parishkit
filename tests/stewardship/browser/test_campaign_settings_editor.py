@@ -33,7 +33,7 @@ from .campaign_settings_components import (
 from .test_in_place import MARK, MARKED
 from .test_live_end_date import answer_checks, enabled
 from .test_settings_in_place import answer_reviews, expect_review
-from .waits import eventually, has_attribute, hidden, visible
+from .waits import eventually, has_attribute, hidden, same_place, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -225,7 +225,8 @@ def test_a_locked_setting_says_why_in_its_tip(page, component_origin):
     before = box.evaluate(PLACE)
     page.locator("button[aria-controls=id_additional_information_tip]").click()
     visible(page.locator("#id_additional_information_tip"))
-    assert box.evaluate(PLACE) == before
+    # Linux Firefox may report the same place a ten-thousandth of a pixel apart.
+    assert same_place(box.evaluate(PLACE), before)
     page.locator("button[aria-controls=id_census_tip]").click()
     tip = page.locator("#id_census_tip")
     visible(tip)
