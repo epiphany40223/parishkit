@@ -25,7 +25,7 @@ from parishkit.stewardship.jobs.storage import _status, change_run
 from parishkit.stewardship.observability import correlation
 from parishkit.stewardship.storage import StorageInvariantError
 
-from .attempts import verify_refresh_attempt
+from .attempts import source_step, verify_refresh_attempt
 from .compaction import compact_before_refresh
 from .credentials import SourceCredential
 from .drop_acceptance import require_live
@@ -187,6 +187,7 @@ def _observe(execution, claim, credential, reconcile, unchanged=None):
     _retire_drained_staging(execution, claim, snapshot)
     if snapshot.state == "unchanged":
         return snapshot
+    prepared = _prepare_promotion(execution, claim, snapshot, reconcile)
     total = sum(snapshot.counts.values())
     execution.progress(total, total, phase=TaskPhase.PROMOTING)
     # The promotion's statement budget (120 s) is longer than what is left of
@@ -199,13 +200,32 @@ def _observe(execution, claim, credential, reconcile, unchanged=None):
     with lock:
         extend_lease(execution, PROMOTION_LEASE_SECONDS)
         started = monotonic()
-        promoted = _promote(execution, claim, snapshot, reconcile)
+        promoted = _promote(execution, claim, snapshot, reconcile, prepared)
     _promotion_timing(started)
     return promoted
 
 
-def _promote(execution, claim, snapshot, reconcile):
-    """Promote the staged snapshot in one effect (see ``_observe``)."""
+def _prepare_promotion(execution, claim, snapshot, reconcile):
+    """Derive promotion's read-only inputs in a source step, off the lock (#895).
+
+    Only a reconciler with a ``prepare`` hook (the compiled effects) has
+    any; a plain reconcile callable gets None and promotes as before. The
+    step is the fenced, admitted, lock-free step staging and validation use,
+    so its row locks are task root, task run, lease, then the snapshot.
+    """
+    prepare = getattr(reconcile, "prepare", None)
+    if prepare is None:
+        return None
+    with source_step(execution):
+        return prepare(snapshot.pk, claim)
+
+
+def _promote(execution, claim, snapshot, reconcile, prepared=None):
+    """Promote the staged snapshot in one effect (see ``_observe``).
+
+    ``prepared`` (from ``_prepare_promotion``) is handed to the reconciler,
+    which uses it only for this very snapshot.
+    """
     with execution.effect():
         attempt = SourceRefreshAttempt.objects.get(snapshot=snapshot)
 
@@ -224,7 +244,11 @@ def _promote(execution, claim, snapshot, reconcile):
             snapshot.pk,
             claim,
             admit=admit,
-            reconcile=lambda current: reconcile(current, execution, claim),
+            reconcile=lambda current: (
+                reconcile(current, execution, claim)
+                if prepared is None
+                else reconcile(current, execution, claim, prepared=prepared)
+            ),
         )
 
 

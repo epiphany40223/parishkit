@@ -855,7 +855,7 @@ responsiveness, against risk.
 | 6 | Task steps (claim, progress, heartbeat, settle, in-flight check, scheduler admission) in shared mode with a per-task key | yes | high |
 | 7 | Family form issue and submission in shared mode with a per-Family key, plus a campaign row lock for the submission sequence | yes | high |
 | 8 | Source attempt start and snapshot completion leave the work lock | yes | medium |
-| 9 | Promotion precomputes its Family and chair effects outside the lock and applies them in a short, verified step | yes | high |
+| 9 | Promotion precomputes its read-only Family inputs outside the lock and applies the effects in a short, verified step | partly | high |
 
 **Change 3** has the largest effect on the launch send while a refresh runs.
 Issue #147 implemented it without a schema change. A full refresh of a
@@ -946,6 +946,43 @@ refuses updates, and evidence that went stale is never frozen. Moving the
 guard's own check off the lock needs a schema change; it is what remains of
 change 8, with the attempt start.
 
+The guard's re-derivation is also planned with statistics that predate the
+new snapshot's rows, because the statistics trigger runs `ANALYZE` only after
+the guard. On the same local corpus, three or four full refreshes in a row
+held the lock for 820–945 ms at the ready transition, against 96–164 ms when
+the membership tables were analyzed just before it (#895). Whether
+autovacuum's analyze runs during staging in Production decides which of the
+two a refresh sees.
+
+Change 9's first slice moves promotion's read-only Family work off the lock
+with no schema change (#895). After the ready transition, a source step
+(task root, task run, lease, then the snapshot row `FOR SHARE`, checked as
+this claim's `ready` snapshot) decodes the snapshot's Family corpus and
+derives each Family's corpus-only eligibility: its status flags, reasons and
+canonical head addresses. That is safe for the same reasons as the inputs
+read above. A ready snapshot's membership is immutable (inserts only while
+staging, no updates), payload versions are content-addressed, and deletes
+touch only compacted or rejected snapshots under the source lease this
+attempt holds. Promotion uses the result only for the very snapshot it
+promotes, after the usual scope, fence and organization checks. It applies
+the suppressions it reads under the lock, so a bounce that lands in between
+always counts. Any other snapshot, or no precomputed result (setup
+completion, or a precompute that found an inconsistent corpus), decodes
+under the lock as before. The Family writes, codes, proposals, Ministry
+requests, pointer switch and audit record stay in the one exclusive
+transaction. FamilyCampaign rows are still locked `FOR NO KEY UPDATE` in pk
+order before any in-memory version bump. With 1,100 Families and a draft
+campaign, the steady-state promotion hold went from 317–394 ms to
+223–281 ms, and a campaign's first promotion (which allocates every Family
+code) from 675–730 ms to 584–619 ms.
+
+The rest of change 9 needs no precompute table either. The work left under
+the lock publishes as it goes: every Family row's generation, codes, the
+population evidence and the derived responses. A stored plan would be
+trusted no more than the worker's statuses are today. What remains is
+Python-side cost in the locked Family update and the effects' repeated
+attempt checks, each a few tens of milliseconds.
+
 **Change 4** is only an optimization. A hint is advisory, and the consumer
 rechecks admission under its own locks, so a skipped re-check costs nothing.
 However, the due-work health sample counts each admitted row. A row skipped
@@ -966,8 +1003,8 @@ read without it finds something to do (#715), with no schema change. The
 scheduling](../background-processing/spec.md#durable-scheduling-and-task-execution)
 spec describes those reads and why each covers its locked pass.
 
-**Changes 6–9** need schema changes, which the v1 schema freeze defers. The
-SQL functions to change are:
+**Changes 6–8** need schema changes, which the v1 schema freeze deferred.
+Change 9's first slice did not (above). The SQL functions to change are:
 
 - the task, delivery and Family guards that assert `mode='ExclusiveLock'`
 - `stewardship_delivery_new_hold_v1` and `stewardship_control_guard_v1`,
