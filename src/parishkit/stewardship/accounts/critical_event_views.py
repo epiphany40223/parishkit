@@ -25,15 +25,19 @@ from .policy import Capability
 from .sessions import database_now
 
 
-def acknowledge_now(service, actor, ids, *, record=None):
+def acknowledge_now(service, actor, ids, *, record=None, subject_id=None):
     """Acknowledge the shown rows ``ids`` for ``actor``, in one transaction.
 
     The page's work, request-free so that ``pk-admin events acknowledge``
-    shares it: the configuration must be coherent and no restore under
-    review (``ConfigError`` otherwise), and only rows still inside the
-    window and not yet acknowledged are recorded. ``record``, when given, is
-    called inside the transaction only when some row was, so a caller's own
-    audit row commits with them. Returns how many rows were acknowledged.
+    and Accept this change once (``system_health.accept_change``) share it:
+    the configuration must be coherent and no restore under review
+    (``ConfigError`` otherwise), and only rows still inside the window and
+    not yet acknowledged are recorded. ``record``, when given, is called
+    inside the transaction only when some row was, so a caller's own audit
+    row commits with them. ``subject_id`` becomes the audit event's subject
+    (``critical_events.acknowledge``). Inside a caller's transaction this
+    is a savepoint that commits or rolls back with it. Returns how many
+    rows were acknowledged.
     """
     with transaction.atomic():
         configuration = coherent_configuration(service.store)
@@ -44,6 +48,7 @@ def acknowledge_now(service, actor, ids, *, record=None):
             ids=ids,
             since=database_now() - WINDOW,
             parish_id=configuration.active_configuration.parish.pk,
+            subject_id=subject_id,
         )
         if count and record is not None:
             record()

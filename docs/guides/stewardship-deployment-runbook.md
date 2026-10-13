@@ -967,6 +967,21 @@ log in debug form again. To remove debug logging for good,
 recreate the services without the setting instead, as
 [pre-launch fast deploys](#pre-launch-fast-deploys) describes.
 
+### Accept a large ParishSoft change once (#530)
+
+The release that adds System health's **Accept this change once** button is
+a grant change without a schema change: the acceptance table and its guard
+came with frozen file 0080. With the [scripted upgrade](#scripted-upgrade)
+set `STEWARDSHIP_SCHEMA_CHANGE=1`; the upgrade check reports `f` and step 4
+runs migration (nothing new) and then `database-grants`, which gives the web
+login its reads and inserts of acceptances and its read of which task each
+refused attempt ran (so accepting acknowledges that refusal's critical
+problem). No other step is needed. An
+Administrator then accepts a refused large change on System health, as
+[Accepting a large ParishSoft change](stewardship-launch-runbooks.md#accepting-a-large-parishsoft-change)
+describes; the `PARISHKIT_SOURCE_MAX_DROP_PERCENT` override stays as the
+server operator's emergency path.
+
 ### Preparing reminders ahead (BG-12)
 
 The release that prepares bulk-send reminders before their due time

@@ -322,9 +322,11 @@ send count `daily_sent`, the `daily_limit` Family email stops at and
 it is below), the open `incidents`, the ParishSoft `refresh` outcome, a refused load's
 `refused_counts`, the newest backup and the `offsite` copy's state, and
 the newest debug-off switch (`debug_switch`: `set_at`, and `cleared_at` and
-`cleared_by` once cleared, or null when none was ever set). The pause's
-reason and who paused it, who set the debug-off switch, and the page's
-sentences, are not in it.
+`cleared_by` once cleared, or null when none was ever set), and the
+one-time acceptance of the refusal shown (`drop_acceptance`: `id`,
+`created_at`, `expires_at` and `live`, or null while it has none). The
+pause's reason and who paused it, who set the debug-off switch, who
+accepted a change, and the page's sentences, are not in it.
 
 ### `system backup-now`
 
@@ -344,6 +346,45 @@ server's five-minute check picks it up) and `created_at`, and records
 
 ```text
 pk-admin system backup-now
+```
+
+### `system refresh-accept-preview` and `system refresh-accept`
+
+System health's **Accept this change once**, for a full ParishSoft refresh
+refused because counts fell too far, after checking in ParishSoft that the
+change is real (the
+[launch runbooks](stewardship-launch-runbooks.md#accepting-a-large-parishsoft-change)
+describe when). Both need a full-scope session.
+`system refresh-accept-preview` changes and records nothing; it prints the
+refusal's `attempt_id` and `refused_at`, every recorded count (`measure`,
+`before`, `after`, `limit_percent`, `failed`; counts only) and
+`preview.token`, the page's signed binding, valid for 15 minutes and for
+this Administrator only. It is refused (exit 1, `stale_version`) while the
+newest refusal cannot be accepted: none is shown, it was accepted already
+(live or lapsed), or the load had no Families or no Members.
+
+`system refresh-accept --token TOKEN` accepts that refusal. It always
+prompts (or takes `--yes`) with the counts that fell too far and the page's
+tick box, "I checked this in ParishSoft, and the change is real". The
+session stands in for the page's recent sign-in. It records the acceptance
+(the token's key names it, so a repeat returns the first, `created` false),
+asks for a full refresh as **Refresh now** does, and records
+`source_drop_accepted` and `admin_cmd_system_refresh_accept`. Like the
+page, it also acknowledges that refusal's own entry in the critical-problems
+banner (`critical_events_acknowledged`, with the acceptance as its subject),
+so `events list` no longer lists it; other entries stay. It prints
+`acceptance_id`, `created`, `created_at`, `expires_at`, `live` and
+`task_root_id` (the requested full refresh's root task, or null when it
+could not be requested; the next full refresh uses the acceptance anyway).
+A refusal that changed since the preview, an expired token or another
+acceptance already given is exit 1, `stale_version`: review again. With
+`--token -` the token is read from standard input, which then cannot answer
+the prompt, so add `--yes`. Follow it with `system health --watch 60`
+(`drop_acceptance` and `refresh`).
+
+```text
+pk-admin system refresh-accept-preview
+pk-admin system refresh-accept --token TOKEN
 ```
 
 ### `system debug-off`
@@ -2174,6 +2215,9 @@ print is exit 1 (`invalid`).
 - `pk-admin/1` (ADM-13 PR 6b, #530): additive. `system debug-off` (keyed,
   fresh-gated, always prompts), and `system health`'s `debug_switch` with
   the newest debug-off switch.
+- `pk-admin/1` (ADM-13 PR 5b, #530): additive. `system
+  refresh-accept-preview` and `system refresh-accept` (fresh-gated, always
+  prompts), and `system health`'s `drop_acceptance`.
 - `pk-admin/1` (#1018): additive. `history list`, `history preview -`
   (the workbook on standard input), `history confirm` (prompts for a
   replacement) and `history remove` (prompts), the Past campaigns page's

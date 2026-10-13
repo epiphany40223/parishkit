@@ -7,16 +7,21 @@ projection, without a database.
 
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from uuid import UUID, uuid4
 
+import pytest
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.source.data_age import Connection
 from parishkit.stewardship.source.refresh_status import FullRefreshStatus
 from parishkit.stewardship.system_health import (
+    AcceptPreview,
     DebugOffPreview,
     DebugSwitchStatus,
+    DropAcceptanceStatus,
     DropCount,
     Problem,
+    RefreshAcceptPreview,
     Subject,
     SystemHealth,
     find_problems,
@@ -730,3 +735,372 @@ def test_the_preview_and_each_refusal_read_in_the_region():
         answer = debug_page(debug_off={"refused": refused})
         assert f'data-debug-off-refused="{refused}"' in answer
         assert words in answer, refused
+
+
+# ------------------------------------------------- accept this change once
+
+FAILED = (
+    DropCount("family", 1084, 612, 25, True),
+    DropCount("member", 3000, 2900, 25, False),
+    DropCount("email_eligible_families", 900, 500, 25, True),
+)
+ACCEPTANCE = UUID("00000000-0000-4000-8000-0000000000a5")
+# The refused attempt the panel shows.
+REFUSED_ATTEMPT = UUID("00000000-0000-4000-8000-0000000000a6")
+# The problem that refusal opened, and an unrelated one.
+DROP_PROBLEM = Problem("source_destructive_change", at=NOW)
+LATE_PROBLEM = Problem("source_late", at=NOW)
+
+
+def accepted(*, live=True):
+    """An acceptance of the refusal shown, given at NOW."""
+    return DropAcceptanceStatus(
+        id=ACCEPTANCE, created_at=NOW, expires_at=NOW + timedelta(hours=24), live=live
+    )
+
+
+def accept_page(
+    counts=FAILED,
+    acceptance=None,
+    actor="admin@example.org",
+    request=None,
+    problems=(),
+    **values,
+):
+    """Render the status region, which holds the Accept this change once
+    region under the refusal.
+
+    ``values`` are the view's other context (a step's ``accept`` result, the
+    page's ``status_url``).
+    """
+    context = {
+        "health": health(
+            refused_at=NOW,
+            refused_counts=counts,
+            drop_acceptance=acceptance,
+            problems=problems,
+        ),
+        "pause": None,
+        "accept_actor": actor if acceptance is not None and acceptance.live else None,
+        "refused_attempt": REFUSED_ATTEMPT if counts else None,
+        "poll_interval": 10000,
+    } | values
+    return render_to_string(
+        "stewardship/system-health-status.html", context, request=request
+    )
+
+
+def test_which_refusals_can_be_accepted_once():
+    """Open only for a refusal with a failing count, no acceptance yet and
+    Families and Members in the load; otherwise the reason it cannot be."""
+    assert health().accept_state == "none"
+    assert health(refused_counts=FAILED).accept_state == "open"
+    assert health(refused_counts=FAILED, drop_acceptance=accepted()).accept_state == (
+        "accepted"
+    )
+    lapsed = health(refused_counts=FAILED, drop_acceptance=accepted(live=False))
+    assert lapsed.accept_state == "lapsed"
+    empty = (DropCount("family", 1084, 0, 25, True),)
+    assert health(refused_counts=empty).accept_state == "empty"
+    no_members = (*FAILED[:1], DropCount("member", 3000, 0, 25, True))
+    assert health(refused_counts=no_members).accept_state == "empty"
+
+
+def test_how_far_a_count_fell_is_rounded_up():
+    """Rounded up, so a count past the limit never reads as the limit."""
+    assert DropCount("family", 1000, 749, 25, True).fell_percent == 26
+    assert DropCount("family", 1084, 612, 25, True).fell_percent == 44
+    assert DropCount("family", 1000, 1000, 25, False).fell_percent is None
+    assert DropCount("family", 1000, 1200, 25, False).fell_percent is None
+    assert DropCount("family", None, 10, 25, False).fell_percent is None
+    assert DropCount("family", 0, 0, 25, True).fell_percent is None
+
+
+def test_the_acceptance_document_never_names_who_gave_it():
+    """The id, times and whether it is live; who accepted is the page's."""
+    document = health(refused_counts=FAILED, drop_acceptance=accepted()).to_document()
+    assert document["drop_acceptance"] == {
+        "id": str(ACCEPTANCE),
+        "created_at": NOW.isoformat(),
+        "expires_at": (NOW + timedelta(hours=24)).isoformat(),
+        "live": True,
+    }
+    assert health().to_document()["drop_acceptance"] is None
+
+
+def test_the_preview_document_holds_counts_and_the_binding_only():
+    """``system refresh-accept-preview`` prints counts, never names."""
+    attempt = uuid4()
+    document = RefreshAcceptPreview(
+        attempt_id=attempt,
+        refused_at=NOW.isoformat(),
+        counts=[
+            {
+                "measure": "family",
+                "before": 1084,
+                "after": 612,
+                "limit_percent": 25,
+                "failed": True,
+            }
+        ],
+        preview={"token": "signed"},
+    ).to_document()
+    assert set(document) == {"attempt_id", "refused_at", "counts", "preview"}
+    assert document["attempt_id"] == str(attempt)
+    assert set(document["counts"][0]) == {
+        "measure",
+        "before",
+        "after",
+        "limit_percent",
+        "failed",
+    }
+
+
+def test_accept_this_change_once_is_offered_for_an_open_refusal():
+    """The button posts the preview step in place; help is in a toggletip."""
+    body = accept_page()
+    assert 'value="accept_preview"' in body
+    assert 'data-in-place="accept-preview"' in body
+    assert 'action="/admin/system/health/#accept-change"' in body
+    assert '<template data-live-mirror="accept-button">' in body
+    assert 'data-live-mirror-target="accept-button"' in body
+    assert 'aria-controls="accept-change-intro-tip"' in body
+    assert "accepted once with Accept this change once just below" in body
+    assert "reload System health" not in body
+    # The emergency path stays the operator's, named in the help.
+    assert "the server operator can still let a change through" in body
+
+
+def test_the_accept_region_sits_right_under_the_refusal():
+    """In the ParishSoft refresh panel, directly after the refused change's
+    notice, inside the element the poll keeps (data-live-keep); its heading
+    is a subheading of the panel's. The polled copy carries no CSRF token,
+    so polls compare equal; the page's own copy does."""
+    import re
+
+    from django.test import RequestFactory
+
+    def kept(body):
+        """The kept element's markup, up to the end of its region."""
+        start = body.index('<div data-live-keep="accept-change"')
+        return body[start : body.index("</section>", start)]
+
+    request = RequestFactory().get("/admin/system/health/")
+    body = accept_page(request=request, status_url="/admin/system/health/status/")
+    panel = body[body.index('aria-labelledby="health-source-heading"') :]
+    panel = panel[: panel.index("</section>\n\n")]
+    # The refusal notice's last line, then at once the kept element.
+    before, after = panel.split(
+        f'<div data-live-keep="accept-change" data-live-keep-key="{REFUSED_ATTEMPT}">',
+        1,
+    )
+    assert before.rstrip().endswith("every later refresh is refused too.</p>\n</div>")
+    assert "data-refused-change" in before
+    assert after.startswith('<section class="panel" id="accept-change"')
+    assert '<h3 id="accept-change-heading">Accept this change once</h3>' in after
+    assert body.count('id="accept-change"') == 1
+    token = r'name="csrfmiddlewaretoken" value="([^"]*)"'
+    assert re.search(token, kept(body)).group(1)
+    polled = kept(accept_page(request=request))
+    assert re.search(token, polled).group(1) == ""
+    # Nothing is drawn while no refusal is shown, but the kept element is.
+    empty = accept_page(counts=())
+    assert '<div data-live-keep="accept-change" data-live-keep-key=""></div>' in empty
+    assert 'id="accept-change"' not in empty
+
+
+def test_an_accepted_refusal_is_listed_but_not_counted():
+    """Accepted once, the refusal's problem says by whom and that the next
+    full refresh is awaited, and no longer counts as needing attention;
+    every other problem still does (#530)."""
+    both = (LATE_PROBLEM, DROP_PROBLEM)
+    open_ = health(refused_counts=FAILED, problems=both)
+    assert open_.attention == both
+    done = health(refused_counts=FAILED, problems=both, drop_acceptance=accepted())
+    assert done.attention == (LATE_PROBLEM,)
+    assert done.announcement.startswith("1 problem needs attention:")
+    alone = health(
+        refused_counts=FAILED, problems=(DROP_PROBLEM,), drop_acceptance=accepted()
+    )
+    assert alone.attention == ()
+    assert alone.announcement == "Nothing needs attention."
+    # A lapsed acceptance is not an answer: the refusal counts again.
+    lapsed = health(
+        refused_counts=FAILED,
+        problems=(DROP_PROBLEM,),
+        drop_acceptance=accepted(live=False),
+    )
+    assert lapsed.attention == (DROP_PROBLEM,)
+
+    body = accept_page(acceptance=accepted(), problems=both)
+    assert "1 problem needs attention" in body
+    line = body[body.index('data-problem="source_destructive_change"') :]
+    line = line[: line.index("</li>")]
+    assert "data-problem-handled" in line and "notice-error" not in line
+    assert (
+        "The refused ParishSoft change was accepted once by admin@example.org; "
+        "waiting for the next full refresh." in line
+    )
+    assert "refused because some counts fell too far" not in line
+    body = accept_page(acceptance=accepted(), problems=(DROP_PROBLEM,))
+    assert "Nothing needs attention" in body and "Everything is working" not in body
+    assert 'data-problem="source_destructive_change"' in body
+    # Not yet accepted: the refusal's own sentence, counted.
+    body = accept_page(problems=(DROP_PROBLEM,))
+    assert "1 problem needs attention" in body
+    assert "refused because some counts fell too far" in body
+
+
+def test_the_preview_and_the_panel_name_the_refusal():
+    """The refusal notice and the kept element name the refusal shown; the
+    preview names the one it reviews, with a reserved line and a Confirm
+    that live-status-v1.js holds once they differ."""
+    preview = AcceptPreview(
+        token="signed", attempt_id=uuid4(), refused_at=NOW, counts=FAILED
+    )
+    body = accept_page(accept={"preview": preview})
+    assert f'data-refused-attempt="{REFUSED_ATTEMPT}"' in body
+    assert (
+        f'<div data-live-keep="accept-change" data-live-keep-key="{REFUSED_ATTEMPT}">'
+        in body
+    )
+    region = body[body.index('id="accept-change"') :]
+    assert f'data-live-keep-for="{preview.attempt_id}"' in region
+    assert (
+        '<p class="reserve-lines-wrap" role="status" data-live-stale-note='
+        '"This changed since you looked; review it again."></p>' in region
+    )
+    confirm = region[: region.index("Confirm: accept this change once")]
+    assert "data-live-stale-holds" in confirm[confirm.rindex("<button") :]
+    # No refusal shown: the key is empty, so any open preview is stale.
+    assert 'data-live-keep-key=""' in accept_page(counts=())
+
+
+def test_an_acceptance_greys_the_button_with_who_when_and_until_when():
+    """Who accepted, when and when it expires, in browser-local time, and
+    that the next full refresh will use it."""
+    body = accept_page(acceptance=accepted())
+    assert 'value="accept_preview"' not in body
+    assert 'disabled aria-describedby="accept-change-reason"' in body
+    assert 'data-accept-state="accepted"' in body
+    assert "Accepted by admin@example.org at" in body
+    assert f'<time datetime="{NOW.isoformat()}" data-local-instant>' in body
+    expires = (NOW + timedelta(hours=24)).isoformat()
+    assert f'<time datetime="{expires}" data-local-instant>' in body
+    assert "The next full refresh will use it" in body
+
+
+def test_a_lapsed_acceptance_offers_refresh_now():
+    """A refusal is accepted once; a lapsed one points to Refresh now."""
+    body = accept_page(acceptance=accepted(live=False), actor=None)
+    assert 'data-accept-state="lapsed"' in body
+    assert "the acceptance ended before a full refresh used it" in body
+    reason = body[body.index('id="accept-change-reason"') :]
+    assert 'href="/admin/parish/parishsoft-refresh/"' in reason
+    assert "Accepted by" not in body
+
+
+def test_an_empty_load_says_it_can_never_be_accepted():
+    """Refused at any setting, by design, so the button stays greyed."""
+    body = accept_page(counts=(DropCount("family", 1084, 0, 25, True),))
+    assert 'data-accept-state="empty"' in body
+    assert "can never be accepted" in body
+    assert 'value="accept_preview"' not in body
+
+
+def test_the_preview_lists_the_counts_and_waits_for_the_tick_box():
+    """Every count with before, after and how far it fell, the failing ones
+    marked; Confirm waits for "I checked this in ParishSoft"."""
+    preview = AcceptPreview(
+        token="signed-binding", attempt_id=uuid4(), refused_at=NOW, counts=FAILED
+    )
+    body = accept_page(accept={"preview": preview})
+    region = body[body.index('id="accept-change"') :]
+    assert region.count("data-accept-failed") == 2
+    for words in (
+        "Families with an email address",
+        "1,084",
+        "612",
+        "44%",
+        "Fell too far (more than 25%)",
+        "Within the limit",
+        "Records missing from ParishSoft leave the campaign",
+        "Confirming also asks for a full refresh now.",
+        "I checked this in ParishSoft, and the change is real.",
+        "Confirm: accept this change once",
+    ):
+        assert words in region, words
+    assert 'name="token" value="signed-binding"' in region
+    assert 'name="checked" value="yes" required data-acknowledgment' in region
+    assert 'value="accept_confirm"' in region and 'value="accept_cancel"' in region
+    assert 'aria-controls="accept-change-rules-tip"' in region
+    # The preview replaces the region's button, so a poll cannot discard it.
+    assert "data-live-mirror-target" not in region
+
+
+@pytest.mark.parametrize(
+    ("refused", "marker", "words"),
+    [
+        ("reauthenticate", "reauthenticate", "For your security, confirm it's you"),
+        ("busy", "changed", "This changed since you looked; review it again."),
+        ("denied", "denied", "The server refused this acceptance"),
+        ("invalid", "invalid", "or the box was not ticked"),
+    ],
+)
+def test_each_refusal_reads_in_the_region(refused, marker, words):
+    """Never the database's words: "no longer the newest" is "changed"."""
+    body = accept_page(accept={"refused": refused})
+    region = body[body.index('id="accept-change"') :]
+    assert f'data-accept-refused="{marker}"' in region
+    assert words in region
+    assert "no longer the newest" not in region
+
+
+def test_the_confirmation_says_a_full_refresh_was_requested():
+    """Or, when it could not be, that the next full refresh uses it."""
+    done = accept_page(
+        acceptance=accepted(),
+        accept={"requested": SimpleNamespace(), "created": True, "refresh": uuid4()},
+    )
+    assert "data-accept-done" in done and "A full refresh was requested" in done
+    assert "Accepted by admin@example.org at" in done
+    missed = accept_page(
+        acceptance=accepted(),
+        accept={"requested": SimpleNamespace(), "created": True, "refresh": None},
+    )
+    assert "A full refresh could not be requested right now" in missed
+    assert "the acceptance stands" in missed
+    assert "Nothing was accepted" not in missed
+
+
+def test_the_binding_is_the_reviewers_own_and_unaltered(settings, monkeypatch):
+    """An altered binding or another Administrator's is invalid; an expired
+    one is "changed" (review it again)."""
+    from django.core import signing
+
+    from parishkit.stewardship import system_health
+    from parishkit.stewardship.storage import StaleRecordError
+
+    actor = SimpleNamespace(identity=uuid4())
+    key, attempt = uuid4(), uuid4()
+    token = system_health._sign(actor, key, attempt, FAILED)
+    found = system_health._unsign(actor, token)
+    assert found[:2] == (key, attempt)
+    assert found[2]["family"] == {"before": 1084, "after": 612, "failed": True}
+    with pytest.raises(ValueError):
+        system_health._unsign(actor, token + "x")
+    with pytest.raises(ValueError):
+        system_health._unsign(SimpleNamespace(identity=uuid4()), token)
+    with pytest.raises(ValueError):
+        system_health._unsign(actor, signing.dumps({"key": "x"}, salt="other"))
+    monkeypatch.setattr(system_health, "ACCEPT_MAX_AGE", -1)
+    with pytest.raises(StaleRecordError):
+        system_health._unsign(actor, token)
+
+
+def test_the_binding_lasts_the_shared_preview_lifetime():
+    """Fifteen minutes, as every configuration-change preview."""
+    from parishkit.stewardship import system_health
+    from parishkit.stewardship.web.refusals import PREVIEW_MAX_AGE
+
+    assert system_health.ACCEPT_MAX_AGE == PREVIEW_MAX_AGE == 15 * 60

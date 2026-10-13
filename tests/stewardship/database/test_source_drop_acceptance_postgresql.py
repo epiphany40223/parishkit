@@ -113,10 +113,10 @@ FELL = (
 def web_with(*privileges):
     """The web login with ``privileges`` on the acceptance table added.
 
-    No web grant exists in this release (System health's button, ADM-13 PR
-    5b, adds it), so the guard is exercised under grants added here, as the
-    debug-off switch tests do. Django reads both times back, so an insert
-    needs SELECT too.
+    Web holds SELECT and INSERT since System health's button (ADM-13 PR 5b);
+    granting them again changes nothing, and granting UPDATE or DELETE here
+    shows the guard itself refuses both, whatever the grants. Django reads
+    both times back, so an insert needs SELECT too.
     """
     with task_login(ServiceRole.WEB, exact=True):
         with connection.cursor() as cursor:

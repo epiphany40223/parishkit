@@ -10,10 +10,12 @@ from parishkit.stewardship.accounts.system_health_views import POLL_MILLISECONDS
 from parishkit.stewardship.source.data_age import Connection
 from parishkit.stewardship.source.refresh_status import FullRefreshStatus
 from parishkit.stewardship.system_health import (
+    AcceptPreview,
     BackupPreview,
     BackupRequestStatus,
     DebugOffPreview,
     DebugSwitchStatus,
+    DropAcceptanceStatus,
     DropCount,
     SystemHealth,
     find_problems,
@@ -48,6 +50,23 @@ DEBUG_STATUS = "/system-health-debug/status"
 DEBUG_PREVIEW = "/system-health-debug-preview"
 DEBUG_SET = "/system-health-debug-set"
 DEBUG_STEP_UP = "/system-health-debug-step-up"
+# Accept this change once (ADM-13 PR 5b): a page showing only a refused
+# large change, the answers its steps get, and its next poll, in which
+# another Administrator has accepted it. The browser test serves the page at
+# the real address (BACKUP_PAGE) by routing, as the POSTs are.
+ACCEPT_PAGE = "/system-health-accept"
+ACCEPT_STATUS = "/system-health-accept/status"
+ACCEPT_PREVIEW = "/system-health-accept-preview"
+ACCEPT_DONE = "/system-health-accept-done"
+ACCEPT_CHANGED = "/system-health-accept-changed"
+# A page drawn before any refusal, whose next poll brings one: the empty
+# kept element takes the Accept this change once region from the poll.
+ACCEPT_LATE = "/system-health-accept-late"
+# A page whose next poll shows a newer refusal than the one an open preview
+# reviews, so the preview is marked changed.
+ACCEPT_STALE = "/system-health-accept-stale"
+ACCEPT_STALE_STATUS = "/system-health-accept-stale/status"
+ACCEPT_LATE_STATUS = "/system-health-accept-late/status"
 # A healthy page whose next poll changes only a time's datetime attribute.
 DATED = "/system-health-dated"
 DATED_STATUS = "/system-health-dated/status"
@@ -70,12 +89,33 @@ def _row(now, service, process="main", *, age=0, **values):
     } | values
 
 
-def health(now, *, troubled, backup_at=None, waiting=False, debug=False, switch=False):
+# The refused attempt the pages show and their previews review.
+REFUSED_ATTEMPT = UUID(int=6)
+# The counts a refused large change recorded.
+REFUSED = (
+    DropCount("family", 1090, 1084, 25, False),
+    DropCount("email_eligible_families", 1084, 612, 25, True),
+)
+
+
+def health(
+    now,
+    *,
+    troubled,
+    backup_at=None,
+    waiting=False,
+    debug=False,
+    switch=False,
+    refused=False,
+    accepted=False,
+):
     """A deployment with several problems, or a healthy one.
 
     ``debug``: the web portal reports debug logging in effect; ``switch``:
-    the debug-off switch is set (ADM-13 PR 6b).
+    the debug-off switch is set (ADM-13 PR 6b). ``refused``: a large change
+    was refused, and ``accepted``: it was accepted once (ADM-13 PR 5b).
     """
+    refused = refused or troubled
     rows = [
         _row(now, "web", debug_logging=debug),
         _row(now, "web", debug_logging=debug),
@@ -136,13 +176,8 @@ def health(now, *, troubled, backup_at=None, waiting=False, debug=False, switch=
         daily_resume_at=now + timedelta(hours=5, minutes=10) if troubled else None,
         incidents=incidents,
         refresh=refresh,
-        refused_at=now - timedelta(hours=3) if troubled else None,
-        refused_counts=(
-            DropCount("family", 1090, 1084, 25, False),
-            DropCount("email_eligible_families", 1084, 612, 25, True),
-        )
-        if troubled
-        else (),
+        refused_at=now - timedelta(hours=3) if refused else None,
+        refused_counts=REFUSED if refused else (),
         backup_at=backup_at or now - timedelta(hours=13),
         backup_key_matches=True,
         backup_bytes=48 * 1024 * 1024,
@@ -163,6 +198,14 @@ def health(now, *, troubled, backup_at=None, waiting=False, debug=False, switch=
             set_at=now - timedelta(minutes=2), cleared_at=None, cleared_by=None
         )
         if switch
+        else None,
+        drop_acceptance=DropAcceptanceStatus(
+            id=UUID(int=5),
+            created_at=now - timedelta(minutes=1),
+            expires_at=now + timedelta(hours=24),
+            live=True,
+        )
+        if accepted
         else None,
     )
 
@@ -187,7 +230,15 @@ def components(context, admin):
     }
 
     def values(
-        troubled, backup_at=None, waiting=False, debug=False, switch=False, **extra
+        troubled,
+        backup_at=None,
+        waiting=False,
+        debug=False,
+        switch=False,
+        refused=False,
+        accepted=False,
+        attempt=REFUSED_ATTEMPT,
+        **extra,
     ):
         """Template context the view would build."""
         return (
@@ -201,8 +252,12 @@ def components(context, admin):
                     waiting=waiting,
                     debug=debug,
                     switch=switch,
+                    refused=refused,
+                    accepted=accepted,
                 ),
                 "debug_actor": "other@example.org" if switch else None,
+                "accept_actor": "other@example.org" if accepted else None,
+                "refused_attempt": attempt if refused else None,
                 "campaign_id": None,
                 "pause": {"actor": "admin@example.org", "reason": "Checking a typo"}
                 if troubled
@@ -376,6 +431,99 @@ def components(context, admin):
                     status_url=DEBUG_STATUS,
                     debug_off={"refused": "reauthenticate"},
                     debug_off_shown=True,
+                ),
+            ),
+        ),
+        ACCEPT_PAGE: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(False, refused=True, status_url=ACCEPT_STATUS),
+            ),
+        ),
+        ACCEPT_STATUS: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health-status.html",
+                values(False, refused=True, accepted=True),
+            ),
+        ),
+        ACCEPT_PREVIEW: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(
+                    False,
+                    refused=True,
+                    status_url=ACCEPT_STATUS,
+                    accept={
+                        "preview": AcceptPreview(
+                            token="signed-binding",
+                            attempt_id=REFUSED_ATTEMPT,
+                            refused_at=now - timedelta(hours=3),
+                            counts=REFUSED,
+                        )
+                    },
+                    accept_shown=True,
+                ),
+            ),
+        ),
+        ACCEPT_DONE: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(
+                    False,
+                    refused=True,
+                    accepted=True,
+                    status_url=ACCEPT_STATUS,
+                    accept={
+                        "requested": SimpleNamespace(),
+                        "created": True,
+                        "refresh": UUID(int=7),
+                    },
+                    accept_shown=True,
+                ),
+            ),
+        ),
+        ACCEPT_STALE: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(False, refused=True, status_url=ACCEPT_STALE_STATUS),
+            ),
+        ),
+        ACCEPT_STALE_STATUS: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health-status.html",
+                values(False, refused=True, attempt=UUID(int=8)),
+            ),
+        ),
+        ACCEPT_LATE: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(False, status_url=ACCEPT_LATE_STATUS),
+            ),
+        ),
+        ACCEPT_LATE_STATUS: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health-status.html",
+                values(False, refused=True),
+            ),
+        ),
+        ACCEPT_CHANGED: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(
+                    False,
+                    refused=True,
+                    status_url=ACCEPT_STATUS,
+                    accept={"refused": "busy"},
+                    accept_shown=True,
                 ),
             ),
         ),

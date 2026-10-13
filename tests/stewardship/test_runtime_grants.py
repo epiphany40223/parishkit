@@ -519,11 +519,12 @@ def test_mail_dispatch_reads_tokens_only_through_the_claimed_token_definer():
             assert not tokens & runtime_functions(role, target=target)
 
 
-def test_only_the_worker_reads_large_change_acceptances():
-    """Accept a large ParishSoft change once (ADM-13 PR 5a, #530): the worker
-    reads the live acceptance when a full refresh's drop check fails; no
-    login writes one yet (System health's button, PR 5b, gives web its
-    grants), and no other login holds any grant on it."""
+def test_web_records_and_the_worker_reads_large_change_acceptances():
+    """Accept a large ParishSoft change once (ADM-13 PR 5, #530): web
+    inserts and reads acceptances (System health's button, PR 5b), the
+    worker reads the live one when a full refresh's drop check fails, no
+    login may update or delete one, and no other login holds any grant on
+    it."""
     from parishkit.stewardship.runtime_grants import CLOSURE_TABLES
 
     table = "stewardship_source_drop_acceptance"
@@ -531,10 +532,13 @@ def test_only_the_worker_reads_large_change_acceptances():
         if role is ServiceRole.MIGRATION:
             continue
         grants, columns = runtime_grants(role, target=target)
-        expected = {"SELECT"} if role is ServiceRole.WORKER else set()
+        expected = {
+            ServiceRole.WEB: {"SELECT", "INSERT"},
+            ServiceRole.WORKER: {"SELECT"},
+        }.get(role, set())
         assert grants.get(table, set()) == expected, role
         assert table not in columns, role
-    # It follows the users swap, so its grant waits for its migration.
+    # It follows the users swap, so its grants wait for its migration.
     assert CLOSURE_TABLES[table] == ("stewardship_source", "0008_drop_acceptance")
 
 
@@ -562,3 +566,17 @@ def test_only_web_records_a_reported_bounce():
         "stewardship_jobs",
         "0030_bounce_report",
     )
+
+
+def test_web_reads_only_which_task_a_refused_attempt_ran():
+    """Accepting a change once acknowledges its refusal's critical problem
+    (#530), whose log entry names the refused task: web may read only an
+    attempt's id and task, never its manifest, configuration or credential
+    fingerprint, and still writes none."""
+    tables, columns = runtime_grants(ServiceRole.WEB)
+    table = "stewardship_source_refresh_attempt"
+    assert table not in tables
+    assert columns[table] == {"SELECT": {"id", "task_id"}}
+    # It already acknowledges critical problems from the banner.
+    assert tables["stewardship_critical_event_ack"] == {"SELECT", "INSERT"}
+    assert "SELECT" in tables["stewardship_operational_log"]

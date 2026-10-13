@@ -485,41 +485,77 @@ the full refreshes of the past week (and, for the eligibility counts, the
 current data), not only the last full refresh. A drop that built up
 gradually, each full refresh a little below the one before, can therefore be
 refused even though no single refresh fell by 25%. A full refresh accepted
-with a raised limit starts that week again. Every later refresh is refused
-the same way until the drop is explained. Accepting a change works as
-before.
+with a raised limit starts that week again; one accepted by an
+Administrator starts it again only for the counts that fell. Every later
+refresh is refused the same way until the drop is explained.
 
-1. Find what fell. The worker's log line for the refusal, a CRITICAL
-   `source_destructive_change`, carries `source_loss` with the count's name
-   and its before and after values (counts only, no parish data; the
-   System health page's example Families are separate and never logged):
-   `docker compose ... logs worker | grep source_loss`.
+An Administrator handles it from the portal; the server operator's override
+is the emergency path.
+
+1. Find what fell. System health's ParishSoft refresh panel lists every
+   count the refused refresh was checked on, with its before and after
+   values, marking each one that fell too far (counts only, no parish data).
+   The worker's log line for the refusal, a CRITICAL
+   `source_destructive_change`, carries `source_loss` with the first count
+   that failed (`docker compose ... logs worker | grep source_loss`).
 2. Check it in ParishSoft. If it is a mistake or an outage there (records
    removed, organization or status fields blanked), fix it in ParishSoft and
    use **Refresh now**; nothing else is needed.
 3. If the change is real, such as the parish inactivating many Families at
-   once, accept it for one refresh. Recreate the worker with a higher loss
-   limit, in percent (`100` accepts any drop; a load with no Families or
-   Members is still refused), then use **Refresh now**:
+   once, an Administrator accepts it once on System health: **Accept this
+   change once…** (it needs a Google sign-in within five minutes), review
+   the counts, tick "I checked this in ParishSoft, and the change is real",
+   and confirm. That also asks for a full refresh, as **Refresh now** does.
+   The section then says who accepted it, when, and when the acceptance
+   expires, in the reader's own time zone. The next full refresh goes
+   through only if no count falls below the "after" value reviewed and every
+   count that was within the limit stays within it; the limit itself is not
+   raised, and the Member contact list check stays in force.
+4. It is over when the ParishSoft refresh panel no longer shows the refusal:
+   the accepted full refresh was promoted. Nothing needs undoing. The
+   acceptance ends by itself when a full refresh is promoted, when a new
+   refusal is recorded, or after 24 hours.
 
-   ```text
-   PARISHKIT_SOURCE_MAX_DROP_PERCENT=100 docker compose ... up --detach --force-recreate worker
-   ```
+What the section can say instead:
 
-4. Wait until the full refresh that **Refresh now** started has completed.
-   Its progress page (where **Refresh now** takes you) shows it finished,
-   and on `/admin/parish/parishsoft-refresh/` the "last full refresh" time ("ParishSoft
-   data as of", when no quick update brought newer changes) moves past the
-   moment you clicked, with no "A full refresh is running now". A 15-minute update that completes first is not enough: later
-   refreshes also compare with the recent full refreshes, and only the
-   accepted full refresh starts that comparison again, so removing the
-   override before the full one completes gets the next refresh refused
-   again. Only then recreate the worker without the variable, so the 25%
-   limit applies again:
+- **"This changed since you looked; review it again."** A newer refusal, or
+  a promoted full refresh, replaced the one reviewed. Review the counts now
+  shown, check them in ParishSoft again, and accept that refusal if the
+  change is still real.
+- **The acceptance ended before a full refresh used it.** A refusal is
+  accepted only once. Use **Refresh now**; if the full refresh is refused
+  again, accept the new refusal. A refresh that fell further than the counts
+  reviewed is refused as well, with a new refusal to review.
+- **A refresh that found no Families or no Members can never be accepted.**
+  It is refused at any limit, by design, because it almost always means
+  ParishSoft could not be read properly. Check the connection and the key,
+  as [ParishSoft outage](#parishsoft-outage) describes.
 
-   ```text
-   docker compose ... up --detach --force-recreate worker
-   ```
+**Emergency path: the operator override.** When no Administrator can use
+the portal, or for a refusal the portal's acceptance does not cover (the
+Member contact list below), the server operator can accept a change for one
+refresh by recreating the worker with a higher loss limit, in percent
+(`100` accepts any drop; a load with no Families or Members is still
+refused), then using **Refresh now**:
+
+```text
+PARISHKIT_SOURCE_MAX_DROP_PERCENT=100 docker compose ... up --detach --force-recreate worker
+```
+
+Wait until the full refresh that **Refresh now** started has completed.
+Its progress page (where **Refresh now** takes you) shows it finished, and
+on `/admin/parish/parishsoft-refresh/` the "last full refresh" time
+("ParishSoft data as of", when no quick update brought newer changes) moves
+past the moment you clicked, with no "A full refresh is running now". A
+15-minute update that completes first is not enough: later refreshes also
+compare with the recent full refreshes, and only the accepted full refresh
+starts that comparison again, so removing the override before the full one
+completes gets the next refresh refused again. Only then recreate the
+worker without the variable, so the 25% limit applies again:
+
+```text
+docker compose ... up --detach --force-recreate worker
+```
 
 The same override, for one full refresh, also accepts a large rise in the
 Members the contact list leaves out (`shifted_scan` with

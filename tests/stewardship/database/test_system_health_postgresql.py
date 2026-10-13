@@ -212,14 +212,18 @@ def test_a_refused_load_shows_its_counts_until_a_full_refresh_follows(tmp_path):
     )
     refused = SourceDropCount.objects.filter(attempt=attempt).first().created_at
     with task_login(ServiceRole.WEB, exact=True, reconnect=True), transaction.atomic():
-        at, counts = system_health._refused(None)
-        assert at == refused
+        at, counts, found = system_health._refused(None)
+        assert at == refused and found == attempt.pk
         assert [(count.measure, count.failed) for count in counts] == [
             ("family", False),
             ("valid_email_contacts", True),
         ]
         # A full refresh that promoted after the refusal settles it.
-        assert system_health._refused(refused + timedelta(seconds=1)) == (None, ())
+        assert system_health._refused(refused + timedelta(seconds=1)) == (
+            None,
+            (),
+            None,
+        )
 
 
 def test_the_schema_check_compares_every_applied_migration(auth_service):

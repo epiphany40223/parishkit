@@ -1230,7 +1230,11 @@ the fifteen-minute backup-key proof and campaign clone seed):
   configuration-change path: parish, integration and setup settings, campaign
   configuration, content, mail schedules, users and access rules, Ministries,
   logos and images, the Preview and test email sends, and the
-  [past-campaign archive Review](../campaign-history/spec.md#what-is-stored).
+  [past-campaign archive Review](../campaign-history/spec.md#what-is-stored),
+  and System health's
+  [Accept this change once](#accept-a-large-parishsoft-change-once), whose
+  binding names the refusal and its counts as reviewed (an expired one is
+  "This changed since you looked; review it again").
   The command line's
   [configuration requests](../admin-automation/spec.md#schedules-and-configuration)
   use the same fifteen minutes.
@@ -5226,15 +5230,15 @@ delivers it. Status: the read-only page has landed (PR 1 and PR 2a–2c of the
 the problems list, the six panels, the status fragment, Home's problem lines,
 Families the form cannot open, the daily limit's 24-hour count and resume
 time, and the
-`system health` command. Two of the four actions have landed: **Take a
-backup now** (PR 3) and **Turn off debug logging** (PR 6a and 6b; Testing's
-**Allow debug logging again** is not built yet). For the other two (PR 4
-and PR 5) no panel offers a button yet; each problem sentence names the
-runbook step instead, and the steps listed under
-[runbook steps the page replaces](#runbook-steps-the-page-replaces) remain
-the way to do those things. Some panel details arrive with those pull
-requests too: a halt's kind (PR 4) and the example Families of a refused
-change (PR 5).
+`system health` command. Three of the four actions have landed: **Take a
+backup now** (PR 3), **Accept this change once** (PR 5a and 5b; the example
+Families, PR 5c, are not built yet) and **Turn off debug logging** (PR 6a
+and 6b; Testing's **Allow debug logging again** is not built yet). For
+**Clear the halt** (PR 4) no panel offers a button yet; its problem sentence
+names the runbook step instead, and that step, listed under
+[runbook steps the page replaces](#runbook-steps-the-page-replaces), remains
+the way to do it. Some panel details arrive with those pull requests too: a
+halt's kind (PR 4) and the example Families of a refused change (PR 5c).
 
 ### System health page
 
@@ -5927,18 +5931,55 @@ share it fell by, marking the ones that failed. It says that records
 missing from ParishSoft leave the campaign's data after the refresh, and
 that a mistake in ParishSoft should be fixed there, followed by **Refresh
 now**. Under each failing count it lists the example Families (name and
-DUID), which only Administrators see, since only they may open the page.
+DUID; PR 5c, not built yet), which only Administrators see, since only they
+may open the page.
 Example names never appear in a log line, an audit context, the refusal's
-log entry or a notice. Opening the preview records the existing
-`system_health_viewed` event only; the preview's command prints the counts
-and example DUIDs without names, as the automation spec's
+log entry or a notice. Opening the preview records no event (see
+**Audit** below); the preview's command prints the counts (and, with PR
+5c, the example DUIDs) without names, as the automation spec's
 [personal data rule](../admin-automation/spec.md#personal-data-on-the-command-line)
 requires.
 
+**Where it appears.** In the ParishSoft refresh panel, directly under the
+refused change it answers (Administrator, pk-local check of #1210: not at
+the foot of the page). The page draws it while the panel shows a refused
+change, including one a later 10-second status update brings; once drawn it
+stays in place, and its button follows the status. The panel is inside the
+region the status updates replace, so the action sits in an element those
+updates leave in place (`data-live-keep`, see
+[in-place controls](../ui-conventions/spec.md#in-place-controls)): an open
+preview, its tick box and the headings above it never move or disappear when
+the status changes. If a status update shows another refusal than the one
+an open preview reviews, or none, the preview says "This changed since you
+looked; review it again" on a line kept for it and Confirm is held. Once a
+refusal is accepted, its line in the problems list says "The refused
+ParishSoft change was accepted once by …; waiting for the next full
+refresh" and is no longer counted among the problems that need attention
+(Home keeps the refusal's own line). Its rules (what the next full
+refresh must meet, how the acceptance ends, that a refusal is accepted only
+once and an empty load never, and the server operator's override as the
+emergency path) are in "i" toggletips. The preview, the refusals and the
+result are answered in place, as the
+[in-place controls](../ui-conventions/spec.md#in-place-controls) convention
+requires. The preview's binding is signed for the Administrator who
+reviewed it and lasts fifteen minutes, the shared
+[preview lifetime](#preview-lifetimes); an older one is "This changed since you
+looked; review it again", as is any refusal by the acceptance's guard other
+than the sign-in's (a newer refusal, a promoted full refresh, an acceptance
+already given). After confirming, the greyed button says "Accepted by … at
+…; expires at …" in browser-local time and that the next full refresh will
+use it. If the full refresh cannot be requested right then, the acceptance
+stands and the section says the next full refresh, scheduled or from
+**Refresh now**, will use it.
+
 **Unavailable when** (greyed, with the reason): the tick box "I checked
 this in ParishSoft, and the change is real" is not ticked; the refusal is
-no longer the newest full refresh's outcome; or an acceptance is already
-active.
+no longer the newest full refresh's outcome; an acceptance is already
+active ("Accepted by … at …; expires at …"); the refusal's acceptance
+lapsed unused (a refusal is accepted only once, so the reason links
+[Refresh from ParishSoft](#manual-parishsoft-refresh) for a new refusal to
+review); or the load had no Families or no Members, which is refused at any
+limit and so can never be accepted.
 
 **Checks (server):** the [shared rules](#shared-rules-for-health-actions);
 the newest full refresh was refused for a drop and no full refresh has been
@@ -5948,7 +5989,20 @@ active; and the refusal is not a tenant mismatch.
 
 **Confirmation:** the tick box, then confirm.
 
-**Audit:** `source_drop_accepted`, plus the manifest record above.
+**Audit:** `source_drop_accepted` naming the acceptance, and from the
+command line also `admin_cmd_system_refresh_accept`, plus the manifest
+record above. Accepting is the Administrator's answer to the refusal, so in
+the same transaction it acknowledges the refusal's own CRITICAL
+`source_destructive_change` entry in the
+[critical-problems banner](#navigation-and-home), through the banner's shared
+acknowledgement and its `critical_events_acknowledged` event, recorded for
+that Administrator with the acceptance as its subject (Administrator, pk-local
+check of #1210). Only that refusal's entry is acknowledged; an earlier
+refusal's and any other problem's stay until acknowledged, and a refused,
+expired or repeated confirmation acknowledges nothing. The web login reads
+which task each refused attempt ran (only the attempt's id and task) to find
+the entry. As with the other actions, the preview step records nothing
+(not `system_health_viewed`, which only opening the page records).
 
 **Not changed:** the environment override still works for the server
 operator. While it is set, the panel shows the limit in use.
@@ -6102,7 +6156,7 @@ clear signal that names its current halt.
 | --- | --- |
 | [Backup runbook: the nightly backup](../../../guides/stewardship-backup-runbook.md#the-nightly-backup), running the backup by hand before Production activation and before an upgrade | **Take a backup now**. The scripted upgrade's own backup stays a host step. |
 | [Backup runbook: checking](../../../guides/stewardship-backup-runbook.md#checking), running the backup by hand when `backup_rpo_breach` fires and confirming the off-site copy | **Take a backup now** and the backups panel. Diagnosing a backup that keeps failing stays on the host. |
-| [Launch runbooks: accepting a large ParishSoft change](../../../guides/stewardship-launch-runbooks.md#accepting-a-large-parishsoft-change), steps 1, 3 and 4 | The ParishSoft refresh panel and **Accept this change once**. Step 2, checking in ParishSoft, stays. |
+| [Launch runbooks: accepting a large ParishSoft change](../../../guides/stewardship-launch-runbooks.md#accepting-a-large-parishsoft-change), recreating the worker with the loss limit override | The ParishSoft refresh panel and **Accept this change once** (landed). Checking in ParishSoft stays, and the override stays the server operator's emergency path. |
 | [Launch runbooks: mail-provider outage](../../../guides/stewardship-launch-runbooks.md#mail-provider-outage) step 5, restarting `mail-dispatch` after a systemic failure | **Clear the halt**, after a passing mailbox check and with every uncertain message settled. Steps 1 to 3 stay. |
 | [Launch runbooks: Production activation](../../../guides/stewardship-launch-runbooks.md#production-activation) step 1, inspecting each container for `PARISHKIT_DEBUG_LOGGING` | The debug logging panel and **Turn off debug logging**. Recreating the services without the setting still removes it for good. |
 | Asking the operator which version is running | The version panel. |

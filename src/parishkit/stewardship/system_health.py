@@ -17,13 +17,15 @@ a name, an address, a reason someone typed or a translated label), which the
 ``system health`` command will print. The page renders the same model in
 words. The actions (take a backup now, clear a halt, accept a large change,
 turn off debug logging) come with ADM-13 PR 3 to PR 6, each with its own
-service function here; Take a backup now (PR 3) and Turn off debug logging
-(PR 6b) have landed, and share ``_record_fresh``.
+service function here; Take a backup now (PR 3), Accept this change once
+(PR 5b) and Turn off debug logging (PR 6b) have landed, and share
+``_record_fresh``.
 
 Pure helpers (``group_processes``, ``find_problems``) take every input as an
 argument, so they are unit tested without a database.
 """
 
+import logging
 from dataclasses import dataclass, fields
 from datetime import datetime, timedelta
 from functools import cache
@@ -304,6 +306,15 @@ class DropCount:
     failed: bool
 
     @property
+    def fell_percent(self):
+        """The share the count fell by, in whole percent rounded up (so a
+        count that fell by more than the limit never reads as the limit
+        itself), or None when it did not fall or had no before value."""
+        if not self.before or self.after >= self.before:
+            return None
+        return -(-(self.before - self.after) * 100 // self.before)
+
+    @property
     def label(self):
         """What the count counts, in plain words."""
         from django.utils.translation import gettext as _
@@ -475,8 +486,11 @@ class SystemHealth(ReadModel):
     ``backup_request`` the newest Take a backup now request (ADM-13 PR 3).
     ``debug_switch`` is the newest debug-off switch (ADM-13 PR 6), or None
     when none was ever set; who set it is the page's alone (``read_health``).
-    ``delivery_paused`` is Production's live delivery pause; ``send_active``
-    and ``planning_held`` come from Family email progress. ``daily_sent`` is
+    ``drop_acceptance`` is the Administrator's one-time acceptance of the
+    refusal shown (ADM-13 PR 5b), or None while it has none; who gave it is
+    the page's alone too. ``delivery_paused`` is Production's live delivery
+    pause; ``send_active`` and ``planning_held`` come from Family email
+    progress. ``daily_sent`` is
     the 24-hour recipient count the mail senders compare with the daily
     limit, and ``daily_limit`` the share of it Family invitations, reminders
     and Family tests may use (ADM-13 PR 2c); ``daily_resume_at`` is when that
@@ -511,6 +525,8 @@ class SystemHealth(ReadModel):
     backup_request: object
     offsite: object
     debug_switch: object
+    # Last, with a default, so a model built before it existed still builds.
+    drop_acceptance: object = None
 
     def to_document(self):
         """The defined projection: states, counts and instants only.
@@ -540,7 +556,7 @@ class SystemHealth(ReadModel):
                     {"kind": kind, "since": since}
                     for kind, since in sorted(value.items())
                 ]
-            elif item.name in {"backup_request", "debug_switch"}:
+            elif item.name in {"backup_request", "debug_switch", "drop_acceptance"}:
                 value = None if value is None else _members(value)
             elif item.name == "problems":
                 value = [
@@ -586,6 +602,36 @@ class SystemHealth(ReadModel):
         )
 
     @property
+    def accept_state(self):
+        """Whether the refusal shown can be accepted once, or why not.
+
+        ``none`` while no refusal is shown; ``accepted`` while its acceptance
+        is live and ``lapsed`` once that ended unused (a refusal is accepted
+        at most once, so **Refresh now** gives a new one to accept);
+        ``empty`` for a load with no Families or no Members, which is
+        refused at any setting and so can never be accepted; otherwise
+        ``open``. Only a hint for the page: the service function and the
+        acceptance's SQL guard decide.
+        """
+        return accept_state(self.refused_counts, self.drop_acceptance)
+
+    @property
+    def attention(self):
+        """The problems that need the Administrator, which the page counts.
+
+        Every problem, except a refused large change already accepted once
+        (#530): the Administrator has handled it and it waits for the next
+        full refresh, so the page lists it, saying so, without counting it.
+        """
+        if self.accept_state != "accepted":
+            return self.problems
+        return tuple(
+            problem
+            for problem in self.problems
+            if problem.kind != "source_destructive_change"
+        )
+
+    @property
     def debug_lines(self):
         """The running processes with debug logging in effect."""
         return tuple(
@@ -597,18 +643,21 @@ class SystemHealth(ReadModel):
         """The short sentence screen readers hear when the problems change."""
         from django.utils.translation import gettext, ngettext
 
+        attention = self.attention
         if not self.problems:
             return gettext("Everything is working.")
+        if not attention:
+            return gettext("Nothing needs attention.")
         # The short names make the sentence change whenever the set of
         # problems does, not only when their number does, so a problem that
         # ends as another begins is still announced.
         return ngettext(
             "%(count)d problem needs attention: %(names)s.",
             "%(count)d problems need attention: %(names)s.",
-            len(self.problems),
+            len(attention),
         ) % {
-            "count": len(self.problems),
-            "names": "; ".join(problem.summary for problem in self.problems),
+            "count": len(attention),
+            "names": "; ".join(problem.summary for problem in attention),
         }
 
 
@@ -737,7 +786,8 @@ def _retries():
 
 
 def _refused(succeeded_at):
-    """The newest refused load's time and counts, unless a full refresh followed.
+    """The newest refused load's time, counts and attempt, unless a full
+    refresh followed: ``(None, (), None)`` then.
 
     A full refresh that promoted after the refusal settles it, so the panel
     no longer shows it.
@@ -752,7 +802,7 @@ def _refused(succeeded_at):
     if newest is None or (
         succeeded_at is not None and succeeded_at >= newest["created_at"]
     ):
-        return None, ()
+        return None, (), None
     rows = SourceDropCount.objects.filter(attempt_id=newest["attempt_id"]).values(
         "measure", "before", "after", "limit_percent", "failed"
     )
@@ -760,7 +810,58 @@ def _refused(succeeded_at):
         (DropCount(**row) for row in rows),
         key=lambda count: DROP_MEASURES.index(count.measure),
     )
-    return newest["created_at"], tuple(counts)
+    return newest["created_at"], tuple(counts), newest["attempt_id"]
+
+
+@dataclass(frozen=True)
+class DropAcceptanceStatus:
+    """The one-time acceptance of the refusal System health shows (ADM-13 PR
+    5b, #530): its identity, when it was given, when it expires, and whether
+    it is still live (``stewardship_source_drop_acceptance_active_v1()``).
+
+    Who gave it is not part of the read model's document: the page shows the
+    Administrator's address from ``read_health``'s page values.
+    """
+
+    id: object
+    created_at: datetime
+    expires_at: datetime
+    live: bool
+
+
+def _drop_acceptance(attempt_id):
+    """The acceptance of ``attempt_id``'s refusal and who gave it.
+
+    ``(None, None)`` when the refusal has none. The address is read only
+    while the acceptance is live, the only time the page names who gave it.
+    Whether it is live is the SQL lifetime check's answer, the one the guard
+    and the worker use, so the page cannot disagree with them.
+    """
+    from django.db import connection
+
+    from .accounts.policy_models import PortalUser
+    from .source.drop_models import SourceDropAcceptance
+
+    if attempt_id is None:
+        return None, None
+    row = (
+        SourceDropAcceptance.objects.filter(attempt_id=attempt_id)
+        .values("id", "created_at", "expires_at", "actor_id")
+        .first()
+    )
+    if row is None:
+        return None, None
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT public.stewardship_source_drop_acceptance_active_v1()")
+        (live,) = cursor.fetchone()
+    actor_id = row.pop("actor_id")
+    status = DropAcceptanceStatus(**row, live=live == row["id"])
+    if not status.live:
+        return status, None
+    actor = (
+        PortalUser.objects.filter(pk=actor_id).values_list("email", flat=True).first()
+    )
+    return status, actor
 
 
 def _backup(configuration):
@@ -986,7 +1087,8 @@ def read_health(store):
 
     Returns ``(model, page)``, where ``page`` holds what only the page shows
     (the current campaign's identifier for its links, who paused delivery
-    and why, and who set the debug-off switch), or None while a restore is
+    and why, who set the debug-off switch, which refusal the panel shows
+    and who accepted it), or None while a restore is
     under review, when the page is withheld. The caller authorizes the
     reader before and after (the page's views).
     """
@@ -1019,7 +1121,8 @@ def read_health(store):
         incidents, schema_current = facts.incidents, facts.schema_current
         processes, missing = _processes(facts.rows, now)
         refresh = full_refresh_status(refresh_schedule(configuration), now)
-        refused_at, refused_counts = _refused(refresh.succeeded_at)
+        refused_at, refused_counts, refused_attempt = _refused(refresh.succeeded_at)
+        drop_acceptance, accept_actor = _drop_acceptance(refused_attempt)
         backup_at, key_matches, backup_bytes, backup_version = _backup(configuration)
         backup_request = _backup_request(now)
         retry_waiting, next_retry_at = _retries()
@@ -1036,6 +1139,10 @@ def read_health(store):
             "pause": _pause(campaign) if paused else None,
             "workgroup_missing": _workgroup_missing(campaign),
             "debug_actor": debug_actor,
+            "accept_actor": accept_actor,
+            # Which refusal the panel shows, so an open Accept this change
+            # once preview of another one is marked changed (live-status).
+            "refused_attempt": refused_attempt,
         }
     model = SystemHealth(
         checked_at=now,
@@ -1076,6 +1183,7 @@ def read_health(store):
         backup_request=backup_request,
         offsite=offsite,
         debug_switch=debug_switch,
+        drop_acceptance=drop_acceptance,
     )
     return model, page
 
@@ -1202,12 +1310,12 @@ class _FreshRow:
     refused: type
 
 
-def _record_fresh(caller, store, kind, *, key, command):
+def _record_fresh(caller, store, kind, *, key, command, values=None, then=None):
     """Record one fresh-gated action row; return ``(row, created)``.
 
-    Shared by Take a backup now and Turn off debug logging, whose rows'
-    SQL guards make the same checks. The fresh sign-in check runs inside
-    the row's transaction, so an automation session's gate
+    Shared by Take a backup now, Accept this change once and Turn off debug
+    logging, whose rows' SQL guards make the same checks. The fresh sign-in
+    check runs inside the row's transaction, so an automation session's gate
     (``sessions.require_fresh``, which locks the session row and records its
     gate event) commits or rolls back with the row. The guard checks again,
     in the same transaction, that the sign-in is fresh (or a live full-scope
@@ -1215,7 +1323,11 @@ def _record_fresh(caller, store, kind, *, key, command):
     confirmation with the same ``key`` returns the first row (``created``
     false). ``kind.action`` is recorded with the row as its subject, and
     from the command line (``command``) also ``kind.command_action`` naming
-    the automation session.
+    the automation session. ``values`` are the row's own further columns
+    (an acceptance's refusal and reviewed counts). ``then(row, actor)``,
+    when given, runs after those events in the same transaction, only for a
+    new row, so whatever it records commits or rolls back with the row (an
+    acceptance acknowledges its refusal's critical problem).
     """
     from django.db import DatabaseError, IntegrityError, transaction
 
@@ -1246,6 +1358,7 @@ def _record_fresh(caller, store, kind, *, key, command):
                 actor_id=actor.identity,
                 session_id=session.pk,
                 authenticated_at=fresh,
+                **(values or {}),
             )
             record_action(
                 kind.action,
@@ -1262,6 +1375,8 @@ def _record_fresh(caller, store, kind, *, key, command):
                     subject_id=caller.automation_session_id,
                     context={"outcome": Outcome.SUCCEEDED},
                 )
+            if then is not None:
+                then(row, actor)
             return row, True
     except IntegrityError as error:
         # A simultaneous second click with the same key lost the race: it
@@ -1590,4 +1705,432 @@ def debug_off(caller, service, *, key, context):
         created=created,
         set_at=plain(row.set_at),
         active=row.cleared_at is None,
+    )
+
+
+# ------------------------------------------------- accept this change once
+
+# The signed preview binding's salt and lifetime. The binding names the
+# refusal and its counts as reviewed, so a confirmation can only accept
+# what the Administrator saw; an older one is reviewed again. Its lifetime
+# is the shared preview lifetime (admin-portal spec, "Preview lifetimes"):
+# web.refusals.PREVIEW_MAX_AGE, not imported here because this module must
+# stay importable before Django is set up; a test pins the two together.
+ACCEPT_SALT = "parishkit.stewardship.system_health.accept"
+ACCEPT_MAX_AGE = 15 * 60
+# What a step answers while the refusal shown cannot be accepted any more
+# (another refusal arrived, a full refresh promoted, it was accepted): the
+# page says "This changed since you looked; review it again".
+ACCEPT_CHANGED = "The refusal changed since it was reviewed."
+
+
+@dataclass(frozen=True)
+class AcceptPreview:
+    """What Accept this change once's preview states before the Administrator
+    ticks the box and confirms (ADM-13 PR 5b).
+
+    ``token`` is the signed binding the confirmation posts: the new
+    acceptance's key, the refused attempt and every recorded count as
+    reviewed. ``counts`` are the refusal's ``DropCount`` values, in the
+    panel's order; counts only, no parish data.
+    """
+
+    token: str
+    attempt_id: object
+    refused_at: datetime
+    counts: tuple
+
+    @property
+    def failed(self):
+        """The counts that fell too far."""
+        return tuple(count for count in self.counts if count.failed)
+
+
+class AcceptanceRefused(ActionRefused):
+    """The database refused an acceptance (see ``ActionRefused``)."""
+
+
+def _open_refusal():
+    """The newest refusal, when it can be accepted now: ``(attempt, at,
+    counts)``. Raises ``StaleRecordError`` (``ACCEPT_CHANGED``) when there
+    is none, or it was accepted, or its acceptance lapsed, or it was an
+    empty load. Runs in the caller's read snapshot; the guard checks again.
+
+    "The newest refusal" is ``_refused``'s, as the page's panel shows it:
+    the newest recorded drop count's attempt, unless a full refresh was
+    promoted at or after it. The page passes the refresh status's last full
+    success, which is that same promotion; here it is read directly
+    (``_last_full_promotion``), so the preview needs no refresh status. The
+    SQL lifetime check and guard use the same rule.
+    """
+    from .storage import StaleRecordError
+
+    refused_at, counts, attempt = _refused(_last_full_promotion())
+    acceptance, _ = _drop_acceptance(attempt)
+    if accept_state(counts, acceptance) != "open":
+        raise StaleRecordError(ACCEPT_CHANGED)
+    return attempt, refused_at, counts
+
+
+def _last_full_promotion():
+    """When the newest full refresh was promoted, or None."""
+    from django.db.models import Max
+
+    from .source.snapshot_models import SourceSnapshot
+
+    return SourceSnapshot.objects.filter(kind="full", state="promoted").aggregate(
+        at=Max("promoted_at")
+    )["at"]
+
+
+def accept_state(counts, acceptance):
+    """Whether a refusal with these recorded ``counts`` and ``acceptance``
+    (a ``DropAcceptanceStatus`` or None) can be accepted once, or why not;
+    see ``SystemHealth.accept_state``. The page's button and the preview's
+    check share it."""
+    if not any(count.failed for count in counts):
+        return "none"
+    if acceptance is not None:
+        return "accepted" if acceptance.live else "lapsed"
+    if any(
+        count.measure in {"family", "member"} and count.after == 0 for count in counts
+    ):
+        return "empty"
+    return "open"
+
+
+def _sign(actor, key, attempt, counts):
+    """The preview binding for ``actor``'s acceptance ``key`` of ``attempt``."""
+    from django.core import signing
+
+    from .source.drop_acceptance import reviewed_counts
+
+    return signing.dumps(
+        {
+            "key": str(key),
+            "actor": str(actor.identity),
+            "attempt": str(attempt),
+            "counts": reviewed_counts(counts),
+        },
+        salt=ACCEPT_SALT,
+    )
+
+
+def _signer(caller, store):
+    """Who is confirming, read only to check the binding is theirs; the
+    action's own admission (``_record_fresh``) checks the Administrator."""
+    from .accounts.sessions import authenticated_admin
+
+    return authenticated_admin(caller, store=store, read_only=True)
+
+
+def _unsign(actor, token):
+    """The binding's ``(key, attempt, counts)``, for ``actor`` only.
+
+    An expired binding is ``StaleRecordError`` (review it again); an altered
+    one, or another Administrator's, is ``ValueError``.
+    """
+    from uuid import UUID
+
+    from django.core import signing
+
+    from .storage import StaleRecordError
+
+    try:
+        value = signing.loads(token, salt=ACCEPT_SALT, max_age=ACCEPT_MAX_AGE)
+    except signing.SignatureExpired:
+        raise StaleRecordError(ACCEPT_CHANGED) from None
+    except (signing.BadSignature, TypeError, ValueError):
+        raise ValueError("The preview token is not valid.") from None
+    try:
+        key, attempt = UUID(value["key"]), UUID(value["attempt"])
+        if value["actor"] != str(actor.identity) or type(value["counts"]) is not dict:
+            raise ValueError
+    except (KeyError, TypeError, ValueError):
+        raise ValueError("The preview token is not valid.") from None
+    return key, attempt, value["counts"]
+
+
+def _accept_preview(actor):
+    """The preview of accepting the newest refusal, in one read snapshot."""
+    from uuid import uuid4
+
+    from .campaigns.work_locks import read_transaction
+
+    with read_transaction():
+        attempt, refused_at, counts = _open_refusal()
+    return AcceptPreview(
+        token=_sign(actor, uuid4(), attempt, counts),
+        attempt_id=attempt,
+        refused_at=refused_at,
+        counts=counts,
+    )
+
+
+def preview_acceptance(caller, store):
+    """Accept this change once's preview, for a freshly signed-in
+    Administrator (the page's step). Changes nothing.
+
+    Refused (``StaleRecordError``) while the newest refusal cannot be
+    accepted: none is shown, it was accepted already (live or lapsed), or
+    it was a load with no Families or no Members.
+    """
+    actor, _ = _admit_action(caller, store)
+    return _accept_preview(actor)
+
+
+def _accept_kind():
+    """Accept this change once's row, events and refusals, for ``_record_fresh``."""
+    from .audit.schemas import Action
+    from .source.drop_models import SourceDropAcceptance
+
+    return _FreshRow(
+        model=SourceDropAcceptance,
+        action=Action.SOURCE_DROP_ACCEPTED,
+        command_action=Action.ADMIN_CMD_SYSTEM_REFRESH_ACCEPT,
+        other_actor="This change was accepted by another Administrator.",
+        # Every guard refusal that is not about the sign-in (the refusal is
+        # no longer the newest, a full refresh promoted, the counts differ,
+        # another acceptance is live, this refusal was accepted before).
+        busy=ACCEPT_CHANGED,
+        refused=AcceptanceRefused,
+    )
+
+
+def _request_refresh(caller, service, key):
+    """Ask for a full refresh after an acceptance, as **Refresh now** does.
+
+    The command is keyed by the acceptance's own key, so a repeated
+    confirmation joins the same request. Returns the run's root task, or
+    None when the request could not be recorded now, for any reason (the
+    ParishSoft settings, the Administrator's access, the database): it runs
+    only after the acceptance committed, which stands either way, and the
+    next full refresh, scheduled or asked for, uses it. So every failure is
+    logged and absorbed here, and the page and the command report the
+    acceptance instead of a refusal that would read as "nothing accepted".
+    """
+    from .accounts.refresh_views import request_manual_refresh
+    from .accounts.sessions import authenticated_admin
+    from .observability import emit_failure
+
+    try:
+        actor = authenticated_admin(caller, store=service.store, read_only=True)
+        receipt = request_manual_refresh(caller, service, actor, key)
+    except Exception as error:  # noqa: BLE001 - the acceptance already stands
+        emit_failure(error, level=logging.WARNING, name_class=True)
+        return None
+    return receipt.task_root_id
+
+
+def _refusal_events(attempt_id):
+    """The CRITICAL ``source_destructive_change`` log entries the refusal of
+    ``attempt_id`` recorded: the worker writes one, naming the refused
+    task, in the refusal's own transaction (``source.failures``). Ids only;
+    whether each is still inside the banner's window and unacknowledged is
+    ``critical_events.acknowledge``'s to check."""
+    from .audit.models import OperationalLog
+    from .observability import Event
+    from .source.refresh_models import SourceRefreshAttempt
+
+    task = (
+        SourceRefreshAttempt.objects.filter(pk=attempt_id)
+        .values_list("task_id", flat=True)
+        .first()
+    )
+    if task is None:
+        return []
+    return list(
+        OperationalLog.objects.filter(
+            level="CRITICAL",
+            event=Event.SOURCE_DESTRUCTIVE_CHANGE.value,
+            context__task_id=str(task),
+        ).values_list("id", flat=True)
+    )
+
+
+def _acknowledge_refusal(service, actor, row):
+    """Acknowledge, for ``actor``, the critical problem the accepted refusal
+    raised, inside the acceptance's transaction (``_record_fresh``'s
+    ``then``).
+
+    Accepting the change once is the Administrator's answer to that
+    problem, so the critical-problems banner should not ask for it again.
+    Only that refusal's own entries are acknowledged, through the banner's
+    shared ``acknowledge_now`` with its ``critical_events_acknowledged``
+    event, whose subject is the acceptance; any other critical problem,
+    an earlier refusal's included, stays until it is acknowledged itself.
+
+    The acknowledgement is a courtesy to the banner, never a condition of
+    the acceptance: a configuration refusal (a restore under review) or a
+    permission refusal (SQLSTATE 42501, a missing grant) is logged and the
+    acceptance stands. ``acknowledge_now`` runs in its own savepoint, so
+    the failure leaves the acceptance's transaction usable; the banner
+    keeps the entry for an Administrator to acknowledge by hand.
+    """
+    from django.db import DatabaseError
+
+    from parishkit.config import ConfigError
+
+    from .accounts.critical_event_views import acknowledge_now
+    from .observability import emit_failure
+
+    ids = _refusal_events(row.attempt_id)
+    if not ids:
+        return
+    try:
+        acknowledge_now(service, actor, ids, subject_id=row.pk)
+    except ConfigError as error:
+        emit_failure(error, level=logging.WARNING, name_class=True)
+    except DatabaseError as error:
+        if getattr(error.__cause__, "sqlstate", None) != "42501":
+            raise
+        emit_failure(error, level=logging.WARNING, name_class=True)
+
+
+def accept_change(caller, service, *, token, command=False, recorded=None):
+    """Record one acceptance of the reviewed refusal and ask for a full
+    refresh; return ``(row, created, refresh)``.
+
+    ``token`` is the preview's signed binding (``_unsign``): its key becomes
+    the acceptance's identity, so a repeated confirmation returns the first
+    acceptance (``created`` false) and joins the same refresh. The counts
+    copied are the ones the Administrator reviewed; the acceptance's guard
+    (0080) refuses them unless they still equal the recorded ones and the
+    refusal is still the newest with nothing accepted, which this answers
+    as ``StaleRecordError`` (``ACCEPT_CHANGED``). ``_record_fresh`` checks
+    the fresh sign-in in the row's transaction and records
+    ``source_drop_accepted`` (and from the command line ``command``,
+    ``admin_cmd_system_refresh_accept``). ``refresh`` is the requested full
+    refresh's root task, or None (``_request_refresh``). ``recorded`` is
+    called once the acceptance has committed, before the refresh is asked
+    for (the command line marks its outcome committed there); nothing after
+    that point raises. A new acceptance also acknowledges its refusal's
+    critical problem in its own transaction (``_acknowledge_refusal``); a
+    repeat, or a refused or expired confirmation, acknowledges nothing.
+    """
+    key, attempt, counts = _unsign(_signer(caller, service.store), token)
+    row, created = _record_fresh(
+        caller,
+        service.store,
+        _accept_kind(),
+        key=key,
+        command=command,
+        values={"attempt_id": attempt, "counts": counts},
+        then=lambda row, actor: _acknowledge_refusal(service, actor, row),
+    )
+    if recorded is not None:
+        recorded()
+    return row, created, _request_refresh(caller, service, key)
+
+
+@dataclass(frozen=True)
+class RefreshAcceptPreview(ReadModel):
+    """``system refresh-accept-preview``: the page's preview of Accept this
+    change once, for the newest refusal.
+
+    ``counts`` are every recorded count (``measure``, ``before``, ``after``,
+    ``limit_percent``, ``failed``), counts only; ``preview.token`` is the
+    signed binding ``system refresh-accept --token`` takes, valid for 15
+    minutes and for this Administrator only.
+    """
+
+    attempt_id: object
+    refused_at: str
+    counts: list
+    preview: dict
+
+
+def refresh_accept_preview(caller, service):
+    """``system refresh-accept-preview``: Accept this change once's preview.
+
+    Admits an Administrator as the page does, without the page's fresh
+    sign-in: the preview changes nothing, and ``system refresh-accept``,
+    which does, is fresh-gated. Refused (``stale_version``) while the newest
+    refusal cannot be accepted, as the page's preview is.
+    """
+    actor = _admit_requester(caller, service.store)
+    preview = _accept_preview(actor)
+    return RefreshAcceptPreview(
+        attempt_id=preview.attempt_id,
+        refused_at=plain(preview.refused_at),
+        counts=[_members(count) for count in preview.counts],
+        preview={"token": preview.token},
+    )
+
+
+def accept_prompt_lines(service, token, caller):
+    """What ``system refresh-accept`` asks the Administrator to confirm: the
+    counts that fell too far, as the page's preview lists them, and the
+    page's tick box. Checks the token first, so a bad one is refused before
+    the prompt."""
+    _, _, counts = _unsign(_signer(caller, service.store), token)
+    lines = ["Accept this large ParishSoft change once:"]
+    for measure, value in sorted(counts.items()):
+        if value.get("failed"):
+            lines.append(
+                f"{measure}: {value.get('before')} before, {value.get('after')} after"
+            )
+    lines += [
+        "Records missing from ParishSoft leave the campaign's data after the "
+        "next full refresh.",
+        "I checked this in ParishSoft, and the change is real.",
+    ]
+    return tuple(lines)
+
+
+@dataclass(frozen=True)
+class RefreshAccept(ReadModel):
+    """``system refresh-accept``'s result: the acceptance it recorded (or the
+    one an earlier run with the same token recorded) and the full refresh
+    it asked for.
+
+    ``created`` is false for a repeat; ``live`` is whether that acceptance
+    is still in effect; ``task_root_id`` is the requested full refresh's
+    root task, or null when the request could not be recorded (the next
+    full refresh uses the acceptance anyway).
+    """
+
+    acceptance_id: object
+    created: bool
+    created_at: str
+    expires_at: str
+    live: bool
+    task_root_id: object
+
+
+def refresh_accept(caller, service, *, token, context):
+    """``system refresh-accept``: Accept this change once, as the page's
+    confirmation (``accept_change``), with ``admin_cmd_system_refresh_accept``.
+
+    ``context["committed"]`` is set once the acceptance may have committed
+    (exit 6 then): as soon as ``_record_fresh`` returns, or on a database
+    failure that may have been the commit itself.
+    """
+    from django.db import DatabaseError, connection
+
+    from .observability import _guard_refusal
+
+    def recorded():
+        """The acceptance committed: any later error is outcome unknown."""
+        context["committed"] = True
+
+    try:
+        row, created, refresh = accept_change(
+            caller, service, token=token, command=True, recorded=recorded
+        )
+    except DatabaseError as error:
+        # A failure at the commit itself may have committed.
+        if not _guard_refusal(error):
+            context["committed"] = True
+        raise
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT public.stewardship_source_drop_acceptance_active_v1()")
+        (live,) = cursor.fetchone()
+    return RefreshAccept(
+        acceptance_id=row.pk,
+        created=created,
+        created_at=plain(row.created_at),
+        expires_at=plain(row.expires_at),
+        live=live == row.pk,
+        task_root_id=refresh,
     )

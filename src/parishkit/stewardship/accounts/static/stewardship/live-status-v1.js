@@ -46,6 +46,27 @@
 // keeps updating. data-live-refresh-label names the page's own refresh link
 // in the message shown when watching stops.
 //
+// A region may hold an element marked [data-live-keep="<name>"] for a control
+// that must sit inside the status it answers but that a poll must never
+// discard: System health's Accept this change once, right under the refused
+// ParishSoft change, whose preview and tick box the Administrator may have
+// open (#530). Once the element has contents, every swap puts the live
+// element back in place of its fresh copy, so what is open in it, ticked or
+// focused stays; its contents never count as a change, and neither typing
+// nor focus in it holds later swaps: the focused element is moved, not
+// rebuilt, and takes focus again at once. An empty one (drawn before there
+// was anything to show) takes the fresh copy's contents, whose empty CSRF
+// field takes this page's token, as a mirrored copy's does.
+//
+// What a kept element shows may be about one thing the status names (the
+// refusal an open preview reviews): the fresh copy says which thing the
+// status shows now (data-live-keep-key), and a part of the kept contents
+// says which one it is about (data-live-keep-for). Once they differ, the part
+// is marked data-live-stale for good: its [data-live-stale-note] line, whose
+// space is already reserved, says so in the attribute's words, and each
+// [data-live-stale-holds] button is disabled, marked data-live-stale-gated
+// so ui-v1.js's other gates never enable it again.
+//
 // An in-place refresh (ui-v1.js, #519) can replace the region itself, such
 // as when Dismiss on an integration's settings page swaps in the page's
 // fresh status. The old region's watcher then stops (its page-wide
@@ -183,10 +204,16 @@
       attempt += 1;
     }
 
-    // Controls the Admin has typed into or changed since the last swap.
+    // Controls the Admin has typed into or changed since the last swap. A
+    // kept element survives every swap, so its controls need no hold.
     let edited = false;
-    region.addEventListener("input", () => { edited = true; });
-    region.addEventListener("change", () => { edited = true; });
+    const edit = (event) => {
+      if (!(event.target instanceof Element && event.target.closest("[data-live-keep]"))) {
+        edited = true;
+      }
+    };
+    region.addEventListener("input", edit);
+    region.addEventListener("change", edit);
 
     // When the Admin began selecting text in the region (0 when not), kept up
     // to date as the selection changes, so the hold is measured from the
@@ -215,8 +242,10 @@
       const active = document.activeElement;
       const holding = selecting() && selectingSince
         && Date.now() - selectingSince < SELECTION_HOLD_MS;
+      // A control in a kept element never holds it: the swap moves that
+      // element and focuses the control again (adopt()).
       return edited || Boolean(holding) || Boolean(active && active !== region
-        && region.contains(active)
+        && region.contains(active) && !active.closest("[data-live-keep]")
         && active.matches("input, select, textarea, button, [contenteditable]"));
     }
 
@@ -241,10 +270,62 @@
       // What the server said, without how this browser worded its times:
       // ui-v1.js and this script rewrite <time> text in place (local dates,
       // "2 minutes ago"), so comparing raw HTML would rebuild the region on
-      // the first poll even when nothing changed.
+      // the first poll even when nothing changed. A kept element's contents
+      // are the reader's, not the status, so they never count either.
       const copy = node.cloneNode(true);
       copy.querySelectorAll("time").forEach((time) => { time.textContent = ""; });
+      copy.querySelectorAll("[data-live-keep]").forEach((kept) => { kept.replaceChildren(); });
       return copy.innerHTML;
+    }
+
+    function fillToken(root) {
+      // An empty CSRF field in polled markup (which carries none, so it stays
+      // the same from poll to poll) takes this page's own token.
+      const token = document.querySelector('input[name="csrfmiddlewaretoken"][value]:not([value=""])');
+      if (!token) return;
+      root.querySelectorAll('input[name="csrfmiddlewaretoken"]').forEach((input) => {
+        if (!input.value) input.value = token.value;
+      });
+    }
+
+    function keepLive(fresh) {
+      // Put each live kept element that has contents in place of its copy
+      // in ``fresh`` (a fragment of the fresh region's children), so a swap
+      // moves it rather than rebuilding it; an empty one is left to be
+      // replaced by its copy, whose CSRF field takes this page's token.
+      const live = new Map([...region.querySelectorAll("[data-live-keep]")]
+        .filter((node) => node.firstElementChild || node.textContent.trim())
+        .map((node) => [node.getAttribute("data-live-keep"), node]));
+      fresh.querySelectorAll("[data-live-keep]").forEach((copy) => {
+        const kept = live.get(copy.getAttribute("data-live-keep"));
+        if (!kept) {
+          fillToken(copy);
+          return;
+        }
+        const key = copy.getAttribute("data-live-keep-key");
+        if (key !== null) {
+          kept.setAttribute("data-live-keep-key", key);
+          kept.querySelectorAll("[data-live-keep-for]").forEach((part) => {
+            if (part.getAttribute("data-live-keep-for") !== key) stale(part);
+          });
+        }
+        copy.replaceWith(kept);
+      });
+      return fresh;
+    }
+
+    function stale(part) {
+      // ``part`` is about something the status no longer shows: say so on
+      // its reserved line and hold its buttons (see the header).
+      if (part.hasAttribute("data-live-stale")) return;
+      part.setAttribute("data-live-stale", "");
+      const note = part.querySelector("[data-live-stale-note]");
+      if (note) note.textContent = note.getAttribute("data-live-stale-note");
+      part.querySelectorAll("[data-live-stale-holds]").forEach((button) => {
+        button.setAttribute("autocomplete", "off");
+        button.setAttribute("data-live-stale-gated", "");
+        button.disabled = true;
+      });
     }
 
     // The markup last adopted, so an unchanged poll leaves the live region
@@ -294,18 +375,19 @@
       // move on, even if the region stays the same from then on. Each target
       // remembers the copy it last took (mirrored), so an unchanged copy is
       // not put in again and the target's markup stays put between polls.
-      const token = document.querySelector('input[name="csrfmiddlewaretoken"][value]:not([value=""])');
+      //
+      // A target inside a kept element (data-live-keep) is the reader's, not
+      // the status, so it is mirrored too, as one outside the region is.
       region.querySelectorAll("template[data-live-mirror]").forEach((source) => {
         const mirrorName = source.getAttribute("data-live-mirror");
         const html = source.innerHTML;
         document.querySelectorAll("[data-live-mirror-target]").forEach((target) => {
           if (target.getAttribute("data-live-mirror-target") !== mirrorName) return;
-          if (region.contains(target) || target.contains(document.activeElement)) return;
+          if (region.contains(target) && !target.closest("[data-live-keep]")) return;
+          if (target.contains(document.activeElement)) return;
           if (mirrored.get(target) === html) return;
           const copy = source.content.cloneNode(true);
-          copy.querySelectorAll('input[name="csrfmiddlewaretoken"]').forEach((input) => {
-            if (!input.value && token) input.value = token.value;
-          });
+          fillToken(copy);
           target.replaceChildren(copy);
           mirrored.set(target, html);
           localize(target);
@@ -335,7 +417,13 @@
       }
       lastMarkup = freshMarkup;
       if (renews) started = Date.now();
-      const key = focusKey(document.activeElement);
+      // Focus in a kept element stays on the same element, which the swap
+      // moves (removing it from the document drops its focus); any other is
+      // found again in the new markup.
+      const active = document.activeElement;
+      const keptFocus = active && region.contains(active)
+        && active.closest("[data-live-keep]") ? active : null;
+      const key = keptFocus ? null : focusKey(active);
       // Wide tables scroll sideways inside .table-scroll; keep each one's
       // offset, matching tables by their caption (a table can come or go
       // above another one), else by position. The page's own scroll is left
@@ -358,7 +446,9 @@
         const need = Math.min(height, below);
         keep.style.minHeight = need > 0 ? `${need}px` : "";
       }
-      region.replaceChildren(...[...fresh.childNodes].map((node) => document.importNode(node, true)));
+      const nodes = document.createDocumentFragment();
+      nodes.append(...[...fresh.childNodes].map((node) => document.importNode(node, true)));
+      region.replaceChildren(keepLive(nodes));
       // Mirror the fresh region's attributes (pending, state markers such as
       // data-export-state) so the page and its tests see the current state.
       [...region.attributes].forEach((attribute) => {
@@ -372,6 +462,9 @@
       localize(region);
       elapsed();
       refocus(key);
+      if (keptFocus && keptFocus.isConnected && document.activeElement !== keptFocus) {
+        keptFocus.focus({ preventScroll: true });
+      }
       region.querySelectorAll(".table-scroll").forEach((node, index) => {
         const offset = sideways.get(scrollKey(node, index));
         if (offset) node.scrollLeft = offset;

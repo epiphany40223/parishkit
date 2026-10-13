@@ -1464,6 +1464,36 @@ def system_debug_off(args, preamble, runtime, context):
     )
 
 
+def system_refresh_accept_preview(args, preamble, runtime, context):
+    """Review accepting the refused ParishSoft change once, as System
+    health's Accept this change once preview (ADM-13 PR 5b).
+
+    Prints every count the refusal recorded and ``preview.token``, the
+    signed binding ``system refresh-accept`` takes. Changes nothing.
+    """
+    from .system_health import refresh_accept_preview
+
+    return refresh_accept_preview(context["caller"], runtime)
+
+
+def system_refresh_accept(args, preamble, runtime, context):
+    """Accept the reviewed refused change once, as System health's Confirm
+    does (ADM-13 PR 5b), and ask for a full refresh.
+
+    It always prompts with the counts that fell too far and the page's tick
+    box ("I checked this in ParishSoft, and the change is real") before any
+    transaction, after checking the token. The token's key names the
+    acceptance, so a repeat returns the first. The session stands in for
+    the page's recent sign-in, as the acceptance's guard admits.
+    """
+    from .admin_changes import TOKEN_LIMIT
+    from .system_health import accept_prompt_lines, refresh_accept
+
+    token = _input(args.token, context, TOKEN_LIMIT)
+    confirm(context, accept_prompt_lines(runtime, token, context["caller"]))
+    return refresh_accept(context["caller"], runtime, token=token, context=context)
+
+
 def portal_maintenance_set(args, preamble, runtime, context):
     """Close or reopen the Family portal, as its page's buttons do (PR 7a).
 
@@ -2419,6 +2449,16 @@ def _debug_off_options(parser):
         type=_uuid4,
         help="a UUID that makes a repeat safe (default: a new one, "
         "written to standard error)",
+    )
+
+
+def _refresh_accept_options(parser):
+    """Options of ``system refresh-accept``: the preview's token."""
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from system refresh-accept-preview, or - for "
+        "standard input (then answer the prompt with --yes)",
     )
 
 
@@ -3420,7 +3460,13 @@ def _read_specs():
         TaskList,
         TaskShow,
     )
-    from .system_health import BackupNow, DebugOff, SystemHealth
+    from .system_health import (
+        BackupNow,
+        DebugOff,
+        RefreshAccept,
+        RefreshAcceptPreview,
+        SystemHealth,
+    )
 
     return (
         CommandSpec(
@@ -3544,6 +3590,34 @@ def _read_specs():
             fresh_gated=True,
             prompts=True,
             request_key=True,
+        ),
+        # Accept this change once (ADM-13 PR 5b): the page's preview, then
+        # its confirmation with the preview's token, fresh-gated, prompting
+        # with the page's tick box. The preview changes nothing and records
+        # nothing, as the page's preview step records nothing.
+        CommandSpec(
+            "system refresh-accept-preview",
+            "Review accepting a refused large ParishSoft change once, as "
+            "System health does.",
+            system_refresh_accept_preview,
+            "full",
+            False,
+            RefreshAcceptPreview.field_names(),
+            3,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "system refresh-accept",
+            "Accept a reviewed refused ParishSoft change once and ask for a full "
+            "refresh, as System health does.",
+            system_refresh_accept,
+            "full",
+            True,
+            RefreshAccept.field_names(),
+            3,
+            options=(_refresh_accept_options,),
+            fresh_gated=True,
+            prompts=True,
         ),
         CommandSpec(
             "go-live progress",
