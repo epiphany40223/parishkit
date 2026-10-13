@@ -661,6 +661,34 @@ def test_go_live_cleanup_gate_blocks_test_preview(campaign_test):
     assert not CampaignMailTest.objects.exists()
 
 
+def test_test_page_returns_to_the_page_it_was_opened_from(campaign_test):
+    """Navigation rule 5 (#521): the opener is remembered in the session.
+
+    Opened from Pause and resume mail, the page links back there; its own
+    reload and another site's Referer keep that opener. Opened from Pages
+    and emails, the breadcrumb already leads back, so no link is drawn.
+    """
+    _, browser, path, _ = campaign_test
+    controls = reverse("admin:delivery_control")
+    with web_login():
+        page = browser.get(path)
+        assert page.status_code == 200 and page.context["return_link"] is None
+        here = page.wsgi_request.build_absolute_uri("/").rstrip("/")
+        page = browser.get(path, HTTP_REFERER=here + controls)
+        link = page.context["return_link"]
+        assert (str(link["label"]), link["url"]) == ("Pause and resume mail", controls)
+        assert b"Return to Pause and resume mail" in page.content
+        elsewhere = "https://elsewhere.example" + reverse("admin:index")
+        # A page a link cannot reopen never replaces the opener either.
+        unlinkable = here + reverse("admin:content_delete")
+        for referer in (here + path, elsewhere, unlinkable):
+            page = browser.get(path, HTTP_REFERER=referer)
+            assert page.context["return_link"]["url"] == controls
+        page = browser.get(path, HTTP_REFERER=here + reverse("admin:content_catalog"))
+        assert page.context["return_link"] is None
+        assert b"Return to " not in page.content
+
+
 ORIGIN = "https://parish.example.org"
 
 
