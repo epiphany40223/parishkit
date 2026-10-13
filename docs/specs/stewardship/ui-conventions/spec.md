@@ -1936,8 +1936,8 @@ envelope numbers, are not internal references and stay. **Why.** Staff print
 and share these files; internal references mean nothing to a reader, and a
 column that is in one format and not another makes the files disagree about
 what the report holds. Troubleshooting uses the page's Technical details and
-the audit log, not a download; the one recorded exception is the System logs
-export below. Every data export is offered as CSV, XLSX and PDF unless a
+the audit log, not a download; the recorded exceptions are the System logs
+export and the command line's Census changes JSON Lines below. Every data export is offered as CSV, XLSX and PDF unless a
 recorded technical or design reason says otherwise (Administrator decision,
 2026-10-10); a page may add a format, such as the participation chart's PNG
 or System logs' JSON Lines. **Shared code.** `reports/pdf_design.py` and
@@ -1975,6 +1975,15 @@ Recorded exceptions to the rule above:
   Family heads and head emails its CSV and XLSX carry. Labels are what the
   PDF is printed for; the CSV is the word processor's merge source
   (Administrator decision, 2026-10-11, on #966).
+- **Census changes JSON Lines (command line only):** `pk-admin export
+  census --format jsonl`
+  ([#463](https://github.com/epiphany40223/parishkit/issues/463)) keeps
+  each change's `proposal_id` and `version`. They are not personal data;
+  Administrators and Staff already receive them in the page's hidden
+  Record outcome fields; and `census resolve` needs them to name the change
+  and its version. The format is offered only on the command line, not on
+  the page, whose CSV, XLSX and PDF follow the rule above. Pending
+  Administrator confirmation.
 
 Not data exports, so outside the rule: the deployment configuration
 document, hosted files (served as uploaded) and chart images.

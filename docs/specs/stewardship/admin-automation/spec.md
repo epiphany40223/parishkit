@@ -960,7 +960,8 @@ needs no database: it checks the preamble's form and prints the catalog.
 
 A command prints exactly one JSON document to standard output, unless it
 runs with `--watch`, is `login start` (whose document has `final` false) or
-streams a file (`logs export`, and `export download --stream` from PR 8b),
+streams a file (`logs export`, `export census`, and `export download
+--stream` from PR 8b),
 which writes the file's bytes alone to standard output and its one document,
 success or failure, to standard error:
 
@@ -2289,7 +2290,7 @@ file is regenerated from the retained capture, in its original format.
 | `family_timeline`, `family_timeline_export` | One Family's timeline, so export only: the page's new export form and `export family-timeline FAMILY_RECORD_ID` (PR 8g, migration 0063); [fresh-gated](#fresh-gated-actions-from-the-command-line) |
 | `family_open_form` (new, #529) | Permanent: Open form signs this browser in to the Family form for a Family on the phone, a browser hand-off by nature; Families' responses are read through `report responses` and the response list exports |
 | `limitations_export` | `export limitations` (PR 8h, with #752's audit fields) |
-| `census_changes`, `census_changes_export` | `report census`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); Family-level rows only as `export census` (PR 8h). A row's Entered in ParishSoft, Ignore and Reopen ([#528](https://github.com/epiphany40223/parishkit/issues/528)) post to `census_changes`; their command is `census resolve PROPOSAL_ID --action entered\|ignored\|reopened` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), through the same `census_resolution` service |
+| `census_changes`, `census_changes_export` | `report census`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the rows through `export census` (PR 8h, [#463](https://github.com/epiphany40223/parishkit/issues/463)). A row's Entered in ParishSoft, Ignore and Reopen ([#528](https://github.com/epiphany40223/parishkit/issues/528)) post to `census_changes`; their command is `census resolve PROPOSAL_ID --action entered\|ignored\|reopened` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), through the same `census_resolution` service |
 | `report_export_create`, `report_export`, `report_export_cancel`, `report_export_retry`, `report_export_regenerate`, `report_export_download` | `export create`, `export status --watch`, `export cancel`, `export retry`, `export regenerate`, `export download --stream` (PR 8b); an exact request's status, cancel and retry, which these pages also serve, are `export exact status --watch`, `export exact cancel` and `export exact retry` (PR 8h) |
 | `report_exact_create` | `export exact create` (PR 8h); the handed-off file through `export fetch` |
 | `daily_digest_snapshot` | `digest daily SNAPSHOT_ID` (PR 8d) |
@@ -2489,6 +2490,35 @@ services' own events and, when it made the change,
 names the `export_id` that `export fetch` saves. The in-memory downloads
 (Limitations and response lists, after #752's audit fields, PR 8h's second
 part) follow.
+
+`export census` ([#463](https://github.com/epiphany40223/parishkit/issues/463))
+is the Census changes page's in-memory download, streamed as `logs export`
+is: the file alone on standard output, its document (`campaign_id`,
+`file_name`, `content_type`, `format`, `timezone`, `size`, `sha256`,
+`count`) on standard error. It needs a full-scope session and is neither
+prompting nor fresh-gated, as the page asks for no recent sign-in. It
+admits as the download does (`census_change_views._principal` with
+`export`: the census capability and `REPORT_EXPORT`, so Administrators and
+Staff, never a Ministry leader), passively and then recording activity as
+the download's post does, and reads through the shared report read and the
+page's `CensusQuery` (`report census`'s filters, without the search) and
+`census_changes`. `--format csv|xlsx|pdf` writes the page's own file
+through the page's writer (`census_change_views.export_body`, which the
+page now calls), with `--timezone` for its times. `--format jsonl` is the
+command's own format, offered only on the command line: per row, the page's
+columns with the same text under fixed keys, plus `proposal_id` and
+`version`, which `census resolve` takes and the page's files leave out
+(a recorded exception in
+[downloaded files](../ui-conventions/spec.md#downloaded-files)), and
+`actions`, the outcomes the reader may record on the row from its state and
+their capabilities, none while other campaign work holds the campaign (the
+page's own check, `admit_campaign(..., mutating=True)`, made once per
+export). It records the page's `census_changes_exported` with
+the rows in the file, and no `admin_cmd_*` event, as `logs export`. The
+`jsonl` format and its keys are defaults pending Administrator
+confirmation; the
+[operator guide](../../../guides/stewardship-admin-automation.md#census-changes-download)
+lists them.
 
 `export family-timeline FAMILY_RECORD_ID [--mode production|testing]` (PR
 8g) is the Family timeline page's new export form, the
@@ -3199,8 +3229,9 @@ exactly the commands that exist.
   **PR 8f:** the Family directory's exports (`export directory`, `export
   postal`). **PR 8g:** the one-Family timeline export (`export
   family-timeline`, with the page's export form and migration 0063).
-  **PR 8h:** the exact daily exports (`export exact …`), then the in-memory
-  downloads (Limitations and response lists) after #752.
+  **PR 8h:** the exact daily exports (`export exact …`), the Census changes
+  download (`export census`), then the in-memory downloads (Limitations and
+  response lists) after #752.
 - **PR 9, operations,** in three parts. **PR 9a:** task retries. **PR 9b:**
   delivery reads and resolution. **PR 9c:** `resend` and refusal clearing, at
   the prompt.

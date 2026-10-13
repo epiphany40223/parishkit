@@ -53,13 +53,14 @@ delete`` and ``files rename`` (PR 10, in ``admin_hosted_files``),
 shares`` (PR 10, in ``admin_settings``), ``parish preview`` and
 ``parish confirm`` (PR 10, in ``admin_parish``), and ``events list`` and
 ``events acknowledge`` (PR 11, in ``admin_events``). A
-command that streams a file (``logs export`` and
+command that streams a file (``logs export``, ``export census`` and
 ``export download --stream``) writes the file's bytes, and nothing else, to
 standard output, and its document to standard error. Other areas join the same
 subparser tree in later pull requests, each listed in the catalog with the
 pull request that added it. ``report roster`` (in ``admin_roster``) counts
 the Roster changes to enter list, and ``report census`` (in
-``admin_census``) the Census changes list (#463). ``artwork show`` (PR 10,
+``admin_census``) the Census changes list (#463), whose download is
+``export census`` (in ``admin_census_export``). ``artwork show`` (PR 10,
 in ``admin_artwork``) reads Campaign images.
 """
 
@@ -1902,6 +1903,34 @@ def report_roster(args, preamble, runtime, context):
     )
 
 
+def _census_filters(args):
+    """The page's non-identifying filters, as ``report census`` takes them."""
+    return {
+        "status": args.status,
+        # The page's "Show history" box: "yes" when ticked.
+        "history": "yes" if args.history else None,
+        "route": args.route,
+        "kind": args.kind,
+        "start": args.start,
+        "end": args.end,
+        "zone": args.zone,
+    }
+
+
+def export_census(args, preamble, runtime, context):
+    """The Census changes download, streamed to standard output (#463)."""
+    from .admin_census_export import export_census as export
+
+    return export(
+        context["caller"],
+        runtime,
+        _census_filters(args),
+        fmt=args.format,
+        zone_name=args.timezone,
+        context=context,
+    )
+
+
 def report_census(args, preamble, runtime, context):
     """The Census changes list, as counts only (#463)."""
     from .admin_census import read_census
@@ -2945,8 +2974,32 @@ def _report_roster_options(parser):
     )
 
 
-def _report_census_options(parser):
-    """Options of ``report census``: the page's filters, without its search."""
+def _export_census_options(parser):
+    """Options of ``export census``: the page's filters, format and time zone."""
+    _report_census_options(
+        parser, history="include superseded and cancelled changes too"
+    )
+    parser.add_argument(
+        "--format",
+        choices=("csv", "xlsx", "pdf", "jsonl"),
+        default="csv",
+        help="default csv; jsonl adds each change's id, version and actions",
+    )
+    parser.add_argument(
+        "--timezone",
+        default="UTC",
+        help="the time zone of the file's times (default UTC)",
+    )
+
+
+def _report_census_options(
+    parser, *, history="count superseded and cancelled changes too"
+):
+    """Options of ``report census``: the page's filters, without its search.
+
+    ``history`` is the ``--history`` help, which ``export census`` words for
+    its rows.
+    """
     parser.add_argument(
         "--status",
         help="open (default: the work to do), to_review, to_do, conflict, "
@@ -2955,7 +3008,7 @@ def _report_census_options(parser):
     parser.add_argument(
         "--history",
         action="store_true",
-        help="count superseded and cancelled changes too",
+        help=history,
     )
     parser.add_argument("--route", help="any (default), automatic or by_hand")
     parser.add_argument(
@@ -3963,6 +4016,7 @@ def _report_specs():
     (``admin_family_exports``).
     """
     from .admin_census import CensusReport, CensusResolve
+    from .admin_census_export import CensusExport
     from .admin_data_to_fix import DataToFixReport
     from .admin_digests import DailyDigest, DigestList, WeeklyDigest, WeeklyRequest
     from .admin_exact_exports import ExactChange, ExactStatus
@@ -4367,6 +4421,20 @@ def _report_specs():
             8,
             options=(_report_roster_options,),
             audit_event="roster_changes_viewed",
+        ),
+        # The Census changes download (PR 8h): the page's file, or JSON
+        # Lines with each change's id and version for ``census resolve``.
+        CommandSpec(
+            "export census",
+            "Write the Census changes download to standard output.",
+            export_census,
+            "full",
+            False,
+            CensusExport.field_names(),
+            8,
+            options=(_export_census_options,),
+            audit_event="census_changes_exported",
+            streams=True,
         ),
         # Census changes (#528): counts only; its rows name Families and
         # Members with their contact details, so they stay on the page and
