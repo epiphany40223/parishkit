@@ -10,7 +10,7 @@ jobs:
   # coverage floors, migration drift, the container, runtime and browser
   # scenarios) is the release evidence. Rerunning that suite serially here took
   # over two hours, so the release instead requires a successful full CI run
-  # (dispatched by hand while main pushes run light CI; see #158) on a tree
+  # (a dispatch: a train's run, or one on main; see #158) on a tree
   # identical to the tagged commit's apart from docs-safe paths (#662), then
   # packages exactly the tagged commit.
   validate-build:
@@ -59,7 +59,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_COMMIT: ${{ steps.tag.outputs.commit }}
         run: |
-          # Pushes to main run only light validation (issue #158), so a
+          # Pushes to main run only a tree-evidence check (issue #158), so a
           # release needs a dispatched full CI run (named exactly "CI (jobs:
           # all)"; a jobs=affected dispatch may have skipped job groups,
           # #626) on a commit whose tree is identical to the tagged commit's

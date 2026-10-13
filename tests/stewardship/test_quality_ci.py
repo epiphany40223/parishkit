@@ -152,7 +152,9 @@ def test_fast_feedback_precedes_full_candidate_suites():
 
     jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]
     fast = jobs["validate"]
-    assert "if" not in fast and "needs" not in fast
+    # A push to main runs only the tree-evidence check (#158).
+    assert fast["if"] == "${{ github.event_name != 'push' }}"
+    assert "needs" not in fast
     smoke = next(
         step
         for step in fast["steps"]

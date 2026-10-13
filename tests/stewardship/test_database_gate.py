@@ -94,6 +94,10 @@ def test_ci_explicitly_requires_postgresql_verification():
     assert count == 16 and indexes == list(range(1, count + 1))
     assert f"parishkit.stewardship.quality_ci combine --count {count} " in commands
     assert shards["strategy"]["fail-fast"] is False
+    # A push to main skips validate, so no shard runs there; main's tree is
+    # covered by a full run's evidence instead (main-tree-evidence, #158).
+    assert shards["needs"] == "validate"
+    assert workflow["jobs"]["validate"]["if"] == "${{ github.event_name != 'push' }}"
     assert gate["needs"] == ["validate", "stewardship-postgresql-shard"]
     assert gate["if"] == "${{ always() && github.event_name != 'push' }}"
     assert gate["steps"][0]["env"] == {

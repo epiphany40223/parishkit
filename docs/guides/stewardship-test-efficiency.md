@@ -16,17 +16,17 @@ context: the queue formerly retested against its then-current merge base. PR
 checks use [GitHub's test merge](https://github.com/actions/checkout#checkout-pull-request-head-commit-instead-of-merge-commit)
 when checking out a `pull_request` event, but do
 not automatically rerun for every later change to `main`. The repository does
-not currently require branches to be up to date. Pushes to `main` currently run
-only the light `validate` job (a temporary pre-launch measure tracked in
-[#158](https://github.com/epiphany40223/parishkit/issues/158)); the full suite
-runs on ready PRs and, by default, on a manual `workflow_dispatch`, which a
-release requires for its tagged tree (see [release evidence](#release-evidence)).
-Until #158 is resolved nothing runs
-the full suite on the landed result automatically, so concurrent independent
-PRs can introduce an integration regression after their individual checks
-passed. Keep stewardship
-increments serial and inspect base drift before merging; refresh and revalidate
-when intervening changes affect the increment. Do not represent auto-merge as
+not require branches to be up to date, so two PRs that each passed against an
+older base can still combine into a regression. The
+[release-train policy](#release-trains) closes that gap: `main` may rest only
+on a tree that a successful full run already tested, which release trains
+provide by testing the integrated tree before anything merges
+([#158](https://github.com/epiphany40223/parishkit/issues/158)). A push to
+`main` therefore does not rerun the suite. Its only job, `main-tree-evidence`,
+checks that a full run covers `main`'s tree and dispatches one on `main` when
+none does. The full suite also runs on ready PRs and, by default, on a manual
+`workflow_dispatch`, which a release requires for its tagged tree (see
+[release evidence](#release-evidence)). Do not represent auto-merge as
 restoring the removed queue guarantee.
 
 ## Path-based job skipping
@@ -88,8 +88,9 @@ views and helpers directly. A parse failure or a deleted module runs the
 engines.
 
 An empty or failed diff, a git query past its one-minute limit (logged), a
-pull request checkout that is not GitHub's two-parent test merge, `main`
-pushes and every default dispatch run all groups. A false positive only costs
+pull request checkout that is not GitHub's two-parent test merge, and every
+default dispatch run all groups (a push to `main` runs none of them; see
+[release trains](#release-trains)). A false positive only costs
 runner time; a false negative could merge an untested change, so new rules
 must err toward running. `tests/stewardship/test_quality_paths.py` pins the
 rules, the set of tracked top-level entries (a new one fails until its rules
@@ -246,18 +247,88 @@ so a failure refuses before the tag is pushed. For that it needs
 such as a virtual environment with `requirements.txt` installed as CI installs
 it; it checks this before watching the CI run and refuses without them.
 
-For a nightly train:
+A run that passed only after its failed jobs were re-run (`gh run rerun
+--failed`) is still evidence, since most reruns are known flakes unrelated to
+the change. Its attempt number is never hidden, though: `release_evidence.py
+select` prints it, `release.yml` warns and adds "passed on attempt N" to the
+release notes, and `release.sh`, `merge-train.sh` and `main-tree-evidence` say
+so too. To check any run by hand, `gh run view RUN --json attempt` shows its
+latest attempt, and `gh run view RUN --attempt 1` shows the first attempt's
+jobs.
 
-- Run [`tools/stewardship-preflight.py --browsers --base origin/main`](../development/stewardship.md#pre-flight-before-a-release-train)
-  on the assembled train branch, and dispatch only when it passes. Each PR
-  should already have passed it on its own, but cross-PR collisions only show
-  up on the merged tree.
-- Include the version-bump PR in the train. A bump merged after the train's
-  full run changes `pyproject.toml`, which is not docs-safe, so the release
-  would need another full run.
-- Keep the train branch until the release run has passed. `release.yml`
-  fetches the evidence commit by SHA, and a deleted branch's head may no
-  longer be served.
+### Release trains
+
+The policy: `main` may rest only on a tree with a successful `CI (jobs: all)`
+run on an identical tree, or on one differing only in docs-safe paths (the
+[release evidence](#release-evidence) rule)
+([#158](https://github.com/epiphany40223/parishkit/issues/158)). Release
+trains are how the policy is met. Intermediate commits inside one train's
+merge sequence are untested for the seconds or minutes the sequence takes;
+never tag or deploy one, and the release gate refuses such a tag unless its
+tree matches anyway.
+
+A train is an integration branch, `train/<date><letter>`, that merges the
+approved PR heads in a fixed order on top of current `main`:
+
+1. Build the branch, and run
+   [`tools/stewardship-preflight.py --browsers --base origin/main`](../development/stewardship.md#pre-flight-before-a-release-train)
+   on it. Each PR should already have passed pre-flight on its own, but
+   cross-PR collisions only show up on the merged tree.
+2. Dispatch exactly one full run on it:
+   `gh workflow run ci.yml --ref train/<name> -f jobs=all`. Cancel superseded
+   PR-push runs. When the run fails, fix the PRs, rebuild the train and
+   dispatch again; never merge a red train. Record each rerun of failed jobs,
+   and why, in the train record.
+3. When it passes, merge with
+   [`tools/stewardship-ops/merge-train.sh`](../../tools/stewardship-ops/merge-train.sh)
+   `TRAIN PR:SHA ...`, in train order. It refuses unless `main` is still the
+   train's base and the train's full run passed. It retargets stacked PRs,
+   marks drafts ready, admin-merges each PR pinned to its tested head, and
+   stops with `MAIN-MOVED` if anything else lands on `main` meanwhile. It
+   ends by printing `TREE-EQUAL`, or by printing `TREE-DIFFERS` and exiting
+   non-zero. When it stops partway, fix the cause and run it again with the
+   same arguments: it skips the PRs already merged, in order, at the head of
+   the list. Copy its output into the train record. Run `-h` for details.
+   Train PRs must be branches of this repository, not forks.
+4. Leave the push runs on `main` alone. `main-tree-evidence` is `main`'s
+   check, and cancelling it defeats it.
+
+Include the version-bump PR in the train. A bump merged after the train's
+full run changes `pyproject.toml`, which is not docs-safe, so the release
+would need another full run. Keep the train branch until the release run has
+passed: `release.yml` fetches the evidence commit by SHA, and a deleted
+branch's head may no longer be served.
+
+A lone hotfix outside a train meets the same rule. Bring its branch up to
+date with `main`, dispatch a full run on its exact head, and merge only after
+that run passes and while `main` has not moved. A merge commit of an
+up-to-date branch has the head's tree.
+
+Every push to `main` runs one cheap job, `main-tree-evidence`, instead of the
+suite. It asks `release_evidence.py select` (the release gate's rule) which
+full run decides for `main`'s head:
+
+| Deciding run | The job |
+| --- | --- |
+| Completed successfully | passes in about a minute, warning if it passed on a later attempt |
+| Queued or in progress | passes with a notice naming that run, whose own result is the signal |
+| Completed without success | fails, naming the run; a human decides whether to fix `main` or rerun |
+| None, or an unreadable newer run | waits five minutes, then dispatches `CI (jobs: all)` on `main` and passes with a warning |
+
+The five-minute wait is a debounce. The workflow's push concurrency group
+cancels an older push's run when a newer push arrives, so during a train's
+merge burst, even a slow one, only the last push's check survives the wait.
+After the wait, the job dispatches nothing when `main` has moved on, since the
+newer push's check owns the newer head, and asks again in case a full run was
+dispatched meanwhile. The dispatched backfill run tests `main`'s head, and its
+result shows on that commit like any other check, so a red backfill is a red
+`main`. A dispatched run has its own group, so no push cancels a backfill.
+This detects and backfills an untested `main` rather than blocking the merge
+itself: `--admin` merges bypass required checks.
+
+Do not cancel a full run on the tree `main` rests on, even a redundant one: the
+newest full run on an equivalent tree decides, so a cancelled one makes the
+next push check (a docs-only merge, say) fail, and the release gate refuse.
 
 ### Protected gates
 

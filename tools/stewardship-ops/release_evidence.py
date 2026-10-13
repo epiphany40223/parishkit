@@ -8,7 +8,10 @@ ancestor of the tag: a nightly train head that was tested once and then
 merged into main in the same order has main's tree under a different SHA.
 
 Both release.yml (independently, on every tag push) and release.sh (before
-it tags) ask this script which run decides, so the rule lives in one place:
+it tags) ask this script which run decides, so the rule lives in one place.
+ci.yml's main-tree-evidence job (on every push to main, #158) and
+merge-train.sh (before a train merges) ask it the same question about main's
+head and a train head:
 
 - Only runs named exactly "CI (jobs: all)" from a workflow_dispatch count; a
   jobs=affected dispatch may have skipped job groups (#626).
