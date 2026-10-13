@@ -204,8 +204,8 @@ each mail type is, that exactly one initial invitation is required before
 go-live, that reminders and the daily and weekly Admin digests are optional (at
 most one digest of each kind), that submission receipts and critical alerts are
 sent automatically and never scheduled, the time zone send times are entered in
-(this computer's on the list and the New and Edit scheduled email pages; the
-campaign's on the first-campaign step and the date-change review, see [time
+(this computer's on the list, the New and Edit scheduled email pages and the
+first-campaign step; the campaign's on the date-change review, see [time
 entry](../ui-conventions/spec.md#time-entry)), and the current campaign dates. Wherever a schedule is
 edited (the first-campaign Mail schedules step, the date-change review and the
 New and Edit scheduled email pages below), its fields show only those its mail

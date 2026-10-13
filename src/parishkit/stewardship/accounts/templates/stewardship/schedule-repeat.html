@@ -11,7 +11,9 @@ hundreds of items and is rebuilt as the Admin types), and it sits with the
 button above the list, its line reserved, so a growing or shrinking list
 never moves the button. The send time is a shared time entry field
 (data-time-entry, ui-v1.js): its "Reads as" line, refusal, blur rewrite and
-Save gate are the same as every other Admin time (#1117).
+Save gate are the same as every other Admin time (#1117). Its zone is the
+rows': the browser's on the first-campaign step (schedules.browser_times,
+#558), the campaign's on the date-change review.
 {% endcomment %}<fieldset class="panel schedule-repeat" data-repeat-panel data-repeat-start="{{ schedules.campaign.start_date }}" data-repeat-end="{{ schedules.campaign.end_date }}" hidden aria-describedby="repeat-intro">
 <legend>{% translate "Repeat a reminder" %}</legend>
 <p class="help" id="repeat-intro">{% translate "Add several reminders at once, for example every Monday until the campaign ends. They are added to the schedules above as ordinary reminders, which you can still change or remove one at a time. Nothing is saved until you preview and confirm." %}</p>
@@ -29,7 +31,7 @@ Save gate are the same as every other Admin time (#1117).
 <div class="field"><label for="repeat-from">{% translate "From" %}</label><input id="repeat-from" type="date" data-repeat="from"></div>
 <div class="field"><label for="repeat-until">{% translate "Until" %}</label><input id="repeat-until" type="date" data-repeat="until"></div>
 <div class="field"><label for="repeat-time">{% translate "Send time" %}</label><input id="repeat-time" type="text" maxlength="32" autocomplete="off" spellcheck="false" autocapitalize="off" data-time-entry="time" data-repeat="time" aria-describedby="repeat-time-help">
-<p class="help" id="repeat-time-help">{% blocktranslate trimmed with timezone=schedules.timezone %}In the campaign's time zone, {{ timezone }}, for example 9:00 AM. Every date uses the same time, even across a daylight-saving change.{% endblocktranslate %}</p></div>
+<p class="help" id="repeat-time-help">{% if schedules.browser_times %}{% translate "In this computer's time zone, for example 9:00 AM. Every date uses the same time, even across a daylight-saving change." %}{% else %}{% blocktranslate trimmed with timezone=schedules.timezone %}In the campaign's time zone, {{ timezone }}, for example 9:00 AM. Every date uses the same time, even across a daylight-saving change.{% endblocktranslate %}{% endif %}</p></div>
 <div class="field"><label for="repeat-email">{% translate "Email to send" %}</label><select id="repeat-email" data-repeat="email"></select>
 <p class="help" data-repeat-no-email hidden>{% translate "No reminder email is saved yet. Save one with the page and email templates first." %}</p></div>
 <p class="repeat-summary" role="status" data-repeat-summary></p>

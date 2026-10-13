@@ -102,12 +102,10 @@ denominator displays an em dash rather than a misleading percentage.
 **Rule.** Every Admin page shows and takes dates and times in the browser's
 own time zone, stored as UTC; no page labels a time "UTC" or asks the reader
 to think in the campaign's or the parish's zone. Exceptions: the ParishSoft
-refresh times stay in the parish's time zone (permanent, below); and, as of
-2026-10-10, two older screens still take send times in the campaign's time
-zone, the first-campaign step's Mail schedules and the date-change review,
-until they are fixed under
-[#558](https://github.com/epiphany40223/parishkit/issues/558) (Administrator
-decision, 2026-10-10). **Why.** Staff read
+refresh times stay in the parish's time zone (permanent, below); and the
+date-change review still takes send times in the campaign's time zone, a dated
+exception (Administrator decision, 2026-10-10) until it is fixed under
+[#558](https://github.com/epiphany40223/parishkit/issues/558). **Why.** Staff read
 and type their own wall-clock time; a campaign-zone or UTC time on a page is a
 conversion the reader has to do in their head. **Shared code.**
 `data-local-instant` elements filled by `date-format-v1.js`;
@@ -1547,11 +1545,11 @@ the two cannot drift.
 
 **Time zones.** The fields read wall-clock times; each keeps its page's zone
 rule under the [global presentation rules](#dates-and-times).
-New and Edit scheduled email take send times in the browser's zone (see [New
-and Edit scheduled email](../admin-portal/spec.md#new-and-edit-scheduled-email)); the first-campaign
-step and the date-change review still take them in the campaign's time zone,
-the dated exception (2026-10-10) in [dates and times](#dates-and-times), until
-they are fixed under
+New and Edit scheduled email and the first-campaign step take send times in
+the browser's zone (see [New and Edit scheduled
+email](../admin-portal/spec.md#new-and-edit-scheduled-email)); the date-change
+review still takes them in the campaign's time zone, the dated exception
+(2026-10-10) in [dates and times](#dates-and-times), until it is fixed under
 [#558](https://github.com/epiphany40223/parishkit/issues/558). The ParishSoft refresh times
 are in the parish's time zone, the recorded exception to the browser-local
 rule that those rules describe (see also
@@ -1568,8 +1566,9 @@ without the mark ([#1117](https://github.com/epiphany40223/parishkit/issues/1117
 | ParishSoft refresh schedule | Each rule's At, From and To; each skip's At, From and To | One time, refresh schedule time |
 | ParishSoft refresh schedule, Edit as text | Full refresh times; Quick update times | List, refresh schedule time |
 | New and Edit scheduled email | Send time | One time, browser time |
-| The date-change review; first-campaign Mail schedules | Send time | One time, campaign time |
-| First-campaign Mail schedules, Repeat a reminder | Send time | One time, campaign time |
+| First-campaign Mail schedules | Send time | One time, browser time |
+| First-campaign Mail schedules, Repeat a reminder | Send time | One time, browser time |
+| The date-change review | Send time | One time, campaign time |
 | Ministry follow-up | Contact attempt time | One time, browser time zone |
 | Logs, reports | Date filters | Dates only, no time of day |
 

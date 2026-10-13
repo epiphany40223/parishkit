@@ -252,12 +252,16 @@ def test_schedule_http_uses_local_window_and_saved_subject(setup_http, monkeypat
             "version": str(status.version),
             "window-start_date": "2054-10-01",
             "window-end_date": "2054-10-31",
+            # The browser's zone (#558): the campaign's, so times post as saved.
+            "zone": "America/New_York",
         }
     )
     with web_login():
         response = browser.get(url)
         assert response.status_code == 200, response.content
         assert b"America/New_York" in response.content
+        # The saved row carries its moment for the page script (#558).
+        assert b'data-schedule-local="2054-10-01T13:00:00+00:00"' in response.content
         assert browser.post(url, data).status_code == 403
         assert (
             post(browser, url, data | {"schedules-0-subject": "Unowned"}).status_code
@@ -284,6 +288,48 @@ def test_schedule_http_uses_local_window_and_saved_subject(setup_http, monkeypat
         assert post(browser, url, data).status_code == 409
         assert SetupDraftSection.objects.get(step="schedules").values == {
             "records": [row]
+        }
+    assert not setup_http.configured()
+
+
+def test_schedule_http_takes_send_times_in_the_browser_zone(setup_http, monkeypatch):
+    """Typed send times are the browser's; the draft keeps campaign-local values.
+
+    Los Angeles is three hours behind the campaign's New York, so 6:00 AM on
+    October 2 there is the saved 9:00 AM. A post without a usable zone is
+    refused with the page's own message and saves nothing (#558).
+    """
+    from ..test_schedule_forms import data_for as schedule_data
+
+    request, status, _, row = with_schedules(setup_http, monkeypatch)
+    browser = Client(enforce_csrf_checks=True)
+    browser.cookies["pk_admin"] = request.session.session_key
+    url = "/admin/setup/schedules"
+    data = schedule_data([row])
+    data.pop("action")
+    data.update(
+        {
+            "version": str(status.version),
+            "window-start_date": "2054-10-01",
+            "window-end_date": "2054-10-31",
+            "schedules-0-date": "2054-10-02",
+            "schedules-0-time": "06:00",
+        }
+    )
+    with web_login():
+        assert browser.get(url).status_code == 200  # Sets the CSRF cookie.
+        for zone in ("", "Etc/Unknown"):
+            refused = post(browser, url, data | {"zone": zone})
+            assert refused.status_code == 400
+            assert b"report a time zone, so this send time" in refused.content
+        assert SetupDraftSection.objects.get(step="schedules").values == {
+            "records": [row]
+        }
+        saved = post(browser, url, data | {"zone": "America/Los_Angeles"})
+        assert saved.status_code == 302, saved.content
+        moved = row["values"] | {"date": "2054-10-02", "time": "09:00:00"}
+        assert SetupDraftSection.objects.get(step="schedules").values == {
+            "records": [{"id": row["id"], "values": moved}]
         }
     assert not setup_http.configured()
 
