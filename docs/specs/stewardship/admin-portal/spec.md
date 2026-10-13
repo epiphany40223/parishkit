@@ -802,6 +802,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `schedule_settings` | Dates and mail schedules | Menu: Dates and mail schedules | Administrator | Mail schedules and campaign dates; Mail schedules | `/admin/campaign/schedules/` | (same) |  |
 | `schedule_new` | New scheduled email | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/addition/` | (same) | Its review confirms through Dates and mail schedules. |
 | `schedule_edit` | Edit scheduled email | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/<schedule>/` | (same) | The New page filled in; refuses a read-only schedule. |
+| `schedule_email_test` | Send a test of this text | New and Edit scheduled email | Administrator | (new, #446) | `/admin/campaign/schedules/test-email/` (POST only) | (same) | The page script posts the schedule's unsaved email here; nothing is saved. |
 | `schedule_calendar` | Campaign calendar | Dates and mail schedules | Administrator | (new, #469) | `/admin/campaign/schedules/calendar/` | (same) | Read-only; every send by date. |
 | `schedule_delete` | Delete scheduled emails | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/deletion/` (POST only) | (same) | The table's confirmation dialog posts here. |
 | `share_settings` | Share options | Menu: Share options | Administrator | How Families will share | `/admin/campaign/share-options/` | (same) | Gains a Return link and About panel. |
@@ -2610,7 +2611,37 @@ this one's. An email must still be chosen; the new email is compared with it.
 On New the fields start empty, and the change gate compares them with the
 blank form like the rest of New. With **Repeat**, every reminder the rule adds
 sends the one new email, so they share it; the help and the review say so.
-Sending a test of an unsaved edit is a later slice of #446.
+
+Under the fields, **Send a test of this text** sends them as they are now as
+a test, without saving anything
+([#446](https://github.com/epiphany40223/parishkit/issues/446), slice 3c).
+The page script posts the subject, HTML source, plain text and "Generate
+plain text from HTML" with the chosen email to
+`/admin/campaign/schedules/test-email/`, with no page load
+([in-place controls](../ui-conventions/spec.md#in-place-controls)). The
+server checks the text as a save does (the same rules as above), against the
+chosen email's mail type, which is the page's, since Email to send only
+offers that type's emails. It then sends the test
+[Preview and test email](#production-transition) sends, with this text in
+place of the saved text: the same fictional sample (parish values, made-up
+Family values, the campaign banner), TEST subject and banner, the Testing
+recipient only, the same admission (a Testing draft, or Production with live
+email delivery paused), one pending test per campaign, the acknowledgment
+while an earlier test may have arrived, and the same record and audit. The
+record names the chosen email, the one the text started from, so the test
+is listed under that email's Recent test results and, in Testing, counts
+for Go-live readiness like a test of that email. Nothing is saved (no change
+request, email or schedule change), and no Family's code, link or sealed
+credential is read or made. A reserved status line after the button says
+why it is unavailable ("Choose an email to send first.", the reason the
+campaign admits no test mail now, or "Tick the confirmation below to send
+another test.") or what the send did: queued, with the time in this
+browser's zone; the text's problems, each named by its field; or a refusal,
+such as a test already on its way. The acknowledgment of an uncertain
+earlier test shows below that line when the page is drawn with one or a send
+is refused for one. A send that gets no answer is not repeated, and the line
+says to check the Testing mailbox first. The command line has no
+counterpart: `test sample` tests a saved email.
 
 On New, choosing Reminder offers a **Repeat** checkbox
 ([#469](https://github.com/epiphany40223/parishkit/issues/469)); other mail
@@ -3018,7 +3049,12 @@ the campaign date interval. It renders a fictional safe sample, routes only to
 the configured Testing recipient, does not create or satisfy a scheduled
 Family-mail occurrence, and does not bypass Family portal date gates. Its
 successful provider delivery satisfies the test-Family-mailing readiness check,
-making the `scheduled` state reachable before the start date.
+making the `scheduled` state reachable before the start date. A test of
+unsaved text sent from New or Edit scheduled email
+([#446](https://github.com/epiphany40223/parishkit/issues/446)) counts as a
+test of the email it started from; saving any change afterwards changes the
+configuration, so the check then needs a new test. Go-live readiness says so
+beside the check.
 
 For staff validation, a Testing-mode draft campaign also offers a link from the
 test send, **Send this email to chosen real Families (Testing recipient only)**,

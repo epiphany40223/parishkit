@@ -29,6 +29,7 @@ from ..accounts import (
     go_live_views,
     reminder_workgroup_views,
     schedule_calendar_views,
+    schedule_email_test,
     schedule_entry_views,
     schedule_views,
     share_views,
@@ -119,6 +120,13 @@ patterns = [
         "campaign/schedules/deletion/",
         schedule_entry_views.schedule_delete,
         "schedule_delete",
+    ),
+    # New and Edit scheduled email's test of an unsaved email edit (#446),
+    # POST only, also before the UUID address.
+    _page(
+        "campaign/schedules/test-email/",
+        schedule_email_test.schedule_email_test,
+        "schedule_email_test",
     ),
     # The read-only Campaign calendar (#469), also before the UUID address.
     _page(

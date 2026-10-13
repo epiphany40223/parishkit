@@ -25,6 +25,10 @@ checks need no database:
   the view refuses an email the whole configuration rejects;
   ``EDIT_INITIAL``: Edit for the Initial invitation, whose email's plain
   text is generated from its HTML.
+  Every New and Edit page's "Send a test of this text" (#446) posts to
+  ``TEST_SEND``, which each test answers itself (``page.route``);
+  ``EDIT_CLOSED`` is Edit while the campaign admits no test mail, so the
+  button is drawn unavailable with ``NOT_OPEN``.
 - ``NEW_REPEAT``: New, whose Review answers with the review of 30 repeated
   reminders (the most one rule adds), a long review; ``NEW_BLOCKED``: New,
   whose review is blocked by sends in progress, so it has no preview;
@@ -57,6 +61,7 @@ from django.http import QueryDict
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts import schedule_email
+from parishkit.stewardship.accounts.campaign_mail import NOT_OPEN as CLOSED
 from parishkit.stewardship.accounts.schedule_calendar_views import (
     WEEK,
     calendar_sends,
@@ -102,6 +107,11 @@ EDIT = "/schedule-edit"
 EDIT_DIGEST = "/schedule-edit-digest"
 EDIT_EMAIL_REFUSED = "/schedule-edit-email-refused"
 EDIT_INITIAL = "/schedule-edit-initial"
+EDIT_CLOSED = "/schedule-edit-closed"
+# Where "Send a test of this text" posts (#446), and the reason it is
+# unavailable on EDIT_CLOSED.
+TEST_SEND = "/schedule-email-test"
+NOT_OPEN = str(CLOSED)
 # The refusal EDIT_EMAIL_REFUSED's answer draws on the email.
 EMAIL_REFUSAL = str(EMAIL_DOES_NOT_FIT)
 NEW_REPEAT = "/schedule-new-repeat"
@@ -239,9 +249,21 @@ def _calendar(values, owner, emails, rows):
 
 
 def _entry(
-    values, owner, emails, rows, *, schedule_row=None, post_url, apply_url=APPLY
+    values,
+    owner,
+    emails,
+    rows,
+    *,
+    schedule_row=None,
+    post_url,
+    apply_url=APPLY,
+    closed=None,
 ):
-    """New scheduled email, or Edit scheduled email for ``schedule_row``."""
+    """New scheduled email, or Edit scheduled email for ``schedule_row``.
+
+    ``closed`` is the reason the campaign admits no test mail now, as
+    ``schedule_email.test_context`` gives it.
+    """
     toggle, email, sources = schedule_email.editor(
         None, emails, schedule_row, owner["id"]
     )
@@ -249,6 +271,12 @@ def _entry(
         "email_toggle": toggle,
         "email": email,
         "email_sources": sources,
+        "email_test": {
+            "url": TEST_SEND,
+            "no_email": schedule_email.NO_EMAIL,
+            "closed": closed,
+            "unknown": False,
+        },
         "campaign": {"pk": owner["id"], "active_configuration": owner["values"]},
         "values": owner["values"],
         "entry": entry_form(None, emails, rows, schedule_row),
@@ -519,6 +547,15 @@ def components(context, admin):
         ),
         EDIT_INITIAL: _entry(
             values, owner, emails, rows, schedule_row=initial, post_url=f"{EDIT}/review"
+        ),
+        EDIT_CLOSED: _entry(
+            values,
+            owner,
+            emails,
+            rows,
+            schedule_row=first,
+            post_url=f"{EDIT}/review",
+            closed=NOT_OPEN,
         ),
         PENDING: _status(values, "validating"),
         NEW_REPEAT: _entry(

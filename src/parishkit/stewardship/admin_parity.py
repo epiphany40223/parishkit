@@ -127,6 +127,13 @@ LEDGER = {
     "schedule_new": command("schedule preview", "schedule confirm"),
     "schedule_edit": command("schedule show", "schedule preview", "schedule confirm"),
     "schedule_delete": command("schedule preview", "schedule confirm"),
+    # A test of New and Edit scheduled email's unsaved email text (#446):
+    # the command line takes no unsaved text; ``test sample`` tests a saved
+    # email, and the content commands save text to test.
+    "schedule_email_test": permanent(
+        "a test of text typed on the page and not saved; test sample tests "
+        "a saved email"
+    ),
     # The read-only calendar of every send (#469) draws the saved schedules
     # and campaign dates that ``schedule show`` lists.
     "schedule_calendar": command("schedule show"),

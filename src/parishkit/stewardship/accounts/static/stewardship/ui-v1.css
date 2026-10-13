@@ -606,6 +606,9 @@ td > :last-child { margin-bottom: 0; }
 /* Why New's own email is unavailable until a mail type is chosen (#446):
    the line keeps its space while idle, so it never moves the page (#736). */
 .schedule-email-reason[data-idle] { visibility: hidden; }
+/* Send a test of this text (#446): its status line (.reserve-line) keeps one
+   line while empty; a refusal reads as an error. */
+.schedule-email-test-status.is-error { color: var(--error-ink); font-weight: 600; }
 .status-badge { display: inline-block; padding: .1rem .6rem; border-radius: 999px; background: var(--paper-soft); border: 1px solid var(--border); font-size: .8125rem; font-weight: 600; white-space: nowrap; }
 .status-badge-on { background: var(--accent-soft); border-color: #b9d7d2; color: var(--accent-strong); }
 .bulk-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; margin-block: 1rem .5rem; }

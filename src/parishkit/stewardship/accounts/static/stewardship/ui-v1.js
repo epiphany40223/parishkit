@@ -5361,6 +5361,115 @@
     });
   });
 
+  // "Send a test of this text" under a scheduled email's own email (#446,
+  // schedule-email.html): posts the email fields as they are now, with the
+  // email chosen in Email to send, to schedule_email_test without a page
+  // load. Nothing is saved; the server checks the text as a save does and
+  // sends the fictional test Preview and test email sends, to the Testing
+  // recipient only. The FormData is built from the page's form, so its
+  // formdata listeners apply (generated plain text is left out, as a Review
+  // leaves it out). The reserved status line after the button
+  // (UX conventions, "Prerequisite gates" and "No layout shift") says why
+  // the button is unavailable (the campaign admits no test mail, which the
+  // server drew in data-closed; no email chosen; an uncertain earlier test
+  // not acknowledged) or what the send did, with the time in this browser's
+  // zone. A reason that appears or clears replaces the line; an answer stays
+  // until then. The acknowledgment has no name, so a Review never posts it;
+  // it shows when the page was drawn with an uncertain test or a send is
+  // refused for one. A send that gets no answer may have been queued, so it
+  // is never repeated by itself, and the line says to check the mailbox.
+  document.querySelectorAll("[data-schedule-email-test]").forEach((panel) => {
+    const form = panel.closest("form");
+    const send = panel.querySelector("[data-schedule-email-test-send]");
+    const status = panel.querySelector("[data-schedule-email-test-status]");
+    const acknowledgment = panel.querySelector("[data-schedule-email-test-acknowledge]");
+    const box = acknowledgment?.querySelector("input[type=checkbox]");
+    const choice = form?.elements.namedItem("schedule-template_version");
+    const csrf = form?.querySelector('input[name="csrfmiddlewaretoken"]');
+    if (!form || !send || !status || !acknowledgment || !box || !choice || !csrf) return;
+    const reason = () => panel.dataset.closed
+      || (!choice.value ? panel.dataset.noEmail || "Choose an email to send first." : "")
+      || (!acknowledgment.hidden && !box.checked
+        ? "Tick the confirmation below to send another test." : "");
+    let sending = false;
+    let shown = null; // the reason the line last showed ("" for none)
+    const say = (text, error) => {
+      status.textContent = text;
+      status.classList.toggle("is-error", Boolean(error));
+    };
+    const gate = () => {
+      const why = reason();
+      send.disabled = Boolean(why);
+      if (why !== shown) {
+        if (why || shown) say(why, false);
+        shown = why;
+      }
+    };
+    // Any change on the form, after the control's own handlers: choosing
+    // another mail type on New empties Email to send from script
+    // (scheduleRow) without a change event of its own, and the bubbling
+    // change of the mail type reaches the form after that reset. pageshow
+    // runs after scheduleRow's own pageshow update, registered earlier.
+    form.addEventListener("change", gate);
+    window.addEventListener("pageshow", gate);
+    gate();
+    send.addEventListener("click", async () => {
+      if (sending || reason()) return;
+      sending = true;
+      send.setAttribute("aria-disabled", "true");
+      send.classList.add("is-busy");
+      say("Sending the test…", false);
+      const data = new FormData(form);
+      const body = new URLSearchParams({template_version: choice.value});
+      ["subject", "html", "generate_text", "text"].forEach((name) => {
+        if (data.has(name)) body.set(name, data.get(name));
+      });
+      if (!acknowledgment.hidden && box.checked) body.set("acknowledge_unknown", "on");
+      let text = "The server could not be reached, so a test may or may not be on its way. "
+        + "Check the Testing mailbox before sending another.";
+      let error = true;
+      let unknown = false;
+      try {
+        const response = await fetch(panel.dataset.url, {
+          method: "POST", credentials: "same-origin", cache: "no-store",
+          headers: {"X-CSRFToken": csrf.value, "Accept": "application/json"}, body
+        });
+        const raw = await response.text();
+        let answer = null;
+        try { answer = JSON.parse(raw); } catch { answer = null; }
+        const problems = Array.isArray(answer?.errors)
+          ? answer.errors.filter((item) => typeof item?.message === "string") : [];
+        if (response.ok && answer?.queued === true) {
+          // The shared clock (date-format-v1.js); without it the time is left out.
+          const time = clockTime();
+          text = time
+            ? fillIn("Test queued at {time} for the Testing recipient. Check the Testing mailbox.",
+              {time})
+            : "Test queued for the Testing recipient. Check the Testing mailbox.";
+          error = false;
+        } else if (response.status === 400 && problems.length) {
+          text = "This text can't be sent as a test. " + problems
+            .map((item) => (item.field ? `${item.field}: ${item.message}` : item.message)).join(" ");
+        } else {
+          unknown = response.status === 409 && answer?.unknown === true;
+          text = refusalText(response.status, raw);
+        }
+      } catch { /* no answer: said above */ }
+      sending = false;
+      send.removeAttribute("aria-disabled");
+      send.classList.remove("is-busy");
+      if (unknown) {
+        acknowledgment.hidden = false;
+        box.checked = false;
+      }
+      say(text, error);
+      // The answer stays; only a reason that changes from here replaces it.
+      shown = reason();
+      send.disabled = Boolean(shown);
+      if (unknown) box.focus();
+    });
+  });
+
   // "Generate plain text from HTML": while it is checked the plain-text field
   // is read-only and shows the server's own generated text for the current
   // HTML, so the Admin sees exactly what a save stores. "Edit plain text" (or

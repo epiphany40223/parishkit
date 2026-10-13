@@ -16,6 +16,13 @@ On New, both the checkbox and Reset need a mail type: until one is chosen
 ui-v1.js keeps them unavailable and data-schedule-email-reason, whose line is
 always reserved (data-idle hides it with visibility), says why, so nothing
 moves when a type is chosen (UX conventions, "Prerequisite gates").
+"Send a test of this text" (data-schedule-email-test, #446) posts the
+fields as they are now to schedule_email_test, without a page load, and
+saves nothing. Its reserved status line, after the button, says why it is
+unavailable (no email chosen; data-closed while the campaign admits no test
+mail) or what the send did, so nothing above it moves. The acknowledgment
+of an uncertain earlier test sits after that line, shown when the page or a
+refusal says one is uncertain; it has no name, so a Review never posts it.
 {% endcomment %}<div class="schedule-email" data-schedule-email>
 <div>{{ email_toggle.edit_email.as_field_group }}</div>{% if new %}
 <p class="help schedule-email-reason" id="schedule-email-reason" data-schedule-email-reason data-idle>{% translate "Choose a mail type first." %}</p>{% endif %}
@@ -26,6 +33,11 @@ moves when a type is chosen (UX conventions, "Prerequisite gates").
 <div>{{ email.subject.as_field_group }}</div>
 <div>{{ email.html.as_field_group }}</div>
 <div data-plain-text data-plain-text-url="{% url 'admin:content_plain_text' %}">{{ email.generate_text.as_field_group }}<p class="help" data-generated-note hidden>{% translate "Generated from the HTML version. This is the plain text a save will store." %} {% button type="button" variant="secondary" data-edit-plain-text %}{% translate "Edit plain text" %}{% endbutton %}</p><p class="help" data-generated-unavailable hidden role="status">{% translate "The generated plain text could not be shown just now; saving still generates it from the HTML version." %}</p>{{ email.text.as_field_group }}</div>
+<div class="schedule-email-test" data-schedule-email-test data-url="{{ email_test.url }}" data-no-email="{{ email_test.no_email }}"{% if email_test.closed %} data-closed="{{ email_test.closed }}"{% endif %}>
+<p>{% button type="button" variant="secondary" data-schedule-email-test-send aria-describedby="schedule-email-test-status" %}{% translate "Send a test of this text" %}{% endbutton %}{% translate "Sends the text above, as it is now, to the Testing recipient as a fictional sample, as Preview and test email does. Nothing is saved, and no Family's code or link is used. Its result shows under Recent test results on the chosen email's Preview and test email page." as test_tip %}{% include "stewardship/components/toggletip.html" with tip_id="schedule-email-test-tip" tip_text=test_tip %}</p>
+<p class="help reserve-line schedule-email-test-status" id="schedule-email-test-status" role="status" data-schedule-email-test-status></p>
+<p data-schedule-email-test-acknowledge{% if not email_test.unknown %} hidden{% endif %}><input type="checkbox" id="schedule-email-test-acknowledge" data-change-ignore> <label for="schedule-email-test-acknowledge">{% translate "A previous test may have arrived; I want to send another test." %}</label></p>
+</div>
 </fieldset>
 {{ email_sources|json_script:"schedule-email-sources" }}
 </div>

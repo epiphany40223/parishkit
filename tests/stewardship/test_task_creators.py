@@ -83,15 +83,9 @@ SITES = {
         "family_mail_test",
         WEB,
     ),
-    "accounts/campaign_mail.py::request_sample": site(
-        "campaign_mail_test",
-        WEB,
-        {
-            "accounts/campaign_mail_views.py",
-            "admin_tests.py",
-            "local/seed_web.py",
-        },
-    ),
+    # Called by request_sample and by the scheduled email's test of an unsaved
+    # edit (#446), which share the limits and the task.
+    "accounts/campaign_mail.py::_queue": site("campaign_mail_test", WEB),
     "accounts/confirmation_progress.py::retry": site(
         "activation_catchup", WEB, {"accounts/confirmation_views.py"}
     ),

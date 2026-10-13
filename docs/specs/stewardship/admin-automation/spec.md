@@ -2203,6 +2203,7 @@ pause, and closing work is the closed-campaign resolution. See
 | --- | --- |
 | `campaign_mail` | `test sample-preview`, `test sample` (PR 6b) |
 | `campaign_mail_families` | `test families-preview REVISION_ID --family DUID …` (with `--names [--timezone ZONE]`, the names as an export, [#817](https://github.com/epiphany40223/parishkit/issues/817)), `test families --token …`, `test status` (PR 6c) |
+| `schedule_email_test` | Permanent: New and Edit scheduled email's test of text typed on the page and not saved ([#446](https://github.com/epiphany40223/parishkit/issues/446)); `test sample` tests a saved email, through the same `campaign_mail` send path |
 
 `test sample-preview REVISION_ID [--request-key UUID]` (PR 6b) is the
 Preview and test email page's review, through the page's own `prepare` and
