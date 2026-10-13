@@ -295,9 +295,9 @@ def test_another_controls_change_announces_no_time_field(page, component_origin)
 def test_edit_as_text_lists_read_live_one_per_line_and_follow_the_rows(
     page, component_origin, axe_source
 ):
-    """The refresh schedule's Edit as text lists are shared list fields (#1117).
+    """The refresh schedule's Edit as text list is a shared list field (#1117).
 
-    Each textarea reads as typed, one time per line or with commas, refuses
+    The textarea reads as typed, one time per line or with commas, refuses
     at the field and holds Save while open; a closed panel holds nothing. A
     list refilled from the rows by the live check reads again.
     """
@@ -323,11 +323,6 @@ def test_edit_as_text_lists_read_live_one_per_line_and_follow_the_rows(
         "refresh-text-error",
         line.get_attribute("id"),
     ]
-    # A long list reads as its count and range, so its line stays short.
-    has_text(
-        reading(page, "#refresh-text-quick"),
-        "Reads as 91 times, from 00:15 (12:15 AM) to 23:45 (11:45 PM)",
-    )
     height = line.bounding_box()["height"]
     # Repeats count once: nine entries of one time are listed, not summarised.
     page.locator(full).fill("1am\n" * 9)
@@ -372,8 +367,7 @@ def test_edit_as_text_lists_read_live_one_per_line_and_follow_the_rows(
     # Typed one per line, it stays one per line when focus leaves.
     page.locator(full).blur()
     assert page.locator(full).input_value() == "02:00\n14:00"
-    page.locator("#refresh-text-quick").fill("")
-    page.get_by_role("button", name="Use these lists").click()
+    page.get_by_role("button", name="Use this list").click()
     # A row change refills the list from the check; its reading follows.
     page.locator('[name="rules-1-at"]').fill("15:00")
     expect(page.locator(full)).to_have_value("02:00, 15:00")

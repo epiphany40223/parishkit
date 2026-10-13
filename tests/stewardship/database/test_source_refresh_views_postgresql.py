@@ -98,7 +98,8 @@ def test_a_manual_refresh_is_confirmed_keyed_and_coalesced(auth_service, google)
         assert f'<a href="/admin/system/background/{root}/">' in page
         assert ">Cancel<" not in page
         # The run's page and the task list both say which kind of refresh
-        # this is, and the refresh page explains full vs quick updates.
+        # this is, and the refresh page explains a full refresh, never
+        # quick updates (#1122).
         task_page = browser.get(f"/admin/system/background/{root}/").content.decode()
         assert "Full refresh" in task_page
         assert "records checked, not records changed" in task_page
@@ -106,7 +107,9 @@ def test_a_manual_refresh_is_confirmed_keyed_and_coalesced(auth_service, google)
             "(Full refresh)"
             in browser.get("/admin/system/background/").content.decode()
         )
-        assert "automatic quick updates" in browser.get(URL).content.decode()
+        refresh_page = browser.get(URL).content.decode()
+        assert "usually takes a few minutes" in refresh_page
+        assert "quick update" not in refresh_page.lower()
     assert TaskRun.objects.filter(task_type=TASK_TYPE).count() == 1
     request = SourceRefreshRequest.objects.get()
     assert (request.kind, str(request.task_root_id)) == ("full", root)

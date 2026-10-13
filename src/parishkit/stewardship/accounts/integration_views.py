@@ -44,12 +44,11 @@ from .integration_selection import loaded_organization
 from .limiting import LimiterUnavailable
 from .policy import Capability, allows
 from .refresh_schedule_forms import (
-    PRESETS,
     ScheduleEditor,
+    basic_context,
     differences,
     editor_view,
     posted_names,
-    presets_payload,
 )
 from .request_admission import historical_record_id
 from .request_patch import OPTIONAL_INTEGRATIONS, build_candidate
@@ -163,9 +162,7 @@ def _schedule_context(configuration, editor):
             now=timezone.now(),
             preview_reader=schedule_preview,
         ),
-        "presets": PRESETS,
-        "presets_payload": presets_payload(),
-    }
+    } | basic_context()
 
 
 def _checked(request, service, response):

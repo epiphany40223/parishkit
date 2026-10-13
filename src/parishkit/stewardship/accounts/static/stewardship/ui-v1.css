@@ -1051,7 +1051,7 @@ fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0;
 .schedule-table :is(th, td) { overflow-wrap: normal; }
 
 /* The ParishSoft refresh schedule editor (#632). A row's controls read as a
-   sentence ("Full every 2 hours from 08:00 to 18:00") and wrap on narrow
+   sentence ("every 2 hours from 08:00 to 18:00") and wrap on narrow
    screens; "from" and "to" sit beside their fields, and each time's reading
    line stays under its own field. Remove ends the line (on its own line on
    narrow screens). Each row keeps room for one line of messages, the line
@@ -1084,8 +1084,15 @@ fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0;
 .schedule-row-messages { padding-top: .5rem; min-height: calc(1lh + .5rem); }
 .schedule-row-messages > * { margin: 0; }
 .schedule-row-messages > * + * { margin-top: .25rem; }
-.schedule-preset-list { list-style: none; padding: 0; display: grid; gap: .5rem; }
-.schedule-preset-list .help { display: block; margin-top: .25rem; }
+/* Its Basic choices (#1122): one radio per line, its plain-words
+   description under it; "Every [hours] hours" keeps its list on the line. */
+.schedule-basic-list { list-style: none; padding: 0; display: grid; gap: .75rem; }
+.schedule-basic-list li { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .5rem; }
+.schedule-basic-list label { display: inline; margin: 0; }
+.schedule-basic-list select { width: auto; }
+.schedule-basic-list .help { flex-basis: 100%; margin: 0; padding-inline-start: 1.75rem; }
+/* A stored quick rule's row (#1122) reads as words, without controls. */
+.schedule-row-words { margin: 0; }
 .schedule-switch { margin-block: 1.25rem; }
 .schedule-switch label { display: inline; margin: 0; }
 .schedule-text textarea { min-height: 3.5rem; }
@@ -1104,10 +1111,10 @@ fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0;
    after them has one. The browser's scroll anchoring skips these regions,
    which the script steadies itself, but still anchors the page against
    changes elsewhere (the header's notes). */
-[data-schedule-part], [data-schedule-rows], [data-row-messages] { display: flow-root; }
-:is([data-schedule-part], [data-schedule-rows], [data-row-messages]) > :first-child { margin-top: 0; }
+[data-schedule-part], [data-schedule-rows], [data-row-messages], [data-quick-region] { display: flow-root; }
+:is([data-schedule-part], [data-schedule-rows], [data-row-messages], [data-quick-region]) > :first-child { margin-top: 0; }
 [data-schedule-part="summary"] > :last-child { margin-bottom: 0; }
-:is([data-schedule-part], [data-schedule-rows], .schedule-save, [data-schedule-stale], [data-preset-confirm], [data-schedule-text-error]) { overflow-anchor: none; }
+:is([data-schedule-part], [data-schedule-rows], .schedule-save, [data-schedule-stale], [data-quick-region], [data-schedule-text-error]) { overflow-anchor: none; }
 .schedule-day-times { list-style: none; padding: 0; margin: 0; columns: 14rem auto; }
 .schedule-day-times s { color: var(--muted); }
 .schedule-time-full { font-weight: 600; }
@@ -1115,7 +1122,7 @@ fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0;
    grid row: the day label, then 96 quarter-hour cells, with a faint line at
    each hour and a darker one every third hour. Marks and shadings are drawn
    by class (the page's policy forbids inline styles): a full refresh is a
-   tall bar, a quick update a ringed dot, so they differ in shape as well as
+   tall bar, a stored quick rule's run (#1122) a ringed dot, so they differ in shape as well as
    colour; Family email windows and the missing hour when clocks go forward
    are patterns the legend names; the current quarter hour has a bar at its
    left edge. Below about 600 pixels the grid keeps its minimum width and

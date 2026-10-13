@@ -119,8 +119,9 @@ SCHEDULE = {
 KEY = uuid4()
 
 
-def test_healthy_deltas_are_reported_beside_a_failed_full_reload(monkeypatch):
-    """A failed nightly reload with working incremental updates says so."""
+def test_a_failed_full_reload_never_mentions_incremental_updates(monkeypatch):
+    """A failed nightly reload is reported alone: the page says nothing of
+    incremental updates (#1122), whose health the status still records."""
     status = status_from(monkeypatch, (EARLY, LATE, False, uuid4(), DELTA_OK, None))
     assert status.failed_at == LATE
     assert status.deltas_healthy is True
@@ -133,8 +134,8 @@ def test_healthy_deltas_are_reported_beside_a_failed_full_reload(monkeypatch):
             "refresh_key": KEY,
         },
     )
-    assert "15-minute updates are working" in html
-    assert "Ministry rosters, ministries and giving" in html
+    assert "updates are working" not in html and "15-minute" not in html
+    assert "since the last successful full refresh appear after the next" in html
     # The one-click action posts the refresh page's own request shape.
     assert 'method="post" action="/admin/parish/parishsoft-refresh/"' in html
     assert f'name="request_key" value="{KEY}"' in html
@@ -275,8 +276,9 @@ def test_several_daily_times_name_the_most_recent_reload():
     assert "The nightly full ParishSoft reload" not in html
 
 
-def test_hourly_deltas_are_named_and_off_deltas_are_not_reported():
-    """The incremental line follows the configured delta cadence (#465)."""
+def test_hourly_deltas_are_recorded_but_not_shown():
+    """The status keeps the delta cadence (#465) for the command line, but
+    the page names no incremental update (#1122)."""
     hourly = FullRefreshStatus(
         EARLY, LATE, False, None, DELTA_OK, None, "daily", NOW, ("02:00",), "hourly"
     )
@@ -284,8 +286,7 @@ def test_hourly_deltas_are_named_and_off_deltas_are_not_reported():
     html = render_to_string(
         "stewardship/full-refresh-status.html", {"status": hourly, "can_refresh": True}
     )
-    assert "Last hourly update:" in html and "hourly updates are working" in html
-    assert "15-minute" not in html
+    assert "hourly" not in html and "15-minute" not in html
     off = FullRefreshStatus(
         EARLY, LATE, False, None, DELTA_OK, None, "daily", NOW, ("02:00",), "off"
     )
@@ -499,8 +500,9 @@ def test_facts_come_from_the_end_of_the_combined_row():
     assert real_facts(outcomes + facts) == SourceFacts(*facts)
 
 
-def test_listed_quick_times_are_called_quick_updates():
-    """A schedule with listed quick times (#632) names them quick updates."""
+def test_listed_quick_times_are_not_shown():
+    """A schedule with listed quick times (#632) still records them, but the
+    page says nothing of quick updates (#1122)."""
     listed = FullRefreshStatus(
         EARLY, LATE, False, None, DELTA_OK, None, "daily", NOW, ("02:00",), "times"
     )
@@ -508,5 +510,5 @@ def test_listed_quick_times_are_called_quick_updates():
     html = render_to_string(
         "stewardship/full-refresh-status.html", {"status": listed, "can_refresh": True}
     )
-    assert "Last quick update:" in html and "quick updates are working" in html
+    assert "quick" not in html.lower()
     assert "15-minute" not in html and "hourly" not in html

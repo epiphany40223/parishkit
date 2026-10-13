@@ -1,13 +1,23 @@
 """The ParishSoft settings page's refresh schedule editor (#632).
 
-The page edits the one refresh schedule as rule rows ("Full every 2 hours
-from 08:00 to 18:00", "Quick at 07:00"), skip rows and the switch "Skip
-refreshes around Family emails" (see the admin-portal spec, "ParishSoft
-refresh schedule settings"). The rules are applied in one place, the
-server: the page script only adds and removes rows, fills presets and reads
-times; every check, the preview and the cost come from here, through the
-shared validator (``refresh_rules.check_schedule``) and the preview
-functions (``schedule_preview``), for the live check and the save alike.
+The page edits the one refresh schedule as rule rows ("every 2 hours from
+08:00 to 18:00", "at 02:00"), skip rows and the switch "Skip refreshes
+around Family emails" (see the admin-portal spec, "ParishSoft refresh
+schedule settings"). It has Basic and Advanced modes (#1122; ui-conventions
+spec, "Basic and Advanced modes"): Basic offers a few choices
+(``BASIC_CHOICES``), each exactly one set of rule rows, which the page
+script writes into the Advanced rows. The rules are applied in one place,
+the server: the page script only adds and removes rows, writes the Basic
+choices and reads times; every check, the preview and the cost come from
+here, through the shared validator (``refresh_rules.check_schedule``) and
+the preview functions (``schedule_preview``), for the live check and the
+save alike. The mode is presentation only: it is stored beside the rules
+(``MODE``) and chooses which panel the page opens in, never what runs.
+
+The editor offers full refreshes only. A stored rule of the "quick" kind
+(quick updates, which ParishSoft's empty change list makes useless, #1122)
+still runs and is shown read-only with one action that removes them all,
+through the usual review; the capability itself goes with #1147.
 
 Two rules keep Production's refresh times unchanged until an Administrator
 changes the schedule itself:
@@ -58,6 +68,14 @@ from .source_cadence_schema import CADENCE_SETTINGS
 RULES = "rules"
 SKIPS = "skips"
 SWITCH = "skip_around_family_emails"
+# The stored settings key (and the posted toggle's name) of the mode the
+# schedule was last saved in: "basic" or "advanced" (source_cadence_schema).
+MODE = "refresh_schedule_mode"
+MODES = ("basic", "advanced")
+# The Basic panel's controls. They are posted while Basic is shown, but
+# the server reads only the Advanced rows they were written into.
+BASIC = "refresh_basic"
+BASIC_HOURS = "refresh_basic_hours"
 MANAGEMENT = ("TOTAL_FORMS", "INITIAL_FORMS", "MIN_NUM_FORMS", "MAX_NUM_FORMS")
 RULE_FIELDS = ("kind", "shape", "every", "start", "last", "at")
 SKIP_FIELDS = ("shape", "at", "start", "last")
@@ -82,71 +100,101 @@ STEP_LABELS = {
     720: _("12 hours"),
 }
 STEP_CHOICES = tuple((step, STEP_LABELS[step]) for step in STEPS)
-KIND_CHOICES = (("full", _("Full")), ("quick", _("Quick")))
+# The kind is a hidden field (#1122): its labels are never shown, so they
+# are plain and untranslated.
+KIND_CHOICES = (("full", "full"), ("quick", "quick"))
 RULE_SHAPES = (("every", _("every")), ("at", _("at")))
 SKIP_SHAPES = (("at", _("at")), ("range", _("from")))
 QUARTER_HOUR_MESSAGE = _("Use :00, :15, :30 or :45.")
 
 
 @dataclass(frozen=True)
-class Preset:
-    """One preset: its key, name, what it includes, and its rules."""
+class BasicChoice:
+    """One Basic choice: its key, name, plain-words description and rules.
+
+    "every" is one choice with an hours list (``EVERY_HOURS``): its rules
+    depend on the hours chosen (``basic_rules``), so ``rules`` is empty.
+    """
 
     key: str
     name: str
     description: str
-    rules: tuple
+    rules: tuple = ()
 
 
-# The admin-portal spec's presets, in its order. Each fills the rules and
-# clears the skips; none changes the switch.
-PRESETS = (
-    Preset(
+# "Every [N] hours": the hour counts Basic offers, each a whole number of
+# repeats a day from midnight, and the one chosen when none is yet.
+EVERY_HOURS = (2, 3, 4, 6, 8, 12)
+DEFAULT_EVERY_HOURS = 4
+
+# The Basic choices (#1122; admin-portal spec, "Schedule editor"), in their
+# order. Each is exactly one Advanced rule set of full refreshes: choosing
+# one replaces the rules and clears the skips; none changes the switch.
+# Quick updates are not offered while ParishSoft's change list returns
+# nothing (#1122, #1147).
+BASIC_CHOICES = (
+    BasicChoice(
         "nightly",
         _("Nightly only"),
-        _("Full at 02:00; no quick updates."),
+        _("One full refresh a night, at 02:00."),
         ({"kind": "full", "at": "02:00"},),
     ),
-    Preset(
-        "nightly_hourly",
-        _("Nightly, then quick updates hourly"),
-        _(
-            "Full at 02:00; quick every hour from 00:00 to 23:00 (23 quick "
-            "updates; the 02:00 one is covered by the full refresh). The default."
-        ),
-        (
-            {"kind": "full", "at": "02:00"},
-            {"kind": "quick", "every": 60, "from": "00:00", "to": "23:00"},
-        ),
+    BasicChoice(
+        "every",
+        _("Every few hours"),
+        _("A full refresh every few hours, starting at 00:00."),
     ),
-    Preset(
-        "every_2_hours",
-        _("Every 2 hours"),
-        _("Full every 2 hours from 00:00 to 22:00; no quick updates."),
-        ({"kind": "full", "every": 120, "from": "00:00", "to": "22:00"},),
-    ),
-    Preset(
-        "every_4_hours",
-        _("Every 4 hours"),
-        _("Full every 4 hours from 00:00 to 20:00; no quick updates."),
-        ({"kind": "full", "every": 240, "from": "00:00", "to": "20:00"},),
-    ),
-    Preset(
+    BasicChoice(
         "business_hours",
         _("Business hours"),
-        _(
-            "Full at 02:00 and every 2 hours from 08:00 to 18:00; quick every "
-            "hour from 07:00 to 19:00 (7 quick updates, at 07:00, 09:00, 11:00, "
-            "13:00, 15:00, 17:00 and 19:00; the others are covered by the full "
-            "refreshes)."
-        ),
+        _("A full refresh at 02:00, then every 2 hours from 08:00 to 18:00."),
         (
             {"kind": "full", "at": "02:00"},
             {"kind": "full", "every": 120, "from": "08:00", "to": "18:00"},
-            {"kind": "quick", "every": 60, "from": "07:00", "to": "19:00"},
         ),
     ),
 )
+BASIC_KEYS = frozenset(choice.key for choice in BASIC_CHOICES)
+
+
+def basic_rules(key, hours=None):
+    """The rules of one Basic choice ("every" also takes its ``hours``)."""
+    if key == "every":
+        return (
+            {
+                "kind": "full",
+                "every": hours * 60,
+                "from": "00:00",
+                "to": clock(DAY - hours * 60),
+            },
+        )
+    return next(choice.rules for choice in BASIC_CHOICES if choice.key == key)
+
+
+def _basic_sets():
+    """Every Basic rule set: ``(key, hours, rules)``, hours only for "every"."""
+    for choice in BASIC_CHOICES:
+        if choice.key == "every":
+            for hours in EVERY_HOURS:
+                yield choice.key, hours, basic_rules("every", hours)
+        else:
+            yield choice.key, None, choice.rules
+
+
+def basic_choice(document):
+    """The Basic choice equal to a schedule document, as ``(key, hours)``, or None.
+
+    Equal means the same rules in any order and no skips; the switch is
+    outside both modes, so it does not matter. A document with a quick
+    rule never matches: Basic offers only full refreshes.
+    """
+    if document is None or document["skips"]:
+        return None
+    rules = _sorted_rows(document["rules"])
+    for key, hours, choice_rules in _basic_sets():
+        if rules == _sorted_rows(choice_rules):
+            return key, hours
+    return None
 
 
 def rule_initial(rule):
@@ -169,12 +217,25 @@ def skip_initial(skip):
     return {"shape": "range", "start": skip["from"], "last": skip["to"]}
 
 
-def presets_payload():
-    """The presets as the page script fills them: each one's rows' initial values."""
+def basic_payload():
+    """The Basic rule sets as the page script writes and matches them.
+
+    Each is ``{"key", "hours", "rules"}`` with the rows' initial values, so
+    the script has no copy of the choices' rules: this is their one source.
+    """
     return [
-        {"key": preset.key, "rules": [rule_initial(rule) for rule in preset.rules]}
-        for preset in PRESETS
+        {"key": key, "hours": hours, "rules": [rule_initial(rule) for rule in rules]}
+        for key, hours, rules in _basic_sets()
     ]
+
+
+def basic_context():
+    """What the editor's Basic panel draws: its choices, hours and payload."""
+    return {
+        "basic_choices": BASIC_CHOICES,
+        "every_hours": EVERY_HOURS,
+        "basic_payload": basic_payload(),
+    }
 
 
 def _hhmm(value):
@@ -224,10 +285,18 @@ class _Row(forms.Form):
 
 
 class RuleForm(_Row):
-    """One rule row: "[Full | Quick] every [interval] from [time] to [time]",
-    or "[Full | Quick] at [time]"."""
+    """One rule row: "every [interval] from [time] to [time]" or "at [time]".
 
-    kind = forms.ChoiceField(label=_("Kind"), choices=KIND_CHOICES, initial="full")
+    The kind is a hidden field: every row the page offers is a full refresh,
+    and a stored quick rule is shown read-only and posted back as it is.
+    """
+
+    kind = forms.ChoiceField(
+        label=_("Kind"),
+        choices=KIND_CHOICES,
+        initial="full",
+        widget=forms.HiddenInput,
+    )
     shape = forms.ChoiceField(label=_("Repeat"), choices=RULE_SHAPES, initial="at")
     every = forms.TypedChoiceField(
         label=_("Interval"),
@@ -389,7 +458,7 @@ Skips = formset_factory(
 
 def posted_names():
     """Every field name the editor may post, for the page's closed field check."""
-    names = {SWITCH}
+    names = {SWITCH, MODE, BASIC, BASIC_HOURS}
     for prefix, fields, most in (
         (RULES, RULE_FIELDS, RULE_ROWS),
         (SKIPS, SKIP_FIELDS, SKIP_ROWS),
@@ -408,10 +477,15 @@ def _canonical(document):
     showed, posted back in another order, are no change.
     """
     return {
-        "rules": sorted(document["rules"], key=lambda r: json.dumps(r, sort_keys=True)),
-        "skips": sorted(document["skips"], key=lambda r: json.dumps(r, sort_keys=True)),
+        "rules": _sorted_rows(document["rules"]),
+        "skips": _sorted_rows(document["skips"]),
         SWITCH: document[SWITCH],
     }
+
+
+def _sorted_rows(rows):
+    """Schedule rows in a fixed order, since their order changes nothing."""
+    return sorted(rows, key=lambda row: json.dumps(row, sort_keys=True))
 
 
 def kept_times(shown):
@@ -648,7 +722,7 @@ def _no_full(document):
             RowProblem(
                 None,
                 None,
-                gettext("Add a Full rule: keep at least one full refresh a day."),
+                gettext("Add a rule: keep at least one full refresh a day."),
                 gettext("add a full refresh"),
             )
         )
@@ -725,6 +799,7 @@ class ScheduleEditor:
             kept=self.kept,
         )
         self.switch = bound.get(SWITCH) == "on" if self.posted else self.shown[SWITCH]
+        self.posted_mode = bound.get(MODE) if self.posted else None
         self._checked = None
 
     def _rows_valid(self):
@@ -849,7 +924,36 @@ class ScheduleEditor:
             }
         if self.blocking:
             raise ValueError("A schedule with problems cannot be saved.")
-        return stored_settings(self.document())
+        document = self.document()
+        # Basic only when it was saved from Basic and Basic can show it.
+        basic = self.posted_mode == "basic" and basic_choice(document) is not None
+        return stored_settings(document) | {MODE: "basic" if basic else "advanced"}
+
+    @property
+    def basic(self):
+        """The Basic choice equal to the edited schedule, ``(key, hours)``, or None."""
+        return basic_choice(self.document())
+
+    @property
+    def mode(self):
+        """The mode the editor is drawn in: "basic" or "advanced".
+
+        Advanced whenever the schedule has no Basic equivalent (a custom
+        schedule, a quick rule, a row that cannot be read); else the mode
+        posted (a refused save drawn again) or, unposted, the mode last
+        saved, and Basic when none was saved (ui-conventions spec, "Which
+        mode opens").
+        """
+        if self.basic is None:
+            return "advanced"
+        wanted = self.posted_mode if self.posted else self.stored.get(MODE)
+        return "advanced" if wanted == "advanced" else "basic"
+
+    @property
+    def has_quick(self):
+        """Whether a rule row is a quick rule (shown read-only, with Remove)."""
+        formset = self.rules
+        return any(form["kind"].value() == "quick" for form in formset.forms)
 
     def row_problems(self, scope):
         """Each row's problems, but those its time fields show themselves."""
@@ -963,9 +1067,29 @@ def _time_line(entry, timezone):
     return text, False
 
 
+def _day_counts(full, quick, spent, *, with_quick):
+    """One preview day's counts: "3 full refreshes, about 22 min of ParishSoft time".
+
+    Quick updates are counted only for a schedule that still has a quick
+    rule (``with_quick``); the editor offers none (#1122).
+    """
+    values = {
+        "full": ngettext("%(count)d full refresh", "%(count)d full refreshes", full)
+        % {"count": full},
+        "time": _duration(spent),
+    }
+    if not with_quick:
+        return gettext("%(full)s, about %(time)s of ParishSoft time") % values
+    values["quick"] = ngettext(
+        "%(count)d quick update", "%(count)d quick updates", quick
+    ) % {"count": quick}
+    return gettext("%(full)s, %(quick)s, about %(time)s of ParishSoft time") % values
+
+
 def preview_context(preview, *, timezone, today, daily):
     """What the per-day list and the summary show for a ``SchedulePreview``."""
     days = []
+    with_quick = bool(daily.quick)
     for index, day in enumerate(preview.days):
         full, quick = len(day.runs("full")), len(day.runs("quick"))
         spent, _share = preview.cost.per_day[index]
@@ -975,20 +1099,7 @@ def preview_context(preview, *, timezone, today, daily):
                 "weekday": WEEKDAYS[day.day.weekday()],
                 "today": day.day == today,
                 "change": day.change,
-                "counts": gettext(
-                    "%(full)s, %(quick)s, about %(time)s of ParishSoft time"
-                )
-                % {
-                    "full": ngettext(
-                        "%(count)d full refresh", "%(count)d full refreshes", full
-                    )
-                    % {"count": full},
-                    "quick": ngettext(
-                        "%(count)d quick update", "%(count)d quick updates", quick
-                    )
-                    % {"count": quick},
-                    "time": _duration(spent),
-                },
+                "counts": _day_counts(full, quick, spent, with_quick=with_quick),
                 "times": [
                     {
                         "text": text,
@@ -1007,10 +1118,17 @@ def preview_context(preview, *, timezone, today, daily):
         )
     cost, durations = preview.cost, preview.cost.durations
     typical = gettext(" (typical; not yet measured)")
-    summary = gettext(
-        "About %(time)s of ParishSoft time a day (%(share)s of the day): "
-        "%(full)s of about %(full_length)s%(full_typical)s and %(quick)s of "
-        "about %(quick_length)s%(quick_typical)s."
+    summary = (
+        gettext(
+            "About %(time)s of ParishSoft time a day (%(share)s of the day): "
+            "%(full)s of about %(full_length)s%(full_typical)s and %(quick)s of "
+            "about %(quick_length)s%(quick_typical)s."
+        )
+        if with_quick
+        else gettext(
+            "About %(time)s of ParishSoft time a day (%(share)s of the day): "
+            "%(full)s of about %(full_length)s%(full_typical)s."
+        )
     ) % {
         "time": _duration(cost.average),
         "share": f"{cost.share * 100:.1f}%",
@@ -1128,7 +1246,11 @@ class EditorView:
         return self.editor.general_problems()
 
     def _rows(self, scope):
-        """Each row of ``scope`` with its number, messages and note."""
+        """Each row of ``scope`` with its number, messages and note.
+
+        A quick rule row also carries ``quick``: its words and the hidden
+        fields that post it back unchanged (``_quick_row``).
+        """
         formset = self.editor.rules if scope == RULES else self.editor.skips
         problems = self.editor.row_problems(scope)
         notes = self.editor.notes() if scope == RULES else {}
@@ -1139,6 +1261,7 @@ class EditorView:
                 "number": index + 1,
                 "problems": problems.get(index, []),
                 "note": notes.get(index),
+                "quick": _quick_row(form) if scope == RULES else None,
             }
             for index, form in enumerate(formset.forms)
         ]
@@ -1175,12 +1298,66 @@ class EditorView:
         return self._rows(SKIPS)
 
     @property
+    def mode(self):
+        """The mode the editor is drawn in (``ScheduleEditor.mode``)."""
+        return self.editor.mode
+
+    @property
+    def basic(self):
+        """The Basic panel's choice and hours as drawn: ``{"key", "hours"}``.
+
+        The choice equal to the schedule, or none chosen; the hours list
+        shows the matching count, else ``DEFAULT_EVERY_HOURS``.
+        """
+        key, hours = self.editor.basic or (None, None)
+        return {"key": key, "hours": hours or DEFAULT_EVERY_HOURS}
+
+    @property
+    def has_quick(self):
+        """Whether the rows include a stored quick rule (``ScheduleEditor``)."""
+        return self.editor.has_quick
+
+    @property
     def text_lists(self):
-        """The full and quick daily times as "Edit as text" shows them."""
+        """The full daily times as "Edit as text" shows them."""
         daily = self.editor.daily()
         if daily is None:
             return None
-        return {"full": ", ".join(daily.full), "quick": ", ".join(daily.quick)}
+        return {"full": ", ".join(daily.full)}
+
+
+def _quick_row(form):
+    """A quick rule row's words and hidden fields, or None for a full rule.
+
+    The editor no longer offers quick updates (#1122), so a stored quick
+    rule is drawn read-only: its words ("Quick update every hour from 00:00
+    to 23:00") and ``(name, value)`` hidden fields that post it back as it
+    is, until "Remove quick updates" takes it out.
+    """
+    if form["kind"].value() != "quick":
+        return None
+    shape = form["shape"].value()
+    used = ("kind", "shape", "at") if shape == "at" else RULE_FIELDS[:5]
+    fields = [
+        (form[name].html_name, "" if form[name].value() is None else form[name].value())
+        for name in used
+    ]
+    values = dict(fields)
+    prefix = form.prefix + "-"
+    value = {name.removeprefix(prefix): text for name, text in values.items()}
+    if shape == "at":
+        words = gettext("Quick update at %(time)s") % {"time": value["at"]}
+    else:
+        # Raw posted text (a refused save drawn again): never trusted as a
+        # number, so a crafted value is shown as sent instead of failing.
+        every = str(value["every"])
+        step = STEP_LABELS.get(int(every), every) if every.isdecimal() else every
+        words = gettext("Quick update every %(step)s from %(start)s to %(end)s") % {
+            "step": step,
+            "start": value["start"],
+            "end": value["last"],
+        }
+    return {"words": words, "fields": fields}
 
 
 def editor_view(editor, *, timezone, now, preview_reader):
@@ -1204,6 +1381,13 @@ def editor_view(editor, *, timezone, now, preview_reader):
         for shown, row in zip(view.preview["days"], rows, strict=True):
             shown["cells"] = row["cells"]
         view.preview["legend"] = legend(rows)
+        # The dot of a stored quick rule is named only while one runs: the
+        # editor offers none (#1122).
+        view.preview["other_mark"] = (
+            gettext("Quick update")
+            if any(cell["quick"] for row in rows for cell in row["cells"])
+            else None
+        )
         view.preview["hours"] = HOURS
     view.links, view.status = status_line(
         editor, view.preview["line"] if view.preview else None

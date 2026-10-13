@@ -26,7 +26,10 @@ CREDENTIAL_SCHEMA = "integration-credential-cadence-v8"
 # ``full_refresh_times`` (sorted unique local HH:MM times, including the
 # nightly time) and ``delta_refresh`` arrived with #465;
 # ``quick_refresh_times`` and ``refresh_rules`` with the integrated refresh
-# schedule (#632), which also lifted the cap of eight full times.
+# schedule (#632), which also lifted the cap of eight full times;
+# ``refresh_schedule_mode`` with the editor's Basic and Advanced modes
+# (#1122): presentation only, the mode the schedule was last saved in, so
+# the editor reopens in it. Nothing that runs refreshes reads it.
 CADENCE_SETTINGS = (
     "nightly_time",
     "full_refresh",
@@ -34,7 +37,10 @@ CADENCE_SETTINGS = (
     "delta_refresh",
     "quick_refresh_times",
     "refresh_rules",
+    "refresh_schedule_mode",
 )
+# The editor modes ``refresh_schedule_mode`` may hold.
+SCHEDULE_MODES = ("basic", "advanced")
 
 
 def uses_cadence(document):
@@ -59,6 +65,12 @@ def _validate_cadence(settings):
     ):
         invalid()
     if "delta_refresh" in settings and settings["delta_refresh"] not in DELTA_REFRESHES:
+        invalid()
+    if "refresh_schedule_mode" in settings and (
+        settings["refresh_schedule_mode"] not in SCHEDULE_MODES
+        or "refresh_rules" not in settings
+    ):
+        # Only a schedule saved with its rules is saved from the editor.
         invalid()
     if "refresh_rules" in settings:
         _validate_rules_schedule(settings)

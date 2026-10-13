@@ -229,7 +229,8 @@ def test_a_saved_rule_reaches_yaml_and_the_real_scheduler(auth_service, google):
     SourceMutationLease.objects.get_or_create(singleton=True)
     browser, _ = signed_in()
     posted = rows([full_at("03:15"), quick_every(15, "00:00", "23:45")]) | {
-        "rules-0-at": "3:15am"
+        "rules-0-at": "3:15am",
+        "refresh_schedule_mode": "advanced",
     }
     review = post(
         browser, URL, edit(auth_service.store, organization_id="12345") | posted
@@ -255,7 +256,10 @@ def test_a_saved_rule_reaches_yaml_and_the_real_scheduler(auth_service, google):
             "skip_around_family_emails": False,
         }
     )
-    assert settings == {"organization_id": "12345"} | expected
+    # The editor mode it was saved in is stored beside the rules (#1122).
+    assert settings == {"organization_id": "12345"} | expected | {
+        "refresh_schedule_mode": "advanced"
+    }
     assert settings["nightly_time"] == "03:15"
     assert settings["delta_refresh"] == "times"
     assert "03:15" not in settings["quick_refresh_times"]
@@ -536,6 +540,66 @@ def test_a_new_key_on_a_rules_schedule_leaves_the_schedule_alone(
     (queued,) = ConfigurationChangeRequest.objects.exclude(pk__in=requests)
     for item in queued.patch:
         assert "settings" not in item["values"]
+
+
+def confirm_and_install(browser, store, review):
+    """Apply a reviewed settings change; return the applied settings."""
+    assert review.status_code == 200, review.content
+    response = post(
+        browser, URL, {"action": "confirm", "preview": hidden(review, "preview")}
+    )
+    assert response.status_code == 302
+    install(store, response)
+    return store.active().document()["sections"]["integrations"][0]["values"][
+        "settings"
+    ]
+
+
+def test_remove_quick_updates_is_reviewed_and_applied(auth_service, google):
+    """A stored quick rule is shown read-only and posted back as it is; taking
+    it out (Remove quick updates) is a reviewed change (#1122)."""
+    apply_rules_schedule(auth_service.store)
+    browser, _ = signed_in()
+    page = unescape(browser.get(URL).content.decode())
+    assert "Remove quick updates" in page and "Quick update at 18:00" in page
+    assert 'value="advanced" data-editor-mode-choice checked' in page
+    posted = {
+        name: value
+        for name, value in shown(page).items()
+        if not name.startswith("rules-1-")
+    } | {"rules-TOTAL_FORMS": "1", "refresh_schedule_mode": "advanced"}
+    review = post(
+        browser, URL, edit(auth_service.store, organization_id="12345") | posted
+    )
+    assert "Quick updates removed: 18:00." in unescape(review.content.decode())
+    settings = confirm_and_install(browser, auth_service.store, review)
+    assert settings["delta_refresh"] == "off" and "quick_refresh_times" not in settings
+    assert [rule["kind"] for rule in settings["refresh_rules"]["rules"]] == ["full"]
+    assert settings["refresh_schedule_mode"] == "advanced"
+
+
+def test_a_basic_choice_is_saved_with_its_mode(auth_service, google):
+    """Basic's controls are posted while Basic is shown; the server reads the
+    rows they were written into and stores the mode beside them (#1122)."""
+    browser, _ = signed_in()
+    posted = rows([{"kind": "full", "every": 240, "from": "00:00", "to": "20:00"}]) | {
+        "refresh_schedule_mode": "basic",
+        "refresh_basic": "every",
+        "refresh_basic_hours": "4",
+    }
+    review = post(
+        browser, URL, edit(auth_service.store, organization_id="12345") | posted
+    )
+    settings = confirm_and_install(browser, auth_service.store, review)
+    assert settings["refresh_schedule_mode"] == "basic"
+    assert settings["full_refresh_times"] == ["00:00", "04:00", "08:00"] + [
+        "12:00",
+        "16:00",
+        "20:00",
+    ]
+    page = browser.get(URL).content.decode()
+    assert 'value="basic" data-editor-mode-choice checked' in page
+    assert '<option value="4" selected>' in page
 
 
 @pytest.mark.parametrize("direct_insert", [False, True])

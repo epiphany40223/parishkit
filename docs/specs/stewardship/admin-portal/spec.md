@@ -1664,8 +1664,8 @@ browser-side key-pair generator is not offered.
 
 The ParishSoft settings page edits the one
 [refresh schedule](../background-processing/spec.md#refresh-schedule) of
-full refreshes and quick updates, replacing the separate frequency, "At these
-times" and quick-update fields
+full refreshes, replacing the separate frequency, "At these times" and
+quick-update fields
 ([#632](https://github.com/epiphany40223/parishkit/issues/632)). The design
 follows common practice for schedules with exceptions (rules, then
 exceptions, then a live preview); the
@@ -1673,11 +1673,21 @@ exceptions, then a live preview); the
 records the products compared. It is written for a mid-level IT admin: plain
 words, no cron text, and every refused or skipped time explained where it
 appears. It follows the [in-place controls](../ui-conventions/spec.md#in-place-controls) and
-conditional-field rules: nothing on the page reloads it.
-Planned ([#1122](https://github.com/epiphany40223/parishkit/issues/1122)):
-the editor adopts the
+conditional-field rules: nothing on the page reloads it. It follows the
 [Basic and Advanced modes](../ui-conventions/spec.md#basic-and-advanced-modes)
-convention, with the presets as its Basic choices.
+convention ([#1122](https://github.com/epiphany40223/parishkit/issues/1122)).
+
+**No quick updates in the Admin UI.** ParishSoft's list of changed
+Families returns nothing
+([#465](https://github.com/epiphany40223/parishkit/issues/465)), so quick
+updates bring no data. Administrator decision (2026-10-12, #1122): no Admin
+page, help text or the editor offers or mentions them, except a stored
+schedule that still has quick rules (below) and history (the Activity log
+and task pages of past runs). The capability stays in the code until
+[#1147](https://github.com/epiphany40223/parishkit/issues/1147) removes it,
+and so do the `pk-admin refresh status` fields `delta_succeeded_at`,
+`delta_failed_at` and `delta_refresh`. Production's stored quick times are
+removed when this ships, with the editor's "Remove quick updates" action.
 
 **Time zone.** Schedule times are entered and shown in the refresh
 schedule's own time zone (the current campaign's, else the parish's, as the
@@ -1694,26 +1704,34 @@ each preview time in the browser's zone as well. See decision 18 in the
 
 #### Schedule editor
 
-- **Presets** fill the editor, each described with what it includes:
-  - "Nightly only": Full at 02:00; no quick updates.
-  - "Nightly, then quick updates hourly" (the default): Full at 02:00; Quick
-    every hour from 00:00 to 23:00 (23 quick updates; the 02:00 one is
-    covered by the full refresh).
-  - "Every 2 hours": Full every 2 hours from 00:00 to 22:00; no quick
-    updates.
-  - "Every 4 hours": Full every 4 hours from 00:00 to 20:00; no quick
-    updates.
-  - "Business hours": Full at 02:00 and every 2 hours from 08:00 to 18:00;
-    Quick every hour from 07:00 to 19:00 (7 quick updates, at 07:00, 09:00,
-    11:00, 13:00, 15:00, 17:00 and 19:00; the others are covered by the full
-    refreshes).
+- **Mode.** The shared Basic / Advanced toggle sits at the top of the
+  editor. The editor opens as the convention says: Basic when the stored
+  schedule equals a Basic choice and was saved from Basic (or before modes
+  existed), else Advanced. The mode is stored beside the rules as the
+  optional setting `refresh_schedule_mode` ("basic" or "advanced"), written
+  only with a changed schedule, and "basic" only when Basic can show it:
+  switching modes alone is no change. It is presentation only; nothing that
+  runs refreshes reads it.
+- **Basic** offers three choices, as radios each described in words; each
+  is exactly one set of Advanced rules, written into the rule rows (and
+  clearing the skips) as it is chosen:
+  - "Nightly only": one full refresh a night, at 02:00 (Full at 02:00).
+  - "Every [2, 3, 4, 6, 8 or 12] hours": a full refresh every few hours,
+    starting at 00:00 (Full every N hours from 00:00 to 24−N:00). Choosing
+    the hours chooses this choice.
+  - "Business hours": a full refresh at 02:00, then every 2 hours from
+    08:00 to 18:00.
 
-  A preset replaces the rule rows and clears the skips. Choosing a preset
-  when the editor has unsaved changes asks first, in place: "Replace your
-  changes with this preset?" No preset needs to avoid the Family email
-  windows by hand: the automatic exclusions do that.
-- **Rule rows**, each "[Full | Quick] every [interval] from [time] to [time]"
-  or "[Full | Quick] at [time]", with **Add a rule** and **Remove**. Time
+  Advanced → Basic chooses the Basic choice equal to the rows (any order, no
+  skips); with none, the shared dialog asks ("Your custom schedule has no
+  basic equivalent."). After Switch to Basic no choice is chosen, and Save
+  is unavailable, with "Choose a basic schedule to review it." beside it,
+  until one is. No choice needs to avoid the Family email windows by hand:
+  the switch does that.
+- **Advanced** has the rule rows, the skips and Edit as text below, with no
+  presets.
+- **Rule rows**, each "every [interval] from [time] to [time]" or "at
+  [time]", always of full refreshes, with **Add a rule** and **Remove**. Time
   fields use the shared [time entry](../ui-conventions/spec.md#time-entry), with its live reading
   beside the field, and accept quarter-hour times; a kept off-quarter-hour full time is shown as a single time,
   labeled as kept from the earlier schedule. A schedule has at most 64
@@ -1726,19 +1744,31 @@ each preview time in the browser's zone as well. See decision 18 in the
   and enforced the same way.
 - **Skip refreshes around Family emails**, with one line saying what it
   does: refreshes are skipped while a reminder is being prepared and while a
-  Family email is being sent. It starts on when no schedule is stored, and
-  off for an existing schedule shown converted (below), since such a
-  schedule never skips today. Presets fill the rules and leave it as it is.
+  Family email is being sent. It is shown in both modes, below them. It
+  starts on when no schedule is stored, and off for an existing schedule
+  shown converted (below), since such a schedule never skips today. Basic
+  choices fill the rules and leave it as it is.
   The settings page always has a stored document to show: one with no
   schedule settings at all runs the default schedule (02:00 and quick
   updates every quarter hour) and is shown converted, with the switch off.
-- **Edit as text**: the resulting full and quick times as two plain lists,
-  for pasting. Choosing "Use these lists" replaces the rules with single
-  times and clears the skips, and the page says so beside the lists before
-  it does. Since each time becomes a rule, the two lists together hold at
-  most 64 times, said beside them; a schedule with more (such as quick
-  updates every 15 minutes) is changed with its rules instead. The lists
-  and the rows stay in step: each check refills them from the rows.
+- **Edit as text**: the resulting full times as one plain list, for
+  pasting. Choosing "Use this list" replaces the rules with single times
+  and clears the skips, and the page says so beside the list before it
+  does. Since each time becomes a rule, the list holds at most 64 times,
+  said beside it; a schedule with more is changed with its rules instead.
+  The list and the rows stay in step: each check refills it from the rows.
+- **Stored quick rules.** A stored schedule that still has quick rules (the
+  default schedule, a converted one, or one saved before #1122) opens in
+  Advanced, since Basic offers only full refreshes. Its quick rules are
+  shown read-only, as words ("Quick update every 15 minutes from 00:00 to
+  23:45") with hidden fields that post them back unchanged, so nothing is
+  dropped silently and saving other settings keeps them. A note above the
+  rules says why they bring no data, with one **Remove quick updates**
+  action that takes every quick row out in place; the change goes through
+  the usual review ("Quick updates removed: …") and Apply. A Basic choice
+  or Use this list replaces them too, and the review says so the same way.
+  The seven-day preview, the cost summary and the grid's legend name quick
+  updates only while such a rule remains.
 - The page states which full time is the nightly refresh and that it runs
   even while Family emails are being sent.
 - A schedule saved before this page existed is shown converted to the
@@ -1785,11 +1815,11 @@ row.
 #### Live checks and saving
 
 The rules are applied in one place, the server. The page script only adds
-and removes rows, fills presets and reads times through the shared
+and removes rows, writes the Basic choices and reads times through the shared
 [time entry](../ui-conventions/spec.md#time-entry); it has no copy of the rules, coverage or spacing.
 
 - **Checking.** Once typing pauses (about half a second, as the time entry
-  waits), or a row, preset or switch changes, the page posts the editor's
+  waits), or a row, Basic choice or switch changes, the page posts the editor's
   unsaved state to a read-only check of this page. The server reads it with
   the same form that saves it, runs the shared validator
   (`refresh_rules.check_schedule`, with the kept off-quarter-hour times) and
@@ -1813,7 +1843,7 @@ and removes rows, fills presets and reads times through the shared
   pointer's, whatever is beside it; with no pointer (keyboard only, a
   lifted touch, or the pointer has left the window), or with the pointer
   over something that does not scroll with the page (the sticky Admin
-  menu), the top of the control being edited, or of Use these lists when
+  menu), the top of the control being edited, or of Use this list when
   it replaces the rows. The script measures each part it changes before
   and after the change and scrolls by the sum of the height changes of
   the parts wholly above that height. In a part that spans it, it adds how
@@ -1825,14 +1855,14 @@ and removes rows, fills presets and reads times through the shared
   pointer stays where it was on the screen, within half a pixel, except
   where it is itself removed or redrawn, and as far as the page can
   scroll: near the top or bottom of the page the scroll stops at the
-  page's edge. Moving focus (to Add a rule after Remove, or to Replace my
-  changes) never scrolls the page under the pointer; with no pointer, a
+  page's edge. Moving focus (to Add a rule after Remove or Remove quick
+  updates) never scrolls the page under the pointer; with no pointer, a
   control off the screen is brought just into view. The browser's own
   scroll anchoring stays on for the page, so a note the header shows
   above the page moves nothing; the parts the script steadies opt out of
   it, so it does not add a second adjustment. Those parts take the same
-  room as plain blocks. The "Edit as text" error is drawn after Use these
-  lists, in room kept for one line.
+  room as plain blocks. The "Edit as text" error is drawn after Use this
+  list, in room kept for one line.
   The preview and the problems at each row are not live regions. This is
   the same pattern as the mail schedules' repeat panel
   ([#469](https://github.com/epiphany40223/parishkit/issues/469)).
@@ -1845,7 +1875,8 @@ and removes rows, fills presets and reads times through the shared
   the stored lists directly. A request without the editor's rows keeps the
   stored schedule, and a new key is never saved together with a schedule
   change. The review before applying lists, in words,
-  the full and quick times added and removed, the switch if it changed, and
+  the full times added and removed (and the quick times, while a stored
+  quick rule is removed or kept), the switch if it changed, and
   each difference that
   [stored schedule and upgrade](../background-processing/spec.md#stored-schedule-and-upgrade)
   names for a converted schedule, rather than the stored settings.
@@ -1872,7 +1903,8 @@ Below the editor, updated live as it changes, the page shows the next seven
 days from today:
 
 - **A grid**: one row per day and 96 quarter-hour cells, with full refreshes
-  and quick updates marked differently (shape as well as color), excluded
+  marked (and a stored quick rule's runs marked differently, by shape as
+  well as color, named in the legend only while one remains), excluded
   windows shaded and labeled with their cause ("Reminder: preparing",
   "Reminder: sending", "Invitation: sending"), and the current time marked.
   A kept off-quarter-hour time is marked in the cell it falls in. The grid
@@ -1888,9 +1920,8 @@ days from today:
   collapsible section per day (today open, the others closed, each heading
   giving the day's counts): each day's refreshes with their kind, and every
   time that will not run, struck through with its reason, one time format
-  per line ("06:00 quick update skipped: reminder being prepared", "09:00
-  quick update covered by the 09:00 full refresh", "02:30 runs at 03:00:
-  clocks go forward").
+  per line ("06:00 full refresh skipped: reminder being prepared", "02:30
+  runs at 03:00: clocks go forward").
 - Daylight-saving days are flagged in both.
 
 The preview is computed by the server from the same functions the scheduler
@@ -1904,8 +1935,9 @@ same preview functions, so the two pages never disagree.
 
 - **Cost**: the estimated daily ParishSoft time and its share of the day,
   per day of the preview and as an average, for example "About 1 h 34 min
-  of ParishSoft time a day (6.5% of the day): 8 full refreshes of about 7.3
-  minutes and 16 quick updates of about 2.2 minutes." The durations are the
+  of ParishSoft time a day (5.1% of the day): 10 full refreshes of about 7.3
+  minutes." A stored quick rule's updates are counted too while one
+  remains. The durations are the
   medians of the last seven days' successful runs of each kind (manual
   refreshes included: the Admin pages cannot tell a run's cause, and a median
   absorbs the odd one), or
@@ -1916,9 +1948,7 @@ same preview functions, so the two pages never disagree.
   days, counting the excluded windows, with the day it falls on, and when
   the alarm would sound, for example "New ParishSoft data arrives at least
   every 8 hours (00:00 to 08:00). If a full refresh is more than 30 minutes
-  late, Administrators are alerted." Quick updates are described as
-  checking the connection and catching the Family contact changes
-  ParishSoft reports, not as keeping the data current. See
+  late, Administrators are alerted." See
   [ParishSoft data age and connection](../operations/spec.md#parishsoft-data-age-and-connection).
 
 The command line offers the same schedule, validation and preview (see the
@@ -4470,8 +4500,10 @@ fresh. The breadcrumb is the way back; the page has no Cancel link.
 
 The refresh page and the "Run a full refresh now" button say that a full
 refresh re-reads everything (including Ministry rosters and giving) and usually
-takes a few minutes, while the automatic quick updates read only the
-Families ParishSoft reports as changed. A refresh run's background task page,
+takes a few minutes; they say nothing of quick updates
+([#1122](https://github.com/epiphany40223/parishkit/issues/1122), see
+[ParishSoft refresh schedule settings](#parishsoft-refresh-schedule-settings)).
+A refresh run's background task page,
 and its row in the background-work list, name the run as a "Full refresh" or a
 "Quick update" from its request kind (whatever the quick-update cadence, so the
 label never claims a 15-minute cadence that is not configured), and describe
@@ -5202,14 +5234,15 @@ the system does about it.
 This panel shows the ParishSoft data the system is using and why a refresh
 might be held back:
 
-- When the last full refresh and the last quick update finished, whether a
-  refresh is running now, and a link to
+- When the last full refresh finished, whether a refresh is running now,
+  and a link to
   [Refresh from ParishSoft](#manual-parishsoft-refresh). The panel states
   "ParishSoft data as of" and "Connection" as two separate lines, with the
   wording Home and the refresh page use, defined in
   [ParishSoft data age and connection](../operations/spec.md#parishsoft-data-age-and-connection).
 - **Refreshes held during a send:** while a bulk send is in progress the
-  scheduler holds quick updates and daytime full refreshes, which run as a
+  scheduler holds daytime full refreshes (and any stored quick updates),
+  which run as a
   catch-up once the send ends, as
   [deltas wait for a bulk Family send](../background-processing/spec.md#deltas-wait-for-a-bulk-family-send)
   describes. The panel says so and gives the latest time at which they start
@@ -5247,9 +5280,10 @@ might be held back:
   not one of the problems listed first, and it clears when a refresh finds
   the name or the setting is cleared.
 
-"About this page" explains the difference between full refreshes and quick
-updates, why quick updates pause during a send, and that every later
-refresh is refused until a drop is fixed in ParishSoft or accepted.
+"About this page" explains what a full refresh reads, why daytime full
+refreshes pause during a send, and that every later refresh is refused
+until a drop is fixed in ParishSoft or accepted. It does not mention quick
+updates (#1122).
 
 #### Backups panel
 
@@ -6245,8 +6279,8 @@ every `'<prefix>_'||` an installed audit-writing function builds to be a
   `mail_provider_failed`. An
   `outbox_*` record does not say whom its email was for, so staff report and
   alert emails are listed too; the page's help says so.
-- **ParishSoft refreshes** (`parishsoft`): full refreshes and quick updates
-  promoted, rejected, superseded or turned into a full reload
+- **ParishSoft refreshes** (`parishsoft`): refreshes (past quick updates
+  included) promoted, rejected, superseded or turned into a full reload
   (`source_promoted`, `source_rejected`, `source_superseded`,
   `source_fallback_requested`), the count-only Ministry leader changes they
   cause (`ministry_leaders_changed`, also recorded when a settings change

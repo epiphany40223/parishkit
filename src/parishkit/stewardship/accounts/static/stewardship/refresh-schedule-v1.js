@@ -2,8 +2,9 @@
 
 // The ParishSoft refresh schedule editor (#632; admin-portal spec, "Live
 // checks and saving"). The rules are applied in one place, the server: this
-// script only adds, removes and renumbers rows, fills presets and the "Edit
-// as text" lists, shows each row's fields for its shape, and posts the
+// script only adds, removes and renumbers rows, writes the Basic choices
+// and the "Edit as text" list into the rows, shows each row's fields for
+// its shape, and posts the
 // editor's unsaved rows to the page's read-only check as typing pauses (or
 // at once when a choice changes). It has no copy of the rules, coverage or
 // spacing. The check answers with the parts of the editor to put in place:
@@ -21,12 +22,22 @@
 // problems, Save is unavailable; when a check fails, the earlier answer
 // stays, marked as not checked, and Save stays available (saving checks
 // everything again).
+// Basic and Advanced modes (#1122): the shared toggle (ParishEditorMode,
+// ui-v1.js) switches the panels; this script registers the editor's
+// mapping, which writes a Basic choice into the rule rows and finds the
+// Basic choice equal to the rows. The choices' rules come from the server
+// (the refresh-schedule-basic JSON), so this script has no copy of them.
+// While Basic is shown with no choice chosen, Save is unavailable with the
+// Basic panel's reason in the line beside Save.
+// A stored quick rule (which the editor no longer offers) is a row without
+// controls; Remove quick updates takes every such row out at once, a change
+// reviewed like any other.
 (() => {
   const root = document.querySelector("[data-refresh-schedule]");
   const form = root && root.closest("form");
   if (!root || !form) return;
   const csrf = form.querySelector('input[name="csrfmiddlewaretoken"]');
-  const presets = JSON.parse(document.getElementById("refresh-schedule-presets")?.textContent || "[]");
+  const basicSets = JSON.parse(document.getElementById("refresh-schedule-basic")?.textContent || "[]");
   const SCOPES = ["rules", "skips"];
   const PAUSE = 500; // As the time entry waits before it reads a typed time.
   const rowsOf = (scope) => root.querySelector(`[data-schedule-rows="${scope}"]`);
@@ -49,10 +60,6 @@
     });
     return data;
   };
-  // The rows as posted, without the token or the row counts (which only
-  // follow the rows), to tell whether anything changed since a preset.
-  const state = () => new URLSearchParams([...scheduleData()].filter(([name]) =>
-    name !== "csrfmiddlewaretoken" && !/_FORMS$/.test(name))).toString();
 
   // Rows keep contiguous indexes, as the server's formsets read them: every
   // name, id and reference inside a row follows its position.
@@ -93,9 +100,38 @@
   let blocking = root.dataset.blocking === "true";
   const submits = () => [...form.elements].filter((node) =>
     (node instanceof HTMLButtonElement || node instanceof HTMLInputElement) && node.type === "submit");
+  // Basic shown with no choice chosen (after "Switch to Basic"): the rows
+  // still hold the custom schedule, but Save waits for a Basic choice.
+  const basicPanel = root.querySelector('[data-editor-mode-panel="basic"]');
+  const needsChoice = () => Boolean(basicPanel) && !basicPanel.hidden
+    && !basicPanel.querySelector('input[name="refresh_basic"]:checked');
+  // The line beside Save says the check's words, or, while a Basic choice
+  // is needed, the Basic panel's reason; the check's words come back after.
+  // data-basic-need marks the line while it shows the reason; the check's
+  // latest words wait in checkedLine (draw, below).
+  let checkedLine = "";
+  const sayNeed = () => {
+    const line = part("status");
+    if (!line) return;
+    const need = needsChoice();
+    const shown = "basicNeed" in line.dataset;
+    if (need === shown) return;
+    steady([line.parentElement], () => {
+      if (need) {
+        checkedLine = line.innerHTML;
+        line.textContent = basicPanel.dataset.missingHint || "";
+        line.dataset.basicNeed = "";
+      } else {
+        line.innerHTML = checkedLine;
+        delete line.dataset.basicNeed;
+      }
+    });
+  };
   const gate = () => {
+    sayNeed();
+    const held = blocking || needsChoice();
     submits().forEach((node) => {
-      if (blocking) {
+      if (held) {
         node.disabled = true;
         node.setAttribute("data-schedule-gated", "");
       } else if (node.hasAttribute("data-schedule-gated")) {
@@ -367,7 +403,8 @@
   const draw = (check) => {
     const line = part("status");
     const fresh = check.querySelector('[data-schedule-part="status"]');
-    if (line && fresh && line.textContent.trim() !== fresh.textContent.trim()) line.innerHTML = fresh.innerHTML;
+    if (line && fresh && "basicNeed" in line.dataset) checkedLine = fresh.innerHTML;
+    else if (line && fresh && line.textContent.trim() !== fresh.textContent.trim()) line.innerHTML = fresh.innerHTML;
     replaceIfChanged(part("summary"), check.querySelector('[data-schedule-part="summary"]'));
     // The days a reader opened stay open.
     const preview = part("preview");
@@ -424,7 +461,8 @@
   const wireRow = (row) => {
     row.querySelector('select[name$="-shape"]')?.addEventListener("change",
       () => steady([row.querySelector(".schedule-row-fields")], () => applyShape(row)));
-    row.querySelector("[data-row-remove]").addEventListener("click", () => {
+    // A stored quick rule has no Remove of its own (Remove quick updates).
+    row.querySelector("[data-row-remove]")?.addEventListener("click", () => {
       const scope = row.dataset.scheduleRow;
       steady([rowsOf(scope)], () => {
         if (fields) fields.cancel(row);
@@ -449,12 +487,21 @@
     if (fields) fields.wire(row);
     return row;
   };
+  // The note and Remove quick updates belong to the stored quick rules:
+  // once no quick row is left (removed, or replaced by a Basic choice or
+  // Edit as text), the note goes too. Called inside the change that removed
+  // them, so a steadied change includes [data-quick-region] in its regions.
+  const quickRegion = root.querySelector("[data-quick-region]");
+  const dropQuickNote = () => {
+    if (quickRegion && !rowsOf("rules").querySelector("[data-quick-rule]")) quickRegion.replaceChildren();
+  };
   const clearRows = (scope) => {
     rowList(scope).forEach((row) => {
       if (fields) fields.cancel(row);
       row.remove();
     });
     renumber(scope);
+    if (scope === "rules") dropQuickNote();
   };
   SCOPES.forEach((scope) => {
     rowList(scope).forEach(wireRow);
@@ -468,51 +515,85 @@
     });
   });
 
-  // Presets replace the rows (and clear the skips); the switch is left as
-  // it is. With unsaved changes, the page asks first, in place.
-  let baseline = state();
-  const confirm = root.querySelector("[data-preset-confirm]");
-  let chosen = null;
-  const ask = (shown) => steady([confirm], () => { confirm.hidden = !shown; });
-  const usePreset = (key) => {
-    const preset = presets.find((item) => item.key === key);
-    if (!preset) return;
-    steady(SCOPES.map(rowsOf), () => {
+  // Basic and Advanced (#1122). A row as one comparable value: its kind,
+  // shape and the fields that shape uses, times canonical ("2am" reads as
+  // "02:00"), as the server's rule_initial gives them in the Basic sets.
+  const canonical = (value) => {
+    const read = window.ParishTimeEntry?.parseTimes(String(value || ""), 0, "");
+    return read && !read.error && read.values.length === 1
+      ? window.ParishTimeEntry.canonicalTime(read.values[0]) : String(value || "");
+  };
+  const ruleKey = (values) => (values.shape === "at"
+    ? [values.kind, "at", canonical(values.at)]
+    : [values.kind, "every", String(values.every), canonical(values.start), canonical(values.last)]).join(" ");
+  const rowValues = (row) => {
+    const values = {};
+    row.querySelectorAll("[name]").forEach((control) => {
+      const name = control.name.replace(/^rules-\d+-/, "");
+      if (!control.disabled) values[name] = control.value;
+    });
+    return values;
+  };
+  const keysOf = (rules) => rules.map(ruleKey).sort().join("|");
+  const rowsKey = () => keysOf(rowList("rules").map(rowValues));
+  // The Basic set the Basic panel has chosen, or null.
+  const chosenSet = () => {
+    const choice = basicPanel?.querySelector('input[name="refresh_basic"]:checked');
+    if (!choice) return null;
+    const hours = basicPanel.querySelector("[data-basic-hours]")?.value;
+    return basicSets.find((item) => item.key === choice.value
+      && (item.hours === null || String(item.hours) === hours)) || null;
+  };
+  // Choosing hours chooses "Every … hours": the list is that choice's part.
+  basicPanel?.querySelector("[data-basic-hours]")?.addEventListener("change", () => {
+    const every = basicPanel.querySelector('input[name="refresh_basic"][value="every"]');
+    if (every && !every.checked) every.checked = true;
+  }, true);
+  window.ParishEditorMode?.register("refresh-schedule", {
+    // Write the chosen Basic set into the rows: it replaces the rules and
+    // clears the skips, the switch left as it is. Rows already equal to it
+    // are left alone, so switching to Advanced keeps their messages.
+    toAdvanced() {
+      const chosen = chosenSet();
+      if (!chosen || (rowsKey() === keysOf(chosen.rules) && !rowList("skips").length)) return;
       clearRows("rules");
       clearRows("skips");
-      preset.rules.forEach((values) => addRow("rules", values));
-    });
-    baseline = state();
-    textEdited = false;
-    schedule(0);
-  };
-  root.querySelectorAll("[data-preset]").forEach((button) => {
-    button.addEventListener("click", () => {
-      if (state() === baseline) {
-        ask(false);
-        usePreset(button.dataset.preset);
-        return;
-      }
-      chosen = button;
-      ask(true);
-      focusOn(confirm.querySelector("[data-preset-replace]"));
-    });
-  });
-  confirm.querySelector("[data-preset-replace]").addEventListener("click", () => {
-    ask(false);
-    if (chosen) {
-      usePreset(chosen.dataset.preset);
-      focusOn(chosen);
-    }
-  });
-  confirm.querySelector("[data-preset-keep]").addEventListener("click", () => {
-    ask(false);
-    if (chosen) focusOn(chosen);
+      chosen.rules.forEach((values) => addRow("rules", values));
+      textEdited = false;
+      schedule(0);
+    },
+    // Choose the Basic set equal to the rows, if any (no skips, the same
+    // rules in any order).
+    toBasic() {
+      if (!basicPanel || rowList("skips").length) return false;
+      const key = rowsKey();
+      const match = basicSets.find((item) => keysOf(item.rules) === key);
+      if (!match) return false;
+      const choice = basicPanel.querySelector(`input[name="refresh_basic"][value="${match.key}"]`);
+      if (!choice) return false;
+      choice.checked = true;
+      const hours = basicPanel.querySelector("[data-basic-hours]");
+      if (hours && match.hours !== null) hours.value = String(match.hours);
+      return true;
+    },
   });
 
-  // "Edit as text": the two lists replace the rules with one "at" rule per
-  // time, and the skips with none, once the reader chooses Use these lists.
-  // Until then, each check refills them from the rows.
+  // Remove quick updates: every stored quick rule row goes at once, and the
+  // note with it; focus moves to Add a rule. Reviewed like any change.
+  root.querySelector("[data-remove-quick]")?.addEventListener("click", () => {
+    steady([quickRegion, rowsOf("rules")], () => {
+      rowList("rules").filter((row) => row.hasAttribute("data-quick-rule")).forEach((row) => row.remove());
+      renumber("rules");
+      dropQuickNote();
+    });
+    focusOn(root.querySelector('[data-row-add="rules"]'));
+    textEdited = false;
+    schedule(0);
+  });
+
+  // "Edit as text": the list replaces the rules with one "at" rule per
+  // time, and the skips with none, once the reader chooses Use this list.
+  // Until then, each check refills it from the rows.
   const textError = root.querySelector("[data-schedule-text-error]");
   const sayTextError = (message) => steady([textError], () => { textError.textContent = message; });
   textLists().forEach((area) => area.addEventListener("input", () => { textEdited = true; }));
@@ -529,7 +610,7 @@
       read[area.dataset.scheduleText] = [...new Set(result.values.map(window.ParishTimeEntry.canonicalTime))].sort();
     }
     // More times than rules a schedule can have: say so, change nothing.
-    const count = read.full.length + read.quick.length;
+    const count = read.full.length;
     const most = Number(management("rules", "MAX_NUM_FORMS").value);
     if (count > most) {
       sayTextError(words("tooManyTimesText", {count}));
@@ -538,12 +619,11 @@
     }
     // The rows above change in number: with no pointer (a touch, which may
     // not focus the button), the button is what stays where it is.
-    steady([...SCOPES.map(rowsOf), textError], () => {
+    steady([quickRegion, ...SCOPES.map(rowsOf), textError].filter(Boolean), () => {
       textError.textContent = "";
       clearRows("rules");
       clearRows("skips");
       read.full.forEach((at) => addRow("rules", {kind: "full", shape: "at", at}));
-      read.quick.forEach((at) => addRow("rules", {kind: "quick", shape: "at", at}));
     }, apply);
     textEdited = false;
     schedule(0);
@@ -551,13 +631,21 @@
 
   // Typing waits for a pause; a choice (a select, the switch) checks at once.
   // A row change also brings the text lists back in step with the rows.
+  // Switching modes changes no row (the Basic choices write the rows
+  // themselves), so it needs no check: only the Save gate looks again.
+  const modeChoice = (node) => node.matches("input[data-editor-mode-choice]");
   root.addEventListener("input", (event) => {
     if (event.target.matches("[data-schedule-text]")) return;
+    if (modeChoice(event.target)) return;
     textEdited = false;
     schedule(PAUSE);
   });
   root.addEventListener("change", (event) => {
     if (event.target.matches("[data-schedule-text]")) return;
+    if (modeChoice(event.target)) {
+      gate();
+      return;
+    }
     textEdited = false;
     schedule(event.target.matches("input[type=text]") ? PAUSE : 0);
   });
