@@ -7,13 +7,12 @@ from uuid import uuid4
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, transaction
-from django.shortcuts import redirect, render
+from django.shortcuts import redirect
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET
 
-from parishkit.stewardship.accounts.admin_navigation import PAGES
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
@@ -82,15 +81,12 @@ def index(request):
         current = SystemConfiguration.objects.values_list(
             "current_campaign_id", flat=True
         ).get()
-        # Only the current campaign is reported until #145 (rule 10); with no
-        # current campaign the reader sees the "no campaign" page.
+        # Only the current campaign is reported until #145 (rule 10). With no
+        # current campaign the root still opens Participation, whose greyed
+        # page says why in the menu's words (#1128), rather than a page of
+        # its own that no link reaches (navigation rule 1).
         if current not in choices:
-            response = render(
-                request,
-                "stewardship/report-empty.html",
-                # Named after the report the reader opened (one name per page).
-                {"page_name": PAGES["reports"].label},
-            )
+            response = redirect("admin:participation")
         else:
             admit_report_read(current)
             response = redirect(query.url())

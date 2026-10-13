@@ -65,10 +65,11 @@ class ReportList(ReadModel):
     """The reports root: the campaign reports open on, and the reports offered.
 
     ``campaign_id`` is the current campaign when it can be reported, else
-    None (the page's "no campaign" page). ``reports`` has one row per report
-    the reader's Admin menu offers: ``command``, the report's ``page`` (its
-    URL name) and ``available``, false while the menu greys it out (no
-    current campaign, or a module the campaign does not include).
+    None (the root then opens Participation, greyed out). ``reports`` has
+    one row per report the reader's Admin menu offers: ``command``, the
+    report's ``page`` (its URL name) and ``available``, false while the menu
+    greys it out (no current campaign, or a module the campaign does not
+    include).
     """
 
     campaign_id: UUID | None

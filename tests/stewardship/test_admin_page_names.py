@@ -633,9 +633,9 @@ def test_pending_names_match_the_spec_later():
 @pytest.mark.parametrize(
     ("view", "name"),
     [
-        ("parishkit.stewardship.reports.workspace_views", "reports"),
         # Ministry requests with no current campaign, as the retired
-        # /admin/ministry-reports/ root showed (NAV-11).
+        # /admin/ministry-reports/ root showed (NAV-11). The reports root
+        # opens Participation instead, whose greyed page says why (#522).
         ("parishkit.stewardship.reports.ministry_views", "ministry_report"),
     ],
 )

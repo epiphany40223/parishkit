@@ -103,25 +103,28 @@ def test_slashless_forms_redirect_and_old_addresses_are_gone(auth_service, googl
 def test_empty_report_roots_are_named_after_their_report(auth_service, google):
     """With no current campaign, each report root names its own report.
 
-    Ministry requests is a menu entry, greyed out without a campaign, so its
-    page names itself in the menu's reason page (#1128).
+    The reports root opens Participation, and Participation and Ministry
+    requests are menu entries greyed out without a campaign, so each page
+    names itself in the menu's reason page (#1128).
     """
     setup(auth_service.store)
     browser, _ = signed_in()
     response = browser.get(reverse("admin:reports"))
-    assert response.status_code == 200
-    assert b"<h1>Participation</h1>" in response.content
-    assert b"Return to Home" in response.content
-    response = browser.get(
-        reverse("admin:ministry_report"),
-        HTTP_ACCEPT="text/html",
-        HTTP_SEC_FETCH_MODE="navigate",
-    )
-    assert response.status_code == 409
-    assert (
-        b"<h1>Ministry requests isn&#x27;t available right now</h1>" in response.content
-    )
-    assert b"No current campaign." in response.content
+    assert response["Location"] == reverse("admin:participation")
+    for name, label in (
+        ("participation", b"Participation"),
+        ("ministry_report", b"Ministry requests"),
+    ):
+        response = browser.get(
+            reverse(f"admin:{name}"),
+            HTTP_ACCEPT="text/html",
+            HTTP_SEC_FETCH_MODE="navigate",
+        )
+        assert response.status_code == 409
+        assert b"<h1>" + label + b" isn&#x27;t available right now</h1>" in (
+            response.content
+        )
+        assert b"No current campaign." in response.content
 
 
 def test_group_roots_open_the_first_entry_the_viewer_may_open(auth_service, google):
@@ -224,7 +227,7 @@ def test_new_report_pages_refuse_or_explain_without_a_current_campaign(
 ):
     """No current campaign: no moved report page or form is a server error.
 
-    The reports root shows the "no campaign" page; the others refuse plainly
+    The reports root opens Participation; the others refuse plainly
     (the menu pages with the menu's "No current campaign", #1128), and no
     form starts an export.
     """
@@ -254,7 +257,8 @@ def test_new_report_pages_refuse_or_explain_without_a_current_campaign(
         response = browser.get(reverse(f"admin:{name}", args=args))
         assert response.status_code < 500, (name, response.status_code)
         if name == "reports":
-            assert response.status_code == 200, name
+            # It opens Participation, refused below.
+            assert response["Location"] == reverse("admin:participation"), name
         else:
             assert 400 <= response.status_code < 500, (name, response.status_code)
             # Never "this campaign is no longer current": there is none.
