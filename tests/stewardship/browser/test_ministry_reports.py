@@ -56,7 +56,7 @@ def test_ministry_activity_is_shown_to_staff_only(page, component_origin):
     row = page.locator("tbody tr").first
     assert "Inactive" in row.inner_text()
     page.goto(component_origin + "/ministry-summary-leader")
-    visible(page.get_by_label("Search Ministry name or DUID"))
+    visible(page.get_by_label("Search Ministry name"))
     assert page.get_by_label("Ministry activity").count() == 0
     assert page.locator("tbody tr th").first.inner_text() == "Example <Ministry>"
     text = page.locator("main").text_content()
