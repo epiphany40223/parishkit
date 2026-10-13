@@ -104,6 +104,8 @@ from .digest_components import components as digest_components
 from .directory_components import components as directory_components
 from .directory_components import open_form_posts
 from .emailed_components import components as emailed_components
+from .family_test_components import components as family_test_components
+from .family_test_components import posts as family_test_posts
 from .family_timeline_components import components as family_timeline_components
 from .financial_components import components as financial_components
 from .find_family_components import POSTS as FIND_FAMILY_POSTS
@@ -2339,6 +2341,7 @@ def component_origin():
     responses.update(content_catalog_components(context, admin))
     responses.update(in_place_components(context, admin))
     responses.update(live_status_components(context, admin))
+    responses.update(family_test_components(context, admin))
     responses.update(settings_components(context, admin))
     responses.update(campaign_settings_components(context, admin))
     responses.update(menu_components(context, admin))
@@ -2373,6 +2376,7 @@ def component_origin():
         | BRANDING_POSTS
         | CONTENT_CATALOG_POSTS
         | open_form_posts(context, admin)
+        | family_test_posts(context, admin)
         | PAST_CAMPAIGN_POSTS
         | {
             f"{IN_PLACE_FORM}/refuse": (400, None, responses["/in-place-refused"][1]),
