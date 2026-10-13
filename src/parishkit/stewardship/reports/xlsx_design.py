@@ -239,14 +239,25 @@ def describe(book, title, *, created=None):
         properties.created = created.astimezone(UTC).replace(tzinfo=None)
 
 
-def table_workbook(headings, rows, *, sheet_title, freeze_first_column=False):
+def table_workbook(
+    headings,
+    rows,
+    *,
+    sheet_title,
+    freeze_first_column=False,
+    information=None,
+    created=None,
+):
     """One styled sheet of ``headings`` over ``rows``, as XLSX bytes.
 
     For downloads whose CSV is exactly a header row plus rows (Census
     changes, System logs): the workbook holds the same columns, written
     through ``xlsx_cell`` so text stays literal (a typed "=..." is never a
     formula), then styled with ``style_table``. ``sheet_title`` names the
-    sheet and the printed page header.
+    sheet, the printed page header and the workbook. ``information`` (label,
+    value) pairs, when given, become the shared "Report information" sheet
+    after the table; ``created`` is the workbook's creation time
+    (``describe``).
     """
     book = Workbook()
     sheet = book.active
@@ -255,7 +266,13 @@ def table_workbook(headings, rows, *, sheet_title, freeze_first_column=False):
         for column, value in enumerate(values, start=1):
             xlsx_cell(sheet, row_number, column, value)
     style_table(sheet, freeze_first_column=freeze_first_column, title=sheet_title)
-    describe(book, sheet_title)
+    if information:
+        details = book.create_sheet("Report information")
+        for row_number, values in enumerate(information, start=1):
+            for column, value in enumerate(values, start=1):
+                xlsx_cell(details, row_number, column, value)
+        style_information(details, title=sheet_title)
+    describe(book, sheet_title, created=created)
     output = io.BytesIO()
     book.save(output)
     return output.getvalue()

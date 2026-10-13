@@ -2,6 +2,7 @@
 
 import csv
 import io
+from datetime import datetime
 from uuid import uuid4
 
 import pytest
@@ -9,6 +10,7 @@ from django.db import connection, transaction
 from openpyxl import load_workbook
 
 from parishkit.stewardship.accounts.policy import Principal
+from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.census_changes import CensusQuery, census_changes
@@ -131,6 +133,14 @@ def test_family_names_follow_the_shared_name_cases(response_service):
         assert worklist(harness)["rows"][0]["family_name"] == expected, case[0]
 
 
+def parish_name():
+    """The active configuration's parish name, as the files state it."""
+    system = SystemConfiguration.objects.select_related(
+        "active_configuration__parish"
+    ).get()
+    return system.active_configuration.parish.name
+
+
 def test_native_page_and_downloads(response_service, google, settings):
     """The page filters by CSRF POST; CSV, XLSX and PDF carry the same rows
     under the same headings, and the view and download are audited."""
@@ -177,7 +187,26 @@ def test_native_page_and_downloads(response_service, google, settings):
         )
         assert response.status_code == 200
         book = load_workbook(io.BytesIO(body))
-        assert book.sheetnames == ["Census changes"]
+        assert book.sheetnames == ["Census changes", "Report information"]
+        # The shared sheet names the download (#926): only names, a time, a
+        # zone, a count and the privacy line, never an internal id (#956).
+        information = list(book["Report information"].iter_rows(values_only=True))
+        assert [label for label, _ in information] == [
+            "Report",
+            "Parish",
+            "Campaign",
+            "Downloaded at",
+            "Display time zone",
+            "Changes in this file",
+            "Privacy",
+        ]
+        values = dict(information)
+        assert values["Report"] == "Census changes"
+        assert values["Parish"] == parish_name()
+        assert values["Campaign"] == harness.campaign.active_configuration.name
+        assert isinstance(values["Downloaded at"], datetime)
+        assert values["Display time zone"] == "UTC"
+        assert values["Changes in this file"] == str(len(table) - 1)
         sheet = [
             ["" if value is None else value for value in values]
             for values in book["Census changes"].iter_rows(values_only=True)

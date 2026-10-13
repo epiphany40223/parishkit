@@ -119,6 +119,8 @@ PDF_WEIGHTS = {
     "Note": 10,
 }
 PRIVACY = "Sensitive parish report. Share only with authorized recipients."
+# The report's name: the PDF's page title, the XLSX sheet and workbook title.
+TITLE = "Census changes"
 
 
 @dataclass(frozen=True, repr=False)
@@ -532,16 +534,44 @@ def census_csv(result, zone):
     return buffer.getvalue().encode("utf-8")
 
 
-def census_xlsx(result, zone):
-    """A workbook with one literal-text sheet of the filtered rows."""
+def report_information(count, zone, *, parish, campaign, as_of):
+    """The XLSX "Report information" rows: what the PDF's page frame states.
+
+    The parish and campaign, the download time ``as_of`` in ``zone`` (a
+    native date-time cell), the row count and the privacy line, labeled as
+    the Limitations download labels them (#926). Like the PDF, it does not
+    list the filters. The CSV holds only the table (#966).
+    """
+    return (
+        ("Report", TITLE),
+        ("Parish", parish),
+        ("Campaign", campaign),
+        ("Downloaded at", as_of.astimezone(zone)),
+        ("Display time zone", zone.key),
+        ("Changes in this file", f"{count:,}"),
+        ("Privacy", PRIVACY),
+    )
+
+
+def census_xlsx(result, zone, *, parish, campaign, as_of):
+    """A literal-text sheet of the filtered rows, then report information.
+
+    ``parish`` and ``campaign`` are names and ``as_of`` the download time,
+    as for ``census_pdf``; the "Report information" sheet and the
+    workbook's created time state them.
+    """
     # Imported here, like the other export writers, to keep web startup light.
     from .xlsx_design import table_workbook
 
     return table_workbook(
         HEADINGS,
         export_rows(result, zone),
-        sheet_title="Census changes",
+        sheet_title=TITLE,
         freeze_first_column=True,
+        information=report_information(
+            len(result["rows"]), zone, parish=parish, campaign=campaign, as_of=as_of
+        ),
+        created=as_of,
     )
 
 
@@ -560,7 +590,7 @@ def census_pdf(result, zone, *, parish, campaign, as_of):
 
     count = len(result["rows"])
     frame = PdfFrame(
-        title="Census changes",
+        title=TITLE,
         eyebrow=f"{parish} · {campaign}",
         stamp=f"Downloaded {dates.display_text(as_of.astimezone(zone))} ({zone.key})",
         details=(f"{count:,} {'change' if count == 1 else 'changes'} in this file.",),

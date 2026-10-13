@@ -198,8 +198,9 @@ packet's Ministry detail values span the width of the member table below
 them. Styling never changes a cell's value or type. Every report
 workbook's document properties (Excel's File > Info) name its report as its
 PDF's page title does and "ParishKit Stewardship" as its author. Its
-creation time is a queued report's request time, or Limitations' download
-time, as its PDF's is, so a retried rendering states the same time. The
+creation time is a queued report's request time, or the download time of
+Limitations and Census changes, as its PDF's is, so a retried rendering
+states the same time. The
 [past-campaign archive workbook](../campaign-history/spec.md#archive-workbook-format) is not a
 report download and is not covered.
 
@@ -1754,6 +1755,12 @@ downloads as CSV, XLSX or PDF, every format with the page's values
 ([downloaded files](../ui-conventions/spec.md#downloaded-files)), audited with
 a count like the other report downloads. The PDF is the shared table, its
 Submitted time in the parish's date format; CSV and XLSX give it in ISO 8601.
+After its table sheet the XLSX has a "Report information" sheet stating what
+the PDF's page frame states: parish, campaign, download time and zone, the
+number of changes and the privacy line
+([#926](https://github.com/epiphany40223/parishkit/issues/926)); like the
+PDF, it does not list the filters. `pk-admin export census` writes these
+same files through the same writer.
 The files have the page's columns in the page's order: Family, Family DUID,
 Who, Member DUID worded as on the page (the DUID, "New Member", or blank for a
 household change), What changed, ParishSoft now, Family's answer, Edited

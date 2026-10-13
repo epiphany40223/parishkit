@@ -443,7 +443,9 @@ def case_census_changes(monkeypatch):
     zone = ZoneInfo("America/Chicago")
     result = select(census_rows(), CensusQuery(), administrator=False)
     headers = csv_headers(census_csv(result, zone))
-    sheets, labels = xlsx_headers(census_xlsx(result, zone))
+    sheets, labels = xlsx_headers(
+        census_xlsx(result, zone, parish="P", campaign="C", as_of=SUBMITTED)
+    )
     seen = pdf_capture(
         monkeypatch,
         lambda: census_pdf(result, zone, parish="P", campaign="C", as_of=SUBMITTED),

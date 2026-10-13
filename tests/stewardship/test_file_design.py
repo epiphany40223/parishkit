@@ -206,6 +206,17 @@ def test_packet_detail_rows_stop_at_excels_tallest_row():
     assert max(heights) == xlsx_design.MAX_ROW_HEIGHT
 
 
+def census(result):
+    """The Census changes workbook of ``result``, downloaded at a fixed time."""
+    return census_xlsx(
+        result,
+        ZoneInfo("UTC"),
+        parish="P",
+        campaign="C",
+        as_of=datetime(2026, 10, 5, 14, tzinfo=UTC),
+    )
+
+
 def test_participation_census_and_limitations_workbooks_share_the_style():
     """The previously unstyled census and Limitations workbooks match the rest."""
     book = saved(participation_xlsx, participation())
@@ -224,10 +235,12 @@ def test_participation_census_and_limitations_workbooks_share_the_style():
         status_label="Pending",
         submitted_at=datetime(2026, 10, 5, 14, tzinfo=UTC),
     )
-    book = load_workbook(io.BytesIO(census_xlsx({"rows": [row]}, ZoneInfo("UTC"))))
+    book = load_workbook(io.BytesIO(census({"rows": [row]})))
     sheet = book["Census changes"]
     assert tuple(cell.value for cell in sheet[1]) == HEADINGS
     assert_styled_table(sheet, first_column=True)
+    assert book.sheetnames == ["Census changes", "Report information"]
+    assert_information_sheet(book["Report information"])
     shaped = shape_result(limitations_result())
     book = load_workbook(
         io.BytesIO(
@@ -250,8 +263,8 @@ def test_every_workbook_names_its_report_in_its_properties():
     Excel's File > Info shows them; openpyxl's defaults were an untitled
     file by "openpyxl" created whenever it was rendered. Queued reports
     state their request time, so every retried rendering agrees with the
-    PDF's CreationDate; direct downloads (Census changes, System logs)
-    carry the title and author only.
+    PDF's CreationDate; Census changes states its download time, and System
+    logs carries the title and author only.
     """
     output = io.BytesIO()
     render_directory(directory([family()]), output, format="xlsx")
@@ -275,9 +288,10 @@ def test_every_workbook_names_its_report_in_its_properties():
     assert properties.created == document.requested_at.astimezone(UTC).replace(
         tzinfo=None
     )
-    census = load_workbook(io.BytesIO(census_xlsx({"rows": []}, ZoneInfo("UTC"))))
-    assert census.properties.title == "Census changes"
-    assert census.properties.creator == xlsx_design.CREATOR
+    book = load_workbook(io.BytesIO(census({"rows": []})))
+    assert book.properties.title == "Census changes"
+    assert book.properties.creator == xlsx_design.CREATOR
+    assert book.properties.created == datetime(2026, 10, 5, 14)
 
 
 def test_describe_escapes_what_xml_cannot_store():

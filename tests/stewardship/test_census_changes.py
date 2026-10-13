@@ -15,6 +15,7 @@ from parishkit.stewardship.reports.census_change_views import SORTING
 from parishkit.stewardship.reports.census_changes import (
     HEADINGS,
     PDF_WEIGHTS,
+    PRIVACY,
     CensusQuery,
     census_csv,
     census_pdf,
@@ -27,6 +28,18 @@ from parishkit.stewardship.reports.census_changes import (
 from parishkit.stewardship.web.dates import UnknownZone
 
 SUBMITTED = datetime(2054, 10, 5, 14, 30, tzinfo=UTC)
+
+
+def workbook(result, zone):
+    """The Census changes XLSX of ``result``, downloaded at ``SUBMITTED``."""
+    body = census_xlsx(
+        result,
+        zone,
+        parish="Example Parish",
+        campaign="Stewardship 2055",
+        as_of=SUBMITTED,
+    )
+    return load_workbook(io.BytesIO(body))
 
 
 def row(**values):
@@ -252,7 +265,7 @@ def test_downloads_word_member_duid_as_the_page_does():
     zone = ZoneInfo("UTC")
     table = list(csv.reader(io.StringIO(census_csv(result, zone).decode())))
     assert [line[3] for line in table] == ["Member DUID", "41", "New Member", ""]
-    sheet = load_workbook(io.BytesIO(census_xlsx(result, zone)))["Census changes"]
+    sheet = workbook(result, zone)["Census changes"]
     assert sheet.max_column == len(HEADINGS)
     column = HEADINGS.index("Member DUID") + 1
     assert [sheet.cell(line, column).value for line in range(1, 4)] == [
@@ -368,6 +381,36 @@ def test_page_shows_member_duid_beside_who():
     assert '<td class="numeric">New Member</td>' in html
 
 
+def test_xlsx_report_information_states_what_the_pdf_frame_states():
+    """The workbook's "Report information" sheet (#926) names the download.
+
+    As the Limitations workbook's does, it states the parish, campaign,
+    download time in the chosen zone, the row count and the privacy line
+    the PDF's page frame shows, and no internal id (#956); the CSV stays
+    the table alone.
+    """
+    zone = ZoneInfo("America/Chicago")
+    result = select(rows(), CensusQuery(), administrator=False)
+    book = workbook(result, zone)
+    assert book.sheetnames == ["Census changes", "Report information"]
+    sheet = book["Report information"]
+    assert list(sheet.iter_rows(values_only=True)) == [
+        ("Report", "Census changes"),
+        ("Parish", "Example Parish"),
+        ("Campaign", "Stewardship 2055"),
+        # A native date-time cell, in the download's zone (9:30 AM Chicago).
+        ("Downloaded at", datetime(2054, 10, 5, 9, 30)),
+        ("Display time zone", "America/Chicago"),
+        ("Changes in this file", f"{len(result['rows']):,}"),
+        ("Privacy", PRIVACY),
+    ]
+    assert sheet["B4"].is_date
+    assert sheet["A1"].font.b and sheet.page_setup.orientation == "portrait"
+    assert book.properties.title == "Census changes"
+    assert book.properties.created == datetime(2054, 10, 5, 14, 30)
+    assert b"Report information" not in census_csv(result, zone)
+
+
 def test_csv_xlsx_and_pdf_carry_the_same_columns_and_rows():
     """One column set in every format (#966): CSV, XLSX and the PDF table.
 
@@ -383,7 +426,7 @@ def test_csv_xlsx_and_pdf_carry_the_same_columns_and_rows():
     )
     result = select(given, CensusQuery(), administrator=False)
     table = list(csv.reader(io.StringIO(census_csv(result, zone).decode())))
-    book = load_workbook(io.BytesIO(census_xlsx(result, zone)))
+    book = workbook(result, zone)
     sheet = [
         ["" if value is None else value for value in values]
         for values in book["Census changes"].iter_rows(values_only=True)
