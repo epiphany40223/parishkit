@@ -23,7 +23,7 @@
 </section>
 <section class="panel" aria-labelledby="lists-heading">
 <h2 id="lists-heading">{% translate "Lists of Families" %}</h2>
-<ul>{% for item in lists %}<li><a href="{{ item.url }}">{{ item.title }}</a>{% if item.count is not None %}: {{ item.count|number }}{% endif %}{% if item.description %} <span class="help">({{ item.description }})</span>{% endif %}</li>{% endfor %}</ul>
+<ul>{% for item in lists %}<li>{# Each list opens the directory, greyed out while the menu greys it (#1242). #}{% with n=forloop.counter|stringformat:"s" %}{% menu_link "family_directory" item.title href=item.url control_id="family-list-"|add:n %}{% endwith %}{% if item.count is not None %}: {{ item.count|number }}{% endif %}{% if item.description %} <span class="help">({{ item.description }})</span>{% endif %}</li>{% endfor %}</ul>
 </section>
 <section class="panel" aria-labelledby="funnel-heading">
 <h2 id="funnel-heading">{{ charts.0.title }}</h2>
