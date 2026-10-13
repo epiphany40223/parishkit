@@ -323,6 +323,10 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # are CLOSURE_CREATED and one (0057's leaders list) is in
 # runtime_grants.CLOSURE_FUNCTIONS; their files bring back the older bodies,
 # so ``CLOSURE_OLD_BODIES`` puts 0091's bodies back afterwards.
+# 0092 (#1217) creates the two invoker functions for a Member's standing in
+# ParishSoft and replaces the Ministry selections in place to call them;
+# nothing reads the selections while the swap is pending, and its file
+# installs them again.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -496,6 +500,13 @@ CLOSURE_CREATED = {
             ),
         ),
         ("stewardship_responses", "0004_publication_plans"),
+    ),
+    **dict.fromkeys(
+        (
+            "public.stewardship_member_source_status_v1(uuid,text,bigint)",
+            "public.stewardship_ministry_request_member_status_v1(uuid)",
+        ),
+        ("stewardship_reports", "0024_hide_gone_members"),
     ),
 }
 

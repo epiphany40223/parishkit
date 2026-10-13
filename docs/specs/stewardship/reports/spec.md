@@ -1419,7 +1419,9 @@ ParishSoft and campaign notes for Admin/Staff; no Ministry DUID,
 [#1123](https://github.com/epiphany40223/parishkit/issues/1123)),
 join-request count, leave-request count, unresolved count, and follow-up
 progress. Counts use latest live request state while retaining links to
-superseded/history views.
+superseded/history views. Requests for
+[Members no longer in ParishSoft](../admin-portal/spec.md#follow-up-workflows)
+are left out of the counts and lists for everyone (#1217).
 
 "Not in ParishSoft data" and "No longer in this campaign" are the
 Administrator's concern and change nothing a leader does with a request, so
@@ -1576,7 +1578,9 @@ still records the Ministries of the summary rows shown. For each
 Ministry, output its name (never its DUID), chair names, stewardship period/year, and one row for
 each latest effective `join` or `leave` MinistryRequest in that Ministry,
 including resolved/cancelled history only when the requester selects the
-history option. Rows contain:
+history option, and never one for a
+[Member no longer in ParishSoft](../admin-portal/spec.md#follow-up-workflows)
+(#1217). Rows contain:
 
 - Member name and DUID, where a Member added on the form reads "New Member"
   (or "New Member N"), numbered by the same rule as the follow-up queue's

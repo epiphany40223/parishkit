@@ -1,5 +1,6 @@
 """Closed Ministry follow-up change grammar, validated without a database."""
 
+import json
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -15,8 +16,11 @@ from parishkit.stewardship.reports.ministries import STATES as REPORT_STATES
 from parishkit.stewardship.reports.ministry_followup import (
     FILTER_OUTCOMES,
     HISTORY_STATES,
+    MEMBER_STATUS_MARKS,
+    NOT_IN_SOURCE,
     STATES,
     FollowupQuery,
+    selection_filters,
 )
 from parishkit.stewardship.reports.ministry_followup import (
     STATE_LABELS as FOLLOWUP_STATE_LABELS,
@@ -622,3 +626,27 @@ def test_each_request_in_a_bulk_action_has_its_own_replay_key():
     key, first, second = uuid4(), uuid4(), uuid4()
     assert bulk_key_for(key, first) == bulk_key_for(key, first)
     assert len({bulk_key_for(key, first), bulk_key_for(key, second), key}) == 3
+
+
+def test_members_no_longer_in_parishsoft_are_one_status_choice():
+    """Every queue view asks the selection for Members still current in
+    ParishSoft; the one Status choice for the others asks for them alone,
+    of any status (#1217)."""
+    default = json.loads(selection_filters(FollowupQuery()))
+    assert (default["state"], default["presence"]) == ("unresolved", "current")
+    # Roster changes to enter asks for every Member (#1217).
+    roster = json.loads(selection_filters(FollowupQuery(), every_member=True))
+    assert roster["presence"] == "any"
+    query = FollowupQuery.parse({"state": NOT_IN_SOURCE})
+    chosen = json.loads(selection_filters(query))
+    assert (chosen["state"], chosen["presence"]) == ("any", "gone")
+    # Each standing the SQL function reports other than current is marked.
+    assert set(MEMBER_STATUS_MARKS) == {"missing", "moved", "inactive", "deceased"}
+    # The badge carries #1216's phrases; each standing has its own reason.
+    assert {phrase for phrase, _ in MEMBER_STATUS_MARKS.values()} == {
+        "Not in ParishSoft",
+        "Inactive in ParishSoft",
+        "Deceased in ParishSoft",
+    }
+    reasons = [reason for _, reason in MEMBER_STATUS_MARKS.values()]
+    assert len(set(reasons)) == 4

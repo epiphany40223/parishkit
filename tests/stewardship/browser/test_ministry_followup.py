@@ -21,6 +21,8 @@ from .followup_components import (
     BULK_LEAVE,
     BULK_POST,
     BULK_QUEUE,
+    GONE_ITEM,
+    GONE_QUEUE,
 )
 from .test_components import axe_violations
 from .waits import available, eventually, greyed, has_text, hidden, same_place, visible
@@ -68,6 +70,8 @@ PAGES = (
     "/followup-error-400",
     "/followup-error-409",
     "/followup-error-503",
+    GONE_QUEUE,
+    GONE_ITEM,
 )
 
 
@@ -727,3 +731,54 @@ def test_a_refused_bulk_outcome_names_the_row_inside_the_dialog(page, component_
     hidden(dialog)
     assert page.evaluate("window.notReloaded === true")
     assert not failures
+
+
+def test_members_no_longer_in_parishsoft_are_marked_with_nothing_to_record(
+    page, component_origin
+):
+    """Staff's one Status choice (#1217) lists requests for Members no longer
+    in ParishSoft, each marked beside the name with #1216's phrase, with no
+    selection column or bulk bar, so no empty column is left and the rows
+    stay one line; its request page says exactly why and has no form. A
+    Ministry leader is not offered the choice."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + "/followup-queue")
+    status = page.get_by_label("Status")
+    assert status.locator("option").all_inner_texts()[-1] == (
+        "Members no longer in ParishSoft"
+    )
+    assert page.locator("[data-source-mark]").count() == 0
+    plain = page.locator("#followup-table tbody tr").first.bounding_box()["height"]
+    page.goto(component_origin + "/followup-leader")
+    assert "Members no longer in ParishSoft" not in (
+        page.get_by_label("Status").locator("option").all_inner_texts()
+    )
+    page.goto(component_origin + GONE_QUEUE)
+    assert page.get_by_label("Status").input_value() == "not_in_parishsoft"
+    selection = page.locator(".select-col, [data-select-row], [data-select-all]")
+    assert selection.count() == 0
+    assert page.locator(".bulk-bar, [data-bulk-action]").count() == 0
+    headings = page.locator("#followup-table thead th").all_inner_texts()
+    assert headings[0].startswith("Member")
+    marks = page.locator("[data-source-mark]")
+    assert marks.count() == 2
+    # #1216's phrases, shown whole, so a reader cannot take them for a
+    # Ministry's own activity marks.
+    for index, phrase in enumerate(("Inactive in ParishSoft", "Not in ParishSoft")):
+        mark = marks.nth(index)
+        visible(mark)
+        assert mark.inner_text() == phrase
+    # The mark sits beside the name on the same line: no row grows.
+    for box in page.locator("#followup-table tbody tr").evaluate_all(
+        "rows => rows.map((row) => row.getBoundingClientRect().height)"
+    ):
+        assert abs(box - plain) < 1
+    page.goto(component_origin + GONE_ITEM)
+    notice = page.locator("#followup-not-in-source")
+    visible(notice)
+    assert notice.inner_text().startswith(
+        "Inactive in ParishSoft: ParishSoft marks this Member inactive."
+    )
+    assert page.get_by_role("button", name="Save follow-up").count() == 0
+    assert page.get_by_text("This request is closed", exact=False).count() == 0
+    visible(page.get_by_text("Left a <private> voicemail", exact=True).first)

@@ -176,7 +176,12 @@ WITH selected AS MATERIALIZED (
         -- "Cannot participate in any ministries" (#247) explains a leave.
         coalesce(s.answers#>ARRAY['service',
             CASE WHEN r.entity_kind='member' THEN 'members' ELSE 'proposed_members' END,
-            r.entity_key,'cannot_serve']='true'::jsonb,false) AS cannot_serve
+            r.entity_key,'cannot_serve']='true'::jsonb,false) AS cannot_serve,
+        -- Whether ParishSoft still has the Member in this Family (#1217),
+        -- worked out only for the rows the filters below keep; NULL for a
+        -- Member the Family added on the form.
+        CASE WHEN r.entity_kind='member' THEN stewardship_member_source_status_v1(
+            x.source_id,r.entity_key,r.family_duid) END AS member_status
     FROM requests r CROSS JOIN source x
     JOIN stewardship_submission s ON s.id=r.submission_id
     LEFT JOIN stewardship_snapshot_member sm
@@ -203,6 +208,21 @@ WITH selected AS MATERIALIZED (
             OR ((filters->>'assignee')='mine' AND r.assignee_id=viewer)
             OR ((filters->>'assignee')='unassigned' AND r.assignee_id IS NULL)
             OR r.assignee_id::text=(filters->>'assignee')) END
+        -- A request for a Member no longer in ParishSoft (#1217) never
+        -- reaches a Ministry leader, even by its own id. Staff and
+        -- Administrators open one by id, list only those with the
+        -- presence filter 'gone' (none by default), and every request
+        -- with 'any' (Roster changes to enter). The standing is worked
+        -- out last, only for rows the cheaper tests keep.
+        AND CASE WHEN operational AND (request_uuid IS NOT NULL
+                OR coalesce(filters->>'presence','current')='any') THEN true
+            WHEN r.entity_kind<>'member'
+                THEN NOT (operational AND request_uuid IS NULL
+                    AND coalesce(filters->>'presence','current')='gone')
+            ELSE (stewardship_member_source_status_v1(
+                x.source_id,r.entity_key,r.family_duid)<>'current')
+                =(operational AND request_uuid IS NULL
+                    AND coalesce(filters->>'presence','current')='gone') END
 ), filtered AS MATERIALIZED (
     SELECT * FROM named WHERE request_uuid IS NOT NULL OR (filters->>'search')=''
         OR position(lower((filters->>'search')) IN lower(member_name))>0
@@ -218,7 +238,7 @@ WITH selected AS MATERIALIZED (
 ), detail AS (
     SELECT r.ordinal,r.id,r.version,r.ministry_duid,r.ministry_name,r.in_campaign,r.member_name,
         r.entity_kind,r.action,r.state,r.outcome,r.assignee_id,r.submitted_at,
-        r.cannot_serve,
+        r.cannot_serve,r.member_status,
         r.resolved_at,r.resolution_source_id IS NOT NULL AS source_resolved,
         r.revision=1 AS latest,
         r.state IN ('new','assigned','in_progress') AS open,

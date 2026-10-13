@@ -51,6 +51,7 @@ from parishkit.stewardship.workflows.followup import (
     MAX_BULK,
     BulkStale,
     FollowupRefusal,
+    MemberNotInSource,
     WorkflowChange,
     apply_bulk_outcome,
     authorize_ministry,
@@ -79,6 +80,7 @@ from .ministry_followup import (
     EXPORT_PDF_LIMIT,
     FILTER_OUTCOMES,
     HISTORY_STATES,
+    NOT_IN_SOURCE,
     SORTING,
     STATES,
     FollowupQuery,
@@ -489,6 +491,11 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None):
             for row in result["rows"]:
                 mark(row, marks)
             mutable = True
+
+            def actionable(row):
+                """An open request whose Member ParishSoft still lists (#1217)."""
+                return row["open"] and not row["source_mark"]
+
             try:
                 admit_campaign(campaign_id, mutating=True)
             except PermissionError:
@@ -517,9 +524,9 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None):
                     )["rows"],
                     SCAN_SIZE,
                     request_id,
-                    lambda row: row["open"],
+                    actionable,
                 )
-                if item and item["open"] and mutable and not history_only
+                if item and actionable(item) and mutable and not history_only
                 else None
             )
             # The form's values: the request's own, or what was just submitted.
@@ -581,6 +588,10 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None):
                     action=reverse("admin:ministry_followup"),
                 ),
                 mutable=mutable,
+                # The Status choice for Members no longer in ParishSoft lists
+                # only requests nothing can be recorded for, so it has no
+                # selection column or bulk bar at all (#1217).
+                gone_view=query.state == NOT_IN_SOURCE,
                 item=item,
                 contact=contact,
                 queue_token=token,
@@ -596,6 +607,11 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None):
                 # Staff and Administrators (#1135). A leader never meets one:
                 # a leader leads only Ministries the campaign asks about (#922).
                 campaign_marks=allows(principal, Capability.MINISTRY_FOLLOWUP),
+                # The Status choice listing requests for Members no longer in
+                # ParishSoft (#1217) is for Staff and Administrators too.
+                not_in_source=NOT_IN_SOURCE
+                if allows(principal, Capability.MINISTRY_FOLLOWUP)
+                else None,
                 states=STATES,
                 staff_states=[(key, STATES[key]) for key in STAFF_STATES],
                 # Only Resolved takes a chosen outcome (change_values), and
@@ -971,6 +987,10 @@ BULK_KIND = _(
     "%(row)s is a request to %(action)s, so %(outcome)s doesn't apply to it. "
     "Nothing was saved."
 )
+BULK_GONE = _(
+    "%(row)s is for a Member no longer in ParishSoft, or inactive or deceased "
+    "there, so nothing can be recorded for it. Nothing was saved."
+)
 BULK_FIX = _("Cancel, then reload the list and try again.")
 
 
@@ -1059,10 +1079,11 @@ def bulk(request, campaign_id):
     The shared confirmation dialog posts the chosen rows (each with its
     version), the outcome and an optional contact attempt, without a page
     load. All or none: a request outside the person's Ministries is denied
-    (403); one that changed since the page was read (409) or is of the
-    other kind (400) is named in the refusal the dialog
-    shows; a contact attempt is checked as on a request's own form. Success
-    answers 204, and the dialog redraws the table from the remembered view.
+    (403); one that changed since the page was read, or whose Member is no
+    longer in ParishSoft (#1217, both 409), or one of the other kind (400)
+    is named in the refusal the dialog shows; a contact attempt is checked
+    as on a request's own form. Success answers 204, and the dialog redraws
+    the table from the remembered view.
     """
     try:
         service = runtime()
@@ -1076,11 +1097,14 @@ def bulk(request, campaign_id):
         response = HttpResponse(status=204)
         response["Cache-Control"] = "no-store"
         return response
-    except BulkStale as error:
+    except (BulkStale, MemberNotInSource) as error:
+        # Both are conflicts with the list as shown; a leader never gets a
+        # row name for a request whose Member left ParishSoft (#1217).
         row = _row_name(campaign_id, principal, error.request_id)
         if row is None:
             return _error(campaign_id, status=409)
-        return _bulk_refusal(409, BULK_STALE % {"row": row})
+        message = BULK_GONE if isinstance(error, MemberNotInSource) else BULK_STALE
+        return _bulk_refusal(409, message % {"row": row})
     except StaleRecordError:
         return _error(campaign_id, status=409)
     except (PermissionError, ObjectDoesNotExist):

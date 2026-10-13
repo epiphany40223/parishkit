@@ -303,9 +303,13 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
     data.members[3]["familyDUID"] = 2
     snapshot, claim = prepare(data)
     promote(snapshot, claim, harness.campaign, harness.rings)
-    moved = page(harness, ministry=9)["rows"][0]
-    assert moved["member_name"] == "Unavailable Member" and not moved["emails"]
-    assert not moved["phones"] and not moved["address_lines"] and moved["age"] is None
+    # A Member now in another Family is no longer in ParishSoft for this
+    # Family's request (#1217): it leaves the rows and the counts, for Staff
+    # as for leaders, so none of the new Family's details can show.
+    moved = page(harness, ministry=9)
+    assert moved["rows"] == [] and moved["total"] == 0
+    summary = {row["duid"]: row for row in page(harness)["summaries"]}
+    assert (summary[9]["joining"], summary[9]["requests"]) == (0, 0)
     # ParishSoft no longer lists the leader's role: refused on the next request.
     snapshot, claim = prepare(
         data, {"leader-9@example.org": [9], "leader-4@example.org": [4]}

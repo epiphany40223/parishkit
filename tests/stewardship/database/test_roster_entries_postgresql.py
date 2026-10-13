@@ -6,6 +6,7 @@ installed, and check the file's own DO block against a database without
 them.
 """
 
+import csv
 import io
 import re
 from pathlib import Path
@@ -27,7 +28,7 @@ from .test_background_grants_postgresql import task_login
 from .test_export_views_postgresql import restricted_download_pool
 from .test_information_followup_postgresql import search
 from .test_ministry_exports_postgresql import leader
-from .test_ministry_followup_postgresql import edit, requests
+from .test_ministry_followup_postgresql import edit, member_gone, requests
 from .test_ministry_reports_postgresql import setup
 from .test_policy_postgresql import user
 from .test_report_workspace_postgresql import read as get
@@ -248,9 +249,10 @@ def test_pages_list_tick_and_download_the_roster_changes(
             browser, export, {"format": "xlsx", "timezone": "UTC", "show": "all"}
         )
         sheet = load_workbook(io.BytesIO(body))["Roster changes"]
-        # No Ministry DUID column (#1123), so Resolved by is the eighth.
-        assert sheet["H1"].value == "Resolved by" and sheet["E1"].value == "Ministry"
-        assert sheet["H2"].value == "admin@example.org" and sheet["J2"].value == "Yes"
+        # No Ministry DUID column (#1123); the ParishSoft status column (#1217)
+        # follows Member DUID, so Resolved by is the ninth.
+        assert sheet["I1"].value == "Resolved by" and sheet["F1"].value == "Ministry"
+        assert sheet["I2"].value == "admin@example.org" and sheet["K2"].value == "Yes"
         response, body = search(
             browser, export, {"format": "pdf", "timezone": "UTC", "show": "all"}
         )
@@ -448,3 +450,33 @@ def test_a_gated_campaign_takes_no_tick_and_draws_no_form(response_service, goog
     assert b"Clear Entered in ParishSoft" not in body
     with pytest.raises(PermissionError):
         tick(harness, admin, join, False)
+
+
+def test_a_change_for_a_member_no_longer_in_parishsoft_stays_listed(
+    response_service, google, settings
+):
+    """A resolved join for a Member ParishSoft now lists in another Family
+    may still need entering, so Roster changes to enter keeps it, with the
+    Member's ParishSoft status on the page and in the download, and its tick
+    still works (#1217), though Ministry follow-up leaves it out."""
+    settings.STEWARDSHIP_DOWNLOAD_POOL = None  # restricted_download_pool sets it
+    harness, admin, join, _ = resolved(response_service)
+    member_gone(harness, "moved")
+    browser, login = signed_in()
+    assert login.status_code == 302
+    route = "/admin/reports/ministries/follow-up/roster/"
+    with restricted_download_pool(settings):
+        _, body = get(browser, route)
+        assert f"follow-up/{join.pk}/".encode() in body
+        assert b'<th scope="col">ParishSoft status</th>' in body
+        assert b"data-source-mark>Not in ParishSoft</span>" in body
+        response, body = search(
+            browser, route + "exports/", {"format": "csv", "timezone": "UTC"}
+        )
+        assert response.status_code == 200
+        heading, line = list(csv.reader(io.StringIO(body.decode("utf-8-sig"))))[:2]
+        assert dict(zip(heading, line, strict=True))["ParishSoft status"] == (
+            "Not in ParishSoft"
+        )
+    tick(harness, admin, join, True)
+    assert MinistryRosterEntry.objects.filter(request=join, entered=True).exists()

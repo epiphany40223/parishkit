@@ -86,6 +86,9 @@ WITH selected AS MATERIALIZED (
         count(r.id) AS requests
     FROM ministries m LEFT JOIN requests r ON r.ministry_duid=m.duid
         AND r.revision=1 AND r.state NOT IN ('cancelled','superseded')
+        -- Not a request for a Member no longer in ParishSoft (#1217).
+        AND (r.entity_kind<>'member' OR stewardship_member_source_status_v1(
+            (SELECT source_id FROM source),r.entity_key,r.family_duid)='current')
     GROUP BY m.duid,m.name,m.active,m.in_campaign
 ), summary_filtered AS MATERIALIZED (
     SELECT * FROM summary WHERE
@@ -125,6 +128,9 @@ WITH selected AS MATERIALIZED (
             >=nullif((filters->>'start'),'')::date)
         AND ((filters->>'end')='' OR (r.submitted_at AT TIME ZONE stewardship_timezone_name_v1(x.timezone))::date
             <=nullif((filters->>'end'),'')::date)
+        -- Not a request for a Member no longer in ParishSoft (#1217).
+        AND (r.entity_kind<>'member' OR stewardship_member_source_status_v1(
+            x.source_id,r.entity_key,r.family_duid)='current')
 ), filtered AS MATERIALIZED (
     SELECT * FROM named WHERE (filters->>'search')=''
         OR position(lower((filters->>'search')) IN lower(member_name))>0
