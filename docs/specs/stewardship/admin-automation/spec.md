@@ -2598,7 +2598,7 @@ lists the fields and refusals.
 | `retry_family_preparation`, `retry_daily_digest`, `retry_weekly_digest`, `retry_export_cleanup` | `task retry` (PR 9a) |
 | `deliveries`, `delivery`, `delivery_resolve` | `delivery list`, `delivery show`, `delivery resolve` (PR 9b), `delivery resend` (PR 9c) |
 | `delivery_refusals`, `delivery_refusal`, `delivery_refusal_clear` | `delivery refusals`, `delivery refusal-show` (PR 9b), `delivery refusal-clear` (PR 9c) |
-| `delivery_bounce_report` (#806 slice 4) | Deferred: `delivery bounce-report` is owed ([#1211](https://github.com/epiphany40223/parishkit/issues/1211)) |
+| `delivery_bounce_report` (#806 slice 4) | `delivery bounce-report` ([#1211](https://github.com/epiphany40223/parishkit/issues/1211)) |
 | `system`, `system_health`, `system_health_status` (ADM-13) | `system health`, `system health --watch`, counts and states only |
 | `system_health` POST, Take a backup now (ADM-13 PR 3b) | `system backup-now [--request-key UUID]` (fresh-gated, always prompts); its progress is `system health` `backup_request`, with `--watch` |
 | `system_mail_check`, `system_mail_clear` (ADM-13) | `system mail-clear-preview` (starts the mailbox check and waits for it), `system mail-clear --token …` |
@@ -2730,6 +2730,30 @@ credential, so emailed codes and links stay valid. A repeat of the key
 returns the receipt before any preparation, and a retry or resend with
 another key on the version already retried is `stale_version`, so one key
 never prepares or sends twice.
+
+`delivery bounce-report MESSAGE_ID --address ADDRESS --note TEXT|-`
+([#1211](https://github.com/epiphany40223/parishkit/issues/1211)) is the
+Mail message page's [Report a bounced
+address](../admin-portal/spec.md#mail-message-page) (#806 slice 4). The
+page's tick ("I saw a bounce message for this address from this email") is
+asked at the prompt, as for `delivery refusal-clear`: a report is not
+fresh-gated and clearing undoes it, so the prompt follows the page's
+acknowledgement, not irreversibility. It admits as the page's post does (no
+fresh sign-in) and calls the page's `report_recipient_bounce` in the same
+command scope, so the service's Administrator check, the web-only definer
+`stewardship_report_recipient_bounce_v1` and the refusal guard decide as for
+the page, keyed by its `command_id` (the refusal's id) and recording
+`admin_cmd_delivery_bounce_report` when it creates the report. The address
+is input only: it is trimmed and lower-cased (the form the page offers), and
+no document prints it or the note; the document is the refusal's `id`,
+`message_id`, `kind` and `created_at`. There is no read of an email's
+reportable addresses, because that list names recipients; the Administrator
+takes the address from the bounce message. An address already set aside, an
+email that is not a delivered Production Family email, or an address the
+email was not sent to (the guard's check refusal) is `stale_version`, an
+unknown email `not_available`, and a key used with another intent `invalid`.
+`delivery refusals` rows and `delivery refusal-show` carry each refusal's
+`kind` (`provider` or `reported_bounce`). No schema is added.
 
 ### Users and follow-up
 

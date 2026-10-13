@@ -119,13 +119,14 @@ def delivery_show():
 
 
 def delivery_refusals():
-    """One unresolved refusal, by id and time only."""
+    """One unresolved refusal, by id, kind and time only."""
     # The read's row (#935): the recording email is read but never projected.
     row = dict(
         id=REFUSAL,
         created_at=NOW,
         address="family@example.org",
         family_duid=4242,
+        kind="reported_bounce",
         message_id=uuid4(),
     )
     return admin_operations.refusal_list_model(
@@ -143,8 +144,14 @@ def delivery_refusal_show():
     """A refusal, unresolved, with the current source to verify."""
     return admin_operations.refusal_show_model(
         {
+            # A provider refusal: no note; a reported bounce's stays on the
+            # page (#806).
             "refusal": SimpleNamespace(
-                pk=REFUSAL, created_at=NOW, address="family@example.org"
+                pk=REFUSAL,
+                kind="provider",
+                created_at=NOW,
+                address="family@example.org",
+                evidence_note=None,
             ),
             "resolved": None,
             "source": SimpleNamespace(snapshot_id=SNAPSHOT, generation=7),
@@ -200,6 +207,21 @@ def delivery_refusal_clear():
         reason="verified_admin",
     )
     return admin_operations.refusal_clear_model(receipt, created=True, request_key=KEY)
+
+
+def delivery_bounce_report():
+    """A bounce reported on a delivered Family email (#1211)."""
+    refusal = SimpleNamespace(
+        pk=KEY,
+        kind="reported_bounce",
+        created_at=NOW,
+        address="family@example.org",
+        family_duid=4242,
+        evidence_note="private-evidence-marker",
+    )
+    return admin_operations.bounce_report_model(
+        refusal, created=True, request_key=KEY, message_id=MESSAGE
+    )
 
 
 GOLDEN = {
@@ -271,13 +293,20 @@ GOLDEN |= {
             "has_next": False,
             "matching": 1,
             "matching_capped": False,
-            "refusals": [{"id": str(REFUSAL), "created_at": NOW.isoformat()}],
+            "refusals": [
+                {
+                    "id": str(REFUSAL),
+                    "kind": "reported_bounce",
+                    "created_at": NOW.isoformat(),
+                }
+            ],
         },
     ),
     "delivery refusal-show": (
         delivery_refusal_show,
         {
             "id": str(REFUSAL),
+            "kind": "provider",
             "created_at": NOW.isoformat(),
             "resolved": None,
             "source": {"snapshot_id": str(SNAPSHOT), "generation": 7},
@@ -330,6 +359,19 @@ GOLDEN |= {
             },
         },
     ),
+    "delivery bounce-report": (
+        delivery_bounce_report,
+        {
+            "created": True,
+            "request_key": str(KEY),
+            "refusal": {
+                "id": str(KEY),
+                "message_id": str(MESSAGE),
+                "kind": "reported_bounce",
+                "created_at": NOW.isoformat(),
+            },
+        },
+    ),
 }
 DELIVERY_MEMBERS = {
     "id",
@@ -377,9 +419,10 @@ ALLOWED = {
         "notes",
     }
     | DELIVERY_MEMBERS,
-    "delivery refusals": {"refusals", "id", "created_at"} | PAGE_MEMBERS,
+    "delivery refusals": {"refusals", "id", "kind", "created_at"} | PAGE_MEMBERS,
     "delivery refusal-show": {
         "id",
+        "kind",
         "created_at",
         "resolved",
         "source",
@@ -409,6 +452,15 @@ ALLOWED["delivery refusal-clear"] = {
     "refusal_id",
     "source_snapshot_id",
     "source_generation",
+    "created_at",
+}
+ALLOWED["delivery bounce-report"] = {
+    "created",
+    "request_key",
+    "refusal",
+    "id",
+    "message_id",
+    "kind",
     "created_at",
 }
 

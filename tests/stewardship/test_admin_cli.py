@@ -114,11 +114,17 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "delivery refusals",
         "delivery refusal-show",
         "delivery refusal-clear",
+        # The Mail message page's bounce report (#806, #1211).
+        "delivery bounce-report",
     }
     # The commands that ask for the page's acknowledgement (PR 9c). Other
     # branches add their own prompting commands, so this checks these two
     # and that --yes comes exactly with ``prompts``, not a closed list.
-    acknowledged = {"delivery resend", "delivery refusal-clear"}
+    acknowledged = {
+        "delivery resend",
+        "delivery refusal-clear",
+        "delivery bounce-report",
+    }
     reports = {
         "logs list",
         "logs export",
@@ -629,6 +635,18 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert clear["audit_event"] == "admin_cmd_delivery_refusal_clear"
     assert clear["arguments"] == ["REFUSAL_ID"]
     assert clear["result_fields"] == ["created", "request_key", "resolution"]
+    # bounce-report: keyed, full scope, not fresh-gated (as its page), asking
+    # for the page's tick at the prompt; the address is an option, never in
+    # the document (#1211).
+    bounce = entries["delivery bounce-report"]
+    assert bounce["scope"] == "full" and bounce["changes_state"]
+    assert bounce["request_key"] and not bounce["expected_version"]
+    assert bounce["prompts"] and not bounce["fresh_gated"]
+    assert bounce["audit_event"] == "admin_cmd_delivery_bounce_report"
+    assert bounce["arguments"] == ["MESSAGE_ID"]
+    assert bounce["result_fields"] == ["created", "request_key", "refusal"]
+    options = {option["name"]: option for option in bounce["options"]}
+    assert options["--address"]["required"] and options["--note"]["required"]
     # census resolve: a Census changes row's Record outcome, keyed and
     # versioned, full scope, not fresh-gated, as its page asks for no recent
     # sign-in; it prompts, but only for Entered in ParishSoft, which cannot
@@ -680,6 +698,7 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_delivery_resolve",
         "admin_cmd_delivery_resend",
         "admin_cmd_delivery_refusal_clear",
+        "admin_cmd_delivery_bounce_report",
         "admin_cmd_export_create",
         # The Campaign comparison's download (#1018, slice 6).
         "admin_cmd_export_comparison",

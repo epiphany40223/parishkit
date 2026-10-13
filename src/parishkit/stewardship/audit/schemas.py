@@ -238,6 +238,8 @@ class Action(StrEnum):
     ADMIN_CMD_EXPORT_FAMILY_TEST_NAMES = "admin_cmd_export_family_test_names"
     ADMIN_CMD_DELIVERY_RESEND = "admin_cmd_delivery_resend"
     ADMIN_CMD_DELIVERY_REFUSAL_CLEAR = "admin_cmd_delivery_refusal_clear"
+    # delivery bounce-report: the Mail message page's bounce report (#1211).
+    ADMIN_CMD_DELIVERY_BOUNCE_REPORT = "admin_cmd_delivery_bounce_report"
     # portal maintenance set: the Family portal switch (ADM-11 PR 7a).
     ADMIN_CMD_PORTAL_MAINTENANCE_SET = "admin_cmd_portal_maintenance_set"
     # system backup-now: System health's Take a backup now (ADM-13 PR 3b).

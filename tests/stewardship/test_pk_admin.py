@@ -1106,6 +1106,7 @@ def test_the_prompting_list_names_every_prompting_command():
     assert set(listed.split()) == prompting
     assert {"test_sample", "test_families"} <= prompting
     assert prompting >= {"delivery_resend", "delivery_refusal-clear"}
+    assert "delivery_bounce-report" in prompting
     assert "portal_maintenance_set" in prompting
     assert "files_delete" in prompting and "files_rename" not in prompting
     assert "census_resolve" in prompting
