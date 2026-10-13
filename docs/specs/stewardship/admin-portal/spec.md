@@ -3830,9 +3830,12 @@ to [no layout shift](../ui-conventions/spec.md#no-layout-shift)
 
 Refused addresses (`/admin/mail/refusals/`, Administrators only) lists
 every unresolved refused address: one an outgoing Production email's
-delivery recorded as refused permanently, which stops campaign email to
-that address for that Family until it is cleared or ParishSoft's address
-changes. It filters by an exact Family DUID (`?duid=`), which the
+delivery recorded as refused permanently, either in the email's own
+attempt or in its
+[follow-up](../background-processing/spec.md#addresses-refused-for-now) to
+an address refused for now (listed against that email), which stops
+campaign email to that address for that Family until it is cleared or
+ParishSoft's address changes. It filters by an exact Family DUID (`?duid=`), which the
 [Outgoing mail](#outgoing-mail) mark uses. The columns follow the Admin
 tables' shared order
 ([#932](https://github.com/epiphany40223/parishkit/issues/932)): Refused

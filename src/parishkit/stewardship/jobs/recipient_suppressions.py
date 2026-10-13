@@ -1,9 +1,10 @@
 """Production recipient refusals remain Family-scoped across source promotions.
 
 No mail is sent here. Refusal creation requires an already recorded, definitive
-Production address-failure event. Source correction appends resolution in the
-same work transaction as Family eligibility; neither Testing failures nor census
-email preferences can create refusals.
+Production address-failure event, or the outcome of that event's follow-up
+to the addresses it refused only for now (#806). Source correction appends
+resolution in the same work transaction as Family eligibility; neither Testing
+failures nor census email preferences can create refusals.
 """
 
 from uuid import UUID
@@ -67,13 +68,74 @@ def record_refusal(*, event_id, address, actor_id, correlation_id):
         raise PermissionError(
             "Recipient refusal requires definitive delivery evidence."
         )
+    return _append(
+        event_id=event_id,
+        family_id=event.message.family_id,
+        address=address,
+        actor_id=actor_id,
+        correlation_id=correlation_id,
+    )
+
+
+def record_retry_refusal(*, retry, address, actor_id, correlation_id, fence):
+    """Append a refusal that an address follow-up's latest outcome recorded.
+
+    ``retry`` is the ``AddressRetry`` row just settled, in the caller's work
+    transaction, by the worker, task run and claim fence named here. The
+    refusal names the accepted attempt's event (``retry.source_event_id``),
+    so it points at the email the address was refused for; that attempt
+    refused this address only for now, so it never already holds a refusal
+    of its own. SQL (migration 0079) independently checks the same evidence.
+    """
+    require_work_order()
+    if any(not isinstance(value, UUID) for value in (actor_id, correlation_id)):
+        raise TypeError("Recipient refusal requires attributed delivery identities.")
+    if normalized_email(address) != address:
+        raise ValueError("Refusal address must be canonical.")
+    message, render = retry.message, retry.render
+    # No outcome yet: nothing was refused. An end without a send, a new
+    # submission or a recovery keeps the old outcome under a new actor and
+    # run, and a retry keeps the task run's id with a new fence, so it
+    # counts only in the settled row of the claim that sent it.
+    permanent = (retry.outcome or {}).get("permanent", [])
+    refused = [render.routed_recipients[index] for index in permanent]
+    if (
+        address not in refused
+        or retry.state == "submitting"
+        or retry.reason == "recovery_unknown"
+        or (retry.run_id, retry.task_fence) != (correlation_id, fence)
+        or (retry.actor_id, retry.correlation_id) != (actor_id, correlation_id)
+        or message.mode != "production"
+        or message.routing != "production"
+        or message.family_id is None
+        or address not in render.intended_recipients
+    ):
+        raise PermissionError(
+            "Recipient refusal requires definitive delivery evidence."
+        )
+    return _append(
+        event_id=retry.source_event_id,
+        family_id=message.family_id,
+        address=address,
+        actor_id=actor_id,
+        correlation_id=correlation_id,
+    )
+
+
+def _append(*, event_id, family_id, address, actor_id, correlation_id):
+    """Insert one checked refusal, or return the one already recorded.
+
+    The Family's stable identity (organization and DUID) is copied from its
+    campaign population, so the refusal survives annual Campaign rows. The
+    insert's AFTER trigger updates the Family's deliverability.
+    """
     previous = RecipientRefusal.objects.filter(
         event_id=event_id, address=address
     ).first()
     if previous is not None:
         return previous
     family = FamilyCampaign.objects.only("id", "campaign_id", "family_duid").get(
-        pk=event.message.family_id
+        pk=family_id
     )
     population = CampaignCredentialState.objects.get(campaign_id=family.campaign_id)
     organization_id = SourceSnapshot.objects.get(
@@ -81,7 +143,7 @@ def record_refusal(*, event_id, address, actor_id, correlation_id):
     ).organization_id
     return RecipientRefusal.objects.create(
         event_id=event_id,
-        family_id=event.message.family_id,
+        family_id=family_id,
         organization_id=organization_id,
         family_duid=family.family_duid,
         address=address,

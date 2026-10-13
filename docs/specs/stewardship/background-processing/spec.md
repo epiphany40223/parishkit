@@ -1645,10 +1645,15 @@ SQL guard when it commits "submitting":
 addresses still to send, which only shrink: an address that accepted the
 email, in the original attempt or a follow-up, never receives it again. An
 accepted address leaves the follow-up, an address refused permanently is
-set aside (shown on the Mail message page; it does not yet become a
-recipient refusal), and an address refused for now stays. An uncertain
-outcome, or a worker lost after "submitting" whose provider deadline has
-passed, ends it `unknown` and it is never retried.
+set aside, and an address refused for now stays. In the transaction that
+records the outcome, an address refused permanently also becomes a
+recipient refusal of the accepted attempt, exactly as that attempt's own
+permanent refusal would: later email to the Family leaves it out until it
+is cleared or ParishSoft's address changes, and Outgoing mail and Refused
+addresses show it against that email. A refusal that cannot be recorded is
+logged and never loses the outcome. An uncertain outcome, or a worker lost
+after "submitting" whose provider deadline has passed, ends it `unknown`
+and it is never retried.
 
 The accepted attempt counts as these addresses' first, so the follow-up
 continues the message's own per-address throttle schedule: its first try

@@ -948,6 +948,17 @@ CREATE FUNCTION public.stewardship_recipient_refusal_guard_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 BEGIN
     PERFORM pg_advisory_xact_lock(736220,1);
+    -- The evidence is either the event's own definitive refusal, attributed
+    -- to the event's actor, or (#806, migration 0079) the latest outcome of
+    -- the follow-up that this accepted attempt opened for the addresses it
+    -- refused only for now: the refusal names the attempt's event, and its
+    -- actor and run are the ones that just recorded that outcome. An end
+    -- without a send, a new submission or a recovery rewrites the row's
+    -- actor and run but keeps the outcome, so the outcome counts only in
+    -- the settled row of the run that sent it (run_id), never while
+    -- submitting, never after a recovery, and only until the task is
+    -- claimed again: a retry keeps the task run's id and advances its fence,
+    -- which then no longer equals the fence that submitted (task_fence).
     IF NEW.address<>lower(NEW.address) OR NOT EXISTS (
         SELECT 1 FROM public.stewardship_outbox_event e
         JOIN public.stewardship_outbox_message m ON m.id=e.message_id
@@ -957,12 +968,21 @@ BEGIN
         JOIN public.stewardship_source_snapshot s ON s.id=k.source_snapshot_id
         WHERE e.id=NEW.event_id AND m.family_id=NEW.family_id
           AND f.family_duid=NEW.family_duid AND s.organization_id=NEW.organization_id
-          AND e.actor_id=NEW.actor_id
           AND m.mode='production' AND m.routing='production'
-          AND ((e.state='permanent_failure' AND e.reason='recipient_refused') OR EXISTS (
+          AND ((e.actor_id=NEW.actor_id AND ((e.state='permanent_failure' AND e.reason='recipient_refused') OR EXISTS (
               SELECT 1 FROM jsonb_array_elements(
                   public.stewardship_family_smtp_result_v1(e.id)->'permanent') item
               WHERE r.routed_recipients->>(item::text::integer)=NEW.address
+          ))) OR EXISTS (
+              SELECT 1 FROM public.stewardship_outbox_address_retry a
+              JOIN public.stewardship_task_run t ON t.id=a.run_id AND t.fence=a.task_fence
+              CROSS JOIN LATERAL jsonb_array_elements(a.outcome->'permanent') item
+              WHERE a.source_event_id=e.id AND a.message_id=m.id AND a.render_id=r.id
+                AND a.actor_id=NEW.actor_id AND a.correlation_id=NEW.correlation_id
+                AND a.state<>'submitting' AND a.run_id=NEW.correlation_id
+                AND a.reason<>'recovery_unknown'
+                AND jsonb_typeof(item)='number'
+                AND r.routed_recipients->>(item::text::integer)=NEW.address
           ))
           AND r.routed_recipients ? NEW.address AND r.intended_recipients ? NEW.address
     ) THEN RAISE EXCEPTION 'Refusal requires exact Production recipient evidence'
