@@ -136,7 +136,13 @@ def document():
 
 
 def test_the_file_holds_the_queue_columns_then_the_contact_details():
-    """Queue columns, Status split from Outcome, then contacts, Submitted last."""
+    """Queue columns, Status split from Outcome, then contacts; no Submitted.
+
+    The Administrator asked for the file without the Submitted time
+    (2026-10-13), as the queue has no such column; the request page still
+    shows it. Every format carries exactly these headings
+    (``test_export_columns``).
+    """
     built = document()
     assert built.headings == HEADINGS
     assert HEADINGS[:7] == (
@@ -148,7 +154,8 @@ def test_the_file_holds_the_queue_columns_then_the_contact_details():
         "Outcome",
         "Last contact",
     )
-    assert HEADINGS[-1] == "Submitted"
+    assert HEADINGS[-1] == "Current Ministry role"
+    assert "Submitted" not in HEADINGS
     joined, left, bare, proposed = (
         dict(zip(HEADINGS, line, strict=True)) for line in built.rows
     )
@@ -161,7 +168,6 @@ def test_the_file_holds_the_queue_columns_then_the_contact_details():
     assert (joined["Gender"], joined["Age"]) == ("Female", "41")
     assert joined["Current Ministry role"] == ""
     assert joined["Last contact"] == CONTACTED.astimezone(CHICAGO)
-    assert joined["Submitted"] == SUBMITTED.astimezone(CHICAGO)
     # A leave has its role and the packet's email and phones, no join details.
     assert left["Request"] == "Leave (cannot participate)"
     assert (left["Status"], left["Outcome"]) == ("Resolved", "Stayed in the Ministry")
@@ -255,6 +261,8 @@ def test_the_csv_is_exactly_the_table():
     render_information(document(), output, format="csv")
     lines = list(csv.reader(io.StringIO(output.getvalue().decode())))
     assert lines[0] == list(HEADINGS) and len(lines) == 5
+    # No cell holds a request's submission time (2026-10-13).
+    assert not any("2054-10-05" in cell for line in lines[1:] for cell in line)
 
 
 @pytest.mark.parametrize(

@@ -4910,12 +4910,16 @@ queue. The file's columns are the queue's (Member, Member DUID, Ministry,
 Request, Status with Outcome split out, Last contact), then the request
 page's contact details (Email, Phones, Known primary Family address, Gender,
 Age, Current Ministry role; blank where a detail does not apply to the
-request's kind) and Submitted last; its Report information sheet and PDF card
+request's kind). It has no Submitted column, as the queue has none
+(Administrator decision, 2026-10-13, on
+[#1157](https://github.com/epiphany40223/parishkit/issues/1157)); the request
+page still shows when a request was submitted. Its Report information sheet
+and PDF card
 hold the parish, campaign, data date, request time, display time zone, age
 reference date, count, filters and the privacy line. It carries the
 retired export's sensitivity notice; like it, it needs no fresh sign-in
 (that is for Family codes and financial detail, #547), and it asks for a time
-zone, since Submitted and Last contact are action times. The file is
+zone, since Last contact is an action time. The file is
 rendered on request, as Roster changes to enter is, rather than queued as a
 stored export: a stored capture would need a schema change, because the
 export capture accepts only one Ministry's join or leave list or a packet.

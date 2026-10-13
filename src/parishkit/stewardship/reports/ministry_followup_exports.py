@@ -18,7 +18,7 @@ information sheet, PDF report card and privacy line are theirs.
 
 Like those exports it needs no fresh sign-in (only the directory, postal,
 financial and timeline files do, #547), and it asks for a time zone because
-it holds exact times (Submitted and Last contact). Each download is audited
+it holds exact times (Last contact). Each download is audited
 with its count, the sorted Ministry DUIDs in the file and whether the
 contacts were operational or publish-restricted; never names, contact
 values, filters or search text.
@@ -74,10 +74,10 @@ FORMATS = {
 TITLE = "Ministry follow-up requests"
 # The queue's columns in its order (Member, Member DUID, Ministry, Request,
 # Status, Last contact), with Status split into Status and Outcome as the
-# page's one cell shows them, then each request's contact details and
-# Submitted from its request page, Submitted last as in the retired lists
-# (UX conventions, Downloaded files). The join-only and leave-only details
-# are blank on the other kind's rows.
+# page's one cell shows them, then each request's contact details from its
+# request page (UX conventions, Downloaded files). The join-only and
+# leave-only details are blank on the other kind's rows. The file has no
+# Submitted column, as the queue has none (Administrator, 2026-10-13, #1157).
 HEADINGS = (
     "Member",
     "Member DUID",
@@ -92,7 +92,6 @@ HEADINGS = (
     "Gender",
     "Age",
     "Current Ministry role",
-    "Submitted",
 )
 # The queue's own words for a request with no recorded contact attempt.
 NO_CONTACT = "None recorded"
@@ -210,7 +209,6 @@ def queue_document(result, contacts, query, *, parish_name, requested_at, zone):
                 instant(row["last_contact_at"]) or NO_CONTACT,
             )
             + _contact_values(details, row["action"])
-            + (instant(row["submitted_at"]),)
         )
     report_dates = {
         details["report_date"] for details in contacts.values() if details
