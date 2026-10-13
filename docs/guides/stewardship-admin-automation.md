@@ -733,13 +733,15 @@ current name changes nothing; otherwise System logs show the page's
 ## Pages and emails
 
 `content list` is the **Pages and emails** page's list for the current
-campaign, and `content history` its **Content history** page. Like the
-pages, they need an Administrator; a session of any scope may run them,
+campaign, `content show` one page's or email's editor as it opens, and
+`content history` its **Content history** page. Like the pages, they need
+an Administrator; a session of any scope may run them,
 and they record nothing in System logs, as opening the pages records
 nothing. With no current campaign, each is exit 1 (`not_available`).
 
 ```sh
 pk-admin content list
+pk-admin content show {page,email} SLOT [--revision ID] [--default]
 pk-admin content history [--revision ID]
 ```
 
@@ -760,6 +762,32 @@ A confirmation email that is only a retired closing note has a null `id`,
 as the page lists it. While background work, such as a mail send, holds
 the campaign, the page refuses and so does `content list`: exit 1
 (`stale_version`); try again later.
+
+`content show` takes a page or email by its `content list` slot, and one
+email of a mail type by its `revisions[].id` with `--revision`. As in the
+editor, `email confirmation` needs no `--revision` (it has one text, shown
+with any retired closing note folded in), and any other mail type without
+`--revision` is the editor's new, empty email. It prints `campaign_id`,
+`version`, `kind`, `slot`, `name`, `revision_id` (the saved record shown,
+or null), `state` and `resave` (the saved text's, as in `content list`),
+`from_default` and `content`:
+
+| Field | What it holds |
+| --- | --- |
+| `content.subject` | The email's subject; null for a page |
+| `content.html` | The saved HTML, as the editor opens it |
+| `content.text` | The email's plain-text version; null for a page, which has none in the editor |
+| `content.generate_text` | Whether the editor opens with "Generate plain text from HTML" checked (the plain text is exactly what the HTML generates); null for a page |
+| `content.show_banner` | Whether this Family email shows the campaign banner; null where the editor has no such choice |
+
+`content` is null for an empty slot. With `--default`, `content` holds the
+slot's default text as saving it would store it, and `from_default` is
+true, as the editor's "Start from the default text" (or "Reset to the
+default text") link pre-fills it; nothing changes. `revision_id`, `state`
+and `resave` still describe the saved text, not the default. A slot that
+is unknown or not shown for this campaign, `--revision` on a page, or an
+email the campaign does not hold is exit 1 (`not_available`), and a held
+campaign `stale_version`, as for `content list`.
 
 `content history` prints `campaign_id`, `state` (the campaign's),
 `configuration_id` (the retained configuration version the page names in
@@ -2002,3 +2030,6 @@ print is exit 1 (`invalid`).
   (Administrators only; the list on any session with no event, the
   acknowledgement on a full-scope session with
   `admin_cmd_events_acknowledge`).
+- `pk-admin/1` (#463): additive. `content show {page,email} SLOT
+  [--revision ID] [--default]`, the content editor's read of one page's or
+  email's text (any session, Administrators only, no event).

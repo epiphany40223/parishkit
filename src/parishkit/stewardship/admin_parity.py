@@ -148,12 +148,15 @@ LEDGER = {
     "share_settings": command("campaign shares", owed="PR 10"),
     "reminder_workgroup": pending("PR 10", f"campaign {REMINDER_WORKGROUP_SLUG}"),
     "content_catalog": command("content list"),
-    "content_edit": pending("PR 10", "content show", "content preview"),
-    "content_revision": pending("PR 10", "content confirm"),
+    # The editor as it opens; its Review and Apply are still owed.
+    "content_edit": command("content show", owed="PR 10"),
+    "content_revision": command("content show", owed="PR 10"),
     "content_delete": pending("PR 10", "content preview", "content confirm"),
     "content_history": command("content history"),
     "content_history_revision": command("content history"),
-    "content_plain_text": pending("PR 10", "content show"),
+    # The editor's live preview of typed HTML: ``content preview`` will
+    # print the proposed change's cleaned HTML and generated plain text.
+    "content_plain_text": pending("PR 10", "content preview"),
     "parish_settings": command("parish show", "parish preview", "parish confirm"),
     "ministries": command("ministries list", owed="PR 10"),
     "hosted_files": command("files list"),

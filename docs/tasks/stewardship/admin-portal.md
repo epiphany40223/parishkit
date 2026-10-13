@@ -724,6 +724,21 @@ session, an ended session and Staff refused) and the unchanged
 `tests/stewardship/database/test_security_events_postgresql.py` and
 `tests/stewardship/database/test_critical_events_postgresql.py`.
 
+Another part adds `content show`, the content editor's read
+of one page's or email's text, in `parishkit.stewardship.admin_content`,
+through the editor's own lookup (moved into
+`content_views.editor_content`, which the page now calls), with no schema
+change; proven by `tests/stewardship/test_admin_content.py` (golden
+document, catalog flags, the ledger, usage errors),
+`tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py` and
+`tests/stewardship/database/test_admin_content_show_cli_postgresql.py` (a
+saved page and email for a read-only session with no event, a new email
+and the default text, the confirmation email, a re-save notice, an unknown
+slot or revision, no current campaign, a held campaign `stale_version`, a
+Staff reader denied, an ended session) and the unchanged content page
+suites.
+
 ## ADM-12: Admin navigation overhaul
 
 Scope and dependencies: [ADM-12 work package](../../plans/stewardship/admin-portal.md#adm-12-admin-navigation-overhaul).
