@@ -21,6 +21,27 @@ from .policy import Capability
 from .security_events import acknowledge
 
 
+def acknowledge_now(service, actor, event_id, *, record=None):
+    """Record ``actor``'s acknowledgement of one event, in one transaction.
+
+    The page's work, request-free so that ``pk-admin events acknowledge``
+    shares it: the configuration must be coherent and no restore under
+    review (``ConfigError`` otherwise). ``record``, when given, is called
+    inside the transaction only when a new acknowledgement was recorded, so
+    a caller's own audit row commits with it. Returns whether one was.
+    """
+    with transaction.atomic():
+        configuration = coherent_configuration(service.store)
+        if configuration.restore_review_required:
+            raise ConfigError("Configuration is unavailable.")
+        recorded = acknowledge(
+            event_id, actor, parish_id=configuration.active_configuration.parish.pk
+        )
+        if recorded and record is not None:
+            record()
+    return recorded
+
+
 @require_POST
 def acknowledge_event(request, event_id):
     """Record the signed-in Administrator's acknowledgement and return home."""
@@ -28,13 +49,7 @@ def acknowledge_event(request, event_id):
         service = runtime()
         actor = principal(request, service, capability=Capability.MANAGE_USERS)
         filters(request.GET, allowed=set())
-        with transaction.atomic():
-            configuration = coherent_configuration(service.store)
-            if configuration.restore_review_required:
-                raise ConfigError("Configuration is unavailable.")
-            acknowledge(
-                event_id, actor, parish_id=configuration.active_configuration.parish.pk
-            )
+        acknowledge_now(service, actor, event_id)
         response = HttpResponseRedirect("/admin/")
         fresh = principal(
             request, service, read_only=True, capability=Capability.MANAGE_USERS

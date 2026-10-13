@@ -409,6 +409,9 @@ UNGROUPED_REASONS = {
     "Acknowledging a notice or confirming another, separately recorded action": (
         "critical_events_acknowledged",
         "automation_notices_acknowledged",
+        # Either acknowledgement from the command line; the page's own
+        # event, recorded with it, says which.
+        "admin_cmd_events_acknowledge",
         "credential_result_dismissed",
         "destructive_confirmation",
     ),

@@ -704,6 +704,26 @@ slot in order for a read-only session with the images the page applied
 and no event, no current campaign, a Staff reader denied, an ended
 session) and the unchanged Campaign images page suite.
 
+ADM-11.12 lands in parts. The first adds `events list` and `events
+acknowledge`, the Admin home page's security events and critical-problem
+banner and their Acknowledge buttons, in
+`parishkit.stewardship.admin_events`, through the page's own
+`open_events`, `alert_counts`, `summary` and `sign` and the views'
+transactions, moved into request-free `acknowledge_now` functions in
+`security_event_views` and `critical_event_views`, which the views now
+call, with no schema change; proven by
+`tests/stewardship/test_admin_events.py` (golden documents, catalog flags,
+the ledger, usage errors), `tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py`,
+`tests/stewardship/database/test_admin_events_cli_postgresql.py` (the list
+for a read-only session with no event, a security event acknowledged with
+the page's event and the command's, a repeat recording nothing, an
+unknown event, the banner's groups and token acknowledging exactly the
+listed rows while a later one stays, an altered token, a read-only
+session, an ended session and Staff refused) and the unchanged
+`tests/stewardship/database/test_security_events_postgresql.py` and
+`tests/stewardship/database/test_critical_events_postgresql.py`.
+
 ## ADM-12: Admin navigation overhaul
 
 Scope and dependencies: [ADM-12 work package](../../plans/stewardship/admin-portal.md#adm-12-admin-navigation-overhaul).

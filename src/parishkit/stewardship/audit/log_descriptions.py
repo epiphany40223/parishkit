@@ -232,6 +232,10 @@ DESCRIPTIONS = {
         "An automation session changed an unused hosted file's placeholder "
         "name, as the Hosted files page's Edit does."
     ),
+    "admin_cmd_events_acknowledge": _(
+        "An automation session acknowledged a security event or critical "
+        "problems, as the Admin home page's Acknowledge does."
+    ),
     "admin_cmd_test_sample": _(
         "An automation session sent a sample test email to the Testing "
         "recipient, as the Preview and test email page does."

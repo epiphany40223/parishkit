@@ -234,6 +234,9 @@ class Action(StrEnum):
     ADMIN_CMD_HISTORY_CONFIRM = "admin_cmd_history_confirm"
     ADMIN_CMD_HISTORY_REMOVE = "admin_cmd_history_remove"
     ADMIN_CMD_EXPORT_FAMILY_TIMELINE = "admin_cmd_export_family_timeline"
+    # events acknowledge: Home's security event and critical-problem
+    # acknowledgements, with the page's own event in the same transaction.
+    ADMIN_CMD_EVENTS_ACKNOWLEDGE = "admin_cmd_events_acknowledge"
 
 
 # Closed field identifiers are operational metadata, never census values.
