@@ -5,7 +5,8 @@
 <h1>{% translate "Testing cleanup" %}</h1>
 <p>{{ campaign.active_configuration.name }}</p>
 <p class="notice">{% translate "The campaign stays in Testing mode. Deleted data cannot be restored, even if you cancel. Going live is a separate final confirmation, after Family links are prepared." %}</p>
-<section class="panel" role="status" aria-live="polite" data-live-status="cleanup" data-live-state="{{ status.state }}"{% if live_pending %} data-live-pending{% endif %}><h2>{% translate "Progress" %}</h2>
+{# Refresh cleanup progress re-reads this region and the technical details in place (ui-v1.js, a[data-in-place], #519); live-status-v1.js watches the fresh panel while it is still pending. #}
+<div id="cleanup-progress" data-in-place-region><section class="panel" role="status" aria-live="polite" data-live-status="cleanup" data-live-state="{{ status.state }}"{% if live_pending %} data-live-pending{% endif %}><h2>{% translate "Progress" %}</h2>
 {% if live_pending %}{% translate "Testing cleanup is running…" as running %}{% include 'stewardship/live-running.html' with message=running since=task.updated_at %}{% endif %}
 {% if status.state == 'cleanup_failed' %}<p class="notice notice-error live-failed" role="alert">{% translate "Cleanup failed. You can retry it from its last checkpoint below." %}</p>{% endif %}
 <dl><dt>{% translate "Status" %}</dt><dd>{% include "stewardship/cleanup-state.html" with state=status.state %}</dd>
@@ -17,7 +18,7 @@
 {% if controls.retry %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ controls.retry }}">{% button type="submit" %}{% translate "Retry failed cleanup from its checkpoints" %}{% endbutton %}</form>{% endif %}
 {% if controls.cancel %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ controls.cancel }}">{% button type="submit" %}{% translate "Cancel cleanup without restoring deleted data" %}{% endbutton %}</form>{% endif %}
 {% if status.state == 'cleanup_complete' %}<p><a href="{% url 'admin:go_live_links' status.request_id %}">{% translate "Prepare inactive Family links" %}</a></p>{% endif %}
-</section>
-<details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Cleanup state" %}</dt><dd><code>{{ status.state }}</code></dd><dt>{% translate "Committed checkpoints" %}</dt><dd>{{ status.checkpoint_sequence|number }}</dd><dt>{% translate "Worker task state" %}</dt><dd><code>{{ task.state }}</code></dd></dl><p>{% translate "Values are as of when this page was opened; select Refresh cleanup progress to update them." %}</p></details>
-<p><a href="">{% translate "Refresh cleanup progress" %}</a> · <a href="{% url 'admin:go_live' %}">{% translate "Return to Go-live readiness" %}</a></p>
+</section></div>
+<details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl id="cleanup-details" data-in-place-region><dt>{% translate "Cleanup state" %}</dt><dd><code>{{ status.state }}</code></dd><dt>{% translate "Committed checkpoints" %}</dt><dd>{{ status.checkpoint_sequence|number }}</dd><dt>{% translate "Worker task state" %}</dt><dd><code>{{ task.state }}</code></dd></dl><p>{% translate "Values are as of when this page was opened or last refreshed; select Refresh cleanup progress to update them." %}</p></details>
+<p><a href="{% url 'admin:go_live_cleanup' status.request_id %}#cleanup-progress" data-in-place="refresh" data-in-place-message="{% translate 'Progress refreshed.' %}">{% translate "Refresh cleanup progress" %}</a> · <a href="{% url 'admin:go_live' %}">{% translate "Return to Go-live readiness" %}</a></p>
 {% endblock %}

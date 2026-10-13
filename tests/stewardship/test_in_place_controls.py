@@ -639,3 +639,70 @@ def test_ministries_view_fields_are_the_carried_view():
 
     assert set(IN_PLACE_VIEWS["ministries"]) == VIEW_FIELDS
     assert {"q", "state", *table_parameters()} == VIEW_FIELDS
+
+
+def test_go_live_and_production_refreshes_are_in_place():
+    """The go-live and Production pages' Refresh links, once plain reloads
+    (``href=""``), re-read the page in place (#519 PR 7b-2): each names its
+    page's real address and a region there as its fragment, and says what it
+    did. Readiness and Production activation gain regions of their own;
+    Testing cleanup's and Prepare Family links' regions wrap their
+    live-status elements, so live-status-v1.js watches the fresh ones."""
+    for name, region, words, message in (
+        (
+            "go-live-readiness.html",
+            "readiness-preview",
+            "Refresh readiness preview",
+            "Readiness preview refreshed.",
+        ),
+        (
+            "go-live-cleanup.html",
+            "cleanup-progress",
+            "Refresh cleanup progress",
+            "Progress refreshed.",
+        ),
+        (
+            "go-live-links.html",
+            "{{ table.anchor }}",
+            "Refresh preparation progress",
+            "Progress refreshed.",
+        ),
+        (
+            "production-progress.html",
+            "production-status",
+            "Refresh Production progress",
+            "Progress refreshed.",
+        ),
+    ):
+        text = (TEMPLATES / name).read_text()
+        assert 'href=""' not in text, name
+        link = re.search(rf'<a [^>]*>{{% translate "{words}" %}}</a>', text).group(0)
+        assert 'href="{% url ' in link, name
+        assert f'#{region}"' in link and 'data-in-place="refresh"' in link, name
+        assert f"data-in-place-message=\"{{% translate '{message}' %}}\"" in link
+        assert names_region(text, region), name
+        if name in ("go-live-cleanup.html", "go-live-links.html"):
+            head = text.split(f'<div id="{region}" data-in-place-region>', 1)[1]
+            assert "data-live-status" in head.split("</section>", 1)[0], name
+
+
+def test_go_live_refresh_regions_that_come_and_go():
+    """Regions a Refresh can fill or empty are drawn even when empty: Prepare
+    Family links' Prepare panel and Production activation's Cancel go-live.
+    Testing cleanup's technical details are a region inside the disclosure,
+    so a refresh never closes it, and the links Refresh keeps the shown
+    history page."""
+    links = (TEMPLATES / "go-live-links.html").read_text()
+    assert '<div id="links-prepare" data-in-place-region>{% if prepare %}' in links
+    assert "?{{ table.current_query }}#{{ table.anchor }}" in links
+    production = (TEMPLATES / "production-progress.html").read_text()
+    assert (
+        '<div id="production-withdrawal" data-in-place-region>'
+        "{% if withdrawal_available %}"
+    ) in production
+    cleanup = (TEMPLATES / "go-live-cleanup.html").read_text()
+    details = cleanup.split('<details class="technical-details">', 1)[1]
+    assert (
+        '<dl id="cleanup-details" data-in-place-region>'
+        in details.split("</details>", 1)[0]
+    )

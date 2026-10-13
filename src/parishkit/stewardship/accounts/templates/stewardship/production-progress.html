@@ -5,6 +5,8 @@
 {% aboutpage "production-progress" %}<p>{% translate "Confirmed preview is what the final go-live check counted. Prepared is what the background work has actually set up. Family counts are recorded as preparation runs. Admin report counts are the report emails the later report work creates, including ones that were cancelled, and stay partial until that work finishes." %}</p>
 <p>{% translate "If preparation was restarted, its counts use the settings in effect for that run." %}</p>{% endaboutpage %}
 <p>{{ campaign.active_configuration.name }}</p>
+{# Refresh Production progress re-reads this region, and Cancel go-live's below, in place (ui-v1.js, a[data-in-place], #519). #}
+<div id="production-status" data-in-place-region>
 <h2>{% if campaign.state == 'active' %}{% translate "Campaign active" %}{% elif campaign.state == 'scheduled' %}{% translate "Campaign scheduled" %}{% elif campaign.state == 'closed' %}{% translate "Campaign closed" %}{% else %}{{ campaign.state }}{% endif %}</h2>
 <p>{% translate "Production confirmed" %}: <time data-local-instant datetime="{{ receipt.created_at|instant }}">{{ receipt.created_at|instant }}</time></p>
 {% comment %}Messages link the page they name (navigation rule 6, #521).{% endcomment %}{% url 'admin:deliveries' as outgoing_url %}
@@ -26,6 +28,7 @@
 {% if demand.failure_code and not complete %}<p role="alert">{% translate "Preparation ran into a problem. The system may still be recovering it on its own. If a Retry button appears, retrying does not repeat work already done." %}</p>{% endif %}
 {% if control %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ control }}">{% button type="submit" %}{% translate "Retry failed mail preparation" %}{% endbutton %}</form>{% endif %}
 </section>{% else %}<p>{% translate "This campaign was confirmed before its start date, so its mail follows the normal mail schedules. There is no initial mail to prepare here." %}</p>{% endif %}
-<p><a href="">{% translate "Refresh Production progress" %}</a> · <a href="{% url 'admin:campaign_settings' %}">{% translate "Review Campaign settings" %}</a></p>
-{% if withdrawal_available %}<p><a href="{% url 'admin:production_withdrawal' %}">{% translate "Cancel go-live" %}</a></p>{% endif %}
+</div>
+<p><a href="{% url 'admin:production_progress' %}#production-status" data-in-place="refresh" data-in-place-message="{% translate 'Progress refreshed.' %}">{% translate "Refresh Production progress" %}</a> · <a href="{% url 'admin:campaign_settings' %}">{% translate "Review Campaign settings" %}</a></p>
+<div id="production-withdrawal" data-in-place-region>{% if withdrawal_available %}<p><a href="{% url 'admin:production_withdrawal' %}">{% translate "Cancel go-live" %}</a></p>{% endif %}</div>
 {% endblock %}

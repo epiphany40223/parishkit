@@ -4,10 +4,20 @@ from types import SimpleNamespace as Value
 from uuid import UUID
 
 from django.template.loader import render_to_string
+from django.urls import reverse
 
 from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.web.contracts import PageWindow
 from parishkit.stewardship.web.tables import window_table
+
+# The real addresses of Go-live readiness, Testing cleanup, Prepare Family
+# links and Production activation, where their Refresh links lead (#519 PR
+# 7b-2). A test answers each in-place read with a later version of the page
+# (the "-fresh" paths below), so the refreshed region differs.
+GO_LIVE = reverse("admin:go_live")
+CLEANUP = reverse("admin:go_live_cleanup", args=[UUID(int=59)])
+LINKS = reverse("admin:go_live_links", args=[UUID(int=59)])
+PRODUCTION = reverse("admin:production_progress")
 
 # Rows as content_views.resave_recommended builds them; the long subject
 # checks wrapping at phone width.
@@ -82,7 +92,9 @@ def components(context, admin):
     stale = ready | {"fresh": False}
     progress = {
         "campaign": campaign,
-        "status": Value(state="cleanup_failed", checkpoint_sequence=5),
+        "status": Value(
+            state="cleanup_failed", checkpoint_sequence=5, request_id=UUID(int=59)
+        ),
         "completion": Percentage(5000, 12000),
         "task": Value(state="failed", updated_at=context["server_now"]),
         "controls": {"cancel": "synthetic-cancel", "retry": "synthetic-retry"},
@@ -138,6 +150,43 @@ def components(context, admin):
             }
         ],
     }
+    # Later versions of each page, for its Refresh to bring in place: the
+    # cleanup finished, the links prepared, the checks passed, and the
+    # Production mail prepared once go-live can no longer be cancelled.
+    finished = Value(state="succeeded", updated_at=context["server_now"])
+    cleaned = progress | {
+        "status": Value(
+            state="cleanup_complete", checkpoint_sequence=9, request_id=UUID(int=59)
+        ),
+        "completion": Percentage(12000, 12000),
+        "task": finished,
+        "controls": {},
+    }
+    prepared = links | {
+        "records": [
+            links["records"][0]
+            | {
+                "task": finished,
+                "generation": Value(state="ready"),
+                "completion": Percentage(5000, 5000),
+                "controls": {},
+            }
+        ],
+    }
+    prepared["table"] = window_table(PageWindow(1, 25), prepared["records"], False)
+    produced = production | {
+        "demand": Value(
+            phase="done", groups_completed=2000, items_completed=9000, failure_code=""
+        ),
+        "task": finished,
+        "complete": True,
+        "control": None,
+        "withdrawal_available": False,
+    }
+    unchecked = ready | {"origin_verified": None, "cleanup_token": None}
+    problems = unchecked | {
+        "problems": ["Save exactly one initial invitation schedule."]
+    }
     return {
         path: (
             "text/html",
@@ -165,6 +214,22 @@ def components(context, admin):
                     "problems": ["Save exactly one initial invitation schedule."],
                     "cleanup_token": None,
                 },
+            ),
+            (GO_LIVE, "stewardship/go-live-readiness.html", problems),
+            ("/go-live-fresh", "stewardship/go-live-readiness.html", unchecked),
+            (CLEANUP, "stewardship/go-live-cleanup.html", progress),
+            ("/go-live-cleanup-fresh", "stewardship/go-live-cleanup.html", cleaned),
+            (LINKS, "stewardship/go-live-links.html", links),
+            ("/go-live-links-fresh", "stewardship/go-live-links.html", prepared),
+            (
+                PRODUCTION,
+                "stewardship/production-progress.html",
+                production | {"withdrawal_available": True},
+            ),
+            (
+                "/production-progress-fresh",
+                "stewardship/production-progress.html",
+                produced,
             ),
             (
                 "/production-confirmation-unchecked",
