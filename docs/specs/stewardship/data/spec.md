@@ -1935,7 +1935,10 @@ current authorization/filter snapshot.
    shown equal to the plan's, and a Testing-mode plan is never confirmed.
 
 Execution claims `SourceMutationLease` and, immediately before each entity PUT,
-revalidates its fencing token, fetches the uncached full payload, and repeats
+revalidates its fencing token, confirms the system is still in Production mode
+(a switch to Testing after confirmation stops every remaining write; no
+database guard refuses it, since an outcome is recorded only after its PUT),
+fetches the uncached full payload, and repeats
 canonical merge/conflict evaluation against the confirmed plan digest. Any
 difference invalidates that entity without writing and returns it for
 confirmation; a conditional-write primitive is used when ParishSoft exposes
@@ -1963,7 +1966,8 @@ Family home and mailing addresses are not written until a verified
 ParishSoft address read exists, since without one publication can neither
 detect a conflict nor confirm the write; until then they are worked by
 hand. Every entity written records an audit event naming the fields, never
-their values. In Testing mode publication stops after preflight and writes
+their values: the event's subject is the attempt's outcome row, whose
+immutable plan rows name the fields. In Testing mode publication stops after preflight and writes
 nothing. Before the first real write, a human-run smoke tool (outside CI,
 reading credentials at runtime) writes one chosen test Member and reads it
 back, and before the first Family address write it does the same for one
