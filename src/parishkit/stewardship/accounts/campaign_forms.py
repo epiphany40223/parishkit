@@ -119,27 +119,6 @@ class LeaderRoleChoices(forms.MultipleChoiceField):
         return canonical_roles(values)
 
 
-class LeaderRolesForm(forms.Form):
-    """A live campaign's one leader-role setting, against the applied digest."""
-
-    ministry_leader_roles = LeaderRoleChoices(
-        error_messages={"required": _("Choose at least one role.")}
-    )
-    base_digest = forms.RegexField(
-        regex=r"^[0-9a-f]{64}$", max_length=64, widget=forms.HiddenInput
-    )
-
-    def __init__(self, *args, roles=(), **kwargs):
-        """Offer only server-built choices (campaigns.leader_roles.role_choices).
-
-        Its element ids differ from the read-only settings form's on the same
-        page; the field names are the same, as the view expects.
-        """
-        kwargs.setdefault("auto_id", "leader_%s")
-        super().__init__(*args, **kwargs)
-        self.fields["ministry_leader_roles"].choices = roles
-
-
 class CampaignForm(forms.Form):
     """Complete structural fields, validated against the same canonical YAML rules."""
 
@@ -203,9 +182,19 @@ class CampaignForm(forms.Form):
         regex=r"^[0-9a-f]{64}$", max_length=64, widget=forms.HiddenInput
     )
 
-    def __init__(self, *args, ministries=(), funds=(), previous=None, **kwargs):
-        """Do not trust posted source labels or let fields replace saved content."""
+    def __init__(
+        self, *args, ministries=(), funds=(), previous=None, whole=True, **kwargs
+    ):
+        """Do not trust posted source labels or let fields replace saved content.
+
+        ``whole`` False skips the checks between the dates and the financial
+        periods (the overlap confirmation and the whole campaign's rules): a
+        live campaign's Campaign settings (#1119) changes only its end date
+        and leader roles, and its end date is judged by its own review
+        (``campaign_end_date.end_review``), in that review's own words.
+        """
         super().__init__(*args, **kwargs)
+        self.whole = whole
         self.previous = deepcopy(previous or {})
         self.share_options = deepcopy(self.previous.get("share_options", []))
         if "financial" not in self.previous.get("modules", []):
@@ -284,6 +273,7 @@ class CampaignForm(forms.Form):
                     self.add_error(name, _("Required for financial stewardship."))
             if (
                 not self.errors
+                and self.whole
                 and overlaps(
                     data["start_date"],
                     data["end_date"],
@@ -299,7 +289,7 @@ class CampaignForm(forms.Form):
                         "dates. Check this box to confirm that is intended."
                     ),
                 )
-        if not self.errors:
+        if not self.errors and self.whole:
             try:
                 campaign_values(self.values())
             except (ConfigError, ValueError):

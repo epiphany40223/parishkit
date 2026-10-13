@@ -12,11 +12,6 @@ import pytest
 from parishkit.stewardship.accounts.share_forms import default_share_options
 
 from .settings_components import (
-    CAMPAIGN,
-    CAMPAIGN_REVIEW,
-    LEADERS,
-    LEADERS_PENDING,
-    LEADERS_REVIEW,
     MINISTRIES,
     MINISTRIES_PENDING,
     MINISTRIES_REVIEW,
@@ -33,7 +28,7 @@ from .settings_components import (
     STATUS,
 )
 from .test_in_place import MARK, MARKED, count_requests
-from .waits import has_attribute, has_text, hidden, painted, recorded, visible
+from .waits import has_attribute, has_text, painted, recorded, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -245,80 +240,6 @@ def test_a_review_that_leads_to_another_page_drops_the_region_fragment(
     page.wait_for_url(component_origin + "/in-place-other")
 
 
-def test_campaign_settings_reviews_in_place_and_keeps_its_module_scripts(
-    page, component_origin
-):
-    """Campaign settings' review fills the region under its form, the form
-    (and the scripts bound to it, such as the module groups) stays, and the
-    step indicator follows."""
-    answer_reviews(page, component_origin, CAMPAIGN_REVIEW, address=CAMPAIGN)
-    page.goto(component_origin + CAMPAIGN)
-    page.evaluate(MARK)
-    page.get_by_label("Campaign name").fill("Renamed campaign")
-    page.get_by_role("button", name="Review changes").click()
-    visible(page.get_by_role("heading", name="Review your changes"))
-    assert page.evaluate(FOCUSED, "#settings-review-title")
-    assert current_step(page) == "Review"
-    assert "Renamed campaign" in page.locator("#settings-review").inner_text()
-    assert page.get_by_label("Campaign name").input_value() == "Renamed campaign"
-    assert page.evaluate(MARKED) == "kept"
-    # The module script still answers the form it was bound to; ticking it
-    # is an edit, so the review is withdrawn.
-    group = page.locator("#ministry-selections")
-    hidden(group)
-    page.get_by_label("Ministry stewardship").check()
-    visible(group)
-    visible(page.get_by_text("Choose Review changes again"))
-    # The Ministry leader roles sit in that group too (#922), ticked with
-    # the roles in effect.
-    roles = page.get_by_role("group", name="Ministry leader roles")
-    visible(roles)
-    assert roles.get_by_label("Chairperson").is_checked()
-    assert roles.get_by_label("Staff").is_checked()
-    assert not roles.get_by_label("Member").is_checked()
-
-
-def test_a_live_campaigns_leader_roles_are_reviewed_and_applied_in_place(
-    page, component_origin
-):
-    """A live campaign's Ministry leader roles (#922) have their own form
-    beside the end date's (#912): Review shows the change under it and
-    takes focus, and Apply shows the change's status there, never under the
-    end date (Administrator decision E2). Nothing reloads and the ticks stay
-    as the reader left them."""
-    reviews = answer_reviews(page, component_origin, LEADERS_REVIEW, address=LEADERS)
-    page.goto(component_origin + LEADERS)
-    page.evaluate(MARK)
-    roles = page.get_by_role("group", name="Ministry leader roles")
-    visible(roles)
-    # Its help says what the roles do, in plain words (behind its tip).
-    assert "sees the reports and follow-up of each Ministry" in (
-        page.locator("#leader-roles").text_content()
-    )
-    # The other settings stay read-only.
-    assert page.locator("fieldset[disabled]").count() == 1
-    roles.get_by_label("Staff").uncheck()
-    page.locator("#leader-roles").get_by_role("button", name="Review changes").click()
-    visible(page.get_by_role("heading", name="Review your changes"))
-    assert len(reviews) == 1
-    assert "editor=leader_roles" in reviews[0]
-    assert "ministry_leader_roles=Chairperson" in reviews[0]
-    assert "ministry_leader_roles=Staff" not in reviews[0]
-    assert page.evaluate(FOCUSED, "#leader-roles-review-title")
-    panel = page.locator("#leader-roles #leader-roles-review")
-    assert "Chairperson, Staff" in panel.inner_text()
-    # The end date's panel stays, with nothing in its own region.
-    end_region = page.locator("#end-date #settings-review")
-    assert end_region.inner_text().strip() == ""
-    assert current_step(page) == "Review"
-    page.get_by_role("button", name="Apply changes").click()
-    visible(panel.get_by_role("heading", name="Change status"))
-    assert page.url == f"{component_origin}{LEADERS_PENDING}#leader-roles-review"
-    assert end_region.inner_text().strip() == ""
-    assert not roles.get_by_label("Staff").is_checked()
-    assert page.evaluate(MARKED) == "kept"
-
-
 def test_campaign_ministries_are_reviewed_and_applied_in_place(page, component_origin):
     """A live campaign's Ministry selections (#750): Review changes waits for
     a change, Review shows the impact under the form and takes focus, and
@@ -395,27 +316,6 @@ def test_parish_settings_review_waits_for_a_change(page, component_origin):
     expect_review(page, enabled=False)
     assert page.evaluate(FORM_TOP) == before
     assert reviews == []
-
-
-def test_campaign_settings_review_waits_for_a_change(page, component_origin):
-    """Campaign settings follows the same rule: a text edit or a module tick
-    makes Review available, undoing it makes it unavailable again, and a
-    restored tick is noticed on pageshow (#921)."""
-    page.goto(component_origin + CAMPAIGN)
-    expect_review(page, enabled=False)
-    name = page.get_by_label("Campaign name")
-    name.fill("Renamed campaign")
-    expect_review(page, enabled=True)
-    name.fill("Sample campaign")
-    expect_review(page, enabled=False)
-    module = page.get_by_label("Ministry stewardship")
-    module.check()
-    expect_review(page, enabled=True)
-    module.uncheck()
-    expect_review(page, enabled=False)
-    module.evaluate("box => { box.checked = true; }")
-    page.evaluate(RESTORE)
-    expect_review(page, enabled=True)
 
 
 def test_share_options_review_in_place_and_redraw_the_form(page, component_origin):

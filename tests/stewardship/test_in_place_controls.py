@@ -124,7 +124,6 @@ def test_presence_refresh_refreshes_the_list_in_place():
 # confirmed change shows, whose follow-up link names it too.
 SETTINGS_PAGES = (
     "parish-settings.html",
-    "campaign-settings.html",
     "share-settings.html",
     "campaign-ministries.html",
     "reminder-workgroup.html",
@@ -168,8 +167,8 @@ def test_every_in_place_control_names_its_region_as_a_fragment():
     template, or, for a fragment template listed in HOSTED, in the page
     template that draws it around the control. A hosted fragment template
     may name its region ``{{ region_id|default:'…' }}``: each include's
-    region is then the region_id it passes (Campaign settings' leader-role
-    panel, #922; Refresh from ParishSoft's run, #521), else the default.
+    region is then the region_id it passes (Refresh from ParishSoft's run,
+    #521; the held-email groups, #757), else the default.
     The earlier data-region-link name is gone."""
     found = 0
     for path in sorted(TEMPLATES.rglob("*.html")):
@@ -509,43 +508,20 @@ def test_option_lists_word_their_review_hint():
     assert "review-changes-button.html' with hint=option_hint" in text
 
 
-@pytest.mark.parametrize("shown", ["review", "receipt"])
-def test_two_settings_review_regions_never_share_a_heading_id(shown):
-    """Campaign settings draws settings-review.html in two regions on one
-    live page (the end date's and the leader roles', #912 and #922). The
-    review's and the status's heading ids start with the region's id, so two
-    regions holding content at once never repeat an id, and each section is
-    labelled by the heading inside it (#973)."""
-    context = {
-        "review": {"changes": [], "notes": [], "preview": "signed"},
-        "receipt": SimpleNamespace(state="applied"),
-    }
-    if shown == "receipt":
-        del context["review"]
-    regions = {}
-    for region in ("settings-review", "leader-roles-review"):
-        extra = {} if region == "settings-review" else {"region_id": region}
-        regions[region] = render_to_string(
-            "stewardship/settings-review.html", context | extra
-        )
-    ids = re.findall(r'\bid="([^"]+)"', "".join(regions.values()))
-    assert len(ids) == len(set(ids)) == 2, ids
-    suffix = "-title" if shown == "review" else "-status-title"
-    for region, html in regions.items():
-        labelled = re.search(r'aria-labelledby="([^"]+)"', html).group(1)
-        assert labelled == region + suffix
-        assert f'<h2 id="{labelled}"' in html
-
-
-def test_every_campaign_settings_review_region_keeps_its_height():
-    """Each review region Campaign settings draws, the live panels' end date
-    and leader roles included, keeps its height while it changes, so a
-    shorter status never moves the page under the reader (No layout shift,
-    #736, #973)."""
+def test_campaign_settings_reviews_in_the_dialog_once():
+    """Campaign settings is one editor with one Review changes (#1119): its
+    form opens the shared review dialog (#750), waits for a real change
+    (#921), and draws no in-place review region or second form."""
     text = (TEMPLATES / "campaign-settings.html").read_text()
-    tags = re.findall(r'<div id="[\w-]+-review" data-in-place-region[^>]*>', text)
-    assert len(tags) == 5
-    assert all("data-keep-height" in tag for tag in tags), tags
+    forms = re.findall(r"<form\b[^>]*>", text)
+    assert len(forms) == 1
+    assert 'data-review-open="campaign-review"' in forms[0]
+    assert 'data-require-change="base_digest"' in forms[0]
+    assert "data-in-place" not in forms[0]
+    assert text.count("stewardship/components/review-changes-button.html") == 1
+    assert "'stewardship/settings-review.html'" not in text
+    assert 'dialog_id="campaign-review"' in text and "review=True" in text
+    assert "(read-only)" not in text
 
 
 def test_a_table_page_keeps_its_view_through_a_change():

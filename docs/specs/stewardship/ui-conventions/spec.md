@@ -463,7 +463,7 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
 - **In-place review (#532, #750).** This panel is being replaced by the
   [review dialog](#review-dialog) (Administrator decision, 2026-10-11); it
   describes the pages that still use it until #750 converts them.
-  Parish settings, Campaign settings, Share options and Campaign
+  Parish settings, Share options and Campaign
   Ministries review, apply and follow a change on the page itself, not on
   separate Review and Change status pages. The settings form is a
   `form[data-in-place]` marked
@@ -502,7 +502,7 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   change was reviewed at until the change is applied, and then at the
   version the change made; a full load of that address (a reload) draws the
   current settings at the current version. A Review the server redirects to
-  another page (Campaign settings' dates-only change) loads it without this
+  another page loads it without this
   page's region fragment. The step indicator is a region too, so it follows
   Make changes, Review and Apply. The signed preview, optimistic
   concurrency, capability and session rechecks, the durable request and its
@@ -539,14 +539,14 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   the saved list it is compared with, and the list an applied change is
   redrawn with (its fresh blank row included) is the saved one. Campaign
   Ministries (#750), a live campaign's Ministry selections, works as Parish
-  and Campaign settings do: its form is `data-table-sync`, its review
+  settings does: its form is `data-table-sync`, its review
   (the Ministries to add and remove, with what each touches, and the
   Families with a form open now) fills the review region, and its Review
   changes waits for a change with the hint "Change a Ministry selection to
   review it." Once its campaign can no longer change them (closed, or held by
   background work), an in-place Review, Apply or follow-up says so in the
   review region, beside the change's status when there is one; a plain load
-  shows the refusal page. Parish and Campaign settings' and Campaign
+  shows the refusal page. Parish settings' and Campaign
   Ministries' forms are never redrawn; until the change is applied, Apply's
   answer hands them the version it was reviewed at.
   [Create the campaign](../admin-portal/spec.md#create-the-campaign) (#142)
@@ -583,7 +583,7 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   follow-up, so the refreshed table is the one the Administrator was
   looking at.
 - **In-place review: No-reminders WorkGroup (#750).** The No-reminders WorkGroup
-  editor works as Parish and Campaign settings do: its one name field is a
+  editor works as Parish settings does: its one name field is a
   `data-table-sync` form whose Review changes waits for a change (hint
   "Change the WorkGroup name to review it."), and its review (the WorkGroup
   now and the one proposed), refusals and the change's status fill the
@@ -1018,8 +1018,10 @@ the flows their own sections describe; whether any of them moves to the
 dialog is decided on [#750](https://github.com/epiphany40223/parishkit/issues/750).
 
 Current state, to be converted: Users' New user, Edit user and Import
-Ministry leaders, and New and Edit scheduled email, use the dialog. Parish
-settings, Campaign settings, Share options, Campaign Ministries, Ministries,
+Ministry leaders, New and Edit scheduled email, and
+[Campaign settings](../admin-portal/spec.md#campaign-settings-page) (#1119)
+use the dialog. Parish
+settings, Share options, Campaign Ministries, Ministries,
 No-reminders WorkGroup, Campaign images and Parish logos show the in-place
 review panel of #532 and #750
 ([in-place controls](#in-place-controls)); the other editors use separate
@@ -1190,6 +1192,13 @@ and #1062 (Parish logos), then the scheduling editors of #1129.
   dialog it returns to the toggle's chosen segment. The focus ring is drawn
   on the chosen or focused segment and keeps the
   [theme's contrast](#accessibility-and-client-behavior).
+
+A setting that can't change in the page's present state (rather than one
+that does not apply to the choices made) stays where it is, disabled, with
+the reason in its tip, never a line under it or a line for its section;
+the page shows each setting once, in the same place whatever can change.
+First use: [Campaign settings](../admin-portal/spec.md#campaign-settings-page)
+for a live or locked campaign (#1119).
 
 ### Single-campaign interim
 

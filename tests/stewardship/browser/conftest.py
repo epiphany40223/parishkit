@@ -28,7 +28,6 @@ from parishkit.stewardship.accounts.campaign_create_views import (
 from parishkit.stewardship.accounts.campaign_family_test_views import FamilyTestForm
 from parishkit.stewardship.accounts.campaign_forms import CampaignForm
 from parishkit.stewardship.accounts.campaign_mail_views import CampaignMailForm
-from parishkit.stewardship.accounts.campaign_views import REMOVES_SHARE_OPTIONS
 from parishkit.stewardship.accounts.content_forms import ContentForm
 from parishkit.stewardship.accounts.integration_credentials import (
     CredentialSummary,
@@ -91,6 +90,8 @@ from .automation_components import canonical
 from .automation_components import components as automation_components
 from .branding_components import POSTS as BRANDING_POSTS
 from .branding_components import components as branding_components
+from .campaign_settings_components import POSTS as CAMPAIGN_SETTINGS_POSTS
+from .campaign_settings_components import components as campaign_settings_components
 from .census_components import components as census_components
 from .chart_components import components as chart_components
 from .comparison_components import components as comparison_components
@@ -1888,6 +1889,9 @@ def component_origin():
                     "active_configuration": {"name": "Sample campaign"},
                 },
                 "editable": True,
+                "open": True,
+                "page_url": "/campaign-settings",
+                "refresh_url": "/campaign-settings",
                 # The Admin view adds the shared field help the same way.
                 "form": setup_help.apply(
                     CampaignForm(
@@ -1919,6 +1923,9 @@ def component_origin():
                     "active_configuration": {"name": "Sample campaign"},
                 },
                 "editable": True,
+                "open": True,
+                "page_url": "/campaign-settings-no-module",
+                "refresh_url": "/campaign-settings-no-module",
                 "form": setup_help.apply(
                     CampaignForm(
                         initial={
@@ -1984,46 +1991,6 @@ def component_origin():
                     ],
                     "notes": [CREATES_TESTING_DRAFT, DEFAULT_TEXT],
                     "apply_label": "Create the campaign",
-                },
-            },
-        ),
-        # Campaign settings with its review shown in place (#532).
-        (
-            "/campaign-preview",
-            "campaign-settings",
-            {
-                "campaign": {
-                    "pk": uuid4(),
-                    "state": "draft",
-                    "active_configuration": {"name": "Sample campaign"},
-                },
-                "editable": True,
-                "form": setup_help.apply(
-                    CampaignForm(
-                        initial={
-                            "name": "Sample campaign",
-                            "timezone": "America/New_York",
-                            "start_date": "2026-10-01",
-                            "end_date": "2026-10-31",
-                            "census": True,
-                            "base_digest": "a" * 64,
-                        },
-                        ministries=[("4", "Community outreach")],
-                        funds=[("9", "Offertory")],
-                    ),
-                    setup_help.ADMIN_CAMPAIGN,
-                    replace=True,
-                ),
-                "review": {
-                    "preview": "synthetic-signed-intent",
-                    "changes": [
-                        {
-                            "label": "Campaign timezone",
-                            "before": None,
-                            "after": "America/New_York",
-                        }
-                    ],
-                    "notes": [REMOVES_SHARE_OPTIONS],
                 },
             },
         ),
@@ -2302,6 +2269,7 @@ def component_origin():
     responses.update(in_place_components(context, admin))
     responses.update(live_status_components(context, admin))
     responses.update(settings_components(context, admin))
+    responses.update(campaign_settings_components(context, admin))
     responses.update(menu_components(context, admin))
     responses.update(my_ministries_components(context, admin))
     responses.update(automation_components(context, admin))
@@ -2325,6 +2293,7 @@ def component_origin():
         | SECURITY_POSTS
         | LIVE_STATUS_POSTS
         | SETTINGS_POSTS
+        | CAMPAIGN_SETTINGS_POSTS
         | SCHEDULE_LIST_POSTS
         | HOSTED_FILE_POSTS
         | USER_POSTS

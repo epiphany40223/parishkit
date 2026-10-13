@@ -80,7 +80,17 @@ def describe(values, campaign):
 
 
 def build_preview(
-    service, actor, state, campaign, window, schedules, *, base_digest, salt, content=()
+    service,
+    actor,
+    state,
+    campaign,
+    window,
+    schedules,
+    *,
+    base_digest,
+    salt,
+    content=(),
+    campaign_values=None,
 ):
     """Validate the complete candidate, including each stranded or reordered mailing.
 
@@ -95,6 +105,11 @@ def build_preview(
     records the change adds first (a schedule's own edited email,
     ``schedule_email``), which the schedules' forms already offer; they are
     validated, signed and applied with the schedules in the one request.
+    ``campaign_values`` names other campaign values changed in the same
+    campaign update (Campaign settings' one Review of a live campaign's end
+    date with its Ministry leader roles, #1119); they are listed in neither
+    ``window_changes`` nor the schedule changes, and the caller describes
+    them.
     """
     configuration = state[0]
     digest = configuration.active_configuration.digest
@@ -126,13 +141,13 @@ def build_preview(
         )
     )
     schedule_changes = list(patch)
-    if changed:
+    if changed or campaign_values:
         patch.append(
             {
                 "operation": "update",
                 "section": "campaigns",
                 "id": str(campaign.pk),
-                "values": changed,
+                "values": changed | (campaign_values or {}),
             }
         )
     base = service.store.active()

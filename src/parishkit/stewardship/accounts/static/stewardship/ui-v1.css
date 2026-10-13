@@ -401,12 +401,24 @@ textarea { max-width: 56rem; }
 :is(form, fieldset) > div:has(> input[type=checkbox]):not(:has(> :is(select, textarea, input:not([type=checkbox], [type=hidden])))) > input[type=checkbox] { grid-column: 1; grid-row: 1; }
 :is(form, fieldset) > div:has(> input[type=checkbox]):not(:has(> :is(select, textarea, input:not([type=checkbox], [type=hidden])))) > label { grid-column: 2; grid-row: 1; margin: 0; font-weight: 550; cursor: pointer; }
 :is(form, fieldset) > div:has(> input[type=checkbox]):not(:has(> :is(select, textarea, input:not([type=checkbox], [type=hidden])))) > :is(.helptext, .errorlist) { grid-column: 2; margin: .2rem 0 0; }
+/* A locked checkbox (Campaign settings, #1119) labels itself in a .label-row
+   that also holds the "i" tip with why it is locked. The row takes the
+   label's place, and the box keeps to the top, so opening the tip (which
+   grows the row) never moves the box (no layout shift, #736). */
+:is(form, fieldset) > div:has(> input[type=checkbox]):has(> .label-row):not(:has(> :is(select, textarea, input:not([type=checkbox], [type=hidden])))) { align-items: start; }
+:is(form, fieldset) > div:has(> input[type=checkbox]):not(:has(> :is(select, textarea, input:not([type=checkbox], [type=hidden])))) > .label-row { grid-column: 2; grid-row: 1; margin: 0; }
+:is(form, fieldset) > div:has(> input[type=checkbox]):not(:has(> :is(select, textarea, input:not([type=checkbox], [type=hidden])))) > .label-row > label { font-weight: 550; }
 /* On desktop, consecutive short fields (dates, times, numbers) share a row.
    (!important: it must win over the help-text column rule above, whose
    selector is necessarily more specific.) */
 @media (min-width: 48rem) {
   :is(form, fieldset) > div:has(> input:is([type=date], [type=time], [type=datetime-local], [type=month], [type=number], [data-time-entry=time])):not(:has(> :is(select, textarea))):not([hidden]) { display: inline-flex !important; flex-direction: column; vertical-align: top; min-width: 12rem; margin-inline-end: 1.5rem; }
   :is(form, fieldset) > div:has(> input:is([type=date], [type=time], [type=datetime-local], [type=month], [type=number], [data-time-entry=time])) > :is(input, .helptext, .time-reading) { max-width: 14rem; }
+  /* A date checked as it is typed whose answer line has no Review beside
+     it (a live campaign's end date on Campaign settings, #1119) takes the
+     form's whole width, so its reserved line holds the longest answer in
+     as few lines as it can; the line never grows past that room. */
+  :is(form, fieldset) > div.field-live:has(> input[type=date]):not([hidden]) { display: flex !important; }
 }
 /* Forms read best at a comfortable measure; forms holding a table keep the
    page width. */
@@ -1071,15 +1083,16 @@ fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0;
 .schedule-row-fields input[type=text] { width: 7.5rem; }
 /* An invalid row control keeps its size: the second pixel of its error
    border is drawn as a shadow, so marking it moves nothing (#736). A
-   .field-row input (the follow-up contact Date and Time, #1014) is taller
-   than its minimum height, so a thicker border would grow it too; a select
+   .field-row input (the follow-up contact Date and Time, #1014) and a
+   live-checked date (Campaign settings' end date, #1119) are taller
+   than their minimum height, so a thicker border would grow them too; a select
    is held at its minimum height and keeps the global 2px border. */
-:is(.schedule-row-fields :is(input, select), .field-row input)[aria-invalid=true] { border-width: 1px; box-shadow: inset 0 0 0 1px var(--error-border); }
-:is(.schedule-row-fields :is(input, select), .field-row input)[aria-invalid=true]:focus { box-shadow: inset 0 0 0 1px var(--error-border), 0 0 0 3px rgb(17 94 86 / 22%); }
+:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input)[aria-invalid=true] { border-width: 1px; box-shadow: inset 0 0 0 1px var(--error-border); }
+:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input)[aria-invalid=true]:focus { box-shadow: inset 0 0 0 1px var(--error-border), 0 0 0 3px rgb(17 94 86 / 22%); }
 /* Forced colors draw no shadow: an outline inside the border marks it,
    except under keyboard focus, where the global 3px focus ring shows. */
 @media (forced-colors: active) {
-  :is(.schedule-row-fields :is(input, select), .field-row input)[aria-invalid=true]:not(:focus-visible) { outline: 1px solid CanvasText; outline-offset: -2px; }
+  :is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input)[aria-invalid=true]:not(:focus-visible) { outline: 1px solid CanvasText; outline-offset: -2px; }
 }
 .schedule-row-messages { padding-top: .5rem; min-height: calc(1lh + .5rem); }
 .schedule-row-messages > * { margin: 0; }

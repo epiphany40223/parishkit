@@ -88,10 +88,10 @@ def closes(campaign):
     )
 
 
-def test_campaign_settings_reviews_and_applies_a_later_end_in_place(
+def test_campaign_settings_reviews_and_applies_a_later_end_in_the_dialog(
     auth_service, google
 ):
-    """Review, Apply in place, intent and audit with the request, then applied."""
+    """Review in the dialog, Apply, intent and audit with the request, applied."""
     store = auth_service.store
     campaign = live(store)
     browser, _ = signed_in()
@@ -99,8 +99,7 @@ def test_campaign_settings_reviews_and_applies_a_later_end_in_place(
     page = browser.get(url)
     assert page.status_code == 200, page.content
     body = page.content.decode()
-    assert 'id="end-date"' in body and 'name="end_date"' in body
-    assert 'value="2054-10-31"' in body
+    assert re.search(r'<input type="date" name="end_date" value="2054-10-31"', body)
     review = post(
         browser,
         url,
@@ -108,15 +107,14 @@ def test_campaign_settings_reviews_and_applies_a_later_end_in_place(
     )
     assert review.status_code == 200, review.content
     text = unescape(review.content.decode())
-    assert "Review your changes" in text and "Campaign end date" in text
+    assert "data-review-answer" in text and "Campaign end date" in text
     assert "Family codes and links already sent keep working" in text
     assert not ConfigurationChangeRequest.objects.filter(
         patch__0__values__end_date="2054-11-15"
     ).exists()
     accepted = post(browser, url, {"action": "confirm", "preview": token(review)})
-    # Answered in place: the page again, naming the request (#532).
-    assert accepted["Location"].startswith(url + "?request=")
-    assert accepted["Location"].endswith("#settings-review")
+    # Answered with the change's status, which the review dialog follows.
+    assert accepted["Location"].startswith("/admin/changes/")
     request = ConfigurationChangeRequest.objects.get(pk=requested(accepted))
     intent = CampaignConfigurationIntent.objects.get(request=request)
     assert (intent.action, intent.campaign_id) == ("edit_end", campaign.pk)
@@ -126,10 +124,8 @@ def test_campaign_settings_reviews_and_applies_a_later_end_in_place(
     [event] = AuditEvent.objects.filter(event_type=EVENT)
     assert event.subject_id == request.pk and event.actor_id == request.actor_id
     assert event.campaign_reference == campaign.pk
-    status = browser.get(
-        urlsplit(accepted["Location"]).path + "?request=" + str(request.pk)
-    )
-    assert status.status_code == 200 and b"Change status" in status.content
+    status = browser.get(urlsplit(accepted["Location"]).path)
+    assert status.status_code == 200 and b"data-live-status" in status.content
 
     assert installed(store, request.pk).state == "applied"
     campaign.refresh_from_db()
@@ -145,7 +141,8 @@ def test_campaign_settings_reviews_and_applies_a_later_end_in_place(
 def test_a_shortened_end_resolves_its_reminder_in_the_combined_review(
     auth_service, google
 ):
-    """Campaign settings refuses and links; Dates and mail schedules applies both."""
+    """Campaign settings refuses at the field, naming Dates and mail schedules
+    (its live check links there); that page applies both."""
     store = auth_service.store
     campaign = live(store)
     browser, _ = signed_in()
@@ -158,10 +155,14 @@ def test_a_shortened_end_resolves_its_reminder_in_the_combined_review(
     )
     assert refused.status_code == 400
     text = unescape(refused.content.decode())
-    assert "would no longer fit the campaign" in text
+    error = re.search(
+        r'<ul class="errorlist" id="id_end_date_error".*?</ul>', text, re.S
+    )
+    assert error and "would no longer fit the campaign" in error.group(0)
+    assert "on Dates and mail schedules" in error.group(0)
+    assert 'name="preview"' not in text
     schedules = reverse("admin:schedule_settings")
     link = f"{schedules}?end_date=2054-10-20"
-    assert f'href="{link}"' in text and 'name="preview"' not in text
     # The combined review: only the end date is open, at the proposed date.
     review = browser.get(link)
     assert review.status_code == 200, review.content
@@ -195,7 +196,7 @@ def test_a_past_or_unchanged_end_and_locked_fields_are_refused(auth_service, goo
     page = browser.get(url)
     before = ConfigurationChangeRequest.objects.count()
     for value, message in (
-        ("2054-10-31", "Nothing has changed."),
+        ("2054-10-31", "No settings have changed."),
         ("2020-01-01", "Choose an end date after the campaign's start date"),
     ):
         refused = post(
@@ -220,9 +221,9 @@ def test_the_live_check_says_what_keeps_a_date_from_review(auth_service, google)
     check = reverse("admin:campaign_end_date_check")
     assert f'data-live-check="{check}"' in page.content.decode()
     assert 'data-live-check-saved="2054-10-31"' in page.content.decode()
-    # The read-only saved settings beside it never repeat the form's ids.
+    # Every setting is drawn once (#1119), so no id repeats.
     assert page.content.decode().count('id="id_end_date"') == 1
-    assert 'id="saved_end_date"' in page.content.decode()
+    assert 'id="saved_end_date"' not in page.content.decode()
     before = ConfigurationChangeRequest.objects.count()
 
     def answer(value, base=None):
@@ -261,8 +262,21 @@ def test_the_live_check_says_what_keeps_a_date_from_review(auth_service, google)
     with campaign_clock(campaign.active_configuration.starts_at + timedelta(days=10)):
         passed = answer("2054-10-05")
     assert "Choose an end date that has not already passed." in passed
-    # Only the end-date form's fields, and only by POST.
-    assert post(browser, check, {"start_date": "2054-10-02"}).status_code == 400
+    # Only the page's own fields (the locked ones are never read), only once
+    # each, and only by POST.
+    assert post(browser, check, {"state": "active"}).status_code == 400
+    twice = {"end_date": ["2054-11-15", "2054-11-16"]}
+    assert post(browser, check, twice).status_code == 400
+    # The page posts its whole form, leader roles included; only the end
+    # date and the version are read.
+    whole = post(
+        browser,
+        check,
+        check_fields(page) | {"ministry_leader_roles": ["Chairperson", "Staff"]},
+    )
+    assert (
+        whole.status_code == 200 and 'data-blocking="false"' in whole.content.decode()
+    )
     assert browser.get(check).status_code == 405
     # Nothing was recorded.
     assert ConfigurationChangeRequest.objects.count() == before
@@ -983,8 +997,8 @@ def test_an_open_campaign_changes_its_end_date_on_the_page(auth_service, google)
     url = reverse("admin:campaign_settings")
     page = browser.get(url)
     body = page.content.decode()
-    assert 'id="end-date"' in body and 'name="end_date"' in body
-    assert "This campaign is live, so these settings are locked" in body
+    assert re.search(r'<input type="date" name="end_date"(?![^>]*disabled)[^>]*>', body)
+    assert "scheduled or live in Production" in body
     review = post(
         browser,
         url,
@@ -1017,7 +1031,8 @@ def test_an_open_campaign_changes_its_end_date_on_the_command_line(admin, google
 
 
 def test_held_work_notes_the_end_date_and_refuses_a_stale_review(auth_service, google):
-    """While background work holds changes the panel says so; a post is refused."""
+    """While background work holds changes the end date's tip says so; a post
+    is refused."""
     from django.db import connection, transaction
 
     from parishkit.stewardship.campaigns.models import CampaignWorkGate
@@ -1044,9 +1059,15 @@ def test_held_work_notes_the_end_date_and_refuses_a_stale_review(auth_service, g
     held = browser.get(url)
     body = unescape(held.content.decode())
     assert held.status_code == 200
-    panel = re.search(r'<section class="panel" id="end-date".*?</section>', body, re.S)
-    assert panel is not None and 'name="end_date"' not in panel.group(0)
-    assert "The end date can change once the background work" in body
+    # The end date stays where it is, disabled, with its own reason in its
+    # tip (#1119), never a line of its own.
+    assert re.search(r'<input type="date" name="end_date"[^>]*disabled', body)
+    tip = re.search(
+        r'<span class="toggletip-bubble" id="id_end_date_tip"[^>]*>(.*?)</span>',
+        body,
+        re.S,
+    )
+    assert tip and "The end date can change once the background work" in tip.group(1)
     assert "They can change only on the current Testing-mode draft" not in body
     before = ConfigurationChangeRequest.objects.count()
     stale = post(
@@ -1055,7 +1076,9 @@ def test_held_work_notes_the_end_date_and_refuses_a_stale_review(auth_service, g
         {"action": "preview", "end_date": "2054-11-15", "base_digest": base},
     )
     assert stale.status_code == 409
-    assert "These campaign settings are locked" in unescape(stale.content.decode())
+    refusal = stale.json()["refusal"]
+    assert refusal["message"] == "Some settings you changed can no longer change now."
+    assert refusal["fix"].count("Reload this page") == 1
     assert ConfigurationChangeRequest.objects.count() == before
 
 
@@ -1080,7 +1103,7 @@ def test_a_past_end_date_is_refused_on_the_page(auth_service, google):
     assert refused.status_code == 400
     text = unescape(refused.content.decode())
     assert "Choose an end date that has not already passed." in text
-    assert "would no longer fit the campaign" not in text
+    assert "would no longer fit the campaign" not in end_error(text)
     assert not CampaignConfigurationIntent.objects.exists()
 
 
@@ -1109,5 +1132,147 @@ def test_other_schedule_errors_are_shown_as_they_are(auth_service, google, monke
     assert refused.status_code == 400
     text = unescape(refused.content.decode())
     assert "Two emails to Families clash." in text
-    assert "would no longer fit the campaign" not in text
+    assert "would no longer fit the campaign" not in end_error(text)
     assert "?end_date=" not in text
+
+
+def test_one_review_moves_the_end_date_and_the_leader_roles_together(
+    auth_service, google
+):
+    """Campaign settings' one Review (#1119) of a live campaign's end date and
+    its Ministry leader roles is one request: one campaign update with both
+    values, the end edit's intent bound to it, and both applied together."""
+    store = auth_service.store
+    campaign, _ = campaign_with_reminder(store)
+    modules = {"modules": ["census", "ministry"]}
+    assert (
+        change(
+            store,
+            store.active(),
+            uuid4(),
+            [
+                {
+                    "operation": "update",
+                    "section": "campaigns",
+                    "id": str(campaign.pk),
+                    "values": modules,
+                }
+            ],
+        ).state
+        == "applied"
+    )
+    campaign = live_from(campaign)
+    browser, _ = signed_in()
+    url = reverse("admin:campaign_settings")
+    page = browser.get(url)
+    review = post(
+        browser,
+        url,
+        {
+            "action": "preview",
+            "end_date": "2054-11-15",
+            "ministry_leader_roles": ["Chairperson"],
+            "base_digest": digest(page),
+        },
+    )
+    text = unescape(review.content.decode())
+    assert "Campaign end date" in text and "Ministry leader roles" in text
+    assert "Family codes and links already sent keep working" in text
+    accepted = post(browser, url, {"action": "confirm", "preview": token(review)})
+    request = ConfigurationChangeRequest.objects.get(pk=requested(accepted))
+    [update] = [item for item in request.patch if item["section"] == "campaigns"]
+    assert update["values"] == {
+        "end_date": "2054-11-15",
+        "ministry_leader_roles": ["Chairperson"],
+    }
+    assert CampaignConfigurationIntent.objects.filter(
+        request=request, action="edit_end"
+    ).exists()
+    assert installed(store, request.pk).state == "applied"
+    campaign.refresh_from_db()
+    assert campaign.active_configuration.end_date.isoformat() == "2054-11-15"
+    assert campaign.active_configuration.values["ministry_leader_roles"] == [
+        "Chairperson"
+    ]
+    assert closes(campaign) == [campaign.active_configuration.ends_at]
+
+
+def live_from(campaign):
+    """Activate ``campaign`` (scheduled, locked) and return it fresh."""
+    command(Campaign.objects.get(pk=campaign.pk), uuid4(), Action.ACTIVATE)
+    campaign = Campaign.objects.get(pk=campaign.pk)
+    assert campaign.state == "scheduled" and campaign.structural_locked
+    return campaign
+
+
+def end_error(text):
+    """The end date's own error list on a refused Review's page.
+
+    The line under the field also keeps room for the longest answer in an
+    invisible copy (#1119), which never counts as a message.
+    """
+    return re.search(
+        r'<ul class="errorlist" id="id_end_date_error".*?</ul>', text, re.S
+    ).group(0)
+
+
+def test_an_end_date_held_after_loading_refuses_the_whole_review(auth_service, google):
+    """Background work that starts between loading the page and its Review
+    locks the end date: a Review changing it with the leader roles is refused
+    (409) with the end date's reason, never applied as the roles alone
+    (#1119 review); nothing is recorded."""
+    from django.db import connection, transaction
+
+    from parishkit.stewardship.campaigns.models import CampaignWorkGate
+
+    store = auth_service.store
+    campaign, _ = campaign_with_reminder(store)
+    assert (
+        change(
+            store,
+            store.active(),
+            uuid4(),
+            [
+                {
+                    "operation": "update",
+                    "section": "campaigns",
+                    "id": str(campaign.pk),
+                    "values": {"modules": ["census", "ministry"]},
+                }
+            ],
+        ).state
+        == "applied"
+    )
+    campaign = live_from(campaign)
+    browser, _ = signed_in()
+    url = reverse("admin:campaign_settings")
+    page = browser.get(url)
+    # A work gate (a purge reservation), the owner's sentinel only.
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(
+            "ALTER TABLE stewardship_campaign_work_gate DISABLE TRIGGER USER"
+        )
+        CampaignWorkGate.objects.create(
+            campaign=campaign,
+            request_id=uuid4(),
+            initiated_by_id=uuid4(),
+            state="preparing",
+        )
+        cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
+        cursor.execute("ALTER TABLE stewardship_campaign_work_gate ENABLE TRIGGER USER")
+    requests = ConfigurationChangeRequest.objects.count()
+    for data in (
+        {"end_date": "2054-11-15", "ministry_leader_roles": ["Chairperson"]},
+        {"end_date": "2054-11-15", "ministry_leader_roles": ["Chairperson", "Staff"]},
+    ):
+        refused = post(
+            browser, url, {"action": "preview", "base_digest": digest(page)} | data
+        )
+
+        assert refused.status_code == 409, refused.content
+        refusal = refused.json()["refusal"]
+        assert (
+            refusal["message"] == "Some settings you changed can no longer change now."
+        )
+        assert "The end date can change once the background work" in refusal["fix"]
+    assert ConfigurationChangeRequest.objects.count() == requests
