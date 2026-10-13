@@ -397,6 +397,50 @@ def revoke_automation_command(configuration, *, reason):
     return {"automation_sessions_revoked": count, "end_reason": reason}
 
 
+def debug_off_clear_command(configuration):
+    """Clear System health's debug-off switch, as the admin-recovery login (#530).
+
+    The switch turns debug logging off in every process until it is
+    cleared; clearing lets processes started with the setting log in debug
+    form again. Run with every online service stopped (the offline lease),
+    then start them again. The clear runs only through
+    ``stewardship_debug_off_clear_v1()``, which only this login may execute,
+    and records ``cleared_by`` "operator" on the switch. Prints whether a set
+    switch was cleared; clearing when none is set changes nothing.
+    """
+    if admit_offline_service(configuration) is not ServiceRole.ADMIN_RECOVERY:
+        raise ConfigError(
+            "Clearing the debug-off switch requires the admin-recovery profile."
+        )
+    with StartupLease(RuntimeLayout(configuration).interlock, offline=True):
+        configure_operator_database(configuration)
+        from django.db import connection
+
+        from .runtime_database import admit_offline_database
+        from .runtime_grants import DEBUG_OFF_CLEAR_FUNCTION
+
+        try:
+            admit_offline_database(configuration)
+            with connection.cursor() as cursor:
+                # Admission keeps admin recovery's definers optional, so it
+                # works before database-grants; this one is required here.
+                cursor.execute(
+                    "SELECT coalesce(has_function_privilege("
+                    "to_regprocedure(%s),'EXECUTE'),false)",
+                    [f"public.{DEBUG_OFF_CLEAR_FUNCTION}"],
+                )
+                if not cursor.fetchone()[0]:
+                    raise ConfigError(
+                        "Clearing the debug-off switch needs its database "
+                        "function grant; run database-grants after migrating."
+                    )
+                cursor.execute(f"SELECT public.{DEBUG_OFF_CLEAR_FUNCTION}")
+                cleared = cursor.fetchone()[0]
+        finally:
+            connection.close()
+    return {"debug_off_cleared": cleared > 0}
+
+
 def parse_backup_time(value):
     """Read the restored backup's time: its set's name or an ISO 8601 instant.
 
@@ -529,6 +573,8 @@ def execute_operator(args):
             )
         elif args.command == "revoke-automation-sessions":
             result = revoke_automation_command(configuration, reason=args.reason)
+        elif args.command == "debug-off-clear":
+            result = debug_off_clear_command(configuration)
         elif args.command == "restore-begin":
             result = restore_begin_command(
                 configuration, backup_at=args.backup_at, reason=args.reason

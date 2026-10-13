@@ -5203,9 +5203,9 @@ and the debug-off switch is not set.
 Each such start also logs one WARNING `debug_logging_enabled` line next to
 `startup_validated` in that service's log, once per process (each web worker
 logs it), so someone reading the logs sees it too (#546). It is not an
-operational incident, since this panel already reports it. The line reads
-only `PARISHKIT_DEBUG_LOGGING`, so once the debug-off switch exists, it must
-honor the switch too.
+operational incident, since this panel already reports it. A service reads
+the debug-off switch when it connects to the database, before this line, so
+a set switch keeps the line out.
 
 - **In Production, any service with debug logging in effect is a problem**
   at the top of the page, and the panel offers **Turn off debug logging**.
@@ -5610,11 +5610,18 @@ switch stays set until it is cleared.
    again with each [service status record](#service-status-records) (every
    60 seconds). One-shot commands that reach the database (`pk-admin`
    commands, `health`, `smoke`, the backup worker and the other operator
-   commands) read it when they connect.
+   commands) read it when they connect. In practice every new database
+   connection reads it. A process started without the setting never reads
+   it, because the switch can only turn debug logging off. The read
+   answers only whether the switch is set; no process login reads who set
+   it.
 3. **Child processes.** A process passes its effective state to every
    helper subprocess it starts: while the switch is set, it removes
    `PARISHKIT_DEBUG_LOGGING` from the helper's environment, so a helper
-   that never reaches the database cannot log in debug form either.
+   that never reaches the database cannot log in debug form either. A
+   helper or sibling process started while the switch is set keeps that
+   environment, so it stays off after a clear until its service is
+   recreated.
 4. The page shows when every service reports debug logging off. The debug
    logging banner stays until they all do.
 5. Lines written before a process first reads the switch at startup are not
@@ -5641,7 +5648,11 @@ records when it applied the switch.
 setting log in debug form again; it can never turn debug logging on in a
 process that was started without the setting. The server operator can
 always clear it with a new operator command,
-`pk-stewardship debug-off-clear` (recorded with `actor_kind` `operator`).
+`pk-stewardship debug-off-clear`. It runs offline from the admin-recovery
+profile, with the services stopped, then they are started again: only that
+login can be told apart in SQL from the web login, which `pk-admin` and the
+online operator commands share. The switch records that the server
+operator cleared it, and when.
 In Testing mode the page also offers **Allow debug logging again**, which
 clears the switch under the same rules and records `debug_logging_allowed`.
 In Production the page never offers it, and the server refuses it

@@ -314,6 +314,9 @@ LEADER_CHANGES_FUNCTION = (
 # addresses, never the rest of a Member's contact record.
 PORTAL_IDENTITIES_FUNCTION = "stewardship_portal_identities_v1()"
 MEMBER_NAMES_FUNCTION = "stewardship_member_names_v1()"
+# The two the users upgrade itself needs (``upgrade-users`` requires them;
+# admin recovery's other definers stay optional, as on the upgrade's base).
+USERS_UPGRADE_FUNCTIONS = frozenset({PORTAL_IDENTITIES_FUNCTION, MEMBER_NAMES_FUNCTION})
 # The New user page's Name default (#952 slice 5): the ordered names of the
 # current ParishSoft Members listing one typed address. Web learns only the
 # names, never another contact field. The definer refuses unless the
@@ -365,6 +368,12 @@ ARCHIVE_RENEWAL_FUNCTION = (
 DISPATCH_TOKEN_FUNCTION = (
     "stewardship_dispatch_family_token_v1(uuid, uuid, uuid, bigint, uuid)"
 )
+# Whether System health's debug-off switch is set (ADM-13, #530): one
+# boolean, read by every process that reaches the database
+# (``debug_switch``), without any login reading who set it.
+DEBUG_OFF_FUNCTION = "stewardship_debug_logging_off_v1()"
+# The server operator's offline ``pk-stewardship debug-off-clear``.
+DEBUG_OFF_CLEAR_FUNCTION = "stewardship_debug_off_clear_v1()"
 # Each definer routine above that a migration in the users swap's closure
 # creates (#952), with that migration. `migrate --users-upgrade-base` leaves
 # the closure pending, and database-grants runs on that base before the
@@ -402,6 +411,11 @@ CLOSURE_FUNCTIONS = {
             ADDRESS_RETRY_TOKEN_FUNCTION,
         ),
         ("stewardship_jobs", "0027_address_retry"),
+    ),
+    # The debug-off switch (0078, #530) follows 0077.
+    **dict.fromkeys(
+        (DEBUG_OFF_FUNCTION, DEBUG_OFF_CLEAR_FUNCTION),
+        ("stewardship_jobs", "0028_debug_off_switch"),
     ),
 }
 
@@ -549,12 +563,18 @@ def runtime_functions(role, *, target=None):
     live delivery claim on (#389 L1). Web reads what a delivered email's
     follow-up to its addresses refused for now did (#806); mail dispatch
     opens that follow-up and reads its link token.
+    Every login a running service or an operator command uses reads whether
+    the debug-off switch is set (#530); the offline admin-recovery login
+    also clears it (``pk-stewardship debug-off-clear``). The backup login
+    reads the table through pg_read_all_data instead: its admission refuses
+    any definer grant.
     """
     role = _identity_role(role, target)
     if role is ServiceRole.CREDENTIAL_INSTALLER:
-        return frozenset(
-            {AUTOMATION_FRESH_FUNCTION} if target in AUTOMATION_SECRET_TARGETS else ()
-        )
+        functions = {DEBUG_OFF_FUNCTION}
+        if target in AUTOMATION_SECRET_TARGETS:
+            functions.add(AUTOMATION_FRESH_FUNCTION)
+        return frozenset(functions)
     return frozenset(
         {
             ServiceRole.WEB: {
@@ -572,16 +592,20 @@ def runtime_functions(role, *, target=None):
                 ARCHIVE_RENEWAL_FUNCTION,
                 RECIPIENT_OUTCOMES_FUNCTION,
                 ADDRESS_RETRIES_FUNCTION,
+                DEBUG_OFF_FUNCTION,
             },
             ServiceRole.CONFIG_INSTALLER: {
                 MINISTRY_CATALOG_FUNCTION,
                 LEADER_CHANGES_FUNCTION,
+                DEBUG_OFF_FUNCTION,
             },
             ServiceRole.MAIL_DISPATCH: {
                 DISPATCH_TOKEN_FUNCTION,
                 ADDRESS_RETRY_OPEN_FUNCTION,
                 ADDRESS_RETRY_TOKEN_FUNCTION,
+                DEBUG_OFF_FUNCTION,
             },
+            ServiceRole.SCHEDULER: {DEBUG_OFF_FUNCTION},
             ServiceRole.WORKER: {
                 SESSION_PURGE_FUNCTION,
                 READ_GUARD_KILLS_FUNCTION,
@@ -590,11 +614,14 @@ def runtime_functions(role, *, target=None):
                 LEADER_CHANGES_FUNCTION,
                 COMPARISON_FUNCTION,
                 ARCHIVE_RENEWAL_FUNCTION,
+                DEBUG_OFF_FUNCTION,
             },
             "download": {LEADER_SCOPE_FUNCTION},
             ServiceRole.ADMIN_RECOVERY: {
                 PORTAL_IDENTITIES_FUNCTION,
                 MEMBER_NAMES_FUNCTION,
+                DEBUG_OFF_FUNCTION,
+                DEBUG_OFF_CLEAR_FUNCTION,
             },
         }.get(role, ())
     )

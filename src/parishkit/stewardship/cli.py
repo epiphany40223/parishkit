@@ -90,6 +90,8 @@ _COMMAND_OPTIONS = {
     "revoke-automation-sessions": {"config", "reason"},
     # Closes the site for a restore review (#537); run in every real restore.
     "restore-begin": {"config", "backup_at", "reason"},
+    # Clears System health's debug-off switch, offline (#530).
+    "debug-off-clear": {"config"},
     # The local environment's fake ParishSoft service (#476); LOCAL only.
     "fake-parishsoft": {"config", "profile", "fake_config", "port"},
     "local-sign-in": {"config", "email"},
@@ -323,6 +325,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "upgrade-users",
         "revoke-automation-sessions",
         "restore-begin",
+        "debug-off-clear",
         "database-roles",
         "database-grants",
     }:

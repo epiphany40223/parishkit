@@ -35,6 +35,9 @@ class Event(StrEnum):
     # next to startup_validated, fixed text only; the System health page's
     # debug logging panel is where an Administrator sees it (ADM-13).
     DEBUG_LOGGING_ENABLED = "debug_logging_enabled"
+    # System health's debug-off switch turned this process's debug logging
+    # off (ADM-13, #530; see debug_switch). WARNING, process log only.
+    DEBUG_LOGGING_SWITCHED_OFF = "debug_logging_switched_off"
     # A scheduled full ParishSoft refresh falls inside a Production
     # reminder's lead window (#584; see FailureKind.REFRESH_IN_LEAD_WINDOW,
     # which it carries). Configuration advice at WARNING, process log only;
@@ -669,7 +672,9 @@ def debug_logging_enabled() -> bool:
 
     Debug logs can carry personal data, provider responses and secrets from
     exception text, so this is for a pre-launch deployment holding disposable
-    data only; it is off unless the variable is exactly "1".
+    data only; it is off unless the variable is exactly "1". System health's
+    debug-off switch turns it off by removing the variable from this
+    process's environment (``debug_switch``).
     """
     return os.environ.get(DEBUG_LOGGING_VARIABLE) == "1"
 
@@ -681,9 +686,10 @@ def emit_started() -> None:
     by a WARNING ``debug_logging_enabled`` line (#546), once per process
     (each web worker logs it), so someone reading the logs sees that this
     process's lines can hold personal data. The event is its whole detail:
-    it carries no free text. It reads only the environment variable; when
-    the System health debug-off switch exists (ADM-13, #530), it must
-    honor that switch too.
+    it carries no free text. The System health debug-off switch (ADM-13,
+    #530) is honored too: each process's startup admission connects to the
+    database first, and a set switch has already taken the setting out of
+    this process's environment (``debug_switch``).
     """
     emit(Event.STARTUP_VALIDATED)
     if debug_logging_enabled():

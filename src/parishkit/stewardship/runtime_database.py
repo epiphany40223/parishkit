@@ -470,7 +470,11 @@ def admit_offline_database(
     from django.db import connection
 
     from .accounts.credential_database import _identity, admit_grants
-    from .runtime_grants import admit_columns, runtime_functions
+    from .runtime_grants import (
+        USERS_UPGRADE_FUNCTIONS,
+        admit_columns,
+        runtime_functions,
+    )
 
     role = configuration.service_role
     _identity("pk_stewardship_" + role.value.replace("-", "_"))
@@ -483,8 +487,15 @@ def admit_offline_database(
     if users_upgrade:
         # The first pass admitted every table and definer grant, so this
         # second one can refuse only for a missing users-upgrade function.
+        # Admin recovery's other definers stay optional: the debug-off
+        # switch's (#530) is created after the swap, so the upgrade's base
+        # lacks it.
         try:
-            admit_grants(allowed, functions=functions)
+            admit_grants(
+                allowed,
+                functions=functions & USERS_UPGRADE_FUNCTIONS,
+                optional_functions=functions,
+            )
         except ConfigError:
             raise ConfigError(
                 "The users upgrade needs its database function grants; "

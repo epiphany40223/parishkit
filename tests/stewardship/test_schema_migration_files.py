@@ -264,6 +264,9 @@ FROZEN = {
     "0077_address_retry.sql": (
         "b1af088fb6a234352c69cdc33edb913c864c9fa13d0d00641834b8d7c85d59f9"
     ),
+    "0078_debug_off_switch.sql": (
+        "507ef08c4445c1cd74a3668fe0b550ac537052e92ba2b473a8fa499f9b608cbf"
+    ),
 }
 
 
