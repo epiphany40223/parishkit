@@ -2730,7 +2730,7 @@ never prepares or sends twice.
 | `user_rules`, `rule_apply`, `rule_base`, `rule_request` | Retired by #952: removed with the rule tables and autosave when the users commands land; no rule commands are built |
 | `chair_confirmations`, `chair_reviews`, `assignments` | Retired by #922: removed with Ministry assignments and Chairperson flows; no commands are built |
 | `security_event_acknowledge`, `critical_events_acknowledge` | `events list`, `events acknowledge` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); see below |
-| `information_update`, `ministry_followup`, `ministry_followup_item`, `ministry_followup_update` | `followup …` (PR 11); follow-up has no assignment ([#552](https://github.com/epiphany40223/parishkit/issues/552)) |
+| `information_update`, `ministry_followup`, `ministry_followup_item`, `ministry_followup_update`, `ministry_followup_bulk` | `followup …` (PR 11); follow-up has no assignment ([#552](https://github.com/epiphany40223/parishkit/issues/552)); the queue's bulk outcome ([#1131](https://github.com/epiphany40223/parishkit/issues/1131)) goes through the same `workflows.followup` service |
 | `ministry_followup_roster` | A resolved join or leave's Entered in ParishSoft tick ([#528](https://github.com/epiphany40223/parishkit/issues/528)): `followup roster-entered REQUEST_ID --set\|--clear` (PR 11), through the same `workflows.roster` service |
 | `ministry_roster`, `ministry_roster_export` | Roster changes to enter ([#528](https://github.com/epiphany40223/parishkit/issues/528)): `report roster`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); rows only as `export roster` (PR 8g) |
 

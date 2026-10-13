@@ -1,9 +1,10 @@
 """Authorized Ministry follow-up edits; never a Family answer or a roster write."""
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime
-from uuid import UUID
+from uuid import UUID, uuid5
 
+from django.db import connection
 from django.db.models import F
 
 from parishkit.stewardship.accounts.policy import Capability, allows, current_principal
@@ -12,10 +13,12 @@ from parishkit.stewardship.accounts.sessions import database_now
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.observability import bound_correlation, correlation
 from parishkit.stewardship.reports.export_services import admit_campaign
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import check_version
+from parishkit.stewardship.web.tables import PAGE_SIZES
 
 from .models import (
     CONTACT_CHANNELS,
@@ -33,6 +36,25 @@ MAX_NOTES, MAX_CONTACT_NOTES = 5000, 2000
 # cannot disagree. The revision guard (schema/ministry_followup.sql) enforces
 # the same pairing in SQL.
 OUTCOME_ACTIONS = {"joined": "join", "leave_confirmed": "leave"}
+# Stored outcomes no person records any more. Duplicate request (#1131): the
+# system never creates duplicates (a Family resubmission replaces a request),
+# so it was a rarely meaningful extra choice. Rows already resolved that way
+# keep it and still read "Duplicate request"; the CHECK still admits it.
+RETIRED_OUTCOMES = frozenset({"duplicate"})
+# The outcomes the follow-up queue records for many requests at once
+# (#1131), each for one kind of request: Joined or Declined for joins, Left
+# or Stayed for leaves (a leave's `declined` reads "Stayed in the Ministry",
+# #1132). Each pair is (kind, outcome); the queue's buttons post it as
+# "kind:outcome" and a button is available only while every ticked request
+# is of its kind, so a batch never mixes kinds (Administrator, 2026-10-13).
+BULK_ACTIONS = (
+    ("join", "joined"),
+    ("join", "declined"),
+    ("leave", "leave_confirmed"),
+    ("leave", "declined"),
+)
+# One bulk action covers at most one page of the queue, its largest size.
+MAX_BULK = max(PAGE_SIZES)
 
 
 def outcomes_for(action):
@@ -41,6 +63,7 @@ def outcomes_for(action):
         outcome
         for outcome in RESOLVED_OUTCOMES
         if OUTCOME_ACTIONS.get(outcome, action) == action
+        and outcome not in RETIRED_OUTCOMES
     )
 
 
@@ -54,6 +77,18 @@ class FollowupRefusal(ValueError):
     def __init__(self, code, **details):
         super().__init__(code)
         self.code, self.details = code, details
+
+
+class BulkStale(StaleRecordError):
+    """One request of a bulk action changed or closed since the page was read.
+
+    ``request_id`` names it, so the dialog can say which row to look at;
+    nothing of the batch was saved.
+    """
+
+    def __init__(self, request_id):
+        super().__init__("A selected Ministry request changed.")
+        self.request_id = request_id
 
 
 @dataclass(frozen=True)
@@ -210,3 +245,121 @@ def update_request(
         return _revise(
             store, actor_id, target, expected_version, request_key, change, _system()
         )
+
+
+def _latest_notes(request_ids):
+    """Each request's current notes: the newest across its same-intent chain.
+
+    A revision stores the complete resulting workflow, notes included, and
+    the request page shows the newest one's notes; so a bulk revision carries
+    each request's notes forward rather than clearing them. One statement
+    reads them all, through the same chain the history uses.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT t.id,(SELECT v.notes "
+            "FROM stewardship_ministry_workflow_chain_v1(t.id) c "
+            "JOIN stewardship_ministry_revision v ON v.request_id=c.request_id "
+            "ORDER BY c.depth,v.expected_version DESC LIMIT 1) "
+            "FROM unnest(%s::uuid[]) t(id)",
+            [list(request_ids)],
+        )
+        return {key: notes or "" for key, notes in cursor.fetchall()}
+
+
+def bulk_key_for(bulk_key, request_id):
+    """One request's replay key within a bulk action, derived from the page's.
+
+    The page renders one key per bulk action; each request's revision takes
+    its own key from it, so posting the same action again replays each
+    request's revision instead of writing a second one.
+    """
+    return uuid5(bulk_key, str(request_id))
+
+
+def apply_bulk_outcome(store, actor_id, versions, *, action, outcome, bulk_key, change):
+    """Resolve many requests with one outcome, all or none (#1131).
+
+    ``versions`` maps each request id to the version its row showed; each
+    request gets its own revision, projection and audit event through
+    ``_revise``, exactly as a single edit does, in one transaction under the
+    shared work order, with every request locked in primary-key order first
+    (``_targets``). ``change`` holds the optional contact attempt applied to
+    each; its state, outcome and notes are set here (each request keeps its
+    own notes). ``(action, outcome)`` is one of ``BULK_ACTIONS``: every
+    request must be of that kind. Any request that is outside the actor's
+    Ministries refuses the whole batch as denied; one of another kind raises
+    the ``outcome_kind`` refusal with its ``request_id``; and one that changed
+    or closed since the page was read raises ``BulkStale`` naming it.
+    Nothing is saved then.
+
+    Every revision and audit event shares one correlation id (the web
+    request's), and one ``ministry_followup_bulk_applied`` event records the
+    action itself with how many requests it changed (``count``) of those
+    chosen (``matching_count``); the request page marks a revision "(bulk)"
+    from that event. Returns the revisions, in request order.
+    """
+    if (
+        not isinstance(actor_id, UUID)
+        or not isinstance(bulk_key, UUID)
+        or not isinstance(change, WorkflowChange)
+        or (action, outcome) not in BULK_ACTIONS
+        or not isinstance(versions, dict)
+        or not 1 <= len(versions) <= MAX_BULK
+        or any(
+            not isinstance(key, UUID) or type(value) is not int
+            for key, value in versions.items()
+        )
+    ):
+        raise ValueError("Invalid bulk Ministry follow-up change.")
+    with correlation(bound_correlation()) as shared, work_transaction():
+        targets = _targets(store, actor_id, versions)
+        system = _system()
+        notes = _latest_notes(versions)
+        revisions = []
+        for target in targets:
+            # The kind is checked before the version, so a request of the
+            # other kind is named as such, not as stale. The page never
+            # offers a mixed batch; a crafted or outdated post is refused.
+            if target.action != action:
+                raise FollowupRefusal(
+                    "outcome_kind",
+                    outcome=outcome,
+                    kind=action,
+                    action=target.action,
+                    request_id=target.pk,
+                )
+            resolved = replace(
+                change, state="resolved", outcome=outcome, notes=notes[target.pk]
+            )
+            try:
+                revisions.append(
+                    _revise(
+                        store,
+                        actor_id,
+                        target,
+                        versions[target.pk],
+                        bulk_key_for(bulk_key, target.pk),
+                        resolved,
+                        system,
+                    )
+                )
+            except StaleRecordError:
+                raise BulkStale(target.pk) from None
+        # A replayed post returns the earlier revisions and records nothing.
+        written = sum(revision.correlation_id == shared for revision in revisions)
+        if written:
+            record_action(
+                Action.MINISTRY_FOLLOWUP_BULK_APPLIED,
+                actor_kind=ActorKind.PORTAL_USER,
+                actor_id=actor_id,
+                subject_id=targets[0].submission.campaign_id,
+                parish_id=system.active_configuration.parish.pk,
+                campaign_id=targets[0].submission.campaign_id,
+                context={
+                    "outcome": Outcome.CHANGED,
+                    "count": written,
+                    "matching_count": len(versions),
+                },
+            )
+    return revisions

@@ -698,6 +698,10 @@ DESCRIPTIONS = {
     "information_updated": _("Someone updated follow-up on an information change."),
     "ministry_followup_viewed": _("Someone opened the Ministry follow-up report."),
     "ministry_request_updated": _("Someone updated follow-up on a Ministry request."),
+    "ministry_followup_bulk_applied": _(
+        "Someone recorded one outcome for several Ministry requests at once on "
+        "Ministry follow-up. Each request also has its own entry."
+    ),
     "financial_report_viewed": _("Someone opened the Financial stewardship page."),
     # The Limitations report keeps the actions it recorded as "Talents and
     # limitations" (#970), so these describe old and new rows alike.

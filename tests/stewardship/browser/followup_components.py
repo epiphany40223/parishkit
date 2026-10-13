@@ -11,7 +11,11 @@ second page (``OLDER``) and first page by number (``NEWER``) serve the
 in-place history pager tests (#519 PR 6). Save and next (#534) is served
 by a request whose save redirects to the next request (``ADVANCE_ITEM`` to
 ``NEXT_ITEM``) and one whose save, the last in the list, redirects to the
-remembered queue view (``LAST_ITEM`` to ``QUEUE_VIEW``).
+remembered queue view (``LAST_ITEM`` to ``QUEUE_VIEW``). The bulk
+outcome queue (#1131, ``BULK_QUEUE``) has open join and leave requests and a
+closed one; its dialog redraws the table from the remembered view
+``BULK_VIEW``, which shows the join request resolved. The tests answer the
+dialog's POST (``BULK_POST``) themselves, with a route.
 """
 
 from datetime import UTC, datetime
@@ -21,17 +25,20 @@ from uuid import UUID
 from django.template.loader import render_to_string
 from django.urls import reverse
 
-from parishkit.stewardship.reports.ministries import outcome_choices, outcome_label
+from parishkit.stewardship.reports.ministries import outcome_label
 from parishkit.stewardship.reports.ministry_followup import (
     CHANNELS,
+    FILTER_OUTCOMES,
     HISTORY_STATES,
     SORTING,
     STATES,
     FollowupQuery,
 )
 from parishkit.stewardship.reports.ministry_followup_views import (
+    BULK_KIND_HINTS,
     REFUSALS,
     _refusal_error,
+    bulk_actions,
 )
 from parishkit.stewardship.web.tables import report_table
 from parishkit.stewardship.workflows.followup import FollowupRefusal, outcomes_for
@@ -67,6 +74,14 @@ TICK_REQUEST = UUID(int=101)
 TICK_ITEM = reverse("admin:ministry_followup_item", args=[TICK_REQUEST])
 TICK_POST = reverse("admin:ministry_followup_roster", args=[TICK_REQUEST])
 TICKED = TICK_ITEM + "?ticked=1"
+# The bulk outcome queue (#1131): its address, the remembered view the dialog
+# redraws it from, and where the dialog posts.
+BULK_QUEUE = "/followup-bulk"
+BULK_TOKEN = "cd" * 16
+BULK_VIEW = reverse("admin:ministry_followup") + f"?queue={BULK_TOKEN}"
+BULK_POST = reverse("admin:ministry_followup_bulk")
+BULK_KEY = UUID(int=104)
+BULK_JOIN, BULK_LEAVE, BULK_CLOSED = UUID(int=105), UUID(int=106), UUID(int=107)
 # The fixture server's answers to a Save (status, Location, body).
 POSTS = {
     UPDATE: (303, SAVED, ""),
@@ -155,8 +170,12 @@ def components(context, admin):
         resolved_outcomes=[
             (key, outcome_label(key, "join")) for key in outcomes_for("join")
         ],
-        outcomes=outcome_choices("any"),
+        outcomes=FILTER_OUTCOMES,
         channels=CHANNELS,
+        bulk_actions=bulk_actions(),
+        bulk_kind_hints=BULK_KIND_HINTS,
+        bulk_key=BULK_KEY,
+        refresh_url=reverse("admin:ministry_followup"),
         future_message=REFUSALS["contact_future"][0],
         total=51,
         rows=[row],
@@ -222,7 +241,7 @@ def components(context, admin):
         ("resolved", "declined"),
         ("closed_no_response", "no_response"),
         ("resolved", "leave_confirmed"),
-        ("superseded", None),
+        ("resolved", "other"),
     ]
     full_page = []
     for number in range(25):
@@ -258,7 +277,37 @@ def components(context, admin):
         FollowupRefusal("outcome_kind", outcome="leave_confirmed", action="join"), {}
     )
     future = _refusal_error(FollowupRefusal("contact_future"), {})
+    # The bulk outcome queue: an open join, an open leave and a closed join;
+    # and the same view once the join is resolved as Joined.
+    bulk_rows = [
+        row | dict(id=str(BULK_JOIN), member_name="Joining <Member>"),
+        leave | dict(id=str(BULK_LEAVE), version=2, cannot_serve=False),
+        closed | dict(id=str(BULK_CLOSED), member_name="Closed <Member>"),
+    ]
+    bulk_after = [
+        bulk_rows[0]
+        | dict(
+            open=False,
+            version=4,
+            state="resolved",
+            state_label=STATES["resolved"],
+            outcome="joined",
+            outcome_label=outcome_label("joined", "join"),
+        ),
+        *bulk_rows[1:],
+    ]
+    bulk_page = values | dict(
+        query=unfiltered, queue_token=BULK_TOKEN, refresh_url=BULK_VIEW
+    )
     pages = {
+        BULK_QUEUE: bulk_page
+        | dict(rows=bulk_rows, table=_table(bulk_rows, unfiltered, 3, campaign)),
+        BULK_VIEW: bulk_page
+        | dict(
+            rows=bulk_after,
+            table=_table(bulk_after, unfiltered, 3, campaign),
+            bulk_key=UUID(int=108),
+        ),
         "/followup-queue": values,
         "/followup-all": values
         | dict(

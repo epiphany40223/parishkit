@@ -9,18 +9,20 @@ from django.db import connection
 from django.utils.datastructures import MultiValueDict
 
 from parishkit.stewardship.accounts.policy import Capability, allows
+from parishkit.stewardship.audit.models import AuditEvent
+from parishkit.stewardship.audit.schemas import Action
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import PageWindow, filters
 from parishkit.stewardship.web.tables import PAGE_SIZES, Sorting
+from parishkit.stewardship.workflows.followup import RETIRED_OUTCOMES
 from parishkit.stewardship.workflows.models import (
-    RESOLVED_OUTCOMES,
     MinistryRequest,
     MinistryWorkflowRevision,
 )
 
 from .information import parse_page
-from .ministries import outcome_label, within_principal
+from .ministries import outcome_choices, outcome_label, within_principal
 
 PAGE_SIZE = 50
 # The installed selection (schema/ministry_followup.sql) orders and pages the
@@ -43,16 +45,31 @@ SORTING = Sorting(
 # Current statuses, offered as filters. Follow-up has no assignee (#552); a
 # request still stored as `assigned` from before then reads as New
 # (followup_page), because `assigned` only ever meant "has an assignee".
+# Withdrawn and Replaced by Family are system bookkeeping for a Family's
+# resubmission, never a leader's choice, and the queue lists current
+# requests only, so they are not filters (#1131); a request page reached by
+# an old link still names them (STATE_LABELS).
 STATES = {
     "new": "New",
     "in_progress": "In progress",
     "resolved": "Resolved",
     "closed_no_response": "Closed: no response",
+}
+STATE_LABELS = STATES | {
     "cancelled": "Withdrawn by Family",
     "superseded": "Replaced by Family",
 }
 # History shows what each past edit recorded, including an old assignment.
-HISTORY_STATES = STATES | {"assigned": "Assigned"}
+HISTORY_STATES = STATE_LABELS | {"assigned": "Assigned"}
+# The Outcome filter's choices: every outcome a person can record, with the
+# combined labels (both meanings of declined, #1132), plus Closed: no
+# response's. A retired outcome (Duplicate request, #1131) is not offered;
+# rows resolved that way still match "Any outcome".
+FILTER_OUTCOMES = {
+    key: label
+    for key, label in outcome_choices("any").items()
+    if key not in RETIRED_OUTCOMES
+}
 CHANNELS = {
     "email": "Email",
     "phone": "Phone",
@@ -63,7 +80,13 @@ CHANNELS = {
 
 @dataclass(frozen=True, repr=False)
 class FollowupQuery:
-    """Search is private POST state, never a query-string or audit payload."""
+    """Search is private POST state, never a query-string or audit payload.
+
+    ``history`` stays a selection input: the request page and Roster changes
+    to enter read every version (``all``). The queue itself lists current
+    requests only (#1131), so ``parse``, which reads the queue's form and
+    its remembered views, accepts only ``current``.
+    """
 
     search: str = ""
     ministry: str = ""
@@ -92,8 +115,8 @@ class FollowupQuery:
         if (
             query.action not in {"any", "join", "leave"}
             or query.state not in {"any", "unresolved", *STATES}
-            or query.outcome not in {"any", *RESOLVED_OUTCOMES, "no_response"}
-            or query.history not in {"current", "all"}
+            or query.outcome not in {"any", *FILTER_OUTCOMES}
+            or query.history != "current"
             or query.sort not in SORTING.tokens
             or query.size not in {str(size) for size in PAGE_SIZES}
             or (query.ministry and not valid_ministry(query.ministry))
@@ -301,7 +324,7 @@ def followup_page(campaign_id, query, principal, *, request_id=None, whole=False
         if row["state"] == "assigned":
             row["state"] = "new"
         row.pop("assignee_id", None)
-        row["state_label"] = STATES[row["state"]]
+        row["state_label"] = STATE_LABELS[row["state"]]
         # The packet's exact labels, by the row's kind of request (#1132).
         row["outcome_label"] = outcome_label(row["outcome"], row["action"])
         for field in (
@@ -326,7 +349,10 @@ def followup_history(request_id, page):
     """Bounded Staff history across same-intent Family resubmissions, newest first.
 
     A raw queryset cannot be sliced without loading every row, so the window and
-    its one has-next sentinel row are bound in SQL.
+    its one has-next sentinel row are bound in SQL. Each revision's ``bulk``
+    says whether a bulk outcome on the queue recorded it (#1131): that action
+    records one ministry_followup_bulk_applied event sharing its revisions'
+    correlation id, read here for the shown revisions in one query.
     """
     window = PageWindow(page=page)
     rows = list(
@@ -337,4 +363,15 @@ def followup_history(request_id, page):
             [request_id, window.size + 1, (page - 1) * window.size],
         )
     )
-    return rows[: window.size], len(rows) > window.size
+    shown = rows[: window.size]
+    bulk = set(
+        AuditEvent.objects.filter(
+            event_type=Action.MINISTRY_FOLLOWUP_BULK_APPLIED,
+            correlation_id__in={row.correlation_id for row in shown},
+        ).values_list("correlation_id", flat=True)
+        if shown
+        else ()
+    )
+    for row in shown:
+        row.bulk = row.correlation_id in bulk
+    return shown, len(rows) > window.size

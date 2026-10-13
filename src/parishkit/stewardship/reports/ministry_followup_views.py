@@ -29,8 +29,15 @@ from parishkit.stewardship.time_entry import (
     is_blank,
     parse_time,
 )
-from parishkit.stewardship.web.contracts import expected_version, filters
+from parishkit.stewardship.web.contracts import (
+    ErrorCode,
+    FieldError,
+    expected_version,
+    filters,
+    validation_response,
+)
 from parishkit.stewardship.web.dates import UnknownZone, browser_instant
+from parishkit.stewardship.web.refusals import Refusal
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.tables import (
     PAGE_SIZES,
@@ -39,8 +46,12 @@ from parishkit.stewardship.web.tables import (
     table_parameters,
 )
 from parishkit.stewardship.workflows.followup import (
+    BULK_ACTIONS,
+    MAX_BULK,
+    BulkStale,
     FollowupRefusal,
     WorkflowChange,
+    apply_bulk_outcome,
     authorize_ministry,
     outcomes_for,
     update_request,
@@ -60,9 +71,10 @@ from parishkit.stewardship.workflows.roster import (
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .information import parse_page
-from .ministries import outcome_choices, outcome_label, unscoped
+from .ministries import outcome_label, unscoped
 from .ministry_followup import (
     CHANNELS,
+    FILTER_OUTCOMES,
     HISTORY_STATES,
     SORTING,
     STATES,
@@ -243,6 +255,59 @@ FIELD_IDS = {
     "contact_time": "contact-time",
 }
 ACTIONS = {"join": _("join"), "leave": _("leave")}
+# What each bulk outcome is called on its button (#1131), by its posted
+# "kind:outcome" value (BULK_ACTIONS).
+BULK_NAMES = {
+    "join:joined": _("Joined"),
+    "join:declined": _("Declined"),
+    "leave:leave_confirmed": _("Left"),
+    "leave:declined": _("Stayed"),
+}
+# Why the bulk buttons of one kind are unavailable (ui-v1.js
+# wireSelection's data-kind-hint-<kind>, shown in the bulk bar's reserved
+# reason line): only requests of one kind are ticked, or both kinds are.
+BULK_KIND_HINTS = {
+    "join": _("Left and Stayed are for requests to leave."),
+    "leave": _("Joined and Declined are for requests to join."),
+    "mixed": _(
+        "Tick only requests to join, or only requests to leave, to record an outcome."
+    ),
+}
+
+
+def bulk_actions():
+    """The queue's bulk outcome buttons and the dialog text each one sets.
+
+    Each button opens the one shared confirmation dialog (#879), which takes
+    its title, body and announcement from the button (ui-v1.js). ``kind``
+    makes a button available only while every ticked request is of that
+    kind (Administrator, 2026-10-13), so the dialog always acts on every
+    ticked request; the server checks every request's kind itself
+    (apply_bulk_outcome).
+    """
+    actions = []
+    for kind, outcome in BULK_ACTIONS:
+        value = f"{kind}:{outcome}"
+        values = {"name": BULK_NAMES[value], "label": outcome_label(outcome, kind)}
+        actions.append(
+            {
+                "value": value,
+                "kind": kind,
+                "label": _("Mark as %(name)s") % values,
+                "title_one": _("Mark {name} as %(label)s?") % values,
+                "title_many": _("Mark {count} requests as %(label)s?") % values,
+                "done_one": _("Marked {name} as %(label)s.") % values,
+                "done_many": _("Marked {count} requests as %(label)s.") % values,
+                "body": _(
+                    "Each request is resolved as %(label)s, with its own entry "
+                    "in its follow-up history."
+                )
+                % values,
+            }
+        )
+    return actions
+
+
 # The submitted fields a refused page shows again.
 FORM_FIELDS = (
     "expected_version",
@@ -529,8 +594,16 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None):
                 # meanings of declined, #1132): the filter form is kept in
                 # place on Apply (data-table-sync), so per-kind option text
                 # would go stale when the Request filter changes.
-                outcomes=outcome_choices("any"),
+                outcomes=FILTER_OUTCOMES,
                 channels=CHANNELS,
+                # Bulk outcomes (#1131): one replay key per rendering of the
+                # queue, sent with the selection, and the remembered view's
+                # address, which the dialog redraws the table from once the
+                # outcome is recorded, keeping its filters, sort and page.
+                bulk_key=uuid4(),
+                refresh_url=with_queue(reverse("admin:ministry_followup"), token),
+                bulk_actions=bulk_actions(),
+                bulk_kind_hints=BULK_KIND_HINTS,
             )
             return iter(
                 (render_to_string(TEMPLATE, context, request=request).encode(),)
@@ -637,6 +710,27 @@ def change_values(parameters):
         "resolved": parameters.get("outcome") or None,
         "closed_no_response": "no_response",
     }.get(state)
+    return dict(
+        expected_version=expected_version(parameters["expected_version"]),
+        request_key=UUID(parameters["request_key"]),
+        change=WorkflowChange(
+            state=state,
+            outcome=outcome,
+            notes=_text(parameters, "notes"),
+            **_contact_values(parameters),
+        ),
+    )
+
+
+def _contact_values(parameters):
+    """The optional contact attempt of a follow-up form, as change fields.
+
+    Shared by a request's own form and the queue's bulk outcome dialog
+    (#1131). Without a channel the attempt's date, time and notes are
+    ignored, since the page does not send them; with one, the date and time
+    are read in the browser's zone (``contact_zone``, #558) and the time in
+    any common form (#398).
+    """
     channel = parameters["contact_channel"] or None
     moment = None
     if channel is not None:
@@ -654,16 +748,9 @@ def change_values(parameters):
         except ValueError:
             raise FollowupRefusal("contact_incomplete") from None
     return dict(
-        expected_version=expected_version(parameters["expected_version"]),
-        request_key=UUID(parameters["request_key"]),
-        change=WorkflowChange(
-            state=state,
-            outcome=outcome,
-            notes=_text(parameters, "notes"),
-            contact_channel=channel,
-            contact_at=moment,
-            contact_notes=_text(parameters, "contact_notes") if channel else "",
-        ),
+        contact_channel=channel,
+        contact_at=moment,
+        contact_notes=_text(parameters, "contact_notes") if channel else "",
     )
 
 
@@ -842,3 +929,155 @@ def roster(request, campaign_id, request_id):
         )
 
     return _mutation(request, campaign_id, request_id, work)
+
+
+# What a refused bulk outcome says in its dialog (#1131). Each names the one
+# request it is about, by the names the queue row shows, read from the
+# scoped selection; nothing submitted is echoed.
+BULK_STALE = _(
+    "%(row)s changed after this list was shown (someone else may have "
+    "recorded follow-up on it), so nothing was saved."
+)
+BULK_KIND = _(
+    "%(row)s is a request to %(action)s, so %(outcome)s doesn't apply to it. "
+    "Nothing was saved."
+)
+BULK_FIX = _("Cancel, then reload the list and try again.")
+
+
+def _bulk_selection(parameters):
+    """The chosen requests: ``request`` values ``<uuid>:<version>``, as a dict.
+
+    Each is a request id with the version its row showed, so every request
+    is checked against its own version. At most one page (MAX_BULK), no
+    request twice; anything else is a malformed form.
+    """
+    values = parameters.getlist("request")
+    if not 1 <= len(values) <= MAX_BULK:
+        raise ValueError("Choose between one and a page of requests.")
+    chosen = {}
+    for value in values:
+        identity, separator, version = value.partition(":")
+        if not separator or len(value) > 64:
+            raise ValueError("Invalid follow-up selection.")
+        chosen[UUID(identity)] = expected_version(version)
+    if len(chosen) != len(values):
+        raise ValueError("A request was chosen twice.")
+    return chosen
+
+
+def bulk_values(parameters):
+    """Strict closed grammar of the bulk outcome dialog's POST.
+
+    The button's "kind:outcome" (one of BULK_ACTIONS), the page's bulk
+    key, the chosen
+    requests and the optional contact attempt the dialog applies to each
+    (as on a request's own form, _contact_values).
+    """
+    single = {"outcome", "bulk_key", "contact_channel"}
+    optional = {"contact_date", "contact_time", "contact_zone", "contact_notes"}
+    keys = set(parameters) - {"csrfmiddlewaretoken", "request"}
+    if not single <= keys <= single | optional or any(
+        len(parameters.getlist(key)) != 1 for key in keys
+    ):
+        raise ValueError("Invalid follow-up form.")
+    kind, _separator, outcome = parameters["outcome"].partition(":")
+    if (kind, outcome) not in BULK_ACTIONS:
+        raise ValueError("Invalid bulk outcome.")
+    contact = _contact_values(parameters)
+    return dict(
+        versions=_bulk_selection(parameters),
+        action=kind,
+        outcome=outcome,
+        bulk_key=UUID(parameters["bulk_key"]),
+        # The state, outcome and notes are set per request by the service.
+        change=WorkflowChange(state="new", outcome=None, notes="", **contact),
+    )
+
+
+def _row_name(campaign_id, principal, request_id):
+    """A request as its queue row names it ("Member — Ministry"), or None.
+
+    Read through the scoped selection, so only a request the person may see
+    is named; any failure falls back to a refusal that names no row.
+    """
+    try:
+        with transaction.atomic():
+            row = followup_page(
+                campaign_id,
+                FollowupQuery(state="any", history="all"),
+                principal,
+                request_id=request_id,
+            )["rows"][0]
+    except (DatabaseError, *SAFE_FAILURES, StorageInvariantError, IndexError):
+        return None
+    return f"{row['member_name']} — {row['ministry_name']}"
+
+
+def _bulk_refusal(status, message):
+    """A refusal the dialog shows below its buttons (ui-v1.js refusalText)."""
+    return validation_response(
+        [FieldError(ErrorCode.STALE if status == 409 else ErrorCode.INVALID)],
+        status=status,
+        refusal=Refusal(message, BULK_FIX if status == 409 else None),
+    )
+
+
+@require_POST
+def bulk(request, campaign_id):
+    """Record one outcome for the requests chosen on the queue (#1131).
+
+    The shared confirmation dialog posts the chosen rows (each with its
+    version), the outcome and an optional contact attempt, without a page
+    load. All or none: a request outside the person's Ministries is denied
+    (403); one that changed since the page was read (409) or is of the
+    other kind (400) is named in the refusal the dialog
+    shows; a contact attempt is checked as on a request's own form. Success
+    answers 204, and the dialog redraws the table from the remembered view.
+    """
+    try:
+        service = runtime()
+        principal = _principal(request, service.store)
+        if request.GET:
+            raise ValueError("Follow-up edits require a POST body.")
+        parameters = request.POST.copy()
+        values = bulk_values(parameters)
+        _in_campaign(campaign_id, list(values["versions"]))
+        apply_bulk_outcome(service.store, principal.identity, **values)
+        response = HttpResponse(status=204)
+        response["Cache-Control"] = "no-store"
+        return response
+    except BulkStale as error:
+        row = _row_name(campaign_id, principal, error.request_id)
+        if row is None:
+            return _error(campaign_id, status=409)
+        return _bulk_refusal(409, BULK_STALE % {"row": row})
+    except StaleRecordError:
+        return _error(campaign_id, status=409)
+    except (PermissionError, ObjectDoesNotExist):
+        return denial()
+    except (*SAFE_FAILURES, StorageInvariantError):
+        return _error(campaign_id, status=503)
+    except FollowupRefusal as refusal:
+        if refusal.code == "outcome_kind" and "request_id" in refusal.details:
+            row = _row_name(campaign_id, principal, refusal.details["request_id"])
+            if row is None:
+                return _error(campaign_id)
+            return _bulk_refusal(
+                400,
+                BULK_KIND
+                % {
+                    "row": row,
+                    "action": ACTIONS[refusal.details["action"]],
+                    # The batch's own label (a leave batch's declined
+                    # reads Stayed), not the refused request's.
+                    "outcome": outcome_label(
+                        refusal.details["outcome"], refusal.details["kind"]
+                    ),
+                },
+            )
+        if refusal.code not in REFUSALS or refusal.code == "outcome_kind":
+            return _error(campaign_id)
+        return _bulk_refusal(400, _refusal_error(refusal, request.POST)["message"])
+    except ValueError:
+        return _error(campaign_id)

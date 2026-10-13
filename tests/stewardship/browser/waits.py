@@ -195,3 +195,32 @@ def painted(page, *, timeout=5000):
             timeout,
         )
         raise
+
+
+def same_place(found, expected, *, tolerance=0.5):
+    """Whether two drawn places match within ``tolerance`` pixels.
+
+    A place is a number, or a list, tuple or dict of places, such as
+    ``bounding_box()`` dicts or ``[x, y, width, height]`` rows. Linux Firefox
+    can report an unmoved box a ten-thousandth of a pixel or less apart
+    (1609.88333 against 1609.88330), so a layout-shift check compares within
+    half a pixel, not exactly; a real shift moves at least a whole pixel.
+    """
+    if isinstance(expected, dict):
+        return (
+            isinstance(found, dict)
+            and found.keys() == expected.keys()
+            and all(
+                same_place(found[k], expected[k], tolerance=tolerance) for k in expected
+            )
+        )
+    if isinstance(expected, (list, tuple)):
+        return (
+            isinstance(found, (list, tuple))
+            and len(found) == len(expected)
+            and all(
+                same_place(f, e, tolerance=tolerance)
+                for f, e in zip(found, expected, strict=True)
+            )
+        )
+    return abs(found - expected) < tolerance

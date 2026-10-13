@@ -1720,8 +1720,10 @@ and shared. Its users so far are
 [Hosted files](../hosted-files/spec.md#admin-page) library, the live
 sessions of
 [Automation access](../admin-automation/spec.md#revocation-and-listing),
-[Users](../admin-portal/spec.md#users-table) and the email template tables of
-[Pages and emails](../admin-portal/spec.md#default-content); the
+[Users](../admin-portal/spec.md#users-table), the email template tables of
+[Pages and emails](../admin-portal/spec.md#default-content) and the bulk
+outcomes of [Ministry follow-up](../admin-portal/spec.md#follow-up-workflows)
+([#1131](https://github.com/epiphany40223/parishkit/issues/1131)); the
 other Admin tables with per-row actions move to it in later changes, as the
 inventory on #879 lists.
 
@@ -1760,7 +1762,17 @@ inventory on #879 lists.
 - **Several rows.** A table that allows acting on several rows has the
   [selection column and bulk bar](#admin-tables) above; its only bulk action
   is usually Delete selected, which opens the same dialog naming the count.
-  Rows without actions have no selection box.
+  Rows without actions have no selection box. Several bulk buttons may share
+  one dialog, each setting its title and text. A bulk action that applies
+  only to one kind of row is a [prerequisite gate](#prerequisite-gates): it
+  is available only while every ticked row is of its kind, and the bulk
+  bar's reason line says why otherwise (Administrator, 2026-10-13,
+  [#1131](https://github.com/epiphany40223/parishkit/issues/1131)). A dialog
+  may hold fields, such as an
+  optional note applied to each row; its confirm button then waits for them
+  as a form's Save does, and they return to their defaults each time it
+  opens. An action that records rather than removes uses an ordinary
+  primary confirm button.
 - **Server checks** are those of the action itself: the dialog only asks, and
   the server validates every chosen row and refuses the whole request when
   any one cannot be acted on.

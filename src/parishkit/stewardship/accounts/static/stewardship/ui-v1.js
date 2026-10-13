@@ -765,20 +765,33 @@
         button.textContent = every ? "Clear selection" : "Select all";
       }
       if (count) count.textContent = chosen ? `${chosen} selected` : "";
+      // A bulk button for one kind of row (its data-confirm-kind, matching
+      // the rows'; the Ministry follow-up queue's outcomes, #1131) is
+      // available only while every ticked row is of its kind. While one is
+      // unavailable for that reason, the line says why: the table's
+      // data-kind-hint-<kind> when the ticked rows are all of one kind, or
+      // its data-kind-hint-mixed when they mix kinds.
+      const kinds = new Set(all.filter((node) => node.checked)
+        .map((node) => node.dataset.confirmKind || ""));
+      const fits = (node) => chosen > 0 && (!node.dataset.confirmKind
+        || (kinds.size === 1 && kinds.has(node.dataset.confirmKind)));
+      const kindHint = !chosen || actions.every(fits) ? ""
+        : scope.getAttribute(`data-kind-hint-${kinds.size > 1 ? "mixed" : [...kinds][0]}`) || "";
       // With no rows at all the table itself says it is empty, unless the
       // table gave an empty-table reason, which then stays in the line.
       const empty = !all.length && Boolean(emptyHint);
-      const explain = Boolean(hint) && !chosen && (all.length > 0 || empty);
+      const explain = Boolean(hint)
+        && (Boolean(kindHint) || (!chosen && (all.length > 0 || empty)));
       if (hint) {
-        const text = empty ? emptyHint : missingHint;
+        const text = kindHint || (empty ? emptyHint : missingHint);
         if (hint.textContent !== text) hint.textContent = text;
       }
       hint?.toggleAttribute("data-cleared", !explain);
       actions.forEach((node) => {
-        node.disabled = !chosen;
+        node.disabled = !fits(node);
         const described = (node.getAttribute("aria-describedby") || "").split(/\s+/)
           .filter((id) => id && id !== hint?.id);
-        if (explain) described.push(hint.id);
+        if (explain && node.disabled) described.push(hint.id);
         if (described.length) node.setAttribute("aria-describedby", described.join(" "));
         else node.removeAttribute("aria-describedby");
       });
@@ -3508,25 +3521,45 @@
     dialog.querySelector("[data-confirm-cancel]")?.addEventListener("click", () => {
       if (!confirming?.busy) dialog.close();
     });
-    dialog.querySelector("[data-confirm-accept]")?.addEventListener("click", () => {
+    dialog.querySelector("[data-confirm-accept]")?.addEventListener("click", (event) => {
+      // A dialog with fields makes Confirm its form's submit button, so the
+      // form's complete gate holds it (confirm-dialog.html fields_template);
+      // it is still posted only from here, never natively.
+      event.preventDefault();
       if (confirming?.dialog !== dialog || confirming.busy) return;
       if (confirming.review) acceptReview(confirming);
       else acceptConfirm(confirming);
     });
   };
+  // A bulk button may carry its own dialog text and post its own name and
+  // value (confirm-dialog.html; the Ministry follow-up queue's bulk
+  // outcomes, #1131). One limited to one kind of row is available only
+  // while every ticked row is of that kind (wireSelection), so the dialog
+  // acts on every ticked row.
   const openConfirm = (dialog, opener) => {
     const form = document.getElementById(dialog.dataset.confirmForm || "");
     if (!(form instanceof HTMLFormElement)) return;
-    const chosen = opener.hasAttribute("data-bulk-action")
-      ? [...form.querySelectorAll("input[data-select-row]:checked")]
-        .filter((box) => !box.disabled)
+    const bulk = opener.hasAttribute("data-bulk-action");
+    // form.elements, not the form's descendants: a table whose headings are
+    // forms of their own ties its row boxes to the form by their form
+    // attribute.
+    const chosen = bulk
+      ? [...form.elements].filter((box) => box.matches("input[data-select-row]:checked")
+        && !box.disabled)
         .map((box) => ({field: box.name, value: box.value, name: box.dataset.confirmName}))
       : [{field: opener.name, value: opener.value, name: opener.dataset.confirmName}];
     if (!chosen.length || chosen.some((item) => !item.field || !item.value)) return;
+    // The button's own text, else the dialog's.
+    const text = (key) => opener.dataset[key] || dialog.dataset[key] || "";
     wireDialog(dialog);
     const values = {count: chosen.length.toLocaleString("en-US"), name: chosen[0].name || ""};
     dialog.querySelector("[data-confirm-title]").textContent = fillIn(
-      chosen.length === 1 ? dialog.dataset.titleOne : dialog.dataset.titleMany, values);
+      chosen.length === 1 ? text("titleOne") : text("titleMany"), values);
+    const body = dialog.querySelector("[data-confirm-body]");
+    if (body) {
+      if (body.dataset.default === undefined) body.dataset.default = body.textContent;
+      body.textContent = opener.dataset.confirmBody || body.dataset.default;
+    }
     const error = dialog.querySelector("[data-confirm-error]");
     error.hidden = true;
     error.replaceChildren();
@@ -3536,7 +3569,24 @@
       button.removeAttribute("aria-disabled");
       button.classList.remove("is-busy");
     });
-    confirming = {dialog, opener, form, chosen, values, busy: false, done: false};
+    // Fields start again from their defaults each time, so an earlier
+    // contact attempt is never recorded again unasked; each change event
+    // lets the rules on them (data-enabled-when, the complete gate) follow.
+    dialog.querySelectorAll("[data-confirm-reset]").forEach((field) => {
+      if (field instanceof HTMLSelectElement) {
+        const first = [...field.options].find((option) => option.defaultSelected) || field.options[0];
+        field.value = first ? first.value : "";
+      } else {
+        field.value = field.defaultValue;
+      }
+      field.dispatchEvent(new Event("change", {bubbles: true}));
+    });
+    if (form.hasAttribute("data-require-complete")) gateComplete(form);
+    confirming = {
+      dialog, opener, form, chosen, values, busy: false, done: false,
+      doneOne: text("doneOne"), doneMany: text("doneMany"),
+      extra: bulk && opener.name ? [opener.name, opener.value] : null,
+    };
     dialog.showModal();
     // The safe choice takes focus first.
     dialog.querySelector("[data-confirm-cancel]")?.focus();
@@ -3692,11 +3742,14 @@
       if (!fields.has(name) && typeof value === "string") body.append(name, value);
     });
     chosen.forEach((item) => body.append(item.field, item.value));
+    if (state.extra) body.append(...state.extra);
     // The answer's page may carry a data-confirm-announce line (below).
     const answer = await followChange(state, form.action, body);
     if (!answer) return;
-    // Applied: redraw every region from the table's own address.
-    const region = form.closest(REGIONS);
+    // Applied: redraw every region from the table's own address. A dialog
+    // whose form sits outside the table's region (its rows tied to it by
+    // their form attribute) finds the region from the button that opened it.
+    const region = form.closest(REGIONS) || state.opener.closest(REGIONS);
     const fresh = await freshPage(region?.dataset.refreshUrl || window.location.href);
     if (!fresh) return;
     state.done = true;
@@ -3713,7 +3766,7 @@
     // instead of the dialog's own "done" words, which would claim a change.
     const outcome = new DOMParser().parseFromString(answer.text, "text/html")
       .querySelector("[data-confirm-announce]")?.textContent.trim();
-    announce(outcome || fillIn(chosen.length === 1 ? dialog.dataset.doneOne : dialog.dataset.doneMany,
+    announce(outcome || fillIn(chosen.length === 1 ? state.doneOne : state.doneMany,
       state.values));
   };
 
