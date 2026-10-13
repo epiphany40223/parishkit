@@ -5277,18 +5277,28 @@
     });
   });
 
-  // Edit scheduled email's own email (#446, schedule-email.html): ticking
-  // "Edit this schedule's email" shows its fields (data-show-when) and fills
-  // them from the email chosen in Email to send. Choosing another email
-  // fills them again, but only while the reader has not edited them, so
-  // typed text is never replaced without asking; Reset to the default text
-  // fills the built-in default. A refused page keeps what was posted. The
+  // New and Edit scheduled email's own email (#446, schedule-email.html):
+  // ticking "Edit this schedule's email" shows its fields (data-show-when)
+  // and fills them from the email chosen in Email to send (empties them
+  // while none is, so no other type's text is left to be saved as this
+  // type's). Choosing another email, or on New another mail type
+  // (whose script above has already narrowed the email list), fills them
+  // again, but only while the reader has not edited them, so typed text is
+  // never replaced without asking; Reset to the default text fills the
+  // built-in default of the mail type shown (Edit's is fixed; the select is
+  // disabled but still holds it). A refused page keeps what was posted. The
   // texts are the server's (data-schedule-email-sources); each is set as a
   // field value, never as markup. "Generate plain text from HTML" is the
   // content editors' panel below, told of every fill by its change event.
+  // On New both the checkbox and Reset need a mail type (UX conventions,
+  // "Prerequisite gates"): while none is chosen they are unavailable, the
+  // box is unticked (so the fields close and are not sent), and the reserved
+  // reason line (data-schedule-email-reason) says why. Checked on load, on
+  // every type change and on pageshow.
   document.querySelectorAll("[data-schedule-email]").forEach((section) => {
     const form = section.closest("form");
     const box = form?.elements.namedItem("edit_email");
+    const kind = form?.elements.namedItem("schedule-kind");
     const choice = form?.elements.namedItem("schedule-template_version");
     const [subject, html, text, generate] = ["subject", "html", "text", "generate_text"]
       .map((name) => form?.elements.namedItem(name));
@@ -5297,7 +5307,8 @@
     try {
       sources = JSON.parse(document.getElementById("schedule-email-sources")?.textContent || "null");
     } catch { sources = null; }
-    if (!box || !choice || !subject || !html || !text || !generate || !reset || !sources) return;
+    if (!box || !kind || !choice || !subject || !html || !text || !generate || !reset
+      || !sources) return;
     // Posted back after a refusal, the fields hold the reader's own text.
     let edited = box.checked;
     const fill = (value) => {
@@ -5309,16 +5320,41 @@
       generate.dispatchEvent(new Event("change"));
       edited = false;
     };
-    const chosen = () => sources.emails?.[choice.value];
+    const empty = {subject: "", html: "", text: "", generate: true};
+    // An email the page has no text for (none of this type) leaves the
+    // fields as drawn.
+    const chosen = () => (choice.value ? sources.emails?.[choice.value] : empty);
     [subject, html, text, generate].forEach((field) => {
       ["input", "change"].forEach((type) => field.addEventListener(type, (event) => {
         if (event.isTrusted) edited = true;
       }));
     });
-    box.addEventListener("change", () => { if (box.checked && !edited) fill(chosen()); });
-    choice.addEventListener("change", () => { if (box.checked && !edited) fill(chosen()); });
+    const refill = () => { if (box.checked && !edited) fill(chosen()); };
+    [box, kind, choice].forEach((control) => control.addEventListener("change", refill));
+    const reason = section.querySelector("[data-schedule-email-reason]");
+    const gate = () => {
+      const ready = Boolean(kind.value);
+      if (!ready && box.checked) {
+        box.checked = false;
+        box.dispatchEvent(new Event("change"));
+      }
+      [box, reset].forEach((control) => {
+        control.disabled = !ready;
+        const described = (control.getAttribute("aria-describedby") || "").split(/\s+/)
+          .filter((id) => id && id !== reason?.id);
+        if (!ready && reason?.id) described.push(reason.id);
+        if (described.length) control.setAttribute("aria-describedby", described.join(" "));
+        else control.removeAttribute("aria-describedby");
+      });
+      reason?.toggleAttribute("data-idle", ready);
+    };
+    kind.addEventListener("change", gate);
+    window.addEventListener("pageshow", gate);
+    gate();
     reset.addEventListener("click", () => {
-      fill(sources.default);
+      const value = sources.defaults?.[kind.value];
+      if (!value) return;
+      fill(value);
       // The default is now the reader's choice; another email chosen above
       // does not replace it.
       edited = true;

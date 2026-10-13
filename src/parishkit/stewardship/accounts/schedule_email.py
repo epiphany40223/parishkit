@@ -1,7 +1,7 @@
-"""Edit a schedule's own email on Edit scheduled email (#446, slice 3).
+"""Edit a schedule's own email on New and Edit scheduled email (#446, slice 3).
 
-Edit scheduled email offers **Edit this schedule's email** under Email to
-send. Ticking it shows the email's subject, HTML source and plain text,
+New and Edit scheduled email offer **Edit this schedule's email** under Email
+to send. Ticking it shows the email's subject, HTML source and plain text,
 filled in from the chosen email, with **Reset to the default text**. The
 fields are the Pages and emails editor's (``ContentForm``: the same cleaning,
 placeholders, hosted files and Family-access rules), without its removal
@@ -11,7 +11,8 @@ and emails.
 A changed email is always saved as a new email that only this schedule
 sends: the change adds that content record, and the schedule's
 ``template_version`` and ``subject`` point at it, reviewed and applied with
-the rest of the schedule's change in one request. The email the schedule
+the rest of the schedule's change in one request. On New with Repeat, every
+reminder the rule adds sends that one record. The email the schedule
 sent before is left exactly as it is, so every other schedule that sends it
 keeps it. Text left as the chosen email's adds nothing.
 
@@ -27,12 +28,21 @@ from django.utils.translation import gettext_lazy as _
 
 from . import setup_help
 from .content_forms import ContentForm, default_values, text_is_generated
+from .schedule_forms import KINDS
 
 # The page's checkbox, and the email fields it shows (unprefixed, so the
 # shared "Generate plain text from HTML" script in ui-v1.js serves them as it
 # serves the content editors).
 EDIT = "edit_email"
 FIELDS = ("subject", "html", "generate_text", "text")
+# New scheduled email's posted mail type (schedule_entry_views' form prefix).
+KIND = "schedule-kind"
+NEW_TEXT_HELP = _(
+    "For an Initial invitation or a Reminder, both the formatted and "
+    "plain-text versions must include {{ family_code }} and {{ family_url }}, "
+    "and the subject must include neither. The text is checked against the "
+    "mail type chosen above."
+)
 
 
 class EmailToggle(forms.Form):
@@ -48,9 +58,9 @@ class EmailToggle(forms.Form):
         widget=forms.CheckboxInput(attrs={"data-change-ignore": ""}),
         label=_("Edit this schedule's email"),
         help_text=_(
-            "Change the subject or text for this schedule only. Saving makes a "
-            "new email that only this schedule sends; the email it sends now "
-            "stays as it is for any other schedule."
+            "Change the subject or text for this scheduled email only. Saving "
+            "makes a new email just for it; the email chosen above stays as it "
+            "is for every other schedule."
         ),
     )
 
@@ -87,38 +97,58 @@ def emails_of(records, kind):
 def editor(data, records, schedule, campaign_id):
     """The checkbox, the email form and the page script's email texts.
 
-    ``data`` is the posted page or None; ``records`` the campaign's content and
-    ``schedule`` the saved schedule being edited. The email form is bound only
-    while the checkbox is ticked (``form.is_bound``), so an unticked page
-    never validates or saves email text. Unbound, it starts from the
-    schedule's saved email (the built-in default when that email is no longer
-    saved). ``sources`` holds every email of this mail type and the default,
-    which the page script fills the fields from.
+    ``data`` is the posted page or None; ``records`` the campaign's content.
+    On Edit, ``schedule`` is the saved schedule, whose mail type is fixed; on
+    New it is None and the mail type is the one posted (``schedule-kind``), so the
+    fields are checked against the type the Admin chose. The email form is
+    bound only while the checkbox is ticked (``form.is_bound``), so an
+    unticked page never validates or saves email text. Unbound, Edit's starts
+    from the schedule's saved email (the built-in default when that email is
+    no longer saved) and New's is empty until the page script fills it.
+    ``sources`` holds every email of the mail types the page offers and each
+    type's default (``defaults``), which the page script fills the fields
+    from.
     """
-    kind = schedule["values"]["kind"]
     toggle = EmailToggle(data)
     editing = data is not None and toggle.is_valid() and toggle.cleaned_data[EDIT]
-    emails = emails_of(records, kind)
-    default = default_values("email", kind, campaign_id=campaign_id)
-    saved = emails.get(schedule["values"]["template_version"], default)
-    form = ScheduleEmailForm(
-        data if editing else None,
-        kind="email",
-        slot=kind,
-        initial={
+    if schedule is not None:
+        kind = schedule["values"]["kind"]
+        kinds = (kind,)
+    else:
+        posted = data.get(KIND) if data is not None else None
+        kind = posted if posted in KINDS else None
+        kinds = KINDS
+    defaults = {
+        each: default_values("email", each, campaign_id=campaign_id) for each in kinds
+    }
+    initial = {}
+    if schedule is not None:
+        saved = emails_of(records, kind).get(
+            schedule["values"]["template_version"], defaults[kind]
+        )
+        initial = {
             "subject": saved["subject"],
             "html": saved["html"],
             "text": saved["text"],
             "generate_text": text_is_generated(saved),
-        },
+        }
+    form = ScheduleEmailForm(
+        data if editing else None, kind="email", slot=kind, initial=initial
     )
+    if schedule is None:
+        # New's mail type can change on the page, so its plain-text help
+        # states the invitation and reminder rule for every type (Edit's
+        # comes from ContentForm for its fixed type).
+        form.fields["text"].help_text = NEW_TEXT_HELP
     # The content editors' field help, long help behind its "i".
     setup_help.apply(form, setup_help.CONTENT)
     sources = {
         "emails": {
-            identifier: _source(values) for identifier, values in emails.items()
+            identifier: _source(values)
+            for each in kinds
+            for identifier, values in emails_of(records, each).items()
         },
-        "default": _source(default),
+        "defaults": {each: _source(values) for each, values in defaults.items()},
     }
     return toggle, form, sources
 

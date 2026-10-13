@@ -12,9 +12,10 @@ views act on them:
   The page shows and takes send times in the browser's time zone, which the
   page script posts as ``zone``; ``schedule_local`` converts them to and
   from the campaign-local values a schedule keeps (#558).
-- **Edit this schedule's email**, on Edit only, edits the schedule's own
+- **Edit this schedule's email**, on New and Edit, edits the schedule's own
   email (``schedule_email``, #446): a changed email is added as a new email
-  that only this schedule sends, in the same reviewed change.
+  that only this schedule (on New, every reminder its repeat adds) sends, in
+  the same reviewed change.
 - **Delete** answers the list's confirmation dialog: it removes the chosen
   schedules in one configuration change.
 
@@ -418,11 +419,15 @@ def entry_times(values, saved, schedule, now, *, bound):
 
 def _fields(new):
     """Every field the page may post, for ``form_action``'s closed check."""
-    names = {"base_digest", ZONE, *(f"{ENTRY}-{name}" for name in ENTRY_FIELDS)}
+    names = {
+        "base_digest",
+        ZONE,
+        schedule_email.EDIT,
+        *schedule_email.FIELDS,
+        *(f"{ENTRY}-{name}" for name in ENTRY_FIELDS),
+    }
     if new:
         names.update(f"repeat-{name}" for name in REPEAT_FIELDS)
-    else:
-        names.update({schedule_email.EDIT, *schedule_email.FIELDS})
     return names
 
 
@@ -510,7 +515,8 @@ def _summary(entry, repeat, email=None):
 
     The shared summary (components/errors.html) takes focus when the refused
     page loads, so the reader hears what to fix and can jump to each field.
-    ``email`` is Edit's email form while it is in use (bound), else None.
+    ``email`` is the schedule's email form; it counts only while in use
+    (bound).
     """
     errors = []
     for form in (entry, repeat, email):
@@ -568,9 +574,10 @@ def _entry(request, campaign_id, schedule_id=None):
     stale page, a read-only schedule, an unchanged Edit) is a plain refusal
     the dialog shows. The posted date and time are in the browser's zone
     (``zone``) and are converted to the campaign's before the review, so its
-    rules compare the moments the Admin chose. On Edit, a ticked "Edit this
+    rules compare the moments the Admin chose. A ticked "Edit this
     schedule's email" with changed text adds the new email to the same
-    review, and the schedule sends it (``schedule_email``).
+    review, and the schedule sends it (``schedule_email``); on New with
+    Repeat, every reminder the rule adds sends that one new email.
     """
     service = runtime()
     actor = principal(request, service)
@@ -609,11 +616,9 @@ def _entry(request, campaign_id, schedule_id=None):
             test_mail=admits_test_mail(state[0].mode, campaign),
         )
         repeat = RepeatRule(posted, prefix="repeat") if new else None
-        # Edit only: the schedule's own email (New picks a saved one).
-        toggle, email, sources = (
-            (None, None, None)
-            if new
-            else schedule_email.editor(posted, records, schedule, campaign.pk)
+        # The schedule's own email (#446): on New, of the posted mail type.
+        toggle, email, sources = schedule_email.editor(
+            posted, records, schedule, campaign.pk
         )
         context = {
             "campaign": campaign,
@@ -638,7 +643,7 @@ def _entry(request, campaign_id, schedule_id=None):
         valid = (
             entry.is_valid()
             & (repeat is None or repeat.is_valid())
-            & (email is None or not email.is_bound or email.is_valid())
+            & (not email.is_bound or email.is_valid())
         )
         if valid:
             _check_repeat(entry, repeat)
@@ -671,13 +676,15 @@ def _entry(request, campaign_id, schedule_id=None):
                 records,
                 entry.cleaned_data["template_version"],
                 campaign_id=campaign.pk,
-                kind=schedule["values"]["kind"],
+                # Every entry has the one mail type (a repeat's are reminders).
+                kind=schedule["values"]["kind"] if schedule else entries[0]["kind"],
             )
-            if email is not None and email.is_bound
+            if email.is_bound
             else None
         )
         if added is not None:
-            # The schedule sends the new email; nothing else changes.
+            # Every entry sends the one new email (a repeat's reminders share
+            # it); nothing else changes.
             entries = [row | {"template_version": added["id"]} for row in entries]
         reviewed, window, schedules, identifiers = review(
             service,

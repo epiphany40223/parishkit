@@ -1,20 +1,26 @@
 {% load i18n stewardship %}{% comment %}
-Edit scheduled email's own email (#446, schedule_email). The checkbox shows
+New and Edit scheduled email's own email (#446, schedule_email). The checkbox shows
 the fields (data-show-when, which also disables them while hidden, so an
 unticked page posts no email text). They open below the checkbox, so ticking
 it moves nothing above or under the pointer. ui-v1.js fills them from the
 email chosen in Email to send when the box is ticked, and again when the
 choice changes while the reader has not edited them; Reset to the default
-text fills the built-in default. The texts come from
+text fills the built-in default of the page's mail type (on New, the one
+chosen; nothing while none is). The texts come from
 data-schedule-email-sources (json_script). "Generate plain text from HTML"
 is the content editors' own panel and script (data-plain-text), so the
 plain text a save stores is shown as it is typed. The HTML source is edited
 directly; the visual editor and the campaign banner choice stay on Pages and
 emails.
+On New, both the checkbox and Reset need a mail type: until one is chosen
+ui-v1.js keeps them unavailable and data-schedule-email-reason, whose line is
+always reserved (data-idle hides it with visibility), says why, so nothing
+moves when a type is chosen (UX conventions, "Prerequisite gates").
 {% endcomment %}<div class="schedule-email" data-schedule-email>
-<div>{{ email_toggle.edit_email.as_field_group }}</div>
+<div>{{ email_toggle.edit_email.as_field_group }}</div>{% if new %}
+<p class="help schedule-email-reason" id="schedule-email-reason" data-schedule-email-reason data-idle>{% translate "Choose a mail type first." %}</p>{% endif %}
 <fieldset class="panel" data-show-when="edit_email=on"><legend>{% translate "This schedule's email" %}</legend>
-<p class="help">{% translate "These fields start from the email chosen in Email to send. Once you edit them or reset them to the default text, choosing another email keeps your text; to start again from a saved email, choose Cancel and edit this schedule again. Only this schedule sends what you save here." %}</p>
+{% if new %}<p class="help">{% translate "These fields start from the email chosen in Email to send. Once you edit or reset them, choosing another email or mail type keeps your text, which is checked against the chosen type. Only this scheduled email sends it; with Repeat, every reminder it adds shares it." %}</p>{% else %}<p class="help">{% translate "These fields start from the email chosen in Email to send. Once you edit them or reset them to the default text, choosing another email keeps your text; to start again from a saved email, choose Cancel and edit this schedule again. Only this schedule sends what you save here." %}</p>{% endif %}
 <p>{% button type="button" variant="secondary" data-schedule-email-reset %}{% translate "Reset to the default text" %}{% endbutton %}</p>
 {{ email.non_field_errors }}
 <div>{{ email.subject.as_field_group }}</div>

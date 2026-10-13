@@ -242,10 +242,8 @@ def _entry(
     values, owner, emails, rows, *, schedule_row=None, post_url, apply_url=APPLY
 ):
     """New scheduled email, or Edit scheduled email for ``schedule_row``."""
-    toggle, email, sources = (
-        schedule_email.editor(None, emails, schedule_row, owner["id"])
-        if schedule_row
-        else (None, None, None)
+    toggle, email, sources = schedule_email.editor(
+        None, emails, schedule_row, owner["id"]
     )
     context = {
         "email_toggle": toggle,
