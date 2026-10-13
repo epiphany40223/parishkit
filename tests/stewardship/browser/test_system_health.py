@@ -425,7 +425,8 @@ def test_turn_off_debug_logging_previews_and_confirms_in_place(
     expect(confirm).to_be_visible()
     expect(confirm).to_be_focused()
     visible(region.get_by_text("Debug logging is on in: Web portal."))
-    assert place() == top
+    # Firefox may report the same place a few millionths of a pixel apart.
+    assert abs(place() - top) < 0.5
     # The help is one click away, in a toggletip.
     region.get_by_role("button", name="More information").click()
     visible(region.get_by_text("using pk-stewardship debug-off-clear"))
@@ -444,7 +445,8 @@ def test_turn_off_debug_logging_previews_and_confirms_in_place(
     expect(done).not_to_have_text(stamp)
     assert "UTC" not in region.inner_text()
     assert kept()
-    assert place() == top
+    # Firefox may report the same place a few millionths of a pixel apart.
+    assert abs(place() - top) < 0.5
     assert page.evaluate(
         "document.getElementById('debug-off').contains(document.activeElement)"
     )
