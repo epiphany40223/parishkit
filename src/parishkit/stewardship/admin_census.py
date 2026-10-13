@@ -223,6 +223,7 @@ def resolve_census(
     from .admin_report_reads import _current, _refusal, _refusals
     from .audit.schemas import Action, ActorKind, Outcome
     from .audit.services import record_action
+    from .campaigns.work_locks import require_work_order
     from .jobs.task_retries import command_scope
     from .observability import _guard_refusal
     from .reports.read_admission import admit_report_read
@@ -255,7 +256,9 @@ def resolve_census(
             ):
                 raise NotAvailable("No such census change.")
             # The work-order lock the scope holds serializes concurrent
-            # repeats, so this tells a repeat from a new key.
+            # repeats, so this tells a repeat from a new key; fail closed if
+            # the scope ever stops holding it (#1222, #147).
+            require_work_order()
             repeat = ProposalResolution.objects.filter(
                 actor_id=actor.identity, request_key=request_key
             ).exists()

@@ -9,10 +9,16 @@ command line on the restricted web login. A resend prepares the email once
 per request key, never twice, and never changes a Family's code or link.
 """
 
+import io
+import json
+import threading
+import time
 from uuid import uuid4
 
 import pytest
+from django.db import connection
 
+from parishkit.stewardship import admin_cli
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.campaigns.schedule_models import ScheduleDefinition
 from parishkit.stewardship.deployment import ServiceRole
@@ -26,6 +32,7 @@ from .automation_builders import paired
 from .campaign_builders import campaign_clock
 from .response_builders import activate_response_service
 from .test_admin_delivery_cli_postgresql import NOTE, credentials, private, resolve
+from .test_admin_status_cli_postgresql import without_web_runtimes
 from .test_admin_task_retry_cli_postgresql import runner
 from .test_background_grants_postgresql import task_login
 from .test_delivery_resolution_postgresql import failed_delivery
@@ -287,8 +294,8 @@ def refusal(response_service):
     return remember(refused(harness)), SourceCurrent.objects.get()
 
 
-def clear(admin, secret, refusal_id, key, current, *, answer=b"", yes=False, **over):
-    """``delivery refusal-clear`` with the page's source version."""
+def clear_argv(refusal_id, key, current, **over):
+    """The arguments of ``delivery refusal-clear`` with the page's source version."""
     values = {
         "--source-snapshot-id": str(current.snapshot_id),
         "--source-generation": str(current.generation),
@@ -298,6 +305,12 @@ def clear(admin, secret, refusal_id, key, current, *, answer=b"", yes=False, **o
     argv = ["delivery", "refusal-clear", str(refusal_id)]
     for name, value in values.items():
         argv += [name, value]
+    return argv
+
+
+def clear(admin, secret, refusal_id, key, current, *, answer=b"", yes=False, **over):
+    """``delivery refusal-clear`` with the page's source version."""
+    argv = clear_argv(refusal_id, key, current, **over)
     return admin(*argv, *(["--yes"] if yes else []), secret=secret, answer=answer)
 
 
@@ -390,3 +403,91 @@ def test_refusal_clear_asks_then_clears_once_per_key(
     code, denied, _ = clear(admin, reader, record.pk, uuid4(), current, yes=True)
     assert code == 1 and denied["error"]["code"] == "denied", denied
     once()
+
+
+def waiting_on_work_order():
+    """Whether another backend waits for the work-order lock (736220, 1)."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory' "
+            "AND classid=736220 AND objid=1 AND objsubid=2 AND NOT granted)"
+        )
+        return cursor.fetchone()[0]
+
+
+def test_concurrent_repeats_of_a_key_record_one_command_event(
+    auth_service, monkeypatch, refusal, google
+):
+    """#1222: two sessions sending one key at once record one event.
+
+    The first command is held after the page's function wrote its
+    clearance, before its transaction commits. The second, on another
+    automation session with the same key and intent, waits on the
+    work-order lock the command scope takes before it checks the key; once
+    the first commits it sees the clearance and returns it. Exactly one
+    ``created`` and one ``admin_cmd_delivery_refusal_clear`` event.
+    """
+    from parishkit.stewardship.jobs import delivery_admin
+
+    admin = runner(auth_service, monkeypatch)
+    record, current = refusal
+    secrets = [paired(admin.service)[1], paired(admin.service)[1]]
+    argv = [*clear_argv(record.pk, uuid4(), current), "--yes"]
+    inside, release = threading.Event(), threading.Event()
+    real = delivery_admin.clear_recipient_refusal
+
+    def held(*arguments, **options):
+        """The page's function; the first command then waits, uncommitted."""
+        receipt = real(*arguments, **options)
+        if threading.current_thread().name == "first":
+            inside.set()
+            assert release.wait(30)
+        return receipt
+
+    monkeypatch.setattr(delivery_admin, "clear_recipient_refusal", held)
+    results = {}
+
+    def command(secret):
+        """One command on its own connection; keeps (code, document)."""
+        out = io.StringIO()
+        try:
+            code = admin_cli.main(
+                [*argv, "--config", "web.yaml", "--session-stdin"],
+                stdin=io.BytesIO(f"pk-admin-session/1 {secret} {'a' * 64}\n".encode()),
+                stdout=out,
+                stderr=io.StringIO(),
+            )
+            results[threading.current_thread().name] = (
+                code,
+                json.loads(out.getvalue()),
+            )
+        finally:
+            connection.close()
+
+    # One restricted login for both threads: each new connection joins it.
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        without_web_runtimes(),
+    ):
+        first = threading.Thread(target=command, args=(secrets[0],), name="first")
+        second = threading.Thread(target=command, args=(secrets[1],), name="second")
+        first.start()
+        try:
+            assert inside.wait(30)
+            second.start()
+            deadline = time.monotonic() + 30
+            while not waiting_on_work_order():
+                assert time.monotonic() < deadline, "second command never waited"
+                time.sleep(0.05)
+        finally:
+            release.set()
+            first.join(60)
+            if second.ident is not None:
+                second.join(60)
+    assert set(results) == {"first", "second"}, results
+    for code, document in results.values():
+        assert code == 0, document
+    assert results["first"][1]["result"]["created"] is True
+    assert results["second"][1]["result"]["created"] is False
+    assert RecipientRefusalResolution.objects.count() == 1
+    assert AuditEvent.objects.filter(event_type=CLEAR).count() == 1
