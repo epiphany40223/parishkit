@@ -1,7 +1,8 @@
 """Report date filters are days in the browser's time zone (#558).
 
-The Additional information queue and one Ministry's requests take their
-submitted-date filters as the viewer's local days: the page names the zone,
+The Additional information queue (and one Ministry's requests, until they
+were retired in #1157) takes its submitted-date filters as the viewer's
+local days: the page names the zone,
 Apply sends it with the dates, and a browser that reports no zone cannot
 apply a date (the server would refuse it rather than guess).
 """
@@ -27,10 +28,7 @@ ZONE_HINT = (
     "Clear the dates, or check your computer's time zone setting."
 )
 # (component page, zone note id, Apply's hint id, how the server parses it)
-PAGES = (
-    ("/information", "information-zone-help", "information-filter-hint", False),
-    ("/ministry-detail", "ministry-zone-help", "ministry-filter-hint", True),
-)
+PAGES = (("/information", "information-zone-help", "information-filter-hint", False),)
 
 
 def _posted(request):
@@ -132,7 +130,6 @@ def test_dates_wait_for_a_known_browser_zone(
     ("path", "pattern", "applied"),
     [
         ("/information", "**/information/", "/information-dated"),
-        ("/ministry-detail", "**/joining/", "/ministry-dated"),
     ],
 )
 def test_the_export_carries_the_applied_zone(

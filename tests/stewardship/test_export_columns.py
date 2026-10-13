@@ -76,6 +76,7 @@ from .test_financial_documents import row as financial_row
 from .test_information_rendering import document as information
 from .test_limitations_report import result as limitations_result
 from .test_ministry_exports import document as ministry
+from .test_ministry_followup_exports import document as followup_requests
 from .test_ministry_packets import item as member
 from .test_ministry_packets import packet
 from .test_participation_rendering import document as participation
@@ -460,6 +461,11 @@ def case_ministry_roster(monkeypatch):
         ),
     )
     return headers[0], headers, sheets, seen["table"], labels
+
+
+def case_ministry_followup(monkeypatch):
+    """Export these requests, the follow-up queue's file (#1157)."""
+    return shared_case(monkeypatch, followup_requests())
 
 
 def case_limitations(monkeypatch):

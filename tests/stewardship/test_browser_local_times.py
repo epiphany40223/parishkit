@@ -215,7 +215,11 @@ def test_follow_up_page_labels_no_utc_entry():
     # fields carry the gate marker for an unknown one.
     assert "data-browser-zone-note hidden" in text
     assert text.count("data-browser-zone-field>") == 2
-    assert "data-browser-zone-name" in text and "UTC" not in text
+    # The queue's Export these requests (#1157) offers UTC among its zone
+    # choices, as every export asking for a zone does; the follow-up itself
+    # names no fixed zone.
+    followup = text[: text.index('<section aria-labelledby="followup-export-heading">')]
+    assert "data-browser-zone-name" in text and "UTC" not in followup
     # Every follow-up instant shown (the request's submitted time, history,
     # contact, the queue's last contact, source as of) is converted in the
     # browser. The queue has no Submitted column (#1064).

@@ -203,7 +203,6 @@ def test_ministry_and_information_exports(
 ):
     """A Ministry list, a packet and the information queue."""
     from parishkit.stewardship.reports.information import InformationQuery
-    from parishkit.stewardship.reports.ministries import MinistryQuery
 
     harness = ministry_setup(response_service)
     browser, _ = signed_in()
@@ -234,12 +233,8 @@ def test_ministry_and_information_exports(
     assert len(requested()) == 3
     # The pages' forms for the same selections make the same records: the
     # same parameters, and the same export_requested context members.
+    # (One Ministry's join list has no page form since #1157.)
     forms = {
-        "join": (
-            reverse("admin:ministry_export"),
-            MinistryQuery(history="all").form_values()
-            | {"action": "join", "ministry": "9"},
-        ),
         "information": (
             reverse("admin:information_export"),
             InformationQuery().form_values() | {"history": "yes"},
@@ -256,7 +251,7 @@ def test_ministry_and_information_exports(
             assert getattr(page, field) == getattr(made[name], field), (name, field)
         contexts = requested()
         assert contexts[-1] == contexts[list(cases).index(name)], name
-    assert len(requested()) == 5
+    assert len(requested()) == 4
     assert count("admin_cmd_export_ministry") == 1
     assert count("admin_cmd_export_ministry_packet") == 1
     assert count("admin_cmd_export_information") == 1
@@ -299,7 +294,7 @@ def test_ministry_and_information_exports(
         "export", "ministry", *base, "--ministry", "123", "--requests", "join"
     )
     assert code == 1 and document["error"]["code"] == "invalid"
-    assert len(requested()) == 5
+    assert len(requested()) == 4
 
 
 @pytest.fixture

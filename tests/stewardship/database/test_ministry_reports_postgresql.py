@@ -7,7 +7,6 @@ import psycopg
 import pytest
 from django.db import connection, transaction
 from django.db.models import F
-from django.test import Client
 from django.urls import reverse
 
 from parishkit.stewardship.accounts.policy import Principal
@@ -223,20 +222,9 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
     google[0]["email"] = "leader@example.org"
     browser, _ = signed_in()
     root = reverse("admin:ministry_report")
-    route = reverse("admin:ministry_joiners")
-    from parishkit.stewardship.reports import ministry_views
-
-    real_principal = ministry_views._principal
-
-    def previously_staff(request, store, *, read_only=False):
-        """Model an outer Staff decision superseded by the guarded leader check."""
-        actor = real_principal(request, store, read_only=read_only)
-        return actor if read_only else Principal(actor.identity, frozenset({"staff"}))
-
-    with monkeypatch.context() as scoped_patch:
-        scoped_patch.setattr(ministry_views, "_principal", previously_staff)
-        response, body = search(browser, route, {"ministry": "9"})
-        assert response.status_code == 200 and b"valid@example.org" not in body
+    # One Ministry's joining and leaving lists were retired (#1157); their
+    # contact details' scope is checked on the follow-up request page and
+    # its export (test_ministry_contacts_postgresql).
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = read(browser, root)
         assert (
@@ -266,68 +254,18 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
             b'name="activity" value="any"'
         )
         assert b"/ministries/9/" not in body
-        assert b'name="ministry" value="9"' in body
         # The summary names each Ministry and shows no DUID (#1123).
         assert b'<td class="numeric">9</td>' not in body
-        assert b"Ministry DUID" not in body and b"DUID 9" not in body
-        # Opening a Ministry's joining list (its Contact details) only
-        # reads, so its control looks like a link; it stays a POST so the
-        # Ministry never reaches a URL (pk-local batch 5). Food pantry has no
-        # leave request, so it offers no leaving list (#1133).
-        text = body.decode()
-        form = text.split('action="/admin/reports/ministries/joining/"', 1)[1]
-        form = form.split("</form>", 1)[0]
-        assert 'class="inline-form"' in form and 'class="link-button"' in form
-        assert 'action="/admin/reports/ministries/leaving/"' not in text
-        response, body = search(browser, route, {"ministry": "9"})
-        assert response.status_code == 200 and response["Cache-Control"] == "no-store"
-        assert b"/ministries/9/" not in body
-        assert b'name="ministry" value="9"' in body
-        assert b"Not published" in body and b"valid@example.org" not in body
-        assert b"+1 (202) 555-0123" in body and b"1960-01-01" not in body
-        # Submitted, Member, then Member DUID in its own column (#932).
-        assert b'data-sort-column="submitted"' in body
-        # The Member DUID heading sorts through the selection (#960).
-        assert b'class="numeric" data-sort-column="member_duid"' in body
-        assert b"DUID 3" not in body
-        assert (
-            search(browser, reverse("admin:ministry_leavers"), {"ministry": "4"})[
-                0
-            ].status_code
-            == 403
-        )
-        assert browser.post(route, {"search": "Private"}).status_code == 403
-        response, body = search(browser, route, {"ministry": "9", "search": "Example"})
-        assert response.status_code == 200 and b"Member Middle Example" in body
-        assert b"?search=" not in body
-        # Shared table (#203): sortable headings and the navigator are POST
-        # forms carrying the private search, never links; only the installed
-        # selection's own sort values are accepted.
-        assert b"Page 1 of 1" in body and b'aria-sort="ascending"' in body
-        assert b'<a class="sort-link"' not in body and b'rel="next"' not in body
-        assert b'name="sort" value="name_desc"' in body
-        assert b'name="search" value="Example"' in body
-        response, body = search(
-            browser, route, {"ministry": "9", "sort": "newest", "size": "25"}
-        )
-        assert response.status_code == 200 and b'aria-sort="descending"' in body
-        # A page past the end (a stale Next or a typed number) shows the last.
-        response, body = search(browser, route, {"ministry": "9", "page": "7"})
-        assert response.status_code == 200 and b"Member Middle Example" in body
-        assert b"Page 1 of 1" in body
-        for invalid in ({"sort": "member_name"}, {"sort": "-name"}, {"size": "7"}):
-            response, _ = search(browser, route, {"ministry": "9"} | invalid)
-            assert response.status_code == 400
+        assert b"\xe2\x80\x94 DUID 9</td>" not in body
+        # The retired lists' Contact details controls are gone (#1157).
+        assert b"/admin/reports/ministries/joining/" not in body
+        assert b"Contact details" not in body
         # A hand-made activity filter is refused from a leader (#1135); "any",
         # what the page's own forms send, is accepted.
         for activity in ("active", "inactive", "unavailable"):
             response, _ = search(browser, root, {"activity": activity})
             assert response.status_code == 400
         assert search(browser, root, {"activity": "any"})[0].status_code == 200
-        # The Member DUID heading sorts the list (#960).
-        response, body = search(browser, route, {"ministry": "9", "sort": "duid_desc"})
-        assert response.status_code == 200 and b"Member Middle Example" in body
-        assert b'aria-sort="descending"' in body and b'value="duid"' in body
         # The summary sorts by Ministry name (#960), within the leader's
         # scope; it offers no Ministry DUID heading (#1123).
         response, body = search(browser, root, {"sort": "name_desc"})
@@ -335,14 +273,6 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
         assert b"Choir" not in body and b'aria-sort="descending"' in body
         assert b'name="sort" value="duid"' not in body
         assert search(browser, root, {"sort": "newest"})[0].status_code == 400
-        # A GET has no Ministry selection: back to the summary (#867),
-        # dropping any query rather than echoing it.
-        response, body = read(browser, route + "?search=Private")
-        assert response.status_code == 303 and b"Private" not in body
-        assert response["Location"] == root
-        assert read(browser, route)[0].status_code == 303
-        for value in ("0", "09", "2147483648", "private@example.org"):
-            assert search(browser, route, {"ministry": value})[0].status_code == 400
     contexts = list(
         AuditContext.objects.filter(
             event__event_type="ministry_report_viewed"
@@ -386,7 +316,8 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
         data, {"leader-9@example.org": [9], "leader-4@example.org": [4]}
     )
     promote(snapshot, claim, harness.campaign, harness.rings)
-    assert search(browser, route, {"ministry": "9"})[0].status_code == 403
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        assert read(browser, root)[0].status_code == 403
 
 
 def packet_boxes(body):
@@ -472,27 +403,6 @@ def test_packet_choices_list_every_ministry_in_scope_beyond_the_table(
         assert response.status_code == 400
         assert "at most 200" in response.json()["refusal"]["message"]
     assert not MinistryExportSnapshot.objects.exists()
-
-
-def test_a_get_of_joining_or_leaving_returns_to_the_ministry_report(
-    response_service, google
-):
-    """A GET has no Ministry selection: back to the report, not 400 (#867).
-
-    Joining and leaving take a POST from the report's per-Ministry forms; a
-    typed or bookmarked address, a refresh or Back sends a GET instead.
-    """
-    browser, _ = signed_in()
-    report = reverse("admin:ministry_report")
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        for name in ("ministry_joiners", "ministry_leavers"):
-            route = reverse(f"admin:{name}")
-            for path in (route, route + "?ministry=9"):
-                response = browser.get(path, HTTP_ACCEPT="text/html")
-                assert response.status_code == 303, path
-                assert response["Location"] == report
-            # Someone not signed in is refused first, never redirected.
-            assert Client().get(route).status_code != 303
 
 
 def test_testing_hidden_proposed_and_resolved_intent(response_service):

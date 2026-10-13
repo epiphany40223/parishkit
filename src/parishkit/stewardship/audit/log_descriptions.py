@@ -718,6 +718,10 @@ DESCRIPTIONS = {
         "cleared that mark."
     ),
     "roster_changes_viewed": _("Someone opened the Roster changes to enter list."),
+    "ministry_followup_exported": _(
+        "Someone downloaded Ministry follow-up requests with their contact "
+        "details (Export these requests)."
+    ),
     "roster_changes_exported": _(
         "Someone downloaded the Roster changes to enter list."
     ),

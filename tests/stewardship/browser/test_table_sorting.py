@@ -680,7 +680,6 @@ def test_followup_filter_refreshes_in_place_without_assignment(page, component_o
     [
         ("/financial-report", "Family DUID", "**/financial/", "sort=duid"),
         ("/information", "Family DUID", "**/information/", "sort=duid"),
-        ("/ministry-detail", "Member DUID", "**/joining/", "sort=duid"),
     ],
 )
 def test_duid_headings_sort_the_sql_ordered_reports(

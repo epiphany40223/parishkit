@@ -5,7 +5,6 @@ from uuid import uuid4
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, transaction
-from django.http import HttpResponseRedirect
 from django.shortcuts import render
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -19,7 +18,6 @@ from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.observability import Event, emit_failure
-from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.dates import UnknownZone
 from parishkit.stewardship.web.report_errors import report_unavailable
@@ -30,8 +28,6 @@ from parishkit.stewardship.web.tables import report_table
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .ministries import (
-    DETAIL_SORTING,
-    STATES,
     SUMMARY_SORTING,
     ZONE_MESSAGE,
     MinistryQuery,
@@ -119,18 +115,17 @@ def queue_links(actor, summary):
 
 
 @require_http_methods(["GET", "POST"])
-def report(request, campaign_id, *, action=None):
-    """Hold purge protection through projection, rendering and streaming."""
+def report(request, campaign_id):
+    """Hold purge protection through projection, rendering and streaming.
+
+    Ministry requests is the campaign-wide summary only: one Ministry's
+    Members joining and Members leaving lists were retired (#1157), since
+    each request's contact details are on its follow-up page.
+    """
     finish, handed_off = None, False
     try:
         service = runtime()
         actor = _principal(request, service.store)
-        if action is not None and request.method == "GET":
-            # Joining and leaving take a POST from the Ministry report's
-            # per-Ministry forms. A GET (typed or bookmarked address, refresh
-            # or Back) has no Ministry selection, so it goes back to the
-            # report rather than failing as an invalid request (#867).
-            return HttpResponseRedirect(reverse("admin:ministry_report"), status=303)
         if request.GET:
             raise ValueError("Ministry filters require private POST state.")
         if campaign_id is None or campaign_id not in campaign_ids(actor):
@@ -148,22 +143,7 @@ def report(request, campaign_id, *, action=None):
             return response
         parameters = request.POST.copy()
         parameters.pop("csrfmiddlewaretoken", None)
-        ministry_id = None
-        if action is not None:
-            values = parameters.pop("ministry", [])
-            if (
-                len(values) != 1
-                or not values[0].isascii()
-                or not values[0].isdecimal()
-                or len(values[0]) > 10
-                or str(int(values[0])) != values[0]
-                or not 0 < int(values[0]) < 2**31
-            ):
-                raise ValueError("A canonical Ministry selection is required.")
-            ministry_id = int(values[0])
-        query = refuse_leader_activity(
-            actor, MinistryQuery.parse(parameters, detail=ministry_id is not None)
-        )
+        query = refuse_leader_activity(actor, MinistryQuery.parse(parameters))
         admit_report_read(campaign_id)
         _audit(actor, campaign_id, query, Outcome.STARTED)
         finalized, count, total, scope = False, 0, 0, ()
@@ -201,14 +181,8 @@ def report(request, campaign_id, *, action=None):
             nonlocal count, total, scope, query
 
             def read():
-                """One page of the role-scoped selection for the current query."""
-                return ministry_page(
-                    campaign_id,
-                    query,
-                    actor,
-                    ministry_id=ministry_id,
-                    action=action or "join",
-                )
+                """One page of the role-scoped summary for the current query."""
+                return ministry_page(campaign_id, query, actor)
 
             result = read()
             # A page past the end (typed, bookmarked or a stale Next) shows
@@ -219,15 +193,9 @@ def report(request, campaign_id, *, action=None):
                 result = read()
             for summary in result["summaries"]:
                 summary["queue_links"] = queue_links(actor, summary)
-            count = len(
-                result["rows"] if ministry_id is not None else result["summaries"]
-            )
+            count = len(result["summaries"])
             total = result["total"]
-            scope = (
-                (ministry_id,)
-                if ministry_id is not None
-                else tuple(row["duid"] for row in result["summaries"])
-            )
+            scope = tuple(row["duid"] for row in result["summaries"])
             mutable = True
             try:
                 admit_campaign(campaign_id, mutating=True)
@@ -236,9 +204,7 @@ def report(request, campaign_id, *, action=None):
             context = result | {
                 # The packet's choices, on the summary only: every Ministry
                 # in scope, not just this page's rows (#533).
-                "packet_choices": None
-                if ministry_id is not None
-                else packet_choices(
+                "packet_choices": packet_choices(
                     result,
                     query,
                     lambda: ministry_page(
@@ -250,21 +216,13 @@ def report(request, campaign_id, *, action=None):
                 # Administrators only (#1135).
                 "show_activity": reads_every_ministry(actor),
                 "mutable": mutable,
-                "export_key": uuid4(),
                 "packet_key": uuid4(),
-                "export_fields": query.form_values(),
-                "export_timezones": sorted(timezone_names()),
                 "campaign_id": campaign_id,
-                "ministry_id": ministry_id,
-                "action": action,
                 "query": query,
-                "states": STATES,
                 "report_url": request.path_info,
-                "summary_url": reverse("admin:ministry_report"),
-                # One shared navigator and sortable headings for whichever
-                # list this page pages: the summary, or one Ministry's rows.
+                # The shared navigator and sortable headings of the summary.
                 "table": report_table(
-                    result["rows"] if ministry_id is not None else result["summaries"],
+                    result["summaries"],
                     number=query.page,
                     size=query.page_size,
                     total=total,
@@ -272,9 +230,8 @@ def report(request, campaign_id, *, action=None):
                         (key, value)
                         for key, value in query.form_values().items()
                         if key != "sort"
-                    ]
-                    + ([("ministry", str(ministry_id))] if ministry_id else []),
-                    sorting=DETAIL_SORTING if ministry_id else SUMMARY_SORTING,
+                    ],
+                    sorting=SUMMARY_SORTING,
                     sort=query.sort,
                     action=request.path_info,
                 ),

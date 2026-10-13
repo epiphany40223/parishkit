@@ -41,7 +41,6 @@ from .test_background_grants_postgresql import task_login
 from .test_family_mail_preparation_postgresql import family_mail  # noqa: F401
 from .test_financial_report_postgresql import pledge
 from .test_financial_source_postgresql import financial_source
-from .test_information_followup_postgresql import search
 from .test_ministry_reports_postgresql import setup as ministry_setup
 from .test_report_selection_postgresql import pointer
 from .test_report_workspace_postgresql import (
@@ -306,7 +305,11 @@ def test_participation_responses_information_and_the_list(http_scenario, cli):  
 
 
 def test_ministry_summary_and_request_counts(response_service, google, cli):
-    """The Ministry page's summary, and one list's count without its Members."""
+    """The Ministry page's summary, and one list's count without its Members.
+
+    The list's own page (Members joining) was retired (#1157); the command's
+    count of it stays.
+    """
     harness = ministry_setup(response_service)
     campaign_id = harness.campaign.pk
     browser, _ = signed_in()
@@ -318,11 +321,7 @@ def test_ministry_summary_and_request_counts(response_service, google, cli):
         lambda: read(browser, root),
         lambda: run("report", "ministry"),
     )
-    parity(
-        "ministry_report_viewed",
-        lambda: search(browser, root + "joining/", {"ministry": "9"}),
-        lambda: run("report", "ministry", "--ministry", "9", "--requests", "join"),
-    )
+    # One list's page was retired (#1157); its command still counts it.
     code, document = run("report", "ministry")
     assert code == 0, document
     result = document["result"]

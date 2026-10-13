@@ -181,6 +181,25 @@ def components(context, admin):
         rows=[row],
         ministries=[dict(duid=9, name="Example <Ministry>")],
         metadata=dict(name="Sample campaign", source_as_of=moment, timezone="UTC"),
+        # Export these requests (#1157): the applied view and zone choices.
+        export_fields=query.form_values(),
+        export_timezones=["America/Detroit", "UTC"],
+        export_pdf_limit=1000,
+        # The Member's contact details on a request page (#1157), as
+        # request_contacts returns them for a join: a leader's view, with
+        # the unpublished phone withheld.
+        contact=dict(
+            kind="join",
+            proposed=False,
+            email_visibility="available",
+            emails=["member<one>@example.org"],
+            phone_visibility="not_published",
+            phones={},
+            address_lines=["1 Example <Street>", "Exampleton, IN 46000"],
+            gender="Unspecified",
+            age=66,
+            report_date="2026-09-19",
+        ),
     )
     # The form's values, as the view builds them (or keeps them on a refusal).
     form = dict(
@@ -312,12 +331,14 @@ def components(context, admin):
         "/followup-all": values
         | dict(
             query=unfiltered,
+            export_fields=unfiltered.form_values(),
             rows=[row, proposed],
             table=_table([row, proposed], unfiltered, 51, campaign),
         ),
         "/followup-page": values
         | dict(
             query=unfiltered,
+            export_fields=unfiltered.form_values(),
             rows=full_page,
             table=_table(full_page, unfiltered, 60, campaign),
         ),
@@ -326,12 +347,23 @@ def components(context, admin):
         "/followup-empty": values
         | dict(rows=[], total=0, table=_table([], query, 0, campaign)),
         "/followup-gated": values | dict(mutable=False),
+        # More requests than one PDF may hold (#1157): PDF is unavailable.
+        "/followup-over": values | dict(total=1001),
         "/followup-item": values
         | dict(item=row, form=form, history=[revision], next_history=2),
         "/followup-item-leave": values
         | dict(
             item=leave,
             form=form,
+            contact=dict(
+                kind="leave",
+                proposed=False,
+                email_visibility="not_published",
+                emails=[],
+                phone_visibility="available",
+                phones={"mobile": "2025550123"},
+                current_role="Chairperson",
+            ),
             resolved_outcomes=[
                 (key, outcome_label(key, "leave")) for key in outcomes_for("leave")
             ],

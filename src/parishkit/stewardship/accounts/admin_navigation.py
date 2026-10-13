@@ -221,8 +221,6 @@ PAGES = {
     ),
     "daily_digest_snapshot": Page("reports", _("Daily report"), "emailed_reports"),
     "ministry_report": Page("reports", _("Ministry requests")),
-    "ministry_joiners": Page("reports", _("Members joining"), "ministry_report"),
-    "ministry_leavers": Page("reports", _("Members leaving"), "ministry_report"),
     "ministry_followup": Page("reports", _("Ministry follow-up")),
     "ministry_followup_item": Page(
         "reports", _("Follow-up request"), "ministry_followup"
@@ -668,7 +666,7 @@ NON_PAGES = frozenset(
         "limitations_export",
         "census_changes_export",
         "maintenance",
-        "ministry_export",
+        "ministry_followup_export",
         "ministry_followup_update",
         "ministry_followup_bulk",
         "ministry_followup_roster",

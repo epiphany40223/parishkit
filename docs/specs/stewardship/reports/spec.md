@@ -1382,8 +1382,8 @@ never includes the opaque email-link token.
 **Access:** Admin/Staff for all selected campaign Ministries; leaders for the
 campaign Ministries they lead in ParishSoft only.
 
-The database enforces this scope, not only the application. The summary, its
-lists and the
+The database enforces this scope, not only the application. The summary, the
+Member contact details on each follow-up request and in its export, and the
 [Ministry follow-up](../admin-portal/spec.md#follow-up-workflows) queue read
 through `stewardship_ministry_report_v2` and
 `stewardship_ministry_followup_v2` (migration 0040). These take the signed-in
@@ -1433,24 +1433,7 @@ Ministries they lead; a zero count is plain text, and each link's accessible
 name names its Ministry ("3 join requests for Choir"), as
 [count links](../ui-conventions/spec.md#admin-tables) ask.
 
-Under each join-request and leave-request count that is not zero, a
-**Contact details** control opens that Ministry's list below, the one place
-the Members' contact details are shown, until the two pages merge (#1133
-step 2). Opening a list only reads, so it looks like a link; it is a small
-POST form styled as one, because this report keeps every filter, the
-Ministry included, in private POST state
-([Admin tables](../admin-portal/spec.md#admin-tables)). Its accessible name
-names the list and the Ministry ("Contact details of Members asking to join
-Choir"). The lists are:
-
-- prospective joiners: Member name, Member DUID, status/outcome, then
-  gender, age as of report date, publishable email/phones for leaders,
-  operational contact for Admin/Staff and Family mailing address, and last
-  the request/submission date; and
-- requested leavers: Member name, Member DUID, status/outcome, current role
-  where known, and last the request date.
-
-Both lists and the summary follow the Admin table
+The summary table follows the Admin table
 [column order](../admin-portal/spec.md#table-column-order), leading with the
 Member or the Ministry: a list's Member DUID has its
 own column next to the Member's name, and a Member added on the form, who has
@@ -1483,29 +1466,54 @@ format. Form order is the order the Family form lists those Members once
 saved: ascending proposed Member reference, whatever the list's sort, with
 every request of one Member sharing its label.
 
-Each list opens by a POST from its Ministry's Contact details form on the
-summary. A GET of
-either list's address (typed, bookmarked, refreshed or reached with Back)
-carries no Ministry selection, so it answers with a 303 redirect to the
-summary rather than an invalid-request error
-([#867](https://github.com/epiphany40223/parishkit/issues/867)).
+The Members joining and Members leaving lists that once opened from each
+Ministry's counts, with their **Contact details** controls and their CSV,
+XLSX and PDF exports, were retired (Administrator decision, 2026-10-12,
+[#1157](https://github.com/epiphany40223/parishkit/issues/1157), the first
+slice of #1133 step 2). Members can share a name, and a list of names did not
+say which Member a request meant; the request does. Each request's
+[follow-up page](../admin-portal/spec.md#follow-up-workflows) now shows its
+Member's contact details, and the follow-up queue's **Export these requests**
+downloads the queue's filtered set with them (as CSV or XLSX at any size, and
+as a PDF of at most 1,000 requests, a limit set by the time a PDF takes to
+render; see
+[follow-up workflows](../admin-portal/spec.md#follow-up-workflows)). The lists' addresses
+(`/admin/reports/ministries/joining/`, `/leaving/` and the export form's
+`/admin/reports/ministries/exports/`) answer 404, with no redirect
+([legacy URLs](../ui-conventions/spec.md#addresses-and-legacy-urls)). Export
+files made from the lists before then stay downloadable until they expire,
+and the host `export ministry` command still writes one Ministry's join or
+leave list.
 
 Neither list nor its export shows a resolved request's **Entered in
 ParishSoft** tick; it is read and set on
 [Roster changes to enter](../admin-portal/spec.md#roster-changes-to-enter).
 Ministry leaders never see the tick anywhere
 ([follow-up workflows](../admin-portal/spec.md#follow-up-workflows)).
+The contact details are read through the installed selections, with no
+schema change: `stewardship_ministry_report_v4`, read for one Ministry and
+request kind with every version, gives a join request's gender, age as of
+the report date, email, phones and known primary Family address, and a
+leave request's current role in the Ministry; the
+[follow-up packet's](#multi-ministry-follow-up-packet)
+`stewardship_ministry_packet_v1` gives a leave request's email and phones
+(the packet's projection, which leaders already receive), its scope derived
+in SQL from the signed-in user as an export capture derives it. An earlier
+version of a request takes its Member's current values. A Member the Family
+added on the form is not in ParishSoft yet, so the details are what the
+Family entered, and the page says so; in a file such a Member reads "New
+Member", and two such Members with one name read "New Member 1", "New
+Member 2" and so on in form order (ascending proposed Member reference), so
+their rows stay distinct in every format. A request whose Ministry the report
+cannot read (one removed from the campaign whose requests were all withdrawn)
+shows no details and says so.
 
-Follow-up has no assignee, so neither list nor its exports show one; see
-[Follow-up workflows](../admin-portal/spec.md#follow-up-workflows).
-
-Leader phone/email columns honor ParishSoft publish flags and show "Not
+Leader phone and email values honor ParishSoft publish flags and show "Not
 published" rather than leaking a value. Admin/Staff may see operational source
 contact. Mailing address/demographics are visible to a Ministry's leaders as
 explicitly authorized for this workflow. Birth date itself is not shown when
 age suffices.
 
-Lists are searchable/filterable/sortable and exportable as CSV, XLSX, or PDF.
 The campaign-wide summary has no export
 ([#1126](https://github.com/epiphany40223/parishkit/issues/1126)): its rows
 are counts per Ministry, with no parishioner data, and the page already shows
@@ -1515,9 +1523,12 @@ export, including regenerating an expired one made before the removal, is
 refused as an invalid selection; an existing summary file stays downloadable
 until it expires. The page shows the ParishSoft data date but not the data
 load number, an internal counter.
-One Ministry's lists filter by submitted date in the viewer's browser time
-zone, as [Additional information](#additional-information) does; the packet
-has no date filter. Every leader view/export is audited with Ministry scope.
+The packet has no date filter. Every leader view/export is audited with
+Ministry scope: a follow-up request page's view records its request's
+`ministry_duid`, and **Export these requests** records the sorted Ministry
+DUIDs in its file (`ministry_duids`) and whether its contacts were
+operational or publish-restricted (`ministry_operational`), as described in
+[follow-up workflows](../admin-portal/spec.md#follow-up-workflows).
 An export audit event retains the sorted Ministry DUID set actually included
 after filtering, plus whether the captured contact projection was operational
 or publish-restricted. This result scope is distinct from the potentially wider
@@ -1554,8 +1565,8 @@ including resolved/cancelled history only when the requester selects the
 history option. Rows contain:
 
 - Member name and DUID, where a Member added on the form reads "New Member"
-  (or "New Member N"), numbered by the same rule as the
-  [lists](#ministry-change-summary) but within each Ministry's packet rows;
+  (or "New Member N"), numbered by the same rule as the follow-up queue's
+  [export](#ministry-change-summary) but within each Ministry's packet rows;
 - authorized Member email address(es);
 - recorded email-contact date, blank if none;
 - authorized Member phone number(s);
@@ -1568,8 +1579,8 @@ history option. Rows contain:
   with its notes/reference.
 
 These are the outcome labels everywhere a Ministry request's outcome shows:
-the follow-up queue, the request page and its history, the join and leave
-lists, and their downloads and packets
+the follow-up queue, the request page and its history, the queue's Export
+these requests, the retired join and leave lists' stored files, and packets
 ([#1132](https://github.com/epiphany40223/parishkit/issues/1132)). The
 stored code is the same for both kinds, so a leave request someone resolved
 as `declined` before the labels changed reads `Stayed in the Ministry`: the

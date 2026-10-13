@@ -70,6 +70,14 @@ FILTER_OUTCOMES = {
     for key, label in outcome_choices("any").items()
     if key not in RETIRED_OUTCOMES
 }
+# The most requests Export these requests writes as a PDF (#1157). A PDF is
+# rendered on request inside the 60-second interactive read guard, and the
+# shared PDF writers take about 19 ms a row (timed on 2026-10-12: 3,002
+# requests from 1,000 synthetic Families took 58 s as record cards and 50 s
+# as a table; CSV took 1.2 s and XLSX 2.7 s). 1,000 rows is about 20 s,
+# leaving room for the slower production VM. CSV and XLSX are not limited.
+# Administrator's default decision, 2026-10-12; it may be revisited.
+EXPORT_PDF_LIMIT = 1_000
 CHANNELS = {
     "email": "Email",
     "phone": "Phone",

@@ -837,10 +837,10 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `information_item` | Information request | Additional information | Administrator, Staff | Additional information and follow-up (one request); Information item | `/admin/reports/information/<item>/` | (same) | Return to the queue keeps its filters and page. |
 | `ministry_reports` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry reports | `/admin/ministry-reports/` | (retired; 404) | Replaced by Ministry requests, which shows the "no campaign" page when there is nothing for the viewer to report. |
 | `ministry_report` | Ministry requests | Menu: Ministry requests | Administrator, Staff, Ministry leader | Ministry report | `/admin/reports/ministries/` | (same) |  |
-| `ministry_joiners` | Members joining | Ministry requests | Administrator, Staff, Ministry leader | Ministry requests — Prospective joiners; Joining | `/admin/reports/ministries/joining/` | (same) | Becomes a bookmarkable view of Ministry requests (#521). |
-| `ministry_leavers` | Members leaving | Ministry requests | Administrator, Staff, Ministry leader | Ministry requests — Requested leavers; Leaving | `/admin/reports/ministries/leaving/` | (same) | Becomes a bookmarkable view of Ministry requests (#521). |
-| `ministry_followup` | Ministry follow-up | Menu: Ministry follow-up | Administrator, Staff, Ministry leader | Follow-up | `/admin/reports/ministries/follow-up/` | (same) | No assignee column, filter or bulk assignment (#552). |
-| `ministry_followup_item` | Follow-up request | Ministry follow-up | Administrator, Staff, Ministry leader | Ministry follow-up (one request) | `/admin/reports/ministries/follow-up/<request>/` | (same) | Return to the queue keeps its filters and page. Status, notes and outcome only; no Assign to (#552). A resolved join or leave's Entered in ParishSoft tick posts to `follow-up/<request>/roster/` (#528). |
+| `ministry_joiners` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry requests — Prospective joiners; Joining; Members joining | `/admin/reports/ministries/joining/` | (retired; 404) | Retired with no redirect ([#1157](https://github.com/epiphany40223/parishkit/issues/1157)): each request's contact details are on its Follow-up request page, and its export is Ministry follow-up's Export these requests. |
+| `ministry_leavers` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry requests — Requested leavers; Leaving; Members leaving | `/admin/reports/ministries/leaving/` | (retired; 404) | Retired with no redirect (#1157), as Members joining. |
+| `ministry_followup` | Ministry follow-up | Menu: Ministry follow-up | Administrator, Staff, Ministry leader | Follow-up | `/admin/reports/ministries/follow-up/` | (same) | No assignee column, filter or bulk assignment (#552). Its Export these requests download (`follow-up/exports/`, #1157) is a non-page action. |
+| `ministry_followup_item` | Follow-up request | Ministry follow-up | Administrator, Staff, Ministry leader | Ministry follow-up (one request) | `/admin/reports/ministries/follow-up/<request>/` | (same) | Return to the queue keeps its filters and page. Status, notes and outcome only; no Assign to (#552). Shows the Member's contact details (#1157). A resolved join or leave's Entered in ParishSoft tick posts to `follow-up/<request>/roster/` (#528). |
 | `ministry_roster` | Roster changes to enter | Ministry follow-up | Administrator, Staff | (new, #528) | (none) | `/admin/reports/ministries/follow-up/roster/` | [Roster changes to enter](#roster-changes-to-enter); its CSV/XLSX/PDF download (`roster/exports/`) is a non-page action. |
 | `family_directory` | Active parishioner family directory | Menu: Active parishioner family directory | Administrator, Staff | (same) | `/admin/reports/families/` | (same) |  |
 | `family_timeline` | Family timeline | Active parishioner family directory | Administrator, Staff | (new, #477) | `/admin/reports/families/<family>/` | (same) | Opened from each directory row (and Find a Family, NAV-19); `<family>` is the opaque campaign record id. Staff see the summary only. |
@@ -4877,9 +4877,77 @@ same read audit as opening it from the queue.
 
 Ministry workflow permissions are row-scoped. Admin/Staff see all; leaders see
 and edit only the Ministries they lead. The interface supports queue filters,
-status/outcome, contact-attempt entry, notes, history, and links to the
-Member's authorized report detail. It never exposes financial or unrelated
+status/outcome, contact-attempt entry, notes, history, and the Member's
+authorized contact details. It never exposes financial or unrelated
 Family data.
+
+Each request's page shows a **Contact details** section for its Member
+([#1157](https://github.com/epiphany40223/parishkit/issues/1157)), because
+Members can share a name and the request says which Member is meant: email
+and phones for either kind; for a join request the Family's known primary
+address, gender and age; for a leave request the Member's current role in the
+Ministry. Who sees it is exactly who may open the request: Administrators,
+Staff, and the leaders of the request's Ministry. A Ministry leader sees only
+the email addresses and phone numbers the Member allows to be shared, and
+"Not published" for the others; Administrators and Staff see operational
+contact. A Member the Family added on the form says so, since the details
+are what the Family entered. Where the details come from, and the rule for a
+request the report cannot read, are in the
+[Ministry change summary](../reports/spec.md#ministry-change-summary). The
+request page's view audit (`ministry_followup_viewed`) records the request's
+`ministry_duid`, as the retired Members joining and leaving lists' views
+recorded theirs; never names or contact values.
+
+Below the queue table, **Export these requests** downloads the queue's
+applied view (its filters, search and sort; every page of it, not just the
+one shown) as CSV, XLSX or PDF (Administrator decision, 2026-10-12, option
+(a) on #1157), replacing the retired Members joining and leaving exports.
+A request whose Member is no longer active in ParishSoft is not in the file
+(Administrator decision, 2026-10-13): the rows are the queue's own default
+selection, which leaves such requests out once open
+[#1217](https://github.com/epiphany40223/parishkit/issues/1217) lands, and
+the export refuses (400) any Status choice but the queue's own statuses, so
+the Staff-only choice of #1217 that lists only those requests is never
+exported.
+A line says how many requests the file holds; the count and the form's hidden
+filters follow an in-place Apply, sort or page change, and the reader's
+format and time zone stay as chosen. The rows are the queue selection's own,
+so a Ministry leader gets only the Ministries they lead, exactly as on the
+queue. The file's columns are the queue's (Member, Member DUID, Ministry,
+Request, Status with Outcome split out, Last contact), then the request
+page's contact details (Email, Phones, Known primary Family address, Gender,
+Age, Current Ministry role; blank where a detail does not apply to the
+request's kind). It has no Submitted column, as the queue has none
+(Administrator decision, 2026-10-13, on
+[#1157](https://github.com/epiphany40223/parishkit/issues/1157)); the request
+page still shows when a request was submitted. Its Report information sheet
+and PDF card
+hold the parish, campaign, data date, request time, display time zone, age
+reference date, count, filters and the privacy line. It carries the
+retired export's sensitivity notice; like it, it needs no fresh sign-in
+(that is for Family codes and financial detail, #547), and it asks for a time
+zone, since Last contact is an action time. The file is
+rendered on request, as Roster changes to enter is, rather than queued as a
+stored export: a stored capture would need a schema change, because the
+export capture accepts only one Ministry's join or leave list or a packet.
+A PDF holds at most 1,000 requests (`EXPORT_PDF_LIMIT`; Administrator's
+default decision, 2026-10-12, which may be revisited); CSV and XLSX are not
+limited. Rendered on request, the file must finish inside the 60-second
+interactive [read guard](../data/spec.md#campaign-read-guards), and the
+shared PDF writers take about 19 ms a request: timed on 1,000 synthetic
+Families with 3,002 requests, CSV took 1.2 s, XLSX 2.7 s and PDF 58 s (50 s
+as a table), so 1,000 requests is about 20 s, with room for the slower
+production server. While the queue's filters select more, the format menu
+offers PDF unavailable and the export line says "The PDF is limited to 1,000
+requests: choose CSV or XLSX, or narrow the filters."; the menu is redrawn
+with each applied view, in place, keeping the reader's choice where it is
+still offered. A PDF asked for anyway (a stale page) is refused with that
+reason and a link back to the queue, before any contact detail is read.
+Each download is audited as `ministry_followup_exported` with its count, the
+sorted Ministry DUIDs in the file (`ministry_duids`, which the log's Ministry
+filter finds) and whether its contacts were operational or
+publish-restricted (`ministry_operational`); never names, contact values,
+filters or search text.
 
 The queue's columns follow the shared
 [table column order](../ui-conventions/spec.md#table-column-order)
