@@ -357,12 +357,8 @@ def _review(request, service, actor, configuration, campaign, change):
     """
     kind, slot, bundle_id = change
     if kind == "remove":
-        images = campaign.active_configuration.values.get("artwork", {}).get(
-            "images", {}
-        )
-        if slot not in images:
-            raise LookupError("That slot has no image to remove.")
-        patch, asset = _image_patch(campaign, slot, None), None
+        asset = None
+        preview = review_removal(service, actor, configuration, campaign, slot)
     else:
         row, assets = staged_bundle(request, service, bundle_id)
         if len(assets) != 1 or assets[0].label != _kind(slot):
@@ -370,7 +366,13 @@ def _review(request, service, actor, configuration, campaign, change):
         asset = assets[0]
         read_variant(media_root(), row.pk, file_receipt(asset))
         patch = _image_patch(campaign, slot, str(asset.pk))
-    _check_candidate(service, configuration, patch, actor)
+        _check_candidate(service, configuration, patch, actor)
+        preview = sign_preview(
+            actor=actor,
+            configuration=configuration,
+            patch=patch,
+            salt=_salt(campaign.pk, change),
+        )
     return {
         # Drawn inside settings-review.html, above its Apply.
         "template": "stewardship/artwork-review.html",
@@ -378,13 +380,31 @@ def _review(request, service, actor, configuration, campaign, change):
         "removing": kind == "remove",
         "asset": asset,
         "label": SLOT_LABELS[slot],
-        "preview": sign_preview(
-            actor=actor,
-            configuration=configuration,
-            patch=patch,
-            salt=_salt(campaign.pk, change),
-        ),
+        "preview": preview,
     }
+
+
+def review_removal(service, actor, configuration, campaign, slot):
+    """The signed preview of removing ``slot``'s image, as Apply posts it.
+
+    Request-free, so the page's review and ``pk-admin artwork
+    remove-preview`` share it. A slot with no image to remove raises
+    ``LookupError``; a base that is no longer the applied one raises
+    ``StaleRecordError`` and a resulting document the configuration refuses
+    ``ConfigError`` (``_check_candidate``). A slot whose upload is
+    unavailable can still be removed (#563).
+    """
+    images = campaign.active_configuration.values.get("artwork", {}).get("images", {})
+    if slot not in images:
+        raise LookupError("That slot has no image to remove.")
+    patch = _image_patch(campaign, slot, None)
+    _check_candidate(service, configuration, patch, actor)
+    return sign_preview(
+        actor=actor,
+        configuration=configuration,
+        patch=patch,
+        salt=_salt(campaign.pk, ("remove", slot, None)),
+    )
 
 
 def _scope(request, change):

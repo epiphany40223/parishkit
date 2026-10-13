@@ -1,8 +1,8 @@
-"""``artwork show``: the Campaign images page's read.
+"""Campaign images commands: ``artwork show`` and the removal commands.
 
 Pure tests: the golden document, built through the projection the command
-uses from stand-ins for the page's own reads; the catalog entry; the
-ledger; and usage errors. The command against a real database is in
+uses from stand-ins for the page's own reads; the catalog entries; the
+ledger; and usage errors. The commands against a real database are in
 database/test_admin_artwork_cli_postgresql.py.
 """
 
@@ -16,6 +16,8 @@ import pytest
 from parishkit.stewardship import admin_artwork, admin_cli
 from parishkit.stewardship.accounts.artwork_views import SLOT_LABELS, UNAVAILABLE
 from parishkit.stewardship.admin_parity import LEDGER
+from parishkit.stewardship.audit.log_descriptions import DESCRIPTIONS
+from parishkit.stewardship.campaigns.configuration import ARTWORK_SLOTS
 
 from .test_admin_reads import FORBIDDEN, members
 
@@ -122,11 +124,65 @@ def test_the_catalog_entry():
     assert entry["result_fields"] == list(admin_artwork.ArtworkShow.field_names())
 
 
+def test_the_removal_catalog_entries():
+    """Full scope, as the page's requests; no prompt and no recent sign-in.
+
+    The preview records nothing, as the page's review; the removal records
+    its own described event. Both name the slot.
+    """
+    entries = {entry["name"]: entry for entry in admin_cli.catalog()}
+    preview, remove = entries["artwork remove-preview"], entries["artwork remove"]
+    for entry in (preview, remove):
+        assert entry["scope"] == "full" and entry["pr"] == 10
+        assert not entry["prompts"] and not entry["fresh_gated"]
+        assert entry["arguments"] == ["SLOT"]
+    assert not preview["changes_state"] and preview["expected_version"]
+    assert preview["audit_event"] is None
+    assert preview["result_fields"] == list(
+        admin_artwork.ArtworkRemovePreview.field_names()
+    )
+    options = {option["name"]: option for option in preview["options"]}
+    assert options["--expected-version"]["required"]
+    assert remove["changes_state"] and not remove["expected_version"]
+    assert remove["audit_event"] == "admin_cmd_artwork_remove"
+    assert "admin_cmd_artwork_remove" in DESCRIPTIONS
+    assert remove["result_fields"] == list(admin_artwork.ArtworkRemove.field_names())
+    options = {option["name"]: option for option in remove["options"]}
+    assert options["--token"]["required"]
+
+
+def test_the_removal_documents_print_only_allowed_names():
+    """The preview's members are the read's image facts and the token's."""
+    names = set(admin_artwork.ArtworkRemovePreview.field_names()) | {"token"}
+    assert names == {
+        "version",
+        "campaign_id",
+        "slot",
+        "name",
+        "image",
+        "preview",
+        "token",
+    }
+    for name in names - {"token"} | set(admin_artwork.ArtworkRemove.field_names()):
+        assert FORBIDDEN.search(name) is None, name
+
+
+def test_the_parser_slots_are_the_pages():
+    """The parser's spelled-out slots stay equal to the configuration's."""
+    assert admin_cli.ARTWORK_SLOTS == ARTWORK_SLOTS
+
+
 def test_the_ledger_covers_the_page():
-    """Campaign images is covered by its read; ``artwork remove`` is owed."""
+    """Campaign images is covered by its read and its removal; uploads stay
+    a permanent exemption."""
     parity = LEDGER["artwork_settings"]
-    assert parity.kind == "command" and parity.detail == ("artwork show",)
-    assert parity.owed == "PR 10"
+    assert parity.kind == "command" and parity.owed is None
+    assert parity.detail == (
+        "artwork show",
+        "artwork remove-preview",
+        "artwork remove",
+    )
+    assert LEDGER["artwork_upload"].kind == "permanent"
 
 
 @pytest.mark.parametrize(
@@ -134,10 +190,18 @@ def test_the_ledger_covers_the_page():
     [
         ["artwork", "show", "extra"],
         ["artwork", "show", "--campaign", str(CAMPAIGN)],
+        ["artwork", "remove-preview", "banner"],
+        ["artwork", "remove-preview", "logo", "--expected-version", VERSION],
+        ["artwork", "remove-preview", "--expected-version", VERSION],
+        ["artwork", "remove-preview", "banner", "--expected-version", "nope"],
+        ["artwork", "remove", "banner"],
+        ["artwork", "remove", "--token", "-"],
+        ["artwork", "remove", "icon", "--token", "-"],
     ],
 )
 def test_malformed_commands_are_usage_errors(argv):
-    """The read takes no argument and no option of its own."""
+    """The read takes no argument and no option of its own; the removal
+    commands need a known slot and their own required option."""
     out = io.StringIO()
     code = admin_cli.main(
         [*argv, "--config", "web.yaml", "--session-stdin"],

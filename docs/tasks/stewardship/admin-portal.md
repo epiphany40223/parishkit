@@ -752,7 +752,25 @@ errors), `tests/stewardship/test_admin_cli.py`,
 `tests/stewardship/database/test_admin_artwork_cli_postgresql.py` (every
 slot in order for a read-only session with the images the page applied
 and no event, no current campaign, a Staff reader denied, an ended
-session) and the unchanged Campaign images page suite.
+session) and the unchanged Campaign images page suite. Another part adds
+`artwork remove-preview` and `artwork remove`, Campaign images' Remove
+this image and its Apply, in `parishkit.stewardship.admin_artwork`,
+through the page's own removal review (moved into
+`artwork_views.review_removal`, which the page's review now calls) and
+`admin_editing.confirm_intent`, with no schema change; proven by
+`tests/stewardship/test_admin_artwork.py` (the catalog entries, the
+described event, the parser's slots, the ledger, usage errors),
+`tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py`,
+`tests/stewardship/database/test_admin_artwork_remove_cli_postgresql.py`
+(a preview and removal recording the request and event with the slot
+emptied once installed, a repeated removal, a command token confirmed on
+the page and a page token by the command, an unavailable slot's image
+removed, a stale version, an empty slot, an altered, another slot's or
+another page's token, another Administrator's token denied, a token
+reviewed before the settings changed, no current campaign,
+a read-only session and Staff denied, an ended session) and the unchanged
+Campaign images page suite.
 
 ADM-11.12 lands in parts. The first adds `events list` and `events
 acknowledge`, the Admin home page's security events and critical-problem

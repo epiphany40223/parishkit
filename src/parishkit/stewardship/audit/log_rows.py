@@ -191,6 +191,7 @@ ACTIVITY_TYPES = {
         "user_change_requested",
         "admin_cmd_users_confirm",
         "admin_cmd_parish_confirm",
+        "admin_cmd_artwork_remove",
         "user_leaders_import_requested",
         "user_leader_imported",
         "admin_cmd_users_import_leaders",
