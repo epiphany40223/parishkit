@@ -12,6 +12,7 @@ modes alone is not a change. No real editor adopts the toggle yet (#1122,
 import pytest
 from django.template import engines
 
+from .keyboard import tab_to_next, tab_to_previous
 from .waits import focused, hidden, visible
 
 pytestmark = pytest.mark.parametrize(
@@ -211,6 +212,77 @@ def test_no_basic_equivalent_asks_and_keep_advanced_changes_nothing(
     assert page.locator("#times").input_value() == CUSTOM
     # Wait for it: the dialog hides as it closes, before its close event.
     focused(toggle(page, "Advanced"))
+
+
+@pytest.mark.parametrize("choice", ["Keep Advanced", "Switch to Basic"])
+def test_focus_never_rests_on_the_unchosen_mode_as_the_dialog_closes(
+    page, component_origin, choice
+):
+    """In the very task that closes the dialog, before its queued close
+    event, focus is not on the Basic choice Keep Advanced put back, and
+    Switch to Basic has already moved it to Basic (#1202).
+
+    Against the old code, the Keep Advanced case fails in Chromium (focus
+    restored to Basic). The Switch to Basic case fails only in WebKit,
+    which does not restore focus on close: Chromium's restoration happened
+    to land on Basic, that case's final focus, anyway.
+    """
+    custom_from_saved(page, component_origin)
+    toggle(page, "Basic").click()
+    dialog = page.get_by_role("dialog", name=NO_BASIC)
+    visible(dialog)
+    # One script click and one read, with no task between them.
+    now = dialog.get_by_role("button", name=choice).evaluate(
+        """(button) => {
+            button.click();
+            const active = document.activeElement;
+            return [button.closest("dialog").open, active.value || active.tagName];
+        }"""
+    )
+    if choice == "Keep Advanced":
+        # Advanced where the browser restores focus as the dialog closes;
+        # otherwise still the closed dialog's button until the close event.
+        assert now[0] is False and now[1] in {"advanced", "BUTTON"}
+        focused(toggle(page, "Advanced"))
+    else:
+        assert now == [False, "basic"]
+        focused(toggle(page, "Basic"))
+
+
+@pytest.mark.parametrize("answer", ["Escape", "Keep Advanced", "Switch to Basic"])
+def test_keyboard_alone_opens_and_answers_the_dialog(page, component_origin, answer):
+    """With the keyboard alone: an arrow key on the toggle asks; Keep Advanced
+    has focus and the two buttons trap Tab and Shift+Tab. Escape, or Enter on
+    Keep Advanced, changes nothing and returns focus to Advanced; Enter on
+    Switch to Basic shows Basic with focus on it (#1202)."""
+    custom_from_saved(page, component_origin)
+    toggle(page, "Advanced").focus()
+    page.keyboard.press("ArrowLeft")
+    dialog = page.get_by_role("dialog", name=NO_BASIC)
+    visible(dialog)
+    keep = dialog.get_by_role("button", name="Keep Advanced")
+    switch = dialog.get_by_role("button", name="Switch to Basic")
+    focused(keep)
+    assert toggle(page, "Advanced").is_checked()
+    if answer == "Escape":
+        page.keyboard.press("Escape")
+    elif answer == "Keep Advanced":
+        # Shift+Tab reaches Switch to Basic, and again wraps back to Keep.
+        tab_to_previous(page)
+        focused(switch)
+        tab_to_previous(page)
+        focused(keep)
+        page.keyboard.press("Enter")
+    else:
+        tab_to_next(page)
+        focused(switch)
+        page.keyboard.press("Enter")
+    hidden(dialog)
+    mode = "Basic" if answer == "Switch to Basic" else "Advanced"
+    focused(toggle(page, mode))
+    assert toggle(page, mode).is_checked()
+    visible(panel(page, mode.lower()))
+    assert page.locator("#times").input_value() == CUSTOM
 
 
 def test_switch_to_basic_needs_a_choice_and_back_is_lossless(page, component_origin):

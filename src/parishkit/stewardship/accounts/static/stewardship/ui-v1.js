@@ -4122,24 +4122,35 @@
     wireDialog(dialog);
     if (!dialog.parishEditorMode) {
       dialog.parishEditorMode = {root, accepted: false};
+      // Switch to Basic switches in its own click, right after closing, so
+      // focus goes straight to Basic rather than first to the Advanced
+      // choice that closing restores (below).
       dialog.querySelector("[data-confirm-accept]")?.addEventListener("click", () => {
-        dialog.parishEditorMode.accepted = true;
+        const state = dialog.parishEditorMode;
+        state.accepted = true;
         dialog.close();
+        clearBasic(state.root);
+        switchMode(state.root, "basic");
       });
       dialog.addEventListener("close", () => {
         const state = dialog.parishEditorMode;
         if (state.accepted) {
           state.accepted = false;
-          clearBasic(state.root);
-          switchMode(state.root, "basic");
-        } else {
-          // Keep Advanced, Cancel or Escape: nothing changes.
-          modeChoice(state.root, "advanced")?.focus();
+          return;
         }
+        // Keep Advanced, Cancel or Escape: nothing changes. Browsers that
+        // restore focus when the dialog closes have already put it on
+        // Advanced; this event, which comes later, covers those that do not.
+        modeChoice(state.root, "advanced")?.focus();
       });
     }
     dialog.parishEditorMode.root = root;
     dialog.querySelector("[data-confirm-title]").textContent = dialog.dataset.titleOne || "";
+    // Closing a modal dialog returns focus at once to whatever had it when
+    // the dialog opened: here the Basic choice just clicked and put back.
+    // Give it to the Advanced choice, which stays chosen, so focus never
+    // rests on the unchosen Basic while the close event is pending (#1202).
+    modeChoice(root, "advanced")?.focus();
     dialog.showModal();
     // The safe choice takes focus first.
     dialog.querySelector("[data-confirm-cancel]")?.focus();

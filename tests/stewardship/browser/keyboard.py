@@ -14,3 +14,17 @@ def tab_to_next(page):
     """
     webkit = page.context.browser.browser_type.name == "webkit"
     page.keyboard.press("Alt+Tab" if webkit and sys.platform == "darwin" else "Tab")
+
+
+def tab_to_previous(page):
+    """Move focus to the previous focusable element, as Shift+Tab does.
+
+    The reverse of ``tab_to_next``: WebKit on macOS also skips buttons on
+    Shift+Tab under Safari's default keyboard setting, so it gets
+    Option+Shift+Tab. Scripts that trap Tab (dialogs) still see a Tab key
+    with Shift held.
+    """
+    webkit = page.context.browser.browser_type.name == "webkit"
+    page.keyboard.press(
+        "Alt+Shift+Tab" if webkit and sys.platform == "darwin" else "Shift+Tab"
+    )
