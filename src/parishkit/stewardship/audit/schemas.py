@@ -237,6 +237,8 @@ class Action(StrEnum):
     # events acknowledge: Home's security event and critical-problem
     # acknowledgements, with the page's own event in the same transaction.
     ADMIN_CMD_EVENTS_ACKNOWLEDGE = "admin_cmd_events_acknowledge"
+    # census resolve: a Census changes row's Record outcome (#528, #463).
+    ADMIN_CMD_CENSUS_RESOLVE = "admin_cmd_census_resolve"
 
 
 # Closed field identifiers are operational metadata, never census values.

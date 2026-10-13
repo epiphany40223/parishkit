@@ -2289,7 +2289,7 @@ file is regenerated from the retained capture, in its original format.
 | `family_timeline`, `family_timeline_export` | One Family's timeline, so export only: the page's new export form and `export family-timeline FAMILY_RECORD_ID` (PR 8g, migration 0063); [fresh-gated](#fresh-gated-actions-from-the-command-line) |
 | `family_open_form` (new, #529) | Permanent: Open form signs this browser in to the Family form for a Family on the phone, a browser hand-off by nature; Families' responses are read through `report responses` and the response list exports |
 | `limitations_export` | `export limitations` (PR 8h, with #752's audit fields) |
-| `census_changes`, `census_changes_export` | `report census`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); Family-level rows only as `export census` (PR 8h). A row's Entered in ParishSoft, Ignore and Reopen ([#528](https://github.com/epiphany40223/parishkit/issues/528)) post to `census_changes`; their command, `census resolve PROPOSAL_ID --action entered\|ignored\|reopened`, comes with PR 8h through the same `census_resolution` service |
+| `census_changes`, `census_changes_export` | `report census`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); Family-level rows only as `export census` (PR 8h). A row's Entered in ParishSoft, Ignore and Reopen ([#528](https://github.com/epiphany40223/parishkit/issues/528)) post to `census_changes`; their command is `census resolve PROPOSAL_ID --action entered\|ignored\|reopened` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), through the same `census_resolution` service |
 | `report_export_create`, `report_export`, `report_export_cancel`, `report_export_retry`, `report_export_regenerate`, `report_export_download` | `export create`, `export status --watch`, `export cancel`, `export retry`, `export regenerate`, `export download --stream` (PR 8b); an exact request's status, cancel and retry, which these pages also serve, are `export exact status --watch`, `export exact cancel` and `export exact retry` (PR 8h) |
 | `report_exact_create` | `export exact create` (PR 8h); the handed-off file through `export fetch` |
 | `daily_digest_snapshot` | `digest daily SNAPSHOT_ID` (PR 8d) |
@@ -2360,6 +2360,36 @@ and the page's summary by status key. It records the page's
 as the menu does. The
 [operator guide](../../../guides/stewardship-admin-automation.md#reports)
 lists the fields.
+
+`census resolve PROPOSAL_ID --action entered|ignored|reopened
+--expected-version VERSION [--note TEXT|-] [--request-key KEY]`
+([#463](https://github.com/epiphany40223/parishkit/issues/463)) is a Census
+changes row's Record outcome
+([#528](https://github.com/epiphany40223/parishkit/issues/528)): full scope,
+keyed, and not fresh-gated, as the page asks for no recent sign-in. Entered
+in ParishSoft cannot be undone and the page asks first, so `--action
+entered` [prompts by default](#mitigations) (or takes `--yes`; `--note -`
+then needs `--yes`); Ignore and Reopen ask nothing, as on the page. It admits as the page's post does (`census_change_views._principal`,
+recording activity), then in the page's command scope
+(`task_retries.command_scope`, that admission repeated around the effect)
+checks the current campaign as the page does (`admit_report_read`), finds
+the Live change in it (any other is `not_available`) and calls the page's
+`census_resolution.resolve_census_change`, which checks the action's
+capability (Reopen is the Administrator's), the version and the row's
+state, and records `census_change_updated`. In the same transaction the
+command records `admin_cmd_census_resolve`, only for a new key: the key is
+the page's `request_key`, so a repeat with the same intent returns the
+first resolution (`created` false) and another intent is `invalid`; the
+campaign is checked first, so a repeat after the current campaign changed
+is `not_available`. A
+changed version, or the page's racing second write (a unique violation),
+is `stale_version`; an action the row's state does not allow, or a Reopen
+without a note, is `invalid`, as the page's 400. It prints the resolution's
+ids, versions and times and the change's state (`version`, `decision`,
+`execution`), never the note, Family, Member or value. No document or
+download prints a change's id and version yet (they are only in the page's
+row form); `export census` (PR 8h) must print them. Taking them from the
+page until then is a default pending Administrator confirmation.
 
 The digest commands (PR 8d) read a retained report an emailed digest
 links to from its stored snapshot, through its page's own functions
