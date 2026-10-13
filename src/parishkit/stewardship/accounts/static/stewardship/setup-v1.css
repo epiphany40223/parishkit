@@ -55,7 +55,6 @@
 .setup-steps [aria-current="step"] {
   background: var(--accent-soft, #e4f0ee); box-shadow: inset 4px 0 0 var(--accent, #115e56);
 }
-.setup-intro { max-width: 70ch; font-size: 1.05rem; }
 /* Back/Continue: identical on every wizard page. Back is secondary and first;
    the primary action (button or link) is last and right-aligned. They share
    one row, and a long label wraps inside its own button; only on very narrow
