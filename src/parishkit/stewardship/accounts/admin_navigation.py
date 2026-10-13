@@ -656,6 +656,7 @@ NON_PAGES = frozenset(
         "past_campaign_review",
         "past_campaign_import",
         "past_campaign_removal",
+        "past_campaign_archive",
         "financial_export",
         "information_export",
         "information_update",

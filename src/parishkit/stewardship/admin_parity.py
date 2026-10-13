@@ -179,6 +179,8 @@ LEDGER = {
     "past_campaign_review": command("history preview"),
     "past_campaign_import": command("history confirm"),
     "past_campaign_removal": command("history remove"),
+    # Download campaign archive (#1018 part (a)): the same export request.
+    "past_campaign_archive": command("export archive"),
     # Reviews and removals happen on the page itself (#750).
     "artwork_settings": command(
         "artwork show", "artwork remove-preview", "artwork remove"

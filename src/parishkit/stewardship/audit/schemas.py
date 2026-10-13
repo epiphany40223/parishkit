@@ -92,6 +92,11 @@ class Action(StrEnum):
     # lifecycle's request event for that kind, with the comparison day as
     # ``count``, no figure. Its cancel and download are the shared events.
     CAMPAIGN_COMPARISON_EXPORTED = "campaign_comparison_exported"
+    # A campaign archive workbook requested (#1018 part (a)): the export
+    # lifecycle's request event for that kind, with the cutoff's campaign
+    # day as ``count``, no figure. The file's SHA-256 and row count are the
+    # shared publication's; its cancel and download are the shared events.
+    CAMPAIGN_ARCHIVE_EXPORTED = "campaign_archive_exported"
     INFORMATION_VIEWED = "information_viewed"
     INFORMATION_UPDATED = "information_updated"
     MINISTRY_FOLLOWUP_VIEWED = "ministry_followup_viewed"
@@ -226,6 +231,7 @@ class Action(StrEnum):
     ADMIN_CMD_EXPORT_DIRECTORY = "admin_cmd_export_directory"
     ADMIN_CMD_EXPORT_POSTAL = "admin_cmd_export_postal"
     ADMIN_CMD_EXPORT_COMPARISON = "admin_cmd_export_comparison"
+    ADMIN_CMD_EXPORT_ARCHIVE = "admin_cmd_export_archive"
     # test families-preview --names: the review's names as an export (#817).
     ADMIN_CMD_EXPORT_FAMILY_TEST_NAMES = "admin_cmd_export_family_test_names"
     ADMIN_CMD_DELIVERY_RESEND = "admin_cmd_delivery_resend"

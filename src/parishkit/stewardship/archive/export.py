@@ -486,19 +486,20 @@ def write_source(source, *, check, on_timeout=None):
 # --- The database read ------------------------------------------------------------
 
 
-def _version(row, names):
-    """A ``Version`` from one submission row and its snapshot's Ministry names."""
-    answers = row["answers"] if isinstance(row["answers"], dict) else {}
-    financial = (
-        answers.get("financial") if isinstance(answers.get("financial"), dict) else None
-    )
+def _version(row, answer):
+    """A ``Version`` from one submission row and its answer's archive parts.
+
+    ``answer`` is the row of ``stewardship_campaign_archive_answers_v1`` for
+    the same version: its frequency, cannot-give box (both None without a
+    financial answer), Ministry choices and the chosen Ministries' names.
+    """
     amount = row["annual_pledge"]
-    if amount is None or financial is None:
+    if amount is None or answer["cannot_give"] is None:
         annual = frequency = cannot_give = None
     else:
         annual = Decimal(amount).quantize(CENT)
-        frequency = financial.get("frequency") or None
-        cannot_give = financial.get("cannot_give") is True
+        frequency = answer["frequency"]
+        cannot_give = answer["cannot_give"]
     return Version(
         row["family__family_duid"],
         row["campaign_sequence"],
@@ -506,47 +507,61 @@ def _version(row, names):
         annual,
         frequency,
         cannot_give,
-        answers.get("ministries") or {},
-        names,
+        answer["ministries"] if isinstance(answer["ministries"], dict) else {},
+        answer["ministry_names"] if isinstance(answer["ministry_names"], dict) else {},
     )
 
 
-def _ministry_names(rows):
-    """{snapshot id: {Ministry DUID text: name}} for the choices of ``rows``."""
-    from parishkit.stewardship.source.version_models import SnapshotMinistry
+def _answers(fact_set_id, cutoff):
+    """{campaign sequence: archive parts} of each live answer under the pins.
 
-    wanted = defaultdict(set)
-    for row in rows:
-        answers = row["answers"] if isinstance(row["answers"], dict) else {}
-        choices = answers.get("ministries")
-        choices = choices if isinstance(choices, dict) else {}
-        for group in ("members", "proposed_members"):
-            for entry in (choices.get(group) or {}).values():
-                for response in ("join", "leave"):
-                    for ministry in (entry or {}).get(response, ()):
-                        wanted[row["reviewed_source_id"]].add(str(ministry))
-    names = defaultdict(dict)
-    for snapshot_id, keys in wanted.items():
-        for key, payload in SnapshotMinistry.objects.filter(
-            snapshot_id=snapshot_id, source_key__in=keys
-        ).values_list("source_key", "payload__payload"):
-            name = payload.get("name") if isinstance(payload, dict) else None
-            names[snapshot_id][key] = name if isinstance(name, str) else ""
-    return names
+    The general worker has no grant on the answers column; this definer
+    function (frozen migration 0084) returns only the parts the archive
+    writes, for the fact set's own campaign and watermark.
+    """
+    import json
+
+    from django.db import connection
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT version, frequency, cannot_give, ministries, ministry_names "
+            "FROM public.stewardship_campaign_archive_answers_v1(%s, %s)",
+            [fact_set_id, cutoff],
+        )
+        rows = cursor.fetchall()
+
+    def document(value):
+        """A jsonb value as Python (psycopg may hand back text)."""
+        return json.loads(value) if isinstance(value, str) else value
+
+    return {
+        version: {
+            "frequency": frequency,
+            "cannot_give": cannot_give,
+            "ministries": document(ministries),
+            "ministry_names": document(names),
+        }
+        for version, frequency, cannot_give, ministries, names in rows
+    }
 
 
 def read_source(fact_set_id, *, cutoff_date, final, converted_at):
-    """Read one archive's ``ArchiveSource`` in a read-only repeatable-read transaction.
+    """Read one archive's ``ArchiveSource`` inside the caller's transaction.
 
-    ``fact_set_id`` is a ready historical fact set holding ``cutoff_date``.
-    The read takes the live versions with a campaign sequence up to the fact
-    set's submission watermark and submitted before the cutoff, of Families
-    in the historical cohort at the cutoff day (the participation graph's
-    respondents). Raises ``FactUnavailable`` when the fact set is not a ready
-    historical one, lacks the cutoff day, or its watermark does not yet cover
-    every version submitted before the cutoff (the export waits).
+    The caller owns a read-only, repeatable-read transaction (``export_archive``
+    opens one; the export worker's campaign read guard runs this inside its
+    own), so every query below sees one snapshot. ``fact_set_id`` is a ready
+    historical fact set holding ``cutoff_date``. The read takes the live
+    versions with a campaign sequence up to the fact set's submission
+    watermark and submitted before the cutoff, of Families in the historical
+    cohort at the cutoff day (the participation graph's respondents). Raises
+    ``FactUnavailable`` when the fact set is not a ready historical one,
+    lacks the cutoff day, or its watermark does not yet cover every version
+    submitted before the cutoff (the export waits), and
+    ``ArchiveUnavailable`` when the stewardship year cannot be resolved.
     """
-    from django.db import connection, transaction
+    from django.db import connection
 
     from parishkit.stewardship.archive.imports import ArchiveRefusal, year_from_values
     from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
@@ -557,110 +572,125 @@ def read_source(fact_set_id, *, cutoff_date, final, converted_at):
     )
     from parishkit.stewardship.responses.models import Submission
 
-    if connection.in_atomic_block:
-        raise RuntimeError("The archive read must start its own transaction.")
-    with transaction.atomic():
-        with connection.cursor() as cursor:
-            cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-        record = CampaignDailyFactSet.objects.filter(
-            pk=fact_set_id, state="ready", population_scope="historical"
-        ).first()
-        if record is None:
-            raise FactUnavailable("The archive needs a ready historical fact set.")
-        projection = CampaignConfiguration.objects.get(
-            pk=record.timezone_configuration_id
+    if not connection.in_atomic_block:
+        raise RuntimeError("The archive read needs its caller's transaction.")
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT current_setting('transaction_isolation'), "
+            "current_setting('transaction_read_only')"
         )
-        active = (
-            Campaign.objects.select_related("active_configuration")
-            .get(pk=record.campaign_id)
-            .active_configuration
+        if cursor.fetchone() != ("repeatable read", "on"):
+            raise RuntimeError("The archive read needs a read-only snapshot.")
+    record = CampaignDailyFactSet.objects.filter(
+        pk=fact_set_id, state="ready", population_scope="historical"
+    ).first()
+    if record is None:
+        raise FactUnavailable("The archive needs a ready historical fact set.")
+    projection = CampaignConfiguration.objects.get(pk=record.timezone_configuration_id)
+    active = (
+        Campaign.objects.select_related("active_configuration")
+        .get(pk=record.campaign_id)
+        .active_configuration
+    )
+    cutoff = local_day(cutoff_date, projection.timezone).interval.end
+    facts = tuple(
+        FactDay(
+            row.local_date,
+            row.first_responses,
+            row.cumulative_responses,
+            row.cohort_denominator,
+            row.population_available,
+            row.pledge_available,
+            row.pledge_total,
         )
-        cutoff = local_day(cutoff_date, projection.timezone).interval.end
-        facts = tuple(
-            FactDay(
-                row.local_date,
-                row.first_responses,
-                row.cumulative_responses,
-                row.cohort_denominator,
-                row.population_available,
-                row.pledge_available,
-                row.pledge_total,
-            )
-            for row in CampaignDailyFact.objects.filter(
-                fact_set=record,
-                local_date__gte=projection.start_date,
-                local_date__lte=cutoff_date,
-            ).order_by("local_date")
+        for row in CampaignDailyFact.objects.filter(
+            fact_set=record,
+            local_date__gte=projection.start_date,
+            local_date__lte=cutoff_date,
+        ).order_by("local_date")
+    )
+    if not facts or facts[-1].local_date != cutoff_date:
+        raise FactUnavailable("The fact set does not reach the cutoff day.")
+    live = Submission.objects.filter(
+        campaign_id=record.campaign_id, mode="live", submitted_at__lt=cutoff
+    )
+    if live.filter(campaign_sequence__gt=record.submission_watermark).exists():
+        raise FactUnavailable("The facts have not yet absorbed every response.")
+    generation = (
+        CampaignDailyFact.objects.filter(fact_set=record, local_date=cutoff_date)
+        .values_list("source_generation", flat=True)
+        .get()
+    )
+    cohort = set(
+        FamilyCampaign.objects.filter(
+            campaign_id=record.campaign_id,
+            first_eligible_at__isnull=False,
+            first_eligible_at__lt=cutoff,
+            first_eligible_source_generation__lte=generation or 0,
+        ).values_list("id", flat=True)
+    )
+    rows = list(
+        live.filter(campaign_sequence__lte=record.submission_watermark).values(
+            "family_id",
+            "family__family_duid",
+            "campaign_sequence",
+            "submitted_at",
+            "annual_pledge",
         )
-        at_cutoff = facts[-1] if facts and facts[-1].local_date == cutoff_date else None
-        if at_cutoff is None:
-            raise FactUnavailable("The fact set does not reach the cutoff day.")
-        live = Submission.objects.filter(
-            campaign_id=record.campaign_id, mode="live", submitted_at__lt=cutoff
-        )
-        if live.filter(campaign_sequence__gt=record.submission_watermark).exists():
-            raise FactUnavailable("The facts have not yet absorbed every response.")
-        generation = (
-            CampaignDailyFact.objects.filter(fact_set=record, local_date=cutoff_date)
-            .values_list("source_generation", flat=True)
-            .get()
-        )
-        cohort = set(
-            FamilyCampaign.objects.filter(
-                campaign_id=record.campaign_id,
-                first_eligible_at__isnull=False,
-                first_eligible_at__lt=cutoff,
-                first_eligible_source_generation__lte=generation or 0,
-            ).values_list("id", flat=True)
-        )
-        rows = list(
-            live.filter(campaign_sequence__lte=record.submission_watermark).values(
-                "family_id",
-                "family__family_duid",
-                "campaign_sequence",
-                "submitted_at",
-                "annual_pledge",
-                "answers",
-                "reviewed_source_id",
-            )
-        )
-        outside = {row["family_id"] for row in rows if row["family_id"] not in cohort}
-        rows = [row for row in rows if row["family_id"] in cohort]
-        names = _ministry_names(rows)
-        versions = tuple(
-            _version(row, names.get(row["reviewed_source_id"], {})) for row in rows
-        )
-        try:
-            year = year_from_values(active.values)
-        except ArchiveRefusal:
-            raise ArchiveUnavailable(
-                "The campaign's stewardship year cannot be resolved."
-            ) from None
-        return ArchiveSource(
-            campaign_name=active.name,
-            campaign_year=year,
-            timezone=projection.timezone,
-            start_date=projection.start_date,
-            cutoff_date=cutoff_date,
-            final=final,
-            financial=projection.values.get("financial") is not None,
-            versions=versions,
-            facts=facts,
-            converted_at=converted_at,
-            outside_cohort=len(outside),
-        )
+    )
+    answers = _answers(record.pk, cutoff)
+    if set(answers) != {row["campaign_sequence"] for row in rows}:
+        # Both reads take the same versions under the same pins and snapshot.
+        raise FactUnavailable("The archive's answers disagree with its versions.")
+    outside = {row["family_id"] for row in rows if row["family_id"] not in cohort}
+    versions = tuple(
+        _version(row, answers[row["campaign_sequence"]])
+        for row in rows
+        if row["family_id"] in cohort
+    )
+    try:
+        year = year_from_values(active.values)
+    except ArchiveRefusal:
+        raise ArchiveUnavailable(
+            "The campaign's stewardship year cannot be resolved."
+        ) from None
+    return ArchiveSource(
+        campaign_name=active.name,
+        campaign_year=year,
+        timezone=projection.timezone,
+        start_date=projection.start_date,
+        cutoff_date=cutoff_date,
+        final=final,
+        financial=projection.values.get("financial") is not None,
+        versions=versions,
+        facts=facts,
+        converted_at=converted_at,
+        outside_cohort=len(outside),
+    )
 
 
 def export_archive(fact_set_id, *, cutoff_date, final, converted_at, on_timeout=None):
     """The checked archive file of one campaign under the given pins.
 
-    Reads (``read_source``), then builds, checks, writes and reads back
-    (``write_source``) outside the database transaction, through the
-    import's isolated reader helper.
+    Opens its own read-only, repeatable-read transaction for the read
+    (``read_source``), then builds, checks, writes and reads back
+    (``write_source``) after it, through the import's isolated reader
+    helper. The export worker instead reads under its campaign read guard
+    (``reports.archive_exports``).
     """
+    from django.db import connection, transaction
+
     from .check import check_archive
 
-    source = read_source(
-        fact_set_id, cutoff_date=cutoff_date, final=final, converted_at=converted_at
-    )
+    if connection.in_atomic_block:
+        raise RuntimeError("The archive read must start its own transaction.")
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        source = read_source(
+            fact_set_id,
+            cutoff_date=cutoff_date,
+            final=final,
+            converted_at=converted_at,
+        )
     return write_source(source, check=check_archive, on_timeout=on_timeout)

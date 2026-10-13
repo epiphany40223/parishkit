@@ -145,6 +145,7 @@ class CampaignReadGuard:
         pool=None,
         limits=DEFAULT_LIMITS,
         timeout_task=None,
+        repeatable_read=False,
     ):
         identifiers = tuple(campaigns)
         if not identifiers or any(not isinstance(value, UUID) for value in identifiers):
@@ -160,6 +161,21 @@ class CampaignReadGuard:
         # The background task (if any) this read serves, named in the log
         # entry written when the deadline stops it (#293).
         self.timeout_task = timeout_task
+        # A read that must see one snapshot across several queries (the
+        # campaign archive workbook, #1018) asks for REPEATABLE READ; every
+        # other guarded read keeps READ COMMITTED. A repeatable-read snapshot
+        # is taken by the first statement below (a set_config), before the
+        # shared campaign lock is waited for, so the campaign-state and
+        # authorization checks after that wait see the data as it was
+        # before it. That read then relies on the export lifecycle's later
+        # checks, each in its own fresh transaction: publication rechecks the
+        # requester's authorization and the campaign's admission under the
+        # SQL publication guard, and a download rechecks both again, so a
+        # purge or a revoked Administrator that won the wait is still
+        # refused before any file is offered.
+        if type(repeatable_read) is not bool:
+            raise TypeError("The read's isolation is an explicit boolean.")
+        self.isolation = "REPEATABLE READ" if repeatable_read else "READ COMMITTED"
         self.limits = pool.limits if pool else limits
         self.closed = Event()
         self.expired = Event()
@@ -213,7 +229,7 @@ class CampaignReadGuard:
             self._stack.enter_context(transaction.atomic(durable=True))
             with self.db.cursor() as cursor:
                 cursor.execute(
-                    "SET TRANSACTION ISOLATION LEVEL READ COMMITTED, READ ONLY"
+                    f"SET TRANSACTION ISOLATION LEVEL {self.isolation}, READ ONLY"
                 )
                 for name, seconds in (
                     ("lock_timeout", self.limits.lock_seconds),

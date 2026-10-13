@@ -535,9 +535,16 @@ CASES = {
 }
 
 
+# Export kinds that are not report downloads. The campaign archive workbook
+# is the archive format (campaign-history spec), whose sheets and columns
+# the format table fixes and test_archive_export covers; the reports spec's
+# File design excludes it.
+NOT_REPORT_DOWNLOADS = frozenset({"campaign_archive"})
+
+
 def test_every_export_kind_has_a_guard_case():
     """A report kind the export worker accepts cannot skip this guard."""
-    assert worker_report_kinds() == set(WORKER_CASES)
+    assert worker_report_kinds() == set(WORKER_CASES) | NOT_REPORT_DOWNLOADS
 
 
 def test_every_page_download_has_a_guard_case():

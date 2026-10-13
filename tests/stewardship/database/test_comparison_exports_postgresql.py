@@ -437,6 +437,18 @@ def test_migration_check_refuses_a_missing_part():
     text = FROZEN.read_text(encoding="utf-8")
     check = text[text.index("DO $check$") : text.index("$check$;") + len("$check$;")]
     with transaction.atomic(), connection.cursor() as cursor:
+        # 0084 (#1018 part (a)) widens export_report_known with the campaign
+        # archive, which 0071's block, written before it, does not count:
+        # put 0071's own check back first (rolled back below).
+        for line in text.splitlines():
+            if line.startswith(
+                tuple(
+                    f"ALTER TABLE public.stewardship_export_request {verb} "
+                    "CONSTRAINT export_report_known"
+                    for verb in ("DROP", "ADD")
+                )
+            ):
+                cursor.execute(line)
         cursor.execute(check)  # The installed schema passes.
         for change in (
             "DROP TRIGGER comparison_export_binding"
@@ -454,6 +466,7 @@ def test_migration_check_refuses_a_missing_part():
                 cursor.execute(change)
                 cursor.execute(check)
         cursor.execute(check)
+        transaction.set_rollback(True)
 
 
 def test_a_ministry_leader_and_a_disabled_user_cannot_export(

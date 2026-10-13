@@ -293,6 +293,10 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # ``CLOSURE_ALTERED`` puts it back. 0083 (#477) creates nothing; it adds the
 # daily digest ready row's funnel chart columns
 # (``before_digest_funnel_charts``), which ``CLOSURE_ALTERED`` puts back.
+# 0084 (#1018 part (a)) creates the campaign archive's answers read, and,
+# like 0071, alters the export request (its kinds, guards and request
+# authorization); the 0071 and 0063 undo statements already put all of that
+# back as the base has it, so it needs no undo of its own.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -426,6 +430,15 @@ CLOSURE_CREATED = {
     "public.stewardship_report_recipient_bounce_v1(uuid,uuid,text,uuid,text)": (
         "stewardship_jobs",
         "0030_bounce_report",
+    ),
+    # The campaign archive's answers read (0084, #1018). Its file also
+    # re-adds export_report_known and replaces the export guards and the
+    # request authorization; ``before_comparison_exports`` and
+    # ``before_timeline_exports`` put those back as the base has them, and
+    # this file, run again last, installs them as released.
+    "public.stewardship_campaign_archive_answers_v1(uuid,timestamp with time zone)": (
+        "stewardship_reports",
+        "0023_campaign_archive_exports",
     ),
 }
 

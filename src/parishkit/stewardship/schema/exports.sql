@@ -216,6 +216,29 @@ BEGIN
                 OR EXISTS(SELECT 1 FROM stewardship_export_request prior
                     WHERE prior.comparison_snapshot_id=comparison.id
                       AND prior.requester_id=NEW.requester_id));
+    ELSIF NEW.report='campaign_archive' THEN
+        -- The campaign archive workbook (migration 0084): an Administrator's
+        -- XLSX of one ready historical fact set, cut off at a day that set
+        -- holds, final or partial, named for its stewardship year. The
+        -- worker reads the submissions itself under those pins.
+        SELECT * INTO facts FROM stewardship_daily_fact_set WHERE id=NEW.fact_set_id FOR SHARE;
+        inputs_valid:=facts.id IS NOT NULL AND facts.state='ready'
+            AND facts.population_scope='historical' AND facts.campaign_id=NEW.campaign_id
+            AND NEW.format='xlsx' AND jsonb_typeof(NEW.parameters)='object'
+            AND (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(NEW.parameters) k)
+                =ARRAY['cutoff_date','final','year']
+            AND jsonb_typeof(NEW.parameters->'final')='boolean'
+            AND jsonb_typeof(NEW.parameters->'year')='number'
+            AND NEW.parameters->>'year' ~ '^2[01][0-9]{2}$'
+            AND jsonb_typeof(NEW.parameters->'cutoff_date')='string'
+            AND NEW.parameters->>'cutoff_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+            AND EXISTS(SELECT 1 FROM stewardship_daily_fact d WHERE d.fact_set_id=facts.id
+                AND d.local_date::text=NEW.parameters->>'cutoff_date')
+            -- Only a closed or archived campaign's archive may be final.
+            AND (NEW.parameters->'final'='false'::jsonb OR EXISTS(SELECT 1
+                FROM stewardship_campaign c WHERE c.id=NEW.campaign_id
+                  AND c.state IN ('closed','archived')))
+            AND stewardship_export_authorized_v1(NEW.requester_id,true);
     END IF;
     IF inputs_valid IS DISTINCT FROM true OR NEW.actor_id IS DISTINCT FROM NEW.requester_id
        OR NOT stewardship_export_request_authorized_v1(NEW.requester_id,NEW)
@@ -238,7 +261,7 @@ END $$;
 CREATE FUNCTION public.stewardship_export_pin_guard_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 BEGIN
-    IF NEW.report='participation' AND NOT EXISTS(SELECT 1 FROM stewardship_fact_pin WHERE fact_set_id=NEW.fact_set_id
+    IF NEW.report IN ('participation','campaign_archive') AND NOT EXISTS(SELECT 1 FROM stewardship_fact_pin WHERE fact_set_id=NEW.fact_set_id
         AND parent_kind='export' AND parent_id=NEW.id)
     THEN RAISE EXCEPTION 'Export requires its retained fact pin' USING ERRCODE='23514'; END IF;
     RETURN NULL;
@@ -297,7 +320,10 @@ BEGIN
                WHERE s.id=request.timeline_snapshot_id AND s.row_count=NEW.row_count))
            OR (request.report='campaign_comparison' AND EXISTS(
                SELECT 1 FROM stewardship_comparison_export_snapshot s
-               WHERE s.id=request.comparison_snapshot_id AND s.row_count=NEW.row_count)))
+               WHERE s.id=request.comparison_snapshot_id AND s.row_count=NEW.row_count))
+           OR (request.report='campaign_archive' AND NEW.row_count>0 AND EXISTS(
+               SELECT 1 FROM stewardship_daily_fact_set f
+               WHERE f.id=request.fact_set_id AND f.state='ready')))
        OR NOT EXISTS(SELECT 1 FROM stewardship_export_attempt a JOIN stewardship_task_run t ON t.id=a.run_id
            WHERE a.id=NEW.attempt_id AND a.request_id=request.id AND a.actor_id=NEW.actor_id
              AND t.state='running' AND t.fence=a.fence AND t.worker_id=a.actor_id

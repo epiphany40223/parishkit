@@ -58,6 +58,13 @@ patterns = [
         past_campaign_views.remove,
         name="past_campaign_removal",
     ),
+    # Download campaign archive (#1018 part (a)): a POST answered with the
+    # export's status page.
+    path(
+        "parish/past-campaigns/archive/",
+        past_campaign_views.archive,
+        name="past_campaign_archive",
+    ),
     path(
         "parish/parishsoft-refresh/",
         refresh_views.source_refresh,

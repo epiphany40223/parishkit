@@ -51,7 +51,14 @@ from .workspace import ReportQuery
 # files and a Family's timeline carry live Family codes and the financial
 # file financial detail.
 FRESH_REPORTS = frozenset(
-    {"family_directory", "postal_outreach", "financial", "family_timeline"}
+    {
+        "family_directory",
+        "postal_outreach",
+        "financial",
+        "family_timeline",
+        # The campaign archive holds each Family's giving (#1018).
+        "campaign_archive",
+    }
 )
 
 
@@ -260,6 +267,11 @@ def detail(request, request_id):
                 title = "Financial stewardship export"
                 source = "financial_report"
                 report_url = reverse("admin:financial_report")
+            elif job.report == "campaign_archive":
+                # Download campaign archive on Past campaigns (#1018).
+                title = "Campaign archive"
+                source = "past_campaigns"
+                report_url = reverse("admin:past_campaigns")
             elif job.report == "campaign_comparison":
                 title = "Campaign comparison download"
                 source = "campaign_comparison"

@@ -25,6 +25,11 @@ campaigns page"):
 - ``remove`` (POST, ``removal/``) is the table's Remove row action, which
   the shared confirmation dialog posts as ``<year>:<version>``; it leaves a
   tombstone and redirects back.
+- ``archive`` (POST, ``archive/``) is This campaign's archive's Download
+  campaign archive (#1018 part (a)): with a Google sign-in within five
+  minutes it queues the current campaign's archive workbook
+  (``archive_exports.create_archive_export``) and answers with the export's
+  status page; a stale sign-in gets the step-up page, which returns here.
 
 Every route needs an Administrator (``CONFIGURE`` and ``FINANCIAL_DETAIL``);
 the service checks again. Every answer is ``no-store``. Note texts appear
@@ -34,7 +39,7 @@ only here, escaped; audit events come from the service.
 import re
 from datetime import timedelta
 from urllib.parse import urlencode
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from django.core import signing
 from django.db import DatabaseError
@@ -59,6 +64,7 @@ from parishkit.stewardship.web.presentation import number
 from parishkit.stewardship.web.refusals import UserFacingStale, unexpected_fields
 from parishkit.stewardship.web.tables import Sorting, whole_table
 
+from .archive_exports import archive_offer, create_archive_export
 from .archive_models import MAX_ARCHIVE_BYTES
 from .comparison import money_text
 
@@ -297,6 +303,15 @@ def _year_problem():
     return None
 
 
+def _archive_offer():
+    """This campaign's archive section: what Download would make now."""
+    from parishkit.stewardship.web.admin_routes import _current_campaign_id
+
+    from .archive_exports import campaign_now
+
+    return archive_offer(_current_campaign_id(), now=campaign_now())
+
+
 def _page_url(selected=None):
     """This page's address, keeping the given query values."""
     query = urlencode(selected or {})
@@ -343,6 +358,8 @@ def _render(request, actor, selected, *, status=200, problems=(), more=0):
             "more_problems": more,
             "year_problem": _year_problem(),
             "max_bytes": MAX_ARCHIVE_BYTES,
+            "archive": _archive_offer(),
+            "request_key": uuid4(),
         },
         status=status,
     )
@@ -516,5 +533,63 @@ def remove(request):
                 fix=_("Reload the page to see the imports now."),
             ) from None
         return _no_store(HttpResponseRedirect(_page_url()))
+    except ERRORS as error:
+        return error_response(error)
+
+
+@require_http_methods(["POST"])
+def archive(request):
+    """Queue the current campaign's archive workbook and show its status page.
+
+    The form posts only its one-time ``request_key``. The file holds each
+    Family's giving, so, as for the financial export, it needs a Google
+    sign-in within the last five minutes (#547): a stale one gets the
+    step-up page, which returns to Past campaigns, and nothing is queued.
+    A download unavailable now (or a reused form) redraws the page, whose
+    section says why, with 409.
+    """
+    from parishkit.stewardship.accounts import admin_navigation
+    from parishkit.stewardship.accounts.admin_editing import step_up_response
+    from parishkit.stewardship.accounts.sessions import (
+        FreshAuthenticationRequired,
+        require_fresh,
+    )
+    from parishkit.stewardship.web.admin_routes import _current_campaign_id
+
+    from .export_services import ExportRequestBound
+    from .export_ui import _redirect
+    from .facts import FactUnavailable
+    from .read_admission import admit_report_read
+
+    try:
+        actor = _administrator(request)
+        if (
+            request.GET
+            or set(request.POST) - {"csrfmiddlewaretoken"} != {"request_key"}
+            or len(request.POST.getlist("request_key")) != 1
+        ):
+            raise unexpected_fields()
+        request_key = UUID(request.POST["request_key"])
+        campaign_id = _current_campaign_id()
+        if campaign_id is None:
+            return _render(request, actor, {}, status=409)
+        admit_report_read(campaign_id)
+        try:
+            require_fresh(request)
+        except FreshAuthenticationRequired:
+            return step_up_response(
+                reverse("admin:past_campaigns"),
+                admin_navigation.PAGES["past_campaigns"].label,
+            )
+        try:
+            result = create_archive_export(
+                runtime().store,
+                actor.identity,
+                campaign_id=campaign_id,
+                request_key=request_key,
+            )
+        except (ExportRequestBound, FactUnavailable):
+            return _render(request, actor, {}, status=409)
+        return _redirect(result.pk)
     except ERRORS as error:
         return error_response(error)

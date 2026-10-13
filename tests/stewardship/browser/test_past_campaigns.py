@@ -63,7 +63,9 @@ def choose(page, tmp_path, size=100):
     page.locator("#archive-file").set_input_files(str(path))
 
 
-@pytest.mark.parametrize("path", [PAGE, CARD, f"{PAGE}-empty", f"{PAGE}-year"])
+@pytest.mark.parametrize(
+    "path", [PAGE, CARD, f"{PAGE}-empty", f"{PAGE}-year", f"{PAGE}-archive-closed"]
+)
 @pytest.mark.parametrize("width", [320, 1280])
 def test_page_is_accessible_and_fits(page, component_origin, axe_source, path, width):
     """No axe violation and no sideways page scroll; tables scroll in place."""
@@ -253,3 +255,24 @@ def test_the_provenance_tip_opens_from_the_keyboard(page, component_origin):
     assert bubble.inner_text() == (
         "Counted from: Families issued <campaign> codes, from an invented snapshot"
     )
+
+
+def test_the_campaign_archive_section_offers_or_explains_the_download(
+    page, component_origin
+):
+    """Download campaign archive posts its key; unavailable, it says why."""
+    page.goto(component_origin + PAGE)
+    section = page.locator("#campaign-archive")
+    button = section.get_by_role("button", name="Download campaign archive")
+    assert button.is_enabled()
+    text = page.locator("[aria-labelledby=campaign-archive-heading]").inner_text()
+    assert "A partial archive of Stewardship 2027, through day 9" in text
+    assert "stewardship-2027-partial.xlsx" in text
+    assert section.get_attribute("action") == "/admin/parish/past-campaigns/archive/"
+    page.goto(component_origin + f"{PAGE}-archive-closed")
+    button = page.locator("#campaign-archive").get_by_role(
+        "button", name="Download campaign archive"
+    )
+    assert button.is_disabled()
+    assert button.get_attribute("aria-describedby") == "campaign-archive-reason"
+    assert "until the end date" in page.locator("#campaign-archive-reason").inner_text()

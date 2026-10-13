@@ -177,6 +177,8 @@ def test_every_export_command_has_a_golden_document():
         "export family-timeline",
         # The Campaign comparison's download (#1018, slice 6).
         "export comparison",
+        # The campaign archive workbook (#1018 part (a)).
+        "export archive",
         # The Census changes download (#463).
         "export census",
     }

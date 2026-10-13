@@ -8,6 +8,8 @@ with the page naming what was done (2025 replaced), and its Remove dialog
 posts to ``removal/`` and redraws from a page without 2025. ``-refused``
 answers its Review with the located problems, ``-year`` has Review
 unavailable for an unresolvable year, and ``-empty`` has nothing imported.
+Every page offers a partial campaign archive download (#1018 part (a))
+except ``-archive-closed``, where it waits for a closed campaign's end date.
 ``POSTS`` lists the POST answers, filled in by ``components``.
 """
 
@@ -20,6 +22,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 
 from parishkit.stewardship.reports import past_campaign_views as views
+from parishkit.stewardship.reports.archive_exports import BEFORE_END, ArchiveOffer
 from parishkit.stewardship.web.tables import whole_table
 
 PAGE = "/past-campaigns"
@@ -36,6 +39,28 @@ REMOVED = f"{PAGE}-removed"
 # The fixtures' file limit, so a small test file counts as too large.
 MAX_BYTES = 2048
 POSTS = {}
+# This campaign's archive: a partial download through day 9, and a closed
+# campaign that waits for its end date.
+OFFER = ArchiveOffer(
+    None,
+    campaign_id=UUID(int=4),
+    campaign_name="Stewardship 2027",
+    year=2027,
+    cutoff_date=date(2026, 10, 12),
+    day=9,
+    end_date=date(2026, 11, 30),
+    fact_set_id=UUID(int=5),
+)
+CLOSED = ArchiveOffer(
+    BEFORE_END,
+    campaign_id=UUID(int=4),
+    campaign_name="Stewardship 2027",
+    year=2027,
+    final=True,
+    cutoff_date=date(2026, 11, 30),
+    day=58,
+    end_date=date(2026, 11, 30),
+)
 
 
 def archive(year, *, final=True, pk=None, state="active", **fields):
@@ -85,6 +110,8 @@ def context_for(active, removed=(), **extra):
         "more_problems": 0,
         "year_problem": None,
         "max_bytes": MAX_BYTES,
+        "archive": OFFER,
+        "request_key": UUID(int=6),
     } | extra
 
 
@@ -173,4 +200,5 @@ def components(context, admin):
             )
         ),
         f"{PAGE}-empty": page(context_for([])),
+        f"{PAGE}-archive-closed": page(context_for([final], archive=CLOSED)),
     }

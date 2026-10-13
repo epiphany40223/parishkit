@@ -3,6 +3,8 @@
 These commands request the report exports whose rows name Families and
 Members, through the export forms' own services:
 
+- ``export archive`` is Past campaigns' Download campaign archive
+  (``archive_exports.create_archive_export``, #1018);
 - ``export financial`` is the financial report's export form
   (``financial_exports.create_financial_export``);
 - ``export information`` is the information queue's export form
@@ -183,6 +185,65 @@ def export_financial(caller, service, *, filters, fmt, zone, request_key, contex
         service,
         principal=_principal,
         action=Action.ADMIN_CMD_EXPORT_FINANCIAL,
+        parse=parse,
+        create=create,
+        request_key=request_key,
+        context=context,
+    )
+
+
+def export_archive(caller, service, *, request_key, context):
+    """``export archive``: Past campaigns' Download campaign archive (#1018).
+
+    As the page, only an Administrator may (``CONFIGURE`` and
+    ``FINANCIAL_DETAIL``), the campaign must be one reports read, and,
+    as the page's view does, ``require_fresh`` comes before
+    ``create_archive_export``. A download unavailable now (no Family
+    responded, before day 1 or the end date, the figures still being
+    calculated) is ``not_available``.
+    """
+    from .accounts.sessions import require_fresh
+    from .audit.schemas import Action
+    from .reports.archive_exports import create_archive_export, require_administrator
+    from .reports.export_views import _principal as page_principal
+    from .reports.facts import FactUnavailable
+    from .reports.read_admission import admit_report_read
+
+    def principal(subject, store):
+        """The page's admission: a signed-in Administrator."""
+        actor = page_principal(subject, store)
+        require_administrator(store, actor.identity)
+        return actor
+
+    def parse(actor, campaign_id):
+        """The page's campaign check."""
+        admit_report_read(campaign_id)
+        return None
+
+    def create(actor, campaign_id, parsed):
+        """The page's fresh gate, then its service, inside the export lock.
+
+        As the page, the fresh sign-in comes before availability: an
+        unavailable download (``FactUnavailable``) is ``not_available``.
+        """
+        admit_report_read(campaign_id)
+        caller.campaign_id = campaign_id
+        require_fresh(caller)
+        try:
+            return create_archive_export(
+                service.store,
+                actor.identity,
+                campaign_id=campaign_id,
+                request_key=request_key,
+            )
+        except FactUnavailable:
+            raise NotAvailable("The campaign archive is unavailable now.") from None
+
+    return _create(
+        caller,
+        service,
+        principal=principal,
+        action=Action.ADMIN_CMD_EXPORT_ARCHIVE,
         parse=parse,
         create=create,
         request_key=request_key,
