@@ -1075,8 +1075,8 @@ FIELD_LABELS = {
     "directory_sort": _("Sorted by"),
 }
 # A response list's sort columns (#851), by sort key, in each list's own
-# column headings (reports.response_lists); ``-key`` is the same column
-# sorted the other way.
+# column headings; ``-key`` is the same column sorted the other way. The
+# lists were removed (#933); their earlier entries still read with these.
 _SORT_COLUMNS = {
     "family": _("Family"),
     "duid": _("Family DUID"),
@@ -1108,7 +1108,7 @@ _DIRECTORY_SORT_COLUMNS = {"name": _("Family")} | {
     )
 }
 # Recorded closed values shown in words, by field (#556): each report's own
-# menu wording (reports.response_lists and the Limitations report's Show
+# menu wording (the removed response lists' and the Limitations report's Show
 # menu). "option" and ``talent_option_id`` appear only on rows recorded before
 # talents were retired (#970); their wording stays so those rows still read.
 # "all" and "any" are each report's first, unfiltered choice.

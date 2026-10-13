@@ -47,7 +47,7 @@ in a read-only transaction after admitting the campaign report as the other
 reports do.
 """
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -202,8 +202,7 @@ class FamilyResponse:
     ``link_at``, ``form_at`` and ``progress_at`` are the engagement record's
     first instants as recorded; ``submitted_at`` is the Family's first
     submission, ``submissions`` how many it had made,
-    ``last_submitted_at`` its latest and ``staff_entered`` how many of them
-    Staff entered for it through Open form. The funnel counts ``form_opened_at``
+    ``last_submitted_at`` its latest. The funnel counts ``form_opened_at``
     and ``progressed_at``, which a submission implies.
     """
 
@@ -217,8 +216,6 @@ class FamilyResponse:
     submitted_at: datetime | None
     submissions: int
     last_submitted_at: datetime | None = None
-    # How many of the submissions Staff entered through Open form (#529).
-    staff_entered: int = 0
 
     @property
     def form_opened_at(self):
@@ -414,34 +411,6 @@ def _families(cursor, values):
     return tuple(FamilyResponse(*row) for row in cursor.fetchall())
 
 
-# How many of each Family's submissions in scope Staff entered for it through
-# Open form (#529), bounded by as_of like ``_FAMILIES``. A separate statement
-# rather than a column of ``stewardship_family_response_v1``: the count is
-# needed only by the lists, and adding it there would replace that installed
-# function (and the directory function that selects from it) in a frozen
-# migration. Only Families with such a submission have a row.
-_STAFF_ENTERED = """
-SELECT s.family_id, count(*)
-FROM stewardship_submission s
-WHERE s.campaign_id=%(campaign)s AND s.mode=%(response_mode)s
-  AND s.rehearsal_epoch_id IS NOT DISTINCT FROM %(epoch)s
-  AND s.submitted_at<=%(as_of)s AND s.entered_by_id IS NOT NULL
-GROUP BY s.family_id
-"""
-
-
-def _with_staff_entered(cursor, values, families):
-    """``families`` with each one's ``staff_entered`` count filled in."""
-    cursor.execute(_STAFF_ENTERED, values)
-    counts = dict(cursor.fetchall())
-    return tuple(
-        replace(family, staff_entered=counts[family.family_id])
-        if family.family_id in counts
-        else family
-        for family in families
-    )
-
-
 def _sends(cursor, values):
     """Read the send markers (see ``_SENDS``), named as the sends page names them."""
     cursor.execute(_SENDS, values)
@@ -473,19 +442,6 @@ def _values(scope, as_of):
         "mail_mode": scope.mail_mode,
         "as_of": as_of,
     }
-
-
-def response_families(scope, as_of):
-    """Only the per-Family rows of ``scope`` at ``as_of``, in one statement.
-
-    The lists of Families behind the funnel's counts need the rows but not
-    the send markers or the activity series; the caller owns the read-only
-    transaction and the campaign report admission, as for
-    ``response_metrics``.
-    """
-    values = _values(scope, as_of)
-    with connection.cursor() as cursor:
-        return _with_staff_entered(cursor, values, _families(cursor, values))
 
 
 def response_metrics(scope, as_of, *, grain="hour"):

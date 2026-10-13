@@ -220,8 +220,9 @@ LEDGER = {
     # without the Family keys, 8f the Family directory's exports (the code
     # MAC keyring loaded only for them), 8g the one-Family timeline export (a
     # new export kind, migration 0063, in its own pull request), and 8h the
-    # exact daily exports (part 1) and the in-memory downloads (limitations,
-    # response lists; part 2, after #752's audit fields).
+    # exact daily exports (part 1) and the in-memory Limitations download
+    # (part 2, after #752's audit fields; the response lists were removed,
+    # #933).
     # The aggregate report reads (PR 8c): counts and summaries only; the
     # rows behind them are the Family-level exports (PR 8e and 8f).
     "reports": command("report list"),
@@ -252,8 +253,6 @@ LEDGER = {
     # A packet of the chosen Ministries' Members and contacts: an export.
     "ministry_packet": command("export ministry-packet"),
     "response_dashboard": command("report responses"),
-    "response_list": pending("PR 8h", "export responses"),
-    "response_list_export": pending("PR 8h", "export responses"),
     "family_directory": command("export directory", "export postal"),
     # The one-Family timeline is Family-level, so it is a file only: the
     # page's export form (PR 8g) and ``export family-timeline``.

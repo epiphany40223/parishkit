@@ -38,7 +38,6 @@ TEMPLATES = Path(accounts.__file__).parent / "templates" / "stewardship"
 # True asks (a visible menu), False sends the browser's zone unasked.
 ASKS = {
     ("logs.html", "admin:logs_export"): True,
-    ("response-list.html", "export_action"): True,
     ("financial-report.html", "admin:financial_export"): True,
     ("limitations-report.html", "admin:limitations_export"): True,
     ("census-changes.html", "admin:census_changes_export"): True,

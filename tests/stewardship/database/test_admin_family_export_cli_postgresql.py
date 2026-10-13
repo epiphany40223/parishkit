@@ -30,6 +30,7 @@ from .response_builders import activate_response_service
 from .test_admin_export_cli_postgresql import download, read_only_session
 from .test_admin_report_cli_postgresql import cli  # noqa: F401
 from .test_background_grants_postgresql import task_login
+from .test_directory_responses_postgresql import quality_funnel  # noqa: F401
 from .test_export_cleanup_postgresql import expire_publication
 from .test_export_views_postgresql import post, restricted_download_pool
 from .test_financial_report_postgresql import pledge
@@ -37,10 +38,7 @@ from .test_financial_source_postgresql import financial_source
 from .test_information_followup_postgresql import search
 from .test_ministry_reports_postgresql import setup as ministry_setup
 from .test_response_http_postgresql import load_form
-from .test_response_lists_postgresql import (  # noqa: F401
-    funnel,
-    quality_funnel,
-)
+from .test_response_metrics_postgresql import funnel  # noqa: F401
 from .test_runtime_auth_grants_postgresql import web_login
 
 pytestmark = pytest.mark.django_db(transaction=True)

@@ -302,7 +302,7 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   refuses an in-place control whose fragment names no region there.
 - **Controls.** A link that shows another view of the page (`a[data-in-place]`:
   the [response dashboard](../reports/spec.md#response-dashboard)'s mode and
-  grain, the [response lists](../reports/spec.md#response-lists)' mode, the
+  grain, the
   [Family timeline](../reports/spec.md#family-timeline)'s mode and When sort,
   "Refresh current work" on "Background work", "Refresh list" on
   "Families on the form now", the page links of a mail delivery's
@@ -326,8 +326,8 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   `data-in-place-read` (the System logs cross-links only read): a read may
   be cancelled by a newer choice and, with no answer at all, falls back to
   the ordinary submission. A form or link marked `data-in-place-filters`
-  sets the page's filters from outside its filter form (a response list's
-  mode link clears its private search), so after the swap the filter
+  sets the page's filters from outside its filter form (a System logs
+  cross-link), so after the swap the filter
   form's visible fields, and any disclosure in it, show what the fresh page
   applied, and the next Apply, sort or page keeps them; every other swap
   leaves filters typed but not yet applied alone. A region a

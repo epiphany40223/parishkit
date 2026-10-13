@@ -25,6 +25,7 @@ from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
 from parishkit.stewardship.schema_primitives import timezone_names
+from parishkit.stewardship.source.snapshot_names import current_snapshot
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.exports import download_headers, page_download
@@ -40,7 +41,6 @@ from .limitations import (
     limitations_xlsx,
 )
 from .read_admission import admit_report_read
-from .response_lists import current_snapshot
 
 # The page's two tables page and sort independently, so their table
 # parameters carry these prefixes.

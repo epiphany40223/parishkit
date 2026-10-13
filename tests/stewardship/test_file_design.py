@@ -35,12 +35,6 @@ from parishkit.stewardship.reports.information_rendering import (
 )
 from parishkit.stewardship.reports.limitations import limitations_xlsx, shape_result
 from parishkit.stewardship.reports.ministry_packets import packet_records, render_packet
-from parishkit.stewardship.reports.response_lists import (
-    LISTS,
-    PRIVACY,
-    ListQuery,
-    list_file,
-)
 from parishkit.stewardship.reports.spreadsheets import participation_xlsx
 
 from .test_directory_rendering import document as directory
@@ -50,7 +44,6 @@ from .test_limitations_report import result as limitations_result
 from .test_ministry_packets import item as member
 from .test_ministry_packets import packet
 from .test_participation_rendering import document as participation
-from .test_response_lists import NEW_YORK, details_of, rows_of
 
 # --- XLSX -----------------------------------------------------------------
 
@@ -149,26 +142,6 @@ def test_information_and_directory_workbooks_share_the_style():
     output = io.BytesIO()
     render_directory(directory([family()]), output, format="xlsx")
     book = load_workbook(output)
-    assert_styled_table(book["Families"], first_column=True)
-    assert_information_sheet(book["Report information"])
-
-
-def test_response_list_workbook_shares_the_style():
-    """A response list's XLSX (#850) is the shared styled workbook.
-
-    Its Family column leads (#932), so it stays in view while the sheet
-    scrolls sideways, as a directory's does.
-    """
-    query = ListQuery(search="adams")
-    body = list_file(
-        LISTS["submitted"],
-        rows_of("submitted"),
-        NEW_YORK,
-        "xlsx",
-        details=details_of("submitted", query),
-    )
-    book = load_workbook(io.BytesIO(body))
-    assert book["Families"]["A1"].value == "Family"
     assert_styled_table(book["Families"], first_column=True)
     assert_information_sheet(book["Report information"])
 
@@ -395,35 +368,6 @@ def test_directory_pdfs_frame_every_page(monkeypatch, postal):
         TESTING_NOTE, pdf_design.BODY_WIDTH - 90, pdf_design.FOOTER_SIZE
     )[0]
     assert len(pages) > 1 and all(note in drawn for drawn in pages)
-
-
-def response_list_pdf(spec, rows, details, output):
-    """Write one response list's PDF and return its page count."""
-    body = list_file(spec, rows, NEW_YORK, "pdf", details=details)
-    output.write(body)
-    return len(re.findall(rb"/Type /Page\b", body))
-
-
-def test_response_list_pdfs_frame_every_page(monkeypatch):
-    """Each response list's PDF is the shared framed table (#850).
-
-    The frame states the counts and filters and that a search was applied,
-    never its text; the table heading repeats on every page.
-    """
-    for key, spec in LISTS.items():
-        listed = rows_of(key)
-        rows = listed * (60 // len(listed) + 1)  # enough rows for two pages
-        details = details_of(key, ListQuery(search="adams"), count=len(rows))
-        pages = frames(monkeypatch, partial(response_list_pdf, spec, rows, details))
-        assert len(pages) > 1, key
-        assert_framed(pages, str(spec.title), PRIVACY)
-        heading = pdf_design.wrap_text(
-            str(spec.columns[0].heading), 40, pdf_design.LABEL_SIZE, "bold"
-        )[0]
-        for drawn in pages:
-            assert any(value.endswith("Search applied.") for value in drawn)
-            assert any(value.startswith(heading) for value in drawn), key
-            assert not any("adams" in value for value in drawn)
 
 
 def test_record_pdfs_frame_every_page(monkeypatch):

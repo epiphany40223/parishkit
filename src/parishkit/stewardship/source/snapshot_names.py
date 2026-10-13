@@ -4,8 +4,8 @@ Admin pages that list Families by DUID (the chosen-Families send page, the
 "Families on the form now" page, and the reports whose SQL reads only a
 surname, through ``name_rows``) name them the way the Family codes directory
 does (``family_names.family_heads_name``): the surname, then the active heads
-of household. One statement serves any number of Families. The response lists
-also show each Family's envelope number and ParishSoft mailing name
+of household. One statement serves any number of Families. The Family
+timeline also shows a Family's envelope number and ParishSoft mailing name
 (``snapshot_family_facts``), read from the same Family rows.
 
 One SQL statement reads the snapshot's state, its Family rows and their heads'
@@ -22,6 +22,12 @@ from dataclasses import dataclass
 from django.db import connection
 
 from .family_names import family_display_name, family_heads_name
+from .snapshot_models import SourceCurrent
+
+
+def current_snapshot():
+    """The current ParishSoft snapshot's id, or None before the first load."""
+    return SourceCurrent.objects.values_list("snapshot_id", flat=True).first()
 
 
 @dataclass(frozen=True)

@@ -237,7 +237,6 @@ def test_new_report_pages_refuse_or_explain_without_a_current_campaign(
     pages = (
         ("reports", []),
         ("response_dashboard", []),
-        ("response_list", ["submitted"]),
         ("participation", []),
         ("campaign_comparison", []),
         ("financial_report", []),
@@ -288,8 +287,6 @@ def test_new_report_pages_refuse_or_explain_without_a_current_campaign(
         ("ministry_followup_bulk", []),
         ("family_directory_export", []),
         ("find_family", []),
-        ("response_list_export", ["submitted"]),
-        ("response_list", ["submitted"]),
     ):
         response = browser.post(reverse(f"admin:{name}", args=args), values)
         assert response.status_code < 500, (name, response.status_code)

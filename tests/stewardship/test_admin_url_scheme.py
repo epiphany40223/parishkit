@@ -271,7 +271,6 @@ SLASHLESS_EXPECTED = {
     # Responses and reports pages without their trailing slash (NAV-11).
     "/admin/reports": "/admin/reports/",
     "/admin/reports/responses": "/admin/reports/responses/",
-    "/admin/reports/responses/logo": "/admin/reports/responses/logo/",
     "/admin/reports/participation": "/admin/reports/participation/",
     "/admin/reports/comparison": "/admin/reports/comparison/",
     "/admin/reports/financial": "/admin/reports/financial/",
@@ -515,8 +514,6 @@ def test_report_actions_and_records_resolve_to_their_own_routes():
         (f"/admin/reports/information/{T}/record/", "information_update"),
         ("/admin/reports/ministries/follow-up/", "ministry_followup"),
         (f"/admin/reports/ministries/follow-up/{T}/", "ministry_followup_item"),
-        ("/admin/reports/responses/submitted/", "response_list"),
-        ("/admin/reports/responses/submitted/csv/", "response_list_export"),
         (f"/admin/reports/exports/{T}/", "report_export"),
         (f"/admin/reports/exports/{T}/download/", "report_export_download"),
         ("/admin/reports/emailed/weekly/new/", "weekly_digest_manual"),
@@ -546,6 +543,23 @@ def test_old_digest_addresses_are_gone():
     ):
         with pytest.raises(Resolver404):
             resolve(old)
+
+
+def test_old_response_list_addresses_are_gone():
+    """The response list pages are 404, not redirected (#933, #864).
+
+    The dashboard's "Lists of Families" links open the family directory's
+    presets instead; the old addresses, with or without their trailing
+    slash or download suffix, resolve to nothing.
+    """
+    for key in ("submitted", "started", "not-opened", "more-than-once", "data-quality"):
+        for old in (
+            f"/admin/reports/responses/{key}/",
+            f"/admin/reports/responses/{key}",
+            f"/admin/reports/responses/{key}/csv/",
+        ):
+            with pytest.raises(Resolver404):
+                resolve(old)
 
 
 def test_new_digest_emails_link_their_emailed_report_pages():

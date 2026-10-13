@@ -62,7 +62,6 @@ from parishkit.stewardship.reports.information_rendering import (
 )
 from parishkit.stewardship.reports.ministry_packets import render_packet
 from parishkit.stewardship.reports.participation import participation_csv
-from parishkit.stewardship.reports.response_lists import LISTS, list_file
 from parishkit.stewardship.reports.spreadsheets import participation_xlsx
 from parishkit.stewardship.web.exports import PAGE_DOWNLOADS
 
@@ -80,7 +79,6 @@ from .test_ministry_exports import document as ministry
 from .test_ministry_packets import item as member
 from .test_ministry_packets import packet
 from .test_participation_rendering import document as participation
-from .test_response_lists import NEW_YORK, details_of, rows_of
 from .test_roster import roster_row
 from .test_timeline_exports import document as timeline
 
@@ -432,31 +430,6 @@ def case_campaign_comparison(monkeypatch):
     reads the table's headings.
     """
     return shared_case(monkeypatch, comparison(), render_comparison)
-
-
-def case_response_list(monkeypatch):
-    """Every response list, through ``list_file``."""
-    results = []
-    for key, spec in LISTS.items():
-        rows = rows_of(key)
-
-        def body(format, key=key, rows=rows):
-            """The list's file in ``format``."""
-            return list_file(
-                LISTS[key],
-                rows,
-                NEW_YORK,
-                format,
-                details=details_of(key),
-                as_of=details_of(key)[6][1],
-            )
-
-        headers = csv_headers(body("csv"))
-        sheets, labels = xlsx_headers(body("xlsx"))
-        seen = pdf_capture(monkeypatch, lambda body=body: body("pdf"))
-        headings = [str(column.heading) for column in spec.columns]
-        results.append((headings, headers, sheets, seen["table"], labels))
-    return results
 
 
 def case_census_changes(monkeypatch):

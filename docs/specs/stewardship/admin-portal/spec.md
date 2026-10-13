@@ -439,7 +439,7 @@ pages (NAV-9: settings, Copy campaign, content and its history, images,
 schedules, Share options and Member talents; NAV-10: the test email pages,
 the go-live chain, Production activation and Cancel go-live, and Campaign
 Ministries under Ministries) and the report pages (NAV-11: every report, the
-response lists and the Family timeline, with the
+response lists (since removed, #933) and the Family timeline, with the
 campaign choosers and the old Ministry reports root retired); the Campaign
 setup, Mail and Family portal and Parish data group roots open their first
 entry, and `/admin/reports/` keeps its meaning. Exports and the reports sent
@@ -824,7 +824,6 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `presence` | Families on the form now | Menu: Families on the form now | Administrator | (same) | `/admin/mail/presence/` | (same) | The header's count is still polled at `/admin/presence?format=count` (decision 8); any other read of that address is 404. |
 | `held_emails` | Held emails | Reached from: Home | Administrator | (new, #757) | `/admin/mail/held-emails/` | (same) | Not a menu entry: Home links to it while a held email is undecided. Its trail is Home › Mail and Family portal. See [restore release](#restore-release). |
 | `response_dashboard` | Response dashboard | Menu: Response dashboard | Administrator, Staff | (same) | `/admin/reports/responses/` | (same) |  |
-| `response_list` | _list name_ | Response dashboard | Administrator, Staff | (new, #477) | `/admin/reports/responses/<key>/` | (same) | Object-named (exception): each list behind a dashboard count is named after that list. Its download (`<key>/csv/`: CSV, XLSX or PDF, #850; the address predates the other two formats) is a non-page action. |
 | `reports` | Participation | Menu: Participation | Administrator, Staff | (redirects) Participation and campaign statistics; 'Campaign reports' only when no campaign exists; Campaign reports | `/admin/reports/` | (same) | Not a group root: redirects to Participation, or to Ministry requests for a viewer who may not open Participation (a Ministry leader). |
 | `participation` | Participation | Menu: Participation | Administrator, Staff | Participation and campaign statistics; Campaign reports (via redirect) | `/admin/reports/participation/` | (same) |  |
 | `campaign_comparison` | Campaign comparison | Menu: Campaign comparison | Administrator, Staff | (new, [#1018](https://github.com/epiphany40223/parishkit/issues/1018)) | `/admin/reports/comparison/` | (same) | Compares the current campaign with imported past campaigns ([campaign history](../campaign-history/spec.md#comparison-report)). |
@@ -843,7 +842,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `ministry_followup_item` | Follow-up request | Ministry follow-up | Administrator, Staff, Ministry leader | Ministry follow-up (one request) | `/admin/reports/ministries/follow-up/<request>/` | (same) | Return to the queue keeps its filters and page. Status, notes and outcome only; no Assign to (#552). A resolved join or leave's Entered in ParishSoft tick posts to `follow-up/<request>/roster/` (#528). |
 | `ministry_roster` | Roster changes to enter | Ministry follow-up | Administrator, Staff | (new, #528) | (none) | `/admin/reports/ministries/follow-up/roster/` | [Roster changes to enter](#roster-changes-to-enter); its CSV/XLSX/PDF download (`roster/exports/`) is a non-page action. |
 | `family_directory` | Active parishioner family directory | Menu: Active parishioner family directory | Administrator, Staff | (same) | `/admin/reports/families/` | (same) |  |
-| `family_timeline` | Family timeline | Active parishioner family directory | Administrator, Staff | (new, #477) | `/admin/reports/families/<family>/` | (same) | Opened from each directory row and response list row (and Find a Family, NAV-19); `<family>` is the opaque campaign record id. Staff see the summary only. |
+| `family_timeline` | Family timeline | Active parishioner family directory | Administrator, Staff | (new, #477) | `/admin/reports/families/<family>/` | (same) | Opened from each directory row (and Find a Family, NAV-19); `<family>` is the opaque campaign record id. Staff see the summary only. |
 | `emailed_reports` | Emailed reports | Menu: Emailed reports | Administrator, Staff | (new) | `/admin/reports/emailed/` | (same) | New page (decision 7, ADM-12.17): the current campaign's daily reports (and weekly reports for Administrators), newest first, each linking its page; Send a weekly report now is on it and returns to it, linking the report it produced. |
 | `weekly_digest_manual` | Send a weekly report now | Emailed reports | Administrator | Request a manual information report; Manual information report | `/admin/reports/emailed/weekly/new/` | (same) | Was the Manual information report menu entry; now a button on Emailed reports, where it ends, linking the report it produced (or its background task until it is ready). Its address named the campaign until #865; that old address is gone, with no redirect (#864). |
 | `weekly_digest_snapshot` | Weekly report | Emailed reports | Administrator | Weekly information report; Weekly summary | `/admin/reports/emailed/weekly/<snapshot>/` | (same) | Its old address, which weekly report emails sent before NAV-12 link, is gone, with no redirect (#864). |
@@ -1148,9 +1147,9 @@ follows them.
     CSRF POST (coordinator) (#561). It matches what the directory search
     matches, including any active Member's name and the envelope number
     (coordinator, #664).
-22. **What are the #477 response lists?** (Coordinator.) One registry row,
-    each named after its list, at `/admin/reports/responses/<key>/`; its CSV
-    is a non-page.
+22. **What are the #477 response lists?** (Coordinator.) They were removed
+    in #933: the directory's Response filters list those Families, and the
+    old `/admin/reports/responses/<key>/` addresses are 404.
 23. **Dead end with no current campaign?** (Administrator.) Accepted
     until #145; Home explains it. A deployment that has never had a campaign
     is not a dead end: Home offers Create the campaign (#142).

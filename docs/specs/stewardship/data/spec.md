@@ -1655,8 +1655,7 @@ disconnect, timeout, exception, and worker loss. Coordination across processes
 must not reissue capacity merely because a lease expired while its connection
 or stream is still alive. Downloads never fall back to an unguarded transfer.
 A small download rendered on request in memory from the same rows as its
-page (the [response lists](../reports/spec.md#response-lists), and
-[Limitations](../reports/spec.md#limitations) after
+page ([Limitations](../reports/spec.md#limitations) after
 [#557](https://github.com/epiphany40223/parishkit/issues/557)) is not a stored
 export file: it is read under the interactive campaign read guard, with its
 60-second deadline, on the web connection, as the page itself is.

@@ -1776,7 +1776,6 @@ checks that every other ledger route is named here.
 | `held_emails` ([#757](https://github.com/epiphany40223/parishkit/issues/757)) | Permanent: held-email decisions need a fresh Google sign-in in the browser, which the decision guard checks (migration 0017) |
 | `automation_access`, `automation_approval`, `automation_sessions` (revoke) and `automation_notices` (acknowledgement) (new) | Permanent: these pages are the human side of the interface (PR 2); `sessions` takes the page's filter and sort for one's own sessions (#621) |
 | `response_dashboard` ([#517](https://github.com/epiphany40223/parishkit/issues/517)) | `report responses` with counts (PR 8c) |
-| `response_list`, `response_list_export` | Family-level rows, so export only: `export responses` (PR 8h) |
 
 The inventory's `status presence` is folded into `status` as its
 `presence.count`, because a word cannot be both a command and an area in
@@ -2314,7 +2313,7 @@ file is regenerated from the retained capture, in its original format.
 | `family_directory`, `family_directory_export` with mailing columns | Export only: `export postal`, the mail merge (PR 8f); [fresh-gated](#fresh-gated-actions-from-the-command-line) |
 | `find_family` | Permanent: a search by name; the command line takes no text that names a Family, and `export directory` is the file. This follows the pending "no search" default (PR 8e); if the Administrator allows searches, it becomes `--filter search=` on `export directory` |
 | `family_timeline`, `family_timeline_export` | One Family's timeline, so export only: the page's new export form and `export family-timeline FAMILY_RECORD_ID` (PR 8g, migration 0063); [fresh-gated](#fresh-gated-actions-from-the-command-line) |
-| `family_open_form` (new, #529) | Permanent: Open form signs this browser in to the Family form for a Family on the phone, a browser hand-off by nature; Families' responses are read through `report responses` and the response list exports |
+| `family_open_form` (new, #529) | Permanent: Open form signs this browser in to the Family form for a Family on the phone, a browser hand-off by nature; Families' responses are read through `report responses` and the directory exports with its Response filters |
 | `limitations_export` | `export limitations` (PR 8h, with #752's audit fields) |
 | `census_changes`, `census_changes_export` | `report census`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the rows through `export census` (PR 8h, [#463](https://github.com/epiphany40223/parishkit/issues/463)). A row's Entered in ParishSoft, Ignore and Reopen ([#528](https://github.com/epiphany40223/parishkit/issues/528)) post to `census_changes`; their command is `census resolve PROPOSAL_ID --action entered\|ignored\|reopened` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), through the same `census_resolution` service |
 | `report_export_create`, `report_export`, `report_export_cancel`, `report_export_retry`, `report_export_regenerate`, `report_export_download` | `export create`, `export status --watch`, `export cancel`, `export retry`, `export regenerate`, `export download --stream` (PR 8b); an exact request's status, cancel and retry, which these pages also serve, are `export exact status --watch`, `export exact cancel` and `export exact retry` (PR 8h) |
@@ -2513,9 +2512,10 @@ handoff, as the page delegates them. Each change admits as the page's form
 post does and runs in the export lifecycle's command scope, recording the
 services' own events and, when it made the change,
 `admin_cmd_export_exact_<verb>`. Once handed off, `export exact status`
-names the `export_id` that `export fetch` saves. The in-memory downloads
-(Limitations and response lists, after #752's audit fields, PR 8h's second
-part) follow.
+names the `export_id` that `export fetch` saves. The in-memory Limitations
+download (after #752's audit fields, PR 8h's second part) follows; the
+response lists' downloads were removed with their pages (#933), and the
+directory's export covers them.
 
 `export census` ([#463](https://github.com/epiphany40223/parishkit/issues/463))
 is the Census changes page's in-memory download, streamed as `logs export`
@@ -3264,8 +3264,8 @@ exactly the commands that exist.
   postal`). **PR 8g:** the one-Family timeline export (`export
   family-timeline`, with the page's export form and migration 0063).
   **PR 8h:** the exact daily exports (`export exact …`), the Census changes
-  download (`export census`), then the in-memory downloads (Limitations and
-  response lists) after #752.
+  download (`export census`), then the in-memory Limitations download after
+  issue #752 (the response lists were removed, #933).
 - **PR 9, operations,** in three parts. **PR 9a:** task retries. **PR 9b:**
   delivery reads and resolution. **PR 9c:** `resend` and refusal clearing, at
   the prompt.

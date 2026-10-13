@@ -8,7 +8,8 @@ name, DUID, envelope number and code never enter the URL, and the page's title
 leaves the name out so browser history does not keep it.
 
 Admission, the campaign read guard, the role recheck inside it and the audit
-follow the response lists (``response_list_views``). Production is the
+follow the other campaign report pages (the response dashboard's
+``response_dashboard``, say). Production is the
 default; Administrators may choose the campaign's active Testing rehearsal
 (``mode=testing``) and Staff may not. The Family code is decrypted under the
 credential key-set lock inside the guard, as the directory page does.
@@ -251,7 +252,7 @@ def read_identity(family, *, codes, workgroup=None):
     """The Family's name and envelope number, its code and its email reach.
 
     The name and envelope number come from the latest ParishSoft data (two
-    snapshot reads), as on the response lists. The code is decrypted only
+    snapshot reads, ``snapshot_family_facts``). The code is decrypted only
     when ``codes`` (the role may see Family codes), under the key-set lock,
     so a rotation cannot change keys between the read and the decryption;
     the caller holds the read guard's transaction. ``workgroup`` is the

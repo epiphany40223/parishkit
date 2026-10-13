@@ -1042,7 +1042,8 @@ email, delivery control and live Ministries suites.
 
 ADM-12.14 (NAV-11) moves every report page under `/admin/reports/` with no
 campaign in the address: the Response dashboard `responses/` and its lists
-`responses/<list>/` (CSV `csv/`), Participation `participation/`, Financial
+`responses/<list>/` (CSV `csv/`; since removed with no redirect, #933),
+Participation `participation/`, Financial
 stewardship `financial/`, Talents and limitations `talents/`, Additional
 information `information/` and its requests, Ministry requests
 `ministries/` with Members joining `joining/` and leaving `leaving/`,
