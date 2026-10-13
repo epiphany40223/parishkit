@@ -89,6 +89,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "branding show",
         "campaign shares",
         "artwork show",
+        "artwork remove-preview",
+        "artwork remove",
     }
     tests = {
         "test sample-preview",
@@ -649,6 +651,7 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_history_preview",
         "admin_cmd_history_confirm",
         "admin_cmd_history_remove",
+        "admin_cmd_artwork_remove",
     ]
     for event in events:
         assert Action(event) and event in DESCRIPTIONS, event

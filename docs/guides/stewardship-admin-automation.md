@@ -857,7 +857,35 @@ pk-admin artwork show
 Scripts should test whether `unavailable` is null, not match its text:
 the wording is the page's and may change. With no current campaign,
 `artwork show` is exit 1 (`not_available`).
-Uploading and removing images stay on the page for now.
+Uploading images stays on the page.
+
+`artwork remove-preview` and `artwork remove` are the page's **Remove
+this image** and its **Apply**, as `parish preview` and `parish confirm`
+are for the parish profile. They need a full-scope session and name the
+slot, as `artwork show` lists it. Nothing changes until `artwork remove`;
+the slot then shows no image until a new one is uploaded on the page.
+A slot whose upload is unavailable can still be removed.
+
+```sh
+VERSION=$(pk-admin artwork show | jq -r .result.version)
+pk-admin artwork remove-preview banner --expected-version "$VERSION" |
+  jq -r .result.preview.token | pk-admin artwork remove banner --token -
+```
+
+| Field | What it holds |
+| --- | --- |
+| `version` (`artwork remove-preview`) | The configuration version the removal was reviewed against |
+| `campaign_id`, `slot`, `name` | The current campaign, and the slot and its label on the page |
+| `image` | The image being removed, as `artwork show` prints it (null if its stored image is missing) |
+| `preview.token` | What `artwork remove --token` takes for the same slot, valid for fifteen minutes |
+| `created`, `request` (`artwork remove`) | As `parish confirm` prints them; follow the change with `config request show --watch` |
+
+A slot with no image, or no current campaign, is exit 1
+(`not_available`). A version that is no longer current, or an expired
+token, is exit 1 (`stale_version`): read `artwork show` again. Another
+slot's or an altered token is exit 1 (`invalid`). `artwork remove`
+records `admin_cmd_artwork_remove` in System logs with the request;
+repeating it with the same token returns the same request.
 
 ## Parish, Ministry, logo and Share option settings
 
@@ -2157,3 +2185,7 @@ print is exit 1 (`invalid`).
   page's download (full scope, Administrators and Staff, the page's
   event), streamed as `logs export` is; its `jsonl` format adds each
   change's `proposal_id`, `version` and `actions`.
+- `pk-admin/1` (#463): additive. `artwork remove-preview SLOT` and
+  `artwork remove SLOT`, Campaign images' Remove this image and its Apply
+  (full scope, Administrators only); `artwork remove` records
+  `admin_cmd_artwork_remove`.
