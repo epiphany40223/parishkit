@@ -19,8 +19,9 @@
   falls on the browser's next calendar day.
 {% endcomment %}<div data-live-status="system-health"{% if status_url %} data-live-url="{{ status_url }}"{% endif %} data-live-interval="{{ poll_interval }}" data-live-refresh-label="{% translate 'Refresh System health' %}" data-live-announce="{{ health.announcement }}" data-live-pending>
 <section class="panel" aria-labelledby="health-problems-heading" data-health-problems>
-{% if health.problems %}<h2 id="health-problems-heading">{% blocktranslate count count=health.problems|length trimmed %}{{ count }} problem needs attention{% plural %}{{ count }} problems need attention{% endblocktranslate %}</h2>
-<ul class="health-problems">{% for problem in health.problems %}<li class="notice notice-error" data-problem="{{ problem.kind }}">
+{% if health.attention %}<h2 id="health-problems-heading">{% blocktranslate count count=health.attention|length trimmed %}{{ count }} problem needs attention{% plural %}{{ count }} problems need attention{% endblocktranslate %}</h2>
+{% elif health.problems %}<h2 id="health-problems-heading">{% translate "Nothing needs attention" %}</h2>{% endif %}
+{% if health.problems %}<ul class="health-problems">{% for problem in health.problems %}<li class="notice{% if problem in health.attention %} notice-error{% endif %}" data-problem="{{ problem.kind }}"{% if problem not in health.attention %} data-problem-handled{% endif %}>
 {% include "stewardship/system-health-problem.html" %}</li>{% endfor %}</ul>
 {% else %}<h2 id="health-problems-heading">{% translate "Everything is working" %}</h2>{% endif %}
 </section>

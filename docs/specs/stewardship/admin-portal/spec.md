@@ -5949,7 +5949,10 @@ region the status updates replace, so the action sits in an element those
 updates leave in place (`data-live-keep`, see
 [in-place controls](../ui-conventions/spec.md#in-place-controls)): an open
 preview, its tick box and the headings above it never move or disappear when
-the status changes. Its rules (what the next full
+the status changes. Once a refusal is accepted, its line in the problems
+list says "The refused ParishSoft change was accepted once by …; waiting
+for the next full refresh" and is no longer counted among the problems that
+need attention (Home keeps the refusal's own line). Its rules (what the next full
 refresh must meet, how the acceptance ends, that a refusal is accepted only
 once and an empty load never, and the server operator's override as the
 emergency path) are in "i" toggletips. The preview, the refusals and the

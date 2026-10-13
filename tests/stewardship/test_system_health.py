@@ -745,6 +745,9 @@ FAILED = (
     DropCount("email_eligible_families", 900, 500, 25, True),
 )
 ACCEPTANCE = UUID("00000000-0000-4000-8000-0000000000a5")
+# The problem that refusal opened, and an unrelated one.
+DROP_PROBLEM = Problem("source_destructive_change", at=NOW)
+LATE_PROBLEM = Problem("source_late", at=NOW)
 
 
 def accepted(*, live=True):
@@ -755,7 +758,12 @@ def accepted(*, live=True):
 
 
 def accept_page(
-    counts=FAILED, acceptance=None, actor="admin@example.org", request=None, **values
+    counts=FAILED,
+    acceptance=None,
+    actor="admin@example.org",
+    request=None,
+    problems=(),
+    **values,
 ):
     """Render the status region, which holds the Accept this change once
     region under the refusal.
@@ -765,7 +773,10 @@ def accept_page(
     """
     context = {
         "health": health(
-            refused_at=NOW, refused_counts=counts, drop_acceptance=acceptance
+            refused_at=NOW,
+            refused_counts=counts,
+            drop_acceptance=acceptance,
+            problems=problems,
         ),
         "pause": None,
         "accept_actor": actor if acceptance is not None and acceptance.live else None,
@@ -890,6 +901,48 @@ def test_the_accept_region_sits_right_under_the_refusal():
     empty = accept_page(counts=())
     assert '<div data-live-keep="accept-change"></div>' in empty
     assert 'id="accept-change"' not in empty
+
+
+def test_an_accepted_refusal_is_listed_but_not_counted():
+    """Accepted once, the refusal's problem says by whom and that the next
+    full refresh is awaited, and no longer counts as needing attention;
+    every other problem still does (#530)."""
+    both = (LATE_PROBLEM, DROP_PROBLEM)
+    open_ = health(refused_counts=FAILED, problems=both)
+    assert open_.attention == both
+    done = health(refused_counts=FAILED, problems=both, drop_acceptance=accepted())
+    assert done.attention == (LATE_PROBLEM,)
+    assert done.announcement.startswith("1 problem needs attention:")
+    alone = health(
+        refused_counts=FAILED, problems=(DROP_PROBLEM,), drop_acceptance=accepted()
+    )
+    assert alone.attention == ()
+    assert alone.announcement == "Nothing needs attention."
+    # A lapsed acceptance is not an answer: the refusal counts again.
+    lapsed = health(
+        refused_counts=FAILED,
+        problems=(DROP_PROBLEM,),
+        drop_acceptance=accepted(live=False),
+    )
+    assert lapsed.attention == (DROP_PROBLEM,)
+
+    body = accept_page(acceptance=accepted(), problems=both)
+    assert "1 problem needs attention" in body
+    line = body[body.index('data-problem="source_destructive_change"') :]
+    line = line[: line.index("</li>")]
+    assert "data-problem-handled" in line and "notice-error" not in line
+    assert (
+        "The refused ParishSoft change was accepted once by admin@example.org; "
+        "waiting for the next full refresh." in line
+    )
+    assert "refused because some counts fell too far" not in line
+    body = accept_page(acceptance=accepted(), problems=(DROP_PROBLEM,))
+    assert "Nothing needs attention" in body and "Everything is working" not in body
+    assert 'data-problem="source_destructive_change"' in body
+    # Not yet accepted: the refusal's own sentence, counted.
+    body = accept_page(problems=(DROP_PROBLEM,))
+    assert "1 problem needs attention" in body
+    assert "refused because some counts fell too far" in body
 
 
 def test_an_acceptance_greys_the_button_with_who_when_and_until_when():

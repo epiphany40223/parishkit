@@ -616,6 +616,22 @@ class SystemHealth(ReadModel):
         return accept_state(self.refused_counts, self.drop_acceptance)
 
     @property
+    def attention(self):
+        """The problems that need the Administrator, which the page counts.
+
+        Every problem, except a refused large change already accepted once
+        (#530): the Administrator has handled it and it waits for the next
+        full refresh, so the page lists it, saying so, without counting it.
+        """
+        if self.accept_state != "accepted":
+            return self.problems
+        return tuple(
+            problem
+            for problem in self.problems
+            if problem.kind != "source_destructive_change"
+        )
+
+    @property
     def debug_lines(self):
         """The running processes with debug logging in effect."""
         return tuple(
@@ -627,18 +643,21 @@ class SystemHealth(ReadModel):
         """The short sentence screen readers hear when the problems change."""
         from django.utils.translation import gettext, ngettext
 
+        attention = self.attention
         if not self.problems:
             return gettext("Everything is working.")
+        if not attention:
+            return gettext("Nothing needs attention.")
         # The short names make the sentence change whenever the set of
         # problems does, not only when their number does, so a problem that
         # ends as another begins is still announced.
         return ngettext(
             "%(count)d problem needs attention: %(names)s.",
             "%(count)d problems need attention: %(names)s.",
-            len(self.problems),
+            len(attention),
         ) % {
-            "count": len(self.problems),
-            "names": "; ".join(problem.summary for problem in self.problems),
+            "count": len(attention),
+            "names": "; ".join(problem.summary for problem in attention),
         }
 
 
