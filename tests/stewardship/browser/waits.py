@@ -94,6 +94,19 @@ def has_count(locator, count):
     expect(locator).to_have_count(count)
 
 
+def focused(locator):
+    """Assert that ``locator`` comes to have focus, waiting.
+
+    Focus can move in a later task than the action that causes it: closing a
+    ``<dialog>`` hides it at once, but its ``close`` event, where a script
+    may move focus, is queued (#1202). An immediate ``document.activeElement``
+    check right after waiting for the dialog to hide races that event.
+    """
+    from playwright.sync_api import expect
+
+    expect(locator).to_be_focused()
+
+
 def has_class(locator, name):
     """Assert that ``locator`` comes to carry the CSS class ``name``, waiting."""
     import re
