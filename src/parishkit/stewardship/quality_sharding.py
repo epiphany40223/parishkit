@@ -160,11 +160,15 @@ def browser_partition(cases, engine, index=1, count=1):
     return sorted(mine)
 
 
-# Scheduling hints, updated from CI run 35438716036. These never select or
-# exclude tests: unknown/new cases receive the default weight. Keep full-duration
-# lease/drain checks; distribute their waiting time instead of shortening it.
-# One coupling: quality_ci keeps its hang stack dump at least twice the
-# largest hint in these maps, so a much slower hint asks for that review.
+# Scheduling hints in seconds, from CI run 35438716036. The entries marked
+# #1200 below (and the revised reference-population and upgrade-parity
+# figures) come from the per-test CI_PROGRESS seconds of runs 38324583316,
+# 38330576705 and 38336036264, three partitions to a hosted runner. Hints
+# never select or exclude tests: unknown/new cases receive the default
+# weight. Keep full-duration lease/drain checks; distribute their waiting
+# time instead of shortening it. One coupling: quality_ci keeps its hang
+# stack dump at least twice the largest hint in these maps, so a much
+# slower hint asks for that review.
 SLOW_TEST_SECONDS = {
     "test_cancel_cleans_catalog_and_its_final_load_but_keeps_bound_receipts": 100,
     "test_real_finalization_producer_and_compiled_worker": 22,
@@ -177,8 +181,8 @@ SLOW_TEST_SECONDS = {
     "test_wrong_mounted_key_prevents_final_provider_reads": 10,
     # The existing short fake-provider budget now removes an unrelated wait.
     "test_real_worker_removes_only_expired_setup_rows": 10,
-    "test_reference_family_population_does_not_expand_interactive_queries": 50,
-    "test_production_lookup_and_sessions_at_reference_population": 70,
+    "test_reference_family_population_does_not_expand_interactive_queries": 35,
+    "test_production_lookup_and_sessions_at_reference_population": 50,
     "test_reference_population_capture_is_one_query_and_within_page_budget": 67,
     "test_forced_shutdown_waits_for_real_deadline_then_never_resends": 36,
     "test_blocked_prefix_advances_without_rescanning": 23,
@@ -186,10 +190,17 @@ SLOW_TEST_SECONDS = {
     "test_crash_after_ack_decision_completes_even_after_deadline": 20,
     "test_metrics_expiry_restores_prior_without_persisting_its_hash": 20,
     "test_all_entity_kinds_stage_in_bounded_batches_at_reference_scale": 15,
-    "test_reference_confirmation_and_family_submit_during_incomplete_catchup": 121,
+    "test_reference_confirmation_and_family_submit_during_incomplete_catchup": 90,
     # 2,700 Families populated and their occurrences seeded in bulk (#640);
     # about 5 s locally.
     "test_a_realistic_population_goes_idle_cheaply": 10,
+    # Measured in #1200; each had been weighted as an ordinary one-second case.
+    "test_closure_functions_list_every_granted_routine_the_swap_closure_adds": 145,
+    "test_scope_cost_on_a_history_sized_roster": 60,
+    "test_a_stop_between_claim_and_send_holds_the_message_until_restart": 35,
+    "test_a_paused_closed_campaign_offers_its_resolution": 30,
+    "test_complete_capture_is_not_the_interactive_page": 30,
+    "test_funnel_from_real_paths_as_of_cutoffs_modes_and_parity": 28,
 }
 
 # Per-test fixture construction is often more expensive than the assertion.
@@ -220,8 +231,9 @@ MODULE_SECONDS = {
     "test_setup_credential_installation_postgresql.py": 5,
     "test_security_fanout_postgresql.py": 8,
     "test_security_dispatch_postgresql.py": 8,
-    # Three subprocess migrations into two extra databases (issue #487).
-    "test_upgrade_parity_postgresql.py": 40,
+    # Three subprocess migrations into two extra databases (issue #487);
+    # about 130 s on a packed runner (#1200).
+    "test_upgrade_parity_postgresql.py": 130,
 }
 
 # Only the loaded case retains a real source lease. Do not assign the unloaded
@@ -229,19 +241,6 @@ MODULE_SECONDS = {
 CASE_SECONDS = {
     "test_cancel_cleans_catalog_and_its_final_load_but_keeps_bound_receipts[False]": 10,
 }
-
-
-# Shard one's baseline in estimate-seconds. In October 2026 the baseline took
-# 1,018 to 1,148 real seconds on a packed hosted runner, where one
-# estimate-second of database work took about 1.6 to 1.8 real seconds. With
-# the old 240 reservation, shard one (baseline plus 381 estimate-seconds)
-# reached its 30-minute quality_ci.SHARD_TIMEOUT and was killed mid-suite
-# (#961). With the 14-way database suite of that month, the three-quarter
-# cap in partition() binds first (452): shard one keeps about 184
-# estimate-seconds of database work, roughly 24 minutes in all, while every
-# other shard gains about 15. Revisit when the baseline's duration changes
-# much.
-BASELINE_SECONDS = 480
 
 
 def estimated_seconds(nodeid):
@@ -263,16 +262,13 @@ def partition(nodeids: list[str], index: int, count: int) -> list[str]:
         or len(nodeids) != len(set(nodeids))
     ):
         raise ValueError("Invalid or duplicate CI test partition")
+    # Shard one's non-database baseline runs beside its database tests, each
+    # with its own deadline (quality_ci.run_with_baseline), so shard one takes
+    # an ordinary share. It once ran first under one shared deadline, and a
+    # reservation here kept shard one light; the growing baseline outran
+    # that (#961, #1200).
     groups = [[] for _ in range(count)]
     loads = [0] * count
-    total = sum(estimated_seconds(node) for node in nodeids)
-    # Shard one also runs the non-database baseline under the same deadline,
-    # so it starts with that much load. Reserve only for a substantial suite,
-    # and never more than three quarters of an average shard: small probe
-    # suites, and shard one itself, must keep work, because an empty shard is
-    # refused as incomplete evidence.
-    if total > count * 180:
-        loads[0] = min(BASELINE_SECONDS, 3 * total // (4 * count))
     # Lexical ties repeatedly put the same parameter positions on one runner.
     # A stable digest spreads those unrelated fixture costs without randomizing
     # collection or omitting any node. Return each owner's nodes in normal order.

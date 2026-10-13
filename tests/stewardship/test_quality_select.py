@@ -321,7 +321,15 @@ def test_workflow_selects_only_on_affected_dispatches():
     assert "inputs.jobs == 'affected'" in step["if"]
     assert "steps.paths.outputs.postgresql == 'true'" in step["if"]
     assert step["continue-on-error"] is True
-    assert "--count 14 " in step["run"]
+    # A map records its partition count; selecting with another count would
+    # never find a usable map (quality_select.load_map).
+    combine = next(
+        step["run"]
+        for step in jobs["stewardship-postgresql"]["steps"]
+        if "quality_ci combine " in step.get("run", "")
+    )
+    count = combine.split("--count ", 1)[1].split()[0]
+    assert f"--count {count} " in step["run"]
     assert jobs["validate"]["permissions"] == {"contents": "read", "actions": "read"}
     shard = {
         step.get("name"): step for step in jobs["stewardship-postgresql-shard"]["steps"]

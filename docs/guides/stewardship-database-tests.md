@@ -28,23 +28,26 @@ duplicating full local and CI acceptance runs during ordinary development.
 
 ## Parallel CI and live progress
 
-Pull-request CI runs fourteen deterministic PostgreSQL partitions on five
+Pull-request CI runs sixteen deterministic PostgreSQL partitions on six
 runners, up to three at once per runner, each partition with its own
 PostgreSQL/Valkey cluster. Packing leaves runner slots free for other PRs'
 runs (#158, #625); the
 [test-efficiency guide](stewardship-test-efficiency.md#postgresql-partition-packing)
 explains the choice and how to retune it. Only partition one also runs
-the credential-free baseline into its raw coverage database. The required
+the credential-free baseline, beside its database tests rather than before
+them (#1200); the baseline's coverage is merged into the partition's raw
+coverage database before its receipt is written. The required
 `stewardship-postgresql` check independently collects the full database test
-universe, requires successful receipts for all fourteen exact partitions from the
+universe, requires successful receipts for all sixteen exact partitions from the
 same source tree, and combines raw line/branch data before enforcing both 80%
 floors. Missing, failed, skipped, cancelled or stale partition evidence cannot
 pass. Coverage percentages are never averaged across partitions.
 
 Partitions are cost-balanced, not equal-count hash buckets. The scheduler assigns
 known slow lease/drain and population tests first, then fills the least-loaded
-partition; shard one reserves time for baseline coverage. Rounded scheduling hints
-come from CI run `35309435892`. New tests always receive a default cost and are
+partition. Rounded scheduling hints come from CI run `35309435892`, and for
+a few large cases from the October 2026 trains measured in #1200. New tests
+always receive a default cost and are
 included. Hints change placement only, never deadlines, test assertions or
 membership. The one coupling is that the hang stack dump described below must
 stay at least twice the largest hint. Independent collection and exact
@@ -75,8 +78,10 @@ shard no longer exits 245: it fails with status 1 after the line `CI shard child
 was killed by SIGSEGV`, and a traceback cut off just above that line is this
 hazard, not a test failure. A hang that begins in a shard's last five minutes
 reaches the shard deadline first and produces no stack trace. Browser jobs keep
-their own 120-second diagnostic. Each shard's test subprocesses share one
-30-minute deadline; each packed job has a 40-minute limit, and aggregation has
+their own 120-second diagnostic. Each test subprocess has a 30-minute
+deadline: a partition's database run, and partition one's baseline beside it.
+On timeout, the log names the run stopped, its limit and the elapsed time.
+Each packed job has a 40-minute limit, and aggregation has
 a 10-minute limit. Slowest-test summaries are retained in job logs. A deadline
 fails the gate rather than silently skipping work.
 

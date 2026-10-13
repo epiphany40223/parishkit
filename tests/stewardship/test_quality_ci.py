@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
-from coverage import Coverage
+from coverage import Coverage, CoverageData
 
 from parishkit.stewardship import quality_ci as ci
 from parishkit.stewardship import quality_sharding as sharding
@@ -58,7 +58,7 @@ def test_workflow_partition_count_matches_required_combiner():
     assert f"--count {count} " in run
 
 
-@pytest.mark.parametrize("count", [1, 2, 3, 4, 8, 14, 32])
+@pytest.mark.parametrize("count", [1, 2, 3, 4, 8, 14, 16, 32])
 @pytest.mark.parametrize("per_job", [1, 2, 3, 4])
 def test_packed_jobs_cover_every_partition_once(count, per_job):
     """Packing never drops or repeats a partition, and partition one, which
@@ -176,23 +176,15 @@ def test_cost_balancing_keeps_slow_cases_separate(monkeypatch):
     assert sorted(node for group in groups for node in group) == sorted(nodes)
 
 
-@pytest.mark.parametrize(
-    ("size", "reserved"),
-    [
-        # Large enough that the full baseline reservation applies.
-        (8000, sharding.BASELINE_SECONDS),
-        # Smaller: capped at three quarters of an average shard.
-        (2000, 3 * 2000 // (4 * 8)),
-    ],
-)
-def test_large_suite_reserves_baseline_time(monkeypatch, size, reserved):
-    """The shard with the extra baseline receives less database work, but
-    never so little that it empties."""
+@pytest.mark.parametrize("size", [8000, 2000, 24])
+def test_shard_one_takes_an_ordinary_share(monkeypatch, size):
+    """Shard one's baseline runs beside its database tests on its own
+    deadline (#1200), so shard one gets as much database work as any other."""
     monkeypatch.setattr(sharding, "SLOW_TEST_SECONDS", {})
+    monkeypatch.setattr(sharding, "MODULE_SECONDS", {})
     nodes = [f"test_a.py::case[{n}]" for n in range(size)]
     groups = [partition(nodes, index, 8) for index in range(1, 9)]
-    assert max(map(len, groups[1:])) - len(groups[0]) == reserved
-    assert len(groups[0]) >= size // 8 // 4
+    assert len(groups[0]) == max(map(len, groups)) == size // 8
     assert sorted(node for group in groups for node in group) == sorted(nodes)
 
 
@@ -348,18 +340,29 @@ def test_incomplete_evidence_fails(repository, tmp_path, monkeypatch, problem):
         ci.combine(repository, directory, report, 2)
 
 
+def child_call(run, phase):
+    """The one stand-in ``run_child`` call for ``phase`` (baseline or database).
+
+    Shard one starts both children at once, so call order is not fixed.
+    """
+    (call,) = [call for call in run.call_args_list if call.kwargs["phase"] == phase]
+    return call
+
+
 @pytest.mark.parametrize(
     "baseline,database", [(1, 0), (0, 1), (0, 5), (-11, 0), (0, -11)]
 )
 def test_failed_shard_never_publishes_receipt(
     repository, tmp_path, monkeypatch, capsys, baseline, database
 ):
-    """A passing baseline cannot mask failed, empty or crashed database execution."""
+    """A passing baseline cannot mask failed, empty or crashed database
+    execution, nor the reverse, though both always run, each to its own
+    deadline (#1200)."""
+    codes = {"baseline": baseline, "database": database}
     run = Mock(
-        side_effect=[
-            subprocess.CompletedProcess([], baseline),
-            subprocess.CompletedProcess([], database),
-        ]
+        side_effect=lambda command, **kwargs: subprocess.CompletedProcess(
+            command, codes[kwargs["phase"]]
+        )
     )
     monkeypatch.setattr(ci, "run_child", run)
     output = tmp_path / "shard"
@@ -368,15 +371,16 @@ def test_failed_shard_never_publishes_receipt(
     assert ci.run_shard(repository, output, 1, 8) == (1 if failed < 0 else failed)
     assert ("SIGSEGV" in capsys.readouterr().err) is (failed < 0)
     assert not (output / "receipt.json").exists()
-    assert run.call_count == (1 if baseline else 2)
-    if not baseline:
-        command = run.call_args.args[0]
-        assert "--require-postgresql-tests" in command
-        assert "--ci-shard=1/8" in command
-        assert "--cov-append" in command
-        assert f"faulthandler_timeout={ci.STACK_DUMP_SECONDS}" in command
-        assert 0 < run.call_args.kwargs["timeout"] <= ci.SHARD_TIMEOUT
-        assert "--require-no-skips" in command
+    assert run.call_count == 2
+    command = child_call(run, "database").args[0]
+    assert "--require-postgresql-tests" in command
+    assert "--ci-shard=1/8" in command
+    assert "--require-no-skips" in command
+    for phase in ("baseline", "database"):
+        call = child_call(run, phase)
+        assert not any(argument == "--cov-append" for argument in call.args[0])
+        assert f"faulthandler_timeout={ci.STACK_DUMP_SECONDS}" in call.args[0]
+        assert call.kwargs["timeout"] == ci.SHARD_TIMEOUT
 
 
 def test_stack_dump_keeps_headroom_from_slow_tests_and_the_deadline():
@@ -414,6 +418,8 @@ class HungChild:
 
     def __init__(self, command, *, aborts=True, **options):
         self.command, self.aborts, self.signals, self.waits = command, aborts, [], 0
+        # A relayed child's output pipe; this one has nothing to say.
+        self.stdout = io.BytesIO()
 
     def wait(self, timeout=None):
         """Time out until the child has been aborted (or killed)."""
@@ -476,6 +482,51 @@ def test_timed_out_child_writes_its_stacks(tmp_path):
         )
     dump = log.read_text()
     assert "Fatal Python error: Aborted" in dump and "stuck_here" in dump
+
+
+def test_relayed_child_lines_are_whole_and_tagged(capsys):
+    """Children running at once are relayed whole line by line, so a partial
+    progress line from one is never spliced into another's (#1200)."""
+    result = ci.run_child(
+        [
+            sys.executable,
+            "-c",
+            "import sys, time\n"
+            "sys.stdout.write('tests/a.py ..'); sys.stdout.flush(); time.sleep(0.2)\n"
+            "print('.. [100%]', flush=True); print('error line', file=sys.stderr)",
+        ],
+        phase="baseline",
+        timeout=60,
+        prefix="[baseline] ",
+        lock=ci.threading.Lock(),
+    )
+    assert result.returncode == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines == ["[baseline] tests/a.py .... [100%]", "[baseline] error line"]
+
+
+def test_relayed_timed_out_child_still_shows_its_stacks(capsys):
+    """A relayed late child's stack dump reaches the log before the timeout
+    message names the phase, the limit and the elapsed time."""
+    with pytest.raises(subprocess.TimeoutExpired):
+        ci.run_child(
+            [
+                sys.executable,
+                "-X",
+                "faulthandler",
+                "-c",
+                "import time\ndef stuck_here():\n    time.sleep(60)\nstuck_here()",
+            ],
+            phase="baseline",
+            timeout=1,
+            prefix="[baseline] ",
+            lock=ci.threading.Lock(),
+        )
+    captured = capsys.readouterr()
+    assert "[baseline] Fatal Python error: Aborted" in captured.out
+    assert "stuck_here" in captured.out
+    assert "stopped the baseline pytest run" in captured.err
+    assert "limit 1s" in captured.err
 
 
 def test_hung_child_fails_without_receipt(repository, tmp_path, monkeypatch):
@@ -587,11 +638,15 @@ def test_packed_job_stops_started_children_when_a_launch_fails(
 
 
 def test_shard_passes_its_private_temporary_root(repository, tmp_path, monkeypatch):
-    """Both of a shard's pytest runs use the temporary root it was given."""
+    """The database run uses the temporary root the shard was given; the
+    baseline beside it uses a sibling, since pytest empties its root."""
     run = Mock(return_value=subprocess.CompletedProcess([], 1))
     monkeypatch.setattr(ci, "run_child", run)
     ci.run_shard(repository, tmp_path / "shard", 1, 8, tmp_path / "temporary")
-    assert f"--basetemp={tmp_path / 'temporary'}" in run.call_args.args[0]
+    database = child_call(run, "database").args[0]
+    baseline = child_call(run, "baseline").args[0]
+    assert f"--basetemp={tmp_path / 'temporary'}" in database
+    assert f"--basetemp={tmp_path / 'temporary-baseline'}" in baseline
 
 
 def test_packed_job_refuses_output_inside_the_checkout(repository, monkeypatch):
@@ -662,17 +717,21 @@ def test_digest_rejects_symlinked_parent(repository, tmp_path):
 def test_successful_shard_baseline_and_deadline(
     repository, tmp_path, monkeypatch, index
 ):
-    """Only shard one measures baseline, sharing one deadline with database work."""
+    """Only shard one measures the baseline. It runs beside the database
+    tests, each child with its own deadline, temporary root and coverage
+    file; the baseline's coverage is merged before the receipt (#1200)."""
     output = tmp_path / "shard"
     nodes = [f"tests/stewardship/database/test_a.py::test_{n}" for n in range(20)]
-    clock = iter([10, 40])
-    monkeypatch.setattr(ci.time, "monotonic", lambda: next(clock))
+    # Shard one's two children must both be running before either finishes;
+    # run one after the other, the first would wait here until it broke.
+    together = ci.threading.Barrier(2 if index == 1 else 1, timeout=30)
 
     def execute(command, **kwargs):
         """Stand in for successful children with complete execution artifacts."""
-        if ci.DATABASE_TESTS in command:
+        together.wait()
+        Path(kwargs["env"]["COVERAGE_FILE"]).write_bytes(b"raw data")
+        if kwargs["phase"] == "database":
             selected = partition(nodes, index, 2)
-            (output / "coverage.data").write_bytes(b"raw data")
             (output / "tests.json").write_text(
                 json.dumps(
                     {
@@ -685,27 +744,160 @@ def test_successful_shard_baseline_and_deadline(
         return subprocess.CompletedProcess(command, 0)
 
     run = Mock(side_effect=execute)
+    merge = Mock()
     monkeypatch.setattr(ci, "run_child", run)
-    assert ci.run_shard(repository, output, index, 2) == 0
+    monkeypatch.setattr(ci, "merge_coverage", merge)
+    assert ci.run_shard(repository, output, index, 2, tmp_path / "tmp") == 0
     assert run.call_count == (2 if index == 1 else 1)
-    assert ("--cov-append" in run.call_args.args[0]) is (index == 1)
-    assert run.call_args.kwargs["timeout"] == ci.SHARD_TIMEOUT - 30
+    database = child_call(run, "database")
+    assert database.kwargs["timeout"] == ci.SHARD_TIMEOUT
+    assert database.kwargs["env"]["COVERAGE_FILE"] == str(output / "coverage.data")
+    assert f"--basetemp={tmp_path / 'tmp'}" in database.args[0]
     assert json.loads((output / "receipt.json").read_text())["baseline"] is (index == 1)
+    if index == 1:
+        baseline = child_call(run, "baseline")
+        assert baseline.kwargs["timeout"] == ci.SHARD_TIMEOUT
+        assert baseline.kwargs["prefix"] == "[baseline] "
+        assert baseline.kwargs["lock"] is database.kwargs["lock"]
+        assert baseline.args[0][-2:] == [
+            "--ds=parishkit.stewardship.settings.test",
+            "tests",
+        ]
+        assert f"--basetemp={tmp_path / 'tmp-baseline'}" in baseline.args[0]
+        extra = output / "baseline.coverage"
+        assert baseline.kwargs["env"]["COVERAGE_FILE"] == str(extra)
+        merge.assert_called_once_with(output / "coverage.data", extra)
+    else:
+        assert "prefix" not in database.kwargs
+        merge.assert_not_called()
 
 
-def test_baseline_exhausting_budget_prevents_database(
-    repository, tmp_path, monkeypatch
-):
-    """A completed baseline cannot reset the shard's total deadline."""
-    clock = iter([0, ci.SHARD_TIMEOUT + 1])
-    monkeypatch.setattr(ci.time, "monotonic", lambda: next(clock))
-    run = Mock(return_value=subprocess.CompletedProcess([], 0))
-    monkeypatch.setattr(ci, "run_child", run)
+def test_baseline_timeout_fails_shard_one(repository, tmp_path, monkeypatch):
+    """A late baseline fails shard one even though its database tests passed;
+    no receipt is written."""
+    nodes = [f"tests/stewardship/database/test_a.py::test_{n}" for n in range(20)]
     output = tmp_path / "shard"
+
+    def execute(command, **kwargs):
+        """The baseline times out; the database child passes completely."""
+        if kwargs["phase"] == "baseline":
+            raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+        selected = partition(nodes, 1, 8)
+        (output / "tests.json").write_text(
+            json.dumps({"universe": nodes, "selected": selected, "completed": selected})
+        )
+        return subprocess.CompletedProcess(command, 0)
+
+    run = Mock(side_effect=execute)
+    monkeypatch.setattr(ci, "run_child", run)
     with pytest.raises(subprocess.TimeoutExpired):
         ci.run_shard(repository, output, 1, 8)
-    assert run.call_count == 1
+    assert run.call_count == 2
     assert not (output / "receipt.json").exists()
+
+
+class StoppableChild:
+    """Stand in for a started baseline ``Popen`` that records being killed."""
+
+    def __init__(self):
+        self.killed = ci.threading.Event()
+
+    def kill(self):
+        """Record the kill, which ends the stand-in's wait."""
+        self.killed.set()
+
+
+@pytest.mark.parametrize("problem", [KeyboardInterrupt, OSError])
+@pytest.mark.parametrize("baseline_first", [True, False])
+def test_database_failure_stops_the_running_baseline(
+    repository, tmp_path, monkeypatch, capsys, problem, baseline_first
+):
+    """An interrupt or launch failure on the database side kills the baseline
+    whether it had already started or starts afterwards, instead of letting
+    it run out its 30-minute deadline before the error surfaces."""
+    child = StoppableChild()
+    baseline_started = ci.threading.Event()
+    database_failed = ci.threading.Event()
+
+    def execute(command, *, phase, on_start=None, **kwargs):
+        """The baseline runs until killed; the database side fails."""
+        if phase == "database":
+            if baseline_first:
+                assert baseline_started.wait(30)
+            database_failed.set()
+            raise problem("database side failed")
+        if not baseline_first:
+            assert database_failed.wait(30)
+        on_start(child)
+        baseline_started.set()
+        assert child.killed.wait(30), "the baseline was never stopped"
+        return subprocess.CompletedProcess(command, -9)
+
+    monkeypatch.setattr(ci, "run_child", Mock(side_effect=execute))
+    with pytest.raises(problem):
+        ci.run_shard(repository, tmp_path / "shard", 1, 8)
+    assert child.killed.is_set()
+    assert "Stopping the baseline" in capsys.readouterr().err
+    assert not (tmp_path / "shard/receipt.json").exists()
+
+
+def test_database_timeout_waits_for_the_baseline(repository, tmp_path, monkeypatch):
+    """A database timeout, already logged by run_child, lets the still-running
+    baseline finish on its own deadline, then is raised; nothing is killed."""
+    child = StoppableChild()
+    database_failed = ci.threading.Event()
+    finished = []
+
+    def execute(command, *, phase, on_start=None, **kwargs):
+        """The database side times out; the baseline is still running then."""
+        if phase == "database":
+            database_failed.set()
+            raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+        on_start(child)
+        assert database_failed.wait(30)
+        finished.append(phase)
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(ci, "run_child", Mock(side_effect=execute))
+    with pytest.raises(subprocess.TimeoutExpired):
+        ci.run_shard(repository, tmp_path / "shard", 1, 8)
+    assert finished == ["baseline"] and not child.killed.is_set()
+    assert not (tmp_path / "shard/receipt.json").exists()
+
+
+def test_baseline_coverage_merges_into_partition_data(
+    repository, tmp_path, monkeypatch
+):
+    """The baseline's lines, branches and test contexts join the partition's
+    coverage file, and its own file is removed; an empty one is refused."""
+    # As in CI: Python 3.14's default sys.monitoring core drops contexts.
+    monkeypatch.setenv("COVERAGE_CORE", "ctrace")
+    source = repository / "src/parishkit/shared.py"
+    files, arcs = {}, set()
+    for name, value in (("coverage.data", True), ("baseline.coverage", False)):
+        files[name] = tmp_path / name
+        cov = Coverage(data_file=str(files[name]), branch=True, config_file=False)
+        cov.start()
+        cov.switch_context(f"tests/test_{name}.py::test_it|run")
+        exec(compile(source.read_text(), str(source), "exec"), {"value": value})
+        cov.stop()
+        cov.save()
+        arcs |= set(cov.get_data().arcs(str(source)))
+    ci.merge_coverage(files["coverage.data"], files["baseline.coverage"])
+    assert not files["baseline.coverage"].exists()
+    merged = CoverageData(basename=str(files["coverage.data"]))
+    merged.read()
+    # Each run took one side of the branch; the merge holds both.
+    assert set(merged.arcs(str(source))) == arcs
+    assert {line for line in merged.lines(str(source))} >= {1, 2, 4}
+    assert {
+        "tests/test_coverage.data.py::test_it|run",
+        "tests/test_baseline.coverage.py::test_it|run",
+    } <= merged.measured_contexts()
+    empty = tmp_path / "empty.coverage"
+    CoverageData(basename=str(empty)).write()
+    with pytest.raises(ValueError, match="no coverage"):
+        ci.merge_coverage(files["coverage.data"], empty)
 
 
 def test_collection_error_is_visible(repository, monkeypatch, capsys):
@@ -867,7 +1059,7 @@ def test_selected_shard_skips_coverage_and_may_be_empty(
         command = call.args[0]
         assert not any(argument.startswith("--cov") for argument in command)
         assert "COVERAGE_FILE" not in call.kwargs["env"]
-    assert f"--ci-select={select.resolve()}" in run.call_args.args[0]
+    assert f"--ci-select={select.resolve()}" in child_call(run, "database").args[0]
     receipt = json.loads((output / "receipt.json").read_text())
     assert receipt["coverage"] is False and receipt["data_sha256"] is None
     line = "the selection runs 3 of 20 and skips 17"
@@ -883,8 +1075,10 @@ def test_affected_whole_group_shard_skips_coverage_only(
     run, output = selected_shard(
         repository, tmp_path, monkeypatch, 1, nodes, nodes, coverage=False
     )
-    command = run.call_args.args[0]
-    assert not any(argument.startswith("--cov") for argument in command)
+    for call in run.call_args_list:
+        assert not any(argument.startswith("--cov") for argument in call.args[0])
+        assert "COVERAGE_FILE" not in call.kwargs["env"]
+    command = child_call(run, "database").args[0]
     assert not any(argument.startswith("--ci-select") for argument in command)
     assert json.loads((output / "receipt.json").read_text())["coverage"] is False
 
