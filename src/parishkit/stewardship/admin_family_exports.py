@@ -199,8 +199,10 @@ def export_archive(caller, service, *, request_key, context):
     ``FINANCIAL_DETAIL``), the campaign must be one reports read, and,
     as the page's view does, ``require_fresh`` comes before
     ``create_archive_export``. A download unavailable now (no Family
-    responded, before day 1 or the end date, the figures still being
-    calculated) is ``not_available``.
+    responded, before day 1 has ended, the figures still being calculated)
+    is ``not_available``. A campaign closed before its end date gets its
+    final file through its last full day (2026-10-13, #1018), once no
+    response falls after that day; until then it is ``not_available``.
     """
     from .accounts.sessions import require_fresh
     from .audit.schemas import Action

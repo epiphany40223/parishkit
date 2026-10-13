@@ -145,14 +145,16 @@ class ArchiveFile:
 def archive_cutoff(state, start_date, end_date, timezone, now):
     """(cutoff date, final) for a campaign at ``now``, or None before day 1 ends.
 
-    A ``closed`` or ``archived`` campaign exports through its end date as a
-    final file; otherwise the cutoff is the last complete local day (the
-    comparison report's comparison day), never today's unfinished day.
+    The cutoff is the last complete local day (the comparison report's
+    comparison day), never today's unfinished day, and never past the end
+    date. A ``closed`` or ``archived`` campaign's file is final, the others'
+    partial. So a campaign closed before its end date gets its final file
+    at once, through its last full day, rather than waiting for the end
+    date (Administrator decision, 2026-10-13, #1018); once the end date has
+    passed, the cutoff is the end date.
     """
-    if state in CLOSED_STATES:
-        return end_date, True
     last = min(now.astimezone(ZoneInfo(timezone)).date() - timedelta(days=1), end_date)
-    return None if last < start_date else (last, False)
+    return None if last < start_date else (last, state in CLOSED_STATES)
 
 
 def archive_name(year, final):

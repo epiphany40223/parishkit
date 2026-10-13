@@ -307,11 +307,25 @@ One campaign's live submissions (Test submissions never) and its ready
 historical [daily facts](../data/spec.md#campaign-daily-report-facts), read
 inside one read-only, repeatable-read transaction up to a **cutoff**:
 
-- For a `closed` or `archived` campaign, the end of its end date. The file
-  is final: `is_final` `TRUE`, named `stewardship-<year>.xlsx`.
-- Otherwise, the end of the last complete local day, the comparison
-  report's [comparison day](#alignment-by-campaign-day), never today's
-  unfinished day. The file is partial: `is_final` `FALSE`, named
+- The end of the last complete local day, the comparison report's
+  [comparison day](#alignment-by-campaign-day), never today's unfinished
+  day, and never past the end date.
+- For a `closed` or `archived` campaign the file is final: `is_final`
+  `TRUE`, named `stewardship-<year>.xlsx`. Once the end date has passed,
+  the cutoff is the end of the end date. A campaign closed before its end
+  date gets its final file cut off at its last full day, rather than
+  waiting for the end date (Administrator decision, 2026-10-13, on
+  [#1018](https://github.com/epiphany40223/parishkit/issues/1018); it
+  replaces the earlier default that the final file waits for the end
+  date). A final file is offered only while no live submission falls after
+  its cutoff; otherwise Download is unavailable with "Available tomorrow:
+  the campaign closed today, and today's responses are not in a complete
+  day yet." This refines that decision (review, 2026-10-13) so that a
+  "final" file never leaves out the closing day's responses and then
+  changes the next day. No close time is stored, so the submission test
+  is the exact rule: a campaign closed with no response that day is final
+  at once, and any other waits at most until the next day.
+- Otherwise the file is partial: `is_final` `FALSE`, named
   `stewardship-<year>-partial.xlsx`.
 
 The request pins two things, which every attempt and retry use: the cutoff
@@ -451,7 +465,10 @@ changes it:
    the financial detail shows, which changes the rule and needs format
    version 1.1.
 3. **When a file is final:** once the campaign is `closed` or `archived`
-   (default); alternatively only after #527's close-out.
+   (default); alternatively only after #527's close-out. A campaign closed
+   before its end date is final through its last full day, once no
+   response falls after it (Administrator decision, 2026-10-13, refined
+   the same day; see [what the export reads](#what-the-export-reads)).
 4. **Partial cutoff:** the last complete local day (default), as the
    comparison report uses.
 5. **Proposed Members' Ministry choices:** included with a blank
@@ -1116,7 +1133,7 @@ importing them.
 | No last year, no Family rows | The affected figure shows "—" with its reason |
 | Financial module off | Pledge figures, charts and columns are left out |
 | Checking a file exceeds its 60-second limit | Stopped, logged as a durable timeout entry naming the limit and the elapsed time, and refused as too large to check |
-| Archive download with no current campaign, before day 1 has ended, or with no Family responded by the cutoff | Download campaign archive unavailable with the reason; the command refuses |
+| Archive download with no current campaign, before day 1 has ended, for a closed campaign with a live submission after the cutoff (closed today with a response today), or with no Family responded by the cutoff | Download campaign archive unavailable with the reason; the command refuses |
 | Archive download with a stale sign-in | The step-up page, returning to Past campaigns; nothing queued |
 | Archive's derived `daily` disagrees with an available fact figure | The generation fails as a fact failure (retried, then failed with its reason); no file is offered |
 | A fact row's population or pledge total is unavailable | Not a disagreement: that figure is left unchecked for the day, and a `note.*` row counts such days |
@@ -1214,7 +1231,10 @@ committed.
   financial module, a proposed Member's Ministry choice, a Test submission
   and a submission after the cutoff (both left out) writes a file that the
   reader accepts and whose `daily` equals the fact series; the partial and
-  final cutoffs and names; a forced fact disagreement and a forced reader
+  final cutoffs and names, including a campaign closed before its end
+  date: unavailable on its closing day after a response that day, final
+  through the day before without one, and final through the closing day
+  the next day; a forced fact disagreement and a forced reader
   refusal fail the generation with no file, while an unavailable pledge
   total (financial module off, or a responding Family without a pledge)
   and an unavailable population are left unchecked with their note; a
@@ -1446,10 +1466,12 @@ Part (a), the [archive export](#archive-export), follows in its own slices
   date, the final mark and the stewardship year, which names the file.
   The worker's campaign read guard runs this kind's read in a
   repeatable-read transaction. A regeneration reuses the pins with a new
-  request time. Download is unavailable, with the reason, before day 1
-  has ended, for a closed campaign before its end date has passed (the
-  default posted on #1018: the final file waits for the end date rather
-  than queueing an export that could only wait), with no Family
+  request time. A campaign closed before its end date is offered its
+  final file cut off at its last full day (Administrator decision,
+  2026-10-13, replacing the default posted on #1018 that the final file
+  waits for the end date). Download is unavailable, with the reason,
+  before day 1 has ended, for a closed campaign with a live submission
+  after the cutoff (until the next day), with no Family
   responded, with no stewardship year, or while no ready fact set covers
   the cutoff (holds its day and a watermark reaching every response
   before it). A final request is admitted by the SQL guard only for a

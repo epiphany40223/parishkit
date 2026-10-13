@@ -12,9 +12,9 @@ capture table exists.
 
 - ``archive_offer`` is what a download would be now: final or partial, the
   cutoff day, or the reason it is unavailable (no current campaign, before
-  day 1 has ended, a closed campaign before its end date, no Family
-  responded by the cutoff, no stewardship year, or no fact set that reaches
-  the cutoff yet).
+  day 1 has ended, a closed campaign with a response after the cutoff, no
+  Family responded by the cutoff, no stewardship year, or no fact set that
+  reaches the cutoff yet).
 - ``create_archive_export`` allocates the request, its task and its fact
   pin, as the Participation export does, and records
   ``campaign_archive_exported`` with the cutoff's campaign day as ``count``.
@@ -31,7 +31,6 @@ rows), and the file's own ``count.*`` rows carry the per-sheet counts.
 from dataclasses import dataclass
 from datetime import date
 from uuid import UUID, uuid4
-from zoneinfo import ZoneInfo
 
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
@@ -59,7 +58,7 @@ TIMEZONE = "UTC"
 # Why a download is unavailable now; the page words each one.
 NO_CAMPAIGN = "no_campaign"
 BEFORE_DAY_1 = "before_day_1"
-BEFORE_END = "before_end"
+CLOSED_TODAY = "closed_today"
 NO_RESPONSE = "no_response"
 NO_YEAR = "no_year"
 NOT_READY = "not_ready"
@@ -170,12 +169,18 @@ def _fact_set(campaign_id, cutoff_date, cutoff):
 def archive_offer(campaign_id, *, now):
     """What Download campaign archive would make for ``campaign_id`` at ``now``.
 
-    The cutoff is ``archive.export.archive_cutoff``'s: the end date for a
-    closed or archived campaign (final), otherwise the last complete local
-    day (partial). A closed campaign whose end date has not yet ended is
-    unavailable until it has (Administrator default on #1018: an early
-    close waits for the end date rather than queueing an export that would
-    only wait). No Family responded by the cutoff is unavailable too.
+    The cutoff is ``archive.export.archive_cutoff``'s: the last complete
+    local day, capped at the end date; final for a closed or archived
+    campaign, otherwise partial. A campaign closed before its end date is
+    offered its final file through its last full day without waiting for
+    the end date (Administrator decision, 2026-10-13, #1018), but only once
+    no live submission falls after the cutoff: a campaign closed today with
+    a response today would otherwise get a "final" file without that day,
+    one that changes tomorrow. No close time is stored, so this test is the
+    exact rule; a campaign closed with no response that day is final at
+    once, and any other waits at most until the next day (the review's
+    refinement of that decision, 2026-10-13). No Family responded by the
+    cutoff is unavailable too.
     """
     from parishkit.stewardship.archive.export import archive_cutoff
     from parishkit.stewardship.archive.imports import ArchiveRefusal, year_from_values
@@ -213,10 +218,14 @@ def archive_offer(campaign_id, *, now):
         cutoff_date=cutoff_date,
         day=(cutoff_date - projection.start_date).days + 1,
     )
-    today = now.astimezone(ZoneInfo(projection.timezone)).date()
-    if final and today <= cutoff_date:
-        return ArchiveOffer(BEFORE_END, **base)
     cutoff_instant = local_day(cutoff_date, projection.timezone).interval.end
+    if (
+        final
+        and Submission.objects.filter(
+            campaign_id=campaign_id, mode="live", submitted_at__gte=cutoff_instant
+        ).exists()
+    ):
+        return ArchiveOffer(CLOSED_TODAY, **base)
     # A Family must have been in the historical cohort by the cutoff, as
     # the archive's Families are; the read applies the exact rule.
     if not Submission.objects.filter(

@@ -64,7 +64,15 @@ def choose(page, tmp_path, size=100):
 
 
 @pytest.mark.parametrize(
-    "path", [PAGE, CARD, f"{PAGE}-empty", f"{PAGE}-year", f"{PAGE}-archive-closed"]
+    "path",
+    [
+        PAGE,
+        CARD,
+        f"{PAGE}-empty",
+        f"{PAGE}-year",
+        f"{PAGE}-archive-closed",
+        f"{PAGE}-archive-unavailable",
+    ],
 )
 @pytest.mark.parametrize("width", [320, 1280])
 def test_page_is_accessible_and_fits(page, component_origin, axe_source, path, width):
@@ -269,10 +277,34 @@ def test_the_campaign_archive_section_offers_or_explains_the_download(
     assert "A partial archive of Stewardship 2027, through day 9" in text
     assert "stewardship-2027-partial.xlsx" in text
     assert section.get_attribute("action") == "/admin/parish/past-campaigns/archive/"
+    # Closed before its end date: final at once, through its last full day
+    # (Administrator decision, 2026-10-13, #1018), with no wait.
     page.goto(component_origin + f"{PAGE}-archive-closed")
+    button = page.locator("#campaign-archive").get_by_role(
+        "button", name="Download campaign archive"
+    )
+    assert button.is_enabled()
+    text = page.locator("[aria-labelledby=campaign-archive-heading]").inner_text()
+    assert "A final archive of Stewardship 2027, through day 9" in text
+    assert "its last full day: the campaign was closed before its end date" in text
+    assert "stewardship-2027.xlsx" in text
+    page.goto(component_origin + f"{PAGE}-archive-unavailable")
     button = page.locator("#campaign-archive").get_by_role(
         "button", name="Download campaign archive"
     )
     assert button.is_disabled()
     assert button.get_attribute("aria-describedby") == "campaign-archive-reason"
-    assert "until the end date" in page.locator("#campaign-archive-reason").inner_text()
+    assert (
+        "no Family has responded"
+        in page.locator("#campaign-archive-reason").inner_text()
+    )
+    # Closed today with a response today: unavailable until tomorrow.
+    page.goto(component_origin + f"{PAGE}-archive-tomorrow")
+    button = page.locator("#campaign-archive").get_by_role(
+        "button", name="Download campaign archive"
+    )
+    assert button.is_disabled()
+    assert page.locator("#campaign-archive-reason").inner_text() == (
+        "Available tomorrow: the campaign closed today, and today's responses "
+        "are not in a complete day yet."
+    )

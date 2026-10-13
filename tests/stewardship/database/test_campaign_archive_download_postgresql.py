@@ -48,7 +48,7 @@ from parishkit.stewardship.reports.export_tasks import export_handler
 from parishkit.stewardship.reports.models import CampaignFactPin
 
 from ..export_urls import export_action
-from .campaign_builders import campaign_clock
+from .campaign_builders import campaign_clock, close_campaign
 from .test_admin_report_cli_postgresql import cli  # noqa: F401
 from .test_background_grants_postgresql import task_login
 from .test_campaign_comparison_postgresql import (  # noqa: F401
@@ -190,6 +190,107 @@ def test_download_queues_renders_and_downloads_the_partial_archive(
     assert again.created_at.replace(microsecond=0) > request.created_at
 
 
+def test_an_early_closed_campaign_gets_its_final_archive_at_once(
+    scenario, settings, tmp_path
+):
+    """Closed today with no response today: final now, through yesterday.
+
+    The Administrator's decision of 2026-10-13 (#1018): a campaign closed
+    early no longer waits for its end date. The campaign is closed through
+    the real boundary ledgers, then seen on day 2, long before its end
+    date, with no response on day 2; the offer, the request, the SQL guard
+    and the worker's file are all final, cut off at day 1.
+    """
+    harness, ready, browser, actor = scenario
+    close_campaign(harness.campaign, actor)
+    assert harness.campaign.state == "closed"
+    root = tmp_path / "archive-reports"
+    root.mkdir(mode=0o700)
+    settings.STEWARDSHIP_REPORTS_ROOT = root
+    settings.STEWARDSHIP_DOWNLOAD_POOL = DownloadPool(ReadLimits(process_pool_size=1))
+    fields = {"request_key": str(uuid4())}
+    with day_two(harness), task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = read(browser, reverse("admin:past_campaigns"))
+        assert response.status_code == 200
+        assert b"A final archive of" in body and b"through day 1" in body
+        assert b"its last full day" in body
+        assert b"stewardship-%d.xlsx" % CURRENT_YEAR in body
+        assert b'id="campaign-archive-reason"' not in body
+        response = post(browser, ROUTE, fields)
+        assert response.status_code == 302, response
+        job = response["Location"]
+    request = ExportRequest.objects.get(request_key=fields["request_key"])
+    assert request.fact_set_id == ready.pk
+    assert request.parameters == {
+        "cutoff_date": ready.first_date.isoformat(),
+        "final": True,
+        "year": CURRENT_YEAR,
+    }
+    work(harness, request, root)
+    with restricted_download_pool(settings):
+        response, body = search(browser, export_action(job, "download"), {})
+    assert response.status_code == 200
+    assert f"stewardship-{CURRENT_YEAR}.xlsx" in response["Content-Disposition"]
+    archive = read_archive(bytes(body))
+    assert archive.metadata["is_final"] is True
+    assert {f["family_id"] for f in archive.families} == set(PLEDGES)
+
+
+def test_closed_today_with_a_response_today_waits_for_the_next_day(scenario):
+    """A response after the cutoff holds the final file until the next day.
+
+    Household 2 revises at 06:00 on day 2; the campaign then closes. Seen at
+    noon on day 2, a final file cut off at day 1 would leave that response
+    out and change tomorrow, so the page and the service (and so the
+    command) refuse with the reason. On day 3, once a fact set reaches day 2,
+    the final file is offered through day 2, the closing day (the review's
+    refinement of the 2026-10-13 decision).
+    """
+    from parishkit.stewardship.reports.archive_exports import (
+        CLOSED_TODAY,
+        campaign_now,
+    )
+    from parishkit.stewardship.reports.facts import FactUnavailable
+    from parishkit.stewardship.reports.materialization import materialize_fact_set
+    from parishkit.stewardship.source.snapshot_models import SourceSnapshot
+
+    from .test_fact_materialization_postgresql import allocation
+    from .test_source_snapshots_postgresql import permit
+
+    harness, ready, browser, actor = scenario
+    opened = harness.campaign.active_configuration.starts_at
+    revise(harness, opened + timedelta(days=1, hours=6))
+    close_campaign(harness.campaign, actor)
+    assert harness.campaign.state == "closed"
+    with day_two(harness):
+        offer = archive_offer(harness.campaign.pk, now=campaign_now())
+        assert (offer.reason, offer.final) == (CLOSED_TODAY, True)
+        assert offer.cutoff_date == ready.first_date
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            body = read(browser, reverse("admin:past_campaigns"))[1]
+            assert b'id="campaign-archive-reason"' in body
+            assert b"Available tomorrow: the campaign closed today" in body
+            answer = post(browser, ROUTE, {"request_key": str(uuid4())})
+            assert answer.status_code == 409
+            # The command's path: the same service, refused the same way.
+            with pytest.raises(FactUnavailable):
+                create_archive_export(
+                    harness.service.store,
+                    actor,
+                    campaign_id=harness.campaign.pk,
+                    request_key=uuid4(),
+                )
+    assert not ExportRequest.objects.exists()
+    day_three = campaign_clock(opened + timedelta(days=2, hours=12))
+    newest = SourceSnapshot.objects.filter(state="promoted").latest("generation")
+    with day_three:
+        record, claim = allocation(harness, watermark=len(PLEDGES) + 1, source=newest)
+        materialize_fact_set(record.pk, claim, admit=permit, interactive=True)
+        offer = archive_offer(harness.campaign.pk, now=campaign_now())
+    assert offer.available and offer.final
+    assert offer.cutoff_date == ready.first_date + timedelta(days=1)
+
+
 def test_before_day_1_the_download_is_unavailable_with_its_reason(scenario):
     """The button is unavailable with the reason; a post queues nothing."""
     harness, _, browser, _ = scenario
@@ -321,7 +422,7 @@ def test_the_answers_read_is_the_workers_only(scenario):
 
 
 def test_the_request_guard_refuses_a_cutoff_its_fact_set_lacks(scenario):
-    """The SQL guard, not only the service, binds the cutoff to the fact set."""
+    """The SQL guard, not only the service, binds the cutoff and final mark."""
     from dataclasses import replace
     from datetime import date
 
@@ -338,6 +439,15 @@ def test_the_request_guard_refuses_a_cutoff_its_fact_set_lacks(scenario):
                 campaign_id=harness.campaign.pk,
                 request_key=uuid4(),
                 offer=replace(offer, cutoff_date=date(2000, 1, 1)),
+            )
+        # Only a closed or archived campaign's archive may be final.
+        with pytest.raises(DatabaseError, match="exact authorized input"):
+            create_archive_export(
+                harness.service.store,
+                actor,
+                campaign_id=harness.campaign.pk,
+                request_key=uuid4(),
+                offer=replace(offer, final=True),
             )
     assert not ExportRequest.objects.exists()
 

@@ -1781,7 +1781,10 @@ pk-admin export comparison --day 8 --format xlsx --timezone America/New_York
 current campaign's archive workbook (one XLSX in the
 [campaign archive format](../specs/stewardship/campaign-history/spec.md#archive-workbook-format)),
 partial while the campaign runs (through yesterday) and final once it has
-closed and its end date has passed. It holds each Family's giving, so,
+closed: through its end date, or, for a campaign closed before its end
+date, through its last full day. That is at once when no response arrived
+on the day it closed, and otherwise the next day. It holds each Family's
+giving, so,
 like `export financial`, it asks at the prompt (or takes `--yes`) and needs
 a full-scope session in place of the page's recent sign-in. It records
 `campaign_archive_exported` (with the cutoff's campaign day) plus
@@ -1794,8 +1797,8 @@ pk-admin export archive --yes
 - It takes no format or time zone: the file is always the archive XLSX,
   named `stewardship-<year>.xlsx` or `stewardship-<year>-partial.xlsx`.
 - When a download is unavailable now (before the first day has ended, a
-  closed campaign before its end date, no Family responded yet, or the
-  report's daily figures still being calculated), it is exit 1
+  campaign closed today with a response today, no Family responded yet, or
+  the report's daily figures still being calculated), it is exit 1
   (`not_available`).
 - Keep the file only in the parish's restricted archive folder; only the
   current campaign can be exported, so download the final file before the
