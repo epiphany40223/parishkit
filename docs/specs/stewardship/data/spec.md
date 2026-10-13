@@ -1929,7 +1929,10 @@ current authorization/filter snapshot.
    blocks its entity, so a write can never clear a field that was not read.
 7. Persist the plan with the recorded source version and source-payload digests,
    present counts and conflicts, and require fresh Google authentication and
-   final confirmation before queueing writes.
+   final confirmation before queueing writes. The plan also records each
+   planned proposal's version, which any decision or Administrator edit
+   changes; confirmation requires every version unchanged and the counts
+   shown equal to the plan's, and a Testing-mode plan is never confirmed.
 
 Execution claims `SourceMutationLease` and, immediately before each entity PUT,
 revalidates its fencing token, fetches the uncached full payload, and repeats

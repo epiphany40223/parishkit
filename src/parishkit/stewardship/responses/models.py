@@ -433,3 +433,13 @@ class SubmissionReceiptOccurrence(ImmutableRecord):
                 name="submission_receipt_scrubbed",
             ),
         ]
+
+
+# Publication plans and outcomes (#528, DAT-09.01) live in their own module.
+from .publication_models import (  # noqa: E402,F401
+    PublicationConfirmation,
+    PublicationEntity,
+    PublicationField,
+    PublicationOutcome,
+    PublicationPlan,
+)

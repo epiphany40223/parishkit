@@ -750,6 +750,17 @@ DESCRIPTIONS = {
         "Someone marked a census change entered in ParishSoft, ignored it, "
         "or reopened it."
     ),
+    "census_publication_planned": _(
+        "The server checked approved census changes against ParishSoft and "
+        "recorded what publishing them would write."
+    ),
+    "census_publication_confirmed": _(
+        "An Administrator confirmed publishing census changes to ParishSoft."
+    ),
+    "census_publication_recorded": _(
+        "The server recorded whether a census change publication to "
+        "ParishSoft was written, stopped because something changed, or failed."
+    ),
     "response_dashboard_viewed": _("Someone opened the response dashboard."),
     "response_submitted_list_viewed": _(
         "Someone opened the list of Families that submitted."

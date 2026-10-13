@@ -412,6 +412,25 @@ DISPATCH_TOKEN_FUNCTION = (
 DEBUG_OFF_FUNCTION = "stewardship_debug_logging_off_v1()"
 # The server operator's offline ``pk-stewardship debug-off-clear``.
 DEBUG_OFF_CLEAR_FUNCTION = "stewardship_debug_off_clear_v1()"
+# Whether one exact publication audit event is recorded (#528, DAT-09.01):
+# the worker writes plan and outcome events but cannot read audit rows, so
+# its deferred checks ask this, which answers for those two types only.
+PUBLICATION_AUDITED_FUNCTION = (
+    "stewardship_publication_audited_v1(text, uuid, uuid, jsonb)"
+)
+# Publication plans and outcomes (#528, DAT-09.01, migration 0087): the
+# worker writes a preflight's plan and each write attempt's outcome; web
+# reads them all and writes only an Administrator's confirmation.
+PUBLICATION_WORKER_TABLES = (
+    "stewardship_publication_plan",
+    "stewardship_publication_entity",
+    "stewardship_publication_field",
+    "stewardship_publication_outcome",
+)
+PUBLICATION_TABLES = (
+    *PUBLICATION_WORKER_TABLES,
+    "stewardship_publication_confirmation",
+)
 # Each definer routine above that a migration in the users swap's closure
 # creates (#952), with that migration. `migrate --users-upgrade-base` leaves
 # the closure pending, and database-grants runs on that base before the
@@ -467,6 +486,11 @@ CLOSURE_FUNCTIONS = {
         "stewardship_source",
         "0010_snapshot_statistics",
     ),
+    # Publication plans (0087, #528) follow 0086.
+    PUBLICATION_AUDITED_FUNCTION: (
+        "stewardship_responses",
+        "0004_publication_plans",
+    ),
 }
 
 
@@ -514,6 +538,11 @@ CLOSURE_TABLES = {
     # A refused large change's example Families (0085, #530), which the
     # worker records and deletes and web reads.
     "stewardship_source_drop_example": ("stewardship_source", "0009_drop_examples"),
+    # Publication plans and outcomes (0087, #528), which the worker writes
+    # and web reads and confirms.
+    **dict.fromkeys(
+        PUBLICATION_TABLES, ("stewardship_responses", "0004_publication_plans")
+    ),
 }
 
 
@@ -634,6 +663,8 @@ def runtime_functions(role, *, target=None):
     follow-up to its addresses refused for now did (#806); mail dispatch
     opens that follow-up and reads its link token. Web records an
     Administrator's report that a delivered email bounced (#806 slice 4).
+    The general worker asks whether a publication plan's or outcome's audit
+    event is recorded (#528), since it cannot read audit rows itself.
     Every login a running service or an operator command uses reads whether
     the debug-off switch is set (#530); the offline admin-recovery login
     also clears it (``pk-stewardship debug-off-clear``). The backup login
@@ -689,6 +720,7 @@ def runtime_functions(role, *, target=None):
                 SNAPSHOT_ANALYZE_FUNCTION,
                 DEBUG_OFF_FUNCTION,
                 ARCHIVE_ANSWERS_FUNCTION,
+                PUBLICATION_AUDITED_FUNCTION,
             },
             "download": {LEADER_SCOPE_FUNCTION},
             ServiceRole.ADMIN_RECOVERY: {
@@ -765,6 +797,13 @@ def runtime_grants(role, *, target=None):
             # no longer be shown. The guard admits no update, and inserts
             # only in the refusal's own transaction.
             tables["stewardship_source_drop_example"] = {"SELECT", "INSERT", "DELETE"}
+            # Publication (#528, DAT-09.01): the preflight writes its plan and
+            # the publish step each attempt's outcome, and both read the
+            # Administrator's confirmation. Identifiers, versions, counts and
+            # hashes only; every guard admits INSERT alone.
+            for table in PUBLICATION_WORKER_TABLES:
+                tables[table] = {"SELECT", "INSERT"}
+            tables["stewardship_publication_confirmation"] = {"SELECT"}
             add_service_status_housekeeping_grants(tables, columns)
         else:
             add_service_status_writer_grants(tables, columns)

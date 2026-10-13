@@ -30,7 +30,10 @@ from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.users_schema import SCHEMA
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.runtime_database import USERS_SWAP
-from parishkit.stewardship.runtime_grants import CLOSURE_TABLES
+from parishkit.stewardship.runtime_grants import (
+    CLOSURE_TABLES,
+    PUBLICATION_WORKER_TABLES,
+)
 
 from .campaign_builders import initialized
 from .test_background_grants_postgresql import task_login
@@ -302,6 +305,9 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # visibility function, and alters no table.
 # 0086 (#895) creates the worker-only snapshot statistics definer and alters
 # nothing.
+# 0087 (#528) creates the five
+# publication tables (in CLOSURE_TABLES) with their guards and deferred
+# checks and the worker's audit answer definer, and alters no table.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -455,6 +461,26 @@ CLOSURE_CREATED = {
     "public.stewardship_source_snapshot_analyze_v1(uuid)": (
         "stewardship_source",
         "0010_snapshot_statistics",
+    ),
+    **dict.fromkeys(
+        (
+            "public.stewardship_publication_audited_v1(text,uuid,uuid,jsonb)",
+            *(
+                f"public.stewardship_publication_{name}_v1()"
+                for name in (
+                    "plan_guard",
+                    "plan_effect",
+                    "entity_guard",
+                    "entity_effect",
+                    "field_guard",
+                    "confirmation_guard",
+                    "confirmation_effect",
+                    "outcome_guard",
+                    "outcome_effect",
+                )
+            ),
+        ),
+        ("stewardship_responses", "0004_publication_plans"),
     ),
 }
 
@@ -968,6 +994,11 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
             # A refused change's example Families (0085, #530): the worker
             # records them; web only reads them.
             "stewardship_source_drop_example": ("pk_stewardship_worker", "INSERT"),
+            # The publication plans and outcomes (0087, #528), which the
+            # worker writes; web inserts only the confirmation.
+            **dict.fromkeys(
+                PUBLICATION_WORKER_TABLES, ("pk_stewardship_worker", "INSERT")
+            ),
         }
         for table in CLOSURE_TABLES:
             login, privilege = writers.get(table, ("pk_stewardship_web", "INSERT"))

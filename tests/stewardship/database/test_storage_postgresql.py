@@ -532,6 +532,15 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             "stewardship_ministry_roster_entry_guard",
             "stewardship_ministry_roster_entry_guard_v1",
         ),
+        # Publication plans and outcomes (#528, DAT-09.01): INSERT only,
+        # each under its own name.
+        **{
+            f"stewardship_publication_{name}": (
+                f"stewardship_publication_{name}_guard",
+                f"stewardship_publication_{name}_guard_v1",
+            )
+            for name in ("plan", "entity", "field", "confirmation", "outcome")
+        },
         "stewardship_directory_export_snapshot": (
             "directory_export_capture",
             "stewardship_directory_export_capture_v1",
@@ -847,6 +856,11 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
                 "stewardship_weekly_manual_request",
                 "stewardship_proposal_resolution",
                 "stewardship_ministry_roster_entry",
+                "stewardship_publication_plan",
+                "stewardship_publication_entity",
+                "stewardship_publication_field",
+                "stewardship_publication_confirmation",
+                "stewardship_publication_outcome",
             }
             expected_type = 31 if table in conditional_insert_guards else 27
             assert row[:2] == (function, expected_type), table
