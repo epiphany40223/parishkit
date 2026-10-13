@@ -1069,6 +1069,24 @@ def test_the_wrapper_never_waits_for_an_answer_no_longer_needed(host, tmp_path):
 YES_ONLY = frozenset({"config request cancel"})
 
 
+def test_the_streaming_list_names_every_streaming_command():
+    """STREAMING is exactly the catalog's commands that stream a file.
+
+    The wrapper refuses to write their bytes to a terminal, keeps them out
+    of its work directory and reads their document from standard error; a
+    streaming command missing from the list would print a file (often
+    personal data) to the terminal and copy it into the work directory.
+    """
+    from parishkit.stewardship import admin_cli
+
+    [listed] = re.findall(r'^STREAMING="([^"]*)"$', WRAPPER.read_text(), re.M)
+    streaming = {
+        "_".join(spec.name.split()) for spec in admin_cli.COMMANDS if spec.streams
+    }
+    assert set(listed.split()) == streaming
+    assert {"logs_export", "export_download", "export_census"} <= streaming
+
+
 def test_the_prompting_list_names_every_prompting_command():
     """PROMPTING is the catalog's prompting commands, less the --yes-only ones.
 

@@ -106,7 +106,8 @@ The session is `--session NAME`, else `PK_ADMIN_SESSION`, else the only file
 in the directory; with several files and no choice the wrapper lists them
 and exits 2. Each command prints exactly one JSON document (schema
 `pk-admin/1`) on standard output, except one that writes a file there
-(`logs export`, see [System logs](#system-logs), and `export download`, see
+(`logs export`, see [System logs](#system-logs), `export census`, see
+[Census changes download](#census-changes-download), and `export download`, see
 [report exports](#report-exports)), whose document goes to standard error; warnings, such as a session with less than
 72 hours left, and structured logs go to standard error. The document's
 fields, the exit codes and the error codes are in the specification's
@@ -1721,6 +1722,39 @@ pk-admin export comparison --day 8 --format xlsx --timezone America/New_York
 The Limitations and response list downloads are not on the command line
 yet; use the pages.
 
+### Census changes download
+
+`export census` writes the page's download of **Census changes** to
+standard output, and its document (`campaign_id`, `file_name`,
+`content_type`, `format`, `timezone`, `size`, `sha256`, `count`) to
+standard error, as `logs export` does. It needs a full-scope session, as
+every export does; Administrators and Staff may run it, and a Ministry
+leader is refused (`denied`). It takes `report census`'s filters, without
+the page's search, `--format` (`csv`, the default, `xlsx`, `pdf` or
+`jsonl`) and `--timezone`, and records the page's "downloaded" event with
+the number of rows in the file. The two zones differ: `--zone` is the time
+zone the `--start` and `--end` days of the filter fall in (required with
+them), while `--timezone` (UTC, the default, or a time zone name) is the
+zone the file's times are written in.
+
+```sh
+(umask 077; pk-admin export census --status all --format jsonl > census.jsonl)
+```
+
+CSV, XLSX and PDF are the page's own files, with the same columns. JSON
+Lines is for scripts: one object per change, the page's columns with the
+same text under the keys `family`, `family_duid`, `who`, `member_duid`,
+`what`, `parishsoft_now`, `family_answer`, `edited`, `route`, `status`,
+`submitted`, `recorded_by`, `recorded_at` and `note`, plus `proposal_id`
+and `version`, which recording a row's outcome needs and the page's files
+leave out, and `actions`: the outcomes you may record on that row now
+(`entered` and `ignored` on a By-hand change still open, `reopened` on an
+ignored one, for Administrators only, and only with a `--note` saying
+why). `actions` is empty while other campaign work holds the campaign, as
+the page then offers no Record outcome. The file names Families and
+Members with their contact details, so create it private, as above, and
+delete it once used; the wrapper refuses to write it to a terminal.
+
 ### Fetching an export's file
 
 `pk-admin export fetch EXPORT_ID` reads `export status`, then downloads the
@@ -2117,3 +2151,9 @@ print is exit 1 (`invalid`).
   scope, Administrators and Staff, Reopen for Administrators only;
   `--action entered` prompts; `census_change_updated` and
   `admin_cmd_census_resolve`).
+- `pk-admin/1` (#463): additive. `export census [--status S] [--history]
+  [--route R] [--kind K] [--start DATE] [--end DATE] [--zone ZONE]
+  [--format csv|xlsx|pdf|jsonl] [--timezone ZONE]`, the Census changes
+  page's download (full scope, Administrators and Staff, the page's
+  event), streamed as `logs export` is; its `jsonl` format adds each
+  change's `proposal_id`, `version` and `actions`.
