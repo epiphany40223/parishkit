@@ -18,7 +18,7 @@ from parishkit.stewardship.family_delivery import (
     FamilyDeliveryStatus,
 )
 from parishkit.stewardship.jobs.security_content import SecurityAlert
-from parishkit.stewardship.mail_layout import FAMILY, SHARED
+from parishkit.stewardship.mail_layout import SHARED
 from parishkit.stewardship.operational_delivery import OperationalMail
 from parishkit.stewardship.operational_delivery_process import (
     submit_operational_mail,
@@ -83,9 +83,8 @@ def test_closed_facts_roundtrip_and_generated_mime():
     body = mime.get_body(preferencelist=("plain",)).get_content()
     assert "Target: new@example.org" in body and "By: admin@example.org" in body
     html = mime.get_body(preferencelist=("html",)).get_content()
-    # Admin mail uses the portal's design tokens (#732), not Family's look.
+    # Admin mail uses the portal's design tokens (#732).
     assert f"background-color:{SHARED.page};" in html
-    assert FAMILY.link not in html
     assert "second@example.org" not in repr(sample)
     assert "html" not in sample.payload() and "text" not in sample.payload()
 

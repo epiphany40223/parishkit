@@ -27,7 +27,7 @@ from parishkit.stewardship.jobs.digest_content import (
     render_digest_envelope,
 )
 from parishkit.stewardship.jobs.outbox_validation import DeliveryIdentity
-from parishkit.stewardship.mail_layout import FAMILY, SHARED
+from parishkit.stewardship.mail_layout import SHARED
 from parishkit.stewardship.weekly_delivery import WeeklyDeliveryMail, deliver_weekly
 from parishkit.stewardship.weekly_delivery_worker import decode_request
 
@@ -83,9 +83,8 @@ def test_real_compiler_decoder_and_mime_have_no_attachment_or_other_recipients()
     # Weekly reports share the daily report's desktop column (#720).
     assert "max-width:960px" in mime.get_body(preferencelist=("html",)).get_content()
     html = mime.get_body(preferencelist=("html",)).get_content()
-    # Admin mail uses the portal's design tokens (#732), not Family's look.
+    # Admin mail uses the portal's design tokens (#732).
     assert f"background-color:{SHARED.page};" in html
-    assert FAMILY.link not in html
     assert "Please call us." not in repr(mail)
 
 

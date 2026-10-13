@@ -25,6 +25,7 @@ from parishkit.stewardship.jobs.family_mail_content import (
     render_family_mail,
 )
 from parishkit.stewardship.jobs.outbox_validation import DeliveryIdentity
+from parishkit.stewardship.mail_layout import email_document
 from parishkit.stewardship.web.content import (
     PLACEHOLDER,
     sanitize_html,
@@ -354,3 +355,26 @@ def test_content_saved_from_a_retired_default_still_matches_the_default():
     assert old_page != default_values("page", "welcome", campaign_id=owner)
     assert matches_default(old_page)
     assert retired_data("page", "login_help") == []
+
+
+@pytest.mark.parametrize("slot", ["initial", "reminder"])
+def test_family_default_call_to_action_draws_as_one_button(slot):
+    """The default invitation and reminder link renders as the email button (#732).
+
+    The button rule matches the sanitizer's exact form of the default's bold
+    link, so a change to that markup must not silently drop the button.
+    """
+    rendered = sample_render(saved("email", slot), parish=PARISH, campaign=CAMPAIGN)
+    page = email_document(rendered["html"], family=True)
+    assert page.count("border-collapse:separate") == 1
+    assert "renewal</a></td></tr></tbody></table>" in page
+
+
+def test_confirmation_default_has_no_email_button():
+    """The receipt's links are inline, so it draws no button."""
+    rendered = sample_render(
+        saved("email", "confirmation"), parish=PARISH, campaign=CAMPAIGN
+    )
+    assert "border-collapse:separate" not in email_document(
+        rendered["html"], family=True
+    )
