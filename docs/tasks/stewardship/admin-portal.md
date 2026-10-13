@@ -602,7 +602,26 @@ without Family, Member, value or resolver, the catalog, usage errors),
 list`) and `tests/stewardship/database/test_admin_census_cli_postgresql.py`
 (the page's list counted with its filters, the page's event, refused
 filters `invalid` with nothing recorded, read-only and Staff readers, a
-Ministry leader denied, an ended session, no current campaign).
+Ministry leader denied, an ended session, no current campaign). Another
+follow-up (#463) adds `census resolve`, a Census changes row's Record
+outcome, in `parishkit.stewardship.admin_census`, through the page's own
+admission and `resolve_census_change` in the page's command scope,
+recording `admin_cmd_census_resolve` once per request key, with no schema
+change; Entered in ParishSoft prompts, as the page's dialog asks; proven
+by `tests/stewardship/test_admin_census.py` (the golden document without
+note, Family, Member or value, the service's actions, the racing write
+only for a unique violation, usage errors including `--note -` without
+`--yes`), `tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_pk_admin.py` (the wrapper's prompting list),
+`tests/stewardship/test_admin_route_parity.py` and
+`tests/stewardship/database/test_admin_census_resolve_cli_postgresql.py`
+(entered, ignored and reopened with both events, Entered unanswered
+changing nothing, a repeat recording nothing, a rebound key and a refused
+outcome `invalid`, Reopen without a note, a stale version, an unknown or
+another campaign's change and a repeat after the campaign changed
+`not_available`, a read-only session denied, Staff entering and ignoring
+but denied Reopen, a Ministry leader denied, an ended session, no current
+campaign).
 A follow-up (#682) lets `delivery resolve` retry Family emails too, loading
 the web's general and public token keyrings only for that, checked against
 the web's published receipts; proven by `tests/stewardship/test_admin_cli.py`,

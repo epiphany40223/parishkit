@@ -183,6 +183,11 @@ DESCRIPTIONS = {
         "An automation session resolved an outgoing email, as the email's "
         "page does: a note, external evidence or a retry."
     ),
+    "admin_cmd_census_resolve": _(
+        "An automation session recorded a census change's outcome (entered "
+        "in ParishSoft, ignored or reopened), as the Census changes page's "
+        "Record outcome does."
+    ),
     "admin_cmd_refresh_start": _(
         "An automation session asked for a full ParishSoft refresh, as the "
         "Refresh from ParishSoft page's confirmation does."

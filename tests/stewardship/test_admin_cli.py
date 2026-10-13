@@ -130,6 +130,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "report ministry",
         "report roster",
         "report census",
+        # A Census changes row's Record outcome (#528).
+        "census resolve",
         "report source-form",
         "report data-to-fix",
         "digest list",
@@ -548,6 +550,26 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert clear["audit_event"] == "admin_cmd_delivery_refusal_clear"
     assert clear["arguments"] == ["REFUSAL_ID"]
     assert clear["result_fields"] == ["created", "request_key", "resolution"]
+    # census resolve: a Census changes row's Record outcome, keyed and
+    # versioned, full scope, not fresh-gated, as its page asks for no recent
+    # sign-in; it prompts, but only for Entered in ParishSoft, which cannot
+    # be undone (its page's confirmation dialog).
+    census = entries["census resolve"]
+    assert census["scope"] == "full" and census["changes_state"]
+    assert census["request_key"] and census["expected_version"]
+    assert census["prompts"] and not census["fresh_gated"]
+    assert census["audit_event"] == "admin_cmd_census_resolve"
+    assert census["arguments"] == ["PROPOSAL_ID"]
+    assert census["result_fields"] == [
+        "created",
+        "request_key",
+        "resolution",
+        "proposal",
+    ]
+    options = {option["name"]: option for option in census["options"]}
+    assert options["--action"]["choices"] == ["entered", "ignored", "reopened"]
+    assert options["--action"]["required"] and options["--expected-version"]["required"]
+    assert not options["--note"]["required"]
 
 
 def test_every_state_change_has_a_registered_described_event():
@@ -594,6 +616,8 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_export_exact_retry",
         "admin_cmd_export_family_timeline",
         "admin_cmd_digest_weekly_request",
+        # census resolve: a Census changes row's Record outcome (#528).
+        "admin_cmd_census_resolve",
         "admin_cmd_users_confirm",
         "admin_cmd_users_import_leaders",
         "admin_cmd_events_acknowledge",

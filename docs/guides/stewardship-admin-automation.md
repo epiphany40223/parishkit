@@ -1357,6 +1357,48 @@ Each row names a Family and often a Member, with their contact details, so
 the rows stay on the page and its downloads. It records the page's
 "viewed" event with a count of 0.
 
+### Recording a census change's outcome
+
+`census resolve` is a Census changes row's **Record outcome**: Entered in
+ParishSoft (`entered`), Ignore (`ignored`) or Reopen (`reopened`). Like the
+page's buttons it needs a full-scope session; Administrators and Staff may
+record Entered and Ignore, and only an Administrator may reopen an ignored
+change (Staff get `denied`). It needs no recent sign-in, as on the page.
+Entered in ParishSoft cannot be undone, so, as the page's dialog does,
+`--action entered` shows the change's id and version and asks for `yes`
+(see [Confirmations](#confirmations)), or takes `--yes`; Ignore and Reopen
+ask nothing.
+
+```sh
+pk-admin census resolve PROPOSAL_ID --action entered --expected-version 3
+pk-admin census resolve PROPOSAL_ID --action reopened --expected-version 4 \
+    --note - --yes < note.txt
+```
+
+`PROPOSAL_ID` and the `--expected-version` are the change's id and version.
+No command or download prints them yet: they are only in the hidden fields
+of the change's row form on the Census changes page (the page's downloads
+leave them out). `export census` will print them. `--note` is optional,
+except to reopen; `-` reads it from standard input, which keeps a note that
+names people out of shell history and the process list, and then needs
+`--yes`, because standard input cannot carry both the note and an answer. `--request-key` is made for you and
+written to standard error when left out. Repeating the command with the
+same key returns the same resolution (`created` false) and records nothing
+new; the key used for another outcome or note is exit 1 (`invalid`). A
+change someone updated since that version is exit 1 (`stale_version`):
+read it again on the page. An outcome the change's status does not allow
+(an automatic change, or one already entered), or reopening without a
+note, is exit 1 (`invalid`); a change that is not the current campaign's
+is exit 1 (`not_available`), and so is a repeat after the current campaign
+changed.
+
+The result has `created`, `request_key`, `resolution` (`id`,
+`proposal_id`, `action`, `expected_version`, `created_at`) and `proposal`
+(the change's `id`, `version`, `decision` and `execution` as the command
+left them), never the note, the Family, the Member or the value. System
+logs show the page's `census_change_updated` and the command's
+`admin_cmd_census_resolve`.
+
 ## Digests
 
 Each emailed daily or weekly report links to a saved copy on the portal,
@@ -2069,3 +2111,9 @@ print is exit 1 (`invalid`).
   email's text (any session, Administrators only, no event).
 - `pk-admin/1` (#463): additive. `send controls`, the Pause and resume
   mail page's read (any session, Administrators only, no event).
+- `pk-admin/1` (#463): additive. `census resolve PROPOSAL_ID --action
+  entered|ignored|reopened --expected-version VERSION [--note TEXT|-]
+  [--request-key KEY] [--yes]`, a Census changes row's Record outcome (full
+  scope, Administrators and Staff, Reopen for Administrators only;
+  `--action entered` prompts; `census_change_updated` and
+  `admin_cmd_census_resolve`).

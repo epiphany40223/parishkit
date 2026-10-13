@@ -365,6 +365,7 @@ UNGROUPED_REASONS = {
         "weekly_digest_viewed",
     ),
     "Staff follow-up on Family requests, not a setting": (
+        "admin_cmd_census_resolve",
         "census_change_updated",
         "chair_review_decided",
         "information_updated",
