@@ -17,8 +17,15 @@ from .digest_comparison import data_line
 from .digest_funnel import funnel_context
 
 
-def snapshot_context(document, *, mode, chart_url, download_url, plot=PLOT_LAYOUT):
+def snapshot_context(
+    document, *, mode, chart_url, download_url, plot=PLOT_LAYOUT, funnel_charts=False
+):
     """Show the email's exact report-day figures; nothing is recalculated.
+
+    ``funnel_charts`` says the email had the Response funnel's two charts
+    (the ready row retained them, #477), so the page draws them too; a
+    digest compiled before them, or sent with its charts withheld, shows
+    only the funnel's table, as its email did.
 
     ``plot`` is where the retained chart image draws its plot, for the date
     hit-testing; see ``chart_layout``. The Compared with past campaigns
@@ -36,8 +43,9 @@ def snapshot_context(document, *, mode, chart_url, download_url, plot=PLOT_LAYOU
         "mode": mode,
         "cards": report_day_cards(document),
         # The response funnel at the end of the report day, counted again
-        # from the same durable timestamps the email used (#477).
-        **funnel_context(document.funnel, document.mode),
+        # from the same durable timestamps the email used (#477), with the
+        # email's two charts drawn in the browser when it had them (slice 2).
+        **funnel_context(document.funnel, document.mode, charts=funnel_charts),
         "chart_url": chart_url,
         "download_url": download_url,
     }

@@ -254,12 +254,23 @@ own renderer):
   Node or a browser, and reports the image's CSS width and height. These are
   the engine's two formats; how a report page offers the downloads above is
   specified in a later increment (the [response dashboard](#response-dashboard)
-  does not offer them yet). The daily digest's own chart is the
-  participation graph's renderer and its funnel is drawn with table cells;
-  the first task to call this renderer is the daily digest's optional
+  does not offer them yet). The daily digest's participation chart is the
+  participation graph's renderer. The daily digest's
+  [response funnel](../background-processing/spec.md#daily-campaign-digest)
+  charts and its optional
   [Compared with past campaigns](../campaign-history/spec.md#digest-section)
-  section, whose two charts it draws at the email's width under the
-  timeout name `digest_chart`. Rendering happens only in workers and
+  section's two charts are drawn by this renderer at the email's width (the
+  axes and legend inside it) under the timeout name `digest_chart`, and
+  retained as PNGs with the digest so a retry sends the same bytes. Each is
+  an inline `cid:` image in the email's related part, never a `data:` URI,
+  which Gmail does not show. A chart the renderer cannot draw fails the
+  compile, which is retried; on the last attempt the digest is compiled
+  without any of these server-drawn charts and sent anyway, since its tables
+  and text part carry every number they draw. That digest retains no images,
+  keeps its comparison section without charts, and its saved page draws none
+  either, while one ERROR `task_failed` entry (no incident) names the chart and the
+  attempt. A digest is never left unsent for a chart.
+  Rendering happens only in workers and
   [export tasks](../background-processing/spec.md#exports-and-graph-rendering),
   never on a page view, and always in a short-lived helper process isolated
   like the mail helpers (no environment, no error text back): the worker

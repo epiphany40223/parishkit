@@ -13,8 +13,8 @@ from .mail_layout import REPORT_WIDTH, email_document
 from .provider_check_worker import CheckSession
 from .web.digest_content import (
     CHART_ID,
-    COMPARISON_CHART_IDS,
     MAX_CHART_BYTES,
+    SERVER_CHART_IDS,
     validate_digest_body,
 )
 
@@ -31,9 +31,10 @@ class DigestDeliveryMail:
     html: str
     text: str
     chart: bytes = field(repr=False)
-    # The Compared with past campaigns section's (content id, PNG) pairs,
-    # when the digest has the section (#1018 slice 7).
-    comparison: tuple = field(default=(), repr=False)
+    # The server-drawn charts' (content id, PNG) pairs, in
+    # ``SERVER_CHART_IDS`` order: the Response funnel section's (#477 slice
+    # 2) and the Compared with past campaigns section's (#1018 slice 7).
+    images: tuple = field(default=(), repr=False)
 
     def __post_init__(self):
         """Validate the closed MIME contract before credentials or sockets are used."""
@@ -51,7 +52,7 @@ class DigestDeliveryMail:
             or any(char in self.subject for char in "\r\n\x00")
         ):
             raise ValueError("Invalid digest delivery subject.")
-        validate_digest_body(self.html, self.text, self.chart, self.comparison)
+        validate_digest_body(self.html, self.text, self.chart, self.images)
 
     def payload(self):
         """Encode a closed in-memory payload only for the bounded private pipe."""
@@ -65,9 +66,9 @@ class DigestDeliveryMail:
             "html": self.html,
             "text": self.text,
             "chart": base64.b64encode(self.chart).decode("ascii"),
-            "comparison": [
+            "images": [
                 [name, base64.b64encode(data).decode("ascii")]
-                for name, data in self.comparison
+                for name, data in self.images
             ],
         }
 
@@ -87,25 +88,25 @@ class DigestDeliveryMail:
                 "html",
                 "text",
                 "chart",
-                "comparison",
+                "images",
             }
             or value["schema"] != "daily-digest-mail-v1"
             or type(value["recipients"]) is not list
             or any(
                 type(item) is not str
                 for name, item in value.items()
-                if name not in {"recipients", "comparison"}
+                if name not in {"recipients", "images"}
             )
             or len(value["chart"]) > 4 * ((MAX_CHART_BYTES + 2) // 3)
-            or type(value["comparison"]) is not list
-            or len(value["comparison"]) > len(COMPARISON_CHART_IDS)
+            or type(value["images"]) is not list
+            or len(value["images"]) > len(SERVER_CHART_IDS)
             or any(
                 type(pair) is not list
                 or len(pair) != 2
-                or pair[0] not in COMPARISON_CHART_IDS
+                or pair[0] not in SERVER_CHART_IDS
                 or type(pair[1]) is not str
                 or len(pair[1]) > 4 * ((MAX_CHART_BYTES + 2) // 3)
-                for pair in value["comparison"]
+                for pair in value["images"]
             )
         ):
             raise ValueError("Invalid digest delivery payload.")
@@ -113,11 +114,9 @@ class DigestDeliveryMail:
         if str(key) != value["semantic_key"]:
             raise ValueError("Invalid digest delivery identity.")
         chart = _decoded(value["chart"])
-        comparison = tuple((name, _decoded(text)) for name, text in value["comparison"])
+        images = tuple((name, _decoded(text)) for name, text in value["images"])
         values = {name: item for name, item in value.items() if name != "schema"}
-        return cls(
-            **(values | {"semantic_key": key, "chart": chart, "comparison": comparison})
-        )
+        return cls(**(values | {"semantic_key": key, "chart": chart, "images": images}))
 
     def message(self):
         """Use shared multipart construction with one fixed CID and no disk reads."""
@@ -130,7 +129,7 @@ class DigestDeliveryMail:
                 text=self.text,
                 inline_images=(
                     InlineImage(self.chart, CHART_ID),
-                    *(InlineImage(data, name) for name, data in self.comparison),
+                    *(InlineImage(data, name) for name, data in self.images),
                 ),
             )
         )

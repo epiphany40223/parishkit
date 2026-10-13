@@ -93,6 +93,9 @@ def add_digest_web_grants(tables, columns):
     columns["stewardship_daily_digest_ready"]["SELECT"].update(
         {"fact_set_id", "chart", "comparison"}
     )
+    # Whether the email had its Response funnel charts (#477): the saved
+    # page draws them only then. An aggregate image, never mail prose.
+    columns["stewardship_daily_digest_ready"]["SELECT"].add("funnel_chart")
 
 
 def add_digest_download_grants(columns):

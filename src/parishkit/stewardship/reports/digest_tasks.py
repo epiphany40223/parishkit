@@ -1,10 +1,13 @@
 """Provider-free daily preparation execution with bounded, resumable effects."""
 
+from dataclasses import replace
 from functools import partial
 
 from django.db import connection
 
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+from parishkit.stewardship.audit.schemas import ContextKind, Outcome
+from parishkit.stewardship.audit.services import operational
 from parishkit.stewardship.campaigns.credential_models import CampaignCredentialState
 from parishkit.stewardship.campaigns.schedule_models import (
     ScheduleDefinition,
@@ -19,6 +22,7 @@ from parishkit.stewardship.jobs.ownership import lock_task_claim
 from parishkit.stewardship.jobs.phases import TaskPhase
 from parishkit.stewardship.jobs.queues import WorkQueue
 from parishkit.stewardship.jobs.storage import _status
+from parishkit.stewardship.observability import Event, failure_kind_of
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .chart_rendering import ChartRenderError
@@ -30,6 +34,7 @@ from .digest_building import (
     retain_daily_content,
 )
 from .digest_capture import capture_daily_snapshot
+from .digest_comparison import withheld
 from .digest_fanout import fanout_daily
 from .digest_ownership import (
     bound_preparation,
@@ -39,6 +44,11 @@ from .digest_ownership import (
 from .digest_planning import cover_dates, discover_dates
 from .facts import FactUnavailable
 from .materialization import materialize_fact_set
+
+# A compile that cannot finish is retried until this attempt, then fails
+# permanently. A chart the server renderer cannot draw on this last attempt
+# is withheld instead, so the digest is still sent (#477).
+FINAL_ATTEMPT = 5
 
 
 def disposition(row):
@@ -140,9 +150,53 @@ def _build(execution, public_origin):
     execution.check()
     # The detached compiler writes only bounded memory. The next effect must
     # recheck admission before any content or recipient handoff is committed.
-    content = render_daily_digest(document, public_origin=public_origin)
+    try:
+        content = render_daily_digest(document, public_origin=public_origin)
+    except ChartRenderError as error:
+        # Earlier attempts retry (``_execute``); the last one sends the
+        # digest without its server-drawn charts rather than not at all. Its
+        # tables and text part carry every number the charts drew.
+        with execution.effect():
+            attempt = _status(lock_task_claim(execution.claim)).attempt
+        if attempt < FINAL_ATTEMPT:
+            raise
+        document = replace(document, comparison=withheld(document.comparison))
+        content = render_daily_digest(
+            document, public_origin=public_origin, charts=False
+        )
+        with execution.effect():
+            charts_withheld(execution.claim, error, attempt)
     with execution.effect():
         retain_daily_content(execution.claim, document, content)
+
+
+def charts_withheld(claim, error, attempt):
+    """Record durably that this digest is sent without its server-drawn charts.
+
+    One ERROR ``task_failed`` entry naming the chart that could not be
+    drawn (a closed failure word), the failure's category, the task and the
+    attempt, so System logs show why the email has no charts. ERROR is the
+    level the worker login may record for ``task_failed`` below CRITICAL
+    (``stewardship_operational_log_writer_v1``); only CRITICAL opens an
+    incident, and the digest itself was sent. Every digest chart is drawn
+    through ``chart_rendering.render_digest_chart``, which names it, so an
+    unnamed failure is a programming error, refused rather than guessed.
+    """
+    if error.chart is None:
+        raise ValueError("A withheld digest chart must be named.")
+    operational(
+        Event.TASK_FAILED,
+        level="ERROR",
+        schema=ContextKind.FAILURE,
+        context={
+            "failure": error.chart,
+            "failure_kind": failure_kind_of(error),
+            "task_id": claim.run_id,
+            "attempt": attempt,
+            "attempt_limit": FINAL_ATTEMPT,
+            "outcome": Outcome.FAILED,
+        },
+    )
 
 
 def _execute(execution, *, public_origin):
@@ -181,17 +235,18 @@ def _execute(execution, *, public_origin):
             try:
                 _build(execution, public_origin)
             except (FactUnavailable, ChartRenderError):
-                # A comparison section's chart the renderer could not draw
-                # (#1018 slice 7) is retried like unavailable facts.
+                # A server-drawn chart the renderer could not draw (#1018
+                # slice 7, #477) is retried like unavailable facts; the last
+                # attempt sends the digest without its charts (``_build``).
                 with execution.effect():
                     status = _status(lock_task_claim(execution.claim))
                     execution.transition(
                         "permanent_failure"
-                        if status.attempt >= 5
+                        if status.attempt >= FINAL_ATTEMPT
                         else "retryable_failure",
                         **(
                             {}
-                            if status.attempt >= 5
+                            if status.attempt >= FINAL_ATTEMPT
                             else {
                                 "retry_seconds": min(
                                     60 * 2 ** max(status.attempt - 1, 0), 600

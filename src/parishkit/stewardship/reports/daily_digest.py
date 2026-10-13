@@ -6,7 +6,7 @@ chart markup is deliberately separate from parish-authored safe HTML: adding
 an inline report image must not enable arbitrary images in Family templates.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, time, timedelta
 from html import escape
 from io import BytesIO
@@ -21,10 +21,13 @@ from parishkit.stewardship.web.digest_content import CHART_ID, EMAIL_CHART_WIDTH
 from parishkit.stewardship.web.report_markup import BLUE, STYLES, TRACK, button
 
 from .charts import render_participation
-from .digest_comparison import render_images, section_html, section_text
+from .digest_comparison import render_images, section_html, section_text, withheld
 from .digest_funnel import (
     TESTING_NOTE,
+    charts_html,
+    digest_charts,
     figure_rows,
+    funnel_images,
     funnel_text,
     stage_rows,
 )
@@ -160,7 +163,11 @@ class DailyDigestContent:
     """Compiled body and bounded in-memory charts; no recipients or file paths.
 
     ``comparison`` holds the Compared with past campaigns section's chart
-    images (#1018 slice 7), none when the digest has no section.
+    images (#1018 slice 7), none when the digest has no section; ``funnel``
+    the Response funnel section's two (#477 slice 2), none when the digest
+    has no funnel (a Testing digest) or ``charts_withheld``: the last
+    compile attempt could not draw a server chart, so the digest is sent
+    without them, its tables and text part carrying every number.
     """
 
     subject: str
@@ -168,6 +175,16 @@ class DailyDigestContent:
     text: str
     chart: InlineImage = field(repr=False)
     comparison: tuple = field(default=(), repr=False)
+    funnel: tuple = field(default=(), repr=False)
+    charts_withheld: bool = False
+
+    @property
+    def images(self):
+        """Every server-drawn chart's (content id, PNG) pair, in email order."""
+        return (
+            tuple((image.content_id, image.data) for image in self.funnel)
+            + self.comparison_images
+        )
 
     @property
     def comparison_images(self):
@@ -387,10 +404,12 @@ def report_day_bars(document):
     return tuple(bars)
 
 
-def funnel_html(document, plain):
+def funnel_html(document, plain, charts=()):
     """The response funnel section of the email, or "" when there is none.
 
-    One row per stage like the campaign totals: the stage (with its note),
+    The section's two charts come first (``digest_funnel.charts_html``,
+    visuals first per #720), then one row per stage like the campaign
+    totals: the stage (with its note),
     a bar of its share of email invites sent, and its count and share; then
     the figures reported beside it (``figure_rows``), drawn the same way
     against their own whole, which their share names. A Testing digest says
@@ -408,6 +427,7 @@ def funnel_html(document, plain):
     ]
     figures = figure_rows(metrics)
     html = f"<h2{_style('heading')}>Response funnel</h2>"
+    html += charts_html(charts, _style)
     # The stages, then the side figures as their own table so they read as
     # a group; every row has the same three cells.
     for group in (rows, figures):
@@ -440,22 +460,30 @@ def chart_alt(document):
     )
 
 
-def render_daily_digest(document, *, public_origin):
+def render_daily_digest(document, *, public_origin, charts=True):
     """Compile an accessible image/text report using the existing chart renderer.
 
     Every data-dependent HTML value is escaped; the only image and link markup
     comes from this compiler. The source document is reused without recapturing
     current state. A later owner may prepend sanitized parish-authored prose
     and the mandatory Testing banner, but cannot replace these required facts.
+
+    ``charts`` False withholds every server-drawn chart (#477): the funnel's
+    two and, through ``digest_comparison.withheld``, the comparison
+    section's. The participation chart, drawn in process, always stays.
     """
     if not isinstance(document, DailyDigestDocument):
         raise TypeError("Daily digest rendering requires an immutable document.")
+    if not charts:
+        document = replace(document, comparison=withheld(document.comparison))
     # Pin the snapshot configuration's style, not the worker's active one.
     with dates.using(document.date_format):
-        return _render_daily_digest(document, public_origin=public_origin)
+        return _render_daily_digest(
+            document, public_origin=public_origin, charts=charts
+        )
 
 
-def _render_daily_digest(document, *, public_origin):
+def _render_daily_digest(document, *, public_origin, charts=True):
     """Compile the report body; the caller has pinned the parish date format.
 
     Visuals come first (#720): the as-of line, then one line per campaign
@@ -516,7 +544,10 @@ def _render_daily_digest(document, *, public_origin):
         for label, value, bar_html, note in totals
     )
     html += "</tbody></table>"
-    html += funnel_html(document, plain)
+    drawn = (
+        digest_charts(document.funnel) if charts and document.funnel is not None else ()
+    )
+    html += funnel_html(document, plain, drawn)
     html += f"<h2{_style('heading')}>Daily participation</h2>"
     html += (
         f'<img src="cid:{CHART_ID}" alt="{escape(alt, quote=True)}" '
@@ -554,6 +585,13 @@ def _render_daily_digest(document, *, public_origin):
         images = tuple(InlineImage(data, name) for name, data in render_images(section))
     stream = BytesIO()
     render_participation(chart, stream, format="png", email=True)
+    funnel = tuple(InlineImage(data, name) for name, data in funnel_images(drawn))
     return DailyDigestContent(
-        document.title, html, text, InlineImage(stream.getvalue(), CHART_ID), images
+        document.title,
+        html,
+        text,
+        InlineImage(stream.getvalue(), CHART_ID),
+        images,
+        funnel,
+        charts_withheld=not charts,
     )

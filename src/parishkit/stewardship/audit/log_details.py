@@ -115,6 +115,21 @@ FAILURE_TEXT = {
         "made its change; read the status before retrying, and report it "
         "with its correlation id."
     ),
+    "digest_funnel_chart": gettext_lazy(
+        "The daily report's Response funnel chart could not be drawn after "
+        "every retry, so the report was sent without its charts; its tables "
+        "still have every number."
+    ),
+    "digest_activity_chart": gettext_lazy(
+        "The daily report's Response activity chart could not be drawn after "
+        "every retry, so the report was sent without its charts; its tables "
+        "still have every number."
+    ),
+    "digest_comparison_chart": gettext_lazy(
+        "A daily report chart comparing past campaigns could not be drawn "
+        "after every retry, so the report was sent without its charts; its "
+        "figures still have every number."
+    ),
 }
 
 # A closed provider result (audit.schemas.REASONS), in words.

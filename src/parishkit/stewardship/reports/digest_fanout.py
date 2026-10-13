@@ -23,7 +23,11 @@ from parishkit.stewardship.jobs.outbox_storage import create_message
 from parishkit.stewardship.jobs.outbox_validation import DeliveryIdentity
 from parishkit.stewardship.jobs.ownership import lock_task_claim
 from parishkit.stewardship.jobs.storage import _status
-from parishkit.stewardship.web.digest_content import CHART_ID, validate_digest_body
+from parishkit.stewardship.web.digest_content import (
+    CHART_ID,
+    FUNNEL_CHART_IDS,
+    validate_digest_body,
+)
 
 from .daily_digest import DailyDigestContent
 from .digest_models import DailyDigestReady, DailyDigestRecipient
@@ -47,13 +51,20 @@ def retained_render(identity, ready, scope, revision, address):
         record_id=UUID(revision.values["template_version"]),
     )
     email = AppliedIntegration.objects.get(configuration=version, kind="email")
-    images = ready.comparison_images()
+    images = ready.images()
     content = DailyDigestContent(
         ready.subject,
         ready.html,
         ready.text,
         InlineImage(bytes(ready.chart), CHART_ID),
-        tuple(InlineImage(data, name) for name, data in images),
+        comparison=tuple(
+            InlineImage(data, name)
+            for name, data in images
+            if name not in FUNNEL_CHART_IDS
+        ),
+        funnel=tuple(
+            InlineImage(data, name) for name, data in images if name in FUNNEL_CHART_IDS
+        ),
     )
     render = render_digest_envelope(
         identity=identity,

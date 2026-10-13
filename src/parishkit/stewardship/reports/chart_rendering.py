@@ -62,7 +62,13 @@ SVG_SIZE = re.compile(
 
 
 class ChartRenderError(Exception):
-    """The chart could not be rendered; the message is fixed, never provider text."""
+    """The chart could not be rendered; the message is fixed, never provider text.
+
+    ``chart`` is set by ``render_digest_chart`` to the closed failure word
+    naming which digest chart it was (``audit.schemas.FAILURES``).
+    """
+
+    chart = None
 
 
 @dataclass(frozen=True)
@@ -118,6 +124,20 @@ def render_chart(spec, *, format, what, limit_seconds=RENDER_SECONDS):
             with suppress(Exception):
                 stream.close()
     return _image(data, format)
+
+
+def render_digest_chart(spec, *, what, chart):
+    """Render one digest chart to PNG bytes, naming it in a failure.
+
+    ``chart`` is the closed failure word for this chart; a ``ChartRenderError``
+    carries it, so the digest that withholds its charts can log which one
+    could not be drawn (#477).
+    """
+    try:
+        return render_chart(spec, format="png", what=what).data
+    except ChartRenderError as error:
+        error.chart = chart
+        raise
 
 
 def _exchange(process, request, deadline, on_timeout):

@@ -90,13 +90,21 @@ def test_the_production_saved_page_shows_the_emails_funnel(
     response after the cutoff leaves the page as it was.
     """
     import re
+    from functools import partial
 
     from parishkit.stewardship.campaigns.work_locks import work_transaction
     from parishkit.stewardship.deployment import ServiceRole
     from parishkit.stewardship.reports.digest_building import retain_daily_content
+    from parishkit.stewardship.reports.digest_fanout import fanout_daily
+    from parishkit.stewardship.reports.digest_models import (
+        DailyDigestReady,
+        DailyDigestRecipient,
+    )
+    from parishkit.stewardship.web.digest_content import FUNNEL_CHART_IDS
 
     from .auth_builders import signed_in
     from .test_background_grants_postgresql import task_login
+    from .test_daily_digest_fanout_postgresql import configure_content
     from .test_daily_digest_views_postgresql import read
 
     harness = live_response_service
@@ -105,12 +113,28 @@ def test_the_production_saved_page_shows_the_emails_funnel(
     with campaign_clock(AFTER_MIDNIGHT):
         respond(harness)
     with campaign_clock(NEXT_SEND):
-        claim, document, content = build(harness)
+        claim, document, content = build(
+            harness, configure=partial(configure_content, harness)
+        )
         assert document.report_day.local_date == date(2054, 10, 8)
         with task_login(ServiceRole.WORKER, exact=True), work_transaction():
             ready = retain_daily_content(claim, document, content)
         assert document.funnel.stage("submitted") == 1
         assert "Submitted: 1 (" in content.text
+        # The funnel's two chart images (#477 slice 2), drawn by the real
+        # server renderer, are retained with the ready row and allocated
+        # through the closed boundary with each Admin's mail.
+        ready = DailyDigestReady.objects.get(pk=ready.pk)
+        assert ready.images() == tuple(
+            (image.content_id, image.data) for image in content.funnel
+        )
+        assert [name for name, _ in ready.images()] == list(FUNNEL_CHART_IDS)
+        with task_login(ServiceRole.WORKER, exact=True), work_transaction():
+            assert fanout_daily(claim).phase == "complete"
+        recipient = DailyDigestRecipient.objects.select_related("outbox__render").get()
+        assert recipient.outbox.render.html.endswith(ready.html)
+        for name in FUNNEL_CHART_IDS:
+            assert ready.html.count(f'src="cid:{name}"') == 1
         browser, _ = signed_in()
         path = f"/admin/reports/emailed/daily/{ready.snapshot_id}/"
         rows = re.compile(
@@ -123,7 +147,7 @@ def test_the_production_saved_page_shows_the_emails_funnel(
             with task_login(ServiceRole.WEB, exact=True, reconnect=True):
                 _, body = read(browser, path)
             section = re.search(
-                rb'<section class="panel" data-digest-funnel>.*?</section>',
+                rb'<table aria-labelledby="digest-funnel-heading">.*?</table>',
                 body,
                 re.S,
             )
@@ -134,6 +158,17 @@ def test_the_production_saved_page_shows_the_emails_funnel(
             ]
 
         before = page_funnel()
+        # The page draws the email's two charts in the browser, before the
+        # funnel's table (visuals first, #720).
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            _, body = read(browser, path)
+        panel = body[body.index(b"data-digest-funnel") :]
+        assert (
+            panel.index(b'id="response-funnel-spec"')
+            < panel.index(b'id="response-activity-spec"')
+            < panel.index(b'<table aria-labelledby="digest-funnel-heading">')
+        )
+        assert b"vega-lite" in body
         # The digest's stages: "Link followed" is left out (#1016).
         assert [row[1] for row in before] == [
             f"{stage.count:,}"
@@ -160,3 +195,65 @@ def test_the_production_saved_page_shows_the_emails_funnel(
         assert later.submitted_again == 1
         # ... and the saved page, counted at the report-day end, is unchanged.
         assert page_funnel() == before
+
+
+def test_a_production_digest_sent_without_its_charts(
+    live_response_service,  # noqa: F811
+    google,
+):
+    """Charts withheld (#477): the funnel's table is sent and saved, no charts.
+
+    The compile the last attempt makes when a chart cannot be drawn
+    (``digest_tasks._build``): the ready row keeps no funnel images, the
+    allocated mail references none, and the saved page shows the funnel's
+    table without the charts its email never had.
+    """
+    from dataclasses import replace
+    from functools import partial
+
+    from parishkit.stewardship.campaigns.work_locks import work_transaction
+    from parishkit.stewardship.deployment import ServiceRole
+    from parishkit.stewardship.reports.daily_digest import render_daily_digest
+    from parishkit.stewardship.reports.digest_building import retain_daily_content
+    from parishkit.stewardship.reports.digest_comparison import withheld
+    from parishkit.stewardship.reports.digest_fanout import fanout_daily
+    from parishkit.stewardship.reports.digest_models import (
+        DailyDigestReady,
+        DailyDigestRecipient,
+    )
+
+    from .auth_builders import signed_in
+    from .test_background_grants_postgresql import task_login
+    from .test_daily_digest_fanout_postgresql import configure_content
+    from .test_daily_digest_views_postgresql import read
+
+    harness = live_response_service
+    complete_empty_catchup(harness.campaign, uuid4())
+    with campaign_clock(AFTER_MIDNIGHT):
+        respond(harness)
+    with campaign_clock(NEXT_SEND):
+        claim, document, _ = build(
+            harness, configure=partial(configure_content, harness)
+        )
+        document = replace(document, comparison=withheld(document.comparison))
+        content = render_daily_digest(
+            document, public_origin="https://parish.example", charts=False
+        )
+        assert content.charts_withheld and content.funnel == ()
+        with task_login(ServiceRole.WORKER, exact=True), work_transaction():
+            ready = retain_daily_content(claim, document, content)
+            assert fanout_daily(claim).phase == "complete"
+        ready = DailyDigestReady.objects.get(pk=ready.pk)
+        assert ready.funnel_chart is None and ready.images() == ()
+        assert "cid:response-" not in ready.html
+        assert "Email invites sent" in ready.html and "Email invites sent" in ready.text
+        recipient = DailyDigestRecipient.objects.select_related("outbox__render").get()
+        assert "cid:response-" not in recipient.outbox.render.html
+        browser, _ = signed_in()
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            _, body = read(
+                browser, f"/admin/reports/emailed/daily/{ready.snapshot_id}/"
+            )
+        assert b'<table aria-labelledby="digest-funnel-heading">' in body
+        assert b"response-funnel-spec" not in body
+        assert b"response-activity-spec" not in body

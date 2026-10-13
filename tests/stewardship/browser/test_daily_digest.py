@@ -211,15 +211,29 @@ def test_missing_controls_keeps_static_report_usable(page, component_origin):
 def test_the_saved_report_shows_the_response_funnel(
     page, component_origin, axe_source, width
 ):
-    """The funnel table and figures are readable, accessible and fit (#477)."""
+    """The funnel charts, table and figures are readable, accessible and fit (#477).
+
+    Slice 2: the email's two charts draw first under the real CSP, each with
+    its heading, then the funnel's own table.
+    """
+    from playwright.sync_api import expect
+
+    from .test_charts import assert_clean, watch
     from .test_components import axe_violations
 
     page.set_viewport_size({"width": width, "height": 900})
+    errors = watch(page)
     page.goto(component_origin + "/daily-digest-funnel")
     funnel = page.locator("[data-digest-funnel]")
-    visible(funnel.get_by_role("heading", name="Response funnel"))
+    visible(funnel.get_by_role("heading", name="Response funnel", level=2))
+    expect(funnel.locator("[data-chart][data-chart-state=rendered]")).to_have_count(2)
+    assert funnel.get_by_role("heading", level=3).all_inner_texts() == [
+        "Response funnel",
+        "Response activity by hour",
+    ]
     # Four stages: "Link followed" is left out (#1016).
-    assert funnel.locator("tbody tr").count() == 4
+    table = funnel.locator('table[aria-labelledby="digest-funnel-heading"]')
+    assert table.locator("tbody tr").count() == 4
     text = funnel.inner_text()
     assert "Email invites sent" in text and "40%" in text
     assert "Compared with email invites sent" in text
@@ -229,6 +243,7 @@ def test_the_saved_report_shows_the_response_funnel(
     assert "without a delivered invitation" not in text
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []
+    assert_clean(page, errors)
 
 
 @pytest.mark.parametrize("width", [320, 1280])

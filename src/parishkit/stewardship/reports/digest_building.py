@@ -192,10 +192,19 @@ def retain_daily_content(claim, document, content):
         content, DailyDigestContent
     ):
         raise TypeError("Daily publication requires compiled exact report content.")
-    validate_digest_body(
-        content.html, content.text, content.chart.data, content.comparison_images
+    validate_digest_body(content.html, content.text, content.chart.data, content.images)
+    # Each section's server-drawn charts are compiled with it, unless the
+    # last attempt withheld every such chart (#477), when the retained
+    # comparison section has none either (``digest_comparison.withheld``).
+    section_charts_expected = bool(
+        document.comparison and document.comparison["charts"]
     )
-    if (document.comparison is None) != (not content.comparison):
+    if (
+        bool(content.comparison) != section_charts_expected
+        or bool(content.funnel)
+        != (document.funnel is not None and not content.charts_withheld)
+        or (content.charts_withheld and section_charts_expected)
+    ):
         raise ValueError("A digest's section and its charts are compiled together.")
     preparation = bound_preparation(_status(lock_task_claim(claim)))
     scope = current_preparation(preparation)
@@ -229,6 +238,16 @@ def retain_daily_content(claim, document, content):
             zip(
                 ("comparison_families_chart", "comparison_pledges_chart"),
                 section_charts(document.comparison, content.comparison_images),
+                strict=True,
+            )
+        ),
+        # The Response funnel section's two charts (#477 slice 2), or none.
+        **dict(
+            zip(
+                ("funnel_chart", "activity_chart"),
+                (image.data for image in content.funnel)
+                if content.funnel
+                else (None, None),
                 strict=True,
             )
         ),

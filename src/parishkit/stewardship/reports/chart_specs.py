@@ -51,6 +51,12 @@ STAGE_PHRASES = {
     "progressed": "progressed past the first step",
     "submitted": "submitted",
 }
+# How the activity summary names each series.
+SERIES_PHRASES = {
+    "links": "link follows",
+    "forms": "form opens",
+    "submissions": "submissions",
+}
 GRAIN_WORDS = {"hour": "hour", "day": "day"}
 
 
@@ -81,9 +87,9 @@ class ChartDocument:
     notes: tuple[str, ...] = ()
 
 
-def stage_label(stage):
+def stage_label(stage, labels=STAGE_LABELS):
     """The stage's display label, with its note in parentheses when it has one."""
-    label = STAGE_LABELS[stage.key]
+    label = labels[stage.key]
     return f"{label} ({stage.note[0].lower()}{stage.note[1:]})" if stage.note else label
 
 
@@ -94,32 +100,43 @@ def share(count, total):
     return f"{(200 * count + total) // (2 * total)}%"
 
 
-def funnel_summary(stages):
+def funnel_summary(stages, phrases=STAGE_PHRASES):
     """One sentence with every stage's count, in funnel order."""
     parts = []
     for stage in stages:
-        phrase = STAGE_PHRASES[stage.key]
+        phrase = phrases[stage.key]
         if stage.note:
             phrase += f" ({stage.note[0].lower()}{stage.note[1:]})"
         parts.append(f"{number(stage.count)} {phrase}")
     return "Families by stage: " + ", ".join(parts) + "."
 
 
-def funnel_chart(metrics):
-    """The response funnel: one bar per stage, labelled with its count."""
-    if tuple(stage.key for stage in metrics.stages) != STAGES:
+def funnel_chart(metrics, *, keys=STAGES, labels=STAGE_LABELS, phrases=STAGE_PHRASES):
+    """The response funnel: one bar per stage, labelled with its count.
+
+    ``keys`` selects the stages drawn, in funnel order, and ``labels`` and
+    ``phrases`` name them in the bars and the summary: the dashboard draws
+    all five with their own names, the daily digest only its four
+    (``digest_funnel.DIGEST_STAGES``, #1016) under its own names. Shares
+    are always of the first stage, Invited.
+    """
+    if tuple(stage.key for stage in metrics.stages) != STAGES or not (
+        keys[0] == "invited" and set(keys) <= set(STAGES)
+    ):
         raise ValueError("A funnel chart needs the stages in funnel order.")
     invited = metrics.stage("invited")
+    stages = tuple(stage for stage in metrics.stages if stage.key in keys)
     rows = [
         {
-            "stage": stage_label(stage),
+            "stage": stage_label(stage, labels),
             "families": stage.count,
             "order": index,
             "share": share(stage.count, invited),
         }
-        for index, stage in enumerate(metrics.stages)
+        for index, stage in enumerate(stages)
     ]
-    summary = funnel_summary(metrics.stages)
+    summary = funnel_summary(stages, phrases)
+    compared = f"Compared with {labels['invited'].lower()}"
     spec = {
         "$schema": VEGA_LITE_SCHEMA,
         "description": summary,
@@ -149,7 +166,7 @@ def funnel_chart(metrics):
                     "tooltip": [
                         {"field": "stage", "title": "Stage"},
                         {"field": "families", "title": "Families", "format": ","},
-                        {"field": "share", "title": "Compared with invited"},
+                        {"field": "share", "title": compared},
                     ]
                 },
             },
@@ -166,7 +183,7 @@ def funnel_chart(metrics):
         ],
     }
     table = ChartTable(
-        ("Stage", "Families", "Compared with invited"),
+        ("Stage", "Families", compared),
         tuple((row["stage"], number(row["families"]), row["share"]) for row in rows),
     )
     return ChartDocument("response-funnel", "Response funnel", summary, spec, table)
@@ -222,13 +239,22 @@ def send_note(send, zone):
     )
 
 
-def activity_summary(metrics, labels):
+def series_phrase(series, conjunction):
+    """The series' plain names joined as a list: "form opens and submissions"."""
+    names = [SERIES_PHRASES[field] for field, *_ in series]
+    if len(names) == 1:
+        return names[0]
+    return ", ".join(names[:-1]) + f" {conjunction} " + names[-1]
+
+
+def activity_summary(metrics, labels, series=SERIES):
     """One sentence about the series' span and the marked sends."""
     grain = GRAIN_WORDS[metrics.grain]
     if not labels:
-        return "No link follows, form opens or submissions yet."
+        return f"No {series_phrase(series, 'or')} yet."
+    phrase = series_phrase(series, "and")
     text = (
-        f"Link follows, form opens and submissions per {grain} in "
+        f"{phrase[0].upper()}{phrase[1:]} per {grain} in "
         f"{metrics.timezone}, from {labels[0]} to {labels[-1]}"
     )
     if metrics.sends:
@@ -238,33 +264,43 @@ def activity_summary(metrics, labels):
     return text + "."
 
 
-def activity_chart(metrics):
-    """The response activity series: three lines per bucket, with send markers."""
+def activity_chart(metrics, *, series=SERIES):
+    """The response activity series: one line per series, with send markers.
+
+    ``series`` selects the lines (a subset of ``SERIES``, in its order): the
+    dashboard draws all three, the daily digest leaves out link follows
+    (#1016), so its buckets are only those with a form open or submission.
+    """
     if metrics.grain not in GRAIN_WORDS:
         raise ValueError("Activity is charted by hour or day.")
+    if not series or any(line not in SERIES for line in series):
+        raise ValueError("Activity is charted from the known series.")
     zone = ZoneInfo(metrics.timezone)
-    labels = tuple(
-        bucket_label(bucket, zone, metrics.grain) for bucket in metrics.activity
+    activity = tuple(
+        bucket
+        for bucket in metrics.activity
+        if any(getattr(bucket, field) for field, *_ in series)
     )
+    labels = tuple(bucket_label(bucket, zone, metrics.grain) for bucket in activity)
     rows = [
         {
             "time": wall_time(bucket.start, zone),
             "label": label,
-            "series": series,
+            "series": name,
             "families": getattr(bucket, field),
         }
-        for bucket, label in zip(metrics.activity, labels, strict=True)
-        for field, series, _color, _dash in SERIES
+        for bucket, label in zip(activity, labels, strict=True)
+        for field, name, _color, _dash in series
     ]
     rows += [
         {
             "time": wall_time(slot, zone),
             "label": bucket_label(ActivityBucket(slot, 0, 0, 0), zone, metrics.grain),
-            "series": series,
+            "series": name,
             "families": 0,
         }
-        for slot in quiet_slots(metrics.activity, zone, metrics.grain)
-        for _field, series, _color, _dash in SERIES
+        for slot in quiet_slots(activity, zone, metrics.grain)
+        for _field, name, _color, _dash in series
     ]
     rows.sort(key=lambda row: row["time"])
     markers = [
@@ -276,8 +312,8 @@ def activity_chart(metrics):
         }
         for send in metrics.sends
     ]
-    series_names = [series for _field, series, _color, _dash in SERIES]
-    summary = activity_summary(metrics, labels)
+    series_names = [name for _field, name, _color, _dash in series]
+    summary = activity_summary(metrics, labels, series)
     spec = {
         "$schema": VEGA_LITE_SCHEMA,
         "description": summary,
@@ -313,7 +349,7 @@ def activity_chart(metrics):
                         "title": None,
                         "scale": {
                             "domain": series_names,
-                            "range": [color for _f, _s, color, _d in SERIES],
+                            "range": [color for _f, _s, color, _d in series],
                         },
                         "legend": {"orient": "top"},
                     },
@@ -325,7 +361,7 @@ def activity_chart(metrics):
                         "title": None,
                         "scale": {
                             "domain": series_names,
-                            "range": [dash for _f, _s, _c, dash in SERIES],
+                            "range": [dash for _f, _s, _c, dash in series],
                         },
                     },
                     "tooltip": [
@@ -373,8 +409,8 @@ def activity_chart(metrics):
     table = ChartTable(
         ("Campaign time", *series_names),
         tuple(
-            (label, *(number(getattr(bucket, field)) for field, *_ in SERIES))
-            for bucket, label in zip(metrics.activity, labels, strict=True)
+            (label, *(number(getattr(bucket, field)) for field, *_ in series))
+            for bucket, label in zip(activity, labels, strict=True)
         ),
     )
     return ChartDocument(

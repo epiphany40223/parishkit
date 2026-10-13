@@ -279,6 +279,9 @@ FROZEN = {
     "0082_branding_bundle_mode.sql": (
         "1743245bc1291cde5f96e54c3b83c34346aa73a47db56ce11f6eaf89694fb9b0"
     ),
+    "0083_digest_funnel_charts.sql": (
+        "ce82e08e8f9dcf45b9576ce760522af9c2ad6c9ee94119f5feb6eebc1ebe56e4"
+    ),
 }
 
 
