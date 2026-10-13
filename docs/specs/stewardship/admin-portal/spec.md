@@ -4901,8 +4901,15 @@ recorded theirs; never names or contact values.
 Below the queue table, **Export these requests** downloads the queue's
 applied view (its filters, search and sort; every page of it, not just the
 one shown) as CSV, XLSX or PDF (Administrator decision, 2026-10-12, option
-(a) on #1157), replacing the retired Members joining and leaving exports. A
-line says how many requests the file holds; the count and the form's hidden
+(a) on #1157), replacing the retired Members joining and leaving exports.
+A request whose Member is no longer active in ParishSoft is not in the file
+(Administrator decision, 2026-10-13): the rows are the queue's own default
+selection, which leaves such requests out once open
+[#1217](https://github.com/epiphany40223/parishkit/issues/1217) lands, and
+the export refuses (400) any Status choice but the queue's own statuses, so
+the Staff-only choice of #1217 that lists only those requests is never
+exported.
+A line says how many requests the file holds; the count and the form's hidden
 filters follow an in-place Apply, sort or page change, and the reader's
 format and time zone stay as chosen. The rows are the queue selection's own,
 so a Ministry leader gets only the Ministries they lead, exactly as on the

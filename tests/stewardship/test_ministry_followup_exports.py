@@ -272,6 +272,9 @@ def test_the_csv_is_exactly_the_table():
         {"format": "csv", "timezone": "Mars/Base"},
         {"format": "csv", "timezone": "UTC", "assignee": "any"},
         {"format": "csv", "timezone": "UTC", "state": "lost"},
+        # The Staff-only Status choice for Members no longer in ParishSoft
+        # (#1217) is never exported (Administrator, 2026-10-13).
+        {"format": "csv", "timezone": "UTC", "state": "not_in_parishsoft"},
         {"timezone": "UTC"},
     ],
 )
@@ -539,3 +542,37 @@ def test_a_pdf_above_the_limit_is_refused_before_contacts_are_read(monkeypatch):
         "The PDF is limited to 2 requests."
     )
     assert "CSV or XLSX" in str(response.stewardship_refusal.fix)
+
+
+def test_the_file_reads_the_queues_own_selection(monkeypatch):
+    """The rows are the queue's whole selection with its default presence.
+
+    Members no longer in ParishSoft must stay out of the file (Administrator,
+    2026-10-13). The queue's selection leaves them out by default (#1217), so
+    the export must read it exactly as the queue does: never with
+    ``every_member``, which Roster changes to enter alone uses to list them.
+    """
+    calls = []
+
+    def selection(campaign_id, query, principal, **options):
+        """Record the read, then end the export (nothing else is under test)."""
+        calls.append((query, options))
+        raise PermissionError("stop here")
+
+    patch = monkeypatch.setattr
+    patch(ministry_followup_exports, "runtime", Mock())
+    patch(ministry_followup_exports, "_principal", Mock())
+    patch(ministry_followup_exports, "admit_report_read", Mock())
+    patch(ministry_followup_exports, "_audit", Mock())
+    patch(ministry_followup_exports, "followup_page", selection)
+    patch(
+        ministry_followup_exports,
+        "campaign_response",
+        lambda request, campaigns, **options: (options["open_content"](), Mock())[1],
+    )
+    values = FollowupQuery(action="join").form_values() | {
+        "format": "csv",
+        "timezone": "UTC",
+    }
+    ministry_followup_exports.export(RequestFactory().post("/", values), uuid4())
+    assert calls == [(FollowupQuery(action="join"), {"whole": True})]

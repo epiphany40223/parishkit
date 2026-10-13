@@ -62,7 +62,7 @@ from .information_rendering import render_information
 from .ministries import reads_every_ministry
 from .ministry_contacts import request_contacts
 from .ministry_documents import MinistryDocument, new_member_labels
-from .ministry_followup import EXPORT_PDF_LIMIT, FollowupQuery, followup_page
+from .ministry_followup import EXPORT_PDF_LIMIT, STATES, FollowupQuery, followup_page
 from .ministry_followup_views import _error, _principal
 from .read_admission import admit_report_read
 
@@ -275,6 +275,9 @@ def _choices(parameters):
     The form posts the applied queue view's filters, search and sort (the
     page and page size only window the screen, so they are ignored), the
     format and the time zone; anything else, or a repeated value, is a 400.
+    So is any Status choice but the queue's own statuses: a Member no longer
+    in ParishSoft never goes into the file (Administrator, 2026-10-13), even
+    from the Staff-only Status choice that lists them (#1217).
     """
     values = filters(
         parameters,
@@ -290,6 +293,8 @@ def _choices(parameters):
     if fmt not in FORMATS or (zone != "UTC" and zone not in timezone_names()):
         raise ValueError("Invalid follow-up export choice.")
     query = FollowupQuery.parse(values)
+    if query.state not in {"any", "unresolved", *STATES}:
+        raise ValueError("Invalid follow-up export choice.")
     return replace(query, page=1), fmt, ZoneInfo(zone)
 
 
@@ -369,6 +374,9 @@ def export(request, campaign_id):
         def content():
             """Read, shape and render the file inside the guarded read."""
             nonlocal count, ministries
+            # The queue's own selection with its default Member presence, so
+            # a Member no longer in ParishSoft is left out of the file as
+            # from the queue once #1217 lands (Administrator, 2026-10-13).
             result = followup_page(campaign_id, query, principal, whole=True)
             count = len(result["rows"])
             ministries = tuple(row["ministry_duid"] for row in result["rows"])
