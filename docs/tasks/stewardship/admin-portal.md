@@ -636,7 +636,22 @@ prompt; proven by `tests/stewardship/test_admin_operations.py`,
 `tests/stewardship/database/test_admin_delivery_ack_cli_postgresql.py` (a
 refused prompt changes nothing, a typed `yes`, a double invoke, the page's
 form with the same key, stale versions, unchanged credentials and the
-read-only refusal).
+read-only refusal). A follow-up (#1211) adds `delivery bounce-report`, the
+Mail message page's Report a bounced address (#806 slice 4), through the
+page's admission and `report_recipient_bounce` in the page's command scope,
+asking for the page's tick at the prompt, recording
+`admin_cmd_delivery_bounce_report` once per request key, and `kind` in the
+refusal reads, with no schema change; proven by
+`tests/stewardship/test_admin_operations.py` (the golden document without
+address or note), `tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_pk_admin.py`,
+`tests/stewardship/test_admin_route_parity.py` and
+`tests/stewardship/database/test_admin_bounce_report_cli_postgresql.py` (a
+refused prompt changes nothing, a typed `yes` with an address as a bounce
+message spells it, a double invoke, the page's form with the same key, a
+rebound key `invalid`, an undelivered email, an address not sent to and one
+already set aside `stale_version`, an unknown email, the read-only refusal,
+`kind` in the reads and unchanged credentials).
 A further follow-up (#463) adds `export census`, the Census changes
 download, in `parishkit.stewardship.admin_census_export`, through the page's
 own admission, `CensusQuery`, `census_changes` and file writer

@@ -28,6 +28,10 @@ resolution form in the page's command scope, keyed by the page's
 the resolution. The duplicate-risk ``delivery resend`` and the verified
 ``delivery refusal-clear`` (PR 9c) need the page's ticked acknowledgement,
 which the command line asks for at its prompt (PR 5b) before they act.
+``delivery bounce-report`` (#1211) is the Mail message page's "Report a
+bounced address", asking for its tick ("I saw a bounce message for this
+address from this email") the same way. The refusal reads say each
+refusal's ``kind``: ``provider`` or ``reported_bounce``.
 """
 
 from dataclasses import dataclass
@@ -89,18 +93,22 @@ def _raise_stale_on_conflict(error):
         raise StaleRecordError("The record changed; read it again.") from None
 
 
-def _admit(caller, service):
+def _admit(caller, service, *, activity=True):
     """The page's admission of a retry, recording activity as its post does.
 
     A session that ended since the command was admitted is exit 5
-    (``session_ended``), not the page's refusal.
+    (``session_ended``), not the page's refusal. ``activity`` false is the
+    read-only admission of a read made before a prompt, which writes
+    nothing.
     """
     from .accounts.automation_sessions import SessionUnusable
     from .accounts.sessions import authenticated_admin
     from .jobs.task_retries import background_principal
 
     try:
-        return background_principal(caller, service.store, activity=True)
+        return background_principal(
+            caller, service.store, activity=activity, final=not activity
+        )
     except PermissionError:
         if authenticated_admin(caller, store=service.store, read_only=True) is None:
             raise SessionUnusable("session_ended") from None
@@ -275,7 +283,11 @@ class DeliveryShow(ReadModel):
 
 @dataclass(frozen=True)
 class RefusalList(ReadModel):
-    """One page of unresolved refused addresses, by id and time only."""
+    """One page of unresolved refused addresses, by id, kind and time only.
+
+    Each row's ``kind`` is ``provider`` (the provider refused the address)
+    or ``reported_bounce`` (an Administrator reported a bounce, #806).
+    """
 
     page: int
     size: int
@@ -288,9 +300,14 @@ class RefusalList(ReadModel):
 
 @dataclass(frozen=True)
 class RefusalShow(ReadModel):
-    """One refusal, how it was resolved, and the source version to verify."""
+    """One refusal, how it was resolved, and the source version to verify.
+
+    ``kind`` is ``provider`` or ``reported_bounce``, as in ``RefusalList``;
+    a reported bounce's note stays on the page.
+    """
 
     id: UUID
+    kind: str
     created_at: object
     resolved: dict | None
     source: dict | None
@@ -387,7 +404,8 @@ def refusal_list_model(data):
         matching=count,
         matching_capped=capped,
         refusals=[
-            {"id": row["id"], "created_at": row["created_at"]} for row in data["rows"]
+            {"id": row["id"], "kind": row["kind"], "created_at": row["created_at"]}
+            for row in data["rows"]
         ],
     )
 
@@ -397,6 +415,7 @@ def refusal_show_model(data):
     refusal, resolved, source = data["refusal"], data["resolved"], data["source"]
     return RefusalShow(
         id=refusal.pk,
+        kind=refusal.kind,
         created_at=refusal.created_at,
         resolved=None
         if resolved is None
@@ -835,5 +854,103 @@ def clear_refusal_command(
         exists=lambda: RecipientRefusalResolution.objects.filter(
             pk=request_key
         ).exists(),
+        act=act,
+    )
+
+
+@dataclass(frozen=True)
+class BounceReport(ReadModel):
+    """The report a ``delivery bounce-report`` recorded, or found for its key.
+
+    ``refusal`` is the refused address it created (its id is the request
+    key): follow it with ``delivery refusal-show``, and clear it with
+    ``delivery refusal-clear``.
+    """
+
+    created: bool
+    request_key: UUID
+    refusal: dict
+
+
+def bounce_report_model(refusal, *, created, request_key, message_id):
+    """The command's projection of a reported bounce's ``RecipientRefusal``.
+
+    Never the note, and not the address either: delivery documents name no
+    recipient, and the caller already has the address it typed.
+    """
+    return BounceReport(
+        created=created,
+        request_key=request_key,
+        refusal={
+            "id": refusal.pk,
+            "message_id": message_id,
+            "kind": refusal.kind,
+            "created_at": refusal.created_at,
+        },
+    )
+
+
+def report_bounce_command(
+    caller, service, message_id, *, address, note, request_key, context, ask
+):
+    """``delivery bounce-report``: the Mail message page's bounce report.
+
+    ``ask(last)`` is the command line's prompt for the page's tick ("I saw
+    a bounce message for this address from this email"), or its ``--yes``.
+    It is called after a read-only admission and before anything is
+    written or any transaction opens; ``last`` is the page's only-address
+    check (``only_address_left``), so the prompt can warn that the Family
+    would get no campaign email. Then this passes the tick as ``observed``
+    to the page's ``report_recipient_bounce`` in the page's command scope,
+    so the service's Administrator check, the definer
+    ``stewardship_report_recipient_bounce_v1`` and the refusal guard decide
+    exactly as for the page (#1211).
+
+    The key is the page's ``command_id``, which becomes the refusal's id: a
+    repeat with the same intent returns the original report, another intent
+    (another Administrator's, too) is ``invalid``. An address already set
+    aside, an email that is not a delivered Production Family email, or an
+    address the email was not sent to (the guard's check refusal) is
+    ``stale_version``, as the page's 409; an unknown email is
+    ``not_available``. Records ``admin_cmd_delivery_bounce_report`` when it
+    creates the report.
+    """
+    from django.core.exceptions import ObjectDoesNotExist
+
+    from .audit.schemas import Action
+    from .jobs.delivery_admin import report_recipient_bounce
+    from .jobs.delivery_reads import only_address_left
+    from .jobs.recipient_models import RecipientRefusal
+
+    _admit(caller, service, activity=False)
+    ask(only_address_left(message_id, address))
+    actor = _admit(caller, service)
+    context["request_id"] = str(request_key)
+
+    def act(*, created):
+        """The page's ``report_recipient_bounce``, with the box ticked."""
+        try:
+            refusal = report_recipient_bounce(
+                service.store,
+                actor.identity,
+                message_id=message_id,
+                address=address,
+                command_id=request_key,
+                note=note,
+                observed=True,
+            )
+        except ObjectDoesNotExist:
+            raise NotAvailable("No such delivery.") from None
+        return bounce_report_model(
+            refusal, created=created, request_key=request_key, message_id=message_id
+        )
+
+    return _keyed_command(
+        caller,
+        service,
+        actor,
+        context,
+        event=Action.ADMIN_CMD_DELIVERY_BOUNCE_REPORT,
+        exists=lambda: RecipientRefusal.objects.filter(pk=request_key).exists(),
         act=act,
     )

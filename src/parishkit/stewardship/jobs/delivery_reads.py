@@ -424,6 +424,39 @@ BOUNCE_UNAVAILABLE = {
 }
 
 
+def current_recipients(family_id):
+    """The Family's current, unrefused addresses, as preparation reads them.
+
+    An invoker read of ParishSoft data web already reads; a reported bounce
+    of the only one leaves the Family with no campaign email (#806).
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT jsonb_array_elements_text("
+            "public.stewardship_family_mail_recipients_v1(%s))",
+            [family_id],
+        )
+        return [address for (address,) in cursor.fetchall()]
+
+
+def only_address_left(message_id, address):
+    """Whether ``address`` is the only one left of the email's Family.
+
+    The panel's ``last`` notice for ``delivery bounce-report``'s prompt
+    (#1211): reporting it would leave the Family with no campaign email.
+    False for an unknown email or one with no Family; the report itself
+    then refuses it.
+    """
+    from .outbox_models import OutboxMessage
+
+    family_id = (
+        OutboxMessage.objects.filter(pk=message_id)
+        .values_list("family_id", flat=True)
+        .first()
+    )
+    return family_id is not None and current_recipients(family_id) == [address]
+
+
 def bounce_panel(delivery, recipients, *, can_change):
     """What the Mail message page's "Report a bounced address" panel shows.
 
@@ -481,15 +514,7 @@ def bounce_panel(delivery, recipients, *, can_change):
     )
     shown = (recipients or {}).get("intended", [])
     addresses = [address for address in dict.fromkeys(shown) if address not in taken]
-    with connection.cursor() as cursor:
-        # The Family's current, unrefused addresses, as preparation reads
-        # them (an invoker read of ParishSoft data web already reads).
-        cursor.execute(
-            "SELECT jsonb_array_elements_text("
-            "public.stewardship_family_mail_recipients_v1(%s))",
-            [delivery["family_id"]],
-        )
-        current = [address for (address,) in cursor.fetchall()]
+    current = current_recipients(delivery["family_id"])
     last = current[0] if len(current) == 1 and current[0] in addresses else None
     if delivery["state"] != "delivered" or delivered is None:
         reason = "not_delivered"

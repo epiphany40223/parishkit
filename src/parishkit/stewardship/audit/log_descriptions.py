@@ -174,6 +174,10 @@ DESCRIPTIONS = {
         "An automation session confirmed a reviewed import of ParishSoft "
         "Ministry leaders as users, which became a configuration request."
     ),
+    "admin_cmd_delivery_bounce_report": _(
+        "An automation session reported that a delivered email bounced at "
+        "one address, as the email's Mail message page does."
+    ),
     "admin_cmd_delivery_refusal_clear": _(
         "An automation session cleared a refused email address after the "
         "Administrator confirmed verifying it, as the address's page does."

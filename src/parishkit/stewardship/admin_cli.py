@@ -2142,6 +2142,12 @@ RESEND_ACKNOWLEDGEMENT = (
 CLEAR_ACKNOWLEDGEMENT = (
     "I verified this address for this Family and authorize removing this refusal."
 )
+BOUNCE_ACKNOWLEDGEMENT = "I saw a bounce message for this address from this email."
+# The page's only-address notice, without the address (#1211).
+BOUNCE_LAST_ADDRESS = (
+    "This is the Family's only address left: the Family will get no campaign "
+    "email until it is cleared or ParishSoft is corrected."
+)
 
 
 def delivery_resend(args, preamble, runtime, context):
@@ -2192,6 +2198,45 @@ def delivery_refusal_clear(args, preamble, runtime, context):
         note=note,
         request_key=key,
         context=context,
+    )
+
+
+def delivery_bounce_report(args, preamble, runtime, context):
+    """Report a bounced address, as the Mail message page's form does (#1211).
+
+    The address is trimmed and lower-cased, the form the page offers and the
+    service requires, so one copied from a bounce message is accepted. It
+    asks for the page's tick at the prompt (or takes ``--yes``), as
+    ``delivery refusal-clear`` does, before any transaction opens; the
+    summary names the email, never the address or the note, and warns, as
+    the page's notice does, when the address is the Family's only one left.
+    """
+    from .admin_operations import NOTE_LIMIT, report_bounce_command
+
+    key = _request_key(args, context)
+    note = _input(args.note, context, NOTE_LIMIT * 4)
+
+    def ask(last):
+        """The page's tick, with its only-address notice when it applies."""
+        confirm(
+            context,
+            (
+                f"Report that delivery {args.message_id} bounced at the given "
+                "address, setting it aside for the Family until it is cleared.",
+                *((BOUNCE_LAST_ADDRESS,) if last else ()),
+                BOUNCE_ACKNOWLEDGEMENT,
+            ),
+        )
+
+    return report_bounce_command(
+        context["caller"],
+        runtime,
+        args.message_id,
+        address=args.address.strip().lower(),
+        note=note,
+        request_key=key,
+        context=context,
+        ask=ask,
     )
 
 
@@ -3252,6 +3297,23 @@ def _refusal_clear_options(parser):
     _request_key_option(parser)
 
 
+def _bounce_report_options(parser):
+    """Options of ``delivery bounce-report``: the Mail message page's form."""
+    parser.add_argument("message_id", type=_uuid, metavar="MESSAGE_ID")
+    parser.add_argument(
+        "--address",
+        required=True,
+        help="the address the bounce message names (one the email was sent to)",
+    )
+    parser.add_argument(
+        "--note",
+        required=True,
+        help="what the bounce message said, or - to read it from standard "
+        "input (needs --yes)",
+    )
+    _request_key_option(parser)
+
+
 def _go_live_progress_options(parser):
     """Options of ``go-live progress``: the campaign, and --watch."""
     _schedule_options(parser)
@@ -3697,6 +3759,7 @@ def _change_specs():
 def _operation_specs():
     """The operations commands (PR 9): task retry and the deliveries."""
     from .admin_operations import (
+        BounceReport,
         DeliveryList,
         DeliveryResolve,
         DeliveryShow,
@@ -3796,6 +3859,20 @@ def _operation_specs():
             RefusalClear.field_names(),
             9,
             options=(_refusal_clear_options,),
+            prompts=True,
+            request_key=True,
+        ),
+        # The Mail message page's "Report a bounced address" (#806, #1211):
+        # asks for the page's tick, as refusal-clear does; clearing undoes it.
+        CommandSpec(
+            "delivery bounce-report",
+            "Report that a delivered email bounced at one address, as its page does.",
+            delivery_bounce_report,
+            "full",
+            True,
+            BounceReport.field_names(),
+            9,
+            options=(_bounce_report_options,),
             prompts=True,
             request_key=True,
         ),

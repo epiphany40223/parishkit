@@ -213,7 +213,7 @@ def test_refusals_are_listed_and_shown_without_the_address(
     response_service,
     google,
 ):
-    """Refused addresses by id and time, and the source version to verify.
+    """Refused addresses by id, kind and time, and the source version to verify.
 
     ``delivery list`` counts the email's unresolved refused addresses as
     Outgoing mail marks them (#1004): the recording email 1, another 0.
@@ -234,7 +234,12 @@ def test_refusals_are_listed_and_shown_without_the_address(
     code, document, _ = admin("delivery", "refusals", "--duid", "1", secret=secret)
     assert code == 0, document
     assert document["result"]["refusals"] == [
-        {"id": str(refusal.pk), "created_at": refusal.created_at.isoformat()}
+        {
+            "id": str(refusal.pk),
+            # A provider's refusal; a reported bounce's is #1211's test.
+            "kind": "provider",
+            "created_at": refusal.created_at.isoformat(),
+        }
     ]
     assert not private(document)
     code, shown, _ = admin("delivery", "refusal-show", str(refusal.pk), secret=secret)
@@ -245,6 +250,7 @@ def test_refusals_are_listed_and_shown_without_the_address(
         "generation": current.generation,
     }
     assert shown["result"]["resolved"] is None and not private(shown)
+    assert shown["result"]["kind"] == "provider"
     assert views() == before + 2
     code, missing, _ = admin("delivery", "refusal-show", str(uuid4()), secret=secret)
     assert code == 1 and missing["error"]["code"] == "not_available"

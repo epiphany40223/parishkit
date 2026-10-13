@@ -1125,15 +1125,16 @@ its subject; it creates no automation notice.
 Every command for an action that needs a recent Google sign-in on its page,
 and every command whose page asks you to type a value or tick an
 acknowledgement, asks at a prompt before it acts, for example `test sample`
-while an earlier test's outcome is unknown, `delivery resend` and
-`delivery refusal-clear`; the catalog's `prompts` flag
-names every one. The command writes what it is about to do to standard error and waits for `yes`, or for the page's typed
-value (`Production` for the Production confirmation). Anything else, or the
-end of input, changes nothing and exits 4 (`confirmation_required`). The
-wrapper passes one line typed at your terminal to a prompting command, so
-run it from a terminal, or pass `--yes` in a script; `--yes` is required when the
-command also reads an input from standard input (`-`). Logs record whether
-the answer came from the prompt or from `--yes`.
+while an earlier test's outcome is unknown, `delivery resend`, `delivery
+refusal-clear` and `delivery bounce-report`; the catalog's `prompts` flag
+names every one. The command writes what it is about to do to standard error
+and waits for `yes`, or for the page's typed value (`Production` for the
+Production confirmation). Anything else, or the end of input, changes
+nothing and exits 4 (`confirmation_required`). The wrapper passes one line
+typed at your terminal to a prompting command, so run it from a terminal, or
+pass `--yes` in a script; `--yes` is required when the command also reads an
+input from standard input (`-`). Logs record whether the answer came from
+the prompt or from `--yes`.
 
 No command of this release does an action that needs a recent Google
 sign-in; they arrive in later releases. When a session stands in for one
@@ -1164,6 +1165,8 @@ pk-admin delivery refusal-show REFUSAL_ID
 pk-admin delivery resend MESSAGE_ID --expected-version 3 --note - --yes < note.txt
 pk-admin delivery refusal-clear REFUSAL_ID --source-snapshot-id SNAPSHOT_ID \
     --source-generation 2 --note - --yes < note.txt
+pk-admin delivery bounce-report MESSAGE_ID --address ADDRESS \
+    --note - --yes < note.txt
 ```
 
 `delivery list` takes the page's `--state`, `--send` (send history's `send`
@@ -1184,8 +1187,8 @@ first), `name`, `duid`, `purpose`, `mode`, `state` and `attempts`, and also
 | `actions`, `retry_unavailable` | `delivery show`: the resolutions the page offers now, and whether a retry is refused by the campaign's resend rule |
 | `events` | `delivery show`: the history's `version`, `at`, `state`, `action`, `attempt` and `result` (a stored code) |
 | `notes` | `delivery show`: each resolution's `created_at` and `action` |
-| `refusals` | `delivery refusals`: each unresolved refusal's `id` and `created_at` |
-| `id`, `created_at`, `resolved`, `source`, `can_clear` | `delivery refusal-show`: the refusal, how and when it was resolved (`kind`, `at`), the source version to verify (`snapshot_id`, `generation`), and whether a clearance can be recorded now |
+| `refusals` | `delivery refusals`: each unresolved refusal's `id`, `kind` and `created_at` |
+| `id`, `kind`, `created_at`, `resolved`, `source`, `can_clear` | `delivery refusal-show`: the refusal (its `kind` is `provider` when the provider refused the address, `reported_bounce` when an Administrator reported a bounce; a report's note stays on the page), how and when it was resolved (`kind`, `at`), the source version to verify (`snapshot_id`, `generation`), and whether a clearance can be recorded now |
 
 `delivery resolve` takes `--action` (`note`, `accept`, `confirm_unsent`,
 `retry_failed` or `retry_unsent`, as offered in `actions`; an offered
@@ -1229,6 +1232,28 @@ exit 1 (`stale_version`): read it again. The result has `created`,
 `request_key` and `resolution` (`id`, `refusal_id`, `source_snapshot_id`,
 `source_generation`, `created_at`), never the note. System logs show it as
 `admin_cmd_delivery_refusal_clear`.
+
+`delivery bounce-report` is the Mail message page's **Report a bounced
+address**: when a bounce message for a delivered Family email arrives in the
+sending mailbox, it sets that address aside for the Family, as a provider's
+refusal does, until `delivery refusal-clear` clears it. It shows the page's
+words ("I saw a bounce message for this address from this email") and asks
+for `yes`; it needs a full-scope session of an Administrator, but no recent
+sign-in, as on the page. When the address is the Family's only one left, the
+prompt also warns, as the page's notice does, that the Family will then get
+no campaign email until the address is cleared or ParishSoft is corrected;
+`--yes` skips that warning too. `--address` is the address the bounce
+message names (spaces and capitals are ignored); no command lists an email's
+addresses, so take it from the bounce message, or see the email on its page.
+`--address` takes the address itself: `-` is not read from standard input.
+`--note` (or `-`) records what the bounce message said. An email that is not
+a delivered Production Family email, an address it was not sent to, or one
+already set aside is exit 1 (`stale_version`); an unknown email is exit 1
+(`not_available`); a key used for another report is exit 1 (`invalid`). The
+result has `created`, `request_key` and `refusal` (`id`, which is the
+request key, `message_id`, `kind` and `created_at`), never the address or
+the note; follow it with `delivery refusal-show`. System logs show it as
+`recipient_bounce_reported` and `admin_cmd_delivery_bounce_report`.
 
 ## System logs
 
@@ -2304,3 +2329,10 @@ print is exit 1 (`invalid`).
   `admin_cmd_artwork_remove`.
 - `pk-admin/1` (#1161): additive. `export comparison` no longer needs
   `--timezone`; without it the file uses the parish's time zone.
+- `pk-admin/1` (#1211): additive. `delivery bounce-report MESSAGE_ID
+  --address ADDRESS --note TEXT|- [--request-key KEY] [--yes]`, the Mail
+  message page's Report a bounced address (full scope, Administrators only,
+  prompts; `recipient_bounce_reported` and
+  `admin_cmd_delivery_bounce_report`), and `kind` (`provider` or
+  `reported_bounce`) in `delivery refusals` rows and `delivery
+  refusal-show`.

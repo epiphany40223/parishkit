@@ -4009,7 +4009,8 @@ in the order the Administrator asked for
    other addresses keep receiving the same mail. The report is audited
    (`recipient_bounce_reported`), and the Refused addresses line near the
    top of the page shows it the next time the page is opened. Its command
-   line counterpart is owed
+   line counterpart is
+   [`delivery bounce-report`](../admin-automation/spec.md#operations)
    ([#1211](https://github.com/epiphany40223/parishkit/issues/1211)); see
    [data](../data/spec.md#job-outbox-audit-and-purge-records) for the
    record.
