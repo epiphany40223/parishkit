@@ -544,10 +544,15 @@ def test_log_csv_and_xlsx_carry_the_same_columns_and_cells():
         }
     ]
     zone = ZoneInfo("America/New_York")
+    as_of = datetime(2054, 10, 5, 15, tzinfo=UTC)
     table = list(
-        csv.reader(io.StringIO(log_reads.export_body(rows, "csv", zone).decode()))
+        csv.reader(
+            io.StringIO(log_reads.export_body(rows, "csv", zone, as_of=as_of).decode())
+        )
     )
-    book = load_workbook(io.BytesIO(log_reads.export_body(rows, "xlsx", zone)))
+    book = load_workbook(
+        io.BytesIO(log_reads.export_body(rows, "xlsx", zone, as_of=as_of))
+    )
     sheet = [
         ["" if value is None else value for value in values]
         for values in book.active.iter_rows(values_only=True)
@@ -574,8 +579,60 @@ def test_log_csv_and_xlsx_carry_the_same_columns_and_cells():
     assert table[1][actor] == "'=1+2" and sheet[1][actor] == "=1+2"
     assert book.active.cell(2, actor + 1).data_type == "s"
     assert sheet[1][5] == "00000000-0000-4000-8000-000000000001"
-    [record] = map(json.loads, log_reads.export_body(rows, "jsonl", zone).splitlines())
+    body = log_reads.export_body(rows, "jsonl", zone, as_of=as_of)
+    [record] = map(json.loads, body.splitlines())
     assert list(record) == list(log_reads.EXPORT_COLUMNS)
     assert set(log_reads.EXPORT_FORMATS) == {"csv", "xlsx", "jsonl"}
     with pytest.raises(ValueError):
         log_reads.export_choice("pdf", "UTC")
+
+
+def test_log_xlsx_report_information_names_the_download():
+    """The System logs workbook's "Report information" sheet (#926).
+
+    It states the download time in the chosen zone (a native date-time),
+    the zone, the entry count, the export limit and the privacy line, with
+    no filters and no Parish or Campaign; the workbook's created time is
+    the download time. CSV and JSON Lines stay the entries alone.
+    """
+    from zoneinfo import ZoneInfo
+
+    from openpyxl import load_workbook
+
+    from parishkit.stewardship.audit import log_reads
+
+    row = {
+        "created_at": datetime(2054, 10, 5, 14, 30, tzinfo=UTC),
+        "source": "audit",
+        "level": None,
+        "event": "system_logs_exported",
+        "actor": "admin@example.org",
+        "actor_id": None,
+        "correlation_id": None,
+        "campaign_id": None,
+        "subject_id": None,
+        "details": {},
+    }
+    zone = ZoneInfo("America/Chicago")
+    as_of = datetime(2054, 10, 5, 15, tzinfo=UTC)
+    book = load_workbook(
+        io.BytesIO(log_reads.export_body([row, row], "xlsx", zone, as_of=as_of))
+    )
+    assert book.sheetnames == ["System logs", "Report information"]
+    sheet = book["Report information"]
+    assert list(sheet.iter_rows(values_only=True)) == [
+        ("Report", "System logs"),
+        # 15:00 UTC is 10:00 AM in Chicago, stored as a native date-time.
+        ("Downloaded at", datetime(2054, 10, 5, 10)),
+        ("Display time zone", "America/Chicago"),
+        ("Entries in this file", "2"),
+        ("Entry limit", "The newest 10,000 matching entries"),
+        ("Privacy", log_reads.EXPORT_PRIVACY),
+    ]
+    assert sheet["B2"].is_date
+    assert sheet["A1"].font.b and sheet.page_setup.orientation == "portrait"
+    assert book.properties.title == "System logs"
+    assert book.properties.created == datetime(2054, 10, 5, 15)
+    for fmt in ("csv", "jsonl"):
+        body = log_reads.export_body([row], fmt, zone, as_of=as_of)
+        assert b"Report information" not in body and b"Entry limit" not in body

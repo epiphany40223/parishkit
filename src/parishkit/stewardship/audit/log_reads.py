@@ -52,6 +52,11 @@ EXPORT_FORMATS = {
     "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "jsonl": "application/x-ndjson",
 }
+# The XLSX names its sheet, page header and workbook with the page's title,
+# and its "Report information" sheet carries this privacy line (#926): the
+# entries name portal users and hold troubleshooting detail.
+EXPORT_TITLE = "System logs"
+EXPORT_PRIVACY = "Sensitive system record. Share only with authorized recipients."
 # Each read (the screen's page and count, or an export) may run at most this
 # long in PostgreSQL: the interactive page-view limit the campaign read
 # guards use. Text search has no index (#536), so on a very large log a
@@ -374,7 +379,27 @@ def export_file_name(fmt, now):
     return f"stewardship-logs-{now.strftime('%Y%m%d-%H%M%SZ')}.{fmt}"
 
 
-def export_body(rows, fmt, zone):
+def report_information(count, zone, *, as_of):
+    """The XLSX "Report information" rows for a System logs download (#926).
+
+    The download time ``as_of`` in ``zone`` (a native date-time cell), the
+    entry count, the export limit and the privacy line, labeled as the other
+    Admin downloads label them. System logs is system-wide and has no PDF
+    frame, so no Parish or Campaign row; like Limitations and Census
+    changes it does not list the filters, whose search text could carry
+    words the file does not otherwise hold.
+    """
+    return (
+        ("Report", EXPORT_TITLE),
+        ("Downloaded at", as_of.astimezone(zone)),
+        ("Display time zone", zone.key),
+        ("Entries in this file", f"{count:,}"),
+        ("Entry limit", f"The newest {EXPORT_LIMIT:,} matching entries"),
+        ("Privacy", EXPORT_PRIVACY),
+    )
+
+
+def export_body(rows, fmt, zone, *, as_of):
     """Serialize the reviewed display rows as bytes; nothing beyond the page.
 
     CSV and XLSX carry the same ``EXPORT_COLUMNS`` under their plain
@@ -383,7 +408,8 @@ def export_body(rows, fmt, zone):
     ``EXPORT_COLUMNS`` and keeps the details as an object. The cross-link
     identifiers stay in every format, the recorded exception to leaving
     internal identifiers out of downloads (UX conventions spec,
-    "Downloaded files").
+    "Downloaded files"). ``as_of`` is the download time: the XLSX's
+    "Report information" sheet and created time state it (#926).
     """
     records = [
         {
@@ -418,7 +444,11 @@ def export_body(rows, fmt, zone):
         from parishkit.stewardship.reports.xlsx_design import table_workbook
 
         return table_workbook(
-            tuple(EXPORT_HEADINGS.values()), table, sheet_title="System logs"
+            tuple(EXPORT_HEADINGS.values()),
+            table,
+            sheet_title=EXPORT_TITLE,
+            information=report_information(len(records), zone, as_of=as_of),
+            created=as_of,
         )
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\r\n")

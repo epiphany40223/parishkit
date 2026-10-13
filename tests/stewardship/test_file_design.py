@@ -236,8 +236,8 @@ def test_every_workbook_names_its_report_in_its_properties():
     Excel's File > Info shows them; openpyxl's defaults were an untitled
     file by "openpyxl" created whenever it was rendered. Queued reports
     state their request time, so every retried rendering agrees with the
-    PDF's CreationDate; Census changes states its download time, and System
-    logs carries the title and author only.
+    PDF's CreationDate; Census changes and System logs state their
+    download time.
     """
     output = io.BytesIO()
     render_directory(directory([family()]), output, format="xlsx")

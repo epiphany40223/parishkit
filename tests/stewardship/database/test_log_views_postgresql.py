@@ -8,6 +8,7 @@ from collections import Counter
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 
 import pytest
 from django.db import connection, transaction
@@ -624,6 +625,28 @@ def export(browser, values=None):
     )
 
 
+def named_at_download(file_name, body, zone):
+    """Whether an XLSX's Report information dates the instant its name states.
+
+    One instant names the file and dates the sheet (#926): the name gives
+    it to the second in UTC, the sheet's Downloaded at in ``zone`` (stored
+    without a zone, to the millisecond), and the workbook's Created
+    property in UTC to the second.
+    """
+    book = load_workbook(io.BytesIO(body))
+    assert book.sheetnames == ["System logs", "Report information"]
+    information = dict(book["Report information"].iter_rows(values_only=True))
+    assert information["Display time zone"] == zone
+    stamp = re.search(r"stewardship-logs-(\d{8}-\d{6})Z\.xlsx", file_name)[1]
+    named = datetime.strptime(stamp, "%Y%m%d-%H%M%S").replace(tzinfo=UTC)
+    downloaded = information["Downloaded at"].replace(tzinfo=ZoneInfo(zone))
+    created = book.properties.created.replace(tzinfo=UTC)
+    # The name and Created drop the fraction of a second; the cell keeps it.
+    return timedelta(0) <= downloaded - named < timedelta(seconds=1) and (
+        created == named
+    )
+
+
 def test_export_downloads_filtered_entries_as_csv_or_json_lines(auth_service, google):
     """Exports carry the screen's filters and detail, newest first, and are audited."""
     diagnostics()
@@ -653,6 +676,7 @@ def test_export_downloads_filtered_entries_as_csv_or_json_lines(auth_service, go
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
     assert ".xlsx" in workbook["Content-Disposition"]
+    assert named_at_download(workbook["Content-Disposition"], workbook.content, "UTC")
     sheet = list(load_workbook(io.BytesIO(workbook.content)).active.values)
     assert ",".join(sheet[0]) == lines[0] and len(sheet) == 1 + len(records)
     assert sheet[1][2] == "CRITICAL"

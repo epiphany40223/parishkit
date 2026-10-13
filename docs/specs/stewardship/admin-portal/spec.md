@@ -6401,7 +6401,12 @@ Source, Level, Type, Actor, Actor identifier, Correlation identifier,
 Campaign identifier, Subject identifier and Recorded detail (#966). JSON
 Lines keys each entry by the same fields in snake_case (`time`, `source`,
 `level`, `type`, `actor_email`, `actor_id`, `correlation_id`,
-`campaign_id`, `subject_id`, `details`), for programs. There is no PDF, and
+`campaign_id`, `subject_id`, `details`), for programs. After its table
+sheet the XLSX has the shared "Report information" sheet (#926): Report
+("System logs"), Downloaded at (in the chosen zone), Display time zone,
+Entries in this file, Entry limit and Privacy. It names no Parish or
+Campaign, because the log is system-wide, and, like the other Admin
+downloads, it does not list the filters. There is no PDF, and
 the identifier columns stay: both are the recorded exception in the
 [downloaded files](../ui-conventions/spec.md#downloaded-files) rule. It is
 Administrator-only, uses a CSRF POST like the screen's filters, rechecks

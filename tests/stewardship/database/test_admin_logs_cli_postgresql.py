@@ -13,6 +13,7 @@ import json
 from uuid import uuid4
 
 import pytest
+from openpyxl import load_workbook
 
 from parishkit.stewardship import admin_cli
 from parishkit.stewardship.accounts import automation_sessions as automation
@@ -26,7 +27,7 @@ from .automation_builders import paired
 from .test_admin_status_cli_postgresql import without_web_runtimes
 from .test_admin_task_retry_cli_postgresql import runner
 from .test_background_grants_postgresql import task_login
-from .test_log_views_postgresql import diagnostics
+from .test_log_views_postgresql import diagnostics, named_at_download
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -167,7 +168,34 @@ def test_logs_export_writes_the_pages_download(admin, google):
         assert result["count"] == 2 and result["size"] == len(body)
         assert result["format"] == fmt and result["timezone"] == zone
         assert result["file_name"].startswith("stewardship-logs-")
-    assert counted("system_logs_exported") == [2, 2, 2, 2]
+    # XLSX: the page's table sheet cell for cell, then the Report information
+    # sheet dated, as its name is, by the command's own download (#926).
+    zone = "America/Chicago"
+    response = page(
+        browser,
+        "/admin/system/logs/export/",
+        SERIOUS_FORM | {"format": "xlsx", "timezone": zone},
+    )
+    code, body, document = stream(
+        admin,
+        "logs",
+        "export",
+        *SERIOUS,
+        "--format",
+        "xlsx",
+        "--timezone",
+        zone,
+        secret=secret,
+    )
+    assert code == 0, document
+    assert named_at_download(document["result"]["file_name"], body, zone)
+    page_book, command_book = (
+        load_workbook(io.BytesIO(content)) for content in (response.content, body)
+    )
+    assert list(page_book["System logs"].values) == list(
+        command_book["System logs"].values
+    )
+    assert counted("system_logs_exported") == [2, 2, 2, 2, 2, 2]
     event = AuditEvent.objects.filter(event_type="system_logs_exported").latest(
         "created_at"
     )
