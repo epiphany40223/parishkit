@@ -454,31 +454,32 @@ def export_body(campaign_id, result, fmt, zone):
     """The filtered list as the chosen file's bytes, times in ``zone``.
 
     The page's download and ``pk-admin export census`` (#463) both render
-    through here, so their CSV, XLSX and PDF cannot drift. The PDF also
-    names the parish and campaign in its page header and dates itself in
-    the parish's date format, lent explicitly so the file never depends on
-    the request's date middleware (as the response lists' downloads do).
+    through here, so their CSV, XLSX and PDF cannot drift. The PDF's page
+    frame and the XLSX's "Report information" sheet (#926) also name the
+    parish, campaign and download time; the PDF dates itself in the
+    parish's date format, lent explicitly so the file never depends on the
+    request's date middleware (as the response lists' downloads do). The
+    CSV is only the table, so it reads none of them.
     """
-    if fmt == "pdf":
-        parish = (
-            SystemConfiguration.objects.select_related("active_configuration__parish")
-            .get()
-            .active_configuration.parish
-        )
-        campaign = Campaign.objects.select_related("active_configuration").get(
-            pk=campaign_id
-        )
-        with dates.using(parish.date_format):
-            return census_pdf(
-                result,
-                zone,
-                parish=parish.name,
-                campaign=campaign.active_configuration.name,
-                as_of=database_now(),
-            )
+    if fmt == "csv":
+        return census_csv(result, zone)
+    parish = (
+        SystemConfiguration.objects.select_related("active_configuration__parish")
+        .get()
+        .active_configuration.parish
+    )
+    campaign = Campaign.objects.select_related("active_configuration").get(
+        pk=campaign_id
+    )
+    context = {
+        "parish": parish.name,
+        "campaign": campaign.active_configuration.name,
+        "as_of": database_now(),
+    }
     if fmt == "xlsx":
-        return census_xlsx(result, zone)
-    return census_csv(result, zone)
+        return census_xlsx(result, zone, **context)
+    with dates.using(parish.date_format):
+        return census_pdf(result, zone, **context)
 
 
 @page_download("census_changes")

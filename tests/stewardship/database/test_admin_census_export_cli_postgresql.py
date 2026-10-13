@@ -12,13 +12,19 @@ import csv
 import hashlib
 import io
 import json
+from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 from openpyxl import load_workbook
 
 from parishkit.stewardship.accounts import sessions
 from parishkit.stewardship.audit.models import AuditEvent
-from parishkit.stewardship.reports import census_change_views, export_services
+from parishkit.stewardship.reports import (
+    census_change_views,
+    census_changes,
+    export_services,
+)
 from parishkit.stewardship.responses.models import ProposedChange
 
 from .auth_builders import signed_in
@@ -42,13 +48,33 @@ def export(run, *argv, secret=None):
     return stream(None, "export", "census", *argv, secret=secret or run.secret)
 
 
+def workbook(body):
+    """An XLSX file's sheets (rows of values, by title) and its properties."""
+    book = load_workbook(io.BytesIO(body))
+    sheets = {
+        sheet.title: [list(values) for values in sheet.iter_rows(values_only=True)]
+        for sheet in book.worksheets
+    }
+    return sheets, book.properties
+
+
+def created_at_download(properties, information, zone):
+    """Whether Created is the sheet's Downloaded at (stored without a zone)."""
+    downloaded = dict(information)["Downloaded at"]
+    assert isinstance(downloaded, datetime)
+    instant = downloaded.replace(tzinfo=ZoneInfo(zone)).astimezone(UTC)
+    # Excel stores the cell to the millisecond; the property to the second.
+    return abs(instant.replace(tzinfo=None) - properties.created) < timedelta(seconds=1)
+
+
 def lines(body):
     """A JSON Lines file, one record per line."""
     return [json.loads(line) for line in body.decode().splitlines()]
 
 
 def test_the_page_s_files_and_json_lines(response_service, google, cli):  # noqa: F811
-    """CSV is the page's download; XLSX holds the same table; PDF is a PDF;
+    """CSV is the page's download; XLSX holds the same table and is the
+    page's, cell for cell but for its download time; PDF is a PDF;
     JSON Lines adds each change's id, version and actions. Each records the
     page's event with the rows in the file."""
     harness = submitted(response_service)
@@ -87,13 +113,50 @@ def test_the_page_s_files_and_json_lines(response_service, google, cli):  # noqa
 
     code, body, document = export(run, *argv, "--format", "xlsx")
     assert code == 0, document
+    command_book, command_properties = workbook(body)
     sheet = [
         ["" if value is None else value for value in values]
-        for values in load_workbook(io.BytesIO(body))["Census changes"].iter_rows(
-            values_only=True
-        )
+        for values in command_book["Census changes"]
     ]
     assert sheet == table
+    # The page's XLSX is the command's, sheet for sheet, cell for cell and
+    # property for property, but for the moment each was downloaded (#926).
+    response, page_body = search(browser, ROUTE, form | {"format": "xlsx"})
+    assert response.status_code == 200
+    page_book, page_properties = workbook(page_body)
+    sheets = ["Census changes", "Report information"]
+    assert list(page_book) == list(command_book) == sheets
+    assert page_book["Census changes"] == command_book["Census changes"]
+    assert page_properties.title == command_properties.title == "Census changes"
+    assert page_properties.creator == command_properties.creator
+    page_information = page_book["Report information"]
+    command_information = command_book["Report information"]
+    for properties, information in (
+        (page_properties, page_information),
+        (command_properties, command_information),
+    ):
+        assert created_at_download(properties, information, "America/New_York")
+    # Row by row in order; only the Downloaded at row (the fourth) differs,
+    # and the command downloaded first.
+    assert [row[0] for row in page_information] == [
+        row[0] for row in command_information
+    ]
+    downloaded = 3
+    assert command_information[downloaded][0] == "Downloaded at"
+    assert command_information[downloaded][1] <= page_information[downloaded][1]
+    del page_information[downloaded], command_information[downloaded]
+    assert (
+        page_information
+        == command_information
+        == [
+            ["Report", "Census changes"],
+            ["Parish", "Example Parish"],
+            ["Campaign", "Annual campaign"],
+            ["Display time zone", "America/New_York"],
+            ["Changes in this file", "2"],
+            ["Privacy", census_changes.PRIVACY],
+        ]
+    )
     code, body, document = export(run, *argv, "--format", "pdf")
     assert code == 0 and body.startswith(b"%PDF-"), document
     assert document["result"]["content_type"] == "application/pdf"
