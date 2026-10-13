@@ -42,7 +42,8 @@ export`` (PR 8a, in ``admin_reports``), the export lifecycle (PR 8b, in
 ``admin_exports``), the aggregate report reads (PR 8c, in
 ``admin_report_reads``), the digests (PR 8d, in ``admin_digests``), the
 Family-level exports (PR 8e, in ``admin_family_exports``), the Family
-portal maintenance switch (PR 7a, in ``admin_portal``), ``report
+portal maintenance switch (PR 7a, in ``admin_portal``), ``send
+controls`` (PR 7b, in ``admin_delivery_control``), ``report
 source-form`` (in ``admin_source_form``), ``report data-to-fix`` (in
 ``admin_data_to_fix``), ``files list``, ``files
 delete`` and ``files rename`` (PR 10, in ``admin_hosted_files``),
@@ -747,6 +748,13 @@ def send_progress(args, preamble, runtime, context):
     from .admin_reads import read_send_progress
 
     return read_send_progress(context["caller"], runtime, audit=context["audit"])
+
+
+def send_controls(args, preamble, runtime, context):
+    """The Pause and resume mail page's status of the current campaign (PR 7b)."""
+    from .admin_delivery_control import read_controls
+
+    return read_controls(context["caller"], runtime)
 
 
 def system_health(args, preamble, runtime, context):
@@ -3594,7 +3602,14 @@ def _test_specs():
 
 
 def _portal_specs():
-    """The Family portal maintenance switch (PR 7a, ``admin_portal``)."""
+    """The Family portal maintenance switch (PR 7a, ``admin_portal``).
+
+    With the Pause and resume mail page's read (PR 7b,
+    ``admin_delivery_control``): like ``portal maintenance show``, any
+    session runs it and it records nothing, as the page's GET records
+    nothing. The pause, resume and resolution commands come later in PR 7b.
+    """
+    from .admin_delivery_control import DeliveryControls
     from .admin_portal import MaintenanceStatus
 
     return (
@@ -3619,6 +3634,16 @@ def _portal_specs():
             options=(_portal_maintenance_set_options,),
             fresh_gated=True,
             prompts=True,
+        ),
+        CommandSpec(
+            "send controls",
+            "Show whether live mail is paused, and what is queued or held.",
+            send_controls,
+            "read_only",
+            False,
+            DeliveryControls.field_names(),
+            7,
+            audit_event=None,
         ),
     )
 

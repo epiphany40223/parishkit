@@ -630,7 +630,23 @@ prompt changes nothing; `yes` closes with the page's event, the command
 event, the fresh-gate event and notice; Families then see the maintenance
 page; the page and the command line reopen each other's change; a no-op
 `stale_version`; bad notes `invalid` before the prompt; read-only and ended
-sessions). 7b (pause, resume and closed-campaign resolution) follows.
+sessions). 7b (pause, resume and closed-campaign resolution) follows; its
+first part adds `send controls`, the Pause and resume mail page's read, in
+`parishkit.stewardship.admin_delivery_control`, through the page's status
+(moved into `delivery_control_commands.controls`, which the page now calls),
+with no schema change; proven by
+`tests/stewardship/test_admin_delivery_control.py` (the golden document and
+its member allowlist, the catalog entry, the ledger, usage errors),
+`tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py`,
+`tests/stewardship/database/test_admin_delivery_control_cli_postgresql.py`
+(a Testing draft's read with no control available, a scheduled Production
+campaign's read equal to the page's status before and after a pause that
+holds a queued email, its recovery counts against the page's SQL reads, a
+paused, closed campaign's resolution choices with held receipts and weekly
+reports, no event, no current campaign `not_available`, a Staff reader
+denied, an ended session) and the unchanged
+`test_delivery_control_postgresql.py`.
 ADM-11.11 lands in parts. The first adds `files list`, the Hosted files
 page's library, in `parishkit.stewardship.admin_hosted_files`, through the
 page's own capability, order and row builder, with no schema change;
