@@ -302,10 +302,11 @@ LEDGER = {
     "campaign_root": permanent(GROUP_ROOT),
     "mail_root": permanent(GROUP_ROOT),
     "parish_root": permanent(GROUP_ROOT),
-    # Take a backup now posts to the page; ``system backup-now`` is its
-    # command (the request's guard admits a full-scope automation session
-    # as the fresh sign-in), and ``system health`` shows its progress.
-    "system_health": command("system health", "system backup-now"),
+    # Take a backup now and Turn off debug logging post to the page;
+    # ``system backup-now`` and ``system debug-off`` are their commands (each
+    # row's guard admits a full-scope automation session as the fresh
+    # sign-in), and ``system health`` shows their progress.
+    "system_health": command("system health", "system backup-now", "system debug-off"),
     "system_health_status": command("system health"),
     # Families the form cannot open (#774): counts and DUIDs only.
     "source_form": command("report source-form"),

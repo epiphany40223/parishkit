@@ -17,7 +17,8 @@ a name, an address, a reason someone typed or a translated label), which the
 ``system health`` command will print. The page renders the same model in
 words. The actions (take a backup now, clear a halt, accept a large change,
 turn off debug logging) come with ADM-13 PR 3 to PR 6, each with its own
-service function here.
+service function here; Take a backup now (PR 3) and Turn off debug logging
+(PR 6b) have landed, and share ``_record_fresh``.
 
 Pure helpers (``group_processes``, ``find_problems``) take every input as an
 argument, so they are unit tested without a database.
@@ -472,6 +473,8 @@ class SystemHealth(ReadModel):
     backup has finished; ``backup_bytes`` and ``backup_version`` are the
     newest backup's size and the version that took it, and
     ``backup_request`` the newest Take a backup now request (ADM-13 PR 3).
+    ``debug_switch`` is the newest debug-off switch (ADM-13 PR 6), or None
+    when none was ever set; who set it is the page's alone (``read_health``).
     ``delivery_paused`` is Production's live delivery pause; ``send_active``
     and ``planning_held`` come from Family email progress. ``daily_sent`` is
     the 24-hour recipient count the mail senders compare with the daily
@@ -507,6 +510,7 @@ class SystemHealth(ReadModel):
     backup_version: str | None
     backup_request: object
     offsite: object
+    debug_switch: object
 
     def to_document(self):
         """The defined projection: states, counts and instants only.
@@ -536,7 +540,7 @@ class SystemHealth(ReadModel):
                     {"kind": kind, "since": since}
                     for kind, since in sorted(value.items())
                 ]
-            elif item.name == "backup_request":
+            elif item.name in {"backup_request", "debug_switch"}:
                 value = None if value is None else _members(value)
             elif item.name == "problems":
                 value = [
@@ -859,6 +863,51 @@ def _backup_request(now):
     return BackupRequestStatus(status=request_status(row, now), **row)
 
 
+@dataclass(frozen=True)
+class DebugSwitchStatus:
+    """The newest debug-off switch (ADM-13 PR 6, #530): when it was set, and
+    when and by whom (``operator`` or ``administrator``) it was cleared.
+
+    Who set it is not part of the read model's document: the page shows the
+    Administrator's address from ``read_health``'s page values.
+    """
+
+    set_at: datetime
+    cleared_at: datetime | None
+    cleared_by: str | None
+
+    @property
+    def active(self):
+        """Whether the switch is set now (not yet cleared)."""
+        return self.cleared_at is None
+
+
+def _debug_switch():
+    """The newest debug-off switch and the address of who set it.
+
+    ``(None, None)`` when no switch was ever set. The address is read only
+    while the switch is set, the only time the page names who set it.
+    """
+    from .accounts.policy_models import PortalUser
+    from .jobs.debug_switch_models import DebugOffSwitch
+
+    row = (
+        DebugOffSwitch.objects.order_by("-set_at", "-id")
+        .values("set_at", "cleared_at", "cleared_by", "actor_id")
+        .first()
+    )
+    if row is None:
+        return None, None
+    actor_id = row.pop("actor_id")
+    status = DebugSwitchStatus(**row)
+    if not status.active:
+        return status, None
+    actor = (
+        PortalUser.objects.filter(pk=actor_id).values_list("email", flat=True).first()
+    )
+    return status, actor
+
+
 def _offsite(configuration):
     """The off-site copy status Home shows, or None when copies are not set up."""
     from .accounts.backup_destination import offsite_status
@@ -936,10 +985,10 @@ def read_health(store):
     """Read the System health model in one read-only snapshot.
 
     Returns ``(model, page)``, where ``page`` holds what only the page shows
-    (the current campaign's identifier for its links, and who paused
-    delivery and why), or None while a restore is under review, when the
-    page is withheld. The caller authorizes the reader before and after
-    (the page's views).
+    (the current campaign's identifier for its links, who paused delivery
+    and why, and who set the debug-off switch), or None while a restore is
+    under review, when the page is withheld. The caller authorizes the
+    reader before and after (the page's views).
     """
     from .accounts.configuration_installation import coherent_configuration
     from .accounts.sessions import database_now
@@ -981,10 +1030,12 @@ def read_health(store):
         production = configuration.mode == "production"
         paused = bool(production and campaign and campaign.delivery_paused)
         offsite = _offsite(configuration)
+        debug_switch, debug_actor = _debug_switch()
         page = {
             "campaign_id": None if campaign is None else campaign.pk,
             "pause": _pause(campaign) if paused else None,
             "workgroup_missing": _workgroup_missing(campaign),
+            "debug_actor": debug_actor,
         }
     model = SystemHealth(
         checked_at=now,
@@ -1024,6 +1075,7 @@ def read_health(store):
         backup_version=backup_version,
         backup_request=backup_request,
         offsite=offsite,
+        debug_switch=debug_switch,
     )
     return model, page
 
@@ -1104,14 +1156,22 @@ def preview_backup(caller, store):
         )
 
 
-class BackupRequestRefused(PermissionError):
-    """The database refused a backup request for a reason other than a stale
-    sign-in (a missing grant, another login): the reader is told plainly,
-    and the System logs record why. The step-up would not help."""
+class ActionRefused(PermissionError):
+    """The database refused a System health action for a reason other than a
+    stale sign-in (a missing grant, another login): the reader is told
+    plainly, and the System logs record why. The step-up would not help."""
 
 
-# The guard's words for a sign-in outside the fresh window (0062): the only
-# permission refusal a "Confirm it's you" step-up can resolve.
+class BackupRequestRefused(ActionRefused):
+    """The database refused a backup request (see ``ActionRefused``)."""
+
+
+class DebugOffRefused(ActionRefused):
+    """The database refused to set the debug-off switch (see ``ActionRefused``)."""
+
+
+# The guards' words for a sign-in outside the fresh window (0062, 0078): the
+# only permission refusal a "Confirm it's you" step-up can resolve.
 FRESH_REFUSAL = "requires fresh Administrator authentication"
 
 
@@ -1124,30 +1184,44 @@ def _admit_requester(caller, store):
     if not (
         allows(actor, Capability.SYSTEM_LOGS) and allows(actor, Capability.CONFIGURE)
     ):
-        raise PermissionError("Take a backup now requires an Administrator.")
+        raise PermissionError("System health's actions require an Administrator.")
     return actor
 
 
-def request_backup(caller, store, *, key, command=False):
-    """Record one Take a backup now request; return ``(row, created)``.
+@dataclass(frozen=True)
+class _FreshRow:
+    """What differs between the fresh-gated actions ``_record_fresh`` records:
+    the row's model, its audit events (the page's and the command's) and
+    the words of each refusal."""
 
-    The fresh sign-in check runs inside the request's transaction, so an
-    automation session's gate (``sessions.require_fresh``, which locks the
-    session row and records its gate event) commits or rolls back with the
-    request. The request's guard checks again, in the same transaction,
-    that the sign-in is fresh (or a live full-scope automation session's),
-    that no other request is live and that no restore is under review. A
-    repeated confirmation with the same ``key`` returns the first request
-    (``created`` false). The audit event ``backup_requested`` is recorded
-    with the request, and from the command line (``command``) also
-    ``admin_cmd_system_backup_now`` naming the automation session.
+    model: object
+    action: object
+    command_action: object
+    other_actor: str
+    busy: str
+    refused: type
+
+
+def _record_fresh(caller, store, kind, *, key, command):
+    """Record one fresh-gated action row; return ``(row, created)``.
+
+    Shared by Take a backup now and Turn off debug logging, whose rows'
+    SQL guards make the same checks. The fresh sign-in check runs inside
+    the row's transaction, so an automation session's gate
+    (``sessions.require_fresh``, which locks the session row and records its
+    gate event) commits or rolls back with the row. The guard checks again,
+    in the same transaction, that the sign-in is fresh (or a live full-scope
+    automation session's) and its own one-at-a-time rule. A repeated
+    confirmation with the same ``key`` returns the first row (``created``
+    false). ``kind.action`` is recorded with the row as its subject, and
+    from the command line (``command``) also ``kind.command_action`` naming
+    the automation session.
     """
     from django.db import DatabaseError, IntegrityError, transaction
 
     from .accounts.sessions import FreshAuthenticationRequired, require_fresh
-    from .audit.schemas import Action, ActorKind, Outcome
+    from .audit.schemas import ActorKind, Outcome
     from .audit.services import record_action
-    from .jobs.backup_models import BackupRequest
     from .observability import emit_failure
     from .storage import StaleRecordError
 
@@ -1155,12 +1229,10 @@ def request_backup(caller, store, *, key, command=False):
     session = caller.portal_session
 
     def first():
-        """The request already recorded with this key, or None."""
-        previous = BackupRequest.objects.filter(pk=key).first()
+        """The row already recorded with this key, or None."""
+        previous = kind.model.objects.filter(pk=key).first()
         if previous is not None and previous.actor_id != actor.identity:
-            raise PermissionError(
-                "This backup request was made by another Administrator."
-            )
+            raise PermissionError(kind.other_actor)
         return previous
 
     try:
@@ -1169,14 +1241,14 @@ def request_backup(caller, store, *, key, command=False):
             if previous is not None:
                 return previous, False
             fresh = require_fresh(caller)
-            row = BackupRequest.objects.create(
+            row = kind.model.objects.create(
                 id=key,
                 actor_id=actor.identity,
                 session_id=session.pk,
                 authenticated_at=fresh,
             )
             record_action(
-                Action.BACKUP_REQUESTED,
+                kind.action,
                 actor_kind=ActorKind.PORTAL_USER,
                 actor_id=actor.identity,
                 subject_id=row.pk,
@@ -1184,7 +1256,7 @@ def request_backup(caller, store, *, key, command=False):
             )
             if command:
                 record_action(
-                    Action.ADMIN_CMD_SYSTEM_BACKUP_NOW,
+                    kind.command_action,
                     actor_kind=ActorKind.PORTAL_USER,
                     actor_id=actor.identity,
                     subject_id=caller.automation_session_id,
@@ -1193,14 +1265,12 @@ def request_backup(caller, store, *, key, command=False):
             return row, True
     except IntegrityError as error:
         # A simultaneous second click with the same key lost the race: it
-        # returns the first request. Otherwise the guard's one-at-a-time or
-        # restore-review refusal.
+        # returns the first row. Otherwise the guard's one-at-a-time (or,
+        # for a backup, restore-review) refusal.
         previous = first()
         if previous is not None:
             return previous, False
-        raise StaleRecordError(
-            "A backup request is already waiting or running."
-        ) from error
+        raise StaleRecordError(kind.busy) from error
     except DatabaseError as error:
         if getattr(error.__cause__, "sqlstate", None) != "42501":
             raise
@@ -1212,9 +1282,35 @@ def request_backup(caller, store, *, key, command=False):
         # Any other permission refusal (a missing grant, the wrong login)
         # is not the reader's to fix by signing in again: log it and say so.
         emit_failure(error)
-        raise BackupRequestRefused(
-            "The server refused this backup request; the System logs say why."
+        raise kind.refused(
+            "The server refused this action; the System logs say why."
         ) from error
+
+
+def _backup_kind():
+    """Take a backup now's row, events and refusals, for ``_record_fresh``."""
+    from .audit.schemas import Action
+    from .jobs.backup_models import BackupRequest
+
+    return _FreshRow(
+        model=BackupRequest,
+        action=Action.BACKUP_REQUESTED,
+        command_action=Action.ADMIN_CMD_SYSTEM_BACKUP_NOW,
+        other_actor="This backup request was made by another Administrator.",
+        busy="A backup request is already waiting or running.",
+        refused=BackupRequestRefused,
+    )
+
+
+def request_backup(caller, store, *, key, command=False):
+    """Record one Take a backup now request; return ``(row, created)``.
+
+    ``_record_fresh`` checks the fresh sign-in in the request's transaction
+    and records ``backup_requested`` (and, from the command line
+    (``command``), ``admin_cmd_system_backup_now``). The request's guard
+    also refuses one while another is live or a restore is under review.
+    """
+    return _record_fresh(caller, store, _backup_kind(), key=key, command=command)
 
 
 @dataclass(frozen=True)
@@ -1325,4 +1421,173 @@ def backup_now(caller, service, *, key, context):
         created=created,
         status=status,
         created_at=plain(row.created_at),
+    )
+
+
+# ------------------------------------------------- turn off debug logging
+
+
+@dataclass(frozen=True)
+class DebugOffPreview:
+    """What Turn off debug logging's preview states before the Administrator
+    confirms (ADM-13 PR 6b).
+
+    ``key`` becomes the switch's identity, so a repeated confirmation
+    returns the first switch instead of being refused as already set.
+    ``processes`` names the running processes with debug logging in effect.
+    """
+
+    key: object
+    processes: tuple
+
+
+def _debug_processes():
+    """The running processes with debug logging in effect, in page order."""
+    from .accounts.sessions import database_now
+
+    processes, _ = _processes(_facts().rows, database_now())
+    return tuple(line for line in processes if line.running and line.debug_logging)
+
+
+def _switch_set():
+    """Whether a debug-off switch is set now."""
+    from .jobs.debug_switch_models import DebugOffSwitch
+
+    return DebugOffSwitch.objects.filter(cleared_at__isnull=True).exists()
+
+
+# The words of the refusal while a switch is set, from the page and the
+# command line alike.
+SWITCH_SET = "The debug-off switch is already set."
+
+
+def preview_debug_off(caller, store):
+    """Turn off debug logging's preview, for a freshly signed-in Administrator.
+
+    Refused (``StaleRecordError``) while the switch is set. Reads only what
+    the page reads; changes nothing. Offered in Testing and Production
+    alike (System health decision 3).
+    """
+    from uuid import uuid4
+
+    from .campaigns.work_locks import read_transaction
+    from .storage import StaleRecordError
+
+    _admit_action(caller, store)
+    with read_transaction():
+        if _switch_set():
+            raise StaleRecordError(SWITCH_SET)
+        return DebugOffPreview(
+            key=uuid4(), processes=tuple(line.label for line in _debug_processes())
+        )
+
+
+def _debug_kind():
+    """Turn off debug logging's row, events and refusals, for ``_record_fresh``."""
+    from .audit.schemas import Action
+    from .jobs.debug_switch_models import DebugOffSwitch
+
+    return _FreshRow(
+        model=DebugOffSwitch,
+        action=Action.DEBUG_LOGGING_TURNED_OFF,
+        command_action=Action.ADMIN_CMD_SYSTEM_DEBUG_OFF,
+        other_actor="This debug-off switch was set by another Administrator.",
+        busy=SWITCH_SET,
+        refused=DebugOffRefused,
+    )
+
+
+def turn_off_debug(caller, store, *, key, command=False):
+    """Set the debug-off switch; return ``(row, created)``.
+
+    ``_record_fresh`` checks the fresh sign-in in the switch's transaction
+    and records ``debug_logging_turned_off`` (and, from the command line
+    (``command``), ``admin_cmd_system_debug_off``). The switch's guard
+    (0078) also refuses one while another is set. Every process that
+    reaches the database then turns its own debug logging off
+    (``debug_switch``) on its next connection or status record.
+    """
+    return _record_fresh(caller, store, _debug_kind(), key=key, command=command)
+
+
+@dataclass(frozen=True)
+class DebugOff(ReadModel):
+    """``system debug-off``'s result: the switch it set (or the one an
+    earlier run with the same ``--request-key`` set).
+
+    ``created`` is false for a repeat; ``active`` is whether that switch is
+    still set (a repeat after the server operator cleared it says false).
+    """
+
+    switch_id: object
+    created: bool
+    set_at: str | None
+    active: bool
+
+
+def debug_off_preview_lines(store, *, key=None):
+    """What Turn off debug logging's preview says, as plain lines for the
+    command line's confirmation prompt. Refuses (``StaleRecordError``) as
+    the page's preview does. A repeat (a switch already set with ``key``)
+    needs no preview: it returns None, and ``turn_off_debug`` returns that
+    first switch."""
+    from .campaigns.work_locks import read_transaction
+    from .jobs.debug_switch_models import DebugOffSwitch
+    from .storage import StaleRecordError
+
+    with read_transaction():
+        if key is not None and DebugOffSwitch.objects.filter(pk=key).exists():
+            return None
+        if _switch_set():
+            raise StaleRecordError(SWITCH_SET)
+        processes = _debug_processes()
+    lines = [
+        "Turn debug logging off in every service now, until the server "
+        "operator clears the debug-off switch."
+    ]
+    if processes:
+        names = ", ".join(line.label for line in processes)
+        lines.append(f"Debug logging is on in: {names}.")
+    else:
+        lines.append("No service reports debug logging right now.")
+    lines += [
+        "Lines already written stay in the logs, and so do lines a service "
+        "writes when it starts, before it first reads the switch.",
+        "The setting on the server still says on until the server operator "
+        "recreates the services without it.",
+        "Only the server operator can clear the switch, offline, with "
+        "pk-stewardship debug-off-clear.",
+    ]
+    return tuple(lines)
+
+
+def debug_off(caller, service, *, key, context):
+    """``system debug-off``: Turn off debug logging, as System health's button.
+
+    The command has already shown ``debug_off_preview_lines`` and had them
+    confirmed. ``turn_off_debug`` checks the fresh sign-in (a full-scope
+    automation session's, which the switch's guard accepts too) inside the
+    switch's transaction and records ``debug_logging_turned_off`` with the
+    command's own ``admin_cmd_system_debug_off``. ``key`` (the command's
+    ``--request-key``) is the switch's identity, so a repeat returns the
+    first switch. ``context["committed"]`` is set once it may have
+    committed (exit 6 then).
+    """
+    from django.db import DatabaseError
+
+    from .observability import _guard_refusal
+
+    try:
+        row, created = turn_off_debug(caller, service.store, key=key, command=True)
+    except DatabaseError as error:
+        # A failure at the commit itself may have committed.
+        if not _guard_refusal(error):
+            context["committed"] = True
+        raise
+    context["committed"] = True
+    return DebugOff(
+        switch_id=row.pk,
+        created=created,
+        set_at=plain(row.set_at),
+        active=row.cleared_at is None,
     )

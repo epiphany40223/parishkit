@@ -94,6 +94,11 @@ still the design record for preparation and disposal),
    since debug logs can hold Families' personal data and the validation
    deployment tool turns it on by default
    ([deployment runbook](stewardship-deployment-runbook.md#pre-launch-fast-deploys)).
+   An Administrator sees it first on System health: its Debug logging panel
+   lists every service that has it on, and **Turn off debug logging** turns
+   it off in all of them within about a minute, without a restart
+   ([deployment runbook](stewardship-deployment-runbook.md#turn-off-debug-logging-530)).
+   That leaves the setting on the server, so still remove it here.
    Check again whenever a container is recreated later:
 
    ```sh

@@ -405,8 +405,12 @@ def debug_off_clear_command(configuration):
     form again. Run with every online service stopped (the offline lease),
     then start them again. The clear runs only through
     ``stewardship_debug_off_clear_v1()``, which only this login may execute,
-    and records ``cleared_by`` "operator" on the switch. Prints whether a set
-    switch was cleared; clearing when none is set changes nothing.
+    and records ``cleared_by`` "operator" on the switch. In the same
+    transaction it records ``debug_logging_allowed`` with actor kind
+    ``operator``, as ``revoke-automation-sessions`` records its endings; the
+    event names no subject, because this login cannot read the switch it
+    cleared. Prints whether a set switch was cleared; clearing when none is
+    set changes nothing and records nothing.
     """
     if admit_offline_service(configuration) is not ServiceRole.ADMIN_RECOVERY:
         raise ConfigError(
@@ -414,14 +418,16 @@ def debug_off_clear_command(configuration):
         )
     with StartupLease(RuntimeLayout(configuration).interlock, offline=True):
         configure_operator_database(configuration)
-        from django.db import connection
+        from django.db import connection, transaction
 
+        from .audit.schemas import Action, Outcome
+        from .audit.services import record_operator_action
         from .runtime_database import admit_offline_database
         from .runtime_grants import DEBUG_OFF_CLEAR_FUNCTION
 
         try:
             admit_offline_database(configuration)
-            with connection.cursor() as cursor:
+            with transaction.atomic(), connection.cursor() as cursor:
                 # Admission keeps admin recovery's definers optional, so it
                 # works before database-grants; this one is required here.
                 cursor.execute(
@@ -436,6 +442,12 @@ def debug_off_clear_command(configuration):
                     )
                 cursor.execute(f"SELECT public.{DEBUG_OFF_CLEAR_FUNCTION}")
                 cleared = cursor.fetchone()[0]
+                if cleared:
+                    record_operator_action(
+                        Action.DEBUG_LOGGING_ALLOWED,
+                        correlation_id=uuid4(),
+                        context={"outcome": Outcome.SUCCEEDED},
+                    )
         finally:
             connection.close()
     return {"debug_off_cleared": cleared > 0}

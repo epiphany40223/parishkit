@@ -412,14 +412,16 @@ of 2026-10-04 are recorded in the specification.
    `debug-off-clear` operator command, **Allow debug logging again**
    (`system_debug_allow`, Testing only, refused in Production by its SQL
    guard), the banner's end condition, and the Production activation and
-   deployment runbook updates. Security-focused review. It lands in two
+   deployment runbook updates. Security-focused review. It lands in
    parts (plan posted on #530): **6a** the switch record and its guard,
    the read and clear definers (frozen migration 0078), the in-process
    override and children's environment, and `debug-off-clear`; **6b** the
-   web's grants, the button with its preview, fresh sign-in, audit event
-   and command or pending exemption, Allow debug logging again, the
-   panel's who-and-when line, the banner's end condition and the runbook
-   updates.
+   web's grants (no migration: grants are `database-grants`'), the button
+   with its preview, fresh sign-in, audit event and `system debug-off`,
+   the operator clear's `debug_logging_allowed` event, the panel's
+   who-and-when line and the runbook updates; **6c** Allow debug logging
+   again (Testing only; its guard change needs its own migration) and the
+   banner's end condition (every service, not only the web process).
 
 PR 3 to PR 6 each add their command or its pending exemption.
 

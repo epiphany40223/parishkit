@@ -1230,6 +1230,18 @@ the offline `pk-stewardship debug-off-clear` command, checked by
 `tests/stewardship/test_debug_switch.py`,
 `tests/stewardship/database/test_debug_off_switch_postgresql.py`, the
 runtime-function tests, the users swap tests and the regenerated schema
-baseline. Part 6b (the button, its preview and audit, Allow debug logging
-again in Testing, the panel's who-and-when line, the banner's end condition
-and the runbook updates) remains.
+baseline. Part 6b adds the web's insert and read grants on the switch (a
+`database-grants` change, registered in the users swap's closure tables),
+Turn off debug logging on System health (drawn while a service has debug
+logging in effect: a preview, the fresh sign-in step-up, the
+`debug_logging_turned_off` audit event naming the switch, the greyed
+button with who set it and when, kept current by the page's poll, answered
+in place), `pk-admin system debug-off`, the operator clear's
+`debug_logging_allowed` event (actor kind `operator`, in the clear's
+transaction), the panel's who-and-when line and the deployment and launch
+runbook updates, checked by
+`tests/stewardship/database/test_debug_off_now_postgresql.py`,
+`tests/stewardship/database/test_debug_off_switch_postgresql.py`,
+`tests/stewardship/test_system_health.py` and
+`tests/stewardship/browser/test_system_health.py`. Part 6c (Allow debug
+logging again in Testing, and the banner's end condition) remains.

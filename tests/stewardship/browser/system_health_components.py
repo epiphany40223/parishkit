@@ -12,6 +12,8 @@ from parishkit.stewardship.source.refresh_status import FullRefreshStatus
 from parishkit.stewardship.system_health import (
     BackupPreview,
     BackupRequestStatus,
+    DebugOffPreview,
+    DebugSwitchStatus,
     DropCount,
     SystemHealth,
     find_problems,
@@ -37,6 +39,15 @@ BACKUP_PREVIEW = "/system-health-backup-preview"
 BACKUP_REQUESTED = "/system-health-backup-requested"
 BACKUP_STEP_UP = "/system-health-backup-step-up"
 BACKUP_BUSY = "/system-health-backup-busy"
+# Turn off debug logging (ADM-13 PR 6b): a page whose web portal reports
+# debug logging, and the answers its steps get. The browser test serves the
+# page at the real address (BACKUP_PAGE) by routing, as the POSTs are.
+DEBUG_PAGE = "/system-health-debug"
+# The next poll: another Administrator has set the switch.
+DEBUG_STATUS = "/system-health-debug/status"
+DEBUG_PREVIEW = "/system-health-debug-preview"
+DEBUG_SET = "/system-health-debug-set"
+DEBUG_STEP_UP = "/system-health-debug-step-up"
 # A healthy page whose next poll changes only a time's datetime attribute.
 DATED = "/system-health-dated"
 DATED_STATUS = "/system-health-dated/status"
@@ -59,11 +70,15 @@ def _row(now, service, process="main", *, age=0, **values):
     } | values
 
 
-def health(now, *, troubled, backup_at=None, waiting=False):
-    """A deployment with several problems, or a healthy one."""
+def health(now, *, troubled, backup_at=None, waiting=False, debug=False, switch=False):
+    """A deployment with several problems, or a healthy one.
+
+    ``debug``: the web portal reports debug logging in effect; ``switch``:
+    the debug-off switch is set (ADM-13 PR 6b).
+    """
     rows = [
-        _row(now, "web"),
-        _row(now, "web"),
+        _row(now, "web", debug_logging=debug),
+        _row(now, "web", debug_logging=debug),
         _row(now, "worker"),
         _row(now, "worker", "source"),
         _row(now, "scheduler", age=600 if troubled else 0),
@@ -144,6 +159,11 @@ def health(now, *, troubled, backup_at=None, waiting=False):
         if troubled or waiting
         else None,
         offsite=None,
+        debug_switch=DebugSwitchStatus(
+            set_at=now - timedelta(minutes=2), cleared_at=None, cleared_by=None
+        )
+        if switch
+        else None,
     )
 
 
@@ -166,15 +186,23 @@ def components(context, admin):
         ],
     }
 
-    def values(troubled, backup_at=None, waiting=False, **extra):
+    def values(
+        troubled, backup_at=None, waiting=False, debug=False, switch=False, **extra
+    ):
         """Template context the view would build."""
         return (
             context
             | {
                 "admin_chrome": chrome,
                 "health": health(
-                    now, troubled=troubled, backup_at=backup_at, waiting=waiting
+                    now,
+                    troubled=troubled,
+                    backup_at=backup_at,
+                    waiting=waiting,
+                    debug=debug,
+                    switch=switch,
                 ),
+                "debug_actor": "other@example.org" if switch else None,
                 "campaign_id": None,
                 "pause": {"actor": "admin@example.org", "reason": "Checking a typo"}
                 if troubled
@@ -287,6 +315,67 @@ def components(context, admin):
                         "requested": SimpleNamespace(created_at=now),
                         "created": True,
                     },
+                ),
+            ),
+        ),
+        DEBUG_PAGE: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(False, debug=True, status_url=DEBUG_STATUS),
+            ),
+        ),
+        DEBUG_STATUS: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health-status.html",
+                values(False, debug=True, switch=True),
+            ),
+        ),
+        DEBUG_PREVIEW: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(
+                    False,
+                    debug=True,
+                    status_url=DEBUG_STATUS,
+                    debug_off={
+                        "preview": DebugOffPreview(
+                            key=UUID(int=530), processes=("Web portal",)
+                        )
+                    },
+                    debug_off_shown=True,
+                ),
+            ),
+        ),
+        DEBUG_SET: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(
+                    False,
+                    debug=True,
+                    switch=True,
+                    status_url=DEBUG_STATUS,
+                    debug_off={
+                        "requested": SimpleNamespace(set_at=now),
+                        "created": True,
+                    },
+                    debug_off_shown=True,
+                ),
+            ),
+        ),
+        DEBUG_STEP_UP: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(
+                    False,
+                    debug=True,
+                    status_url=DEBUG_STATUS,
+                    debug_off={"refused": "reauthenticate"},
+                    debug_off_shown=True,
                 ),
             ),
         ),

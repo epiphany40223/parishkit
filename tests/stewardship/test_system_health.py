@@ -13,6 +13,8 @@ from django.template.loader import render_to_string
 from parishkit.stewardship.source.data_age import Connection
 from parishkit.stewardship.source.refresh_status import FullRefreshStatus
 from parishkit.stewardship.system_health import (
+    DebugOffPreview,
+    DebugSwitchStatus,
     DropCount,
     Problem,
     Subject,
@@ -221,6 +223,7 @@ def health(**values):
             "backup_version": "1.4.2",
             "backup_request": None,
             "offsite": None,
+            "debug_switch": None,
         }
         | values
     )
@@ -262,6 +265,14 @@ def test_the_document_holds_states_counts_and_instants_only():
     assert document["refresh"]["full_succeeded_at"] == NOW.isoformat()
     assert "Translated text" not in str(document)
     assert health().to_document()["offsite"] == {"state": "unset"}
+    assert health().to_document()["debug_switch"] is None
+    # The newest debug-off switch's times and who cleared it, never who set it.
+    switch = DebugSwitchStatus(set_at=NOW, cleared_at=None, cleared_by=None)
+    assert health(debug_switch=switch).to_document()["debug_switch"] == {
+        "set_at": NOW.isoformat(),
+        "cleared_at": None,
+        "cleared_by": None,
+    }
 
 
 def test_nothing_waiting_and_everything_working_read_plainly():
@@ -624,3 +635,98 @@ def test_a_requested_backup_reads_as_the_page_words_it():
         {"health": health(), "pause": None, "poll_interval": 10000},
     )
     assert "Its size is 3.0" in body and "taken by version 1.4.2" in body
+
+
+def debug_page(*, switch=None, debug=True, actor="admin@example.org", **values):
+    """Render the status region and the Turn off debug logging region together.
+
+    ``switch`` is the newest debug-off switch; ``debug`` whether the web
+    portal reports debug logging in effect. ``values`` are the view's
+    other context (a step's ``debug_off`` result).
+    """
+    processes = group_processes([row(debug_logging=debug)], NOW)
+    context = {
+        "health": health(processes=processes, debug_switch=switch),
+        "pause": None,
+        "debug_actor": actor if switch is not None and switch.active else None,
+        "poll_interval": 10000,
+    } | values
+    return render_to_string(
+        "stewardship/system-health-status.html", context
+    ) + render_to_string("stewardship/system-health-debug-off.html", context)
+
+
+def test_turn_off_debug_logging_is_offered_while_a_service_has_it_on():
+    """The button posts the preview step in place; help says who clears it."""
+    body = debug_page()
+    assert 'value="debug_off_preview"' in body
+    assert 'data-in-place="debug-off-preview"' in body
+    assert 'action="/admin/system/health/#debug-off"' in body
+    # The polled copy carries the same enabled button for the mirror.
+    assert '<template data-live-mirror="debug-off-button">' in body
+    assert "pk-stewardship debug-off-clear" in body
+    assert "those whose server setting is still on log in debug form again" in body
+    assert "Use Turn off debug logging on this page" in body
+
+
+def test_a_set_switch_greys_the_button_and_says_who_and_when():
+    """Who set it and when (browser-local), and that the setting still says on."""
+    switch = DebugSwitchStatus(set_at=NOW, cleared_at=None, cleared_by=None)
+    body = debug_page(switch=switch)
+    assert 'value="debug_off_preview"' not in body
+    assert 'disabled aria-describedby="debug-off-reason"' in body
+    assert "Debug logging was turned off by admin@example.org at" in body
+    assert f'<time datetime="{NOW.isoformat()}" data-local-instant>' in body
+    assert 'data-debug-switch="set"' in body
+    assert "The setting on the server still says “on”." in body
+    # Once no service reports debug logging, the button stays greyed with why.
+    quiet = debug_page(switch=switch, debug=False)
+    assert "Debug logging is off in every service that reports." in quiet
+    assert 'data-debug-switch="set"' in quiet
+    unset = debug_page(debug=False)
+    assert 'value="debug_off_preview"' not in unset
+    assert 'disabled aria-describedby="debug-off-reason"' in unset
+
+
+def test_a_cleared_switch_is_named_only_while_debug_logging_is_back():
+    """The operator's clear is stated while it matters, not forever."""
+    cleared = DebugSwitchStatus(
+        set_at=NOW - timedelta(hours=2), cleared_at=NOW, cleared_by="operator"
+    )
+    body = debug_page(switch=cleared)
+    assert "The server operator cleared the debug-off switch at" in body
+    assert 'value="debug_off_preview"' in body
+    assert "cleared the debug-off switch" not in debug_page(switch=cleared, debug=False)
+
+
+def test_the_preview_and_each_refusal_read_in_the_region():
+    """Preview, result and refusals are drawn inside #debug-off."""
+    preview = DebugOffPreview(key="k-1", processes=("the web portal",))
+    body = debug_page(debug_off={"preview": preview})
+    for words in (
+        "Debug logging is on in: the web portal.",
+        "Lines already written stay in the logs",
+        "still says “on” until the server operator recreates the services",
+        "Only the server operator can clear the switch.",
+        "Confirm: turn off debug logging",
+    ):
+        assert words in body, words
+    assert 'name="key" value="k-1"' in body
+    assert 'value="debug_off_confirm"' in body and 'value="debug_off_cancel"' in body
+    # The preview replaces the region's button, so a poll cannot discard it.
+    region = body[body.index('id="debug-off"') :]
+    assert "data-live-mirror-target" not in region
+    done = debug_page(
+        switch=DebugSwitchStatus(set_at=NOW, cleared_at=None, cleared_by=None),
+        debug_off={"requested": SimpleNamespace(set_at=NOW), "created": True},
+    )
+    assert "data-debug-off-set" in done and "Debug logging turned off at" in done
+    for refused, words in (
+        ("reauthenticate", "For your security, confirm it's you with Google"),
+        ("busy", "Debug logging has already been turned off"),
+        ("denied", "The server refused to turn off debug logging"),
+        ("invalid", "That request could not be read."),
+    ):
+        answer = debug_page(debug_off={"refused": refused})
+        assert f'data-debug-off-refused="{refused}"' in answer
+        assert words in answer, refused

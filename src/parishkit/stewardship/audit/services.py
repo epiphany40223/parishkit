@@ -58,6 +58,46 @@ def record_action(
     return event
 
 
+def record_operator_action(action, *, correlation_id, subject_id=None, context=None):
+    """Record an offline operator command's audit event with plain INSERTs.
+
+    For the admin-recovery login, which may insert audit rows but not read
+    them back, so ``record_action``'s model saves (which read the database's
+    defaults back) are refused. Like ``record_action`` it must run inside
+    the transaction of the effect it records, and its context is sanitized
+    the same way. The actor kind is ``operator`` and there is no actor.
+    """
+    import json
+    from uuid import uuid4
+
+    if not connection.in_atomic_block:
+        raise StorageInvariantError("Audited effects require their owning transaction.")
+    if not isinstance(action, Action):
+        raise ValueError("Audit requires a canonical action type.")
+    safe = sanitize(ContextKind.ACTION, {} if context is None else context)
+    event_id = uuid4()
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "INSERT INTO public.stewardship_audit_event "
+            "(id, actor_id, correlation_id, event_type, subject_id) "
+            "VALUES (%s, NULL, %s, %s, %s)",
+            [event_id, correlation_id, action.value, subject_id],
+        )
+        cursor.execute(
+            "INSERT INTO public.stewardship_audit_context "
+            "(id, actor_id, correlation_id, actor_kind, schema, context, event_id) "
+            "VALUES (%s, NULL, %s, %s, %s, %s, %s)",
+            [
+                uuid4(),
+                correlation_id,
+                ActorKind.OPERATOR.value,
+                ContextKind.ACTION.value,
+                json.dumps(safe),
+                event_id,
+            ],
+        )
+
+
 def audited_effect(action, *, authorize, operation, **evidence):
     """Run within the owner's locks; a stale principal or failed effect saves nothing.
 

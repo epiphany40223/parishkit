@@ -207,6 +207,24 @@ def test_recipient_evidence_writes_are_closed_across_all_installed_identities():
         runtime_grants(ServiceRole.TOKEN_KEY_ROTATION)
 
 
+def test_only_web_sets_and_reads_the_debug_off_switch():
+    """Turn off debug logging (ADM-13 PR 6b): web inserts and reads the
+    switch; no login may update or delete it (the operator's offline clear
+    runs through its definer), and no other login holds any grant on it."""
+    from parishkit.stewardship.runtime_grants import CLOSURE_TABLES
+
+    table = "stewardship_debug_off_switch"
+    for _, _, role, target in database_identities():
+        if role is ServiceRole.MIGRATION:
+            continue
+        grants, columns = runtime_grants(role, target=target)
+        expected = {"SELECT", "INSERT"} if role is ServiceRole.WEB else set()
+        assert grants.get(table, set()) == expected, role
+        assert table not in columns, role
+    # It follows the users swap, so its grants wait for its migration.
+    assert CLOSURE_TABLES[table] == ("stewardship_jobs", "0028_debug_off_switch")
+
+
 def test_config_installer_can_replace_boundaries_without_audit_or_family_reads():
     """Trigger-owned replacement is writable without broadening private reads."""
     tables, columns = runtime_grants(ServiceRole.CONFIG_INSTALLER)

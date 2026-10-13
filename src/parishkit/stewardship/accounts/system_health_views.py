@@ -106,6 +106,7 @@ def _read(request, template, *, page):
             "campaign_id": extra["campaign_id"],
             "pause": extra["pause"],
             "workgroup_missing": extra["workgroup_missing"],
+            "debug_actor": extra["debug_actor"],
             "poll_interval": POLL_MILLISECONDS,
         }
         if page:
@@ -162,10 +163,11 @@ def system(request):
 def system_health(request):
     """The System health page: one audited view, then passive polls.
 
-    Take a backup now's steps post to this same address (``_backup_now``).
+    Take a backup now's and Turn off debug logging's steps post to this
+    same address (``_act``).
     """
     if request.method == "POST":
-        return _backup_now(request)
+        return _act(request)
     return _read(request, "stewardship/system-health.html", page=True)
 
 
@@ -175,31 +177,65 @@ def system_health_status(request):
     return _read(request, "stewardship/system-health-status.html", page=False)
 
 
-# The form fields each Take a backup now step accepts.
-_BACKUP_FIELDS = {
+# The form fields each action step accepts: Take a backup now's (ADM-13 PR
+# 3b) and Turn off debug logging's (PR 6b, named debug_off_*).
+_ACTION_FIELDS = {
     "preview": {"action"},
     "confirm": {"action", "key"},
     "cancel": {"action"},
+    "debug_off_preview": {"action"},
+    "debug_off_confirm": {"action", "key"},
+    "debug_off_cancel": {"action"},
 }
 # What an in-place refusal is answered with (HTTP status, the region's words).
 _REFUSALS = {"reauthenticate": 403, "busy": 409, "invalid": 400, "denied": 403}
 
 
-def _backup_now(request):
-    """Take a backup now's steps, posted to the System health page itself.
+def _step(action, request, service):
+    """Run one action step; return what its region shows.
 
-    The answer is the whole page at its own address, so ui-v1.js swaps the
-    Take a backup now region (``#backup-now``) in place. A step the server
-    refuses for a reason the reader can act on (a stale sign-in, a request
-    already live, a malformed form) is answered the same way, the region
-    saying why, with a status ui-v1.js treats as refused; the stale sign-in
-    offers the "Confirm with Google" step-up, which returns to this page.
-    Anything else (not an Administrator, the system unavailable) is the
-    usual closed refusal. No step records a page view; confirming records
-    ``backup_requested``.
+    Previews and confirmations go to ``system_health``'s service functions,
+    which check the Administrator and the fresh sign-in themselves. Cancel
+    only closes the preview, so it only rechecks the Administrator.
     """
     from uuid import UUID
 
+    from parishkit.stewardship import system_health as health_actions
+
+    if action == "preview":
+        return {"preview": health_actions.preview_backup(request, service.store)}
+    if action == "debug_off_preview":
+        return {"preview": health_actions.preview_debug_off(request, service.store)}
+    if action in {"confirm", "debug_off_confirm"}:
+        record = (
+            health_actions.request_backup
+            if action == "confirm"
+            else health_actions.turn_off_debug
+        )
+        row, created = record(
+            request, service.store, key=UUID(request.POST.get("key", ""))
+        )
+        return {"requested": row, "created": created}
+    # Cancel only closes the preview; nothing was recorded.
+    _principal(request, service.store, activity=True)
+    return None
+
+
+def _act(request):
+    """An action's step, posted to the System health page itself.
+
+    The answer is the whole page at its own address, so ui-v1.js swaps the
+    action's region (``#backup-now`` or ``#debug-off``) in place; the step's
+    result goes to the template as ``backup_now`` or ``debug_off``. A step
+    the server refuses for a reason the reader can act on (a stale sign-in,
+    a request already live or a switch already set, a malformed form) is
+    answered the same way, the region saying why, with a status ui-v1.js
+    treats as refused; the stale sign-in offers the "Confirm with Google"
+    step-up, which returns to this page. Anything else (not an
+    Administrator, the system unavailable) is the usual closed refusal. No
+    step records a page view; confirming records the action's audit event
+    (``backup_requested`` or ``debug_logging_turned_off``).
+    """
     from parishkit.config import ConfigError
     from parishkit.stewardship import system_health as health_actions
     from parishkit.stewardship.storage import StaleRecordError
@@ -209,42 +245,32 @@ def _backup_now(request):
     from .sessions import FreshAuthenticationRequired
     from .setup_views import _closed
 
-    backup_now, status = None, 200
+    action = request.POST.get("action", "")
+    region = "debug_off" if action.startswith("debug_off_") else "backup_now"
+    result, status = None, 200
     try:
         service = runtime()
         try:
-            action = request.POST.get("action", "")
-            if action not in _BACKUP_FIELDS:
-                raise ValueError("Invalid backup request step.")
-            _closed(request, _BACKUP_FIELDS[action])
-            if action == "preview":
-                backup_now = {
-                    "preview": health_actions.preview_backup(request, service.store)
-                }
-            elif action == "confirm":
-                row, created = health_actions.request_backup(
-                    request, service.store, key=UUID(request.POST.get("key", ""))
-                )
-                backup_now = {"requested": row, "created": created}
-            else:
-                # Cancel only closes the preview; nothing was requested.
-                _principal(request, service.store, activity=True)
+            if action not in _ACTION_FIELDS:
+                raise ValueError("Invalid System health action step.")
+            _closed(request, _ACTION_FIELDS[action])
+            result = _step(action, request, service)
         except FreshAuthenticationRequired:
-            backup_now = {"refused": "reauthenticate"}
-        except health_actions.BackupRequestRefused:
+            result = {"refused": "reauthenticate"}
+        except health_actions.ActionRefused:
             # The database refused it for a reason a new sign-in would not
-            # fix; request_backup logged why.
-            backup_now = {"refused": "denied"}
+            # fix; the service function logged why.
+            result = {"refused": "denied"}
         except StaleRecordError:
-            backup_now = {"refused": "busy"}
+            result = {"refused": "busy"}
         except ConfigError:
             # A ValueError too, but the system's configuration, not the
             # form: the outer handler answers it as unavailable (503).
             raise
         except ValueError:
-            backup_now = {"refused": "invalid"}
-        if backup_now and "refused" in backup_now:
-            status = _REFUSALS[backup_now["refused"]]
+            result = {"refused": "invalid"}
+        if result and "refused" in result:
+            status = _REFUSALS[result["refused"]]
             # The page itself is still only for an Administrator.
             _principal(request, service.store)
         found = read_health(service.store)
@@ -258,9 +284,13 @@ def _backup_now(request):
                 "health": health,
                 "campaign_id": extra["campaign_id"],
                 "pause": extra["pause"],
+                "debug_actor": extra["debug_actor"],
                 "poll_interval": POLL_MILLISECONDS,
                 "status_url": reverse("admin:system_health_status"),
-                "backup_now": backup_now,
+                region: result,
+                # The debug logging region stays once the page has drawn it,
+                # so answering any of its steps keeps it in place.
+                "debug_off_shown": region == "debug_off",
             },
             status=status,
         )

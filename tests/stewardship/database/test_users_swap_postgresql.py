@@ -280,13 +280,12 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # creates the address follow-up table (in CLOSURE_TABLES) with its guard and
 # position check and three definers, and adds a task type to the two task
 # maps in place; the maps call nothing it creates, so they need no
-# ``before_*``. 0078 (#530) creates the debug-off switch table with its guard
-# and two definers. No login has a grant on that table, so it is not in
-# CLOSURE_TABLES; ``UNGRANTED_CLOSURE_TABLES`` drops it with the others. Its
-# widened operational event check is replaced again by a rerun, harmlessly.
-# 0080 (#530) creates the large-change acceptance table (in CLOSURE_TABLES,
-# which the worker reads) with its guard and its invoker lifetime function,
-# and alters no table.
+# ``before_*``. 0078 (#530) creates the debug-off switch table (in
+# CLOSURE_TABLES, since web sets and reads it) with its guard and two
+# definers. Its widened operational event check is replaced again by a
+# rerun, harmlessly. 0080 (#530) creates the large-change acceptance table
+# (in CLOSURE_TABLES, which the worker reads) with its guard and its invoker
+# lifetime function, and alters no table.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -418,12 +417,6 @@ CLOSURE_CREATED = {
         ("stewardship_source", "0008_drop_acceptance"),
     ),
 }
-
-
-# Tables a closure migration creates that no login is granted, so they are
-# not in runtime_grants.CLOSURE_TABLES; ``swap_pending`` drops them too, so
-# their frozen file can make them again.
-UNGRANTED_CLOSURE_TABLES = ("stewardship_debug_off_switch",)
 
 
 # Columns a later closure migration's frozen file adds to an existing table,
@@ -644,7 +637,7 @@ def swap_pending():
         assert USERS_SWAP in {(app, name) for app, name, _ in removed}
         for definition in old_definitions().values():
             cursor.execute(definition)
-        for table in (*CLOSURE_TABLES, *UNGRANTED_CLOSURE_TABLES):
+        for table in CLOSURE_TABLES:
             cursor.execute(f"DROP TABLE public.{table} CASCADE")
         for function in CLOSURE_CREATED:
             cursor.execute(f"DROP FUNCTION {function} CASCADE")
