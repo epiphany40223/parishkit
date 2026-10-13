@@ -1512,8 +1512,12 @@ The cycle:
    eligibility depends on disappear, so both are checked. The recent full
    snapshots bound the loss accumulated over a series of deltas, or over
    several full refreshes that each drop just under the threshold. A full
-   refresh accepted past the threshold starts this trend again: older full
-   snapshots are not compared with after it. Any count falling to zero is
+   refresh accepted past the threshold by the operator's raised threshold
+   starts this trend again: older full snapshots are not compared with after
+   it. One accepted by an Administrator's
+   [one-time acceptance](../admin-portal/spec.md#accept-a-large-parishsoft-change-once)
+   starts it again only for the counts that failed; every other count keeps
+   its history. Any count falling to zero is
    refused, even from one or two. An operator accepts a known large change
    for one refresh by raising the threshold, as the
    [launch runbook](../../../guides/stewardship-launch-runbooks.md#accepting-a-large-parishsoft-change)

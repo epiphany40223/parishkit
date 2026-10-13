@@ -5534,6 +5534,11 @@ requires today.
 3. Confirming records a one-time acceptance (a new row: the refused run,
    every recorded count's before and after values, who, when and the fresh
    sign-in instant) and requests a full refresh, as **Refresh now** does.
+   A refusal is accepted at most once: if its acceptance lapses unused,
+   **Refresh now** gives a new refusal to review and accept. The refusal of
+   a load with no Families or no Members cannot be accepted. The row is
+   never changed or deleted; its SQL guard (frozen migration 0080) also
+   checks the refusal, the counts and that no other acceptance is live.
 4. The next full refresh honors the acceptance only when every recorded
    count's new value is at least the reviewed after value: no count falls
    below what the Administrator saw. The before values are recorded with
@@ -5543,12 +5548,31 @@ requires today.
    while quick updates run every 15 minutes. A count that passed in the
    refusal keeps the limit in effect. A load with no Families or no Members
    is still refused. Any other result is refused again, with a new refusal
-   to review.
+   to review. A count that fails now must also have failed in the refusal,
+   and the Member contact list check
+   ([#387](https://github.com/epiphany40223/parishkit/issues/387) M4) stays
+   in force. The worker reads the live acceptance only when a full load's
+   drop check fails, after the download, so a full refresh already running
+   when the Administrator confirms can use it.
 5. **Lifetime.** The acceptance ends when any full refresh is promoted,
    whether or not it used the acceptance, when a new refusal is recorded,
    or 24 hours after it was given. Quick updates never use it and never end
-   it. The refresh that uses it records in its manifest the acceptance and
-   who gave it, as the environment override's limit is recorded today.
+   it. The refresh that uses it records in its manifest the acceptance, who
+   gave it and the counts that failed, as the environment override's limit
+   is recorded today, and logs a WARNING line naming the acceptance. The
+   lifetime is derived from these facts, never stored, by one SQL function
+   that the guard and the worker share. The refresh is promoted only if its
+   acceptance is still live, checked again under the work-order lock in the
+   promotion's own transaction; otherwise it is refused, nothing new is
+   recorded, and the process log's CRITICAL line names the lapsed
+   acceptance. That refusal can never be accepted again; the next full
+   refresh (for example **Refresh now**) records a new refusal, and that one
+   can be accepted. After it, only the counts that failed start their
+   trend again from that refresh
+   ([full cycle](../background-processing/spec.md#full-cycle)); every other
+   count keeps its week of history, so the next refresh compares with the
+   accepted counts at the normal limit and the acceptance never weakens the
+   check of a count it did not cover.
 6. **Examples are deleted** when their refusal is no longer the newest full
    refresh's outcome, when a full refresh is promoted, when the acceptance
    ends, or seven days after the refusal, whichever comes first. These four

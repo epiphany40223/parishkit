@@ -7,6 +7,7 @@ verified failure/wait. It cannot load, stage, promote or use a new credential.
 
 import logging
 from dataclasses import dataclass
+from uuid import UUID
 
 import requests
 from django.db import connection
@@ -38,6 +39,7 @@ from parishkit.stewardship.storage import StorageInvariantError
 
 from .attempts import _bindings
 from .canonical import InvalidSourcePayload
+from .drop_acceptance import AcceptanceLapsed
 from .drop_counts import record_drop_counts
 from .errors import (
     SourceAuthorityChanging,
@@ -78,6 +80,10 @@ class ReadFailure:
     # For a destructive change: every count the load was checked on
     # (loading.CountCheck), recorded with the refusal (ADM-13).
     checks: tuple = ()
+    # For a refresh refused because the Administrator's one-time acceptance
+    # it was loaded under had lapsed before promotion (#530): that
+    # acceptance's UUID, logged as the reason.
+    lapsed: UUID | None = None
     # For a contact list refused as cut short (#387 M4): its counts, in
     # loading.CONTACT_COVERAGE_FIELDS order, logged so the operator can tell
     # a short read from a real ParishSoft change.
@@ -109,6 +115,7 @@ def classify_read_failure(error, *, has_source_claim):
             "destructive_change",
             loss=error.loss,
             checks=error.checks,
+            lapsed=error.acceptance if isinstance(error, AcceptanceLapsed) else None,
         )
     if isinstance(error, ShiftedSourceScan):
         # The provider's paging moved mid-scan (validated 2026-09-28: the same
@@ -396,6 +403,16 @@ def settle_failed_read(execution, error, *, source_claim=None):
                 level=logging.CRITICAL,
                 task_id=result.run_id,
                 source_loss=decision.loss,
+            )
+        if decision.lapsed is not None:
+            # The durable event says only "destructive_change"; name the
+            # lapsed acceptance as the reason, so the operator can tell it
+            # from a new drop (an identifier only, never parish data).
+            emit(
+                decision.event,
+                level=logging.CRITICAL,
+                task_id=result.run_id,
+                source_acceptance_lapsed=decision.lapsed,
             )
         if decision.coverage is not None:
             # Likewise for a contact list refused as cut short: without its

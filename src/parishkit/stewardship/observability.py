@@ -373,6 +373,8 @@ def emit(
     failure_kind: FailureKind | None = None,
     source_loss: tuple | None = None,
     source_max_drop_percent: int | None = None,
+    source_drop_acceptance: UUID | None = None,
+    source_acceptance_lapsed: UUID | None = None,
     source_contact_coverage: tuple | None = None,
     drive_failure: str | None = None,
     timeout: str | None = None,
@@ -392,6 +394,12 @@ def emit(
     ``source_max_drop_percent`` is a source refresh's overridden loss limit,
     only with ``TASK_STARTED``. Event names are mirrored by a SQL constraint,
     so the override rides on that reviewed event rather than a new one.
+    ``source_drop_acceptance`` is the UUID of the Administrator's one-time
+    acceptance under which a full refresh's refused counts were honored
+    (``source.drop_acceptance``), only with ``TASK_STARTED``, for the same
+    reason. ``source_acceptance_lapsed`` is the UUID of such an acceptance
+    that had lapsed by the time its refresh would have been promoted, the
+    reason that refresh was refused, only with ``SOURCE_DESTRUCTIVE_CHANGE``.
     ``source_contact_coverage`` is a full refresh's contact list counts
     refused as cut short (``source.loading.ShortContactList``), only with
     ``SOURCE_PROVIDER_FAILED``, which carries it for the same reason.
@@ -434,6 +442,15 @@ def emit(
         event is not Event.TASK_STARTED or not _safe_percent(source_max_drop_percent)
     ):
         raise ValueError("A source loss limit must be a whole percent.")
+    if source_drop_acceptance is not None and (
+        event is not Event.TASK_STARTED or not isinstance(source_drop_acceptance, UUID)
+    ):
+        raise ValueError("A large-change acceptance is named by its UUID.")
+    if source_acceptance_lapsed is not None and (
+        event is not Event.SOURCE_DESTRUCTIVE_CHANGE
+        or not isinstance(source_acceptance_lapsed, UUID)
+    ):
+        raise ValueError("A lapsed acceptance is named by its UUID, on its refusal.")
     if source_contact_coverage is not None and (
         event is not Event.SOURCE_PROVIDER_FAILED
         or not _safe_coverage(source_contact_coverage)
@@ -483,6 +500,8 @@ def emit(
                 "failure_kind": failure_kind,
                 "source_loss": source_loss,
                 "source_max_drop_percent": source_max_drop_percent,
+                "source_drop_acceptance": source_drop_acceptance,
+                "source_acceptance_lapsed": source_acceptance_lapsed,
                 "source_contact_coverage": source_contact_coverage,
                 "drive_failure": drive_failure,
                 "timeout": timeout,
@@ -886,6 +905,22 @@ class SafeJsonFormatter(JsonLogFormatter):
             and _safe_percent(context.get("source_max_drop_percent"))
         ):
             safe.extra["source_max_drop_percent"] = context["source_max_drop_percent"]
+        if (
+            record.msg is Event.TASK_STARTED
+            and isinstance(context, dict)
+            and isinstance(context.get("source_drop_acceptance"), UUID)
+        ):
+            safe.extra["source_drop_acceptance"] = str(
+                context["source_drop_acceptance"]
+            )
+        if (
+            record.msg is Event.SOURCE_DESTRUCTIVE_CHANGE
+            and isinstance(context, dict)
+            and isinstance(context.get("source_acceptance_lapsed"), UUID)
+        ):
+            safe.extra["source_acceptance_lapsed"] = str(
+                context["source_acceptance_lapsed"]
+            )
         if (
             record.msg is Event.SOURCE_PROVIDER_FAILED
             and isinstance(context, dict)

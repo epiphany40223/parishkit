@@ -31,8 +31,10 @@ from .attempts import (
 from .canonical import InvalidSourcePayload, canonical_payload
 from .cursors import refresh_cursor
 from .delta import load_delta_source
+from .drop_acceptance import ACCEPTANCE_KEY, acceptor
 from .loading import (
     DEFAULT_MAXIMUM_DROP_PERCENT,
+    DERIVED_COUNTS,
     derived_baseline,
     derived_counts,
     load_full_source,
@@ -100,22 +102,54 @@ TREND_DAYS = 7
 
 
 def _resets_trend(snapshot):
-    """Whether this full refresh was accepted past the normal drop limit.
+    """Whether the operator accepted this full refresh past the drop limit.
 
     An operator raises the limit for one refresh to accept a known large
     change; the trend then starts again from that refresh, so the next one
-    is not compared with the counts before the change. A future one-time
-    Admin acceptance of a refused change must count here too (#530).
+    is not compared with the counts before the change.
 
     This is deliberately broad: any full refresh whose load ran with a
     raised limit resets the trend, whether or not anything actually fell,
     since the manifest records the limit, not why it was raised. That errs
     toward fewer refusals after an operator has looked, which is the
-    override's purpose; the counts it accepted become the new baseline.
+    override's purpose; the counts it accepted become the new baseline. An
+    Administrator's one-time acceptance is narrower (``_accepted_measures``).
     """
     load = snapshot.cursor.get("load") if type(snapshot.cursor) is dict else None
     limit = load.get("maximum_drop_percent") if type(load) is dict else None
     return type(limit) is int and limit > DEFAULT_MAXIMUM_DROP_PERCENT
+
+
+def _accepted_measures(snapshot):
+    """The counts an Administrator's one-time acceptance let fall here (#530).
+
+    A full refresh that went through under an acceptance records it in its
+    manifest (``drop_acceptance.ACCEPTANCE_KEY``, written only by the worker)
+    with the counts that failed the drop check. Only those counts start
+    their trend again from this refresh, so the accepted change is not
+    refused again; every other count keeps its week of history, so the
+    acceptance never weakens the check of a count it did not cover.
+    Anything malformed resets nothing.
+    """
+    load = snapshot.cursor.get("load") if type(snapshot.cursor) is dict else None
+    accepted = load.get(ACCEPTANCE_KEY) if type(load) is dict else None
+    failed = accepted.get("failed") if type(accepted) is dict else None
+    if type(failed) is not list:
+        return frozenset()
+    return frozenset(name for name in failed if type(name) is str)
+
+
+def _within(trend, name):
+    """The trend's snapshots that still count for ``name``, newest first.
+
+    That is every one up to and including the newest whose acceptance let
+    ``name`` fall (``_accepted_measures``); older values of that count are
+    from before the accepted change.
+    """
+    for snapshot in trend:
+        yield snapshot
+        if name in _accepted_measures(snapshot):
+            return
 
 
 def _trend(full, since):
@@ -145,6 +179,9 @@ def _trend(full, since):
 def _largest_counts(trend):
     """Each record count's largest value over the trend (the newest's kinds).
 
+    A count an Administrator's acceptance let fall stops at that refresh
+    (``_within``).
+
     A malformed newest value is passed through unchanged, for the count
     check to refuse as it always has; older malformed values are skipped.
     """
@@ -155,7 +192,7 @@ def _largest_counts(trend):
     for kind, value in newest.items():
         older = [
             snapshot.counts[kind]
-            for snapshot in trend[1:]
+            for snapshot in list(_within(trend, kind))[1:]
             if type(snapshot.counts) is dict and type(snapshot.counts.get(kind)) is int
         ]
         largest[kind] = max([value, *older]) if type(value) is int else value
@@ -167,6 +204,37 @@ def _recorded_derived(snapshot):
     load = snapshot.cursor.get("load") if type(snapshot.cursor) is dict else None
     value = load.get("derived_counts") if type(load) is dict else None
     return value if valid_derived_counts(value) else None
+
+
+def _derived_baseline(trend, counted):
+    """Each derived count's largest value over the trend and the current data.
+
+    As ``loading.derived_baseline`` (``None`` when nothing usable is
+    recorded), except that a count an Administrator's acceptance let fall
+    only looks back to that refresh (``_within``). ``counted`` is the current
+    snapshot's derived counts, which always count.
+    """
+    current = [counted] if valid_derived_counts(counted) else []
+    if derived_baseline(*map(_recorded_derived, trend), *current) is None:
+        return None
+    baseline = {}
+    for name in DERIVED_COUNTS:
+        values = [
+            recorded[name]
+            for recorded in map(_recorded_derived, _within(trend, name))
+            if recorded is not None
+        ] + [each[name] for each in current]
+        # Empty only if neither the accepted refresh nor the current data
+        # recorded the count; then the whole trend counts, as before.
+        baseline[name] = max(
+            values
+            or [
+                recorded[name]
+                for recorded in map(_recorded_derived, trend)
+                if recorded is not None
+            ]
+        )
+    return baseline
 
 
 def _base_cursor(current_id):
@@ -217,7 +285,7 @@ def _inputs(attempt_id, execution, claim):
         cursor = None
         counts = None
         counted = None
-        recorded_trend = None
+        trend = None
         base_workgroup = None
         contact_missing = None
         if current.snapshot_id is not None:
@@ -236,7 +304,6 @@ def _inputs(attempt_id, execution, claim):
             trend = _trend(full, snapshot.started_at - timedelta(days=TREND_DAYS))
             contact_missing = recorded_contact_missing(full.cursor)
             counts = _largest_counts(trend)
-            recorded_trend = [_recorded_derived(each) for each in trend]
             if snapshot.kind == "delta":
                 cursor = _base_cursor(current.snapshot_id)
             # Eligibility is compared with both the last full and the current
@@ -278,7 +345,7 @@ def _inputs(attempt_id, execution, claim):
                     current.snapshot_id, kinds=("family", "contact")
                 )
             )
-        derived = derived_baseline(*recorded_trend, counted)
+        derived = _derived_baseline(trend, counted)
     return RefreshInputs(
         window,
         as_of,
@@ -377,6 +444,11 @@ def load_and_stage_attempt(execution, claim, credential, *, unchanged=None):
                 client,
                 **options,
                 previous_contact_missing=inputs.previous_contact_missing,
+                # Only a full refresh may use an Administrator's one-time
+                # acceptance of a refused large change (#530).
+                accept=acceptor(
+                    attempt.request.organization_id, execution.claim.run_id
+                ),
             )
         else:
             loaded = load_delta_source(

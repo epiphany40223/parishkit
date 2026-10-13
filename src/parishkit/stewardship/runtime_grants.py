@@ -453,6 +453,12 @@ CLOSURE_TABLES = {
     ),
     # A delivered email's follow-ups to addresses refused for now (0077, #806).
     "stewardship_outbox_address_retry": ("stewardship_jobs", "0027_address_retry"),
+    # An Administrator's one-time acceptance of a refused large ParishSoft
+    # change (0080, #530), which the worker reads.
+    "stewardship_source_drop_acceptance": (
+        "stewardship_source",
+        "0008_drop_acceptance",
+    ),
 }
 
 
@@ -681,6 +687,11 @@ def runtime_grants(role, *, target=None):
         ).update({"id", "campaign_id", "mode", "obligation_key", "occurrence_id"})
         if role is ServiceRole.WORKER:
             tables.setdefault("stewardship_delivery_pause_hold", set()).add("SELECT")
+            # An Administrator's one-time acceptance of a refused large
+            # ParishSoft change (ADM-13 PR 5, #530): a full refresh whose drop
+            # check fails reads the live one. Counts and identifiers only; its
+            # guard admits no write from this login.
+            tables["stewardship_source_drop_acceptance"] = {"SELECT"}
             add_service_status_housekeeping_grants(tables, columns)
         else:
             add_service_status_writer_grants(tables, columns)

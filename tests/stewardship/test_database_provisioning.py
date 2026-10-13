@@ -35,8 +35,13 @@ CLOSURE_APPLIED = {
 # 0077): their table waits with their routines.
 BOTH = set(CLOSURE_FUNCTIONS.values()) & set(CLOSURE_TABLES.values())
 # The login that writes each closure table: web, except the address
-# follow-ups (0077), which mail dispatch updates.
-TABLE_WRITERS = {"stewardship_outbox_address_retry": "pk_stewardship_mail_dispatch"}
+# follow-ups (0077), which mail dispatch updates, and the large-change
+# acceptances (0080, #530), which only the worker reads until web's grants
+# come with System health's button (ADM-13 PR 5b).
+TABLE_WRITERS = {
+    "stewardship_outbox_address_retry": "pk_stewardship_mail_dispatch",
+    "stewardship_source_drop_acceptance": "pk_stewardship_worker",
+}
 
 
 def names_closure_object(statement, migrations):

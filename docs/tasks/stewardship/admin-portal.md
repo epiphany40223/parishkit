@@ -1206,6 +1206,19 @@ they are answered in place, refusals and the step-up answered inside the
 section, and the commands owed by ADM-11 PR 5,
 checked by `tests/stewardship/database/test_backup_now_postgresql.py` and
 `tests/stewardship/browser/test_system_health.py`.
+ADM-13.05 is in progress in parts. Part 5a adds the frozen forward migration
+`0080_drop_acceptance.sql` (`stewardship_source.0008`): the acceptance
+record and its guard, the shared SQL lifetime check and the worker's read
+grant; the full refresh honoring a live acceptance within the reviewed
+counts (`parishkit.stewardship.source.drop_acceptance`), recording it in its
+manifest, logging it and promoting only while it is still live; and the
+trend of each count that failed starting again after it, checked by `tests/stewardship/test_source_drop_acceptance.py`,
+`tests/stewardship/test_source_trend.py`,
+`tests/stewardship/database/test_source_drop_acceptance_postgresql.py`, the
+runtime-grant and users swap tests and the regenerated schema baseline.
+Part 5b (the preview, the button, the `source_drop_accepted` audit event,
+the web's grants, the panel lines, the command and the runbook update) and
+part 5c (the example Families) remain.
 ADM-13.06 is in progress in parts. Part 6a adds the frozen forward migration
 `0078_debug_off_switch.sql` (`stewardship_jobs.0028`): the switch record and
 its guard, the one-boolean read every runtime login may run, the

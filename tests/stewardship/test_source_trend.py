@@ -2,8 +2,14 @@
 
 from types import SimpleNamespace
 
+from parishkit.stewardship.source.drop_acceptance import ACCEPTANCE_KEY
 from parishkit.stewardship.source.loading import DEFAULT_MAXIMUM_DROP_PERCENT
-from parishkit.stewardship.source.refreshing import _largest_counts, _resets_trend
+from parishkit.stewardship.source.refreshing import (
+    _accepted_measures,
+    _derived_baseline,
+    _largest_counts,
+    _resets_trend,
+)
 
 
 def full(counts, limit=None):
@@ -68,29 +74,29 @@ def derived(eligible):
 
 def check(new_counts, new_derived, history, *, current_derived=None):
     """Run the real drop check against the trend of promoted fulls."""
-    from parishkit.stewardship.source.loading import (
-        check_source_counts,
-        derived_baseline,
-    )
+    from parishkit.stewardship.source.loading import check_source_counts
 
     trend = list(reversed(history))
     check_source_counts(
         new_counts,
         new_derived,
         previous_full_counts=_largest_counts(trend),
-        previous_derived_counts=derived_baseline(
-            *(snapshot.cursor["load"]["derived_counts"] for snapshot in trend),
-            current_derived,
-        ),
+        previous_derived_counts=_derived_baseline(trend, current_derived),
         maximum_drop_percent=DEFAULT_MAXIMUM_DROP_PERCENT,
     )
 
 
-def promoted(record, eligible):
-    """A promoted full refresh's manifest, as the trend reads it."""
+def promoted(record, eligible, *, accepted=None, member=100):
+    """A promoted full refresh's manifest, as the trend reads it.
+
+    ``accepted``, when given, is the counts an Administrator's one-time
+    acceptance let fall in it (#530), recorded as the worker records them.
+    """
+    load = {"derived_counts": derived(eligible)}
+    if accepted is not None:
+        load[ACCEPTANCE_KEY] = {"id": "0b8f", "actor_id": "4c1d", "failed": accepted}
     return SimpleNamespace(
-        counts=counts(record),
-        cursor={"load": {"derived_counts": derived(eligible)}},
+        counts=counts(record) | {"member": member}, cursor={"load": load}
     )
 
 
@@ -124,3 +130,60 @@ def test_compounding_eligibility_drops_are_refused_on_the_second_full():
         check(counts(1000), derived(600), history)
     assert refused.value.loss[0] == "portal_eligible_families"
     check(counts(1000), derived(600), history[-1:])
+
+
+def test_an_acceptance_starts_only_the_failed_counts_trends_again():
+    """#530: the counts an acceptance let fall start again from that refresh;
+    every other count keeps its history, and malformed evidence resets
+    nothing. An acceptance never resets the whole trend."""
+    accepted = promoted(500, 1000, accepted=["family"], member=760)
+    trend = [accepted, promoted(1000, 1000, member=1000)]
+    assert _accepted_measures(accepted) == {"family"}
+    assert not _resets_trend(accepted)
+    largest = _largest_counts(trend)
+    assert (largest["family"], largest["member"]) == (500, 1000)
+    for value in (None, {}, {"failed": "family"}, {"failed": [7]}):
+        broken = promoted(500, 1000)
+        broken.cursor["load"][ACCEPTANCE_KEY] = value
+        assert _accepted_measures(broken) == frozenset()
+        assert _largest_counts([broken, trend[1]])["family"] == 1000
+
+
+def test_after_an_acceptance_a_passing_count_still_compounds():
+    """The accepted Family drop is not refused again, but Members, which
+    passed 24% below their high in the accepted refresh, are refused when
+    they fall a further 24% (42% below the week's high)."""
+    import pytest
+
+    from parishkit.stewardship.source.loading import DestructiveSourceChange
+
+    history = [
+        promoted(1000, 1000, member=1000),
+        promoted(500, 1000, accepted=["family"], member=760),
+    ]
+    check(counts(500) | {"member": 760}, derived(1000), history)
+    with pytest.raises(DestructiveSourceChange) as refused:
+        check(counts(500) | {"member": 578}, derived(1000), history)
+    assert refused.value.loss[0] == "member"
+
+
+def test_an_accepted_eligibility_count_starts_again_and_others_keep_history():
+    """The same per-count rule for derived counts, with the current data."""
+    import pytest
+
+    from parishkit.stewardship.source.loading import DestructiveSourceChange
+
+    history = [
+        promoted(1000, 1000),
+        promoted(1000, 600, accepted=["portal_eligible_families"]),
+    ]
+    trend = list(reversed(history))
+    assert _derived_baseline(trend, None)["portal_eligible_families"] == 600
+    assert _derived_baseline(trend, derived(650))["portal_eligible_families"] == 650
+    assert _derived_baseline(trend, None)["email_eligible_families"] == 900
+    check(counts(1000), derived(600), history)
+    older = history[0].cursor["load"]["derived_counts"]
+    older["valid_email_contacts"] = 4000
+    with pytest.raises(DestructiveSourceChange) as refused:
+        check(counts(1000), derived(600), history)
+    assert refused.value.loss[0] == "valid_email_contacts"

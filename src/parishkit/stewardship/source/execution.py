@@ -28,6 +28,7 @@ from parishkit.stewardship.storage import StorageInvariantError
 from .attempts import verify_refresh_attempt
 from .compaction import compact_before_refresh
 from .credentials import SourceCredential
+from .drop_acceptance import require_live
 from .failures import settle_failed_read
 from .fallback import request_full_fallback
 from .leases import acquire_source, release_source
@@ -209,8 +210,14 @@ def _promote(execution, claim, snapshot, reconcile):
         attempt = SourceRefreshAttempt.objects.get(snapshot=snapshot)
 
         def admit(action, candidate):
-            """Repeat current tenant/window/key and exact attempt fence checks."""
+            """Repeat current tenant/window/key and exact attempt fence checks.
+
+            A refresh loaded under an Administrator's one-time acceptance
+            (#530) is promoted only while that acceptance is still live,
+            checked here under the work-order lock.
+            """
             current = verify_refresh_attempt(attempt.pk, execution, claim)
+            require_live(candidate.cursor)
             return action == "promote" and candidate.pk == current.snapshot_id
 
         return promote_snapshot(

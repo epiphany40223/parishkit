@@ -270,6 +270,9 @@ FROZEN = {
     "0079_retry_refusal.sql": (
         "55f1eed335f0616c34610a2e8f8dd3291596f6131ae91e29087bd492f9034375"
     ),
+    "0080_drop_acceptance.sql": (
+        "556e938e39369cca5f02cb25fece5e4f9b110271431d40d4ce8420562c04a997"
+    ),
 }
 
 
