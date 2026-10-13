@@ -161,8 +161,11 @@ def test_reference_family_population_does_not_expand_interactive_queries(
         # integration key change holds the settings queue, for its banner
         # (one small indexed query, #456), and the menu's open counts on
         # Additional information and Ministry follow-up are one statement
-        # (#585): the page measures 51.
-        "admin_shell": _measure(admin_page, query_limit=51),
+        # (#585): the page measured 51. On a Testing draft, Home's Next
+        # steps read the initial invitation's email for an Administrator's
+        # Preview and test email (one small indexed query, NAV-18); its
+        # Today count rides on the Family participation statement: 52.
+        "admin_shell": _measure(admin_page, query_limit=52),
     }
     print("Identity baseline: " + json.dumps(result, sort_keys=True))
     # A Family page reads its own session and Family, never the population.

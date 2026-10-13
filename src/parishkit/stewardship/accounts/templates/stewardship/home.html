@@ -70,4 +70,5 @@
     <p>{% translate "The latest five failures in the past 24 hours. Open one to see what went wrong and whether it can be retried." %}</p>
     <ul>{% for task in dashboard.recent_failures %}<li><a href="{% url 'admin:background_task_page' task.id %}">{{ task.name }}</a> — <time datetime="{{ task.updated_at|instant }}" data-local-instant>{{ task.updated_at|instant }}</time></li>{% endfor %}</ul>
   </section>{% endif %}
+  {% include "stewardship/home-next-steps.html" %}
 {% endblock %}

@@ -115,6 +115,7 @@ from .followup_components import components as followup_components
 from .go_live_components import components as go_live_components
 from .go_live_families_components import components as go_live_families_components
 from .held_emails_components import components as held_emails_components
+from .home_steps_components import components as home_steps_components
 from .hosted_file_components import IMAGE_TOKEN
 from .hosted_file_components import POSTS as HOSTED_FILE_POSTS
 from .hosted_file_components import components as hosted_file_components
@@ -2349,6 +2350,7 @@ def component_origin():
     responses.update(campaign_settings_components(context, admin))
     responses.update(menu_components(context, admin))
     responses.update(my_ministries_components(context, admin))
+    responses.update(home_steps_components(context, admin))
     responses.update(automation_components(context, admin))
     responses.update(signed_in_components(context, admin))
     responses.update(step_up_components(context, admin))

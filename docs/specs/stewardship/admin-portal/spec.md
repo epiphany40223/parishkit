@@ -689,12 +689,12 @@ when the viewer's menu offers either entry as a link, once per request.
 
 #### Home page
 
-Status: the **Next steps** list and the **Today** line below are NAV-18
-(ADM-12.21), not built yet. Today Home shows its heading, the System health
-problems, the campaign and ParishSoft status panels (with the off-site backup
-line and the next planned Family mailing), My Ministries, the security events,
-automation notices, Ministry catalog changes, Family participation, the
-unreachable-Family count and recent failed background tasks.
+Status: built (ADM-12.21, NAV-18). In order, Home shows its heading, the
+System health problems, the campaign and ParishSoft status panels (with the
+off-site backup line and the next planned Family mailing), My Ministries,
+the security events, automation notices, Ministry catalog changes, Family
+participation, the unreachable-Family count, recent failed background tasks
+and, last, the **Next steps** panel led by the **Today** line.
 
 Home is a starting point, not only a status page. Its heading is "Home"; the
 parish name and the current campaign's name and state are its data line. Below
@@ -703,8 +703,8 @@ links chosen by the campaign's state and the viewer's role:
 
 | State | Administrator | Staff | Ministry leader |
 | --- | --- | --- | --- |
-| Draft in Testing | Campaign settings, Pages and emails, Dates and mail schedules, Preview and test email (for the initial invitation's current revision), Go-live readiness, Response dashboard (Testing) | Response dashboard, Participation | Ministry requests |
-| Production being activated | Production activation, Outgoing mail | Response dashboard | Ministry requests |
+| Draft in Testing | Campaign settings, Pages and emails, Dates and mail schedules, Preview and test email (for the initial invitation's current revision), Go-live readiness, Response dashboard | Response dashboard, Participation | Ministry requests |
+| Production being activated | Production activation, Outgoing mail (while the campaign is still a draft, Go-live readiness leads) | Response dashboard | Ministry requests |
 | Active | Response dashboard, Additional information and Ministry follow-up (with open counts), Family email progress, Outgoing mail problems (with count) | Response dashboard, Additional information, Ministry follow-up (with open counts) | Ministry requests, Ministry follow-up (with open count) |
 | Mail paused | Pause and resume mail first, then the Active list | As Active | As Active |
 | Closed or archived | Participation, Emailed reports | Participation | Ministry requests |
@@ -750,10 +750,31 @@ keep that Ministry. Search and every filter other than those
 The command line's status read does not
 compute the panel.
 
-Home also shows one **Today** line for each role. Its contents are a
-proposal for the Administrator to confirm in NAV-18 (gap G10 on #522):
-submissions since yesterday, next scheduled email, open follow-up counts,
-problems. How the line differs by role is still to be decided.
+The Next steps panel comes last, after every problem and status panel, and
+opens with one **Today** line for each role
+([decision 29](#navigation-decisions); contents confirmed on #522):
+Administrators and Staff see how many Families responded in the past 24
+hours (Testing responses while in Testing), and a Ministry leader with My
+Ministries sees the open requests in those Ministries. The line does not
+repeat the next planned Family mailing (in the campaign panel), the open
+queue counts (on the Next steps links) or the problems (listed above).
+
+Each next step is the viewer's own menu entry: a link with the page's name
+while the menu offers it, the page's name and the menu's reason as plain
+text while the menu greys it out, and left out when the viewer's role has
+no such entry. A count follows the link as text. "Production being
+activated" is a scheduled campaign, or Production preparation in progress;
+"Mail paused" is Production with live mail paused, in any state not closed.
+Outgoing mail problems are the emails that may not have arrived (the
+header's "Not sure it arrived" count), and the step links Outgoing mail
+filtered to them, counted as "N may not have arrived", or plain Outgoing
+mail while there are none. Preview and
+test email opens the initial invitation's first email and follows Pages and
+emails' availability. With no current campaign there is no Next steps panel:
+the campaign panel offers Create the campaign or says why there is none.
+Building the list adds no query; Home reads the Today count on its Family
+participation statement, and the invitation's email only for an
+Administrator in a Testing draft.
 
 Problems that need action (failed background tasks, unacknowledged security
 events, out-of-date ParishSoft data as
@@ -4702,8 +4723,8 @@ rest of this section follows those decisions:
 5. A role sees only the sections whose detail page it can open, so Staff
    see sections 3 and 4; Staff get no counts for sections 1 and 2.
 6. The menu entry carries no count.
-7. Home does not link the page for now; this is revisited with NAV-18's
-   Next steps.
+7. Home does not link the page for now; NAV-18's Next steps keep it
+   unlinked (a default on #522 the Administrator may revisit).
 
 ### Data to fix page
 
@@ -5307,10 +5328,11 @@ the way to do it. A halt's kind arrives with PR 4.
   problems list that ADM-12's Home work (#568, NAV-18, with its Today line)
   renders, so whichever of the two lands second adds its lines to the
   other's list rather than making a second one. ADM-13 landed first, so
-  until NAV-18 its lines are Home's problems list, a panel at the top of
-  Home, each with the page's own sentence. Until NAV-18 merges the lists,
-  a problem Home already reports elsewhere (a failed ParishSoft refresh, a
-  failed off-site copy) can appear twice on Home: once in its own notice
+  its lines are Home's problems list, a panel at the top of Home, each
+  with the page's own sentence; NAV-18 added Next steps without merging
+  the lists (a later slice on #522). Until they are merged, a problem
+  Home already reports elsewhere (a failed ParishSoft refresh, a failed
+  off-site copy) can appear twice on Home: once in its own notice
   and once as a System health line. The
   [debug logging banner](#navigation-and-home) and the critical-problems
   banner link this page too.
