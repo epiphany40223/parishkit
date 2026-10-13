@@ -421,6 +421,7 @@ def load_full_source(
     maximum_drop_percent=DEFAULT_MAXIMUM_DROP_PERCENT,
     previous_contact_missing=None,
     progress=None,
+    accept=None,
 ):
     """Fetch, normalize and validate without SQL or a mutable source pointer.
 
@@ -433,6 +434,13 @@ def load_full_source(
     collection in the order ``load_progress`` expects.
     ``previous_contact_missing`` is the last promoted full refresh's count
     of Members the contact list left out (``check_member_contact_coverage``).
+
+    ``accept(checks)``, when given, is asked only when the drop check refuses
+    the load for a count that fell (never for an empty load): it returns the
+    evidence of an Administrator's one-time acceptance that honors
+    ``checks`` (``drop_acceptance.acceptor``), recorded in the manifest under
+    ``drop_acceptance.ACCEPTANCE_KEY``, or ``None``, and the refusal stands.
+    The limit itself is never raised.
     """
     if (
         not isinstance(client, CoherentParishSoftClient)
@@ -494,30 +502,40 @@ def load_full_source(
         ) from None
     counts = {kind: len(rows) for kind, rows in corpus.items()}
     derived = derived_counts(corpus)
-    check_source_counts(
-        counts,
-        derived,
-        previous_full_counts=previous_full_counts,
-        previous_derived_counts=previous_derived_counts,
-        maximum_drop_percent=maximum_drop_percent,
-    )
-    return SourceLoad(
-        corpus,
-        counts,
-        {
-            "schema": "source-load-v1",
-            "window_digest": window.digest,
-            "maximum_drop_percent": maximum_drop_percent,
-            "anonymous_pledges": giving.anonymous_pledges,
-            "anonymous_contributions": giving.anonymous_contributions,
-            "requests": client.request_count,
-            "response_bytes": client.response_bytes,
-            "as_of_date": as_of.isoformat(),
-            "giving_as_of_date": as_of.isoformat(),
-            # Retained in the manifest, so later refreshes can compare with it
-            # even after the snapshot's rows are compacted.
-            "derived_counts": derived,
-            # The next full refresh's contact list baseline (#387 M4).
-            CONTACT_COVERAGE_KEY: coverage,
-        },
-    )
+    accepted = None
+    try:
+        check_source_counts(
+            counts,
+            derived,
+            previous_full_counts=previous_full_counts,
+            previous_derived_counts=previous_derived_counts,
+            maximum_drop_percent=maximum_drop_percent,
+        )
+    except DestructiveSourceChange as refusal:
+        # An empty load is refused at any setting, so it is never offered.
+        if accept is None or refusal.loss is None or refusal.loss[0] == "empty":
+            raise
+        accepted = accept(refusal.checks)
+        if accepted is None:
+            raise
+    evidence = {
+        "schema": "source-load-v1",
+        "window_digest": window.digest,
+        "maximum_drop_percent": maximum_drop_percent,
+        "anonymous_pledges": giving.anonymous_pledges,
+        "anonymous_contributions": giving.anonymous_contributions,
+        "requests": client.request_count,
+        "response_bytes": client.response_bytes,
+        "as_of_date": as_of.isoformat(),
+        "giving_as_of_date": as_of.isoformat(),
+        # Retained in the manifest, so later refreshes can compare with it
+        # even after the snapshot's rows are compacted.
+        "derived_counts": derived,
+        # The next full refresh's contact list baseline (#387 M4).
+        CONTACT_COVERAGE_KEY: coverage,
+    }
+    if accepted is not None:
+        from .drop_acceptance import ACCEPTANCE_KEY
+
+        evidence[ACCEPTANCE_KEY] = accepted
+    return SourceLoad(corpus, counts, evidence)

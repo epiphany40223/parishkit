@@ -153,6 +153,49 @@ def test_source_loss_limit_override_is_logged_only_as_a_percent(caplog):
             emit(event, source_max_drop_percent=value)
 
 
+def test_a_large_change_acceptance_is_logged_only_by_its_uuid(caplog):
+    """#530: a refresh let through under an Administrator's acceptance says so,
+    on the reviewed start event, naming the acceptance and nothing else."""
+    acceptance = uuid4()
+    with caplog.at_level(logging.DEBUG):
+        emit(
+            Event.TASK_STARTED,
+            level=logging.WARNING,
+            task_id=uuid4(),
+            source_drop_acceptance=acceptance,
+        )
+    payload = json.loads(SafeJsonFormatter().format(caplog.records[-1]))
+    assert payload["extra"]["source_drop_acceptance"] == str(acceptance)
+    for event, value in (
+        (Event.TASK_FAILED, uuid4()),
+        (Event.TASK_STARTED, str(uuid4())),
+        (Event.TASK_STARTED, "Example Family"),
+    ):
+        with pytest.raises(ValueError):
+            emit(event, source_drop_acceptance=value)
+
+
+def test_a_lapsed_acceptance_is_named_only_on_its_refusal(caplog):
+    """#530: a refresh refused because its acceptance lapsed before
+    promotion names that acceptance, by UUID, on the refusal event."""
+    acceptance = uuid4()
+    with caplog.at_level(logging.DEBUG):
+        emit(
+            Event.SOURCE_DESTRUCTIVE_CHANGE,
+            level=logging.CRITICAL,
+            task_id=uuid4(),
+            source_acceptance_lapsed=acceptance,
+        )
+    payload = json.loads(SafeJsonFormatter().format(caplog.records[-1]))
+    assert payload["extra"]["source_acceptance_lapsed"] == str(acceptance)
+    for event, value in (
+        (Event.TASK_STARTED, uuid4()),
+        (Event.SOURCE_DESTRUCTIVE_CHANGE, str(uuid4())),
+    ):
+        with pytest.raises(ValueError):
+            emit(event, source_acceptance_lapsed=value)
+
+
 def test_unstructured_errors_are_redacted_without_mutating_record():
     """Discard unsafe names, formatted args, exception text, stacks, and extras."""
     record = logging.LogRecord(
