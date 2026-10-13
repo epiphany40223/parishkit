@@ -279,6 +279,48 @@ def test_accepting_acknowledges_only_that_refusals_critical_problem(parish, goog
     assert count("critical_events_acknowledged") == 1
 
 
+@pytest.mark.parametrize("failure", ["configuration", "permission"])
+def test_an_acknowledgement_that_fails_leaves_the_acceptance(
+    parish, google, monkeypatch, caplog, failure
+):
+    """A restore under review or a missing grant refuses the banner's
+    acknowledgement: it is logged, and the acceptance and its refresh
+    stand; the banner keeps the entry."""
+    from django.db import DatabaseError
+
+    from parishkit.config import ConfigError
+    from parishkit.stewardship.accounts import critical_event_views
+
+    class Refused(Exception):
+        """A PostgreSQL permission refusal, as psycopg reports it."""
+
+        sqlstate = "42501"
+
+    def refuse(*args, **values):
+        """The acknowledgement is refused."""
+        if failure == "configuration":
+            raise ConfigError("PRIVATE")
+        raise DatabaseError("PRIVATE") from Refused()
+
+    monkeypatch.setattr(critical_event_views, "acknowledge_now", refuse)
+    raised(refusal())
+    browser, _ = signed_in()
+    token = token_of(post(browser, action="accept_preview").content.decode())
+    answer = post(browser, action="accept_confirm", token=token, checked="yes")
+    assert answer.status_code == 200, answer.content.decode()
+    assert "data-accept-done" in answer.content.decode()
+    assert SourceDropAcceptance.objects.count() == 1
+    assert count("source_drop_accepted") == 1
+    assert SourceRefreshCommand.objects.count() == 1
+    assert not acknowledged()
+    [logged] = [
+        record for record in caplog.records if record.getMessage() == "task_failed"
+    ]
+    assert logged.levelname == "WARNING"
+    assert "PRIVATE" not in caplog.text
+    assert f"{DROP}" in home(browser)
+
+
 def test_a_changed_or_expired_confirmation_acknowledges_nothing(
     parish, google, monkeypatch
 ):

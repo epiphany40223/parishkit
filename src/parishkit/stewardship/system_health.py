@@ -1956,12 +1956,32 @@ def _acknowledge_refusal(service, actor, row):
     shared ``acknowledge_now`` with its ``critical_events_acknowledged``
     event, whose subject is the acceptance; any other critical problem,
     an earlier refusal's included, stays until it is acknowledged itself.
+
+    The acknowledgement is a courtesy to the banner, never a condition of
+    the acceptance: a configuration refusal (a restore under review) or a
+    permission refusal (SQLSTATE 42501, a missing grant) is logged and the
+    acceptance stands. ``acknowledge_now`` runs in its own savepoint, so
+    the failure leaves the acceptance's transaction usable; the banner
+    keeps the entry for an Administrator to acknowledge by hand.
     """
+    from django.db import DatabaseError
+
+    from parishkit.config import ConfigError
+
     from .accounts.critical_event_views import acknowledge_now
+    from .observability import emit_failure
 
     ids = _refusal_events(row.attempt_id)
-    if ids:
+    if not ids:
+        return
+    try:
         acknowledge_now(service, actor, ids, subject_id=row.pk)
+    except ConfigError as error:
+        emit_failure(error, level=logging.WARNING, name_class=True)
+    except DatabaseError as error:
+        if getattr(error.__cause__, "sqlstate", None) != "42501":
+            raise
+        emit_failure(error, level=logging.WARNING, name_class=True)
 
 
 def accept_change(caller, service, *, token, command=False, recorded=None):
