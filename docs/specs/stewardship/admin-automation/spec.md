@@ -1640,7 +1640,9 @@ signatures:
   was already request-free); `content history` moved the history page's
   read into `content_history.retained_content`, which the page now calls.
   `artwork show` moved Campaign images' current-image query into
-  `artwork_views.current_images`, which the page now calls.
+  `artwork_views.current_images`, which the page now calls;
+  `artwork remove-preview` moved its removal review into
+  `artwork_views.review_removal`, which the page's review now calls;
   `content show` moved the editor GET's lookup (the slot check, the saved
   record and the folded closing note) into `content_views.editor_content`,
   which the page now calls.
@@ -1834,7 +1836,7 @@ none.
 | `content_catalog`, `content_edit`, `content_revision`, `content_delete`, `content_history`, `content_history_revision`, `content_plain_text` | `content list`, `content show`, `content history` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); `content preview`, `content confirm` (PR 10), the plain-text preview with `content preview` |
 | `parish_settings`, `ministries` | `parish show`, `parish preview`, `parish confirm`, `ministries list` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the Ministries changes (PR 10) |
 | `hosted_files`, `hosted_file_delete`, `hosted_file_rename` | `files list`, `files delete`, `files rename` ([#463](https://github.com/epiphany40223/parishkit/issues/463)) |
-| `artwork_settings` (its upload and removal reviews, #750) | `artwork show` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); `artwork remove` (PR 10) |
+| `artwork_settings` (its upload and removal reviews, #750) | `artwork show`, `artwork remove-preview`, `artwork remove` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); uploads are `artwork_upload`'s, below |
 | `branding_settings`: **Apply changes** on its in-place logo review (#750) | `branding show` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); `branding confirm --expected-version …`, a configuration request for logos already uploaded (PR 10) |
 | `hosted_file_upload`, `artwork_upload`, `branding_settings` uploads | Pending: file uploads; a later PR may accept `--file` |
 | `branding_asset` | Permanent: image previews and bytes for the browser |
@@ -2021,6 +2023,30 @@ editor answers not found. The editor's live plain-text preview
 with `content preview`, whose review prints the proposed change's cleaned
 HTML and plain text. The positional kind and slot, the field names and
 moving the plain-text preview to `content preview` are defaults, pending
+Administrator confirmation.
+
+`artwork remove-preview SLOT --expected-version …` and `artwork remove
+SLOT --token …` are the page's **Remove this image** and its in-place
+**Apply** (#750), as `parish preview` and `parish confirm` are Parish
+settings' Review and Apply. The preview admits as the page does
+(`CONFIGURE`, recording activity) and, in one read snapshot, checks the
+version (another is `stale_version`) and builds the page's own removal
+review (`artwork_views.review_removal`): a slot with no image is
+`not_available`, as the page answers 404, and a resulting document the
+configuration refuses is `invalid`. A slot whose upload is unavailable can
+still be removed, as on the page. It prints `version`, `campaign_id`,
+`slot`, `name`, `image` (as `artwork show` prints it) and `preview.token`,
+the page's own signed binding; it records nothing, as the page's review
+records nothing. `artwork remove` records the configuration request as
+the page's Apply does, through `admin_editing.confirm_intent` with the
+page's salt (bound to the current campaign and the slot, so another slot's
+token is `invalid`) and removal scope, with `admin_cmd_artwork_remove` in
+the request's own transaction; a repeat returns the original request.
+Both need a full-scope session, as the page's requests record activity;
+neither is fresh-gated nor prompts, as the page asks for no recent sign-in
+and shows no confirmation dialog: the reviewed token is the confirmation,
+and a removal deletes nothing (the image stays in the activated
+configurations' history). The command shapes are defaults, pending
 Administrator confirmation.
 
 `parish show`, `ministries list`, `branding show` and `campaign shares
@@ -3240,7 +3266,8 @@ exactly the commands that exist.
   and Share options
   (`parish show`, `ministries list`, `branding show` and `campaign shares`
   first, then `parish preview` and `parish confirm`), hosted files (`files list`,
-  `files delete`, `files rename`), artwork, branding confirmation, integration settings with the
+  `files delete`, `files rename`), artwork (`artwork show`, then
+  `artwork remove-preview` and `artwork remove`), branding confirmation, integration settings with the
   backup folder probe, and secret replacement: integration key replacement,
   finish switching and the backup key change, with the wrapper's secret
   input.

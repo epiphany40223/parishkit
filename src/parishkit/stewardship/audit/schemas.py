@@ -189,6 +189,8 @@ class Action(StrEnum):
     ADMIN_CMD_USERS_CONFIRM = "admin_cmd_users_confirm"
     # parish confirm: the Parish settings page's Apply (ADM-11 PR 10).
     ADMIN_CMD_PARISH_CONFIRM = "admin_cmd_parish_confirm"
+    # artwork remove: Campaign images' Apply of a removal (ADM-11 PR 10).
+    ADMIN_CMD_ARTWORK_REMOVE = "admin_cmd_artwork_remove"
     ADMIN_CMD_USERS_IMPORT_LEADERS = "admin_cmd_users_import_leaders"
     # The operator's cancellation of a stuck live end-date change (#944).
     ADMIN_CMD_CONFIG_REQUEST_CANCEL = "admin_cmd_config_request_cancel"

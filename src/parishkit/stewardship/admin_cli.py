@@ -60,8 +60,9 @@ subparser tree in later pull requests, each listed in the catalog with the
 pull request that added it. ``report roster`` (in ``admin_roster``) counts
 the Roster changes to enter list, and ``report census`` (in
 ``admin_census``) the Census changes list (#463), whose download is
-``export census`` (in ``admin_census_export``). ``artwork show`` (PR 10,
-in ``admin_artwork``) reads Campaign images.
+``export census`` (in ``admin_census_export``). ``artwork show``,
+``artwork remove-preview`` and ``artwork remove`` (PR 10, in
+``admin_artwork``) read Campaign images and remove one of them.
 """
 
 import argparse
@@ -1265,6 +1266,29 @@ def events_acknowledge(args, preamble, runtime, context):
         runtime,
         event_id=args.security,
         token=token,
+        context=context,
+    )
+
+
+def artwork_remove_preview(args, preamble, runtime, context):
+    """Review removing one Campaign image (PR 10)."""
+    from .admin_artwork import preview_removal
+
+    return preview_removal(
+        context["caller"], runtime, args.slot, expected_version=args.expected_version
+    )
+
+
+def artwork_remove(args, preamble, runtime, context):
+    """Remove one Campaign image as a reviewed configuration request (PR 10)."""
+    from .admin_artwork import remove_image
+    from .admin_changes import TOKEN_LIMIT
+
+    return remove_image(
+        context["caller"],
+        runtime,
+        args.slot,
+        token=_input(args.token, context, TOKEN_LIMIT),
         context=context,
     )
 
@@ -2508,6 +2532,33 @@ def _events_acknowledge_options(parser):
         "--critical",
         metavar="TOKEN",
         help="critical.token from events list, or - for standard input",
+    )
+
+
+# Campaign images' slots, in the page's order. Spelled out because the parser
+# is built before Django is set up; a test keeps it equal to
+# ``campaigns.configuration.ARTWORK_SLOTS``.
+ARTWORK_SLOTS = ("banner", "welcome", "member", "financial", "closing")
+
+
+def _artwork_remove_preview_options(parser):
+    """Options of ``artwork remove-preview``: the slot and the version."""
+    parser.add_argument("slot", choices=ARTWORK_SLOTS, metavar="SLOT")
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_digest,
+        help="the version artwork show printed",
+    )
+
+
+def _artwork_remove_options(parser):
+    """Options of ``artwork remove``: the slot and the preview's token."""
+    parser.add_argument("slot", choices=ARTWORK_SLOTS, metavar="SLOT")
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from artwork remove-preview, or - for standard input",
     )
 
 
@@ -3912,12 +3963,16 @@ def _settings_specs():
 
 
 def _artwork_specs():
-    """The Campaign images page's read (PR 10, ``admin_artwork``).
+    """The Campaign images page's read and removal (PR 10, ``admin_artwork``).
 
-    Like ``branding show``, any session runs it and it records nothing, as
-    the page's GET records nothing. ``artwork remove`` comes later in PR 10.
+    Like ``branding show``, any session runs ``artwork show`` and it records
+    nothing, as the page's GET records nothing. Remove this image and its
+    Apply are ``artwork remove-preview`` and ``artwork remove``, as ``parish
+    preview`` and ``parish confirm``: full scope, as the page's requests
+    record activity; neither is fresh-gated nor prompts, as the page asks
+    for no recent sign-in and its Apply is the reviewed token.
     """
-    from .admin_artwork import ArtworkShow
+    from .admin_artwork import ArtworkRemove, ArtworkRemovePreview, ArtworkShow
 
     return (
         CommandSpec(
@@ -3929,6 +3984,28 @@ def _artwork_specs():
             ArtworkShow.field_names(),
             10,
             audit_event=None,
+        ),
+        CommandSpec(
+            "artwork remove-preview",
+            "Review removing one of the current campaign's images.",
+            artwork_remove_preview,
+            "full",
+            False,
+            ArtworkRemovePreview.field_names(),
+            10,
+            options=(_artwork_remove_preview_options,),
+            expected_version=True,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "artwork remove",
+            "Remove one of the current campaign's images, as reviewed.",
+            artwork_remove,
+            "full",
+            True,
+            ArtworkRemove.field_names(),
+            10,
+            options=(_artwork_remove_options,),
         ),
     )
 
