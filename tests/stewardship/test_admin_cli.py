@@ -132,6 +132,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "report census",
         # A Census changes row's Record outcome (#528).
         "census resolve",
+        "export census",
         "report source-form",
         "report data-to-fix",
         "digest list",
@@ -220,8 +221,10 @@ def test_the_catalog_lists_every_command_with_its_flags():
         # A prompting command, and only one, takes --yes. Other branches add
         # their own prompting commands, so this is not a closed list.
         assert ("--yes" in names) == entry["prompts"], name
-        # Only the two downloads stream a file to standard output.
-        assert entry["streams"] == (name in {"logs export", "export download"}), name
+        # Only the downloads stream a file to standard output.
+        assert entry["streams"] == (
+            name in {"logs export", "export download", "export census"}
+        ), name
         if name in acknowledged:
             assert entry["prompts"], name
     # The sample test asks for the page's acknowledgement (PR 6b); its
@@ -454,6 +457,28 @@ def test_the_catalog_lists_every_command_with_its_flags():
     options = {option["name"]: option for option in export["options"]}
     assert options["--format"]["choices"] == ["csv", "xlsx", "jsonl"]
     assert "--through" not in options and "--page" not in options
+    # The Census changes download (PR 8h): a full-scope session, as every
+    # export; the page's own event; report census's filters, no search; the
+    # page's formats and the command's JSON Lines.
+    census = entries["export census"]
+    assert census["scope"] == "full" and not census["changes_state"]
+    assert census["audit_event"] == "census_changes_exported"
+    assert not census["prompts"] and not census["fresh_gated"]
+    assert not census["request_key"] and not census["expected_version"]
+    options = {option["name"]: option for option in census["options"]}
+    assert options["--format"]["choices"] == ["csv", "xlsx", "pdf", "jsonl"]
+    assert {"--status", "--history", "--route", "--kind", "--timezone"} <= set(options)
+    assert "--search" not in options and "--campaign" not in options
+    assert census["result_fields"] == [
+        "campaign_id",
+        "file_name",
+        "content_type",
+        "format",
+        "timezone",
+        "size",
+        "sha256",
+        "count",
+    ]
     # The export lifecycle: status is any session's passive read with
     # --watch and no view event; every other command needs a full-scope
     # session. The four changes are keyed (but cancel) and record their

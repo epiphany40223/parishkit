@@ -637,6 +637,21 @@ prompt; proven by `tests/stewardship/test_admin_operations.py`,
 refused prompt changes nothing, a typed `yes`, a double invoke, the page's
 form with the same key, stale versions, unchanged credentials and the
 read-only refusal).
+A further follow-up (#463) adds `export census`, the Census changes
+download, in `parishkit.stewardship.admin_census_export`, through the page's
+own admission, `CensusQuery`, `census_changes` and file writer
+(`census_change_views.export_body`, extracted from the page's view) under
+the shared report read, with a command-line `jsonl` format that carries
+each change's id, version and actions, and no schema change; proven by
+`tests/stewardship/test_admin_census_export.py` (the JSON Lines writer, its
+keys against the page's headings, the formats and choices),
+`tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py` and
+`tests/stewardship/database/test_admin_census_export_cli_postgresql.py`
+(the page's CSV byte for byte, XLSX, PDF and JSON Lines, the page's event
+with its count, refused choices `invalid` with nothing recorded, a
+read-only session refused, Staff, a Ministry leader denied, an ended
+session, no current campaign).
 ADM-11.08 lands in two parts. 7a adds `portal maintenance show` and
 `portal maintenance set` (fresh-gated, always prompts) in
 `parishkit.stewardship.admin_portal`, through the page's own
