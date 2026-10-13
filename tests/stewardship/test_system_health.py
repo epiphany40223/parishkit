@@ -754,10 +754,14 @@ def accepted(*, live=True):
     )
 
 
-def accept_page(counts=FAILED, acceptance=None, actor="admin@example.org", **values):
-    """Render the status region and the Accept this change once region.
+def accept_page(
+    counts=FAILED, acceptance=None, actor="admin@example.org", request=None, **values
+):
+    """Render the status region, which holds the Accept this change once
+    region under the refusal.
 
-    ``values`` are the view's other context (a step's ``accept`` result).
+    ``values`` are the view's other context (a step's ``accept`` result, the
+    page's ``status_url``).
     """
     context = {
         "health": health(
@@ -768,8 +772,8 @@ def accept_page(counts=FAILED, acceptance=None, actor="admin@example.org", **val
         "poll_interval": 10000,
     } | values
     return render_to_string(
-        "stewardship/system-health-status.html", context
-    ) + render_to_string("stewardship/system-health-accept.html", context)
+        "stewardship/system-health-status.html", context, request=request
+    )
 
 
 def test_which_refusals_can_be_accepted_once():
@@ -847,10 +851,45 @@ def test_accept_this_change_once_is_offered_for_an_open_refusal():
     assert '<template data-live-mirror="accept-button">' in body
     assert 'data-live-mirror-target="accept-button"' in body
     assert 'aria-controls="accept-change-intro-tip"' in body
-    assert "accepted once with Accept this change once below" in body
-    assert "reload System health if that section is not shown" in body
+    assert "accepted once with Accept this change once just below" in body
+    assert "reload System health" not in body
     # The emergency path stays the operator's, named in the help.
     assert "the server operator can still let a change through" in body
+
+
+def test_the_accept_region_sits_right_under_the_refusal():
+    """In the ParishSoft refresh panel, directly after the refused change's
+    notice, inside the element the poll keeps (data-live-keep); its heading
+    is a subheading of the panel's. The polled copy carries no CSRF token,
+    so polls compare equal; the page's own copy does."""
+    import re
+
+    from django.test import RequestFactory
+
+    def kept(body):
+        """The kept element's markup, up to the end of its region."""
+        start = body.index('<div data-live-keep="accept-change">')
+        return body[start : body.index("</section>", start)]
+
+    request = RequestFactory().get("/admin/system/health/")
+    body = accept_page(request=request, status_url="/admin/system/health/status/")
+    panel = body[body.index('aria-labelledby="health-source-heading"') :]
+    panel = panel[: panel.index("</section>\n\n")]
+    # The refusal notice's last line, then at once the kept element.
+    before, after = panel.split('<div data-live-keep="accept-change">', 1)
+    assert before.rstrip().endswith("every later refresh is refused too.</p>\n</div>")
+    assert "data-refused-change" in before
+    assert after.startswith('<section class="panel" id="accept-change"')
+    assert '<h3 id="accept-change-heading">Accept this change once</h3>' in after
+    assert body.count('id="accept-change"') == 1
+    token = r'name="csrfmiddlewaretoken" value="([^"]*)"'
+    assert re.search(token, kept(body)).group(1)
+    polled = kept(accept_page(request=request))
+    assert re.search(token, polled).group(1) == ""
+    # Nothing is drawn while no refusal is shown, but the kept element is.
+    empty = accept_page(counts=())
+    assert '<div data-live-keep="accept-change"></div>' in empty
+    assert 'id="accept-change"' not in empty
 
 
 def test_an_acceptance_greys_the_button_with_who_when_and_until_when():

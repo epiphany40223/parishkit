@@ -46,6 +46,18 @@
 // keeps updating. data-live-refresh-label names the page's own refresh link
 // in the message shown when watching stops.
 //
+// A region may hold an element marked [data-live-keep="<name>"] for a control
+// that must sit inside the status it answers but that a poll must never
+// discard: System health's Accept this change once, right under the refused
+// ParishSoft change, whose preview and tick box the Administrator may have
+// open (#530). Once the element has contents, every swap puts the live
+// element back in place of its fresh copy, so what is open in it, ticked or
+// focused stays; its contents never count as a change, and typing or
+// ticking in it does not hold later swaps (a focused control in it still
+// holds the swap, as anywhere in the region). An empty one (drawn before
+// there was anything to show) takes the fresh copy's contents, whose empty
+// CSRF field takes this page's token, as a mirrored copy's does.
+//
 // An in-place refresh (ui-v1.js, #519) can replace the region itself, such
 // as when Dismiss on an integration's settings page swaps in the page's
 // fresh status. The old region's watcher then stops (its page-wide
@@ -183,10 +195,16 @@
       attempt += 1;
     }
 
-    // Controls the Admin has typed into or changed since the last swap.
+    // Controls the Admin has typed into or changed since the last swap. A
+    // kept element survives every swap, so its controls need no hold.
     let edited = false;
-    region.addEventListener("input", () => { edited = true; });
-    region.addEventListener("change", () => { edited = true; });
+    const edit = (event) => {
+      if (!(event.target instanceof Element && event.target.closest("[data-live-keep]"))) {
+        edited = true;
+      }
+    };
+    region.addEventListener("input", edit);
+    region.addEventListener("change", edit);
 
     // When the Admin began selecting text in the region (0 when not), kept up
     // to date as the selection changes, so the hold is measured from the
@@ -241,10 +259,38 @@
       // What the server said, without how this browser worded its times:
       // ui-v1.js and this script rewrite <time> text in place (local dates,
       // "2 minutes ago"), so comparing raw HTML would rebuild the region on
-      // the first poll even when nothing changed.
+      // the first poll even when nothing changed. A kept element's contents
+      // are the reader's, not the status, so they never count either.
       const copy = node.cloneNode(true);
       copy.querySelectorAll("time").forEach((time) => { time.textContent = ""; });
+      copy.querySelectorAll("[data-live-keep]").forEach((kept) => { kept.replaceChildren(); });
       return copy.innerHTML;
+    }
+
+    function fillToken(root) {
+      // An empty CSRF field in polled markup (which carries none, so it stays
+      // the same from poll to poll) takes this page's own token.
+      const token = document.querySelector('input[name="csrfmiddlewaretoken"][value]:not([value=""])');
+      if (!token) return;
+      root.querySelectorAll('input[name="csrfmiddlewaretoken"]').forEach((input) => {
+        if (!input.value) input.value = token.value;
+      });
+    }
+
+    function keepLive(fresh) {
+      // Put each live kept element that has contents in place of its copy
+      // in ``fresh`` (a fragment of the fresh region's children), so a swap
+      // moves it rather than rebuilding it; an empty one is left to be
+      // replaced by its copy, whose CSRF field takes this page's token.
+      const live = new Map([...region.querySelectorAll("[data-live-keep]")]
+        .filter((node) => node.firstElementChild || node.textContent.trim())
+        .map((node) => [node.getAttribute("data-live-keep"), node]));
+      fresh.querySelectorAll("[data-live-keep]").forEach((copy) => {
+        const kept = live.get(copy.getAttribute("data-live-keep"));
+        if (kept) copy.replaceWith(kept);
+        else fillToken(copy);
+      });
+      return fresh;
     }
 
     // The markup last adopted, so an unchanged poll leaves the live region
@@ -294,18 +340,19 @@
       // move on, even if the region stays the same from then on. Each target
       // remembers the copy it last took (mirrored), so an unchanged copy is
       // not put in again and the target's markup stays put between polls.
-      const token = document.querySelector('input[name="csrfmiddlewaretoken"][value]:not([value=""])');
+      //
+      // A target inside a kept element (data-live-keep) is the reader's, not
+      // the status, so it is mirrored too, as one outside the region is.
       region.querySelectorAll("template[data-live-mirror]").forEach((source) => {
         const mirrorName = source.getAttribute("data-live-mirror");
         const html = source.innerHTML;
         document.querySelectorAll("[data-live-mirror-target]").forEach((target) => {
           if (target.getAttribute("data-live-mirror-target") !== mirrorName) return;
-          if (region.contains(target) || target.contains(document.activeElement)) return;
+          if (region.contains(target) && !target.closest("[data-live-keep]")) return;
+          if (target.contains(document.activeElement)) return;
           if (mirrored.get(target) === html) return;
           const copy = source.content.cloneNode(true);
-          copy.querySelectorAll('input[name="csrfmiddlewaretoken"]').forEach((input) => {
-            if (!input.value && token) input.value = token.value;
-          });
+          fillToken(copy);
           target.replaceChildren(copy);
           mirrored.set(target, html);
           localize(target);
@@ -358,7 +405,9 @@
         const need = Math.min(height, below);
         keep.style.minHeight = need > 0 ? `${need}px` : "";
       }
-      region.replaceChildren(...[...fresh.childNodes].map((node) => document.importNode(node, true)));
+      const nodes = document.createDocumentFragment();
+      nodes.append(...[...fresh.childNodes].map((node) => document.importNode(node, true)));
+      region.replaceChildren(keepLive(nodes));
       // Mirror the fresh region's attributes (pending, state markers such as
       // data-export-state) so the page and its tests see the current state.
       [...region.attributes].forEach((attribute) => {

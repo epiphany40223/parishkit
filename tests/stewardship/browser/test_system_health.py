@@ -7,6 +7,7 @@ import pytest
 from .system_health_components import (
     ACCEPT_CHANGED,
     ACCEPT_DONE,
+    ACCEPT_LATE,
     ACCEPT_PAGE,
     ACCEPT_PREVIEW,
     BACKUP_BUSY,
@@ -512,8 +513,9 @@ def test_the_debug_region_is_accessible_at_phone_and_desktop_widths(
 def test_accept_this_change_once_previews_and_confirms_in_place(
     page, component_origin, axe_source
 ):
-    """Preview, the tick box, then confirm, each in #accept-change; nothing
-    above the region moves, and the page is never reloaded (ADM-13 PR 5b)."""
+    """Preview, the tick box, then confirm, each in #accept-change right
+    under the refusal; no heading above the region or of it moves, and the
+    page is never reloaded (ADM-13 PR 5b)."""
     _routed(
         page,
         component_origin,
@@ -524,19 +526,14 @@ def test_accept_this_change_once_previews_and_confirms_in_place(
     kept = _not_reloaded(page)
     region = page.locator("#accept-change")
     heading = region.get_by_role("heading", name="Accept this change once")
-
-    def place():
-        """The heading's place in the document, wherever the page is scrolled."""
-        return heading.evaluate("e => e.getBoundingClientRect().top + window.scrollY")
-
-    top = place()
+    _beside_the_refusal(page)
+    places = _places(page, heading)
     region.get_by_role("button", name="Accept this change once…").click()
     confirm = region.get_by_role("button", name="Confirm: accept this change once")
     expect(confirm).to_be_visible()
     visible(region.get_by_text("Families with an email address"))
     visible(region.get_by_text("44%"))
-    # Firefox may report the same place a few millionths of a pixel apart.
-    assert abs(place() - top) < 0.5
+    assert places() == []
     # Confirm waits for the tick box, with its reason after it.
     expect(confirm).to_be_disabled()
     visible(region.get_by_text("Tick the box to confirm that you checked this"))
@@ -563,8 +560,100 @@ def test_accept_this_change_once_previews_and_confirms_in_place(
         expect(stamp).not_to_have_text(stamp.get_attribute("datetime"))
     assert "UTC" not in region.inner_text()
     assert kept()
-    # Firefox may report the same place a few millionths of a pixel apart.
-    assert abs(place() - top) < 0.5
+    assert places() == []
+    _beside_the_refusal(page)
+
+
+def _beside_the_refusal(page):
+    """#accept-change is in the ParishSoft refresh panel, directly after the
+    refused change's notice (in the element the poll keeps), and starts
+    within a line of it."""
+    assert page.evaluate("""() => {
+        const notice = document.querySelector('[data-refused-change]');
+        const kept = notice.nextElementSibling;
+        return kept.matches('[data-live-keep="accept-change"]')
+            && kept.firstElementChild === document.getElementById('accept-change')
+            && notice.closest('section') === kept.closest('section')
+            && kept.closest('section').getAttribute('aria-labelledby')
+                === 'health-source-heading';
+    }""")
+    gap = page.evaluate("""() =>
+        document.getElementById('accept-change').getBoundingClientRect().top
+        - document.querySelector('[data-refused-change]').getBoundingClientRect().bottom
+    """)
+    assert 0 <= gap < 40, gap
+
+
+def _places(page, heading):
+    """Record where ``heading`` and every shown heading above it are in the
+    document; the returned check lists those that moved since (Firefox may
+    report the same place a few millionths of a pixel apart)."""
+    script = """(own) => [...document.querySelectorAll('h1, h2, h3')]
+        .filter((h) => h.getClientRects().length && (h === own
+            || h.compareDocumentPosition(own) & Node.DOCUMENT_POSITION_FOLLOWING))
+        .map((h) => [h.textContent.trim(),
+            h.getBoundingClientRect().top + window.scrollY])"""
+    before = heading.evaluate(f"own => ({script})(own)")
+
+    def moved():
+        """The headings whose place changed by half a pixel or more."""
+        now = dict(heading.evaluate(f"own => ({script})(own)"))
+        return [name for name, top in before if abs(now.get(name, -1e9) - top) >= 0.5]
+
+    return moved
+
+
+def test_an_open_preview_survives_a_poll(page, component_origin):
+    """The poll swaps the status around the open preview: the preview, its
+    tick and the headings stay, and the poll keeps running afterwards."""
+    _routed(
+        page,
+        component_origin,
+        {"accept_preview": (200, ACCEPT_PREVIEW)},
+        shown=ACCEPT_PAGE,
+    )
+    page.goto(component_origin + BACKUP_PAGE)
+    region = page.locator("#accept-change")
+    heading = region.get_by_role("heading", name="Accept this change once")
+    region.get_by_role("button", name="Accept this change once…").click()
+    confirm = region.get_by_role("button", name="Confirm: accept this change once")
+    expect(confirm).to_be_visible()
+    box = region.get_by_label("I checked this in ParishSoft, and the change is real.")
+    box.check()
+    # Focus off the box, so nothing holds the poll.
+    page.evaluate("document.activeElement.blur()")
+    places = _places(page, heading)
+    page.evaluate("""() => {
+        document.getElementById('accept-change').dataset.marked = 'yes';
+    }""")
+    # The next poll's status says another Administrator accepted it.
+    eventually(
+        page,
+        """() => {
+            const mirror = document.querySelector(
+                'template[data-live-mirror="accept-button"]');
+            return !!mirror && mirror.innerHTML.includes('Accepted by');
+        }""",
+    )
+    # The same region element, its preview still open and ticked.
+    assert region.get_attribute("data-marked") == "yes"
+    expect(confirm).to_be_visible()
+    expect(box).to_be_checked()
+    expect(confirm).to_be_enabled()
+    assert places() == []
+    _beside_the_refusal(page)
+
+
+def test_a_refusal_shown_by_a_poll_brings_its_accept_region(page, component_origin):
+    """A page drawn before the refusal gets the region from the poll that
+    shows the refusal, right under it; no reload needed."""
+    page.goto(component_origin + ACCEPT_LATE)
+    assert page.locator("#accept-change").count() == 0
+    button = page.locator("#accept-change").get_by_role(
+        "button", name="Accept this change once…"
+    )
+    expect(button).to_be_enabled(timeout=30000)
+    _beside_the_refusal(page)
 
 
 def test_a_changed_refusal_is_said_in_the_region(page, component_origin):

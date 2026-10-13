@@ -59,6 +59,10 @@ ACCEPT_STATUS = "/system-health-accept/status"
 ACCEPT_PREVIEW = "/system-health-accept-preview"
 ACCEPT_DONE = "/system-health-accept-done"
 ACCEPT_CHANGED = "/system-health-accept-changed"
+# A page drawn before any refusal, whose next poll brings one: the empty
+# kept element takes the Accept this change once region from the poll.
+ACCEPT_LATE = "/system-health-accept-late"
+ACCEPT_LATE_STATUS = "/system-health-accept-late/status"
 # A healthy page whose next poll changes only a time's datetime attribute.
 DATED = "/system-health-dated"
 DATED_STATUS = "/system-health-dated/status"
@@ -472,6 +476,20 @@ def components(context, admin):
                     },
                     accept_shown=True,
                 ),
+            ),
+        ),
+        ACCEPT_LATE: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(False, status_url=ACCEPT_LATE_STATUS),
+            ),
+        ),
+        ACCEPT_LATE_STATUS: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health-status.html",
+                values(False, refused=True),
             ),
         ),
         ACCEPT_CHANGED: (

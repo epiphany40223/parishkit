@@ -5940,10 +5940,16 @@ log entry or a notice. Opening the preview records no event (see
 [personal data rule](../admin-automation/spec.md#personal-data-on-the-command-line)
 requires.
 
-**Where it appears.** The page draws the action, below the panels, only
-while the ParishSoft refresh panel shows a refused change when the page is
-drawn; once drawn it stays in place, and its button follows the 10-second
-status, so nothing moves under the pointer. Its rules (what the next full
+**Where it appears.** In the ParishSoft refresh panel, directly under the
+refused change it answers (Administrator, pk-local check of #1210: not at
+the foot of the page). The page draws it while the panel shows a refused
+change, including one a later 10-second status update brings; once drawn it
+stays in place, and its button follows the status. The panel is inside the
+region the status updates replace, so the action sits in an element those
+updates leave in place (`data-live-keep`, see
+[in-place controls](../ui-conventions/spec.md#in-place-controls)): an open
+preview, its tick box and the headings above it never move or disappear when
+the status changes. Its rules (what the next full
 refresh must meet, how the acceptance ends, that a refusal is accepted only
 once and an empty load never, and the server operator's override as the
 emergency path) are in "i" toggletips. The preview, the refusals and the
