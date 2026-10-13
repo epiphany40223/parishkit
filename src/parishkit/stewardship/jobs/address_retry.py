@@ -35,9 +35,14 @@ reference) to the addresses still refused, and only to them:
   days after the acceptance). Sending limits and provider outages hold it
   without spending an attempt, and so do the mailbox's pause, stop and daily
   cap.
-- No FamilyCampaign row is locked or written, so the Family row-lock order
-  is not involved. A permanent refusal seen here is recorded on the row (the
-  Mail message page shows it) but does not yet create a RecipientRefusal.
+- A permanent refusal seen here is recorded on the row (the Mail message
+  page shows it) and, in the same transaction, as a RecipientRefusal of the
+  accepted attempt's event (``record_refusals``), so the address is set
+  aside for the Family as the message's own permanent refusal would be.
+  That refusal's trigger may update the Family's deliverability: the one
+  FamilyCampaign write, after the follow-up's own rows under the
+  work-order lock, the same order the message's settle uses. Nothing else
+  locks or writes a FamilyCampaign row.
 """
 
 import logging
@@ -554,6 +559,39 @@ def settled(row, result, now):
     return values, wait
 
 
+def record_refusals(row, claim):
+    """Set aside each address the follow-up's latest outcome refused permanently.
+
+    Called right after the guarded write that recorded the outcome, in its
+    transaction, so the refusal's evidence (migration 0079's guard) is that
+    outcome under the same worker and run. Like ``open_follow_up``, it runs
+    in a savepoint: a failure is logged at ERROR and never loses the recorded
+    outcome; the address is then left to the next email's own refusal, as
+    before #806.
+    """
+    from .recipient_suppressions import record_retry_refusal
+
+    permanent = (row.outcome or {}).get("permanent", [])
+    if not permanent:
+        return
+    try:
+        with transaction.atomic():
+            for position in permanent:
+                record_retry_refusal(
+                    retry=row,
+                    address=row.render.routed_recipients[position],
+                    actor_id=claim.worker_id,
+                    correlation_id=claim.run_id,
+                    fence=claim.fence,
+                )
+    except Exception:
+        LOG.error(
+            "An address follow-up could not record an address refused "
+            "permanently as a recipient refusal (#806).",
+            exc_info=True,
+        )
+
+
 def _defer(execution, seconds):
     """Hold the follow-up's task without spending anything, then try again."""
     execution.progress(0, 0, phase=TaskPhase.RECONCILING)
@@ -713,6 +751,7 @@ def _execute(execution, *, store, private, public_origin, credential_path, circu
         row = _change(
             row, actor_id=claim.worker_id, correlation_id=claim.run_id, **values
         )
+        record_refusals(row, claim)
     observe_outcome(circuit, result)
     if row.state == "waiting":
         execution.transition(

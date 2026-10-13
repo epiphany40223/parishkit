@@ -267,6 +267,9 @@ FROZEN = {
     "0078_debug_off_switch.sql": (
         "507ef08c4445c1cd74a3668fe0b550ac537052e92ba2b473a8fa499f9b608cbf"
     ),
+    "0079_retry_refusal.sql": (
+        "55f1eed335f0616c34610a2e8f8dd3291596f6131ae91e29087bd492f9034375"
+    ),
 }
 
 

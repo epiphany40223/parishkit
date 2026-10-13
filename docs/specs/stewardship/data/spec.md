@@ -1348,7 +1348,12 @@ the runtime's `restore_activated_at` (a restore keeps credentials, so a
 restored follow-up may already have been sent), and never once a later
 invitation or reminder to the Family has been accepted. Mail dispatch reads the Family's link token for a
 waiting follow-up only through `stewardship_address_retry_token_v1`, bound to
-the same claim.
+the same claim. A follow-up's permanent refusal of an address is a
+`RecipientRefusal` naming the accepted attempt's event; the refusal guard
+(frozen migration 0079) admits it only when that attempt's follow-up, for
+the same message and rendering, lists the address's position as refused
+permanently in its latest outcome, recorded by the refusal's own worker and
+task run.
 
 The OutboxMessage pause hold records a pause independently of schedule
 membership, including directly created submission receipts. Held messages keep
