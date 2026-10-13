@@ -1219,8 +1219,10 @@ trend of each count that failed starting again after it, checked by `tests/stewa
 runtime-grant and users swap tests and the regenerated schema baseline.
 Part 5b adds the web's insert and read grants on acceptances (a
 `database-grants` change; the table was already in the users swap's
-closure tables), Accept this change once on System health (drawn while the
-ParishSoft refresh panel shows a refused change: a preview of every count,
+closure tables), Accept this change once on System health (drawn in the
+ParishSoft refresh panel right under a refused change, in an element the
+status updates keep, and acknowledging that refusal's critical problem
+when confirmed: a preview of every count,
 the "I checked this in ParishSoft" tick box, the fresh sign-in step-up, a
 signed binding answered as "This changed since you looked" when the
 refusal changed, the `source_drop_accepted` audit event naming the

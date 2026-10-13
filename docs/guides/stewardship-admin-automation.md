@@ -369,7 +369,10 @@ tick box, "I checked this in ParishSoft, and the change is real". The
 session stands in for the page's recent sign-in. It records the acceptance
 (the token's key names it, so a repeat returns the first, `created` false),
 asks for a full refresh as **Refresh now** does, and records
-`source_drop_accepted` and `admin_cmd_system_refresh_accept`. It prints
+`source_drop_accepted` and `admin_cmd_system_refresh_accept`. Like the
+page, it also acknowledges that refusal's own entry in the critical-problems
+banner (`critical_events_acknowledged`, with the acceptance as its subject),
+so `events list` no longer lists it; other entries stay. It prints
 `acceptance_id`, `created`, `created_at`, `expires_at`, `live` and
 `task_root_id` (the requested full refresh's root task, or null when it
 could not be requested; the next full refresh uses the acceptance anyway).

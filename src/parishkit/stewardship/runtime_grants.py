@@ -824,6 +824,11 @@ def runtime_grants(role, *, target=None):
         # until an Administrator sets one (#198), and System health shows the
         # newest backup's size and version (ADM-13): those columns only.
         columns["stewardship_backup_run"] = {"SELECT": set(BACKUP_PANEL_COLUMNS)}
+        # Accept this change once (#530) acknowledges the critical problem its
+        # refusal raised, whose log entry names the refused task: which task
+        # each refused attempt ran, and nothing else of the attempt (its
+        # manifest, configuration and credential fingerprint stay private).
+        columns["stewardship_source_refresh_attempt"] = {"SELECT": {"id", "task_id"}}
         # Setup progress observes live source ownership, never mutates the lease.
         columns["stewardship_source_lease"] = {
             "SELECT": {

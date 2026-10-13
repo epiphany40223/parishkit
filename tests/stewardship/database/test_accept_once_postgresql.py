@@ -22,14 +22,21 @@ from datetime import timedelta
 from uuid import UUID, uuid4
 
 import pytest
-from django.db import connection
+from django.db import connection, transaction
 
+from parishkit.stewardship import system_health
 from parishkit.stewardship.accounts import sessions
 from parishkit.stewardship.accounts.configuration_models import (
     AppliedConfigurationVersion,
 )
-from parishkit.stewardship.audit.models import AuditEvent
+from parishkit.stewardship.audit.models import (
+    AuditEvent,
+    CriticalEventAcknowledgement,
+)
+from parishkit.stewardship.audit.schemas import ContextKind, Outcome
+from parishkit.stewardship.audit.services import operational
 from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.observability import Event
 from parishkit.stewardship.source.drop_models import (
     SourceDropAcceptance,
     SourceDropCount,
@@ -39,6 +46,7 @@ from parishkit.stewardship.source.refresh_models import (
     SourceRefreshCommand,
 )
 
+from ..log_samples import sample as log_sample
 from ..policy_factory import address
 from ..test_source_corpus import source
 from .auth_builders import signed_in, unguarded
@@ -46,6 +54,7 @@ from .automation_builders import paired
 from .campaign_builders import change
 from .test_admin_test_sample_cli_postgresql import runner
 from .test_background_grants_postgresql import task_login
+from .test_security_events_postgresql import home
 from .test_source_families_postgresql import (
     publish,
     source_singletons,  # noqa: F401
@@ -101,6 +110,41 @@ def refusal(counts=FELL):
                 failed=failed,
             )
     return attempt
+
+
+def raised(attempt):
+    """Record the CRITICAL entry the worker writes with ``attempt``'s
+    refusal, naming its task (``source.failures``); return it."""
+    with transaction.atomic():
+        return operational(
+            Event.SOURCE_DESTRUCTIVE_CHANGE,
+            level="CRITICAL",
+            schema=ContextKind.FAILURE,
+            context={
+                "failure": "destructive_change",
+                "task_id": attempt.task_id,
+                "version": 2,
+                "attempt": 1,
+                "outcome": Outcome.FAILED,
+            },
+        )
+
+
+def unrelated():
+    """Record an unrelated CRITICAL entry (a mail outage)."""
+    event = Event.MAIL_PROVIDER_FAILED
+    with transaction.atomic():
+        return operational(event, level="CRITICAL", **log_sample(event))
+
+
+def acknowledged():
+    """The log entries acknowledged so far."""
+    return set(CriticalEventAcknowledgement.objects.values_list("log_id", flat=True))
+
+
+# The critical-problems banner and the refusal's line in it.
+BANNER = "Critical problems in the past 24 hours"
+DROP = "ParishSoft refresh would remove too much data"
 
 
 def post(browser, **values):
@@ -192,6 +236,75 @@ def test_preview_tick_and_confirm_record_one_acceptance_and_a_refresh(parish, go
     assert refused.status_code == 409
     assert 'data-accept-refused="changed"' in refused.content.decode()
     assert 'data-accept-state="accepted"' in page(browser)
+
+
+def test_accepting_acknowledges_only_that_refusals_critical_problem(parish, google):
+    """The banner stops asking about the refusal the Administrator accepted:
+    its entry is acknowledged in the acceptance's transaction, by that
+    Administrator, with the acceptance as the event's subject. An earlier
+    refusal's entry and an unrelated problem stay; a repeat adds nothing."""
+    earlier = raised(refusal())
+    attempt = refusal()
+    entry = raised(attempt)
+    outage = unrelated()
+    browser, _ = signed_in()
+    before = home(browser)
+    assert BANNER in before and f"{DROP} (2×)" in before
+    assert "Email sending failed" in before
+    token = token_of(post(browser, action="accept_preview").content.decode())
+    # The preview acknowledges nothing.
+    assert not acknowledged()
+    answer = post(browser, action="accept_confirm", token=token, checked="yes")
+    assert answer.status_code == 200, answer.content.decode()
+    acceptance = SourceDropAcceptance.objects.get()
+    assert acceptance.attempt_id == attempt.pk
+    assert acknowledged() == {entry.pk}
+    assert CriticalEventAcknowledgement.objects.get().actor_id == acceptance.actor_id
+    event = AuditEvent.objects.get(event_type="critical_events_acknowledged")
+    assert event.subject_id == acceptance.pk
+    assert event.actor_id == acceptance.actor_id
+    assert event.auditcontext.context == {"outcome": "succeeded", "count": 1}
+    # The page the confirmation answers with no longer counts it either.
+    assert f"{DROP} (2×)" not in answer.content.decode()
+    after = home(browser)
+    assert BANNER in after and DROP in after and f"{DROP} (2×)" not in after
+    assert "Email sending failed" in after
+    assert earlier.pk not in acknowledged() and outage.pk not in acknowledged()
+    # The same confirmation again acknowledges nothing more.
+    assert (
+        post(browser, action="accept_confirm", token=token, checked="yes").status_code
+        == 200
+    )
+    assert acknowledged() == {entry.pk}
+    assert count("critical_events_acknowledged") == 1
+
+
+def test_a_changed_or_expired_confirmation_acknowledges_nothing(
+    parish, google, monkeypatch
+):
+    """A refusal superseded since the preview, or an expired binding, is
+    "This changed since you looked": nothing is accepted or acknowledged."""
+    entry = raised(refusal())
+    browser, _ = signed_in()
+    token = token_of(post(browser, action="accept_preview").content.decode())
+    with monkeypatch.context() as patch:
+        patch.setattr(system_health, "ACCEPT_MAX_AGE", -1)
+        expired = post(browser, action="accept_confirm", token=token, checked="yes")
+    assert expired.status_code == 409
+    assert 'data-accept-refused="changed"' in expired.content.decode()
+    newer = raised(refusal())
+    changed = post(browser, action="accept_confirm", token=token, checked="yes")
+    assert changed.status_code == 409
+    assert 'data-accept-refused="changed"' in changed.content.decode()
+    assert not SourceDropAcceptance.objects.exists()
+    assert not acknowledged()
+    assert not count("critical_events_acknowledged")
+    assert f"{DROP} (2×)" in home(browser)
+    # Accepting the newer refusal acknowledges its entry only.
+    fresh = token_of(post(browser, action="accept_preview").content.decode())
+    post(browser, action="accept_confirm", token=fresh, checked="yes")
+    assert acknowledged() == {newer.pk}
+    assert entry.pk not in acknowledged()
 
 
 def test_a_new_refusal_since_the_preview_is_changed_not_an_error(parish, google):
@@ -393,6 +506,7 @@ def test_a_change_is_accepted_from_the_command_line(admin):
     """The preview prints counts and the binding; the confirmation prompts
     with the page's tick box, records both events and asks for a refresh."""
     attempt = refusal()
+    entry = raised(attempt)
     _, secret, row = paired(admin.service)
     code, document, _ = admin("system", "refresh-accept-preview", secret=secret)
     assert code == 0, document
@@ -430,6 +544,10 @@ def test_a_change_is_accepted_from_the_command_line(admin):
     )
     [event] = AuditEvent.objects.filter(event_type="admin_cmd_system_refresh_accept")
     assert event.actor_id == row.principal_id and event.subject_id == row.pk
+    # The refusal's critical problem is acknowledged, as the page does.
+    assert acknowledged() == {entry.pk}
+    [event] = AuditEvent.objects.filter(event_type="critical_events_acknowledged")
+    assert event.actor_id == row.principal_id and event.subject_id == acceptance.pk
 
     # The same token again returns the first acceptance.
     code, document, _ = admin(

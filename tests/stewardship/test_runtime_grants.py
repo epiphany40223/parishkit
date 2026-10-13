@@ -566,3 +566,17 @@ def test_only_web_records_a_reported_bounce():
         "stewardship_jobs",
         "0030_bounce_report",
     )
+
+
+def test_web_reads_only_which_task_a_refused_attempt_ran():
+    """Accepting a change once acknowledges its refusal's critical problem
+    (#530), whose log entry names the refused task: web may read only an
+    attempt's id and task, never its manifest, configuration or credential
+    fingerprint, and still writes none."""
+    tables, columns = runtime_grants(ServiceRole.WEB)
+    table = "stewardship_source_refresh_attempt"
+    assert table not in tables
+    assert columns[table] == {"SELECT": {"id", "task_id"}}
+    # It already acknowledges critical problems from the banner.
+    assert tables["stewardship_critical_event_ack"] == {"SELECT", "INSERT"}
+    assert "SELECT" in tables["stewardship_operational_log"]

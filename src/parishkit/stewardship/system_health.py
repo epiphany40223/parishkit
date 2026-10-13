@@ -1288,7 +1288,7 @@ class _FreshRow:
     refused: type
 
 
-def _record_fresh(caller, store, kind, *, key, command, values=None):
+def _record_fresh(caller, store, kind, *, key, command, values=None, then=None):
     """Record one fresh-gated action row; return ``(row, created)``.
 
     Shared by Take a backup now, Accept this change once and Turn off debug
@@ -1302,7 +1302,10 @@ def _record_fresh(caller, store, kind, *, key, command, values=None):
     false). ``kind.action`` is recorded with the row as its subject, and
     from the command line (``command``) also ``kind.command_action`` naming
     the automation session. ``values`` are the row's own further columns
-    (an acceptance's refusal and reviewed counts).
+    (an acceptance's refusal and reviewed counts). ``then(row, actor)``,
+    when given, runs after those events in the same transaction, only for a
+    new row, so whatever it records commits or rolls back with the row (an
+    acceptance acknowledges its refusal's critical problem).
     """
     from django.db import DatabaseError, IntegrityError, transaction
 
@@ -1350,6 +1353,8 @@ def _record_fresh(caller, store, kind, *, key, command, values=None):
                     subject_id=caller.automation_session_id,
                     context={"outcome": Outcome.SUCCEEDED},
                 )
+            if then is not None:
+                then(row, actor)
             return row, True
     except IntegrityError as error:
         # A simultaneous second click with the same key lost the race: it
@@ -1895,6 +1900,51 @@ def _request_refresh(caller, service, key):
     return receipt.task_root_id
 
 
+def _refusal_events(attempt_id):
+    """The CRITICAL ``source_destructive_change`` log entries the refusal of
+    ``attempt_id`` recorded: the worker writes one, naming the refused
+    task, in the refusal's own transaction (``source.failures``). Ids only;
+    whether each is still inside the banner's window and unacknowledged is
+    ``critical_events.acknowledge``'s to check."""
+    from .audit.models import OperationalLog
+    from .observability import Event
+    from .source.refresh_models import SourceRefreshAttempt
+
+    task = (
+        SourceRefreshAttempt.objects.filter(pk=attempt_id)
+        .values_list("task_id", flat=True)
+        .first()
+    )
+    if task is None:
+        return []
+    return list(
+        OperationalLog.objects.filter(
+            level="CRITICAL",
+            event=Event.SOURCE_DESTRUCTIVE_CHANGE.value,
+            context__task_id=str(task),
+        ).values_list("id", flat=True)
+    )
+
+
+def _acknowledge_refusal(service, actor, row):
+    """Acknowledge, for ``actor``, the critical problem the accepted refusal
+    raised, inside the acceptance's transaction (``_record_fresh``'s
+    ``then``).
+
+    Accepting the change once is the Administrator's answer to that
+    problem, so the critical-problems banner should not ask for it again.
+    Only that refusal's own entries are acknowledged, through the banner's
+    shared ``acknowledge_now`` with its ``critical_events_acknowledged``
+    event, whose subject is the acceptance; any other critical problem,
+    an earlier refusal's included, stays until it is acknowledged itself.
+    """
+    from .accounts.critical_event_views import acknowledge_now
+
+    ids = _refusal_events(row.attempt_id)
+    if ids:
+        acknowledge_now(service, actor, ids, subject_id=row.pk)
+
+
 def accept_change(caller, service, *, token, command=False, recorded=None):
     """Record one acceptance of the reviewed refusal and ask for a full
     refresh; return ``(row, created, refresh)``.
@@ -1912,7 +1962,9 @@ def accept_change(caller, service, *, token, command=False, recorded=None):
     refresh's root task, or None (``_request_refresh``). ``recorded`` is
     called once the acceptance has committed, before the refresh is asked
     for (the command line marks its outcome committed there); nothing after
-    that point raises.
+    that point raises. A new acceptance also acknowledges its refusal's
+    critical problem in its own transaction (``_acknowledge_refusal``); a
+    repeat, or a refused or expired confirmation, acknowledges nothing.
     """
     key, attempt, counts = _unsign(_signer(caller, service.store), token)
     row, created = _record_fresh(
@@ -1922,6 +1974,7 @@ def accept_change(caller, service, *, token, command=False, recorded=None):
         key=key,
         command=command,
         values={"attempt_id": attempt, "counts": counts},
+        then=lambda row, actor: _acknowledge_refusal(service, actor, row),
     )
     if recorded is not None:
         recorded()

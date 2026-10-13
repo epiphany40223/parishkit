@@ -974,7 +974,9 @@ a grant change without a schema change: the acceptance table and its guard
 came with frozen file 0080. With the [scripted upgrade](#scripted-upgrade)
 set `STEWARDSHIP_SCHEMA_CHANGE=1`; the upgrade check reports `f` and step 4
 runs migration (nothing new) and then `database-grants`, which gives the web
-login its reads and inserts of acceptances. No other step is needed. An
+login its reads and inserts of acceptances and its read of which task each
+refused attempt ran (so accepting acknowledges that refusal's critical
+problem). No other step is needed. An
 Administrator then accepts a refused large change on System health, as
 [Accepting a large ParishSoft change](stewardship-launch-runbooks.md#accepting-a-large-parishsoft-change)
 describes; the `PARISHKIT_SOURCE_MAX_DROP_PERCENT` override stays as the

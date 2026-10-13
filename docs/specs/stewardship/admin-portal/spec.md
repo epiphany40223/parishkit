@@ -5985,7 +5985,17 @@ active; and the refusal is not a tenant mismatch.
 
 **Audit:** `source_drop_accepted` naming the acceptance, and from the
 command line also `admin_cmd_system_refresh_accept`, plus the manifest
-record above. As with the other actions, the preview step records nothing
+record above. Accepting is the Administrator's answer to the refusal, so in
+the same transaction it acknowledges the refusal's own CRITICAL
+`source_destructive_change` entry in the
+[critical-problems banner](#navigation-and-home), through the banner's shared
+acknowledgement and its `critical_events_acknowledged` event, recorded for
+that Administrator with the acceptance as its subject (Administrator, pk-local
+check of #1210). Only that refusal's entry is acknowledged; an earlier
+refusal's and any other problem's stay until acknowledged, and a refused,
+expired or repeated confirmation acknowledges nothing. The web login reads
+which task each refused attempt ran (only the attempt's id and task) to find
+the entry. As with the other actions, the preview step records nothing
 (not `system_health_viewed`, which only opening the page records).
 
 **Not changed:** the environment override still works for the server

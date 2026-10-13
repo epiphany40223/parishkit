@@ -646,7 +646,9 @@ DESCRIPTIONS = {
         "An Administrator acknowledged a security notice."
     ),
     "critical_events_acknowledged": _(
-        "An Administrator acknowledged critical notices on the dashboard."
+        "An Administrator acknowledged critical notices on the dashboard, or "
+        "by accepting a refused large ParishSoft change once, which then "
+        "acknowledges that refusal's notice (the acceptance is the subject)."
     ),
     "configuration_activated": _("A settings change took effect."),
     "credential_consumer_acknowledged": _(

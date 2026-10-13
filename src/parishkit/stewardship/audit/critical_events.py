@@ -115,7 +115,7 @@ def shown(token):
     return [UUID(value) for value in values]
 
 
-def acknowledge(actor_id, *, ids, since, parish_id):
+def acknowledge(actor_id, *, ids, since, parish_id, subject_id=None):
     """Acknowledge the CRITICAL rows the banner showed, and no others.
 
     ``ids`` comes from ``shown``: the rows counted when the page was rendered.
@@ -123,7 +123,10 @@ def acknowledge(actor_id, *, ids, since, parish_id):
     so a CRITICAL row recorded after the page was shown stays visible. Returns
     how many rows were acknowledged; zero records nothing. A row that another
     Administrator acknowledged concurrently is skipped by its unique log
-    reference rather than refused, so both requests succeed.
+    reference rather than refused, so both requests succeed. ``subject_id``
+    names what acknowledged the rows when it was not the banner: Accept this
+    change once (#530) acknowledges its refusal's own rows, with the
+    acceptance as the audit event's subject.
     """
     with transaction.atomic():
         pending = list(
@@ -146,6 +149,7 @@ def acknowledge(actor_id, *, ids, since, parish_id):
             Action.CRITICAL_EVENTS_ACKNOWLEDGED,
             actor_kind=ActorKind.PORTAL_USER,
             actor_id=actor_id,
+            subject_id=subject_id,
             parish_id=parish_id,
             context={"outcome": Outcome.SUCCEEDED, "count": len(pending)},
         )
