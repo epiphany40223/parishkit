@@ -399,12 +399,22 @@ def test_tables_and_notes(page, component_origin):
         page.locator("caption", has_text="Stewardship 2027 (so far)")
     ).to_contain_text("median $1,000.00")
     # The data notes start closed (#1161) and open by their summary.
-    note = page.get_by_text("Converted from <three> invented exports").first
-    expect(note).to_be_hidden()
     notes = page.locator("details.comparison-notes")
+    note = notes.get_by_text("Converted from <three> invented exports")
+    expect(note).to_be_hidden()
     expect(notes).not_to_have_attribute("open", "")
     notes.locator("> summary").click()
     expect(note).to_be_visible()
+    # Consolidated (#1161, 2026-10-13): the notes every year shares show
+    # once, then each year only its own note, newest first.
+    expect(note).to_have_count(1)
+    expect(notes.get_by_text("Invented old system")).to_have_count(1)
+    expect(notes.locator("h3")).to_have_text(
+        ["Every imported year", "2026", "2025", "2024"]
+    )
+    expect(notes.locator("h3 + dl").nth(1)).to_have_text(
+        "note.02Invented note for 2026 only"
+    )
     # An Administrator manages the imported years on Past campaigns.
     expect(
         page.get_by_role(

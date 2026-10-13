@@ -990,10 +990,17 @@ first, explanation in the About this page panel.
    section, closed by default since the notes are long
    ([#1161](https://github.com/epiphany40223/parishkit/issues/1161)), and
    last on the page, so opening it moves nothing above it. It holds the
-   permanent note on the two kinds of denominator, then for each year its
-   source system, the active count's provenance, the dedup rule and its
-   `note.*` rows, escaped and each cut to 500 characters. These texts stay
-   on this page (see [privacy](#privacy)), and an opened disclosure stays
+   permanent note on the two kinds of denominator, then each imported
+   year's notes: its source system, the active count's provenance, the
+   dedup rule and its `note.*` rows, escaped and each cut to 500
+   characters. The notes are consolidated (Administrator decision,
+   2026-10-13, on
+   [#1161](https://github.com/epiphany40223/parishkit/issues/1161)): a
+   note that every imported year has alike, the same heading and text, is
+   shown once under "Every imported year", and each year, newest first,
+   then lists only its own notes; a year with none of its own is left out,
+   and a lone imported year's notes are all its own. These texts stay on
+   this page (see [privacy](#privacy)), and an opened disclosure stays
    open through Compare on day ([in-place
    controls](../ui-conventions/spec.md#in-place-controls)).
 
@@ -1188,7 +1195,8 @@ committed.
   `day` value range, `no-store`, the audit events, the chart
   accessibility checks of the chart engine in a browser test, and (also a
   browser test) the current campaign's pledge bands shown while each
-  imported year's and the data notes start closed and open on request.
+  imported year's and the data notes start closed and open on request,
+  the shared notes shown once and each year's own after them.
 - **Downloads and digest:** the three formats carry the same columns and
   aggregates only, with no note text; a saved digest page shows the stored
   section unchanged after a later import and a removal; the chart

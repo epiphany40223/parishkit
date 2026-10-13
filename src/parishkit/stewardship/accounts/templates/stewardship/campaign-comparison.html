@@ -54,6 +54,7 @@
 <section aria-labelledby="notes-heading">{# Closed by default (#1161): the notes are long, and they sit last, so opening them moves nothing above. #}<details id="comparison-notes" class="comparison-notes" data-keep-open><summary id="notes-heading">{% translate "Data notes" %}</summary>
 <p>{% translate "This system's percentage counts every Family eligible for the portal at any time through the day. Each imported year's percentage uses the active-Family count its archive file names, measured as described below, so the two kinds of percentage are close but not identical." %}</p>
 {% if can_import and comparison.imported %}<p><a href="{% url 'admin:past_campaigns' %}">{% translate "Add, replace or remove imported years on Past campaigns" %}</a></p>{% endif %}
-{% for year in comparison.imported %}<h3>{{ year.year }}</h3><dl>{% for label, text in year.notes %}<dt>{{ label }}</dt><dd>{{ text }}</dd>{% endfor %}</dl>{% endfor %}</details></section>
+{# Consolidated (Administrator, 2026-10-13, #1161): the notes every imported year shares once, then each year's own. #}{% if shared_notes %}<h3>{% translate "Every imported year" %}</h3><dl>{% for label, text in shared_notes %}<dt>{{ label }}</dt><dd>{{ text }}</dd>{% endfor %}</dl>{% endif %}
+{% for year, pairs in year_notes %}<h3>{{ year }}</h3><dl>{% for label, text in pairs %}<dt>{{ label }}</dt><dd>{{ text }}</dd>{% endfor %}</dl>{% endfor %}</details></section>
 </div>
 {% endblock %}

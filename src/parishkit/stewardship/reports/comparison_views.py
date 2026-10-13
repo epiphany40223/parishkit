@@ -118,9 +118,10 @@ def page_context(comparison, principal, *, refused=False, mutable=True):
     """
     from parishkit.stewardship.archive.workbook import BAND_EDGES
 
-    from .comparison import years_label
+    from .comparison import data_notes, years_label
 
     error = day_error(comparison.latest_day) if refused else None
+    shared_notes, year_notes = data_notes(comparison.imported)
     return {
         "comparison": comparison,
         "day_error": error,
@@ -139,6 +140,9 @@ def page_context(comparison, principal, *, refused=False, mutable=True):
         "tiles": tiles(comparison),
         "rows": table_rows(comparison),
         "distributions": distributions(comparison, BAND_EDGES),
+        # The data notes, the shared ones once and each year's own (#1161).
+        "shared_notes": shared_notes,
+        "year_notes": year_notes,
         # The years the tiles' averages cover: those with a value on day N
         # (a partial year after its last day is left out).
         "average_years": years_label(

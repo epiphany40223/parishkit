@@ -102,7 +102,7 @@ def _at(series, day, final):
 
 
 def _year(value, series, renewal, day, final=True):
-    """An imported year with its data notes."""
+    """An imported year with its data notes: three every year shares, one its own."""
     return Year(
         value,
         f"Stewardship {value}",
@@ -118,6 +118,7 @@ def _year(value, series, renewal, day, final=True):
             ("Source system", "Invented old system"),
             ("Active Families counted from", "An invented snapshot"),
             ("note.01", "Converted from <three> invented exports"),
+            ("note.02", f"Invented note for {value} only"),
         ),
         series=series,
     )

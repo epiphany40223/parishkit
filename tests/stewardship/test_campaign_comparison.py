@@ -416,6 +416,45 @@ def test_the_data_line_names_the_years_the_averages_cover():
     assert not context["can_import"]
 
 
+def test_data_notes_show_the_shared_notes_once_then_each_years_own():
+    """Notes every year has alike show once; each year keeps only its own.
+
+    The Administrator asked for one consolidated section (2026-10-13,
+    #1161). A note with a shared label but a different text is the year's
+    own; a year with nothing of its own is left out; a lone year's notes
+    are all its own.
+    """
+    from parishkit.stewardship.reports.comparison import data_notes
+
+    source = ("Source system", "Old system")
+    counted = ("Active Families counted from", "A snapshot")
+    years = [
+        replace(year(2054, None), notes=(source, counted, ("note.a", "Late file"))),
+        replace(year(2053, None), notes=(counted, source)),
+        replace(
+            year(2052, None),
+            notes=(source, counted, ("Repeat submissions", "Kept the last")),
+        ),
+    ]
+    assert data_notes(years) == (
+        (source, counted),
+        (
+            (2054, (("note.a", "Late file"),)),
+            (2052, (("Repeat submissions", "Kept the last"),)),
+        ),
+    )
+    other = replace(years[1], notes=(source, ("Active Families counted from", "B")))
+    assert data_notes([years[0], other]) == (
+        (source,),
+        (
+            (2054, (counted, ("note.a", "Late file"))),
+            (2053, (("Active Families counted from", "B"),)),
+        ),
+    )
+    assert data_notes(years[:1]) == ((), ((2054, years[0].notes),))
+    assert data_notes([]) == ((), ())
+
+
 # ------------------------------------------------- slice 5: series and day
 
 
