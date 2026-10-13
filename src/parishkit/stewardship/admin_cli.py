@@ -1935,20 +1935,7 @@ def report_census(args, preamble, runtime, context):
     """The Census changes list, as counts only (#463)."""
     from .admin_census import read_census
 
-    return read_census(
-        context["caller"],
-        runtime,
-        {
-            "status": args.status,
-            # The page's "Show history" box: "yes" when ticked.
-            "history": "yes" if args.history else None,
-            "route": args.route,
-            "kind": args.kind,
-            "start": args.start,
-            "end": args.end,
-            "zone": args.zone,
-        },
-    )
+    return read_census(context["caller"], runtime, _census_filters(args))
 
 
 def census_resolve(args, preamble, runtime, context):
