@@ -88,10 +88,10 @@ def test_ci_explicitly_requires_postgresql_verification():
     indexes = [
         index
         for job in shards["strategy"]["matrix"]["job"]
-        for index in quality_ci.job_partitions(job, 14)
+        for index in quality_ci.job_partitions(job, 16)
     ]
     count = len(indexes)
-    assert count == 14 and indexes == list(range(1, count + 1))
+    assert count == 16 and indexes == list(range(1, count + 1))
     assert f"parishkit.stewardship.quality_ci combine --count {count} " in commands
     assert shards["strategy"]["fail-fast"] is False
     assert gate["needs"] == ["validate", "stewardship-postgresql-shard"]

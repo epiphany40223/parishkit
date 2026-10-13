@@ -16,6 +16,7 @@ import subprocess
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from pathlib import Path
 
@@ -31,16 +32,19 @@ DATABASE_TESTS = "tests/stewardship/database"
 # Partitions one CI job runs concurrently, each against its own PostgreSQL/
 # Valkey pair (issue #625). This is the one tuning knob: the contract tests
 # derive the workflow's job matrix and its service pairs from it, and fail
-# naming what to change. Three is the smallest packing that frees at least
-# eight of the account's twenty concurrent job slots (fourteen jobs become
-# five; two per job would free only seven). It also fits a 4 vCPU / 16 GB
-# hosted runner: the partitions spend much of their time waiting on
-# PostgreSQL and on real lease and drain deadlines, and three 2 GiB tmpfs
-# clusters plus three pytest processes stay well inside 16 GB.
+# naming what to change. Three per job keeps a full run's PostgreSQL group to
+# six of the account's twenty concurrent job slots for sixteen partitions
+# (#625, #1200). It also fits a 4 vCPU / 16 GB hosted runner: the partitions
+# spend much of their time waiting on PostgreSQL and on real lease and drain
+# deadlines, and three 2 GiB tmpfs clusters plus three pytest processes stay
+# well inside 16 GB. Job one holds partition one and the baseline, also three
+# pytest processes at most.
 PARTITIONS_PER_JOB = 3
-# One partition's subprocesses share this deadline. Partitions alone took up
-# to 18.9 minutes (median 13.2) in October 2026; the margin absorbs sharing a
-# runner with the other packed partitions, not a slower suite.
+# Each pytest child's deadline: a partition's database run, and partition
+# one's baseline beside it. Packed fourteen ways, partitions took 1,120 to
+# 1,690 s and the baseline 1,310 to 1,330 s in October 2026 (#1200); sixteen
+# partitions bring the heaviest to about 24 minutes. The margin absorbs slow
+# runners, not a slower suite: when a partition nears it, add partitions.
 SHARD_TIMEOUT = 30 * 60
 # The first slot keeps the services' default ports. Valkey port 56380 stays
 # unused: the unavailable-service tests rely on nothing listening there.
@@ -156,7 +160,9 @@ def child_status(result):
 ABORT_GRACE_SECONDS = 10
 
 
-def run_child(arguments, *, phase, timeout, **options):
+def run_child(
+    arguments, *, phase, timeout, prefix=None, lock=None, on_start=None, **options
+):
     """Run one shard pytest child; at its deadline, dump its stacks and say so.
 
     ``subprocess.run(timeout=...)`` SIGKILLs a late child, so no stack dump
@@ -167,11 +173,35 @@ def run_child(arguments, *, phase, timeout, **options):
     re-raising ``TimeoutExpired``, it prints which ``phase`` was stopped, its
     limit and the elapsed time. Any other interruption kills the child, as
     ``subprocess.run`` does.
+
+    With a ``prefix`` (and the ``lock`` its sibling children share), the
+    child's output, stack dump included, is relayed whole line by line with
+    that prefix, so children running at once never splice their partial
+    progress lines together (#1200). ``on_start``, if given, is called with
+    the started ``Popen``, so a sibling can stop this child early.
     """
     started = time.monotonic()
+    if prefix is not None:
+        options |= {"stdout": subprocess.PIPE, "stderr": subprocess.STDOUT}
     process = subprocess.Popen(arguments, **options)
+    if on_start is not None:
+        on_start(process)
+    thread = None
+    if prefix is not None:
+        thread = threading.Thread(
+            target=relay, args=(process.stdout, prefix, lock), daemon=True
+        )
+        thread.start()
+
+    def drained():
+        """Let the relay finish the child's last lines, such as its stack dump."""
+        if thread is not None:
+            thread.join(timeout=RELAY_DRAIN_SECONDS)
+
     try:
-        return subprocess.CompletedProcess(arguments, process.wait(timeout=timeout))
+        code = process.wait(timeout=timeout)
+        drained()
+        return subprocess.CompletedProcess(arguments, code)
     except subprocess.TimeoutExpired:
         process.send_signal(signal.SIGABRT)
         try:
@@ -179,11 +209,11 @@ def run_child(arguments, *, phase, timeout, **options):
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait()
+        drained()
         print(
             f"ERROR: CI shard timeout: stopped the {phase} pytest run after "
-            f"{time.monotonic() - started:.0f}s (limit {timeout:.0f}s; the "
-            f"shard's total deadline is {SHARD_TIMEOUT}s). Its thread stacks "
-            "are dumped above; in the database run, the last CI_PROGRESS "
+            f"{time.monotonic() - started:.0f}s (limit {timeout:.0f}s). Its "
+            "thread stacks are dumped above; in the database run, the last CI_PROGRESS "
             "START without an END also names the test that was running.",
             file=sys.stderr,
             flush=True,
@@ -238,48 +268,37 @@ def run_shard(root, output, index, count, basetemp=None, *, coverage=True, selec
         "--durations=20",
         "-o",
         f"faulthandler_timeout={STACK_DUMP_SECONDS}",
-        *([f"--basetemp={outside(root, basetemp)}"] if basetemp else []),
     ]
-    deadline = time.monotonic() + SHARD_TIMEOUT
+    basetemp = outside(root, basetemp) if basetemp else None
+    database = [
+        *arguments,
+        *([f"--basetemp={basetemp}"] if basetemp else []),
+        "--ds=parishkit.stewardship.settings.database_test",
+        "--require-postgresql-tests",
+        "--require-no-skips",
+        f"--ci-shard={index}/{count}",
+        f"--ci-evidence={output / 'tests.json'}",
+        *([f"--ci-select={Path(select).resolve()}"] if select else []),
+        DATABASE_TESTS,
+    ]
     if index == 1:
-        result = run_child(
-            [*arguments, "--ds=parishkit.stewardship.settings.test", "tests"],
-            phase="baseline",
-            cwd=root,
-            env=env,
-            timeout=SHARD_TIMEOUT,
-        )
-        if result.returncode:
-            return child_status(result)
-    remaining = deadline - time.monotonic()
-    if remaining <= 0:
-        print(
-            "ERROR: CI shard timeout: the baseline used the whole "
-            f"{SHARD_TIMEOUT}s shard deadline (elapsed "
-            f"{SHARD_TIMEOUT - remaining:.0f}s); the database run was not started.",
-            file=sys.stderr,
-            flush=True,
-        )
-        raise subprocess.TimeoutExpired(arguments, SHARD_TIMEOUT)
-    result = run_child(
-        [
+        # pytest empties its temporary root when it starts, so the baseline,
+        # running beside the database tests, needs one of its own.
+        baseline = [
             *arguments,
-            *(["--cov-append"] if coverage and index == 1 else []),
-            "--ds=parishkit.stewardship.settings.database_test",
-            "--require-postgresql-tests",
-            "--require-no-skips",
-            f"--ci-shard={index}/{count}",
-            f"--ci-evidence={output / 'tests.json'}",
-            *([f"--ci-select={Path(select).resolve()}"] if select else []),
-            DATABASE_TESTS,
-        ],
-        phase="database",
-        cwd=root,
-        env=env,
-        timeout=remaining,
-    )
-    if result.returncode:
-        return child_status(result)
+            *([f"--basetemp={basetemp}-baseline"] if basetemp else []),
+            "--ds=parishkit.stewardship.settings.test",
+            "tests",
+        ]
+        status = run_with_baseline(root, env, database, baseline, data, coverage)
+    else:
+        status = child_status(
+            run_child(
+                database, phase="database", cwd=root, env=env, timeout=SHARD_TIMEOUT
+            )
+        )
+    if status:
+        return status
     if tree_digest(root) != digest:
         raise ValueError("Repository changed during CI measurement")
     evidence = json.loads((output / "tests.json").read_text())
@@ -321,6 +340,93 @@ def run_shard(root, output, index, count, basetemp=None, *, coverage=True, selec
     return 0
 
 
+def run_with_baseline(root, env, database, baseline, data, coverage):
+    """Run partition one's database tests and the baseline at once; 0 or a status.
+
+    The non-database baseline once ran first, sharing one SHARD_TIMEOUT with
+    partition one's database tests. As both grew, that partition reached the
+    deadline (#961, #1200), so each child now has its own SHARD_TIMEOUT and
+    its own timeout message. The baseline measures into a separate coverage
+    file, merged into ``data`` only when both pass, so the receipt still
+    hashes one complete coverage file. Each child's output is relayed whole,
+    line by line, the baseline's tagged ``[baseline]``. A timeout in either
+    child is raised once both have stopped. Any other failure of the database
+    side (an interrupt, a child that cannot start) stops the baseline at once
+    rather than leaving it to run out its deadline.
+    """
+    extra = data.with_name("baseline.coverage")
+    baseline_env = dict(env)
+    if coverage:
+        baseline_env["COVERAGE_FILE"] = str(extra)
+    lock = threading.Lock()
+    # The baseline's Popen, once started. If the database side fails first,
+    # ``cancel`` makes the baseline stop as soon as it starts.
+    processes = []
+    cancel = threading.Event()
+
+    def started(process):
+        """Record the baseline child; stop it at once if already cancelled."""
+        processes.append(process)
+        if cancel.is_set():
+            process.kill()
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        later = pool.submit(
+            run_child,
+            baseline,
+            phase="baseline",
+            cwd=root,
+            env=baseline_env,
+            timeout=SHARD_TIMEOUT,
+            prefix="[baseline] ",
+            lock=lock,
+            on_start=started,
+        )
+        try:
+            result = run_child(
+                database,
+                phase="database",
+                cwd=root,
+                env=env,
+                timeout=SHARD_TIMEOUT,
+                prefix="",
+                lock=lock,
+            )
+        except subprocess.TimeoutExpired:
+            # Already logged; the baseline finishes or times out on its own.
+            raise
+        except BaseException:
+            cancel.set()
+            for process in processes:
+                process.kill()
+            print(
+                "Stopping the baseline: the database run did not finish.",
+                file=sys.stderr,
+                flush=True,
+            )
+            raise
+        # Name both failures (a signal, say) before returning either status.
+        status = [child_status(later.result()), child_status(result)]
+    if any(status):
+        return next(code for code in status if code)
+    if coverage:
+        merge_coverage(data, extra)
+    return 0
+
+
+def merge_coverage(data, extra):
+    """Merge the coverage file ``extra`` (with its test contexts) into ``data``."""
+    merged = CoverageData(basename=str(data))
+    merged.read()
+    other = CoverageData(basename=str(extra))
+    other.read()
+    if not other.measured_files():
+        raise ValueError("The baseline recorded no coverage")
+    merged.update(other)
+    merged.write()
+    extra.unlink()
+
+
 def summarize(line):
     """Append one line to the GitHub Actions job summary, when there is one."""
     if path := os.environ.get("GITHUB_STEP_SUMMARY"):
@@ -338,9 +444,9 @@ def job_partitions(job, count, per_job=PARTITIONS_PER_JOB):
 
     Jobs are numbered from one. When the partitions do not divide evenly, the
     first job takes the short remainder: partition one runs the CPU-heavy
-    non-database baseline as well as its database tests, so it is often the
-    longest and should share its runner with the fewest others. Every
-    partition belongs to exactly one job.
+    non-database baseline beside its database tests, so its runner should
+    hold the fewest other partitions. Every partition belongs to exactly one
+    job.
     """
     partition([], 1, count)
     jobs = job_count(count, per_job)

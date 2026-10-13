@@ -315,19 +315,46 @@ real lease, drain and deadline waits, so three rarely need more than three
 cores at once, leaving one for the PostgreSQL backends. Three 2 GiB tmpfs
 clusters and three pytest processes stay well inside 16 GB; four would
 oversubscribe the CPUs whenever the partitions are all busy. The first job
-takes the short remainder (two partitions): partition one also runs the
-CPU-heavy non-database baseline, so it is often the longest. The partition
-deadline and job limit were raised to absorb sharing the runner, not to permit
-a slower suite.
+takes the short remainder: partition one also runs the CPU-heavy non-database
+baseline. The partition deadline and job limit were raised to absorb sharing
+the runner, not to permit a slower suite.
 
-The expected cost is roughly 100 runner-minutes for the PostgreSQL group
-instead of about 185, with a lone run's PostgreSQL wall time a few minutes
-longer. Measure before claiming either: first with the introducing PR's own
-dispatched `CI (jobs: all)` run (the five jobs' times and runner-minutes, and
-partition one's margin to its deadline), then by comparing a dispatched `CI
-(jobs: all)` run on an otherwise idle account, and the runner-minutes of a week
-of ordinary PR runs, against the #625 baseline. To retune, change
-`PARTITIONS_PER_JOB`; `tests/stewardship/test_quality_ci.py` then names the job
+By October 2026 both had outgrown that layout
+([#1200](https://github.com/epiphany40223/parishkit/issues/1200)). Release
+trains p, q and r measured these times:
+
+- The baseline took 1,310 to 1,330 s.
+- Partition one's database share took about 470 s after the baseline, under
+  the same 1,800 s deadline. It was killed at the deadline twice.
+- Three-packed partitions took 1,120 to 1,690 s of pytest each.
+
+So the baseline now runs beside partition one's database tests, each with its
+own deadline, and the baseline's coverage is merged into the partition's file
+before the receipt is written. The count went from fourteen to sixteen, which
+is six jobs. Job one holds only partition one and the baseline, so the
+baseline shares its runner with one database partition, as before. Run
+against the measured per-test seconds, sixteen partitions put the heaviest at
+about 1,170 s of work, about 24 minutes of wall time with each partition's
+fixed schema and collection cost. A refresh of the stale hints for a few
+large cases keeps the heaviest within about 9% of the average.
+
+The tradeoff is one more runner per full run: twelve concurrent jobs at peak
+instead of eleven. PostgreSQL runner-minutes stay about the same (six jobs of
+about 25 minutes instead of five of about 29 to 31), and the browser jobs
+remain a full run's critical path. When a partition again nears its deadline,
+raise the count (keeping job one's single partition: 16, 19, 22 and so on)
+rather than the deadline. When the baseline nears it, split the baseline
+([#1205](https://github.com/epiphany40223/parishkit/issues/1205)), which needs
+its own completeness evidence.
+
+Packing was expected to cut the PostgreSQL group from about 185
+runner-minutes (#625) to about 100. By October 2026 the suite had grown, and
+fourteen partitions on five jobs used about 135 to 150 runner-minutes per
+full run; sixteen on six jobs should stay near 150. Check a change to the
+packing or the count against a dispatched `CI (jobs: all)` run: the six jobs'
+times and runner-minutes, each partition's and the baseline's margin to its
+deadline, and, for runner-minutes, a week of ordinary PR runs. To retune,
+change `PARTITIONS_PER_JOB`; `tests/stewardship/test_quality_ci.py` then names the job
 matrix and the `postgres-N`/`valkey-N` service pairs `ci.yml` must declare.
 
 ## Transient infrastructure failures
