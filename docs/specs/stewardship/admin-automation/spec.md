@@ -2705,7 +2705,12 @@ pages answer 409. The refusal's detail is its own verb,
 `delivery refusal-show` (a default, pending Administrator confirmation).
 `delivery resolve` is the delivery page's resolution form in the page's
 command scope, keyed by its `command_id`, recording
-`admin_cmd_delivery_resolve` when it creates the resolution. Two page
+`admin_cmd_delivery_resolve` when it creates the resolution. The command
+scope's work transaction takes the work-order lock before the key is checked,
+so two sessions sending one key at once are serialized: the second sees the
+first's committed record, returns it with `created` false and records no
+second command event
+([#1222](https://github.com/epiphany40223/parishkit/issues/1222)). Two page
 actions need a ticked acknowledgement, which PR 9c asks for at PR 5b's
 [prompt](#command-line-confirmation) (the page's words, then `yes`, or
 `--yes`) before any transaction opens. They are separate verbs, not more

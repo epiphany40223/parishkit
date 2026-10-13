@@ -146,6 +146,7 @@ def retry_task(caller, service, task_id, *, request_key, context):
 
     from .audit.schemas import Action, ActorKind, Outcome
     from .audit.services import record_action
+    from .campaigns.work_locks import require_work_order
     from .jobs.models import TaskRun
     from .jobs.storage import TaskRetryConflict
     from .jobs.task_retries import (
@@ -175,7 +176,9 @@ def retry_task(caller, service, task_id, *, request_key, context):
                 raise NotAvailable("This task has no retry.")
             # A key that already retried this chain is a repeat: the services
             # return its original retry, and no second event is recorded. The
-            # work-order lock the scope holds serializes concurrent repeats.
+            # work-order lock the scope holds serializes concurrent repeats;
+            # fail closed if the scope ever stops holding it (#1222, #147).
+            require_work_order()
             repeat = TaskRun.objects.filter(
                 root_id=task["root_id"], retry_command_id=request_key
             ).exists()
@@ -570,13 +573,15 @@ def _keyed_command(caller, service, actor, context, *, event, exists, act):
     command's own transaction; ``act(created=...)`` runs the page's function
     and returns the document. ``event`` (``admin_cmd_<area>_<verb>``) is
     recorded in the same transaction only when the key was new, so a repeat
-    records nothing. A missing record raised by ``act`` as ``NotAvailable``,
-    or a refusal, is exit 5 when the session ended meanwhile; a check or
-    uniqueness refusal from the database is ``stale_version``, as the pages
-    answer 409.
+    records nothing. Concurrent repeats of one key are serialized by the
+    work-order lock the command scope holds before ``exists()`` (#1222). A
+    missing record raised by ``act`` as ``NotAvailable``, or a refusal, is
+    exit 5 when the session ended meanwhile; a check or uniqueness refusal
+    from the database is ``stale_version``, as the pages answer 409.
     """
     from .audit.schemas import ActorKind, Outcome
     from .audit.services import record_action
+    from .campaigns.work_locks import require_work_order
     from .jobs.task_retries import command_scope
     from .observability import _guard_refusal
 
@@ -586,6 +591,12 @@ def _keyed_command(caller, service, actor, context, *, event, exists, act):
         """The page's command, then the command's event when it created one."""
         written.clear()
         with command_scope(caller, service, actor):
+            # The scope's work transaction takes the exclusive work-order lock
+            # first, so a second session with this key waits here until the
+            # first commits; READ COMMITTED then lets ``exists()`` see its row,
+            # and only one of them records the event (#1222). Fail closed if
+            # the scope ever stops holding that lock (#147 narrows it).
+            require_work_order()
             repeat = exists()
             model = act(created=not repeat)
             if not repeat:
