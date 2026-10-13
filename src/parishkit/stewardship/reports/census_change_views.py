@@ -383,9 +383,8 @@ def _respond(request, campaign_id, *, export, render):
             return _error(campaign_id, status=503)
         handed_off = response.status_code == 200 and response.streaming
         if export and handed_off:
-            stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%SZ")
             for name, value in download_headers(
-                f"stewardship-census-changes-{stamp}.{extra['format']}",
+                export_file_name(extra["format"], datetime.now(UTC)),
                 content_type=FORMATS[extra["format"]],
             ).items():
                 response[name] = value
@@ -446,40 +445,49 @@ def report(request, campaign_id):
     return _respond(request, campaign_id, export=False, render=render)
 
 
+def export_file_name(fmt, now):
+    """The download's file name, stamped with the UTC instant ``now``."""
+    return f"stewardship-census-changes-{now.strftime('%Y%m%d-%H%M%SZ')}.{fmt}"
+
+
+def export_body(campaign_id, result, fmt, zone):
+    """The filtered list as the chosen file's bytes, times in ``zone``.
+
+    The page's download and ``pk-admin export census`` (#463) both render
+    through here, so their CSV, XLSX and PDF cannot drift. The PDF also
+    names the parish and campaign in its page header and dates itself in
+    the parish's date format, lent explicitly so the file never depends on
+    the request's date middleware (as the response lists' downloads do).
+    """
+    if fmt == "pdf":
+        parish = (
+            SystemConfiguration.objects.select_related("active_configuration__parish")
+            .get()
+            .active_configuration.parish
+        )
+        campaign = Campaign.objects.select_related("active_configuration").get(
+            pk=campaign_id
+        )
+        with dates.using(parish.date_format):
+            return census_pdf(
+                result,
+                zone,
+                parish=parish.name,
+                campaign=campaign.active_configuration.name,
+                as_of=database_now(),
+            )
+    if fmt == "xlsx":
+        return census_xlsx(result, zone)
+    return census_csv(result, zone)
+
+
 @page_download("census_changes")
 @require_http_methods(["POST"])
 def export(request, campaign_id):
     """Download the filtered list as CSV, XLSX or PDF, rendered on request."""
 
     def render(result, query, extra):
-        """The chosen file format, with times in the chosen timezone.
-
-        The PDF also names the parish and campaign in its page header and
-        dates itself in the parish's date format, lent explicitly so the
-        file never depends on the request's date middleware (as the
-        response lists' downloads do).
-        """
-        if extra["format"] == "pdf":
-            parish = (
-                SystemConfiguration.objects.select_related(
-                    "active_configuration__parish"
-                )
-                .get()
-                .active_configuration.parish
-            )
-            campaign = Campaign.objects.select_related("active_configuration").get(
-                pk=campaign_id
-            )
-            with dates.using(parish.date_format):
-                return census_pdf(
-                    result,
-                    extra["zone"],
-                    parish=parish.name,
-                    campaign=campaign.active_configuration.name,
-                    as_of=database_now(),
-                )
-        if extra["format"] == "xlsx":
-            return census_xlsx(result, extra["zone"])
-        return census_csv(result, extra["zone"])
+        """The chosen file format, with times in the chosen timezone."""
+        return export_body(campaign_id, result, extra["format"], extra["zone"])
 
     return _respond(request, campaign_id, export=True, render=render)
