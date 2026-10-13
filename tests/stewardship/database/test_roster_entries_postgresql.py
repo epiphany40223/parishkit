@@ -270,16 +270,37 @@ def test_pages_list_tick_and_download_the_roster_changes(
         assert contexts and all(set(c) == {"outcome", "count"} for c in contexts)
 
 
-def test_a_leader_sees_the_tick_but_not_the_list(response_service, google):
-    """A Ministry leader reads the tick on their own request, has no tick
-    form, and is refused the list and the tick."""
+def test_a_leader_never_sees_the_tick_nor_the_list(response_service, google):
+    """A Ministry leader has no ParishSoft access (#1160): their request page
+    and queue draw no tick (state, who, when or form) and tell them Staff
+    enter roster changes; the list and the tick are refused. Staff and
+    Administrators keep seeing it and the "update ParishSoft yourself" help."""
     harness, admin, join, _ = resolved(response_service)
-    tick(harness, admin, join, True)
-    browser, _, _, _ = leader(harness, google)
     item = f"/admin/reports/ministries/follow-up/{join.pk}/"
-    response, body = get(browser, item)
-    assert response.status_code == 200 and b"Entered in ParishSoft" in body
-    assert b"Clear Entered in ParishSoft" not in body
+    queue = "/admin/reports/ministries/follow-up/"
+    browser, _, _, _ = leader(harness, google)
+
+    def hidden(entered):
+        """The leader's request page and queue show nothing of the tick."""
+        response, body = get(browser, item)
+        assert response.status_code == 200 and b"Asked to join" in body
+        for words in (
+            b"Entered in ParishSoft",
+            b"Not yet entered",
+            b"Mark entered",
+            f"{join.pk}/roster/".encode(),
+            b"followup-roster",
+            b"update ParishSoft yourself",
+        ):
+            assert words not in body, (entered, words)
+        assert b"Staff enter roster changes in ParishSoft" in body
+        response, body = search(browser, queue, {"state": "any"})
+        assert response.status_code == 200 and f"{join.pk}/".encode() in body
+        assert b"<br>Entered" not in body and b"Not yet entered" not in body
+
+    hidden(False)
+    tick(harness, admin, join, True)
+    hidden(True)
     assert get(browser, "/admin/reports/ministries/follow-up/roster/")[
         0
     ].status_code in {403, 404}
@@ -289,6 +310,18 @@ def test_a_leader_sees_the_tick_but_not_the_list(response_service, google):
         {"sequence": "2", "entered": "no", "request_key": str(uuid4())},
     )
     assert response.status_code in {403, 404}
+    assert MinistryRosterEntry.objects.filter(request=join).count() == 1
+    # The Administrator still sees the mark, its form and the queue line;
+    # leader() pointed the one synthetic Google account at the leader.
+    google[0]["email"] = "admin@example.org"
+    staff, login = signed_in()
+    assert login.status_code == 302
+    _, body = get(staff, item)
+    assert b"Entered in ParishSoft by admin@example.org" in body
+    assert b"Clear Entered in ParishSoft" in body
+    assert b"update ParishSoft yourself" in body
+    assert b"Staff enter roster changes" not in body
+    assert b"<br>Entered" in search(staff, queue, {"state": "any"})[1]
 
 
 class Rollback(Exception):

@@ -566,7 +566,7 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None):
                 next_history=history_page + 1 if more_history else None,
                 request_key=uuid4(),
                 roster_key=uuid4(),
-                # Admin and Staff set the tick; a Ministry leader sees it only.
+                # Admin and Staff see and set the tick; a leader never sees it.
                 can_tick=can_tick(principal),
                 # The help about Ministries removed from the campaign is for
                 # Staff and Administrators (#1135). A leader never meets one:
