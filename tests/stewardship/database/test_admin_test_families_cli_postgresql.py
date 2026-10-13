@@ -233,10 +233,11 @@ def test_an_email_changed_since_the_preview_is_refused(
 NAMES_EVENT = "admin_cmd_export_family_test_names"
 
 
-def names_preview(admin, secret, family_test, *duids, key, fmt=None, zone="UTC"):  # noqa: F811
+def names_preview(admin, secret, family_test, *duids, key, fmt="csv", zone="UTC"):  # noqa: F811
     """``test families-preview --names`` for ``duids`` under ``key``.
 
-    ``fmt`` adds ``--format``; without it the command's default (CSV).
+    ``fmt`` is the ``--format``; the command's own default is XLSX (#1190), so
+    these tests ask for CSV unless they test another format.
     ``zone`` is the ``--timezone``; None leaves it out (the parish's, #1127).
     """
     argv = ["test", "families-preview", revision(family_test)]
@@ -245,8 +246,7 @@ def names_preview(admin, secret, family_test, *duids, key, fmt=None, zone="UTC")
     argv += ["--names", "--request-key", str(key)]
     if zone is not None:
         argv += ["--timezone", zone]
-    if fmt is not None:
-        argv += ["--format", fmt]
+    argv += ["--format", fmt]
     return admin(*argv, secret=secret)
 
 

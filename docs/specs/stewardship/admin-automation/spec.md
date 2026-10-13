@@ -2273,7 +2273,8 @@ keyed by the preview's request key, through the shared
 [export lifecycle](#reports-and-exports): the worker renders the file and
 `export fetch` downloads it, so the names reach only the file. The document
 is the preview's with `export`, the export's `export status` document (it is
-null without `--names`). The file is CSV (the default), XLSX or PDF
+null without `--names`). The file is XLSX (the
+[default](../ui-conventions/spec.md#downloaded-files)), CSV or PDF
 (`--format`, [#966](https://github.com/epiphany40223/parishkit/issues/966)),
 each with Family then Family DUID, in the page's order (the page's Reviewed
 Families table also shows each Family's status)

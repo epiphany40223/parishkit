@@ -6,6 +6,13 @@ from urllib.parse import quote
 
 from . import dates
 
+# The format every export form preselects, and every page download and
+# pk-admin command takes when none is given (#1190): the Administrator's one
+# rule is XLSX. CSV stays offered wherever it was. pk-admin spells it out
+# (admin_cli.DEFAULT_EXPORT_FORMAT, as its parser is built before Django is
+# set up); a test keeps the two equal.
+DEFAULT_EXPORT_FORMAT = "xlsx"
+
 # Every synchronous page download: a view that writes a CSV, XLSX or PDF
 # straight from its page instead of through the export worker. The name is
 # the download's case in the one-column-set guard (#966,

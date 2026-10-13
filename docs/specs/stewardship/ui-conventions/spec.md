@@ -2119,6 +2119,21 @@ the Family test names file (`test families-preview --names`, which uses the
 parish's zone unless `--timezone` is given, as a host command has no
 browser).
 
+**Default format.** Every data export's format menu offers XLSX first and
+preselects it; the other formats it offers (CSV, PDF, and a page's own such as
+PNG or JSON Lines) follow, so CSV stays available wherever it was. A download
+or `pk-admin` command posted or run without a format produces XLSX too.
+Document downloads keep their own first choice: the Campaign comparison's PDF
+summary and the Ministry follow-up packet, which are read rather than sorted.
+**Why.** Most readers open the file in a spreadsheet, and one rule for every
+form means no page picks its own default (Administrator request, 2026-10-12).
+**Shared code.** `web.exports.DEFAULT_EXPORT_FORMAT`, the `export_format_options`
+template tag (which orders and selects the options, and with `disabled=` shows
+one offered format as unavailable, never selected), and
+`admin_cli.DEFAULT_EXPORT_FORMAT` (spelled out, kept equal by a test);
+`tests/stewardship/test_export_default_format.py` guards every format menu.
+**Precedent.** [#1190](https://github.com/epiphany40223/parishkit/issues/1190).
+
 Current state: since the
 [#966](https://github.com/epiphany40223/parishkit/issues/966) column sweep,
 every export's CSV, XLSX and PDF carry one column set with no internal

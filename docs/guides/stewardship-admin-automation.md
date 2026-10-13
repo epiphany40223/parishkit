@@ -1317,8 +1317,8 @@ Open the page, or export, to see them.
 
 `logs export` writes the page's download, the newest 10,000 matching
 entries at most, to standard output, as the page's file (CSV and JSON Lines
-byte for byte). It takes the filters above, `--format` (`csv`, the default,
-`xlsx` or `jsonl`; CSV and XLSX have the same columns, under plain
+byte for byte). It takes the filters above, `--format` (`xlsx`, the
+default, `csv` or `jsonl`; CSV and XLSX have the same columns, under plain
 headings such as `Correlation identifier`, while JSON Lines keeps keys such
 as `correlation_id`) and
 `--timezone` (UTC, the default, or a time zone name, for the file's times).
@@ -1884,7 +1884,7 @@ standard output, and its document (`campaign_id`, `file_name`,
 standard error, as `logs export` does. It needs a full-scope session, as
 every export does; Administrators and Staff may run it, and a Ministry
 leader is refused (`denied`). It takes `report census`'s filters, without
-the page's search, `--format` (`csv`, the default, `xlsx`, `pdf` or
+the page's search, `--format` (`xlsx`, the default, `csv`, `pdf` or
 `jsonl`) and `--timezone`, and records the page's "downloaded" event with
 the number of rows in the file. The two zones differ: `--zone` is the time
 zone the `--start` and `--end` days of the filter fall in (required with
@@ -2336,3 +2336,8 @@ print is exit 1 (`invalid`).
   `admin_cmd_delivery_bounce_report`), and `kind` (`provider` or
   `reported_bounce`) in `delivery refusals` rows and `delivery
   refusal-show`.
+- `pk-admin/1` (#1190): a change of default, kept on version 1. Without
+  `--format`, `logs export`, `export census` and `test families-preview
+  --names` now write XLSX (they wrote CSV), as every page's format menu now
+  preselects XLSX. The document's fields are unchanged; a script that
+  needs CSV passes `--format csv`.

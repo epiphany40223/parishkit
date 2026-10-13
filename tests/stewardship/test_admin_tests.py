@@ -449,7 +449,7 @@ def test_names_take_an_optional_time_zone_and_print_a_new_key(monkeypatch):
         monkeypatch, ["--names", "--timezone", "UTC", "--request-key", str(KEY)]
     )
     assert calls[0][1]["request_key"] == KEY and errors == ""
-    assert calls[0][1]["format"] == "csv"
+    assert calls[0][1]["format"] == "xlsx"  # the default (#1190)
 
 
 def test_names_take_a_file_format(monkeypatch):

@@ -43,7 +43,12 @@ from parishkit.stewardship.source.snapshot_names import snapshot_family_names
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.contracts import filters
-from parishkit.stewardship.web.exports import csv_cell, download_headers, page_download
+from parishkit.stewardship.web.exports import (
+    DEFAULT_EXPORT_FORMAT,
+    csv_cell,
+    download_headers,
+    page_download,
+)
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
 from parishkit.stewardship.workflows.models import (
@@ -372,7 +377,10 @@ def _choices(parameters, *, export):
     ):
         raise ValueError("Invalid roster list choice.")
     if export:
-        fmt, zone = values.get("format", "csv"), values.get("timezone", "UTC")
+        fmt, zone = (
+            values.get("format", DEFAULT_EXPORT_FORMAT),
+            values.get("timezone", "UTC"),
+        )
         if fmt not in FORMATS or (zone != "UTC" and zone not in timezone_names()):
             raise ValueError("Invalid roster export choice.")
         return show, {"format": fmt, "zone": ZoneInfo(zone), "ministry": ministry}

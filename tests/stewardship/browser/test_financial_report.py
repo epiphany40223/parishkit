@@ -74,7 +74,7 @@ def test_financial_mobile_keyboard_and_accessibility(
     assert page.locator("th button.sort-link").count() == 4
     # The complete export is offered beside the page, with its own controls.
     assert page.get_by_role("button", name="Queue complete export").count() == 1
-    assert page.get_by_label("Export format").input_value() == "csv"
+    assert page.get_by_label("Export format").input_value() == "xlsx"
     assert page.get_by_label("Export timezone").count() == 1
     # While the campaign cannot accept work every export control is disabled.
     page.goto(component_origin + "/financial-gated")

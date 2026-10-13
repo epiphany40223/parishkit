@@ -17,7 +17,7 @@
 <section aria-labelledby="roster-export-heading">
 <h2 id="roster-export-heading">{% translate "Download" %}</h2>
 <form id="table-export" data-table-sync method="post" action="{% url 'admin:ministry_roster_export' %}">{% csrf_token %}<input type="hidden" name="show" value="{{ show }}"><input type="hidden" name="ministry" value="{{ ministry }}">
-<label for="roster-format">{% translate "Format" %}</label><select id="roster-format" name="format"><option value="csv">CSV</option><option value="xlsx">XLSX</option><option value="pdf">PDF</option></select>
+<label for="roster-format">{% translate "Format" %}</label><select id="roster-format" name="format">{% export_format_options "csv" "xlsx" "pdf" %}</select>
 <label for="roster-timezone">{% translate "Timezone" %}</label><select id="roster-timezone" name="timezone" data-information-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
 {% button type="submit" %}{% translate "Download this list" %}{% endbutton %}</form></section>
 <script src="{% static 'stewardship/information-export-v1.js' %}" defer></script>

@@ -291,6 +291,8 @@ def test_logs_export_matches_the_download_with_actor_emails(admin, google):
         admin,
         "logs",
         "export",
+        "--format",
+        "csv",
         "--show",
         "audit",
         "--event",
