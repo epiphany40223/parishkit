@@ -1638,6 +1638,9 @@ signatures:
   read into `content_history.retained_content`, which the page now calls.
   `artwork show` moved Campaign images' current-image query into
   `artwork_views.current_images`, which the page now calls.
+  `content show` moved the editor GET's lookup (the slot check, the saved
+  record and the folded closing note) into `content_views.editor_content`,
+  which the page now calls.
   `parish show`, `ministries list` and `campaign shares` needed none: the
   pages' profile, catalog and campaign-target reads were already
   request-free; `branding show` moved the logo page's current-logo query
@@ -1825,7 +1828,7 @@ none.
 | `configuration_request` | `config request show --watch` (PR 4); `config request cancel` ([#944](https://github.com/epiphany40223/parishkit/pull/944)), an operator recovery with no page button |
 | `campaign_settings`, `campaign_create`, `campaign_clone` | `campaign show`, `campaign preview`, `campaign confirm`, `campaign clone` (PR 10); until #145, creating or copying a campaign is refused, except the first campaign through [Create the campaign](../admin-portal/spec.md#create-the-campaign) (#142) ([navigation rule 10](../admin-portal/spec.md#navigation-rules)): commands that go through `confirm` and `_target`, or call `refuse_campaign_creation`, will get the same refusal as the pages; `privileged_actions.configuration_request` has no such check |
 | `campaign_ministries`, `share_settings`, `reminder_workgroup` | `campaign shares` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), the Share options read; `campaign ministries`, `campaign no-reminders-workgroup` and Share option changes (PR 10) |
-| `content_catalog`, `content_edit`, `content_revision`, `content_delete`, `content_history`, `content_history_revision`, `content_plain_text` | `content list`, `content history` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); `content show`, `content preview`, `content confirm` (PR 10) |
+| `content_catalog`, `content_edit`, `content_revision`, `content_delete`, `content_history`, `content_history_revision`, `content_plain_text` | `content list`, `content show`, `content history` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); `content preview`, `content confirm` (PR 10), the plain-text preview with `content preview` |
 | `parish_settings`, `ministries` | `parish show`, `parish preview`, `parish confirm`, `ministries list` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the Ministries changes (PR 10) |
 | `hosted_files`, `hosted_file_delete`, `hosted_file_rename` | `files list`, `files delete`, `files rename` ([#463](https://github.com/epiphany40223/parishkit/issues/463)) |
 | `artwork_settings` (its upload and removal reviews, #750) | `artwork show` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); `artwork remove` (PR 10) |
@@ -1993,6 +1996,29 @@ reads, on the page and the command line alike. The images are the
 campaign's own artwork, never a Family's. The
 [operator guide](../../../guides/stewardship-admin-automation.md#campaign-images)
 lists the fields.
+
+`content show {page,email} SLOT [--revision ID] [--default]` is the
+content editor as it opens, through the page's own lookup
+(`content_views.editor_content`) under the same campaign check, admission
+and recheck as `content list`, with no event, as the editor's GET records
+none. The slots are `content list`'s; as on the page, `email SLOT` without
+`--revision` is the confirmation email's single text (with any retired
+closing note folded in) or, for another mail type, the editor's new empty
+email. It prints the applied configuration's `version`, the slot's name,
+the saved record's id, the saved text's state and re-save notice, and
+`content`: the `subject`, `html` and `text` the editor opens with its
+"Generate plain text from HTML" and campaign banner choices (each null
+where the editor has no such field), or null for an empty slot. With
+`--default`, `content` is the slot's default as an editor save would store
+it (`content_forms.default_values`), the page's "start from the default
+text", which changes nothing. An unknown or hidden slot, `--revision` on a
+page, or a revision the campaign does not hold is `not_available`, as the
+editor answers not found. The editor's live plain-text preview
+(`content_plain_text`) previews typed HTML, not saved text, so it belongs
+with `content preview`, whose review prints the proposed change's cleaned
+HTML and plain text. The positional kind and slot, the field names and
+moving the plain-text preview to `content preview` are defaults, pending
+Administrator confirmation.
 
 `parish show`, `ministries list`, `branding show` and `campaign shares
 [--campaign ID]` are the reads of Parish settings, Ministries, Parish
@@ -3122,8 +3148,9 @@ exactly the commands that exist.
 - **PR 9, operations,** in three parts. **PR 9a:** task retries. **PR 9b:**
   delivery reads and resolution. **PR 9c:** `resend` and refusal clearing, at
   the prompt.
-- **PR 10, other configuration:** campaign, content (`content list` and
-  `content history` first), Ministries, parish, logos and Share options
+- **PR 10, other configuration:** campaign, content (`content list`,
+  `content show` and `content history` first), Ministries, parish, logos
+  and Share options
   (`parish show`, `ministries list`, `branding show` and `campaign shares`
   first, then `parish preview` and `parish confirm`), hosted files (`files list`,
   `files delete`, `files rename`), artwork, branding confirmation, integration settings with the

@@ -46,7 +46,8 @@ portal maintenance switch (PR 7a, in ``admin_portal``), ``report
 source-form`` (in ``admin_source_form``), ``report data-to-fix`` (in
 ``admin_data_to_fix``), ``files list``, ``files
 delete`` and ``files rename`` (PR 10, in ``admin_hosted_files``),
-``content list`` and ``content history`` (PR 10, in ``admin_content``),
+``content list``, ``content show`` and ``content history`` (PR 10, in
+``admin_content``),
 ``parish show``, ``ministries list``, ``branding show`` and ``campaign
 shares`` (PR 10, in ``admin_settings``), ``parish preview`` and
 ``parish confirm`` (PR 10, in ``admin_parish``), and ``events list`` and
@@ -1151,6 +1152,20 @@ def content_list(args, preamble, runtime, context):
     from .admin_content import read_content_list
 
     return read_content_list(context["caller"], runtime)
+
+
+def content_show(args, preamble, runtime, context):
+    """The content editor as it opens: one page's or email's text (PR 10)."""
+    from .admin_content import read_content_show
+
+    return read_content_show(
+        context["caller"],
+        runtime,
+        args.kind,
+        args.slot,
+        args.revision,
+        args.default,
+    )
 
 
 def content_history(args, preamble, runtime, context):
@@ -2393,6 +2408,23 @@ def _history_remove_options(parser):
     )
 
 
+def _content_show_options(parser):
+    """Options of ``content show``: the page or email, as ``content list``
+    names it, and the editor's "start from the default text"."""
+    parser.add_argument("kind", choices=("page", "email"), metavar="KIND")
+    parser.add_argument("slot", metavar="SLOT", help="a content list slot")
+    parser.add_argument(
+        "--revision",
+        type=_uuid,
+        help="one email of the mail type, by its content list id",
+    )
+    parser.add_argument(
+        "--default",
+        action="store_true",
+        help="print the slot's default text instead; nothing changes",
+    )
+
+
 def _content_history_options(parser):
     """Options of ``content history``: one retained revision's sample."""
     parser.add_argument(
@@ -3594,11 +3626,11 @@ def _portal_specs():
 def _file_specs():
     """The hosted file library (PR 10, ``admin_hosted_files``) and content reads.
 
-    The content reads (``admin_content``) are the Pages and emails and
-    Content history pages' reads; like ``files list``, any session runs
+    The content reads (``admin_content``) are the Pages and emails, content
+    editor and Content history pages' reads; like ``files list``, any session runs
     them and they record nothing, as the pages' GETs record nothing.
     """
-    from .admin_content import ContentHistory, ContentList
+    from .admin_content import ContentHistory, ContentList, ContentShow
     from .admin_hosted_files import FileDeletion, FileRename, HostedFileLibrary
 
     return (
@@ -3610,6 +3642,17 @@ def _file_specs():
             False,
             ContentList.field_names(),
             10,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "content show",
+            "Show one page's or email's text as the content editor opens it.",
+            content_show,
+            "read_only",
+            False,
+            ContentShow.field_names(),
+            10,
+            options=(_content_show_options,),
             audit_event=None,
         ),
         CommandSpec(

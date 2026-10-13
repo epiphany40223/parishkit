@@ -80,6 +80,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "files delete",
         "files rename",
         "content list",
+        "content show",
         "content history",
         "parish show",
         "parish preview",

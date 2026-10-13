@@ -85,6 +85,59 @@ def _records(configuration, campaign_id):
     ]
 
 
+def editor_content(configuration, campaign, kind, slot, revision_id=None):
+    """The editor's saved text for one slot, without the request.
+
+    Returns ``(label, previous, note, shown)``: the slot's name, the saved
+    record the editor opens (None for an empty slot or a new email), a
+    retired receipt closing note (#260; the confirmation email only), and
+    the values the editor shows, with that note folded in. An email of a
+    mail type other than the confirmation opens only with ``revision_id``;
+    without it the editor is a new, empty email. An unknown kind or slot, a
+    page slot the campaign does not show, ``revision_id`` on a page, or a
+    revision the campaign does not hold raises ``LookupError``. The page
+    and ``pk-admin content show`` (#463) both read through here.
+    """
+    labels = (
+        page_slots(campaign.active_configuration.values)
+        if kind == "page"
+        else EMAIL_LABELS
+    )
+    if (
+        kind not in {"page", "email"}
+        or slot not in labels
+        or (revision_id and kind != "email")
+    ):
+        raise LookupError("Content slot is unavailable.")
+    records = _records(configuration, campaign.pk)
+    previous = next(
+        (
+            row
+            for row in records
+            if (row["values"]["kind"], row["values"]["slot"]) == (kind, slot)
+            and (
+                kind == "page"
+                or (slot == "confirmation" and revision_id is None)
+                or row["id"] == str(revision_id)
+            )
+        ),
+        None,
+    )
+    if revision_id and previous is None:
+        raise LookupError("Content revision is unavailable.")
+    # The confirmation email opens with any retired closing note already
+    # folded into its body, as receipts send it (#260).
+    note = (
+        legacy_note(records, campaign.pk)
+        if (kind, slot) == ("email", "confirmation")
+        else None
+    )
+    shown = previous["values"] if previous else None
+    if note is not None:
+        shown = fold(shown, note["values"], campaign_id=campaign.pk)
+    return labels[slot], previous, note, shown
+
+
 def campaign_email_usage(configuration, campaign_id):
     """The names of the saved schedules that send each email, by email ID.
 
@@ -516,44 +569,9 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
             if kind is None:
                 response = _catalog(request, configuration, campaign)
             else:
-                labels = (
-                    page_slots(campaign.active_configuration.values)
-                    if kind == "page"
-                    else EMAIL_LABELS
+                label, previous, note, shown = editor_content(
+                    configuration, campaign, kind, slot, revision_id
                 )
-                if (
-                    kind not in {"page", "email"}
-                    or slot not in labels
-                    or (revision_id and kind != "email")
-                ):
-                    raise LookupError("Content slot is unavailable.")
-                records = _records(configuration, campaign.pk)
-                previous = next(
-                    (
-                        row
-                        for row in records
-                        if (row["values"]["kind"], row["values"]["slot"])
-                        == (kind, slot)
-                        and (
-                            kind == "page"
-                            or (slot == "confirmation" and revision_id is None)
-                            or row["id"] == str(revision_id)
-                        )
-                    ),
-                    None,
-                )
-                if revision_id and previous is None:
-                    raise LookupError("Content revision is unavailable.")
-                # The confirmation email opens with any retired closing note
-                # already folded into its body, as receipts send it (#260).
-                note = (
-                    legacy_note(records, campaign.pk)
-                    if (kind, slot) == ("email", "confirmation")
-                    else None
-                )
-                shown = previous["values"] if previous else None
-                if note is not None:
-                    shown = fold(shown, note["values"], campaign_id=campaign.pk)
                 # "?start=default" only pre-fills the form: it starts an empty
                 # slot or resets a configured one, and nothing changes until
                 # the Admin previews and applies it like any other edit.
@@ -580,7 +598,7 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
                         state,
                         campaign,
                         form,
-                        labels[slot],
+                        label,
                         previous,
                         slot,
                         salt,
@@ -592,7 +610,7 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
                         request,
                         form,
                         campaign,
-                        labels[slot],
+                        label,
                         default_url=None if start else request.path + "?start=default",
                         # A folded closing note is saved text too, so the
                         # default link offers a reset, not a start.

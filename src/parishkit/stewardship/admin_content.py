@@ -19,6 +19,14 @@ Administrators only, and a read-only session reads), read in one read
 transaction, recheck the session before reporting, and record nothing, as
 the pages' GETs record nothing. Content is the campaign's own text, never a
 Family's; a sample's Family values are the page's fictional ones.
+
+``content show`` is the content editor (``admin:content_edit`` and
+``admin:content_revision``) as it opens, through the page's own lookup
+(``content_views.editor_content``): one page's or email's saved text, its
+text state and re-save notice, or with ``--default`` the slot's default
+text as an editor save would store it (the page's "?start=default", which
+only pre-fills the editor). It admits, reads and rechecks as ``content
+list`` does, and records nothing, as the editor's GET records nothing.
 """
 
 from dataclasses import dataclass
@@ -61,6 +69,31 @@ class ContentHistory(ReadModel):
     configuration_id: UUID
     entries: list
     revision: dict | None
+
+
+@dataclass(frozen=True)
+class ContentShow(ReadModel):
+    """One page's or email's text as the content editor opens it.
+
+    ``version`` is the applied configuration's version, as ``content
+    list``'s; ``name`` the page's label; ``revision_id`` the saved record
+    shown, or None; ``state`` and ``resave`` the saved text's, as ``content
+    list``. ``from_default`` says ``content`` is the slot's default text
+    (``--default``); ``content`` is None for an empty slot, else
+    ``subject``, ``html``, ``text``, ``generate_text`` and
+    ``show_banner`` (None where the editor has no such field).
+    """
+
+    campaign_id: UUID
+    version: str
+    kind: str
+    slot: str
+    name: str
+    revision_id: str | None
+    state: str
+    resave: dict | None
+    from_default: bool
+    content: dict | None
 
 
 def resave_model(stale):
@@ -121,6 +154,46 @@ def catalog_model(campaign_id, version, pages, emails):
             }
             for email in emails
         ],
+    )
+
+
+def editor_model(campaign, version, kind, slot, read, *, default=None, banner=None):
+    """The editor's read (``editor_content``) as ``content show`` prints it.
+
+    ``read`` is ``editor_content``'s ``(label, previous, note, shown)``;
+    ``default`` the slot's default as an editor save stores it, printed
+    instead of the saved text (``--default``); ``banner`` the page's "show
+    the campaign banner" choice, None where it does not apply. A page has
+    no subject and no plain-text field in the editor, so both print as
+    None, as does ``generate_text``.
+    """
+    from .accounts.content_forms import stale_markup, text_is_generated
+    from .accounts.content_views import _content_state
+
+    label, previous, _, shown = read
+    values = default if default is not None else shown
+    email = kind == "email"
+    return ContentShow(
+        campaign_id=campaign.pk,
+        version=version,
+        kind=kind,
+        slot=slot,
+        name=str(label),
+        revision_id=previous["id"] if previous else None,
+        state=_content_state(shown and {"values": shown}),
+        resave=resave_model(stale_markup(shown)),
+        from_default=default is not None,
+        content=None
+        if values is None
+        else {
+            "subject": values.get("subject") if email else None,
+            "html": values["html"],
+            "text": values["text"] if email else None,
+            # As the editor opens it: checked when the saved plain text is
+            # exactly what the HTML generates (always, for a default).
+            "generate_text": text_is_generated(values) if email else None,
+            "show_banner": banner,
+        },
     )
 
 
@@ -236,6 +309,61 @@ def read_content_history(caller, service, revision_id=None):
         except (LookupError, NotAvailable):
             _recheck(caller, service.store, actor, Capability.CONFIGURE)
             raise NotAvailable("The retained content is not available.") from None
+        _recheck(caller, service.store, actor, Capability.CONFIGURE)
+        return model
+
+    return _held(step)
+
+
+def read_content_show(caller, service, kind, slot, revision_id=None, default=False):
+    """``content show``: the content editor as it opens, Administrators only.
+
+    As on the page, the current campaign only (none is ``not_available``),
+    and background work holding it is ``stale_version``; an unknown slot or
+    revision is ``not_available``. Each is reported after the session
+    recheck so an ended session is exit 5. A configuration refusal is
+    ``unavailable``.
+    """
+    from .accounts.campaign_views import _state
+    from .accounts.content_forms import default_values
+    from .accounts.content_views import _campaign, _shows_banner, editor_content
+    from .accounts.policy import Capability
+    from .campaigns.work_locks import read_transaction
+    from .storage import StaleRecordError
+
+    def step():
+        """Admit, read in one snapshot, then recheck."""
+        actor = _admit(caller, service.store, Capability.CONFIGURE)
+        try:
+            with read_transaction():
+                target = _current(service)
+                state = _state(service)
+                campaign = _campaign(state, target)
+                configuration = state[0]
+                read = editor_content(configuration, campaign, kind, slot, revision_id)
+                model = editor_model(
+                    campaign,
+                    configuration.active_configuration.digest,
+                    kind,
+                    slot,
+                    read,
+                    # The page's "?start=default": the default as an editor
+                    # save stores it (cleaned HTML, generated plain text).
+                    default=default_values(kind, slot, campaign_id=campaign.pk)
+                    if default
+                    else None,
+                    banner=_shows_banner(campaign, kind, slot),
+                )
+        except KeyError:
+            # A KeyError is a bug, never "no such slot": internal.
+            raise
+        except (LookupError, NotAvailable):
+            _recheck(caller, service.store, actor, Capability.CONFIGURE)
+            raise NotAvailable("That page or email is not available.") from None
+        except StaleRecordError:
+            # The page's hold refusal; the session first, as for the others.
+            _recheck(caller, service.store, actor, Capability.CONFIGURE)
+            raise
         _recheck(caller, service.store, actor, Capability.CONFIGURE)
         return model
 
