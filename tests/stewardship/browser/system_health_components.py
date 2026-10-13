@@ -462,6 +462,13 @@ def components(context, admin):
                             attempt_id=REFUSED_ATTEMPT,
                             refused_at=now - timedelta(hours=3),
                             counts=REFUSED,
+                            # Synthetic example Families (ADM-13 PR 5c).
+                            examples={
+                                "email_eligible_families": (
+                                    (1201, "Example, Ann and Bob"),
+                                    (1202, "Sample, Carol"),
+                                )
+                            },
                         )
                     },
                     accept_shown=True,

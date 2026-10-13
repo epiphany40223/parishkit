@@ -498,9 +498,15 @@ is the emergency path.
    The worker's log line for the refusal, a CRITICAL
    `source_destructive_change`, carries `source_loss` with the first count
    that failed (`docker compose ... logs worker | grep source_loss`).
-2. Check it in ParishSoft. If it is a mistake or an outage there (records
-   removed, organization or status fields blanked), fix it in ParishSoft and
-   use **Refresh now**; nothing else is needed.
+2. Check it in ParishSoft. **Accept this change once…** lists, under each
+   Family, Member or contact count that fell too far, up to five example
+   Families (name and Family DUID) that the current data has and the
+   refused refresh lost or no longer counted: look a few of them up in
+   ParishSoft. If it is a mistake or an outage there (records removed,
+   organization or status fields blanked), fix it in ParishSoft and use
+   **Refresh now**; nothing else is needed. The examples are deleted when
+   the change is accepted, when a newer refusal or a full refresh replaces
+   it, or after seven days.
 3. If the change is real, such as the parish inactivating many Families at
    once, an Administrator accepts it once on System health: **Accept this
    change once…** (it needs a Google sign-in within five minutes), review

@@ -17,6 +17,8 @@ transactions:
   for a day (ADM-13; ``service_status.prune_service_status``);
 - removes refresh slot decisions eight days after their due time (#632;
   ``source.slot_decisions.prune_slot_decisions``);
+- removes the example Families of a refused large change once they may no
+  longer be shown (ADM-13 PR 5c; ``source.drop_examples.prune_drop_examples``);
 - deletes the ``heartbeat`` and ``progress`` events of task runs that
   finished more than EVENT_RETENTION_DAYS ago, in batches, within a time
   budget (#386; ``prune_task_events``).
@@ -147,6 +149,7 @@ def admit_maintenance(action, status):
 def _execute(execution):
     """Run one maintenance pass, each step in its own fenced effect."""
     from parishkit.stewardship.service_status import prune_service_status
+    from parishkit.stewardship.source.drop_examples import prune_drop_examples
     from parishkit.stewardship.source.slot_decisions import prune_slot_decisions
 
     from .automation_sessions import maintain
@@ -163,6 +166,11 @@ def _execute(execution):
     execution.check()
     with execution.effect():
         prune_slot_decisions()
+    # ...and a refused large change's example Families once they may no
+    # longer be shown: superseded, promoted over, accepted or a week old.
+    execution.check()
+    with execution.effect():
+        prune_drop_examples()
     prune_task_events(execution)
     execution.transition("complete")
 

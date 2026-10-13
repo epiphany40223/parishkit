@@ -1295,11 +1295,13 @@ retention period is not required. This exception does not change encrypted
 backup or database-field encryption requirements.
 
 The example Families that a refused large ParishSoft change records (DUID
-and directory name only) are deleted under the rules of
+and directory name only, in `stewardship_source_drop_example`) are deleted
+under the rules of
 [accept a large ParishSoft change once](../admin-portal/spec.md#accept-a-large-parishsoft-change-once)
-(ADM-13), at most seven days after the refusal by default. That action and
-its example Families are not built yet; refused counts are recorded and
-shown, but no example Family is. The worker's
+(ADM-13): when the refusal is superseded, promoted over or accepted, and at
+most seven days after the refusal by default. The worker's hourly
+housekeeping deletes them, and no reader shows one whose deletion is due.
+After a restore, the restore procedure deletes them too. The worker's
 hourly housekeeping, the
 [maintenance task](../admin-automation/spec.md#maintenance-task), removes the
 [service status record](../admin-portal/spec.md#service-status-records) of

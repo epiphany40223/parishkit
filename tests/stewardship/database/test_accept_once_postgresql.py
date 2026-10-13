@@ -40,6 +40,7 @@ from parishkit.stewardship.observability import Event
 from parishkit.stewardship.source.drop_models import (
     SourceDropAcceptance,
     SourceDropCount,
+    SourceDropExample,
 )
 from parishkit.stewardship.source.refresh_models import (
     SourceRefreshAttempt,
@@ -145,6 +146,22 @@ def acknowledged():
 # The critical-problems banner and the refusal's line in it.
 BANNER = "Critical problems in the past 24 hours"
 DROP = "ParishSoft refresh would remove too much data"
+
+
+def with_examples(attempt):
+    """Two example Families for the refusal's failing Family count (PR 5c),
+    written as the schema owner, as the worker records them."""
+    for position, (duid, name) in enumerate(EXAMPLES, start=1):
+        SourceDropExample.objects.create(
+            attempt=attempt,
+            measure="family",
+            position=position,
+            family_duid=duid,
+            family_name=name,
+        )
+
+
+EXAMPLES = ((4101, "Synthetic, Ann & Bob"), (4102, "Sample, Carol"))
 
 
 def post(browser, **values):
@@ -637,3 +654,38 @@ def test_a_read_only_session_cannot_accept(admin):
     code, refused, _ = admin("system", "refresh-accept-preview", secret=reader)
     assert code != 0 and refused["error"]["code"] in {"denied", "scope_required"}
     assert not SourceDropAcceptance.objects.exists()
+
+
+def test_the_preview_lists_example_families_and_the_command_only_their_duids(
+    admin,
+):
+    """PR 5c: the page's preview names the examples under the failing count;
+    the command prints their DUIDs without names; once the change is
+    accepted, neither shows them any more."""
+    attempt = refusal()
+    with_examples(attempt)
+    browser, _ = signed_in()
+    body = post(browser, action="accept_preview").content.decode()
+    region = body[body.index('data-accept-examples="family"') :]
+    region = region[: region.index("</table>")]
+    assert '<td>Synthetic, Ann &amp; Bob</td><td class="numeric">4101</td>' in region
+    assert '<td>Sample, Carol</td><td class="numeric">4102</td>' in region
+    assert "No example Families are available for this count." in body
+
+    _, secret, _ = paired(admin.service)
+    code, document, errors = admin("system", "refresh-accept-preview", secret=secret)
+    assert code == 0, document
+    assert document["result"]["examples"] == {"family": [4101, 4102]}
+    for name in ("Synthetic", "Sample"):
+        assert name not in str(document) and name not in errors
+    token = document["result"]["preview"]["token"]
+    code, document, errors = admin(
+        "system", "refresh-accept", "--token", token, secret=secret, answer=b"yes\n"
+    )
+    assert code == 0, document
+    assert "Synthetic" not in str(document) and "Synthetic" not in errors
+    # Decided: the examples are no longer shown, and housekeeping may go.
+    from parishkit.stewardship.source.drop_examples import shown_examples
+
+    assert shown_examples(attempt.pk) == {}
+    assert SourceDropExample.objects.count() == len(EXAMPLES)

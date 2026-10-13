@@ -357,7 +357,9 @@ change is real (the
 describe when). Both need a full-scope session.
 `system refresh-accept-preview` changes and records nothing; it prints the
 refusal's `attempt_id` and `refused_at`, every recorded count (`measure`,
-`before`, `after`, `limit_percent`, `failed`; counts only) and
+`before`, `after`, `limit_percent`, `failed`; counts only), `examples` (the
+page's example Families for each failing count, as Family DUIDs only, never
+names; look their names up in ParishSoft or on the page) and
 `preview.token`, the page's signed binding, valid for 15 minutes and for
 this Administrator only. It is refused (exit 1, `stale_version`) while the
 newest refusal cannot be accepted: none is shown, it was accepted already
@@ -2218,6 +2220,9 @@ print is exit 1 (`invalid`).
 - `pk-admin/1` (ADM-13 PR 5b, #530): additive. `system
   refresh-accept-preview` and `system refresh-accept` (fresh-gated, always
   prompts), and `system health`'s `drop_acceptance`.
+- `pk-admin/1` (ADM-13 PR 5c, #530): additive. `system
+  refresh-accept-preview` gains `examples`, the example Family DUIDs of each
+  failing count, without names.
 - `pk-admin/1` (#1018): additive. `history list`, `history preview -`
   (the workbook on standard input), `history confirm` (prompts for a
   replacement) and `history remove` (prompts), the Past campaigns page's

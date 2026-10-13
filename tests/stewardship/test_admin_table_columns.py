@@ -206,6 +206,7 @@ FAMILY_ROWS = {
     ("family-timeline.html", "identity.envelope"),
     ("go-live-families.html", "row.duid"),
     ("presence.html", "row.duid"),
+    ("system-health-accept.html", "duid"),
 }
 # Bare "DUID" labels that name a Family's DUID in a line about one Family.
 FAMILY_LABELS = {"find-family-results.html": "a Family search result's DUID"}

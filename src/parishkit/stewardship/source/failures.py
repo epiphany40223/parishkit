@@ -6,7 +6,7 @@ verified failure/wait. It cannot load, stage, promote or use a new credential.
 """
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from uuid import UUID
 
 import requests
@@ -41,6 +41,7 @@ from .attempts import _bindings
 from .canonical import InvalidSourcePayload
 from .drop_acceptance import AcceptanceLapsed
 from .drop_counts import record_drop_counts
+from .drop_examples import record_drop_examples
 from .errors import (
     SourceAuthorityChanging,
     SourceCredentialChanged,
@@ -88,6 +89,11 @@ class ReadFailure:
     # loading.CONTACT_COVERAGE_FIELDS order, logged so the operator can tell
     # a short read from a real ParishSoft change.
     coverage: tuple | None = None
+    # For a destructive change: the refused load's counted keys
+    # (drop_examples.counted_keys), from which a few example Families are
+    # recorded with the refusal (ADM-13 PR 5c). Parish identifiers, so never
+    # logged; excluded from the dataclass's repr for the same reason.
+    counted: dict = field(default_factory=dict, repr=False)
 
 
 def classify_read_failure(error, *, has_source_claim):
@@ -116,6 +122,7 @@ def classify_read_failure(error, *, has_source_claim):
             loss=error.loss,
             checks=error.checks,
             lapsed=error.acceptance if isinstance(error, AcceptanceLapsed) else None,
+            counted=error.counted,
         )
     if isinstance(error, ShiftedSourceScan):
         # The provider's paging moved mid-scan (validated 2026-09-28: the same
@@ -393,6 +400,15 @@ def settle_failed_read(execution, error, *, source_claim=None):
                 # acceptance read them from this record, not the log.
                 record_drop_counts(
                     attempt.pk, decision.checks, actor_id=execution.claim.worker_id
+                )
+                # A few example Families for the Administrator to check in
+                # ParishSoft (ADM-13 PR 5c). Best effort: a failure here is
+                # logged without them and never undoes the refusal.
+                record_drop_examples(
+                    attempt.pk,
+                    decision.checks,
+                    decision.counted,
+                    task_id=execution.claim.run_id,
                 )
         if decision.loss is not None:
             # The durable event above has no place for this detail, so the

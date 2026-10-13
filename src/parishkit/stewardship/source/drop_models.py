@@ -25,6 +25,7 @@ from parishkit.stewardship.storage import (
 )
 
 from .count_names import DERIVED_COUNTS, TREND_COLLECTIONS
+from .drop_examples import EXAMPLE_MEASURES
 from .refresh_models import SourceRefreshAttempt
 
 # The closed names of every count a load is checked on, in check order.
@@ -113,4 +114,57 @@ class SourceDropAcceptance(models.Model):
             models.Index(
                 models.F("created_at").desc(), name="source_drop_acceptance_newest"
             )
+        ]
+
+
+class SourceDropExample(models.Model):
+    """One example Family of a refused large change (ADM-13 PR 5c, #530).
+
+    Up to five per failing count that concerns Families, Members or contacts
+    (``position`` 1 to 5): a Family the current promoted data counted but
+    the refused load no longer did. Only its DUID and its name as the active
+    parishioner family directory shows it are kept, so the Administrator can
+    look it up in ParishSoft before accepting the change once. See
+    ``drop_examples`` for how they are chosen, shown and deleted. The guard
+    in ``schema/migrations/0085_drop_examples.sql`` admits a row only from
+    the worker, for a count that failed and whose drop count was recorded
+    no earlier than the inserting transaction began (in practice the
+    refusal's own transaction);
+    nobody changes one, and only the worker's housekeeping (and the schema
+    owner) deletes them.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    created_at = UTCDateTimeField(db_default=Now())
+    attempt = models.ForeignKey(
+        SourceRefreshAttempt, on_delete=models.PROTECT, related_name="drop_examples"
+    )
+    measure = models.CharField(max_length=32)
+    position = models.PositiveSmallIntegerField()
+    family_duid = models.PositiveBigIntegerField()
+    family_name = models.CharField(max_length=300)
+
+    class Meta:
+        db_table = "stewardship_source_drop_example"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["attempt", "measure", "position"],
+                name="source_drop_example_position",
+            ),
+            models.UniqueConstraint(
+                fields=["attempt", "measure", "family_duid"],
+                name="source_drop_example_family",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(measure__in=EXAMPLE_MEASURES),
+                name="source_drop_example_measure",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(position__gte=1, position__lte=5),
+                name="source_drop_example_place",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(family_duid__gt=0) & ~models.Q(family_name=""),
+                name="source_drop_example_family_shape",
+            ),
         ]

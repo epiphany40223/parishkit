@@ -828,8 +828,9 @@ def test_the_acceptance_document_never_names_who_gave_it():
     assert health().to_document()["drop_acceptance"] is None
 
 
-def test_the_preview_document_holds_counts_and_the_binding_only():
-    """``system refresh-accept-preview`` prints counts, never names."""
+def test_the_preview_document_holds_counts_example_duids_and_the_binding_only():
+    """``system refresh-accept-preview`` prints counts and example Family
+    DUIDs (PR 5c), never names."""
     attempt = uuid4()
     document = RefreshAcceptPreview(
         attempt_id=attempt,
@@ -843,9 +844,17 @@ def test_the_preview_document_holds_counts_and_the_binding_only():
                 "failed": True,
             }
         ],
+        examples={"family": [101, 102]},
         preview={"token": "signed"},
     ).to_document()
-    assert set(document) == {"attempt_id", "refused_at", "counts", "preview"}
+    assert set(document) == {
+        "attempt_id",
+        "refused_at",
+        "counts",
+        "examples",
+        "preview",
+    }
+    assert document["examples"] == {"family": [101, 102]}
     assert document["attempt_id"] == str(attempt)
     assert set(document["counts"][0]) == {
         "measure",
@@ -1036,6 +1045,53 @@ def test_the_preview_lists_the_counts_and_waits_for_the_tick_box():
     assert 'aria-controls="accept-change-rules-tip"' in region
     # The preview replaces the region's button, so a poll cannot discard it.
     assert "data-live-mirror-target" not in region
+
+
+def test_the_preview_lists_example_families_under_each_failing_count():
+    """PR 5c: name and Family DUID under the failing count; a failing
+    Family, Member or contact count without examples says none could be
+    recorded; a passing count, or a ministry count, lists nothing."""
+    counts = (*FAILED, DropCount("ministry", 40, 20, 25, True))
+    preview = AcceptPreview(
+        token="signed-binding",
+        attempt_id=uuid4(),
+        refused_at=NOW,
+        counts=counts,
+        examples={"family": ((1201, "Example, Ann & Bob"), (1202, "Sample, Carol"))},
+    )
+    body = accept_page(accept={"preview": preview})
+    region = body[body.index('id="accept-change"') :]
+    family = region[region.index('data-accept-examples="family"') :]
+    family = family[: family.index("</table>")]
+    assert "Examples to check in ParishSoft:" in family
+    # The name is escaped, and the DUID has its own column.
+    assert '<td>Example, Ann &amp; Bob</td><td class="numeric">1201</td>' in family
+    assert '<td>Sample, Carol</td><td class="numeric">1202</td>' in family
+    email = region[region.index('data-accept-examples="email_eligible_families"') :]
+    assert "No example Families are available for this count." in email
+    assert 'data-accept-examples="member"' not in region
+    assert 'data-accept-examples="ministry"' not in region
+    assert 'aria-controls="accept-change-examples-tip"' in region
+    assert "deleted when the change is accepted" in region
+
+
+def test_the_examples_help_shows_only_when_a_failing_count_gets_examples():
+    """A refusal whose only failing count is a ministry count lists no
+    examples, so the page does not explain them."""
+    preview = AcceptPreview(
+        token="signed-binding",
+        attempt_id=uuid4(),
+        refused_at=NOW,
+        counts=(
+            DropCount("family", 1084, 1000, 25, False),
+            DropCount("ministry", 40, 20, 25, True),
+        ),
+    )
+    body = accept_page(accept={"preview": preview})
+    region = body[body.index('id="accept-change"') :]
+    assert "data-accept-examples" not in region
+    assert "accept-change-examples-tip" not in region
+    assert "example Families show where to look" not in region
 
 
 @pytest.mark.parametrize(

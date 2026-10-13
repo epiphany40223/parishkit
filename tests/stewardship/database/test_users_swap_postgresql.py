@@ -297,6 +297,9 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # like 0071, alters the export request (its kinds, guards and request
 # authorization); the 0071 and 0063 undo statements already put all of that
 # back as the base has it, so it needs no undo of its own.
+# 0085 (#530) creates the example Families table (in CLOSURE_TABLES, which
+# the worker writes and web reads) with its guard and its invoker
+# visibility function, and alters no table.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -439,6 +442,13 @@ CLOSURE_CREATED = {
     "public.stewardship_campaign_archive_answers_v1(uuid,timestamp with time zone)": (
         "stewardship_reports",
         "0023_campaign_archive_exports",
+    ),
+    **dict.fromkeys(
+        (
+            "public.stewardship_source_drop_example_guard_v1()",
+            "public.stewardship_source_drop_example_attempt_v1()",
+        ),
+        ("stewardship_source", "0009_drop_examples"),
     ),
 }
 
@@ -949,6 +959,9 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
                 "pk_stewardship_mail_dispatch",
                 "UPDATE",
             ),
+            # A refused change's example Families (0085, #530): the worker
+            # records them; web only reads them.
+            "stewardship_source_drop_example": ("pk_stewardship_worker", "INSERT"),
         }
         for table in CLOSURE_TABLES:
             login, privilege = writers.get(table, ("pk_stewardship_web", "INSERT"))
