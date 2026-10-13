@@ -64,7 +64,7 @@ def document():
 def render(value):
     """Exercise compilation through the actual retention/delivery boundary."""
     result = render_daily_digest(value, public_origin="https://campaign.example.org")
-    validate_digest_body(result.html, result.text, result.chart.data)
+    validate_digest_body(result.html, result.text, result.chart.data, result.images)
     return result
 
 
@@ -657,3 +657,147 @@ def test_the_saved_page_shows_the_same_funnel():
     )
     assert testing["funnel_stages"] == ()
     assert "Testing digests" in testing["funnel_testing_note"]
+
+
+def charted_digest():
+    """A Production digest whose funnel has activity and sends to chart."""
+    from .test_chart_specs import metrics
+
+    return replace(document(), funnel=metrics(), mode="production")
+
+
+def test_a_production_digest_shows_the_funnel_charts_before_its_table():
+    """Two cid: PNGs open the funnel section (#477 slice 2, visuals first)."""
+    from parishkit.stewardship.web.digest_content import (
+        COMPARISON_PIXEL_WIDTH,
+        FUNNEL_CHART_IDS,
+    )
+
+    result = render(charted_digest())
+    assert [image.content_id for image in result.funnel] == list(FUNNEL_CHART_IDS)
+    assert [name for name, _ in result.images] == list(FUNNEL_CHART_IDS)
+    for image in result.funnel:
+        with Image.open(BytesIO(image.data)) as png:
+            assert png.format == "PNG" and png.size[0] == COMPARISON_PIXEL_WIDTH
+    html = result.html
+    funnel_image = html.index(f'src="cid:{FUNNEL_CHART_IDS[0]}"')
+    activity_image = html.index(f'src="cid:{FUNNEL_CHART_IDS[1]}"')
+    assert (
+        html.index(">Response funnel</h2>")
+        < funnel_image
+        < html.index(">Response activity by hour</p>")
+        < activity_image
+        < html.index(">Email invites sent</td>")
+        < html.index("Daily participation")
+    )
+    # Each image's alt text carries its figures in the digest's words.
+    alts = re.findall(r'<img src="cid:response-[a-z]+@parishkit" alt="([^"]*)"', html)
+    assert alts[0] == (
+        "Families by stage: 4 were sent an email invite, 4 opened the form, "
+        "3 progressed past the first step, 3 submitted."
+    )
+    assert alts[1].startswith("Form opens and submissions per hour in ")
+    assert all("Link followed" not in alt and "link follows" not in alt for alt in alts)
+    # The text part already lists every funnel number; it gains no chart text.
+    assert "Response activity" not in result.text
+
+
+def test_the_funnel_charts_travel_as_inline_parts_beside_a_text_part():
+    """Every cid: the HTML names is one image part of the delivered message."""
+    import json
+
+    from parishkit.stewardship.digest_delivery import DigestDeliveryMail
+
+    result = render(charted_digest())
+    mail = DigestDeliveryMail(
+        UUID(int=9),
+        "reports@example.org",
+        "reports@example.org",
+        ("admin@example.org",),
+        result.subject,
+        result.html,
+        result.text,
+        result.chart.data,
+        result.images,
+    )
+    again = DigestDeliveryMail.from_payload(json.loads(json.dumps(mail.payload())))
+    assert again.images == mail.images == result.images
+    message = mail.message()
+    parts = list(message.walk())
+    assert message.get_content_type() == "multipart/alternative"
+    assert [part.get_content_type() for part in parts].count("text/plain") == 1
+    related = next(p for p in parts if p.get_content_type() == "multipart/related")
+    images = {
+        part["Content-ID"].strip("<>"): part.get_payload(decode=True)
+        for part in related.walk()
+        if part.get_content_type() == "image/png"
+    }
+    html = next(p for p in parts if p.get_content_type() == "text/html")
+    sources = re.findall(r'src="cid:([^"]+)"', html.get_content())
+    assert sorted(sources) == sorted(images)
+    assert dict(result.images) == {
+        name: data for name, data in images.items() if name.startswith("response-")
+    }
+    # Never a data: URI, which Gmail does not show.
+    assert "data:" not in html.get_content()
+
+
+def test_a_testing_digest_has_no_funnel_charts():
+    """No funnel, so no funnel images; older documents without a mode neither."""
+    for value in (replace(document(), mode="testing"), document()):
+        result = render(value)
+        assert result.funnel == () and result.images == ()
+        assert "cid:response-" not in result.html
+
+
+def test_the_validator_keeps_the_funnel_charts_together_and_in_order():
+    """A lone funnel chart, a repeated one or one after the others is refused."""
+    from parishkit.stewardship.web.digest_content import FUNNEL_CHART_IDS
+
+    result = render(charted_digest())
+    funnel, activity = result.images
+    body = (result.html, result.text, result.chart.data)
+    validate_digest_body(*body, (funnel, activity))
+    for images in ((funnel,), (activity, funnel), (funnel, funnel), ()):
+        with pytest.raises(ValueError):
+            validate_digest_body(*body, images)
+    # Neither image may be dropped from the body while still attached.
+    html = result.html.replace(
+        f"cid:{FUNNEL_CHART_IDS[1]}", f"cid:{FUNNEL_CHART_IDS[0]}"
+    )
+    with pytest.raises(ValueError):
+        validate_digest_body(html, result.text, result.chart.data, (funnel, activity))
+
+
+def test_the_saved_page_draws_the_same_funnel_charts():
+    """The daily page's panel has the email's two charts; the weekly one none yet."""
+    from parishkit.stewardship.reports.digest_funnel import funnel_context
+    from parishkit.stewardship.reports.digest_presentation import snapshot_context
+
+    value = charted_digest()
+    context = snapshot_context(
+        value,
+        mode="production",
+        chart_url="/chart",
+        download_url="/download",
+        funnel_charts=True,
+    )
+    charts = context["funnel_charts"]
+    assert [chart.key for chart in charts] == ["response-funnel", "response-activity"]
+    # Drawn without the title inside them: the panel's headings name them.
+    assert all("title" not in chart.spec for chart in charts)
+    assert charts[0].summary.startswith("Families by stage: 4 were sent")
+    assert funnel_context(value.funnel, "production")["funnel_charts"] == ()
+    # A digest whose email had no funnel charts (compiled before them, or
+    # sent with them withheld) shows none on its page either.
+    older = snapshot_context(
+        value, mode="production", chart_url="/chart", download_url="/download"
+    )
+    assert older["funnel_charts"] == () and older["funnel_stages"]
+    testing = snapshot_context(
+        replace(document(), mode="testing"),
+        mode="testing",
+        chart_url="/chart",
+        download_url="/download",
+    )
+    assert testing["funnel_charts"] == ()

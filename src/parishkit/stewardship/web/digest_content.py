@@ -27,8 +27,18 @@ COMPARISON_CHART_IDS = (
     "comparison-families@parishkit",
     "comparison-pledges@parishkit",
 )
+# The Response funnel section's charts (#477 slice 2): the funnel and the
+# activity series, both or neither, before the section's table.
+FUNNEL_CHART_IDS = (
+    "response-funnel@parishkit",
+    "response-activity@parishkit",
+)
+# Every chart drawn by the chart engine's server renderer, in the email's
+# order: at most one of each, each its own inline image beside the
+# participation chart.
+SERVER_CHART_IDS = FUNNEL_CHART_IDS + COMPARISON_CHART_IDS
 # Their PNGs are the email width at the renderer's scale (2); the height
-# follows the legend's rows, within a bound.
+# follows the legend's rows or the funnel's stages, within a bound.
 COMPARISON_PIXEL_WIDTH = 2 * int(EMAIL_CHART_WIDTH)
 COMPARISON_PIXEL_HEIGHTS = range(200, 2001)
 
@@ -42,7 +52,7 @@ def _attributes(tag, attribute, value):
     """
     if tag == "img":
         if attribute == "src":
-            known = {f"cid:{name}" for name in (CHART_ID, *COMPARISON_CHART_IDS)}
+            known = {f"cid:{name}" for name in (CHART_ID, *SERVER_CHART_IDS)}
             return value if value in known else None
         if attribute == "width":
             return value if value in CHART_WIDTHS else None
@@ -86,15 +96,16 @@ def _png(data, *, size=None, width=None, heights=None):
             image.verify()
 
 
-def validate_digest_body(html, text, chart, comparison=()):
+def validate_digest_body(html, text, chart, images=()):
     """Reject unsafe/private-pipe data without repairing it or reading any path.
 
     These checks establish syntax, sizes and inert raster content, not delivery
     authority. Only the fenced owner may select the retained report and current
-    recipient before invoking the adapter. ``comparison`` holds the
-    Compared with past campaigns section's (content id, PNG bytes) pairs
-    (#1018 slice 7), in ``COMPARISON_CHART_IDS`` order; the body must show
-    exactly those images, once each, besides the one participation chart.
+    recipient before invoking the adapter. ``images`` holds the server-drawn
+    charts' (content id, PNG bytes) pairs in ``SERVER_CHART_IDS`` order: the
+    Response funnel section's (#477 slice 2) and the Compared with past
+    campaigns section's (#1018 slice 7). The body must show exactly those
+    images, once each, besides the one participation chart.
     """
     try:
         if any(
@@ -105,13 +116,17 @@ def validate_digest_body(html, text, chart, comparison=()):
             for value in (html, text)
         ):
             raise ValueError
-        if type(comparison) is not tuple or len(comparison) > len(COMPARISON_CHART_IDS):
+        if type(images) is not tuple or len(images) > len(SERVER_CHART_IDS):
             raise ValueError
         names = [
             pair[0] if type(pair) is tuple and len(pair) == 2 else None
-            for pair in comparison
+            for pair in images
         ]
-        if names != [name for name in COMPARISON_CHART_IDS if name in names]:
+        # Each known id at most once, in the email's order; the funnel's two
+        # charts come together or not at all.
+        if names != [name for name in SERVER_CHART_IDS if name in names] or (
+            len(set(FUNNEL_CHART_IDS) & set(names)) == 1
+        ):
             raise ValueError
         clean = nh3.clean(
             html,
@@ -135,7 +150,7 @@ def validate_digest_body(html, text, chart, comparison=()):
         ):
             raise ValueError
         _png(chart, size=(1440, 840))
-        for _name, data in comparison:
+        for _name, data in images:
             _png(data, width=COMPARISON_PIXEL_WIDTH, heights=COMPARISON_PIXEL_HEIGHTS)
     except (
         ValueError,

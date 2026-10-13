@@ -37,6 +37,7 @@ def components(context, admin):
         chart_url="/digest-chart.png",
         download_url="/digest-chart-download.png",
         plot=chart_layout(content.chart.data),
+        funnel_charts=True,
     )
     funnel |= daily_rows(funnel, {})
     # A digest with the Compared with past campaigns section (#1018 slice 7):

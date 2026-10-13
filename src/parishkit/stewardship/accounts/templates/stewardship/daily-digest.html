@@ -3,7 +3,7 @@
 {% block head %}
 <link rel="stylesheet" href="{% static 'stewardship/digest-v1.css' %}">
 <script src="{% static 'stewardship/digest-v1.js' %}" defer></script>
-{% if comparison %}{% include 'stewardship/components/chart-scripts.html' %}{% endif %}
+{% if comparison or funnel_charts %}{% include 'stewardship/components/chart-scripts.html' %}{% endif %}
 {% endblock %}
 {% block content %}
 <h1>{{ document.title }}</h1>

@@ -49,6 +49,9 @@ DIGEST_CHART = "digest_chart"
 # chart only with Financial stewardship.
 MEASURES = ("families", "pledged")
 LINK_LABEL = "Open the Campaign comparison report"
+# The closed failure word (audit.schemas.FAILURES) naming the section's
+# charts when one cannot be drawn.
+CHART_FAILURE = "digest_comparison_chart"
 
 
 def section(comparison):
@@ -146,18 +149,32 @@ def render_images(document):
     """Each section chart as (content id, PNG bytes), in the email's order.
 
     Starts the chart engine's server renderer once per chart; a kill at its
-    time limit is logged under ``DIGEST_CHART`` and raises
-    ``ChartRenderError``, which fails this compile so it is retried.
+    time limit is logged under ``DIGEST_CHART``. A failure raises
+    ``ChartRenderError`` naming the chart (``CHART_FAILURE``), which fails
+    this compile so it is retried; the last attempt sends the digest with
+    the section's figures but without its charts (``withheld``).
     """
-    from .chart_rendering import render_chart
+    from .chart_rendering import render_digest_chart
 
     return tuple(
         (
             content_id(chart),
-            render_chart(email_spec(chart), format="png", what=DIGEST_CHART).data,
+            render_digest_chart(
+                email_spec(chart), what=DIGEST_CHART, chart=CHART_FAILURE
+            ),
         )
         for chart in document["charts"]
     )
+
+
+def withheld(document):
+    """The section without its charts, or None when there is no section.
+
+    Its figures, data line and link stay; the email and the saved page then
+    show no chart for it (#477: a digest is sent without charts rather than
+    not at all).
+    """
+    return None if document is None else document | {"charts": []}
 
 
 def section_text(document, url):

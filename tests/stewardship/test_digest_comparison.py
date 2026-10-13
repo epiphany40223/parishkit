@@ -279,7 +279,7 @@ def test_the_delivery_mail_carries_every_image(renderer):
         result.comparison_images,
     )
     again = DigestDeliveryMail.from_payload(json.loads(json.dumps(mail.payload())))
-    assert again.comparison == mail.comparison
+    assert again.images == mail.images
     ids = [
         part["Content-ID"]
         for part in mail.message().walk()
@@ -288,9 +288,9 @@ def test_the_delivery_mail_carries_every_image(renderer):
     assert ids == [f"<{CHART_ID}>", *(f"<{name}>" for name in COMPARISON_CHART_IDS)]
     payload = mail.payload()
     for broken in (
-        payload | {"comparison": [["other@parishkit", payload["comparison"][0][1]]]},
-        payload | {"comparison": "none"},
-        {key: value for key, value in payload.items() if key != "comparison"},
+        payload | {"images": [["other@parishkit", payload["images"][0][1]]]},
+        payload | {"images": "none"},
+        {key: value for key, value in payload.items() if key != "images"},
     ):
         with pytest.raises(ValueError):
             DigestDeliveryMail.from_payload(broken)
@@ -369,3 +369,52 @@ def test_the_schedule_form_saves_the_setting_only_when_on():
     field = ScheduleForm.base_fields["comparison"]
     assert isinstance(field, forms.BooleanField) and not field.required
     assert field.label == "Include Compared with past campaigns"
+
+
+def test_a_withheld_render_sends_every_number_without_server_charts(renderer):
+    """Charts withheld (#477): no server-drawn image, no dangling cid: reference.
+
+    The funnel and the section keep their tables and text lines; only the
+    participation chart, drawn in process, stays an image.
+    """
+    import re
+
+    from parishkit.stewardship.reports.digest_comparison import withheld
+
+    from .test_chart_specs import metrics
+
+    value = replace(with_section(), funnel=metrics(), mode="production")
+    result = render_daily_digest(
+        value, public_origin="https://campaign.example.org", charts=False
+    )
+    assert renderer == []
+    assert result.charts_withheld and result.images == ()
+    assert result.funnel == () and result.comparison == ()
+    validate_digest_body(result.html, result.text, result.chart.data, ())
+    assert re.findall(r'src="cid:([^"]+)"', result.html) == [CHART_ID]
+    for body in (result.html, result.text):
+        assert "Email invites sent" in body and HEADING in body
+        assert "Last year on day 3: 30 (↑ 20% more)" in body
+    assert withheld(value.comparison)["charts"] == []
+    assert withheld(None) is None
+
+    def broken(spec, *, format, what, limit_seconds=60):
+        """The renderer refusing every chart."""
+        raise chart_rendering.ChartRenderError("Chart rendering failed.")
+
+    # A render that fails names the chart it could not draw.
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(chart_rendering, "render_chart", broken)
+        with pytest.raises(chart_rendering.ChartRenderError) as raised:
+            render_daily_digest(
+                replace(digest_document(), funnel=metrics(), mode="production"),
+                public_origin="https://campaign.example.org",
+            )
+        assert raised.value.chart == "digest_funnel_chart"
+        with pytest.raises(chart_rendering.ChartRenderError) as raised:
+            render_daily_digest(
+                with_section(), public_origin="https://campaign.example.org"
+            )
+        assert raised.value.chart == "digest_comparison_chart"
+    assert {"digest_funnel_chart", "digest_activity_chart"} <= schemas.FAILURES
+    assert "digest_comparison_chart" in schemas.FAILURES

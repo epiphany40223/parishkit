@@ -120,7 +120,16 @@ class DailyDigestReady(ImmutableRecord):
     what was sent whatever is imported or removed later. Its two charts are
     retained as PNG bytes like the participation chart (the pledges chart
     only with Financial stewardship). All three are null otherwise, as on
-    every digest compiled before the section existed.
+    every digest compiled before the section existed. A digest sent with
+    its charts withheld (#477) keeps the section with no charts and no
+    images.
+
+    ``funnel_chart`` and ``activity_chart`` are the Response funnel
+    section's two chart images (#477 slice 2), retained as PNG bytes for the
+    same reason: both on a Production digest, both null on a Testing digest
+    (which has no funnel), on a digest sent with its charts withheld (the
+    last compile attempt could not draw one) and on every digest compiled
+    before them.
     """
 
     snapshot = models.OneToOneField(DailyDigestSnapshot, on_delete=models.PROTECT)
@@ -140,26 +149,57 @@ class DailyDigestReady(ImmutableRecord):
     comparison = models.JSONField(null=True)
     comparison_families_chart = models.BinaryField(null=True)
     comparison_pledges_chart = models.BinaryField(null=True)
+    funnel_chart = models.BinaryField(null=True)
+    activity_chart = models.BinaryField(null=True)
 
     class Meta:
         db_table = "stewardship_daily_digest_ready"
         constraints = [
-            # A section has its Families chart; a pledges chart needs both.
+            # No section, no images; a pledges chart needs the Families
+            # chart. A section may have none: a digest sent with its charts
+            # withheld (#477) keeps its section without charts.
             models.CheckConstraint(
                 condition=(
-                    models.Q(
-                        comparison__isnull=True,
-                        comparison_families_chart__isnull=True,
-                        comparison_pledges_chart__isnull=True,
+                    (
+                        models.Q(comparison__isnull=False)
+                        | models.Q(
+                            comparison_families_chart__isnull=True,
+                            comparison_pledges_chart__isnull=True,
+                        )
                     )
-                    | models.Q(
-                        comparison__isnull=False,
-                        comparison_families_chart__isnull=False,
+                    & (
+                        models.Q(comparison_pledges_chart__isnull=True)
+                        | models.Q(comparison_families_chart__isnull=False)
                     )
                 ),
                 name="daily_digest_comparison_charts",
-            )
+            ),
+            # The funnel's two charts are kept together or not at all.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(funnel_chart__isnull=True, activity_chart__isnull=True)
+                    | models.Q(funnel_chart__isnull=False, activity_chart__isnull=False)
+                ),
+                name="daily_digest_funnel_charts",
+            ),
         ]
+
+    def images(self):
+        """Every server-drawn chart's (content id, PNG bytes) pair, in email order.
+
+        The Response funnel section's two charts, when retained, then the
+        Compared with past campaigns section's (``SERVER_CHART_IDS``).
+        """
+        from parishkit.stewardship.web.digest_content import FUNNEL_CHART_IDS
+
+        funnel = ()
+        if self.funnel_chart is not None:
+            charts = (self.funnel_chart, self.activity_chart)
+            funnel = tuple(
+                (name, bytes(data))
+                for name, data in zip(FUNNEL_CHART_IDS, charts, strict=True)
+            )
+        return funnel + self.comparison_images()
 
     def comparison_images(self):
         """The section's (content id, PNG bytes) pairs, in the email's order."""

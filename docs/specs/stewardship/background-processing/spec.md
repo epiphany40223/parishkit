@@ -2272,9 +2272,20 @@ sets (the Administrator chooses it; there is no preset time), send:
   (already responded)" and "Submitted without a delivered invitation"); the
   [Response dashboard](../reports/spec.md#response-funnel) and
   `pk-admin report responses` still show them
-  ([#969](https://github.com/epiphany40223/parishkit/issues/969)). The email
-  shows every stage and figure as a row with a share bar; the saved report
-  page shows the stages as a table and the figure with its share. The compiling
+  ([#969](https://github.com/epiphany40223/parishkit/issues/969)). The section
+  opens with two charts, visuals first: the funnel of those stages under the
+  digest's names, and the response activity (form opens and submissions per
+  hour while they span three days or less, per day after that, over at most
+  the last 120 days, with each invitation and reminder send marked; no Link
+  followed line, for the same reason). Each is drawn by the
+  [chart engine](../reports/spec.md#chart-engine) from the Response
+  dashboard's specifications and carries its figures in its alt text. Then the
+  email shows every stage and figure as a row with a share bar; the saved
+  report page draws the same two charts in the browser when its email had
+  them, then shows the stages as a table and the figure with its share. A
+  chart the renderer still cannot draw on the last attempt is
+  [withheld](../reports/spec.md#chart-engine): the digest is sent without its
+  charts rather than not at all. The compiling
   worker counts it and the page counts it again from
   the same durable timestamps, so the two agree unless the engagement record
   is backfilled later. The saved page of a digest sent before the funnel

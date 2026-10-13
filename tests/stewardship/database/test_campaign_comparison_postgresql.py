@@ -458,12 +458,18 @@ def test_migration_check_refuses_a_missing_or_widened_function():
     Frozen file 0072 (slice 7) replaced both functions to admit the worker
     login, so its DO block is the one the installed functions now pass; the
     block also compares the grants captured before the replacement, which a
-    re-run reads back as they are now.
+    re-run reads back as they are now. It checks the comparison chart
+    constraint as 0072 declared it, which 0083 (#477) relaxed, so that one is
+    put back first (rolled back with the test).
     """
+    # Imported here: that module imports this one's ACL_NOW the same way.
+    from .test_daily_digest_comparison_postgresql import CHECK_0072
+
     text = LATEST.read_text(encoding="utf-8")
     check = text[text.index("DO $check$") : text.index("$check$;") + len("$check$;")]
     with transaction.atomic(), connection.cursor() as cursor:
         cursor.execute(ACL_NOW)
+        cursor.execute(CHECK_0072)
         cursor.execute(check)  # The installed functions pass.
         for change in (
             "DROP FUNCTION public.stewardship_campaign_archive_renewal_v1"
@@ -480,6 +486,7 @@ def test_migration_check_refuses_a_missing_or_widened_function():
                 cursor.execute(change)
                 cursor.execute(check)
         cursor.execute(check)
+        transaction.set_rollback(True)
 
 
 def test_band_edges_reach_the_function_as_the_workbook_defines_them():

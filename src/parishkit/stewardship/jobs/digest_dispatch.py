@@ -135,6 +135,6 @@ def current_digest_content(message, scope):
             render.html,
             render.text,
             bytes(ready.chart),
-            ready.comparison_images(),
+            ready.images(),
         ),
     )

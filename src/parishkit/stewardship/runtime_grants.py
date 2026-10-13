@@ -490,6 +490,12 @@ CLOSURE_COLUMNS = {
         "stewardship_reports",
         "0021_digest_comparison",
     ),
+    # #477's 0083 gives web the ready row's funnel_chart column, so the
+    # saved page knows whether the email had the funnel charts.
+    ("stewardship_daily_digest_ready", "funnel_chart"): (
+        "stewardship_reports",
+        "0022_digest_funnel_charts",
+    ),
 }
 
 

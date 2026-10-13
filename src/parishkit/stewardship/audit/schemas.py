@@ -596,6 +596,12 @@ FAILURES = frozenset(
         # may have committed a change, its outcome is unknown.
         "admin_command",
         "admin_command_outcome_unknown",
+        # A daily digest chart the server renderer could not draw on the
+        # compile's last attempt, so the digest was sent without its
+        # server-drawn charts (#477; reports.digest_tasks.charts_withheld).
+        "digest_funnel_chart",
+        "digest_activity_chart",
+        "digest_comparison_chart",
     }
 )
 # Closed provider results a ``reason`` may hold; mirrored in

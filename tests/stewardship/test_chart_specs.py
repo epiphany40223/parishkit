@@ -323,3 +323,55 @@ def test_empty_activity_layers_stay_out_of_the_accessibility_tree():
     lines, rules, _labels = markers.spec["layer"]
     assert lines["mark"]["aria"] is False and "aria" not in rules["mark"]
     assert all("aria" not in layer["mark"] for layer in full.spec["layer"])
+
+
+def test_digest_charts_are_trimmed_like_the_digest_table():
+    """The digest's charts drop Link followed and name Invited as it does (#1016)."""
+    from parishkit.stewardship.reports.digest_funnel import digest_charts
+
+    with using("us_long"):
+        funnel, activity = digest_charts(metrics())
+    rows = funnel.spec["data"]["values"]
+    assert [row["stage"] for row in rows] == [
+        "Email invites sent",
+        "Form opened",
+        "Progressed past the first step",
+        "Submitted",
+    ]
+    assert [row["share"] for row in rows] == ["100%", "100%", "75%", "75%"]
+    assert funnel.table.headings == (
+        "Stage",
+        "Families",
+        "Compared with email invites sent",
+    )
+    assert funnel.summary == (
+        "Families by stage: 4 were sent an email invite, 4 opened the form, "
+        "3 progressed past the first step, 3 submitted."
+    )
+    lines, _rules, _labels = activity.spec["layer"]
+    assert {row["series"] for row in lines["data"]["values"]} == {
+        "Form opened",
+        "Submitted",
+    }
+    assert activity.table.headings == ("Campaign time", "Form opened", "Submitted")
+    assert activity.summary.startswith("Form opens and submissions per hour in ")
+    # The dashboard's own charts are unchanged: five stages, three lines.
+    assert len(funnel_chart(metrics()).spec["data"]["values"]) == 5
+    assert activity_chart(metrics()).table.headings[1] == "Link followed"
+
+
+def test_digest_activity_follows_the_dashboards_automatic_grain():
+    """Hourly while the activity spans three days or less, daily after that."""
+    from parishkit.stewardship.reports.digest_funnel import digest_charts
+
+    value = metrics()
+    assert digest_charts(value)[1].title == "Response activity by hour"
+    later = replace(value, as_of=value.as_of + timedelta(days=5))
+    assert digest_charts(later)[1].title == "Response activity by day"
+
+
+def test_activity_chart_refuses_unknown_series():
+    """Only the known lines can be drawn, and at least one of them."""
+    for series in ((), (("other", "Other", "#000000", [1, 0]),)):
+        with pytest.raises(ValueError):
+            activity_chart(metrics(), series=series)

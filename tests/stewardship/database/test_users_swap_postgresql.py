@@ -290,7 +290,9 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # columns and replaces the refusal guard (``before_bounce_report``), so
 # ``CLOSURE_ALTERED`` puts it back too. 0082 (#1062) creates nothing; it adds
 # the branding bundle's mode column (``before_branding_bundle_mode``), so
-# ``CLOSURE_ALTERED`` puts it back.
+# ``CLOSURE_ALTERED`` puts it back. 0083 (#477) creates nothing; it adds the
+# daily digest ready row's funnel chart columns
+# (``before_digest_funnel_charts``), which ``CLOSURE_ALTERED`` puts back.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -449,6 +451,10 @@ CLOSURE_ALTERED = {
         "stewardship_accounts",
         "0021_branding_bundle_mode",
     ),
+    ("stewardship_daily_digest_ready", "funnel_chart"): (
+        "stewardship_reports",
+        "0022_digest_funnel_charts",
+    ),
 }
 
 
@@ -574,6 +580,21 @@ def before_digest_comparison():
     ]
 
 
+def before_digest_funnel_charts():
+    """The statements that put the digest ready row back as 0075 left it.
+
+    #477's 0083 adds the funnel and activity chart columns (with the check
+    over them, which goes with them), and replaces 0072's comparison chart
+    check and ``stewardship_safe_context_v1``. Those two need no undo here:
+    ``before_digest_comparison``, which runs next, drops the comparison
+    columns (and so any check over them) and puts 0065's body back.
+    """
+    return [
+        "ALTER TABLE public.stewardship_daily_digest_ready DROP COLUMN " + column
+        for column in ("funnel_chart", "activity_chart")
+    ]
+
+
 def before_report_local_days():
     """The statements that put the report export captures back before 0064.
 
@@ -667,7 +688,8 @@ def swap_pending():
     digest ready row as it was before 0072 (``before_digest_comparison``),
     and the refusal table and its guard as they were before 0081
     (``before_bounce_report``), and branding bundles as they were before 0082
-    (``before_branding_bundle_mode``).
+    (``before_branding_bundle_mode``), and the digest ready row's funnel
+    charts as they were before 0083 (``before_digest_funnel_charts``).
     """
     from django.db.migrations.loader import MigrationLoader
 
@@ -696,6 +718,7 @@ def swap_pending():
             cursor.execute(f"DROP FUNCTION {function} CASCADE")
         for statement in (
             *before_bounce_report(),
+            *before_digest_funnel_charts(),
             *before_digest_comparison(),
             *before_comparison_exports(),
             *before_timeline_exports(),

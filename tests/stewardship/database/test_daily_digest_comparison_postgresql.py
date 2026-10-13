@@ -327,12 +327,15 @@ def test_a_failed_section_compile_retries_then_fails_at_attempt_5(
     error,
     final,
 ):
-    """A renderer failure or unavailable facts wait to retry; the fifth fails.
+    """A compile failure or unavailable facts wait to retry; the fifth fails.
 
     The retry delays run on the database's real clock (minutes), so the
     fifth attempt is shown by having the failure branch read attempt 5
     (``final``), as the fifth claim would: digest_tasks._execute then ends
     the task as a permanent failure instead of scheduling another retry.
+    Here the whole compile fails, even without its charts; a chart the
+    renderer alone cannot draw is withheld on the last attempt instead
+    (``test_a_chart_that_never_draws_is_withheld_on_the_last_attempt``).
     """
     from dataclasses import replace
 
@@ -365,6 +368,78 @@ def test_a_failed_section_compile_retries_then_fails_at_attempt_5(
     assert failed
     assert task.state == ("failed" if final else "retry_wait")
     assert not DailyDigestReady.objects.exists()
+
+
+@pytest.mark.parametrize("final", [False, True])
+def test_a_chart_that_never_draws_is_withheld_on_the_last_attempt(
+    family_mail,  # noqa: F811
+    google,
+    monkeypatch,
+    final,
+):
+    """A renderer that always fails retries, then the digest goes without charts.
+
+    #477: a chart the server renderer cannot draw must not stop the day's
+    digest. Earlier attempts wait to retry; the last (attempt 5, read as in
+    the test above) compiles without any server-drawn chart, keeps the
+    section's figures with no charts and no images, allocates every Admin's
+    mail with no dangling ``cid:`` reference, and leaves one durable
+    ERROR entry naming the chart and the attempt.
+    """
+    import re
+    from dataclasses import replace
+
+    from parishkit.stewardship.reports import digest_tasks
+
+    failed = []
+
+    def broken(spec, *, format, what, limit_seconds=60):
+        """The renderer refusing every chart."""
+        failed.append(what)
+        raise chart_rendering.ChartRenderError("Chart rendering failed.")
+
+    real_status = digest_tasks._status
+
+    def status_of(run):
+        """The task's status; attempt 5 once a chart has failed (``final``)."""
+        found = real_status(run)
+        return replace(found, attempt=5) if final and failed else found
+
+    monkeypatch.setattr(chart_rendering, "render_chart", broken)
+    monkeypatch.setattr(digest_tasks, "_status", status_of)
+    with campaign_clock(INSTANT):
+        import_archive(
+            family_mail.service.store,
+            administrator(),
+            archive_bytes(CURRENT_YEAR - 1, [1, 2]),
+        )
+        status = queued_with_comparison(family_mail)
+        task = run(status)
+    assert failed == [DIGEST_CHART]
+    if not final:
+        assert task.state == "retry_wait"
+        assert not DailyDigestReady.objects.exists()
+        return
+    assert task.state == "succeeded"
+    ready = DailyDigestReady.objects.get()
+    assert ready.comparison["charts"] == [] and ready.comparison["tiles"]
+    assert ready.images() == () and ready.funnel_chart is None
+    assert ready.comparison_families_chart is None
+    assert re.findall(r'src="cid:([^"]+)"', ready.html) == ["participation@parishkit"]
+    assert HEADING in ready.html and HEADING in ready.text
+    recipient = DailyDigestRecipient.objects.select_related("outbox__render").get()
+    assert "cid:comparison-" not in recipient.outbox.render.html
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT level, context FROM stewardship_operational_log"
+            " WHERE event='task_failed'"
+        )
+        [(level, context)] = cursor.fetchall()
+    context = context if isinstance(context, dict) else json.loads(context)
+    assert level == "ERROR"
+    assert context["failure"] == "digest_comparison_chart"
+    assert (context["attempt"], context["attempt_limit"]) == (5, 5)
+    assert context["task_id"] == str(status.run_id)
 
 
 def test_a_comparison_that_disagrees_with_its_facts_is_retried(
@@ -427,6 +502,26 @@ MIGRATIONS = (
 )
 
 
+# 0072's own comparison chart check, which 0083 (#477) relaxed so a section
+# may be kept without images; 0072's DO block checks for this one.
+CHECK_0072 = (
+    "ALTER TABLE public.stewardship_daily_digest_ready DROP CONSTRAINT "
+    "daily_digest_comparison_charts; "
+    + next(
+        line
+        for line in (
+            Path(__file__).resolve().parents[3]
+            / "src/parishkit/stewardship/schema/migrations/0072_digest_comparison.sql"
+        )
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line.startswith(
+            "ALTER TABLE public.stewardship_daily_digest_ready ADD CONSTRAINT"
+        )
+    )
+)
+
+
 def replaced(name, function):
     """One function's definition from a frozen file, as CREATE OR REPLACE."""
     from ..test_schema_migration_files import function_bodies
@@ -465,6 +560,8 @@ def test_the_0072_check_refuses_the_old_bodies(installs, refusal):
     check = text[text.index("DO $check$") : text.index("$check$;") + len("$check$;")]
     with transaction.atomic(), connection.cursor() as cursor:
         cursor.execute(ACL_NOW)
+        # The table as 0072 left it (rolled back below); 0083 changes it.
+        cursor.execute(CHECK_0072)
         cursor.execute(check)  # The installed bodies pass.
         with (
             pytest.raises(DatabaseError, match=f"Migration 0072: .*{refusal}"),
@@ -474,6 +571,7 @@ def test_the_0072_check_refuses_the_old_bodies(installs, refusal):
                 cursor.execute(replaced(name, function))
             cursor.execute(check)
         cursor.execute(check)  # Rolled back: the installed bodies pass again.
+        transaction.set_rollback(True)
 
 
 def test_the_0072_check_refuses_a_body_without_0065s_sorts():
@@ -493,6 +591,7 @@ def test_the_0072_check_refuses_a_body_without_0065s_sorts():
     assert body.count(tokens) == 1
     with transaction.atomic(), connection.cursor() as cursor:
         cursor.execute(ACL_NOW)
+        cursor.execute(CHECK_0072)  # As 0072 left the table; rolled back below.
         with (
             pytest.raises(DatabaseError, match="Migration 0072: .*chart timeout"),
             transaction.atomic(),
@@ -500,3 +599,4 @@ def test_the_0072_check_refuses_a_body_without_0065s_sorts():
             cursor.execute(body.replace(tokens, ""))
             cursor.execute(check)
         cursor.execute(check)  # Rolled back: the installed body passes again.
+        transaction.set_rollback(True)

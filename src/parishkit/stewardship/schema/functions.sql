@@ -5741,7 +5741,8 @@ BEGIN
                 'due_work_health_check','backup_health_check','export_cleanup','fact_verification',
                 'source_retention','family_engagement','alert_mail','security_mail','slack_alert',
                 'smtp_systemic','smtp_unavailable','web_health_check','web_unresponsive',
-                'admin_command','admin_command_outcome_unknown') THEN RETURN false; END IF;
+                'admin_command','admin_command_outcome_unknown','digest_funnel_chart',
+                'digest_activity_chart','digest_comparison_chart') THEN RETURN false; END IF;
         -- An Admin command-line command (#617): its catalog name, lower-case
         -- words such as 'export create' (Python checks the catalog itself).
         ELSIF key='command' THEN

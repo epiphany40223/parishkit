@@ -1369,9 +1369,13 @@ linked to #1018 (slice 7 completed part (b)).
    Past campaigns compared; `pk-admin digest daily` prints the section
    without the specifications. The renderer's timeout name is
    `digest_chart` with the helper `chart_render_worker`. A comparison
-   that disagrees with its facts, or a chart the renderer cannot draw,
-   fails that compile (it is retried like a fact failure), rather than
-   sending a digest without the section it was set to carry.
+   that disagrees with its facts fails that compile (it is retried like a
+   fact failure), rather than sending a digest without the section it was
+   set to carry. A chart the renderer cannot draw is retried too, but on
+   the last attempt the digest is sent with the section's figures and no
+   charts ([#477](https://github.com/epiphany40223/parishkit/issues/477);
+   see the reports spec's
+   [chart engine](../reports/spec.md#chart-engine)).
 
 Slices 4 to 7 depend on 3 but not on each other. UI slices get the
 human pk-local check that significant new UI needs.
