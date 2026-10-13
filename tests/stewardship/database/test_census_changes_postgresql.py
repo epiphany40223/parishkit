@@ -15,6 +15,7 @@ from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.census_changes import CensusQuery, census_changes
 from parishkit.stewardship.responses.models import ProposedChange
+from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
 
 from ..census_factory import address
 from ..policy_factory import address as rule_address
@@ -99,7 +100,8 @@ def test_family_names_follow_the_shared_name_cases(response_service):
     """The Family name comes from the shared SQL lookup, so every shared edge
     case (Unicode padding, inactive or missing heads, surname fallbacks) reads
     as snapshot_family_names gives it, and a Family missing from the current
-    snapshot is Unavailable Family (#932)."""
+    snapshot has no name (None), which the page marks Not in ParishSoft
+    (#932, #1216)."""
     from parishkit.stewardship.source.snapshot_models import SourceCurrent
 
     harness = response_service
@@ -122,14 +124,14 @@ def test_family_names_follow_the_shared_name_cases(response_service):
             )
 
     drop_family()
-    assert worklist(harness)["rows"][0]["family_name"] == "Unavailable Family"
+    assert worklist(harness)["rows"][0]["family_name"] is None
     for case in NAME_CASES:
         # Each case's head Member DUIDs are distinct, so earlier cases' heads
         # can stay in the snapshot.
         drop_family()
         (expected,) = seed_name_cases(snapshot, (case,), first=duid).values()
         if expected == DEFAULT:
-            expected = "Unavailable Family"
+            expected = NAME_NOT_RECORDED
         assert worklist(harness)["rows"][0]["family_name"] == expected, case[0]
 
 

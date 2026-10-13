@@ -17,6 +17,7 @@ from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.reports import source_form
 from parishkit.stewardship.source.family_names import family_display_name
+from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
 
 from .auth_builders import signed_in
 from .automation_builders import paired
@@ -88,7 +89,7 @@ def test_the_list_by_duid_for_any_session(response_service, google, cli):  # noq
     # Never a value, and never the Family name the page shows.
     text = str(document)
     assert "private" not in text and "x" * 101 not in text
-    assert family_display_name(data.families[1], "Unavailable Family") not in text
+    assert family_display_name(data.families[1], NAME_NOT_RECORDED) not in text
     assert viewed()[-1] == {"outcome": "succeeded", "count": 1}
 
     # A read-only session reads the same list.

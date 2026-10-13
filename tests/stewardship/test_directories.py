@@ -472,8 +472,7 @@ DAN = {"name": "Dan Example", "emails": []}
         # An export's current data no longer has this head at all.
         (
             [ANNA, DAN | {"missing": True}],
-            "Anna Example: family@example.org; "
-            "Dan Example: (not in current ParishSoft data)",
+            "Anna Example: family@example.org; Dan Example: (Not in ParishSoft)",
         ),
         ([], ""),
     ],

@@ -740,8 +740,10 @@ parent is the active parishioner family directory. The page reads the Family's r
 database's current instant (**Counted at**).
 
 Data comes first: the heading, then the Family's name (the directory's
-surname-and-heads name from the latest ParishSoft data, or a note that the
-data no longer has the Family), DUID and envelope number, then a summary that
+surname-and-heads name from the latest ParishSoft data, or the shared
+[Not in ParishSoft](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
+badge when that data no longer has the Family), DUID and envelope number,
+then a summary that
 both roles see:
 
 - **Submitted:** Yes, with the first submission's time and, after more than
@@ -1067,9 +1069,11 @@ DUID, Envelope number, Family code, any Submissions, What to check and
 response dates (see [Response filters](#response-filters)), and Family head
 emails.
 The list filtered to Families no campaign mail can reach
-adds Phone numbers for follow-up calls, before Family head emails. A
-Family no longer active in ParishSoft has "(No longer active in ParishSoft)"
-after its name. The PDF is the [shared design](#file-design)'s table: the
+adds Phone numbers for follow-up calls, before Family head emails. In the
+[shared words](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft),
+a Family no longer active in ParishSoft has "(Inactive in ParishSoft)"
+after its name, and one the data no longer has reads "Not in ParishSoft" in
+place of a name. The PDF is the [shared design](#file-design)'s table: the
 columns share the page width, and long cells and headings wrap, so a file
 with many columns still fits the landscape page; times use the parish's
 compact date format and counts are grouped, as on the page. Family
@@ -1086,7 +1090,8 @@ file) reads the same heads' emails from the current ParishSoft data instead,
 and the file's report details add "Head emails as of" that data's refresh
 time. CSV files carry no report details, so that note appears only in XLSX
 and PDF files. A head the current data no longer has as a Member at all
-reads "(not in current ParishSoft data)" rather than "(no email)". A regenerated or retried file therefore has the same Families, names,
+reads "(Not in ParishSoft)" rather than "(no email)". A regenerated or
+retried file therefore has the same Families, names,
 codes and other columns as the capture, but its head emails may be newer. Only
 when no ParishSoft data is available at all does the render fail, with its
 own failure kind (`directory_head_emails_unavailable`) in the logs; the
@@ -1176,10 +1181,13 @@ header reads "Families from ParishSoft data as of *time*" and the rows are
 every campaign Family the funnel selects, so the matching count equals the
 [dashboard](#response-dashboard)'s figure. A campaign Family the current
 ParishSoft data no longer lists as active and registered is then listed too,
-marked **No longer active in ParishSoft**. Its name and envelope number come
-from the current data when that data still has the Family; otherwise it
-reads "Not in the latest ParishSoft data". Campaign mail reaches it neither
-way: its email availability reads "No longer active in ParishSoft", it
+marked with the shared **Inactive in ParishSoft** badge beside its name. Its
+name and envelope number come from the current data when that data still has
+the Family; otherwise the name cell holds only the **Not in ParishSoft**
+badge
+([Members and Families no longer in ParishSoft](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)).
+Campaign mail reaches it neither way: its email availability reads the same
+words as its name cell ("Inactive in ParishSoft" or "Not in ParishSoft"), it
 counts as reachable by neither email nor postal mail, and the postal mail
 merge leaves it out when mailing columns are on, since that list covers only
 the Families postal mail is for

@@ -1,9 +1,14 @@
 """One phrase and one badge for Members and Families no longer in ParishSoft.
 
 ui-conventions "Members and Families no longer in ParishSoft" (#1216): the
-shared words in ``source/source_status.py``, and the ``{% source_status %}``
-template tag.
+shared words in ``source/source_status.py``, the ``{% source_status %}``
+template tag, and a guard that keeps the retired phrases out of the pages.
 """
+
+import os
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 from django.template import Context, Template
@@ -13,6 +18,20 @@ from parishkit.stewardship.source.source_status import (
     INACTIVE_IN_PARISHSOFT,
     NOT_IN_PARISHSOFT,
     source_status_label,
+)
+
+PACKAGE = Path(__file__).resolve().parents[2] / "src/parishkit/stewardship"
+# Phrases the convention replaced. Installed SQL (schema/*.sql and frozen
+# migrations) still prints "Unavailable Member" and "Unavailable Family"
+# until later changes of #1216 replace those selections with a migration.
+RETIRED = (
+    "Unavailable Member",
+    "Unavailable Family",
+    "Not in the latest ParishSoft data",
+    "Not in current ParishSoft data",
+    "not in current ParishSoft data",
+    "Name not in the current ParishSoft data",
+    "No longer active in ParishSoft",
 )
 
 
@@ -56,3 +75,45 @@ def test_the_tag_renders_the_shared_badge():
     )
     assert _render(None) == "[]"
     assert _render("current") == "[]"
+
+
+def _sources():
+    """Every template, script and Python module of the package."""
+    for pattern in ("*.html", "*.js", "*.py"):
+        yield from PACKAGE.rglob(pattern)
+
+
+def test_pages_and_code_do_not_use_the_retired_phrases():
+    """Templates and Python use the shared words, not the six old ones."""
+    found = [
+        f"{path.relative_to(PACKAGE)}: {phrase}"
+        for path in _sources()
+        if "migrations" not in path.parts
+        for phrase in RETIRED
+        if phrase in path.read_text()
+    ]
+    assert found == []
+
+
+@pytest.mark.parametrize(
+    "module",
+    [
+        "parishkit.stewardship.source.source_status",
+        "parishkit.stewardship.source.loading",
+    ],
+)
+def test_the_words_import_before_django_is_configured(module):
+    """The installer imports them through ``source.loading`` before it sets
+    up Django, so a module-level translation call there fails the deploy."""
+    source = PACKAGE.parents[1]
+    # A clean environment with only this checkout on the path: no settings
+    # module, and never another checkout's installed copy of the package.
+    env = {"PATH": os.environ.get("PATH", ""), "PYTHONPATH": str(source)}
+    result = subprocess.run(
+        [sys.executable, "-c", f"import {module}"],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr

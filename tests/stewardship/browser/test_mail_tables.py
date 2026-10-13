@@ -107,7 +107,7 @@ def test_outgoing_mail_shows_the_family_name_and_duid_apart(page, component_orig
     rows = table.locator("tbody tr")
     assert [rows.nth(i).locator("th").inner_text() for i in range(3)] == [
         "Castellanos, Maximiliana and Bartholomew",
-        "Not in current ParishSoft data",
+        "Not in ParishSoft",
         "Administrator report",
     ]
     # The DUID cell follows the When cell.
@@ -121,12 +121,11 @@ def test_outgoing_mail_shows_the_family_name_and_duid_apart(page, component_orig
     assert when.locator("time").count() == 1
     assert when.evaluate("node => node.getClientRects().length") == 1
     assert "Changed" not in table.inner_text()
-    # A Family the latest data no longer has reads in a muted color.
-    gone = rows.nth(1).locator("th .cell-detail")
-    assert gone.inner_text() == "Not in current ParishSoft data"
-    assert gone.evaluate("node => getComputedStyle(node).color") != rows.nth(0).locator(
-        "th a"
-    ).evaluate("node => getComputedStyle(node).color")
+    # A Family the latest data no longer has shows the shared badge (#1216),
+    # boxed so it does not read as a name.
+    gone = rows.nth(1).locator('th .status-badge[data-source-status="missing"]')
+    assert gone.inner_text() == "Not in ParishSoft"
+    assert gone.evaluate("node => getComputedStyle(node).borderTopStyle") == "solid"
     assert (
         rows.nth(0)
         .get_by_role("link", name="Castellanos, Maximiliana and Bartholomew")

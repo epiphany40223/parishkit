@@ -42,7 +42,7 @@
 <div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Census changes' %}"><table>
 <caption>{% translate "Census changes" %}</caption><thead><tr>{% translate "Family" as heading %}{% sort_heading table "family" heading %}{% translate "Family DUID" as heading %}{% sort_heading table "duid" heading "numeric" %}{% translate "Who" as heading %}{% sort_heading table "who" heading %}{% translate "Member DUID" as heading %}{% sort_heading table "member_duid" heading "numeric" %}{% translate "What changed" as heading %}{% sort_heading table "what" heading %}<th scope="col">{% translate "ParishSoft now" %}</th><th scope="col">{% translate "Family's answer" %}</th><th scope="col">{% translate "Edited value" %}</th>{% translate "How it reaches ParishSoft" as heading %}{% sort_heading table "route" heading %}{% translate "Status" as heading %}{% sort_heading table "status" heading %}{% translate "Submitted" as heading %}{% sort_heading table "submitted" heading %}<th scope="col">{% translate "Recorded by" %}</th><th scope="col">{% translate "Recorded at" %}</th><th scope="col">{% translate "Note" %}</th><th scope="col">{% translate "Actions" %}</th></tr></thead><tbody>
 {% for row in table.rows %}<tr>
-<td>{{ row.family_name }}</td>
+<td>{% if row.family_name %}{{ row.family_name }}{% else %}{% source_status "missing" %}{% endif %}</td>
 <td class="numeric">{{ row.family_duid|duid }}</td>
 <th scope="row" id="who-{{ row.id }}">{{ row.who }}</th>
 <td class="numeric">{% if row.member_duid %}{{ row.member_duid|duid }}{% elif row.entity_kind == 'proposed_member' %}{% translate "New Member" %}{% endif %}</td>

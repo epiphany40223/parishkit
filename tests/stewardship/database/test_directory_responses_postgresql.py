@@ -435,6 +435,8 @@ def test_directory_response_filters_follow_the_dashboard_rows(
     gone = next(row for row in submitted["rows"] if row["family_duid"] == 11)
     assert gone["active"] is False and gone["reason"] == "inactive"
     assert gone["family_name"] is None and gone["display_name"]
+    # Its email availability says what its name cell says (#1216).
+    assert gone["display_name"] == gone["reason_label"] == "Not in ParishSoft"
     assert not gone["email_deliverable"] and not gone["mailable"]
     assert gone["submissions"] == 2
     assert 11 not in duids(page(harness))

@@ -33,6 +33,10 @@ from parishkit.stewardship.responses.comparison import ADDRESS_COMPONENTS
 from parishkit.stewardship.responses.member_census import MEMBER_FIELDS
 from parishkit.stewardship.responses.member_requests import REQUEST_FIELDS
 from parishkit.stewardship.schema_primitives import timezone_names
+from parishkit.stewardship.source.source_status import (
+    NAME_NOT_RECORDED,
+    NOT_IN_PARISHSOFT,
+)
 from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
@@ -196,15 +200,17 @@ class CensusQuery:
 # snapshot_family_names), so the page, its search and sort and the downloads
 # name a Family as every Admin table does (#932); a
 # Member's name is the Family's own corrected one first, then the parish
-# record's.
+# record's. A Family the source no longer has reads as NULL, which the page
+# marks "Not in ParishSoft"; one without a usable name reads as the shared
+# "Name not recorded in ParishSoft" (the first parameter, #1216).
 ROWS = """
 SELECT p.id::text, p.entity_kind, p.entity_key, p.field,
     p.baseline_available, p.baseline_value::text, p.submitted_value::text,
     p.current_available, p.current_value::text, p.admin_value_set,
     p.admin_value::text,
     p.handling, p.decision, p.execution, s.submitted_at, f.family_duid,
-    coalesce(stewardship_family_display_name_v1(sc.snapshot_id, f.family_duid,
-        'Unavailable Family'), 'Unavailable Family') AS family_name,
+    stewardship_family_display_name_v1(sc.snapshot_id, f.family_duid, %s)
+        AS family_name,
     coalesce(nullif(btrim(concat_ws(' ',
             nullif(btrim(s.answers->'members'->p.entity_key->>'first_name'),''),
             nullif(btrim(s.answers->'members'->p.entity_key->>'last_name'),''))),''),
@@ -270,7 +276,7 @@ def census_changes(campaign_id, query, principal):
         cursor.execute("SELECT 1 FROM stewardship_campaign WHERE id=%s", [campaign_id])
         if cursor.fetchone() is None:
             raise ReadUnavailable("Census change inputs are unavailable.")
-        cursor.execute(ROWS, [campaign_id])
+        cursor.execute(ROWS, [NAME_NOT_RECORDED, campaign_id])
         rows = [dict(zip(COLUMNS, values, strict=True)) for values in cursor]
     for row in rows:
         # JSON values arrive as text (cast in ROWS), whatever the driver's
@@ -457,7 +463,7 @@ def select(rows, query, *, administrator):
         and (upper is None or row["submitted_at"] < upper)
         and (
             not needle
-            or needle in row["family_name"].casefold()
+            or needle in (row["family_name"] or "").casefold()
             or needle in row["who"].casefold()
             or needle in str(row["family_duid"])
         )
@@ -501,7 +507,7 @@ def export_rows(result, zone, *, time_text=iso_time):
     """
     return [
         (
-            row["family_name"],
+            row["family_name"] or NOT_IN_PARISHSOFT,
             str(row["family_duid"]),
             row["who"],
             export_member_duid(row),

@@ -30,6 +30,7 @@ from threading import Lock
 
 from parishkit.stewardship.responses.inputs import member_source_fields
 from parishkit.stewardship.source.family_names import family_display_name
+from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
 from parishkit.stewardship.source.version_models import SnapshotFamily
 from parishkit.stewardship.source_form_check import (
     RECORD,
@@ -91,7 +92,7 @@ def family_names(snapshot_id, duids):
         return {}
     return {
         row.source_key: family_display_name(
-            row.payload.payload or {}, "Unavailable Family"
+            row.payload.payload or {}, NAME_NOT_RECORDED
         )
         for row in SnapshotFamily.objects.filter(
             snapshot_id=snapshot_id, source_key__in=[str(duid) for duid in duids]
@@ -126,7 +127,9 @@ def blocked_families(campaign_id):
     rows = [
         {
             "family_duid": item["family_duid"],
-            "family_name": names.get(str(item["family_duid"]), "Unavailable Family"),
+            # None when the snapshot no longer has the Family: the page marks
+            # it with the shared "Not in ParishSoft" badge (#1216).
+            "family_name": names.get(str(item["family_duid"])),
             "member_duid": item["member_duid"],
             "field": field_label(item["field"], item["kind"]),
         }

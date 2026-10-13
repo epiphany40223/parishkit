@@ -225,11 +225,18 @@ def _filters(parameters):
 def _family_cell(item):
     """The code list's Family cell: the page's name, marked when inactive.
 
+    Downloads do not have their own ParishSoft status column yet (#1216),
+    so the mark is in the cell.
+
     A Family the Response filter lists after the current ParishSoft data
     stopped listing it as active says so, as the page does (#933).
     """
     name = row_name(item)
-    return name if item.get("active", True) else f"{name} ({INACTIVE})"
+    # A Family no longer in the data at all is only "Not in ParishSoft",
+    # never also inactive, as on the page (#1216).
+    if item["family_name"] is None or item.get("active", True):
+        return name
+    return f"{name} ({INACTIVE})"
 
 
 def directory_document(

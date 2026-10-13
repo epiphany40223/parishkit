@@ -43,7 +43,7 @@
   <tbody>
   {% for delivery in table.rows %}<tr>
     <td class="nowrap"><time datetime="{{ delivery.updated_at|instant }}" data-local-instant data-compact>{{ delivery.updated_at|instant }}</time></td>
-    <th scope="row"><a href="{% url 'admin:delivery' delivery.id %}">{% if not delivery.family__family_duid %}{% translate "Administrator report" %}{% elif delivery.family_name %}{{ delivery.family_name }}{% else %}<span class="cell-detail">{% translate "Not in current ParishSoft data" %}</span>{% endif %}</a></th>
+    <th scope="row"><a href="{% url 'admin:delivery' delivery.id %}">{% if not delivery.family__family_duid %}{% translate "Administrator report" %}{% elif delivery.family_name %}{{ delivery.family_name }}{% else %}{% source_status "missing" %}{% endif %}</a></th>
     <td class="numeric nowrap">{% if delivery.family__family_duid %}{{ delivery.family__family_duid|duid }}{% else %}—{% endif %}</td>
     <td>{{ delivery.purpose|delivery_label }}</td>
     <td>{{ delivery.mode|delivery_label }}</td>

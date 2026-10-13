@@ -13,7 +13,18 @@ is present but has no usable name is a separate case, worded by
 ``NAME_NOT_RECORDED`` rather than called a removal.
 """
 
-from django.utils.translation import gettext_noop
+
+def gettext_noop(message):
+    """Mark ``message`` for translation without translating it (identity).
+
+    Django's own ``gettext_noop`` reads settings, which fails when this module
+    is imported before Django is configured (the installer's provisioning
+    imports it through ``source.loading``). The name keeps the message
+    extraction marker working; the pages translate the phrases when they
+    render them.
+    """
+    return message
+
 
 NOT_IN_PARISHSOFT = gettext_noop("Not in ParishSoft")
 INACTIVE_IN_PARISHSOFT = gettext_noop("Inactive in ParishSoft")

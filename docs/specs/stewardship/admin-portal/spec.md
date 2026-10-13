@@ -3904,11 +3904,12 @@ in the order the Administrator asked for
    [Family timeline](../reports/spec.md#family-timeline).
 2. **Type, mode and state** on one line under the heading, such as
    "Initial invitation · Production · Not sure it arrived".
-3. **Family and recipients.** The Family's name and its Family DUID ("Not
-   in current ParishSoft data" when the name is unknown), or "Administrator
-   report". Then "To:" and the email's recipient addresses, in their stored
-   order, from its newest rendering (every address is a To: address; none
-   is Cc or Bcc). When that rendering sent it elsewhere, which only Testing
+3. **Family and recipients.** The Family's name and its Family DUID (the
+   shared
+   [Not in ParishSoft](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
+   badge when the name is unknown), or "Administrator report". Then "To:"
+   and the email's recipient addresses, in their stored order, from its
+   newest rendering (every address is a To: address; none is Cc or Bcc). When that rendering sent it elsewhere, which only Testing
    mode does, "Testing mode sends it to:" names where. When the email's
    delivery recorded [refused addresses](#refused-addresses) that are still
    unresolved, they follow, each once and linking its newest refusal's

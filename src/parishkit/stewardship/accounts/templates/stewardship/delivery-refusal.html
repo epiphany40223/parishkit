@@ -5,7 +5,7 @@
 {% aboutpage "delivery-refusal" %}<p>{% translate "The same address may have other refusals that still stop email to it; check the Refused addresses list afterward. Clearing does not send any email." %}</p>
 <p>{% translate "The Family's name comes from the latest ParishSoft data. Open the email that recorded the refusal to see its delivery history; it may show Delivered, because another address of the Family accepted it." %}</p>
 <p>{% translate "Clear verified refusal stays unavailable until you describe how you verified the mailbox and tick the confirmation. Clearing happens in place: this page shows the result where you are." %}</p>{% endaboutpage %}
-<p>{{ refusal.address }} · {% if family_name %}{{ family_name }}{% else %}<span class="help">{% translate "Not in current ParishSoft data" %}</span>{% endif %} · {% translate "Family DUID:" %} {{ refusal.family_duid|duid }}</p>
+<p>{{ refusal.address }} · {% if family_name %}{{ family_name }}{% else %}{% source_status "missing" %}{% endif %} · {% translate "Family DUID:" %} {{ refusal.family_duid|duid }}</p>
 {% if refusal.kind == 'reported_bounce' %}<p>{% translate "Reported as bounced by an Administrator" %} · <time datetime="{{ refusal.created_at|instant }}" data-local-instant>{{ refusal.created_at|instant }}</time></p>
 <p>{{ refusal.evidence_note }}</p>{% endif %}
 <p><a href="{% url 'admin:delivery_refusals' %}?duid={{ refusal.family_duid }}">{% translate "See this Family's refused addresses" %}</a>{% if message_id %} · <a href="{% url 'admin:delivery' message_id %}">{% translate "Open the email that recorded this refusal" %}</a>{% endif %}</p>

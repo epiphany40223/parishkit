@@ -141,13 +141,13 @@ def test_name_rows_gives_report_rows_the_directory_name(monkeypatch):
     rows = [
         {"family_duid": 1, "family_name": "Squyres"},
         {"family_duid": 1, "family_name": "Squyres"},
-        {"family_duid": 9, "family_name": "Unavailable Family"},
+        {"family_duid": 9, "family_name": "Not in ParishSoft"},
     ]
     assert snapshot_names.name_rows("snap", rows) is True
     assert [row["family_name"] for row in rows] == [
         "Squyres, Jeff and Tracy",
         "Squyres, Jeff and Tracy",
-        "Unavailable Family",
+        "Not in ParishSoft",
     ]
     assert read.calls == [("snap", {"1", "9"})]
     assert snapshot_names.name_rows("snap", []) is True

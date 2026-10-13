@@ -375,7 +375,10 @@ def test_empty_states_say_what_to_do():
     page = render(Timeline(summary([], [])), identity=Identity(1234))
     assert "Not yet" in page and "None sent yet" in page
     assert "Nothing recorded for this Family yet." in page
-    assert "Not in the latest ParishSoft data · Family DUID 1234 ·" in page
+    assert (
+        'data-source-status="missing">Not in ParishSoft</span> · Family DUID 1234 ·'
+        in page
+    )
     assert "None recorded" in page and "Never" in page
     page = render(None, mode="testing")
     assert "no Testing rehearsal now" in page and "Summary" not in page

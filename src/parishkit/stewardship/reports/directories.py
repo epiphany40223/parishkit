@@ -22,6 +22,10 @@ from parishkit.stewardship.source.family_names import (
     family_heads_name,
     name_series,
 )
+from parishkit.stewardship.source.source_status import (
+    INACTIVE_IN_PARISHSOFT,
+    NOT_IN_PARISHSOFT,
+)
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.tables import Sorting
@@ -99,8 +103,9 @@ def admit_mode(principal, mode):
 # A row the Response filter lists although the current ParishSoft data no
 # longer lists the Family as active and registered (reason "inactive"), and
 # the name shown when that data no longer has the Family at all.
-INACTIVE = "No longer active in ParishSoft"
-MISSING_NAME = "Not in the latest ParishSoft data"
+# Both are the shared phrases of ui-conventions (#1216).
+INACTIVE = INACTIVE_IN_PARISHSOFT
+MISSING_NAME = NOT_IN_PARISHSOFT
 
 
 @dataclass(frozen=True)
@@ -449,9 +454,14 @@ def add_codes(campaign_id, rows, *, general):
             if identity and identity.code_ciphertext
             else None
         )
-        row["reason_label"] = (
-            INACTIVE if row["reason"] == "inactive" else REASONS[row["reason"]]
-        )
+        if row["reason"] != "inactive":
+            row["reason_label"] = REASONS[row["reason"]]
+        else:
+            # A Family the data no longer has at all is "Not in ParishSoft"
+            # here too, as in its name cell, never also inactive (#1216).
+            row["reason_label"] = (
+                MISSING_NAME if row["family_name"] is None else INACTIVE
+            )
         row["address_lines"] = address_lines(row["address"])
         row["display_name"] = row_name(row)
     add_responses(rows)
@@ -522,8 +532,9 @@ LEFT JOIN stewardship_source_contact p ON p.id=c.payload_id
 """
 INVALID_EMAIL_NOTE = "not a valid address; fix in ParishSoft"
 # A captured head the current ParishSoft data (an export's fallback) no
-# longer has as a Member, so "no email" would be a guess.
-MISSING_HEAD_NOTE = "(not in current ParishSoft data)"
+# longer has as a Member, so "no email" would be a guess. The shared phrase
+# of ui-conventions (#1216).
+MISSING_HEAD_NOTE = f"({NOT_IN_PARISHSOFT})"
 
 
 class HeadEmailsUnavailable(ReadUnavailable):
@@ -651,7 +662,7 @@ def add_head_emails(source_id, rows, *, current=False):
     data's promotion time when it was used, so the file can say how current
     its emails are, and ``None`` when the captured source was read (or
     nothing was). With the current data, a head it no longer has as a Member
-    is marked ``missing`` ("(not in current ParishSoft data)", not "no
+    is marked ``missing`` ("(Not in ParishSoft)", not "no
     email").
     """
     contacts, chosen = _head_contacts(

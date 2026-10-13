@@ -668,7 +668,7 @@ def test_response_columns_and_checks_follow_the_page():
         "2026-10-02 09:00:00-04:00",
     ]
     assert lines[2][:8] == [
-        "Not in the latest ParishSoft data (No longer active in ParishSoft)",
+        "Not in ParishSoft",
         "2",
         "",
         "ABCDEFGH",

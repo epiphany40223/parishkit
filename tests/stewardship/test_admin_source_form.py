@@ -38,7 +38,7 @@ def blocked():
             },
             {
                 "family_duid": 205,
-                "family_name": "Unavailable Family",
+                "family_name": None,
                 "member_duid": None,
                 "field": "The Member record itself (an unusable or repeated Member)",
             },
