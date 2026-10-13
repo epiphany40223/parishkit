@@ -409,6 +409,10 @@ warning count. It is distinct from security-event acknowledgement, which is per
 recipient. Acknowledge acts [in place](../ui-conventions/spec.md#in-place-controls): the server still
 answers with Home, and the banner is taken from that answer on the page the
 Administrator is on, which keeps its address and everything else on it.
+A System health action that resolves a problem also acknowledges that
+problem's entries, as
+[health problems on Home and in the banner](#health-problems-on-home-and-in-the-banner)
+describes.
 
 ### JavaScript requirement
 
@@ -5282,21 +5286,25 @@ the way to do it. A halt's kind arrives with PR 4.
   `CONFIGURE` capability, checked again on the server and in SQL (see
   [shared rules for health actions](#shared-rules-for-health-actions)).
   Staff get no view of it ([decision 1](#system-health-decisions)).
-- **Problems first.** The top of the page lists every current problem as one
-  plain sentence, saying what is wrong and what the Administrator can do: a
+- **At a glance** ([#1214](https://github.com/epiphany40223/parishkit/issues/1214)).
+  The page is a dashboard: one [overall status line](#overall-status-line),
+  then one [tile](#health-tiles) per area, each with its state and a
+  one-line summary. Healthy tiles are closed; warnings and errors are open,
+  with each problem's sentence and its action together inside the tile, as
+  the [health dashboard](#health-dashboard) describes. Each problem is one
+  plain sentence saying what is wrong and what the Administrator can do: a
   button on this page, another Admin page, or a runbook section for the
   server operator. For example: "No backup has finished since 2:00 AM
   yesterday. Take a backup now, or ask the server operator to check the
-  backup schedule." When nothing needs attention, the page says "Everything
-  is working", with the time of the last check. A condition that affects
-  several services or processes at once (debug logging, a service that
-  stopped or never reported, a halted or outage-paused mail sender) is one
-  problem whose sentence names them all ("Debug logging is on in
-  Production in the web portal, background worker, scheduler and both mail
-  senders"), so Home and the page list it, and screen readers hear it, once
-  (#686).
-- **Families the form cannot open (#774).** Below the problems, one
-  sentence says how many Families cannot open the Family form because a
+  backup schedule." A condition that affects several services or processes
+  at once (debug logging, a service that stopped or never reported, a halted
+  or outage-paused mail sender) is one problem whose sentence names them all
+  ("Debug logging is on in Production in the web portal, background worker,
+  scheduler and both mail senders"), so Home lists it, and screen readers
+  hear it, once (#686); the page shows it in the tile the
+  [problem registry](#health-problem-registry) names.
+- **Families the form cannot open (#774).** Its own tile's details hold one
+  sentence that says how many Families cannot open the Family form because a
   Member's ParishSoft data has a value the form cannot accept, linking the
   **Families the form cannot open** list (`/admin/system/source-form/`,
   Administrators only, no menu entry). The list comes from the same check as
@@ -5319,17 +5327,21 @@ the way to do it. A halt's kind arrives with PR 4.
   only, never by the 10-second status poll; if the check cannot run, it
   says so instead. Opening the list records `source_form_viewed` with the
   number of Families listed.
-- **Pages and emails to re-save (#838).** Below that, one sentence says how
-  many of the current campaign's saved pages and emails should be re-saved,
-  linking **Pages and emails**, followed by the same linked list as
+- **Pages and emails to re-save (#838).** Its own tile's details hold one
+  sentence that says how many of the current campaign's saved pages and
+  emails should be re-saved, linking **Pages and emails**, followed by the same linked list as
   [Go-live readiness](#production-transition). It is read on page load only,
   in its own read-only snapshot, never by the 10-second status poll, and is
   not one of the problems; with no current campaign, or when the read cannot
-  run, the sentence says so instead.
-- **Panels.** Below the problems come the panels described under
-  [health panels](#health-panels), in this order: why sends are waiting, mail
-  sender, ParishSoft refresh, backups, debug logging and version. During a
-  send, the first two are what the Administrator watches, so they come first.
+  run, the sentence says so instead. The re-save findings stay outside the
+  shared problem list, as a recorded exception: see
+  [health problems on Home and in the banner](#health-problems-on-home-and-in-the-banner).
+- **Panels.** The [health panels](#health-panels) define what each tile's
+  details show when opened. The tiles come in a fixed order: mail (why
+  sends are waiting and the mail sender, together), ParishSoft refresh,
+  backups, debug logging, Families the form cannot open, pages and emails
+  to re-save, and version and services. During a send, mail is what the
+  Administrator watches, so it comes first.
 - **Home.** For viewers who may open this page, Home's problems list (see
   [Home page](#home-page)) adds one line for each System health problem,
   linking this page. Other viewers see no such line. These lines join the
@@ -5343,7 +5355,9 @@ the way to do it. A halt's kind arrives with PR 4.
   off-site copy) can appear twice on Home: once in its own notice
   and once as a System health line. The
   [debug logging banner](#navigation-and-home) and the critical-problems
-  banner link this page too.
+  banner link this page too. How Home's lines and the critical-problems
+  banner stay consistent with the tiles is in
+  [health problems on Home and in the banner](#health-problems-on-home-and-in-the-banner).
 - **Live and in place.** The page needs JavaScript, as every Admin page
   does (see the [JavaScript requirement](../ui-conventions/spec.md#javascript-requirement)). It
   updates itself like the other
@@ -5360,10 +5374,11 @@ the way to do it. A halt's kind arrives with PR 4.
   local time zone, without "UTC" labels. States use words ("Halted",
   "Waiting for the daily limit"), not internal names. Internal names, such as
   an incident kind, appear only under a closed "Technical details"
-  disclosure. Each panel shows its state and its button. What each state
-  means, and what a panel cannot see, is in the page's "About this page"
-  panel ([page help](../ui-conventions/spec.md#page-help)), hidden by default. The panels below say
-  which explanations go there.
+  disclosure. Each tile shows its state, its summary and, when open, its
+  button. What each state means, and what a panel cannot see, is in the
+  page's "About this page" panel
+  ([page help](../ui-conventions/spec.md#page-help)), hidden by default.
+  The panels below say which explanations go there.
 - **Cost.** A status read uses one read-only snapshot, takes no lock (in
   particular not the global work-order lock that sending takes), and reads
   only small rows and indexed counts. It never calls ParishSoft, Google or
@@ -5379,7 +5394,404 @@ the way to do it. A halt's kind arrives with PR 4.
   the same functions, so the page and the command line cannot disagree about
   what is allowed.
 
+### Health dashboard
+
+The Administrator asked on 2026-10-13
+([#1214](https://github.com/epiphany40223/parishkit/issues/1214)) for the
+page to read as a dashboard: one glance shows that everything works,
+warnings are obvious, errors are more obvious still, and more detail opens
+only on request. This section defines that layout. The
+[health panels](#health-panels) remain the definition of what each area
+shows once opened, and the [health actions](#health-actions) keep their
+rules; only where things sit and when they show changes. Nothing on the page
+today is removed, only disclosed, including the controls added by
+pull requests 1206, 1210 and 1213. The issue records the rejected
+approaches: a metrics dashboard with time-series charts, a restyle of the
+current page, a colour-only status, hiding healthy areas, and a second page
+for details.
+
+Status: specified, not built. This specification merges after pull requests
+1206, 1210 and 1213, with its System health edits rebased onto theirs, and
+the [delivery slices](#dashboard-delivery-slices) build on that merged
+code. The [open questions](#dashboard-questions) list what the
+Administrator may still change.
+
+#### Overall status line
+
+The page leads with one line, directly after its heading and its "About
+this page" panel. It is the first thing in the polled region, so it follows
+the 10-second poll. "Last checked", outside the polled region, follows it.
+Its look per state (icon shape, colours, start bar) is the
+[status indicators](../ui-conventions/spec.md#status-indicators)
+convention's; this page adds only the words.
+
+| State | Exact text | Look |
+| --- | --- | --- |
+| No tile has a warning or an error | All working | Working |
+| Some tiles have warnings, none has an error | 1 warning / *N* warnings | Warning |
+| At least one tile has an error | 1 error / *N* errors, followed by "and 1 warning" / "and *N* warnings" when there are warnings too | Error |
+| Not current (below) | Not checked since 3:42 PM, then a **Refresh System health** button | Not current |
+
+- **What it counts.** *N* counts tiles, not problems: "2 errors and 1
+  warning" means two tiles show Error and one shows Warning, which is what
+  the eye sees below. A tile counts once, under its worst state.
+- **Not current.** The poll stops for good after an hour of watching
+  (`GIVE_UP_MS` in `live-status-v1.js`), and today a failed check only
+  says "retrying". Either way the last answer could still read All working
+  when it is no longer true. So the line changes to **Not current** when
+  the poll gives up, and after three checks in a row have failed, with the
+  browser-local time of the last successful check. It has no Working,
+  Warning or Error icon, and its **Refresh System health** button reloads
+  the page's status in place and starts the poll again. The tiles keep
+  their last states under that line; its "Not checked since" time is what
+  tells the reader they may be out of date
+  ([question 12](#dashboard-questions)). The line returns to its counted
+  form on the next successful check. Slice 2a gives `live-status-v1.js`
+  the hook that tells the line it has given up or is failing.
+- **Screen readers.** The line is the page's first `h2`, so heading
+  navigation reaches it, and its icon is hidden from assistive technology.
+  The page's existing hidden status announcer speaks one sentence when the
+  line's text, or the set of tiles it counts, changes on a poll, and never
+  for an unchanged poll or on page load (when the heading is read in
+  order): "System health: 1 error (Backups) and 2 warnings (Mail,
+  ParishSoft refresh).", "System health: all working." or "System health
+  is not current; last checked at 3:42 PM." It replaces today's
+  announcement of the number of problems.
+- **Fixed height.** The line reserves one fixed height (3 rem, room for a
+  44-pixel button) at every width, and its text is sized so the longest
+  form fits on one line at 320 pixels. A poll never changes its height, so
+  it never moves the tiles below.
+- **Tiles read on page load.** Two tiles (Families the form cannot open and
+  Pages and emails to re-save) are read only when the page opens, never by
+  the poll. The page passes their states to the status fragment as
+  `?loaded=`, for example `?loaded=resave:error`. It is the only query key
+  the fragment accepts: any other key is still refused with 400, as every
+  key is today, and the page itself still accepts none. Within it, values
+  outside the closed set of these two tiles and their two non-Working
+  states are ignored. The fragment counts the named states into the line.
+  It changes nothing and records nothing, so a forged value can only
+  mislabel the requester's own page.
+
+#### Health tiles
+
+Each area is one tile, in this fixed order. A poll never adds, removes or
+reorders tiles: an area with nothing to report still has its tile, showing
+Working with a summary that says so ("No current campaign").
+
+- **Shape.** A tile is a `section` holding a visually hidden `h2` with the
+  area's name, so heading navigation reaches each tile, then a full-width
+  native disclosure (`details` with its `summary`). The summary row is the
+  disclosure's button. It holds the state icon, the area name, the state
+  word (**Working**, **Warning** or **Error**), the one-line summary, and a
+  visible "Show details" or "Hide details" cue, not only a chevron. It
+  holds no heading, because a heading inside `summary` hides the button
+  role from some screen readers.
+- **Anchors.** Each tile has a fixed anchor: `health-mail`,
+  `health-source`, `health-backups`, `health-debug`, `health-source-form`,
+  `health-resave` and `health-version`.
+- **Summary row height.** One line on a laptop screen; at phone width two
+  lines (the name and state, then the summary). A summary longer than its
+  line is cut with an ellipsis by CSS only, so the row's accessible text
+  stays whole and the full sentence is in the details. Summaries come from
+  a closed set of short sentences, so the cut is rare.
+- **Look.** Each tile takes its state's look from the
+  [status indicators](../ui-conventions/spec.md#status-indicators)
+  convention, so an Error tile stands out more than a Warning tile.
+- **Details, in a fixed order.** Opened, a tile shows its current problems'
+  sentences, then its action regions, each in its one fixed place given in
+  the table below, then the area's panel content and links. Explanations
+  move to "About this page" or to toggletips, as
+  [page help](../ui-conventions/spec.md#page-help) requires.
+- **Summary when not Working.** The summary is the words of the tile's
+  most severe problem (the first in registry order when several tie), plus
+  "and 1 more" or "and *N* more" when the tile has others.
+
+| Tile | Error when | Warning when | Working summary (examples) | Show details reveals | Action regions, in their fixed order after the problems |
+| --- | --- | --- | --- | --- | --- |
+| **Mail** | a mail consumer is halted (`sender_halted`); a mail consumer is not running, or mail dispatch has not reported (the `mail-dispatch` part of `not_running` and `not_reported`); the email provider is unavailable (`mail_provider_unavailable`) | a mail consumer is paused after an outage (`sender_outage`) | "Sending"; "Nothing due"; "Paused by an Administrator since 9:12 AM"; "Waiting for the daily limit until about 3:10 PM"; "Held at Gmail's limit until 4:00 PM"; "Planning is held"; "3 emails waiting to retry" | the [why sends are waiting](#why-sends-are-waiting) panel (every reason, the 24-hour count, the resume time, the Family email progress link) and the [mail sender panel](#mail-sender-panel) (each consumer's line and any open incident) | **Clear the halt** ([ADM-13 PR 4](#clear-a-halted-mail-sender), not built). The panel content keeps its links: the deployment runbook under a not-running line, Pause and resume mail beside the pause line, and Outgoing mail: waiting to retry beside the retry line. |
+| **ParishSoft refresh** | a refused large change (`source_destructive_change`, whose problem block holds the refused counts table); a different organization (`source_tenant_mismatch`); while the campaign has Reminders still scheduled, an unknown No-reminders WorkGroup (`workgroup_missing`, new in the shared list, the #861 concern) | the last full refresh failed (`source_failed`); ParishSoft could not be reached (`source_failing`); the data is out of date (`source_late`); old copies are not being removed (`source_retention_failing`); an unknown No-reminders WorkGroup while no Reminder is scheduled | "Data as of 6:02 AM; connection working", in the words of [ParishSoft data age and connection](../operations/spec.md#parishsoft-data-age-and-connection); "Refreshes held during the email send until about 4:30 PM" | the [ParishSoft refresh panel](#parishsoft-refresh-panel): refresh times, and held and skipped refreshes | **Accept this change once** (its tick box, preview and the example Families of #1213), directly after the refusal's counts table, as the Administrator asked on #1210. The problem sentences keep their links (the ParishSoft outage runbook, Check the No-reminders WorkGroup setting), and Refresh from ParishSoft ends the panel content. |
+| **Backups** | a backup is overdue (`backup_rpo_breach`) | an off-site copy failed (`backup_offsite_failed`); the backup key changed (`backup_key_changed`); the newest backup, finished after the configured key was activated, was sealed to another key (`backup_key_mismatch`, new); a requested backup failed, did not finish or was not picked up (`backup_request_failed`, new, until a newer request or a newer finished backup); in Production, off-site copies are not set up (`offsite_missing`, new) | "Last backup 3 hours ago; off-site copy 3 hours ago"; "Backup requested at 10:42 AM is running" | the [backups panel](#backups-panel) | **Take a backup now**. Off-site backup settings stays in the panel content beside the off-site line. |
+| **Debug logging** | in Production, debug logging is in effect in any service (`debug_logging`) | none | "Off"; "Turned off from this page by … at …"; "On in 4 services, as expected in Testing" | the [debug logging panel](#debug-logging-panel) | **Turn off debug logging**; in Testing, **Allow debug logging again** after it. |
+| **Families the form cannot open** | none | at least one Family cannot open the form; the check could not run | "Every Family can open the form"; "No current campaign" | the sentence and the link of [Families the form cannot open](#system-health-page) | none; the list's link is in the sentence |
+| **Pages and emails to re-save** | an invitation or reminder cannot be sent until it is fixed (the list's `blocked` items) | other items are marked "Re-save recommended"; the check could not run | "Nothing to re-save"; "No current campaign" | the sentence and the linked list of [pages and emails to re-save](#system-health-page) | none; each item links its editor |
+| **Version and services** | a core service other than mail dispatch is not running or has not reported (the rest of `not_running` and `not_reported`); the services run different versions (`versions_differ`); the database does not match (`schema_mismatch`) | an installer that reports is not running (the installers' part of `not_running`) | "Version 1.12.0, Production, all services running" | the [version panel](#version-panel), then the closed Technical details disclosure (its values as of page load) and the links to System logs and Background work | none; the deployment runbook's upgrade link is in the versions sentence |
+
+Each action region is drawn when the page loads, whatever the tile's
+state, and never removed: when its action does not apply it stays greyed
+with its reason ("No refused refresh to accept", "Debug logging is off in
+every service"), as [unavailable buttons](#shared-rules-for-health-actions)
+already do. Pull requests 1206 and 1210 draw their regions only while
+their problem is current; slice 2b draws them always. "Refresh System
+health" stays at the end of the page, after the tiles.
+
+#### Health problem registry
+
+One registry in `parishkit.stewardship.system_health` describes every
+problem kind: its home tile, its severity (error or warning), its summary
+words, its sentence (one shared template, as today), its action, and the
+CRITICAL operational events it accounts for. The table above is its
+content. `find_problems` returns each problem with its severity and tile,
+in registry order, so the page, Home and the `system health` command
+cannot disagree.
+
+- **One home tile.** A problem appears in exactly one tile, except a
+  grouped process problem (#686), which is split by subject for the page
+  only: its `mail-dispatch` subjects go to Mail, the rest to Version and
+  services, each part with the same sentence naming its own subjects. Home
+  and the announcement keep the single grouped sentence.
+- **The command.** The `system health` document gains `severity` and
+  `tiles` for each problem. `tiles` lists the tiles that show it, in page
+  order: one tile for most problems, and both tiles for a grouped process
+  problem whose subjects the page splits. The document still lists such a
+  problem once, as Home does.
+- **New kinds.** `workgroup_missing` (today a panel notice; an error while
+  Reminders are scheduled, otherwise a warning), and the warnings
+  `backup_key_mismatch`, `backup_request_failed` and `offsite_missing`
+  (Production only), join the shared list, so Home and the page agree on
+  them.
+  - The backup request and off-site facts are rows `HEALTH_SQL` can read
+    in the statement Home already runs.
+  - `workgroup_missing` needs the current campaign's id and configuration
+    and the current snapshot's cursor, read through the existing helpers
+    (`configured_name` and `recorded` in `source/workgroups.py`, as
+    `_workgroup_missing` does today), so Home reads it in Python after
+    that statement. Slice 1 records Home's query count in its query-budget
+    test.
+  - `backup_key_mismatch` comes from `_backup`, which raises a
+    `ConfigError` when the configured key cannot be read. The System
+    health page keeps its 503 for that, as today; only Home falls back,
+    showing "The backup key could not be checked" as a warning line
+    instead of failing.
+- **Backup key, one warning per cause.** `backup_key_mismatch` holds only
+  when the newest backup finished after the configured key was activated
+  (the time the configuration that set it was applied) and was sealed to
+  another key, so it never fires in the day between an ordinary key change
+  and the next backup. `backup_key_changed` (the incident raised when a
+  backup used a different key than the one before it) is the expected
+  result of a key change. While both hold, the tile lists only
+  `backup_key_mismatch`, whose sentence covers the change, so one cause
+  never gives two warnings.
+- **Page-only findings.** Families the form cannot open and pages and
+  emails to re-save are too costly for Home and for the poll. They stay
+  outside the shared list as a recorded exception: they set their tiles'
+  states and count in the overall line, but Home does not list them
+  ([question 6](#dashboard-questions)).
+- **Deliberate waits are not problems.** An Administrator's pause, the
+  daily limit, Gmail's limit, held planning and waiting retries stay
+  reasons in the Mail tile's summary and details, not warnings, as the
+  [why sends are waiting](#why-sends-are-waiting) panel already defines
+  ([question 3](#dashboard-questions)).
+
+#### Opening and closing tiles
+
+- **On page load:** Working tiles are closed. Warning and Error tiles are
+  open. A link to a tile's anchor (for example
+  `/admin/system/health/#health-backups`, which Home's lines use) opens
+  that tile too. The browser stores nothing, so every load applies this
+  rule again ([question 9](#dashboard-questions)).
+- **The Administrator decides after that.** Opening and closing is the
+  native disclosure, by pointer or keyboard. A poll never opens or closes a
+  tile: a tile whose state changes keeps its open or closed state, and only
+  its icon, state word and summary change, in place and at the same height.
+  A tile that turns Working while open stays open.
+- **How the poll reaches the tiles.** One fetch per poll, through the
+  existing `data-live-mirror` mechanism. The polled region holds the
+  overall line and, for each tile, `template[data-live-mirror]` copies of
+  three parts: the summary row's state, icon, word and summary; the
+  problems' sentences; and the panel content. Each copy goes to its
+  `[data-live-mirror-target]` in the tile, which sits outside the polled
+  region. The tile's `details` element and its `open` attribute, and every
+  action region, are not mirror targets, so an open tile, an open preview
+  and a ticked box survive every poll. As today, a target that holds focus
+  is skipped, and an unchanged copy is not applied. Action buttons follow
+  the poll through their own mirror copies, as pull requests 1206 and 1210
+  already do.
+- **No shift under the pointer**
+  ([no layout shift](../ui-conventions/spec.md#no-layout-shift)). The
+  summary row is the toggle and never moves when its tile opens or closes:
+  the details open below it, so only content after it moves, as the About
+  panel does. A summary row has one height whatever its state. The
+  problems' target sits above the action regions, so a poll that changes
+  its height would move them. Slice 2b therefore extends the mirror's
+  focus rule: a tile's problems and panel targets are also skipped while
+  the pointer is over that tile, and the change is applied on the first
+  poll after the pointer leaves. Action regions are never added or
+  removed (see [health tiles](#health-tiles)).
+- **The order is fixed.** Tiles are not sorted by severity, because a tile
+  that jumped to the top on a poll would move every tile under the pointer;
+  the overall line already says which tiles need attention.
+
+#### Health problems on Home and in the banner
+
+The same problem never appears twice in ways that disagree.
+
+- **Home's lines.** Home's System health lines (`home_problems`) are the
+  registry's problems, with the page's sentence, plus the registry's icon
+  and state word, and link the problem's tile anchor. Until NAV-18 merges
+  Home's lists (see [System health page](#system-health-page)), a problem
+  that Home also reports in its own notice (a failed ParishSoft refresh, a
+  failed off-site copy) is shown once: as the System health line to
+  viewers who may open System health, and as the other notice to everyone
+  else. A line shown in a notice's place keeps that notice's links and
+  actions (for example Refresh from ParishSoft, or the off-site backup
+  settings), so nothing Home offers today is lost.
+- **Banner events and problems.** Where a problem kind accounts for a
+  CRITICAL operational event, the registry names it. While a mapped
+  problem is current, the banner's group for its event links, for
+  Administrators, the problem's tile ahead of the filtered log. Once the
+  problem has ended, the group reads "ended" as the
+  [critical-problems banner](#navigation-and-home) already does (#633).
+
+  | Banner event | Problem kind | Words |
+  | --- | --- | --- |
+  | `source_destructive_change` | `source_destructive_change` | shared: "ParishSoft refresh refused: too large a change" |
+  | `source_tenant_mismatch` | `source_tenant_mismatch` | shared: "ParishSoft organization does not match" |
+  | `source_invalid` | `source_failed` | shared: "ParishSoft refresh failed" |
+  | `source_provider_failed` | `source_failing` | shared: "ParishSoft could not be reached" |
+  | `source_credential_failed` | `source_failing` | the banner keeps "ParishSoft API key was refused", which names the cause; the tile's sentence names it too when the connection record does |
+  | `mail_provider_failed` | `sender_halted` | the banner keeps "Email sending failed", because the event is also recorded for failures that halt nothing; it links the Mail tile only while a halt is current |
+
+  The other CRITICAL events (`source_held`, `task_failed`, `fact_drift`,
+  `due_work_lag` and `boundary_lag`) have no registry problem kind, so
+  their groups keep the filtered-log link and their own labels.
+  `web_unhealthy` is not mapped either: while it is current the page cannot be
+  shown at all, and once the page shows, the web answers and the group
+  has ended, so its log link is the useful one. Two banner labels change
+  to the shared words: `source_destructive_change` (today "ParishSoft
+  refresh would remove too much data") and `source_invalid` (today
+  "ParishSoft data refresh failed"). On the page side, the summaries of
+  `source_tenant_mismatch`, `source_failing` and
+  `source_destructive_change` change to the shared words.
+- **An action that resolves a problem clears its banner entries.** When an
+  action's confirmation resolves a mapped problem, the same transaction
+  acknowledges that event's CRITICAL entries through the banner's existing
+  acknowledgement rows and its `critical_events_acknowledged` audit event,
+  with the acting Administrator recorded as the one who acknowledged them.
+  As with the banner's own Acknowledge, that hides them for every Admin.
+  Only entries the action's preview showed are acknowledged: the preview's
+  signed binding carries their ids (the banner's own `sign` list, at most
+  500), so nothing recorded after the preview is hidden. The in-place
+  answer carries the refreshed banner, so it disappears without a reload.
+  A later entry, for example when the accepted refresh is refused again,
+  brings it back.
+  - **Accept this change once** acknowledges the refusal's
+    `source_destructive_change` entries. This is the fix the Administrator
+    asked for on #1210.
+  - **Clear the halt** (ADM-13 PR 4) acknowledges the halt's
+    `mail_provider_failed` entries.
+  - **Take a backup now** and **Turn off debug logging** acknowledge
+    nothing: an overdue backup ends only when a backup finishes (the
+    banner then reads "ended"), and debug logging raises no CRITICAL
+    entry.
+  - A problem that ends by itself leaves its entries for an Administrator
+    to acknowledge ([question 8](#dashboard-questions)).
+
+#### Dashboard at phone width and in themes
+
+- **Phone width.** One column at every width
+  ([question 7](#dashboard-questions)). At 320 pixels the overall line
+  keeps its fixed height, each summary row is two lines and at least 44
+  pixels tall, tables in the details scroll inside their own region,
+  buttons follow [button labels](../ui-conventions/spec.md#button-labels),
+  and the page never scrolls sideways.
+- **Themes.** The Admin portal has one light theme today; `ui-v1.css` has
+  no `prefers-color-scheme` rule. The dashboard uses only the
+  [status indicators](../ui-conventions/spec.md#status-indicators) and
+  the [shared design tokens](../ui-conventions/spec.md#shared-visual-style),
+  never a fixed colour, so a portal-wide dark theme, if one is added,
+  covers it by redefining the tokens ([question 10](#dashboard-questions)).
+  In forced-colours mode the borders, icon shapes and state words remain,
+  so the state still reads.
+
+#### Dashboard delivery slices
+
+Each slice is a small pull request, in this order, with its own pk-local
+check by the Administrator. Each covers the all-working, warning and error
+states in unit and browser tests. All of them build on main after pull
+requests 1206, 1210 and 1213 have merged.
+
+1. **Registry.** The problem registry, severity and tiles in
+   `find_problems`, the new kinds and their facts, the backup key rule,
+   Home's fallback when the key cannot be checked, the shared banner words
+   and mappings, and `severity` and `tiles` in the `system health`
+   command's document. The page and Home look as before, except that the
+   new kinds appear. pk-local: Home and the page with each new kind.
+2. **Frame**, in two parts:
+   - **2a, the line.** The overall status line with its Not current state
+     and the `live-status-v1.js` hook, the `?loaded=` key, the new
+     announcement, and the
+     [status indicators](../ui-conventions/spec.md#status-indicators): the
+     reworked severity icons, the state classes and the contrast test.
+     pk-local: all working, a warning, an error, and a poll left to give
+     up.
+   - **2b, the tiles.** The seven tiles holding today's panel content
+     unchanged, the load rule, the mirror targets and the pointer hold,
+     and the controls of pull requests 1206, 1210 and 1213 moved into
+     their fixed places and always drawn. pk-local: a poll that changes
+     state while a tile is open, an open preview across a poll, and phone
+     width.
+3. **Mail tile.** Its summaries, and its explanations moved to "About this
+   page" and toggletips. pk-local: a send, a pause, the daily limit and a
+   stopped consumer in Testing.
+4. **ParishSoft refresh tile.** Its summaries, and the refusal's block with
+   Accept this change once and its examples. pk-local: a refused change
+   accepted from the tile.
+5. **Backups and Debug logging tiles.** pk-local: Take a backup now and
+   Turn off debug logging from their tiles.
+6. **Page-load and services tiles.** Families the form cannot open, pages
+   and emails to re-save, and version and services with Technical details.
+   pk-local: each tile's warning and error.
+7. **Home and the banner.** Home's icons, state words, tile links and
+   single display of a shared problem with the notice's links kept; the
+   banner's tile links; and the acknowledgement by actions. If the fix to
+   pull request 1210 already acknowledges the banner, this slice moves it
+   onto the registry's mapping. pk-local: accept a refused change and
+   watch the banner clear on Home and System health.
+
+#### Dashboard questions
+
+The text above follows these defaults until the Administrator decides
+otherwise on [#1214](https://github.com/epiphany40223/parishkit/issues/1214).
+
+1. **One Mail tile, or separate "Why sends are waiting" and "Mail sender"
+   tiles?** Default: one Mail tile; the halted or stopped sender is the
+   reason sends wait, so two tiles would show one problem twice.
+2. **Does the overall line count tiles or problems?** Default: tiles.
+3. **Are deliberate waits (an Administrator's pause, the daily limit,
+   Gmail's limit) Working, or a separate "information" state?** Default:
+   Working, named in the summary.
+4. **Is the severity map right?** In particular, a failed or late
+   ParishSoft refresh is a warning (the system keeps the data it has), and
+   a stopped installer is a warning. Default: as in the table.
+5. **Are missing off-site copies a warning in Production?** Default: yes;
+   in Production, no off-site copy set up at all is a warning
+   (`offsite_missing`). In Testing it is only the Backups summary.
+6. **Should Home list the page-only findings (Families the form cannot
+   open, pages and emails to re-save)?** Default: no; they cost too much
+   for Home, and Go-live readiness already lists the re-save items.
+7. **One column at every width, or a grid of tiles on wide screens?**
+   Default: one column; a grid reflows its rows when a tile opens or
+   changes state, which moves tiles beside it.
+8. **Should a problem that ends by itself also clear its banner entries?**
+   Default: no; the banner reads "ended" until an Administrator
+   acknowledges it.
+9. **Should the browser remember which tiles were open?** Default: no;
+   each load opens exactly the tiles that need attention.
+10. **Should the Admin portal get a dark theme?** Default: not as part of
+    this work; the dashboard uses tokens only, so a portal-wide theme would
+    cover it. A theme would be its own issue.
+11. **Is debug logging in Production an error or a warning?** Debug logs
+    can hold personal data, but nothing stops working. Default: an error,
+    as the always-shown debug logging banner already treats it.
+12. **What does the line show once polling stops or keeps failing?**
+    Default: Not current, "Not checked since 3:42 PM" with **Refresh
+    System health**, and the tiles keep their last states under it.
+
 ### Health panels
+
+Each panel below is what its tile's details show once opened (see
+[health tiles](#health-tiles)); "Why sends are waiting" and the mail sender
+panel together form the Mail tile.
 
 #### Why sends are waiting
 

@@ -59,7 +59,7 @@ when it lands.
   [unavailable menu pages](#unavailable-menu-pages).
 - Admin page layout: [page help](#page-help),
   [button labels](#button-labels), [shared visual style](#shared-visual-style),
-  [time entry](#time-entry).
+  [status indicators](#status-indicators), [time entry](#time-entry).
 - Tables: [Admin tables](#admin-tables),
   [empty tables and lists](#empty-tables-and-lists),
   [row actions](#row-actions-and-confirmation),
@@ -1541,6 +1541,41 @@ The portal and the emails share one visual style
   on a night with no reminder the next morning.
 
 Portal notices, cards and headings follow in later slices of #732.
+
+### Status indicators
+
+**Rule.** A status that says whether something is working shows a word, an
+icon whose shape differs per state, and a colour, never colour alone. Its
+look per state:
+
+| State | Icon | Colours (design tokens) | Start bar |
+| --- | --- | --- | --- |
+| Working | `ok`: a check mark in a circle | icon and border `--accent`, background `--accent-soft`, text `--ink` | none |
+| Warning | `warning`: a triangle with an exclamation mark | icon and border `--warning-border`, background `--warning-bg`, text `--warning-ink` | .35 rem, as a notice has today |
+| Error | `error`: a cross in a circle | icon and border `--error-border`, background `--error-bg`, text `--error-ink`, word in bold | .6 rem, new, so an error stands out more than a warning |
+| Not current | none | border `--border`, background `--paper-soft`, text `--muted` | none |
+
+- **Icons.** The icon is hidden from assistive technology, because the
+  word carries the state. Every mark inside an icon (the check, the
+  exclamation mark, the cross) is cut out of the shape, or drawn as an
+  outline, in `currentColor`. No icon has a fixed colour, so forced-colours
+  mode keeps every shape and mark. Icon colours come only from the
+  [design tokens](#shared-visual-style).
+- **Contrast.** Text meets 4.5:1, and icons and borders 3:1, against their
+  background, checked by a contrast test over the token pairs above.
+
+**Why.** A colour-only dot fails colour-blind readers, forced-colours mode
+and print, and one set of shapes lets a reader learn it once. **Shared
+code.** The severity icon set in `components/level-icon.html` and state
+classes in `ui-v1.css` that read the tokens. Today the set draws its marks
+in fixed `#fff` and `#1b1300`, and the `.level-icon-*` colours are fixed
+hex values. The frame slice of
+[#1214](https://github.com/epiphany40223/parishkit/issues/1214) reworks
+the set to these rules, adds the `ok` shape, moves the level colours into
+tokens, and adds the contrast test. System logs' level icons keep their
+shapes. **Precedent.** #601 (log level icons), #1214 (the
+[System health dashboard](../admin-portal/spec.md#health-dashboard), its
+first user).
 
 ### Time entry
 
