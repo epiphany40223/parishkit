@@ -22,6 +22,7 @@ from parishkit.stewardship.reports.ministry_followup import (
     STATE_LABELS as FOLLOWUP_STATE_LABELS,
 )
 from parishkit.stewardship.reports.ministry_followup_views import (
+    BULK_KIND_HINTS,
     FIELD_IDS,
     REFUSALS,
     _refusal_error,
@@ -31,7 +32,7 @@ from parishkit.stewardship.reports.ministry_followup_views import (
     refusal_fields,
 )
 from parishkit.stewardship.workflows.followup import (
-    BULK_OUTCOMES,
+    BULK_ACTIONS,
     MAX_BULK,
     MAX_CONTACT_NOTES,
     MAX_NOTES,
@@ -508,7 +509,7 @@ def test_refused_fields_are_marked_at_the_field(code):
 
 REQUEST = uuid4()
 BULK = {
-    "outcome": "declined",
+    "outcome": "leave:declined",
     "bulk_key": str(uuid4()),
     "contact_channel": "",
 }
@@ -528,7 +529,7 @@ def test_bulk_form_reads_each_request_with_its_own_version():
     other = uuid4()
     values = bulk(BULK, (f"{REQUEST}:3", f"{other}:1"))
     assert values["versions"] == {REQUEST: 3, other: 1}
-    assert values["outcome"] == "declined"
+    assert (values["action"], values["outcome"]) == ("leave", "declined")
     assert values["change"].contact_channel is None
     assert values["change"].contact_notes == ""
     contact = bulk(
@@ -548,10 +549,15 @@ def test_bulk_form_reads_each_request_with_its_own_version():
 @pytest.mark.parametrize(
     ("values", "requests"),
     [
-        # Only Joined, Left and declined are bulk outcomes.
-        (BULK | {"outcome": "other"}, None),
-        (BULK | {"outcome": "duplicate"}, None),
-        (BULK | {"outcome": "no_response"}, None),
+        # Only Joined or Declined for joins and Left or Stayed for leaves,
+        # each posted with its kind.
+        (BULK | {"outcome": "declined"}, None),
+        (BULK | {"outcome": "leave:joined"}, None),
+        (BULK | {"outcome": "join:leave_confirmed"}, None),
+        (BULK | {"outcome": "any:declined"}, None),
+        (BULK | {"outcome": "join:other"}, None),
+        (BULK | {"outcome": "join:duplicate"}, None),
+        (BULK | {"outcome": "leave:no_response"}, None),
         ({k: v for k, v in BULK.items() if k != "bulk_key"}, None),
         (BULK | {"bulk_key": "not-a-uuid"}, None),
         (BULK | {"state": "resolved"}, None),
@@ -583,30 +589,32 @@ def test_bulk_contact_mistakes_are_the_request_forms_refusals():
     assert refused.value.code == "contact_zone"
 
 
-def test_bulk_buttons_name_their_outcome_and_kind():
-    """Joined only for joins, Left only for leaves, declined for both (#1132)."""
-    actions = {action["outcome"]: action for action in bulk_actions()}
-    assert tuple(actions) == BULK_OUTCOMES
-    assert {key: action["kind"] for key, action in actions.items()} == {
-        "joined": "join",
-        "leave_confirmed": "leave",
-        "declined": "",
-    }
-    assert [str(action["label"]) for action in actions.values()] == [
-        "Mark as Joined",
-        "Mark as Left",
-        "Mark as Declined / stayed",
+def test_bulk_buttons_are_each_for_one_kind_of_request():
+    """Joined and Declined for joins, Left and Stayed for leaves (2026-10-13).
+
+    Each button posts its kind with its outcome and names the outcome by
+    that kind's label (#1132); the page gives the reason line's text for a
+    selection of one kind and for a mixed one.
+    """
+    actions = bulk_actions()
+    assert [(action["kind"], action["value"]) for action in actions] == [
+        (kind, f"{kind}:{outcome}") for kind, outcome in BULK_ACTIONS
     ]
-    joined = actions["joined"]
+    assert [str(action["label"]) for action in actions] == [
+        "Mark as Joined",
+        "Mark as Declined",
+        "Mark as Left",
+        "Mark as Stayed",
+    ]
+    joined, declined, _left, stayed = actions
     assert joined["title_many"] == "Mark {count} requests as Joined the Ministry?"
     assert joined["done_one"] == "Marked {name} as Joined the Ministry."
-    assert "{names}" in joined["skipped_many"] and "{count}" in joined["skipped_many"]
-    assert "request to join" in joined["none"]
-    assert "request to leave" in actions["leave_confirmed"]["skipped_one"]
-    declined = actions["declined"]
-    assert declined["title_many"] == "Mark {count} requests as Declined / stayed?"
-    assert "Stayed in the Ministry" in declined["body"]
-    assert declined["skipped_one"] == declined["none"] == ""
+    assert declined["title_one"] == "Mark {name} as Declined / no longer interested?"
+    assert stayed["title_many"] == "Mark {count} requests as Stayed in the Ministry?"
+    assert "Stayed in the Ministry" in stayed["body"]
+    # No skipped-row text any more: a button never meets the other kind.
+    assert not any(key.startswith("skipped") for key in joined)
+    assert set(BULK_KIND_HINTS) == {"join", "leave", "mixed"}
 
 
 def test_each_request_in_a_bulk_action_has_its_own_replay_key():

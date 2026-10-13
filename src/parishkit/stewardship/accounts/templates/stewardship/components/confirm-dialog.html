@@ -28,13 +28,10 @@
   - The opening button may carry its own data-title-one, data-title-many,
     data-done-one, data-done-many and data-confirm-body, which replace the
     dialog's, so several bulk buttons share one dialog.
-  - Its data-confirm-kind limits it to the ticked rows of that kind (rows
-    marked data-confirm-kind too); the others are named in the reserved
-    skipped line, from the button's data-skipped-one / data-skipped-many
-    ({count} and {names}), and data-confirm-none says why when no ticked
-    row is of that kind (Confirm is then unavailable). The line has the id
-    "<dialog_id>-skipped" and describes the dialog, and the unavailable
-    Confirm names it, so a screen reader hears why.
+  - A button marked data-confirm-kind is available only while every ticked
+    row is of that kind (rows marked data-confirm-kind too; ui-v1.js
+    wireSelection, which says why in the bulk bar's reason line), so the
+    dialog always acts on every ticked row.
   - Its name and value are posted with the rows (the outcome).
   - fields_template is a template of fields shown in the dialog; the
     dialog then sits inside the table's form (form_id), marked
@@ -74,10 +71,9 @@
 <div class="dialog-actions">{% button type="button" data-confirm-accept %}{% translate "Apply" %}{% endbutton %}{% button type="button" variant="secondary" data-confirm-cancel %}{% translate "Cancel" %}{% endbutton %}</div>
 <p class="dialog-status" role="status" data-confirm-status></p>
 <div class="notice notice-error" role="alert" data-confirm-error hidden></div>
-</dialog>{% else %}<dialog id="{{ dialog_id }}" class="confirm-dialog" aria-labelledby="{{ dialog_id }}-title" aria-describedby="{{ dialog_id }}-body{% if skips %} {{ dialog_id }}-skipped{% endif %}" data-confirm-dialog data-confirm-form="{{ form_id }}" data-confirm-fallback="{{ fallback }}" data-title-one="{{ title_one }}" data-title-many="{{ title_many }}" data-done-one="{{ done_one }}" data-done-many="{{ done_many }}" data-working="{% translate 'Working…' %}">
+</dialog>{% else %}<dialog id="{{ dialog_id }}" class="confirm-dialog" aria-labelledby="{{ dialog_id }}-title" aria-describedby="{{ dialog_id }}-body" data-confirm-dialog data-confirm-form="{{ form_id }}" data-confirm-fallback="{{ fallback }}" data-title-one="{{ title_one }}" data-title-many="{{ title_many }}" data-done-one="{{ done_one }}" data-done-many="{{ done_many }}" data-working="{% translate 'Working…' %}">
 <h2 id="{{ dialog_id }}-title" data-confirm-title>{{ title_many }}</h2>
 <p id="{{ dialog_id }}-body" data-confirm-body>{{ body }}</p>
-{% if skips %}<p class="notice" id="{{ dialog_id }}-skipped" data-confirm-skipped hidden></p>{% endif %}
 {% if caution %}<p class="notice">{{ caution }}</p>{% endif %}
 {% if fields_template %}{% include fields_template %}{% endif %}
 <div class="dialog-actions">{% if plain_accept %}{% button type=accept_type|default:"button" aria-describedby=accept_hint data-confirm-accept %}{{ accept }}{% endbutton %}{% else %}{% button type="button" class="button-danger" data-confirm-accept %}{{ accept }}{% endbutton %}{% endif %}{% button type="button" variant="secondary" data-confirm-cancel %}{% if cancel %}{{ cancel }}{% else %}{% translate "Cancel" %}{% endif %}{% endbutton %}</div>

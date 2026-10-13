@@ -42,10 +42,17 @@ OUTCOME_ACTIONS = {"joined": "join", "leave_confirmed": "leave"}
 # keep it and still read "Duplicate request"; the CHECK still admits it.
 RETIRED_OUTCOMES = frozenset({"duplicate"})
 # The outcomes the follow-up queue records for many requests at once
-# (#1131): Joined for a join, Left for a leave, and declined for either (a
-# join's "Declined / no longer interested", a leave's "Stayed in the
-# Ministry", #1132).
-BULK_OUTCOMES = ("joined", "leave_confirmed", "declined")
+# (#1131), each for one kind of request: Joined or Declined for joins, Left
+# or Stayed for leaves (a leave's `declined` reads "Stayed in the Ministry",
+# #1132). Each pair is (kind, outcome); the queue's buttons post it as
+# "kind:outcome" and a button is available only while every ticked request
+# is of its kind, so a batch never mixes kinds (Administrator, 2026-10-13).
+BULK_ACTIONS = (
+    ("join", "joined"),
+    ("join", "declined"),
+    ("leave", "leave_confirmed"),
+    ("leave", "declined"),
+)
 # One bulk action covers at most one page of the queue, its largest size.
 MAX_BULK = max(PAGE_SIZES)
 
@@ -270,7 +277,7 @@ def bulk_key_for(bulk_key, request_id):
     return uuid5(bulk_key, str(request_id))
 
 
-def apply_bulk_outcome(store, actor_id, versions, *, outcome, bulk_key, change):
+def apply_bulk_outcome(store, actor_id, versions, *, action, outcome, bulk_key, change):
     """Resolve many requests with one outcome, all or none (#1131).
 
     ``versions`` maps each request id to the version its row showed; each
@@ -279,11 +286,12 @@ def apply_bulk_outcome(store, actor_id, versions, *, outcome, bulk_key, change):
     shared work order, with every request locked in primary-key order first
     (``_targets``). ``change`` holds the optional contact attempt applied to
     each; its state, outcome and notes are set here (each request keeps its
-    own notes). Any request that is outside the actor's Ministries refuses
-    the whole batch as denied; one that changed or closed since the page was
-    read raises ``BulkStale`` naming it; and an outcome that does not apply
-    to a request's kind (Joined on a leave, Left on a join) raises the
-    ``outcome_kind`` refusal with its ``request_id``. Nothing is saved then.
+    own notes). ``(action, outcome)`` is one of ``BULK_ACTIONS``: every
+    request must be of that kind. Any request that is outside the actor's
+    Ministries refuses the whole batch as denied; one of another kind raises
+    the ``outcome_kind`` refusal with its ``request_id``; and one that changed
+    or closed since the page was read raises ``BulkStale`` naming it.
+    Nothing is saved then.
 
     Every revision and audit event shares one correlation id (the web
     request's), and one ``ministry_followup_bulk_applied`` event records the
@@ -295,7 +303,7 @@ def apply_bulk_outcome(store, actor_id, versions, *, outcome, bulk_key, change):
         not isinstance(actor_id, UUID)
         or not isinstance(bulk_key, UUID)
         or not isinstance(change, WorkflowChange)
-        or outcome not in BULK_OUTCOMES
+        or (action, outcome) not in BULK_ACTIONS
         or not isinstance(versions, dict)
         or not 1 <= len(versions) <= MAX_BULK
         or any(
@@ -310,12 +318,14 @@ def apply_bulk_outcome(store, actor_id, versions, *, outcome, bulk_key, change):
         notes = _latest_notes(versions)
         revisions = []
         for target in targets:
-            # The kind is checked before the version, so a request that
-            # could never take this outcome is named as such, not as stale.
-            if OUTCOME_ACTIONS.get(outcome, target.action) != target.action:
+            # The kind is checked before the version, so a request of the
+            # other kind is named as such, not as stale. The page never
+            # offers a mixed batch; a crafted or outdated post is refused.
+            if target.action != action:
                 raise FollowupRefusal(
                     "outcome_kind",
                     outcome=outcome,
+                    kind=action,
                     action=target.action,
                     request_id=target.pk,
                 )

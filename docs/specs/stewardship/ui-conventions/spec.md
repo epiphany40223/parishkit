@@ -1764,8 +1764,11 @@ inventory on #879 lists.
   is usually Delete selected, which opens the same dialog naming the count.
   Rows without actions have no selection box. Several bulk buttons may share
   one dialog, each setting its title and text. A bulk action that applies
-  only to some kinds of row counts only those of its kind and names the
-  other ticked rows as skipped. A dialog may hold fields, such as an
+  only to one kind of row is a [prerequisite gate](#prerequisite-gates): it
+  is available only while every ticked row is of its kind, and the bulk
+  bar's reason line says why otherwise (Administrator, 2026-10-13,
+  [#1131](https://github.com/epiphany40223/parishkit/issues/1131)). A dialog
+  may hold fields, such as an
   optional note applied to each row; its confirm button then waits for them
   as a form's Save does, and they return to their defaults each time it
   opens. An action that records rather than removes uses an ordinary

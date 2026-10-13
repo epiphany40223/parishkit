@@ -1363,13 +1363,14 @@ def test_users_read_through_the_actor_and_domain_rules_grant_nothing(
         )
 
 
-def bulk(harness, actor, versions, outcome, *, key=None, **contact):
+def bulk(harness, actor, versions, action, outcome, *, key=None, **contact):
     """Apply one bulk outcome under the real web database role (#1131)."""
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         return apply_bulk_outcome(
             harness.service.store,
             actor,
             versions,
+            action=action,
             outcome=outcome,
             bulk_key=key or uuid4(),
             change=WorkflowChange(state="new", outcome=None, notes="", **contact),
@@ -1381,7 +1382,7 @@ def test_bulk_outcome_is_all_or_none_with_one_revision_per_request(
 ):
     """A bulk outcome writes each request's own revision, projection and
     audit event under one correlation id, plus one bulk event; a request of
-    the wrong kind, a stale version or another Ministry's request refuses
+    the other kind, a stale version or another Ministry's request refuses
     the whole batch and saves nothing (#1131)."""
     harness = setup(response_service)
     _, head, _, _ = leader(harness, google)
@@ -1392,66 +1393,79 @@ def test_bulk_outcome_is_all_or_none_with_one_revision_per_request(
     join.refresh_from_db()
     assert (join.version, leave.version) == (2, 1)
     both = {join.pk: 2, leave.pk: 1}
-    # Joined does not apply to a leave, nor Left to a join: the refusal
-    # names the request.
-    for outcome, wrong in (("joined", leave), ("leave_confirmed", join)):
+    # Each bulk outcome is for one kind of request (Administrator,
+    # 2026-10-13), declined included: a batch mixing kinds is refused,
+    # naming the request of the other kind.
+    for action, outcome, wrong in (
+        ("join", "joined", leave),
+        ("join", "declined", leave),
+        ("leave", "leave_confirmed", join),
+        ("leave", "declined", join),
+    ):
         with pytest.raises(FollowupRefusal) as refused:
-            bulk(harness, admin, both, outcome)
+            bulk(harness, admin, both, action, outcome)
         assert refused.value.code == "outcome_kind"
         assert refused.value.details["request_id"] == wrong.pk
+        assert refused.value.details["kind"] == action
+    # A pairing that is not a bulk action is malformed.
+    with pytest.raises(ValueError):
+        bulk(harness, admin, {leave.pk: 1}, "leave", "joined")
     # One stale version refuses the batch, naming that request.
     with pytest.raises(BulkStale) as stale:
-        bulk(harness, admin, {join.pk: 1, leave.pk: 1}, "declined")
+        bulk(harness, admin, {join.pk: 1}, "join", "declined")
     assert stale.value.request_id == join.pk
     # A leader of Ministry 9 cannot reach Ministry 4's request, even mixed
     # with one of their own.
     with pytest.raises(PermissionError):
-        bulk(harness, head, both, "declined")
+        bulk(harness, head, both, "join", "declined")
     with pytest.raises(PermissionError):
-        bulk(harness, head, {join.pk: 2, uuid4(): 1}, "declined")
+        bulk(harness, head, {join.pk: 2, uuid4(): 1}, "join", "declined")
     assert MinistryWorkflowRevision.objects.count() == 1
     assert not AuditEvent.objects.filter(
         event_type="ministry_followup_bulk_applied"
     ).exists()
     called, key = database_now() - timedelta(hours=1), uuid4()
     contact = dict(contact_channel="phone", contact_at=called, contact_notes="Hi")
-    revisions = bulk(harness, admin, both, "declined", key=key, **contact)
+    (declined,) = bulk(
+        harness, admin, {join.pk: 2}, "join", "declined", key=key, **contact
+    )
+    (stayed,) = bulk(harness, admin, {leave.pk: 1}, "leave", "declined", **contact)
     join.refresh_from_db()
     leave.refresh_from_db()
     assert (join.state, join.outcome, join.version) == ("resolved", "declined", 3)
     assert (leave.state, leave.outcome, leave.version) == ("resolved", "declined", 2)
     assert join.resolved_at is not None and leave.resolved_at is not None
-    by_request = {revision.request_id: revision for revision in revisions}
-    assert by_request[join.pk].notes == "PRIVATE-NOTE keep me"
-    assert by_request[leave.pk].notes == ""
-    for revision in revisions:
+    assert declined.notes == "PRIVATE-NOTE keep me"
+    assert stayed.notes == ""
+    for revision in (declined, stayed):
         assert (revision.contact_channel, revision.contact_at) == ("phone", called)
         assert revision.contact_notes == "Hi"
-    correlations = {revision.correlation_id for revision in revisions}
-    assert len(correlations) == 1
-    (shared,) = correlations
-    events = AuditEvent.objects.filter(correlation_id=shared)
+    # Each action's revisions and events share that action's correlation id.
+    assert declined.correlation_id != stayed.correlation_id
+    events = AuditEvent.objects.filter(correlation_id=declined.correlation_id)
     assert sorted(events.values_list("event_type", flat=True)) == [
         "ministry_followup_bulk_applied",
         "ministry_request_updated",
-        "ministry_request_updated",
     ]
     summary = AuditContext.objects.get(
-        event__event_type="ministry_followup_bulk_applied"
+        event__event_type="ministry_followup_bulk_applied",
+        event__correlation_id=declined.correlation_id,
     )
-    assert summary.context == {"outcome": "changed", "count": 2, "matching_count": 2}
+    assert summary.context == {"outcome": "changed", "count": 1, "matching_count": 1}
     assert summary.event.subject_id == harness.campaign.pk
-    # Posting the same action again replays it: same revisions, no new event.
-    again = bulk(harness, admin, both, "declined", key=key, **contact)
-    assert {revision.pk for revision in again} == set(by_request[k].pk for k in both)
+    # Posting the same action again replays it: same revision, no new event.
+    (again,) = bulk(
+        harness, admin, {join.pk: 2}, "join", "declined", key=key, **contact
+    )
+    assert again.pk == declined.pk
     assert MinistryWorkflowRevision.objects.count() == 3
     assert (
         AuditEvent.objects.filter(event_type="ministry_followup_bulk_applied").count()
-        == 1
+        == 2
     )
     # Closed requests take no further bulk outcome.
     with pytest.raises(BulkStale):
-        bulk(harness, admin, {join.pk: 3}, "declined")
+        bulk(harness, admin, {join.pk: 3}, "join", "declined")
     # The request page's history marks the bulk revision, not the single edit.
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         rows, _ = followup_history(join.pk, 1)
@@ -1475,7 +1489,7 @@ def test_bulk_outcome_route_refuses_in_the_dialog_and_marks_history(
     route = reverse("admin:ministry_followup_bulk")
     queue = reverse("admin:ministry_followup")
     form = {
-        "outcome": "joined",
+        "outcome": "join:joined",
         "bulk_key": str(uuid4()),
         "request": [f"{join.pk}:1"],
         "contact_channel": "phone",
@@ -1495,7 +1509,10 @@ def test_bulk_outcome_route_refuses_in_the_dialog_and_marks_history(
         assert f'value="{join.pk}:1" form="followup-bulk"'.encode() in body
         assert str(leave.pk).encode() not in body
         assert b'action="' + route.encode() + b'"' in body
-        assert b"Mark as Joined" in body and b"Mark as Left" in body
+        for name in ("Joined", "Declined", "Left", "Stayed"):
+            assert f"Mark as {name}".encode() in body
+        assert b'value="join:declined" data-confirm-kind="join"' in body
+        assert b'data-kind-hint-mixed="Tick only requests to join' in body
         assert b"filter-history" not in body and b"Request history" not in body
         assert b"Withdrawn by Family" not in body and b"Replaced by Family" not in body
         assert b'value="duplicate"' not in body
@@ -1505,11 +1522,19 @@ def test_bulk_outcome_route_refuses_in_the_dialog_and_marks_history(
         assert outside.status_code == 403
         mixed = form | {"request": [f"{join.pk}:1", f"{leave.pk}:1"]}
         assert post(browser, route, mixed).status_code == 403
-        kind = post(browser, route, form | {"outcome": "leave_confirmed"})
+        # The page never offers a batch of the other kind; a crafted or
+        # outdated post is refused, naming the row and the batch's outcome.
+        kind = post(browser, route, form | {"outcome": "leave:declined"})
         assert kind.status_code == 400
         assert refusal(kind) == (
-            "Example, Member — Food pantry is a request to join, so Left the "
-            "Ministry doesn't apply to it. Nothing was saved."
+            "Example, Member — Food pantry is a request to join, so Stayed in "
+            "the Ministry doesn't apply to it. Nothing was saved."
+        )
+        # The old kindless value and a pairing that is no bulk action are
+        # malformed.
+        assert post(browser, route, form | {"outcome": "joined"}).status_code == 400
+        assert (
+            post(browser, route, form | {"outcome": "leave:joined"}).status_code == 400
         )
         stale = post(browser, route, form | {"request": [f"{join.pk}:2"]})
         assert stale.status_code == 409
@@ -1517,7 +1542,7 @@ def test_bulk_outcome_route_refuses_in_the_dialog_and_marks_history(
         future = post(browser, route, form | {"contact_date": "2999-01-01"})
         assert future.status_code == 400
         assert refusal(future).startswith("The contact attempt's date and time")
-        assert post(browser, route, form | {"outcome": "other"}).status_code == 400
+        assert post(browser, route, form | {"outcome": "join:other"}).status_code == 400
         assert MinistryWorkflowRevision.objects.count() == 0
         done = post(browser, route, form)
         assert done.status_code == 204 and done["Cache-Control"] == "no-store"

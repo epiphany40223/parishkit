@@ -765,20 +765,33 @@
         button.textContent = every ? "Clear selection" : "Select all";
       }
       if (count) count.textContent = chosen ? `${chosen} selected` : "";
+      // A bulk button for one kind of row (its data-confirm-kind, matching
+      // the rows'; the Ministry follow-up queue's outcomes, #1131) is
+      // available only while every ticked row is of its kind. While one is
+      // unavailable for that reason, the line says why: the table's
+      // data-kind-hint-<kind> when the ticked rows are all of one kind, or
+      // its data-kind-hint-mixed when they mix kinds.
+      const kinds = new Set(all.filter((node) => node.checked)
+        .map((node) => node.dataset.confirmKind || ""));
+      const fits = (node) => chosen > 0 && (!node.dataset.confirmKind
+        || (kinds.size === 1 && kinds.has(node.dataset.confirmKind)));
+      const kindHint = !chosen || actions.every(fits) ? ""
+        : scope.getAttribute(`data-kind-hint-${kinds.size > 1 ? "mixed" : [...kinds][0]}`) || "";
       // With no rows at all the table itself says it is empty, unless the
       // table gave an empty-table reason, which then stays in the line.
       const empty = !all.length && Boolean(emptyHint);
-      const explain = Boolean(hint) && !chosen && (all.length > 0 || empty);
+      const explain = Boolean(hint)
+        && (Boolean(kindHint) || (!chosen && (all.length > 0 || empty)));
       if (hint) {
-        const text = empty ? emptyHint : missingHint;
+        const text = kindHint || (empty ? emptyHint : missingHint);
         if (hint.textContent !== text) hint.textContent = text;
       }
       hint?.toggleAttribute("data-cleared", !explain);
       actions.forEach((node) => {
-        node.disabled = !chosen;
+        node.disabled = !fits(node);
         const described = (node.getAttribute("aria-describedby") || "").split(/\s+/)
           .filter((id) => id && id !== hint?.id);
-        if (explain) described.push(hint.id);
+        if (explain && node.disabled) described.push(hint.id);
         if (described.length) node.setAttribute("aria-describedby", described.join(" "));
         else node.removeAttribute("aria-describedby");
       });
@@ -3518,9 +3531,11 @@
       else acceptConfirm(confirming);
     });
   };
-  // A bulk button may limit itself to one kind of row, carry its own
-  // dialog text and post its own name and value (confirm-dialog.html; the
-  // Ministry follow-up queue's bulk outcomes, #1131).
+  // A bulk button may carry its own dialog text and post its own name and
+  // value (confirm-dialog.html; the Ministry follow-up queue's bulk
+  // outcomes, #1131). One limited to one kind of row is available only
+  // while every ticked row is of that kind (wireSelection), so the dialog
+  // acts on every ticked row.
   const openConfirm = (dialog, opener) => {
     const form = document.getElementById(dialog.dataset.confirmForm || "");
     if (!(form instanceof HTMLFormElement)) return;
@@ -3528,37 +3543,22 @@
     // form.elements, not the form's descendants: a table whose headings are
     // forms of their own ties its row boxes to the form by their form
     // attribute.
-    const ticked = bulk
+    const chosen = bulk
       ? [...form.elements].filter((box) => box.matches("input[data-select-row]:checked")
         && !box.disabled)
-        .map((box) => ({field: box.name, value: box.value, name: box.dataset.confirmName,
-          kind: box.dataset.confirmKind || ""}))
+        .map((box) => ({field: box.name, value: box.value, name: box.dataset.confirmName}))
       : [{field: opener.name, value: opener.value, name: opener.dataset.confirmName}];
-    if (!ticked.length || ticked.some((item) => !item.field || !item.value)) return;
-    // A button for one kind of row acts only on the ticked rows of that kind;
-    // the dialog names the others as skipped, and says so when none is left.
-    const kind = bulk ? opener.dataset.confirmKind || "" : "";
-    const chosen = kind ? ticked.filter((item) => item.kind === kind) : ticked;
-    const skipped = ticked.filter((item) => !chosen.includes(item));
+    if (!chosen.length || chosen.some((item) => !item.field || !item.value)) return;
     // The button's own text, else the dialog's.
     const text = (key) => opener.dataset[key] || dialog.dataset[key] || "";
     wireDialog(dialog);
-    const values = {count: chosen.length.toLocaleString("en-US"), name: chosen[0]?.name || ""};
+    const values = {count: chosen.length.toLocaleString("en-US"), name: chosen[0].name || ""};
     dialog.querySelector("[data-confirm-title]").textContent = fillIn(
       chosen.length === 1 ? text("titleOne") : text("titleMany"), values);
     const body = dialog.querySelector("[data-confirm-body]");
     if (body) {
       if (body.dataset.default === undefined) body.dataset.default = body.textContent;
       body.textContent = opener.dataset.confirmBody || body.dataset.default;
-    }
-    const skippedLine = dialog.querySelector("[data-confirm-skipped]");
-    if (skippedLine) {
-      skippedLine.textContent = !chosen.length ? text("confirmNone")
-        : skipped.length ? fillIn(text(skipped.length === 1 ? "skippedOne" : "skippedMany"), {
-          count: skipped.length.toLocaleString("en-US"),
-          names: skipped.map((item) => item.name).join("; "),
-        }) : "";
-      skippedLine.hidden = !skippedLine.textContent;
     }
     const error = dialog.querySelector("[data-confirm-error]");
     error.hidden = true;
@@ -3582,19 +3582,6 @@
       field.dispatchEvent(new Event("change", {bubbles: true}));
     });
     if (form.hasAttribute("data-require-complete")) gateComplete(form);
-    // Nothing of this kind is ticked: Confirm stays unavailable (the skipped
-    // line says why, and Confirm names it); no gate releases a button
-    // disabled without its mark.
-    const accept = dialog.querySelector("[data-confirm-accept]");
-    const reason = skippedLine?.id || "";
-    const described = (accept.getAttribute("aria-describedby") || "").split(/\s+/)
-      .filter((id) => id && id !== reason);
-    if (!chosen.length) {
-      accept.disabled = true;
-      if (reason) described.push(reason);
-    }
-    if (described.length) accept.setAttribute("aria-describedby", described.join(" "));
-    else accept.removeAttribute("aria-describedby");
     confirming = {
       dialog, opener, form, chosen, values, busy: false, done: false,
       doneOne: text("doneOne"), doneMany: text("doneMany"),

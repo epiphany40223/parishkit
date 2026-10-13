@@ -35,6 +35,7 @@ from parishkit.stewardship.reports.ministry_followup import (
     FollowupQuery,
 )
 from parishkit.stewardship.reports.ministry_followup_views import (
+    BULK_KIND_HINTS,
     REFUSALS,
     _refusal_error,
     bulk_actions,
@@ -172,6 +173,7 @@ def components(context, admin):
         outcomes=FILTER_OUTCOMES,
         channels=CHANNELS,
         bulk_actions=bulk_actions(),
+        bulk_kind_hints=BULK_KIND_HINTS,
         bulk_key=BULK_KEY,
         refresh_url=reverse("admin:ministry_followup"),
         future_message=REFUSALS["contact_future"][0],

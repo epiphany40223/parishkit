@@ -4796,17 +4796,20 @@ shared [selection column, bulk bar](../ui-conventions/spec.md#admin-tables) and
 Only open requests (New or In progress) have a selection box. The selection
 covers the current page and the page help says so.
 
-The bulk bar offers Mark as Joined, Mark as Left and Mark as Declined /
-stayed. Joined applies only to requests to join and Left only to requests to
-leave; declined applies to both, reading Declined / no longer interested on a
-join and Stayed in the Ministry on a leave
-([#1132](https://github.com/epiphany40223/parishkit/issues/1132)). Each button
-opens one dialog, which names the count and the outcome. It names any ticked
-request of the other kind as skipped and leaves that request as it is; when
-none applies, it says so and offers nothing to record. The dialog has an
-optional "Record a contact attempt" (How, Date, Time and What happened, as on
-the request form), which is applied to each request. Its fields return to
-their defaults each time it opens.
+The bulk bar offers Mark as Joined and Mark as Declined for requests to join,
+and Mark as Left and Mark as Stayed for requests to leave, with the outcome
+labels of [#1132](https://github.com/epiphany40223/parishkit/issues/1132)
+(Declined / no longer interested; Stayed in the Ministry). A button is
+available only while every ticked request is of its kind (Administrator,
+2026-10-13), as a [prerequisite gate](../ui-conventions/spec.md#prerequisite-gates):
+with only requests to join ticked, Left and Stayed are unavailable, and the
+other way round; with both kinds ticked, all four are, and the bar's reason
+line asks for one kind. Filtering Request to Join or Leave makes Select all
+choose one kind. Each button opens one dialog, which names the count and the
+outcome and applies to every ticked request. The dialog has an optional
+"Record a contact attempt" (How, Date, Time and What happened, as on the
+request form), which is applied to each request. Its fields return to their
+defaults each time it opens.
 
 Recording posts the chosen requests, each with the version its row showed,
 without a page load. The server applies them all or none, in one transaction
@@ -4822,7 +4825,8 @@ The server refuses the whole batch, saving nothing, when:
   request is);
 - any request changed or closed since the page was read (named in the
   dialog);
-- any request's kind does not take the outcome (named in the dialog); or
+- any request is not of the button's kind (named in the dialog; the page
+  never offers such a batch); or
 - the contact attempt is refused, as on the request form.
 
 A batch is at most one page of the largest page size. Posting the same

@@ -46,7 +46,7 @@ from parishkit.stewardship.web.tables import (
     table_parameters,
 )
 from parishkit.stewardship.workflows.followup import (
-    BULK_OUTCOMES,
+    BULK_ACTIONS,
     MAX_BULK,
     BulkStale,
     FollowupRefusal,
@@ -255,11 +255,23 @@ FIELD_IDS = {
     "contact_time": "contact-time",
 }
 ACTIONS = {"join": _("join"), "leave": _("leave")}
-# What a bulk outcome is called on its button and in its dialog.
+# What each bulk outcome is called on its button (#1131), by its posted
+# "kind:outcome" value (BULK_ACTIONS).
 BULK_NAMES = {
-    "joined": _("Joined"),
-    "leave_confirmed": _("Left"),
-    "declined": _("Declined / stayed"),
+    "join:joined": _("Joined"),
+    "join:declined": _("Declined"),
+    "leave:leave_confirmed": _("Left"),
+    "leave:declined": _("Stayed"),
+}
+# Why the bulk buttons of one kind are unavailable (ui-v1.js
+# wireSelection's data-kind-hint-<kind>, shown in the bulk bar's reserved
+# reason line): only requests of one kind are ticked, or both kinds are.
+BULK_KIND_HINTS = {
+    "join": _("Left and Stayed are for requests to leave."),
+    "leave": _("Joined and Declined are for requests to join."),
+    "mixed": _(
+        "Tick only requests to join, or only requests to leave, to record an outcome."
+    ),
 }
 
 
@@ -267,55 +279,30 @@ def bulk_actions():
     """The queue's bulk outcome buttons and the dialog text each one sets.
 
     Each button opens the one shared confirmation dialog (#879), which takes
-    its title, body, announcement and skipped-row text from the button
-    (ui-v1.js). ``kind`` limits the outcome to one kind of request: the
-    dialog counts only the selected rows of that kind and names the rest as
-    skipped; declined applies to both kinds (#1132). The server checks every
-    request's kind itself (apply_bulk_outcome).
+    its title, body and announcement from the button (ui-v1.js). ``kind``
+    makes a button available only while every ticked request is of that
+    kind (Administrator, 2026-10-13), so the dialog always acts on every
+    ticked request; the server checks every request's kind itself
+    (apply_bulk_outcome).
     """
     actions = []
-    for outcome in BULK_OUTCOMES:
-        kind = {"joined": "join", "leave_confirmed": "leave"}.get(outcome, "")
-        name = BULK_NAMES[outcome]
-        label = outcome_label(outcome, kind or "any")
-        values = {"name": name, "label": label, "kind": ACTIONS.get(kind, "")}
-        if kind:
-            body = _(
-                "Each request is resolved as %(label)s, with its own entry in "
-                "its follow-up history."
-            )
-            skipped_one = _(
-                "{names} is not a request to %(kind)s, so it is left as it is."
-            )
-            skipped_many = _(
-                "{count} selected requests are not requests to %(kind)s, so "
-                "they are left as they are: {names}."
-            )
-            none = _(
-                "None of the selected requests is a request to %(kind)s, so "
-                "there is nothing to mark as %(name)s. Cancel and select "
-                "requests to %(kind)s."
-            )
-        else:
-            body = _(
-                "A request to join is resolved as Declined / no longer "
-                "interested, and a request to leave as Stayed in the "
-                "Ministry, each with its own entry in its follow-up history."
-            )
-            skipped_one = skipped_many = none = ""
+    for kind, outcome in BULK_ACTIONS:
+        value = f"{kind}:{outcome}"
+        values = {"name": BULK_NAMES[value], "label": outcome_label(outcome, kind)}
         actions.append(
             {
-                "outcome": outcome,
+                "value": value,
                 "kind": kind,
                 "label": _("Mark as %(name)s") % values,
                 "title_one": _("Mark {name} as %(label)s?") % values,
                 "title_many": _("Mark {count} requests as %(label)s?") % values,
                 "done_one": _("Marked {name} as %(label)s.") % values,
                 "done_many": _("Marked {count} requests as %(label)s.") % values,
-                "body": body % values,
-                "skipped_one": skipped_one and skipped_one % values,
-                "skipped_many": skipped_many and skipped_many % values,
-                "none": none and none % values,
+                "body": _(
+                    "Each request is resolved as %(label)s, with its own entry "
+                    "in its follow-up history."
+                )
+                % values,
             }
         )
     return actions
@@ -616,6 +603,7 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None):
                 bulk_key=uuid4(),
                 refresh_url=with_queue(reverse("admin:ministry_followup"), token),
                 bulk_actions=bulk_actions(),
+                bulk_kind_hints=BULK_KIND_HINTS,
             )
             return iter(
                 (render_to_string(TEMPLATE, context, request=request).encode(),)
@@ -981,7 +969,8 @@ def _bulk_selection(parameters):
 def bulk_values(parameters):
     """Strict closed grammar of the bulk outcome dialog's POST.
 
-    The outcome (one of BULK_OUTCOMES), the page's bulk key, the chosen
+    The button's "kind:outcome" (one of BULK_ACTIONS), the page's bulk
+    key, the chosen
     requests and the optional contact attempt the dialog applies to each
     (as on a request's own form, _contact_values).
     """
@@ -992,12 +981,14 @@ def bulk_values(parameters):
         len(parameters.getlist(key)) != 1 for key in keys
     ):
         raise ValueError("Invalid follow-up form.")
-    if parameters["outcome"] not in BULK_OUTCOMES:
+    kind, _separator, outcome = parameters["outcome"].partition(":")
+    if (kind, outcome) not in BULK_ACTIONS:
         raise ValueError("Invalid bulk outcome.")
     contact = _contact_values(parameters)
     return dict(
         versions=_bulk_selection(parameters),
-        outcome=parameters["outcome"],
+        action=kind,
+        outcome=outcome,
         bulk_key=UUID(parameters["bulk_key"]),
         # The state, outcome and notes are set per request by the service.
         change=WorkflowChange(state="new", outcome=None, notes="", **contact),
@@ -1039,8 +1030,8 @@ def bulk(request, campaign_id):
     The shared confirmation dialog posts the chosen rows (each with its
     version), the outcome and an optional contact attempt, without a page
     load. All or none: a request outside the person's Ministries is denied
-    (403); one that changed since the page was read (409) or whose kind
-    does not take the outcome (400) is named in the refusal the dialog
+    (403); one that changed since the page was read (409) or is of the
+    other kind (400) is named in the refusal the dialog
     shows; a contact attempt is checked as on a request's own form. Success
     answers 204, and the dialog redraws the table from the remembered view.
     """
@@ -1078,8 +1069,10 @@ def bulk(request, campaign_id):
                 % {
                     "row": row,
                     "action": ACTIONS[refusal.details["action"]],
+                    # The batch's own label (a leave batch's declined
+                    # reads Stayed), not the refused request's.
                     "outcome": outcome_label(
-                        refusal.details["outcome"], refusal.details["action"]
+                        refusal.details["outcome"], refusal.details["kind"]
                     ),
                 },
             )
