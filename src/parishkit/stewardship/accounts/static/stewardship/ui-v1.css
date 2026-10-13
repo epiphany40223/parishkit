@@ -725,6 +725,8 @@ details.technical-details dd { overflow-wrap: anywhere; }
 .content-editor { min-height: 12rem; overflow-wrap: anywhere; }
 /* While the HTML source is being re-sanitized, the visual pane dims but stays visible. */
 [data-visual-content][aria-busy="true"] .content-editor { opacity: .55; }
+/* An HTML source error is marked at the visual editor too, as a field's (#563). */
+.content-editor[aria-invalid="true"] { border: 2px solid var(--error-border); }
 .content-sample, pre { overflow-wrap: anywhere; white-space: pre-wrap; }
 .content-sample { padding: 1rem; border: 1px dashed var(--control-border); border-radius: var(--radius-small); background: var(--paper); }
 

@@ -778,7 +778,12 @@ no longer a draft, Testing cleanup is unfinished, other inputs (such as a
 ParishSoft refresh) are not ready, earlier links still need Cancel, or
 cancelled links are still being discarded. On the Off-site backups page,
 Test access is unavailable until Google Workspace mail is set up, since the
-check signs in as its mailbox user. The server still checks each of these.
+check signs in as its mailbox user. In the Pages and emails editor, "Remove
+this selected content" is unavailable, with its reason as the box's help,
+while nothing is saved there or while mail schedules still send the email.
+The box is an action, not a setting, so its reason stays visible rather than
+in a tip; it takes the help line's place, adding no line.
+The server still checks each of these.
 
 The integration settings pages (other than ParishSoft, whose refresh
 schedule editor gates Save itself) and both steps of the backup encryption

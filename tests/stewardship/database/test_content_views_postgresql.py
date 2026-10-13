@@ -1,6 +1,7 @@
 """Real-session content editing, sanitization, immutable revisions and mail impacts."""
 
 import json
+import re
 from html import unescape
 from uuid import uuid4
 
@@ -40,6 +41,13 @@ def setup(store):
 def values(store, **changes):
     """Submit HTML form values, not raw YAML patches or browser role declarations."""
     return fields(base_digest=store.active().digest, action="preview", **changes)
+
+
+def remove_box(body):
+    """The editor's "Remove this selected content" box and its help line."""
+    box = re.search(r'<input type="checkbox" name="clear"[^>]*>', body).group(0)
+    help_line = re.search(r'id="id_clear_helptext"[^>]*>(.*?)</div>', body, re.S)
+    return box, unescape(help_line.group(1)) if help_line else ""
 
 
 def test_page_content_apply_sanitizes_samples_and_replays(auth_service, google):
@@ -189,6 +197,9 @@ def test_email_create_and_explicit_page_remove_with_web_grants(auth_service, goo
         == "applied"
     )
     path = catalog + "page/login_help/"
+    # Saved text that nothing else needs can be removed.
+    box, _ = remove_box(browser.get(path).content.decode())
+    assert " disabled" not in box
     proposal = token(post(browser, path, values(store, clear="on")))
     apply(store, post(browser, path, {"action": "confirm", "preview": proposal}))
     assert (
@@ -226,6 +237,11 @@ def test_content_stale_base_noop_and_route_scope(auth_service, google):
         post(browser, path, values(store) | {"base_digest": "f" * 64}).status_code
         == 409
     )
+    # An empty slot has nothing to remove: the box is drawn unavailable with
+    # why (#563), and a tick posted anyway is still refused.
+    box, reason = remove_box(browser.get(path).content.decode())
+    assert " disabled" in box and 'aria-describedby="id_clear_helptext"' in box
+    assert reason == "Nothing is saved here yet, so there is nothing to remove."
     assert post(browser, path, values(store, clear="on")).status_code == 400
     proposal = token(post(browser, path, values(store)))
     assert (
@@ -390,7 +406,12 @@ def test_removing_a_scheduled_template_explains_the_fix_inline(auth_service, goo
     )
     browser, _ = signed_in()
     path = catalog + "email/initial/" + row["id"] + "/"
-    browser.get(path)
+    # The editor already knows: Remove is drawn unavailable, naming the
+    # schedule that sends this email (#563).
+    box, reason = remove_box(browser.get(path).content.decode())
+    assert " disabled" in box and 'aria-describedby="id_clear_helptext"' in box
+    assert reason.startswith("Scheduled mail still sends this email (")
+    assert "under Dates and mail schedules first" in reason
     requests = ConfigurationChangeRequest.objects.count()
     refused = post(browser, path, values(store, subject="Invitation", clear="on"))
     body = refused.content.decode()

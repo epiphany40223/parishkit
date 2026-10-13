@@ -112,9 +112,10 @@ def test_family_access_contract_is_enforced_by_the_editor(slot, defect):
         "link_subject": "The email subject contains {{ family_url }}.",
     }[defect]
     assert expected in str(form.errors)
-    assert {error.code for error in form.errors.as_data()["__all__"]} == {
-        "family_access"
-    }
+    # Each problem is shown at the field it is about (#563), never above.
+    field = "subject" if defect.endswith("_subject") else defect
+    assert {error.code for error in form.errors.as_data()[field]} == {"family_access"}
+    assert "__all__" not in form.errors
 
 
 @pytest.mark.parametrize("slot", ["initial", "reminder"])
@@ -132,7 +133,9 @@ def test_generated_text_problem_names_the_generator_and_the_fix(slot):
         slot=slot,
     )
     assert not form.is_valid()
-    messages = [str(error.message) for error in form.errors.as_data()["__all__"]]
+    # Generated text is fixed in the HTML source, so both are shown there.
+    assert list(form.errors) == ["html"]
+    messages = [str(error.message) for error in form.errors.as_data()["html"]]
     assert messages[0].startswith("The HTML version is missing {{ family_url }}.")
     assert messages[1].startswith(
         "The plain text generated from the HTML version is missing {{ family_url }}."
@@ -393,3 +396,57 @@ def test_editor_template_hides_plain_text_for_web_only_pages():
 
     assert "data-plain-text" not in render(kind="page", slot="welcome")
     assert "data-plain-text" in render(kind="email", slot="confirmation")
+
+
+@pytest.mark.parametrize(
+    ("kind", "changes", "field"),
+    [
+        ("page", {"html": "<p>{{ unknown_name }}</p>"}, "html"),
+        ("email", {"subject": "Hello {{ unknown_name }}"}, "subject"),
+        ("email", {"html": "<p>{{ unknown_name }}</p>"}, "html"),
+        (
+            "email",
+            {"generate_text": "", "text": "Hello {{ unknown_name }}"},
+            "text",
+        ),
+    ],
+)
+def test_placeholder_problems_are_shown_at_their_field(kind, changes, field):
+    """An unknown placeholder is a field error, never one above the form (#563)."""
+    payload = fields(**({"subject": "Hello"} | changes))
+    form = ContentForm(payload, kind=kind, slot="welcome" if kind == "page" else None)
+    assert not form.is_valid()
+    assert list(form.errors) == [field]
+    assert "placeholders" in str(form.errors[field])
+
+
+def test_an_unavailable_removal_is_drawn_disabled_with_its_reason():
+    """The box stays in place, disabled and named by its reason (#563)."""
+    reason = "Nothing is saved here yet, so there is nothing to remove."
+    form = ContentForm(kind="page", slot="welcome", clear_unavailable=reason)
+    box = str(form["clear"])
+    assert " disabled" in box and 'aria-describedby="id_clear_helptext"' in box
+    assert reason in form["clear"].as_field_group()
+    assert " disabled" not in str(ContentForm(kind="page", slot="welcome")["clear"])
+
+
+def test_an_html_source_error_is_shown_at_the_visual_editor_too():
+    """The HTML source is folded away while the visual editor is in use, so
+    its error is shown, linked and marked at the editor as well (#563)."""
+    from django.template.loader import render_to_string
+
+    form = ContentForm(
+        fields(html="<p>{{ unknown_name }}</p>"), kind="page", slot="welcome"
+    )
+    assert not form.is_valid()
+    page = render_to_string("stewardship/content-fields.html", {"form": form})
+    editor = page[page.index('class="panel content-editor"') :]
+    editor = editor[: editor.index(">")]
+    assert 'aria-describedby="visual-content-error"' in editor
+    assert 'aria-invalid="true"' in editor
+    error = page[page.index('id="visual-content-error"') :]
+    assert "placeholders" in error[: error.index("</ul>")]
+    valid = ContentForm(fields(), kind="page", slot="welcome")
+    assert valid.is_valid()
+    shown = render_to_string("stewardship/content-fields.html", {"form": valid})
+    assert "visual-content-error" not in shown

@@ -92,6 +92,12 @@ def page_slots(campaign):
     return {slot: label for slot, label in PAGE_LABELS.items() if slot not in excluded}
 
 
+# Field-level messages for a part that is too large or names a placeholder
+# that doesn't exist (#563); the placeholders are listed in the page's help.
+BOUNDED_MESSAGE = _(
+    "Use only the documented placeholders, and keep the text within the size limit."
+)
+SUBJECT_MESSAGE = _("Use only the documented placeholders, on one line.")
 PART_LABELS = {
     "subject": _("The email subject"),
     "html": _("The HTML version"),
@@ -155,16 +161,27 @@ class ContentForm(forms.Form):
     )
     clear = forms.BooleanField(label=_("Remove this selected content"), required=False)
 
-    def __init__(self, *args, kind, slot=None, banner=None, **kwargs):
+    def __init__(
+        self, *args, kind, slot=None, banner=None, clear_unavailable=None, **kwargs
+    ):
         """Page content cannot carry a subject or masquerade as an email template.
 
         ``banner`` is whether this campaign email currently shows the campaign
         banner (#248); it is None where the choice does not apply (pages, Admin
         emails, and the setup wizard, which has no campaign artwork yet).
+        ``clear_unavailable`` is why "Remove this selected content" can't be
+        used now (content_views.removal_reason), or None: the box is then
+        drawn disabled in place with that reason as its help, which the box
+        names (aria-describedby, #563). Only the drawn box is disabled: a
+        tick posted anyway still reaches the server's own refusal (nothing
+        to remove, or revision_patch's schedule refusal with its fix).
         """
         self.kind = kind
         self.slot = slot
         super().__init__(*args, **kwargs)
+        if clear_unavailable and "clear" in self.fields:
+            self.fields["clear"].widget.attrs["disabled"] = True
+            self.fields["clear"].help_text = clear_unavailable
         if banner is not None:
             self.fields["show_banner"] = forms.BooleanField(
                 label=_("Show the campaign banner at the top of this email"),
@@ -191,8 +208,24 @@ class ContentForm(forms.Form):
                 "“label: URL”. Never put the code or link in the subject."
             )
 
+    def _part_field(self, part, generated):
+        """The field a problem in one part of the content is shown at (#563).
+
+        ``part`` is "subject", "html" or "text". Plain text generated from
+        the HTML (``generated``, and always on a page, which has no plain-text
+        field) is fixed in the HTML source, so its problems are shown there.
+        """
+        if part == "text" and (generated or "text" not in self.fields):
+            return "html"
+        return part
+
     def clean(self):
-        """Validate sanitized output and substitutions before creating any request."""
+        """Validate sanitized output and substitutions before creating any request.
+
+        Each problem is shown at the field it is about (#563): the subject,
+        the HTML source or the plain text. Only rules about the whole email
+        (a receipt's or a digest's required content) stay above the form.
+        """
         values = super().clean()
         if self.errors or values.get("clear"):
             return values
@@ -200,7 +233,32 @@ class ContentForm(forms.Form):
         generate = values.get("generate_text", True)
         typed = values.get("text", "")
         try:
-            prepared = prepare_content(values["html"], text=None if generate else typed)
+            prepared = prepare_content(values["html"])
+        except ValueError:
+            self.add_error("html", BOUNDED_MESSAGE)
+            return values
+        if not generate:
+            try:
+                prepared = prepare_content(values["html"], text=typed)
+            except ValueError:
+                self.add_error("text", BOUNDED_MESSAGE)
+                return values
+        parts = [("html", prepared.html), ("text", prepared.text)]
+        if self.kind == "email":
+            parts.append(("subject", values["subject"]))
+        for part, value in parts:
+            try:
+                validate_template(value, subject=part == "subject")
+            except ValueError:
+                # Generated text's problem is its HTML source's, said once.
+                field = self._part_field(part, generate)
+                if not self.has_error(field):
+                    self.add_error(
+                        field, SUBJECT_MESSAGE if part == "subject" else BOUNDED_MESSAGE
+                    )
+        if self.errors:
+            return values
+        try:
             if (
                 generate
                 and typed.strip()
@@ -221,10 +279,6 @@ class ContentForm(forms.Form):
                     ),
                 )
                 return values
-            validate_template(prepared.html)
-            validate_template(prepared.text)
-            if self.kind == "email":
-                validate_template(values["subject"], subject=True)
             if (self.kind, self.slot) == ("email", "confirmation"):
                 validate_receipt_content(
                     values.get("subject", ""), prepared.html, prepared.text
@@ -244,10 +298,19 @@ class ContentForm(forms.Form):
             return values
         from .hosted_file_content import content_problems
 
-        hosted = content_problems(prepared.html, prepared.text)
-        for message in hosted:
-            self.add_error(None, forms.ValidationError(message, code="hosted_file"))
-        if hosted:
+        # A generated plain text names only the files its HTML names, so only
+        # typed plain text can add a problem of its own.
+        hosted = {"html": content_problems(prepared.html, "")}
+        if not generate and "text" in self.fields:
+            hosted["text"] = [
+                message
+                for message in content_problems("", prepared.text)
+                if message not in hosted["html"]
+            ]
+        for part, messages in hosted.items():
+            for message in messages:
+                self.add_error(part, forms.ValidationError(message, code="hosted_file"))
+        if self.errors:
             return values
         if self.kind == "email" and self.slot in {"initial", "reminder"}:
             problems = family_email_problems(
@@ -255,7 +318,7 @@ class ContentForm(forms.Form):
             )
             for part, problem, names in problems:
                 self.add_error(
-                    None,
+                    self._part_field(part, generate),
                     forms.ValidationError(
                         family_access_message(part, problem, names, generated=generate),
                         code="family_access",
