@@ -215,7 +215,8 @@ workbook's document properties (Excel's File > Info) name its report as its
 PDF's page title does and "ParishKit Stewardship" as its author. Its
 creation time is a queued report's request time, or the download time of
 Limitations and Census changes, as its PDF's is, so a retried rendering
-states the same time. The
+states the same time; System logs, which has no PDF, also states its
+download time. The
 [past-campaign archive workbook](../campaign-history/spec.md#archive-workbook-format) is not a
 report download and is not covered.
 

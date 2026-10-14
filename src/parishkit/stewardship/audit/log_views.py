@@ -248,11 +248,13 @@ def export_logs(request):
             if configuration is None or configuration.restore_review_required:
                 return _error(ErrorCode.UNAVAILABLE, 503)
             rows = export_rows(query)
-        body = export_body(rows, fmt, zone)
+        # One instant names the file and dates its Report information.
+        now = datetime.now(UTC)
+        body = export_body(rows, fmt, zone, as_of=now)
         response = HttpResponse(
             body,
             headers=download_headers(
-                export_file_name(fmt, datetime.now(UTC)),
+                export_file_name(fmt, now),
                 content_type=EXPORT_FORMATS[fmt],
             ),
         )

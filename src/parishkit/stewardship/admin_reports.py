@@ -223,17 +223,17 @@ def export_logs(caller, service, filters, *, fmt, zone_name, context):
         with bounded_read():
             _configured()
             rows = export_rows(query)
-        body = export_body(rows, fmt, zone)
+        now = datetime.now(UTC)
+        body = export_body(rows, fmt, zone, as_of=now)
         with transaction.atomic():
             current = _recheck(caller, service.store, actor, Capability.SYSTEM_LOGS)
             _audit(Action.SYSTEM_LOGS_EXPORTED, current, count=len(rows))
-        return body, len(rows)
+        return body, len(rows), now
 
-    body, count = _held(step)
+    # One instant dates the file's Report information and names the file.
+    body, count, now = _held(step)
     context["stream"] = body
-    return log_export_model(
-        body, fmt=fmt, zone_name=zone_name, count=count, now=datetime.now(UTC)
-    )
+    return log_export_model(body, fmt=fmt, zone_name=zone_name, count=count, now=now)
 
 
 def log_export_model(body, *, fmt, zone_name, count, now):

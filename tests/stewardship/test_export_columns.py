@@ -519,8 +519,10 @@ def case_system_logs(monkeypatch):
         }
     ]
     zone = ZoneInfo("America/Chicago")
-    headers = csv_headers(log_reads.export_body(rows, "csv", zone))
-    sheets, labels = xlsx_headers(log_reads.export_body(rows, "xlsx", zone))
+    headers = csv_headers(log_reads.export_body(rows, "csv", zone, as_of=SUBMITTED))
+    sheets, labels = xlsx_headers(
+        log_reads.export_body(rows, "xlsx", zone, as_of=SUBMITTED)
+    )
     return list(log_reads.EXPORT_HEADINGS.values()), headers, sheets, None, labels
 
 
