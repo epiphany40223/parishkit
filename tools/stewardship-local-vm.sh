@@ -38,7 +38,8 @@
 #                                       Caddy, beside a new Reminder send when DURING_SEND
 #                                       is 1, for at most WAIT minutes; prints the report
 #   wizard                              complete the setup wizard unattended through
-#                                       its own service layer (LOCAL convenience)
+#                                       its own service layer, then Create the
+#                                       campaign and its first load (LOCAL convenience)
 #   sign-in EMAIL                       print a local test sign-in link (OPS-10.08)
 #   ca                                  print Caddy's local root certificate
 #
@@ -1202,19 +1203,28 @@ cmd_wizard() {
     # own service layer (seed_web.run_wizard), then the runbook's first-
     # installation step 5: once the installers report awaiting_ack, recreate
     # worker and mail-dispatch from compose.json and acknowledge each request
-    # inside them, which lets the installer finish setup. The developer-facing
-    # path is still the real wizard; this is for unattended installs and tests.
-    local parishsoft workspace
+    # inside them, which lets the installer finish setup. Setup collects no
+    # campaign (#142), so the seeder's campaign step then runs Create the
+    # campaign and loads its Families. The developer-facing path is still the
+    # real wizard; this is for unattended installs and tests.
     require_marker
     load_env
     select_compose
     seed_now=$(date -u +%FT%TZ)
     seed_scale=1
     seed_step 1800 wizard web web.yaml
-    if [ "$(jq -r .result <<<"$seed_result")" != frozen ]; then
-        echo "    nothing to finish"
-        return 0
+    if [ "$(jq -r .result <<<"$seed_result")" = frozen ]; then
+        wizard_finish
+    else
+        echo "    setup needs no finishing"
     fi
+    seed_step 1800 campaign web web.yaml
+    echo "Setup and the campaign complete in $(( $(date -u +%s) - began ))s."
+}
+
+wizard_finish() {
+    # The runbook's post-wizard step for the frozen attempt in $seed_result.
+    local parishsoft workspace
     parishsoft=$(jq -r .requests.parishsoft <<<"$seed_result")
     workspace=$(jq -r .requests.google_workspace <<<"$seed_result")
     step "Waiting for the credential installers to report awaiting_ack"
@@ -1233,7 +1243,6 @@ cmd_wizard() {
     wait_until 900 "the configuration installer to complete setup" setup_is_complete
     step "Restarting every service under the configured topology"
     start_services --force-recreate
-    echo "Setup complete in $(( $(date -u +%s) - began ))s."
 }
 
 cmd_sign_in() {

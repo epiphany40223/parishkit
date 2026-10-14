@@ -220,30 +220,36 @@ def _census_inputs(projection):
     )
 
 
-def test_wizard_campaign_values_pass_the_campaign_validator():
-    """A catalog like the synthetic parish's (25 Ministries by name, 4 funds)."""
+def test_create_campaign_fields_fill_the_real_form_and_validator():
+    """A catalog like the synthetic parish's (25 Ministries by name, 4 funds).
+
+    The seeder fills Create the campaign's own form (#142); the form and
+    the campaign validator both admit what it posts.
+    """
     from datetime import date
 
+    from parishkit.stewardship.accounts.campaign_forms import CampaignForm
     from parishkit.stewardship.campaigns import configuration
-    from parishkit.stewardship.local.seed_web import campaign_values
+    from parishkit.stewardship.local.seed_web import campaign_fields
 
     names = sorted(f"Ministry {n}" for n in range(25))
-    catalog = SimpleNamespace(
-        timezone="America/New_York",
-        result_id="00000000-0000-0000-0000-000000000001",
-        # Sorted by display name, as the setup catalog sorts them.
-        ministries=tuple((str(9000 + (hash(n) % 97)), n) for n in names),
-        funds=(
-            ("303", "Capital"),
-            ("300", "Offertory"),
-            ("301", "Other"),
-            ("302", "X"),
-        ),
-    )
-    values = campaign_values(catalog, (date(2026, 9, 27), date(2026, 10, 27)))
-    assert values["ministry_duids"] == sorted(set(values["ministry_duids"]))
+    options = {
+        # Sorted by display name, as the source catalog sorts them.
+        "ministries": [(str(9000 + n), name) for n, name in enumerate(names)],
+        "funds": [("303", "Capital"), ("300", "Offertory"), ("301", "Other")],
+    }
+    initial = {"timezone": "America/New_York", "base_digest": "a" * 64}
+    blank = CampaignForm(initial=initial, previous={}, **options)
+    data = campaign_fields(blank, (date(2026, 9, 27), date(2026, 10, 27)))
+    form = CampaignForm(data, initial=initial, previous={}, **options)
+    assert form.is_valid(), form.errors
+    values = form.values()
+    assert values["modules"] == ["census", "financial", "ministry"]
+    assert len(values["ministry_duids"]) == 25
     assert values["financial"]["fund_duids"] == [303]
     assert values["financial"]["comparison_fund_duids"] == [300]
+    # A Financial campaign starts with the default share options.
+    assert values["share_options"]
     # The real validator admits them (it raises ConfigError otherwise).
     configuration.campaign_values(values)
     # The year label is the year Families pledge for, the financial period's

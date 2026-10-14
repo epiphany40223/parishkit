@@ -178,11 +178,43 @@ def _page(request, configuration, form, *, status=200, **region):
     return response
 
 
-def _preview(request, service, actor, state, form):
-    """Validate the whole new campaign and sign its review; record nothing yet."""
+def creation_form(configuration, source, data=None, *, digest=None):
+    """The creation form over the current source's Ministries and funds.
+
+    ``digest`` is the applied configuration the form is drawn against (the
+    current one when None). The local seeder (``seed_web``) fills in the
+    same form.
+    """
+    ministries, funds = _catalog(configuration, source, {})
+    form = CampaignForm(
+        data,
+        initial={
+            "timezone": configuration.active_configuration.parish.timezone,
+            "census": True,
+            "additional_information": True,
+            "base_digest": configuration.active_configuration.digest
+            if digest is None
+            else digest,
+        },
+        previous={},
+        ministries=ministries,
+        funds=funds,
+    )
+    # Same plain-language field help as Campaign settings.
+    setup_help.apply(form, setup_help.ADMIN_CAMPAIGN, replace=True)
+    return form
+
+
+def creation_review(service, actor, state, form):
+    """Validate the whole new campaign and sign its review; record nothing yet.
+
+    Returns the review region's ``review``, or None with the reason on the
+    form's errors. The page shows either; the local seeder (``seed_web``)
+    confirms the signed ``preview`` the way the page's Apply does.
+    """
     configuration, fingerprint = state[0], state[-1]
     if not form.is_valid():
-        return _page(request, configuration, form, status=400)
+        return None
     if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:
         raise stale_page()
     values = form.values()
@@ -194,7 +226,7 @@ def _preview(request, service, actor, state, form):
                 "Edit the draft afterward to change it."
             ),
         )
-        return _page(request, configuration, form, status=400)
+        return None
     target = str(uuid4())
     # The campaign starts with the default text for every page and email its
     # modules use, added in this same configuration change so it never exists
@@ -212,8 +244,8 @@ def _preview(request, service, actor, state, form):
         build_candidate(base, patch, candidate_id=uuid4())
     except ConfigError:
         form.add_error(None, _("Check the campaign name and dates."))
-        return _page(request, configuration, form, status=400)
-    review = {
+        return None
+    return {
         "changes": describe_changes(
             {},
             values,
@@ -230,7 +262,14 @@ def _preview(request, service, actor, state, form):
             snapshot=fingerprint,
         ),
     }
-    return _page(request, configuration, form, review=review)
+
+
+def _preview(request, service, actor, state, form):
+    """The page's Review: the signed review in place, or the form's errors."""
+    review = creation_review(service, actor, state, form)
+    if review is None:
+        return _page(request, state[0], form, status=400)
+    return _page(request, state[0], form, review=review)
 
 
 @require_http_methods(["GET", "HEAD", "POST"])
@@ -300,23 +339,12 @@ def campaign_create(request):
                 if action != "preview":
                     raise first_campaign_refused()
                 refusal = first_campaign_refused().refusal
-            ministries, funds = _catalog(configuration, source, {})
-            form = CampaignForm(
+            form = creation_form(
+                configuration,
+                source,
                 request.POST if action == "preview" else None,
-                initial={
-                    "timezone": configuration.active_configuration.parish.timezone,
-                    "census": True,
-                    "additional_information": True,
-                    "base_digest": configuration.active_configuration.digest
-                    if digest is None
-                    else digest,
-                },
-                previous={},
-                ministries=ministries,
-                funds=funds,
+                digest=digest,
             )
-            # Same plain-language field help as Campaign settings.
-            setup_help.apply(form, setup_help.ADMIN_CAMPAIGN, replace=True)
             if refusal is not None:
                 response = _page(
                     request, configuration, form, status=409, refusal=refusal
