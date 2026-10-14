@@ -77,6 +77,13 @@ def test_delivery_resolutions_post_in_place():
     ]
     for region in only:
         assert names_region(text, region), region
+    # The state line and every recipient line whose outcome a resolution
+    # changes sit in #delivery-state, so none keeps a stale label.
+    start = text.index('<div id="delivery-state" data-in-place-region>')
+    state = text[start : text.index("</div>", start)]
+    for line in ("delivery.state|delivery_label", "email-recipients", "email-routed"):
+        assert line in state, line
+    assert "email-reached" in state
     for message in (
         "Evidence note saved.",
         "Delivery confirmed.",

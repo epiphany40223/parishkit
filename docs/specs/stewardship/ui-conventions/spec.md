@@ -420,10 +420,10 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   chosen file and a typed name across a sort, a page or a deletion, and a
   Mail message's resolution forms keep typed evidence across paging its
   history. A resolution posts in place: it lands on the Admin evidence,
-  whose heading takes focus, and lists the state line, history, forms and
-  bounce panel to replace too. An export's Retry and Cancel swap its status
-  panel and hand focus to Refresh status below. Regenerate, whose answer is
-  a new export's page, stays a navigation. One
+  whose heading takes focus, and lists the state and recipient lines,
+  history, forms and bounce panel to replace too. An export's Retry and
+  Cancel swap its status panel and hand focus to Refresh status below.
+  Regenerate, whose answer is a new export's page, stays a navigation. One
   request is in flight at a time: a newer choice cancels an older
   read, but a POST that saves a change is never cancelled, and other
   in-place controls and repeats are ignored (the live region says "Still

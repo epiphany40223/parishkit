@@ -195,23 +195,37 @@ def test_refused_export_retry_is_shown_once(page, component_origin):
     assert posts == [component_origin + EXPORT_REFUSED_RETRY]
 
 
-# Each resolution: its button, what the reader types, its message and the
-# email's state line once it is recorded.
+# Each resolution: its button, its message, the email's state line once it
+# is recorded, and what the Testing recipient's line then says it got.
 RESOLUTIONS = [
-    ("note", "Save evidence note", "Evidence note saved.", "Not sure it arrived"),
+    (
+        "note",
+        "Save evidence note",
+        "Evidence note saved.",
+        "Not sure it arrived",
+        "not sure it arrived",
+    ),
     (
         "accept",
         "Confirm delivery using external evidence",
         "Delivery confirmed.",
         "Delivered",
+        "delivered",
     ),
     (
         "confirm_unsent",
         "Record that the provider did not send it (no resend)",
         "Recorded as not sent.",
         "Failed",
+        "not delivered",
     ),
-    ("resend", "Authorize potentially duplicate resend", "Resend authorized.", None),
+    (
+        "resend",
+        "Authorize potentially duplicate resend",
+        "Resend authorized.",
+        None,
+        "not delivered yet",
+    ),
 ]
 
 
@@ -222,13 +236,16 @@ def resolution_form(page, name):
     )
 
 
-@pytest.mark.parametrize("action, name, message, state", RESOLUTIONS)
-def test_resolutions_are_in_place(page, component_origin, action, name, message, state):
-    """Each resolution posts once and follows the view's redirect back: the
-    state line, history, evidence and forms are swapped in where the reader
-    is. Focus goes to the evidence heading, below the forms, where the
-    decision is now listed: the fresh form, if still offered, waits for a new
-    note."""
+@pytest.mark.parametrize("action, name, message, state, outcome", RESOLUTIONS)
+def test_resolutions_are_in_place(
+    page, component_origin, action, name, message, state, outcome
+):
+    """Each resolution posts once (the resend, the riskiest, double-clicked)
+    and follows the view's redirect back: the state and recipient lines,
+    history, evidence and forms are swapped in where the reader is, so no
+    line keeps a stale outcome. Focus goes to the evidence heading, below
+    the forms, where the decision is now listed: the fresh form, if still
+    offered, waits for a new note."""
     open_marked(page, component_origin, DELIVERY[action])
     posts = count_requests(page, "POST", RESOLVE[action])
     form = resolution_form(page, name)
@@ -237,14 +254,23 @@ def test_resolutions_are_in_place(page, component_origin, action, name, message,
         form.get_by_role("checkbox").check()
     button = form.get_by_role("button", name=name, exact=True)
     offset = wheel_to(page, button)
-    button.click()
+    if action == "resend":
+        button.dblclick()
+    else:
+        button.click()
     announced(page, message)
     stayed(page, offset)
+    routed = page.locator("#delivery-state #email-routed")
+    visible(routed.get_by_text(f"testing@example.org ({outcome})"))
+    if outcome != "not sure it arrived":
+        assert "not sure it arrived" not in routed.inner_text()
     evidence = page.locator("#delivery-evidence")
     focused(evidence.get_by_role("heading", name="Admin evidence and decisions"))
     visible(evidence.get_by_text(SAVED_NOTE).first)
     if state:
-        visible(page.locator("#delivery-state").get_by_text(state, exact=False))
+        visible(
+            page.locator("#delivery-state > p").first.get_by_text(state, exact=False)
+        )
     if action == "note":
         # Still offered, at the new version, emptied and waiting again.
         fresh = resolution_form(page, name)

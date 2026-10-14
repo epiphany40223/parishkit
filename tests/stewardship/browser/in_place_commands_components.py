@@ -138,9 +138,10 @@ def components(context, admin):
             context | {"admin_chrome": admin | {"delivery_unknown": 1}} | values,
         )
 
-    def recorded(action, state):
+    def recorded(action, state, outcome=None):
         """The page once ``action`` was recorded and left the email ``state``:
-        the decision is the newest evidence and history entry, and only the
+        the decision is the newest evidence and history entry, the Testing
+        recipient's line says ``outcome`` (else as before), and only the
         evidence note is still offered (none for a note, which changes
         nothing)."""
         note = dict(action=action, created_at=now, evidence_note=SAVED_NOTE)
@@ -150,22 +151,28 @@ def components(context, admin):
             "notes": [note, *base["notes"]],
             "events": [event, *base["events"]],
         }
+        if outcome:
+            routed = [
+                (address, outcome) for address, _ in base["recipients"]["routed_rows"]
+            ]
+            changes["recipients"] = base["recipients"] | {"routed_rows": routed}
         if action != "note":
             changes |= {"decisions": False, "commands": note_only}
         return changes
 
-    for action, state in (
-        ("note", "delivery_unknown"),
-        ("accept", "delivered"),
-        ("confirm_unsent", "permanent_failure"),
-        ("resend", "pending"),
+    # The outcome labels as delivery_reads.recipient_rows words them.
+    for action, state, outcome in (
+        ("note", "delivery_unknown", None),
+        ("accept", "delivered", "delivered"),
+        ("confirm_unsent", "permanent_failure", "not delivered"),
+        ("resend", "pending", "not delivered yet"),
     ):
         # The note email also has a second history page, so paging can be
         # checked to keep a note being typed.
         paged = {"next_query": "page=2"} if action == "note" else {}
         responses[DELIVERY[action]] = delivery(action, **paged)
         responses[_stand_in(DELIVERY[action], "resolved")] = delivery(
-            action, **recorded(action, state)
+            action, **recorded(action, state, outcome)
         )
     responses[DELIVERY["note"] + "?page=2"] = delivery(
         "note",
