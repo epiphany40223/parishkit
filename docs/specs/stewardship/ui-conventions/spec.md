@@ -307,8 +307,10 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   "Families on the form now", the page links of a mail delivery's
   evidence and attempt history, an information item's and a Ministry
   follow-up request's history, and a weekly information report, and the
-  Refresh links of the key replacement status, Family email progress and
-  Family test pages) or a form whose answer is the page again
+  Refresh links of the key replacement status, Family email progress,
+  Family test, Background task, Change status, report export and
+  latest-data export pages; Refresh task also keeps the task history's
+  sort and page) or a form whose answer is the page again
   (`form[data-in-place]`, such as a POST whose server redirects back to the
   page: Save follow-up on an information item and on a
   [Ministry follow-up request](../admin-portal/spec.md#follow-up-workflows); System logs'

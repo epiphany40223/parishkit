@@ -3,7 +3,7 @@
 {% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
 {% block content %}
 <h1>{% translate "Latest-data export" %}</h1>
-<section class="panel export-live" aria-live="polite" data-live-status="exact" data-export-state="{{ status.state }}"{% if not status.export_id and status.state != 'failed' and status.state != 'abandoned' and status.state != 'cancelled' %} data-live-pending{% endif %}>
+<div id="export-status" data-in-place-region><section class="panel export-live" aria-live="polite" data-live-status="exact" data-export-state="{{ status.state }}"{% if not status.export_id and status.state != 'failed' and status.state != 'abandoned' and status.state != 'cancelled' %} data-live-pending{% endif %}>
 {% if status.export_id %}
 <p class="export-state export-state-ready" role="status">{% translate "The export's figures are ready." %}</p>
 <p>{% url 'admin:report_export' status.export_id as button_href %}{% button href=button_href variant="primary" data-live-follow %}{% translate "Open the file and download it" %}{% endbutton %}</p>
@@ -13,8 +13,8 @@
 {% else %}<p class="export-state export-state-pending" role="status"><span class="spinner" aria-hidden="true"></span> {% if wait %}{% include 'stewardship/queue-wait.html' %}{% else %}{% translate "Calculating the figures…" %}{% endif %}</p>
 <p class="help">{% translate "This usually takes a few seconds, and this page updates by itself. The file always uses the data as it was when you requested it." %}</p>{% endif %}
 {% if can_cancel %}<form method="post" action="{% url 'admin:report_export_cancel' job.pk %}">{% csrf_token %}{% button type="submit" variant="secondary" enabled=mutable aria-describedby=mutable|yesno:",export-locked" %}{% translate "Cancel export" %}{% endbutton %}</form>{% endif %}
-</section>
-<p><a href="{% url 'admin:report_export' job.pk %}">{% translate "Refresh status" %}</a> · <a href="{{ report_url }}">{% translate "Return to Participation" %}</a></p>
+</section></div>
+<p><a href="{% url 'admin:report_export' job.pk %}#export-status" data-in-place="refresh" data-in-place-message="{% translate 'Status refreshed.' %}">{% translate "Refresh status" %}</a> · <a href="{{ report_url }}">{% translate "Return to Participation" %}</a></p>
 <dl><dt>{% translate "Format" %}</dt><dd>{{ job.format|upper }}</dd>
 <dt>{% translate "Population" %}</dt><dd>{% if job.population_scope == 'historical' %}{% translate "Historical as of day" %}{% else %}{% translate "Current population" %}{% endif %}</dd>
 <dt>{% translate "ParishSoft data as of" %}</dt><dd><time datetime="{{ source.promoted_at|date:'c' }}" data-local-instant>{{ source.promoted_at|date:'c' }}</time></dd>
@@ -27,5 +27,5 @@
 <dt>{% translate "Responses included up to number" %}</dt><dd>{{ job.submission_watermark|number }}</dd></dl>
 <p>{% translate "These values were fixed when you requested the export. Waiting and retrying never switch to newer ParishSoft data or later responses. Refreshing this page does not extend your sign-in." %}</p>
 </details>
-{% if not mutable %}<p class="notice" id="export-locked">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so cancelling and retrying are unavailable until it finishes or is cancelled; going live can take days. Files that are ready can still be downloaded." %}</p>{% endif %}
+<div id="export-lock" data-in-place-region>{% if not mutable %}<p class="notice" id="export-locked">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so cancelling and retrying are unavailable until it finishes or is cancelled; going live can take days. Files that are ready can still be downloaded." %}</p>{% endif %}</div>
 {% endblock %}

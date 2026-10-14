@@ -13,7 +13,7 @@ from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts.admin_editing import in_place_follow, review_region
 from parishkit.stewardship.accounts.presence import PRESENCE_SORTING
-from parishkit.stewardship.jobs.views import TASK_SORTING
+from parishkit.stewardship.jobs.views import EVENT_SORTING, TASK_SORTING
 from parishkit.stewardship.web.contracts import PageWindow
 from parishkit.stewardship.web.tables import paginate, window_table
 
@@ -444,6 +444,93 @@ def test_live_status_pages_refresh_and_dismiss_in_place():
     summary = (TEMPLATES / "integration-summary.html").read_text()
     form = re.search(r"<form [^>]*dismiss_credential_result[^>]*>", summary).group(0)
     assert '#integration-status" ' in form and 'data-in-place="dismiss"' in form
+
+
+def test_remaining_live_status_refreshes_are_in_place():
+    """Refresh on Background task, Change status and both report export pages
+    re-reads the page in place (#519 PR 7b): each link names a region that
+    wraps the page's live-status element, so live-status-v1.js watches the
+    fresh one, and says what it did. The export pages' campaign-work notice
+    is a region of its own, drawn even when empty, so it comes and goes with
+    the buttons it explains."""
+    for name, region, words, message in (
+        ("background-task.html", "task-status", "Refresh task", "Task refreshed."),
+        (
+            "configuration-request.html",
+            "change-status",
+            "Refresh status",
+            "Status refreshed.",
+        ),
+        ("report-export.html", "export-status", "Refresh status", "Status refreshed."),
+        ("report-exact.html", "export-status", "Refresh status", "Status refreshed."),
+    ):
+        text = (TEMPLATES / name).read_text()
+        link = re.search(rf'<a [^>]*>{{% translate "{words}" %}}</a>', text).group(0)
+        assert f'#{region}"' in link and 'data-in-place="refresh"' in link, name
+        assert f"data-in-place-message=\"{{% translate '{message}' %}}\"" in link
+        head = text.split(f'<div id="{region}" data-in-place-region>', 1)[1]
+        head = head.split("</div>", 1)[0]
+        # The region holds the live-status element itself, or only the
+        # include that draws it.
+        assert "data-live-status" in head or re.fullmatch(
+            r"\{% include 'stewardship/[\w-]+-status\.html' %\}", head
+        ), name
+        if name.startswith("report-"):
+            assert re.search(
+                r'<div id="export-lock" data-in-place-region>\{% if not mutable %\}'
+                r'<p class="notice" id="export-locked">',
+                text,
+            ), name
+
+
+def test_refresh_task_keeps_the_history_view():
+    """Refresh task keeps the Task history's sort, size and page, and follows
+    later table choices (data-table-sync). The latest retry and the technical
+    details are regions too, the details' list inside the disclosure, so a
+    refresh never closes it."""
+    events = [
+        {
+            "version": 1,
+            "at": NOW.isoformat(),
+            "action": "created",
+            "state": "queued",
+            "progress": {"phase": "", "current": 0, "total": 0},
+            "phase_text": "",
+        }
+    ]
+    history = window_table(
+        PageWindow(2, 20),
+        events,
+        False,
+        total=(30, False),
+        sorting=EVENT_SORTING,
+        sort="-version",
+    )
+    task = {
+        "id": UUID(int=5),
+        "name": "Refresh",
+        "type": "source_refresh",
+        "state": "running",
+        "active": True,
+        "attempt": 1,
+        "retry_sequence": 0,
+        "created_at": NOW.isoformat(),
+        "updated_at": NOW.isoformat(),
+        "progress": {"phase": "", "current": 0, "total": 0},
+    }
+    page = render_to_string(
+        "stewardship/background-task.html",
+        {"task": task, "work": {"events": events}, "history": history},
+    )
+    link = re.search(r'<a id="task-refresh"[^>]*>', page).group(0)
+    assert "data-table-sync" in link
+    assert f'href="/admin/system/background/{task["id"]}/?' in link
+    assert "sort=-version" in link and "page=2#task-status" in link
+    assert '<div id="task-latest" data-in-place-region>' in page
+    details = page.split('<details class="technical-details">', 1)[1]
+    assert details.split("</details>", 1)[0].count(
+        '<dl id="task-details" data-in-place-region>'
+    )
 
 
 @pytest.mark.parametrize("state", ["applied", "failed", "cancelled", "staged"])

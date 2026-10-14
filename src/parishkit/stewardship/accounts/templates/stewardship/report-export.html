@@ -7,11 +7,14 @@
   The live region is what live-status-v1.js refreshes in place while the export is
   queued or running (it re-reads this passive page, which never extends the
   login session). When the file becomes ready while the page watches, the
-  download starts once by itself. Refresh status reloads the whole page.
+  download starts once by itself. Refresh status re-reads the panel (and the
+  campaign-work notice) in place (ui-v1.js, a[data-in-place], #519); a file it
+  finds ready waits for Download, as on an ordinary load, and live-status-v1.js
+  watches a fresh panel that is still pending.
   While the export's task is still queued (not yet claimed by a worker),
   ``wait`` says why it has not started and how long it has waited (#340).
 {% endcomment %}
-<section class="panel export-live" aria-live="polite" data-live-status="export" data-export-state="{{ status.state }}"{% if status.state == 'queued' or status.state == 'running' or status.state == 'retry_wait' %} data-live-pending{% endif %}>
+<div id="export-status" data-in-place-region><section class="panel export-live" aria-live="polite" data-live-status="export" data-export-state="{{ status.state }}"{% if status.state == 'queued' or status.state == 'running' or status.state == 'retry_wait' %} data-live-pending{% endif %}>
 {% if status.state == 'ready' %}
   <p class="export-state export-state-ready" role="status">{% translate "Your file is ready." %}</p>
   <form method="post" action="{% url 'admin:report_export_download' job.pk %}" data-live-autosubmit>{% csrf_token %}{% button type="submit" variant="large" %}{% translate "Download export" %}{% endbutton %}</form>
@@ -35,10 +38,10 @@
 {% endif %}
 {% if can_cancel %}<form method="post" action="{% url 'admin:report_export_cancel' job.pk %}">{% csrf_token %}{% button type="submit" variant="secondary" enabled=mutable aria-describedby=mutable|yesno:",export-locked" %}{% translate "Cancel export" %}{% endbutton %}</form>{% endif %}
 {% if status.expires_at %}<p class="help">{% translate "File available until" %} <time datetime="{{ status.expires_at }}" data-local-instant>{{ status.expires_at }}</time>.</p>{% endif %}
-</section>
+</section></div>
 {% if testing_codes %}<p class="notice" data-testing-codes>{% translate "These are the live codes; they work only after go-live." %} {% if testing_codes_administrator %}{% translate "To try the Family form now, send yourself a test invitation." %}{% else %}{% translate "To try the Family form now, ask an Administrator for a test invitation." %}{% endif %}{% if family_test_url %} <a href="{{ family_test_url }}">{% translate "Try the Family form as a chosen Family" %}</a>{% endif %}</p>{% endif %}
-<p><a href="{% url 'admin:report_export' job.pk %}">{% translate "Refresh status" %}</a> · <a href="{{ report_url }}">{% blocktranslate %}Return to {{ report_name }}{% endblocktranslate %}</a></p>
-{% if not mutable %}<p class="notice" id="export-locked">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so new exports, cancelling and retrying are unavailable until it finishes or is cancelled; going live can take days. Files that are ready can still be downloaded." %}</p>{% endif %}
+<p><a href="{% url 'admin:report_export' job.pk %}#export-status" data-in-place="refresh" data-in-place-message="{% translate 'Status refreshed.' %}">{% translate "Refresh status" %}</a> · <a href="{{ report_url }}">{% blocktranslate %}Return to {{ report_name }}{% endblocktranslate %}</a></p>
+<div id="export-lock" data-in-place-region>{% if not mutable %}<p class="notice" id="export-locked">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so new exports, cancelling and retrying are unavailable until it finishes or is cancelled; going live can take days. Files that are ready can still be downloaded." %}</p>{% endif %}</div>
 <details class="technical-details"><summary>{% translate "Technical details" %}</summary>
 <dl><dt>{% translate "Format" %}</dt><dd>{{ job.format|upper }}</dd>
 <dt>{% translate "Requested by (user reference)" %}</dt><dd>{{ job.requester_id }}</dd>
