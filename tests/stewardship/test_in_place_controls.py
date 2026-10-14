@@ -124,7 +124,6 @@ def test_presence_refresh_refreshes_the_list_in_place():
 # confirmed change shows, whose follow-up link names it too.
 SETTINGS_PAGES = (
     "parish-settings.html",
-    "share-settings.html",
     "reminder-workgroup.html",
 )
 # Campaign images and Parish logos review their uploads (and removals) in the
@@ -610,12 +609,19 @@ def test_review_button_hint_follows_it_and_keeps_its_space():
     assert ".unchanged-hint[data-idle] { visibility: hidden; }" in css
 
 
-def test_option_lists_word_their_review_hint():
+def test_share_options_review_in_the_dialog():
     """Share options say "option", not "setting", in the hint after its
-    Review changes button (#921)."""
+    Review changes button (#921); its form opens the shared review dialog
+    (#750) from a region redrawn from the page's address once a change is
+    applied, and the page draws no in-place review region."""
     text = (TEMPLATES / "share-settings.html").read_text()
     form = re.search(r'<form id="settings-form"[^>]*>', text).group(0)
     assert 'data-require-change="base_digest"' in form
+    assert 'data-review-open="share-review"' in form
+    assert "data-in-place" not in form
+    assert 'data-refresh-url="{{ refresh_url }}"' in text
+    assert "settings-review" not in text
+    assert 'dialog_id="share-review"' in text and "review=True" in text
     assert 'translate "Change an option to review it." as option_hint' in text
     assert "review-changes-button.html' with hint=option_hint" in text
 
