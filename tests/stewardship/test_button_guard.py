@@ -198,3 +198,96 @@ def test_aria_states_are_spelled_out(value, expected):
         '{% button type="button" aria-pressed=state %}x{% endbutton %}', state=value
     )
     assert html == f'<button type="button"{expected}>x</button>'
+
+
+# ---------------------------------------------------------------- labels
+# Button labels don't end in an ellipsis, even when a review step follows
+# (ui-conventions Button labels, #1268). The scan reads only what a button
+# says: the body of each {% button %}, raw <button> and button-class link.
+# Progress text ("Saving…", data-working) and truncation sit outside those
+# bodies, so they need no exception here.
+#
+# ELLIPSIS_ALLOWED names reviewed exceptions, template -> reason; it is
+# empty, and each new entry needs the reason a label must trail off.
+ELLIPSIS_ALLOWED: dict[str, str] = {}
+
+BUTTON_BODY = re.compile(
+    r"{% button\b.*?%}(?P<tag>.*?){% endbutton %}"
+    r"|<button\b[^>]*>(?P<raw>.*?)</button>"
+    r"""|<a\b[^>]*\bclass=["']button\b[^>]*>(?P<link>.*?)</a>""",
+    re.S,
+)
+TRANSLATED = re.compile(r"""{% translate (["'])(.*?)\1""")
+MARKUP = re.compile(r"{%.*?%}|{{.*?}}|<[^>]*>", re.S)
+TRAILING_ELLIPSIS = ("…", "...", "&hellip;")
+
+
+def label_texts(body):
+    """What a button body can show: each translated literal in it (one per
+    {% if %} branch) and its text once every tag and variable is removed."""
+    texts = [literal for _, literal in TRANSLATED.findall(body)]
+    return [*texts, MARKUP.sub("", body)]
+
+
+def trailing_ellipsis_labels(source):
+    """Button labels in a template source that end in an ellipsis."""
+    found = []
+    for match in BUTTON_BODY.finditer(COMMENT.sub("", source)):
+        body = match["tag"] or match["raw"] or match["link"] or ""
+        found += [
+            text.strip()
+            for text in label_texts(body)
+            if text.strip().endswith(TRAILING_ELLIPSIS)
+        ]
+    return found
+
+
+@pytest.mark.parametrize("name", ALL_TEMPLATES)
+def test_button_labels_do_not_end_in_an_ellipsis(name):
+    """No button label trails off, even before a review step (#1268)."""
+    if name in ELLIPSIS_ALLOWED:
+        return
+    labels = trailing_ellipsis_labels((TEMPLATES / name).read_text())
+    assert not labels, (
+        f"{name}: drop the trailing ellipsis from {labels} "
+        "(ui-conventions spec, Button labels)"
+    )
+
+
+def test_ellipsis_allowances_are_still_needed():
+    """An exception names a real template and a reason, and goes as soon as
+    its label loses the ellipsis. (One test, not one per entry, so the empty
+    map runs rather than skips.)"""
+    for name, reason in ELLIPSIS_ALLOWED.items():
+        assert name in ALL_TEMPLATES and reason.strip(), name
+        assert trailing_ellipsis_labels((TEMPLATES / name).read_text()), name
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        '{% button type="submit" %}{% translate "Take a backup now…" %}{% endbutton %}',
+        '{% button href=url %}{% translate "Open..." %}{% endbutton %}',
+        '{% button type="button" %}{% if a %}{% translate "Send these again…" %}'
+        '{% else %}{% translate "Send" %}{% endif %}{% endbutton %}',
+        '<button type="submit">Release the site&hellip;</button>',
+        '<a href="/x" class="button button-secondary">Review… </a>',
+    ],
+)
+def test_the_label_guard_catches_a_trailing_ellipsis(source):
+    """Each button form, and either branch of an {% if %}, is read."""
+    assert trailing_ellipsis_labels(source)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        '{% button type="submit" %}{% translate "Take a backup now" %}{% endbutton %}',
+        '<p data-working="{% translate \'Working…\' %}">{% translate "Saving…" %}</p>',
+        '{% button type="submit" %}{% translate "Use … in a name" %}{% endbutton %}',
+        '{% comment %}{% button type="submit" %}Old…{% endbutton %}{% endcomment %}',
+    ],
+)
+def test_the_label_guard_leaves_other_ellipses_alone(source):
+    """Progress text, a mid-label ellipsis and comments are not labels."""
+    assert not trailing_ellipsis_labels(source)
