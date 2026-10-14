@@ -48,6 +48,25 @@ def test_custom_property_fallbacks_match(name):
             assert fallback.strip() == tokens.CSS_PROPERTIES[prop], (name, prop)
 
 
+# Every other stylesheet loads after ui-v1.css and so reads its tokens
+# directly. chart-v1.css is exempt: its vega-tooltip rules are vendored as
+# published.
+TOKEN_ONLY = sorted(
+    p.name for p in STATIC.glob("*.css") if p.name not in {"ui-v1.css", "chart-v1.css"}
+)
+
+
+@pytest.mark.parametrize("name", TOKEN_ONLY)
+def test_page_stylesheets_take_colours_only_from_the_tokens(name):
+    """No hex colour and no var() fallback outside ui-v1.css (#732), so a
+    token changes in one place. Every page loads ui-v1.css first."""
+    css = COMMENT.sub("", (STATIC / name).read_text())
+    assert not re.findall(r"#[0-9a-fA-F]{3,8}\b", css)
+    assert not re.findall(r"var\(--[a-z0-9-]+\s*,", css)
+    # Every token the stylesheet reads exists.
+    assert set(re.findall(r"var\(--([a-z0-9-]+)\)", css)) <= set(root_properties())
+
+
 def test_lengths_and_colours_convert_for_email():
     """rem lengths become whole pixels; short hex becomes six digits."""
     assert tokens.px(".5rem") == 8 and tokens.px("2px") == 2
