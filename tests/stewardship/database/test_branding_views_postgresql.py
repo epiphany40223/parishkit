@@ -176,6 +176,9 @@ def test_other_login_cannot_preview_an_unapplied_upload(auth_service, google, me
     another, _ = signed_in()
     elsewhere = confirm_review(another, review)
     assert elsewhere.status_code == 404
+    # The dialog says to reload (#750): a retry can never succeed, so it is
+    # not "try again in a moment".
+    assert "Reload the page, then upload the logo again." in refusal(elsewhere)
     assert not ConfigurationChangeRequest.objects.filter(
         patch__0__section="parish", patch__0__values__has_key="branding"
     ).exists()
