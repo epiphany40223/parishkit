@@ -641,7 +641,8 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   length changes never moves the form or the review.
 - **Review dialog: Campaign images (#750).** Campaign images reviews in the
   [review dialog](#review-dialog). It has no settings form: each slot's
-  upload form (multipart, which the dialog's Review sends as it is) and its
+  upload form (multipart, sent as
+  [preparing the review](#review-dialog) says) and its
   Remove this image (a text-styled button in a form of its own, drawn only
   when the slot has an image) open the dialog with the image as it will
   appear, or the removal. The slots are one in-place region, redrawn after
@@ -992,7 +993,9 @@ section says how every Review behaves.
   refuses an unchanged Review, as a safeguard for requests that bypass the
   page script.
 - **Preparing the review.** Review changes posts the form without a page
-  load. Until the answer arrives the form is inert and marked busy, and
+  load, sent as a native submit would send it: multipart when the form's
+  enctype is `multipart/form-data` (an upload editor's file), otherwise
+  URL-encoded. Until the answer arrives the form is inert and marked busy, and
   Review changes says it is working, so nothing can be edited while the
   review is being prepared.
 - **Field errors stay on the form.** A Review refused for the values in the
