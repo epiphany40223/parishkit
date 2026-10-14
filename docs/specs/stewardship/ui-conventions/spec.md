@@ -1533,7 +1533,8 @@ The portal and the emails share one visual style
   colours, corner radii, fonts and button shape. The portal stylesheet
   declares them as CSS custom properties, and a unit test fails if the two
   disagree, including any `var()` fallback in another stylesheet. The other
-  stylesheets (the setup wizard, the report pages and the session dialog)
+  stylesheets (the setup wizard, the stepper it shares with the Campaign
+  setup pages, the report pages and the session dialog)
   load after it and read the tokens directly, with no hex colour and no
   fallback; only the vendored chart tooltip rules are exempt. The setup
   wizard's Back and Continue buttons take the shared button shape. Email
