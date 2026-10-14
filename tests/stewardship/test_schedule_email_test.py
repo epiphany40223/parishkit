@@ -66,7 +66,7 @@ def test_an_email_no_schedule_can_send_or_no_longer_saved_is_stale():
 
 
 def test_a_refused_text_names_each_field_by_its_label():
-    """Field problems carry the field's label; whole-email ones none."""
+    """Every field problem, a missing Family code included, carries its label."""
     data = QueryDict(mutable=True)
     data.update({"subject": "", "html": "<p>Please respond.</p>"})
     form = schedule_email.ScheduleEmailForm(data, kind="email", slot="reminder")
@@ -78,7 +78,9 @@ def test_a_refused_text_names_each_field_by_its_label():
     form = schedule_email.ScheduleEmailForm(data, kind="email", slot="reminder")
     assert not form.is_valid()
     errors = _errors(form)
-    assert errors and all(item["field"] is None for item in errors)
+    # A missing code or link is shown at the HTML field it is fixed in
+    # (#563), so it is labelled with that field.
+    assert errors and all(item["field"] for item in errors)
     assert "{{ family_code }}" in " ".join(item["message"] for item in errors)
 
 

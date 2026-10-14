@@ -160,6 +160,30 @@ def campaign_email_usage(configuration, campaign_id):
     )
 
 
+def removal_reason(configuration, campaign, previous, note):
+    """Why the editor's "Remove this selected content" can't be used, or None.
+
+    The server would refuse it (#563): with nothing saved in the slot there
+    is nothing to remove, and an email a mail schedule still sends can't be
+    removed until that schedule sends another (revision_patch). The editor
+    shows the box disabled with this reason instead of refusing afterwards.
+    A retired receipt closing note (``note``) is saved text the removal
+    takes away, so it counts as something to remove.
+    """
+    if previous is None:
+        if note is None:
+            return _("Nothing is saved here yet, so there is nothing to remove.")
+        return None
+    names = campaign_email_usage(configuration, campaign.pk).get(previous["id"])
+    if not names:
+        return None
+    return _(
+        "Scheduled mail still sends this email (%(names)s), so it can't be "
+        "removed. Choose another email for them under Dates and mail "
+        "schedules first."
+    ) % {"names": ", ".join(str(name) for name in names)}
+
+
 def _content_state(record):
     """Catalog status of one revision: "empty", "default" (unmodified) or "custom"."""
     if record is None:
@@ -586,6 +610,9 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
                     slot=slot,
                     initial=initial,
                     banner=_shows_banner(campaign, kind, slot),
+                    clear_unavailable=removal_reason(
+                        configuration, campaign, previous, note
+                    ),
                 )
                 # The same plain-language field help the setup wizard shows;
                 # long help opens from an "i" beside the label.

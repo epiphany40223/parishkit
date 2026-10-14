@@ -132,7 +132,8 @@ def test_the_content_rules_apply_and_their_errors_reach_the_summary():
     )
     _toggle, form, _sources = schedule_email.editor(data, records, row, CAMPAIGN)
     assert not form.is_valid()
-    assert "{{ family_code }}" in " ".join(form.non_field_errors())
+    # At the field the code is missing from (#563), so the summary links it.
+    assert "{{ family_code }}" in " ".join(form.errors["html"])
     blank = data.copy()
     blank["subject"] = ""
     _toggle, form, _sources = schedule_email.editor(blank, records, row, CAMPAIGN)
@@ -183,7 +184,7 @@ def test_new_checks_the_email_against_the_posted_mail_type():
     _toggle, form, _sources = schedule_email.editor(data, records, None, CAMPAIGN)
     assert form.slot == "reminder"
     assert not form.is_valid()
-    assert "{{ family_code }}" in " ".join(form.non_field_errors())
+    assert "{{ family_code }}" in " ".join(form.errors["html"])
     data["html"] = "<p>Please respond." + CODE + "</p>"
     _toggle, form, _sources = schedule_email.editor(data, records, None, CAMPAIGN)
     assert form.is_valid(), form.errors
@@ -263,7 +264,7 @@ def test_code_and_link_placeholders_stay_required_in_both_parts():
     )
     _toggle, form, _sources = schedule_email.editor(data, records, row, CAMPAIGN)
     assert not form.is_valid()
-    assert "{{ family_url }}" in " ".join(form.non_field_errors())
+    assert "{{ family_url }}" in " ".join(form.errors["text"])
 
 
 def test_a_whole_email_refusal_is_put_at_its_html_source():

@@ -18,8 +18,10 @@ from parishkit.stewardship.campaigns.configuration import (
     campaign_values,
     leader_role_key,
 )
+from parishkit.stewardship.campaigns.intervals import financial_period_end
 from parishkit.stewardship.campaigns.leader_roles import canonical_roles
 from parishkit.stewardship.schema_primitives import timezone_names
+from parishkit.stewardship.web.presentation import parish_date
 
 from .share_forms import default_share_options
 
@@ -48,6 +50,14 @@ FINANCIAL_REQUIRED = (
     "comparison_end",
     "fund_duids",
     "comparison_fund_duids",
+)
+# Each end date and the start it must follow (#563). The browser takes the
+# start as the end's min (data-not-before, ui-v1.js) and the server puts an
+# order or one-year refusal at the end field, not at the top of the page.
+DATE_PAIRS = (
+    ("start_date", "end_date"),
+    ("financial_start", "financial_end"),
+    ("comparison_start", "comparison_end"),
 )
 
 
@@ -219,6 +229,74 @@ class CampaignForm(forms.Form):
         for name in FINANCIAL_REQUIRED:
             self.fields[name].widget.attrs["data-required-when"] = financial_on
         self.fields["overlap_confirmed"].template_name = OVERLAP_TEMPLATE
+        if whole:
+            self._mark_date_order()
+
+    def _mark_date_order(self):
+        """Let the browser hold an end date before its start (#563).
+
+        Each end names its start by element id (data-not-before), so the page
+        script makes the start its min and the complete gate holds Review with
+        the end's hint until the order is right. A financial end left empty
+        keeps the financial fieldset's own hint (data-empty-hint). The server
+        still checks the order and the one-year span (_date_errors). A live
+        campaign's end date (``whole`` False) has its own live check instead.
+        """
+        hints = {
+            "end_date": _("Choose a campaign end date after its start date."),
+            "financial_end": _(
+                "Choose an upcoming financial period end one year after its start."
+            ),
+            "comparison_end": _(
+                "Choose a comparison financial period end one year after its start."
+            ),
+        }
+        for start, end in DATE_PAIRS:
+            attrs = self.fields[end].widget.attrs
+            # The id the start is drawn with (BoundField.auto_id), worked out
+            # without binding it: a BoundField made now would be cached
+            # before field_tips swaps in its tip-aware class.
+            attrs["data-not-before"] = self.auto_id % self.add_prefix(start)
+            attrs["data-missing-hint"] = hints[end]
+            if end != "end_date":
+                attrs["data-empty-hint"] = _(
+                    "Fill in both financial periods and their funds."
+                )
+
+    def _date_errors(self, data):
+        """Put a date order or one-year refusal at the end field it is about.
+
+        The rules are campaign_values' own: a campaign ends strictly after it
+        starts, and each financial period ends the day before its start's
+        first anniversary (financial_period_end). Returns whether any was
+        found, so clean() can skip the whole-campaign check's generic
+        message for a problem already shown at its field.
+        """
+        found = False
+        if data["end_date"] <= data["start_date"]:
+            self.add_error(
+                "end_date", _("The campaign end date must be after its start date.")
+            )
+            found = True
+        if data["financial_enabled"]:
+            for start, end in DATE_PAIRS[1:]:
+                try:
+                    expected = financial_period_end(data[start])
+                except (ValueError, OverflowError):
+                    self.add_error(start, _("Choose an earlier start date."))
+                    found = True
+                    continue
+                if data[end] != expected:
+                    self.add_error(
+                        end,
+                        _(
+                            "A financial period spans exactly one year: with this "
+                            "start, it ends on %(date)s."
+                        )
+                        % {"date": parish_date(expected)},
+                    )
+                    found = True
+        return found
 
     @property
     def overlap_needed(self):
@@ -289,7 +367,7 @@ class CampaignForm(forms.Form):
                         "dates. Check this box to confirm that is intended."
                     ),
                 )
-        if not self.errors and self.whole:
+        if not self.errors and self.whole and not self._date_errors(data):
             try:
                 campaign_values(self.values())
             except (ConfigError, ValueError):

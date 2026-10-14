@@ -29,6 +29,7 @@ FINANCIAL_HINT = "Fill in both financial periods and their funds."
 OVERLAP_HINT = "Confirm the overlap with the campaign dates, or change the dates."
 SLACK_HINT = "Enter the Slack channel ID, or untick Enable Slack notifications."
 UNCHANGED_HINT = "Change a setting to review it."
+END_HINT = "Choose a campaign end date after its start date."
 
 
 def restore(locator, script):
@@ -196,6 +197,38 @@ def test_campaign_settings_review_waits_for_a_change_and_completeness(
     name.fill("Renamed campaign")
     ready(review, hint)
     changed(page)
+    assert not failures
+
+
+def test_campaign_settings_waits_for_an_end_date_after_its_start(
+    page, component_origin
+):
+    """An end date before the start holds Review with the end date's hint,
+    as soon as it is entered and again on pageshow; the start sets the end's
+    min (data-not-before), so the date picker offers no earlier day (#563)."""
+    failures = []
+    page.on("pageerror", lambda error: failures.append(str(error)))
+    page.goto(component_origin + "/campaign-settings")
+    review = page.get_by_role("button", name="Review changes")
+    hint = page.locator("#settings-complete-hint")
+    start = page.get_by_label("Campaign start date")
+    end = page.get_by_label("Campaign end date")
+    assert end.get_attribute("min") == "2026-10-01"
+    where = (spot(end), spot(review))
+    end.fill("2026-09-15")
+    waits_with(review, hint, END_HINT)
+    assert (spot(end), spot(review)) == where
+    end.fill("2026-11-15")
+    ready(review, hint)
+    # A later start moves the end's min with it.
+    start.fill("2026-11-20")
+    assert end.get_attribute("min") == "2026-11-20"
+    waits_with(review, hint, END_HINT)
+    start.fill("2026-10-01")
+    ready(review, hint)
+    # A start restored from history, without an event, is checked again.
+    restore(start, "field => { field.value = '2026-12-01'; }")
+    waits_with(review, hint, END_HINT)
     assert not failures
 
 
