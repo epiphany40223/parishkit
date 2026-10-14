@@ -594,21 +594,8 @@ def component_origin():
             {
                 "form": LogoUploadForm(initial={"base_digest": "a" * 64}),
                 "assets": [branding_asset],
-            },
-        ),
-        # Parish logos with its upload's review in place (#750).
-        (
-            "/branding-preview",
-            "branding-settings",
-            {
-                "form": LogoUploadForm(initial={"base_digest": "a" * 64}),
-                "assets": [branding_asset],
-                "review": {
-                    "template": "stewardship/branding-review.html",
-                    "notes": [],
-                    "assets": [branding_asset],
-                    "preview": "synthetic-preview",
-                },
+                "page_url": "/branding-settings",
+                "refresh_url": "/branding-settings",
             },
         ),
         (

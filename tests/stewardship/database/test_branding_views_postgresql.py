@@ -1,4 +1,4 @@
-"""Logo upload/preview/application through real Admin HTTP and durable media files."""
+"""Logo upload, review dialog and application through real Admin HTTP and media."""
 
 import io
 import re
@@ -22,7 +22,6 @@ from .auth_builders import signed_in
 from .campaign_builders import change
 from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_background_grants_postgresql import task_login
-from .test_parish_views_postgresql import region
 
 pytestmark = pytest.mark.django_db(transaction=True)
 URL = "/admin/parish/logos/"
@@ -53,16 +52,44 @@ def post(browser, url, values):
     )
 
 
-def stage(browser, service):
-    """Upload once and return the owner-only review address actually returned:
-    Parish logos naming the staged logos (#750), without its region fragment."""
+def stage(browser, service, values=None):
+    """Upload once (one image, or ``values``) and return the review dialog's
+    fragment of the staged logos (#750), which carries what Apply posts."""
     result = post(
-        browser, URL, {"base_digest": service.store.active().digest, "logo": upload()}
+        browser,
+        URL,
+        {"base_digest": service.store.active().digest}
+        | (values if values is not None else {"logo": upload()}),
     )
-    assert result.status_code == 302, result.content
-    location, fragment = result["Location"].split("#")
-    assert location.startswith(f"{URL}?review=") and fragment == "settings-review"
-    return location
+    carried(result)
+    return result
+
+
+def carried(review):
+    """The hidden fields of the review dialog's fragment, which its Apply
+    posts: the signed preview and the staged bundle it was signed for."""
+    assert review.status_code == 200, review.content
+    # The review dialog's fragment, never a page (#750).
+    assert b"data-review-answer" in review.content
+    assert b"<h1>" not in review.content
+    return {
+        name: unescape(value)
+        for name, value in re.findall(
+            r'<input type="hidden" name="(\w+)" value="([^"]*)"',
+            review.content.decode(),
+        )
+    }
+
+
+def confirm_review(browser, review, **changed):
+    """Post a review's Apply as the dialog does, to Parish logos, with the
+    carried fields (``changed`` replaces some)."""
+    return post(browser, URL, {"action": "confirm"} | carried(review) | changed)
+
+
+def refusal(response):
+    """A plain refusal's message, as the review dialog shows it."""
+    return response.json()["refusal"]["message"]
 
 
 def preview_token(response):
@@ -81,14 +108,11 @@ def test_logo_becomes_public_only_after_yaml_activation(auth_service, google, me
         listing = browser.get(URL)
         assert listing.status_code == 200
         assert flow_steps(listing.content) == (STEPS, "Make changes")
-        preview = stage(browser, auth_service)
-        page = browser.get(preview)
-        assert flow_steps(page.content) == (STEPS, "Review")
-        # Reviewed in place (#750): every size and Apply in the review region.
-        assert "Apply changes" in region(page.content)
-        assert region(page.content).count("<figure") == 4
-        token = preview_token(page)
-        assert b"private-original" not in page.content
+        review = stage(browser, auth_service)
+        # Reviewed in the dialog (#750): every size, and the hidden fields
+        # its Apply posts; the step indicator stays at the edit step.
+        assert review.content.decode().count("<figure") == 4
+        assert b"private-original" not in review.content
         assets = list(BrandingAsset.objects.order_by("label"))
         for asset in assets:
             response = browser.get(f"{URL}assets/{asset.pk}.png")
@@ -96,13 +120,13 @@ def test_logo_becomes_public_only_after_yaml_activation(auth_service, google, me
             assert b"".join(response.streaming_content).startswith(b"\x89PNG")
             assert response["Cache-Control"] == "no-store"
             assert browser.get(f"/branding/{asset.pk}.png").status_code == 404
-        result = post(browser, preview, {"action": "confirm", "preview": token})
+        result = confirm_review(browser, review)
         assert result.status_code == 302, result.content
     assert auth_service.store.active() == old
-    # Apply answers with Parish logos naming the change, not Change status.
-    location = result["Location"].split("#")[0]
-    assert location.startswith(f"{URL}?request=")
-    request = ConfigurationChangeRequest.objects.get(pk=location.rsplit("=", 1)[1])
+    # Apply answers with the change's status, which the dialog follows.
+    location = result["Location"]
+    assert location.startswith("/admin/changes/")
+    request = ConfigurationChangeRequest.objects.get(pk=location.split("/")[3])
     with task_login(ServiceRole.CONFIG_INSTALLER):
         assert (
             install_request(
@@ -110,22 +134,14 @@ def test_logo_becomes_public_only_after_yaml_activation(auth_service, google, me
             ).state
             == "applied"
         )
-    # The page follows the change in place: Applied, and the new logos.
-    followed = browser.get(location)
-    assert flow_steps(followed.content) == (STEPS, "Apply")
-    assert "Applied: your change is saved" in region(followed.content)
-    # The current logos are the four just applied.
+    # The page the dialog redraws from shows the four logos just applied.
+    followed = browser.get(URL)
+    assert flow_steps(followed.content) == (STEPS, "Make changes")
     for asset in assets:
         assert f'<img src="/branding/{asset.pk}.png"'.encode() in followed.content
     # Change status itself still returns to Parish logos (#196).
-    status = browser.get(f"/admin/changes/{request.pk}/").content
+    status = browser.get(location).content
     assert f'<a href="{URL}">Return to Parish logos</a>'.encode() in status
-    # The one-time review no longer opens once its logos are chosen: the
-    # page explains it where the review would be.
-    reloaded = browser.get(preview)
-    assert reloaded.status_code == 409
-    assert "can no longer be reviewed" in region(reloaded.content)
-    assert b'name="preview"' not in reloaded.content
     for asset in assets:
         response = browser.get(f"/branding/{asset.pk}.png")
         assert response.status_code == 200
@@ -134,10 +150,8 @@ def test_logo_becomes_public_only_after_yaml_activation(auth_service, google, me
         assert response["Cache-Control"] == "public, max-age=31536000, immutable"
         assert response["Content-Security-Policy"] == FILE_CSP
         assert b"".join(response.streaming_content).startswith(b"\x89PNG")
-    assert (
-        post(browser, preview, {"action": "confirm", "preview": token})["Location"]
-        == result["Location"]
-    )
+    # An exact retry of the applied logos answers with the same change.
+    assert confirm_review(browser, review)["Location"] == result["Location"]
     page = browser.get(URL)
     assert b'rel="icon"' in page.content and b'<img src="/branding/' in page.content
     # The header draws the 150 x 80 menu logo 4rem (64 pixels) tall, at its
@@ -154,14 +168,17 @@ def test_logo_becomes_public_only_after_yaml_activation(auth_service, google, me
 
 
 def test_other_login_cannot_preview_an_unapplied_upload(auth_service, google, media):
-    """Even the same Google account does not adopt the previous session's staging."""
+    """Even the same Google account does not adopt the previous session's
+    staging: its preview cannot be applied from another sign-in."""
     browser, _ = signed_in()
-    preview = stage(browser, auth_service)
+    review = stage(browser, auth_service)
     asset = BrandingAsset.objects.first()
     another, _ = signed_in()
-    elsewhere = another.get(preview)
+    elsewhere = confirm_review(another, review)
     assert elsewhere.status_code == 404
-    assert "can no longer be reviewed" in region(elsewhere.content)
+    assert not ConfigurationChangeRequest.objects.filter(
+        patch__0__section="parish", patch__0__values__has_key="branding"
+    ).exists()
     assert another.get(f"{URL}assets/{asset.pk}.png").status_code == 404
     assert another.get(f"/branding/{asset.pk}.png").status_code == 404
 
@@ -174,14 +191,13 @@ def test_preview_refuses_a_changed_yaml_base(
     from parishkit.stewardship.accounts import branding_views
 
     browser, _ = signed_in()
-    preview = stage(browser, auth_service)
     original = branding_views.editable_configuration
 
     def changed_after_verification(service):
         """Change only the next external read, after the coherent SQL check.
 
-        The race is one read: the page that then explains the refusal in
-        its review region (#750) reads the store as it really is.
+        The race is one read, between staging the upload and signing its
+        review, which is then refused in the dialog (#750).
         """
         result = original(service)
         active = service.store.active
@@ -198,9 +214,14 @@ def test_preview_refuses_a_changed_yaml_base(
         branding_views, "editable_configuration", changed_after_verification
     )
     with task_login(ServiceRole.WEB):
-        response = browser.get(preview)
+        response = post(
+            browser,
+            URL,
+            {"base_digest": auth_service.store.active().digest, "logo": upload()},
+        )
     assert response.status_code == 409
-    assert "can no longer be reviewed" in region(response.content)
+    assert "can no longer be reviewed" in refusal(response)
+    assert "Reload the page" in refusal(response)
     assert b'name="preview"' not in response.content
     assert not ConfigurationChangeRequest.objects.exists()
 
@@ -227,25 +248,27 @@ def test_bad_uploads_never_create_durable_bundles(auth_service, google, media, k
         403 if kind == "csrf" else 409 if kind == "stale" else 400
     )
     assert b"<script>private" not in response.content
-    # Explained in place, in the review region (#750).
+    # A stale page is refused in the review dialog; a refused image is the
+    # page again, its summary linked to the field (#750).
     if kind == "stale":
-        assert "This page changed in another tab or session." in region(
-            response.content
-        )
+        assert "This page changed in another tab or session." in refusal(response)
     elif kind == "signature":
-        assert 'href="#id_logo"' in region(response.content)
+        assert b'href="#id_logo"' in response.content
+        assert b"data-review-answer" not in response.content
     assert not BrandingBundle.objects.exists()
     assert not BrandingAsset.objects.exists()
 
 
-def test_a_refused_apply_is_explained_in_place(auth_service, google, media):
+def test_a_refused_apply_is_explained_in_the_dialog(auth_service, google, media):
     """Logos staged against settings that changed since are refused when
-    applied, in the review region (#750); Apply needs a staged address."""
+    applied, in the dialog's words (reload first, #750); Apply needs the
+    staged bundle its preview was signed for, and the page takes no
+    query (no legacy review or status addresses)."""
     browser, _ = signed_in()
     store = auth_service.store
     with task_login(ServiceRole.WEB):
-        preview = stage(browser, auth_service)
-        token = preview_token(browser.get(preview))
+        review = stage(browser, auth_service)
+        other = stage(browser, auth_service)
     parish = store.active().document()["sections"]["parish"][0]
     patch = [
         {
@@ -257,31 +280,25 @@ def test_a_refused_apply_is_explained_in_place(auth_service, google, media):
     ]
     assert change(store, store.active(), uuid4(), patch).state == "applied"
     with task_login(ServiceRole.WEB):
-        refused = post(browser, preview, {"action": "confirm", "preview": token})
+        refused = confirm_review(browser, review)
         assert refused.status_code == 409
-        assert "Upload the logo again." in region(refused.content)
-        # The form and the current logos are redrawn at the current version,
-        # though Apply's answer otherwise takes only the review region, so
-        # the next upload is accepted.
-        body = refused.content.decode()
-        assert 'id="branding-upload" data-in-place-region data-in-place-always' in body
-        assert "data-in-place-region data-in-place-always aria-labelledby" in body
-        assert f'name="base_digest" value="{store.active().digest}"' in body
-        # Reloading the review explains it in place too.
-        reloaded = browser.get(preview)
-        assert reloaded.status_code == 409
-        assert "can no longer be reviewed" in region(reloaded.content)
-        assert stage(browser, auth_service).startswith(f"{URL}?review=")
-        # Apply posts only to the address naming its staged logos.
-        for elsewhere in (URL, f"{URL}?review={uuid4()}"):
-            assert (
-                post(
-                    browser, elsewhere, {"action": "confirm", "preview": token}
-                ).status_code
-                == 400
-            )
-        assert browser.get(f"{URL}?review=x").status_code == 400
-        assert browser.get(f"{URL}?review={uuid4()}&request=x").status_code == 400
+        assert "Reload the page, then upload the logo again." in refusal(refused)
+        # A preview posted with another staged bundle, with none, or with
+        # a malformed one is refused outright.
+        token = carried(review)["preview"]
+        for bundle in (carried(other)["bundle"], str(uuid4()), "x"):
+            assert confirm_review(browser, review, bundle=bundle).status_code == 400
+        assert (
+            post(browser, URL, {"action": "confirm", "preview": token}).status_code
+            == 400
+        )
+        # Only Apply has an action: a Review is the upload itself.
+        assert post(browser, URL, {"action": "preview"}).status_code == 400
+        # No query is taken, so old review and status addresses are refused.
+        for query in (f"?review={uuid4()}", "?request=x", "?settled=1"):
+            assert browser.get(f"{URL}{query}").status_code == 400
+        # After a reload the next upload is accepted.
+        stage(browser, auth_service)
     assert not ConfigurationChangeRequest.objects.filter(
         patch__0__section="parish", patch__0__values__has_key="branding"
     ).exists()
@@ -372,14 +389,13 @@ def png(width, height, color="blue"):
     return SimpleUploadedFile("size.png", stream.getvalue(), content_type="image/png")
 
 
-def apply_staged(browser, service, preview):
-    """Apply the staged logos at ``preview`` and install the change, each
+def apply_staged(browser, service, review):
+    """Apply the staged logos ``review`` shows and install the change, each
     under its own database role."""
     with task_login(ServiceRole.WEB):
-        token = preview_token(browser.get(preview))
-        result = post(browser, preview, {"action": "confirm", "preview": token})
+        result = confirm_review(browser, review)
     assert result.status_code == 302, result.content
-    request = UUID(result["Location"].split("#")[0].rsplit("=", 1)[1])
+    request = UUID(result["Location"].split("/")[3])
     with task_login(ServiceRole.CONFIG_INSTALLER):
         installed = install_request(
             service.store, request_id=request, correlation_id=uuid4()
@@ -412,20 +428,14 @@ def test_each_size_upload_changes_only_the_sizes_chosen(auth_service, google, me
             "Favicon: the image is 400 × 120 pixels; a favicon must be square "
             "(within 10%)."
         ) in unescape(refused.content.decode())
-        assert 'href="#id_favicon"' in region(refused.content)
+        assert b'href="#id_favicon"' in refused.content
         assert BrandingBundle.objects.count() == 1
-        result = post(
+        review = stage(
             browser,
-            URL,
-            {
-                "base_digest": digest,
-                "editor_mode": "advanced",
-                "favicon": png(48, 48, "red"),
-            },
+            auth_service,
+            {"editor_mode": "advanced", "favicon": png(48, 48, "red")},
         )
-        assert result.status_code == 302, result.content
-        review = browser.get(result["Location"].split("#")[0])
-        shown = unescape(region(review.content))
+        shown = unescape(review.content.decode())
         assert "Favicon — 32 × 32 pixels — Changed" in shown
         for title in ("Large logo", "Menu logo", "Icon"):
             assert re.search(rf"{title} — [0-9,]+ × [0-9,]+ pixels — Unchanged", shown)
@@ -469,17 +479,15 @@ def test_each_size_upload_without_stored_logos_generates_from_large(
             "it, or upload a large logo to generate it from."
         ) in unescape(refused.content.decode())
         assert not BrandingBundle.objects.exists()
-        result = post(
+        stage(
             browser,
-            URL,
+            auth_service,
             {
-                "base_digest": digest,
                 "editor_mode": "advanced",
                 "large": png(600, 300),
                 "favicon": png(32, 32, "red"),
             },
         )
-        assert result.status_code == 302, result.content
     sizes = {
         row.label: (row.width, row.height)
         for row in BrandingAsset.objects.filter(bundle=BrandingBundle.objects.get())
@@ -498,7 +506,7 @@ def test_each_size_upload_and_apply_are_refused_after_settings_change(
     """A per-size upload (#1062) from a page whose settings changed
     elsewhere gets the usual changed-elsewhere refusal before the current
     logos are read, and Apply of a per-size bundle staged before such a
-    change is refused in place, as for one image."""
+    change is refused in the dialog, as for one image."""
     browser, _ = signed_in()
     store = auth_service.store
     with task_login(ServiceRole.WEB):
@@ -506,18 +514,11 @@ def test_each_size_upload_and_apply_are_refused_after_settings_change(
     apply_staged(browser, auth_service, preview)
     digest = store.active().digest
     with task_login(ServiceRole.WEB):
-        result = post(
+        staged = stage(
             browser,
-            URL,
-            {
-                "base_digest": digest,
-                "editor_mode": "advanced",
-                "favicon": png(32, 32, "red"),
-            },
+            auth_service,
+            {"editor_mode": "advanced", "favicon": png(32, 32, "red")},
         )
-        assert result.status_code == 302, result.content
-        staged = result["Location"].split("#")[0]
-        token = preview_token(browser.get(staged))
     parish = store.active().document()["sections"]["parish"][0]
     patch = [
         {
@@ -543,11 +544,11 @@ def test_each_size_upload_and_apply_are_refused_after_settings_change(
             {"base_digest": digest, "editor_mode": "advanced", "favicon": png(32, 32)},
         )
         assert stale.status_code == 409
-        assert "This page changed in another tab or session." in region(stale.content)
+        assert "This page changed in another tab or session." in refusal(stale)
         assert BrandingBundle.objects.count() == bundles
-        refused = post(browser, staged, {"action": "confirm", "preview": token})
+        refused = confirm_review(browser, staged)
         assert refused.status_code == 409
-        assert "Upload the logo again." in region(refused.content)
+        assert "Reload the page, then upload the logo again." in refusal(refused)
 
 
 def opened(page):
@@ -574,13 +575,9 @@ def test_the_page_opens_in_the_mode_that_saved_the_logos(auth_service, google, m
     with task_login(ServiceRole.WEB):
         assert opened(browser.get(URL)) == ("basic", "true")
         digest = auth_service.store.active().digest
-        result = post(
-            browser,
-            URL,
-            {"base_digest": digest, "editor_mode": "advanced", "favicon": png(32, 32)},
+        staged = stage(
+            browser, auth_service, {"editor_mode": "advanced", "favicon": png(32, 32)}
         )
-        assert result.status_code == 302, result.content
-        staged = result["Location"].split("#")[0]
         # Staged, not applied: the current logos still came from one image.
         assert opened(browser.get(URL)) == ("basic", "true")
     assert BrandingBundle.objects.filter(mode="advanced").count() == 1

@@ -126,13 +126,9 @@ SETTINGS_PAGES = (
     "parish-settings.html",
     "reminder-workgroup.html",
 )
-# Parish logos reviews its uploads in the same region (#750); it has no
-# settings form, so it is not one of SETTINGS_PAGES. Campaign images reviews
-# in the review dialog. Ministries changes nothing any more (#1267).
-REVIEW_PAGES = (
-    *SETTINGS_PAGES,
-    "branding-settings.html",
-)
+# Campaign images and Parish logos review in the review dialog (#750).
+# Ministries changes nothing any more (#1267).
+REVIEW_PAGES = SETTINGS_PAGES
 HOSTED = {
     "integration-summary.html": ("integration-settings.html",),
     "settings-review.html": REVIEW_PAGES,
@@ -662,6 +658,27 @@ def test_campaign_images_review_in_the_dialog():
     assert 'dialog_id="artwork-review"' in text and "review=True" in text
     script = (TEMPLATES.parents[1] / "static/stewardship/ui-v1.js").read_text()
     assert 'form.enctype === "multipart/form-data" ? data' in script
+
+
+def test_parish_logos_review_in_the_dialog():
+    """Parish logos' upload opens the shared review dialog (#750) from the
+    form's region, which is redrawn from the page's address once a change
+    is applied, as are the current logos; the page draws no in-place review
+    region, and the upload is sent multipart and waits for a chosen file."""
+    text = (TEMPLATES / "branding-settings.html").read_text()
+    forms = re.findall(r"<form\b[^>]*>", text)
+    assert len(forms) == 1
+    assert 'data-review-open="branding-review"' in forms[0]
+    assert "data-in-place" not in forms[0]
+    assert 'enctype="multipart/form-data"' in forms[0]
+    assert "data-require-complete" in forms[0]
+    assert 'data-refresh-url="{{ refresh_url }}"' in text
+    assert '<section id="branding-current" class="panel" data-in-place-region' in text
+    assert "settings-review" not in text
+    assert 'dialog_id="branding-review"' in text and "review=True" in text
+    review = (TEMPLATES / "branding-review.html").read_text()
+    assert "data-review-answer" in review and "data-review-preview" in review
+    assert 'name="bundle"' in review
 
 
 def test_the_follow_up_carries_only_the_change():

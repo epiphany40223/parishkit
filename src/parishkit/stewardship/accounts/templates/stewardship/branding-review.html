@@ -1,8 +1,18 @@
 {% load i18n stewardship %}{% comment %}
-  Staged Parish logos under review, drawn inside settings-review.html on
-  Parish logos (#750): every generated size, as it will appear. The review
-  region's own heading, notes and Apply surround it.
-{% endcomment %}<p class="notice">{% translate "These logos are uploaded but not yet in use. Apply the change to start using them." %}</p>
+The review of new Parish logos (#750; branding_views._review), drawn in the
+shared review dialog (UX conventions, "Review dialog"), never as a page of
+its own: Parish logos' upload posts without a page load and ui-v1.js moves
+this fragment's content into the dialog's body. It shows every generated
+size as it will appear. The hidden fields (the signed preview, marked
+data-review-preview, and the staged bundle it was signed for) are what the
+dialog's Apply posts to Parish logos, and data-review-done starts the
+status line the page shows once the change is applied.
+{% endcomment %}<div data-review-answer data-review-done="{% translate 'Parish logos changed.' %}">
+<p class="notice">{% translate "These logos are uploaded but not yet in use. Apply the change to start using them." %}</p>
 <section><h3>{% translate "Logo sizes" %}</h3>
 {% comment %}Each size says whether this upload changes it (#1062): a size uploaded on its own changes only itself; the others keep their current image. A changed size is marked with the shared .changed style and says so in words.{% endcomment %}{% for asset in review.assets %}<figure{% if asset.changed %} class="changed"{% endif %}><img src="{% url 'admin:branding_asset' asset.pk %}" alt="{{ asset.title|default:asset.label }}" width="{{ asset.width }}" height="{{ asset.height }}" class="branding-preview"><figcaption>{{ asset.title|default:asset.label|capfirst }} — {{ asset.width|number }} × {{ asset.height|number }} {% translate "pixels" %} — {% if asset.changed %}{% translate "Changed" %}{% else %}{% translate "Unchanged" %}{% endif %}</figcaption></figure>{% endfor %}</section>
 <p>{% translate "Uploads that are never applied are discarded after a day." %}</p>
+<p>{% translate "Nothing changes until you choose Apply." %}</p>
+<input type="hidden" name="preview" value="{{ review.preview }}" data-review-preview>
+<input type="hidden" name="bundle" value="{{ review.bundle }}">
+</div>

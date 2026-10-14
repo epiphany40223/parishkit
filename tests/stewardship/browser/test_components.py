@@ -305,7 +305,6 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/credential-status",
         "/credential-selection",
         "/branding-settings",
-        "/branding-preview",
         "/hosted-files",
         "/hosted-file-unavailable",
         "/setup",
@@ -343,7 +342,7 @@ def test_components_accessible_and_responsive(
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
     page.goto(component_origin + path)
-    if path in {"/branding-settings", "/branding-preview"}:
+    if path == "/branding-settings":
         assert page.locator(".branding-preview").evaluate_all(
             "images => images.length > 0 && images.every("
             "image => image.complete && image.naturalWidth > 0)"
