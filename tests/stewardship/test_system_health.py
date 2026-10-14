@@ -1686,7 +1686,8 @@ def source_said(model, **context):
 
 def test_the_source_summary_names_the_first_that_holds():
     """Each Working summary in SOURCE_SUMMARIES's order: an accepted refusal
-    outranks a hold, a hold a running refresh, and the data's age with the
+    outranks a hold, a hold catching up after its send outranks one still
+    held, a hold a running refresh, and the data's age with the
     connection comes only when nothing else holds."""
     before = NOW - timedelta(hours=2)
     until = NOW + timedelta(hours=1)
@@ -1722,6 +1723,21 @@ def test_the_source_summary_names_the_first_that_holds():
             ),
             "held",
             f"Refreshes held during the email send until about {until.isoformat()}",
+        ),
+        (
+            health(
+                refresh=status(
+                    held_for_send=True,
+                    catching_up=True,
+                    out_of_date=True,
+                    overdue_at=before,
+                    # The resume time has passed, so it is never named.
+                    resume_at=NOW - timedelta(minutes=5),
+                    running=True,
+                )
+            ),
+            "catching_up",
+            "Catching up after the email send",
         ),
         (health(refresh=status(running=True)), "running", "Full refresh running"),
         (
@@ -1916,3 +1932,45 @@ def test_the_source_panel_repeats_no_problem_sentence():
     assert "did not finish" in shared and "minutes late" in shared
     # Without either incident, no runbook line.
     assert "parishsoft-outage" not in source_details(tiles({"health": health()}))
+
+
+def test_a_failed_refresh_stays_in_the_tile_while_parishsoft_is_not_answering():
+    """With the connection failing, ``source_failing`` is listed instead of
+    ``source_failed``, so the panel keeps the failed refresh's own notice;
+    once only the failure is listed, the panel shortens it."""
+    task = uuid4()
+    failed_at = NOW.replace(hour=2)
+
+    def details(connection):
+        """The ParishSoft refresh tile's details for a 2 AM failure."""
+        refresh = FullRefreshStatus(
+            NOW - timedelta(days=1),
+            failed_at,
+            False,
+            failed_task_id=task,
+            connection=connection,
+        )
+        found = find_problems(
+            mode="production",
+            processes=(),
+            missing=(),
+            schema_current=True,
+            incidents={},
+            refresh=refresh,
+            backup_at=NOW,
+        )
+        model = health(refresh=refresh, problems=found)
+        return model, source_details(tiles({"health": model}))
+
+    model, failing = details(Connection("failing", failed_at))
+    assert [problem.kind for problem in model.problems] == ["source_failing"]
+    assert not model.failed_listed
+    assert "ParishSoft has not answered since" in failing
+    assert failing.count("did not finish") == 1
+    assert 'class="notice notice-error" role="status"' in failing
+    assert f"/admin/system/background/{task}/" in failing
+    model, failed = details(Connection("working", NOW))
+    assert model.failed_listed
+    assert failed.count("did not finish") == 1
+    assert 'class="notice notice-error" role="status"' not in failed
+    assert f"/admin/system/background/{task}/" in failed

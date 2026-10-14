@@ -6180,9 +6180,11 @@ might be held back:
   clears when a refresh finds the name or the setting is cleared.
 
 The panel repeats none of the tile's problems: in the tile, the shared
-refresh status leaves out its failed and late notices, which `source_failed`
-and `source_late` already state, and keeps a failure's "See what went
-wrong" link and when changes appear. Home and the refresh pages keep those
+refresh status leaves out its late notice, which `source_late` already
+states, and, while `source_failed` is listed, its failed notice, keeping a
+failure's "See what went wrong" link and when changes appear. While
+ParishSoft is not answering, `source_failing` is listed instead of
+`source_failed`, so the failed notice stays in full. Home and the refresh pages keep those
 notices.
 
 While the ParishSoft refresh tile is Working, its summary names the first
@@ -6190,14 +6192,17 @@ of these that holds:
 
 1. "Change accepted once; waiting for the next full refresh", while the
    refusal shown has a live acceptance (it is listed, not counted);
-2. "Refreshes held during the email send until about 4:30 PM";
-3. "Full refresh running";
-4. "Data as of 6:02 AM", in the words of
+2. "Catching up after the email send", while a held refresh runs or is
+   about to because its send ended or its resume time passed (no time is
+   named, since it may already be past);
+3. "Refreshes held during the email send until about 4:30 PM";
+4. "Full refresh running";
+5. "Data as of 6:02 AM", in the words of
    [ParishSoft data age and connection](../operations/spec.md#parishsoft-data-age-and-connection),
    followed by the connection line: "; connection working", "; connection
    not checked since 2:00 AM", "; connection failing since 9:15 AM" or
    "; connection not checked yet";
-5. "No ParishSoft data yet".
+6. "No ParishSoft data yet".
 
 Each time is a browser-local clock time, with the full date when it falls
 on another day.

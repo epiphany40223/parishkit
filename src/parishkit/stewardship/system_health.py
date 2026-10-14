@@ -461,9 +461,11 @@ class SourceSummary:
 # The ParishSoft refresh tile's Working summaries, in the order the first
 # that holds is named (admin-portal spec, "ParishSoft refresh panel"): a
 # refusal the Administrator already accepted is what the tile is waiting
-# on, a hold during a send says why the data is not moving, and a running
-# refresh says it is about to; otherwise the data's age and the connection.
-SOURCE_SUMMARIES = ("accepted", "held", "running", "data", "none")
+# on, a held refresh catching up once its send ended (its resume time
+# passed, so it is not named), then a hold during a send says why the data
+# is not moving, and a running refresh says it is about to; otherwise the
+# data's age and the connection.
+SOURCE_SUMMARIES = ("accepted", "catching_up", "held", "running", "data", "none")
 
 
 @dataclass(frozen=True)
@@ -921,6 +923,8 @@ class SystemHealth(ReadModel):
             return SourceSummary("accepted")
         if status is None:
             return SourceSummary("none")
+        if status.held_for_send and status.catching_up:
+            return SourceSummary("catching_up")
         if status.held_for_send:
             return SourceSummary("held", status.resume_at)
         if status.running:
@@ -928,6 +932,17 @@ class SystemHealth(ReadModel):
         if status.data_as_of is not None:
             return SourceSummary("data", status.data_as_of, status.connection)
         return SourceSummary("none")
+
+    @property
+    def failed_listed(self):
+        """Whether a failed full refresh is among the problems.
+
+        A failing connection is listed instead of the failure
+        (``find_problems``), so the ParishSoft refresh tile's panel keeps
+        the failure's own notice then (``failed_listed`` in
+        full-refresh-status.html).
+        """
+        return any(problem.kind == "source_failed" for problem in self.problems)
 
     @property
     def live_request(self):
