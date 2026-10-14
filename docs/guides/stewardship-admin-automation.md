@@ -1683,7 +1683,8 @@ pk-admin exports clean
   page's buttons: cancel an export that is not ready yet, run a failed one
   again once its cause is fixed, or request an expired one again from the
   figures it was made from (a new export, with a new `EXPORT_ID`).
-  Regenerating a Family directory, mail-merge or financial export needs a
+  Regenerating an Active parishioner family directory, mail-merge or
+  financial export needs a
   recent Google sign-in on the page, so for those `export regenerate` asks
   at the [confirmation prompt](#confirmations) (or takes `--yes`); the
   session stands in for the sign-in, and System logs show
@@ -1785,7 +1786,8 @@ pk-admin export fetch EXPORT_ID
 
 #### Family codes and mail merge
 
-`export directory` is the Family directory's export of Family codes, for
+`export directory` is the Active parishioner family directory's export of
+Family codes, for
 the current campaign, and `export postal` its mail merge. Each needs a
 full-scope session and records the page's events, plus
 `admin_cmd_export_directory` or `admin_cmd_export_postal`. Both need a
