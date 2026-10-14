@@ -11,7 +11,7 @@
 {% if metadata.giving_through %}<p>{% blocktranslate with start=metadata.comparison_start|parish_date end=metadata.comparison_end|parish_date through=metadata.giving_through|parish_date %}ParishSoft pledges and contributions cover the comparison period {{ start }} — {{ end }}, with contributions through {{ through }}.{% endblocktranslate %}</p>
 {% else %}<p class="notice">{% translate "ParishSoft pledges and contributions are unavailable: the latest giving data read from ParishSoft is not confirmed complete for this campaign's comparison period. Unavailable does not mean zero. A later full ParishSoft refresh may fill it in." %}</p>{% endif %}
 <p><a href="{% url 'admin:participation' %}">{% translate "Participation" %}</a></p>
-{# The summary follows the applied filters in place (data-table-sync): headline tiles, then the frequency and share-method charts (#720), each with its exact values in its tooltips and its collapsed table. #}
+{# The summary follows the applied filters in place (data-table-sync): headline tiles, then the frequency and share-method charts (#720), each bar labelled with its count and share, the same values in its tooltip (#1266). #}
 <div id="financial-summary" data-table-sync><h2>{% translate "Summary of matching pledges" %}</h2>
 <ul class="stat-tiles">
 <li class="stat-tile"><span class="stat-label">{% translate "Families" %}</span> <span class="stat-value" data-summary="families">{{ summary.families|number }}</span></li>
@@ -19,7 +19,7 @@
 <li class="stat-tile"><span class="stat-label">{% translate "Cannot contribute financially" %}</span> <span class="stat-value">{{ summary.cannot_give|default:0|number }}</span></li>
 </ul>
 {% for chart in charts %}<h3>{{ chart.title }}</h3>
-{% include 'stewardship/components/chart.html' %}{% endfor %}
+{% include 'stewardship/components/chart.html' with no_table=True %}{% endfor %}
 </div>
 {% comment %}The complete gate holds Apply while a date or amount is out of order or an amount is malformed (#563), its hint in a reserved line after the button so nothing moves; the server still checks each.{% endcomment %}<form id="table-filters" data-table-sync method="post" action="{% url 'admin:financial_report' %}" data-require-complete>{% csrf_token %}
 <label for="financial-search">{% translate "Search Family name or Family DUID" %}</label><input id="financial-search" name="search" maxlength="200" value="{{ query.search }}">

@@ -21,6 +21,7 @@ from parishkit.stewardship.reports.chart_specs import (
     activity_chart,
     financial_charts,
     funnel_chart,
+    label_room,
     quiet_slots,
     share,
     stage_label,
@@ -399,10 +400,10 @@ CHOICES = [("online", "Online <giving>"), ("envelopes", "Envelopes")]
 
 
 def test_financial_charts_carry_each_count_and_its_share_everywhere():
-    """Bars, tooltips, the summary and the table come from the same counts (#720).
+    """Labels, tooltips, names, summary and table share the counts (#720, #1266).
 
-    Shares are of the matching Families; share methods can add up past them,
-    since a Family can choose more than one.
+    Shares are of the matching Families, to one decimal; share methods can
+    add up past them, since a Family can choose more than one.
     """
     frequency, shares = financial_charts(financial_summary(), CHOICES)
     assert (frequency.key, frequency.title) == (
@@ -414,13 +415,14 @@ def test_financial_charts_carry_each_count_and_its_share_everywhere():
     assert spec["$schema"] == VEGA_LITE_SCHEMA and spec["width"] == WIDTH
     assert spec["description"] == frequency.summary
     assert [
-        (row["label"], row["count"], row["share"]) for row in spec["data"]["values"]
+        (row["label"], row["count"], row["share"], row["text"])
+        for row in spec["data"]["values"]
     ] == [
-        ("Weekly", 1, "13%"),
-        ("Monthly", 4, "50%"),
-        ("Quarterly", 0, "0%"),
-        ("Annual", 2, "25%"),
-        ("No frequency", 1, "13%"),
+        ("Weekly", 1, "12.5%", "1 (12.5%)"),
+        ("Monthly", 4, "50%", "4 (50%)"),
+        ("Quarterly", 0, "0%", "0 (0%)"),
+        ("Annual", 2, "25%", "2 (25%)"),
+        ("No frequency", 1, "12.5%", "1 (12.5%)"),
     ]
     assert [layer["mark"]["type"] for layer in spec["layer"]] == ["bar", "text"]
     # Each bar is named in one phrase; its drawn count stays out of the
@@ -429,7 +431,17 @@ def test_financial_charts_carry_each_count_and_its_share_everywhere():
     assert spec["data"]["values"][1]["name"] == (
         "Monthly: 4 families, 50% compared with matching Families"
     )
-    assert spec["layer"][1]["mark"]["aria"] is False
+    # Each bar's count and share are drawn after it, hidden from assistive
+    # technology since the bar's name says them.
+    label = spec["layer"][1]
+    assert label["mark"]["aria"] is False and label["mark"]["align"] == "left"
+    assert label["encoding"]["text"] == {"field": "text"}
+    # The axis runs past the longest bar (4) by the widest label's room in
+    # pixels, at whatever width the chart is drawn.
+    room = label_room(["1 (12.5%)"])
+    assert spec["encoding"]["x"]["scale"]["domainMax"] == {
+        "expr": f"4 * width / max(width - {room}, width / 2)"
+    }
     tooltip = spec["layer"][0]["encoding"]["tooltip"]
     assert [field["title"] for field in tooltip] == [
         "Pledges by frequency",
@@ -442,14 +454,14 @@ def test_financial_charts_carry_each_count_and_its_share_everywhere():
         "Compared with matching Families",
     )
     assert frequency.summary == (
-        "Pledges by frequency: Weekly 1, Monthly 4, Quarterly 0, Annual 2, "
-        "No frequency 1."
+        "Pledges by frequency: Weekly 1 (12.5%), Monthly 4 (50%), Quarterly 0 "
+        "(0%), Annual 2 (25%), No frequency 1 (12.5%)."
     )
     # No share method chosen comes last, after the offered methods.
     assert shares.table.rows == (
         ("Online <giving>", "6", "75%"),
-        ("Envelopes", "3", "38%"),
-        ("No share method chosen", "1", "13%"),
+        ("Envelopes", "3", "37.5%"),
+        ("No share method chosen", "1", "12.5%"),
     )
 
 
@@ -465,6 +477,8 @@ def test_financial_charts_with_no_matching_families_dash_every_share():
     )
     frequency, shares = financial_charts(summary, CHOICES)
     assert {row[2] for row in frequency.table.rows} == {"—"}
+    # The label is the count alone, with no share to give.
+    assert {row["text"] for row in frequency.spec["data"]["values"]} == {"0"}
     assert shares.table.rows == (
         ("Online <giving>", "0", "—"),
         ("Envelopes", "0", "—"),
@@ -483,7 +497,7 @@ def test_financial_share_chart_draws_every_offered_method_and_groups_retired():
     _frequency, shares = financial_charts(summary, CHOICES)
     assert shares.table.rows == (
         ("Online <giving>", "0", "0%"),
-        ("Envelopes", "3", "38%"),
-        ("Unavailable share method", "3", "38%"),
-        ("No share method chosen", "1", "13%"),
+        ("Envelopes", "3", "37.5%"),
+        ("Unavailable share method", "3", "37.5%"),
+        ("No share method chosen", "1", "12.5%"),
     )

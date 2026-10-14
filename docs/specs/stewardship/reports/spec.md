@@ -287,9 +287,15 @@ own renderer):
 Each chart is accessible in every rendering. On a page the chart is a figure
 whose view has the chart's name and is described by its summary, and is
 followed by the collapsed exact-values table, a region named by the table's
-caption. A pointer shows exact values in tooltips; the view takes keyboard
-focus so a keyboard or screen-reader user hears its name and summary, and gets
-the exact values from the table, not the tooltips. Series are told apart by
+caption. A chart that draws its values in the chart itself leaves that table
+out ([#1266](https://github.com/epiphany40223/parishkit/issues/1266)), and its
+feature spec says so: each bar, or each band of a stacked bar, is labelled
+with its count or dollars and its share (a band too narrow for its label has
+them in the chart's legend instead), and its tooltip and accessible name
+carry the same figures. A pointer shows exact values in tooltips; the view
+takes keyboard focus so a keyboard or screen-reader user hears its name and
+summary, and gets the exact values from the table, or without one from the
+marks' names, not the tooltips. Series are told apart by
 dash pattern as well as color. A layer with nothing to draw (no activity yet,
 or no send to mark) is hidden from assistive technology rather than announced
 as an unnamed graphic. In an email the PNG carries the summary as its alt text
@@ -1845,11 +1851,14 @@ then two [chart engine](#chart-engine) bar charts, "Pledges by frequency"
 method in its configured order, even one nobody chose, retired methods
 together as Unavailable share method, then No share method chosen), so a
 filter changes an offered method's bar length, never whether it shows. Each
-bar is labelled with its count, and its tooltip and accessible name add its
-share of the matching Families; a Family can choose more than one share
-method, so those shares can add up past 100%. Each chart's exact-values table has the same figures. The summary
-follows the applied filters in place, and its charts keep their space until
-they are drawn again. Exports are CSV, XLSX, and PDF; queuing
+bar is labelled after its end with its count and its share of the matching
+Families, "4 (50%)", and its tooltip and accessible name carry the same
+figures, so the charts have no exact-values table
+([chart engine](#chart-engine),
+[#1266](https://github.com/epiphany40223/parishkit/issues/1266)); a Family can
+choose more than one share method, so those shares can add up past 100%. The
+summary follows the applied filters in place, and its charts keep their space
+until they are drawn again. Exports are CSV, XLSX, and PDF; queuing
 or regenerating one needs the same fresh sign-in as a
 [active parishioner family directory](#active-parishioner-family-directory) export, returning to this report. No
 Ministry leader receives aggregate or Family financial detail.

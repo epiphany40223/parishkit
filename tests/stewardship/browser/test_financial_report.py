@@ -3,6 +3,7 @@
 import pytest
 from django.urls import reverse
 
+from .test_campaign_comparison import COLLISIONS
 from .test_charts import assert_clean, watch
 from .test_response_dashboard import AXE, FITTED
 from .waits import eventually, visible
@@ -308,15 +309,28 @@ def test_heading_tip_closes_when_its_button_scrolls_out(page, component_origin, 
     assert button.get_attribute("aria-expanded") == "false"
 
 
-def test_summary_charts_draw_with_tooltips_and_exact_tables(
+# The value labels drawn after the summary charts' bars (#1266): for each,
+# its text and the pixels between its right end and its chart's right edge.
+# A label cut off by the chart's edge would have a negative slack.
+VALUE_LABELS = """() => [...document.querySelectorAll(
+  "#financial-summary [data-chart-view] svg")].flatMap((svg) => {
+    const edge = svg.getBoundingClientRect().right;
+    return [...svg.querySelectorAll(".role-mark text")].map((text) =>
+      [text.textContent, edge - text.getBoundingClientRect().right]);
+  })"""
+
+
+def test_summary_charts_draw_with_tooltips_and_labelled_values(
     page, component_origin, axe_source
 ):
-    """The summary is tiles, then two drawn charts with their exact values (#720).
+    """The summary is tiles, then two drawn charts with values on the bars.
 
-    Both charts draw under the CSP with no script error; a bar's tooltip has
-    its count and share of the matching Families; the collapsed table holds
-    every value, markup in a share method's label stays text, and the page
-    still fits its window.
+    Both charts draw under the CSP with no script error (#720); each bar is
+    labelled after its end with its count and share of the matching
+    Families, and there is no Exact values table (#1266); a bar's tooltip
+    has the same count and share; markup in a share method's label stays
+    text. At 320 and 1280 pixels the page fits its window, and every label
+    ends inside its chart with no text drawn over other text.
     """
     from playwright.sync_api import expect
 
@@ -340,25 +354,35 @@ def test_summary_charts_draw_with_tooltips_and_exact_tables(
     frequency.locator("svg g.mark-rect path").nth(1).hover()
     tooltip = page.locator("#vg-tooltip-element")
     visible(tooltip)
-    assert "Monthly" in tooltip.inner_text() and "6%" in tooltip.inner_text()
+    assert "Monthly" in tooltip.inner_text() and "5.9%" in tooltip.inner_text()
+    # Pointer away: axe must not catch the tooltip while it fades out.
+    page.mouse.move(0, 0)
+    expect(tooltip).to_be_hidden()
     assert_clean(page, errors)
     # The share methods' labels are drawn as text, never parsed as markup.
     shares = page.locator("[data-chart='share-methods-spec']")
     assert "Online <giving>" in shares.locator("svg text").all_text_contents()
-    table = page.locator("[data-chart='share-methods-spec'] + .chart-table")
-    table.locator("summary").click()
-    assert [
-        row.locator("td").all_inner_texts() for row in table.locator("tbody tr").all()
-    ] == [
-        ["Another way", "4", "8%"],
-        ["Online <giving>", "40", "78%"],
-        ["No share method chosen", "7", "14%"],
+    # Each bar's count and share, drawn after it, in the bars' order.
+    assert shares.locator("svg .role-mark text").all_text_contents() == [
+        "4 (7.8%)",
+        "40 (78.4%)",
+        "7 (13.7%)",
     ]
+    # The bar's accessible name says the same values.
+    assert (
+        shares.locator("svg g.mark-rect path").nth(1).get_attribute("aria-label")
+        == "Online <giving>: 40 families, 78.4% compared with matching Families"
+    )
+    expect(summary.locator(".chart-table")).to_have_count(0)
+    expect(summary.get_by_text("Exact values")).to_have_count(0)
     assert_clean(page, errors)
     for width in (320, 1280):
         page.set_viewport_size({"width": width, "height": 900})
         eventually(page, FITTED)
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        assert page.evaluate(COLLISIONS) == []
+        labels = page.evaluate(VALUE_LABELS)
+        assert len(labels) == 8 and min(slack for _, slack in labels) >= 0, labels
     page.evaluate(axe_source)
     assert page.evaluate(AXE) == []
     assert_clean(page, errors)
@@ -396,7 +420,9 @@ def test_applied_filters_redraw_the_summary_charts_in_place(page, component_orig
     eventually(page, FITTED)
     assert page.evaluate("window.__financialMarker") == 1
     assert abs(page.evaluate(FORM_TOP) - form) < 2
-    table = page.locator("[data-chart='pledge-frequency-spec'] + .chart-table")
-    table.locator("summary").click()
-    assert "25%" in table.inner_text()
+    # The fresh chart's labels carry the filtered counts: 1 of 4 is 25%.
+    frequency = page.locator("[data-chart='pledge-frequency-spec']")
+    assert frequency.locator("svg .role-mark text").all_text_contents()[0] == (
+        "1 (25%)"
+    )
     assert_clean(page, errors)

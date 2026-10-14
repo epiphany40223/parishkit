@@ -20,8 +20,9 @@ from dataclasses import dataclass
 from datetime import UTC, timedelta
 from zoneinfo import ZoneInfo
 
+from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.web.dates import format_date, format_instant
-from parishkit.stewardship.web.presentation import number
+from parishkit.stewardship.web.presentation import number, percentage
 
 from .chart_assets import VEGA_LITE_SCHEMA
 from .response_metrics import STAGES, ActivityBucket
@@ -423,28 +424,60 @@ def activity_chart(metrics, *, series=SERIES):
     )
 
 
+# A bar's value label: the text mark's font size (Vega's default) and a
+# generous width per character at that size, so the room kept after the
+# longest bar is never too small for its label (#1266).
+LABEL_FONT = 11
+LABEL_CHAR = 6.6
+LABEL_GAP = 4
+
+
+def label_room(texts):
+    """Pixels to keep after the longest bar for the widest value label."""
+    return round(LABEL_GAP + LABEL_CHAR * max((len(text) for text in texts), default=0))
+
+
 def count_bars(key, title, bars, *, total, compared, noun="Families"):
     """A labelled horizontal bar per ``(label, count)`` pair, in the given order.
 
-    The Financial stewardship summary's charts (#720) draw with this: each
-    bar carries its count as a text label, and its tooltip has the count
-    and its share of ``total`` (headed ``compared``), as the funnel's bars
-    do. The table has the same three columns, so the exact values stay
-    readable without a pointer. The summary sentence lists every bar.
+    The Financial stewardship summary's charts (#720) draw with this. Each
+    bar is labelled after its end with its count and its share of ``total``
+    ("4 (50%)", one decimal as every report percentage), so the chart shows
+    every value without a table (#1266); its tooltip has the same count and
+    share (headed ``compared``), as the funnel's bars do, and its accessible
+    name says both. The summary sentence lists every bar. The table has the
+    same three columns for a rendering that shows one; the page leaves it
+    out (the chart engine's labelled-values rule).
+
+    The value axis runs past the longest bar by exactly the room its label
+    needs, whatever the chart's width (``label_room``, in pixels, read
+    against Vega's ``width`` signal), so at phone width the label after a
+    full-length bar still ends inside the chart instead of being cut off.
     """
-    rows = [
-        {"label": label, "count": count, "order": index, "share": share(count, total)}
-        for index, (label, count) in enumerate(bars)
-    ]
-    # Each bar's accessible name, in place of Vega's field-by-field default
-    # ("Families: 3; label: Weekly; …"): the label, the count and its share.
-    for row in rows:
-        row["name"] = (
-            f"{row['label']}: {number(row['count'])} {noun.lower()}, "
-            f"{row['share']} {compared[0].lower()}{compared[1:]}"
+    rows = []
+    for index, (label, count) in enumerate(bars):
+        shown = percentage(Percentage(count, total))
+        rows.append(
+            {
+                "label": label,
+                "count": count,
+                "order": index,
+                "share": shown,
+                # No matching Families: the share is a dash, so the label
+                # is the count alone.
+                "text": number(count) if shown == "—" else f"{number(count)} ({shown})",
+                # The bar's accessible name, in place of Vega's
+                # field-by-field default ("Families: 3; label: Weekly; …").
+                "name": (
+                    f"{label}: {number(count)} {noun.lower()}, "
+                    f"{shown} {compared[0].lower()}{compared[1:]}"
+                ),
+            }
         )
-    parts = ", ".join(f"{row['label']} {number(row['count'])}" for row in rows)
+    parts = ", ".join(f"{row['label']} {row['text']}" for row in rows)
     summary = f"{title}: {parts}." if rows else f"{title}: none."
+    largest = max((row["count"] for row in rows), default=0)
+    room = label_room(row["text"] for row in rows)
     spec = {
         "$schema": VEGA_LITE_SCHEMA,
         "description": summary,
@@ -464,6 +497,18 @@ def count_bars(key, title, bars, *, total, compared, noun="Families"):
                 "type": "quantitative",
                 "title": noun,
                 "axis": {"format": ",d", "tickMinStep": 1},
+                # The longest bar ends ``room`` pixels before the plot's
+                # right edge: the domain grows by the share of the plot's
+                # width that the label needs (half the plot at most, for a
+                # chart too narrow to read anyway).
+                "scale": {
+                    "domainMin": 0,
+                    "domainMax": {
+                        "expr": f"{max(largest, 1)} * width"
+                        f" / max(width - {room}, width / 2)"
+                    },
+                    "nice": False,
+                },
             },
         },
         "layer": [
@@ -478,13 +523,18 @@ def count_bars(key, title, bars, *, total, compared, noun="Families"):
                     ],
                 },
             },
-            # The count drawn beside each bar repeats the bar's name, so
+            # The value drawn after each bar repeats the bar's name, so
             # assistive technology hears it once, from the bar.
             {
-                "mark": {"type": "text", "align": "left", "dx": 4, "aria": False},
-                "encoding": {
-                    "text": {"field": "count", "type": "quantitative", "format": ","}
+                "mark": {
+                    "type": "text",
+                    "align": "left",
+                    "baseline": "middle",
+                    "dx": LABEL_GAP,
+                    "fontSize": LABEL_FONT,
+                    "aria": False,
                 },
+                "encoding": {"text": {"field": "text"}},
             },
         ],
     }
