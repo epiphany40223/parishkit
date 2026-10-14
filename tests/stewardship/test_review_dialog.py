@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 
 from django.template.loader import render_to_string
+from django.urls import reverse
 
 from parishkit.stewardship.accounts.user_changes import plan_changes
 
@@ -255,6 +256,8 @@ def test_a_blocked_schedule_review_offers_no_apply():
     text = schedule_fragment([scheduled("update", blocking=2)], new=False, blocking=2)
     assert "Sends blocking the change: 2" in text
     assert "data-review-preview" not in text
+    # The page the message names is linked (navigation rule 6, #521).
+    assert f'<a href="{reverse("admin:deliveries")}">Outgoing mail</a>' in text
 
 
 def test_new_and_edit_scheduled_email_review_in_the_dialog():
