@@ -270,6 +270,33 @@ def test_follow_up_saves_are_in_place():
         assert form in panel and "history pages" in panel, name
 
 
+def test_family_test_check_and_send_are_in_place():
+    """Check these Families and Send these Family tests act in place (#519
+    PR 7c): each is a data-in-place POST landing on the review region, which
+    holds the notices, the allowance, Check and the review. Send's redirect
+    leaves no review, so the requested notice takes focus and is announced.
+    The step-up's Confirm with Google stays an ordinary form, and Refresh
+    status replaces only its own region, so Families typed but not
+    yet checked survive it."""
+    text = (TEMPLATES / "campaign-mail-families.html").read_text()
+    assert names_region(text, "family-test-review")
+    region = region_body(text, "family-test-review")
+    check = re.search(r'<form [^>]*data-in-place="family-test-check"[^>]*>', text)
+    send = re.search(r'<form [^>]*data-in-place="family-test-send"[^>]*>', text)
+    for form in (check.group(0), send.group(0)):
+        assert 'action="{{ refresh_url }}#family-test-review"' in form
+        assert form in region
+    assert "data-in-place-message=\"{% translate 'Families checked.' %}\"" in (
+        check.group(0)
+    )
+    assert 'data-in-place-message-from="family-test-sent"' in send.group(0)
+    assert 'id="family-test-sent" tabindex="-1" data-in-place-focus' in region
+    assert "family-test-available" in region
+    assert "components/reauthenticate.html" in region
+    refresh = re.search(r'<a [^>]*>{% translate "Refresh status" %}</a>', text)
+    assert "data-in-place-only" in refresh.group(0)
+
+
 def test_information_reopen_confirmation_shows_only_when_unticking():
     """The confirmation to reopen completed follow-up is shown, and required
     before Save, only once "Follow-up completed" is unticked."""

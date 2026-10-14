@@ -45,14 +45,22 @@
   // return path (never an answer or credential) for local-sign-in-v1.js to
   // send as the sign-in's "next". The key "pk-local-step-up" and the
   // ten-minute limit pair with STEP_UP_KEY and STEP_UP_SECONDS in
-  // local-sign-in-v1.js; change them together.
-  document.querySelectorAll("[data-local-step-up]").forEach((node) => {
-    try {
-      window.localStorage.setItem("pk-local-step-up", JSON.stringify({
-        next: node.dataset.localStepUp, at: Date.now(),
-      }));
-    } catch (error) { /* The sign-in then returns to the home page. */ }
-  });
+  // local-sign-in-v1.js; change them together. A step-up an in-place answer
+  // brings in (a Family test review shown with a stale sign-in, #519) is
+  // recorded too, as it would be had the page loaded with it.
+  const recordStepUp = (root) => {
+    const nodes = [...root.querySelectorAll("[data-local-step-up]")];
+    if (root instanceof Element && root.matches("[data-local-step-up]")) nodes.unshift(root);
+    nodes.forEach((node) => {
+      try {
+        window.localStorage.setItem("pk-local-step-up", JSON.stringify({
+          next: node.dataset.localStepUp, at: Date.now(),
+        }));
+      } catch (error) { /* The sign-in then returns to the home page. */ }
+    });
+  };
+  recordStepUp(document);
+  document.addEventListener("parishkit:swap", (event) => recordStepUp(event.target));
 
   // Hosted files (#346). A Copy button copies its read-only field; without
   // script (or the clipboard API) the button stays hidden and the field can

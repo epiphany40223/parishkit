@@ -15,7 +15,7 @@ from parishkit.stewardship.web.acknowledgment import ACKNOWLEDGMENT
 from parishkit.stewardship.web.contracts import filters
 
 from . import admin_navigation
-from .admin_editing import form_action
+from .admin_editing import form_action, summary_errors
 from .authentication import runtime
 from .campaign_family_test import (
     SALT,
@@ -228,6 +228,7 @@ def _page(
         flow="family_test",
         step="review" if duids else "send" if sent else "choose",
     )
+    refused = form is not None and not form.is_valid()
     response = render(
         request,
         "stewardship/campaign-mail-families.html",
@@ -263,9 +264,17 @@ def _page(
             "sent": sent,
             "next": request.path,
             "sample_url": reverse("admin:campaign_mail", args=[revision_id]),
+            # A refused list's error summary (base template), which links to
+            # the field and takes focus when Check is answered in place (#519).
+            "errors": summary_errors(form) if refused else [],
         },
-        status=200 if form is None or form.is_valid() else 400,
+        status=400 if refused else 200,
     )
+    if refused:
+        # The refusal is this page with its errors, safe to show as it is
+        # (not the generic "Invalid request." the middleware draws for other
+        # 400s), so the reader sees which DUID to fix.
+        response.stewardship_safe_error = True
     return _checked(request, service, response)
 
 

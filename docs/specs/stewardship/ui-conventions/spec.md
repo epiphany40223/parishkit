@@ -452,7 +452,16 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   that fails falls back to the ordinary load, except when the browser cut
   it off because the reader is leaving the page: their own navigation goes
   ahead. A save with no answer still shows its note then, since a download
-  link also starts leaving the page and the page stays.
+  link also starts leaving the page and the page stays. A step-up stays an
+  ordinary navigation even inside a region: on Send to chosen Families, Check
+  these Families and Send these Family tests act in place, and a review
+  swapped in with a stale sign-in keeps its Confirm with Google form, which
+  loads the sign-in page (in LOCAL, the page records the return path for a
+  swapped-in step-up as it does for one it loaded with). A Send refused for a
+  stale sign-in is answered with the step-up page, shown whole. That page's
+  Refresh status replaces only the recent tests (and the critical-problems
+  banner), so Family DUIDs typed but not yet checked are kept, and after
+  Send the requested notice takes focus.
 - **Real targets.** Every control is a real link or form with its `href`
   or `action` and fragment, which the script requests; when an ordinary load
   happens instead (a fallback above), the fragment, kept across a

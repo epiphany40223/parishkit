@@ -1360,7 +1360,23 @@ def test_stale_sign_in_keeps_the_review_and_never_looks_sent(family_test):
         # since reloading it would resubmit the form.
         invalid = post(browser, path, {"action": "preview", "families": "x"})
     assert invalid.status_code == 400
-    assert b"live-status-v1.js" not in invalid.content
+    # The refused review is the page again, whose recent tests follow
+    # themselves by re-reading the page (a GET), never by reloading it.
+    assert b"http-equiv" not in invalid.content
+    assert b"data-reload-while-pending" not in invalid.content
+
+
+def test_a_refused_list_has_an_error_summary(family_test):
+    """A list Check refuses (a repeated DUID) is the page again, 400, with
+    an error summary linking to the field, which an in-place Check focuses
+    and reads out (#519)."""
+    harness, browser, path, sample = family_test
+    with web_login():
+        refused = post(browser, path, {"action": "preview", "families": "1\n1"})
+    assert refused.status_code == 400, refused.content
+    assert b"data-error-summary" in refused.content
+    assert b'href="#id_families"' in refused.content
+    assert b'id="family-test-review"' in refused.content
 
 
 def test_testing_mode_explains_live_codes_and_offers_a_test_send(family_test):
