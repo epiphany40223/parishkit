@@ -20,7 +20,7 @@ preview, dismissal and every key step are still owed by PR 10.
 
 from dataclasses import dataclass
 
-from .admin_reads import ReadModel, _admit, _held, _recheck
+from .admin_reads import NotAvailable, ReadModel, _admit, _held, _recheck
 
 # ``integration show``'s targets: every settings page but the Backup
 # encryption key's, whose proof-of-possession page has its own commands.
@@ -127,7 +127,11 @@ def _read(caller, service, read):
     """Admit, run ``read(configuration, actor)`` in one snapshot, then recheck.
 
     The configuration is the pages' own ``editable_configuration``, so a
-    restore under review or an unfinished setup refuses as the pages do.
+    restore under review or an unfinished setup refuses as the pages do. A
+    required integration with no record (Outgoing email addresses or Google
+    Workspace mail before setup) is the pages' ``LookupError`` (their 404),
+    reported as ``not_available`` only after the session recheck, so an
+    ended session is still exit 5, as ``admin_settings._read`` does.
     """
     from .accounts.admin_editing import editable_configuration
     from .accounts.policy import Capability
@@ -136,9 +140,16 @@ def _read(caller, service, read):
     def step():
         """One attempt, repeated by ``_held`` while a change activates."""
         actor = _admit(caller, service.store, Capability.CONFIGURE)
+        missing = False
         with read_transaction():
-            model = read(editable_configuration(service), actor)
+            configuration = editable_configuration(service)
+            try:
+                model = read(configuration, actor)
+            except LookupError:
+                missing = True
         _recheck(caller, service.store, actor, Capability.CONFIGURE)
+        if missing:
+            raise NotAvailable("That integration is not set up.")
         return model
 
     return _held(step)

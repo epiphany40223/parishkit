@@ -1072,7 +1072,9 @@ integration, its `target`, `name` and whether it is `configured`.
 
 `integration show TARGET` takes `parishsoft`, `google_workspace` (Google
 Workspace mail), `email` (Outgoing email addresses), `slack` or `backup`
-(Off-site backups); the Backup encryption key stays on its page.
+(Off-site backups); the Backup encryption key stays on its page. Google
+Workspace mail or Outgoing email addresses not set up is exit 1
+(`not_available`), as the page finds nothing to show.
 
 | Field | What it holds |
 | --- | --- |

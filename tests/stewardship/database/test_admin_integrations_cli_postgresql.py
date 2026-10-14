@@ -205,3 +205,32 @@ def test_an_ended_session_reads_nothing(admin, argv):
     code, document, _ = admin(*argv, secret=secret)
     assert code == 5 and document["error"]["code"] == "session_ended", document
     assert "result" not in document
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ("integration", "show", "email"),
+        ("integration", "show", "google_workspace"),
+        ("integration", "status", "google_workspace"),
+    ],
+)
+def test_a_required_integration_not_set_up_is_not_available(admin, caplog, argv):
+    """No email or Workspace record (the page's 404): exit 1 ``not_available``,
+    nothing printed and no ERROR logged."""
+    import logging
+
+    _, reader, _ = paired(admin.service, scope="read-only")
+    caplog.set_level(logging.INFO)
+    code, document, _ = admin(*argv, secret=reader)
+    assert code == 1 and document["error"]["code"] == "not_available", document
+    assert "result" not in document
+    assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
+
+
+def test_an_ended_session_is_exit_5_before_not_available(admin):
+    """The recheck comes first: a revoked session reading a missing record."""
+    _, secret, _ = paired(admin.service)
+    revoke(admin.service, secret)
+    code, document, _ = admin("integration", "show", "email", secret=secret)
+    assert code == 5 and document["error"]["code"] == "session_ended", document

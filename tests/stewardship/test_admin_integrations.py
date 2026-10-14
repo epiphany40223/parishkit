@@ -311,3 +311,55 @@ def test_malformed_commands_are_usage_errors(argv):
         stderr=out,
     )
     assert code == 2 and json.loads(out.getvalue())["error"]["code"] == "usage"
+
+
+def test_a_required_integration_not_set_up_is_not_available(monkeypatch):
+    """Outgoing email addresses with no record: the page's 404 (a
+    ``LookupError``) is ``not_available``, reported after the recheck."""
+    import contextlib
+
+    from parishkit.stewardship.accounts import admin_editing
+    from parishkit.stewardship.admin_reads import NotAvailable
+    from parishkit.stewardship.campaigns import work_locks
+
+    with pytest.raises(LookupError):
+        admin_integrations.show_model(
+            configuration(), "email", key=None, refresh=None, backup=None
+        )
+    calls = []
+    monkeypatch.setattr(admin_integrations, "_admit", lambda *a: calls.append("admit"))
+    monkeypatch.setattr(
+        admin_integrations, "_recheck", lambda *a: calls.append("recheck")
+    )
+    monkeypatch.setattr(admin_integrations, "_held", lambda step: step())
+    monkeypatch.setattr(work_locks, "read_transaction", contextlib.nullcontext)
+    monkeypatch.setattr(
+        admin_editing, "editable_configuration", lambda service: configuration()
+    )
+    service = SimpleNamespace(store=None)
+    with pytest.raises(NotAvailable):
+        admin_integrations.read_integration_show(None, service, "email")
+    assert calls == ["admit", "recheck"]
+
+
+def test_a_watch_timeout_names_the_command_and_no_record(caplog):
+    """``integration status`` follows a target, not a record with a UUID, so
+    its watch names no subject (the log admits only a UUID there); its
+    timeout line still names the command."""
+    import logging
+
+    from parishkit.stewardship.observability import Event, emit
+
+    spec = admin_cli.BY_NAME["integration status"]
+    assert spec.watch and spec.watch_subject is None
+    caplog.set_level(logging.WARNING, logger="parishkit.stewardship")
+    emit(
+        Event.TASK_TIMED_OUT,
+        level=logging.WARNING,
+        timeout="automation_watch",
+        limit_seconds=2,
+        elapsed_seconds=3,
+        watched_command=spec.name,
+        subject_id=None,
+    )
+    assert caplog.records[-1].levelno == logging.WARNING
