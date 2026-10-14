@@ -19,6 +19,7 @@ from django.core import signing
 from django.db import DatabaseError, IntegrityError, connection, transaction
 
 from parishkit.config import ConfigError
+from parishkit.stewardship import admin_changes
 from parishkit.stewardship.accounts import integration_selection, request_patch
 from parishkit.stewardship.accounts import users_upgrade as upgrade
 from parishkit.stewardship.accounts.authority import parse_version
@@ -31,7 +32,10 @@ from parishkit.stewardship.accounts.configuration_schema import validator_for
 from parishkit.stewardship.accounts.operator_recovery import recover_admin
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
-from parishkit.stewardship.accounts.schedule_changes import preview_salt
+from parishkit.stewardship.accounts.schedule_changes import (
+    SERIES_UNMATCHED,
+    preview_salt,
+)
 from parishkit.stewardship.accounts.series_schema import SCHEMA, SECTION
 from parishkit.stewardship.accounts.users_schema import (
     CREDENTIAL_SCHEMA,
@@ -42,6 +46,7 @@ from parishkit.stewardship.campaigns.models import ScheduleDefinition
 from parishkit.stewardship.campaigns.recurrence import canonical_rule, expand
 
 from ..campaign_factory import schedule
+from ..content_factory import content
 from .automation_builders import paired
 from .campaign_builders import change, initialized
 from .test_admin_schedule_cli_postgresql import (  # noqa: F401
@@ -279,6 +284,90 @@ def test_a_remembered_repeat_becomes_a_series(admin, google):  # noqa: F811
     assert shown["result"]["series"] == [
         {"id": series["id"], "rule": rule, "schedules": added}
     ]
+
+
+def test_a_series_that_cannot_be_matched_is_refused(
+    admin,  # noqa: F811
+    google,
+    monkeypatch,
+):
+    """build_preview fails closed when an added form produced no add.
+
+    parse_changes refuses an added entry with no values; this bypasses that
+    check, as another caller might, with an empty entry before the repeat:
+    the positions then no longer name the repeat's reminders.
+    """
+    store = admin.service.store
+    with_saved_emails(store)
+    convert(store)
+    _, secret, _ = paired(admin.service)
+    parse = admin_changes.parse_changes
+
+    def shifted(text):
+        """The real parse, with an empty added entry first."""
+        parsed = parse(text)
+        empty = {"comparison": False, admin_changes.LABEL: "new9"}
+        return parsed | {
+            "schedules": [empty, *parsed["schedules"]],
+            "series": [
+                item | {"added": [index + 1 for index in item["added"]]}
+                for item in parsed["series"]
+            ],
+        }
+
+    monkeypatch.setattr(admin_changes, "parse_changes", shifted)
+    digest = store.active().digest
+    code, document = preview(admin, secret, remembering(store, remember=True))
+    assert code == 1 and document["error"]["code"] == "invalid", document
+    [problem] = document["error"]["fields"]
+    assert problem == {
+        "field": "window",
+        "code": "invalid",
+        "message": SERIES_UNMATCHED,
+    }
+    assert (
+        store.active().digest == digest
+        and SECTION not in (store.active().document()["sections"])
+    )
+
+
+def test_other_changes_apply_on_a_series_configuration(admin, google):  # noqa: F811
+    """Once remembered, the configuration stays campaign-series-v11, and a
+    campaign setting and an added email still apply over it."""
+    store = admin.service.store
+    campaign, _ = with_saved_emails(store)
+    convert(store)
+    _, secret, _ = paired(admin.service)
+    code, reviewed = preview(admin, secret, remembering(store, remember=True))
+    assert code == 0, reviewed
+    code, confirmed = confirm(admin, secret, reviewed["result"]["preview"]["token"])
+    assert code == 0, confirmed
+    request = UUID(confirmed["result"]["request"]["request_id"])
+    assert install_request(store, request_id=request, correlation_id=uuid4()).state == (
+        "applied"
+    )
+    assert active_schema() == SCHEMA
+    before = remembered(store)
+    email = content(str(campaign.pk), kind="email", slot="reminder", subject="later")
+    result = change(
+        store,
+        store.active(),
+        uuid4(),
+        [
+            {
+                "operation": "update",
+                "section": "campaigns",
+                "id": str(campaign.pk),
+                "values": {"name": "Renamed campaign"},
+            },
+            {"operation": "add", "section": "content", **email},
+        ],
+    )
+    assert result.state == "applied"
+    assert active_schema() == SCHEMA and remembered(store) == before
+    sections = store.active().document()["sections"]
+    assert sections["campaigns"][0]["values"]["name"] == "Renamed campaign"
+    assert email["id"] in {row["id"] for row in sections["content"]}
 
 
 def test_remembering_needs_the_users_form(admin, google):  # noqa: F811

@@ -237,7 +237,12 @@ def parse_changes(text):
                 # A saved schedule's mail type never changes (as on the page).
                 raise ValueError("A saved schedule's kind cannot change.")
             seen.add(row["id"])
-        elif not row:
+        elif all(
+            value is None or value == "" or value is False for value in row.values()
+        ):
+            # The page's form set skips a new row with only empty or default
+            # values, so it would add nothing; and it would shift a
+            # remembered repeat's positions (build_preview's ``series``).
             raise ValueError("A new schedule needs its fields.")
         if "delete" in row and (
             row["delete"] is not True or "id" not in row or set(row) != {"id", "delete"}

@@ -43,6 +43,12 @@ DOES_NOT_FIT = (
 )
 # Only a users-form configuration can hold a remembered series (#469), so
 # remembering one elsewhere is refused in plain words, not as DOES_NOT_FIT.
+# A remembered repeat's positions must name exactly the reminders it added;
+# when the added forms and adds disagree, refuse rather than guess (#469).
+SERIES_UNMATCHED = (
+    "The repeat to remember could not be matched to the reminders it adds. "
+    "Leave out added schedules that have no values."
+)
 SERIES_NEEDS_USERS = (
     "A repeat can be remembered as a series only once the configuration "
     "holds Admin users; run upgrade-users first."
@@ -150,9 +156,24 @@ def build_preview(
     }
     patch = schedules.patch()
     explicit = {row["id"] for row in patch}
-    # The form set adds new schedules in form order, so a repeat's positions
-    # name the ids it just minted for that repeat's reminders.
+    # A repeat's positions index the added forms, in form order. They name
+    # the ids the form set just minted only if every added form produced
+    # exactly one "add": the form set skips an added form with no values
+    # (the page's blank extra row too), which would shift every later
+    # position. The command line refuses such entries (parse_changes), and
+    # this check fails closed for any other caller.
     added = [row["id"] for row in patch if row["operation"] == "add"]
+    added_forms = [
+        form
+        for form in schedules.forms
+        if not form.cleaned_data.get("id") and form not in schedules.deleted_forms
+    ]
+    if series and (
+        len(added) != len(added_forms)
+        or any(index >= len(added) for item in series for index in item["added"])
+    ):
+        window.add_error(None, SERIES_UNMATCHED)
+        return None
     remembered = [
         {
             "operation": "add",

@@ -283,6 +283,10 @@ def test_a_request_watch_stops_once_the_request_is_settled():
         # A saved schedule's mail type never changes; a new one needs fields.
         f'{{"schedules": [{{"id": "{SCHEDULE}", "kind": "reminder"}}]}}',
         '{"schedules": [{}]}',
+        # Only empty or default values: the page's forms would add nothing.
+        '{"schedules": [{"comparison": false}]}',
+        '{"schedules": [{"date": null, "weekday": null}]}',
+        '{"schedules": [{"kind": ""}]}',
         '{"schedules": {}}',
         '{"schedules": [1]}',
         '{"schedules": [{"label": "x"}]}',
@@ -446,6 +450,27 @@ def test_a_remembered_repeat_names_its_reminders_among_the_added():
     ]
     added = [row for row in parsed["schedules"] if "id" not in row]
     assert [added[index]["time"] for index in (4, 5)] == ["08:00", "08:00"]
+
+
+def test_an_empty_added_entry_cannot_shift_a_remembered_repeat():
+    """Refused at parse, so 08:00's reminders can never be remembered as 09:00's."""
+    rule = weekly(end="2054-10-05")
+    document = {
+        "schedules": [
+            {"comparison": False},
+            {"repeat": rule, "time": "08:00", "remember": True},
+            {"repeat": rule, "time": "09:00"},
+        ]
+    }
+    with pytest.raises(ValueError, match="A new schedule needs its fields."):
+        admin_changes.parse_changes(json.dumps(document))
+    # Without the empty entry, the 08:00 reminders are the remembered ones.
+    parsed = admin_changes.parse_changes(
+        json.dumps(document | {"schedules": document["schedules"][1:]})
+    )
+    [series] = parsed["series"]
+    added = [row for row in parsed["schedules"] if "id" not in row]
+    assert [added[index]["time"] for index in series["added"]] == ["08:00", "08:00"]
 
 
 @pytest.mark.parametrize("remember", [False, None, 1, "true"])
