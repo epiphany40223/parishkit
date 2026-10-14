@@ -260,6 +260,7 @@ value Outgoing mail's send filter takes), `number`, `mode`, `cycle`,
 | `version` | What a schedule change is previewed against |
 | `window` | `start_date`, `end_date`, `timezone` |
 | `schedules` | Each schedule's `id`, `kind`, `date`, `time`, `weekday`, `subject`, `template_version`, `comparison` (whether a daily digest includes Compared with past campaigns), its first resolved send times (`resolved`: `key`, `due_at`) and `more` |
+| `series` | Each remembered reminder series (a repeat saved with `"remember": true`): its `id`, its repeat `rule` and the `schedules` (reminder ids) it holds |
 
 `schedule show` reads the current campaign unless `--campaign UUID` names
 another. An unknown campaign, or no current campaign, is exit 1
@@ -538,7 +539,7 @@ The document is JSON with two optional members:
 | Change a saved schedule | `id` (from `schedule show`) and any of `date`, `time`, `weekday`, `template_version` and, for a daily digest, `comparison` (`true` or `false`: whether it includes Compared with past campaigns). Members you leave out keep their values. Its `kind` cannot change, so it may not be given. |
 | Remove a saved schedule | `id` and `"delete": true`, nothing else. |
 | Add a schedule | `kind` (`initial`, `reminder`, `daily_digest` or `weekly_digest`) and the members its kind needs: `date` for `initial` and `reminder`, `weekday` (0 is Monday) for `weekly_digest`, and `time` (in the campaign's time zone) and `template_version` for all. A `daily_digest` may add `"comparison": true`; it is off without it. A `time` may be written in any form the page accepts, such as `09:00:00`, `9:00`, `9am` or `21:00`, and is stored as `HH:MM:SS`. |
-| Add repeating reminders | `repeat` (the rule below), `time` and `template_version`, as for one reminder, and nothing else. It adds one ordinary reminder per date the rule gives, as if you listed each one. Every date must fit: unlike the page, which leaves out a date that does not fit, the command refuses the whole change. A problem with one date alone, such as a date after the campaign closes, names that date; a conflict between schedules, such as a date at the same moment as a saved reminder or not after the initial invitation, comes back as a plain `schedules` error, as for reminders listed one by one. A rule that gives no dates or more than 30, or skips a month, is exit 1 (`invalid`). The rule itself is not saved. |
+| Add repeating reminders | `repeat` (the rule below), `time` and `template_version`, as for one reminder, and nothing else. It adds one ordinary reminder per date the rule gives, as if you listed each one. Every date must fit: unlike the page, which leaves out a date that does not fit, the command refuses the whole change. A problem with one date alone, such as a date after the campaign closes, names that date; a conflict between schedules, such as a date at the same moment as a saved reminder or not after the initial invitation, comes back as a plain `schedules` error, as for reminders listed one by one. A rule that gives no dates or more than 30, or skips a month, is exit 1 (`invalid`). The rule itself is not saved unless you add `"remember": true`, which also saves it as a reminder series holding exactly the reminders this repeat adds, so later changes can treat them as one. The reminders are the same either way, and they send as ordinary reminders. |
 
 | `repeat` member | What it holds |
 | --- | --- |
@@ -560,6 +561,7 @@ the page and email templates (a command for those arrives later).
 | `changes` | Each change's `id`, `operation` (`add`, `update` or `remove`), `kind`, its values and first send times `before` and `after` (as in `schedule show`; `null` when added or removed), and its `impact`: `delivered`, `cancellable`, `failed`, `blocking`, `occurrences` and `outboxes`, the page's counts |
 | `blocking` | Sends in progress or with an uncertain result. While it is above zero, `preview` is `null`, as the page offers no **Confirm** |
 | `preview` | `token`, which `schedule confirm` takes |
+| `series` | Each reminder series the change remembers (a repeat with `"remember": true`): its new `id`, its `rule` and its reminders' ids (`schedules`); empty otherwise |
 
 Each `error.fields` entry has `field` (`window.<name>`,
 `schedules.<id>.<name>`, `schedules.new<n>.<name>` for the n-th added

@@ -1810,7 +1810,8 @@ names. As on the Dates and mail schedules page, an unknown campaign, or no curre
 campaign, is `not_available`; a campaign that is not the current one, or
 that background work holds while mail is sent, is `stale_version`. Its
 `version` is the applied configuration's digest, the base a schedule change
-(PR 4) is previewed against.
+(PR 4) is previewed against. Its `series` lists the campaign's remembered
+reminder series, each with its rule and the reminders it holds.
 
 ### Source refresh
 
@@ -1890,7 +1891,15 @@ forms refuse refuses the whole change and is named by its date
 (`schedules.new<n>.<YYYY-MM-DD>.<field>`), while a conflict between
 schedules is the form set's plain `schedules` error. A rule that gives no
 dates or more than 30, or that would skip a month without its day of the
-month (named in the error), is `invalid`. The rule is not saved. For a live campaign
+month (named in the error), is `invalid`. The rule is not saved unless the
+entry also has `"remember": true` (any other value is `invalid`): then the
+same signed preview adds one remembered reminder series
+([#469](https://github.com/epiphany40223/parishkit/issues/469)) holding
+exactly the reminders that repeat adds, which the preview lists as `series`
+and `schedule show` lists afterwards. Delivery never reads a series, so the
+reminders are planned and sent as they would be without it. Only a
+configuration in the users form can hold a series; elsewhere remembering is
+`invalid` with a plain `window` message. For a live campaign
 the document's `window` may change `end_date` alone, as the page allows
 ([#912](https://github.com/epiphany40223/parishkit/issues/912)), and
 `schedule confirm` binds its exceptional end-edit intent and records

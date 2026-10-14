@@ -310,6 +310,42 @@ def send_history():
     return admin_reads.SendHistory(CAMPAIGN, 1, 1, 1, 25, [admin_reads.send_row(row)])
 
 
+# A remembered reminder series (#469) of the campaign, and one of another.
+SERIES_RULE = {
+    "frequency": "weekly",
+    "start": "2054-10-05",
+    "end": "2054-10-19",
+    "weekdays": [0],
+}
+SERIES = "00000000-0000-4000-8000-0000000000a1"
+SERIES_CONFIGURATION = SimpleNamespace(
+    active_configuration=SimpleNamespace(
+        canonical_document={
+            "sections": {
+                "schedule_series": [
+                    {
+                        "id": SERIES,
+                        "values": {
+                            "campaign_id": str(CAMPAIGN),
+                            "rule": SERIES_RULE,
+                            "schedules": [SCHEDULE],
+                        },
+                    },
+                    {
+                        "id": "00000000-0000-4000-8000-0000000000a2",
+                        "values": {
+                            "campaign_id": "00000000-0000-4000-8000-0000000000ff",
+                            "rule": SERIES_RULE,
+                            "schedules": [SCHEDULE],
+                        },
+                    },
+                ]
+            }
+        }
+    )
+)
+
+
 def schedule_show():
     """The applied invitation schedule of a fixed draft."""
     owner = campaign_record()
@@ -326,6 +362,7 @@ def schedule_show():
             "timezone": values["timezone"],
         },
         schedules=[admin_reads.schedule_entry(row, values)],
+        series=admin_reads.campaign_series(SERIES_CONFIGURATION, CAMPAIGN),
     )
 
 
@@ -802,6 +839,7 @@ GOLDEN = {
                     "more": False,
                 }
             ],
+            "series": [{"id": SERIES, "rule": SERIES_RULE, "schedules": [SCHEDULE]}],
         },
     ),
     "go-live readiness": (
@@ -1169,6 +1207,13 @@ ALLOWED = {
         "key",
         "due_at",
         "more",
+        # Remembered reminder series (#469) and their repeat rules.
+        "series",
+        "rule",
+        "frequency",
+        "start",
+        "end",
+        "weekdays",
     },
     "go-live readiness": {
         "campaign_id",

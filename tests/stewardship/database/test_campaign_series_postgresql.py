@@ -39,13 +39,19 @@ from parishkit.stewardship.accounts.users_schema import (
 )
 from parishkit.stewardship.accounts.users_schema import SCHEMA as USERS_SCHEMA
 from parishkit.stewardship.campaigns.models import ScheduleDefinition
-from parishkit.stewardship.campaigns.recurrence import expand
+from parishkit.stewardship.campaigns.recurrence import canonical_rule, expand
 
 from ..campaign_factory import schedule
 from .automation_builders import paired
 from .campaign_builders import change, initialized
-from .test_admin_schedule_cli_postgresql import admin, confirm, preview  # noqa: F401
+from .test_admin_schedule_cli_postgresql import (  # noqa: F401
+    admin,
+    confirm,
+    one,
+    preview,
+)
 from .test_recovery_postgresql import arguments as recovery_arguments
+from .test_schedule_entry_postgresql import setup as with_saved_emails
 from .test_schedule_views_postgresql import setup as campaign_with_reminder
 from .test_users_upgrade_postgresql import arguments as upgrade_arguments
 from .user_builders import convert
@@ -190,6 +196,105 @@ def test_ordinary_schedule_changes_keep_the_series(admin, google):  # noqa: F811
     assert {"operation": "remove", "section": SECTION, "id": identifier} in patch
     assert remembered(store) == []
     assert active_schema() == SCHEMA
+
+
+def remembering(store, **extra):
+    """A repeat on the saved reminder's weekday, before it, with its email.
+
+    The 2054-10-11 and 2054-10-18 reminders it adds fall after the
+    fixture's initial invitation and clash with no saved schedule.
+    """
+    saved = next(
+        row["values"]
+        for row in store.active().document()["sections"]["schedules"]
+        if row["id"] == reminder(store, LAST)
+    )
+    rule = RULE | {"start": "2054-10-10", "end": "2054-10-20"}
+    entry = {
+        "repeat": rule,
+        "time": "10:00",
+        "template_version": saved["template_version"],
+    }
+    return {"schedules": [entry | extra]}
+
+
+def test_a_remembered_repeat_becomes_a_series(admin, google):  # noqa: F811
+    """``"remember": true`` saves the rule with exactly the reminders it adds.
+
+    The reminders are those the same repeat adds without it, the saved
+    reminder keeps its revision, and ``schedule show`` lists the series.
+    """
+    store = admin.service.store
+    # The repeat sends the saved reminder's email, as the page's forms need.
+    campaign, _ = with_saved_emails(store)
+    convert(store)
+    _, secret, _ = paired(admin.service)
+    # Without remember the review is the same, with no series.
+    code, plain = preview(admin, secret, remembering(store))
+    assert code == 0, plain
+    assert plain["result"]["series"] == []
+    before = revisions()
+
+    code, reviewed = preview(admin, secret, remembering(store, remember=True))
+    assert code == 0, reviewed
+    result = reviewed["result"]
+    added = sorted(change["id"] for change in result["changes"])
+    assert [change["after"]["date"] for change in result["changes"]] == [
+        "2054-10-11",
+        "2054-10-18",
+    ]
+    strip = ("id", "after")
+    assert [
+        {key: value for key, value in change.items() if key not in strip}
+        for change in result["changes"]
+    ] == [
+        {key: value for key, value in change.items() if key not in strip}
+        for change in plain["result"]["changes"]
+    ]
+    [series] = result["series"]
+    rule = canonical_rule(remembering(store)["schedules"][0]["repeat"])
+    assert series["rule"] == rule and series["schedules"] == added
+    code, confirmed = confirm(admin, secret, result["preview"]["token"])
+    assert code == 0, confirmed
+    request = confirmed["result"]["request"]["request_id"]
+    installed = install_request(store, request_id=UUID(request), correlation_id=uuid4())
+    assert installed.state == "applied"
+
+    assert active_schema() == SCHEMA
+    assert remembered(store) == [
+        {
+            "id": series["id"],
+            "values": {
+                "campaign_id": str(campaign.pk),
+                "rule": rule,
+                "schedules": added,
+            },
+        }
+    ]
+    after = revisions()
+    assert {key: after[key] for key in before} == before
+    assert set(after) - set(before) == set(added)
+    code, shown = one(admin, "schedule", "show", secret=secret)
+    assert code == 0, shown
+    assert shown["result"]["series"] == [
+        {"id": series["id"], "rule": rule, "schedules": added}
+    ]
+
+
+def test_remembering_needs_the_users_form(admin, google):  # noqa: F811
+    """Sign-in rules cannot hold a series: refused in plain words, not as a misfit."""
+    store = admin.service.store
+    with_saved_emails(store)
+    _, secret, _ = paired(admin.service)
+    digest = store.active().digest
+    code, document = preview(admin, secret, remembering(store, remember=True))
+    assert code == 1 and document["error"]["code"] == "invalid"
+    [problem] = document["error"]["fields"]
+    assert problem["field"] == "window"
+    assert "run upgrade-users first" in problem["message"]
+    assert store.active().digest == digest
+    code, shown = one(admin, "schedule", "show", secret=secret)
+    assert code == 0 and shown["result"]["series"] == []
 
 
 def test_recovery_keeps_the_series(admin, google):  # noqa: F811

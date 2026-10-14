@@ -38,7 +38,10 @@ schedules the document does not name stay as they are: as on the page,
 omission never removes one. A ``repeat`` entry (#469) adds one ordinary
 reminder per date its rule gives (``campaigns.recurrence``), each with the
 entry's ``time`` and ``template_version``, exactly as if the document listed
-them one by one. ``window`` (any of its fields) changes the
+them one by one. With ``"remember": true`` the same change also remembers
+the rule as a reminder series holding exactly those reminders
+(``schedule_changes.build_preview``'s ``series``), for later series edits;
+delivery never reads a series. ``window`` (any of its fields) changes the
 campaign's dates only while they may still change; for a live campaign
 (scheduled or open in Production, #912) only ``end_date`` may change, and
 confirming it binds the exceptional end-date intent as the page does.
@@ -133,10 +136,14 @@ def _repeat(entry, label):
     date silently, so a date the forms refuse refuses the whole change, named
     ``<label>.<date>``, and so does a month the rule would skip.
     """
-    if set(entry) - {"repeat", *REPEAT_FIELDS} or not all(
-        _typed(name, entry[name]) for name in REPEAT_FIELDS if name in entry
+    if (
+        set(entry) - {"repeat", "remember", *REPEAT_FIELDS}
+        or not all(_typed(name, entry[name]) for name in REPEAT_FIELDS if name in entry)
+        or entry.get("remember", True) is not True
     ):
-        raise ValueError("A repeat takes only its rule, time and template_version.")
+        raise ValueError(
+            'A repeat takes only its rule, time, template_version and "remember": true.'
+        )
     rule = canonical_rule(entry["repeat"])
     if rule is None:
         # canonical_rule refuses exactly the rules expand names an error for.
@@ -172,9 +179,12 @@ def parse_changes(text):
     without a saved ``id``, a repeated ``id``, a ``kind`` on a saved
     schedule (its mail type never changes), an empty new entry, a repeat
     ``_repeat`` refuses, and more rows than the page takes, before or after
-    the repeats are expanded. Returns ``{"window": dict, "schedules": list}``:
-    each repeat is replaced by its reminders, and each added entry carries
-    its ``LABEL``.
+    the repeats are expanded. Returns ``{"window": dict, "schedules": list,
+    "series": list}``: each repeat is replaced by its reminders, and each
+    added entry carries its ``LABEL``. ``series`` lists each repeat to
+    remember as ``{"rule", "added"}``: its canonical rule and the positions
+    of its reminders among the document's added entries, which is the order
+    the page's form set adds them in (``build_preview``'s ``series``).
     """
     if len(text) > CHANGES_LIMIT:
         raise ValueError("The change document is too long.")
@@ -196,10 +206,22 @@ def parse_changes(text):
         raise ValueError("The change document's schedules are not valid.")
     seen = set()
     entries = []
+    series = []
     added = 0
     for row in rows:
         if isinstance(row, dict) and "repeat" in row:
-            entries.extend(_repeat(row, f"new{added}"))
+            reminders = _repeat(row, f"new{added}")
+            if row.get("remember"):
+                # Added entries so far, saved ones aside: this repeat's
+                # reminders come next among the change's added schedules.
+                first = sum("id" not in entry for entry in entries)
+                series.append(
+                    {
+                        "rule": canonical_rule(row["repeat"]),
+                        "added": list(range(first, first + len(reminders))),
+                    }
+                )
+            entries.extend(reminders)
             added += 1
             continue
         if (
@@ -227,7 +249,7 @@ def parse_changes(text):
         entries.append(row)
     if len(entries) > ROW_LIMIT:
         raise ValueError("The change document's schedules are not valid.")
-    return {"window": window, "schedules": entries}
+    return {"window": window, "schedules": entries, "series": series}
 
 
 def _text(value):
@@ -374,6 +396,8 @@ class SchedulePreview(ReadModel):
     total of blocking work; while it is above zero, as on the page, there is
     no ``preview`` to confirm. Otherwise ``preview.token`` is the signed
     binding ``schedule confirm`` takes, valid for fifteen minutes.
+    ``series`` lists each reminder series the change remembers (``id``,
+    ``rule`` and its reminders' ``schedules``), empty when none (#469).
     """
 
     campaign_id: UUID
@@ -381,6 +405,7 @@ class SchedulePreview(ReadModel):
     window: dict
     changes: list
     blocking: int
+    series: list
     preview: dict | None
 
 
@@ -436,6 +461,7 @@ def schedule_preview_model(context, version):
             for change in context["changes"]
         ],
         blocking=context["blocking"],
+        series=context["series"],
         preview=None if context["preview"] is None else {"token": context["preview"]},
     )
 
@@ -553,6 +579,7 @@ def preview_schedule(caller, service, campaign_id, *, expected_version, changes)
                 schedules,
                 base_digest=expected_version,
                 salt=preview_salt(target),
+                series=parsed["series"],
             )
             if context is None:
                 raise InvalidChange(field_errors(window, schedules, identifiers))
