@@ -22,9 +22,19 @@ A digest has no date, so its time (and a weekly digest's weekday) is
 converted at its next send from now: the zones' offset on that day decides
 it. Where the two zones change their clocks on different dates, a digest
 keeps its campaign wall-clock time between those dates, as it always has.
+The page posts back the moment it drew a digest from (``drawn``), so a page
+drawn on one side of such a change and posted on the other is still read as
+unchanged when its fields are as drawn.
+
+A dated send typed in the browser's zone whose moment falls in the hour the
+campaign's clocks repeat when they fall back is refused (:class:`RepeatedHour`):
+a schedule keeps only a campaign wall-clock time, which the scheduler reads
+as the first of the two, so it would send an hour early. A moment can never
+fall in the hour the campaign's clocks skip, since every real moment has a
+campaign wall-clock time; a time the browser's own clocks skip reads forward.
 """
 
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from parishkit.stewardship.campaigns.intervals import resolve_local
@@ -38,13 +48,54 @@ def _next(today, weekday):
     return today + timedelta(days=(weekday - today.weekday()) % 7)
 
 
-def instant(values, campaign_zone, now):
+# How far from now a posted digest moment may be: a weekly digest's next send
+# is up to a week ahead, and a page may sit open for a while before it posts.
+DRAWN_WINDOW = timedelta(days=14)
+
+
+class RepeatedHour(ValueError):
+    """A typed send moment the campaign's clocks show twice (fall back)."""
+
+
+def _drawn(values, campaign_zone, now, drawn):
+    """The digest moment a page drew, when ``drawn`` really is one of its sends.
+
+    ``drawn`` is posted text, so it is used only when it parses as an aware
+    instant within :data:`DRAWN_WINDOW` of ``now`` that the saved digest
+    sends at (its campaign wall-clock time, and its weekday for a weekly
+    digest, resolved as the scheduler does). Anything else is None, and the
+    caller falls back to the next send from ``now``.
+    """
+    if not drawn or values.get("date") or now is None:
+        return None
+    try:
+        moment = datetime.fromisoformat(drawn)
+    except (TypeError, ValueError):
+        return None
+    if moment.utcoffset() is None or abs(moment - now) > DRAWN_WINDOW:
+        return None
+    moment = moment.astimezone(UTC)
+    day = moment.astimezone(ZoneInfo(campaign_zone)).date()
+    weekday = values.get("weekday")
+    if weekday is not None and day.weekday() != weekday:
+        return None
+    clock = time.fromisoformat(values["time"])
+    if resolve_local(datetime.combine(day, clock), campaign_zone) != moment:
+        return None
+    return moment
+
+
+def instant(values, campaign_zone, now, drawn=None):
     """The UTC moment a saved schedule's campaign-local ``values`` stand for.
 
     A dated schedule's own date; a digest's next send day from ``now`` in the
-    campaign's zone (today for a daily digest). Resolved as the scheduler
+    campaign's zone (today for a daily digest), or the moment the page drew
+    it from (``drawn``, see :func:`_drawn`). Resolved as the scheduler
     resolves it (``resolve_local``).
     """
+    kept = _drawn(values, campaign_zone, now, drawn)
+    if kept is not None:
+        return kept
     if values.get("date"):
         day = date.fromisoformat(values["date"])
     else:
@@ -54,13 +105,13 @@ def instant(values, campaign_zone, now):
     return resolve_local(datetime.combine(day, clock), campaign_zone)
 
 
-def in_browser(values, zone, campaign_zone, now):
+def in_browser(values, zone, campaign_zone, now, drawn=None):
     """A saved schedule's send time of day in the browser's ``zone``."""
-    moment = instant(values, campaign_zone, now)
+    moment = instant(values, campaign_zone, now, drawn)
     return moment.astimezone(browser_zone(zone)).time()
 
 
-def shown(values, day, clock, weekday, *, zone, campaign_zone, now):
+def shown(values, day, clock, weekday, *, zone, campaign_zone, now, drawn=None):
     """Whether typed ``day``, ``clock`` and ``weekday`` are what Edit showed.
 
     The Edit page fills its fields from :func:`instant` in the browser's
@@ -69,8 +120,9 @@ def shown(values, day, clock, weekday, *, zone, campaign_zone, now):
     the fields). Around a fall-back hour the browser's wall-clock time can
     occur twice, and reading it again would take the first occurrence, so
     an unchanged save of the second one would move the send by an hour.
+    ``drawn`` is the moment the page drew a digest from (:func:`instant`).
     """
-    moment = instant(values, campaign_zone, now).astimezone(browser_zone(zone))
+    moment = instant(values, campaign_zone, now, drawn).astimezone(browser_zone(zone))
     has_weekday = values.get("weekday") is not None
     return (
         (day is not None) == bool(values.get("date"))
@@ -82,7 +134,16 @@ def shown(values, day, clock, weekday, *, zone, campaign_zone, now):
 
 
 def to_campaign(
-    day, clock, weekday, *, zone, campaign_zone, now, saved=None, saved_zone=None
+    day,
+    clock,
+    weekday,
+    *,
+    zone,
+    campaign_zone,
+    now,
+    saved=None,
+    saved_zone=None,
+    drawn=None,
 ):
     """Convert a send time typed in the browser's ``zone`` to campaign-local.
 
@@ -103,6 +164,11 @@ def to_campaign(
     zone, and the page showed the saved row in the saved one. An unchanged
     row then keeps its campaign wall-clock time in the new zone (as a time
     zone change always has); a changed row converts into ``campaign_zone``.
+    ``drawn`` is the moment the page drew a saved digest from.
+
+    Raises :class:`RepeatedHour` for a dated send whose moment is the second
+    of the two the campaign's clocks show when they fall back (see the
+    module docstring); the first of the two is saved exactly.
     """
     if saved is not None and shown(
         saved,
@@ -112,6 +178,7 @@ def to_campaign(
         zone=zone,
         campaign_zone=saved_zone or campaign_zone,
         now=now,
+        drawn=drawn,
     ):
         return (
             date.fromisoformat(saved["date"]) if saved.get("date") else None,
@@ -122,6 +189,13 @@ def to_campaign(
     moment = browser_instant(
         reference.isoformat(), clock.isoformat(timespec="seconds"), zone
     ).astimezone(ZoneInfo(campaign_zone))
+    # The scheduler reads a campaign wall-clock time as its first moment; a
+    # dated send at the second (the repeated hour) would go an hour early.
+    # (Compared in UTC: PEP 495 makes an aware datetime inside a repeated
+    # hour unequal to every instant in another zone, even its own.)
+    first = resolve_local(moment.replace(tzinfo=None), campaign_zone)
+    if day and first != moment.astimezone(UTC):
+        raise RepeatedHour("The send time falls in a repeated hour.")
     return (
         moment.date() if day else None,
         moment.time(),
