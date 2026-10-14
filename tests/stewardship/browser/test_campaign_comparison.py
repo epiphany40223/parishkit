@@ -166,6 +166,24 @@ def test_dark_mode_keeps_the_light_theme_and_its_contrast(
     assert axe_violations(page, axe_source) == []
 
 
+# For each chart matching a selector: whether its summary is its view's
+# description yet takes no room on the page (a chart that draws its values
+# shows no caption repeating them).
+HIDDEN_SUMMARIES = """(selector) =>
+  [...document.querySelectorAll(selector)].map((chart) => {
+  const view = chart.querySelector("[data-chart-view]");
+  const caption = document.getElementById(view.getAttribute("aria-describedby"));
+  return Boolean(caption && caption.closest("[data-chart]") === chart
+    && caption.textContent.trim() && caption.getBoundingClientRect().width <= 1);
+})"""
+
+
+def hidden_summaries(page, selector):
+    """True when every chart matching ``selector`` hides its own summary."""
+    found = page.evaluate(HIDDEN_SUMMARIES, selector)
+    return bool(found) and all(found)
+
+
 def test_charts_show_each_year_and_their_exact_values(page, component_origin):
     """The lines, end labels, day rule, tooltips and tables of the charts.
 
@@ -253,6 +271,9 @@ def test_charts_show_each_year_and_their_exact_values(page, component_origin):
     expect(
         page.locator("[data-chart^='comparison-final-'] + .chart-table")
     ).to_have_count(0)
+    # Those values are drawn, so no chart summary is shown to repeat them;
+    # each stays its view's description (ui-conventions: Charts).
+    assert hidden_summaries(page, "[data-chart^='comparison-final-']")
     # Pointing beside a short bar, on its year's row, still reads its value.
     finals.scroll_into_view_if_needed()
     row = finals.locator("svg g.mark-rect.role-mark").first.locator("path").last
@@ -276,6 +297,7 @@ def test_charts_show_each_year_and_their_exact_values(page, component_origin):
         "Families, Under $250: 30, 13% of pledging Families"
     )
     expect(page.locator("#bands-current .chart-table")).to_have_count(0)
+    assert hidden_summaries(page, "[data-chart='comparison-bands-spec']")
     assert_clean(page, errors)
 
 

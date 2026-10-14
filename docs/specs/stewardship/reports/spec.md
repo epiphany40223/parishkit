@@ -296,8 +296,8 @@ the chart cannot be drawn
 [pledge bands](../campaign-history/spec.md#page-layout) are one): each bar, or
 each band of a stacked bar, shows its figures (its count or dollars, and its
 share where the chart gives one) on or after the mark or in its axis label, a
-band too narrow for its label
-having them in the chart's legend instead, and its tooltip and accessible
+band too narrow for its label having them in the chart's legend instead, and
+its tooltip and accessible
 name carry the same figures. A pointer shows exact values in tooltips; the
 view takes keyboard focus so a keyboard or screen-reader user hears its name
 and summary, and gets the exact values from the table, or without one from
