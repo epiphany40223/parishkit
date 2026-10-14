@@ -18,6 +18,7 @@ The view and each download are audited as a count only.
 
 import csv
 import io
+from collections import Counter
 from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
@@ -529,18 +530,31 @@ def _respond(request, campaign_id, *, export, parameters, render):
             finish(False)
 
 
-def row_controls(rows):
+def resolved_on(moment, zone):
+    """A resolution's calendar day in ``zone``, in the parish's compact style."""
+    return dates.format_date(moment.astimezone(ZoneInfo(zone)).date(), compact=True)
+
+
+def row_controls(rows, zone):
     """Give each shown row what its tick form and selection box need.
 
     A fresh request key per drawn form makes a repeated submission a replay.
     ``label`` names the row as "Member — Ministry", in its icon button's
     accessible name and tooltip, its box's name and the bulk dialog's title
-    (the follow-up queue's bulk outcomes name a row the same way).
+    (the follow-up queue's bulk outcomes name a row the same way). The same
+    change can be listed twice (a Family answered again and both requests
+    were resolved); those rows add their Resolved day in ``zone`` (the
+    parish's), "Member — Ministry, resolved Oct 5, 2054", so each control
+    names its own row, as a stale bulk refusal does.
     """
     for row in rows:
         row["request_key"] = uuid4()
         member = row["member_name"] or row["member_label"]
         row["label"] = f"{member} — {row['ministry_name']}"
+    names = Counter(row["label"] for row in rows)
+    for row in rows:
+        if names[row["label"]] > 1 and row["resolved_at"]:
+            row["label"] += f", resolved {resolved_on(row['resolved_at'], zone)}"
 
 
 @require_GET
@@ -558,7 +572,7 @@ def page(request, campaign_id):
             admit_campaign(campaign_id, mutating=True)
         except PermissionError:
             mutable = False
-        row_controls(table.rows)
+        row_controls(table.rows, dates.parish_zone())
         tick_fields = table.page_fields(table.number)
         return render_to_string(
             "stewardship/ministry-roster.html",
@@ -672,6 +686,15 @@ def bulk(request, campaign_id):
         row = _row_name(campaign_id, principal, error.request_id)
         if row is None:
             return _error(status=409)
+        # The change may be listed twice (row_controls), so the refusal
+        # always names the day it was resolved, which tells the rows apart.
+        resolved = (
+            MinistryRequest.objects.filter(pk=error.request_id)
+            .values_list("resolved_at", flat=True)
+            .first()
+        )
+        if resolved:
+            row += f", resolved {resolved_on(resolved, dates.parish_zone())}"
         return _bulk_refusal(409, BULK_STALE % {"row": row})
     except StaleRecordError:
         return _error(status=409)

@@ -18,6 +18,7 @@ from django.db import DatabaseError, IntegrityError, connection, transaction
 from django.urls import reverse
 from openpyxl import load_workbook
 
+from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
@@ -561,3 +562,62 @@ def test_bulk_marks_several_changes_all_or_none(response_service, google):
     )
     assert refused.status_code in {403, 404}
     assert entries() == before
+
+
+def test_staff_bulk_mark_a_gone_members_change_as_a_single_tick_does(
+    response_service, google
+):
+    """Staff use the bulk bar as Administrators do (#879), and a change for
+    a Member ParishSoft no longer lists is marked like a single tick (#1217):
+    the roster work may still be real. A stale refusal still names that
+    Member's row, with the day it was resolved."""
+    from ..policy_factory import address
+    from .campaign_builders import change
+
+    harness = setup(response_service)
+    store = harness.service.store
+    change(
+        store,
+        store.active(),
+        uuid4(),
+        [
+            {
+                "operation": "add",
+                "section": "login_rules",
+                **address("staff@example.org", ("staff",)),
+            }
+        ],
+    )
+    staff = user("staff@example.org").pk
+    join, leave = requests()
+    edit(harness, staff, join, state="resolved", outcome="joined")
+    edit(harness, staff, leave, state="resolved", outcome="leave_confirmed")
+    member_gone(harness, "moved")
+    google[0]["email"] = "staff@example.org"
+    browser, login = signed_in()
+    assert login.status_code == 302
+    _, body = get(browser, "/admin/reports/ministries/follow-up/roster/")
+    assert f'value="{join.pk}:1" form="roster-bulk"'.encode() in body
+    route = reverse("admin:ministry_roster_bulk")
+    form = {"bulk_key": str(uuid4()), "request": [f"{join.pk}:1", f"{leave.pk}:1"]}
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        assert post(browser, route, form).status_code == 204
+    marked = MinistryRosterEntry.objects.filter(entered=True)
+    assert set(marked.values_list("request_id", flat=True)) == {join.pk, leave.pk}
+    # The signed-in Staff member made them (a fresh identity for the same
+    # address, as signed_in() creates one).
+    assert set(
+        PortalUser.objects.filter(
+            pk__in=marked.values_list("actor_id", flat=True)
+        ).values_list("email", flat=True)
+    ) == {"staff@example.org"}
+    assert AuditEvent.objects.filter(event_type="ministry_roster_entered").count() == 2
+    tick(harness, staff, join, False)
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        stale = post(
+            browser, route, {"bulk_key": str(uuid4()), "request": [f"{join.pk}:2"]}
+        )
+    assert stale.status_code == 409
+    message = json.loads(stale.content)["refusal"]["message"]
+    assert re.search(r"^.+ — .+, resolved \w{3} \d{1,2}, \d{4} changed after", message)
+    assert MinistryRosterEntry.objects.filter(request=join).count() == 2

@@ -230,7 +230,7 @@ def test_the_tick_is_an_icon_button_named_for_its_row():
     from parishkit.stewardship.reports.ministry_roster_views import row_controls
 
     row = roster_row(id=str(uuid4()), roster_eligible=True, roster_entered=False)
-    row_controls([row])
+    row_controls([row], "UTC")
     assert row["label"] == "Sample, Pat — Food pantry"
     cell = row_cell_html(row, mutable=True)
     assert cell.startswith('<td class="table-actions"><form method="post"')
@@ -285,3 +285,31 @@ def test_bulk_post_grammar_is_closed():
     ):
         with pytest.raises(ValueError):
             parse(**bad)
+
+
+def test_a_change_listed_twice_names_each_row_by_its_resolved_day():
+    """The same change listed twice (a Family answered again and both
+    requests were resolved) would give both rows one name; those rows add
+    their Resolved day in the parish's zone, so each icon, box and dialog
+    names its own row. A name no other row shares stays short."""
+    from datetime import timedelta
+
+    from parishkit.stewardship.reports.ministry_roster_views import row_controls
+
+    earlier = WHEN - timedelta(days=3)
+    rows = [
+        roster_row(id="1", resolved_at=WHEN),
+        roster_row(id="2", resolved_at=earlier, latest=False),
+        roster_row(id="3", member_name="Other, Lee"),
+    ]
+    row_controls(rows, "America/Los_Angeles")
+    assert [row["label"] for row in rows] == [
+        "Sample, Pat — Food pantry, resolved Oct 5, 2054",
+        "Sample, Pat — Food pantry, resolved Oct 2, 2054",
+        "Other, Lee — Food pantry",
+    ]
+    # The day is the parish's: 14:30 UTC on Oct 5 is still Oct 5 in Los
+    # Angeles, but a resolution at 02:00 UTC is the day before there.
+    late = [roster_row(id=str(n), resolved_at=WHEN.replace(hour=2)) for n in (1, 2)]
+    row_controls(late, "America/Los_Angeles")
+    assert late[0]["label"].endswith("resolved Oct 4, 2054")
