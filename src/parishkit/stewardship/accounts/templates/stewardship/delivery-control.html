@@ -4,7 +4,7 @@
 <h1>{% translate "Pause and resume mail" %}</h1>
 {% aboutpage "delivery-control" %}<p>{% translate "Pause stops this campaign's email to Families and Admin digests; resume sends it again. Use it when something is wrong with the campaign's email." %}</p>
 <p>{% translate "Pausing does not close the campaign: Families can still respond, and their confirmation emails wait until you resume. Nothing is sent to the Testing recipient instead. Alerts to administrators and test emails you send yourself still go out." %}</p>
-<p>{% translate "An email whose result is uncertain is resolved on the Outgoing mail page, not here." %}</p>
+<p>{% url 'admin:deliveries' as outgoing_url %}{% blocktranslate %}An email whose result is uncertain is resolved on the <a href="{{ outgoing_url }}">Outgoing mail</a> page, not here.{% endblocktranslate %}</p>
 <p>{% translate "Every pause, resume or resolution asks for a reason and shows a preview first. Nothing changes until you confirm it." %}</p>{% endaboutpage %}
 <p>{{ campaign.active_configuration.name }}</p>
 <p><a href="{% url 'admin:family_email_progress' %}">{% translate "Watch Family email progress" %}</a></p>
@@ -35,7 +35,7 @@
 <dt>{% translate "Families on hold" %}</dt><dd>{{ family_recovery.blocked|number }}</dd>
 <dt>{% translate "Families still waiting for their first invitation" %}</dt><dd>{{ family_recovery.deferred|number }}</dd>
 <dt>{% translate "Overdue send times not prepared yet" %}</dt><dd>{{ family_recovery.unmaterialized|number }}</dd></dl>
-{% if family_recovery.deferred %}<p>{% translate "These Families never received their first invitation, so their reminders wait. They do not hold up other Families. Check the failed invitation on the Outgoing mail page, or the restore hold, before retrying their reminders." %}</p>{% endif %}</section>{% endif %}
+{% if family_recovery.deferred %}<p>{% url 'admin:deliveries' as outgoing_url %}{% blocktranslate %}These Families never received their first invitation, so their reminders wait. They do not hold up other Families. Check the failed invitation on the <a href="{{ outgoing_url }}">Outgoing mail</a> page, or the restore hold, before retrying their reminders.{% endblocktranslate %}</p>{% endif %}</section>{% endif %}
 {% if digest_recovery %}<section class="panel"><h2>{% translate "Overdue Admin digests" %}</h2>
 <p>{% translate "Overdue daily or weekly digests are combined so each report is sent once, still covering its original dates, and administrators who already received one are not sent it again. These count reports, not individual emails." %}</p>
 <dl><dt>{% translate "Digest reports to send" %}</dt><dd>{{ digest_recovery.selected|number }}</dd>
@@ -43,7 +43,7 @@
 <dt>{% translate "Report dates not prepared yet" %}</dt><dd>{{ digest_recovery.unmaterialized|number }}</dd>
 <dt>{% translate "Reports already prepared" %}</dt><dd>{{ digest_recovery.prepared|number }}</dd>
 <dt>{% translate "Reports on hold" %}</dt><dd>{{ digest_recovery.blocked|number }}</dd></dl>
-{% if digest_recovery.blocked %}<p>{% translate "Some reports are still being prepared or have an uncertain delivery. Wait for preparation to finish, and resolve uncertain deliveries on the Outgoing mail page, before resuming." %}</p>{% endif %}</section>{% endif %}
+{% if digest_recovery.blocked %}<p>{% url 'admin:deliveries' as outgoing_url %}{% blocktranslate %}Some reports are still being prepared or have an uncertain delivery. Wait for preparation to finish, and resolve uncertain deliveries on the <a href="{{ outgoing_url }}">Outgoing mail</a> page, before resuming.{% endblocktranslate %}</p>{% endif %}</section>{% endif %}
 {% if resume_available %}<form method="post" data-require-complete>{% csrf_token %}<input type="hidden" name="action" value="preview_resume"><div data-missing-hint="{% translate 'Enter a reason for resuming to preview it.' %}"><label for="resume-reason">{% translate "Reason for resuming live delivery" %}</label><textarea id="resume-reason" name="reason" required maxlength="1024">{{ preview.reason }}</textarea></div>{% button type="submit" aria-describedby="resume-complete-hint" %}{% translate "Preview resume" %}{% endbutton %}<p class="help" id="resume-complete-hint" data-complete-hint hidden></p></form>
 {% if preview.action == 'resume' %}<section class="panel"><h2>{% translate "Resume preview" %}</h2><p>{{ preview.reason }}</p>
 {% if preview.selection.plan == 'before_start' %}<p>{% translate "The campaign has not started, so nothing is overdue. Held email keeps its original send time." %}</p>
@@ -63,14 +63,14 @@
 {% if resolution.types and not resolution.release %}<p class="help">{% translate "Releasing held messages becomes available once the provider and sender check above has passed." %}</p>{% endif %}
 {% if resolution.release or resolution.cancel %}<fieldset data-show-when="decision!=clear" data-require-one data-missing-hint="{% translate 'Tick at least one message type to preview.' %}"><legend>{% translate "Message types" %}</legend>
 {% for item in resolution.types %}{% if resolution.release or item.cancellable %}<label{% if not item.cancellable %} data-show-when="decision!=cancel"{% endif %}><input type="checkbox" name="{{ item.kind }}" value="yes"> {{ item.label }} ({{ item.held|number }})</label>{% endif %}{% endfor %}</fieldset>{% endif %}
-{% if resolution.uncancellable %}<p class="help"{% if resolution.release %} data-show-when="decision=cancel"{% endif %}>{% blocktranslate with types=resolution.uncancellable|join:", " %}These types can't be cancelled yet: {{ types }}. They still have email being handed to the mail service, or email that may not have arrived. Resolve that email on the Outgoing mail page first.{% endblocktranslate %}</p>{% endif %}
+{% if resolution.uncancellable %}<p class="help"{% if resolution.release %} data-show-when="decision=cancel"{% endif %}>{% url 'admin:deliveries' as outgoing_url %}{% blocktranslate with types=resolution.uncancellable|join:", " %}These types can't be cancelled yet: {{ types }}. They still have email being handed to the mail service, or email that may not have arrived. Resolve that email on the <a href="{{ outgoing_url }}">Outgoing mail</a> page first.{% endblocktranslate %}</p>{% endif %}
 <div data-missing-hint="{% translate 'Enter a reason to preview the resolution.' %}"><label for="resolution-reason">{% translate "Reason" %}</label><textarea id="resolution-reason" name="reason" required maxlength="1024">{{ preview.reason }}</textarea></div>
 {% button type="submit" aria-describedby="resolve-complete-hint" %}{% translate "Preview held-message resolution" %}{% endbutton %}<p class="help" id="resolve-complete-hint" data-complete-hint hidden></p></form>
 {% else %}{% comment %}No choice is available: Preview is shown unavailable, described by the paragraph that lists every way forward.{% endcomment %}<p><span class="disabled-control"><a class="disabled-control-link" role="link" aria-disabled="true" tabindex="0" aria-describedby="resolve-unavailable-reason">{% translate "Preview held-message resolution" %}</a></span></p>
 <div id="resolve-unavailable-reason"><p>{% translate "Nothing can be resolved yet." %}</p><ul>
 {% if resolution.types %}<li>{% translate "To release held messages, pass the provider and sender check above." %}</li>
-<li>{% blocktranslate with types=resolution.uncancellable|join:", " %}To cancel them, first resolve the email still being handed to the mail service, or that may not have arrived, on the Outgoing mail page ({{ types }}).{% endblocktranslate %}</li>
-{% else %}<li>{% translate "To clear the pause, wait for email still being handed to the mail service, and resolve email that may not have arrived on the Outgoing mail page." %}</li>{% endif %}</ul></div>{% endif %}
+<li>{% url 'admin:deliveries' as outgoing_url %}{% blocktranslate with types=resolution.uncancellable|join:", " %}To cancel them, first resolve the email still being handed to the mail service, or that may not have arrived, on the <a href="{{ outgoing_url }}">Outgoing mail</a> page ({{ types }}).{% endblocktranslate %}</li>
+{% else %}<li>{% url 'admin:deliveries' as outgoing_url %}{% blocktranslate %}To clear the pause, wait for email still being handed to the mail service, and resolve email that may not have arrived on the <a href="{{ outgoing_url }}">Outgoing mail</a> page.{% endblocktranslate %}</li>{% endif %}</ul></div>{% endif %}
 {% if preview.action == 'resolve' %}<section class="panel"><h3>{% translate "Held-message resolution preview" %}</h3><p>{{ preview.reason }}</p>
 <p>{% translate "Decision" %}: {{ preview.selection.decision }}. {% translate "Selected types" %}: {{ preview.selection.types|join:", " }}.</p>
 <ul>{% for kind, counts in preview.inventory.types.items %}{% if kind in preview.selection.types %}<li>{{ kind }}: {{ counts.held|number }} {% translate "held messages" %}</li>{% endif %}{% endfor %}</ul>

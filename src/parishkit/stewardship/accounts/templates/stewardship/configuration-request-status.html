@@ -8,7 +8,11 @@
   change that was not applied leaves the page alone, so its form keeps the
   version it was reviewed at. A refused live end-date change (#944) says
   why, in the same paragraph a failure's explanation always takes, so the
-  settled status occupies the same place as any other.
+  settled status occupies the same place as any other. The pages a message
+  names are linked with menu_link, greyed out as the menu greys them (#521).
+  This needs no flag for where the status is drawn: Campaign settings'
+  review dialog reads the status as plain text (ui-v1.js changeStatus), so
+  the link never shows on the page it names.
   The template[data-live-refused] is what live-status-v1.js shows, in place
   of the running status, when a status read is refused (signed out, or the
   reader lost access, such as by a change that removed their own access): a
@@ -22,8 +26,8 @@
   <h2 class="live-done">{% translate "Applied: your change is saved" %}</h2><p>{% translate "The change has been applied and is now in effect." %}</p>
 {% elif receipt.state == 'failed' or receipt.state == 'cancelled' %}
   <h2 class="live-failed">{% translate "Not applied" %}</h2>
-  {% if receipt.refusal %}<p>{{ receipt.refusal }} {% translate "Nothing was changed. If the end date still needs to change, review it again on Campaign settings." %}</p>
-  {% elif receipt.failure_code == 'invalid_candidate' %}<p>{% translate "This change could not be applied because it did not pass validation against the saved settings. Nothing was changed. Start the change again; if it keeps failing, check System logs." %}</p>
+  {% if receipt.refusal %}<p>{{ receipt.refusal }} {% translate "Nothing was changed. If the end date still needs to change, review it again on" %} {% menu_link "campaign_settings" _("Campaign settings") %}.</p>
+  {% elif receipt.failure_code == 'invalid_candidate' %}<p>{% translate "This change could not be applied because it did not pass validation against the saved settings. Nothing was changed. Start the change again; if it keeps failing, check" %} {% menu_link "logs" _("System logs") %}.</p>
   {% elif receipt.failure_code == 'stale_base' %}<p>{% translate "The settings changed after you reviewed this change, so it was not applied. Nothing was changed. Start the change again from the current settings." %}</p>
   {% elif receipt.failure_code == 'actor_unauthorized' %}<p>{% translate "Your account is no longer allowed to make this change, so it was not applied. Nothing was changed." %}</p>
   {% else %}<p>{% translate "Review the current configuration before starting a new change." %}</p>{% endif %}
