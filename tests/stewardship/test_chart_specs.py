@@ -617,16 +617,46 @@ def test_participation_chart_is_panels_on_one_date_axis():
             for layer in panel["layer"]
         )
     xs = [panel["encoding"]["x"] for panel in panels]
-    assert all(x["field"] == "day" and x["type"] == "ordinal" for x in xs)
+    assert all(x["field"] == "tick" and x["type"] == "ordinal" for x in xs)
+    # Dates in order, whatever their text order, by an explicit domain.
+    assert xs[0]["scale"]["domain"] == [row["tick"] for row in spec["data"]["values"]]
     assert [x["axis"].get("labels", True) for x in xs] == [False, False, True]
     assert xs[-1]["title"] == ["Campaign date", "(America/New_York)"]
-    assert "labelExpr" in xs[-1]["axis"] and xs[-1]["axis"]["labelOverlap"]
+    assert xs[-1]["axis"]["labelOverlap"] and "labelExpr" not in xs[-1]["axis"]
+    # Vega's own accessible names would read raw fields (ISO dates,
+    # unrounded dollars), so the marks and axes are hidden; the view's name,
+    # summary and the daily table are the accessible path.
+    for panel in panels:
+        drawn = panel["layer"][0]
+        assert drawn["mark"]["aria"] is False
+        assert drawn["mark"].get("point", {"aria": False})["aria"] is False
+        assert drawn["encoding"]["y"]["axis"]["aria"] is False
+        assert panel["encoding"]["x"]["axis"]["aria"] is False
     # The hover column per date, on top and hidden from assistive technology.
     for panel in panels:
         hover = panel["layer"][-1]
         assert hover["mark"] == {"type": "bar", "opacity": 0, "aria": False}
         assert hover["encoding"]["tooltip"] == {"field": "tip"}
     assert json.loads(json.dumps(spec)) == spec
+
+
+@pytest.mark.parametrize(
+    ("style", "first", "heading"),
+    [
+        ("us_long", "Oct 31, 2026", "November 2, 2026"),
+        ("eu_dot", "31.10.26", "02.11.2026"),
+        ("iso", "2026-10-31", "2026-11-02"),
+    ],
+)
+def test_participation_chart_dates_follow_the_parish_style(style, first, heading):
+    """The date axis and the tooltips write dates in the parish's style, as
+    the static drawing, the daily table and the exports do."""
+    with using(style):
+        chart = participation_chart(participation())
+    rows = chart.spec["data"]["values"]
+    assert rows[0]["tick"] == first
+    assert rows[-1]["tip"]["title"] == heading
+    assert chart.spec["vconcat"][0]["encoding"]["x"]["scale"]["domain"][0] == first
 
 
 def test_participation_chart_rows_tooltips_and_summary():
@@ -688,13 +718,31 @@ def test_participation_chart_gaps_and_without_financial():
     )
 
 
-def test_participation_chart_compiles_without_warnings():
-    """The spec is valid Vega-Lite: the server renderer draws it (the page's
-    own drawing is checked in the browser tests)."""
-    svg = vl_convert.vegalite_to_svg(
-        participation_chart(participation()).spec, allowed_base_urls=[]
-    )
-    assert svg.startswith("<svg")
+def page_warnings(spec, capfd):
+    """Vega-Lite's compile warnings for ``spec`` as the page draws it.
+
+    chart-v1.js gives the spec (or each stacked panel) the container's
+    width, so that is compiled here; vl-convert prints the warnings, which
+    ``capfd`` reads from the process's output.
+    """
+    spec = json.loads(json.dumps(spec))
+    for part in spec.get("vconcat", [spec]):
+        part["width"] = "container"
+    capfd.readouterr()
+    vl_convert.vegalite_to_vega(spec, show_warnings=True)
+    captured = capfd.readouterr()
+    return [line for line in (captured.out + captured.err).splitlines() if line]
+
+
+def test_participation_page_charts_compile_without_warnings(capfd):
+    """Both Participation page charts compile, as the page draws them,
+    without a warning (a step height beside a container width drew one on
+    every draw); a step height still warns, so the check can fail."""
+    assert page_warnings(participation_chart(participation()).spec, capfd) == []
+    progress = population_progress(PopulationStatistics(4, 2, 1, 1, 0, MoneyAmount(0)))
+    assert page_warnings(progress.spec, capfd) == []
+    stepped = progress.spec | {"height": {"step": 36}}
+    assert any("fit-y" in line for line in page_warnings(stepped, capfd))
 
 
 @pytest.mark.parametrize(

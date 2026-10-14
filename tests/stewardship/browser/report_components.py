@@ -12,7 +12,9 @@ from django.urls import reverse
 
 from parishkit.stewardship.jobs.queue_wait import QueueWait
 from parishkit.stewardship.reports.chart_specs import participation_chart
-from parishkit.stewardship.reports.digest_presentation import participation_context
+from parishkit.stewardship.reports.digest_presentation import (
+    participation_table_context,
+)
 from parishkit.stewardship.reports.money import MoneyAmount
 from parishkit.stewardship.reports.participation import ParticipationDay
 from parishkit.stewardship.reports.workspace import ReportQuery
@@ -76,7 +78,7 @@ def components(context, admin):
         state="active",
     )
     page = {
-        **participation_context(chart),
+        **participation_table_context(chart),
         "campaign": campaign,
         "campaigns": [
             {"id": campaign.pk, "name": chart.campaign_name, "url": "/participation"}
@@ -93,7 +95,7 @@ def components(context, admin):
         "row_count": len(chart.days),
         **daily_table(
             chart,
-            participation_context(chart),
+            participation_table_context(chart),
             ReportQuery(timezone="America/Los_Angeles"),
         ),
         "daily_chart": participation_chart(chart),
@@ -213,7 +215,7 @@ def components(context, admin):
     implicit = ReportQuery(timezone_explicit=False)
     fallback = page | {
         "query": implicit,
-        **daily_table(chart, participation_context(chart), implicit),
+        **daily_table(chart, participation_table_context(chart), implicit),
     }
     los_angeles = ReportQuery(timezone="America/Los_Angeles")
     current = ReportQuery(scope="current", timezone="America/Los_Angeles")
@@ -237,7 +239,7 @@ def components(context, admin):
         | {
             "query": current,
             **statistics_panel(refreshed),
-            **daily_table(chart, participation_context(chart), current),
+            **daily_table(chart, participation_table_context(chart), current),
         },
     )
     return {

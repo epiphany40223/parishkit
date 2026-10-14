@@ -29,7 +29,7 @@ from parishkit.stewardship.web.tables import paginate
 
 from .chart_specs import PROGRESS, participation_chart, population_progress
 from .daily_digest import statistics_cards
-from .digest_presentation import participation_context
+from .digest_presentation import participation_table_context
 from .exact_models import ExactExportRequest
 from .export_models import ExportRequest
 from .export_services import admit_campaign
@@ -200,7 +200,7 @@ def participation(request, campaign_id):
 def daily_table(chart, presented, query):
     """The daily table's sorted, paged context for one participation chart.
 
-    ``presented`` is ``participation_context(chart)``. Each day is paired
+    ``presented`` is ``participation_table_context(chart)``. Each day is paired
     with its formatted cells, so the server sorts by the exact stored values
     while the table shows the shared formatting. The whole document is
     already in memory, so the shared navigator shows the total and allows
@@ -312,7 +312,7 @@ def _page_context(campaign_id, query, selected, principal):
         ),
     }
     if selected.document is not None:
-        context.update(participation_context(selected.document))
+        context.update(participation_table_context(selected.document))
         context.update(daily_table(selected.document, context, query))
         context["row_count"] = len(selected.document.days)
         # The daily chart drawn in the browser (#720); the exports and the

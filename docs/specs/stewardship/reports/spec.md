@@ -301,7 +301,9 @@ each band of a stacked bar, shows its figures (its count or dollars, and its
 share where the chart gives one) on or after the mark or in its axis label, a
 band too narrow for its label having them in the chart's legend instead, and
 its tooltip and accessible
-name carry the same figures. A pointer shows exact values in tooltips; the
+name carry the same figures. A pointer shows exact values in tooltips, and so
+does a tap (`chart-v1.js` replays a tap on a chart as a pointer move, which is
+what Vega's tooltips follow; a tap elsewhere closes the tooltip); the
 view takes keyboard focus so a keyboard or screen-reader user hears its name
 and summary, and gets the exact values from the table, or without one from
 the marks' names, not the tooltips. Series are told apart by dash pattern as
@@ -414,9 +416,12 @@ The Participation page draws the same design in the browser with the
 ([#720](https://github.com/epiphany40223/parishkit/issues/720)): the same
 panels, titles, colors, zero-based axes and round ticks, each campaign date one
 band of the shared date axis, and as many date labels under the last panel as
-fit without overlapping. The page's daily table directly follows the chart and
-is its exact values, so the chart adds no exact-values table of its own and
-does not show its summary, which would only repeat that table. There is no
+fit without overlapping, in the parish's compact date style as the exports'
+ticks are. The page's daily table directly follows the chart and is its exact
+values, so the chart adds no exact-values table of its own and does not show
+its summary, which would only repeat that table. Its marks and axes are hidden
+from assistive technology, since their automatic names would read raw values
+(ISO dates, unrounded dollars) unlike the table's. There is no
 page image, so a page view draws nothing on the server.
 
 For **Historical as of day**, the source cutoff is the last promoted source

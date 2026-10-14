@@ -129,6 +129,31 @@
       }
     });
   };
+  // Vega shows a tooltip on pointermove, which a tap never sends: a touch
+  // pointer goes over, down, up and out again, then the page gets a click.
+  // So a tap on a drawn chart replays itself as a pointermove there, and
+  // the tooltip opens; a tap anywhere else sends each drawn chart a
+  // pointerout, which closes any open tooltip. Pointer and mouse users are
+  // unaffected: only a click that follows a touch pointerdown counts.
+  let touched = false;
+  document.addEventListener("pointerdown", (event) => {
+    touched = event.pointerType === "touch";
+  }, true);
+  document.addEventListener("click", (event) => {
+    if (!touched) return;
+    touched = false;
+    const target = event.target instanceof Element
+      ? event.target.closest("[data-chart-view] svg *") && event.target
+      : null;
+    const at = { bubbles: true, clientX: event.clientX, clientY: event.clientY, pointerType: "touch" };
+    drawn.forEach((_result, root) => {
+      const svg = root.querySelector("[data-chart-view] svg");
+      if (svg && !(target && svg.contains(target))) {
+        svg.dispatchEvent(new PointerEvent("pointerout", at));
+      }
+    });
+    if (target) target.dispatchEvent(new PointerEvent("pointermove", at));
+  }, true);
   window.ParishCharts = { render, hold };
   render(document);
 })();

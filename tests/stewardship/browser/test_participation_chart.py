@@ -57,8 +57,16 @@ def drawn(page, origin):
 
 @pytest.fixture
 def chart(page, component_origin):
-    """The daily chart, drawn at a desktop width, with errors watched."""
+    """The daily chart, drawn at a desktop width, with errors and console
+    warnings watched (Vega reports a spec it has to correct as a warning)."""
     page.errors = watch(page)
+    page.warnings = []
+    page.on(
+        "console",
+        lambda message: (
+            page.warnings.append(message.text) if message.type == "warning" else None
+        ),
+    )
     page.set_viewport_size({"width": 1280, "height": 900})
     return drawn(page, component_origin)
 
@@ -71,9 +79,8 @@ def test_daily_chart_is_panels_on_one_date_axis(page, chart):
     for title in TITLES:
         assert texts.count(title) == 1
     assert chart.locator("svg g.mark-group.role-legend").count() == 0
-    # One value axis per panel, all on the left, and one date axis.
-    assert chart.locator("svg g.role-axis[aria-label^='Y-axis']").count() == 3
-    assert chart.locator("svg g.role-axis[aria-label^='X-axis']").count() == 1
+    # One titled value axis per panel; one titled date axis, under the last.
+    assert texts.count("Families") == 2 and texts.count("USD") == 1
     lines = chart.locator("svg tspan").all_text_contents()
     assert "Campaign date" in lines and "(America/New_York)" in lines
     # Short dollar ticks on the pledges panel ("$1K", "$2K", ...).
@@ -100,7 +107,34 @@ def test_daily_chart_is_panels_on_one_date_axis(page, chart):
     view.focus()
     assert page.evaluate("document.activeElement.hasAttribute('data-chart-view')")
     assert page.evaluate(COLLISIONS) == []
+    # Vega would name each mark and axis from raw fields (ISO dates,
+    # unrounded dollars); they are hidden, so the view's name and summary
+    # and the daily table are the accessible path. Only the panel titles
+    # are named.
+    assert (
+        chart.locator("svg [role=graphics-symbol]").evaluate_all(
+            "nodes => nodes.map(node => node.getAttribute('aria-roledescription'))"
+        )
+        == ["title"] * 3
+    )
+    assert chart.locator("svg [aria-roledescription=axis]").count() == 0
     assert_clean(page, page.errors)
+    assert page.warnings == []
+
+
+TIP = (
+    ("First submissions", "1"),
+    ("Families that have responded", "3 out of 1,234 (0.2%)"),
+    ("Effective annual pledges", "$3,235"),
+)
+
+
+def tip_rows(tooltip):
+    """The tooltip's (label, value) rows, as vega-tooltip lays them out."""
+    return [
+        tuple(cell.strip() for cell in row.locator("td").all_inner_texts())
+        for row in tooltip.locator("tr").all()
+    ]
 
 
 def test_a_date_column_shows_that_dates_figures(page, chart):
@@ -115,14 +149,34 @@ def test_a_date_column_shows_that_dates_figures(page, chart):
         page.mouse.move(box["x"] + box["width"] * 5 / 6, box["y"] + box["height"] / 4)
         expect(tooltip).to_be_visible()
         expect(tooltip.locator("h2")).to_have_text("November 2, 2026")
-        for text in (
-            "First submissions",
-            "Families that have responded",
-            "Effective annual pledges",
-        ):
-            expect(tooltip).to_contain_text(text)
+        assert tip_rows(tooltip) == list(TIP)
     page.mouse.move(0, 0)
     expect(tooltip).to_be_hidden()
+
+
+def test_tapping_a_date_shows_its_figures(browser_engine, component_origin):
+    """On a touch screen, tapping a date's column shows its tooltip."""
+    context = browser_engine.new_context(
+        has_touch=True,
+        viewport={"width": 390, "height": 900},
+        timezone_id="America/Los_Angeles",
+    )
+    try:
+        page = context.new_page()
+        chart = drawn(page, component_origin)
+        chart.scroll_into_view_if_needed()
+        plot = chart.locator("svg g.mark-group.role-scope > g > path.background")
+        box = plot.nth(1).bounding_box()
+        page.touchscreen.tap(box["x"] + box["width"] / 6, box["y"] + box["height"] / 2)
+        tooltip = page.locator("#vg-tooltip-element")
+        expect(tooltip).to_be_visible()
+        expect(tooltip.locator("h2")).to_have_text("October 31, 2026")
+        assert tip_rows(tooltip)[1] == (
+            "Families that have responded",
+            "1 out of 1,234 (0.1%)",
+        )
+    finally:
+        context.close()
 
 
 @pytest.mark.parametrize("width", [320, 1280])

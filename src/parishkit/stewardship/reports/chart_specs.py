@@ -446,6 +446,10 @@ def label_room(texts):
 TICK = " — "
 
 
+# Each count bar's band height in pixels (``count_bars``).
+BAR_STEP = 36
+
+
 def count_bars(key, title, bars, *, total, compared, noun="Families", progress=False):
     """A labelled horizontal bar per ``(label, count)`` pair, in the given order.
 
@@ -581,7 +585,11 @@ def count_bars(key, title, bars, *, total, compared, noun="Families", progress=F
         "$schema": VEGA_LITE_SCHEMA,
         "description": summary,
         "width": WIDTH,
-        "height": {"step": 36},
+        # 36 pixels a bar, as a fixed height rather than Vega-Lite's
+        # {"step": 36}: a step height beside the page's "container" width
+        # makes Vega-Lite warn on every draw that it drops fit-y.
+        "height": BAR_STEP * max(len(rows), 1),
+        "autosize": {"type": "fit-x", "contains": "padding"},
         "data": {"values": rows},
         "encoding": {"y": y, "x": x},
         "layer": layers,
@@ -697,6 +705,9 @@ def participation_rows(document):
             # so no time zone can shift it.
             "day": day.local_date.isoformat(),
             "label": format_date(day.local_date),
+            # The date axis's label, in the parish's compact date style, as
+            # the static drawing's ticks and the daily table write it.
+            "tick": format_date(day.local_date, compact=True),
             "first": day.first_responses if known else None,
             "families": day.cumulative_responses if known else None,
             "pledges": float(day.pledge_total) if pledged else None,
@@ -746,10 +757,15 @@ def participation_panel(title, field, unit, values, mark, *, tooltip, x, axis=No
     one), and its ticks step by round 1, 2 or 5 multiples (``round_ticks``).
     An invisible full-height bar per date carries the tooltip, so a pointer
     anywhere in a date's column, not only on its small mark, shows that
-    date's figures; it is hidden from assistive technology, since the visible
-    mark already names the same day. A line's points sit in the middle of
-    their date's column, and an unavailable day breaks the line (a gap,
-    never a joined or zero point).
+    date's figures. A line's points sit in the middle of their date's
+    column, and an unavailable day breaks the line (a gap, never a joined or
+    zero point).
+
+    The marks are hidden from assistive technology: Vega would name each
+    one from its raw fields (an ISO date, an unrounded dollar float), which
+    differs from the page's daily table. The view's name and summary, and
+    that table, are the chart's accessible path (reports spec, "Chart
+    engine").
     """
     top = axis_top([value for value in values if value is not None])
     settings = {
@@ -757,6 +773,8 @@ def participation_panel(title, field, unit, values, mark, *, tooltip, x, axis=No
         "format": ",d",
         "minExtent": AXIS_EXTENT,
         "maxExtent": AXIS_EXTENT,
+        # Its range and ticks would be read as raw numbers ("0 to 3.3").
+        "aria": False,
     } | (axis or {})
     y = {
         "field": field,
@@ -771,7 +789,7 @@ def participation_panel(title, field, unit, values, mark, *, tooltip, x, axis=No
         "height": PANEL_HEIGHT,
         "encoding": {"x": x},
         "layer": [
-            {"mark": mark, "encoding": {"y": y}},
+            {"mark": mark | {"aria": False}, "encoding": {"y": y}},
             # On top, so the pointer always reaches a whole date's column:
             # a line's path would otherwise catch it, and Vega gives a path
             # one tooltip, its first date's.
@@ -801,15 +819,21 @@ def participation_chart(document):
     """
     rows = participation_rows(document)
     tooltip = {"field": "tip"}
-    # Each campaign date is one band, in date order (ISO dates sort as
-    # text): a bar fills most of it, a line's point sits in its middle and
-    # its hover column fills all of it. Only the last panel labels it.
+    # Each campaign date is one band, named by its compact parish-style
+    # label (unique, since it carries the year) and in date order (an
+    # explicit domain, whatever the style's text order): a bar fills most of
+    # it, a line's point sits in its middle and its hover column fills all
+    # of it. Only the last panel labels it.
     x = {
-        "field": "day",
+        "field": "tick",
         "type": "ordinal",
-        "scale": {"paddingInner": 0, "paddingOuter": 0},
+        "scale": {
+            "domain": [row["tick"] for row in rows],
+            "paddingInner": 0,
+            "paddingOuter": 0,
+        },
         "title": None,
-        "axis": {"labels": False, "ticks": False, "domain": False},
+        "axis": {"labels": False, "ticks": False, "domain": False, "aria": False},
     }
     fill, stroke = PANEL_COLORS["bars"]
     # (title, field, unit, mark, axis overrides), top to bottom.
@@ -835,7 +859,12 @@ def participation_chart(document):
                 "type": "line",
                 "color": PANEL_COLORS["line"],
                 "invalid": "break-paths-show-domains",
-                "point": {"filled": True, "size": 12, "color": PANEL_COLORS["line"]},
+                "point": {
+                    "filled": True,
+                    "size": 12,
+                    "color": PANEL_COLORS["line"],
+                    "aria": False,
+                },
             },
             None,
         ),
@@ -856,19 +885,22 @@ def participation_chart(document):
                         "shape": "square",
                         "size": 12,
                         "color": PANEL_COLORS["money"],
+                        "aria": False,
                     },
                 },
                 {"format": None, "labelExpr": SHORT_DOLLARS},
             )
         )
-    # Only the last panel labels the dates ("Oct 31"), as many as fit
-    # without overlapping, and none past the plot's ends. The title names the
-    # campaign's time zone, as the static page drawing did, on its own line
-    # so it fits a phone-width plot.
+    # Only the last panel labels the dates, in the parish's compact date
+    # style, as many as fit without overlapping and none past the plot's
+    # ends. The title names the campaign's time zone, as the static page
+    # drawing did, on its own line so it fits a phone-width plot. The axis
+    # is hidden from assistive technology, which would otherwise read every
+    # date of the campaign; the daily table lists them.
     labelled = x | {
         "title": ["Campaign date", f"({document.campaign_timezone})"],
         "axis": {
-            "labelExpr": "utcFormat(toDate(datum.value), '%b %-d')",
+            "aria": False,
             "ticks": False,
             "labelAngle": 0,
             "labelOverlap": True,
