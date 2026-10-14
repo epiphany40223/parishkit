@@ -393,19 +393,3 @@ def test_one_image_over_its_limit_is_refused_in_the_pages_words():
     page = LogoUploadForm(initial={"base_digest": "a" * 64})
     template = page.fields["logo"].widget.attrs["data-max-bytes-message"]
     assert str(template).replace("{size}", "5.1 MB") == message
-
-
-@pytest.mark.parametrize(("legacy", "mode"), [("one", "basic"), ("each", "advanced")])
-def test_a_page_from_before_the_toggle_still_uploads(legacy, mode):
-    """The earlier mode field (one or each, #1062 slices 1-2) is read as
-    Basic or Advanced while editor_mode is absent, for one release (#1178)."""
-    form = LogoUploadForm(
-        {"base_digest": "a" * 64, "mode": legacy},
-        {
-            "favicon": upload("favicon", image(32, 32)),
-            "logo": upload("logo", image(150, 80)),
-        },
-    )
-    assert form.is_valid(), form.errors
-    assert form.cleaned_data["editor_mode"] == mode
-    assert form.opened_mode == mode

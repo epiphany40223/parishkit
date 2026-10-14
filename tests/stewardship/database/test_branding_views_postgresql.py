@@ -594,38 +594,13 @@ def test_the_page_opens_in_the_mode_that_saved_the_logos(auth_service, google, m
         # A mode the page never sends is refused outright.
         crafted = post(browser, URL, {"base_digest": digest, "editor_mode": "each"})
         assert crafted.status_code == 400
-        # The earlier mode field is read only alone, with its own values,
-        # until #1178 removes it.
+        # The mode field of the page before the toggle (#1062 slices 1-2)
+        # is refused like any other unknown field (#1178).
         for values in (
-            {"mode": "advanced"},
-            {"mode": "each", "editor_mode": "advanced"},
+            {"mode": "one", "logo": upload()},
+            {"mode": "each", "favicon": png(32, 32)},
+            {"mode": "each", "editor_mode": "advanced", "favicon": png(32, 32)},
         ):
             refused = post(browser, URL, {"base_digest": digest} | values)
             assert refused.status_code == 400
     assert BrandingBundle.objects.count() == 2
-
-
-def test_a_page_from_before_the_toggle_still_uploads(auth_service, google, media):
-    """A Parish logos page opened before the toggle (#1062 slices 1-2) posts
-    mode=one|each; for one release (#1178) it is staged as Basic or Advanced."""
-    browser, _ = signed_in()
-    with task_login(ServiceRole.WEB):
-        digest = auth_service.store.active().digest
-        one = post(
-            browser, URL, {"base_digest": digest, "mode": "one", "logo": upload()}
-        )
-        assert one.status_code == 302, one.content
-    assert BrandingBundle.objects.get().mode == "basic"
-    apply_staged(browser, auth_service, one["Location"].split("#")[0])
-    with task_login(ServiceRole.WEB):
-        each = post(
-            browser,
-            URL,
-            {
-                "base_digest": auth_service.store.active().digest,
-                "mode": "each",
-                "favicon": png(32, 32, "red"),
-            },
-        )
-        assert each.status_code == 302, each.content
-    assert BrandingBundle.objects.filter(mode="advanced").count() == 1
