@@ -801,7 +801,8 @@ database lock while fetching data or awaiting human confirmation.
 
 ### Refresh schedule
 
-Scheduled refreshes follow one daily schedule of parish-local times, each
+Scheduled refreshes follow one daily schedule of local times, in the refresh
+schedule's time zone (the current campaign's, else the parish's), each
 marked **Full** (a [full cycle](#full-cycle)) or **Quick** (a
 [delta cycle](#delta-cycle)) ([#632](https://github.com/epiphany40223/parishkit/issues/632)).
 The Administrator edits it on the
@@ -1015,8 +1016,9 @@ run that day; the next day's runs as usual.
 
 #### Slots, identities and daylight saving
 
-Every daily time, Full or Quick, is a parish-local wall time resolved for
-each day through the shared daylight-saving resolver: a repeated time (clocks
+Every daily time, Full or Quick, is a wall time in the refresh schedule's
+time zone, resolved for each day through the shared daylight-saving resolver
+of [schedules](../ui-conventions/spec.md#schedules): a repeated time (clocks
 go back) runs once, at its earlier instant, and a time in the missing hour
 (clocks go forward) runs at the first real instant after the gap. On the day
 clocks go back, quick times in the repeated hour therefore run once; on the
