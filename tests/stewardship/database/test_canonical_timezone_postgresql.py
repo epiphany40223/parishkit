@@ -39,7 +39,11 @@ RAW = MIGRATIONS / "migrations/0072_digest_comparison.sql"
 COMPARISON = "stewardship_campaign_comparison_v1(uuid, date, numeric[], uuid)"
 
 # An ``AT TIME ZONE`` operand: a literal, the normalizing call, or a name.
-OPERAND = re.compile(r"AT\s+TIME\s+ZONE\s+('[^']*'|[\w.]+\s*\(|[\w.]+)", re.IGNORECASE)
+# Any other form (a parenthesized expression, a quoted identifier, $1) is
+# captured by its first character, so it is reported rather than skipped.
+OPERAND = re.compile(
+    r"AT\s+TIME\s+ZONE\s+('[^']*'|[\w.]+\s*\(|[\w.]+|\S)", re.IGNORECASE
+)
 NORMALIZED = {"stewardship_timezone_name_v1(", "public.stewardship_timezone_name_v1("}
 # The two functions that apply a local variable they first set from the
 # normalizing call, with that assignment.
@@ -109,6 +113,23 @@ def test_every_installed_conversion_applies_a_normalized_zone():
             "WHERE n.nspname = 'public' AND p.prosrc ~* 'AT\\s+TIME\\s+ZONE'"
         )
         bodies = cursor.fetchall()
+        # Views apply no zone today; a future one is checked the same way.
+        cursor.execute(
+            "SELECT viewname, definition FROM pg_views WHERE schemaname = 'public' "
+            "UNION ALL SELECT matviewname, definition FROM pg_matviews "
+            "WHERE schemaname = 'public'"
+        )
+        bodies += [row for row in cursor.fetchall() if OPERAND.search(row[1])]
+        # A session zone set from a name must be normalized too (0043).
+        cursor.execute(
+            "SELECT p.proname, m[1] FROM pg_proc p "
+            "JOIN pg_namespace n ON n.oid = p.pronamespace, "
+            "regexp_matches(p.prosrc, "
+            "'set_config\\(\\s*''timezone''\\s*,\\s*([\\w.]+\\s*\\(?)', 'gi') m "
+            "WHERE n.nspname = 'public'"
+        )
+        settings = cursor.fetchall()
+        assert settings, "the scan finds 0043's alert time"
         cursor.execute(
             "SELECT count(*) FROM pg_proc p JOIN pg_namespace n "
             "ON n.oid = p.pronamespace WHERE n.nspname = 'public' "
@@ -127,6 +148,11 @@ def test_every_installed_conversion_applies_a_normalized_zone():
                 or operand == variable
             ):
                 offenders.append(f"{name}: {operand}")
+    offenders += [
+        f"{name}: set_config {operand}"
+        for name, operand in settings
+        if re.sub(r"\s+", "", operand) not in NORMALIZED
+    ]
     assert offenders == []
     assert "stewardship_campaign_comparison_v1" in {name for name, _ in bodies}
 
