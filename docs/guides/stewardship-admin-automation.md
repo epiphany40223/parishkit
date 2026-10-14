@@ -1260,10 +1260,14 @@ progress does, even if the automatic switch to it is still queued; run
 
 ```sh
 pk-admin integration key status parishsoft --watch 5
-pk-admin integration key finish-switching-preview parishsoft > review.json
-jq -r .result.preview.token review.json \
+pk-admin integration key finish-switching-preview parishsoft
+pk-admin integration key finish-switching-preview parishsoft \
+    | jq -r .result.preview.token \
     | pk-admin integration key finish-switching parishsoft --token - --yes
 ```
+
+The first preview is the review to read; the pipeline takes a fresh
+token straight through, so no file holds a usable token until it expires.
 
 When the new key is installed but switching to it did not finish (the
 settings page's key change line is `unselected`), the integration is
