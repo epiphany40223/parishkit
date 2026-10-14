@@ -113,6 +113,7 @@ from .find_family_components import components as find_family_components
 from .followup_components import POSTS as FOLLOWUP_POSTS
 from .followup_components import components as followup_components
 from .go_live_components import components as go_live_components
+from .go_live_components import posts as go_live_posts
 from .go_live_families_components import components as go_live_families_components
 from .held_emails_components import components as held_emails_components
 from .home_steps_components import components as home_steps_components
@@ -2363,6 +2364,7 @@ def component_origin():
         | open_form_posts(context, admin)
         | family_test_posts(context, admin)
         | upload_defaults_posts()
+        | go_live_posts()
         | PAST_CAMPAIGN_POSTS
         | {
             f"{IN_PLACE_FORM}/refuse": (400, None, responses["/in-place-refused"][1]),

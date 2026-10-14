@@ -18,6 +18,16 @@ GO_LIVE = reverse("admin:go_live")
 CLEANUP = reverse("admin:go_live_cleanup", args=[UUID(int=59)])
 LINKS = reverse("admin:go_live_links", args=[UUID(int=59)])
 PRODUCTION = reverse("admin:production_progress")
+# Prepare Family links pages whose commands act in place (#519 PR 7c-3): one
+# with nothing prepared yet, so Prepare is offered, and one whose discarded
+# links failed to be disposed of, so Retry failed disposal is. The listed
+# commands of LINKS above (Cancel, Retry) and of CLEANUP (Retry, Cancel) are
+# answered from the "-cancelled" and "-fresh" pages below.
+LINKS_NEW = reverse("admin:go_live_links", args=[UUID(int=61)])
+LINKS_DISPOSAL = reverse("admin:go_live_links", args=[UUID(int=62)])
+# Where the fixture server's redirect after Retry failed mail preparation
+# lands: a stand-in for the page once the retry has run, at the same path.
+PRODUCTION_RETRIED = PRODUCTION + "?retried=1"
 
 # Rows as content_views.resave_recommended builds them; the long subject
 # checks wrapping at phone width.
@@ -183,6 +193,43 @@ def components(context, admin):
         "control": None,
         "withdrawal_available": False,
     }
+    # The pages each in-place command's answer brings (#519 PR 7c-3): the
+    # cleanup cancelled, the listed links cancelled and discarded, a first
+    # preparation started, and failed disposal retried and finished.
+    cancelled = progress | {
+        "status": Value(
+            state="cancelled", checkpoint_sequence=5, request_id=UUID(int=59)
+        ),
+        "controls": {},
+    }
+    discarded = links | {
+        "records": [
+            links["records"][0]
+            | {"current": False, "cleanup": Value(state="succeeded"), "controls": {}}
+        ],
+    }
+    discarded["table"] = window_table(PageWindow(1, 25), discarded["records"], False)
+    fresh_start = links | {
+        "transition": Value(pk=UUID(int=61)),
+        "prepare": "synthetic-prepare",
+        "unavailable": None,
+        "records": [],
+    }
+    fresh_start["table"] = window_table(PageWindow(1, 25), [], False)
+    started = prepared | {"transition": fresh_start["transition"]}
+    disposal = links | {
+        "transition": Value(pk=UUID(int=62)),
+        "records": [
+            links["records"][0]
+            | {
+                "current": False,
+                "cleanup": Value(state="failed"),
+                "controls": {"retry_cleanup": "synthetic-retry-cleanup"},
+            }
+        ],
+    }
+    disposal["table"] = window_table(PageWindow(1, 25), disposal["records"], False)
+    disposed = discarded | {"transition": disposal["transition"]}
     unchecked = ready | {"origin_verified": None, "cleanup_token": None}
     problems = unchecked | {
         "problems": ["Save exactly one initial invitation schedule."]
@@ -236,6 +283,21 @@ def components(context, admin):
                 "stewardship/production-confirmation.html",
                 confirmation | {"confirmation_token": None, "origin_verified": None},
             ),
+            (
+                "/go-live-cleanup-cancelled",
+                "stewardship/go-live-cleanup.html",
+                cancelled,
+            ),
+            ("/go-live-links-cancelled", "stewardship/go-live-links.html", discarded),
+            (LINKS_NEW, "stewardship/go-live-links.html", fresh_start),
+            ("/go-live-links-started", "stewardship/go-live-links.html", started),
+            (LINKS_DISPOSAL, "stewardship/go-live-links.html", disposal),
+            ("/go-live-links-disposed", "stewardship/go-live-links.html", disposed),
+            (
+                PRODUCTION_RETRIED,
+                "stewardship/production-progress.html",
+                produced,
+            ),
             ("/go-live-cleanup", "stewardship/go-live-cleanup.html", progress),
             ("/go-live-links", "stewardship/go-live-links.html", links),
             (
@@ -281,3 +343,11 @@ def components(context, admin):
             ),
         )
     }
+
+
+def posts():
+    """The fixture server's answer to Retry failed mail preparation (#519 PR
+    7c-3): the view's Post/Redirect/Get redirect back to Production activation,
+    which a route cannot fulfil on every engine, landing on a stand-in for the
+    page once the retry has run."""
+    return {PRODUCTION: (303, PRODUCTION_RETRIED, "")}

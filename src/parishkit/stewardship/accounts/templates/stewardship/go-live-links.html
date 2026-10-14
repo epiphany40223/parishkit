@@ -8,15 +8,21 @@
 {% comment %}Prepare is always shown: while the server would refuse it, it is
 unavailable and described by the reason, chosen by progress()'s unavailable
 key (#563). It is an in-place region, so Refresh preparation progress
-brings it up to date with the history below (#519).{% endcomment %}
-<div id="links-prepare" data-in-place-region>{% if prepare %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ prepare }}">{% button type="submit" %}{% translate "Prepare inactive Family links" %}{% endbutton %}</form>
+brings it up to date with the history below (#519). Prepare posts in place
+(form[data-in-place]) and names the history region, so after the redirect
+back here focus goes to the new preparation's heading (Prepare itself is
+then unavailable).{% endcomment %}
+<div id="links-prepare" data-in-place-region>{% if prepare %}<form method="post" action="{% url 'admin:go_live_links' transition.pk %}#{{ table.anchor }}" data-in-place="links-prepare" data-in-place-message="{% translate 'Link preparation started.' %}">{% csrf_token %}<input type="hidden" name="control" value="{{ prepare }}">{% button type="submit" %}{% translate "Prepare inactive Family links" %}{% endbutton %}</form>
 {% else %}<p role="status" id="prepare-unavailable">{% if unavailable == 'not_draft' %}{% translate "Links can't be prepared: this campaign is no longer a draft." %}{% elif unavailable == 'cleanup' %}{% translate "Links can't be prepared yet. Finish Testing cleanup, then reload this page." %}{% elif unavailable == 'inputs' %}{% translate "Links can't be prepared yet. Wait for any running ParishSoft refresh or campaign work to finish, then reload this page." %}{% elif unavailable == 'discarding' %}{% translate "Earlier links are still being discarded below. Wait for them to finish being discarded, then reload this page." %}{% else %}{% translate "Links are already prepared or being prepared below. To prepare new ones, cancel and discard those first, then reload this page." %}{% endif %}</p>
 <p>{% button type="button" disabled=True aria-describedby="prepare-unavailable" %}{% translate "Prepare inactive Family links" %}{% endbutton %}</p>{% endif %}</div>
 {% comment %}No data-table-region: live-status-v1.js owns the history panels
 below, so paging stays a full load that lands here. As an in-place region,
 Refresh preparation progress re-reads it, navigators included, in place
 (ui-v1.js, a[data-in-place], #519), and live-status-v1.js watches the fresh
-panels while they are still pending.{% endcomment %}
+panels while they are still pending. Each preparation's Cancel, Retry and
+Retry disposal post in place too, keyed by the preparation; once a button is
+gone, focus goes to this region's first heading, the newest preparation,
+which is the one those controls act on.{% endcomment %}
 <div id="{{ table.anchor }}" data-in-place-region>
 {% translate "Preparation history pages" as navigator_label %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <div data-live-status="links" aria-live="polite"{% if live_pending %} data-live-pending{% endif %}>
@@ -31,9 +37,9 @@ panels while they are still pending.{% endcomment %}
 {% if not record.current %}<p role="status">{% translate "These links were cancelled, or the data they were made from has changed since, so they cannot be used to go live. Prepare new links." %}</p>{% endif %}
 {% if record.generation.state == 'ready' and record.current %}<p role="status">{% translate "Inactive links are prepared. The campaign remains in Testing." %}</p>{% if record.task.state == 'succeeded' %}<p><a href="{% url 'admin:production_confirmation' transition.pk record.preparation.pk %}">{% translate "Continue to Confirm Production" %}</a></p>{% endif %}{% endif %}
 {% if record.cleanup %}<p>{% translate "Discarding these links:" %} {% include "stewardship/task-state.html" with state=record.cleanup.state %}</p>{% endif %}
-{% if record.controls.cancel %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ record.controls.cancel }}">{% button type="submit" %}{% translate "Cancel and discard these inactive links" %}{% endbutton %}</form>{% endif %}
-{% if record.controls.retry %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ record.controls.retry }}">{% button type="submit" %}{% translate "Retry failed preparation" %}{% endbutton %}</form>{% endif %}
-{% if record.controls.retry_cleanup %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ record.controls.retry_cleanup }}">{% button type="submit" %}{% translate "Retry failed disposal" %}{% endbutton %}</form>{% endif %}
+{% if record.controls.cancel %}<form method="post" action="{% url 'admin:go_live_links' transition.pk %}#{{ table.anchor }}" data-in-place="links-cancel-{{ record.preparation.pk }}" data-in-place-message="{% translate 'Discarding these links.' %}">{% csrf_token %}<input type="hidden" name="control" value="{{ record.controls.cancel }}">{% button type="submit" %}{% translate "Cancel and discard these inactive links" %}{% endbutton %}</form>{% endif %}
+{% if record.controls.retry %}<form method="post" action="{% url 'admin:go_live_links' transition.pk %}#{{ table.anchor }}" data-in-place="links-retry-{{ record.preparation.pk }}" data-in-place-message="{% translate 'Preparation retry started.' %}">{% csrf_token %}<input type="hidden" name="control" value="{{ record.controls.retry }}">{% button type="submit" %}{% translate "Retry failed preparation" %}{% endbutton %}</form>{% endif %}
+{% if record.controls.retry_cleanup %}<form method="post" action="{% url 'admin:go_live_links' transition.pk %}#{{ table.anchor }}" data-in-place="links-retry-cleanup-{{ record.preparation.pk }}" data-in-place-message="{% translate 'Disposal retry started.' %}">{% csrf_token %}<input type="hidden" name="control" value="{{ record.controls.retry_cleanup }}">{% button type="submit" %}{% translate "Retry failed disposal" %}{% endbutton %}</form>{% endif %}
 </section>
 {% empty %}<p>{% translate "No links have been prepared yet. Select Prepare inactive Family links to start." %}</p>{% endfor %}
 </div>
