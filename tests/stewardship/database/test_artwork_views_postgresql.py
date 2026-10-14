@@ -386,6 +386,8 @@ def test_an_apply_needs_its_own_live_upload(auth_service, google, media, monkeyp
     with task_login(ServiceRole.WEB):
         other = post(browser, path, {"action": "confirm"} | second)
     assert other.status_code == 404
+    # The dialog says to reload, since a retry can never succeed.
+    assert "Reload the page, then upload the image again." in refusal(other)
     assert ConfigurationChangeRequest.objects.count() == before
     assert artwork(row) == {}
 

@@ -62,7 +62,12 @@ from .branding_slots import (
     file_size,
     missing_message,
 )
-from .branding_staging import file_receipt, stage_branding, staged_bundle
+from .branding_staging import (
+    applied_upload,
+    file_receipt,
+    stage_branding,
+    staged_bundle,
+)
 from .branding_validation import campaign_artwork_retained, validate_installation
 from .configuration_installation import coherent_configuration
 from .configuration_models import Parish
@@ -413,7 +418,7 @@ def _scope(request, bundle_id):
         """Permit exact receipt retries after selection, not stale new edits."""
         asset = BrandingAsset.objects.filter(bundle_id=bundle_id, label="large").first()
         if asset is None or not _retained(asset):
-            staged_bundle(request, service, bundle_id)
+            applied_upload(request, service, bundle_id, refusal=GONE_UPLOAD)
         return editable_configuration(service), None
 
     return scope
@@ -483,6 +488,13 @@ def _page(request, service, configuration, form, *, status=200):
 EXPIRED = _(
     "These logos expired, or the settings changed after they were uploaded, "
     "so they were not used. Reload the page, then upload the logo again."
+)
+# Why staged logos unknown to this sign-in cannot be applied: they were
+# uploaded before the reader signed in again (another tab), or are gone.
+GONE_UPLOAD = _(
+    "These logos were uploaded in another sign-in, or are no longer "
+    "available, so they were not used. Reload the page, then upload the logo "
+    "again."
 )
 UNREVIEWABLE = _(
     "These uploaded logos can no longer be reviewed: the settings changed "

@@ -61,7 +61,12 @@ from .admin_editing import (
 from .authentication import runtime
 from .branding_files import read_variant
 from .branding_models import BrandingAsset
-from .branding_staging import file_receipt, stage_branding, staged_bundle
+from .branding_staging import (
+    applied_upload,
+    file_receipt,
+    stage_branding,
+    staged_bundle,
+)
 from .branding_validation import validate_installation
 from .branding_views import ERRORS, _checked, _error, _retained, media_root
 from .request_patch import build_candidate
@@ -83,6 +88,12 @@ STALE = {
         "again if the slot still shows an image."
     ),
 }
+# Why a staged image unknown to this sign-in cannot be applied: it was
+# uploaded before the reader signed in again (another tab), or is gone.
+GONE_UPLOAD = _(
+    "This upload was made in another sign-in, or is no longer available, so "
+    "it was not used. Reload the page, then upload the image again."
+)
 # Why a review address can no longer be reviewed, by change kind.
 UNREVIEWABLE = {
     "image": _(
@@ -400,7 +411,7 @@ def _scope(request, change):
                 bundle_id=bundle_id, label=_kind(slot)
             ).first()
             if asset is None or not _retained(asset):
-                staged_bundle(request, service, bundle_id)
+                applied_upload(request, service, bundle_id, refusal=GONE_UPLOAD)
         return editable_configuration(service), None
 
     return scope
