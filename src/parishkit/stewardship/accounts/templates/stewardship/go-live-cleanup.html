@@ -21,5 +21,5 @@
 {% if status.state == 'cleanup_complete' %}<p><a href="{% url 'admin:go_live_links' status.request_id %}">{% translate "Prepare inactive Family links" %}</a></p>{% endif %}
 </section></div>
 <details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl id="cleanup-details" data-in-place-region><dt>{% translate "Cleanup state" %}</dt><dd><code>{{ status.state }}</code></dd><dt>{% translate "Committed checkpoints" %}</dt><dd>{{ status.checkpoint_sequence|number }}</dd><dt>{% translate "Worker task state" %}</dt><dd><code>{{ task.state }}</code></dd></dl><p>{% translate "Values are as of when this page was opened or last refreshed; select Refresh cleanup progress to update them." %}</p></details>
-<p><a href="{% url 'admin:go_live_cleanup' status.request_id %}#cleanup-progress" data-in-place="refresh" data-in-place-message="{% translate 'Progress refreshed.' %}">{% translate "Refresh cleanup progress" %}</a> · <a href="{% url 'admin:go_live' %}">{% translate "Return to Go-live readiness" %}</a></p>
+<p><a href="{% url 'admin:go_live_cleanup' status.request_id %}#cleanup-progress" data-in-place="refresh" data-in-place-message="{% translate 'Progress refreshed.' %}">{% translate "Refresh cleanup progress" %}</a></p>
 {% endblock %}

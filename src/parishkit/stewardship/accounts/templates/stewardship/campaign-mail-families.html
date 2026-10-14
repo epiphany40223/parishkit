@@ -26,5 +26,4 @@
 {% if items %}<details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl>{% for item in items %}<dt>{% translate "Test reference" %}{% if item.duid %} ({% translate "Family DUID" %} {{ item.duid|duid }}){% endif %}</dt><dd><code>{{ item.id }}</code></dd>{% endfor %}</dl><p>{% translate "As of when this page was opened; select Refresh status to update." %}</p></details>{% endif %}
 </div>
 <p><a href="{{ refresh_url }}#family-tests" data-in-place="refresh" data-in-place-only="critical-events" data-in-place-message="{% translate 'Status refreshed.' %}">{% translate "Refresh status" %}</a></p>
-<p><a href="{{ sample_url }}">{% translate "Return to Preview and test email" %}</a></p>
 {% endblock %}
