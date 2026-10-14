@@ -120,6 +120,8 @@ from .home_steps_components import components as home_steps_components
 from .hosted_file_components import IMAGE_TOKEN
 from .hosted_file_components import POSTS as HOSTED_FILE_POSTS
 from .hosted_file_components import components as hosted_file_components
+from .in_place_commands_components import components as in_place_commands_components
+from .in_place_commands_components import posts as in_place_commands_posts
 from .in_place_components import FORM as IN_PLACE_FORM
 from .in_place_components import POSTS as IN_PLACE_POSTS
 from .in_place_components import SLOW as IN_PLACE_SLOW
@@ -2325,6 +2327,7 @@ def component_origin():
     responses.update(content_catalog_components(context, admin))
     responses.update(in_place_components(context, admin))
     responses.update(live_status_components(context, admin))
+    responses.update(in_place_commands_components(context, admin))
     responses.update(family_test_components(context, admin))
     responses.update(upload_defaults_components(context, admin))
     responses.update(settings_components(context, admin))
@@ -2344,6 +2347,7 @@ def component_origin():
     posts = (
         IN_PLACE_POSTS
         | DELIVERY_POSTS
+        | in_place_commands_posts(context, admin)
         | AUTOMATION_POSTS
         | SIGNED_IN_POSTS
         | FOLLOWUP_POSTS
