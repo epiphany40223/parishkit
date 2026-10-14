@@ -106,10 +106,10 @@ denominator displays an em dash rather than a misleading percentage.
 
 **Rule.** Every Admin page shows and takes dates and times in the browser's
 own time zone, stored as UTC; no page labels a time "UTC" or asks the reader
-to think in the campaign's or the parish's zone. Exceptions: the ParishSoft
-refresh times stay in the refresh schedule's time zone (permanent, below); and the
-date-change review still takes send times in the campaign's time zone, a dated
-exception (Administrator decision, 2026-10-10) until it is fixed under
+to think in the campaign's or the parish's zone. Exception: the ParishSoft
+refresh times stay in the refresh schedule's time zone (permanent, below). The
+date-change review's dated exception (Administrator decision, 2026-10-10)
+ended when it moved to the browser's zone under
 [#558](https://github.com/epiphany40223/parishkit/issues/558). **Why.** Staff read
 and type their own wall-clock time; a campaign-zone or UTC time on a page is a
 conversion the reader has to do in their head. **Shared code.**
@@ -152,9 +152,13 @@ logs date filters the second ([Admin portal](../admin-portal/spec.md#logs)),
 New and Edit scheduled email the third ([Admin
 portal](../admin-portal/spec.md#new-and-edit-scheduled-email)), and the
 submitted-date filters of the Additional information and Ministry reports the
-fourth ([Reports](../reports/spec.md#additional-information)).
-Until a page's PR lands, it keeps its current zone, including the campaign zone
-for the other schedule pages, campaign dates and report day buckets (the
+fourth ([Reports](../reports/spec.md#additional-information)), then the
+first-campaign Mail schedules step and the date-change review ([Admin
+portal](../admin-portal/spec.md#dates-and-mail-schedules)). A schedule review
+shows each send only as a moment in the browser's zone, never as the saved
+campaign-local date and time with the campaign's zone.
+Until a page's PR lands, it keeps its current zone, including the campaign
+zone for the retired Copy campaign page, campaign dates and report day buckets (the
 participation chart still buckets by campaign time). One field is a recorded
 exception that stays in the refresh schedule's own time zone (the current
 campaign's, else the parish's, as the scheduler reads it) after every #558 PR:
@@ -1953,12 +1957,9 @@ the two cannot drift.
 
 **Time zones.** The fields read wall-clock times; each keeps its page's zone
 rule under the [global presentation rules](#dates-and-times).
-New and Edit scheduled email take send times in
+New and Edit scheduled email and the date-change review take send times in
 the browser's zone (see [New and Edit scheduled
-email](../admin-portal/spec.md#new-and-edit-scheduled-email)); the date-change
-review still takes them in the campaign's time zone, the dated exception
-(2026-10-10) in [dates and times](#dates-and-times), until it is fixed under
-[#558](https://github.com/epiphany40223/parishkit/issues/558). The ParishSoft refresh times
+email](../admin-portal/spec.md#new-and-edit-scheduled-email)). The ParishSoft refresh times
 are in the refresh schedule's time zone (the current campaign's, else the
 parish's), the recorded exception to the browser-local rule that those rules
 describe (see also
@@ -1975,7 +1976,7 @@ without the mark ([#1117](https://github.com/epiphany40223/parishkit/issues/1117
 | ParishSoft refresh schedule | Each rule's At, From and To; each skip's At, From and To | One time, refresh schedule time |
 | ParishSoft refresh schedule, Edit as text | Full refresh times | List, refresh schedule time |
 | New and Edit scheduled email | Send time | One time, browser time |
-| The date-change review | Send time | One time, campaign time |
+| The date-change review | Send time | One time, browser time |
 | Ministry requests' follow-up request | Contact attempt time | One time, browser time zone |
 | Logs, reports | Date filters | Dates only, no time of day |
 

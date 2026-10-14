@@ -2,10 +2,11 @@
 
 A saved schedule keeps wall-clock values in the campaign's time zone (its
 ``date``, ``time`` and ``weekday``; ``configuration.schedule_values``), and
-the scheduler resolves them to instants. New and Edit scheduled email and the
-first-campaign step's Mail schedules (``schedule_forms.ScheduleSet`` with
-``browser_times``) show and take those times in the browser's time zone
-instead, as every Admin date and time is (the global presentation rules):
+the scheduler resolves them to instants. New and Edit scheduled email, the
+first-campaign step's Mail schedules and the date-change review
+(``schedule_forms.ScheduleSet`` with ``browser_times``) show and take those
+times in the browser's time zone instead, as every Admin date and time is
+(the global presentation rules):
 
 - :func:`instant` is the UTC moment a saved schedule's values stand for. The
   page carries it, and the page script fills the fields in the browser's zone.
@@ -80,7 +81,9 @@ def shown(values, day, clock, weekday, *, zone, campaign_zone, now):
     )
 
 
-def to_campaign(day, clock, weekday, *, zone, campaign_zone, now, saved=None):
+def to_campaign(
+    day, clock, weekday, *, zone, campaign_zone, now, saved=None, saved_zone=None
+):
     """Convert a send time typed in the browser's ``zone`` to campaign-local.
 
     ``day`` (a ``date`` or None), ``clock`` (a ``time``) and ``weekday``
@@ -95,9 +98,20 @@ def to_campaign(day, clock, weekday, *, zone, campaign_zone, now, saved=None):
     ``saved`` is the edited schedule's campaign-local values (None on New).
     When the typed values are what the Edit page showed for them
     (:func:`shown`), those saved values are returned unchanged.
+    ``saved_zone`` is the zone those saved values are in, when it is not
+    ``campaign_zone``: the date-change review may propose a new campaign
+    zone, and the page showed the saved row in the saved one. An unchanged
+    row then keeps its campaign wall-clock time in the new zone (as a time
+    zone change always has); a changed row converts into ``campaign_zone``.
     """
     if saved is not None and shown(
-        saved, day, clock, weekday, zone=zone, campaign_zone=campaign_zone, now=now
+        saved,
+        day,
+        clock,
+        weekday,
+        zone=zone,
+        campaign_zone=saved_zone or campaign_zone,
+        now=now,
     ):
         return (
             date.fromisoformat(saved["date"]) if saved.get("date") else None,

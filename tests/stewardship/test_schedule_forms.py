@@ -904,3 +904,58 @@ def test_a_kept_legacy_time_follows_the_posted_row_id():
     formset = browser_schedules(swapped, owner, rows, zone="America/Los_Angeles")
     assert 'data-time-kept="06:00:37"' in str(formset.forms[1]["time"])
     assert "data-time-kept" not in str(formset.forms[0]["time"])
+
+
+def proposed_zone_schedules(data, owner, previous, templates=(), *, zone):
+    """A date-change review formset whose campaign moves to Chicago.
+
+    The review replaces the formset's campaign with the proposed window
+    before validating (``schedule_changes.build_preview``); the page drew
+    the saved rows from the saved New York values.
+    """
+    formset = browser_schedules(data, owner, previous, templates, zone=zone)
+    formset.campaign = owner["values"] | {"timezone": "America/Chicago"}
+    return formset
+
+
+def test_a_row_shown_unchanged_keeps_its_wall_clock_in_a_proposed_zone():
+    """An invitation shown as 6:00 AM in Los Angeles is posted back as shown.
+
+    The page drew it from its New York moment (9:00 AM there), so it is an
+    unchanged row: it keeps its saved 9:00 AM, now in Chicago, as a time
+    zone change always has, rather than being read again in the new zone.
+    """
+    owner = campaign()
+    old = schedule(owner["id"])
+    data = data_for([old]) | {"schedules-0-time": "06:00"}
+    formset = proposed_zone_schedules(data, owner, [old], zone="America/Los_Angeles")
+    assert formset.is_valid(), (formset.errors, formset.non_form_errors())
+    assert formset.patch() == []
+
+
+def test_a_changed_row_converts_into_a_proposed_zone():
+    """8:00 AM typed in Los Angeles is 10:00 AM in the proposed Chicago zone."""
+    owner = campaign()
+    old = schedule(owner["id"])
+    data = data_for([old]) | {"schedules-0-time": "8:00 AM"}
+    formset = proposed_zone_schedules(data, owner, [old], zone="America/Los_Angeles")
+    assert formset.is_valid(), (formset.errors, formset.non_form_errors())
+    [changed] = formset.patch()
+    assert (changed["values"]["date"], changed["values"]["time"]) == (
+        "2054-10-01",
+        "10:00:00",
+    )
+
+
+def test_a_proposed_zone_keeps_the_saved_moment_and_kept_seconds():
+    """The page's moment and a legacy time's kept seconds use the saved zone."""
+    owner = campaign()
+    old = schedule(owner["id"], time="09:00:37")
+    unbound = browser_schedules(None, owner, [old], zone="")
+    unbound.campaign = owner["values"] | {"timezone": "America/Chicago"}
+    assert unbound.forms[0].schedule_moment == "2054-10-01T13:00:37+00:00"
+    data = data_for([old]) | {"schedules-0-time": "06:00:37"}
+    formset = proposed_zone_schedules(data, owner, [old], zone="America/Los_Angeles")
+    assert 'data-time-kept="06:00:37"' in str(formset.forms[0]["time"])
+    assert formset.is_valid(), (formset.errors, formset.non_form_errors())
+    assert formset.patch() == []

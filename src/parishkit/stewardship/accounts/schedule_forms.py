@@ -78,9 +78,11 @@ class ScheduleWindow(forms.Form):
 
     timezone = TimezoneField(
         label=_("Campaign timezone"),
+        # Send times on every page that draws this form are in the
+        # browser's zone (#558); this zone decides the campaign's days.
         help_text=_(
-            "Every send date and time on this page is in this time zone, not "
-            "your computer's."
+            "The time zone of the campaign's days. Send dates and times on "
+            "this page are in this computer's time zone."
         ),
     )
     start_date = forms.DateField(
@@ -578,16 +580,19 @@ class ScheduleSet(BaseFormSet):
         (the campaign admits no test mail now) leaves out the test address
         and says why instead (#923).
 
-        ``browser_times`` (the first-campaign step, #558) shows and takes
-        send dates and times in the browser's time zone: ``zone`` is the
-        posted browser zone and ``now`` the current instant, which places a
-        digest's time at its next send (``schedule_local``). Saved values
-        stay campaign-local either way; see ``_construct_form`` and
-        ``_to_campaign``.
+        ``browser_times`` (the first-campaign step and the date-change
+        review, #558) shows and takes send dates and times in the browser's
+        time zone: ``zone`` is the posted browser zone and ``now`` the
+        current instant, which places a digest's time at its next send
+        (``schedule_local``). Saved values stay campaign-local either way;
+        see ``_construct_form`` and ``_to_campaign``. ``saved_timezone`` is
+        the zone the saved rows are in: the date-change review may replace
+        ``campaign`` with a proposed time zone before validating.
         """
         if browser_times and now is None:
             raise ValueError("Browser-local schedule times need the current instant.")
         self.browser_times, self.zone, self.now = browser_times, zone, now
+        self.saved_timezone = campaign["timezone"]
         self.previous = sorted(previous, key=schedule_order)
         self.labels = schedule_labels(self.previous)
         self.usage = email_usage(self.previous)
@@ -638,14 +643,14 @@ class ScheduleSet(BaseFormSet):
                 return form
             try:
                 kept = schedule_local.in_browser(
-                    saved, self.zone, self.timezone, self.now
+                    saved, self.zone, self.saved_timezone, self.now
                 )
             except UnknownZone:
                 kept = None  # Refused in clean, with ZONE_MISSING.
             form.fields["time"].keep(kept)
         else:
             form.schedule_moment = schedule_local.instant(
-                self.previous[i]["values"], self.timezone, self.now
+                self.previous[i]["values"], self.saved_timezone, self.now
             ).isoformat()
         return form
 
@@ -755,9 +760,11 @@ class ScheduleSet(BaseFormSet):
         (inside the campaign dates, after the initial invitation, never two
         mailings at once) and the saved record are campaign-local, as on New
         and Edit scheduled email (``schedule_local.to_campaign``). A saved
-        row posted exactly as it was shown keeps its saved values. Raises
-        ``UnknownZone`` for a blank or unknown zone and ``ValueError`` for a
-        date that cannot convert.
+        row posted exactly as it was shown (in the saved zone) keeps its
+        saved values, so with a proposed campaign time zone it keeps its
+        wall-clock time in the new zone; a changed row converts into the
+        proposed zone. Raises ``UnknownZone`` for a blank or unknown zone
+        and ``ValueError`` for a date that cannot convert.
         """
         data = form.cleaned_data
         data["date"], data["time"], data["weekday"] = schedule_local.to_campaign(
@@ -768,6 +775,7 @@ class ScheduleSet(BaseFormSet):
             campaign_zone=self.timezone,
             now=self.now,
             saved=previous,
+            saved_zone=self.saved_timezone,
         )
 
     def _field_errors(self, form, previous):

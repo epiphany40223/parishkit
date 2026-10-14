@@ -397,6 +397,8 @@ def schedule_page(
     reads from the database (schedule_preview.work_summary). With ``data``
     the formset is bound and validated, as after a refused preview.
     ``test_mail`` false is a live campaign, which admits no test mail (#923).
+    Send times are the browser's (#558); a bound post was typed in the
+    campaign's own zone, so its values read as they always have.
     """
     schedules = Schedules(
         data,
@@ -407,6 +409,9 @@ def schedule_page(
         prefix="schedules",
         email_links=True,
         test_mail=test_mail,
+        browser_times=True,
+        zone="" if data is None else owner["values"]["timezone"],
+        now=now,
     )
     if data is not None:
         schedules.is_valid()
@@ -837,6 +842,18 @@ def component_origin():
             schedule_page(mail_campaign, [mail], now=datetime(2054, 9, 1, tzinfo=UTC)),
         ),
         (
+            # The date-change review with reminders either side of London's
+            # DST change, shown in the browser's zone (#558).
+            "/schedule-dates-dst",
+            "schedule-reconcile",
+            schedule_page(
+                mail_campaign,
+                SETUP_DST["previous"],
+                templates=mail_emails,
+                now=SETUP_BROWSER_TIMES["now"],
+            ),
+        ),
+        (
             # The scheduled emails table (#448): a sent invitation, two
             # upcoming reminders out of order, and a weekly digest.
             "/schedule-table",
@@ -892,6 +909,7 @@ def component_origin():
                     campaign_id=mail_campaign["id"],
                     campaign=mail_campaign["values"],
                     prefix="schedules",
+                    **SETUP_BROWSER_TIMES,
                 ),
                 "base_digest": "a" * 64,
                 "editable": False,
