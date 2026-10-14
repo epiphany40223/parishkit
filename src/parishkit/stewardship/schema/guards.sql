@@ -4947,6 +4947,23 @@ BEGIN
                           WHEN 'reopened' THEN NEW.decision='unreviewed'
                               AND NEW.execution=OLD.execution
                           ELSE false END)
+                   -- An Administrator's review of an Automatic change (#528,
+                   -- ADM-09) is admitted the same way, only with its paired
+                   -- review row, whose own guard checked the actor, the
+                   -- campaign and the starting state: the decision and the
+                   -- edit fields become exactly what the row records, nothing
+                   -- else changes, and the version advances by one.
+                   AND NOT EXISTS (
+                    SELECT 1 FROM public.stewardship_proposal_review v
+                    WHERE v.proposal_id=OLD.id AND v.expected_version=OLD.version
+                      AND NEW.version=OLD.version+1
+                      AND ROW(NEW.decision,NEW.admin_value_set,NEW.admin_value)
+                          IS NOT DISTINCT FROM ROW(v.decision,v.admin_value_set,v.admin_value)
+                      AND ROW(NEW.current_available,NEW.current_value,NEW.current_source_id,
+                              NEW.execution,NEW.superseded_by_id)
+                          IS NOT DISTINCT FROM
+                          ROW(OLD.current_available,OLD.current_value,OLD.current_source_id,
+                              OLD.execution,OLD.superseded_by_id))
                    AND (NEW.decision<>OLD.decision
                    OR NEW.execution NOT IN ('superseded','cancelled','resolved_upstream')
                    OR NOT EXISTS (

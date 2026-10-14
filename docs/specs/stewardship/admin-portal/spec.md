@@ -5234,8 +5234,10 @@ Manual census items may be marked resolved externally or ignored by Admin or
 Staff, with notes, on the
 [Census changes](../reports/spec.md#pending-census-changes) worklist
 ([manual census resolution](../reports/spec.md#manual-census-resolution)).
-API-writable changes are view-only for Staff. Admin review and publication
-follow the [data workflow](../data/spec.md#review-and-publication).
+API-writable changes are view-only for Staff. An Administrator approves or
+ignores them on the same worklist
+([automatic census review](../reports/spec.md#automatic-census-review)), and
+publication follows the [data workflow](../data/spec.md#review-and-publication).
 
 The ParishSoft API cannot change Ministry rosters, so a join or leave is
 always entered in ParishSoft by hand

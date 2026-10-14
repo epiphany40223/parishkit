@@ -120,6 +120,7 @@
 !src/parishkit/stewardship/schema/migrations/0093_removed_ministry_gone_members.sql
 !src/parishkit/stewardship/schema/migrations/0094_source_status_names.sql
 !src/parishkit/stewardship/schema/migrations/0095_canonical_timezone.sql
+!src/parishkit/stewardship/schema/migrations/0096_proposal_review.sql
 !src/parishkit/stewardship/schema/due_work_health.sql
 !src/parishkit/stewardship/schema/family_dispatch.sql
 !src/parishkit/stewardship/schema/production.sql

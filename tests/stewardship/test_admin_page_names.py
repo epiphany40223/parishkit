@@ -286,7 +286,10 @@ def test_return_links_name_a_page(template):
     """
     labels = {str(page.label) for page in navigation.PAGES.values()}
     source = _source(template)
-    assert "Back to " not in source
+    # The Census changes worklist's "Back to To review" is a review decision,
+    # not a link back to a page (see ALLOWED).
+    if template != "census-changes.html":
+        assert "Back to " not in source
     for target in re.findall(r'"Return to ([^"]+)"', source):
         assert target in labels or (template, target) in UNNAMED_RETURNS, (
             template,
@@ -489,6 +492,9 @@ ALLOWED = {
     # "Back to edit" steps back inside the Family form, outside the Admin
     # portal and its page names.
     ("accounts/static/stewardship/family-v1.js", "Back to "),
+    # "Back to To review" is the Census changes review button that undoes an
+    # Approve or Ignore (#528), not a link back to a page.
+    ("accounts/templates/stewardship/census-changes.html", "Back to "),
     # "Distinct Families with Testing submissions": a readiness count and
     # the Testing submissions table's caption, not the page's name.
     (

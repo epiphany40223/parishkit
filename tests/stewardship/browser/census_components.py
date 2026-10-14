@@ -31,6 +31,11 @@ ROWS = 30
 RESOLVED = (
     "Mobile phone for Member DUID 100 in Family DUID 1000 marked entered in ParishSoft."
 )
+# The page whose first row is Automatic (#528, ADM-09), at an address of its
+# own that its forms post back to, and the notice the view answers an
+# Administrator's Approve of that row with.
+AUTOMATIC = "/census-changes-automatic"
+APPROVED = "Mobile phone for Member DUID 100 in Family DUID 1000 approved."
 STALE = (
     "Mobile phone for Member DUID 100 in Family DUID 1000 was updated by "
     "someone else, so nothing was recorded. The list shows its current status."
@@ -40,8 +45,10 @@ STALE = (
 def components(context, admin):
     """The page at each table choice the test steps through."""
     when = datetime(2054, 10, 5, 12, tzinfo=UTC)
-    rows = [
-        shape(
+
+    def shaped(index, automatic):
+        """One shaped row; the first is Automatic when ``automatic`` says."""
+        return shape(
             {
                 "id": str(index),
                 "entity_kind": "member",
@@ -54,7 +61,7 @@ def components(context, admin):
                 "current_value": "555-0100",
                 "admin_value_set": False,
                 "admin_value": None,
-                "handling": "manual",
+                "handling": "api" if automatic and index == 0 else "manual",
                 "decision": "unreviewed",
                 "execution": "pending",
                 # Later Families answered later, so newest first reverses.
@@ -65,14 +72,17 @@ def components(context, admin):
                 "version": 1,
             }
         )
-        for index in range(ROWS)
-    ]
-    query = CensusQuery()
-    result = select(rows, query, administrator=True)
 
-    def page(paging, notice=None):
+    query = CensusQuery()
+
+    def page(paging, notice=None, *, automatic=False):
         """Render the page with the table paged and sorted as ``paging`` says,
-        and ``notice`` (a resolution's answer) above it."""
+        and ``notice`` (a resolution's answer) above it; with ``automatic``,
+        its first row is an Automatic change an Administrator reviews, and
+        its forms post to ``AUTOMATIC``."""
+        path = AUTOMATIC if automatic else PATH
+        rows = [shaped(index, automatic) for index in range(ROWS)]
+        result = select(rows, query, administrator=True)
         table = paginate(
             result["rows"],
             paging,
@@ -88,7 +98,7 @@ def components(context, admin):
                 | {"admin_chrome": admin}
                 | result
                 | {
-                    "table": replace(table, method="post", action=PATH),
+                    "table": replace(table, method="post", action=path),
                     "campaign_id": CAMPAIGN,
                     "query": query,
                     "query_fields": query.form_values(),
@@ -97,7 +107,7 @@ def components(context, admin):
                     "kind_choices": KIND_LABELS.items(),
                     "export_timezones": ["UTC", "America/Detroit"],
                     "notice": notice,
-                    "action": PATH,
+                    "action": path,
                     "mutable": True,
                 },
             ),
@@ -113,6 +123,11 @@ def components(context, admin):
         "/census-changes-resolved": page(
             {"size": "25"},
             notice=RESOLVED,
+        ),
+        # The first row Automatic, To review; and the answer to its Approve.
+        AUTOMATIC: page({"size": "25"}, automatic=True),
+        "/census-changes-approved": page(
+            {"size": "25"}, notice=APPROVED, automatic=True
         ),
         # A row someone else changed first: the page says so, nothing saved.
         "/census-changes-stale": page(

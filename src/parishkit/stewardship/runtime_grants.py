@@ -541,6 +541,9 @@ CLOSURE_TABLES = {
     **dict.fromkeys(
         PUBLICATION_TABLES, ("stewardship_responses", "0004_publication_plans")
     ),
+    # An Administrator's review of an Automatic census change (0096, #528),
+    # which web records and reads.
+    "stewardship_proposal_review": ("stewardship_responses", "0006_proposal_review"),
 }
 
 

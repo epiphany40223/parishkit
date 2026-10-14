@@ -1706,11 +1706,14 @@ then:
 - **Submitted**, in browser-local time.
 - **Recorded by**, **Recorded at** and **Note**: the latest *Entered in
   ParishSoft*, *Ignore* or *Reopen* on the row
-  ([manual census resolution](#manual-census-resolution)): the person's
+  ([manual census resolution](#manual-census-resolution)), or *Approve*,
+  *Ignore* or *Back to To review* on an Automatic row
+  ([automatic census review](#automatic-census-review)): the person's
   sign-in address, the time in the parish's compact date format and
   browser-local time, and the note they left. Blank until someone records
   one.
-- **Actions**, last: *Record outcome* on a row someone may resolve.
+- **Actions**, last: *Record outcome* on a By-hand row someone may resolve,
+  and *Review* on an Automatic row, for an Administrator.
 
 A terminal execution decides the status first, since it is the outcome
 whatever the decision says: *published* is **Published**,
@@ -1777,10 +1780,9 @@ every resolved outcome is: a mistaken tick is corrected in ParishSoft, and a
 later Family answer creates new rows. An Administrator may reopen an
 *Ignored* row (decision back to *unreviewed*) with a note saying why, which
 is required. Who, when and the note are kept as history. Automatic rows are
-view-only for Staff. Admin
-review/publish actions are defined by the
-[data](../data/spec.md#review-and-publication) and
-[Admin](../admin-portal/spec.md#follow-up-workflows) specifications.
+view-only for Staff; an Administrator reviews them as the
+[next section](#automatic-census-review) says, and publication follows the
+[data workflow](../data/spec.md#review-and-publication).
 
 The controls sit in the row's last column, in a *Record outcome* disclosure,
 so a row stays short until someone opens it
@@ -1816,6 +1818,47 @@ the campaign, the proposal's version and its starting state again.
 Since Family addresses are not yet written by publication (see the
 [data workflow](../data/spec.md#review-and-publication)), an address entered
 in ParishSoft stays *To do* until it is ticked.
+
+### Automatic census review
+
+Publication writes only Automatic changes an Administrator approved (see the
+[data workflow](../data/spec.md#review-and-publication)). On an Automatic row
+an Administrator may record **Approve** (decision *approved*; the row becomes
+*To do* until it is published), **Ignore** (decision *ignored*, leaving
+ParishSoft as it is) or **Back to To review** (decision *unreviewed*), each
+with an optional note
+([#528](https://github.com/epiphany40223/parishkit/issues/528), ADM-09).
+Each is offered only while it would change the decision, and only while the
+change is open: *pending*, *conflict* or *failed*, never while it is
+*queued* for publication or once it has a final outcome. A *Conflict* row
+may be ignored or sent back, but not approved, since publication blocks an
+approved conflict until it is resolved. A review can be changed again until
+publication of the change starts, and each one changes the proposal's
+version, so a publication plan that included it no longer matches. Staff
+see Automatic rows but never review them.
+
+The controls sit in the row's *Review* disclosure, in the same place and form
+as [Record outcome](#manual-census-resolution): a note field, then the
+buttons the row allows. A review is reversible, so none asks first. The form
+posts with the page's filters and table choices, and the answer is the same
+page, refreshed in place, with the notice naming the row; a row someone else
+changed first is left as it is, and the notice says so. While other campaign
+work holds the campaign, no Review is offered. Bulk review of the selected
+rows with exact counts, an Administrator's edited value
+([ADM-09](../../../plans/stewardship/admin-portal.md#adm-09-census-review-and-parishsoft-publication-ui))
+and `pk-admin` review commands come later; the command line keeps its
+*Reopen* of an ignored row meanwhile.
+
+Each review is one immutable review row (who, when, the note and the
+resulting decision and edit fields), added by forward migration 0096 under
+the [post-launch schema policy](../operations/spec.md#post-launch-schema-policy).
+The database pairs it with the proposal's result at the next version and a
+`census_change_updated` audit event naming only the versions. The web role
+may change an Automatic proposal's decision only with such a row, and the
+row's own guard checks again that the actor is a current Administrator, the
+campaign admits changes, the version is current, the change is Automatic and
+open, and the decision changes. The row records the whole resulting review
+state, so the later edited value needs only a wider guard for the row.
 
 ## Financial stewardship detail
 

@@ -248,6 +248,7 @@ sections:
     "Census change rows": [RPT-08]
     "Census change filters and downloads": [RPT-08]
     "Manual census resolution": [RPT-08]
+    "Automatic census review": [RPT-08, ADM-09]
     "Financial stewardship detail": [RPT-08]
     "Limitations": [RPT-04]
     "System logs": [RPT-09]
