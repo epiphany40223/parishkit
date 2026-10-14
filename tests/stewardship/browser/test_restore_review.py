@@ -199,15 +199,21 @@ def test_refusals_answer_inside_the_region(page, component_origin):
     release = region.get_by_role("button", name="Release the site", exact=True)
     resend = region.get_by_role("button", name="Send these again", exact=True).first
     before = (_top(release), _top(resend))
+    resend.click()
+    expect(region.get_by_text("Something changed since you looked")).to_be_visible()
+    assert _top(resend) == pytest.approx(before[1], abs=1)
     release.click()
     expect(region.get_by_text("this step needs a Google sign-in")).to_be_visible()
     expect(region.get_by_role("button", name="Confirm with Google")).to_be_visible()
     # The refusal is drawn after the controls, so none of them moved.
     after = (_top(release), _top(resend))
     assert after == pytest.approx(before, abs=1)
-    resend.click()
-    expect(region.get_by_text("Something changed since you looked")).to_be_visible()
-    assert _top(resend) == pytest.approx(before[1], abs=1)
+    # The sign-in is stale now, so the redrawn decisions wait for it,
+    # named by the refusal's own step-up sentence (#1331).
+    expect(release).to_be_disabled()
+    expect(resend).to_be_disabled()
+    assert "restore-fresh-reason" in resend.get_attribute("aria-describedby")
+    expect(region.locator("#restore-fresh-reason")).to_have_count(1)
     assert kept()
 
 

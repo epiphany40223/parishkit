@@ -867,6 +867,25 @@ the server draws disabled because other campaign work holds the page (report
 exports, follow-up saves, Participation) or because the sign-in is not
 recent (automation approval) names that notice too.
 
+Likewise ([#1331](https://github.com/epiphany40223/parishkit/issues/1331)):
+the Mail message page's decisions (Accept, Confirm unsent, a resend or
+retry) while other campaign work holds the email, named by a held notice in
+the "Resolve this email" section; Clear verified refusal on a Refused
+address page, named by the first reason it would be refused (no current
+campaign, an archived campaign, other campaign work, or ParishSoft data the
+campaign has not taken in); Release the site on Restore review while a purge
+or campaign change runs (checked when the page opens, as the release
+checks it); every decision and Release on Restore review and Held emails, and
+Start Testing cleanup on Go-live readiness, without a recent sign-in, named
+by the shared step-up notice (a refused step's own step-up takes its place
+after the controls, so nothing above them appears on a click); Queue new
+manual report while the campaign has no Weekly Admin digest schedule; the
+Ministry follow-up bulk bar and its row boxes while other campaign work
+holds the page; Queue timeline export on the Family timeline, which names
+its locked line itself as well as through its greyed fieldset; and Open form
+there for a campaign that is not the current one or a Family that may not
+use the Family form.
+
 ### Field errors and live checks
 
 **Rule.** An error is shown at its field: the message beside it, the field

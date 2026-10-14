@@ -1112,3 +1112,100 @@ def test_preparation_retry_form_preserves_failed_task_and_hides_stale_action(
             assert conflict.status_code == 409
         assert TaskRun.objects.get(pk=ticket.task_id).state == "failed"
         assert TaskRun.objects.filter(root_id=ticket.task_id).count() == 2
+
+
+def hold_campaign_work():
+    """Leave a campaign work gate running on the current campaign, so other
+    campaign work holds it (loaded as offline input, as the restore review
+    tests do)."""
+    from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+    from parishkit.stewardship.campaigns.runtime_models import CampaignWorkGate
+
+    campaign = SystemConfiguration.objects.get().current_campaign_id
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute("SET LOCAL session_replication_role = replica")
+        CampaignWorkGate.objects.create(
+            campaign_id=campaign,
+            request_id=uuid4(),
+            state="running",
+            correlation_id=uuid4(),
+        )
+        cursor.execute("SET LOCAL session_replication_role = origin")
+
+
+def test_held_decisions_are_shown_unavailable_and_still_refused(
+    family_mail,  # noqa: F811
+    google,
+    monkeypatch,
+    settings,
+):
+    """While other campaign work holds the email, its decisions are drawn
+    unavailable, named by the held notice; a posted one is still refused
+    (#1331)."""
+    from parishkit.stewardship.accounts import family_authentication
+    from parishkit.stewardship.jobs.delivery_resolution_models import DeliveryResolution
+
+    from .test_delivery_resolution_postgresql import failed_delivery
+
+    settings.STEWARDSHIP_PUBLIC_ORIGIN = "http://localhost:8000"
+    monkeypatch.setattr(family_authentication, "runtime", lambda: family_mail.rings)
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = failed_delivery(family_mail, FamilyDeliveryStatus.UNKNOWN)
+        browser, _ = signed_in()
+        hold_campaign_work()
+        path = f"/admin/mail/outgoing/{message.pk}/"
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            html = browser.get(path).content.decode()
+            response = browser.post(
+                path + "resolution/",
+                dict(
+                    command_id=str(uuid4()),
+                    expected_version=str(message.version),
+                    action="accept",
+                    note="Seen in the provider's log.",
+                ),
+                HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
+            )
+    section = html[html.index('id="resolve-heading"') :].split("</section>")[0]
+    assert 'id="delivery-held"' in section
+    assert (
+        'disabled aria-describedby="delivery-held">'
+        "Confirm delivery using external evidence</button>"
+    ) in section
+    assert "<form" not in section
+    assert response.status_code != 302
+    assert DeliveryResolution.objects.count() == 0
+
+
+def test_clear_is_unavailable_while_campaign_work_holds_it(response_service, google):
+    """The Refused address page names why Clear is unavailable, and a posted
+    clearance is still refused (#1331)."""
+    harness = activate_response_service(response_service)
+    refusal = remember(refused(harness))
+    browser, _ = signed_in()
+    path = f"/admin/mail/refusals/{refusal.pk}/"
+    current = SourceCurrent.objects.get()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        assert b"Describe how you verified the mailbox" in browser.get(path).content
+    hold_campaign_work()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        html = browser.get(path).content.decode()
+        response = browser.post(
+            path + "clearance/",
+            dict(
+                command_id=str(uuid4()),
+                source_snapshot_id=str(current.snapshot_id),
+                source_generation=str(current.generation),
+                verified="yes",
+                note="Called the Family.",
+            ),
+            HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
+        )
+    assert 'id="refusal-clear-unavailable"' in html
+    assert "other campaign work" in html
+    assert (
+        'disabled aria-describedby="refusal-clear-unavailable">'
+        "Clear verified refusal</button>"
+    ) in html
+    assert response.status_code != 302
+    assert RecipientRefusalResolution.objects.count() == 0

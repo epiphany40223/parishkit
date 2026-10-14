@@ -795,8 +795,11 @@ both roles see:
   directory, the page shows no notice beside it (the Administrator's choice
   on #590). Open form is a
   disabled button with its reason beside it while the system is in Testing
-  mode (the Family sign-in then accepts only rehearsal codes) or when the
-  Family has no code for the campaign. In Testing mode the reason links "Try
+  mode (the Family sign-in then accepts only rehearsal codes), when the
+  Family has no code for the campaign, when the campaign is not the current
+  one, or when ParishSoft no longer lists the Family as active and
+  registered (#1331), the refusals Open form's hand-off makes (below). In
+  Testing mode the reason links "Try
   the Family form as a chosen Family" for roles that may open that page
   (Administrators).
 
