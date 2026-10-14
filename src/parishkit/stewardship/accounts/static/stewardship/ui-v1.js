@@ -2746,10 +2746,31 @@
       });
     });
   };
+  // data-max-ticked="N" on a group of checkboxes allows at most N ticked
+  // (the Ministry requests packet's Ministries, #1332). Past that each
+  // ticked box is invalid with the group's data-max-ticked-hint, its
+  // "{count}" the number ticked, which the gate below shows as its hint.
+  // Only a mark this check made is cleared. The server refuses more too.
+  const maxTicked = (form) => {
+    form.querySelectorAll("[data-max-ticked]").forEach((group) => {
+      const boxes = [...group.querySelectorAll("input[type=checkbox]")];
+      const ticked = boxes.filter((box) => box.checked && !box.disabled);
+      const over = !group.closest("[hidden]")
+        && ticked.length > Number(group.dataset.maxTicked);
+      const hint = (group.dataset.maxTickedHint || "").replace("{count}",
+        ticked.length.toLocaleString());
+      boxes.forEach((box) => {
+        const mark = over && ticked.includes(box);
+        if (mark || box.hasAttribute("data-max-ticked-over")) box.setCustomValidity(mark ? hint : "");
+        box.toggleAttribute("data-max-ticked-over", mark);
+      });
+    });
+  };
   const gateComplete = (form) => {
     if (!form || !form.hasAttribute("data-require-complete")) return;
     requiredWhen(form);
     requireOne(form);
+    maxTicked(form);
     // A required text field holding only spaces is still empty: the server
     // trims it (notes for the outcome Other, a Slack token being set up).
     const blank = (node) => node.required
@@ -2777,6 +2798,7 @@
           || (missing.matches("[data-time-entry]") && missing.validity.customError
             && missing.validationMessage)
           || (empty && missing.dataset.emptyHint)
+          || (missing.hasAttribute("data-max-ticked-over") && missing.validationMessage)
           || missing.closest("[data-missing-hint]")?.dataset.missingHint
           || "Fill in the required fields to save.")
         : "";

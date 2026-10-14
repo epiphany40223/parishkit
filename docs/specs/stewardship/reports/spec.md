@@ -1679,9 +1679,12 @@ in the requester's scope by name, whatever the page's filters, sort or page
 show, so a leader of many Ministries can choose a subset; filtering, paging
 or sorting the table keeps the ticks
 ([#533](https://github.com/epiphany40223/parishkit/issues/533)). At most
-200 Ministries may be ticked for one packet, as the form's help says; more
-are refused with a message saying to tick fewer or leave every box unticked,
-which includes them all. The list is
+200 Ministries may be ticked for one packet, as the form's help says. While
+more are ticked, Queue is unavailable and its reason line gives the count and
+says to untick some or all
+([#1332](https://github.com/epiphany40223/parishkit/issues/1332)); the server
+still refuses more with a message saying to tick fewer or leave every box
+unticked, which includes them all. The list is
 read through the same scoped Ministry report selection as By Ministry, whose
 whole-scope read it reuses. It shows
 only each Ministry's full name (no DUID,
