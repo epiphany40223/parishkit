@@ -101,6 +101,12 @@ def test_statistics_draw_as_progress_bars_with_labelled_values(
     view = panel.locator("[data-chart-view]")
     assert view.get_attribute("aria-label") == "Responses and email reach"
     assert view.get_attribute("tabindex") == "0"
+    # The summary would repeat the axis labels' values, so it is not shown;
+    # it stays the view's description for assistive technology.
+    caption = panel.locator("figcaption")
+    assert view.get_attribute("aria-describedby") == caption.get_attribute("id")
+    assert caption.inner_text().startswith("Responses and email reach: Families")
+    assert caption.bounding_box()["width"] <= 1
     ticks = panel.locator("svg .role-axis-label text:has(tspan)")
     assert [tick.locator("tspan").all_text_contents() for tick in ticks.all()] == [
         ["Families that have responded", "2 out of 1,000 (0.2%)"],
