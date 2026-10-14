@@ -80,14 +80,18 @@ class Placement:
     which report an export came from, which settings page a configuration
     change was confirmed on. ``parent`` replaces the registered parent,
     ``arguments`` supplies route arguments that ancestor links need,
-    ``labels`` names ancestor pages more specifically (by URL name), and
-    ``flow``/``step`` select a step indicator from ``FLOWS``. Presentation
-    only: it grants nothing, and every linked page rechecks its own access.
+    ``labels`` names ancestor pages more specifically (by URL name),
+    ``queries`` adds a query string to an ancestor's link (by URL name; the
+    view's own closed choice, such as the timeline's Testing mode, never the
+    request's query), and ``flow``/``step`` select a step indicator from
+    ``FLOWS``. Presentation only: it grants nothing, and every linked page
+    rechecks its own access.
     """
 
     parent: str | None = None
     arguments: dict = field(default_factory=dict)
     labels: dict = field(default_factory=dict)
+    queries: dict = field(default_factory=dict)
     flow: str | None = None
     step: str | None = None
 
@@ -1020,9 +1024,10 @@ def back(match, placed=None, items=None):
     """
     _name, chain, arguments = _resolved(match, placed)
     labels = placed.labels if placed else {}
+    queries = placed.queries if placed else {}
     offered = _offered(items)
     for ancestor in reversed(chain[:-1]):
-        url = _link(ancestor, arguments, offered)
+        url = _with_query(_link(ancestor, arguments, offered), queries.get(ancestor))
         if url:
             return {"label": labels.get(ancestor, PAGES[ancestor].label), "url": url}
     return {"label": PAGES["index"].label, "url": reverse(f"{NAMESPACE}:index")}
@@ -1078,9 +1083,15 @@ def build(match, items, placed=None):
                 }
             )
     labels = placed.labels if placed else {}
+    queries = placed.queries if placed else {}
     return sections, _breadcrumbs(
-        name, chain, arguments, sections, labels, _offered(items)
+        name, chain, arguments, sections, labels, _offered(items), queries
     )
+
+
+def _with_query(url, query):
+    """``url`` with ``query`` appended, or as it is when either is empty."""
+    return f"{url}?{query}" if url and query else url
 
 
 def _item(entry):
@@ -1095,7 +1106,7 @@ def _offered(items):
     return {item.name: item.url for item in map(_item, items) if item.url}
 
 
-def _breadcrumbs(name, chain, arguments, sections, labels, offered=None):
+def _breadcrumbs(name, chain, arguments, sections, labels, offered=None, queries=None):
     """Home, the section, then each ancestor page, ending at the current page."""
     if name is None or name not in PAGES:
         return []
@@ -1121,7 +1132,9 @@ def _breadcrumbs(name, chain, arguments, sections, labels, offered=None):
         trail.append(
             {
                 "label": labels.get(ancestor, PAGES[ancestor].label),
-                "url": _link(ancestor, arguments, offered),
+                "url": _with_query(
+                    _link(ancestor, arguments, offered), (queries or {}).get(ancestor)
+                ),
             }
         )
     trail.append({"label": PAGES[name].label, "url": None})
