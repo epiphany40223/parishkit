@@ -480,8 +480,13 @@ def test_post_filter_applies_in_place_with_csrf(page, component_origin):
     """A private report's Apply filters posts the form's urlencoded body, CSRF
     token and hidden sort included; the rows, the matching counts outside the
     table and the export's hidden query follow, and the address never changes."""
+    from playwright.sync_api import expect
+
     page.set_viewport_size(VIEWPORT)
     page.goto(component_origin + "/information")
+    chart = page.locator("[data-chart='information-followup-spec']")
+    expect(chart).to_have_attribute("data-chart-state", "rendered")
+    expect(chart.locator("svg tspan", has_text="20 out of 51 (39.2%)")).to_have_count(1)
     page.evaluate(MARK)
     page.get_by_label("Request history").select_option("withdrawn")
     offset = scroll_to_filters(page)
@@ -501,6 +506,10 @@ def test_post_filter_applies_in_place_with_csrf(page, component_origin):
     assert "search=Sample" in body and "size=50" in body
     visible(page.locator("#table").get_by_text("Other Family"))
     has_text(page.locator("#information-matching"), "Matching requests: 3.")
+    # The Follow-up status chart follows the filters in place (#720).
+    chart = page.locator("[data-chart='information-followup-spec']")
+    expect(chart).to_have_attribute("data-chart-state", "rendered")
+    expect(chart.locator("svg tspan", has_text="1 out of 3 (33.3%)")).to_have_count(1)
     visible(page.locator("#information-export-count", has_text="3 estimated matching"))
     export = page.locator("#table-export input[type=hidden][name=disposition]")
     assert export.input_value() == "withdrawn"
@@ -524,6 +533,8 @@ def test_post_filter_with_no_matches_empties_the_counts(page, component_origin):
     page.get_by_role("button", name="Apply filters").click()
     visible(page.get_by_text("No matching requests."))
     has_text(page.locator("#information-matching"), "Matching requests: 0.")
+    # No matching request: no Follow-up status chart (#720).
+    assert page.locator("#information-status [data-chart]").count() == 0
     has_text(
         page.get_by_role("status").filter(has_text="No rows"), "No rows · Page 1 of 1"
     )

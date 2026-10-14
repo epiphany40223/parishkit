@@ -631,6 +631,37 @@ def financial_charts(summary, choices):
     )
 
 
+# The Additional information page's follow-up states (#720), in drawing
+# order: (bar label, key of the selection's ``counts``). Every request is in
+# exactly one, so the bars add up to the matching requests.
+INFORMATION_STATES = (
+    ("Completed", "completed"),
+    ("Needed, not completed", "needed_open"),
+    ("Not needed, not completed", "not_needed_open"),
+)
+
+
+def information_followup(counts, total):
+    """The Additional information page's "Follow-up status" chart (#720).
+
+    ``counts`` and ``total`` are the information selection's, over every
+    request the filters match rather than the table's page: each follow-up
+    state is a progress bar against ``total``. With no matching request
+    there is nothing to draw, so ``None`` is returned.
+    """
+    if not total:
+        return None
+    return count_bars(
+        "information-followup",
+        "Follow-up status",
+        [(label, counts[key]) for label, key in INFORMATION_STATES],
+        total=total,
+        compared="Share of matching requests",
+        noun="Requests",
+        progress=True,
+    )
+
+
 # The statistics drawn as progress against active Families (#720), in the
 # order the cards listed them: (card label, PopulationStatistics field).
 PROGRESS = (
