@@ -286,7 +286,7 @@ def test_native_leader_exports_worker_download_and_regeneration(
         job_route = reverse("admin:report_export", args=[result.pk])
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             response, body = read(browser, job_route)
-            assert response.status_code == 200 and b"Ministry export" in body
+            assert response.status_code == 200 and b"Ministry requests export" in body
         with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
             document = load_document(result)
             assert "valid@example.org" not in str(document.rows)

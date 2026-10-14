@@ -281,7 +281,7 @@ def test_native_information_exports_use_real_worker_and_guarded_downloads(
                 for q in queries.captured_queries
             )
             assert (
-                response.status_code == 200 and b"Additional-information export" in body
+                response.status_code == 200 and b"Additional information export" in body
             )
         with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
             assert execute_hint(

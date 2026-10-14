@@ -9,6 +9,7 @@ from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET, require_POST
 
 from parishkit.stewardship.accounts import admin_navigation
@@ -254,32 +255,33 @@ def detail(request, request_id):
                 admit_campaign(campaign_id, mutating=True)
             except PermissionError:
                 mutable = False
-            # The report page the export came from, for the trail (#196).
+            # The report page the export came from, for the trail (#196). A
+            # report's export is named after that report's page (#520), so
+            # ``title`` stays None for those and is built from the page's
+            # name below; other files have names of their own.
+            title = None
             if job.report == "ministry":
-                title = "Ministry export"
                 source = "ministry_report"
                 report_url = reverse("admin:ministry_report")
             elif job.report == "additional_information":
-                title = "Additional-information export"
                 source = "information_queue"
                 report_url = reverse("admin:information_queue")
             elif job.report == "financial":
-                title = "Financial stewardship export"
                 source = "financial_report"
                 report_url = reverse("admin:financial_report")
             elif job.report == "campaign_archive":
                 # Download campaign archive on Past campaigns (#1018).
-                title = "Campaign archive"
+                title = _("Campaign archive")
                 source = "past_campaigns"
                 report_url = reverse("admin:past_campaigns")
             elif job.report == "campaign_comparison":
-                title = "Campaign comparison download"
+                title = _("Campaign comparison download")
                 source = "campaign_comparison"
                 report_url = reverse("admin:campaign_comparison")
             elif job.report == "family_test_names":
                 # Requested from the command line's chosen-Family review
                 # (#817); the trail returns to that page for the same email.
-                title = "Chosen-Family test names export"
+                title = _("Chosen-Family test names export")
                 source = "campaign_mail_families"
                 report_url = reverse(
                     "admin:campaign_mail_families", args=[job.parameters["revision"]]
@@ -289,18 +291,17 @@ def detail(request, request_id):
                 # way back is the Family's own timeline page.
                 from .family_timeline_views import timeline_url
 
-                title = "Family timeline export"
+                title = _("Family timeline export")
                 source = "family_directory"
                 report_url = timeline_url(
                     job.timeline_snapshot.family_id, job.parameters["mode"]
                 )
             elif job.report in {"family_directory", "postal_outreach"}:
                 source = "family_directory"
-                title = (
-                    "Family-directory mail-merge export"
-                    if job.parameters["postal"]
-                    else "Family-directory export"
-                )
+                if job.parameters["postal"]:
+                    title = _("%(page)s mail-merge export") % {
+                        "page": admin_navigation.PAGES[source].label
+                    }
                 report_url = reverse("admin:family_directory")
                 # Return with the closed link presets the export used: its reach
                 # filter or, for a mail merge, the mailing columns alone. A mail
@@ -315,12 +316,15 @@ def detail(request, request_id):
                 if presets:
                     report_url += "?" + urlencode(presets)
             else:
-                title = "Participation export"
                 source = "participation"
                 report_url = ReportQuery(
                     scope=job.parameters["population_scope"],
                     timezone=job.browser_timezone,
                 ).url()
+            if title is None:
+                title = _("%(page)s export") % {
+                    "page": admin_navigation.PAGES[source].label
+                }
             admin_navigation.place(
                 request,
                 parent=source,
@@ -338,6 +342,9 @@ def detail(request, request_id):
                 "mutable": mutable,
                 "retry_key": uuid4(),
                 "report_title": title,
+                # The trail's last crumb names the page as its heading does,
+                # as the latest-data export's does (#520).
+                "breadcrumb_label": title,
                 "report_url": report_url,
                 # "Return to" names the report by its page name.
                 "report_name": admin_navigation.PAGES[source].label,

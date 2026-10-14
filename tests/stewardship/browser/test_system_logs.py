@@ -158,7 +158,7 @@ def test_logs_mobile_keyboard_and_accessibility(
     page.goto(component_origin + "/logs-error-400")
     assert page.get_by_role("alert").count() == 1
     assert page.get_by_text("Identifiers must be complete", exact=False).count() == 1
-    assert page.get_by_role("link", name="Return to the newest log entries").count()
+    assert page.get_by_role("link", name="Return to System logs").count()
     assert page.get_by_text("never in a web address", exact=False).count() == 0
     # A query string is refused for where it was sent, not for what it said.
     page.goto(component_origin + "/logs-error-query")

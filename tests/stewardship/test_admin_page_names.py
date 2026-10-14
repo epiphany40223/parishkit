@@ -160,18 +160,6 @@ SETUP = {
 }
 SETUP_SHARED = ("setup-step.html", "setup-credential.html")
 
-# The review steps of these pages' change flows render their own templates;
-# their "Return to" links are checked with the pages'.
-REVIEWS = (
-    "integration-preview.html",
-    "clone-preview.html",
-    "content-preview.html",
-    "content-settings.html",
-    "schedule-review.html",
-    "user-review.html",
-    "user-leader-import.html",
-)
-
 TRANSLATED = re.compile(r'{% translate "([^"]+)" %}')
 
 
@@ -261,14 +249,28 @@ def test_title_and_heading_use_the_page_name(name):
     assert title <= shared and heading <= shared
 
 
-@pytest.mark.parametrize("template", sorted(set(TEMPLATES.values()) | set(REVIEWS)))
+# "Return to" links whose target has no fixed name: the shared error page
+# returns to whatever page the reader came from (navigation rule 4).
+UNNAMED_RETURNS = {("error.html", "the previous page")}
+
+
+@pytest.mark.parametrize(
+    "template", sorted(path.name for path in TEMPLATE_DIR.glob("*.html"))
+)
 def test_return_links_name_a_page(template):
-    """Every "Return to X" names X by a page's label; no "Back to" wording."""
+    """Every "Return to X" names X by a page's label; no "Back to" wording.
+
+    Every Admin template is checked, error pages and shared fragments too,
+    not only the pages' own templates (#520).
+    """
     labels = {str(page.label) for page in navigation.PAGES.values()}
     source = _source(template)
     assert "Back to " not in source
     for target in re.findall(r'"Return to ([^"]+)"', source):
-        assert target in labels, (template, target)
+        assert target in labels or (template, target) in UNNAMED_RETURNS, (
+            template,
+            target,
+        )
 
 
 # A link whose whole text is one translated string, to an Admin page.
@@ -348,6 +350,7 @@ def test_former_names_are_read_from_the_spec():
     assert {"Participation export", "Financial stewardship export"} <= former
     # An object-named row's former link names count; its placeholder does not.
     assert {"ParishSoft settings", "Off-site backup settings"} <= former
+    assert {"Key change details", "Family-directory export"} <= former
     assert not any(name.startswith("_") for name in former)
     # Current names, a non-page row, quoted wording and single words are not.
     assert not former & {"Ministry follow-up", "Every Admin page", "Message"}

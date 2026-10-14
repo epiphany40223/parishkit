@@ -287,7 +287,10 @@ def test_native_directory_exports_render_download_and_regenerate_retained_inputs
                 '"stewardship_directory_export_snapshot"."document"' not in item["sql"]
                 for item in queries.captured_queries
             )
-            assert response.status_code == 200 and b"Family-directory export" in body
+            assert (
+                response.status_code == 200
+                and b"Active parishioner family directory export" in body
+            )
             # A code-list export with no reach filter returns to the plain page.
             assert f'href="{route}">'.encode() in body
             assert b"mail-merge export" not in body
@@ -636,7 +639,7 @@ def test_mail_merge_always_lists_by_postal_mail_only(
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         status, body = read(browser, response["Location"])
     assert status.status_code == 200
-    assert b"Family-directory mail-merge export" in body
+    assert b"Active parishioner family directory mail-merge export" in body
     assert f'href="{route}?mailing=yes"'.encode() in body
     with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
         assert execute_hint(
