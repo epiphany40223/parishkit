@@ -848,7 +848,7 @@ Specification: [Admin navigation](../../specs/stewardship/admin-portal/spec.md#a
 - [x] ADM-12.17 — NAV-14: add the Emailed reports page.
 - [ ] ~~ADM-12.18 — NAV-15~~ — Dropped, not done: the Users revamp (#952) replaces the planned Portal users split (#535).
 - [ ] ADM-12.19 — NAV-16: add the ways back (#521), including the test-email origin kept in the session.
-- [ ] ADM-12.20 — NAV-17: add the reachability and no-UUID crawl test.
+- [x] ADM-12.20 — NAV-17: add the reachability and no-UUID crawl test.
 - [ ] ADM-12.21 — NAV-18: add Home's Next steps for each state and role and the per-role Today line.
 - [x] ADM-12.22 — NAV-19: add the Find a Family header search (#561).
 
@@ -928,6 +928,17 @@ Admin shell's query budget unchanged) and
 `tests/stewardship/browser/test_find_family.py` (one request after a pause,
 the keyboard path, refusals, WCAG checks at phone and desktop widths, on
 Chromium and WebKit).
+ADM-12.20 (NAV-17) adds
+`tests/stewardship/database/test_admin_reachability_postgresql.py`. As
+Administrator and as Staff, on a new Testing draft and on a campaign with a
+complete ParishSoft capture, it follows every GET link from Home and checks
+[navigation rules](../../specs/stewardship/admin-portal/spec.md#navigation-rules)
+1 (every page without route arguments that opens is reached) and 3 (every
+reached page but Home has a linked parent crumb or a "Return to" link), and
+that no `href`, `action`, `src` or `data-*-url` names the current campaign.
+Held emails, linked from Home only after a restore, is proven by its own
+suite; a `PENDING` set for pages awaiting #521 starts empty and may only
+shrink.
 ADM-12.06 (NAV-4) gives every Campaign setup and Mail and Family portal page
 its placement-table name in the registry, the browser title and the heading
 (Dates and mail schedules, Pause and resume mail, Family email history, Cancel
