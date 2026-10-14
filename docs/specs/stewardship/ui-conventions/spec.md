@@ -402,7 +402,11 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   region ids to replace as well: a settings page's Apply
   (`data-in-place-only="flow-steps"`) also moves the step indicator. A
   region the answer itself marks `data-in-place-always` is replaced even
-  then. One request is in flight at a time: a newer choice cancels an older
+  then. A region marked `data-in-place-own` is replaced only by the answer
+  to a control that names it (or lists it in `data-in-place-only`), never by
+  another control's answer or a redraw: Hosted files' Upload panel keeps a
+  chosen file and a typed name across a sort, a page or a deletion. One
+  request is in flight at a time: a newer choice cancels an older
   read, but a POST that saves a change is never cancelled, and other
   in-place controls and repeats are ignored (the live region says "Still
   saving…") until it settles.
@@ -461,7 +465,20 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   stale sign-in is answered with the step-up page, shown whole. That page's
   Refresh status replaces only the recent tests (and the critical-problems
   banner), so Family DUIDs typed but not yet checked are kept, and after
-  Send the requested notice takes focus.
+  Send the requested notice takes focus. A file upload is
+  sent in place as the multipart body a native submission sends: on
+  [Hosted files](../hosted-files/spec.md#admin-page), Upload follows its
+  redirect, so the new file's row, the notice (read out) and the usage line
+  appear and the Upload panel comes back empty, with focus on its file
+  field, since Upload waits for a file. A refused file (a wrong type, or too
+  large for the server) is swapped in with its error beside the field and
+  in the summary, which takes focus. On the setup wizard's Pages and
+  emails step, Fill in and Reset each land on their own region, so focus
+  stays where the reader is (the notice that replaces Fill in; Reset's
+  heading, since its box comes back unticked), and the stepper and each
+  entry's state update. Neither needs a fresh sign-in; an answer without
+  the region (the step-up page, a stale version's error page) is shown
+  whole.
 - **Real targets.** Every control is a real link or form with its `href`
   or `action` and fragment, which the script requests; when an ordinary load
   happens instead (a fallback above), the fragment, kept across a

@@ -84,21 +84,22 @@
       });
     });
   };
-  const slugSource = document.querySelector("input[data-slug-from]");
-  const slugTarget = document.querySelector("input[data-slug-to]");
-  if (slugSource && slugTarget) {
-    let derived = "";
-    slugSource.addEventListener("change", () => {
-      const file = slugSource.files && slugSource.files[0];
-      if (!file || (slugTarget.value && slugTarget.value !== derived)) return;
-      const stem = file.name.replace(/\.[^.]*$/, "");
-      let slug = stem.normalize("NFKD").replace(/[^\x00-\x7f]/g, "").toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-      if (slug.length > 64) slug = slug.slice(0, 64).replace(/-[^-]*$/, "") || slug.slice(0, 64);
-      derived = slug.replace(/^-+|-+$/g, "") || "file";
-      slugTarget.value = derived;
-    });
-  }
+  // Delegated, so an Upload form an in-place answer brings in (#519) fills
+  // its name too. The name the field was last filled with is kept on the
+  // field (data-derived), so a name the reader typed is never replaced.
+  document.addEventListener("change", (event) => {
+    const source = event.target;
+    if (!(source instanceof HTMLInputElement) || !source.matches("input[data-slug-from]")) return;
+    const target = source.form?.querySelector("input[data-slug-to]");
+    const file = source.files && source.files[0];
+    if (!target || !file || (target.value && target.value !== target.dataset.derived)) return;
+    const stem = file.name.replace(/\.[^.]*$/, "");
+    let slug = stem.normalize("NFKD").replace(/[^\x00-\x7f]/g, "").toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    if (slug.length > 64) slug = slug.slice(0, 64).replace(/-[^-]*$/, "") || slug.slice(0, 64);
+    target.dataset.derived = slug.replace(/^-+|-+$/g, "") || "file";
+    target.value = target.dataset.derived;
+  });
 
   // The parish's chosen date format (date-format-v1.js, loaded first).
   if (window.ParishDates) window.ParishDates.localize(document);
@@ -1011,7 +1012,14 @@
   // stays. An element of the swapped region marked data-in-place-focus (an
   // in-place review's heading, #532) takes focus after a successful answer
   // instead of the control, since that is what the reader acts on next.
+  // A region marked data-in-place-own is replaced only by an answer to a
+  // control that names it (or lists it in data-in-place-only), never by
+  // another control's answer or a redraw: Hosted files' Upload panel keeps a
+  // chosen file and a typed name across a sort, a page or a deletion, which
+  // a fresh copy would discard (#519).
   const REGIONS = "[data-in-place-region][id], [data-table-region][id]";
+  const ownedElsewhere = (other, region) => other !== region
+    && other.hasAttribute("data-in-place-own");
   // The control whose answer is being swapped in, while refreshRegions swaps
   // it (synchronously), so a parishkit:swap listener can tell the reader's
   // own table choice (a sort heading, Previous or Next, the filters) from
@@ -1621,6 +1629,7 @@
             && !(!anywhere && isRegion(copy) && copy.hasAttribute("data-in-place-always"))) {
           return;
         }
+        if (ownedElsewhere(other, region) && !alsoSwapped.includes(other.id)) return;
         if (isRegion(copy)) swapRegion(other, copy);
       });
     } finally {
@@ -3795,9 +3804,11 @@
       return null;
     }
   };
-  // Swap every region of this page that the fresh page also has.
+  // Swap every region of this page that the fresh page also has, except one
+  // only its own control replaces (data-in-place-own).
   const redrawFrom = (fresh) => {
     document.querySelectorAll(REGIONS).forEach((other) => {
+      if (ownedElsewhere(other, null)) return;
       const copy = fresh.getElementById(other.id);
       if (isRegion(copy)) swapRegion(other, copy);
     });

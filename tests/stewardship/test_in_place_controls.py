@@ -733,3 +733,55 @@ def test_go_live_refresh_regions_that_come_and_go():
         '<dl id="cleanup-details" data-in-place-region>'
         in details.split("</details>", 1)[0]
     )
+
+
+def test_hosted_file_upload_is_in_place():
+    """Upload posts its multipart body in place (#519 PR 7c): the form lands
+    on the Upload panel, a region only its own answer replaces
+    (data-in-place-own), so a sort, page or deletion redraw keeps a chosen
+    file and a typed name. The fresh "Uploaded …" notice is read out."""
+    text = (TEMPLATES / "hosted-files.html").read_text()
+    assert names_region(text, "hosted-file-upload")
+    region = re.search(r'<div id="hosted-file-upload" [^>]*>', text).group(0)
+    assert "data-in-place-own" in region
+    form = re.search(r'<form [^>]*data-in-place="hosted-file-upload"[^>]*>', text)
+    tag = form.group(0)
+    assert "action=\"{% url 'admin:hosted_file_upload' %}#hosted-file-upload\"" in tag
+    assert 'enctype="multipart/form-data"' in tag
+    assert 'data-in-place-message-from="hosted-file-uploaded"' in tag
+    # The form sits inside the panel region, which closes right after it.
+    assert text.index(region) < form.start()
+    assert text[form.start() :].split("</form>", 1)[1].startswith("</div>")
+    assert 'id="hosted-file-uploaded" data-table-sync' in text
+    # The emptied form holds Upload, so the file field takes focus instead.
+    from parishkit.stewardship.accounts.hosted_file_views import UploadForm
+
+    assert "data-in-place-focus" in UploadForm().fields["file"].widget.attrs
+
+
+def test_setup_content_defaults_are_in_place():
+    """Fill in and Reset post to the content list's own address in place
+    (#519 PR 7c), each landing on its own region, so focus stays near the
+    reader: Fill in's holds the notice, which takes focus and is read out
+    after either. Every entry's state and the stepper (the content step
+    turns done after a fill) are regions too, and the open step list stays
+    open."""
+    text = (TEMPLATES / "setup-content.html").read_text()
+    for region in (
+        "setup-stepper",
+        "setup-content-fill",
+        "setup-content-entries",
+        "setup-content-reset",
+    ):
+        assert names_region(text, region), region
+    for key in ("setup-content-fill", "setup-content-reset"):
+        body = region_body(text, key)
+        tag = re.search(rf'<form [^>]*data-in-place="{key}"[^>]*>', body).group(0)
+        assert f"action=\"{{% url 'admin:setup_content' %}}#{key}\"" in tag
+        assert 'data-in-place-message-from="setup-content-filled"' in tag
+    fill = region_body(text, "setup-content-fill")
+    assert 'id="setup-content-filled" tabindex="-1" data-in-place-focus' in fill
+    assert "{% for group in groups %}" in region_body(text, "setup-content-entries")
+    assert "stewardship/setup-wizard.html" in region_body(text, "setup-stepper")
+    wizard = (TEMPLATES / "setup-wizard.html").read_text()
+    assert 'id="setup-stepper-list" data-keep-open' in wizard

@@ -489,7 +489,10 @@ from Family pages and emails.") opens the About panel, following the Admin
   characters at a hyphen where possible. An empty result becomes `file`, and a
   taken name gets `-2`, `-3` and so on. A name the Admin typed is never
   changed, only validated; a taken or invalid one is a field error. On success
-  the page redirects back with "Uploaded *name* as `{{ file.slug }}`".
+  the page redirects back with "Uploaded *name* as `{{ file.slug }}`". A
+  refused upload's errors also appear in the page's error summary. Upload
+  acts in place
+  ([in-place controls](../ui-conventions/spec.md#in-place-controls)).
 - **Usage line**: "12 of 100 files, 35.2 MB of 200 MB used."
 - **File table**, built on the shared Admin table component with its
   selection column and **Delete selected** bulk action, as an action table

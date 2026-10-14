@@ -160,6 +160,8 @@ from .signed_in_components import components as signed_in_components
 from .source_form_components import components as source_form_components
 from .step_up_components import components as step_up_components
 from .system_health_components import components as system_health_components
+from .upload_defaults_components import components as upload_defaults_components
+from .upload_defaults_components import posts as upload_defaults_posts
 from .user_components import POSTS as USER_POSTS
 from .user_components import components as user_components
 from .weekly_components import components as weekly_components
@@ -2342,6 +2344,7 @@ def component_origin():
     responses.update(in_place_components(context, admin))
     responses.update(live_status_components(context, admin))
     responses.update(family_test_components(context, admin))
+    responses.update(upload_defaults_components(context, admin))
     responses.update(settings_components(context, admin))
     responses.update(campaign_settings_components(context, admin))
     responses.update(menu_components(context, admin))
@@ -2377,6 +2380,7 @@ def component_origin():
         | CONTENT_CATALOG_POSTS
         | open_form_posts(context, admin)
         | family_test_posts(context, admin)
+        | upload_defaults_posts()
         | PAST_CAMPAIGN_POSTS
         | {
             f"{IN_PLACE_FORM}/refuse": (400, None, responses["/in-place-refused"][1]),

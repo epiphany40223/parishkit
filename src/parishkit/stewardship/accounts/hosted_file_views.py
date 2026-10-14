@@ -30,7 +30,7 @@ from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
 
 from . import hosted_file_storage as storage
 from . import hosted_file_uses, hosted_files
-from .admin_editing import error_response, principal
+from .admin_editing import error_response, principal, summary_errors
 from .authentication import runtime
 from .hosted_file_models import (
     IMAGE_KINDS,
@@ -136,6 +136,10 @@ class UploadForm(forms.Form):
                 "accept": ACCEPT,
                 "data-slug-from": "",
                 "data-missing-hint": REFUSALS["empty"],
+                # After an in-place Upload (#519) the emptied form holds
+                # Upload until a file is chosen, so focus goes here, to the
+                # field the reader uses next.
+                "data-in-place-focus": "",
             }
         ),
         help_text=gettext_lazy(
@@ -265,6 +269,10 @@ def _library(request, *, form=None, status=200, notice=None):
             + _("Families at the parish picnic")
             + '" width="600">',
             "notice": notice,
+            # A refused upload's errors, for the page's error summary: an
+            # in-place Upload (#519) moves it into the Upload panel, focuses
+            # it and reads it out, so the reason is said, not only shown.
+            "errors": summary_errors(form) if status == 400 else [],
             "count": len(files),
             "total": sum(row.size for row in files),
             "max_files": MAX_FILES,
