@@ -7,6 +7,7 @@ import pytest
 from django.db import DatabaseError, connection
 from django.urls import reverse
 
+from parishkit.stewardship.accounts import admin_navigation as navigation
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.campaigns.production_models import ProductionCleanupTarget
@@ -22,7 +23,7 @@ from parishkit.stewardship.reports.weekly_models import (
     WeeklyManualRequest,
 )
 
-from .auth_builders import signed_in
+from .auth_builders import signed_in, unguarded
 from .campaign_builders import campaign_clock
 from .test_background_grants_postgresql import task_login
 from .test_cleanup_batches_postgresql import delete_batch, running_request
@@ -303,9 +304,34 @@ def test_manual_form_explains_a_missing_weekly_schedule(response_service, google
         assert b"no Weekly Admin digest schedule" in page.content
         schedules = "/admin/campaign/schedules/"
         assert schedules.encode() in page.content
+        assert b"Dates and mail schedules</a>, then return here." in page.content
         assert b"Queue new manual report" not in page.content
         assert WeeklyManualRequest.objects.count() == 0
         assert TaskRun.objects.count() == before
+
+
+def test_manual_form_greys_the_schedule_link_for_an_archived_campaign(
+    response_service, google
+):
+    """The missing-schedule notice greys its link on an archived campaign (#1261).
+
+    Dates and mail schedules refuses an archived campaign (#1258), so the
+    notice shows the link text as the shared greyed-out control with the
+    menu's reason instead of linking the refusal.
+    """
+    with campaign_clock(INSTANT):
+        browser, _ = signed_in()
+        with unguarded(), connection.cursor() as cursor:
+            cursor.execute("UPDATE public.stewardship_campaign SET state='archived'")
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            page = browser.get(reverse("admin:weekly_digest_manual"))
+        body = page.content.decode()
+        assert page.status_code == 409
+        assert "no Weekly Admin digest schedule" in body
+        assert 'href="/admin/campaign/schedules/"' not in body
+        assert 'aria-describedby="schedule-settings-link-tip"' in body
+        assert f"{navigation.ARCHIVED}</span>" in body
+        assert WeeklyManualRequest.objects.count() == 0
 
 
 def test_manual_form_shows_queue_unavailable_while_a_digest_is_unresolved(
