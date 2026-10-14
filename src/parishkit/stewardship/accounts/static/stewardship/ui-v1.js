@@ -1897,12 +1897,12 @@
   // what is applied. An edit made while Review is still in flight is not in
   // the review that answer brings, so that review is withdrawn as soon as
   // it arrives. Forms are noted by id (editedSince, above). A form that is
-  // its own region (Share options, #750) is replaced by an
-  // answer that draws it: a Review's (accepted or refused) with the values
-  // that were sent, and the quiet refresh once a change is applied with the
-  // applied settings. Edits typed into it since it was sent are then gone,
-  // so a line at the top of the review region says they were not kept; a
-  // review that arrives with it matches the redrawn form, so it stays.
+  // its own region is replaced by an answer that draws it (a table's
+  // selection form, or the quiet refresh once a change is applied). Edits
+  // typed into it since it was sent are then gone, so a line says they were
+  // not kept: at the top of the region its action names, else after it. A
+  // review dialog's Review clears the mark (prepareReview), since what was
+  // typed is in that review and the form cannot change while it is shown.
   const withdraw = (review) => {
     // Hold the review region (else the review) at what the reader's place
     // needs, which also lets go of any hold an earlier swap no longer needs.
@@ -4034,7 +4034,8 @@
   // The review dialog of Admin editors (UX conventions, "Review dialog",
   // #750): components/confirm-dialog.html with review=True, opened by a form
   // marked data-review-open="<dialog id>" (New and Edit user, Import
-  // Ministry leaders, New and Edit scheduled email).
+  // Ministry leaders, New and Edit scheduled email, Campaign settings, its
+  // date change on Dates and mail schedules, and Share options).
   //
   // Review posts the form, submitter included, without a page load. Until
   // the answer arrives the form is inert and aria-busy, and its Review
