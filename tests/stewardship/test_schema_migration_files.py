@@ -300,6 +300,9 @@ FROZEN = {
     "0089_retry_refusal_log.sql": (
         "07c432248d8d28e730df2f0c07378faa44c3b98def736eeb15f36410f0475828"
     ),
+    "0090_publication_worker.sql": (
+        "67a990b0fee1f8c98619ad6ba9d5a7eaab7c8bade7a2ca874ad4206170c0a956"
+    ),
 }
 
 

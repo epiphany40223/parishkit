@@ -102,3 +102,24 @@ context for death-date source failures. There are still 303 functions, with
 fingerprint `e362f7e055fa37867f7067b9036a4b45500f18736564b42644f8deda13a69ae4`.
 All non-function fingerprints are unchanged. No retained database was upgraded
 or deleted; all database checks concern current application behavior.
+
+## ParishSoft publication
+
+The census publish worker (BG-09, #528) writes Administrator-confirmed
+contact changes to ParishSoft with the v2 Member contact PUT. It ships
+**switched off**, and it must stay off until both of these are done:
+
+1. A ParishSoft read that returns all fifteen Member contact fields the PUT
+   replaces is confirmed and implemented in
+   `responses/publication_gateway.py`. Until then the ParishSoft gateway's
+   read refuses, so the worker cannot reach its PUT even when switched on.
+2. The human-run smoke test (outside CI, reading credentials at runtime)
+   has written one chosen test Member and read it back unchanged.
+
+The switch is the deployment setting `parishsoft_publication: true` (or
+`PARISHKIT_STEWARDSHIP_PARISHSOFT_PUBLICATION=1`) on the worker. While it is
+off the worker refuses before it takes the source lease or makes any
+ParishSoft call. In Testing mode publication stops after preflight whatever
+the switch says. The rules the worker follows are in the data spec's
+[Review and publication](../specs/stewardship/data/spec.md#review-and-publication)
+section.

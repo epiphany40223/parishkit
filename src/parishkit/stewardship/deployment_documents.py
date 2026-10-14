@@ -66,6 +66,10 @@ def deployment_document(configuration, *, switches=True):
         # the local profile (BG-12's rehearsal latency): every other
         # deployment renders exactly what it rendered before the setting.
         result["local_smtp_latency_ms"] = configuration.local_smtp_latency_ms
+    if configuration.parishsoft_publication and switches:
+        # Likewise written only while census publication (#528, BG-09) is
+        # on, so a deployment with it off renders what it rendered before.
+        result["parishsoft_publication"] = True
     if configuration.credential_target is not None:
         result["credential_target"] = configuration.credential_target
     return {"deployment": result}

@@ -1936,8 +1936,9 @@ current authorization/filter snapshot.
 
 Execution claims `SourceMutationLease` and, immediately before each entity PUT,
 revalidates its fencing token, confirms the system is still in Production mode
-(a switch to Testing after confirmation stops every remaining write; no
-database guard refuses it, since an outcome is recorded only after its PUT),
+(a switch to Testing after confirmation stops every remaining write; the
+database also refuses to queue an entity's changes outside Production mode,
+though no guard can refuse the PUT itself),
 fetches the uncached full payload, and repeats
 canonical merge/conflict evaluation against the confirmed plan digest. Any
 difference invalidates that entity without writing and returns it for
@@ -1946,8 +1947,17 @@ one. Publication then groups fields by entity and uses idempotent v2 `PUT`
 operations with bounded shared retries. Each entity is verified by an uncached
 read after write. Success marks its fields published/resolved; failure records a
 sanitized error and leaves the entity retryable without replaying successful
-entities. After releasing the lease, a final targeted/full refresh reconciles
-the promoted snapshot under a new lease claim.
+entities. An entity's written proposals are `queued` from just before its PUT
+until its outcome: `published` when verified, or, when the entity is
+invalidated, back to `failed` (an attempt failed) or `pending`. Every entity a
+run leaves without a published or invalidated outcome, and any left by a
+crashed run once its plan's execution window has passed, is invalidated, so a
+new preflight can plan it and it never blocks a later confirmation. A crash
+after a PUT is recovered by the next run's read, without a second PUT. After
+releasing the lease, a final targeted/full refresh reconciles
+the promoted snapshot under a new lease claim. Publication ships switched off;
+the [publication guide](../../../guides/stewardship-member-requests.md#parishsoft-publication)
+says what must happen before it is switched on.
 
 Admins may publish any reviewed subset during or after an active campaign.
 They need not finish review in one session. Later Family submissions supersede
