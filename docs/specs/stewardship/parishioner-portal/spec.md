@@ -306,14 +306,15 @@ does not claim to create ParishSoft Members.
 
 ## Ministry stewardship
 
-For each non-terminal existing/proposed Member, show current campaign-included
-Ministries eligible under the
-[Admin-managed activity policy](../admin-portal/spec.md#ministry-activity-management),
-in deterministic case-insensitive name order with DUID as final tie breaker.
-Inactive Ministries are hidden from current memberships as well as join/leave
-choices. Hiding an existing membership or earlier request does not delete it or
-turn omission into a new leave/withdrawal action. Recheck the same policy at
-submission, including the linked stale-form reconfirmation requirement.
+For each non-terminal existing/proposed Member, show the Ministries the
+current campaign selects that are in the current ParishSoft catalog (see the
+[Ministries page](../admin-portal/spec.md#ministries-page); there is no local
+inactive state, #1267), in deterministic case-insensitive name order with
+DUID as final tie breaker. Any other Ministry is hidden from current
+memberships as well as join/leave choices. Hiding an existing membership or
+earlier request does not delete it or turn omission into a new
+leave/withdrawal action. Recheck the same rule at submission, including the
+linked stale-form reconfirmation requirement.
 
 Current memberships appear first (with no visible heading; screen readers get
 a "Current ministries" heading), each stating its choice once as "Continue in

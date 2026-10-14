@@ -1835,7 +1835,7 @@ none.
 | `campaign_settings`, `campaign_create`, `campaign_clone` | `campaign show`, `campaign preview`, `campaign confirm`, `campaign clone`, `campaign ministries` (PR 10; a live campaign's Ministries change on Campaign settings, #1119); until #145, creating or copying a campaign is refused, except the first campaign through [Create the campaign](../admin-portal/spec.md#create-the-campaign) (#142) ([navigation rule 10](../admin-portal/spec.md#navigation-rules)): commands that go through `confirm` and `_target`, or call `refuse_campaign_creation`, will get the same refusal as the pages; `privileged_actions.configuration_request` has no such check |
 | `share_settings`, `reminder_workgroup` | `campaign shares` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), the Share options read; `campaign no-reminders-workgroup` and Share option changes (PR 10) |
 | `content_catalog`, `content_edit`, `content_revision`, `content_delete`, `content_history`, `content_history_revision`, `content_plain_text` | `content list`, `content show`, `content history` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); `content preview`, `content confirm` (PR 10), the plain-text preview with `content preview` |
-| `parish_settings`, `ministries` | `parish show`, `parish preview`, `parish confirm`, `ministries list` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the Ministries changes (PR 10) |
+| `parish_settings`, `ministries` | `parish show`, `parish preview`, `parish confirm`, `ministries list` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); Ministries changes nothing since [#1267](https://github.com/epiphany40223/parishkit/issues/1267) |
 | `hosted_files`, `hosted_file_delete`, `hosted_file_rename` | `files list`, `files delete`, `files rename` ([#463](https://github.com/epiphany40223/parishkit/issues/463)) |
 | `artwork_settings` (its upload and removal reviews, #750) | `artwork show`, `artwork remove-preview`, `artwork remove` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); uploads are `artwork_upload`'s, below |
 | `branding_settings`: **Apply changes** on its in-place logo review (#750) | `branding show` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); `branding confirm --expected-version …`, a configuration request for logos already uploaded (PR 10) |
@@ -2062,7 +2062,7 @@ target check of the option editor (`campaign_views._state` and
 passively so any session scope reads, with no event, as the pages' GETs
 record none, and each prints the applied configuration's `version`, the
 base a later change is previewed against. `ministries list` prints every
-catalog row (`duid`, `name`, `active`, `included`) in the page's order
+catalog row (`duid`, `name`, `included`; no `active` since #1267) in the page's order
 rather than one page of the table; no promoted catalog for the configured
 organization is `unavailable`, as the page answers 503. `campaign shares`
 defaults to the current campaign (none, or an unknown campaign, is

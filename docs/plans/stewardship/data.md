@@ -135,7 +135,7 @@ validation is never sufficient.
    chairperson suggestions, suspension/review tasks, and login/audit history.
 2. Materialize configured rules/manual assignments from exact YAML versions and
    keep source suspension/reactivation as a fail-closed runtime overlay.
-   Materialize the [Ministry activity policy](../../specs/stewardship/data/spec.md#ministry-activity-policy)
+   Materialize the [Ministry activity policy](../../specs/stewardship/data/spec.md#retired-ministry-activity)
    alongside those versions; source refresh must never rewrite its overrides.
    Persist rule creation origin, AddressRoleGrant origin sets and operation
    references in YAML and materialized rows; validate exact role/grant parity

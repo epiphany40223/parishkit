@@ -520,7 +520,7 @@ UI and their tests remain open.
 
 Ministry activity decision (September 11, 2026): the owner requires an Admin
 web workflow to mark Ministries inactive so they are not shown to parishioners.
-The [normative workflow](../specs/stewardship/admin-portal/spec.md#ministry-activity-management)
+The [normative workflow](../specs/stewardship/admin-portal/spec.md#ministries-page)
 now defines persistent parish-wide tenant/DUID overrides, defaults, import and
 rename stability, visibility of existing memberships as well as choices, and
 preservation of source/history/earlier requests. It also defines live-campaign

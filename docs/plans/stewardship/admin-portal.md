@@ -55,7 +55,7 @@ remain below `/admin/` and apply server-side authorization.
 4. Build parish, branding, timezone, contact, mode, integration, sender, Slack,
    and secret replace/test pages with YAML change-request and sealed target-
    installer progress, version diff, optimistic digest concurrency, and audit.
-   Include the [Ministry activity editor](../../specs/stewardship/admin-portal/spec.md#ministry-activity-management),
+   Include the [Ministry activity editor](../../specs/stewardship/admin-portal/spec.md#ministries-page),
    with persistent tenant/DUID overrides, impact preview and applied-status UI.
    Its activation must atomically reevaluate seeded assignment overlays without
    changing manual assignments or the campaign's structural selection.

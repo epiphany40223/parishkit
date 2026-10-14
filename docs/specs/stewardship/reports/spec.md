@@ -1415,21 +1415,21 @@ follow-up menu count read through the same function and cross-check, so neither
 shows more than the queue would.
 
 The sorted summary has the Ministry name (the row header, with its
-activity and campaign notes for Admin/Staff; no Ministry DUID,
+ParishSoft and campaign notes for Admin/Staff; no Ministry DUID,
 [#1123](https://github.com/epiphany40223/parishkit/issues/1123)),
 join-request count, leave-request count, unresolved count, and follow-up
 progress. Counts use latest live request state while retaining links to
 superseded/history views.
 
-Ministry activity (Active, Inactive, Not in ParishSoft data) and "No longer in
-this campaign" are the Administrator's campaign settings and change nothing a
-leader does with a request, so only Admin/Staff see them: the Ministry
-activity filter, each Ministry's activity and campaign notes, and the page
-help about them
-([#1135](https://github.com/epiphany40223/parishkit/issues/1135)). A leader's
-forms send only the activity `any`, which the installed selection still
-takes, and the page and its export refuse any other activity from a leader
-as invalid filters. The [follow-up
+"Not in ParishSoft data" and "No longer in this campaign" are the
+Administrator's concern and change nothing a leader does with a request, so
+only Admin/Staff see them: each Ministry's notes and the page help about
+them ([#1135](https://github.com/epiphany40223/parishkit/issues/1135)).
+There is no Ministry activity filter (Active, Inactive) any more
+([#1267](https://github.com/epiphany40223/parishkit/issues/1267)): the page,
+its export and the command line refuse an `activity` field from anyone, and
+always send the neutral `any` that the installed selection and the export
+capture still take. The [follow-up
 queue](../admin-portal/spec.md#follow-up-workflows) likewise explains its
 "Removed" badge only to Admin/Staff; a leader never meets one, since a leader
 leads only the Ministries the campaign asks about (#922).

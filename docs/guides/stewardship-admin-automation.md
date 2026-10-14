@@ -999,7 +999,7 @@ pk-admin campaign shares [--campaign ID]
 | `parish` (`parish show`) | The profile the page's editor shows: `name`, `website`, `timezone`, `phone` (stored as `+1` and ten digits), `online_giving_url` (null when unset) and `date_format` |
 | `campaign_id` (`ministries list`) | The current campaign, or null without one |
 | `snapshot_id` | The ParishSoft data the Ministry catalog comes from |
-| `ministries` | Every Ministry, by name as on the page: its ParishSoft `duid`, `name`, `active` (offered to parishioners) and `included` (in the current campaign) |
+| `ministries` | Every Ministry, by name as on the page: its ParishSoft `duid`, `name` and `included` (in the current campaign) |
 | `logos` | The current logos the page shows, in the order `large`, `menu`, `icon`, `favicon`: `slot`, `id`, `width` and `height` (pixels), `size` (bytes) and `sha256` |
 | `campaign_id` (`campaign shares`) | The campaign, the current one unless `--campaign` names another |
 | `editable` | Whether the page would edit the options now: an unlocked current Testing draft that no background work holds, with the financial module |
@@ -1421,8 +1421,7 @@ The options are the pages' own, and a value the page would refuse is exit 1
   `--completed` (`any`, `yes` or `no`), and `--start` and `--end` (days
   in the time zone `--zone` names, for example `America/New_York`, which
   is required with them, as the page takes days in your browser's zone).
-- `report ministry`: `--activity`, `--sort`, `--page` and `--size` for the
-  summary; `--ministry DUID` with `--requests join` or `--requests leave`
+- `report ministry`: `--sort`, `--page` and `--size` for the summary; `--ministry DUID` with `--requests join` or `--requests leave`
   counts one Ministry's list, and takes `--state`, `--history` (`current`
   or `all`) and `--start`, `--end` and `--zone`, as `report information`
   takes them.
@@ -2372,3 +2371,9 @@ print is exit 1 (`invalid`).
   "Not in ParishSoft". The command's options and document are unchanged,
   and the only readers are Administrator-run assistants; a script that
   reads these files by position must change.
+- `pk-admin/1` (#1267): a deliberate removal, kept on version 1, as for
+  #1126. The local Ministry activity is gone: `ministries list` rows have
+  no `active`, `report ministry` takes no `--activity` and its `filters`
+  have no `activity`, and an `--filter activity=...` on `export ministry`
+  is refused (`invalid`). The only readers are Administrator-run
+  assistants.

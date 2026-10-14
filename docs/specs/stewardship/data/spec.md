@@ -166,21 +166,36 @@ constraint permits only one nonterminal request per credential target; only the
 matching installer identity may claim it. Expiry/failure cleanup removes the
 sealed payload while preserving non-secret audit metadata.
 
-### Ministry activity policy
+### Retired Ministry activity
 
-Parish-wide Ministry activity overrides are non-secret authoritative YAML
-configuration, materialized with their exact applied configuration version.
-Each record has a stable record UUID, ParishSoft organization ID, Ministry DUID
-and explicit active flag; the organization/Ministry pair is unique within an
-applied version. Missing overrides mean locally active, not missing source
-membership. Retain overrides when a Ministry disappears from the source catalog.
-Source payloads remain unmodified and cannot overwrite local activity policy.
+The parish-wide Ministry activity override is gone (Administrator decision,
+2026-10-13, [#1267](https://github.com/epiphany40223/parishkit/issues/1267)):
+a Ministry is offered when it is in the promoted catalog and the campaign's
+Ministry selections (see the
+[Ministries page](../admin-portal/spec.md#ministries-page)). Its
+configuration section, `ministries` (records of a stable UUID, ParishSoft
+organization ID, Ministry DUID and an explicit `active` flag), is retired:
 
-The [Admin activity workflow](../admin-portal/spec.md#ministry-activity-management)
-owns defaults, visibility, live-campaign edits and authorization-overlay effects.
-Submission baseline/fingerprint inputs include the applicable activity policy
-so concurrent changes cannot silently accept stale Ministry choices. Retained
-submissions and audit refer to the applied policy that governed their acceptance.
+- A new or changed configuration (YAML installation, setup, an Admin or
+  command-line request, operator recovery) that holds any `ministries`
+  record is refused with a validation error naming the section and saying
+  to delete its records, as a configuration with a record in a section it
+  does not accept is refused. An empty section is accepted. SQL refuses
+  such a version too (`stewardship_ministry_complete_v1`).
+- Applied history keeps what it recorded: its schema discriminators
+  (`ministry-activity-v4` and its request formats) keep their meaning, and a
+  stored version with records still verifies, its shape checked as before,
+  from the document itself.
+- A configuration whose applied version still holds records can change only
+  by a request that removes them; any other change carrying them forward is
+  refused.
+
+The `stewardship_ministry_activity` table, which projected the section per
+applied version, and its trigger functions are dropped by a forward
+migration ([post-launch schema policy](../operations/spec.md#post-launch-schema-policy)).
+That migration refuses to run while the active configuration still marks a
+Ministry inactive, so a hidden Ministry never reappears unannounced;
+Production had none.
 
 ### Campaign
 
@@ -935,9 +950,9 @@ a Family is active unless it is in ParishSoft's "Inactive" Family group or has
 no active Member, the same Family flag Portal eligibility requires. The Family
 need not be registered at the parish: a non-parishioner can lead a Ministry, an
 inactive Member cannot (Administrator decision, 2026-10-10). The Ministry must
-be catalog-present, selected in the current campaign, which asks about
-Ministries, and not marked inactive in the applied [Ministry
-activity](#ministry-activity-policy). The current campaign may still be a
+be catalog-present and selected in the current campaign, which asks about
+Ministries; there is no local inactive state
+([retired](#retired-ministry-activity)). The current campaign may still be a
 draft. Role labels match with each run of whitespace (any Unicode whitespace,
 the no-break space included) read as one space, the ends trimmed and ASCII
 letters case-insensitive, otherwise exactly
@@ -991,7 +1006,7 @@ Because Ministry scope is derived on every request, a full refresh or a
 settings change can widen or narrow what a signed-in Ministry leader sees with
 no other record. Each change that can move it records a count-only audit event
 instead (#1034). A source promotion, and a configuration activation (a change
-to the campaign's leader roles, its Ministries or their Ministry activity),
+to the campaign's leader roles or its Ministries),
 reads the current source snapshot, configuration and campaign just before its
 change and, just after it in the same transaction, calls the SECURITY DEFINER
 `stewardship_ministry_leader_changes_v1`. That function compares the

@@ -600,34 +600,16 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   `in_place` page, so it never refreshes the page once applied. The other
   editors keep their review and Change status pages until issue 750 reaches
   them.
-- **In-place review of a table selection (#750).** Ministries reviews,
-  applies and follows an activity change in place too, in the review region
-  under its table (so a review appearing never moves the table or its bulk
-  buttons). Its form is the table's row selection
-  (`form#ministry-selection[data-select-table]`), not a settings form:
-  Review activation and Review inactivation send the ticked rows, and the
-  answer replaces only the review region and the step indicator
-  (`data-in-place-only="flow-steps"`), so the ticks, page and sort stay.
-  Ticking or unticking a row, the header checkbox, or Select all / Clear
-  selection (which ticks rows from script, so it withdraws the review
-  itself) withdraws a shown review, whose last line then says to choose
-  Review activation or Review inactivation again (the review's
-  `data-stale-note`). A selection that would change nothing ("already
-  active") is refused in the region, as is an empty or oversized one.
-  Paging, sorting or filtering the table draws an empty review region, so
-  the review (or a settled status) of the earlier selection goes with it.
-  Every redrawn selection table keeps the ticks of the rows it still shows
-  (selection is per page, so a row on another page loses its tick). For
-  every selection table (Ministries, Hosted files and Schedule settings
-  alike), `ui-v1.js` shows the "were not kept" line only when an answer the
-  reader did not choose as a table view (the quiet refresh once a change is
-  applied) drops a ticked row because it is no longer listed; a re-sort,
-  page or filter they chose says nothing. Select all / Clear selection
-  withdraws a review on any page that has one. The page's view (its
-  filters, sort and page; `admin_editing.IN_PLACE_VIEWS`) is kept in Apply's
-  answer, handed through Change status's read and carried by the quiet
-  follow-up, so the refreshed table is the one the Administrator was
-  looking at.
+- **Selection tables keep their ticks (#750).** Ministries once reviewed an
+  activity change of its row selection in place; it lists the catalog and
+  changes nothing now (#1267), so no page reviews a table selection in
+  place. Every redrawn selection table (Hosted files and Schedule settings)
+  keeps the ticks of the rows it still shows (selection is per page, so a
+  row on another page loses its tick). `ui-v1.js` shows the "were not kept"
+  line only when an answer the reader did not choose as a table view (the
+  quiet refresh once a change is applied) drops a ticked row because it is
+  no longer listed; a re-sort, page or filter they chose says nothing.
+  Select all / Clear selection withdraws a review on any page that has one.
 - **In-place review: No-reminders WorkGroup (#750).** The No-reminders WorkGroup
   editor works as Parish settings does: its one name field is a
   `data-table-sync` form whose Review changes waits for a change (hint
@@ -996,8 +978,7 @@ section says how every Review behaves.
   again when the reader's edits return to them, with the gate's short hint
   after the button ([prerequisite gates](#prerequisite-gates)). A table's
   bulk Review action is likewise unavailable until the selection would change
-  something (for example, Review activation while every ticked row is already
-  active), with its reason in the bulk bar's reserved line. No page draws a
+  something, with its reason in the bulk bar's reserved line. No page draws a
   "nothing has changed" review, refusal, heading or page. The server still
   refuses an unchanged Review, as a safeguard for requests that bypass the
   page script.
@@ -1988,9 +1969,9 @@ A Ministry, fund, WorkGroup, role or any other ParishSoft record is
 identified by its name, never its DUID: no column, inline "(DUID n)", detail
 line, picker label, help sentence or download column shows one. Where two
 Ministries can share a name in one list, a detail ParishSoft users recognise
-tells them apart, not the DUID: System logs' Ministry menu marks an inactive
-Ministry "(inactive)". Two active Ministries with the same name keep the
-same label, since the DUID is never the tie-breaker. A saved Ministry or fund the
+tells them apart, not the DUID. Two Ministries with the same name keep the
+same label (System logs' Ministry menu, for one), since the DUID is never
+the tie-breaker; there is no "(inactive)" mark any more (#1267). A saved Ministry or fund the
 current ParishSoft data no longer has shows its name from the latest
 promoted ParishSoft data that still held it, and that it is no longer in
 ParishSoft. Internal identifiers stay in URLs,
