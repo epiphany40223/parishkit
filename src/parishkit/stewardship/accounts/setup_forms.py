@@ -7,7 +7,7 @@ from django import forms
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.config import ConfigError
-from parishkit.stewardship.schema_primitives import typed
+from parishkit.stewardship.schema_primitives import canonical_timezone, typed
 from parishkit.stewardship.web.refusals import UserFacingError
 from parishkit.stewardship.web.sender_name_field import SenderNameField
 
@@ -27,6 +27,15 @@ class SetupParishForm(ParishForm):
         """Explain each profile field in plain language."""
         super().__init__(*args, **kwargs)
         setup_help.apply(self, setup_help.PARISH, replace=True)
+
+    def clean_timezone(self):
+        """Store a new setup's zone by its canonical name (#1286).
+
+        Once the source load has fixed the zone the field is disabled and
+        keeps the draft's own value, which the save compares unchanged.
+        """
+        value = self.cleaned_data["timezone"]
+        return value if self.fields["timezone"].disabled else canonical_timezone(value)
 
     def clean_website(self):
         """Reject credential-bearing or parameterized URLs before temporary storage."""

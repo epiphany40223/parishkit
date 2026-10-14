@@ -14,7 +14,6 @@ from parishkit.stewardship.campaigns.configuration import (
     campaign_values,
     schedule_values,
 )
-from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.web.dates import UnknownZone
 from parishkit.stewardship.web.presentation import parish_date
 from parishkit.stewardship.web.time_entry_fields import FlexibleTimeField
@@ -22,6 +21,7 @@ from parishkit.stewardship.web.time_entry_fields import FlexibleTimeField
 from . import field_tips, schedule_local
 from .campaign_forms import OVERLAP_TEMPLATE, overlap_attributes, overlaps
 from .content_forms import EMAIL_LABELS
+from .timezone_field import TimezoneField
 
 KINDS = ("initial", "reminder", "daily_digest", "weekly_digest")
 # The fields each mail type uses besides the type itself, as
@@ -84,7 +84,7 @@ def schedulable(templates):
 class ScheduleWindow(forms.Form):
     """Draft dates may change together with mail; locked structural inputs are inert."""
 
-    timezone = forms.ChoiceField(
+    timezone = TimezoneField(
         label=_("Campaign timezone"),
         help_text=_(
             "Every send date and time on this page is in this time zone, not "
@@ -144,9 +144,6 @@ class ScheduleWindow(forms.Form):
                 raise ValueError("Invalid proposed campaign window.")
             initial.update(proposed)
         super().__init__(*args, initial=initial, **kwargs)
-        self.fields["timezone"].choices = [
-            (zone, zone) for zone in sorted(timezone_names())
-        ]
         if previous["financial"] is None:
             del self.fields["overlap_confirmed"]
         else:
