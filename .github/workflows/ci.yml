@@ -170,7 +170,9 @@ jobs:
     needs: validate
     if: ${{ needs.validate.outputs.compose != 'false' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # About 14-17 minutes in October 2026; leave room for the in-image
+    # baseline's own 15-minute limit in test_compose.py (#1278).
+    timeout-minutes: 30
     steps:
       - name: Check out repository
         uses: actions/checkout@v4

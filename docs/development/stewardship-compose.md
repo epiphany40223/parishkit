@@ -203,8 +203,12 @@ test IDs, including parameterized cases and duplicate occurrences. It fails with
 missing/unexpected IDs if a new fixture was omitted from the narrow mounts, even
 if the two environments collect the same number of tests. Collection order does
 not matter. Host collection always covers the full baseline independently of
-the outer pytest selection; the image manifest comes from its actual baseline
-run. Collection errors, missing manifests, and empty collections fail closed.
+the outer pytest selection. The image is compared twice: first a collect-only
+run, so a parity failure appears in seconds, then the manifest of its actual
+baseline run, so the executed selection is exact too. Collection errors,
+missing manifests, and empty collections fail closed. The baseline run has its
+own time limit, sized from measured CI run time with headroom; a passing run
+prints its elapsed time against that limit, and a timeout reports both.
 
 Opt-in host checks render the development overlay and exercise a disposable
 development project (build the image first); the rendered production topology
