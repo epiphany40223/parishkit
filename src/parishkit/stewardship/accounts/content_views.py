@@ -56,6 +56,27 @@ from .schedule_forms import KINDS, email_usage, excerpt, schedule_order
 from .sessions import authenticated_admin
 
 
+def _content_campaign(state, campaign_id):
+    """The campaign whose pages and emails may be edited now (``_campaign``).
+
+    An archived current campaign is refused first with the menu entry's own
+    reason (ui-conventions, "Unavailable menu pages"; #1255): it is closed
+    history, so the refusal is permanent and must not say to try again
+    later, as the held or non-current message does. It reads the same
+    snapshot (or work lock) as the rest of the request, so archiving cannot
+    slip in between the check and a save.
+    """
+    configuration, campaigns = state[0], state[1]
+    campaign = next((row for row in campaigns if row.pk == campaign_id), None)
+    if campaign is not None and configuration.current_campaign_id == campaign.pk:
+        menu_state = admin_navigation.MenuState(campaign, configuration.mode)
+        reason = admin_navigation.MENU_REASONS["content_catalog"](menu_state)
+        if reason is not None:
+            label = admin_navigation.PAGES["content_catalog"].label
+            raise admin_navigation.Greyed(label, reason, None).refusal()
+    return _campaign(state, campaign_id)
+
+
 def _campaign(state, campaign_id):
     """Allow content edits after structural lock, only for the current campaign."""
     configuration, campaigns, held = state[0], state[1], state[3]
@@ -589,7 +610,7 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
             else work_transaction()
         ):
             state = _state(service)
-            configuration, campaign = state[0], _campaign(state, campaign_id)
+            configuration, campaign = state[0], _content_campaign(state, campaign_id)
             if kind is None:
                 response = _catalog(request, configuration, campaign)
             else:

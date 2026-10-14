@@ -1025,3 +1025,44 @@ def test_delete_is_refused_while_campaign_work_holds_changes(auth_service, googl
         {"base_digest": store.active().digest, "revision_id": spare["id"]},
     )
     assert accepted.status_code == 302, accepted.content
+
+
+def test_archived_campaign_refuses_every_editor_request(auth_service, google):
+    """An archived current campaign's editor pages and saves are refused (#1255).
+
+    Each answers 409 with the menu's own reason (ui-conventions,
+    "Unavailable menu pages"), not the held message that says to try again
+    later, and nothing is requested.
+    """
+    from django.db import connection
+
+    from parishkit.stewardship.accounts import admin_navigation as navigation
+
+    store = auth_service.store
+    campaign, catalog, _ = setup(store)
+    spare = content(str(campaign.pk), kind="email", slot="initial", subject="Spare")
+    added(store, campaign, spare)
+    editor = catalog + "page/welcome/"
+    revision = catalog + f"email/initial/{spare['id']}/"
+    browser, _ = signed_in()
+    assert browser.get(editor).status_code == 200
+    with unguarded(), connection.cursor() as cursor:
+        cursor.execute("UPDATE public.stewardship_campaign SET state='archived'")
+    before = ConfigurationChangeRequest.objects.count()
+    page = {"HTTP_ACCEPT": "text/html", "HTTP_SEC_FETCH_MODE": "navigate"}
+    for path in (catalog, editor, revision):
+        response = browser.get(path, **page)
+        body = response.content.decode()
+        assert response.status_code == 409, (path, body)
+        assert f"{navigation.ARCHIVED}." in body, path
+        assert "Try again later" not in body, path
+    for path, data in (
+        (editor, values(store, html="<p>Archived</p>")),
+        (DELETE, {"base_digest": store.active().digest, "revision_id": spare["id"]}),
+    ):
+        response = post(browser, path, data)
+        assert response.status_code == 409, (path, response.content)
+        refusal = json.loads(response.content)["refusal"]["message"]
+        assert refusal == f"{navigation.ARCHIVED}.", path
+    assert ConfigurationChangeRequest.objects.count() == before
+    assert spare["id"] in saved_emails()

@@ -1345,7 +1345,9 @@ opens one page per kind of reason. **Precedent.** #1128.
   before the view, for a GET or HEAD of any menu page whose reason check
   returns a reason; a new entry with a reason check is covered without
   further code. A POST keeps its page's own refusal; the Share options editor
-  refuses a form sent after the campaign went live with the same reason.
+  refuses a form sent after the campaign went live with the same reason, and
+  Pages and emails refuses its editors, revisions and Delete for an archived
+  campaign with the same reason, by any method (#1255).
 - **Only for a viewer who sees the entry greyed.** The role still hides an
   entry ([stable menu shape](../admin-portal/spec.md#stable-menu-shape)), so
   a page the viewer's role may not open is refused by its own view (403) as
