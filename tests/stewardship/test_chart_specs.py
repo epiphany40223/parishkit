@@ -6,6 +6,7 @@ counts, and times are the campaign's wall clock whatever zone renders them.
 """
 
 import json
+import re
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -34,6 +35,7 @@ from parishkit.stewardship.reports.chart_specs import (
     stage_label,
     whole_dollars,
 )
+from parishkit.stewardship.reports.digest_funnel import digest_charts, email_spec
 from parishkit.stewardship.reports.money import MoneyAmount
 from parishkit.stewardship.reports.participation import ParticipationDay
 from parishkit.stewardship.reports.response_metrics import (
@@ -780,6 +782,90 @@ def test_every_page_chart_compiles_without_warnings(capfd):
     for document in (documents[0], finals):
         stepped = document.spec | {"height": {"step": 36}}
         assert any("fit-y" in line for line in page_warnings(stepped, capfd))
+
+
+def empty_activity_charts():
+    """The activity charts of a campaign with no activity, with and without
+    sends, as the dashboard (by hour and by day) and the digest draw them."""
+    return [
+        chart
+        for sends in (False, True)
+        for found in (metrics((), sends=sends), metrics((), grain="day", sends=sends))
+        for chart in (activity_chart(found), digest_charts(found)[1])
+    ]
+
+
+def data_domains(spec):
+    """The scales of ``spec``'s compiled Vega whose domain reads a dataset.
+
+    A literal domain compiles to a list, or for a temporal scale to a
+    ``fields`` list of constant signals; a data-derived one names its
+    dataset (``{"data": ..., "field": ...}``, alone or in ``fields``).
+    """
+    found = set()
+    for scale in vl_convert.vegalite_to_vega(spec)["scales"]:
+        domain = scale["domain"]
+        if isinstance(domain, dict):
+            refs = domain.get("fields", [domain])
+            if any(isinstance(ref, dict) and "data" in ref for ref in refs):
+                found.add(scale["name"])
+    return found
+
+
+def axis_labels(spec):
+    """How many tick labels each axis of ``spec``'s drawn SVG has."""
+    svg = vl_convert.vegalite_to_svg(spec)
+    groups = re.findall(r'<g class="mark-text role-axis-label"[^>]*>(.*?)</g>', svg)
+    return [group.count("<text") for group in groups]
+
+
+def test_empty_activity_charts_draw_without_warnings(capfd):
+    """An empty activity chart compiles without a warning, no scale of its
+    compiled Vega takes its domain from data (an empty layer's extent is
+    infinite, which Vega warns about on every draw, #1327), and both of its
+    axes draw tick labels, in the page's and the email's form. A chart with
+    activity still takes its domains from its rows, so the check can fail.
+    (Vega's runtime warnings are caught by the browser tests' console
+    watch: vl-convert does not report them, and an epoch-number x domain,
+    which warned in the browser, drew here.)"""
+    for document in empty_activity_charts():
+        assert page_warnings(document.spec, capfd) == []
+        assert data_domains(document.spec) == set(), document.summary
+        for spec in (document.spec, email_spec(document)):
+            labels = axis_labels(spec)
+            assert len(labels) == 2 and all(labels), (document.summary, labels)
+    assert data_domains(activity_chart(metrics()).spec) == {"x", "y"}
+
+
+def test_empty_activity_scales_span_the_sends_or_a_trailing_window():
+    """The x axis spans the sends as their markers drew it, or with fewer
+    than two a day (by hour) or a week (by day) up to ``as_of``; the y axis
+    is 0 to 1, so its axis keeps the ticks of a count (#1327)."""
+
+    def domains(found):
+        spec = activity_chart(found).spec
+        x = spec["encoding"]["x"]["scale"]["domain"]
+        return [
+            datetime(
+                at["year"],
+                at["month"],
+                at["date"],
+                at["hours"],
+                at["minutes"],
+                tzinfo=UTC,
+            )
+            for at in x
+        ], spec["layer"][0]["encoding"]["y"]["scale"]["domain"]
+
+    wall = START.astimezone(ZoneInfo(NEW_YORK)).replace(tzinfo=UTC)
+    x, y = domains(metrics(()))
+    assert x == [wall - timedelta(minutes=5), wall + timedelta(hours=20)]
+    assert y == [0, 1]
+    as_of = wall + timedelta(days=1)
+    assert domains(metrics((), sends=False))[0] == [as_of - timedelta(days=1), as_of]
+    week = domains(metrics((), grain="day", sends=False))[0]
+    assert week == [as_of - timedelta(days=7), as_of]
+    assert "domain" not in activity_chart(metrics()).spec["encoding"]["x"]["scale"]
 
 
 def test_bar_chart_heights_match_their_old_step_heights():

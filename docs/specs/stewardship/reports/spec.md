@@ -309,7 +309,11 @@ and summary, and gets the exact values from the table, or without one from
 the marks' names, not the tooltips. Series are told apart by dash pattern as
 well as color. A layer with nothing to draw (no activity yet,
 or no send to mark) is hidden from assistive technology rather than announced
-as an unnamed graphic. In an email the PNG carries the summary as its alt text
+as an unnamed graphic, and an activity chart with no activity still draws
+its axes on explicit scales (its sends' span, or the last day by hour or week
+by day, and 0 to 1 Families) rather than from empty data, which Vega warns
+about on every draw
+([#1327](https://github.com/epiphany40223/parishkit/issues/1327)). In an email the PNG carries the summary as its alt text
 and the table follows it. Times on an axis are the campaign's wall clock
 whatever time zone draws the chart, and the axis names the campaign's zone.
 

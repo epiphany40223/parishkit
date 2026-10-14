@@ -93,8 +93,7 @@ def test_empty_campaign_renders_cleanly(
     """
     from playwright.sync_api import expect
 
-    # The empty activity chart's known warning (#1327).
-    errors = watch(page, empty_activity=True)
+    errors = watch(page)
     page.goto(component_origin + path)
     expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(2)
     assert page.locator(".stat-value").all_inner_texts() == ["0"] * 5

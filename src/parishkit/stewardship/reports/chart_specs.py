@@ -18,7 +18,7 @@ parish-formatted label.
 
 import math
 from dataclasses import dataclass
-from datetime import UTC, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from zoneinfo import ZoneInfo
 
@@ -280,6 +280,49 @@ def activity_summary(metrics, labels, series=SERIES):
     return text + "."
 
 
+def empty_scales(spec, metrics, markers):
+    """Give an activity chart with no activity explicit scale domains.
+
+    A scale's domain is otherwise the union of every layer's extent, and
+    Vega warns "Infinite extent" for each empty one (#1327). The x axis spans
+    the send markers, as their own extent drew it, or with none (or one) a
+    day (by hour) or a week (by day) up to ``as_of``; the y axis is 0 to 1,
+    as the funnel's progress axis keeps at least 1.
+    """
+    zone = ZoneInfo(metrics.timezone)
+    times = [row["time"] for row in markers]
+    if len(set(times)) < 2:
+        # A single instant is no span to draw: add the trailing window.
+        window = timedelta(days=1 if metrics.grain == "hour" else 7)
+        times += [
+            wall_time(metrics.as_of - window, zone),
+            wall_time(metrics.as_of, zone),
+        ]
+    instants = [datetime.fromisoformat(time) for time in times]
+    spec["encoding"]["x"]["scale"]["domain"] = [
+        date_time(min(instants)),
+        date_time(max(instants)),
+    ]
+    spec["layer"][0]["encoding"]["y"]["scale"] = {"domain": [0, 1]}
+
+
+def date_time(instant):
+    """A UTC ``instant`` as a Vega-Lite DateTime object.
+
+    Vega-Lite compiles a number in a temporal domain to a one-argument
+    ``datetime(...)``, which Vega reads as a year (an invalid date, so an
+    infinite extent again); a DateTime object compiles to a full ``utc(...)``.
+    """
+    return {
+        "year": instant.year,
+        "month": instant.month,
+        "date": instant.day,
+        "hours": instant.hour,
+        "minutes": instant.minute,
+        "utc": True,
+    }
+
+
 def activity_chart(metrics, *, series=SERIES):
     """The response activity series: one line per series, with send markers.
 
@@ -412,6 +455,8 @@ def activity_chart(metrics, *, series=SERIES):
             },
         ],
     }
+    if not rows:
+        empty_scales(spec, metrics, markers)
     # Vega leaves an empty layer's mark container in the accessibility tree
     # with a graphics role and no name, which assistive technology announces
     # as an unnamed image. A layer with no data shows nothing (the summary
