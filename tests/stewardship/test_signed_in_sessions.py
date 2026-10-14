@@ -15,6 +15,7 @@ import pytest
 from django.http import QueryDict
 from django.template.loader import render_to_string
 from django.test import RequestFactory
+from django.urls import reverse
 
 from parishkit.stewardship.accounts import signed_in_views as views
 from parishkit.stewardship.accounts.signed_in_sessions import SORTING
@@ -193,3 +194,10 @@ def test_only_the_already_ended_page_carries_the_announcement(page):
         "<p hidden data-confirm-announce>That session had already ended; "
         "the list is up to date.</p>" in html
     )
+
+
+def test_the_help_links_the_pages_it_names(page):
+    """Users and System logs, named in the help, are links (rule 6, #521)."""
+    _, html = page()
+    assert f'<a href="{reverse("admin:users")}">Users</a> page' in html
+    assert f'<a href="{reverse("admin:logs")}">System logs</a> under' in html

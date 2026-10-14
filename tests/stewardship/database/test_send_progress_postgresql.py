@@ -25,6 +25,7 @@ from uuid import UUID, uuid4
 import pytest
 from django.db import connection
 from django.db.models import F
+from django.urls import reverse
 from psycopg import sql
 
 from parishkit.stewardship.accounts.models import PortalSession
@@ -189,6 +190,13 @@ def test_the_web_login_follows_a_real_send_during_a_work_order_hold(
         # The panel is in the sidebar and the breadcrumb trail.
         assert '<a href="/admin/mail/family-progress/" aria-current="page">' in body
         assert '<span aria-current="page">Family email progress</span>' in body
+        # The help links each page it tells the reader to use (navigation
+        # rule 6, #521). The help's own words around each link keep the
+        # sidebar's links to the same pages from satisfying the check.
+        outgoing = f'<a href="{reverse("admin:deliveries")}">Outgoing mail</a> page'
+        assert body.count(outgoing) == 2
+        background = f'<a href="{reverse("admin:background")}">Background work</a>'
+        assert f"or on {background} if it failed" in body
         activity = PortalSession.objects.get().last_activity_at
         views = AuditEvent.objects.filter(event_type="delivery_viewed").count()
         assert views == 1
