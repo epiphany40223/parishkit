@@ -148,3 +148,20 @@ def test_fill_result_parameters_are_closed():
     assert result_url("reset", ["page_welcome", "email_confirmation"]) == (
         "/admin/setup/content?reset_pages=1&reset_emails=1"
     )
+
+
+def test_default_forms_post_to_the_bare_content_address():
+    """Fill in and Reset name the content list's own address as their
+    action. With no action they posted to whatever address the page showed,
+    which after a fill carries ``?filled_pages=…``; the view refuses that
+    query (``_closed``), so a Reset straight after a Fill in was refused."""
+    from pathlib import Path
+
+    import parishkit.stewardship.accounts as accounts
+
+    text = (
+        Path(accounts.__file__).parent / "templates/stewardship/setup-content.html"
+    ).read_text()
+    forms = [line for line in text.splitlines() if "setup-content-defaults" in line]
+    assert len(forms) == 2
+    assert all("action=\"{% url 'admin:setup_content' %}" in line for line in forms)
