@@ -13,7 +13,10 @@
  *   boundaries and the focus ring meet the 3:1 non-text minimum. Re-check
  *   contrast when changing any color token.
  */
-:root {
+/* .light-card redeclares the light tokens on itself, so an email sample
+   preview stays light inside a dark Admin page and shows what is sent
+   (#1264; ui-conventions "Colour scheme"). */
+:root, .light-card {
   color-scheme: light;
   /* These values come from web/design_tokens.py, which the email components
      also read; test_design_tokens.py fails if the two disagree (#732). */
@@ -112,6 +115,8 @@
   /* A parish logo is drawn for a light header; a white backing behind its
      transparent parts keeps a dark logo visible. It adds no size. */
   html.admin-document .brand img { background-color: #fff; border-radius: var(--radius-small); }
+  /* A light card keeps its edge clear of the email's text on the dark page. */
+  html.admin-document .light-card:not(.content-sample) { padding: 1rem; border-radius: var(--radius-small); }
 }
 * { box-sizing: border-box; }
 /* Always reserve the vertical scrollbar's space, so a centred page does not
@@ -892,6 +897,7 @@ details.technical-details dd { overflow-wrap: anywhere; }
 /* An HTML source error is marked at the visual editor too, as a field's (#563). */
 .content-editor[aria-invalid="true"] { border: 2px solid var(--error-border); }
 .content-sample, pre { overflow-wrap: anywhere; white-space: pre-wrap; }
+.light-card { background: var(--paper); color: var(--ink); }
 .content-sample { padding: 1rem; border: 1px dashed var(--control-border); border-radius: var(--radius-small); background: var(--paper); }
 
 
@@ -1224,6 +1230,9 @@ fieldset.editor-mode > legend { float: none; width: auto; margin: 0; padding: 0;
 .editor-mode-options label:has(> input[type=radio]) > input { inset: 0; width: 100%; height: 100%; opacity: 0; }
 .editor-mode-options label:has(> input:checked) { background: var(--accent); color: var(--paper); }
 .editor-mode-options label:has(> input:focus-visible) { outline: 3px solid var(--focus); outline-offset: -6px; }
+/* The ring sits inside the segment, so on the checked (accent) segment it
+   is drawn in --paper, which keeps 3:1 on --accent in both schemes (#1264). */
+.editor-mode-options label:has(> input:checked:focus-visible) { outline-color: var(--paper); }
 /* The Basic panel is a <fieldset> so one disabled attribute keeps its
    controls unsent while Advanced is shown; it draws no box of its own. */
 fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0; background: none; }

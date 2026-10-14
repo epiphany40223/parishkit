@@ -4,7 +4,8 @@ With the browser asking for dark (``prefers-color-scheme``), every Admin page,
 including sign-in and a setup step, draws from the dark tokens in
 ``web/design_tokens.py``: no visible element keeps a light surface or the
 light ink, and the page has no colour-contrast violation. The Family portal
-stays light. The token values and their contrast are unit-tested in
+stays light, and so does an email sample preview (a light card). The
+token values and their contrast are unit-tested in
 ``tests/stewardship/test_design_tokens.py``; ui-conventions "Colour scheme"
 is the rule.
 """
@@ -14,6 +15,7 @@ import pytest
 from parishkit.stewardship.web.design_tokens import COLORS, DARK_COLORS, hex6
 
 from .system_health_components import PAGE as SYSTEM_HEALTH
+from .test_editor_mode import basic_from_saved, toggle
 from .waits import visible
 
 pytestmark = pytest.mark.parametrize(
@@ -22,7 +24,8 @@ pytestmark = pytest.mark.parametrize(
 
 # Home, a page full of form controls, sign-in, a setup wizard step, the
 # System health dashboard, System logs (a shared table) and the Response
-# charts, whose drawn charts stay light cards for now.
+# charts, whose drawn charts stay light cards for now; then the two email
+# sample previews and the new campaign's copy preview.
 ADMIN_PAGES = (
     "/home",
     "/campaign-settings",
@@ -32,15 +35,18 @@ ADMIN_PAGES = (
     "/logs",
     "/charts",
 )
+PREVIEWS = ("/clone-preview",)
+
 CONTRAST = """async () => (await axe.run(document, {
     runOnly: {type: 'rule', values: ['color-contrast']}
 })).violations.map(({id, nodes}) => ({id, targets: nodes.map(n => n.target)}))"""
 # Every visible element's own background and text colour, except the
-# parish logo (an image whose white backing is deliberate) and the inside
-# of a drawn chart, which stays light until charts get a dark scheme.
+# parish logo (an image whose white backing is deliberate), the inside of a
+# drawn chart, which stays light until charts get a dark scheme, and an email
+# sample preview's light card.
 COLOURS = """() => [...document.querySelectorAll('body, body *')]
     .filter((el) => el.checkVisibility()
-        && !el.closest('.brand img, [data-chart-view]'))
+        && !el.closest('.brand img, [data-chart-view], .light-card'))
     .map((el) => {
         const style = getComputedStyle(el);
         return [el.tagName + (el.className && typeof el.className === 'string'
@@ -63,7 +69,7 @@ def dark_page(page, origin, path):
     visible(page.locator("main"))
 
 
-@pytest.mark.parametrize("path", ADMIN_PAGES)
+@pytest.mark.parametrize("path", ADMIN_PAGES + PREVIEWS)
 def test_admin_page_draws_in_the_dark_tokens(page, component_origin, path):
     """The main surfaces take the dark values and no light colour is left."""
     dark_page(page, component_origin, path)
@@ -89,7 +95,7 @@ def test_admin_page_draws_in_the_dark_tokens(page, component_origin, path):
     assert leftovers == []
 
 
-@pytest.mark.parametrize("path", ADMIN_PAGES)
+@pytest.mark.parametrize("path", ADMIN_PAGES + PREVIEWS)
 def test_admin_page_in_dark_has_no_contrast_violation(
     page, component_origin, axe_source, path
 ):
@@ -97,6 +103,39 @@ def test_admin_page_in_dark_has_no_contrast_violation(
     dark_page(page, component_origin, path)
     page.evaluate(axe_source)
     assert page.evaluate(CONTRAST) == []
+
+
+@pytest.mark.parametrize("path", PREVIEWS)
+def test_email_sample_preview_stays_a_light_card(page, component_origin, path):
+    """An email preview shows the email as sent: light paper and ink."""
+    dark_page(page, component_origin, path)
+    cards = page.locator(".light-card")
+    assert cards.count() > 0
+    for card in cards.all():
+        visible(card)
+        assert card.evaluate("el => getComputedStyle(el).backgroundColor") == rgb(
+            COLORS["paper"]
+        )
+        assert card.evaluate("el => getComputedStyle(el).color") == rgb(COLORS["ink"])
+
+
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+def test_focus_ring_on_the_checked_mode_segment_is_paper(
+    page, component_origin, scheme
+):
+    """The ring inside the checked (accent) Basic segment is drawn in --paper,
+    which keeps 3:1 on --accent; orange --focus would not (#1264)."""
+    page.emulate_media(color_scheme=scheme)
+    basic_from_saved(page, component_origin)
+    # The component page is not built from admin-base.html; mark it as one.
+    page.evaluate("document.documentElement.classList.add('admin-document')")
+    checked = toggle(page, "Basic")
+    page.keyboard.press("Tab")  # A keyboard user: focus-visible.
+    checked.focus()
+    colors = DARK_COLORS if scheme == "dark" else COLORS
+    assert checked.evaluate(
+        "el => getComputedStyle(el.parentElement).outlineColor"
+    ) == rgb(colors["paper"])
 
 
 def test_admin_page_stays_light_when_the_system_is_light(page, component_origin):

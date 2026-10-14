@@ -12,7 +12,7 @@ from parishkit.stewardship.web.report_markup import button as report_button
 STATIC = (
     Path(__file__).parents[2] / "src/parishkit/stewardship/accounts/static/stewardship"
 )
-ROOT_BLOCK = re.compile(r":root\s*{(.*?)}", re.S)
+ROOT_BLOCK = re.compile(r":root, \.light-card\s*{(.*?)}", re.S)
 DECLARATION = re.compile(r"--([a-z][a-z0-9-]*):\s*([^;]+);")
 COMMENT = re.compile(r"/\*.*?\*/", re.S)
 
@@ -270,6 +270,8 @@ MARKS_ON = {
     "level-audit": ("paper", "paper-soft"),
     "warning-border": ("paper", "paper-soft"),
     "error-border": ("paper", "paper-soft"),
+    # The focus ring on the checked Basic/Advanced segment is --paper.
+    "paper": ("accent",),
 }
 
 
