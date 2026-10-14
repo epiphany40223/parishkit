@@ -33,19 +33,24 @@ def test_ministry_reports_mobile_keyboard_and_accessibility(
     search = page.get_by_label("Search Ministry name")
     search.focus()
     page.keyboard.press("Tab")
-    assert page.locator(":focus").get_attribute("name") == "activity"
+    # No Ministry activity filter sits after the search any more (#1267);
+    # where focus lands next depends on the engine (WebKit skips buttons).
+    assert page.locator(":focus").get_attribute("name") != "activity"
+    assert page.locator("[name=activity]").count() == 0
     heading = page.locator("th[data-sort-column='ministry']")
     assert heading.get_attribute("aria-sort") == "ascending"
 
 
-def test_ministry_activity_is_shown_to_staff_only(page, component_origin):
-    """Staff and Administrators see the Ministry activity filter and each
-    Ministry's mark; a Ministry leader sees neither, nor the help about
-    them (#1135)."""
+def test_ministry_marks_are_shown_to_staff_only(page, component_origin):
+    """Staff and Administrators see each Ministry's "Not in ParishSoft data"
+    mark; a Ministry leader sees none, nor the help about them (#1135).
+    Nobody gets a Ministry activity filter or an Active/Inactive mark any
+    more (#1267)."""
     page.goto(component_origin + "/ministry-summary")
-    visible(page.get_by_label("Ministry activity"))
+    assert page.get_by_label("Ministry activity").count() == 0
     row = page.locator("tbody tr").first
-    assert "Inactive" in row.inner_text()
+    assert "Not in ParishSoft data" in row.inner_text()
+    assert "Inactive" not in row.inner_text()
     page.goto(component_origin + "/ministry-summary-leader")
     visible(page.get_by_label("Search Ministry name"))
     assert page.get_by_label("Ministry activity").count() == 0

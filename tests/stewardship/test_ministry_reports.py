@@ -34,7 +34,9 @@ from .test_ministry_table_columns import ministry_page as render_report
         {"start": "2026-02-30"},
         {"start": "20261001"},
         {"start": "2026-10-02", "end": "2026-10-01"},
-        {"activity": "removed"},
+        # The retired Ministry activity filter (#1267), any value.
+        {"activity": "any"},
+        {"activity": "inactive"},
         {"state": "complete"},
         {"history": "yes"},
         {"sort": "name;SELECT"},
@@ -149,11 +151,10 @@ def test_packet_choices_reuse_a_page_that_holds_the_whole_summary():
         (MinistryQuery(), 3),  # More Ministries than this page shows.
         (MinistryQuery(page=2), 3),  # A later page.
         (MinistryQuery(search="choir"), 1),  # A search narrows the table.
-        (MinistryQuery(activity="active"), 1),  # So does an activity filter.
     ],
 )
 def test_packet_choices_list_every_ministry_beyond_the_table(query, total):
-    """A page, search or filter narrower than the scope reads it whole (#533)."""
+    """A page or search narrower than the scope reads it whole (#533)."""
     reads = []
 
     def read_every():

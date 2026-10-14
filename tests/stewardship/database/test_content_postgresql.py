@@ -143,26 +143,18 @@ def test_content_installation_replacement_and_recovery(tmp_path, cadence):
 
 
 def test_cadence_preparation_retains_nonempty_projection_families():
-    """Versioned time does not drop campaign, policy, ministry or content records."""
+    """Versioned time does not drop campaign, policy or content records.
+
+    The retired Ministry activity (#1267) has no projection to keep.
+    """
     document = content_document()
     document["sections"]["integrations"][0]["values"]["settings"]["nightly_time"] = (
         "03:15"
     )
-    document["sections"]["ministries"] = [
-        {
-            "id": str(uuid4()),
-            "values": {
-                "organization_id": 12345,
-                "ministry_duid": 1,
-                "active": False,
-            },
-        }
-    ]
     version = configuration_version(document)
     prepare(version)
     row = AppliedConfigurationVersion.objects.get(pk=version.version_id)
     assert row.validation_schema == "source-cadence-v8"
-    assert row.ministry_activity.get().active is False
     assert row.content_versions.get().slot == "welcome"
     assert is_prepared(version.digest)
 

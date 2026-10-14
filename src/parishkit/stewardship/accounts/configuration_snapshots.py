@@ -24,7 +24,6 @@ from .configuration_errors import ConfigurationHistoryInvalid
 from .configuration_models import (
     AppliedConfigurationVersion,
     AppliedIntegration,
-    MinistryActivity,
     Parish,
 )
 from .configuration_schema import (
@@ -37,7 +36,6 @@ from .content_schema import SCHEMA as CONTENT_SCHEMA
 from .content_schema import remember_content
 from .content_trust import records_of, trusted_content
 from .ministry_activity import SCHEMA as MINISTRY_SCHEMA
-from .ministry_activity import remember_records
 from .source_cadence_schema import SCHEMA as CADENCE_SCHEMA
 from .users_schema import FORM_SCHEMAS as USERS_SCHEMAS
 
@@ -58,9 +56,10 @@ CAMPAIGN_SCHEMAS = {
     CADENCE_SCHEMA,
     *USERS_SCHEMAS,
 }
-# The schemas with local Ministry activity, and those with content. The
-# users form (#952) keeps every section of the schema it follows, and so do
-# remembered reminder series (#469), which have no projection of their own.
+# The schemas with the retired local Ministry activity section (#1267), and
+# those with content. The users form (#952) keeps every section of the
+# schema it follows, and so do remembered reminder series (#469), which have
+# no projection of their own.
 MINISTRY_SCHEMAS = {MINISTRY_SCHEMA, CONTENT_SCHEMA, CADENCE_SCHEMA, *USERS_SCHEMAS}
 CONTENT_SCHEMAS = {CONTENT_SCHEMA, CADENCE_SCHEMA, *USERS_SCHEMAS}
 HISTORY_BATCH_SIZE = 64
@@ -156,19 +155,13 @@ def _stored_projections(snapshot):
 
         result.update(stored_campaigns(snapshot))
     if snapshot.validation_schema in MINISTRY_SCHEMAS:
-        result["ministries"] = [
-            {
-                "id": str(row.record_id),
-                "values": {
-                    "organization_id": row.organization_id,
-                    "ministry_duid": row.ministry_duid,
-                    "active": row.active,
-                },
-            }
-            for row in sorted(
-                snapshot.ministry_activity.all(), key=lambda item: str(item.record_id)
-            )
-        ]
+        # The retired local Ministry activity (#1267) has no projection any
+        # more (its table is dropped), so the applied document's own section
+        # is the record: empty for every configuration since, and as stored
+        # for older history, which keeps its normalized digest.
+        result["ministries"] = snapshot.canonical_document["sections"].get(
+            "ministries", []
+        )
     if snapshot.validation_schema in CONTENT_SCHEMAS:
         result["content"] = [
             {
@@ -277,10 +270,6 @@ def _prefetch_history(rows):
         "schedule_revisions",
     )
     prefetch_related_objects(
-        [row for row in rows if row.validation_schema in MINISTRY_SCHEMAS],
-        "ministry_activity",
-    )
-    prefetch_related_objects(
         [row for row in rows if row.validation_schema in CONTENT_SCHEMAS],
         "content_versions",
     )
@@ -342,7 +331,6 @@ def _verify_history(snapshot, candidate=None):
     try:
         parish_id = None
         by_kind, by_id, policy_ids = {}, {}, {}
-        ministry_ids, ministry_identities = {}, {}
         content_ids = {}
         newer_policy = None
         newer_parish = None
@@ -352,7 +340,6 @@ def _verify_history(snapshot, candidate=None):
             parish_id = parishes[0]["id"] if parishes else None
             _remember_integrations(candidate, by_kind, by_id)
             newer_policy = _remember_policy(candidate, policy_ids)
-            remember_records(candidate, ministry_ids, ministry_identities)
             remember_content(candidate, content_ids)
         for entry in _hydrated_history(snapshot):
             predecessor = entry.predecessor.digest if entry.predecessor_id else None
@@ -368,7 +355,6 @@ def _verify_history(snapshot, candidate=None):
             newer_parish = bool(parishes)
             _remember_integrations(version.document(), by_kind, by_id)
             has_policy = _remember_policy(version.document(), policy_ids)
-            remember_records(version.document(), ministry_ids, ministry_identities)
             remember_content(version.document(), content_ids)
             if newer_policy is False and has_policy:
                 return False
@@ -517,13 +503,6 @@ def prepare_snapshot(version, *, actor_id, correlation_id):
         from parishkit.stewardship.campaigns.projections import prepare_campaigns
 
         prepare_campaigns(snapshot, document, attribution)
-        for record in document["sections"].get("ministries", []):
-            MinistryActivity.objects.create(
-                configuration=snapshot,
-                record_id=record["id"],
-                **record["values"],
-                **attribution,
-            )
         for record in document["sections"].get("content", []):
             ContentVersion.objects.create(
                 configuration=snapshot,

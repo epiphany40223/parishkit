@@ -263,7 +263,6 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/denied-link",
         "/denied-unavailable",
         "/ministries",
-        "/ministry-preview",
         "/parish-settings",
         "/parish-preview",
         "/configuration-request",
@@ -845,28 +844,31 @@ def test_parish_editor_retains_native_form_validation_and_timezone_scope(
 
 def test_ministry_preview_preserves_operational_indicators(page, component_origin):
     """Configuration pages do not replace the persistent Admin navigation/header."""
-    for path in ("/ministries", "/ministry-preview", "/configuration-request"):
+    for path in ("/ministries", "/configuration-request"):
         page.goto(component_origin + path)
         visible(page.locator("[data-background-indicator]"))
         visible(page.get_by_role("complementary", name="Testing mode"))
 
 
 def test_shared_table_selection_enables_bulk_actions(page, component_origin):
-    """Select all chooses every row on the page and enables the bulk buttons."""
-    page.goto(component_origin + "/ministries")
-    review = page.get_by_role("button", name="Review inactivation")
-    assert review.is_disabled()
-    page.get_by_role("button", name="Select all").click()
+    """Select all chooses every row on the page and enables the bulk buttons.
+
+    Mail schedules' table is the example since Ministries lost its row
+    selection (#1267)."""
+    page.goto(component_origin + "/schedule-list")
+    delete = page.get_by_role("button", name="Delete selected", exact=True)
+    assert delete.is_disabled()
     rows = page.locator("input[data-select-row]")
+    assert rows.count() >= 2
+    page.get_by_role("button", name="Select all").click()
     assert rows.evaluate_all("nodes => nodes.every(node => node.checked)")
-    visible(page.get_by_text("2 selected"))
-    assert review.is_enabled()
+    visible(page.get_by_text(f"{rows.count()} selected"))
+    assert delete.is_enabled()
     page.get_by_role("button", name="Clear selection").click()
-    assert review.is_disabled()
+    assert delete.is_disabled()
     rows.first.check()
-    header = page.get_by_label("Select every Ministry on this page")
+    header = page.get_by_label("Select every scheduled email that can be deleted")
     assert header.evaluate("node => node.indeterminate")
-    visible(page.get_by_text("Showing 1–2 of 2").first)
 
 
 def test_sortable_headings_state_and_name_their_direction(page, component_origin):

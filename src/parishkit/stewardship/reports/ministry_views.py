@@ -36,7 +36,6 @@ from .ministries import (
     ministry_page,
     packet_choices,
     reads_every_ministry,
-    refuse_leader_activity,
     unscoped,
 )
 from .ministry_exports import MAX_PACKET_MINISTRIES
@@ -143,7 +142,7 @@ def report(request, campaign_id):
             return response
         parameters = request.POST.copy()
         parameters.pop("csrfmiddlewaretoken", None)
-        query = refuse_leader_activity(actor, MinistryQuery.parse(parameters))
+        query = MinistryQuery.parse(parameters)
         admit_report_read(campaign_id)
         _audit(actor, campaign_id, query, Outcome.STARTED)
         finalized, count, total, scope = False, 0, 0, ()
@@ -212,9 +211,9 @@ def report(request, campaign_id):
                     ),
                 ),
                 "packet_limit": MAX_PACKET_MINISTRIES,
-                # Ministry activity and campaign marks, for Staff and
-                # Administrators only (#1135).
-                "show_activity": reads_every_ministry(actor),
+                # The "Not in ParishSoft data" and campaign marks, for
+                # Staff and Administrators only (#1135).
+                "show_marks": reads_every_ministry(actor),
                 "mutable": mutable,
                 "packet_key": uuid4(),
                 "campaign_id": campaign_id,

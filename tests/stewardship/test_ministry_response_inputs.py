@@ -1,4 +1,4 @@
-"""Closed Ministry choices use local policy and Family-scoped source evidence."""
+"""Closed Ministry choices use campaign selection and Family-scoped source evidence."""
 
 from copy import deepcopy
 from uuid import uuid4
@@ -14,7 +14,7 @@ from parishkit.stewardship.responses.ministry import (
 
 
 def inputs(**overrides):
-    """One current Ministry, one join option and one locally hidden catalog row."""
+    """One current Ministry, one join option and one unselected catalog row."""
     values = {
         "catalog": [
             {"id": 4, "name": "Choir", "catalog_present": True, "active": False},
@@ -26,21 +26,8 @@ def inputs(**overrides):
             {"member_key": "3", "ministry_key": "10", "current": True},
         ],
         "member_duids": (3,),
-        "selected_duids": [4, 9, 10, 20],
-        "document": {
-            "sections": {
-                "ministries": [
-                    {
-                        "values": {
-                            "organization_id": 5,
-                            "ministry_duid": 10,
-                            "active": False,
-                        }
-                    }
-                ]
-            }
-        },
-        "organization_id": 5,
+        # 10 is in the catalog but not selected; 20 is selected but absent.
+        "selected_duids": [4, 9, 20],
     }
     return ministry_inputs(**(values | overrides))
 
@@ -60,8 +47,12 @@ def validate(value, projection=None, *, terminal=(), proposed=()):
     )
 
 
-def test_visibility_intersects_catalog_selection_and_local_activity():
-    """Upstream flags and absent selected IDs cannot override local activity."""
+def test_visibility_intersects_catalog_and_campaign_selection():
+    """Upstream activity flags are ignored; only catalog and selection count.
+
+    There is no local inactive override any more (#1267), so a catalog
+    Ministry the campaign selects is offered even if ParishSoft calls it
+    inactive."""
     projection = inputs()
     assert [(option.duid, option.name) for option in projection.options] == [
         (4, "Choir"),
@@ -111,7 +102,6 @@ def test_hidden_unrepresentable_labels_do_not_invalidate_visible_projection():
         {"member_duids": (3, 3)},
         {"selected_duids": [4, 4]},
         {"selected_duids": [True]},
-        {"organization_id": True},
         {"roster": [{"member_key": "03", "ministry_key": "4", "current": True}]},
         {"roster": [{"member_key": "8", "ministry_key": "4", "current": True}]},
         {"roster": [{"member_key": "3", "ministry_key": "4", "current": 1}]},

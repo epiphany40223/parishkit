@@ -161,9 +161,7 @@ class DatabaseMaterializer:
         self._candidate(version)
         from .branding_validation import validate_installation as validate_branding
         from .integration_selection import validate_installation as validate_credentials
-        from .ministry_activity import validate_installation as validate_activity
 
-        validate_activity(version.document())
         validate_branding(version.document(), actor_id=self.actor_id)
         validate_credentials(version.document())
         from parishkit.stewardship.campaigns.admission import validate_installation
@@ -404,8 +402,8 @@ class DatabaseMaterializer:
 
         # The pointers Ministry leadership derives from, read before SQL
         # moves the configuration pointer, for the count-only audit below
-        # (#1034): leader roles, Ministries and Ministry activity all change
-        # Ministry leaders' scope without a ParishSoft refresh.
+        # (#1034): leader roles and Ministries both change Ministry
+        # leaders' scope without a ParishSoft refresh.
         leaders = leader_pointers()
         activation = ConfigurationActivation.objects.create(
             configuration_id=selected.version_id,
@@ -749,11 +747,6 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
                 from .request_admission import check_historical_additions
 
                 check_historical_additions(request.base_id, request.patch)
-                from .ministry_activity import (
-                    validate_installation as validate_activity,
-                )
-
-                validate_activity(intent.candidate.document())
                 from parishkit.stewardship.campaigns.admission import (
                     validate_installation,
                 )

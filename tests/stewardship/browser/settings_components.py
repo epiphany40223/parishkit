@@ -29,13 +29,6 @@ Campaign settings reviews in the review dialog (#1119) and is served by
 answered, by date, with one of ``END_CHECKS``' answers (the real check
 fragment): none, a past date, a date before the start, or mail the date
 would strand.
-Ministries' row selection (#750) is served at ``MINISTRY_TABLE`` (page 1
-of 30 Ministries, 25 to a page, whose Apply leads to
-``MINISTRY_TABLE_PENDING``), ``MINISTRY_TABLE_REVIEW`` (its review of
-inactivating Ministry 1) and ``MINISTRY_TABLE_PAGE2`` (the table's second
-page, as a GET draws it). The pending change polls ``MINISTRY_TABLE_STATUS``,
-which answers Applied and follows to ``MINISTRY_TABLE_SETTLED``, the page
-refreshed with Ministry 01 inactive and Ministry 25 gone from the catalog.
 """
 
 from types import SimpleNamespace
@@ -44,13 +37,11 @@ from uuid import UUID
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts.admin_editing import review_region
-from parishkit.stewardship.accounts.ministry_views import CATALOG_SORTING
 from parishkit.stewardship.accounts.parish_views import TIMEZONE_NOTE, ParishForm
 from parishkit.stewardship.accounts.share_forms import (
     ShareOptions,
     default_share_options,
 )
-from parishkit.stewardship.web.tables import paginate
 
 SETTINGS = "/settings-in-place"
 REVIEW = "/settings-in-place-review"
@@ -66,17 +57,6 @@ SHARE_APPLIED = "/share-in-place-applied"
 SHARE_STATUS = "/share-in-place-status"
 SHARE_PENDING = f"{SHARE}?request={REQUEST}"
 SHARE_SETTLED = f"{SHARE}?request={REQUEST}&settled=1"
-MINISTRY_TABLE = "/ministries-in-place"
-MINISTRY_TABLE_REVIEW = "/ministries-in-place-review"
-MINISTRY_TABLE_PAGE2 = "/ministries-in-place-page-2"
-MINISTRY_TABLE_PENDING = f"{MINISTRY_TABLE}?request={REQUEST}"
-MINISTRY_TABLE_STATUS = "/ministries-in-place-status"
-MINISTRY_TABLE_SETTLED = f"{MINISTRY_TABLE}?request={REQUEST}&settled=1"
-# Thirty active Ministries, so the table has a second page.
-MINISTRY_ROWS = [
-    {"duid": duid, "name": f"Ministry {duid:02d}", "active": True, "included": True}
-    for duid in range(1, 31)
-]
 # The live check's answers (#944), by the end date the browser test types.
 STRANDING = "Some scheduled emails would no longer fit the campaign."
 PASSED = "Choose an end date that has not already passed."
@@ -93,7 +73,6 @@ COMBINED_REVIEW = "/admin/campaign/schedules/?end_date=2054-10-20"
 POSTS = {
     SETTINGS: (303, PENDING, ""),
     SHARE: (303, SHARE_PENDING, ""),
-    MINISTRY_TABLE: (303, MINISTRY_TABLE_PENDING, ""),
     # A Review answered with a redirect to another page, which does not draw
     # the review region (Campaign settings' dates-only change, #532).
     "/settings-in-place-elsewhere": (303, "/in-place-other", ""),
@@ -157,33 +136,6 @@ def components(context, admin):
     reviewed.is_valid()
     refused = ParishForm(data=renamed | {"phone": "123"})
     refused.is_valid()
-
-    def ministry_table(step, page="1", rows=MINISTRY_ROWS, **region):
-        """Ministries at ``step``: ``page`` of ``rows``, 25 to a page, with
-        ``region``'s review context under it (#750)."""
-        values = review_region("ministries", None, **region)
-        if region.get("receipt"):
-            # The fixture server serves Ministries' Change status here.
-            values["status_url"] = MINISTRY_TABLE_STATUS
-        return (
-            "text/html",
-            render_to_string(
-                "stewardship/ministries.html",
-                context
-                | {
-                    "admin_chrome": admin | {"flow_steps": _steps(step)},
-                    "table": paginate(
-                        rows,
-                        {"size": "25", "page": page},
-                        carry=(("q", ""), ("state", "all")),
-                        sorting=CATALOG_SORTING,
-                    ),
-                    "query": "",
-                    "state": "all",
-                }
-                | values,
-            ),
-        )
 
     options = default_share_options()
 
@@ -283,42 +235,6 @@ def components(context, admin):
             ),
         ),
         SETTLED: page(editor("b" * 64), 2, receipt=applied),
-        MINISTRY_TABLE: ministry_table(0),
-        MINISTRY_TABLE_REVIEW: ministry_table(
-            1,
-            review={
-                "template": "stewardship/ministry-review.html",
-                "notes": [],
-                "changing": MINISTRY_ROWS[:1],
-                "unchanged": [],
-                "not_included": [],
-                "new_active": False,
-                "preview": "synthetic-signed-intent",
-            },
-        ),
-        MINISTRY_TABLE_PAGE2: ministry_table(0, page="2"),
-        MINISTRY_TABLE_PENDING: ministry_table(2, receipt=pending),
-        MINISTRY_TABLE_STATUS: (
-            "text/html",
-            render_to_string(
-                "stewardship/configuration-request.html",
-                context
-                | {
-                    "admin_chrome": admin,
-                    "receipt": applied,
-                    "follow_url": MINISTRY_TABLE_SETTLED,
-                },
-            ),
-        ),
-        MINISTRY_TABLE_SETTLED: ministry_table(
-            2,
-            # Ministry 25 left the catalog meanwhile, so a tick on it goes.
-            rows=[
-                dict(MINISTRY_ROWS[0], active=False),
-                *(row for row in MINISTRY_ROWS[1:] if row["duid"] != 25),
-            ],
-            receipt=applied,
-        ),
         SHARE: share(None, 0),
         SHARE_REVIEW: share(
             sent,

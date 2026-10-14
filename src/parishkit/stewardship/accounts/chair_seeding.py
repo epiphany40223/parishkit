@@ -107,11 +107,9 @@ def confirmable(request, configuration_id, document):
     Judged inside the activation transaction, before anything is applied, by
     the same facts the evidence guard demands: the selected Member is a
     current Chairperson of that Ministry at that address in the promoted
-    snapshot for that organization, and the Ministry is active under the
-    candidate's own activity. A request that adds no seed is confirmable.
+    snapshot for that organization. A request that adds no seed is
+    confirmable.
     """
-    from .ministry_activity import active_ministries
-
     if request is None or request.request_schema != REQUEST_SCHEMA:
         return True
     intents = list(ChairSeedIntent.objects.filter(request=request))
@@ -123,15 +121,8 @@ def confirmable(request, configuration_id, document):
     if any(intent.organization_id != organization for intent in intents):
         return False
     rows = _relationships(intents, configuration_id)
-    for intent, assignment, current, keys in rows:
+    for intent, _assignment, current, keys in rows:
         if not keys or current.organization_id != intent.organization_id:
-            return False
-        active = active_ministries(
-            document,
-            organization_id=intent.organization_id,
-            catalog_duids=frozenset({assignment.ministry_duid}),
-        )
-        if assignment.ministry_duid not in active:
             return False
     return True
 

@@ -568,7 +568,6 @@ def component_origin():
     ministry = {
         "duid": 12345,
         "name": "Community outreach",
-        "active": True,
         "included": True,
     }
 
@@ -579,7 +578,7 @@ def component_origin():
         return paginate(
             [row for row in rows if search in row["name"]],
             parameters,
-            carry=(("q", search), ("state", "all")),
+            carry=(("q", search),),
             sorting=CATALOG_SORTING,
         )
 
@@ -2074,25 +2073,7 @@ def component_origin():
         (
             "/ministries",
             "ministries",
-            {"table": ministries_table({}), "query": "", "state": "all"},
-        ),
-        # Ministries with its review shown in place, under the table (#750).
-        (
-            "/ministry-preview",
-            "ministries",
-            {
-                "table": ministries_table({}),
-                "query": "",
-                "state": "all",
-                "review": {
-                    "template": "stewardship/ministry-review.html",
-                    "notes": [],
-                    "changing": [ministry],
-                    "unchanged": [],
-                    "new_active": False,
-                    "preview": "synthetic-signed-intent",
-                },
-            },
+            {"table": ministries_table({}), "query": ""},
         ),
         (
             "/parish-settings",
@@ -2233,7 +2214,7 @@ def component_origin():
             (
                 "/ministries?" + query,
                 "ministries",
-                {"table": ministries_table(chosen), "query": "", "state": "all"},
+                {"table": ministries_table(chosen), "query": ""},
             )
             for query, chosen in (
                 (ministries_table({}).heading_query("name"), {"sort": "-name"}),
@@ -2254,12 +2235,11 @@ def component_origin():
         # one Ministry and one that matches none.
         *(
             (
-                f"/ministries?q={search}&state=all&size=50&sort=name",
+                f"/ministries?q={search}&size=50&sort=name",
                 "ministries",
                 {
                     "table": ministries_table({}, search),
                     "query": search,
-                    "state": "all",
                 },
             )
             for search in ("Lectors", "Nothing")

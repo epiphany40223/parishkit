@@ -237,8 +237,8 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
             b"Ministry requests" in body
             and b"Active parishioner family directory" not in body
         )
-        # A leader sees no Ministry activity filter or mark and no campaign
-        # mark (#1135); Food pantry (9) is Active, which a leader never reads.
+        # A leader sees no ParishSoft or campaign mark (#1135), and nobody
+        # sees a Ministry activity filter or an Active/Inactive mark (#1267).
         for hidden in (
             b"Ministry activity",
             b'id="ministry-activity"',
@@ -248,11 +248,8 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
             b"No longer in this campaign",
         ):
             assert hidden not in body, hidden
-        # Its forms carry the activity "any" only, which a leader may send.
-        assert b'name="activity" value="any"' in body
-        assert body.count(b'name="activity"') == body.count(
-            b'name="activity" value="any"'
-        )
+        # Its forms carry no activity field at all.
+        assert b'name="activity"' not in body
         assert b"/ministries/9/" not in body
         # The summary names each Ministry and shows no DUID (#1123).
         assert b'<td class="numeric">9</td>' not in body
@@ -260,12 +257,10 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
         # The retired lists' Contact details controls are gone (#1157).
         assert b"/admin/reports/ministries/joining/" not in body
         assert b"Contact details" not in body
-        # A hand-made activity filter is refused from a leader (#1135); "any",
-        # what the page's own forms send, is accepted.
-        for activity in ("active", "inactive", "unavailable"):
+        # A hand-made activity filter is refused as unknown (#1267).
+        for activity in ("any", "active", "inactive", "unavailable"):
             response, _ = search(browser, root, {"activity": activity})
             assert response.status_code == 400
-        assert search(browser, root, {"activity": "any"})[0].status_code == 200
         # The summary sorts by Ministry name (#960), within the leader's
         # scope; it offers no Ministry DUID heading (#1123).
         response, body = search(browser, root, {"sort": "name_desc"})
@@ -448,16 +443,14 @@ def test_testing_hidden_proposed_and_resolved_intent(response_service):
             store,
             store.active(),
             uuid4(),
+            # Hidden by taking it out of the campaign's selections; there is
+            # no local inactive state any more (#1267).
             [
                 {
-                    "operation": "add",
-                    "section": "ministries",
-                    "id": str(uuid4()),
-                    "values": {
-                        "organization_id": 12345,
-                        "ministry_duid": 9,
-                        "active": False,
-                    },
+                    "operation": "update",
+                    "section": "campaigns",
+                    "id": str(harness.campaign.pk),
+                    "values": {"ministry_duids": [4]},
                 }
             ],
         ).state
@@ -465,10 +458,10 @@ def test_testing_hidden_proposed_and_resolved_intent(response_service):
     )
     form = revisit(harness)
     respond(harness, form, answers_for(form))
-    hidden = page(harness, activity="inactive")["summaries"]
-    assert len(hidden) == 1 and hidden[0]["duid"] == 9 and hidden[0]["joining"] == 2
-    assert page(harness, ministry=9, activity="active")["rows"] == []
-    # An inactive Ministry has no leaders (#922); Staff still read it.
+    hidden = [row for row in page(harness)["summaries"] if row["duid"] == 9]
+    assert len(hidden) == 1 and hidden[0]["joining"] == 2
+    assert hidden[0]["in_campaign"] is False
+    # A Ministry out of the campaign has no leaders (#922); Staff still read it.
     with pytest.raises(PermissionError):
         page(harness, **leader)
     assert page(harness, ministry=9)["total"] == 2
@@ -484,7 +477,7 @@ def test_testing_hidden_proposed_and_resolved_intent(response_service):
     ]
     snapshot, claim = prepare(data)
     promote(snapshot, claim, harness.campaign, harness.rings)
-    summary = page(harness, activity="inactive")["summaries"][0]
+    [summary] = [row for row in page(harness)["summaries"] if row["duid"] == 9]
     assert summary["completed"] == summary["unresolved"] == 1
     assert summary["joining"] == 2 and "50" in summary["progress"]
     resolved = page(harness, ministry=9, state="resolved")["rows"]
@@ -713,7 +706,7 @@ def sql_report(harness, actor_id, **arguments):
             "request_action => %s)::text",
             [
                 harness.campaign.pk,
-                json.dumps(MinistryQuery.parse({}, detail=False).form_values()),
+                json.dumps(MinistryQuery.parse({}, detail=False).selection_filters()),
                 actor_id,
                 arguments.get("ministry"),
                 arguments.get("action", "join"),

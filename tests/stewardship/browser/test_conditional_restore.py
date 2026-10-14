@@ -56,7 +56,6 @@ def explained(action, hint):
 @pytest.mark.parametrize(
     "path,button,hint",
     [
-        ("/ministries", "Review activation", "Select at least one Ministry to review."),
         ("/hosted-files", "Delete selected", "Select at least one file to delete."),
     ],
 )

@@ -1902,7 +1902,7 @@
   document.addEventListener("change", withdrawReview);
   // A table's Select all / Clear selection button ticks its rows from
   // script, which fires no change event, so it withdraws a review of the
-  // row selection itself (Ministries, #750).
+  // row selection itself (#750).
   document.addEventListener("click", (event) => {
     if (event.target instanceof Element && event.target.closest("[data-select-all-button]")) {
       withdrawReview(event);
@@ -1916,7 +1916,7 @@
       const edited = editedSince.get(fresh.id);
       if (!edited || edited.isConnected) return;
       editedSince.delete(fresh.id);
-      // A selection table (Ministries, Hosted files, Schedule settings) is
+      // A selection table (Hosted files, Schedule settings) is
       // redrawn with the ticks of every row it still shows (swapRegion), and
       // its selection is per page. When the reader re-sorts, re-pages or
       // re-filters it, a tick on a row no longer shown goes as they asked,

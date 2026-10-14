@@ -172,8 +172,6 @@ def _scope(service):
 
 def _catalog(configuration, source, previous):
     """Expose Ministry/fund names only from the configured tenant's current corpus."""
-    from .ministry_activity import active_ministries
-
     selected = set(previous.get("ministry_duids", []))
     financial = previous.get("financial") or {}
     retained_funds = set(financial.get("fund_duids", [])) | set(
@@ -250,22 +248,14 @@ def _catalog(configuration, source, previous):
                 "payload"
             )
         )
-        ministry_ids = (
-            active_ministries(
-                configuration.active_configuration.canonical_document,
-                organization_id=source.organization_id,
-                catalog_duids=frozenset(int(row.source_key) for row in rows),
-            )
-            if model is SnapshotMinistry
-            else frozenset()
-        )
         for row in rows:
             duid, payload = int(row.source_key), row.payload.payload
-            active = payload.get("active", True) is not False
-            if model is SnapshotMinistry:
-                # Upstream Ministry activity is not reliable; the local override
-                # alone owns activity for a Ministry present in this snapshot.
-                active = duid in ministry_ids
+            # Every Ministry in this snapshot can be chosen: upstream Ministry
+            # activity is not reliable and there is no local override (#1267).
+            # A fund keeps ParishSoft's own active flag.
+            active = (
+                model is SnapshotMinistry or payload.get("active", True) is not False
+            )
             retained = selected if model is SnapshotMinistry else retained_funds
             if active or duid in retained:
                 # A blank, null or odd ParishSoft name must not break
@@ -795,7 +785,7 @@ def _ministries_preview(request, service, actor, state, campaign, form, changed)
     """Review a live campaign's Ministry change and its impact (#342, #1119).
 
     The change is one campaign update of ``ministry_duids`` alone. Its
-    choices offer only the current selections and the active Ministries
+    choices offer only the current selections and the Ministries
     ParishSoft still lists (``campaign_ministry_changes.addable``), so the
     form has already refused any other addition; the installer and SQL check
     it again. The review lists the Ministries to add and to remove, with what

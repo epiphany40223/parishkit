@@ -135,44 +135,24 @@ def test_ministry_complete_submission_and_same_intent_revisit(
         ) == {"cancelled"}
 
 
-def test_hidden_request_survives_omission_and_returns_on_reactivation(response_service):
-    """Local activity hiding is not a Family withdrawal or a roster change."""
+def test_hidden_request_survives_omission_and_returns_when_selected_again(
+    response_service,
+):
+    """Hiding a Ministry is not a Family withdrawal or a roster change.
+
+    A Ministry is hidden by taking it out of the campaign's selections
+    (there is no local inactive state any more, #1267)."""
     harness = response_service
     form = start(harness)
     answers = answers_for(form)
     answers["ministries"]["members"]["3"]["join"] = [9]
     respond(harness, form, answers)
-    record_id = str(uuid4())
-    configure(
-        harness,
-        patches=[
-            {
-                "operation": "add",
-                "section": "ministries",
-                "id": record_id,
-                "values": {
-                    "organization_id": 12345,
-                    "ministry_duid": 9,
-                    "active": False,
-                },
-            }
-        ],
-    )
+    configure(harness, selected=(4,))
     form = revisit(harness)
     assert form["ministries"]["options"] == [{"id": 4, "name": "Choir"}]
     respond(harness, form, answers_for(form))
     assert MinistryRequest.objects.get().state == "new"
-    configure(
-        harness,
-        patches=[
-            {
-                "operation": "update",
-                "section": "ministries",
-                "id": record_id,
-                "values": {"active": True},
-            }
-        ],
-    )
+    configure(harness, selected=(4, 9))
     form = revisit(harness)
     assert form["ministries"]["members"]["3"]["join"] == [9]
 
@@ -363,29 +343,15 @@ def test_terminal_member_omits_ministry_controls_and_withdraws_visible_work(
         assert answers_for(form)["ministries"]["members"] == {}
 
 
-def test_activity_change_during_form_requires_review_before_submission(
+def test_selection_change_during_form_requires_review_before_submission(
     response_service,
 ):
-    """A valid but stale edit cannot bypass a newly applied inactive policy."""
+    """A valid but stale edit cannot bypass a newly removed Ministry."""
     harness = response_service
     form = start(harness)
     answers = answers_for(form)
     answers["ministries"]["members"]["3"]["join"] = [9]
-    configure(
-        harness,
-        patches=[
-            {
-                "operation": "add",
-                "section": "ministries",
-                "id": str(uuid4()),
-                "values": {
-                    "organization_id": 12345,
-                    "ministry_duid": 9,
-                    "active": False,
-                },
-            }
-        ],
-    )
+    configure(harness, selected=(4,))
     with web_login():
         result = post(
             harness.client,

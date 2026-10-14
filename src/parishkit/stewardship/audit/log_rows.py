@@ -148,8 +148,8 @@ EVENTS = tuple(sorted({item.value for item in Action} | {item.value for item in 
 #   rejected, replaced or fallen back to a full reload, their failures and
 #   holds, an Administrator accepting a refused large change once, and the
 #   Ministry leader changes they cause (#1034). That one type
-#   is also recorded when a settings change (leader roles, Ministries or
-#   Ministry activity) changes who leads; it stays here, with the refreshes
+#   is also recorded when a settings change (leader roles or Ministries)
+#   changes who leads; it stays here, with the refreshes
 #   that cause most of them, because each type belongs to one group.
 #   Timeouts are left out: every kind of background work shares their
 #   types, so a type list cannot pick a refresh's (#953 comment).

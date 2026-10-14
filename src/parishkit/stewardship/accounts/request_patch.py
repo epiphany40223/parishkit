@@ -29,7 +29,6 @@ from .content_trust import records_of, trusted_content
 from .ministry_activity import RECOVERY_SCHEMA as MINISTRY_RECOVERY_SCHEMA
 from .ministry_activity import REQUEST_SCHEMA as MINISTRY_REQUEST_SCHEMA
 from .ministry_activity import SCHEMA as MINISTRY_SCHEMA
-from .ministry_activity import remember_records
 from .setup_configuration import REQUEST_SCHEMA as SETUP_REQUEST_SCHEMA
 from .setup_configuration import USERS_REQUEST_SCHEMA as USERS_SETUP_REQUEST_SCHEMA
 from .setup_configuration import build_setup_candidate, build_users_setup_candidate
@@ -152,9 +151,6 @@ def _build_v4_candidate(base, patch, *, candidate_id):
         new["sections"].get("login_rules", []),
     )
     validate_campaign_change(old, new)
-    by_id, by_identity = {}, {}
-    remember_records(old, by_id, by_identity)
-    remember_records(new, by_id, by_identity)
     return result
 
 
@@ -200,9 +196,6 @@ def _build_v5_candidate(
         new["sections"].get("login_rules", []),
     )
     validate_campaign_change(old, new)
-    by_id, by_identity = {}, {}
-    remember_records(old, by_id, by_identity)
-    remember_records(new, by_id, by_identity)
     validate_content_change(old, new)
     return result
 
@@ -658,9 +651,6 @@ def _build_chair_seed_candidate(base, patch, *, candidate_id):
         str(candidate_operation(patch)),
     )
     validate_campaign_change(old, new)
-    by_id, by_identity = {}, {}
-    remember_records(old, by_id, by_identity)
-    remember_records(new, by_id, by_identity)
     validate_content_change(old, new)
     return result
 

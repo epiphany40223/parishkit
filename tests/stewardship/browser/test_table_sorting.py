@@ -20,7 +20,7 @@ pytestmark = pytest.mark.parametrize(
 # Tall enough for the Admin chrome, short enough that the table starts below
 # the fold, so scrolling to it is a real scroll position to keep.
 VIEWPORT = {"width": 1280, "height": 500}
-SORTED_MINISTRIES = "/ministries?state=all&size=50&sort=-name#table"
+SORTED_MINISTRIES = "/ministries?size=50&sort=-name#table"
 TABLE_TOP = "document.getElementById('table').getBoundingClientRect().top"
 # A mark outside every region, which only a full page load could lose.
 MARK = "document.querySelector('h1').dataset.mark = 'kept'"
@@ -111,26 +111,32 @@ def test_filter_form_follows_an_in_place_sort(page, component_origin):
     page.get_by_role("link", name="Ministry (sort descending)").click()
     has_attribute(sort_heading(page, "name"), "aria-sort", "descending")
     assert sort.input_value() == "-name"
-    with page.expect_request(lambda request: "state=" in request.url) as sent:
+    with page.expect_request(lambda request: "q=" in request.url) as sent:
         page.get_by_role("button", name="Filter").click()
     assert "sort=-name" in sent.value.url
 
 
 def test_selection_survives_an_in_place_resort(page, component_origin):
     """Rows still shown after the re-sort stay selected, and the swapped-in
-    table's bulk controls work: Select all, the count and the action buttons."""
+    table's bulk controls work: Select all, the count and the action button.
+    Hosted files is the example since Ministries lost its row selection
+    (#1267)."""
     page.set_viewport_size(VIEWPORT)
-    page.goto(component_origin + "/ministries")
-    page.get_by_label("Select Lectors").check()
+    page.goto(component_origin + "/hosted-files")
+    rows = page.locator("#table input[data-select-row]")
+    ticked = rows.first.get_attribute("value")
+    rows.first.check()
     visible(page.get_by_text("1 selected"))
-    page.get_by_role("link", name="Ministry (sort descending)").click()
-    has_attribute(sort_heading(page, "name"), "aria-sort", "descending")
-    assert page.get_by_label("Select Lectors").is_checked()
-    assert not page.get_by_label("Select Community outreach").is_checked()
+    page.get_by_role("link", name="Name (sort ascending)").click()
+    has_attribute(sort_heading(page, "name"), "aria-sort", "ascending")
+    kept = page.locator(f'#table input[data-select-row][value="{ticked}"]')
+    assert kept.is_checked()
+    assert rows.evaluate_all("nodes => nodes.filter(node => node.checked).length") == 1
     visible(page.get_by_text("1 selected"))
-    assert page.get_by_role("button", name="Review inactivation").is_enabled()
+    delete = page.get_by_role("button", name="Delete selected", exact=True)
+    assert delete.is_enabled()
     page.get_by_role("button", name="Select all").click()
-    visible(page.get_by_text("2 selected"))
+    visible(page.get_by_text(f"{rows.count()} selected"))
 
 
 def test_rows_per_page_and_repeated_headings_work_after_a_swap(page, component_origin):
@@ -139,7 +145,7 @@ def test_rows_per_page_and_repeated_headings_work_after_a_swap(page, component_o
     page.goto(component_origin + "/ministries")
     page.get_by_label("Rows per page").first.select_option("25")
     # The navigator's own form, as the browser would have sent it.
-    page.wait_for_url("**/ministries?state=all&sort=name&size=25&page=1#table")
+    page.wait_for_url("**/ministries?sort=name&size=25&page=1#table")
     assert page.get_by_label("Rows per page").last.input_value() == "25"
     assert page.evaluate("document.activeElement.matches('[data-page-size]')")
     page.get_by_role("link", name="Ministry (sort descending)").click()
@@ -148,7 +154,7 @@ def test_rows_per_page_and_repeated_headings_work_after_a_swap(page, component_o
     page.get_by_role("link", name="Ministry (sort ascending)").click()
     has_attribute(sort_heading(page, "name"), "aria-sort", "ascending")
     assert ministry_names(page) == ["Community outreach", "Lectors"]
-    assert page.url.endswith("/ministries?state=all&size=25&sort=name#table")
+    assert page.url.endswith("/ministries?size=25&sort=name#table")
 
 
 def test_navigator_pages_in_place(page, component_origin):
@@ -305,8 +311,10 @@ def test_swapped_in_rows_are_enhanced_again(page, component_origin):
 
 def test_fetch_failure_falls_back_to_a_full_load_at_the_table(page, component_origin):
     """When the in-place fetch fails the ordinary navigation happens instead,
-    and its fragment lands the reader on the table rather than at the top."""
-    page.set_viewport_size(VIEWPORT)
+    and its fragment lands the reader on the table rather than at the top.
+    The viewport is short so the read-only Ministries page (#1267) is still
+    tall enough to scroll its table to the top."""
+    page.set_viewport_size(VIEWPORT | {"height": 300})
     page.goto(component_origin + "/ministries")
     aborted = []
 
@@ -443,9 +451,7 @@ def test_get_filter_applies_in_place(page, component_origin):
     # Still meaningful: the page stays scrollable, so a jump to the top fails.
     assert bottom > 40
     assert abs(page.evaluate("window.scrollY") - min(offset, bottom)) < 40
-    assert page.url == (
-        component_origin + "/ministries?q=Lectors&state=all&size=50&sort=name"
-    )
+    assert page.url == (component_origin + "/ministries?q=Lectors&size=50&sort=name")
     assert page.evaluate("document.activeElement.textContent.trim()") == "Filter"
     has_text(
         page.get_by_role("status").filter(has_text="Showing"),

@@ -43,7 +43,7 @@ def packet_parameters(ministries, *, history):
         raise ValueError("Ministry packet requires a canonical selection.")
     query = MinistryQuery(history="all" if history else "current")
     return {
-        "filters": query.form_values(),
+        "filters": query.selection_filters(),
         "ministry": None,
         "action": "packet",
         "ministries": None if ministries is None else list(ministries),
@@ -146,7 +146,7 @@ def create_ministry_export(
             raise ValueError("Ministry export requires typed selection.")
         query = MinistryQuery.parse(query.form_values(), detail=True)
         parameters = {
-            "filters": query.form_values(),
+            "filters": query.selection_filters(),
             "ministry": ministry_id,
             "action": action,
         }

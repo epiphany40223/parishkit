@@ -169,7 +169,8 @@ LEDGER = {
     # print the proposed change's cleaned HTML and generated plain text.
     "content_plain_text": pending("PR 10", "content preview"),
     "parish_settings": command("parish show", "parish preview", "parish confirm"),
-    "ministries": command("ministries list", owed="PR 10"),
+    # A read-only catalog since #1267, so nothing is owed.
+    "ministries": command("ministries list"),
     "hosted_files": command("files list"),
     "hosted_file_delete": command("files delete"),
     "hosted_file_rename": command("files rename"),

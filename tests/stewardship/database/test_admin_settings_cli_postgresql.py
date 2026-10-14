@@ -87,7 +87,7 @@ def test_parish_show_is_the_editors_profile(admin):
 
 
 def test_ministries_list_is_the_pages_catalog(admin):
-    """Every catalog row, by name, with activity and campaign inclusion."""
+    """Every catalog row, by name, with campaign inclusion and no activity."""
     publish(two_ministries())
     store = admin.service.store
     _, reader, _ = paired(admin.service, scope="read-only")
@@ -98,7 +98,7 @@ def test_ministries_list_is_the_pages_catalog(admin):
     names = [row["name"] for row in result["ministries"]]
     assert "Lectors" in names and names == sorted(names, key=str.casefold)
     lectors = next(row for row in result["ministries"] if row["name"] == "Lectors")
-    assert lectors == {"duid": 5, "name": "Lectors", "active": True, "included": False}
+    assert lectors == {"duid": 5, "name": "Lectors", "included": False}
     assert AuditEvent.objects.count() == events
 
 

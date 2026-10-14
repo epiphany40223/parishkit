@@ -40,8 +40,9 @@ def ministry_page(rows, *, summaries=(), packet_choices=()):
             "total": len(shown),
             "mutable": True,
             "query": query,
-            # As Staff or an Administrator sees it: with Ministry activity.
-            "show_activity": True,
+            # As Staff or an Administrator sees it: with the ParishSoft and
+            # campaign marks.
+            "show_marks": True,
             "report_url": "/report",
             "table": report_table(
                 shown,
@@ -79,7 +80,10 @@ def test_summary_names_each_ministry_without_its_duid():
     start = html.index("Current Ministry request summary")
     table = html[start : html.index("</table>", start)]
     assert in_order(table, 'data-sort-column="ministry"', ">Joining</th>")
-    assert '<th scope="row">Food pantry<br>Active</th>' in table
+    # A Ministry ParishSoft lists has no mark: there is no Active or
+    # Inactive any more (#1267).
+    assert '<th scope="row">Food pantry</th>' in table
+    assert "Active" not in table and "Inactive" not in table
     assert "DUID" not in table and 'class="numeric">9<' not in table
 
 
