@@ -209,3 +209,79 @@ def test_download_names_a_member_no_longer_in_parishsoft_in_its_own_column():
         "Deceased in ParishSoft",
     ]
     assert lines[1]["Member"] == "Sample, Pat"
+
+
+def row_cell_html(row, **context):
+    """One row's Actions cell on Roster changes to enter, for one context."""
+    from django.template.loader import render_to_string
+
+    return render_to_string(
+        "stewardship/roster-tick-row.html",
+        {"row": row, "table": {"anchor": "roster"}, "tick_fields": ()} | context,
+    ).strip()
+
+
+def test_the_tick_is_an_icon_button_named_for_its_row():
+    """The row's tick is a same-size icon button in the Actions cell (#879),
+    its accessible name and tooltip naming the row; a row without a tick,
+    or a campaign that admits no change, keeps an empty cell."""
+    from uuid import uuid4
+
+    from parishkit.stewardship.reports.ministry_roster_views import row_controls
+
+    row = roster_row(id=str(uuid4()), roster_eligible=True, roster_entered=False)
+    row_controls([row])
+    assert row["label"] == "Sample, Pat — Food pantry"
+    cell = row_cell_html(row, mutable=True)
+    assert cell.startswith('<td class="table-actions"><form method="post"')
+    name = "Mark Sample, Pat — Food pantry entered in ParishSoft"
+    assert f'aria-label="{name}"' in cell and f'title="{name}"' in cell
+    assert 'class="action-icon"' in cell and 'name="entered" value="yes"' in cell
+    cell = row_cell_html(row | {"roster_entered": True}, mutable=True)
+    name = "Clear Entered in ParishSoft for Sample, Pat — Food pantry"
+    assert f'aria-label="{name}"' in cell and 'name="entered" value="no"' in cell
+    empty = '<td class="table-actions"></td>'
+    assert row_cell_html(row, mutable=False) == empty
+    assert row_cell_html(row | {"roster_eligible": False}, mutable=True) == empty
+
+
+def test_bulk_post_grammar_is_closed():
+    """The bulk bar's post takes only the chosen ticks and the page's key:
+    each tick as "<request>:<next sequence>", at most a page, none twice."""
+    from uuid import uuid4
+
+    from django.http import QueryDict
+
+    from parishkit.stewardship.reports.ministry_roster_views import (
+        MAX_BULK,
+        bulk_values,
+    )
+
+    key, first, second = uuid4(), uuid4(), uuid4()
+
+    def parse(**values):
+        """bulk_values over a form of the given fields (lists for many)."""
+        form = QueryDict(mutable=True)
+        for name, value in values.items():
+            form.setlist(name, value if isinstance(value, list) else [value])
+        return bulk_values(form)
+
+    assert parse(bulk_key=str(key), request=[f"{first}:1", f"{second}:3"]) == (
+        {first: 1, second: 3},
+        key,
+    )
+    for bad in (
+        {"request": [f"{first}:1"]},
+        {"bulk_key": str(key)},
+        {"bulk_key": [str(key), str(key)], "request": [f"{first}:1"]},
+        {"bulk_key": str(key), "request": [f"{first}:1", f"{first}:2"]},
+        {"bulk_key": str(key), "request": [f"{first}"]},
+        {"bulk_key": str(key), "request": [f"{first}:0"]},
+        {"bulk_key": str(key), "request": [f"{first}:1"], "show": "all"},
+        {
+            "bulk_key": str(key),
+            "request": [f"{uuid4()}:1" for _ in range(MAX_BULK + 1)],
+        },
+    ):
+        with pytest.raises(ValueError):
+            parse(**bad)

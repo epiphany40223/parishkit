@@ -389,6 +389,8 @@ LEDGER = {
     "ministry_roster": command("report roster"),
     # The page's download, through the page's own writer.
     "ministry_roster_export": command("export roster"),
+    # The list's bulk Mark entered in ParishSoft (#879).
+    "ministry_roster_bulk": pending("PR 11", "followup roster-entered"),
     # Integrations and credentials.
     "integrations": command("integration list"),
     # The settings page as it opens, its Save, its Remove and the backup

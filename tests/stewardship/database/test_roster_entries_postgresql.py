@@ -8,12 +8,14 @@ them.
 
 import csv
 import io
+import json
 import re
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
 from django.db import DatabaseError, IntegrityError, connection, transaction
+from django.urls import reverse
 from openpyxl import load_workbook
 
 from parishkit.stewardship.audit.models import AuditContext, AuditEvent
@@ -25,7 +27,7 @@ from parishkit.stewardship.workflows.roster import set_roster_entered
 
 from .auth_builders import signed_in
 from .test_background_grants_postgresql import task_login
-from .test_export_views_postgresql import restricted_download_pool
+from .test_export_views_postgresql import post, restricted_download_pool
 from .test_information_followup_postgresql import search
 from .test_ministry_exports_postgresql import leader
 from .test_ministry_followup_postgresql import edit, member_gone, requests
@@ -492,3 +494,70 @@ def test_a_change_for_a_member_no_longer_in_parishsoft_stays_listed(
         )
     tick(harness, admin, join, True)
     assert MinistryRosterEntry.objects.filter(request=join, entered=True).exists()
+
+
+def test_bulk_marks_several_changes_all_or_none(response_service, google):
+    """Roster changes to enter's bulk bar (#879): the list draws a box for
+    each change not yet entered, and its dialog's post marks every chosen
+    change at once, each with its own entry and audit event, replay-safe.
+    A change someone else ticked first refuses the whole post, naming it in
+    the dialog; a malformed form or a change already marked is a 400; a
+    leader is refused. Nothing is saved by a refused post."""
+    harness, admin, join, leave = resolved(response_service)
+    edit(harness, admin, leave, state="resolved", outcome="leave_confirmed")
+    leave.refresh_from_db()
+    browser, login = signed_in()
+    assert login.status_code == 302
+    route = reverse("admin:ministry_roster_bulk")
+    _, body = get(browser, "/admin/reports/ministries/follow-up/roster/")
+    for target in (join, leave):
+        assert f'value="{target.pk}:1" form="roster-bulk"'.encode() in body
+    assert b'id="roster-bulk" method="post" action="' + route.encode() in body
+    assert b'data-refresh-url="/admin/reports/ministries/follow-up/roster/?' in body
+    form = {"bulk_key": str(uuid4()), "request": [f"{join.pk}:1", f"{leave.pk}:1"]}
+
+    def entries():
+        """Every tick row, as (request, sequence, entered), in a fixed order."""
+        return sorted(
+            MinistryRosterEntry.objects.values_list("request_id", "sequence", "entered")
+        )
+
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        for _ in range(2):  # the second post replays the first
+            response = post(browser, route, form)
+            assert response.status_code == 204, response.content
+        assert entries() == sorted([(join.pk, 1, True), (leave.pk, 1, True)])
+    assert AuditEvent.objects.filter(event_type="ministry_roster_entered").count() == 2
+    tick(harness, admin, join, False)
+    before = entries()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        # The list showed join at sequence 2; someone cleared it since.
+        stale = post(
+            browser, route, {"bulk_key": str(uuid4()), "request": [f"{join.pk}:2"]}
+        )
+        assert stale.status_code == 409
+        message = json.loads(stale.content)["refusal"]["message"]
+        assert "changed after this list was shown" in message
+        assert "nothing was marked" in message
+        # Leave is already marked, so the whole post is refused, join too.
+        mixed = {"bulk_key": str(uuid4()), "request": [f"{join.pk}:3", f"{leave.pk}:2"]}
+        assert post(browser, route, mixed).status_code == 400
+        for bad in (
+            {"request": [f"{join.pk}:3"]},
+            {"bulk_key": str(uuid4()), "request": []},
+            {"bulk_key": str(uuid4()), "request": [f"{join.pk}:3", f"{join.pk}:3"]},
+            {"bulk_key": str(uuid4()), "request": [f"{join.pk}"]},
+            {"bulk_key": "x", "request": [f"{join.pk}:3"]},
+            {"bulk_key": str(uuid4()), "request": [f"{join.pk}:3"], "extra": "1"},
+        ):
+            assert post(browser, route, bad).status_code == 400, bad
+        assert post(browser, route + "?x=1", mixed).status_code == 400
+        assert entries() == before
+    leader_browser, _, _, _ = leader(harness, google)
+    refused = post(
+        leader_browser,
+        route,
+        {"bulk_key": str(uuid4()), "request": [f"{join.pk}:3"]},
+    )
+    assert refused.status_code in {403, 404}
+    assert entries() == before

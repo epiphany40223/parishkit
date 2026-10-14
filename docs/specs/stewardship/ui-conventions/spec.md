@@ -2207,8 +2207,8 @@ Actions column. **Why.** One pattern for every list of editable things; a dialog
 names exactly what will be removed. **Shared code.** The `table_actions`
 template tag, `components/confirm-dialog.html` and `data-confirm-open` in
 `ui-v1.js`. **Precedent.** #879, #882 (first user), #947 (second slice),
-the Pages and emails email tables (third slice); #1065 (row links, System
-logs).
+the Pages and emails email tables (third slice), Roster changes to enter
+(a recording action); #1065 (row links, System logs).
 
 A table whose rows can be acted on follows one pattern
 ([#879](https://github.com/epiphany40223/parishkit/issues/879)), built once
@@ -2220,7 +2220,9 @@ sessions of
 [Users](../admin-portal/spec.md#users-table), the email template tables of
 [Pages and emails](../admin-portal/spec.md#default-content) and the bulk
 outcomes of [Ministry follow-up](../admin-portal/spec.md#follow-up-workflows)
-([#1131](https://github.com/epiphany40223/parishkit/issues/1131)); the
+([#1131](https://github.com/epiphany40223/parishkit/issues/1131)) and the
+Entered in ParishSoft tick of
+[Roster changes to enter](../admin-portal/spec.md#roster-changes-to-enter); the
 other Admin tables with per-row actions move to it in later changes, as the
 inventory on #879 lists.
 
@@ -2231,8 +2233,13 @@ inventory on #879 lists.
   icons are drawn inline, so they need no request and stay inside the
   content security policy. A destructive action with another name uses its
   own word and icon in Delete's place and works the same way; so far only
-  Revoke ("Revoke nightly export") on Automation access. A row shows only the
-  actions that apply to it; a row with none shows nothing there.
+  Revoke ("Revoke nightly export") on Automation access. An action that
+  records rather than removes, and that the row's other action undoes, also
+  takes an icon of its own and acts [in place](#in-place-controls) without a
+  dialog; so far only Roster changes to enter's tick, "Mark … entered in
+  ParishSoft" (a check mark) and "Clear Entered in ParishSoft for …" (an
+  undo arrow). A row shows only the actions that apply to it; a row with
+  none shows nothing there.
 - **Edit** opens the item's edit page, which is the same page as New, filled
   in. Saving it goes through the [review dialog](#review-dialog), after which
   the reader returns to the table (until #750 converts the page, through its
