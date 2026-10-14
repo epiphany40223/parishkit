@@ -948,15 +948,21 @@ an integration that isn't set up yet can't store its key, its Save is shown
 unavailable, named by the notice that says why. The Pages and emails editor's
 Preview changes waits for a change, except while the page offers saving what
 it shows as it is (the default text filled in, a saved text that needs
-re-saving, a refused Preview drawn again). On Campaign settings the Ministry
+re-saving, a confirmation email with a retired receipt closing note folded
+in, a refused Preview drawn again). On Campaign settings the Ministry
 leader roles need one ticked while Ministry stewardship is on, and on a live
 campaign Save waits while the Ministries and another setting both changed
-(`data-change-alone`), with the server's own words. The Parish website, the
-automation approval's user code and New and Edit user's Email and Name are
-checked in the browser, with their refusals at the field, and Continue,
-Add the user or Save waits for them. An integration page drawn again
-after a refused Save shows what was posted, so its Save does not wait
-for a change then.
+(`data-change-alone`), with the server's own words. The automation
+approval's user code and New and Edit user's Email and Name are checked in
+the browser, with their refusals at the field, and Continue, Add the user
+or Save waits for them (a Name the Email lookup fills in or clears counts
+as an entry).
+The Parish website carries a pattern too: on Parish settings, which has no
+complete gate, the browser marks a website with a user name, query or
+fragment at the field when it is left, and the server's refusal is shown
+there; Save still waits only for a change. An integration page drawn
+again after a refused Save shows what was posted, so its Save does not
+wait for a change then.
 
 The same holds for the rest of the Admin portal (#563, the audit's last
 slice): Start Testing cleanup on Go-live readiness and Confirm Production

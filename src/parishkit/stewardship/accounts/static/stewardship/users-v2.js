@@ -59,9 +59,15 @@
     help.textContent = words;
     help.title = words;
   };
+  // Write the Name, then say so as typing would: a scripted value fires no
+  // event, and the form's complete and change gates must see it (#1330).
+  const write = (value) => {
+    name.value = value;
+    name.dispatchEvent(new Event("input", {bubbles: true}));
+  };
   // Clear the Name only if this script filled it and it is unchanged.
   const unfill = () => {
-    if (filled !== null && name.value === filled) name.value = "";
+    if (filled !== null && name.value === filled) write("");
     filled = null;
   };
   const suggest = (names) => {
@@ -77,7 +83,7 @@
     // Never over a Name the Administrator typed; a Name filled in for an
     // earlier address is replaced.
     if (names.length && (!name.value.trim() || name.value === filled)) {
-      name.value = names[0];
+      write(names[0]);
       filled = names[0];
     }
   };

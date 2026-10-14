@@ -15,7 +15,7 @@ import pytest
 
 from .automation_components import APPROVAL
 from .campaign_settings_components import DRAFT
-from .user_components import NEW, NEW_TAKEN
+from .user_components import NEW, NEW_TAKEN, SUGGESTED
 from .waits import has_attribute, visible
 
 pytestmark = pytest.mark.parametrize(
@@ -154,6 +154,8 @@ def test_new_user_review_waits_for_an_email_and_a_name(page, component_origin):
     line reserved under the buttons."""
     from playwright.sync_api import expect
 
+    from .test_users_page import help_says
+
     failures = watch(page)
     page.goto(component_origin + NEW)
     review = page.get_by_role("button", name="Add the user")
@@ -164,11 +166,40 @@ def test_new_user_review_waits_for_an_email_and_a_name(page, component_origin):
     email.fill("not an address")
     expect(hint).to_have_text("Enter one email address, such as name@example.org.")
     email.fill("new@example.org")
+    email.press("Tab")
+    # Wait for the lookup's suggested Name, then clear it by hand.
+    help_says(page, "Suggested from ParishSoft")
     page.get_by_label("Name", exact=True).fill("")
     expect(hint).to_have_text("Enter a name.")
     page.get_by_label("Name", exact=True).fill("New, Nora")
     expect(review).to_be_enabled()
     assert hint.inner_text() == ""
+    assert not failures
+
+
+def test_a_name_filled_or_cleared_from_parishsoft_moves_review(page, component_origin):
+    """The Email lookup's Name counts as an entry (#1330): filling it in
+    makes Review available, and clearing it for an address with no match
+    holds Review again, without the Administrator touching the Name."""
+    from playwright.sync_api import expect
+
+    from .test_users_page import HeldLookups, help_says
+
+    failures = watch(page)
+    page.goto(component_origin + NEW)
+    review = page.get_by_role("button", name="Review")
+    lookups = HeldLookups(page)
+    lookups.ask("ann@example.org")
+    expect(review).to_be_disabled()
+    lookups.answer(200, {"error": None, "names": SUGGESTED})
+    expect(page.get_by_label("Name", exact=True)).to_have_value(SUGGESTED[0])
+    expect(review).to_be_enabled()
+    lookups.ask("nobody@example.org")
+    lookups.answer(200, {"error": None, "names": []})
+    help_says(page, "No ParishSoft Member")
+    expect(page.get_by_label("Name", exact=True)).to_have_value("")
+    expect(review).to_be_disabled()
+    expect(page.locator("#user-complete-hint")).to_have_text("Enter a name.")
     assert not failures
 
 

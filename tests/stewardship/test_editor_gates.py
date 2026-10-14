@@ -23,6 +23,7 @@ from parishkit.stewardship.accounts.integration_forms import (
     IntegrationForm,
 )
 from parishkit.stewardship.accounts.parish_views import (
+    WEBSITE_EMPTY,
     WEBSITE_PATTERN,
     WEBSITE_REFUSAL,
     ParishForm,
@@ -98,6 +99,7 @@ def test_a_refused_website_is_shown_at_its_field(form_class):
     attrs = form.fields["website"].widget.attrs
     assert attrs["pattern"] == WEBSITE_PATTERN
     assert attrs["data-missing-hint"] == WEBSITE_REFUSAL
+    assert attrs["data-empty-hint"] == WEBSITE_EMPTY
     form.cleaned_data = {"website": "https://example.org/?a=1"}
     with pytest.raises(forms.ValidationError) as refused:
         form.clean_website()
