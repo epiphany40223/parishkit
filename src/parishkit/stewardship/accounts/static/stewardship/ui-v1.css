@@ -750,7 +750,6 @@ details.export-panel > form { margin-top: .5rem; }
 /* Wide enough for a time's reading ("Reads as 09:30 (9:30 AM)") on one line. */
 .field-row > div.field-time { flex-basis: 14rem; }
 .field-row > div > label, .field-row > div > .label-row { display: flex; align-items: center; min-height: 1.75rem; margin: 0 0 .25rem; }
-.field-row .label-row .toggletip-bubble { position: absolute; top: calc(100% + .4rem); inset-inline-start: 0; flex: none; width: max-content; max-width: min(20rem, calc(100vw - 2rem)); box-shadow: var(--shadow); }
 @media (max-width: 40rem) { .field-row > div { flex-basis: 100%; } }
 textarea.compact { min-height: 0; }
 
@@ -836,30 +835,25 @@ details.technical-details dd { overflow-wrap: anywhere; }
 
 
 /* Toggletips (ui-v1.js): a small round "i" button beside a label that opens
-   one short help bubble on click or tap. In a .label-row the bubble opens
-   in the page flow on its own line under the label, pushing the field down
-   rather than covering it; anywhere else it floats below its button. A
-   filter bar is the exception (see the rule after .label-row's). */
+   one short help bubble on click or tap. Every bubble floats, wherever its
+   button sits (a label row, a filter bar, a table heading, beside a
+   checkbox, on Family or Admin pages): fixed to the viewport, it is outside
+   every box's flow and overflow, so opening it never moves a label or
+   control, never grows a field or a table's .table-scroll box and never
+   scrolls anything (UI conventions, Field help; #1289). ui-v1.js places it
+   below its button, or above when only there it fits, inside the viewport;
+   the max-width already fits a phone. */
 .label-row { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin-block: 1rem .35rem; }
 .label-row > label, .label-row > legend { margin: 0; }
-.toggletip { position: relative; display: inline-block; vertical-align: middle; }
+.toggletip { display: inline-block; vertical-align: middle; }
+/* In a label row the button is the row's own flex item, centred on the
+   label's line. */
 .label-row > .toggletip { display: contents; }
 .toggletip-button { display: inline-flex; align-items: center; justify-content: center; width: 1.75rem; height: 1.75rem; min-height: 0; margin: 0; padding: 0; border: 2px solid var(--accent); border-radius: 50%; background: var(--paper); color: var(--accent); font-family: Georgia, "Times New Roman", serif; font-style: italic; font-weight: 700; line-height: 1; box-shadow: none; position: relative; }
 /* A 44px touch target around the 28px circle, without enlarging the icon. */
 .toggletip-button::before { content: ""; position: absolute; inset: -.5rem; }
 .toggletip-button:not(:disabled):hover, .toggletip-button[aria-expanded=true] { background: var(--accent); color: var(--paper); box-shadow: none; }
-.toggletip-bubble { position: absolute; top: calc(100% + .4rem); inset-inline-start: 0; z-index: 3; display: block; width: max-content; max-width: min(20rem, calc(100vw - 2rem)); padding: .6rem .8rem; border: 1px solid var(--border); border-inline-start: .3rem solid var(--accent); border-radius: var(--radius-small); background: var(--paper-soft, var(--paper)); color: var(--ink); font-size: .925rem; font-weight: 450; font-style: normal; line-height: 1.4; box-shadow: var(--shadow); }
-/* A tip in a table heading floats over the page (ui-v1.js places it), so it
-   never grows or scrolls the table's .table-scroll box. */
-.table-scroll .toggletip-bubble { position: fixed; inset: auto; }
-.label-row .toggletip-bubble { position: static; flex: 1 0 100%; width: auto; max-width: 40rem; box-shadow: none; }
-/* A .filter-bar aligns its fields at the bottom (align-items: end), so an
-   in-flow bubble would make its field taller and push the label and the "i"
-   button up under the pointer, breaking the "No layout shift" rule. There
-   the bubble floats below its whole field instead and moves nothing;
-   ui-v1.js still nudges it left to keep it inside the viewport. */
-.filter-bar > div { position: relative; }
-.filter-bar .label-row .toggletip-bubble { position: absolute; top: calc(100% + .4rem); inset-inline-start: 0; flex: none; width: max-content; max-width: min(20rem, calc(100vw - 2rem)); box-shadow: var(--shadow); }
+.toggletip-bubble { position: fixed; inset: auto; z-index: 3; display: block; width: max-content; max-width: min(20rem, calc(100vw - 2rem)); padding: .6rem .8rem; border: 1px solid var(--border); border-inline-start: .3rem solid var(--accent); border-radius: var(--radius-small); background: var(--paper-soft, var(--paper)); color: var(--ink); font-size: .925rem; font-weight: 450; font-style: normal; line-height: 1.4; box-shadow: var(--shadow); }
 
 /* A Member's section groups fields without a second box around them. */
 fieldset.member-section { border: 0; border-radius: 0; background: none; padding: 0; margin: 0; }

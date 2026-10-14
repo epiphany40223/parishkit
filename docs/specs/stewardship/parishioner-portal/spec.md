@@ -159,6 +159,8 @@ full, exactly as the Administrator wrote it, with no "Read more" collapse.
 Occasional field help (phone formats, death-date review, the email opt-out)
 sits behind a small "i" toggletip beside the label, which opens on click, tap,
 Enter or Space, never on hover, and closes with Escape or a click elsewhere.
+Its bubble floats over the page and moves nothing, as everywhere
+([page help](../ui-conventions/spec.md#page-help)).
 Help that every Family needs stays visible, including the birth-date Unknown
 explanation below and the pledge's "intention only" statement.
 

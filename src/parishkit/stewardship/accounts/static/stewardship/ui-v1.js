@@ -5819,7 +5819,8 @@
 //     <span class="toggletip-bubble" id="ID" hidden>Help text</span>
 //   </span>
 // The bubble follows its button in the document, so screen readers reach it
-// next. The button's name is generic on purpose: naming it after its label
+// next; on screen it floats over the page beside its button and never moves
+// anything. The button's name is generic on purpose: naming it after its label
 // ("More about Phone") would make it a second match for that label's text,
 // both for voice control and for tests that find fields by label. Its
 // description (the label, when given an id) says which field it explains. One document-level listener serves every toggletip, including ones
@@ -5834,18 +5835,15 @@
     tip.querySelector(".toggletip-bubble").hidden = true;
     if (returnFocus) tip.querySelector(".toggletip-button").focus();
   }
-  function floating(bubble) {
-    // ui-v1.css fixes a bubble inside a .table-scroll box to the viewport.
-    // As an absolute child it would grow the box's scroll area (a one-row
-    // table would gain a scrollbar) or be clipped by it; fixed, it is
-    // outside the box's overflow, so the table never changes size or scroll.
-    return getComputedStyle(bubble).position === "fixed";
-  }
   function place(tip) {
-    // Put a floating bubble under its button, or above it when only there
-    // it fits, aligned with the button's start and kept inside the viewport
-    // (its CSS max-width already fits a phone). Rerun on scroll and resize,
-    // since a fixed bubble does not move with its button by itself.
+    // Put the bubble under its button, or above it when only there it
+    // fits, aligned with the button's start and kept inside the viewport
+    // (its CSS max-width already fits a phone). ui-v1.css fixes every
+    // bubble to the viewport, so it sits outside every box's flow and
+    // overflow: opening it never moves a control, grows a field or a
+    // table's .table-scroll box, or scrolls anything (#1289). Rerun on
+    // scroll and resize, since a fixed bubble does not move with its
+    // button by itself.
     const bubble = tip.querySelector(".toggletip-bubble");
     const anchor = tip.querySelector(".toggletip-button").getBoundingClientRect();
     const edge = 8, gap = 6, box = bubble.getBoundingClientRect();
@@ -5868,11 +5866,11 @@
       || anchor.bottom <= box.top || anchor.top >= box.bottom;
   }
   function follow() {
-    // Keep an open floating bubble with its button as the page or the
-    // table's box scrolls, and as the window changes size; close it once
-    // the box scrolls its button out of view.
+    // Keep an open bubble with its button as the page or a table's box
+    // scrolls, and as the window changes size; close it once the box
+    // scrolls its button out of view.
     const tip = document.querySelector(".toggletip-open");
-    if (!tip || !floating(tip.querySelector(".toggletip-bubble"))) return;
+    if (!tip) return;
     if (scrolledOut(tip)) close(tip);
     else place(tip);
   }
@@ -5880,23 +5878,10 @@
   window.addEventListener("resize", follow);
   function open(tip) {
     document.querySelectorAll(".toggletip-open").forEach((other) => close(other));
-    const bubble = tip.querySelector(".toggletip-bubble");
     tip.classList.add("toggletip-open");
     tip.querySelector(".toggletip-button").setAttribute("aria-expanded", "true");
-    bubble.hidden = false;
-    if (floating(bubble)) {
-      place(tip);
-      return;
-    }
-    // Keep the bubble on screen: a button near the right edge of a phone
-    // would otherwise push it past the viewport (and scroll the page).
-    bubble.style.insetInlineStart = "";
-    const edge = 8, box = bubble.getBoundingClientRect();
-    const overflow = box.right - (document.documentElement.clientWidth - edge);
-    if (overflow > 0) {
-      // Shift left by the overflow, but never past the viewport's left edge.
-      bubble.style.insetInlineStart = -Math.max(0, Math.min(overflow, box.left - edge)) + "px";
-    }
+    tip.querySelector(".toggletip-bubble").hidden = false;
+    place(tip);
   }
   document.addEventListener("click", (event) => {
     const button = event.target.closest?.(".toggletip-button");

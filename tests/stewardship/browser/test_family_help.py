@@ -5,6 +5,7 @@ import pytest
 from .test_family_ministry import begin
 from .test_family_pages import next_page, paged_form
 from .test_family_response import expect, review, show
+from .waits import same_place
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -19,6 +20,11 @@ LONG_WELCOME = (
         for n in range(1, 5)
     )
 )
+
+# An element's box in page coordinates, so that scrolling does not count as
+# the element moving.
+PAGE_BOX = """e => { const r = e.getBoundingClientRect();
+    return [r.x + scrollX, r.y + scrollY, r.width, r.height]; }"""
 
 
 def phone_tip(page):
@@ -67,7 +73,10 @@ def test_review_submit_sits_in_the_sticky_bar(page, component_origin):
 def test_toggletip_opens_by_click_and_keyboard_and_closes(
     page, component_origin, width
 ):
-    """Click, tap, Enter and Space open it; Escape and outside clicks close it."""
+    """Click, tap, Enter and Space open it; Escape and outside clicks close it.
+
+    The bubble floats over the page, so its phone field never moves (#1289).
+    """
     page.set_viewport_size({"width": width, "height": 800})
     begin(page, component_origin, paged_form(), None)
     tip = phone_tip(page)
@@ -77,9 +86,12 @@ def test_toggletip_opens_by_click_and_keyboard_and_closes(
     assert page.locator(f"#{label_id}").inner_text().endswith("(optional)")
     expect(bubble).to_be_hidden()
     expect(bubble).to_contain_text("country code")
+    field = page.locator(".label-row + input[id$='_phone']").first
+    before = field.evaluate(PAGE_BOX)
     button.click()
     expect(button).to_have_attribute("aria-expanded", "true")
     expect(bubble).to_be_visible()
+    assert same_place(field.evaluate(PAGE_BOX), before)
     assert in_viewport(page, bubble)
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     button.click()
@@ -105,7 +117,10 @@ def test_only_one_toggletip_is_open_at_a_time(page, component_origin):
     tips = tip.locator("xpath=ancestor::section[@data-page]").locator(".toggletip")
     assert tips.count() >= 2
     tips.nth(0).locator("button").click()
-    tips.nth(1).locator("button").click()
+    # The open bubble floats over the page and may cover the next field's
+    # "i" (#1289), so reach that one from the keyboard.
+    tips.nth(1).locator("button").focus()
+    page.keyboard.press("Enter")
     expect(tips.nth(0).locator(".toggletip-bubble")).to_be_hidden()
     expect(tips.nth(1).locator(".toggletip-bubble")).to_be_visible()
 
