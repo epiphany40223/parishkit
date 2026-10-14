@@ -25,7 +25,7 @@ from datetime import timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from django.db import connection
+from django.db import DatabaseError, OperationalError, connection
 
 from parishkit.stewardship.storage import StorageInvariantError
 
@@ -308,8 +308,35 @@ def read_comparison(guard, campaign_id, *, day=None):
     The caller owns authorization and the campaign read guard ``guard``.
     Raises ``DayOutOfRange`` for a ``day`` outside 1 to the comparison day,
     and ``StorageInvariantError`` when the live figures disagree with their
-    facts.
+    facts. A database error is logged (``log_read_failure``) and raised; the
+    page and ``pk-admin report comparison`` answer it as unavailable.
     """
+    try:
+        return _read_comparison(guard, campaign_id, day)
+    except DatabaseError as error:
+        log_read_failure(error)
+        raise
+
+
+def log_read_failure(error):
+    """Record a database error that every retry of the read would repeat.
+
+    The callers answer a database error with their 503 page or exit 3
+    (retry) and log nothing, which hid #1286's unknown time zone. A
+    connection loss or the read guard's own cancellation (an
+    ``OperationalError``) passes on a retry, and the guard logs its own
+    timeout, so only the other errors (a refusal in the definer function, an
+    invalid value) get a ``report_shaping_failed`` line with their category
+    and class, never their text.
+    """
+    from parishkit.stewardship.observability import Event, emit_failure
+
+    if not isinstance(error, OperationalError):
+        emit_failure(error, event=Event.REPORT_SHAPING_FAILED, name_class=True)
+
+
+def _read_comparison(guard, campaign_id, day):
+    """``read_comparison``'s read, inside the caller's guard."""
     from parishkit.stewardship.campaigns.models import Campaign
 
     campaign = Campaign.objects.select_related("active_configuration").get(

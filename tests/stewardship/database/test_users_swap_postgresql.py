@@ -354,6 +354,10 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # the report selections 0056 and 0064 create, so once those files (and 0092's
 # and 0093's) install again with their older bodies, ``CLOSURE_REPLACED``
 # runs 0094's file again.
+# 0095 (#1286) creates nothing: it replaces 0072's campaign comparison
+# function in place, so once 0067's file (``CLOSURE_CREATED``) and 0072's
+# (``CLOSURE_ALTERED``) install it again with the raw stored zone,
+# ``CLOSURE_REPLACED`` runs 0095's file again.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -593,7 +597,8 @@ CLOSURE_ALTERED = {
 # check 0078's file brings back) with its own, which admits 'retry_refusal'.
 # 0094 (#1216) replaces 0056's and 0064's report selections; its file also
 # puts back the Ministry selections 0092's and 0093's files ran again
-# (``CLOSURE_RERUN``) with older bodies, as it runs after them.
+# (``CLOSURE_RERUN``) with older bodies, as it runs after them. 0095 (#1286)
+# replaces the comparison function 0067's and 0072's files bring back.
 CLOSURE_REPLACED = {
     "public.stewardship_debug_off_switch_guard_v1()": (
         ("stewardship_jobs", "0031_debug_allow"),
@@ -611,6 +616,10 @@ CLOSURE_REPLACED = {
             "(uuid,jsonb,boolean,bigint[],integer,text,integer,integer)",
         ),
         (("stewardship_reports", "0026_source_status_names"), NAME_NOT_RECORDED),
+    ),
+    "public.stewardship_campaign_comparison_v1(uuid,date,numeric[],uuid)": (
+        ("stewardship_reports", "0027_canonical_timezone"),
+        "stewardship_timezone_name_v1(selected.timezone)",
     ),
 }
 
