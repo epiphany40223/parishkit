@@ -14,9 +14,10 @@ the summary and exact-values table that stand in for the picture.
 - **Final results by year:** Families responded and annual pledges, one
   horizontal bar per year, the current campaign lighter and labelled
   "so far".
-- **Pledge distribution:** per year, two bars per pledge band: its share
-  of the year's pledging Families and of its dollars pledged, each
-  labelled with the band's exact Families or dollars.
+- **Pledge distribution:** per year, two 100% stacked bars: the share of
+  its pledging Families, and of its dollars pledged, in each pledge band,
+  each band labelled with its figures where it fits and every band's
+  figures in the legend.
 
 Everything here is a pure function of ``comparison.Comparison``: nothing
 reads the database or the clock. These charts appear only on the Admin
@@ -73,6 +74,21 @@ STYLES = {
 }
 # The comparison day's rule and every chart's own text.
 RULE = COLORS["muted"]
+# The pledge bands, lightest (smallest pledges) to darkest: lightness orders
+# them as well as hue, and white edges separate neighbouring segments. Each
+# has the ink its segment's label is drawn in, the one of ink and white with
+# at least 4.5:1 contrast on it (WCAG AA for the 11-pixel labels); the
+# fifth band is a shade darker than an even step so white reaches 4.5:1.
+BAND_COLORS = (
+    ("#bfe0d9", COLORS["ink"]),
+    ("#a1d1c7", COLORS["ink"]),
+    ("#7ebfb2", COLORS["ink"]),
+    ("#55a898", COLORS["ink"]),
+    ("#2b8273", "#ffffff"),
+    ("#1d7667", "#ffffff"),
+    ("#115e56", "#ffffff"),
+    ("#0a3f3a", "#ffffff"),
+)
 # Theme tokens for the chart's own text, so axes and legends read with the
 # page's contrast rather than Vega's light grey defaults.
 CONFIG = {
@@ -929,38 +945,40 @@ def short_band_label(band, edges):
     return f"${whole(edges[band - 2])}–{whole(edges[band - 1])}"
 
 
-# Each year's chart: per band, one bar of its share of the year's pledging
-# Families and one of its share of the year's total pledged, each labelled
-# with its exact value (#1221). The Families bar is the accent color, the
-# dollars bar gold; their labels tell them apart without color too, since
-# only the dollars carry a dollar sign.
-DISTRIBUTIONS = (
-    ("families", "Share of Families", COLORS["accent"], "#ffffff"),
-    ("dollars", "Share of total pledged", COLORS["gold"], COLORS["ink"]),
-)
-
-
-def share_top(largest):
-    """The share axis's end: the largest share rounded up to a tenth.
-
-    A band rarely holds more than half of a year, so a fixed 0–100% axis
-    would leave most bars short and their labels crowded at the left.
-    """
-    return min(1.0, max(0.1, math.ceil(largest * 10 - 1e-9) / 10))
+# Each year's chart: one 100% stacked bar of its pledging Families by band,
+# and one of its dollars pledged, so the two shares sit side by side (the
+# Administrator's preferred banded style, #1221).
+DISTRIBUTIONS = (("families", "Families"), ("dollars", "Dollars pledged"))
+# Joins a band's name and its two figures in its legend key, which the
+# legend splits into three lines: a line each, rather than one, keeps the
+# legend narrow enough for a phone-width plot.
+KEY_BREAK = " — "
+# A segment's label is two lines of the 11-pixel label font, its value over
+# its share; this much width per character (generous) plus a little padding
+# is the room the segment needs before the label is drawn on it.
+SEGMENT_CHAR = 6.6
+SEGMENT_PAD = 6
 
 
 def distribution_chart(year, edges):
-    """One year's pledge bands as grouped horizontal bars, or None.
+    """One year's pledge bands as two 100% stacked bars, or None.
 
-    Each band, from the smallest, has two bars: its share of the year's
-    pledging Families and its share of the year's total pledged, labelled
-    with the band's Families and dollars (#1221). The page shows one year's
-    chart at a time, chosen by the Pledge distribution section's year
-    selector (campaign-history spec, "Page layout"), so the chart is per
-    year; its key names the year so each one's elements are distinct. The
-    band table under it lists every figure, so the chart has no separate
-    exact-values table on the page. A year with no bands to draw (a
-    reason, an older band set or no pledging Family) has none.
+    The bars are the share of the year's pledging Families, and of its
+    dollars pledged, in each band, from the smallest. Each band's segment
+    is labelled with its Families or dollars over its share when the
+    segment is wide enough at the width the chart is drawn (a Vega test
+    against the ``width`` signal, so a phone draws fewer labels than a
+    laptop and none overlaps); every band's legend entry has its figures
+    for both bars, so each value is in the chart at any width (#1266). The
+    tooltips and each segment's accessible name carry the same figures.
+
+    The page shows one year's chart at a time, chosen by the Pledge
+    distribution section's year selector (campaign-history spec, "Page
+    layout"), so the chart is per year; its key names the year so each
+    one's elements are distinct. The band table under it lists every
+    figure, so the page shows no exact-values table of the chart's own. A
+    year with no bands to draw (a reason, an older band set or no pledging
+    Family) has none.
     """
     found = year.distribution
     if found is None or found.reason is not None:
@@ -968,52 +986,82 @@ def distribution_chart(year, edges):
     if not (found.pledging and found.bands):
         return None
     name = short_label(year)
-    labels = [short_band_label(band, edges) for band in range(1, len(edges) + 2)]
+    count = len(edges) + 1
+    labels = [short_band_label(band, edges) for band in range(1, count + 1)]
     by_band = {band.band: band for band in found.bands}
-    raw = []
-    for band in range(1, len(edges) + 2):
+    figures = []
+    for band in range(1, count + 1):
         entry = by_band.get(band)
         families = entry.families if entry else 0
         total = entry.total if entry else Decimal(0)
-        for key, measure, _, ink in DISTRIBUTIONS:
-            part, whole, shown = (
-                (families, found.pledging, number(families))
-                if key == "families"
-                else (total, found.total, money_text(total))
+        figures.append(
+            {
+                "families": (
+                    number(families),
+                    share_text(families, found.pledging),
+                    families / found.pledging,
+                ),
+                "dollars": (
+                    money_text(total),
+                    share_text(total, found.total),
+                    float(total) / float(found.total) if found.total else 0.0,
+                ),
+            }
+        )
+    # Each band's legend key: its name, then its Families and its dollars.
+    keys = []
+    for band, (label, f) in enumerate(zip(labels, figures, strict=True), start=1):
+        entry = by_band.get(band)
+        noun = "Family" if entry and entry.families == 1 else "Families"
+        keys.append(
+            KEY_BREAK.join(
+                (
+                    label,
+                    f"{f['families'][0]} {noun} ({f['families'][1]})",
+                    f"{f['dollars'][0]} ({f['dollars'][1]})",
+                )
             )
-            raw.append(
+        )
+    rows = []
+    for key, bar in DISTRIBUTIONS:
+        for band in range(1, count + 1):
+            shown, percent, part = figures[band - 1][key]
+            of = "pledging Families" if key == "families" else "the total pledged"
+            rows.append(
                 {
-                    "label": labels[band - 1],
+                    "name": bar,
+                    "band": band,
+                    "key": keys[band - 1],
                     "range": band_label(band, edges),
-                    "measure": measure,
-                    "share": float(part) / float(whole) if whole else 0.0,
-                    "percent": share_text(part, whole),
-                    "shown": shown,
-                    "on_bar": ink,
+                    "share": part,
+                    "shown": percent,
+                    # What the bar's share is of: the band's Families on
+                    # the Families bar, its dollars on the dollars bar.
+                    "amount": f"{shown} Families"
+                    if key == "families"
+                    else f"{shown} pledged",
+                    "lines": [shown, percent],
+                    "need": round(
+                        SEGMENT_PAD + SEGMENT_CHAR * max(len(shown), len(percent))
+                    ),
+                    "ink": BAND_COLORS[band - 1][1],
+                    "description": (
+                        f"{bar}, {band_label(band, edges)}: {shown}, {percent} of {of}"
+                    ),
                 }
             )
-    top = share_top(max(row["share"] for row in raw))
-    rows = []
-    for row in raw:
-        # As the final-results bars: a long bar carries its label inside
-        # its end, a short one just after it, so no label runs past the plot.
-        inside = row["share"] >= INSIDE * top
-        rows.append(
-            row | {"inside": inside, "ink": row["on_bar"] if inside else COLORS["ink"]}
-        )
-    measures = [measure for _, measure, _, _ in DISTRIBUTIONS]
     title = f"Pledge bands, {name}"
     summary = (
-        f"{title}: for each of {number(len(labels))} bands from the smallest "
-        "pledges, its share of the pledging Families and of the total "
-        "pledged, each bar labelled with the band's Families or dollars. The "
-        "table below lists every band's figures."
+        f"{title}: the share of pledging Families and of dollars pledged in "
+        f"each of {number(count)} bands from the smallest pledges. Each band "
+        "is labelled with its Families or dollars where it fits, the legend "
+        "gives every band's figures, and the table below lists them all."
     )
     tooltip = [
         {"field": "range", "title": "Annual pledge"},
-        {"field": "measure", "title": "Bar"},
-        {"field": "percent", "title": "Share"},
-        {"field": "shown", "title": "In this band"},
+        {"field": "name", "title": "Share of"},
+        {"field": "shown", "title": "Share"},
+        {"field": "amount", "title": "In this band"},
     ]
     spec = {
         "$schema": VEGA_LITE_SCHEMA,
@@ -1021,71 +1069,90 @@ def distribution_chart(year, edges):
         "config": CONFIG,
         "autosize": AUTOSIZE,
         "width": WIDTH,
-        "height": {"step": 36},
+        # Tall enough for a segment's two-line label.
+        "height": {"step": 40},
         "data": {"values": rows},
+        # Each segment's ends, stacked from the smallest band, so the
+        # labels can sit at a segment's middle and test its width.
+        "transform": [
+            {
+                "stack": "share",
+                "groupby": ["name"],
+                "sort": [{"field": "band"}],
+                "as": ["x0", "x1"],
+            },
+            {"calculate": "(datum.x0 + datum.x1) / 2", "as": "middle"},
+        ],
         "encoding": {
             "y": {
-                "field": "label",
+                "field": "name",
                 "type": "nominal",
-                "sort": labels,
+                "sort": [bar for _, bar in DISTRIBUTIONS],
                 "title": None,
                 "axis": {"labelLimit": 120},
-            },
-            "yOffset": {"field": "measure", "type": "nominal", "sort": measures},
-            "x": {
-                "field": "share",
-                "type": "quantitative",
-                "title": "Share of the year",
-                "scale": {"domain": [0, top], "nice": False},
-                "axis": {
-                    "format": ".0%",
-                    "tickCount": 5,
-                    "labelOverlap": True,
-                    **VALUE_AXIS_TITLE,
-                },
             },
         },
         "layer": [
             {
-                "mark": {"type": "bar"},
+                "mark": {"type": "bar", "stroke": "#ffffff", "strokeWidth": 1},
                 "encoding": {
+                    "x": {
+                        "field": "x0",
+                        "type": "quantitative",
+                        "title": "Share",
+                        "scale": {"domain": [0, 1], "nice": False},
+                        "axis": {
+                            "format": ".0%",
+                            "tickCount": 5,
+                            "labelOverlap": True,
+                            **VALUE_AXIS_TITLE,
+                        },
+                    },
+                    "x2": {"field": "x1"},
                     "color": {
-                        "field": "measure",
+                        "field": "key",
                         "type": "nominal",
-                        "title": None,
-                        "sort": measures,
+                        "title": "Annual pledge",
+                        "sort": keys,
                         "scale": {
-                            "domain": measures,
-                            "range": [color for _, _, color, _ in DISTRIBUTIONS],
+                            "domain": keys,
+                            "range": [color for color, _ in BAND_COLORS[:count]],
                         },
                         "legend": {
                             "orient": "top",
-                            "columns": legend_columns(170),
-                            "labelLimit": 160,
+                            "columns": legend_columns(140),
+                            "labelLimit": 130,
+                            "labelExpr": f"split(datum.label, '{KEY_BREAK}')",
                         },
                     },
+                    "description": {"field": "description"},
                     "tooltip": tooltip,
                 },
             },
-            *(
-                {
-                    "transform": [{"filter": {"field": "inside", "equal": inside}}],
-                    "mark": {
-                        "type": "text",
-                        "align": "right" if inside else "left",
-                        "baseline": "middle",
-                        "dx": -4 if inside else 4,
-                        "fontSize": LABEL_FONT,
+            {
+                # The segment's label, drawn only when the segment is wide
+                # enough for it at the drawn width; its values are in the
+                # segment's name, so assistive technology skips it.
+                "mark": {
+                    "type": "text",
+                    "baseline": "middle",
+                    "lineHeight": LABEL_FONT + 2,
+                    "fontSize": LABEL_FONT,
+                    "aria": False,
+                },
+                "encoding": {
+                    "x": {"field": "middle", "type": "quantitative"},
+                    "text": {
+                        "condition": {
+                            "test": "(datum.x1 - datum.x0) * width >= datum.need",
+                            "field": "lines",
+                        },
+                        "value": "",
                     },
-                    "encoding": {
-                        "text": {"field": "shown"},
-                        "color": {"field": "ink", "type": "nominal", "scale": None},
-                        "tooltip": tooltip,
-                    },
-                }
-                for inside in (True, False)
-                if any(row["inside"] is inside for row in rows)
-            ),
+                    "color": {"field": "ink", "type": "nominal", "scale": None},
+                    "tooltip": tooltip,
+                },
+            },
         ],
     }
     # The record a rendering without the page's band table would show; the
@@ -1093,10 +1160,8 @@ def distribution_chart(year, edges):
     table = ChartTable(
         ("Annual pledge", "Families", "Total pledged"),
         tuple(
-            (band_label(band, edges), families["shown"], dollars["shown"])
-            for band, (families, dollars) in enumerate(
-                zip(raw[::2], raw[1::2], strict=True), start=1
-            )
+            (band_label(band, edges), f["families"][0], f["dollars"][0])
+            for band, f in enumerate(figures, start=1)
         ),
     )
     return ChartDocument(

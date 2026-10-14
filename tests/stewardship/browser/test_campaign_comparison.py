@@ -79,6 +79,26 @@ COLLISIONS = """() => {
   return found;
 }"""
 
+# Each pledge bands chart's drawn segment labels (#1266): for each, its
+# lines and the pixels it has to spare inside its own segment on the left
+# and on the right (negative when it spills out). A label is drawn only
+# where its segment is wide enough, so none should spill.
+BAND_LABELS = """() => [...document.querySelectorAll(
+  "[data-chart^='comparison-bands'] [data-chart-view] svg")].flatMap((svg) => {
+    const segments = [...svg.querySelectorAll("g.mark-rect.role-mark path")]
+      .map((path) => path.getBoundingClientRect());
+    return [...svg.querySelectorAll("g.mark-text.role-mark text")]
+      .filter((text) => text.textContent.trim())
+      .map((text) => {
+        const box = text.getBoundingClientRect();
+        const middle = [(box.left + box.right) / 2, (box.top + box.bottom) / 2];
+        const own = segments.find((r) => r.left <= middle[0] && middle[0] <= r.right
+          && r.top <= middle[1] && middle[1] <= r.bottom);
+        return [text.textContent, own ? box.left - own.left : -1,
+                own ? own.right - box.right : -1];
+      });
+  })"""
+
 
 def expect(locator):
     """Load the optional browser assertion library only after explicit opt-in."""
@@ -114,6 +134,8 @@ def test_page_is_accessible_and_fits(page, component_origin, axe_source, path, w
         # The published infographic's lessons: at phone width no label is
         # drawn over another, and no chart or label runs past its panel.
         assert page.evaluate(COLLISIONS) == []
+        labels = page.evaluate(BAND_LABELS)
+        assert all(left >= 0 and right >= 0 for _, left, right in labels), labels
         assert axe_violations(page, axe_source) == []
     assert_clean(page, errors)
 
@@ -145,7 +167,11 @@ def test_dark_mode_keeps_the_light_theme_and_its_contrast(
 
 
 def test_charts_show_each_year_and_their_exact_values(page, component_origin):
-    """The lines, end labels, day rule, tooltips and tables of the charts."""
+    """The lines, end labels, day rule, tooltips and tables of the charts.
+
+    The day-by-day charts keep their Exact values tables; the final results
+    and pledge bands draw their figures in the chart instead (#1266).
+    """
     errors = watch(page)
     page.goto(component_origin + "/campaign-comparison")
     expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(DRAWN)
@@ -208,9 +234,14 @@ def test_charts_show_each_year_and_their_exact_values(page, component_origin):
         "—",
         "880",
     ]
-    # The final results mark this campaign's bar as so far.
+    # The final results mark this campaign's bar as so far, and each bar
+    # carries its figure, so no Exact values table follows (#1266).
     finals = page.locator("[data-chart='comparison-final-families-spec']")
-    assert "2027 (so far)" in finals.locator("svg text").all_text_contents()
+    finals_text = finals.locator("svg text").all_text_contents()
+    assert "2027 (so far)" in finals_text and "880" in finals_text
+    expect(
+        page.locator("[data-chart^='comparison-final-'] + .chart-table")
+    ).to_have_count(0)
     # Pointing beside a short bar, on its year's row, still reads its value.
     finals.scroll_into_view_if_needed()
     row = finals.locator("svg g.mark-rect.role-mark").first.locator("path").last
@@ -219,12 +250,20 @@ def test_charts_show_each_year_and_their_exact_values(page, component_origin):
     expect(tooltip).to_be_visible()
     expect(tooltip).to_contain_text("2027 (so far)")
     page.mouse.move(0, 0)
-    # This campaign's pledge bands: each band's bars carry its exact Families
-    # and dollars (band 1: 30 Families, $9,000.00), and no exact-values table
-    # follows the chart, since the band table under it lists them (#1221).
+    # This campaign's pledge bands, two 100% stacked bars (#1221): a wide
+    # band's segment carries its Families or dollars over its share (band
+    # 1: 30 Families, 13%), every band's legend entry has both bars'
+    # figures (band 1's $9,000.00 is too narrow a segment to label at this
+    # width), and each segment's name says them; no exact-values table
+    # follows the chart, since the band table under it lists them (#1266).
     bands = page.locator("[data-chart='comparison-bands-spec']")
-    texts = bands.locator("svg text").all_text_contents()
-    assert "30" in texts and "$9,000.00" in texts
+    lines = bands.locator("svg tspan").all_text_contents()
+    assert "30" in lines and "13%" in lines
+    assert "30 Families (13%)" in lines and "$9,000.00 (4.3%)" in lines
+    segment = bands.locator("svg g.mark-rect.role-mark path").first
+    assert segment.get_attribute("aria-label") == (
+        "Families, Under $250: 30, 13% of pledging Families"
+    )
     expect(page.locator("#bands-current .chart-table")).to_have_count(0)
     assert_clean(page, errors)
 

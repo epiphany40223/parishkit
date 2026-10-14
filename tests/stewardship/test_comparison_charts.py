@@ -493,65 +493,87 @@ def test_final_bars_mark_the_current_campaign_so_far_and_lighter():
 # ---------------------------------------------------- pledge distribution
 
 
-def test_band_charts_label_each_bands_families_and_dollars():
-    """Per band, its share of Families and of dollars, labelled exactly.
+def contrast(one, two):
+    """The WCAG contrast ratio of two ``#rrggbb`` colours."""
+
+    def luminance(color):
+        """Relative luminance, per WCAG 2."""
+        channels = [int(color[i : i + 2], 16) / 255 for i in (1, 3, 5)]
+        r, g, b = (
+            c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+            for c in channels
+        )
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+    light, dark = sorted((luminance(one), luminance(two)), reverse=True)
+    return (light + 0.05) / (dark + 0.05)
+
+
+def test_band_charts_stack_each_years_shares_and_label_every_band():
+    """Per year, its shares of Families and of dollars by band, each 100%.
 
     One chart per year, shown one at a time by the year selector (#1221), so
-    each key names its year. Each bar carries its band's Families or dollars
-    (no separate exact-values table on the page), inside a long bar's end
-    and after a short one.
+    each key names its year. Each segment's label is its Families or
+    dollars over its share, drawn only where the segment is wide enough;
+    each band's legend entry has both bars' figures; and each segment's
+    accessible name has them too (#1266).
     """
     built = comparison()
     current = charts.distribution_chart(built.current, BAND_EDGES)
-    # The current campaign's bands too: this chart stays in the portal.
+    assert current is not None
     assert current.key == "comparison-bands"
     assert current.title == "Pledge bands, 2055 (so far)"
-    rows = current.spec["data"]["values"]
-    measures = ["Share of Families", "Share of total pledged"]
-    assert [row["measure"] for row in rows[:2]] == measures
+    spec = current.spec
+    rows = spec["data"]["values"]
     assert len(rows) == 2 * (len(BAND_EDGES) + 1)
-    for measure in measures:
-        shares = [row["share"] for row in rows if row["measure"] == measure]
+    for name in ("Families", "Dollars pledged"):
+        shares = [row["share"] for row in rows if row["name"] == name]
         assert sum(shares) == pytest.approx(1)
-    # Band 1: 3 of 7 Families, $300.00 of $1,100.00; band 2: 4 and $800.00.
-    labelled = [(row["shown"], row["percent"]) for row in rows[:4]]
-    assert labelled == [
-        ("3", "42.9%"),
-        ("$300.00", "27.3%"),
-        ("4", "57.1%"),
-        ("$800.00", "72.7%"),
-    ]
-    # The axis ends at the largest share rounded up to a tenth (80%), and a
-    # bar of at least 55% of it (44%) carries its label inside: white on the
-    # accent bar, ink on the gold one; a shorter bar's label is ink after it.
-    assert current.spec["encoding"]["x"]["scale"]["domain"] == [0, 0.8]
-    assert [(row["inside"], row["ink"]) for row in rows[:4]] == [
-        (False, COLORS["ink"]),
-        (False, COLORS["ink"]),
-        (True, "#ffffff"),
-        (True, COLORS["ink"]),
-    ]
-    assert current.spec["encoding"]["yOffset"]["sort"] == measures
-    assert [layer["mark"]["type"] for layer in current.spec["layer"]] == [
-        "bar",
-        "text",
-        "text",
-    ]
+        assert len(shares) == len(BAND_EDGES) + 1
+    families = [row for row in rows if row["name"] == "Families"]
+    dollars = [row for row in rows if row["name"] == "Dollars pledged"]
+    # Band 1: 3 of 7 Families, $300.00 of $1,100.00.
+    assert families[0]["lines"] == ["3", "42.9%"]
+    assert dollars[0]["lines"] == ["$300.00", "27.3%"]
+    assert families[0]["amount"] == "3 Families"
+    assert dollars[0]["amount"] == "$300.00 pledged"
+    assert dollars[0]["description"] == (
+        "Dollars pledged, Under $250: $300.00, 27.3% of the total pledged"
+    )
+    assert families[0]["key"] == "Under $250 — 3 Families (42.9%) — $300.00 (27.3%)"
+    # Segments stack from the smallest band; a label is drawn only where
+    # its segment has room for it at the drawn width.
+    stack = spec["transform"][0]
+    assert stack["stack"] == "share" and stack["sort"] == [{"field": "band"}]
+    bar, label = spec["layer"]
+    assert bar["encoding"]["description"] == {"field": "description"}
+    color = bar["encoding"]["color"]
+    assert color["scale"]["range"] == [band for band, _ in charts.BAND_COLORS]
+    assert color["legend"]["labelExpr"] == "split(datum.label, ' — ')"
+    assert label["mark"]["aria"] is False
+    assert label["encoding"]["text"] == {
+        "condition": {
+            "test": "(datum.x1 - datum.x0) * width >= datum.need",
+            "field": "lines",
+        },
+        "value": "",
+    }
+    assert families[0]["need"] == round(
+        charts.SEGMENT_PAD + charts.SEGMENT_CHAR * len("42.9%")
+    )
     oldest = next(year for year in built.imported if year.year == 2052)
     found = charts.distribution_chart(oldest, BAND_EDGES)
     assert found.key == "comparison-bands-2052"
-    # Band 1 of 2052: one Family, $100 of $1,900.
+    # Band 1 of 2052: one of ten Families, $100 of $1,900.
     assert found.table.rows[0] == ("Under $250", "1", "$100.00")
-    assert found.spec["data"]["values"][1]["percent"] == "5.3%"
+    assert found.spec["data"]["values"][0]["key"].split(" — ")[1] == ("1 Family (10%)")
     assert found.notes == (charts.NOMINAL_DOLLARS,)
 
 
-def test_share_axis_ends_at_a_tenth_above_the_largest_share():
-    """Rounded up to a tenth, from 10% to 100%; an exact tenth stays."""
-    assert charts.share_top(0.72) == pytest.approx(0.8)
-    assert charts.share_top(0.7) == pytest.approx(0.7)
-    assert charts.share_top(0.01) == pytest.approx(0.1)
-    assert charts.share_top(1.0) == pytest.approx(1.0)
+def test_band_labels_have_aa_contrast_on_their_band():
+    """Each band's label ink has at least 4.5:1 contrast on its colour."""
+    for band, ink in charts.BAND_COLORS:
+        assert contrast(band, ink) >= 4.5, band
 
 
 def test_band_charts_leave_out_a_year_with_older_bands():

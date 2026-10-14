@@ -989,16 +989,25 @@ first, explanation in the About this page panel.
    pledges, one bar per imported year plus the current campaign drawn
    lighter and labeled "so far". Pointing anywhere on a year's row, not
    only at its bar, shows the year, whether its figures are final, partial
-   or so far, and the value, so a short bar still reads.
+   or so far, and the value, so a short bar still reads. Each bar carries
+   its value, so these charts have no exact-values table
+   ([chart engine](../reports/spec.md#chart-engine),
+   [#1266](https://github.com/epiphany40223/parishkit/issues/1266)).
 5. **Pledge distribution:** one year at a time (Administrator feedback,
    2026-10-13, [#1221](https://github.com/epiphany40223/parishkit/issues/1221)).
    A labelled Year selector lists the current campaign, then each
    imported year newest first, and starts on the current campaign (on the
    newest imported year when the current campaign has no bands). The
-   chosen year's chart has two bars per band, ordered from the smallest
-   band: the band's share of the year's pledging Families and of its total
-   pledged, each labelled with the band's exact Families or dollars, so
-   the chart has no exact-values table of its own. Under it, the band
+   chosen year's chart is two 100% stacked bars, one of its pledging
+   Families by band and one of its total pledged by band, both ordered
+   from the smallest band (the banded style the Administrator chose,
+   2026-10-13). Each band's segment is labelled with its Families or
+   dollars over its share wherever the segment is wide enough at the drawn
+   width, and each band's legend entry gives both its Families and its
+   dollars with their shares, so every figure is in the chart at any width
+   and it has no exact-values table of its own
+   ([chart engine](../reports/spec.md#chart-engine),
+   [#1266](https://github.com/epiphany40223/parishkit/issues/1266)). Under it, the band
    table (Families, share of Families, total, share of total) with the
    quartile line (first quartile, median, third quartile, mean) in its
    caption lists every figure as text. Choosing another year swaps the
@@ -1230,7 +1239,8 @@ committed.
   `day` value range, `no-store`, the audit events, the chart
   accessibility checks of the chart engine in a browser test, and (also a
   browser test) one pledge distribution chart and table whose year
-  selector swaps them in place, a year with an older band set showing its
+  selector swaps them in place, its band labels and legend fitting with no
+  overlap at phone and laptop widths, a year with an older band set showing its
   note, the data notes starting closed and opening on request,
   the shared notes shown once and each year's own after them.
 - **Downloads and digest:** the three formats carry the same columns and
