@@ -4458,7 +4458,7 @@
   const isoDay = (day) => day.toISOString().slice(0, 10);
   const monthDays = (day) => new Date(Date.UTC(day.getUTCFullYear(),
     day.getUTCMonth() + 1, 0)).getUTCDate();
-  // Monday is 0, as in schedule_forms.WEEKDAYS and Python's date.weekday().
+  // Monday is 0, as in wall_clock.WEEKDAYS and Python's date.weekday().
   const mondayFirst = (day) => (day.getUTCDay() + 6) % 7;
   const expandRecurrence = (rule) => {
     const start = civilDay(rule?.start);

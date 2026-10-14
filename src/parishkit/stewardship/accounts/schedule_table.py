@@ -23,9 +23,10 @@ from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.campaigns.schedule_evaluation import SchedulePlan
+from parishkit.stewardship.wall_clock import WEEKDAYS
 from parishkit.stewardship.web.tables import Sorting
 
-from .schedule_forms import WEEKDAYS, schedule_labels
+from .schedule_forms import schedule_labels
 
 DIGESTS = frozenset({"daily_digest", "weekly_digest"})
 STATUS_LABELS = {
@@ -183,7 +184,7 @@ def schedule_rows(previous, campaign, summary, now, names=None):
                 email=(names or {}).get(values["template_version"], values["subject"]),
                 due=plan.one_time_due,
                 next_due=slot.due_at if slot else None,
-                weekday=str(_(WEEKDAYS[values["weekday"]]))
+                weekday=str(WEEKDAYS[values["weekday"]])
                 if values["weekday"] is not None
                 else None,
                 delivered=counts.get("delivered", 0),
