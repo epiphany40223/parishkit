@@ -566,7 +566,8 @@ Notes on the groups:
 - Each group's root URL (`/admin/campaign/`, `/admin/mail/`,
   `/admin/reports/`, `/admin/parish/`, `/admin/users/`, `/admin/system/`)
   redirects to the group's first entry available to the viewer, except
-  `/admin/reports/`, which keeps its old meaning: Participation, or Ministry
+  `/admin/reports/`, which keeps its old meaning: Participation (even with
+  no current campaign, when Participation's greyed page says why), or Ministry
   requests for a viewer who may not open Participation, and `/admin/users/`,
   which is the Users page itself. A group root with no entry available to
   the viewer redirects to Home.

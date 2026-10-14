@@ -938,7 +938,13 @@ reached page but Home has a linked parent crumb or a "Return to" link), and
 that no `href`, `action`, `src` or `data-*-url` names the current campaign.
 Held emails, linked from Home only after a restore, is proven by its own
 suite; a `PENDING` set for pages awaiting #521 starts empty and may only
-shrink.
+shrink. The same checks also run with no current campaign, as a Ministry
+leader (who reaches Ministry requests and Ministry follow-up), and on a live
+campaign in Production mode with every module and a configured Ministry, so
+Financial stewardship, Pause and resume mail, Limitations and the Ministry
+pages are crawled too. With no current campaign `/admin/reports/` now opens
+Participation, whose greyed page says why, instead of a page of its own that
+no link reached.
 ADM-12.06 (NAV-4) gives every Campaign setup and Mail and Family portal page
 its placement-table name in the registry, the browser title and the heading
 (Dates and mail schedules, Pause and resume mail, Family email history, Cancel

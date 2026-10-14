@@ -22,18 +22,19 @@ pytestmark = pytest.mark.django_db(transaction=True)
 def test_report_roots_show_no_archived_campaign(auth_service, google):
     """With no current campaign, the report roots say so (rule 10).
 
-    The reports root and Ministry requests never open the archived campaign;
-    Ministry requests, a greyed menu entry, says so in the menu's words
-    (#1128).
+    The reports root and Ministry requests never open the archived campaign:
+    the root opens Participation, and both, greyed menu entries, say so in
+    the menu's words (#1128).
     """
     setup(auth_service.store)
     browser, _ = signed_in()
     response = browser.get(reverse("admin:reports"))
-    assert response.status_code == 200
-    assert b"There is no current campaign report for you to view." in (response.content)
-    response = browser.get(reverse("admin:ministry_report"))
-    assert response.status_code == 409
-    assert response.json()["refusal"]["message"] == "No current campaign."
+    assert response.status_code == 302
+    assert response["Location"] == reverse("admin:participation")
+    for name in ("participation", "ministry_report"):
+        response = browser.get(reverse(f"admin:{name}"))
+        assert response.status_code == 409
+        assert response.json()["refusal"]["message"] == "No current campaign."
 
 
 @pytest.mark.parametrize("role", ["signed_out", "ministry_leader"])

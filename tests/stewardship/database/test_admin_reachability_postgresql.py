@@ -1,10 +1,12 @@
 """Reachability, way-back and no-UUID crawl of the Admin portal (ADM-12.20, NAV-17).
 
-Signs in as Administrator and as Staff, on a new Testing draft and on a
-campaign with a complete ParishSoft capture, and follows every GET link from
-Home, as a reader clicking through the portal would. It checks the
-admin-portal spec's navigation rules against the rendered pages, not only the
-registry (``tests/stewardship/test_admin_navigation.py`` covers the registry):
+Signs in as Administrator and as Staff (with no current campaign, on a new
+Testing draft, on a campaign with a complete ParishSoft capture, and on a
+live Production campaign with every module and a configured Ministry) and as
+a Ministry leader, and follows every GET link from Home, as a reader clicking
+through the portal would. It checks the admin-portal spec's navigation rules
+against the rendered pages, not only the registry
+(``tests/stewardship/test_admin_navigation.py`` covers the registry):
 
 - rule 1: every registered page that needs no route argument and that the
   role may open is reached by following links from Home;
@@ -33,13 +35,18 @@ from parishkit.stewardship.accounts.admin_navigation import (
     PAGES,
     route_parameters,
 )
+from parishkit.stewardship.campaigns.lifecycle import Action
 from parishkit.stewardship.campaigns.models import Campaign
+from parishkit.stewardship.source.models import SourceCurrent
 
+from ..campaign_factory import campaign, financial
 from ..policy_factory import address
 from .auth_builders import signed_in
-from .campaign_builders import add_draft, campaign_clock, change
+from .campaign_builders import add_draft, campaign_clock, change, command
+from .leader_builders import make_leader
 from .test_daily_digest_dispatch_postgresql import allocated
 from .test_daily_digest_planning_postgresql import INSTANT
+from .test_debug_production_banner_postgresql import force_mode
 from .test_family_mail_preparation_postgresql import family_mail  # noqa: F401
 from .test_hosted_files_postgresql import media  # noqa: F401
 from .test_report_workspace_postgresql import read
@@ -142,9 +149,20 @@ def _sign_in(store, google, role):
 
     Production runs on users, and the Users page refuses before the
     conversion, so the crawl converts first. Any role but Administrator is
-    reader@example.org, given its sign-in rule before the conversion.
+    reader@example.org, given its sign-in rule before the conversion; a
+    Ministry leader also leads Ministry 9 in the current campaign through a
+    ParishSoft role (#922).
+
+    The source pointer is put back as the migration seeds it: an earlier
+    transactional test's flush deletes that singleton row, and without it
+    pages that read the current source (Families the form cannot open)
+    refuse with 403 rather than answer "no ParishSoft data yet".
     """
-    if role != "administrator":
+    SourceCurrent.objects.get_or_create(singleton=True)
+    if role == "ministry_leader":
+        make_leader(store, Campaign.objects.get(), "reader@example.org")
+        google[0]["email"] = "reader@example.org"
+    elif role != "administrator":
         _add_reader(store, google, role)
     convert(store)
     browser, _ = signed_in()
@@ -270,7 +288,12 @@ def _check(browser, scenario):
     Returns the URL names reached, so a scenario can prove it rendered the
     pages it exists for.
     """
-    campaign = Campaign.objects.get().pk
+    # Every campaign's UUID, in both its dashed and its hex form.
+    campaigns = {
+        form
+        for pk in Campaign.objects.values_list("pk", flat=True)
+        for form in (str(pk), pk.hex)
+    }
     reached = _crawl(browser)
 
     failures = {(scenario, "reachable", name) for name in _rule_one(browser, reached)}
@@ -283,11 +306,7 @@ def _check(browser, scenario):
     assert pending - failures == set(), "now fixed: remove from PENDING"
 
     named = {
-        path: [
-            url
-            for url in page.urls
-            if str(campaign) in url.lower() or campaign.hex in url.lower()
-        ]
+        path: [url for url in page.urls if any(c in url.lower() for c in campaigns)]
         for path, (_name, page) in reached.items()
     }
     assert {path: urls for path, urls in named.items() if urls} == {}
@@ -325,3 +344,68 @@ def test_a_census_backed_campaign_is_navigable_without_naming_the_campaign(
         browser = _sign_in(family_mail.service.store, google, role)
         reached = _check(browser, f"census {role}")
     assert {"participation", "family_directory", "family_timeline"} <= reached
+
+
+@pytest.mark.parametrize("role", ROLES)
+def test_no_current_campaign_is_navigable(auth_service, google, media, role):  # noqa: F811
+    """A deployment before its first campaign: campaign pages are greyed out,
+    and every page that opens is still reached and has a way back."""
+    browser = _sign_in(auth_service.store, google, role)
+    reached = _check(browser, f"no campaign {role}")
+    assert "index" in reached and not {"campaign_settings", "participation"} & reached
+
+
+def test_a_ministry_leader_reaches_their_ministry_pages(auth_service, google, media):  # noqa: F811
+    """A ParishSoft leader of a configured Ministry reaches its pages, and no
+    Administrator page.
+
+    Rule 1 already fails for any parameterless page that answers the leader
+    200 but is not reached, so an exact reached set proves no other such
+    page opens for them, linked or typed.
+    """
+    store = auth_service.store
+    add_draft(store, store.active(), uuid4())
+    browser = _sign_in(store, google, "ministry_leader")
+    reached = _check(browser, "leader")
+    assert reached == {"index", "ministry_report", "ministry_followup"}
+
+
+def _go_live_in_production(store):
+    """A live campaign with every module and Ministry 9, in Production mode.
+
+    The campaign is activated through its lifecycle command. Only a whole
+    go-live may switch the deployment to Production, so the mode is set
+    directly, as the debug-banner test does; every request runs guarded.
+    No Production confirmation is stored, so Production activation (which
+    the menu links in this state) and Cancel go-live answer "unavailable"
+    and are not crawled; test_withdrawal_postgresql.py opens both after a
+    real confirmation.
+    """
+    row = campaign(
+        modules=["census", "financial", "ministry"],
+        financial=financial(),
+        ministry_duids=[9],
+    )
+    assert add_draft(store, store.active(), uuid4(), row)[0].state == "applied"
+    draft = Campaign.objects.get()
+    # A leader of Ministry 9 gives the Ministry pages someone to list.
+    make_leader(store, draft, "leader@example.org")
+    command(draft, uuid4(), Action.ACTIVATE)
+    force_mode("production")
+
+
+@pytest.mark.parametrize("role", ROLES)
+def test_a_live_production_campaign_with_every_module_is_navigable(
+    auth_service,
+    google,
+    media,  # noqa: F811
+    role,
+):
+    """The pages the other states grey out open here and are crawled too:
+    Financial stewardship, Pause and resume mail and the Ministry pages."""
+    store = auth_service.store
+    _go_live_in_production(store)
+    browser = _sign_in(store, google, role)
+    reached = _check(browser, f"production {role}")
+    assert {"financial_report", "ministry_report", "limitations_report"} <= reached
+    assert ("delivery_control" in reached) == (role == "administrator")
