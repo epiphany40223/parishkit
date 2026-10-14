@@ -69,34 +69,40 @@ def document_metadata():
     )
 
 
-def document(*, count=1, history=True):
-    """Use hostile literal values and enough text to cross a PDF page boundary."""
+def document(*, count=1, history=True, **changes):
+    """Use hostile literal values and enough text to cross a PDF page boundary.
+
+    ``changes`` replace the item's values.
+    """
     instant = "2026-10-02T12:00:00+00:00"
-    item = dict(
-        id="item",
-        version=3,
-        family_name="=Sample <Family>",
-        family_duid=12345,
-        submitted_at=instant,
-        disposition="current_actionable",
-        replacement_id=None,
-        text="First line\n\n" + "x" * 4200 + "\nFINAL TEXT MARKER",
-        follow_up_needed=True,
-        followed_up_at=instant,
-        completed_by="staff@example.org",
-        notes="+Literal notes",
-        previously_reported=True,
-        correction_resolved=False,
-        history=[
-            dict(
-                version=2,
-                follow_up_needed=True,
-                followed_up_at=None,
-                notes="@Older notes",
-                created_at=instant,
-                actor_label="staff@example.org",
-            )
-        ],
+    item = (
+        dict(
+            id="item",
+            version=3,
+            family_name="=Sample <Family>",
+            family_duid=12345,
+            submitted_at=instant,
+            disposition="current_actionable",
+            replacement_id=None,
+            text="First line\n\n" + "x" * 4200 + "\nFINAL TEXT MARKER",
+            follow_up_needed=True,
+            followed_up_at=instant,
+            completed_by="staff@example.org",
+            notes="+Literal notes",
+            previously_reported=True,
+            correction_resolved=False,
+            history=[
+                dict(
+                    version=2,
+                    follow_up_needed=True,
+                    followed_up_at=None,
+                    notes="@Older notes",
+                    created_at=instant,
+                    actor_label="staff@example.org",
+                )
+            ],
+        )
+        | changes
     )
     return information_document(
         dict(
@@ -213,14 +219,16 @@ def test_xlsx_values_are_literal_complete_and_structured():
         assert "item" not in [cell.value for cell in sheet[2]]
         # The earlier workflow row (the one with a Changed at time) repeats
         # its item's identity.
-        assert sheet["K2"].value is None and sheet["K3"].value is not None
+        # ParishSoft status (#1216) is column B, so the rest move one right.
+        assert sheet["B2"].value is None
+        assert sheet["L2"].value is None and sheet["L3"].value is not None
         assert all(sheet[f"{c}3"].value == sheet[f"{c}2"].value for c in "ABCF")
         assert sheet["A2"].value == "=Sample <Family>" and sheet["A2"].data_type == "s"
-        assert sheet["F2"].value.endswith("FINAL TEXT MARKER")
-        assert sheet["J3"].value == "@Older notes" and sheet["J3"].data_type == "s"
+        assert sheet["G2"].value.endswith("FINAL TEXT MARKER")
+        assert sheet["K3"].value == "@Older notes" and sheet["K3"].data_type == "s"
         # A Family-keyed sheet keeps its Family column in view too.
         assert sheet.freeze_panes == "B2" and sheet.print_title_rows == "$1:$1"
-        assert sheet.auto_filter.ref == "A1:N3"
+        assert sheet.auto_filter.ref == "A1:O3"
         # Native date-time cells in Excel's locale-aware built-in format 22.
         requested = book["Report information"]["B7"]
         assert requested.value == datetime(2026, 10, 2, 9, 0)
@@ -271,6 +279,25 @@ def test_empty_reports_still_include_source_and_request_provenance():
     assert report.item_count == 0 and not report.rows
 
 
+@pytest.mark.parametrize(
+    ("changes", "cells"),
+    [
+        ({}, ("=Sample <Family>", "")),
+        ({"active": True}, ("=Sample <Family>", "")),
+        ({"active": False}, ("=Sample <Family>", "Inactive in ParishSoft")),
+        ({"family_name": None, "active": None}, ("", "Not in ParishSoft")),
+    ],
+)
+def test_parishsoft_status_follows_the_family(changes, cells):
+    """The page's badge is a column of its own, on every row of an item (#1216).
+
+    A capture made before the selection returned ``active`` reads as active.
+    """
+    report = document(**changes)
+    assert HEADINGS[:3] == ("Family", "ParishSoft status", "Family DUID")
+    assert {row[:2] for row in report.rows} == {cells}
+
+
 def test_format_exclusions_have_lossless_visible_notation():
     """XML controls and unavailable glyphs cannot poison an immutable export."""
     value = "Éλληνικά 中文 🙂\x0b\x1b\ufffe literal \\u000b"
@@ -284,7 +311,7 @@ def test_format_exclusions_have_lossless_visible_notation():
     information_xlsx(report, stream)
     book = load_workbook(io.BytesIO(stream.getvalue()))
     try:
-        assert book["Information"]["F2"].value == expected
+        assert book["Information"]["G2"].value == expected
         assert "Unsupported characters" in book["Report information"]["B15"].value
     finally:
         book.close()

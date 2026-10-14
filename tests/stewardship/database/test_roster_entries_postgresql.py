@@ -469,7 +469,7 @@ def test_a_change_for_a_member_no_longer_in_parishsoft_stays_listed(
         _, body = get(browser, route)
         assert f"follow-up/{join.pk}/".encode() in body
         assert b'<th scope="col">ParishSoft status</th>' in body
-        assert b"data-source-mark>Not in ParishSoft</span>" in body
+        assert b'data-source-status="moved">Not in ParishSoft</span>' in body
         response, body = search(
             browser, route + "exports/", {"format": "csv", "timezone": "UTC"}
         )

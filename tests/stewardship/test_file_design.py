@@ -136,8 +136,9 @@ def test_information_and_directory_workbooks_share_the_style():
     """Information and a directory both lead with, and freeze, their Family."""
     book = saved(information_xlsx, information(count=3))
     assert_styled_table(book["Information"], first_column=True)
-    # Submitted text (column F) gets the wide free-text column.
-    assert book["Information"].column_dimensions["F"].width == 70
+    # Submitted text (column G, after ParishSoft status, #1216) gets the wide
+    # free-text column.
+    assert book["Information"].column_dimensions["G"].width == 70
     assert_information_sheet(book["Report information"])
     output = io.BytesIO()
     render_directory(directory([family()]), output, format="xlsx")

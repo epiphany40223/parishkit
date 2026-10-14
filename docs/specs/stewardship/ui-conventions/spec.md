@@ -2124,24 +2124,33 @@ named "Unavailable" and could not tell whether two pages meant the same thing
 (nothing for a current Member or Family); the downloads' `STATUS_HEADING`
 and `family_status(name, active=...)`, which reads a Family row's key. The
 status keys are those of the SQL `stewardship_member_source_status_v1`
-(open PR #1218): `current`,
-`missing`, `moved`, `inactive` and `deceased`. A guard test keeps the retired
-phrases out of templates and Python.
+(#1217): `current`,
+`missing`, `moved`, `inactive` and `deceased`. A selection that builds a
+name in installed SQL gives no name (NULL) for a Member or Family the data
+no longer has, and spells "Name not recorded in ParishSoft" as the Python
+constant does. A guard test keeps the retired phrases out of templates,
+Python and the SQL baseline files, and a PostgreSQL test out of every
+installed function body.
 
 **Precedent.** [#1216](https://github.com/epiphany40223/parishkit/issues/1216)
 (Administrator, 2026-10-13, on #1131). Family pages use it since #1216's
 first change, and the Family-code directory, Census changes and Family
 timeline downloads have the ParishSoft status column (or detail) since its
-second. The Ministry follow-up pages, Ministry requests and packets still
-print "Unavailable Member" from their installed SQL, and the financial and
-information reports print "Unavailable Family" for a Family the data no
-longer has; they move to it, their downloads with a ParishSoft status
-column, in later changes of #1216, after #1217. The Family timeline,
-Outgoing mail, Refused addresses, Testing submissions, the chosen-Family
-send page and "Families on the form now" word a blank surname "Name not
-recorded in ParishSoft" since that second change; the Family codes
-directory and the information reports, whose names are built in installed
-SQL, still stand "Family" in for it until the same later changes.
+second. The Family timeline, Outgoing mail, Refused addresses, Testing
+submissions, the chosen-Family send page and "Families on the form now"
+word a blank surname "Name not recorded in ParishSoft" since that second
+change. Since its third (frozen migration 0094), the installed selections
+do too: the Ministry follow-up queue, its request page and Roster changes
+to enter mark a Member with the shared badge (no longer "Unavailable
+Member"); the Financial, Limitations and Additional information reports
+mark a Family the data no longer has (no longer "Unavailable Family"), and
+the Financial and Additional information reports an inactive one, with a
+ParishSoft status column in their downloads; and the Family codes
+directory, the information reports and the weekly report no longer stand
+"Family" in for a blank name. Packets and Ministry requests list only
+current Members (#1217), so they have nothing to mark. The weekly report is
+an email with no badge, so it names a Family the data no longer has "Not
+in ParishSoft".
 
 ### Table fit and row height
 

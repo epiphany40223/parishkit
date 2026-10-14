@@ -323,16 +323,24 @@ def components(context, admin):
         ),
         *bulk_rows[1:],
     ]
-    # Two open requests whose Members ParishSoft no longer lists: one
-    # inactive there, one gone, with a name long enough to be cut short.
+    # Two open requests whose Members ParishSoft no longer lists as current:
+    # one inactive there, one deceased, with a name long enough to be cut
+    # short. (A Member the data no longer has has no name; its badge alone
+    # is the link, #1216.)
     gone_query = FollowupQuery(state=NOT_IN_SOURCE)
     gone_rows = [
-        row | dict(id=str(UUID(int=110)), source_mark=MEMBER_STATUS_MARKS["inactive"]),
+        row
+        | dict(
+            id=str(UUID(int=110)),
+            member_status="inactive",
+            source_mark=MEMBER_STATUS_MARKS["inactive"],
+        ),
         leave
         | dict(
             id=str(UUID(int=111)),
             member_name="Bartholomew-Fitzgerald, Maximilian <Example>",
-            source_mark=MEMBER_STATUS_MARKS["missing"],
+            member_status="deceased",
+            source_mark=MEMBER_STATUS_MARKS["deceased"],
         ),
     ]
     bulk_page = values | dict(

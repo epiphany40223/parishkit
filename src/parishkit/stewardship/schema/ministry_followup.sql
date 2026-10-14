@@ -180,9 +180,15 @@ WITH selected AS MATERIALIZED (
     SELECT r.*,coalesce(nullif(concat_ws(', ',
             nullif(stewardship_name_strip_v1(n.last_name),''),
             nullif(stewardship_name_strip_v1(n.first_name),'')),''),
-            'Unavailable Member') AS member_name,
+            -- No name (NULL) for a Member the data no longer has in this
+            -- Family: the page shows its ParishSoft status badge alone, and
+            -- it sorts after the names (#1216). A present Member, or one the
+            -- Family added, without a usable name reads as such.
+            CASE WHEN r.entity_kind<>'member' OR p.id IS NOT NULL
+                THEN 'Name not recorded in ParishSoft' END) AS member_name,
         coalesce(nullif(btrim(concat_ws(' ',n.first_name,n.last_name)),''),
-            'Unavailable Member') AS member_search_name,
+            CASE WHEN r.entity_kind<>'member' OR p.id IS NOT NULL
+                THEN 'Name not recorded in ParishSoft' END) AS member_search_name,
         -- "Cannot participate in any ministries" (#247) explains a leave.
         coalesce(s.answers#>ARRAY['service',
             CASE WHEN r.entity_kind='member' THEN 'members' ELSE 'proposed_members' END,

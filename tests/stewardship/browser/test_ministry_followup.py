@@ -747,7 +747,7 @@ def test_members_no_longer_in_parishsoft_are_marked_with_nothing_to_record(
     assert status.locator("option").all_inner_texts()[-1] == (
         "Members no longer in ParishSoft"
     )
-    assert page.locator("[data-source-mark]").count() == 0
+    assert page.locator("[data-source-status]").count() == 0
     plain = page.locator("#followup-table tbody tr").first.bounding_box()["height"]
     page.goto(component_origin + "/followup-leader")
     assert "Members no longer in ParishSoft" not in (
@@ -760,11 +760,13 @@ def test_members_no_longer_in_parishsoft_are_marked_with_nothing_to_record(
     assert page.locator(".bulk-bar, [data-bulk-action]").count() == 0
     headings = page.locator("#followup-table thead th").all_inner_texts()
     assert headings[0].startswith("Member")
-    marks = page.locator("[data-source-mark]")
+    marks = page.locator("[data-source-status]")
     assert marks.count() == 2
     # #1216's phrases, shown whole, so a reader cannot take them for a
     # Ministry's own activity marks.
-    for index, phrase in enumerate(("Inactive in ParishSoft", "Not in ParishSoft")):
+    for index, phrase in enumerate(
+        ("Inactive in ParishSoft", "Deceased in ParishSoft")
+    ):
         mark = marks.nth(index)
         visible(mark)
         assert mark.inner_text() == phrase

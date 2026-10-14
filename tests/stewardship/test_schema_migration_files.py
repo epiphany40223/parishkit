@@ -312,6 +312,9 @@ FROZEN = {
     "0093_removed_ministry_gone_members.sql": (
         "9c9b4ebeb51da19ac20ee77465b6de325d70f4269913e47e1cfdb87194360050"
     ),
+    "0094_source_status_names.sql": (
+        "fb0671d5cf8fdbc80871d2cd41073b214bf84514005e31ad05ab4c1caea10e54"
+    ),
 }
 
 

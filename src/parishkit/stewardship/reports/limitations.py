@@ -19,6 +19,11 @@ from django.utils.datastructures import MultiValueDict
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.source.snapshot_names import name_rows
+from parishkit.stewardship.source.source_status import (
+    STATUS_HEADING,
+    family_status,
+    source_status_label,
+)
 from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
@@ -32,16 +37,19 @@ SHOW_WORDS = frozenset({"any", "cannot_serve", "cannot_attend"})
 # #966): the Members table leads with the Member and Member DUID, as on the
 # page, and the Families table has no "Cannot attend Mass" column, as on the
 # page, whose table heading says what it lists (every listed Family cannot
-# attend).
+# attend). ParishSoft status follows the Family's name, as the page's badge
+# sits beside it: "Not in ParishSoft" with the name blank when the data no
+# longer has the Family, otherwise blank (#1216).
 MEMBER_HEADINGS = (
     "Member",
     "Member DUID",
     "Family",
+    STATUS_HEADING,
     "Family DUID",
     "Cannot participate in ministries",
     "Latest response",
 )
-FAMILY_HEADINGS = ("Family", "Family DUID", "Latest response")
+FAMILY_HEADINGS = ("Family", STATUS_HEADING, "Family DUID", "Latest response")
 # Each table's page heading, which the PDF prints above that table.
 MEMBER_CAPTION = "Members who cannot participate in ministries"
 FAMILY_CAPTION = "Families that cannot attend Mass or prayer services"
@@ -49,6 +57,7 @@ FAMILY_CAPTION = "Families that cannot attend Mass or prayer services"
 # room; the Yes columns and DUIDs are short.
 PDF_WEIGHTS = {
     "Family": 10,
+    STATUS_HEADING: 5,
     "Family DUID": 5,
     "Member": 9,
     "Member DUID": 5,
@@ -119,6 +128,16 @@ def iso_time(moment):
     return moment.isoformat(timespec="seconds")
 
 
+def _family(row):
+    """A row's Family name and ParishSoft status cells (#1216).
+
+    The report reads no activity, so the only mark is a Family the data no
+    longer has, whose name is blank.
+    """
+    name = row["family_name"]
+    return name or "", source_status_label(family_status(name))
+
+
 def export_tables(result, zone, *, time_text=iso_time):
     """Two plain tables (Members, then Families) with localized timestamps.
 
@@ -136,7 +155,7 @@ def export_tables(result, zone, *, time_text=iso_time):
             row["member_name"] + (" (proposed)" if row["proposed"] else ""),
             # A proposed Member has no DUID yet, so its cell is empty.
             "" if row["member_duid"] is None else str(row["member_duid"]),
-            row["family_name"],
+            *_family(row),
             str(row["family_duid"]),
             "Yes",
             instant(row["submitted_at"]),
@@ -144,7 +163,7 @@ def export_tables(result, zone, *, time_text=iso_time):
         for row in result["members"]
     ]
     families = [
-        (row["family_name"], str(row["family_duid"]), instant(row["submitted_at"]))
+        (*_family(row), str(row["family_duid"]), instant(row["submitted_at"]))
         for row in result["families"]
     ]
     return members, families

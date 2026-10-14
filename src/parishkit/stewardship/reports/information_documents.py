@@ -7,6 +7,11 @@ from typing import ClassVar
 from zoneinfo import ZoneInfo
 
 from parishkit.stewardship.source.snapshot_names import FAMILY_NAMES_DETAIL
+from parishkit.stewardship.source.source_status import (
+    STATUS_HEADING,
+    family_status,
+    source_status_label,
+)
 
 from .weekly_presentation import DISPOSITIONS
 
@@ -15,11 +20,14 @@ from .weekly_presentation import DISPOSITIONS
 # version. An earlier-workflow row follows its item, repeats the item's
 # Family, DUID, submission time and text, which identify the item to a
 # reader, and is the only kind of row with a Changed at time; a superseded
-# item names its replacement by that request's submission time.
+# item names its replacement by that request's submission time. ParishSoft
+# status follows the name, as the page's badge sits beside it, and the name
+# is blank for a Family the data no longer has (#1216).
 # A superseded item whose replacement the export's filters left out.
 REPLACEMENT_NOT_EXPORTED = "Not in this export"
 HEADINGS = (
     "Family",
+    STATUS_HEADING,
     "Family DUID",
     "Submitted",
     "Disposition",
@@ -104,7 +112,14 @@ def information_document(payload, parameters, *, parish_name, requested_at, time
         # Every row of an item repeats its identity, so a sorted or filtered
         # spreadsheet still says which item an earlier workflow belongs to.
         common = (
-            item["family_name"],
+            item["family_name"] or "",
+            # A capture made before migration 0094 has no active flag, and
+            # reads as active.
+            source_status_label(
+                family_status(
+                    item["family_name"], active=item.get("active") is not False
+                )
+            ),
             str(item["family_duid"]),
             instant(item["submitted_at"]),
             DISPOSITIONS[item["disposition"]],

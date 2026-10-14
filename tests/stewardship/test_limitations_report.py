@@ -30,15 +30,17 @@ from parishkit.stewardship.responses.service import DEFAULT_TALENTS
 
 PAINTER = DEFAULT_TALENTS[0].id
 WHEN = "2026-10-05T14:00:00+00:00"
+# ParishSoft status follows each Family name (#1216).
 MEMBER_HEADINGS = [
     "Member",
     "Member DUID",
     "Family",
+    "ParishSoft status",
     "Family DUID",
     "Cannot participate in ministries",
     "Latest response",
 ]
-FAMILY_HEADINGS = ["Family", "Family DUID", "Latest response"]
+FAMILY_HEADINGS = ["Family", "ParishSoft status", "Family DUID", "Latest response"]
 # The writers read ``zone.key``, so tests pass a ZoneInfo, as the view does.
 UTC_ZONE = ZoneInfo("UTC")
 # The download context the view lends the XLSX and PDF writers.
@@ -83,6 +85,18 @@ def test_shaping_parses_response_times_and_keeps_the_summary():
     assert shaped["summary"] == {"cannot_serve": 1, "cannot_attend": 1}
 
 
+def test_a_family_no_longer_in_parishsoft_has_a_blank_name_and_its_status():
+    """The download splits the page's badge out of the name cell (#1216)."""
+    raw = result()
+    raw["members"][0]["family_name"] = None
+    raw["families"][0]["family_name"] = None
+    rows = list(
+        csv.reader(io.StringIO(limitations_csv(shape_result(raw), UTC).decode()))
+    )
+    assert rows[1][2:4] == ["", "Not in ParishSoft"]
+    assert rows[4][:2] == ["", "Not in ParishSoft"]
+
+
 def test_downloads_match_the_page_columns():
     """CSV and XLSX hold the page's columns in its order (#932, #970).
 
@@ -96,11 +110,11 @@ def test_downloads_match_the_page_columns():
     shaped = shape_result(raw)
     rows = list(csv.reader(io.StringIO(limitations_csv(shaped, UTC).decode())))
     assert rows[0] == MEMBER_HEADINGS
-    assert rows[1] == ["Alex Example", "3", "Example", "10", "Yes", WHEN]
-    assert rows[2] == ["New Example (proposed)", "", "Example", "10", "Yes", WHEN]
+    assert rows[1] == ["Alex Example", "3", "Example", "", "10", "Yes", WHEN]
+    assert rows[2] == ["New Example (proposed)", "", "Example", "", "10", "Yes", WHEN]
     rows.pop(2)
     assert rows[2] == [] and rows[3] == FAMILY_HEADINGS
-    assert rows[4] == ["Example", "10", WHEN]
+    assert rows[4] == ["Example", "", "10", WHEN]
     book = workbook(shaped)
     assert [cell.value for cell in book["Members"][1]] == MEMBER_HEADINGS
     assert [cell.value for cell in book["Families"][1]] == FAMILY_HEADINGS
@@ -141,9 +155,9 @@ def test_pdf_prints_both_tables_with_the_csv_columns_and_rows(monkeypatch):
     assert list(families.headings) == csv_rows[3] == FAMILY_HEADINGS
     # The formula-like name prints as typed; the CSV guards it.
     # The Member DUID follows the Member, as on the page (#932).
-    assert member_rows[0][:5] == ("=cmd", "3", "Example", "10", "Yes")
-    assert member_rows[0][5] == family_rows[0][2] == "Oct 5, 2026 9:00 AM"
-    assert family_rows[0][:2] == ("Example", "10")
+    assert member_rows[0][:6] == ("=cmd", "3", "Example", "", "10", "Yes")
+    assert member_rows[0][6] == family_rows[0][3] == "Oct 5, 2026 9:00 AM"
+    assert family_rows[0][:3] == ("Example", "", "10")
     assert frame.eyebrow == "Example Parish · Stewardship 2055"
     # The tables' frame adds two blank lines of room for their captions.
     assert frame.details == (

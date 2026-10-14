@@ -210,10 +210,11 @@ def test_native_page_and_downloads(response_service, google, settings):
         assert "stewardship-limitations-" in response["Content-Disposition"]
         assert b"Organ" not in body
         # The Families table has the page's columns: no Cannot attend Mass.
-        assert b"\r\nFamily,Family DUID,Latest response\r\n" in body
+        # ParishSoft status follows each Family name (#1216).
+        assert b"\r\nFamily,ParishSoft status,Family DUID,Latest response\r\n" in body
         assert body.startswith(
-            b"Member,Member DUID,Family,Family DUID,Cannot participate in ministries,"
-            b"Latest response\r\n"
+            b"Member,Member DUID,Family,ParishSoft status,Family DUID,"
+            b"Cannot participate in ministries,Latest response\r\n"
         )
         response, body = search(browser, export, {"format": "xlsx", "timezone": "UTC"})
         assert response.status_code == 200
@@ -230,12 +231,13 @@ def test_native_page_and_downloads(response_service, google, settings):
             "Member",
             "Member DUID",
             "Family",
+            "ParishSoft status",
             "Family DUID",
             "Cannot participate in ministries",
             "Latest response",
         ]
         assert book["Members"]["B2"].value == "3"
-        assert book["Members"]["E2"].value == "Yes"
+        assert book["Members"]["F2"].value == "Yes"
         # The PDF is offered too (#966), named and typed as one.
         response, body = search(browser, export, {"format": "pdf", "timezone": "UTC"})
         assert response.status_code == 200

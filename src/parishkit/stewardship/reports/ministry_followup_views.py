@@ -1060,7 +1060,7 @@ def _row_name(campaign_id, principal, request_id):
             )["rows"][0]
     except (DatabaseError, *SAFE_FAILURES, StorageInvariantError, IndexError):
         return None
-    return f"{row['member_name']} — {row['ministry_name']}"
+    return f"{row['member_label']} — {row['ministry_name']}"
 
 
 def _bulk_refusal(status, message):

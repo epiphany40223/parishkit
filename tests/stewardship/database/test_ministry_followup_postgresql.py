@@ -1651,7 +1651,15 @@ def test_requests_for_members_no_longer_in_parishsoft_leave_leaders_work(
     gone = read(harness, staff, state="not_in_parishsoft")
     assert gone["total"] == 2
     assert {row["source_mark"][0] for row in gone["rows"]} == {mark}
-    assert "member_status" not in gone["rows"][0]
+    # The status stays on the row for the shared badge (#1216).
+    assert {row["member_status"] for row in gone["rows"]} == {case}
+    # A Member the data no longer has in this Family has no name: the page
+    # shows the badge alone and a heading names it by its status (#1216).
+    known = case in ("inactive", "deceased")
+    assert all(bool(row["member_name"]) is known for row in gone["rows"])
+    assert {row["member_label"] for row in gone["rows"]} <= (
+        {row["member_name"] for row in gone["rows"]} if known else {mark}
+    )
     (item,) = read(harness, staff, request_id=join.pk)["rows"]
     assert item["source_mark"][0] == mark and item["open"]
     # The server refuses every edit, single or bulk, by anyone.
@@ -1795,8 +1803,8 @@ def test_queue_pages_mark_and_refuse_members_no_longer_in_parishsoft(
         _, body = search(clerk, route, {"state": "not_in_parishsoft"})
         assert option + b" selected" in body
         assert str(join.pk).encode() in body and str(leave.pk).encode() in body
-        assert body.count(b"data-source-mark") == 2
-        assert b"data-source-mark>Inactive in ParishSoft</span>" in body
+        assert body.count(b"data-source-status=") == 2
+        assert b'data-source-status="inactive">Inactive in ParishSoft</span>' in body
         assert b"data-select-row" not in body and b"data-select-all" not in body
         assert b"data-bulk-action" not in body and b"bulk-bar" not in body
         response, body = get(clerk, detail)

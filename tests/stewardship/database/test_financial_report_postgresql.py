@@ -38,6 +38,10 @@ from parishkit.stewardship.source.leases import release_source
 from parishkit.stewardship.source.models import SourceCurrent
 from parishkit.stewardship.source.snapshot_names import snapshot_family_names
 from parishkit.stewardship.source.snapshots import promote_snapshot
+from parishkit.stewardship.source.source_status import (
+    NAME_NOT_RECORDED,
+    STATUS_HEADING,
+)
 
 from ..financial_factory import record
 from ..test_financial_answers import CHECK, OPTIONS, OTHER
@@ -660,10 +664,13 @@ def test_native_page_filters_privately_and_denies_leaders(
         assert b'aria-describedby="financial-source-pledged-tip"' in body
         # The page has the downloads' columns in their order (decisions B1
         # and E1, #932): Family leads, First response follows Latest response.
+        # The files split ParishSoft status out of the page's Family cell,
+        # where its badge sits beside the name (#1216).
         head = body[body.index(b"Current live pledges by Family</caption>") :]
         head = head[: head.index(b"</thead>")]
-        assert head.count(b'scope="col"') == len(HEADINGS)
-        places = [head.index(heading.encode()) for heading in HEADINGS]
+        shown = [heading for heading in HEADINGS if heading != STATUS_HEADING]
+        assert head.count(b'scope="col"') == len(shown)
+        places = [head.index(heading.encode()) for heading in shown]
         assert places == sorted(places)
         assert b">Version<" not in body
         assert b'datetime=""' not in body and b"?search=" not in body
@@ -888,6 +895,57 @@ def test_sql_shown_name_matches_snapshot_family_names(response_service):
         if row["family_duid"] in shown
     ]
     assert ordered == [6, 7, 8]
+
+
+def test_a_family_no_longer_in_parishsoft_has_no_name(response_service):
+    """The shared words, not "Unavailable Family" (#1216).
+
+    A Family the data no longer has gets no name (the page shows the badge
+    alone) and sorts after the names; one with a blank name reads "Name not
+    recorded in ParishSoft"; an inactive one keeps its name and its flag.
+    """
+    harness = response_service
+    family = dict(registeredOrganizationID=5)
+    financial_source(
+        harness,
+        options=map(asdict, OPTIONS),
+        extra_families={
+            duid: family | dict(familyDUID=duid, lastName=last)
+            for duid, last in ((6, "Alpha"), (7, "Bravo"), (8, "Charlie"))
+        },
+        extra_members={
+            30 + duid: head(30 + duid, duid) | dict(firstName="Ann", lastName=last)
+            for duid, last in ((6, "Alpha"), (7, "Bravo"), (8, "Charlie"))
+        },
+    )
+    harness = activate_response_service(harness)
+    with web_login():
+        for duid in (6, 7, 8):
+            session = family_session(harness, duid)
+            pledge(session, load_form(session), shares={CHECK: ""})
+    snapshot = SourceCurrent.objects.get().snapshot_id
+    blank = {"lastName": "", "mailingName": "", "firstName": ""}
+    _rewrite_payload("family", snapshot, 6, blank)
+    _rewrite_payload("family", snapshot, 8, {"active": False})
+    with unguarded(), connection.cursor() as cursor:
+        cursor.execute(
+            "DELETE FROM stewardship_snapshot_family "
+            "WHERE snapshot_id=%s AND source_key='7'",
+            [snapshot],
+        )
+    rows = {row["family_duid"]: row for row in report(harness)["rows"]}
+    assert rows[6]["family_name"].startswith(NAME_NOT_RECORDED)
+    assert rows[7]["family_name"] is None and rows[7]["active"] is None
+    assert rows[8]["family_name"].startswith("Charlie") and rows[8]["active"] is False
+    ordered = [
+        row["family_duid"]
+        for row in report(harness, sort="name")["rows"]
+        if row["family_duid"] in rows
+    ]
+    assert ordered[-1] == 7
+    # The DUID still finds the nameless Family.
+    found = report(harness, search="7")["rows"]
+    assert 7 in {row["family_duid"] for row in found}
 
 
 def test_cannot_contribute_is_reported_and_filterable(response_service):

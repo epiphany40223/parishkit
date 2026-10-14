@@ -942,7 +942,11 @@ name, as the directory does; the Family DUID column sorts too
 ([#960](https://github.com/epiphany40223/parishkit/issues/960)). Exports
 include complete text and workflow history option, and name each Family as
 the page does, from the snapshot their capture was read from; a Family
-without a surname is "Family", as the selection names it. The name form is
+without a surname is "Name not recorded in ParishSoft", as the selection
+names it. A Family the data no longer has has no name: the page shows the
+[ParishSoft status](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
+badge in its place, and marks an inactive Family beside its name, and the
+exports have a ParishSoft status column right after Family (#1216). The name form is
 chosen once for the whole file, in the same database read as the names: if
 compaction has begun on that snapshot by the time the file is rendered,
 every row keeps the captured surname instead, so one file never mixes the
@@ -1801,10 +1805,14 @@ and contribution aggregates, Latest response (the time the Family last
 updated its response), First response (when it first responded) and,
 as the last column, Entered by Staff (described below).
 The page and every export format (CSV, XLSX, PDF) have exactly these
-columns in this order (the Administrator's decisions B1 and E1, #932): the
-report lists only active Families, so no format has a Family status
-column, and no format carries internal references (Family version or
-response reference). The page's two aggregate headings carry the
+columns in this order (the Administrator's decisions B1 and E1, #932), and
+no format carries internal references (Family version or response
+reference). The page marks a Family the data no longer has, or marks
+inactive, with the shared
+[ParishSoft status](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
+badge in or beside its Family cell, and the exports split it into a
+ParishSoft status column right after Family, blank for a current Family
+(#1216). The page's two aggregate headings carry the
 comparison period's years, as the Family form words them ("ParishSoft
 pledged (2026)", or "(2026–2027)" for a period spanning two years), each with
 a toggletip naming the period's dates. The comparison period is the
@@ -1873,10 +1881,14 @@ PDF's page frame states: parish, campaign, download time and zone, both
 counts and the privacy line) or PDF (one table each under the page's table
 heading, the Families table starting on a new page, in the shared page frame
 with both counts), in a chosen display timezone. Each table has its page table's
-columns, names and order: Member, Member DUID, Family, Family DUID, Cannot
-participate in ministries and Latest response for Members, and Family, Family DUID and
-Latest response for Families (every listed Family cannot attend, so, as on
-the page, no column repeats it). Every format carries these columns and rows
+columns, names and order: Member, Member DUID, Family, ParishSoft status,
+Family DUID, Cannot participate in ministries and Latest response for
+Members, and Family, ParishSoft status, Family DUID and Latest response for
+Families (every listed Family cannot attend, so, as on the page, no column
+repeats it). ParishSoft status splits out the page's
+[badge](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
+for a Family the data no longer has, whose Family cell is then blank
+(#1216); the report reads no activity, so it marks no inactive Family. Every format carries these columns and rows
 ([downloaded files](../ui-conventions/spec.md#downloaded-files)); the PDF
 words Latest response in the parish's date format. A download is rendered in memory on the web
 connection under the interactive campaign read guard, not through the
