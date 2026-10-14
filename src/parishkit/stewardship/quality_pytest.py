@@ -11,9 +11,11 @@ import pytest
 from .quality_select import chosen, load_selection
 from .quality_sharding import (
     BROWSER_ENGINES,
+    baseline_partition,
     browser_estimate,
     browser_label,
     browser_partition,
+    nodes_digest,
     parse_browser_partition,
     partition,
 )
@@ -41,6 +43,10 @@ BROWSER_DISCOVERY = {
 def pytest_addoption(parser):
     """Keep ordinary developer tests unchanged unless CI explicitly opts in."""
     parser.addoption("--ci-shard", help="Required PostgreSQL partition INDEX/COUNT")
+    parser.addoption(
+        "--ci-baseline",
+        help="Required non-database baseline part PART/COUNT (#1205)",
+    )
     parser.addoption("--ci-evidence", help="New outside-repository execution receipt")
     parser.addoption(
         "--ci-select",
@@ -73,8 +79,12 @@ def pytest_configure(config):
     )
     if config.getoption("--ci-select") and not config.getoption("--ci-shard"):
         raise pytest.UsageError("A database test selection requires a shard")
-    if config.getoption("--ci-evidence") and not config.getoption("--ci-shard"):
-        raise pytest.UsageError("CI evidence requires a PostgreSQL shard")
+    if config.getoption("--ci-shard") and config.getoption("--ci-baseline"):
+        raise pytest.UsageError("A CI run is a database shard or a baseline part")
+    if config.getoption("--ci-evidence") and not (
+        config.getoption("--ci-shard") or config.getoption("--ci-baseline")
+    ):
+        raise pytest.UsageError("CI evidence requires a shard or a baseline part")
     if config.getoption("--ci-browser-evidence") and not config.getoption(
         "--ci-browser-engine"
     ):
@@ -83,7 +93,10 @@ def pytest_configure(config):
         "--ci-browser-engine"
     ):
         raise pytest.UsageError("A browser partition requires an engine")
-    if config.getoption("--ci-shard") or config.getoption("--ci-progress"):
+    if any(
+        config.getoption(option)
+        for option in ("--ci-shard", "--ci-baseline", "--ci-progress")
+    ):
         config.pluginmanager.register(Progress(config), "stewardship-ci-progress")
     if config.getoption("--ci-browser-engine"):
         config.pluginmanager.register(
@@ -242,11 +255,18 @@ class BrowserSelection:
 
 
 class Progress:
-    """Track collection, completed teardown and elapsed time without test locals."""
+    """Track collection, completed teardown and elapsed time without test locals.
+
+    A database shard (``--ci-shard``) partitions the database tests and
+    logs every test's start and end. A baseline part (``--ci-baseline``,
+    #1205) partitions the whole non-database run instead, quietly, and its
+    receipt records digests rather than node IDs (see ``baseline_receipt``).
+    """
 
     def __init__(self, config):
         """Validate explicit partition inputs before collecting any tests."""
         self.config = config
+        self.baseline = bool(config.getoption("--ci-baseline"))
         self.started = {}
         self.durations = {}
         self.completed = []
@@ -256,13 +276,17 @@ class Progress:
         self.shard = None
         self.evidence = None
         self.selection = None
-        if value := config.getoption("--ci-shard"):
+        if value := config.getoption("--ci-shard") or config.getoption("--ci-baseline"):
             try:
                 index, count = [int(part) for part in value.split("/")]
                 partition([], index, count)
                 self.shard = (index, count)
-                if not config.getoption("--require-postgresql-tests"):
-                    raise ValueError("Required database gate missing")
+                if self.baseline is bool(
+                    config.getoption("--require-postgresql-tests")
+                ):
+                    # Database shards need the database gate; the baseline,
+                    # which runs without a database, must not have it.
+                    raise ValueError("Database gate does not match the run")
                 self.evidence = Path(config.getoption("--ci-evidence")).resolve()
                 if (
                     self.evidence.is_relative_to(config.rootpath.resolve())
@@ -283,6 +307,16 @@ class Progress:
         spread thinner than the fixed partition count.
         """
         if self.shard is None:
+            return
+        if self.baseline:
+            self.universe = sorted(item.nodeid for item in items)
+            self.selected = baseline_partition(self.universe, *self.shard)
+            if not self.selected:
+                raise pytest.UsageError("CI baseline part selected no tests")
+            selected = set(self.selected)
+            removed = [item for item in items if item.nodeid not in selected]
+            items[:] = [item for item in items if item.nodeid in selected]
+            self.config.hook.pytest_deselected(items=removed)
             return
         directory = self.config.rootpath / "tests/stewardship/database"
         if any(not item.path.is_relative_to(directory) for item in items):
@@ -315,15 +349,24 @@ class Progress:
         reporter.flush()
 
     def pytest_runtest_logstart(self, nodeid, location):
-        """Identify the active test before its fixtures can block."""
+        """Identify the active test before its fixtures can block.
+
+        A baseline part stays quiet: a line per test would add tens of
+        thousands of log lines, some of them megabytes long.
+        """
+        if self.baseline:
+            return
         self.started[nodeid] = time.monotonic()
         self.emit(f"START {nodeid}")
 
     def pytest_runtest_logreport(self, report):
         """A test is complete only after teardown, not just its assertion body."""
-        self.durations.setdefault(report.nodeid, {})[report.when] = report.duration
         if report.when == "teardown":
             self.completed.append(report.nodeid)
+        if self.baseline:
+            return
+        self.durations.setdefault(report.nodeid, {})[report.when] = report.duration
+        if report.when == "teardown":
             elapsed = time.monotonic() - self.started.pop(report.nodeid)
             self.emit(f"END {report.nodeid} elapsed={elapsed:.3f}s")
 
@@ -340,6 +383,15 @@ class Progress:
             return
         if sorted(self.completed) != self.selected:
             session.exitstatus = pytest.ExitCode.TESTS_FAILED
+            return
+        if self.baseline:
+            with self.evidence.open("x", encoding="utf-8") as stream:
+                json.dump(
+                    baseline_receipt(
+                        *self.shard, self.universe, self.selected, self.completed
+                    ),
+                    stream,
+                )
             return
         with self.evidence.open("x", encoding="utf-8") as stream:
             evidence = {
@@ -358,3 +410,25 @@ class Progress:
             "x", encoding="utf-8"
         ) as stream:
             json.dump(self.durations, stream)
+
+
+def baseline_receipt(part, parts, universe, selected, completed):
+    """The execution receipt one non-database baseline part writes (#1205).
+
+    It holds each set's count and ``nodes_digest`` rather than node IDs,
+    which can be megabytes long. ``quality_ci.combine`` builds the same
+    receipt for every part from its own collection of the unsplit suite and
+    requires each to match, so the parts together ran every test once.
+    """
+    return {
+        "part": part,
+        "parts": parts,
+        **{
+            name: {"count": len(nodes), "sha256": nodes_digest(nodes)}
+            for name, nodes in (
+                ("universe", universe),
+                ("selected", selected),
+                ("completed", completed),
+            )
+        },
+    }

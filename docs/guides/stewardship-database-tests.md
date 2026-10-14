@@ -35,13 +35,19 @@ runs (#158, #625); the
 [test-efficiency guide](stewardship-test-efficiency.md#postgresql-partition-packing)
 explains the choice and how to retune it. Only partition one also runs
 the credential-free baseline, beside its database tests rather than before
-them (#1200); the baseline's coverage is merged into the partition's raw
-coverage database before its receipt is written. The required
+them (#1200). The baseline is split by node ID into `BASELINE_PARTS` parts
+that run at the same time (#1205). Each part writes a receipt that records
+the count and digest of the suite it collected, of its share and of the tests
+it completed. Every part's coverage is merged into the partition's raw
+coverage database before the partition's receipt is written. The required
 `stewardship-postgresql` check independently collects the full database test
-universe, requires successful receipts for all sixteen exact partitions from the
-same source tree, and combines raw line/branch data before enforcing both 80%
-floors. Missing, failed, skipped, cancelled or stale partition evidence cannot
-pass. Coverage percentages are never averaged across partitions.
+universe and the unsplit baseline. It requires successful receipts for all
+sixteen exact partitions from the same source tree. It also requires each
+baseline part's receipt to match its share of that baseline, and the shares to
+be disjoint and to cover all of it. It then combines raw line/branch data before
+enforcing both 80% floors. Missing, failed, skipped, cancelled or stale
+partition or baseline evidence cannot pass. Coverage percentages are never
+averaged across partitions.
 
 Partitions are cost-balanced, not equal-count hash buckets. The scheduler assigns
 known slow lease/drain and population tests first, then fills the least-loaded
@@ -79,7 +85,8 @@ was killed by SIGSEGV`, and a traceback cut off just above that line is this
 hazard, not a test failure. A hang that begins in a shard's last five minutes
 reaches the shard deadline first and produces no stack trace. Browser jobs keep
 their own 120-second diagnostic. Each test subprocess has a 30-minute
-deadline: a partition's database run, and partition one's baseline beside it.
+deadline: a partition's database run, and each baseline part beside
+partition one's.
 On timeout, the log names the run stopped, its limit and the elapsed time.
 Each packed job has a 40-minute limit, and aggregation has
 a 10-minute limit. Slowest-test summaries are retained in job logs. A deadline
@@ -123,8 +130,8 @@ PARISHKIT_TEST_POSTGRES_PORT=55440 PARISHKIT_TEST_VALKEY_PORT=56381 \
 ```
 
 Use indexes 1–4, the same count, and distinct new `shard-N` output directories
-under one new external parent. Only shard one runs the complete baseline;
-all four run their exact PostgreSQL partitions. Do not edit source, tests,
+under one new external parent. Only shard one runs the complete baseline, in
+its parts; all four run their exact PostgreSQL partitions. Do not edit source, tests,
 configuration or documentation while collecting this same-tree evidence.
 After all four commands exit successfully, combine their raw coverage:
 

@@ -25,10 +25,23 @@ from coverage.exceptions import CoverageException
 
 from .arguments import StewardshipArgumentParser
 from .quality import FLOOR, coverage_percentages, load_scope
+from .quality_pytest import baseline_receipt
 from .quality_select import build_map
-from .quality_sharding import partition, tree_digest
+from .quality_sharding import baseline_partition, partition, tree_digest
 
 DATABASE_TESTS = "tests/stewardship/database"
+# The credential-free baseline: the whole suite under the test settings,
+# which skip the database tests.
+BASELINE_TESTS = "tests"
+# Parts the baseline is split into, run at once beside partition one's
+# database tests, each with its own SHARD_TIMEOUT (#1205). In October 2026
+# the whole baseline took 765 to 1,310 s depending on the runner, and gained
+# about 900 tests a day. Job one holds only partition one, so two parts make
+# three pytest processes on its 4 vCPUs, like every other job. When a part
+# nears its deadline, raise this; combine requires every part's evidence.
+BASELINE_PARTS = 2
+# Collecting the whole baseline took about 35 s locally for 27,677 tests.
+BASELINE_COLLECTION_SECONDS = 5 * 60
 # Partitions one CI job runs concurrently, each against its own PostgreSQL/
 # Valkey pair (issue #625). This is the one tuning knob: the contract tests
 # derive the workflow's job matrix and its service pairs from it, and fail
@@ -37,14 +50,15 @@ DATABASE_TESTS = "tests/stewardship/database"
 # (#625, #1200). It also fits a 4 vCPU / 16 GB hosted runner: the partitions
 # spend much of their time waiting on PostgreSQL and on real lease and drain
 # deadlines, and three 2 GiB tmpfs clusters plus three pytest processes stay
-# well inside 16 GB. Job one holds partition one and the baseline, also three
-# pytest processes at most.
+# well inside 16 GB. Job one holds partition one and the BASELINE_PARTS
+# baseline parts, also three pytest processes.
 PARTITIONS_PER_JOB = 3
-# Each pytest child's deadline: a partition's database run, and partition
-# one's baseline beside it. Packed fourteen ways, partitions took 1,120 to
-# 1,690 s and the baseline 1,310 to 1,330 s in October 2026 (#1200); sixteen
-# partitions bring the heaviest to about 24 minutes. The margin absorbs slow
-# runners, not a slower suite: when a partition nears it, add partitions.
+# Each pytest child's deadline: a partition's database run, and each
+# baseline part beside partition one's. Packed fourteen ways, partitions took
+# 1,120 to 1,690 s and the baseline 1,310 to 1,330 s in October 2026 (#1200);
+# sixteen partitions bring the heaviest to about 24 minutes. The margin
+# absorbs slow runners, not a slower suite: when a partition nears it, add
+# partitions; when a baseline part does, add parts (BASELINE_PARTS).
 SHARD_TIMEOUT = 30 * 60
 # The first slot keeps the services' default ports. Valkey port 56380 stays
 # unused: the unavailable-service tests rely on nothing listening there.
@@ -85,8 +99,12 @@ def outside(root, path):
     return result
 
 
-def database_collection(root):
-    """Independently collect the full database universe without starting services."""
+def collection(root, target, *options, timeout):
+    """Independently collect ``target``'s node IDs without starting services.
+
+    ``options`` are extra pytest options, such as ``--require-no-skips``.
+    The IDs come back sorted, and a duplicate or empty collection fails.
+    """
     result = subprocess.run(
         [
             sys.executable,
@@ -94,17 +112,17 @@ def database_collection(root):
             "pytest",
             "--ds=parishkit.stewardship.settings.test",
             "--collect-only",
-            "--require-no-skips",
+            *options,
             "--collection-manifest",
             "-q",
-            DATABASE_TESTS,
+            target,
         ],
         cwd=root,
         env=environment(),
         capture_output=True,
         text=True,
         check=False,
-        timeout=120,
+        timeout=timeout,
     )
     if result.returncode:
         # This is the credential-free test collector, not runtime/provider I/O.
@@ -123,14 +141,34 @@ def database_collection(root):
     if (
         not isinstance(nodes, list)
         or not nodes
-        or any(
-            not isinstance(node, str) or not node.startswith(DATABASE_TESTS + "/")
-            for node in nodes
-        )
+        or any(not isinstance(node, str) for node in nodes)
     ):
-        raise ValueError("Invalid database collection")
+        raise ValueError("Invalid test collection")
     partition(nodes, 1, 1)
     return sorted(nodes)
+
+
+def database_collection(root):
+    """Independently collect the full database universe without starting services."""
+    nodes = collection(root, DATABASE_TESTS, "--require-no-skips", timeout=120)
+    if any(not node.startswith(DATABASE_TESTS + "/") for node in nodes):
+        raise ValueError("Invalid database collection")
+    return nodes
+
+
+def baseline_collection(root):
+    """Independently collect the whole unsplit non-database baseline (#1205)."""
+    return collection(root, BASELINE_TESTS, timeout=BASELINE_COLLECTION_SECONDS)
+
+
+def baseline_evidence(directory, part):
+    """Where baseline part ``part`` writes its execution receipt."""
+    return directory / f"baseline-{part}.json"
+
+
+def baseline_label(part):
+    """Name a baseline part in log prefixes and timeout messages."""
+    return f"baseline {part}/{BASELINE_PARTS}"
 
 
 def child_status(result):
@@ -236,7 +274,7 @@ def coverage_arguments(scope):
 
 
 def run_shard(root, output, index, count, basetemp=None, *, coverage=True, select=None):
-    """Run one partition and, on shard one only, the baseline; require success.
+    """Run one partition and, on shard one only, the baseline parts; require success.
 
     ``basetemp``, when given, is pytest's private temporary root, so packed
     partitions on one runner never share or prune each other's directories.
@@ -282,15 +320,21 @@ def run_shard(root, output, index, count, basetemp=None, *, coverage=True, selec
         DATABASE_TESTS,
     ]
     if index == 1:
-        # pytest empties its temporary root when it starts, so the baseline,
-        # running beside the database tests, needs one of its own.
-        baseline = [
-            *arguments,
-            *([f"--basetemp={basetemp}-baseline"] if basetemp else []),
-            "--ds=parishkit.stewardship.settings.test",
-            "tests",
+        # pytest empties its temporary root when it starts, so each baseline
+        # part, running beside the others and the database tests, needs one
+        # of its own.
+        baselines = [
+            [
+                *arguments,
+                *([f"--basetemp={basetemp}-baseline-{part}"] if basetemp else []),
+                "--ds=parishkit.stewardship.settings.test",
+                f"--ci-baseline={part}/{BASELINE_PARTS}",
+                f"--ci-evidence={baseline_evidence(output, part)}",
+                BASELINE_TESTS,
+            ]
+            for part in range(1, BASELINE_PARTS + 1)
         ]
-        status = run_with_baseline(root, env, database, baseline, data, coverage)
+        status = run_with_baseline(root, env, database, baselines, data, coverage)
     else:
         status = child_status(
             run_child(
@@ -312,11 +356,18 @@ def run_shard(root, output, index, count, basetemp=None, *, coverage=True, selec
         or evidence["completed"] != expected
     ):
         raise ValueError("Incomplete CI partition")
+    baseline_tests = check_baseline(output) if index == 1 else 0
+    parts = range(1, BASELINE_PARTS + 1) if index == 1 else ()
     receipt = {
-        "schema": 1,
+        "schema": 2,
         "index": index,
         "count": count,
         "baseline": index == 1,
+        # Each baseline part's receipt, by digest; combine checks them all.
+        "baseline_sha256": [
+            hashlib.sha256(baseline_evidence(output, part).read_bytes()).hexdigest()
+            for part in parts
+        ],
         "coverage": coverage,
         "root": str(root),
         "tree": digest,
@@ -330,6 +381,10 @@ def run_shard(root, output, index, count, basetemp=None, *, coverage=True, selec
     with (output / "receipt.json").open("x", encoding="utf-8") as stream:
         json.dump(receipt, stream)
     message = f"CI shard {index}/{count}: {len(expected):,} database tests passed"
+    if baseline_tests:
+        message += (
+            f"; the baseline ran {baseline_tests:,} tests in {BASELINE_PARTS} parts"
+        )
     if select:
         message += (
             f"; the selection runs {len(pool):,} of {len(universe):,} "
@@ -340,48 +395,61 @@ def run_shard(root, output, index, count, basetemp=None, *, coverage=True, selec
     return 0
 
 
-def run_with_baseline(root, env, database, baseline, data, coverage):
-    """Run partition one's database tests and the baseline at once; 0 or a status.
+def run_with_baseline(root, env, database, baselines, data, coverage):
+    """Run partition one's database tests and the baseline parts at once.
 
-    The non-database baseline once ran first, sharing one SHARD_TIMEOUT with
-    partition one's database tests. As both grew, that partition reached the
-    deadline (#961, #1200), so each child now has its own SHARD_TIMEOUT and
-    its own timeout message. The baseline measures into a separate coverage
-    file, merged into ``data`` only when both pass, so the receipt still
-    hashes one complete coverage file. Each child's output is relayed whole,
-    line by line, the baseline's tagged ``[baseline]``. A timeout in either
-    child is raised once both have stopped. Any other failure of the database
-    side (an interrupt, a child that cannot start) stops the baseline at once
-    rather than leaving it to run out its deadline.
+    Return 0 or a failing status. The non-database baseline once ran first,
+    sharing one SHARD_TIMEOUT with partition one's database tests. As both
+    grew, that partition reached the deadline (#961, #1200), so each child
+    now has its own SHARD_TIMEOUT and its own timeout message; then the
+    baseline itself neared its deadline, so it is split into the commands in
+    ``baselines``, one per part (#1205). Each part measures into a separate
+    coverage file, merged into ``data`` only when every child passes, so the
+    receipt still hashes one complete coverage file. Each child's output is
+    relayed whole, line by line, a part's tagged ``[baseline N/K]``. A
+    timeout in any child is raised once all have stopped. Any other failure
+    of the database side (an interrupt, a child that cannot start) stops the
+    baseline parts at once rather than leaving them to run out their
+    deadlines.
     """
-    extra = data.with_name("baseline.coverage")
-    baseline_env = dict(env)
-    if coverage:
-        baseline_env["COVERAGE_FILE"] = str(extra)
+    extras = [
+        data.with_name(f"baseline-{part}.coverage")
+        for part in range(1, len(baselines) + 1)
+    ]
     lock = threading.Lock()
-    # The baseline's Popen, once started. If the database side fails first,
-    # ``cancel`` makes the baseline stop as soon as it starts.
+    # The baseline parts' Popens, once started. If the database side fails
+    # first, ``cancel`` makes a part stop as soon as it starts.
     processes = []
     cancel = threading.Event()
+    # The parts' threads append and the database side's failure path reads.
+    guard = threading.Lock()
 
     def started(process):
-        """Record the baseline child; stop it at once if already cancelled."""
-        processes.append(process)
-        if cancel.is_set():
-            process.kill()
+        """Record a baseline child; stop it at once if already cancelled."""
+        with guard:
+            processes.append(process)
+            if cancel.is_set():
+                process.kill()
 
-    with ThreadPoolExecutor(max_workers=1) as pool:
-        later = pool.submit(
-            run_child,
-            baseline,
-            phase="baseline",
-            cwd=root,
-            env=baseline_env,
-            timeout=SHARD_TIMEOUT,
-            prefix="[baseline] ",
-            lock=lock,
-            on_start=started,
-        )
+    with ThreadPoolExecutor(max_workers=len(baselines)) as pool:
+        later = []
+        for part, extra in enumerate(extras, start=1):
+            part_env = dict(env)
+            if coverage:
+                part_env["COVERAGE_FILE"] = str(extra)
+            later.append(
+                pool.submit(
+                    run_child,
+                    baselines[part - 1],
+                    phase=baseline_label(part),
+                    cwd=root,
+                    env=part_env,
+                    timeout=SHARD_TIMEOUT,
+                    prefix=f"[{baseline_label(part)}] ",
+                    lock=lock,
+                    on_start=started,
+                )
+            )
         try:
             result = run_child(
                 database,
@@ -393,25 +461,58 @@ def run_with_baseline(root, env, database, baseline, data, coverage):
                 lock=lock,
             )
         except subprocess.TimeoutExpired:
-            # Already logged; the baseline finishes or times out on its own.
+            # Already logged; the baseline parts finish or time out on their own.
             raise
         except BaseException:
-            cancel.set()
-            for process in processes:
-                process.kill()
+            with guard:
+                cancel.set()
+                for process in processes:
+                    process.kill()
             print(
                 "Stopping the baseline: the database run did not finish.",
                 file=sys.stderr,
                 flush=True,
             )
             raise
-        # Name both failures (a signal, say) before returning either status.
-        status = [child_status(later.result()), child_status(result)]
+        # Name every failure (a signal, say) before returning any status.
+        status = [child_status(future.result()) for future in later]
+        status.append(child_status(result))
     if any(status):
         return next(code for code in status if code)
     if coverage:
-        merge_coverage(data, extra)
+        for extra in extras:
+            merge_coverage(data, extra)
     return 0
+
+
+def check_baseline(output):
+    """Require every baseline part's receipt in ``output``; return the test count.
+
+    Each part's pytest run wrote its receipt only after completing exactly
+    its share of the suite it collected (``quality_pytest``). Here, before
+    the shard's own receipt, the parts must agree on that suite, and their
+    shares must add up to it. ``combine`` later proves the shares are the
+    exact, disjoint split of an independent collection.
+    """
+    receipts = [
+        json.loads(baseline_evidence(output, part).read_text())
+        for part in range(1, BASELINE_PARTS + 1)
+    ]
+    universe = receipts[0]["universe"]
+    if (
+        any(
+            receipt["part"] != part
+            or receipt["parts"] != BASELINE_PARTS
+            or receipt["universe"] != universe
+            or receipt["completed"] != receipt["selected"]
+            or not receipt["selected"]["count"]
+            for part, receipt in enumerate(receipts, start=1)
+        )
+        or sum(receipt["selected"]["count"] for receipt in receipts)
+        != universe["count"]
+    ):
+        raise ValueError("Incomplete CI baseline")
+    return universe["count"]
 
 
 def merge_coverage(data, extra):
@@ -594,6 +695,32 @@ def remap(root, recorded_root, filename):
     return str(result)
 
 
+def verify_baseline(directory, digests, universe):
+    """Prove the baseline parts in ``directory`` ran every test exactly once.
+
+    ``universe`` is combine's own collection of the unsplit baseline, and
+    ``digests`` the shard receipt's digests of the parts' receipts, in part
+    order. Each part's receipt must be exactly the one that completing its
+    share of ``universe`` produces: the same suite, and the same tests
+    selected and completed. The shares must then be disjoint and together be
+    the whole of ``universe``.
+    """
+    parts = len(digests)
+    shares = []
+    for part, digest in enumerate(digests, start=1):
+        path = baseline_evidence(directory, part)
+        if hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+            raise ValueError("CI baseline evidence digest mismatch")
+        expected = baseline_partition(universe, part, parts)
+        if json.loads(path.read_text()) != baseline_receipt(
+            part, parts, universe, expected, expected
+        ):
+            raise ValueError("CI baseline part did not execute its complete share")
+        shares.extend(expected)
+    if len(shares) != len(set(shares)) or sorted(shares) != universe:
+        raise ValueError("CI baseline parts do not cover the suite exactly once")
+
+
 def combine(root, directory, report, count, test_map=None):
     """Require every exact partition before combining raw line/branch evidence.
 
@@ -613,6 +740,7 @@ def combine(root, directory, report, count, test_map=None):
     if len(receipts) != count:
         raise ValueError("Missing or extra CI shard artifacts")
     universe = database_collection(root)
+    baseline = baseline_collection(root)
     combined = Coverage(branch=True, source=[str(root / "src")], config_file=False)
     combined.set_option("run:data_file", str(report) + ".data")
     seen = set()
@@ -622,9 +750,11 @@ def combine(root, directory, report, count, test_map=None):
         if (
             type(index) is not int
             or index in seen
-            or receipt["schema"] != 1
+            or receipt["schema"] != 2
             or receipt["count"] != count
             or receipt["baseline"] is not (index == 1)
+            or type(receipt["baseline_sha256"]) is not list
+            or len(receipt["baseline_sha256"]) != (BASELINE_PARTS if index == 1 else 0)
             or receipt.get("coverage", True) is not True
             or receipt["tree"] != digest
         ):
@@ -641,6 +771,8 @@ def combine(root, directory, report, count, test_map=None):
         tests = json.loads(tests_path.read_text())
         if tests != {"universe": universe, "selected": expected, "completed": expected}:
             raise ValueError("CI shard did not execute its complete test partition")
+        if index == 1:
+            verify_baseline(path.parent, receipt["baseline_sha256"], baseline)
         data = CoverageData(basename=str(data_path))
         data.read()
         if not data.has_arcs() or not data.measured_files():
@@ -662,6 +794,10 @@ def combine(root, directory, report, count, test_map=None):
     if test_map is not None:
         write_map(root, test_map, combined.get_data(), universe, count)
     print(f"All {len(universe):,} database tests accounted for across {count} shards")
+    print(
+        f"All {len(baseline):,} baseline tests accounted for across "
+        f"{BASELINE_PARTS} parts"
+    )
     print(f"Stewardship scope: lines {lines:.2f}%; branches {branches:.2f}%")
     return 0 if lines >= FLOOR and branches >= FLOOR else 1
 
