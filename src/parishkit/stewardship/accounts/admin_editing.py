@@ -417,11 +417,14 @@ def confirm_intent(
             current = authenticated_admin(caller, store=service.store, read_only=True)
             if not allows(current, capability) or current.identity != actor.identity:
                 return False
-            if fresh:
-                require_fresh(caller)
             existing = ConfigurationChangeRequest.objects.filter(
                 actor_id=actor.identity, request_key=key
             ).exists()
+            if fresh:
+                # A repeat still needs the gate, but an automation session's
+                # repeat records no second fresh-gate event or notice, as
+                # the export commands' repeats record none.
+                require_fresh(caller, record=not existing)
             if existing:
                 # An identical retry returns the original receipt (record_request
                 # finds it by key) even when the page's own admission no longer

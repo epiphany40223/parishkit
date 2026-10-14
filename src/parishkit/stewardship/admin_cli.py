@@ -1210,6 +1210,37 @@ def integration_status(args, preamble, runtime, context):
     return read_integration_status(context["caller"], runtime, args.target)
 
 
+def integration_preview(args, preamble, runtime, context):
+    """Review a change to, or the removal of, an integration's settings (PR 10)."""
+    from .admin_integration_changes import CHANGES_LIMIT, preview_integration
+
+    return preview_integration(
+        context["caller"],
+        runtime,
+        args.target,
+        expected_version=args.expected_version,
+        changes=(None if args.remove else _input(args.changes, context, CHANGES_LIMIT)),
+        remove=args.remove,
+    )
+
+
+def integration_confirm(args, preamble, runtime, context):
+    """Apply a reviewed integration settings change (PR 10).
+
+    The page's Apply needs a recent sign-in (#547), so this always prompts,
+    naming the integration and the reviewed settings (never their values),
+    after checking the token's signature and before any transaction.
+    """
+    from .admin_changes import TOKEN_LIMIT
+    from .admin_integration_changes import confirm_integration, prompt_lines
+
+    token = _input(args.token, context, TOKEN_LIMIT)
+    confirm(context, prompt_lines(args.target, token))
+    return confirm_integration(
+        context["caller"], runtime, args.target, token=token, context=context
+    )
+
+
 def parish_show(args, preamble, runtime, context):
     """The Parish settings page's profile (PR 10)."""
     from .admin_settings import read_parish
@@ -2742,6 +2773,38 @@ def _integration_status_options(parser):
     """Options of ``integration status``: the integration, and --watch."""
     parser.add_argument("target", choices=INTEGRATION_STATUS_TARGETS, metavar="TARGET")
     _watch_options(parser)
+
+
+def _integration_preview_options(parser):
+    """Options of ``integration preview``: the integration, version and change."""
+    parser.add_argument("target", choices=INTEGRATION_SHOW_TARGETS, metavar="TARGET")
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_digest,
+        help="the version integration show printed",
+    )
+    change = parser.add_mutually_exclusive_group(required=True)
+    change.add_argument(
+        "--changes",
+        help="the settings change as JSON, or - to read it from standard input",
+    )
+    change.add_argument(
+        "--remove",
+        action="store_true",
+        help="review removing the integration (Slack or off-site backups)",
+    )
+
+
+def _integration_confirm_options(parser):
+    """Options of ``integration confirm``: the integration and the token."""
+    parser.add_argument("target", choices=INTEGRATION_SHOW_TARGETS, metavar="TARGET")
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from integration preview, or - for standard input "
+        "(needs --yes)",
+    )
 
 
 def _content_history_options(parser):
@@ -4377,8 +4440,14 @@ def _integration_specs():
     Like ``parish show``, any session runs them and they record nothing, as
     the pages' GETs record nothing. ``integration status`` takes ``--watch``,
     as the settings page follows its status line while a change runs.
-    Saving, removing and the key steps come later in PR 10.
+    A settings page's Save and Remove are ``integration preview`` and
+    ``integration confirm`` (``admin_integration_changes``), as ``parish
+    preview`` and ``parish confirm``: full scope, as the page's posts record
+    activity. The page asks for a recent sign-in (#547), so ``integration
+    confirm`` is fresh-gated and prompts; the preview records nothing. The
+    key steps come later in PR 10.
     """
+    from .admin_integration_changes import IntegrationConfirm, IntegrationPreview
     from .admin_integrations import IntegrationList, IntegrationShow, IntegrationStatus
 
     return (
@@ -4414,6 +4483,30 @@ def _integration_specs():
             options=(_integration_status_options,),
             audit_event=None,
             watch=True,
+        ),
+        CommandSpec(
+            "integration preview",
+            "Review a change to an integration's settings, or its removal.",
+            integration_preview,
+            "full",
+            False,
+            IntegrationPreview.field_names(),
+            10,
+            options=(_integration_preview_options,),
+            expected_version=True,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "integration confirm",
+            "Apply a reviewed change to an integration's settings.",
+            integration_confirm,
+            "full",
+            True,
+            IntegrationConfirm.field_names(),
+            10,
+            options=(_integration_confirm_options,),
+            fresh_gated=True,
+            prompts=True,
         ),
     )
 

@@ -863,10 +863,11 @@ Every event also appears in the [system logs](../admin-portal/spec.md#logs).
 Nothing carries the secret, digests or Family data.
 
 A row applies once a command can take its action. On `main` no command yet
-confirms Production, withdraws, runs Testing cleanup (PR 12) or changes
-user rules, keys or notification settings (PR 10 and PR 11), so nothing
-records an `irreversible` or `policy_change` notice or observes
-`automation_irreversible` or `automation_policy_change` yet; the
+confirms Production, withdraws, runs Testing cleanup (PR 12) or replaces a
+key (PR 10), so nothing records an `irreversible` notice or observes
+`automation_irreversible` yet. `users confirm`'s high-impact changes and
+`integration confirm`'s Slack changes and removals record the
+`policy_change` notice and observe `automation_policy_change`; the
 [delivery plan](#delivery-plan) says which commands have landed.
 
 ### High-impact changes
@@ -1173,8 +1174,9 @@ sign-in, with no browser step:
   `export family-timeline`, `export financial` and `export regenerate` run,
   and the campaign archive workbook, which `export archive` runs
   ([#1018](https://github.com/epiphany40223/parishkit/issues/1018) part (a));
-- integration setting changes (PR 10's `integration set`, including removing
-  an integration) and starting Testing cleanup (PR 12's `go-live cleanup`)
+- integration setting changes (PR 10's `integration confirm`, including
+  removing an integration) and starting Testing cleanup (PR 12's `go-live
+  cleanup`)
   ([#547](https://github.com/epiphany40223/parishkit/issues/547)).
 
 The #547 actions have no SQL freshness check (only Python's `require_fresh`),
@@ -1657,7 +1659,10 @@ signatures:
   `integration list`, `integration show` and `integration status` moved the
   list's rows, the key change line and the backup status into
   `integration_views.integration_list`, `key_summary` and `backup_state`,
-  which the pages now call.
+  which the pages now call. `integration preview` moved the settings page's
+  Save review (after its local and key checks) and its Remove review into
+  `integration_views.review_settings` and `review_removal`, which the
+  page's Save and Remove now call.
 - **PR 11:** user, event and follow-up actions from their views (the users
   model of #952 replaces the rule actions; #922 retired the assignment and
   Chairperson actions). The event acknowledgements moved each view's
@@ -2910,14 +2915,14 @@ lists the fields.
 
 | URL names | Command or exemption |
 | --- | --- |
-| `integrations`, `integration_settings`, `integration_status`, `credential_status` | `integration list`, `integration show TARGET` and `integration status TARGET [--watch S]` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), the pages' reads (any session; no event, as the pages' reads record none; see below); `integration set` for non-secret settings, `integration backup-probe` for the backup Drive folder check (PR 10); `integration set --target parishsoft` takes the [refresh schedule](../background-processing/spec.md#refresh-schedule) with the page's validation, and `integration schedule-preview` prints the page's [seven-day preview](../admin-portal/spec.md#seven-day-preview) and [cost and freshness summary](../admin-portal/spec.md#cost-and-freshness-summary), for a saved or a proposed schedule ([#632](https://github.com/epiphany40223/parishkit/issues/632)) |
+| `integrations`, `integration_settings`, `integration_status`, `credential_status` | `integration list`, `integration show TARGET` and `integration status TARGET [--watch S]` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), the pages' reads (any session; no event, as the pages' reads record none; see below); `integration preview TARGET` and `integration confirm TARGET` for the settings page's non-secret Save and its Remove ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below); `integration backup-probe` for the backup Drive folder check (PR 10); `integration preview parishsoft` takes the [refresh schedule](../background-processing/spec.md#refresh-schedule) with the page's validation, and `integration schedule-preview` prints the page's [seven-day preview](../admin-portal/spec.md#seven-day-preview) and [cost and freshness summary](../admin-portal/spec.md#cost-and-freshness-summary), for a saved or a proposed schedule ([#632](https://github.com/epiphany40223/parishkit/issues/632)) |
 | `refresh_schedule_check` | `integration schedule-preview` (PR 10): the ParishSoft page's no-save live check of the refresh schedule editor's rows answers the same validation, preview and cost summary ([#632](https://github.com/epiphany40223/parishkit/issues/632)) |
 | `dismiss_credential_result` | `integration dismiss` (PR 10) |
 | Key replacement through `integration_settings` | `integration key replace --target …`, `integration key status --watch` (PR 10; see [secret replacement](#secret-replacement)) |
 | `select_credential` | `integration key finish-switching` (PR 10) |
 | Backup encryption key change, through `integration_settings` with proof of possession | `integration backup-key challenge`, `integration backup-key preview`, `integration backup-key confirm` (PR 10) |
 
-The refresh schedule is given to `integration set --target parishsoft` as
+The refresh schedule is given to `integration preview parishsoft` as
 `--refresh-schedule FILE` (`-` reads standard input): a YAML or JSON
 document in the stored `refresh_rules` shape (rules, skips and the skip
 switch), never the derived time lists. The command derives the lists and
@@ -2954,6 +2959,32 @@ the pages' own helpers and record no event, as the pages' GETs record none.
 No key, key file or fingerprint is printed. The
 [operator guide](../../../guides/stewardship-admin-automation.md#integrations)
 lists the fields.
+
+`integration preview TARGET --expected-version VERSION` is a settings
+page's review, for the same five targets: with `--changes` (a JSON document
+`{"settings": {...}}` shaped like `integration show`'s `settings`, any
+non-empty subset of the page's fields, an omitted field keeping its applied
+value, only `sender_name` nullable) the page's Save, or with `--remove` its
+Remove (Slack and the off-site folder only; anything else, or one not set
+up, is `not_available`, the page's 404). It needs a full-scope session, as
+the page's posts record activity, passes the page's
+[fresh gate](#fresh-gated-actions-from-the-command-line) with the live session, binds the
+document to the page's own form in one read snapshot, and prints
+`version`, `target`, `name`, `removing`, `changes` (each `field` with its
+stored `before` and `after`) and `preview.token`, the page's own signed
+binding (salt per integration). It records nothing. The page's refusals
+are `invalid` at `settings.<name>` or `settings` (no change); Slack not yet
+set up is `invalid` at `key`, as its key sets it up; keys and refresh
+schedule keys are never accepted, and an unchanged ParishSoft schedule
+keeps its stored keys exactly. `integration confirm TARGET --token TOKEN`
+is the page's Apply, through `admin_editing.confirm_intent` with the
+page's salt and fresh gate: it is fresh-gated and prompts, naming the
+integration and the reviewed settings but never their values. In the
+request's transaction it records `admin_cmd_integration_confirm` with the
+fresh gate's event and `fresh_gated` notice, and, for Slack, a
+`policy_change` notice and the `automation_policy_change` incident (see
+[notifications](#notifications)). A repeat returns the original request and
+records nothing new, the fresh gate's trail included.
 
 Secret values never pass through command output. The backup destination is an
 `integration` target; backups themselves already run as `pk-stewardship
@@ -3378,7 +3409,9 @@ exactly the commands that exist.
   (`parish show`, `ministries list`, `branding show` and `campaign shares`
   first, then `parish preview` and `parish confirm`), hosted files (`files list`,
   `files delete`, `files rename`), artwork (`artwork show`, then
-  `artwork remove-preview` and `artwork remove`), branding confirmation, integration settings with the
+  `artwork remove-preview` and `artwork remove`), branding confirmation, integration settings
+  (`integration list`, `integration show` and `integration status`, then
+  `integration preview` and `integration confirm`) with the
   backup folder probe, and secret replacement: integration key replacement,
   finish switching and the backup key change, with the wrapper's secret
   input.

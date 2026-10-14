@@ -859,6 +859,25 @@ line, the backup folder, its copy status and only this Administrator's
 check, Staff denied, an ended session) and the unchanged integration and
 backup page suites.
 
+Another part adds `integration preview` and `integration confirm`, an
+integration settings page's non-secret Save and its Remove, in
+`parishkit.stewardship.admin_integration_changes`, through the page's own
+form, reviews (moved into `integration_views.review_settings` and
+`review_removal`, which the page's Save and Remove now call), salt and
+`admin_editing.confirm_intent` with its fresh gate (whose repeat now
+records no second fresh-gate notice), with no schema change; proven by
+`tests/stewardship/test_admin_integration_changes.py` (the change
+document, the form post, the prompt, catalog flags, the described event,
+the ledger, usage errors), `tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_pk_admin.py` (the wrapper's prompting list),
+`tests/stewardship/database/test_admin_integration_changes_cli_postgresql.py`
+(mail settings reviewed, prompted, applied and repeated with the command
+event and fresh-gate trail, a Slack change and removal with the policy
+notice, the off-site folder added and removed, a command token confirmed
+on the page and a page token by the command, the page's refusals, Slack and
+mail not set up, foreign tokens, a read-only session and Staff denied, an
+ended session) and the unchanged integration page suites.
+
 ## ADM-12: Admin navigation overhaul
 
 Scope and dependencies: [ADM-12 work package](../../plans/stewardship/admin-portal.md#adm-12-admin-navigation-overhaul).
