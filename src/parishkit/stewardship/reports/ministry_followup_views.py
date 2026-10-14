@@ -275,6 +275,12 @@ FIELD_IDS = {
     "contact_date": "contact-date",
     "contact_time": "contact-time",
 }
+# The same fields' ids in the queue's bulk outcome dialog
+# (ministry-followup-bulk-fields.html), which has no outcome or notes field.
+BULK_FIELD_IDS = {
+    "contact_date": "bulk-contact-date",
+    "contact_time": "bulk-contact-time",
+}
 ACTIONS = {"join": _("join"), "leave": _("leave")}
 # What each bulk outcome is called on its button (#1131), by its posted
 # "kind:outcome" value (BULK_ACTIONS).
@@ -1159,10 +1165,17 @@ def _row_name(campaign_id, principal, request_id):
     return f"{row['member_label']} — {row['ministry_name']}"
 
 
-def _bulk_refusal(status, message):
-    """A refusal the dialog shows below its buttons (ui-v1.js refusalText)."""
+def _bulk_refusal(status, message, fields=()):
+    """A refusal the dialog shows (ui-v1.js refusalText).
+
+    With ``fields`` (form field names), each error names that field's id in
+    the dialog, so the dialog shows the message at those fields (#1332);
+    otherwise it shows it below its buttons.
+    """
+    code = ErrorCode.STALE if status == 409 else ErrorCode.INVALID
+    errors = [FieldError(code, BULK_FIELD_IDS[name]) for name in fields]
     return validation_response(
-        [FieldError(ErrorCode.STALE if status == 409 else ErrorCode.INVALID)],
+        errors or [FieldError(code)],
         status=status,
         refusal=Refusal(message, BULK_FIX if status == 409 else None),
     )
@@ -1227,6 +1240,8 @@ def bulk(request, campaign_id):
             )
         if refusal.code not in REFUSALS or refusal.code == "outcome_kind":
             return _error(campaign_id)
-        return _bulk_refusal(400, _refusal_error(refusal, request.POST)["message"])
+        refused = _refusal_error(refusal, request.POST)
+        fields = [name for name in refused["fields"] if name in BULK_FIELD_IDS]
+        return _bulk_refusal(400, refused["message"], fields)
     except ValueError:
         return _error(campaign_id)

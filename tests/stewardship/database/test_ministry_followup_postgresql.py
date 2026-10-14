@@ -1545,6 +1545,19 @@ def test_bulk_outcome_route_refuses_in_the_dialog_and_marks_history(
         future = post(browser, route, form | {"contact_date": "2999-01-01"})
         assert future.status_code == 400
         assert refusal(future).startswith("The contact attempt's date and time")
+        # It names the dialog's Date and Time, so it shows there (#1332);
+        # the row refusals above name no field.
+        assert [e["field_id"] for e in json.loads(future.content)["errors"]] == [
+            "bulk-contact-date",
+            "bulk-contact-time",
+        ]
+        assert [e["field_id"] for e in json.loads(kind.content)["errors"]] == [None]
+        zoneless = post(browser, route, form | {"contact_zone": "Not/A_Zone"})
+        assert zoneless.status_code == 400
+        assert [e["field_id"] for e in json.loads(zoneless.content)["errors"]] == [
+            "bulk-contact-date",
+            "bulk-contact-time",
+        ]
         assert post(browser, route, form | {"outcome": "join:other"}).status_code == 400
         assert MinistryWorkflowRevision.objects.count() == 0
         done = post(browser, route, form)

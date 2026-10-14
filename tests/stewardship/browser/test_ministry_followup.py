@@ -807,3 +807,61 @@ def test_a_queue_page_with_no_open_request_says_why_nothing_can_be_ticked(
         [False] * 4,
         "No request on this page is open for an outcome.",
     )
+
+
+def test_a_refused_bulk_contact_time_is_shown_at_the_fields(page, component_origin):
+    """A contact date and time refusal names its fields (#1332): the message
+    fills the fields' error line, not the box below the buttons; Date and
+    Time are marked; Record outcome waits, naming the line, until one of them
+    is edited, which clears the mark."""
+    failures = bulk_page(page, component_origin)
+    message = (
+        "The contact time came without your computer's time zone. Save "
+        "again; if this repeats, check your computer's time zone setting."
+    )
+
+    def refuse(route):
+        """Answer as the bulk view does for a contact zone refusal."""
+        route.fulfill(
+            status=400,
+            content_type="application/json",
+            body=json.dumps(
+                {
+                    "errors": [
+                        {"code": "invalid", "field_id": "bulk-contact-date"},
+                        {"code": "invalid", "field_id": "bulk-contact-time"},
+                    ],
+                    "refusal": {"message": message, "fix": None},
+                }
+            ),
+        )
+
+    page.route(component_origin + BULK_POST, refuse)
+    tick(page, BULK_JOIN)
+    page.get_by_role("button", name="Mark as Joined").click()
+    dialog = bulk_dialog(page)
+    visible(dialog)
+    dialog.get_by_label("How").select_option("phone")
+    date = dialog.get_by_label("Date", exact=True)
+    time = dialog.get_by_label("Time", exact=True)
+    date.fill("2026-09-19")
+    time.fill("3:04 PM")
+    record = dialog.get_by_role("button", name="Record outcome")
+    available(record)
+    record.click()
+    line = dialog.locator("#bulk-contact-error")
+    visible(line)
+    assert line.inner_text().strip() == message
+    assert dialog.locator("[data-confirm-error]").is_hidden()
+    for field in (date, time):
+        assert field.get_attribute("aria-invalid") == "true"
+        assert "bulk-contact-error" in field.get_attribute("aria-describedby").split()
+    assert record.is_disabled()
+    assert "bulk-contact-error" in record.get_attribute("aria-describedby").split()
+    time.fill("3:05 PM")
+    hidden(line)
+    assert date.get_attribute("aria-invalid") == "false"
+    available(record)
+    assert "bulk-contact-error" not in (record.get_attribute("aria-describedby") or "")
+    assert page.evaluate("window.notReloaded === true")
+    assert not failures

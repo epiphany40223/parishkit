@@ -3774,6 +3774,62 @@
     state.busy = false;
     cancel.focus();
   };
+  // A refusal whose errors name fields in the dialog (field_id: the bulk
+  // outcome's contact date and time, #1332) is shown at those fields
+  // instead: the message fills the dialog's field-error line (its first
+  // .errorlist with an id) and each field is marked and described by it.
+  // Confirm stays unavailable, naming the line, until one of them is
+  // edited: the edit clears the mark (wireValidity) and then lets the
+  // form's complete gate decide again. False when nothing was marked.
+  const refuseAtFields = (state, raw, text) => {
+    let ids = [];
+    try {
+      ids = (JSON.parse(raw)?.errors || []).map((item) => item?.field_id).filter(Boolean);
+    } catch { return false; }
+    const fields = [...new Set(ids)].map((id) => document.getElementById(id))
+      .filter((node) => node instanceof HTMLElement && state.dialog.contains(node)
+        && node.matches("input, select, textarea") && !node.disabled);
+    const list = state.dialog.querySelector(".errorlist[id]");
+    if (!fields.length || !list) return false;
+    const item = list.querySelector("li") || list.appendChild(document.createElement("li"));
+    item.textContent = text;
+    list.hidden = false;
+    list.dataset.source = "server";
+    const describe = (node) => node.setAttribute("aria-describedby", [...new Set([
+      ...(node.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean), list.id])].join(" "));
+    fields.forEach((node) => {
+      node.setAttribute("aria-invalid", "true");
+      node.setAttribute("data-field-error", "");
+      describe(node);
+    });
+    state.dialog.querySelector("[data-confirm-error]").hidden = true;
+    state.dialog.querySelector("[data-confirm-status]").textContent = "";
+    const accept = state.dialog.querySelector("[data-confirm-accept]");
+    accept.classList.remove("is-busy");
+    accept.removeAttribute("aria-disabled");
+    accept.disabled = true;
+    describe(accept);
+    state.dialog.querySelector("[data-confirm-cancel]").disabled = false;
+    state.busy = false;
+    // Registered after wireValidity's own listeners, so the mark is
+    // already cleared when this runs.
+    const done = new AbortController();
+    const release = () => {
+      done.abort();
+      const kept = (accept.getAttribute("aria-describedby") || "").split(/\s+/)
+        .filter((id) => id && id !== list.id);
+      if (kept.length) accept.setAttribute("aria-describedby", kept.join(" "));
+      else accept.removeAttribute("aria-describedby");
+      if (confirming !== state) return;
+      accept.disabled = false;
+      if (state.form.hasAttribute("data-require-complete")) gateComplete(state.form);
+    };
+    fields.forEach((node) => ["input", "change"].forEach((type) =>
+      node.addEventListener(type, release, {signal: done.signal})));
+    state.dialog.addEventListener("close", release, {signal: done.signal});
+    fields[0].focus();
+    return true;
+  };
   // A refused answer's message: the server's own explanation when it gives
   // one (a JSON refusal), else a plain one for its status.
   const refusalText = (status, text) => {
@@ -3825,7 +3881,8 @@
       return false;
     }
     if (!answer.response.ok) {
-      refuseConfirm(state, refusalText(answer.response.status, answer.text));
+      const text = refusalText(answer.response.status, answer.text);
+      if (!refuseAtFields(state, answer.text, text)) refuseConfirm(state, text);
       return false;
     }
     onRecorded?.();
