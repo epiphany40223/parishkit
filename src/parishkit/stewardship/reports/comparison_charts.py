@@ -597,9 +597,9 @@ def day_chart(measure, comparison):
     # every draw that strokeWidth should not encode an unsorted nominal
     # field (#1325).
     encoding_series["strokeWidth"]["scale"]["type"] = "ordinal"
-    encoding_series["strokeWidth"]["sort"] = encoding_series["strokeWidth"]["scale"][
-        "domain"
-    ]
+    encoding_series["strokeWidth"]["sort"] = list(
+        encoding_series["strokeWidth"]["scale"]["domain"]
+    )
     encoding_series["color"]["legend"] = {
         "orient": "top",
         "columns": legend_columns(150),

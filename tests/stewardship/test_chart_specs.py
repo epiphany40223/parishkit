@@ -776,7 +776,8 @@ def test_every_page_chart_compiles_without_warnings(capfd):
     for document in documents:
         assert page_warnings(document.spec, capfd) == [], document.key
     # A bar chart (here the funnel and the final figures) given back a step
-    # height warns again.
+    # height warns again. The loop above covers the other three fixes: the
+    # name sorts, the line width's sort and the merged series legend.
     finals = next(d for d in documents if d.key == "comparison-final-families")
     for document in (documents[0], finals):
         stepped = document.spec | {"height": {"step": 36}}

@@ -223,7 +223,8 @@ def test_the_saved_report_shows_the_response_funnel(
     from .test_components import axe_violations
 
     page.set_viewport_size({"width": width, "height": 900})
-    errors = watch(page)
+    # The saved digest's activity window can be empty (#1327).
+    errors = watch(page, empty_activity=True)
     page.goto(component_origin + "/daily-digest-funnel")
     funnel = page.locator("[data-digest-funnel]")
     visible(funnel.get_by_role("heading", name="Response funnel", level=2))
