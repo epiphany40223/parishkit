@@ -5,18 +5,20 @@ from datetime import timedelta
 from uuid import uuid4
 
 from django.db import connection
-from django.db.models import Count, Q
+from django.db.models import Count, Exists, OuterRef, Q
 
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.campaigns.models import ScheduleRevision
 from parishkit.stewardship.jobs.models import TaskRun
+from parishkit.stewardship.responses.models import Submission
 from parishkit.stewardship.source.refresh_status import (
     full_refresh_status,
     refresh_schedule,
 )
 from parishkit.stewardship.source.snapshot_models import SourceCurrent, SourceSnapshot
 
+from .content_models import ContentVersion
 from .policy import Capability, allows
 
 
@@ -97,7 +99,22 @@ def summary(actor, configuration, now, *, home=False):
             .first()
         )
         if allows(actor, Capability.CAMPAIGN_REPORT):
+            # Home's Today line (NAV-18): Families with a response saved in
+            # the past 24 hours, in the mode the system is in now (Testing
+            # responses while testing). A filter on this same statement, so
+            # it adds no query; the submission index on (family, mode,
+            # submitted_at) serves it. Home only: the command line's status
+            # read leaves it out.
+            recent = {}
+            if home:
+                responded = Submission.objects.filter(
+                    family=OuterRef("pk"),
+                    mode="test" if configuration.mode == "testing" else "live",
+                    submitted_at__gte=now - timedelta(hours=24),
+                )
+                recent["recent"] = Count("id", filter=Q(Exists(responded)))
             counts = FamilyCampaign.objects.filter(campaign=campaign).aggregate(
+                **recent,
                 active=Count("id", filter=Q(active=True)),
                 eligible=Count("id", filter=Q(portal_eligible=True)),
                 responded=Count("id", filter=Q(first_live_submission_id__isnull=False)),
@@ -112,6 +129,27 @@ def summary(actor, configuration, now, *, home=False):
                 counts["eligible_responded"], counts["eligible"]
             )
             result["families"] = counts
+        if (
+            home
+            and campaign.state == "draft"
+            and configuration.mode == "testing"
+            and allows(actor, Capability.CONFIGURE)
+        ):
+            # Home's Next steps offer Preview and test email for the
+            # initial invitation's current revision while a Testing draft
+            # admits test mail (NAV-18); the same row Pause and resume mail
+            # links. One small indexed query, for Administrators only.
+            result["test_email"] = (
+                ContentVersion.objects.filter(
+                    configuration_id=configuration.active_configuration_id,
+                    campaign_id=campaign.pk,
+                    kind="email",
+                    slot="initial",
+                )
+                .order_by("record_id")
+                .values_list("record_id", flat=True)
+                .first()
+            )
         if campaign.state in {"draft", "scheduled", "active"} and allows(
             actor, Capability.FAMILY_CODES
         ):
