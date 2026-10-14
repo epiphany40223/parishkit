@@ -128,17 +128,41 @@ def test_rows_with_none_selectable_say_why_in_the_reason_line(page, component_or
     assert not failures
 
 
-def test_rows_with_none_selectable_and_no_reason_leave_the_line_blank(
-    page, component_origin
-):
-    """A table that gives no reason for having no selectable rows (Dates and
-    mail schedules with only a sent email) keeps the line blank, as for an
-    empty table, rather than asking for a selection that cannot be made."""
+def test_schedules_with_none_selectable_say_why(page, component_origin):
+    """Dates and mail schedules with only an email that has already run
+    (read-only, #1332): Delete selected is unavailable and the line says
+    why, named by the button."""
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
     page.goto(component_origin + "/schedule-list-sent-only")
     assert page.locator("tbody td.select-col").count() == 1
     assert page.locator("input[data-select-row]").count() == 0
+    action = page.get_by_role("button", name="Delete selected", exact=True)
+    hint = page.locator("[data-selection-hint]").first
+    assert action.is_disabled()
+    assert hint.is_visible()
+    assert hint.inner_text().strip() == (
+        "Every scheduled email on this page has already started or run, so none "
+        "can be deleted."
+    )
+    assert described(action, hint)
+    assert not failures
+
+
+def test_rows_with_none_selectable_and_no_reason_leave_the_line_blank(
+    page, component_origin
+):
+    """A table that gives no data-none-hint keeps the line blank with no
+    selectable row, as for an empty table, rather than asking for a
+    selection that cannot be made (the hint removed from the schedules)."""
+    failures = []
+    page.on("pageerror", lambda error: failures.append(str(error)))
+    page.add_init_script(
+        "document.addEventListener('readystatechange', () => "
+        "document.querySelectorAll('[data-none-hint]').forEach("
+        "(node) => node.removeAttribute('data-none-hint')));"
+    )
+    page.goto(component_origin + "/schedule-list-sent-only")
     action = page.get_by_role("button", name="Delete selected", exact=True)
     hint = page.locator("[data-selection-hint]").first
     assert action.is_disabled()
