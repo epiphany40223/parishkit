@@ -246,6 +246,49 @@ def health(**values):
     )
 
 
+def page(context, *, request=None):
+    """The page's dashboard as the view draws it, without the Admin chrome.
+
+    Returns ``(region, tiles)``: the polled status region (the overall line
+    and the copies the poll carries), then the seven tiles with their
+    details. ``context`` is the view's; its dashboard is built from
+    ``health`` as the view builds it, unless given.
+    """
+    context = {"pause": None, "poll_interval": 10000} | context
+    model = context["health"]
+    context.setdefault(
+        "dashboard",
+        dashboard(
+            model,
+            findings=page_findings(
+                model, workgroup_missing=context.get("workgroup_missing")
+            ),
+        ),
+    )
+    region = render_to_string(
+        "stewardship/system-health-status.html", context, request=request
+    )
+    tiles = "".join(
+        render_to_string(
+            "stewardship/system-health-tile.html", context | {"tile": tile}, request
+        )
+        for tile in context["dashboard"].tiles
+    )
+    return region, tiles
+
+
+def whole(context, *, request=None):
+    """The region and the tiles as one string."""
+    return "".join(page(context, request=request))
+
+
+def section(body, marker):
+    """``body`` from ``marker`` (such as 'id="accept-change"') to the end of
+    the section it opens."""
+    start = body.index(marker)
+    return body[start : body.index("</section>", start)]
+
+
 def test_the_document_holds_states_counts_and_instants_only():
     """No translated text, names or messages: the projection is plain values."""
     document = health(
@@ -491,25 +534,21 @@ def test_nothing_waiting_and_everything_working_read_plainly():
     """A healthy system says so in the panel and the announcement."""
     healthy = health()
     assert not healthy.waiting
-    assert healthy.announcement == "Everything is working."
+    assert dashboard(healthy).announcement == "System health: all working."
     paused = health(
         delivery_paused=True,
         problems=(Problem("schema_mismatch"), Problem("versions_differ")),
     )
     assert paused.waiting
-    assert paused.announcement == (
-        "2 problems need attention: database does not match; versions differ."
+    # Two problems in one tile are one Error tile (decision 2).
+    assert dashboard(paused).announcement == (
+        "System health: 1 error (Version and services)."
     )
-    # The sentence follows the set of problems, not only their number.
+    # The sentence follows the set of tiles, not only their number.
     swapped = health(
-        problems=(
-            Problem("schema_mismatch"),
-            Problem("sender_halted", (Subject("mail-dispatch", "mail"),)),
-        )
+        problems=(Problem("sender_halted", (Subject("mail-dispatch", "mail"),)),)
     )
-    assert swapped.announcement == (
-        "2 problems need attention: database does not match; Mail sender 2 halted."
-    )
+    assert dashboard(swapped).announcement == "System health: 1 error (Mail)."
 
 
 def test_the_status_region_states_problems_and_panels_in_words():
@@ -553,17 +592,17 @@ def test_the_status_region_states_problems_and_panels_in_words():
             DropCount("fund", None, 12, 25, False),
         ),
     )
-    body = render_to_string(
-        "stewardship/system-health-status.html",
+    region, body = page(
         {
             "health": shown,
             "campaign_id": None,
             "pause": {"actor": "admin@example.org", "reason": "Fixing a typo"},
-            "poll_interval": 10000,
-        },
+        }
     )
+    # Each problem in its one tile: the line counts the tiles.
     assert body.count("data-problem=") == len(codes)
-    assert "17 problems need attention" in body
+    line = region[: region.index("</h2>")]
+    assert "4 errors" in line and "and 1 warning" in line
     assert "Mail sender 1 has stopped all Family email" in body
     assert "The background worker has not reported its status" in body
     assert "Families with an email address" in body
@@ -583,22 +622,16 @@ def test_the_status_region_states_problems_and_panels_in_words():
     assert "stewardship-deployment-runbook.md" not in body  # no sender is stopped
     # How long ago the last backup finished is counted in the browser, so an
     # unchanged poll's markup stays the same.
-    assert "data-live-since" in body and "Last checked" not in body
+    assert "data-live-since" in region and "Last checked" not in region
     # Internal names stay out of the words.
     assert "sender_halted<" not in body and "mail-dispatch<" not in body
-    healthy = render_to_string(
-        "stewardship/system-health-status.html",
-        {"health": health(), "pause": None, "poll_interval": 10000},
-    )
-    assert "Everything is working" in healthy
+    healthy = whole({"health": health(mode="testing")})
+    assert "All working" in healthy
     assert "Nothing is holding Family email back." in healthy
     # Shown even when nothing waits, so the Administrator sees the limit coming.
     assert "Emails went to 0 recipients in the last 24 hours." in healthy
     assert "Debug logging is off in every service that reports." in healthy
-    one = render_to_string(
-        "stewardship/system-health-status.html",
-        {"health": health(daily_sent=1), "pause": None, "poll_interval": 10000},
-    )
+    one = whole({"health": health(daily_sent=1)})
     assert "Emails went to 1 recipient in the last 24 hours." in one
     # Below the limit nothing waits for it, so no resume time is shown.
     assert "data-daily-resume" not in healthy and "data-daily-resume" not in one
@@ -607,14 +640,7 @@ def test_the_status_region_states_problems_and_panels_in_words():
 def test_the_resume_time_shows_only_while_the_count_is_at_the_limit():
     """At the limit the count line says when sending resumes, as a local clock time."""
     resume = NOW + timedelta(hours=5, minutes=10)
-    body = render_to_string(
-        "stewardship/system-health-status.html",
-        {
-            "health": health(daily_sent=1612, daily_resume_at=resume),
-            "pause": None,
-            "poll_interval": 10000,
-        },
-    )
+    _, body = page({"health": health(daily_sent=1612, daily_resume_at=resume)})
     line = body.split("data-daily-count>", 1)[1].split("</p>", 1)[0]
     assert "Sending resumes at about" in line
     # The browser shows it in its own time zone as a clock time (it is always
@@ -658,10 +684,7 @@ def test_a_stopped_mail_sender_links_the_deployment_runbook():
             [row(), row("mail-dispatch", age=600), row("mail-dispatch", "mail")], NOW
         )
     )
-    body = render_to_string(
-        "stewardship/system-health-status.html",
-        {"health": stopped, "pause": None, "poll_interval": 10000},
-    )
+    body = whole({"health": stopped})
     assert "Not running." in body
     assert (
         'href="https://github.com/epiphany40223/parishkit/blob/main/docs/guides/'
@@ -768,10 +791,7 @@ def test_a_condition_in_several_services_is_one_problem():
     # The most recent report among the stopped processes.
     assert stopped.at == NOW - timedelta(seconds=400)
     assert debug.names_inline == "the web portal, the scheduler and both mail senders"
-    body = render_to_string(
-        "stewardship/system-health-status.html",
-        {"health": health(problems=found), "pause": None, "poll_interval": 10000},
-    )
+    _, body = page({"health": health(problems=found)})
     assert body.count('data-problem="debug_logging"') == 1
     assert (
         "Debug logging is on in Production in the web portal, the scheduler and "
@@ -782,11 +802,9 @@ def test_a_condition_in_several_services_is_one_problem():
         "The background worker, the ParishSoft refresh worker and the settings "
         "installer have not reported for more than three minutes"
     ) in body
-    assert health(problems=found).announcement == (
-        "3 problems need attention: Both mail senders halted; The background "
-        "worker, the ParishSoft refresh worker and the settings installer not "
-        "running; debug logging on in the web portal, the scheduler and both "
-        "mail senders."
+    assert dashboard(health(problems=found)).announcement == (
+        "System health: 2 errors (Mail, Version and services) and 1 warning "
+        "(Debug logging)."
     )
 
 
@@ -801,10 +819,7 @@ def test_one_process_reads_as_its_own_phrase():
         refresh=None,
         backup_at=None,
     )
-    body = render_to_string(
-        "stewardship/system-health-status.html",
-        {"health": health(problems=(debug,)), "pause": None, "poll_interval": 10000},
-    )
+    body = whole({"health": health(problems=(debug,))})
     assert "Debug logging is on in Production in mail sender 1." in body
     assert "the mail sender 1" not in body
 
@@ -867,27 +882,18 @@ def test_a_requested_backup_reads_as_the_page_words_it():
             finished_at=NOW,
             failure_kind=None,
         )
-        body = render_to_string(
-            "stewardship/system-health-status.html",
-            {
-                "health": health(backup_request=request),
-                "pause": None,
-                "poll_interval": 10000,
-            },
-        )
+        body = whole({"health": health(backup_request=request)})
         assert words in body, code
         assert f'data-backup-request="{code}"' in body
-    body = render_to_string(
-        "stewardship/system-health-status.html",
-        {"health": health(), "pause": None, "poll_interval": 10000},
-    )
+    body = whole({"health": health()})
     assert "Its size is 3.0" in body and "taken by version 1.4.2" in body
 
 
 def debug_page(
     *, switch=None, debug=True, actor="admin@example.org", mode="production", **values
 ):
-    """Render the status region and the Turn off debug logging region together.
+    """Render the dashboard, whose Debug logging tile holds Turn off debug
+    logging.
 
     ``switch`` is the newest debug-off switch; ``debug`` whether the web
     portal reports debug logging in effect; ``mode`` the global mode. ``values``
@@ -900,9 +906,7 @@ def debug_page(
         "debug_actor": actor if switch is not None and switch.active else None,
         "poll_interval": 10000,
     } | values
-    return render_to_string(
-        "stewardship/system-health-status.html", context
-    ) + render_to_string("stewardship/system-health-debug-off.html", context)
+    return whole(context)
 
 
 def test_turn_off_debug_logging_is_offered_while_a_service_has_it_on():
@@ -963,7 +967,7 @@ def test_the_preview_and_each_refusal_read_in_the_region():
     assert 'name="key" value="k-1"' in body
     assert 'value="debug_off_confirm"' in body and 'value="debug_off_cancel"' in body
     # The preview replaces the region's button, so a poll cannot discard it.
-    region = body[body.index('id="debug-off"') :]
+    region = section(body, 'id="debug-off"')
     assert "data-live-mirror-target" not in region
     done = debug_page(
         switch=DebugSwitchStatus(set_at=NOW, cleared_at=None, cleared_by=None),
@@ -1011,8 +1015,8 @@ def accept_page(
     problems=(),
     **values,
 ):
-    """Render the status region, which holds the Accept this change once
-    region under the refusal.
+    """Render the dashboard, whose ParishSoft refresh tile holds the Accept
+    this change once region under the refusal.
 
     ``values`` are the view's other context (a step's ``accept`` result, the
     page's ``status_url``).
@@ -1029,9 +1033,7 @@ def accept_page(
         "refused_attempt": REFUSED_ATTEMPT if counts else None,
         "poll_interval": 10000,
     } | values
-    return render_to_string(
-        "stewardship/system-health-status.html", context, request=request
-    )
+    return whole(context, request=request)
 
 
 def test_which_refusals_can_be_accepted_once():
@@ -1125,41 +1127,47 @@ def test_accept_this_change_once_is_offered_for_an_open_refusal():
 
 
 def test_the_accept_region_sits_right_under_the_refusal():
-    """In the ParishSoft refresh panel, directly after the refused change's
-    notice, inside the element the poll keeps (data-live-keep); its heading
-    is a subheading of the panel's. The polled copy carries no CSRF token,
-    so polls compare equal; the page's own copy does."""
+    """In the ParishSoft refresh tile's details, directly after its problems,
+    which end with the refused change's counts (#1214), outside the polled
+    region; its heading is a subheading of the tile's. The polled copy of
+    its button carries no CSRF token, so polls compare equal; the page's
+    own copy does. It is drawn even with no refusal, greyed with why."""
     import re
 
     from django.test import RequestFactory
 
-    def kept(body):
-        """The kept element's markup, up to the end of its region."""
-        start = body.index('<div data-live-keep="accept-change"')
-        return body[start : body.index("</section>", start)]
-
     request = RequestFactory().get("/admin/system/health/")
-    body = accept_page(request=request, status_url="/admin/system/health/status/")
-    panel = body[body.index('aria-labelledby="health-source-heading"') :]
-    panel = panel[: panel.index("</section>\n\n")]
-    # The refusal notice's last line, then at once the kept element.
-    before, after = panel.split(
-        f'<div data-live-keep="accept-change" data-live-keep-key="{REFUSED_ATTEMPT}">',
-        1,
+    region, tiles = page(
+        {
+            "health": health(refused_at=NOW, refused_counts=FAILED),
+            "refused_attempt": REFUSED_ATTEMPT,
+            "status_url": "/admin/system/health/status/",
+        },
+        request=request,
     )
-    assert before.rstrip().endswith("every later refresh is refused too.</p>\n</div>")
+    details = tiles[tiles.index('id="health-source-details"') :]
+    before, after = details.split('<div data-live-keyed="accept-change">', 1)
+    # The refusal's last line ends the problems, then at once the region.
+    assert before.rstrip().endswith(
+        "every later refresh is refused too.</p>\n</div>\n</div>"
+    )
     assert "data-refused-change" in before
     assert after.startswith('<section class="panel" id="accept-change"')
     assert '<h3 id="accept-change-heading">Accept this change once</h3>' in after
-    assert body.count('id="accept-change"') == 1
+    assert tiles.count('id="accept-change"') == 1
+    assert 'id="accept-change"' not in region
     token = r'name="csrfmiddlewaretoken" value="([^"]*)"'
-    assert re.search(token, kept(body)).group(1)
-    polled = kept(accept_page(request=request))
+    assert re.search(token, section(tiles, 'id="accept-change"')).group(1)
+    polled = region[region.index('<template data-live-mirror="accept-button">') :]
     assert re.search(token, polled).group(1) == ""
-    # Nothing is drawn while no refusal is shown, but the kept element is.
+    # The region names the refusal shown, for an open preview's check.
+    assert f'data-live-key-value="{REFUSED_ATTEMPT}"' in region
+    # With no refusal the region is still drawn, its button greyed with why.
     empty = accept_page(counts=())
-    assert '<div data-live-keep="accept-change" data-live-keep-key=""></div>' in empty
-    assert 'id="accept-change"' not in empty
+    assert 'id="accept-change"' in empty
+    assert 'data-accept-state="none"' in empty
+    assert 'data-live-key="accept-change" data-live-key-value=""' in empty
+    assert "data-refused-change" not in empty
 
 
 def test_an_accepted_refusal_is_listed_but_not_counted():
@@ -1171,12 +1179,14 @@ def test_an_accepted_refusal_is_listed_but_not_counted():
     assert open_.attention == both
     done = health(refused_counts=FAILED, problems=both, drop_acceptance=accepted())
     assert done.attention == (LATE_PROBLEM,)
-    assert done.announcement.startswith("1 problem needs attention:")
+    assert dashboard(done).announcement == (
+        "System health: 1 warning (ParishSoft refresh)."
+    )
     alone = health(
         refused_counts=FAILED, problems=(DROP_PROBLEM,), drop_acceptance=accepted()
     )
     assert alone.attention == ()
-    assert alone.announcement == "Nothing needs attention."
+    assert dashboard(alone).announcement == "System health: all working."
     # A lapsed acceptance is not an answer: the refusal counts again.
     lapsed = health(
         refused_counts=FAILED,
@@ -1185,8 +1195,12 @@ def test_an_accepted_refusal_is_listed_but_not_counted():
     )
     assert lapsed.attention == (DROP_PROBLEM,)
 
+    def source(body):
+        """The ParishSoft refresh tile's summary row."""
+        return section(body, 'id="health-source"')
+
     body = accept_page(acceptance=accepted(), problems=both)
-    assert "1 problem needs attention" in body
+    assert "health-counted status-warning" in source(body)
     line = body[body.index('data-problem="source_destructive_change"') :]
     line = line[: line.index("</li>")]
     assert "data-problem-handled" in line and "notice-error" not in line
@@ -1196,11 +1210,11 @@ def test_an_accepted_refusal_is_listed_but_not_counted():
     )
     assert "refused because some counts fell too far" not in line
     body = accept_page(acceptance=accepted(), problems=(DROP_PROBLEM,))
-    assert "Nothing needs attention" in body and "Everything is working" not in body
+    assert "health-counted status-working" in source(body)
     assert 'data-problem="source_destructive_change"' in body
-    # Not yet accepted: the refusal's own sentence, counted.
+    # Not yet accepted: the refusal's own sentence, counted as an error.
     body = accept_page(problems=(DROP_PROBLEM,))
-    assert "1 problem needs attention" in body
+    assert "health-counted status-error" in source(body)
     assert "refused because some counts fell too far" in body
 
 
@@ -1213,11 +1227,8 @@ def test_the_preview_and_the_panel_name_the_refusal():
     )
     body = accept_page(accept={"preview": preview})
     assert f'data-refused-attempt="{REFUSED_ATTEMPT}"' in body
-    assert (
-        f'<div data-live-keep="accept-change" data-live-keep-key="{REFUSED_ATTEMPT}">'
-        in body
-    )
-    region = body[body.index('id="accept-change"') :]
+    assert f'data-live-key-value="{REFUSED_ATTEMPT}"' in body
+    region = section(body, 'id="accept-change"')
     assert f'data-live-keep-for="{preview.attempt_id}"' in region
     assert (
         '<p class="reserve-lines-wrap" role="status" data-live-stale-note='
@@ -1226,7 +1237,7 @@ def test_the_preview_and_the_panel_name_the_refusal():
     confirm = region[: region.index("Confirm: accept this change once")]
     assert "data-live-stale-holds" in confirm[confirm.rindex("<button") :]
     # No refusal shown: the key is empty, so any open preview is stale.
-    assert 'data-live-keep-key=""' in accept_page(counts=())
+    assert 'data-live-key-value=""' in accept_page(counts=())
 
 
 def test_an_acceptance_greys_the_button_with_who_when_and_until_when():
@@ -1288,7 +1299,7 @@ def test_the_preview_lists_the_counts_and_waits_for_the_tick_box():
     assert 'value="accept_confirm"' in region and 'value="accept_cancel"' in region
     assert 'aria-controls="accept-change-rules-tip"' in region
     # The preview replaces the region's button, so a poll cannot discard it.
-    assert "data-live-mirror-target" not in region
+    assert "data-live-mirror-target" not in section(body, 'id="accept-change"')
 
 
 def test_the_preview_lists_example_families_under_each_failing_count():
@@ -1416,7 +1427,7 @@ def test_allow_debug_logging_again_is_offered_only_in_testing_while_set():
     assert 'value="debug_allow_preview"' in body
     assert 'data-in-place="debug-allow-preview"' in body
     assert body.count('value="debug_allow_preview"') == 2  # region and mirror
-    assert "Allow debug logging again, below, clears the switch in Testing" in body
+    assert "Allow debug logging again, above, clears the switch in Testing" in body
     production = debug_page(switch=SET, debug=False)
     assert 'value="debug_allow_preview"' not in production
     assert 'disabled aria-describedby="debug-allow-reason"' in production
@@ -1441,7 +1452,10 @@ def test_the_allow_preview_result_and_refusals_read_in_the_region():
     assert 'name="key" value="k-2"' in body
     assert 'value="debug_allow_confirm"' in body
     assert 'value="debug_allow_cancel"' in body
-    region = body[body.index('id="debug-off"') :]
+    # The region alone: the tile's panel content follows it, in its own
+    # mirror target.
+    start = body.index('id="debug-off"')
+    region = body[start : body.index("</section>", start)]
     assert "data-live-mirror-target" not in region
     assert "Confirm: turn off debug logging" not in body
     cleared = DebugSwitchStatus(

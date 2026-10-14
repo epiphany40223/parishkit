@@ -75,12 +75,16 @@ def count(event):
     return AuditEvent.objects.filter(event_type=event).count()
 
 
-def test_the_control_appears_only_while_a_service_has_debug_logging(
+def test_the_control_is_offered_only_while_a_service_has_debug_logging(
     auth_service, google
 ):
-    """No region without debug logging; the button once a service has it."""
+    """Always drawn in its tile (#1214): greyed with why without debug
+    logging, the button once a service has it."""
     browser, _ = signed_in()
-    assert 'id="debug-off"' not in page(browser)
+    quiet = page(browser)
+    assert 'id="debug-off"' in quiet
+    assert 'value="debug_off_preview"' not in quiet
+    assert "Debug logging is off in every service that reports." in quiet
     debug_service()
     body = page(browser)
     assert 'id="debug-off"' in body

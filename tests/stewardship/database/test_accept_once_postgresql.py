@@ -196,10 +196,14 @@ def live():
         return cursor.fetchone()[0]
 
 
-def test_the_control_appears_only_while_a_refusal_is_shown(parish, google):
-    """No region without a refusal; the button once one is recorded."""
+def test_the_control_is_offered_only_while_a_refusal_is_shown(parish, google):
+    """Always drawn in its tile (#1214): greyed with why without a refusal,
+    the button once one is recorded."""
     browser, _ = signed_in()
-    assert 'id="accept-change"' not in page(browser)
+    empty = page(browser)
+    assert 'id="accept-change"' in empty
+    assert 'data-accept-state="none"' in empty
+    assert 'value="accept_preview"' not in empty
     refusal()
     body = page(browser)
     assert 'id="accept-change"' in body

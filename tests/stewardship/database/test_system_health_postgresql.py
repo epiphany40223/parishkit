@@ -81,7 +81,10 @@ def test_an_administrator_opens_the_page_and_only_the_page_is_audited(
         assert response.status_code == 200
         assert response["Cache-Control"] == "no-store"
         body = response.content.decode()
-        assert "Everything is working" in body
+        assert "All working" in body
+        # Seven tiles, Working and closed (#1214).
+        assert body.count("data-health-tile=") == 7
+        assert body.count(" hidden>") >= 7
         assert "All services run version 1.0.0." in body
         assert "The database matches the version that is running." in body
         assert "Nothing is holding Family email back." in body
@@ -93,7 +96,7 @@ def test_an_administrator_opens_the_page_and_only_the_page_is_audited(
         )
         fragment = browser.get(STATUS)
         assert fragment.status_code == 200
-        assert "Everything is working" in fragment.content.decode()
+        assert "All working" in fragment.content.decode()
         assert "<html" not in fragment.content.decode()
         opened = browser.get("/admin/system/")
     assert opened.status_code == 302 and opened["Location"] == PAGE
@@ -117,13 +120,23 @@ def test_problems_come_from_status_rows_incidents_and_retries(auth_service, goog
     browser, _ = signed_in()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         body = browser.get(STATUS).content.decode()
+        whole = browser.get(PAGE).content.decode()
         found = system_health.read_health(auth_service.store)[0]
     codes = [problem.kind for problem in found.problems]
     assert codes == ["sender_halted", "not_running", "backup_offsite_failed"]
     assert [
         (subject.service, subject.process) for subject in found.problems[1].subjects
     ] == [("worker", "source")]
-    assert "3 problems need attention" in body
+    # Mail (halted) and Version and services (a stopped worker) are Error
+    # tiles, Backups (a failed off-site copy) a Warning tile: the line
+    # counts tiles (#1214).
+    line = body[: body.index("</h2>")]
+    assert "2 errors" in line and "and 1 warning" in line
+    # Troubled tiles start open, Working ones closed.
+    for tile, shown in (("mail", True), ("backups", True), ("debug", False)):
+        band = whole[whole.index(f'id="health-{tile}-details"') :]
+        band = band[: band.index(">")]
+        assert ("hidden" not in band) is shown, tile
     assert "Mail sender 1 has stopped all Family email" in body
     assert "The ParishSoft refresh worker has not reported since" in body
     assert "Copying backups off-site has failed since" in body
@@ -135,8 +148,8 @@ def test_problems_come_from_status_rows_incidents_and_retries(auth_service, goog
     # Below the limit nothing waits for it, so there is no resume time (#530).
     assert found.daily_resume_at is None and "data-daily-resume" not in body
     assert "Emails went to 0 recipients in the last 24 hours." in body
-    # The polled fragment is never audited.
-    assert views() == []
+    # The polled fragment is never audited; the page view counts problems.
+    assert views() == [{"outcome": "succeeded", "count": 3}]
 
 
 @pytest.mark.parametrize("role", ["staff", "ministry_leader"])
@@ -186,9 +199,21 @@ def test_a_signed_out_request_reads_nothing(auth_service, google):
 
 
 def test_unknown_query_options_are_refused(auth_service, google):
-    """The page takes no options; a stray one is a plain refusal."""
+    """The page takes no options; a stray one is a plain refusal. The
+    fragment takes only the page-load tiles' states (``loaded``), which it
+    counts into the line and otherwise ignores (#1214)."""
+    running_services()
     browser, _ = signed_in()
     assert browser.get(PAGE + "?all=1").status_code == 400
+    assert browser.get(PAGE + "?loaded=resave:error").status_code == 400
+    assert browser.get(STATUS + "?all=1").status_code == 400
+    assert browser.get(STATUS + "?loaded=resave:error&all=1").status_code == 400
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        counted = browser.get(STATUS + "?loaded=resave:error").content.decode()
+        forged = browser.get(STATUS + "?loaded=mail:error,resave:fine").content
+    line = counted[: counted.index("</h2>")]
+    assert "1 error" in line
+    assert b"All working" in forged[: forged.index(b"</h2>")]
     assert views() == []
 
 

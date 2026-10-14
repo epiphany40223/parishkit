@@ -24,7 +24,10 @@ debug-off switch, has its own (``allow_debug``), since it updates the switch
 instead of recording a row.
 
 Pure helpers (``group_processes``, ``find_problems``) take every input as an
-argument, so they are unit tested without a database.
+argument, so they are unit tested without a database. So does the dashboard
+(#1214): ``REGISTRY`` gives each problem kind its home tile and severity,
+and ``dashboard`` turns a read into the overall status line and the seven
+tiles the page shows.
 """
 
 import logging
@@ -747,33 +750,30 @@ class SystemHealth(ReadModel):
         )
 
     @property
+    def mail_wait(self):
+        """The first running mail sender held at a limit (the daily limit or
+        Gmail's), which the Mail tile's summary names, or None."""
+        return next(
+            (
+                line
+                for line in self.senders
+                if line.running and line.sender_state in {"daily_limit", "gmail_held"}
+            ),
+            None,
+        )
+
+    @property
+    def live_request(self):
+        """Whether a requested backup is waiting, held or running."""
+        request = self.backup_request
+        return bool(request and request.status in LIVE_REQUEST)
+
+    @property
     def debug_lines(self):
         """The running processes with debug logging in effect."""
         return tuple(
             line for line in self.processes if line.running and line.debug_logging
         )
-
-    @property
-    def announcement(self):
-        """The short sentence screen readers hear when the problems change."""
-        from django.utils.translation import gettext, ngettext
-
-        attention = self.attention
-        if not self.problems:
-            return gettext("Everything is working.")
-        if not attention:
-            return gettext("Nothing needs attention.")
-        # The short names make the sentence change whenever the set of
-        # problems does, not only when their number does, so a problem that
-        # ends as another begins is still announced.
-        return ngettext(
-            "%(count)d problem needs attention: %(names)s.",
-            "%(count)d problems need attention: %(names)s.",
-            len(attention),
-        ) % {
-            "count": len(attention),
-            "names": "; ".join(problem.summary for problem in attention),
-        }
 
 
 # ------------------------------------------------------------ the dashboard
@@ -889,6 +889,46 @@ class Tile:
     def name(self):
         """The area's name."""
         return tile_name(self.key)
+
+    @property
+    def anchor(self):
+        """The tile's fixed anchor ("health-mail"), which Home's links use."""
+        return f"health-{self.key}"
+
+    @property
+    def details_id(self):
+        """The id of the tile's details band."""
+        return f"health-{self.key}-details"
+
+    @property
+    def panel(self):
+        """The template of the tile's panel content."""
+        return f"stewardship/system-health-panel-{self.key}.html"
+
+    @property
+    def word(self):
+        """The state word the tile shows beside its icon."""
+        from django.utils.translation import gettext as _
+
+        return {
+            "working": _("Working"),
+            "warning": _("Warning"),
+            "error": _("Error"),
+        }[self.state]
+
+    @property
+    def details_label(self):
+        """The details band's accessible name."""
+        from django.utils.translation import gettext as _
+
+        return _("%(name)s details") % {"name": self.name}
+
+    @property
+    def details_label_not_current(self):
+        """The details band's accessible name while the page is not current."""
+        from django.utils.translation import gettext as _
+
+        return _("%(name)s details, not current") % {"name": self.name}
 
     @property
     def icon(self):

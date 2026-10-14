@@ -1,13 +1,14 @@
 """The Administrator-only System health page and its polled status (ADM-13, #530).
 
-The page renders ``system_health.read_health``: the problems first, then the
-six panels. live-status-v1.js re-reads the status fragment every 10 seconds
-while the page is open (pausing while the tab is hidden), so a problem that
-starts or ends appears by itself. Only opening the page is audited
-(``system_health_viewed``); the fragment records nothing and never renews
-the Administrator's idle time. Neither read takes the work-order lock or
-any data lock; the only lock is the brief one the first sign-in check
-takes on the reader's own session row.
+The page renders ``system_health.read_health`` as a dashboard (#1214): the
+overall status line, then one tile per area, each with its state, its
+problems and its panel content. live-status-v1.js re-reads the status
+fragment every 10 seconds while the page is open (pausing while the tab is
+hidden), so a problem that starts or ends appears by itself. Only opening
+the page is audited (``system_health_viewed``); the fragment records nothing
+and never renews the Administrator's idle time. Neither read takes the
+work-order lock or any data lock; the only lock is the brief one the first
+sign-in check takes on the reader's own session row.
 """
 
 from django.core.exceptions import ObjectDoesNotExist
@@ -16,6 +17,7 @@ from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils.http import urlencode
 from django.views.decorators.http import require_http_methods, require_safe
 
 from parishkit.config import ConfigError
@@ -30,7 +32,14 @@ from parishkit.stewardship.jobs.delivery_views import (
 )
 from parishkit.stewardship.observability import debug_swallowed
 from parishkit.stewardship.storage import StorageInvariantError
-from parishkit.stewardship.system_health import read_health
+from parishkit.stewardship.system_health import (
+    dashboard,
+    loaded_query,
+    loaded_states,
+    page_findings,
+    parse_loaded,
+    read_health,
+)
 from parishkit.stewardship.web.contracts import ErrorCode, filters
 
 from .admin_editing import editable_configuration
@@ -84,6 +93,39 @@ def resave_summary(service, campaign_id):
         return None
 
 
+def _context(health, extra, *, loaded):
+    """The template context shared by the page, its fragment and an action.
+
+    ``loaded`` holds the page-load tiles' states that are not Working (the
+    page's own reads, or the fragment's ``?loaded=``); an action's answer
+    passes none, since only its region is swapped in.
+    """
+    return {
+        "health": health,
+        "dashboard": dashboard(
+            health,
+            findings=page_findings(
+                health, workgroup_missing=extra["workgroup_missing"]
+            ),
+            loaded=loaded,
+        ),
+        "campaign_id": extra["campaign_id"],
+        "pause": extra["pause"],
+        "workgroup_missing": extra["workgroup_missing"],
+        "debug_actor": extra["debug_actor"],
+        "accept_actor": extra["accept_actor"],
+        "refused_attempt": extra["refused_attempt"],
+        "poll_interval": POLL_MILLISECONDS,
+    }
+
+
+def _status_url(loaded):
+    """The fragment's address, carrying the page-load tiles' states."""
+    url = reverse("admin:system_health_status")
+    query = loaded_query(loaded)
+    return f"{url}?{urlencode({'loaded': query})}" if query else url
+
+
 def _read(request, template, *, page):
     """Admit an Administrator, read, render, then recheck before release.
 
@@ -92,36 +134,35 @@ def _read(request, template, *, page):
     Administrator signed out or demoted, or a restore begun, while the page
     rendered withholds it. Only the page is audited, with the number of
     problems it showed.
+
+    The fragment accepts one query key, ``loaded``: the page-load tiles'
+    states, which it counts into the overall line (``parse_loaded`` ignores
+    anything else in it). The page accepts none.
     """
     try:
-        filters(request.GET, allowed=set())
+        query = filters(request.GET, allowed=set() if page else {"loaded"})
         service = runtime()
         actor = _principal(request, service.store, activity=page)
         found = read_health(service.store)
         if found is None:
             return _error(ErrorCode.UNAVAILABLE, 503)
         health, extra = found
-        context = {
-            "health": health,
-            "campaign_id": extra["campaign_id"],
-            "pause": extra["pause"],
-            "workgroup_missing": extra["workgroup_missing"],
-            "debug_actor": extra["debug_actor"],
-            "accept_actor": extra["accept_actor"],
-            "refused_attempt": extra["refused_attempt"],
-            "poll_interval": POLL_MILLISECONDS,
-        }
         if page:
-            context["status_url"] = reverse("admin:system_health_status")
             # Families the form cannot open (#774): on page load only, never
             # in the polled status, so the poll never pays for the scan.
-            context["source_form_count"] = source_form_summary(extra["campaign_id"])
+            source_form = source_form_summary(extra["campaign_id"])
             # Content to re-save (#838): likewise on page load only.
-            context["resave"] = resave_summary(service, extra["campaign_id"])
+            resave = resave_summary(service, extra["campaign_id"])
+            loaded = loaded_states(source_form, resave)
+            context = _context(health, extra, loaded=loaded)
+            context["source_form_count"] = source_form
+            context["resave"] = resave
+            context["status_url"] = _status_url(loaded)
             # The Admin chrome reuses this instant instead of reading the clock.
             request._stewardship_display_now = health.checked_at
             response = render(request, template, context)
         else:
+            context = _context(health, extra, loaded=parse_loaded(query.get("loaded")))
             # The fragment needs no Admin chrome, so it skips the context
             # processors (and their queries) a full page render runs.
             response = HttpResponse(render_to_string(template, context))
@@ -334,25 +375,13 @@ def _act(request):
         if found is None:
             return _error(ErrorCode.UNAVAILABLE, 503)
         health, extra = found
+        # Only the action's region is swapped in, so the answer skips the
+        # page-load tiles' reads; they show as Working in the discarded rest.
         response = render(
             request,
             "stewardship/system-health.html",
-            {
-                "health": health,
-                "campaign_id": extra["campaign_id"],
-                "pause": extra["pause"],
-                "debug_actor": extra["debug_actor"],
-                "accept_actor": extra["accept_actor"],
-                "refused_attempt": extra["refused_attempt"],
-                "poll_interval": POLL_MILLISECONDS,
-                "status_url": reverse("admin:system_health_status"),
-                region: result,
-                # The debug logging and acceptance regions stay once the page
-                # has drawn them, so answering any of their steps keeps them
-                # in place.
-                "debug_off_shown": region == "debug_off",
-                "accept_shown": region == "accept",
-            },
+            _context(health, extra, loaded={})
+            | {"status_url": _status_url({}), region: result},
             status=status,
         )
         if status != 200:

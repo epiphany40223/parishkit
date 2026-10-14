@@ -1,0 +1,20 @@
+{% load i18n stewardship %}{% comment %}
+  One tile's problems (#1214), each one plain sentence with what to do
+  (system-health-problem.html), in the registry's order. ``tile`` is a
+  system_health.Tile: its ``problems`` are the parts it shows, and those not
+  in ``counted`` (a refused change already accepted once) are listed
+  without counting. An Error part is drawn as an error notice, a Warning
+  part as a notice. The ParishSoft refresh tile ends with the refused large
+  change's counts, so Accept this change once, which follows the problems
+  in the tile, sits right under them. Shared by the page's tile and the
+  polled region's copy.
+{% endcomment %}{% if tile.problems %}<ul class="health-problems">{% for part in tile.problems %}<li class="notice{% if part in tile.counted and part.severity == 'error' %} notice-error{% endif %}" data-problem="{{ part.problem.kind }}" data-severity="{{ part.severity }}"{% if part not in tile.counted %} data-problem-handled{% endif %}>
+{% include "stewardship/system-health-problem.html" with problem=part.problem %}</li>{% endfor %}</ul>{% endif %}
+{% if tile.key == "source" and health.refused_counts %}<div class="notice notice-error" data-refused-change data-refused-attempt="{{ refused_attempt|default:'' }}">
+<p>{% translate "A ParishSoft refresh was refused at" %} <time datetime="{{ health.refused_at|instant }}" data-local-instant>{{ health.refused_at|instant }}</time> {% translate "because some counts fell too far. The system keeps using the data it had." %}</p>
+<div class="table-scroll"><table><caption>{% translate "What the refused refresh counted" %}</caption>
+<thead><tr><th scope="col">{% translate "Count" %}</th><th scope="col" class="numeric">{% translate "Before" %}</th><th scope="col" class="numeric">{% translate "After" %}</th><th scope="col">{% translate "Result" %}</th></tr></thead>
+<tbody>{% for count in health.refused_counts %}<tr><th scope="row">{{ count.label }}</th><td class="numeric">{% if count.before is None %}{% translate "None" %}{% else %}{{ count.before|number }}{% endif %}</td><td class="numeric">{{ count.after|number }}</td><td>{% if count.failed %}<strong>{% blocktranslate with limit=count.limit_percent trimmed %}Fell too far (more than {{ limit }}%){% endblocktranslate %}</strong>{% else %}{% translate "Within the limit" %}{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+<p>{% translate "“Before” is each count’s highest value over the full refreshes of the past week (and, for the eligibility counts, the current data), so a drop that built up over several refreshes is caught too." %}</p>
+<p>{% translate "Check these numbers in ParishSoft first. Until the drop is fixed there, or accepted once with Accept this change once just below, every later refresh is refused too." %}</p>
+</div>{% endif %}

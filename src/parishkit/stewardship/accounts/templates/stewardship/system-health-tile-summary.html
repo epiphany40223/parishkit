@@ -1,0 +1,17 @@
+{% load i18n stewardship %}{% comment %}
+  One tile's summary row contents (#1214): the state icon, the area's name,
+  the state word and a one-line summary, then the Show details / Hide
+  details cue, which CSS picks from the toggle's aria-expanded. ``tile`` is
+  a system_health.Tile. It is drawn twice: in the counted state, and in the
+  Not current state that the dashboard shows instead while the poll has
+  stopped or keeps failing ([data-not-current], decision 12 of
+  2026-10-13), with the same summary after "Last known:" and the state
+  word. Both are drawn from the start inside the row's fixed height, so
+  turning Not current changes nothing's size. The page draws it inside the
+  tile's toggle, in a data-live-mirror-target, and the polled region carries
+  a copy, so a poll changes only the row's words and icon, never whether the
+  tile is open. A page-load tile has no polled copy.
+{% endcomment %}{% translate "Show details" as show %}{% translate "Hide details" as hide %}<span class="health-box health-counted status-{{ tile.state }}"><span class="health-head">{% include "stewardship/components/level-icon.html" with level=tile.icon %}<span class="health-name">{{ tile.name }}</span> <span class="status-word">{{ tile.word }}</span></span>
+<span class="health-line-two"><span class="health-said">{% include "stewardship/system-health-tile-words.html" %}</span> <span class="health-cue"><span class="health-cue-show">{{ show }}</span><span class="health-cue-hide">{{ hide }}</span></span></span></span>
+<span class="health-box health-unknown status-unknown"><span class="health-head">{% include "stewardship/components/level-icon.html" with level="unknown" %}<span class="health-name">{{ tile.name }}</span> <span class="status-word">{% translate "Not current" %}</span></span>
+<span class="health-line-two"><span class="health-said">{% blocktranslate with state=tile.word trimmed %}Last known: {{ state }}.{% endblocktranslate %} {% include "stewardship/system-health-tile-words.html" %}</span> <span class="health-cue"><span class="health-cue-show">{{ show }}</span><span class="health-cue-hide">{{ hide }}</span></span></span></span>

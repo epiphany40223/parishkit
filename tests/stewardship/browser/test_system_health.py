@@ -26,9 +26,12 @@ from .system_health_components import (
     DEBUG_STEP_UP,
     HEALTHY,
     PAGE,
+    STALE,
+    STALE_STATUS,
+    STATUS,
     STEADY,
 )
-from .waits import eventually, visible
+from .waits import eventually, same_place, visible
 
 
 def expect(locator):
@@ -45,18 +48,70 @@ REGION = '[data-live-status="system-health"]'
 ANNOUNCER = '[data-live-announcer="system-health"]'
 
 
+# Every tile, in the fixed order (admin-portal spec, "Health tiles").
+TILES = ("mail", "source", "backups", "debug", "source-form", "resave", "version")
+NAMES = [
+    "Mail",
+    "ParishSoft refresh",
+    "Backups",
+    "Debug logging",
+    "Families the form cannot open",
+    "Pages and emails to re-save",
+    "Version and services",
+]
+# Where each tile's summary row (its toggle) is drawn in the document.
+TOPS = """() => [...document.querySelectorAll('[data-health-toggle]')]
+    .map((b) => b.getBoundingClientRect().top + window.scrollY)"""
+# The overall line's shown form (the other is display: none), and the
+# fixed-height line that holds it and Refresh System health.
+LINE = "#health-overall > span:visible"
+HOLDER = """() => {
+    const box = document.querySelector('.health-line').getBoundingClientRect();
+    return [box.top + window.scrollY, box.height];
+}"""
+
+
+def _toggle(page, tile):
+    """The tile's summary row: the disclosure button."""
+    return page.locator(f"#health-{tile} [data-health-toggle]")
+
+
+def _band(page, tile):
+    """The tile's details band."""
+    return page.locator(f"#health-{tile}-details")
+
+
+def _word(page, tile):
+    """The tile's shown state word."""
+    return page.locator(f"#health-{tile} .status-word").filter(visible=True)
+
+
+def _away(page):
+    """Move the pointer off the tile grid, so held details catch up."""
+    page.mouse.move(1, 1)
+
+
+def _axe(page, axe_source):
+    """The page's axe violations for the WCAG 2.2 AA tags."""
+    page.evaluate(axe_source)
+    return page.evaluate("""async () => (await axe.run(document, {
+        runOnly: {type: 'tag', values: ['wcag2a','wcag2aa','wcag21aa','wcag22aa']}
+    })).violations.map(({id,impact}) => ({id,impact}))""")
+
+
 def test_the_resume_time_reads_as_a_local_clock_time(page, component_origin):
     """At the limit the count line ends with the browser-local resume time (#530)."""
     page.goto(component_origin + PAGE)
-    resume = page.locator(f"{REGION} [data-daily-resume] time")
+    resume = page.locator("#health-mail-details [data-daily-resume] time")
     stamp = resume.get_attribute("datetime")
     expected = page.evaluate(
         "(stamp) => ParishDates.dayTime(new Date(stamp), new Date())", stamp
     )
     expect(resume).to_have_text(expected)
-    assert "UTC" not in page.locator(f"{REGION} [data-daily-count]").inner_text()
+    count = page.locator("#health-mail-details [data-daily-count]")
+    assert "UTC" not in count.inner_text()
     page.goto(component_origin + HEALTHY)
-    assert page.locator(f"{REGION} [data-daily-resume]").count() == 0
+    assert page.locator("#health-mail-details [data-daily-resume]").count() == 0
 
 
 def test_a_resume_time_on_the_next_day_says_tomorrow(page, component_origin):
@@ -80,139 +135,263 @@ def test_a_resume_time_on_the_next_day_says_tomorrow(page, component_origin):
 def test_health_pages_are_accessible_at_phone_and_desktop_widths(
     page, component_origin, axe_source, width
 ):
-    """Troubled and healthy pages pass axe and fit a phone without scrolling."""
+    """Troubled and healthy pages pass axe and fit a phone without scrolling;
+    the line is the first h2, then one hidden h2 per tile, in order."""
     page.set_viewport_size({"width": width, "height": 900})
     for path in (PAGE, HEALTHY):
         page.goto(component_origin + path)
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
-        page.evaluate(axe_source)
-        assert (
-            page.evaluate("""async () => (await axe.run(document, {
-            runOnly: {type: 'tag', values: ['wcag2a','wcag2aa','wcag21aa','wcag22aa']}
-        })).violations.map(({id,impact}) => ({id,impact}))""")
-            == []
-        )
-        headings = page.locator(f"{REGION} h2").all_text_contents()
-        # Problems first, then the six panels in the specification's order.
-        assert headings[1:7] == [
-            "Why sends are waiting",
-            "Mail sender",
-            "ParishSoft refresh",
-            "Backups",
-            "Debug logging",
-            "Version",
-        ]
+        assert _axe(page, axe_source) == []
+        headings = page.locator("[data-health-dashboard] h2")
+        assert headings.nth(0).get_attribute("id") == "health-overall"
+        assert headings.all_text_contents()[1:] == NAMES
+        line = page.locator(LINE).inner_text().strip()
         if path == HEALTHY:
-            assert headings[0] == "Everything is working"
+            assert line == "All working"
         else:
-            assert headings[0] == "3 problems need attention"
+            assert line == "4 errors and 1 warning"
         # The help is there, closed until asked for.
         assert page.locator("details.about-page").get_attribute("open") is None
 
 
-def test_the_page_follows_problems_ending_and_announces_only_the_change(
+def test_each_tile_shows_its_state_as_a_word_an_icon_and_a_colour(
     page, component_origin
 ):
-    """One 10-second poll swaps in the healthy state; the announcer says so once."""
+    """Working, Warning and Error read as words with their own icon shapes,
+    and an Error's start bar is wider than a Warning's (status indicators);
+    troubled tiles start open, Working ones closed, each band named for its
+    tile."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + PAGE)
+    states = {
+        "mail": "error",
+        "source": "error",
+        "backups": "warning",
+        "debug": "working",
+        "source-form": "working",
+        "resave": "error",
+        "version": "error",
+    }
+    words = {"working": "Working", "warning": "Warning", "error": "Error"}
+    icons = {"working": "ok", "warning": "warning", "error": "error"}
+    for tile, state in states.items():
+        expect(_word(page, tile)).to_have_text(words[state])
+        box = page.locator(f"#health-{tile} .health-counted")
+        expect(box.locator(f"svg.level-icon-{icons[state]}")).to_have_count(1)
+        assert box.locator("svg").get_attribute("aria-hidden") == "true"
+        toggle = _toggle(page, tile)
+        opened = state != "working"
+        assert toggle.get_attribute("aria-expanded") == str(opened).lower()
+        assert toggle.get_attribute("aria-controls") == f"health-{tile}-details"
+        band = _band(page, tile)
+        if opened:
+            expect(band).to_be_visible()
+        else:
+            expect(band).to_be_hidden()
+        assert band.get_attribute("role") == "region"
+    expect(page.get_by_role("region", name="Mail details")).to_be_visible()
+    bar = """(tile) => parseFloat(getComputedStyle(document.querySelector(
+        `#health-${tile} .health-counted`)).borderInlineStartWidth)"""
+    error, warning, working = (
+        page.evaluate(bar, tile) for tile in ("mail", "backups", "debug")
+    )
+    assert error > warning > working
+    # The summary names the tile's most severe problem.
+    expect(page.locator("#health-mail .health-counted .health-said")).to_contain_text(
+        "Mail sender 1 halted"
+    )
+    expect(page.locator("#health-mail-details")).to_contain_text(
+        "Mail sender 1 has stopped all Family email"
+    )
+
+
+def test_a_tile_opens_and_closes_in_place_without_moving_its_row(
+    page, component_origin
+):
+    """Opening a tile shows its band after the tile's row; the row's toggles
+    and everything above stay put, only the rows below move. Pointer and
+    keyboard both work, the cue says what a press does, and the page never
+    reloads."""
+    page.set_viewport_size({"width": 1440, "height": 900})
+    page.goto(component_origin + HEALTHY)
+    kept = _not_reloaded(page)
+    for tile in TILES:
+        expect(_band(page, tile)).to_be_hidden()
+    before = page.evaluate(TOPS)
+    # Two or three columns on a laptop, filled in the fixed order.
+    columns = sum(same_place(top, before[0]) for top in before)
+    assert columns in (2, 3)
+    row = before[:columns]
+    source = _toggle(page, "source")
+    expect(source).to_contain_text("Show details")
+    source.click()
+    expect(_band(page, "source")).to_be_visible()
+    expect(source).to_have_attribute("aria-expanded", "true")
+    expect(source).to_contain_text("Hide details")
+    after = page.evaluate(TOPS)
+    assert same_place(after[:columns], row)
+    band = _band(page, "source").bounding_box()
+    box = source.bounding_box()
+    # The band follows the row, full width, and the next row follows it.
+    assert band["y"] >= box["y"] + box["height"]
+    assert after[columns] >= band["y"] + band["height"]
+    assert band["width"] > 1.5 * box["width"]
+    # The keyboard opens Mail, beside it: its band comes first, in tile
+    # order, and the row still does not move.
+    mail = _toggle(page, "mail")
+    mail.focus()
+    page.keyboard.press("Enter")
+    expect(_band(page, "mail")).to_be_visible()
+    assert (
+        _band(page, "mail").bounding_box()["y"]
+        < _band(page, "source").bounding_box()["y"]
+    )
+    assert same_place(page.evaluate(TOPS)[:columns], row)
+    source.focus()
+    page.keyboard.press("Space")
+    expect(_band(page, "source")).to_be_hidden()
+    expect(source).to_have_attribute("aria-expanded", "false")
+    assert same_place(page.evaluate(TOPS)[:columns], row)
+    assert kept()
+
+
+def test_one_column_at_phone_width(page, component_origin):
+    """At 320 pixels the tiles are one column; each row is at least 44px."""
+    page.set_viewport_size({"width": 320, "height": 900})
+    page.goto(component_origin + HEALTHY)
+    tops = page.evaluate(TOPS)
+    assert tops == sorted(tops) and len(set(round(top) for top in tops)) == 7
+    for tile in TILES:
+        assert _toggle(page, tile).bounding_box()["height"] >= 44
+
+
+def test_an_anchor_opens_its_tile(page, component_origin):
+    """Home's links name a tile's anchor; the page opens that tile."""
+    page.goto(component_origin + HEALTHY + "#health-backups")
+    expect(_band(page, "backups")).to_be_visible()
+    expect(_toggle(page, "backups")).to_have_attribute("aria-expanded", "true")
+    expect(_band(page, "mail")).to_be_hidden()
+
+
+def test_a_poll_changes_words_but_never_opens_closes_or_moves_a_tile(
+    page, component_origin
+):
+    """The troubled page's next poll is healthy: summaries and the line
+    follow it, a tile that turns Working while open stays open, a tile the
+    Administrator closed stays closed, the line and the first row stay put,
+    and the announcer says the new line once."""
+    page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + PAGE)
     region = page.locator(REGION)
     assert region.get_attribute("data-live-interval") == "10000"
-    assert region.get_attribute("data-live-pending") is not None
-    visible(page.get_by_text("Mail sender 1 has stopped all Family email"))
-    visible(page.get_by_role("rowheader", name="Families with an email address"))
-    # The 24-hour count, with the limit it is compared with (ADM-13 PR 2c).
-    visible(page.get_by_text("Emails went to 1,612 recipients in the last 24 hours."))
     assert page.locator(ANNOUNCER).text_content() == ""
-    page.locator("details.technical-details summary").click()
-    # A mouse click focuses a link in the region (Chromium and Firefox); it
-    # must not freeze the region, and the swap puts focus back on the same
-    # link in the new markup. The click itself is kept from navigating.
-    page.evaluate(
-        "document.addEventListener('click', (event) => event.preventDefault())"
+    _toggle(page, "version").click()
+    expect(_band(page, "version")).to_be_hidden()
+    _toggle(page, "debug").click()
+    expect(_band(page, "debug")).to_be_visible()
+    _away(page)
+    line = page.evaluate(HOLDER)
+    tops = page.evaluate(TOPS)
+    expect(_word(page, "mail")).to_have_text("Working", timeout=30000)
+    expect(page.locator(LINE)).to_have_text("1 error")
+    expect(page.locator(ANNOUNCER)).to_have_text(
+        "System health: 1 error (Pages and emails to re-save)."
     )
-    link = page.locator(REGION).get_by_role("link", name="Refresh from ParishSoft")
-    link.click()
-    # WebKit does not focus a link on click, so focus it as the keyboard
-    # would; in every engine the focused link must not hold the swap.
-    link.focus()
-    expect(page.get_by_role("heading", name="Everything is working")).to_be_visible(
-        timeout=30000
-    )
-    assert page.evaluate(
-        "document.activeElement.textContent === 'Refresh from ParishSoft'"
-        " && document.querySelector('[data-live-status]')"
-        ".contains(document.activeElement)"
-    )
-    assert page.locator(ANNOUNCER).text_content() == "Everything is working."
-    visible(page.get_by_text("Nothing is holding Family email back."))
-    # The count stays shown when nothing waits, and follows the poll.
-    visible(page.get_by_text("Emails went to 240 recipients in the last 24 hours."))
-    # The page never reloaded: the open Technical details outside the region
-    # stayed open, and the page still polls.
-    assert page.locator("details.technical-details").get_attribute("open") is not None
+    # The open Mail tile stays open and follows the poll.
+    expect(_band(page, "mail")).to_be_visible()
+    visible(_band(page, "mail").get_by_text("Nothing is holding Family email back."))
+    expect(_band(page, "mail")).not_to_contain_text("has stopped all Family email")
+    expect(_band(page, "version")).to_be_hidden()
+    expect(_band(page, "debug")).to_be_visible()
+    # The page-load tile keeps the state it was drawn with.
+    expect(_word(page, "resave")).to_have_text("Error")
+    assert same_place(page.evaluate(HOLDER), line)
+    assert same_place(page.evaluate(TOPS)[:2], tops[:2])
     assert region.get_attribute("data-live-pending") is not None
+
+
+def test_open_details_wait_while_the_pointer_is_over_the_grid(page, component_origin):
+    """The summary rows follow at once; the details, which can change
+    height, wait until the pointer leaves the grid."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + PAGE)
+    mail = _band(page, "mail")
+    visible(mail.get_by_text("Mail sender 1 has stopped all Family email"))
+    _toggle(page, "source").hover()
+    expect(_word(page, "mail")).to_have_text("Working", timeout=30000)
+    # Held while the pointer is over the grid.
+    visible(mail.get_by_text("Mail sender 1 has stopped all Family email"))
+    _away(page)
+    expect(mail).not_to_contain_text("has stopped all Family email", timeout=30000)
+    visible(mail.get_by_text("Nothing is holding Family email back."))
 
 
 def test_an_unchanged_poll_keeps_the_readers_focus_and_place(page, component_origin):
-    """Polls that bring the same state leave the region's elements alone.
+    """Polls that bring the same state leave the elements alone.
 
-    A keyboard user resting on a link inside the region keeps focus through
-    two 10-second polls, and only "Last checked" (outside the region) moves.
+    A keyboard user resting on a link in an open tile keeps focus through
+    two 10-second polls; only "Last checked" (outside the region) moves.
     """
     page.goto(component_origin + STEADY)
-    link = page.locator(REGION).get_by_role("link", name="Refresh from ParishSoft")
+    _toggle(page, "source").click()
+    _away(page)
+    link = _band(page, "source").get_by_role("link", name="Refresh from ParishSoft")
     link.focus()
-    page.evaluate(
-        "document.querySelector('[data-live-status] h2').dataset.original = 'yes'"
-    )
+    page.evaluate("""() => {
+        document.getElementById('health-overall').dataset.original = 'yes';
+        document.querySelector('[data-live-mirror-target="health-source-panel"] p')
+            .dataset.original = 'yes';
+    }""")
     checked = page.locator("time[data-live-checked]")
     first = checked.get_attribute("datetime")
     # Two polls, each with the same state.
     expect(checked).not_to_have_attribute("datetime", first, timeout=30000)
     second = checked.get_attribute("datetime")
     expect(checked).not_to_have_attribute("datetime", second, timeout=30000)
-    assert page.evaluate(
-        "document.activeElement.textContent === 'Refresh from ParishSoft'"
-    )
-    # The same element: the region was not rebuilt.
-    assert page.evaluate(
-        "document.querySelector('[data-live-status] h2').dataset.original === 'yes'"
-    )
+    expect(link).to_be_focused()
+    # The same elements: nothing was rebuilt.
+    assert page.evaluate("""() =>
+        document.getElementById('health-overall').dataset.original === 'yes'
+        && document.querySelector('[data-live-mirror-target="health-source-panel"] p')
+            .dataset.original === 'yes'""")
 
 
-def test_a_change_only_in_a_times_datetime_updates_the_region(page, component_origin):
+def test_a_change_only_in_a_times_datetime_updates_the_tiles(page, component_origin):
     """Times are compared by their datetime, not by how the browser words them."""
     page.goto(component_origin + DATED)
-    since = page.locator(f"{REGION} time[data-live-since]")
+    since = page.locator(
+        '[data-live-mirror-target="health-backups-summary"]'
+        " .health-counted time[data-live-since]"
+    ).first
     first = since.get_attribute("datetime")
     expect(since).not_to_have_attribute("datetime", first, timeout=30000)
-    visible(page.get_by_text("1 hour ago"))
+    expect(since).to_have_text("1 hour ago")
 
 
-def test_a_swap_leaves_focus_outside_and_keeps_a_tables_sideways_scroll(
+def test_an_update_leaves_focus_outside_and_keeps_a_tables_sideways_scroll(
     page, component_origin
 ):
-    """Focus outside the region stays put; a wide table keeps its offset."""
+    """Focus outside the tiles stays put; a wide table in an open tile keeps
+    its sideways offset when the poll replaces the tile's details."""
     page.set_viewport_size({"width": 320, "height": 900})
     page.goto(component_origin + PAGE)
     # Make the Services table wider than the phone, as a long one would be.
     # Through the CSS object model: the page's CSP refuses inline styles.
     page.evaluate(
         "document.styleSheets[0].insertRule("
-        "'[data-live-status] .table-scroll table { min-width: 900px }')"
+        "'#health-version-details .table-scroll table { min-width: 900px }')"
     )
-    table = page.locator(f"{REGION} .table-scroll").last
+    table = page.locator("#health-version-details .table-scroll")
     assert table.evaluate("(node) => node.scrollWidth > node.clientWidth")
     table.evaluate("(node) => { node.scrollLeft = 40; }")
     outside = page.get_by_role("link", name="Refresh System health")
     outside.focus()
-    expect(page.get_by_role("heading", name="Everything is working")).to_be_visible(
-        timeout=30000
-    )
-    assert page.evaluate(
-        "document.activeElement.textContent === 'Refresh System health'"
-    )
-    swapped = page.locator(f"{REGION} .table-scroll").last
+    _away(page)
+    expect(
+        page.locator("#health-version-details td", has_text="Not running")
+    ).to_have_count(0, timeout=30000)
+    expect(outside).to_be_focused()
+    swapped = page.locator("#health-version-details .table-scroll")
     assert swapped.evaluate("(node) => node.scrollLeft") == 40
 
 
@@ -229,7 +408,7 @@ def test_last_checked_does_not_advance_while_a_swap_is_held(page, component_orig
     page.evaluate(
         """() => {
         const range = document.createRange();
-        range.selectNodeContents(document.querySelector('[data-live-status] h2'));
+        range.selectNodeContents(document.getElementById('health-overall'));
         const selection = window.getSelection();
         selection.removeAllRanges();
         selection.addRange(range);
@@ -245,6 +424,190 @@ def test_last_checked_does_not_advance_while_a_swap_is_held(page, component_orig
     # Once the selection ends, the next poll is adopted and "Last checked" moves.
     page.evaluate("window.getSelection().removeAllRanges()")
     expect(checked).not_to_have_attribute("datetime", first, timeout=30000)
+
+
+def test_the_page_says_when_it_is_not_current_and_recovers_in_place(
+    page, component_origin
+):
+    """After three failed checks the line reads Not current with when it
+    last checked, every tile turns Not current with its last known state,
+    nothing opens, closes or moves, and the announcer says so once.
+    Refresh System health checks again at once and brings the counted
+    states back."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    failures = []
+
+    def fail(route):
+        """Answer a status check as a server that cannot answer."""
+        failures.append(1)
+        route.fulfill(status=500, content_type="text/plain", body="")
+
+    page.route(f"{component_origin}{STALE_STATUS}", fail)
+    page.goto(component_origin + STALE)
+    kept = _not_reloaded(page)
+    restart = page.get_by_role("button", name="Refresh System health")
+    expect(restart).to_be_hidden()
+    _toggle(page, "backups").click()
+    _away(page)
+    line = page.evaluate(HOLDER)
+    tops = page.evaluate(TOPS)
+    dashboard = page.locator("[data-health-dashboard]")
+    expect(dashboard).to_have_attribute("data-not-current", "", timeout=60000)
+    assert len(failures) >= 3
+    expect(page.locator(LINE)).to_contain_text("Not current")
+    expect(page.locator(LINE)).to_contain_text("Not checked since")
+    last = page.locator("time[data-health-last]")
+    stamp = page.locator("time[data-live-checked]").get_attribute("datetime")
+    expect(last).to_have_attribute("datetime", stamp)
+    expect(last).to_have_text(
+        page.evaluate("(stamp) => ParishDates.time(new Date(stamp))", stamp)
+    )
+    expect(restart).to_be_visible()
+    for tile in TILES:
+        expect(_word(page, tile)).to_have_text("Not current")
+        expect(
+            page.locator(f"#health-{tile} .health-unknown .health-said")
+        ).to_contain_text("Last known: Working.")
+    expect(
+        page.get_by_role("region", name="Backups details, not current")
+    ).to_be_visible()
+    expect(_band(page, "mail")).to_be_hidden()
+    expect(page.locator(ANNOUNCER)).to_have_text(
+        "System health is not current; last checked at "
+        f"{last.text_content()}. The tiles show what was last known."
+    )
+    assert same_place(page.evaluate(HOLDER), line)
+    assert same_place(page.evaluate(TOPS), tops)
+    # Current again, from the button, with the troubled state it reads.
+    # Count what the announcer is given: the sentence once, not twice.
+    page.evaluate("""() => {
+        window.announced = 0;
+        new MutationObserver((records) => { window.announced += records.length; })
+            .observe(document.querySelector('[data-live-announcer="system-health"]'),
+                {childList: true, characterData: true, subtree: true});
+    }""")
+    page.unroute(f"{component_origin}{STALE_STATUS}")
+    restart.click()
+    expect(dashboard).not_to_have_attribute("data-not-current", "")
+    expect(page.locator(LINE)).to_have_text("3 errors and 1 warning")
+    expect(_word(page, "mail")).to_have_text("Error")
+    expect(page.locator(ANNOUNCER)).to_have_text(
+        "System health: 3 errors (Mail, ParishSoft refresh, Version and services)"
+        " and 1 warning (Backups)."
+    )
+    assert page.evaluate("window.announced") == 1
+    expect(page.get_by_role("region", name="Backups details")).to_be_visible()
+    # A poll never opens a tile, even one that turned Error.
+    expect(_band(page, "mail")).to_be_hidden()
+    expect(restart).to_be_hidden()
+    assert kept()
+
+
+# The fragment of the troubled page, whatever its ?loaded= says.
+TROUBLED_ROUTE = f"**{STATUS}*"
+# The line box and the restart button, in the viewport.
+RESTART = """() => {
+    const line = document.querySelector('.health-line').getBoundingClientRect();
+    const button = document.querySelector('.health-restart').getBoundingClientRect();
+    return {line: [line.left, line.top, line.right, line.bottom],
+            button: [button.left, button.top, button.right, button.bottom]};
+}"""
+
+
+@pytest.mark.parametrize("width", [320, 660, 1000, 1280])
+def test_not_current_takes_over_troubled_tiles_and_the_line_fits(
+    page, component_origin, width
+):
+    """Open Error and Warning bands, and their rows' notches, take the Not
+    current border and lose their start bars; the Not current line and its
+    button fit the line's fixed box, beside the menu too, so neither is cut
+    off nor overlaps the tiles."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.route(
+        TROUBLED_ROUTE,
+        lambda route: route.fulfill(status=500, content_type="text/plain", body=""),
+    )
+    page.goto(component_origin + PAGE)
+    look = """(selector) => {
+        const style = getComputedStyle(document.querySelector(selector));
+        return [style.borderTopColor, style.borderInlineStartWidth];
+    }"""
+    neutral = page.evaluate(
+        """() => { const probe = document.createElement('span');
+        probe.style.color = 'var(--control-border)';
+        document.body.append(probe);
+        const color = getComputedStyle(probe).color;
+        probe.remove();
+        return color; }"""
+    )
+    assert page.evaluate(look, "#health-mail-details")[0] != neutral
+    dashboard = page.locator("[data-health-dashboard]")
+    expect(dashboard).to_have_attribute("data-not-current", "", timeout=60000)
+    for tile in ("mail", "backups"):
+        assert page.evaluate(look, f"#health-{tile}-details") == [neutral, "1px"]
+        notch = page.evaluate(
+            """(tile) => getComputedStyle(document.getElementById(tile),
+            '::after').borderTopColor""",
+            f"health-{tile}",
+        )
+        assert notch == neutral
+    box = page.evaluate(RESTART)
+    line, button = box["line"], box["button"]
+    assert line[0] <= button[0] and button[2] <= line[2]
+    assert line[1] <= button[1] and button[3] <= line[3]
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+
+
+def test_a_poll_that_gives_up_turns_not_current_and_refresh_starts_it_again(
+    page, component_origin
+):
+    """After an hour of watching the poll stops: the line turns Not current
+    with no other notice. Refresh System health starts a fresh watch that
+    checks at once, brings the counted state back, says it once, and keeps
+    polling."""
+    page.clock.install()
+    page.goto(component_origin + STEADY)
+    kept = _not_reloaded(page)
+    dashboard = page.locator("[data-health-dashboard]")
+    checked = page.locator("time[data-live-checked]")
+    # One ordinary check, then a jump past the hour.
+    first = checked.get_attribute("datetime")
+    page.clock.fast_forward(11_000)
+    expect(checked).not_to_have_attribute("datetime", first)
+    page.clock.fast_forward(61 * 60 * 1000)
+    expect(dashboard).to_have_attribute("data-not-current", "")
+    expect(page.locator(".live-status-problem")).to_be_hidden()
+    expect(page.locator(ANNOUNCER)).to_contain_text("System health is not current")
+    expect(page.get_by_role("button", name="Refresh System health")).to_be_attached()
+    # The hour's jump also ends the component's Admin session, whose modal
+    # "Sign in again" dialog makes the rest of the page inert, so the button
+    # is clicked from script.
+    page.evaluate("document.querySelector('[data-live-restart]').click()")
+    expect(dashboard).not_to_have_attribute("data-not-current", "")
+    expect(page.locator(LINE)).to_have_text("All working")
+    expect(page.locator(ANNOUNCER)).to_have_text("System health: all working.")
+    # The fresh watch polls on.
+    stamp = checked.get_attribute("datetime")
+    page.clock.fast_forward(11_000)
+    expect(checked).not_to_have_attribute("datetime", stamp)
+    expect(dashboard).not_to_have_attribute("data-not-current", "")
+    assert kept()
+
+
+def test_a_refused_check_turns_not_current_at_once(page, component_origin):
+    """A refused check (signed out) turns the page Not current at once, with
+    nothing squeezed into the line's fixed box."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.route(
+        TROUBLED_ROUTE,
+        lambda route: route.fulfill(status=401, content_type="text/plain", body=""),
+    )
+    page.goto(component_origin + PAGE)
+    dashboard = page.locator("[data-health-dashboard]")
+    expect(dashboard).to_have_attribute("data-not-current", "", timeout=60000)
+    expect(page.locator(".live-status-problem")).to_be_hidden()
+    box = page.evaluate(RESTART)
+    assert box["button"][3] <= box["line"][3]
 
 
 def _routed(page, component_origin, answers, shown=None):
@@ -308,7 +671,7 @@ def test_take_a_backup_now_previews_and_confirms_in_place(
         component_origin,
         {"preview": (200, BACKUP_PREVIEW), "confirm": (200, BACKUP_REQUESTED)},
     )
-    page.goto(component_origin + BACKUP_PAGE)
+    page.goto(component_origin + BACKUP_PAGE + "#health-backups")
     kept = _not_reloaded(page)
     page.locator("#backup-now").get_by_role(
         "button", name="Take a backup now", exact=True
@@ -335,7 +698,7 @@ def test_take_a_backup_now_previews_and_confirms_in_place(
 def test_refusals_answer_inside_the_region(page, component_origin):
     """A stale sign-in offers the step-up, a race says so; never raw JSON."""
     _routed(page, component_origin, {"preview": (403, BACKUP_STEP_UP)})
-    page.goto(component_origin + BACKUP_PAGE)
+    page.goto(component_origin + BACKUP_PAGE + "#health-backups")
     kept = _not_reloaded(page)
     page.locator("#backup-now").get_by_role(
         "button", name="Take a backup now", exact=True
@@ -346,7 +709,7 @@ def test_refusals_answer_inside_the_region(page, component_origin):
     assert '"errors"' not in page.content()
     page.unroute(f"{component_origin}{BACKUP_PAGE}")
     _routed(page, component_origin, {"preview": (409, BACKUP_BUSY)})
-    page.goto(component_origin + BACKUP_PAGE)
+    page.goto(component_origin + BACKUP_PAGE + "#health-backups")
     kept = _not_reloaded(page)
     page.locator("#backup-now").get_by_role(
         "button", name="Take a backup now", exact=True
@@ -357,7 +720,7 @@ def test_refusals_answer_inside_the_region(page, component_origin):
 
 def test_the_button_follows_a_request_made_elsewhere(page, component_origin):
     """The poll greys the button when another request starts waiting."""
-    page.goto(component_origin + BACKUP_PAGE)
+    page.goto(component_origin + BACKUP_PAGE + "#health-backups")
     region = page.locator("#backup-now")
     expect(
         region.get_by_role("button", name="Take a backup now", exact=True)
@@ -394,7 +757,7 @@ def test_the_button_catches_up_once_the_reader_leaves_it(page, component_origin)
     The polled region then stays the same, so the copy must still be put in
     on a later poll, not only when the region changes.
     """
-    page.goto(component_origin + BACKUP_PAGE)
+    page.goto(component_origin + BACKUP_PAGE + "#health-backups")
     region = page.locator("#backup-now")
     button = region.get_by_role("button", name="Take a backup now", exact=True)
     button.focus()
@@ -402,7 +765,7 @@ def test_the_button_catches_up_once_the_reader_leaves_it(page, component_origin)
     eventually(
         page,
         """() => document.querySelector(
-            '[data-live-status] template[data-live-mirror]'
+            '[data-live-status] template[data-live-mirror="backup-now-button"]'
         ).innerHTML.includes('disabled')""",
         timeout=30000,
     )
@@ -498,7 +861,7 @@ def test_the_debug_button_follows_a_switch_set_elsewhere(page, component_origin)
     expect(reason).to_contain_text("Debug logging was turned off by other@example.org")
     stamp = reason.locator("time").get_attribute("datetime")
     expect(reason.locator("time")).not_to_have_text(stamp)
-    # The panel above says the same, and that the server's setting is on.
+    # The tile's details say the same, and that the server's setting is on.
     panel = page.locator('[data-debug-switch="set"]')
     expect(panel).to_contain_text("still says “on”")
 
@@ -590,17 +953,19 @@ def test_accept_this_change_once_previews_and_confirms_in_place(
 
 
 def _beside_the_refusal(page):
-    """#accept-change is in the ParishSoft refresh panel, directly after the
-    refused change's notice (in the element the poll keeps), and starts
-    within a line of it."""
+    """#accept-change is in the ParishSoft refresh tile's details, directly
+    after its problems, which end with the refused change's counts (#1214),
+    and starts within a line of them."""
     assert page.evaluate("""() => {
         const notice = document.querySelector('[data-refused-change]');
-        const kept = notice.nextElementSibling;
-        return kept.matches('[data-live-keep="accept-change"]')
-            && kept.firstElementChild === document.getElementById('accept-change')
-            && notice.closest('section') === kept.closest('section')
-            && kept.closest('section').getAttribute('aria-labelledby')
-                === 'health-source-heading';
+        const problems = notice.parentElement;
+        const keyed = problems.nextElementSibling;
+        return problems.matches(
+                '[data-live-mirror-target="health-source-problems"]')
+            && notice === problems.lastElementChild
+            && keyed.matches('[data-live-keyed="accept-change"]')
+            && keyed.firstElementChild === document.getElementById('accept-change')
+            && keyed.parentElement.id === 'health-source-details';
     }""")
     gap = page.evaluate("""() =>
         document.getElementById('accept-change').getBoundingClientRect().top
@@ -611,12 +976,13 @@ def _beside_the_refusal(page):
 
 def _places(page, heading):
     """Record where ``heading`` and every shown heading above it are in the
-    document; the returned check lists those that moved since (Firefox may
+    document, each known by its id (the overall line's words change) or its
+    text; the returned check lists those that moved since (Firefox may
     report the same place a few millionths of a pixel apart)."""
     script = """(own) => [...document.querySelectorAll('h1, h2, h3')]
         .filter((h) => h.getClientRects().length && (h === own
             || h.compareDocumentPosition(own) & Node.DOCUMENT_POSITION_FOLLOWING))
-        .map((h) => [h.textContent.trim(),
+        .map((h) => [h.id || h.textContent.trim(),
             h.getBoundingClientRect().top + window.scrollY])"""
     before = heading.evaluate(f"own => ({script})(own)")
 
@@ -710,15 +1076,20 @@ def test_an_open_preview_of_an_older_refusal_is_marked_changed(page, component_o
     assert places() == []
 
 
-def test_a_refusal_shown_by_a_poll_brings_its_accept_region(page, component_origin):
-    """A page drawn before the refusal gets the region from the poll that
-    shows the refusal, right under it; no reload needed."""
-    page.goto(component_origin + ACCEPT_LATE)
-    assert page.locator("#accept-change").count() == 0
-    button = page.locator("#accept-change").get_by_role(
-        "button", name="Accept this change once", exact=True
+def test_a_refusal_shown_by_a_poll_brings_its_accept_button(page, component_origin):
+    """A page drawn before the refusal shows the region greyed with why; the
+    poll that shows the refusal brings its counts and the button, right
+    under them; no reload needed, and the tile is not opened for the reader."""
+    page.goto(component_origin + ACCEPT_LATE + "#health-source")
+    region = page.locator("#accept-change")
+    button = region.get_by_role("button", name="Accept this change once", exact=True)
+    expect(button).to_be_disabled()
+    expect(region.locator("#accept-change-reason")).to_have_text(
+        "No refused ParishSoft refresh is waiting to be accepted."
     )
+    _away(page)
     expect(button).to_be_enabled(timeout=30000)
+    expect(page.locator("[data-refused-change]")).to_be_visible(timeout=30000)
     _beside_the_refusal(page)
 
 
@@ -787,7 +1158,9 @@ def test_allow_debug_logging_again_previews_and_confirms_in_place(
         },
         shown=ALLOW_PAGE,
     )
-    page.goto(component_origin + BACKUP_PAGE)
+    # Debug logging is off and the switch set, so the tile is Working and
+    # starts closed; its anchor opens it.
+    page.goto(component_origin + BACKUP_PAGE + "#health-debug")
     kept = _not_reloaded(page)
     region = page.locator("#debug-off")
     heading = region.get_by_role("heading", name="Turn off debug logging", exact=True)
@@ -836,8 +1209,11 @@ def test_the_allow_region_is_accessible_at_phone_and_desktop_widths(
     fit a phone without scrolling."""
     page.set_viewport_size({"width": width, "height": 900})
     for path in (ALLOW_PAGE, ALLOW_PREVIEW, DEBUG_PAGE):
-        page.goto(component_origin + path)
+        # The anchor opens the Debug logging tile, Working in Testing, so axe
+        # checks the region as the reader sees it.
+        page.goto(component_origin + path + "#health-debug")
         assert page.locator("#debug-off").count() == 1
+        expect(page.locator("#debug-off")).to_be_visible()
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         page.evaluate(axe_source)
         assert (

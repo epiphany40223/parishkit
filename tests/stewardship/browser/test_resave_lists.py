@@ -41,8 +41,10 @@ def test_go_live_readiness_links_each_page_or_email_to_re_save(page, component_o
 
 
 def test_system_health_list_stays_put_through_a_poll(page, component_origin):
-    """The list is read on page load, outside the polled region, so the
-    10-second poll that swaps in the healthy state leaves it untouched."""
+    """The list is read on page load, in its tile outside the polled region
+    (#1214), so the 10-second poll that brings the healthy state leaves it
+    untouched. Its item that cannot be sent makes the tile an Error tile,
+    open from the start, and the line keeps counting it."""
     page.goto(component_origin + PAGE)
     summary = page.locator("#resave-summary")
     visible(summary.get_by_text("2 saved pages or emails should be re-saved"))
@@ -50,9 +52,7 @@ def test_system_health_list_stays_put_through_a_poll(page, component_origin):
     _check_rows(page, "#resave-summary")
     page.evaluate("document.querySelector('#resave-summary').dataset.original = 'yes'")
     box = summary.bounding_box()
-    expect(page.get_by_role("heading", name="Everything is working")).to_be_visible(
-        timeout=30000
-    )
+    expect(page.get_by_role("heading", name="1 error")).to_be_visible(timeout=30000)
     # The same element, never rebuilt, still listing both rows.
     assert summary.get_attribute("data-original") == "yes"
     expect(page.locator("#resave-summary ul.resave-list li")).to_have_count(2)
@@ -61,7 +61,7 @@ def test_system_health_list_stays_put_through_a_poll(page, component_origin):
 
 def test_system_health_says_when_nothing_needs_re_saving(page, component_origin):
     """With nothing flagged, one sentence says so and no list appears."""
-    page.goto(component_origin + HEALTHY)
+    page.goto(component_origin + HEALTHY + "#health-resave")
     summary = page.locator("#resave-summary")
     visible(summary.get_by_text("No saved page or email needs re-saving."))
     expect(summary.locator("ul")).to_have_count(0)
