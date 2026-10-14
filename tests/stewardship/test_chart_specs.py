@@ -19,6 +19,7 @@ from parishkit.stewardship.reports.chart_specs import (
     WIDTH,
     ChartDocument,
     activity_chart,
+    financial_charts,
     funnel_chart,
     quiet_slots,
     share,
@@ -375,3 +376,114 @@ def test_activity_chart_refuses_unknown_series():
     for series in ((), (("other", "Other", "#000000", [1, 0]),)):
         with pytest.raises(ValueError):
             activity_chart(metrics(), series=series)
+
+
+def financial_summary():
+    """A shaped Financial stewardship summary, as financial.shape_result leaves it."""
+    return dict(
+        families=8,
+        frequencies=[
+            ("Weekly", 1),
+            ("Monthly", 4),
+            ("Quarterly", 0),
+            ("Annual", 2),
+            ("No frequency", 1),
+        ],
+        share_counts={"online": 6, "envelopes": 3},
+        no_share=1,
+    )
+
+
+# The offered share methods, as financial.shape_result lists them.
+CHOICES = [("online", "Online <giving>"), ("envelopes", "Envelopes")]
+
+
+def test_financial_charts_carry_each_count_and_its_share_everywhere():
+    """Bars, tooltips, the summary and the table come from the same counts (#720).
+
+    Shares are of the matching Families; share methods can add up past them,
+    since a Family can choose more than one.
+    """
+    frequency, shares = financial_charts(financial_summary(), CHOICES)
+    assert (frequency.key, frequency.title) == (
+        "pledge-frequency",
+        "Pledges by frequency",
+    )
+    assert (shares.key, shares.title) == ("share-methods", "Share methods chosen")
+    spec = json.loads(json.dumps(frequency.spec))
+    assert spec["$schema"] == VEGA_LITE_SCHEMA and spec["width"] == WIDTH
+    assert spec["description"] == frequency.summary
+    assert [
+        (row["label"], row["count"], row["share"]) for row in spec["data"]["values"]
+    ] == [
+        ("Weekly", 1, "13%"),
+        ("Monthly", 4, "50%"),
+        ("Quarterly", 0, "0%"),
+        ("Annual", 2, "25%"),
+        ("No frequency", 1, "13%"),
+    ]
+    assert [layer["mark"]["type"] for layer in spec["layer"]] == ["bar", "text"]
+    # Each bar is named in one phrase; its drawn count stays out of the
+    # accessibility tree, so it is not announced twice.
+    assert spec["layer"][0]["encoding"]["description"] == {"field": "name"}
+    assert spec["data"]["values"][1]["name"] == (
+        "Monthly: 4 families, 50% compared with matching Families"
+    )
+    assert spec["layer"][1]["mark"]["aria"] is False
+    tooltip = spec["layer"][0]["encoding"]["tooltip"]
+    assert [field["title"] for field in tooltip] == [
+        "Pledges by frequency",
+        "Families",
+        "Compared with matching Families",
+    ]
+    assert frequency.table.headings == (
+        "Pledges by frequency",
+        "Families",
+        "Compared with matching Families",
+    )
+    assert frequency.summary == (
+        "Pledges by frequency: Weekly 1, Monthly 4, Quarterly 0, Annual 2, "
+        "No frequency 1."
+    )
+    # No share method chosen comes last, after the offered methods.
+    assert shares.table.rows == (
+        ("Online <giving>", "6", "75%"),
+        ("Envelopes", "3", "38%"),
+        ("No share method chosen", "1", "13%"),
+    )
+
+
+def test_financial_charts_with_no_matching_families_dash_every_share():
+    """No matching Families draws zero-length bars and no percentages."""
+    summary = financial_summary() | dict(
+        families=0,
+        frequencies=[
+            (label, 0) for label, _count in financial_summary()["frequencies"]
+        ],
+        share_counts={},
+        no_share=0,
+    )
+    frequency, shares = financial_charts(summary, CHOICES)
+    assert {row[2] for row in frequency.table.rows} == {"—"}
+    assert shares.table.rows == (
+        ("Online <giving>", "0", "—"),
+        ("Envelopes", "0", "—"),
+        ("No share method chosen", "0", "—"),
+    )
+
+
+def test_financial_share_chart_draws_every_offered_method_and_groups_retired():
+    """Every offered method has a bar, in configured order, even at zero.
+
+    Methods no longer offered share one bar, before No share method chosen.
+    """
+    summary = financial_summary() | dict(
+        share_counts={"envelopes": 3, "gone": 2, "older": 1}
+    )
+    _frequency, shares = financial_charts(summary, CHOICES)
+    assert shares.table.rows == (
+        ("Online <giving>", "0", "0%"),
+        ("Envelopes", "3", "38%"),
+        ("Unavailable share method", "3", "38%"),
+        ("No share method chosen", "1", "13%"),
+    )

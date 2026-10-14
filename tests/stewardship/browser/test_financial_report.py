@@ -3,6 +3,8 @@
 import pytest
 from django.urls import reverse
 
+from .test_charts import assert_clean, watch
+from .test_response_dashboard import AXE, FITTED
 from .waits import eventually, visible
 
 pytestmark = pytest.mark.parametrize(
@@ -56,7 +58,7 @@ def test_financial_mobile_keyboard_and_accessibility(
     assert page.locator("[data-summary=annual-total]").inner_text() == "$62,959.50"
     assert page.get_by_text("contributions through June 30, 2026", exact=False).count()
     # The share filter offers escaped labels and keeps the current choice.
-    assert page.get_by_label("Share method").input_value() == ONLINE
+    assert page.get_by_label("Share method", exact=True).input_value() == ONLINE
     chosen = page.locator("#filter-share option:checked")
     assert chosen.inner_text() == "Online <giving>"
     assert page.get_by_label("At least").input_value() == "100.00"
@@ -106,7 +108,7 @@ def test_financial_filters_and_pages_post_privately(page, component_origin):
     page.goto(component_origin + "/financial-report")
     page.get_by_label("Search Family name or Family DUID").fill("Private name")
     page.get_by_label("At most").fill("5000.00")
-    page.get_by_label("Frequency").select_option("monthly")
+    page.get_by_label("Frequency", exact=True).select_option("monthly")
     page.route("**/financial/", lambda route: route.fulfill(body="Filtered"))
     with page.expect_request(lambda request: request.method == "POST") as sent:
         page.get_by_role("button", name="Apply filters").click()
@@ -175,7 +177,7 @@ def test_financial_columns_lead_with_family_and_name_the_parishsoft_year(
 
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + "/financial-report")
-    shown = page.locator("table thead th").all_inner_texts()
+    shown = page.locator("[data-table-region] table thead th").all_inner_texts()
     download = headings("2025-07-01", "2026-06-30")
     # A download's status column sits right after Family; the page has none.
     assert download[:2] == ("Family", STATUS_HEADING)
@@ -187,17 +189,18 @@ def test_financial_columns_lead_with_family_and_name_the_parishsoft_year(
     )
     # Latest and First response precede Entered by Staff, one time each;
     # the sample row's current pledge was entered by Staff.
-    row = page.locator("table tbody tr").first
+    row = page.locator("[data-table-region] table tbody tr").first
     assert row.locator("td").last.inner_text() == "Yes"
     assert row.locator("td").nth(-2).locator("time").count() == 1
     assert row.locator("td").nth(-3).locator("time").count() == 1
     assert "Version" not in row.inner_text()
 
 
-# The table's scroll box, in page coordinates, with its scroll area: none of
+# The results table's scroll box (not a chart's exact-values table, #720),
+# in page coordinates, with its scroll area: none of
 # it may change when a heading's tip opens.
 TABLE_BOX = """() => {
-    const box = document.querySelector(".table-scroll");
+    const box = document.querySelector("[data-table-region] .table-scroll");
     const table = box.querySelector("table").getBoundingClientRect();
     const outer = box.getBoundingClientRect();
     return [outer.height, box.scrollWidth, box.scrollHeight, box.scrollTop,
@@ -219,7 +222,7 @@ def test_heading_tips_float_without_moving_the_table(
     """
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + path)
-    rows = page.locator("table tbody tr").count()
+    rows = page.locator("[data-table-region] table tbody tr").count()
     assert rows == {"/financial-report": 1, "/financial-unproven": 2}[path]
     button = page.locator(f'button[aria-controls="financial-source-{column}-tip"]')
     # Described by its bubble alone, not by the whole heading cell.
@@ -259,7 +262,7 @@ def test_heading_tips_float_without_moving_the_table(
 # Scroll the table box sideways until the given tip's button is out of its
 # visible area; returns whether that worked.
 SCROLL_BUTTON_OUT = """id => {
-    const box = document.querySelector(".table-scroll");
+    const box = document.querySelector("[data-table-region] .table-scroll");
     const button = document.querySelector(`[aria-controls="${id}"]`);
     const out = () => {
         const a = button.getBoundingClientRect(), b = box.getBoundingClientRect();
@@ -289,7 +292,10 @@ def test_heading_tip_closes_when_its_button_scrolls_out(page, component_origin, 
     # A narrow box, so that each heading's button can scroll fully out of
     # it in every engine (WebKit's 320 px table otherwise always shows a
     # sliver of the last column).
-    page.evaluate("document.querySelector('.table-scroll').style.width = '120px'")
+    page.evaluate(
+        "document.querySelector('[data-table-region] .table-scroll')"
+        ".style.width = '120px'"
+    )
     tip = f"financial-source-{column}-tip"
     button = page.locator(f'button[aria-controls="{tip}"]')
     button.scroll_into_view_if_needed()
@@ -300,3 +306,97 @@ def test_heading_tip_closes_when_its_button_scrolls_out(page, component_origin, 
     assert moved[0], moved
     bubble.wait_for(state="hidden")
     assert button.get_attribute("aria-expanded") == "false"
+
+
+def test_summary_charts_draw_with_tooltips_and_exact_tables(
+    page, component_origin, axe_source
+):
+    """The summary is tiles, then two drawn charts with their exact values (#720).
+
+    Both charts draw under the CSP with no script error; a bar's tooltip has
+    its count and share of the matching Families; the collapsed table holds
+    every value, markup in a share method's label stays text, and the page
+    still fits its window.
+    """
+    from playwright.sync_api import expect
+
+    errors = watch(page)
+    page.goto(component_origin + "/financial-report")
+    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(2)
+    summary = page.locator("#financial-summary")
+    assert summary.locator(".stat-label").all_inner_texts() == [
+        "Families",
+        "Total annual pledges",
+        "Cannot contribute financially",
+    ]
+    assert summary.get_by_role("heading", level=3).all_inner_texts() == [
+        "Pledges by frequency",
+        "Share methods chosen",
+    ]
+    frequency = page.locator("[data-chart='pledge-frequency-spec']")
+    assert frequency.locator("svg g.mark-rect path").count() == 5
+    view = frequency.locator("[data-chart-view]")
+    assert view.get_attribute("aria-label") == "Pledges by frequency"
+    frequency.locator("svg g.mark-rect path").nth(1).hover()
+    tooltip = page.locator("#vg-tooltip-element")
+    visible(tooltip)
+    assert "Monthly" in tooltip.inner_text() and "6%" in tooltip.inner_text()
+    assert_clean(page, errors)
+    # The share methods' labels are drawn as text, never parsed as markup.
+    shares = page.locator("[data-chart='share-methods-spec']")
+    assert "Online <giving>" in shares.locator("svg text").all_text_contents()
+    table = page.locator("[data-chart='share-methods-spec'] + .chart-table")
+    table.locator("summary").click()
+    assert [
+        row.locator("td").all_inner_texts() for row in table.locator("tbody tr").all()
+    ] == [
+        ["Another way", "4", "8%"],
+        ["Online <giving>", "40", "78%"],
+        ["No share method chosen", "7", "14%"],
+    ]
+    assert_clean(page, errors)
+    for width in (320, 1280):
+        page.set_viewport_size({"width": width, "height": 900})
+        eventually(page, FITTED)
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    page.evaluate(axe_source)
+    assert page.evaluate(AXE) == []
+    assert_clean(page, errors)
+
+
+# The filter form's top in page coordinates.
+FORM_TOP = (
+    "document.getElementById('table-filters').getBoundingClientRect().top + scrollY"
+)
+
+
+def test_applied_filters_redraw_the_summary_charts_in_place(page, component_origin):
+    """Apply filters swaps in the new summary and draws its charts, no reload.
+
+    The fresh charts hold their predecessors' space until drawn, so the
+    filters below them end where they were (#736).
+    """
+    from playwright.sync_api import expect
+
+    errors = watch(page)
+    page.set_viewport_size({"width": 1280, "height": 900})
+    answer = page.request.get(component_origin + "/financial-filtered").text()
+    page.goto(component_origin + "/financial-report")
+    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(2)
+    eventually(page, FITTED)
+    page.evaluate("window.__financialMarker = 1")
+    form = page.evaluate(FORM_TOP)
+    page.route(
+        "**/financial/",
+        lambda route: route.fulfill(body=answer, content_type="text/html"),
+    )
+    page.get_by_role("button", name="Apply filters").click()
+    expect(page.locator("[data-summary=families]")).to_have_text("4")
+    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(2)
+    eventually(page, FITTED)
+    assert page.evaluate("window.__financialMarker") == 1
+    assert abs(page.evaluate(FORM_TOP) - form) < 2
+    table = page.locator("[data-chart='pledge-frequency-spec'] + .chart-table")
+    table.locator("summary").click()
+    assert "25%" in table.inner_text()
+    assert_clean(page, errors)

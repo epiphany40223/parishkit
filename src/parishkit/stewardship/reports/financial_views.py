@@ -22,6 +22,7 @@ from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.tables import report_table
 
+from .chart_specs import financial_charts
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .financial import (
@@ -183,6 +184,8 @@ def report(request, campaign_id):
                 "query": query,
                 "query_fields": query.form_values(),
                 "frequencies": FREQUENCY_LABELS,
+                # The summary's charts (#720), drawn by chart-v1.js.
+                "charts": financial_charts(result["summary"], result["share_choices"]),
                 "table": report_table(
                     result["rows"],
                     number=query.page,

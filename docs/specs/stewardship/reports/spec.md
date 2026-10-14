@@ -1835,10 +1835,21 @@ A file captured before frozen migration 0066 added the marker to
 the projection leaves the column blank, never No (#794).
 
 Filters include active/inactive, first/latest submission dates, pledge range,
-zero/nonzero/cannot contribute, frequency, and share method. Summary shows
-Family count, annual total, frequency distribution, share-method counts and the
-number of Families that cannot contribute financially; such a Family's
-frequency reads "Cannot contribute". Exports are CSV, XLSX, and PDF; queuing
+zero/nonzero/cannot contribute, frequency, and share method. The summary of
+the matching pledges comes first, as visuals
+([#720](https://github.com/epiphany40223/parishkit/issues/720)): tiles for the
+Family count, the annual total and the number of Families that cannot
+contribute financially (such a Family's frequency reads "Cannot contribute"),
+then two [chart engine](#chart-engine) bar charts, "Pledges by frequency"
+(each frequency and No frequency) and "Share methods chosen" (each offered
+method in its configured order, even one nobody chose, retired methods
+together as Unavailable share method, then No share method chosen), so a
+filter changes an offered method's bar length, never whether it shows. Each
+bar is labelled with its count, and its tooltip and accessible name add its
+share of the matching Families; a Family can choose more than one share
+method, so those shares can add up past 100%. Each chart's exact-values table has the same figures. The summary
+follows the applied filters in place, and its charts keep their space until
+they are drawn again. Exports are CSV, XLSX, and PDF; queuing
 or regenerating one needs the same fresh sign-in as a
 [active parishioner family directory](#active-parishioner-family-directory) export, returning to this report. No
 Ministry leader receives aggregate or Family financial detail.

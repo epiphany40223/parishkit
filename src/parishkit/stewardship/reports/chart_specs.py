@@ -421,3 +421,116 @@ def activity_chart(metrics, *, series=SERIES):
         table,
         tuple(send_note(send, zone) for send in metrics.sends),
     )
+
+
+def count_bars(key, title, bars, *, total, compared, noun="Families"):
+    """A labelled horizontal bar per ``(label, count)`` pair, in the given order.
+
+    The Financial stewardship summary's charts (#720) draw with this: each
+    bar carries its count as a text label, and its tooltip has the count
+    and its share of ``total`` (headed ``compared``), as the funnel's bars
+    do. The table has the same three columns, so the exact values stay
+    readable without a pointer. The summary sentence lists every bar.
+    """
+    rows = [
+        {"label": label, "count": count, "order": index, "share": share(count, total)}
+        for index, (label, count) in enumerate(bars)
+    ]
+    # Each bar's accessible name, in place of Vega's field-by-field default
+    # ("Families: 3; label: Weekly; …"): the label, the count and its share.
+    for row in rows:
+        row["name"] = (
+            f"{row['label']}: {number(row['count'])} {noun.lower()}, "
+            f"{row['share']} {compared[0].lower()}{compared[1:]}"
+        )
+    parts = ", ".join(f"{row['label']} {number(row['count'])}" for row in rows)
+    summary = f"{title}: {parts}." if rows else f"{title}: none."
+    spec = {
+        "$schema": VEGA_LITE_SCHEMA,
+        "description": summary,
+        "width": WIDTH,
+        "height": {"step": 36},
+        "data": {"values": rows},
+        "encoding": {
+            "y": {
+                "field": "label",
+                "type": "nominal",
+                "sort": {"field": "order"},
+                "title": None,
+                "axis": {"labelLimit": 300},
+            },
+            "x": {
+                "field": "count",
+                "type": "quantitative",
+                "title": noun,
+                "axis": {"format": ",d", "tickMinStep": 1},
+            },
+        },
+        "layer": [
+            {
+                "mark": {"type": "bar", "color": BAR},
+                "encoding": {
+                    "description": {"field": "name"},
+                    "tooltip": [
+                        {"field": "label", "title": title},
+                        {"field": "count", "title": noun, "format": ","},
+                        {"field": "share", "title": compared},
+                    ],
+                },
+            },
+            # The count drawn beside each bar repeats the bar's name, so
+            # assistive technology hears it once, from the bar.
+            {
+                "mark": {"type": "text", "align": "left", "dx": 4, "aria": False},
+                "encoding": {
+                    "text": {"field": "count", "type": "quantitative", "format": ","}
+                },
+            },
+        ],
+    }
+    table = ChartTable(
+        (title, noun, compared),
+        tuple((row["label"], number(row["count"]), row["share"]) for row in rows),
+    )
+    return ChartDocument(key, title, summary, spec, table)
+
+
+def financial_charts(summary, choices):
+    """The Financial stewardship summary's two charts (#720).
+
+    ``summary`` is the shaped summary of ``financial.shape_result``: its
+    ``frequencies`` are ``(label, count)`` pairs in display order and its
+    ``share_counts`` the share-method counts by option identity.
+    ``choices`` is that result's ``share_choices``: the offered methods'
+    ``(identity, label)`` pairs in their configured order. Every offered
+    method gets a bar, even one nobody chose, so the chart shows what is
+    offered; methods no longer offered are counted together, as the
+    summary counts them. Shares are of the matching Families; a Family can
+    choose more than one share method, so those shares can add up past
+    100%.
+    """
+    families = summary["families"]
+    compared = "Compared with matching Families"
+    counts = summary["share_counts"]
+    offered = dict(choices)
+    shares = [(label, counts.get(key, 0)) for key, label in choices]
+    retired = sum(count for key, count in counts.items() if key not in offered)
+    if retired:
+        shares.append(("Unavailable share method", retired))
+    shares.append(("No share method chosen", summary["no_share"]))
+    return (
+        count_bars(
+            "pledge-frequency",
+            "Pledges by frequency",
+            summary["frequencies"],
+            total=families,
+            compared=compared,
+        ),
+        count_bars(
+            "share-methods",
+            "Share methods chosen",
+            shares,
+            total=families,
+            compared=compared,
+        ),
+    )

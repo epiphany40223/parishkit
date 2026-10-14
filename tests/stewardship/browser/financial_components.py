@@ -6,6 +6,7 @@ from uuid import UUID
 from django.template.loader import render_to_string
 from django.urls import reverse
 
+from parishkit.stewardship.reports.chart_specs import financial_charts
 from parishkit.stewardship.reports.financial import (
     FINANCIAL_SORTING,
     FREQUENCY_LABELS,
@@ -77,25 +78,42 @@ def components(context, admin):
             sizes=PAGE_SIZES,
         )
 
+    choices = [(other, "Another way"), (online, "Online <giving>")]
+    summary = dict(
+        families=51,
+        annual_total=MoneyAmount(6295950),
+        frequencies=[(label, 3) for label in FREQUENCY_LABELS.values()],
+        shares=[("Another way", 4), ("Online <giving>", 40)],
+        share_counts={other: 4, online: 40},
+        no_share=7,
+    )
+    filtered = summary | dict(
+        families=4,
+        annual_total=MoneyAmount(480000),
+        frequencies=[
+            (label, int(key != "none")) for key, label in FREQUENCY_LABELS.items()
+        ],
+        # Nobody here chose Another way: its bar stays, at zero, so the
+        # chart keeps its height and the filters below it do not move.
+        shares=[("Online <giving>", 2)],
+        share_counts={online: 2},
+        no_share=1,
+    )
     values = dict(
         campaign_id=campaign,
         query=query,
         query_fields=query.form_values(),
         frequencies=FREQUENCY_LABELS,
-        share_choices=[(other, "Another way"), (online, "Online <giving>")],
+        share_choices=choices,
         table=table([row]),
         total=51,
         # The export form: enabled, with its one-time key and timezone choices.
         mutable=True,
         request_key=UUID(int=100),
         export_timezones=("America/New_York", "UTC"),
-        summary=dict(
-            families=51,
-            annual_total=MoneyAmount(6295950),
-            frequencies=[(label, 3) for label in FREQUENCY_LABELS.values()],
-            shares=[("Another way", 4), ("Online <giving>", 40)],
-            no_share=7,
-        ),
+        summary=summary,
+        # The summary's charts (#720), as the view builds them.
+        charts=financial_charts(summary, choices),
         metadata=dict(
             name="Sample campaign",
             source_as_of=moment,
@@ -117,6 +135,10 @@ def components(context, admin):
         # The campaign cannot accept work: the export controls are offered gated.
         "/financial-gated": values | dict(mutable=False),
         "/financial-last": values | dict(table=table([row], number=2)),
+        # The answer to an applied filter: a smaller summary, its charts
+        # drawn again in place (#720).
+        "/financial-filtered": values
+        | dict(summary=filtered, charts=financial_charts(filtered, choices), total=4),
     }
     result = {
         path: (

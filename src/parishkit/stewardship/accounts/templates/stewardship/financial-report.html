@@ -1,5 +1,6 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
 {% block title %}{% translate "Financial stewardship" %}{% endblock %}
+{% block head %}{% include 'stewardship/components/chart-scripts.html' %}{% endblock %}
 {% block content %}
 <h1>{% translate "Financial stewardship" %}</h1>
 {% aboutpage "financial-report" %}<p>{% translate "One row for each Family's current live pledge. A later submission replaces the earlier one; testing responses are excluded. Pledges are reported here and are never written to the parish source." %}</p>
@@ -10,15 +11,16 @@
 {% if metadata.giving_through %}<p>{% blocktranslate with start=metadata.comparison_start|parish_date end=metadata.comparison_end|parish_date through=metadata.giving_through|parish_date %}ParishSoft pledges and contributions cover the comparison period {{ start }} — {{ end }}, with contributions through {{ through }}.{% endblocktranslate %}</p>
 {% else %}<p class="notice">{% translate "ParishSoft pledges and contributions are unavailable: the latest giving data read from ParishSoft is not confirmed complete for this campaign's comparison period. Unavailable does not mean zero. A later full ParishSoft refresh may fill it in." %}</p>{% endif %}
 <p><a href="{% url 'admin:participation' %}">{% translate "Participation" %}</a></p>
+{# The summary follows the applied filters in place (data-table-sync): headline tiles, then the frequency and share-method charts (#720), each with its exact values in its tooltips and its collapsed table. #}
 <div id="financial-summary" data-table-sync><h2>{% translate "Summary of matching pledges" %}</h2>
-<dl>
-<dt>{% translate "Families" %}</dt><dd data-summary="families">{{ summary.families|number }}</dd>
-<dt>{% translate "Total annual pledges" %}</dt><dd data-summary="annual-total">{{ summary.annual_total.display }}</dd>
-{% for label,count in summary.frequencies %}<dt>{{ label }}</dt><dd>{{ count|number }}</dd>{% endfor %}
-{% for label,count in summary.shares %}<dt>{{ label }}</dt><dd>{{ count|number }}</dd>{% endfor %}
-<dt>{% translate "No share method chosen" %}</dt><dd>{{ summary.no_share|number }}</dd>
-<dt>{% translate "Cannot contribute financially" %}</dt><dd>{{ summary.cannot_give|default:0|number }}</dd>
-</dl></div>
+<ul class="stat-tiles">
+<li class="stat-tile"><span class="stat-label">{% translate "Families" %}</span> <span class="stat-value" data-summary="families">{{ summary.families|number }}</span></li>
+<li class="stat-tile"><span class="stat-label">{% translate "Total annual pledges" %}</span> <span class="stat-value" data-summary="annual-total">{{ summary.annual_total.display }}</span></li>
+<li class="stat-tile"><span class="stat-label">{% translate "Cannot contribute financially" %}</span> <span class="stat-value">{{ summary.cannot_give|default:0|number }}</span></li>
+</ul>
+{% for chart in charts %}<h3>{{ chart.title }}</h3>
+{% include 'stewardship/components/chart.html' %}{% endfor %}
+</div>
 {% comment %}The complete gate holds Apply while a date or amount is out of order or an amount is malformed (#563), its hint in a reserved line after the button so nothing moves; the server still checks each.{% endcomment %}<form id="table-filters" data-table-sync method="post" action="{% url 'admin:financial_report' %}" data-require-complete>{% csrf_token %}
 <label for="financial-search">{% translate "Search Family name or Family DUID" %}</label><input id="financial-search" name="search" maxlength="200" value="{{ query.search }}">
 <label for="filter-active">{% translate "Family status" %}</label><select id="filter-active" name="active"><option value="any">{% translate "Any status" %}</option><option value="active"{% if query.active == 'active' %} selected{% endif %}>{% translate "Active" %}</option><option value="inactive"{% if query.active == 'inactive' %} selected{% endif %}>{% translate "Inactive" %}</option><option value="unavailable"{% if query.active == 'unavailable' %} selected{% endif %}>{% translate "Status unavailable" %}</option></select>

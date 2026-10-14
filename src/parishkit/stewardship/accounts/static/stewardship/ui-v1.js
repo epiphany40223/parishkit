@@ -1346,6 +1346,9 @@
         });
         return;
       }
+      // Charts in it (the Financial stewardship summary, #720) keep their
+      // space until the fresh ones are drawn, so nothing below them moves.
+      if (window.ParishCharts) window.ParishCharts.hold(node, fresh);
       node.replaceWith(fresh);
       enhanceSwapped(fresh);
     });
