@@ -1591,10 +1591,30 @@ coalesces into the invitation. Everything else is unchanged: the invitation,
 receipts and confirmations still go out, the Family keeps its portal access,
 code and link, its eligibility flags do not change, and it stays in every
 count and report. Membership comes from the current snapshot's recorded read
-(see the [delta cycle](#delta-cycle)) and applies only while the recorded name
-is the campaign's current setting, so clearing or changing the name takes
-effect at once for the old membership and at the next refresh for the new
-one. The scheduler plans every Family at each reminder's lead-window start
+(see the [delta cycle](#delta-cycle)), which a refresh records for the name
+set when it ran. Clearing the setting stops every exclusion at once. A new
+name applies from the next refresh that reads it; until then a rename keeps
+excluding the Families the recorded read found for the previous name
+([#1305](https://github.com/epiphany40223/parishkit/issues/1305)), so a
+corrected spelling or next year's WorkGroup never sends a Reminder to every
+Family meant to be skipped (the safer failure for duplicate or staff
+records), and a snapshot with no recorded read (no name was set when it was
+read) excludes nobody, so the first name set applies from the next refresh.
+A clear followed by a new name before any refresh therefore excludes the
+recorded read's Families again until that refresh. A refresh that finds no
+Family WorkGroup by the name set (a misspelled rename, or a WorkGroup
+deleted in ParishSoft) records it as not found but keeps the Families the
+snapshot before it applied (`source.workgroups.keep_when_missing`), so a
+typo is never a Reminder to every Family meant to be skipped; the page and
+System health show the missing name until a refresh finds it, and the set
+it then reads replaces the kept one. A WorkGroup that is found but has no
+members excludes nobody, as the Administrator intends. The recorded read
+belongs to the snapshot, not to a campaign: when another campaign becomes
+current and names any WorkGroup, the previous campaign's recorded Families
+stay skipped until its first refresh reads its name (fewer Reminders,
+briefly, never more), and a campaign that names none skips nobody. One
+definition, `source.workgroups.applied_evidence`, gives every Python reader
+this set. The scheduler plans every Family at each reminder's lead-window start
 and due time, and the mail dispatcher plans the Family again just before
 sending, so a reminder prepared ahead for a Family that joined the WorkGroup
 afterwards is skipped and its unsent email cancelled with the same reason;
@@ -1603,7 +1623,8 @@ the WorkGroup (its SQL proof admits only the established skip reasons); a
 reminder it selects is skipped when it is dispatched. The paused-delivery
 resume plan (the `stewardship_delivery_family_recovery` view, behind both the
 resume preview's counts and `stewardship_delivery_recover_families_v1`) reads
-the same recorded membership under the same name rule and skips a WorkGroup
+the same recorded membership under the same rule (frozen migration 0099
+dropped the name comparison it had, #1305) and skips a WorkGroup
 Family's due reminders as `workgroup_excluded`, in the same order of reasons
 ([#866](https://github.com/epiphany40223/parishkit/issues/866)). The preview
 counts them as skipped, confirming the resume writes them so, and none

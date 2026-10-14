@@ -327,6 +327,9 @@ FROZEN = {
     "0098_debug_off_clear_subject.sql": (
         "5e77e47bdb4c074839c5938fa739fd1b249c12a9c7d517ab4c9dd1d0ca512a3d"
     ),
+    "0099_workgroup_rename_keep.sql": (
+        "d6c82585d1876698dcea878a3648f23a0633cf7775e85a31b0a0d73d1d9a7adb"
+    ),
 }
 
 
