@@ -9,6 +9,8 @@
 //     is shown at the field, in its reserved error line, marked as the shared
 //     live checks mark a field (data-field-error="client", aria-invalid, the
 //     line in aria-describedby), so ui-v1.js clears it on the next edit;
+//     its words are the field's data-client-error, so the form's complete
+//     gate holds Review with them until then (#1330);
 //   - names: the distinct names of the current ParishSoft Members that list
 //     the address, best first. The first fills in the Name unless the
 //     Administrator has typed one (a Name this script filled is replaced by
@@ -47,6 +49,10 @@
     const ids = (email.getAttribute("aria-describedby") || "").split(/\s+/)
       .filter((id) => id && id !== line.id);
     email.setAttribute("aria-describedby", [...ids, line.id].join(" "));
+    email.dataset.clientError = words;
+    // The gate listens on the form; an event on the form itself is no edit
+    // of the field, so it does not clear the mark just made.
+    form.dispatchEvent(new Event("change"));
   };
   // Say one state of the lookup in the help line, whole in its title too.
   const say = (words) => {

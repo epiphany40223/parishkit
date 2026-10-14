@@ -367,12 +367,16 @@ def test_configured_content_editor_can_reset_to_the_default(auth_service, google
     saved = browser.get(path)
     assert b"Reset to the default text" in saved.content
     assert b"Start from the default text" not in saved.content
+    # Saved text, as saved: Preview changes waits for a change (#1330).
+    assert b'data-require-change="base_digest"' in saved.content
     requests = ConfigurationChangeRequest.objects.count()
     reset = browser.get(path + "?start=default")
     assert reset.status_code == 200
     assert b"Personal prayer" in reset.content
     assert b"will replace the current text" in reset.content
     assert b"Reset to the default text" not in reset.content
+    # The default filled in can be previewed as shown.
+    assert b"data-require-change" not in reset.content
     assert ConfigurationChangeRequest.objects.count() == requests
     preview = post(
         browser,
@@ -679,6 +683,8 @@ def test_stale_saved_content_is_flagged_and_resaves_without_an_edit(
     assert "markup that sending already removes: HTML comments." in (
         editor.content.decode()
     )
+    # A re-save needs no edit, so Preview changes does not wait (#1330).
+    assert b"data-require-change" not in editor.content
     email_editor = browser.get(catalog + "email/initial/" + email["id"] + "/")
     assert email_editor.context["stale"].removed == ("onclick attribute",)
     # Posting the saved text unchanged is enough: the form stores it cleaned.

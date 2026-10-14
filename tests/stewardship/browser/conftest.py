@@ -998,6 +998,32 @@ def component_origin():
                 ),
             },
         ),
+        (
+            # Preview changes waiting for a change, as the view draws it (#1330).
+            "/content-settings-gated",
+            "content-settings",
+            {
+                "campaign": {
+                    "pk": uuid4(),
+                    "active_configuration": {"name": "Sample campaign"},
+                },
+                "label": "Confirmation email",
+                "visual": "<p>Hello Sample Family</p>",
+                "placeholders": ["family_name", "parish_name"],
+                "change_gate": True,
+                "form": ContentForm(
+                    kind="email",
+                    slot="confirmation",
+                    initial={
+                        "base_digest": "a" * 64,
+                        "subject": "Received",
+                        "html": "<p>Hello Sample Family</p>",
+                        "text": "Hello Sample Family",
+                        "generate_text": True,
+                    },
+                ),
+            },
+        ),
         # A web-only page in the campaign content editor: no plain-text panel
         # (#259).
         (

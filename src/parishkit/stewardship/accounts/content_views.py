@@ -417,6 +417,10 @@ def _page(
             "started_from_default": started,
             "refusal": refusal,
             "stale": stale,
+            # Preview waits for a change (#1330) unless the page offers saving
+            # what is shown as it is: the unsaved default text, a saved text
+            # that needs re-saving, or a refused Preview drawn with its posts.
+            "change_gate": not (form.is_bound or started or stale is not None),
             # Post to the clean path: a "?start=default" GET must not carry its
             # query into the POST, which accepts no query parameters.
             "post_url": request.path,
