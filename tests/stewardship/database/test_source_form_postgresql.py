@@ -7,6 +7,7 @@ import pytest
 from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.source.family_names import family_display_name
+from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
 
 from ..policy_factory import address
 from .auth_builders import signed_in
@@ -55,7 +56,7 @@ def test_the_list_follows_the_snapshot_and_never_shows_a_value(
     ).encode() in body
     # The surname alone, never "Surname, heads": a head's name is a Member
     # value and may be the refused one (here, Member 3's first name).
-    family_name = family_display_name(data.families[1], "Unavailable Family")
+    family_name = family_display_name(data.families[1], NAME_NOT_RECORDED)
     assert f'<th scope="row">{family_name}</th>'.encode() in body
     assert b"<td>Last name</td>" in body
     assert b"private" not in body and b"x" * 101 not in body

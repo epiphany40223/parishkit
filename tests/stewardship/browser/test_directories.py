@@ -91,14 +91,22 @@ def test_response_filters_columns_and_inactive_families(page, component_origin):
     for index in (0, 1):
         assert page.locator("table thead th").nth(index).get_by_role("button").count()
     visible(page.get_by_role("rowheader", name="Example <Family>, Example Head"))
-    inactive = page.get_by_role("rowheader", name="Not in the latest ParishSoft data")
-    visible(inactive)
-    visible(inactive.get_by_text("No longer active in ParishSoft", exact=True))
+    # The shared marks (#1216): a Family the data no longer has shows only
+    # Not in ParishSoft; one it marks inactive keeps its name, badge beside.
+    gone = page.get_by_role("rowheader", name="Not in ParishSoft", exact=True)
+    visible(gone.locator('[data-source-status="missing"]'))
+    assert gone.locator('[data-source-status="inactive"]').count() == 0
+    faded = page.get_by_role(
+        "rowheader", name="Faded, Old Head Inactive in ParishSoft", exact=True
+    )
+    visible(faded.locator('.status-badge[data-source-status="inactive"]'))
     assert page.locator("[data-open-form]").count() == 1
     visible(page.get_by_text("HGFEDCBA", exact=True))
     # A missing Link followed reads "No"; times are localized in place.
     row = page.get_by_role("row").filter(has_text="HGFEDCBA")
     assert row.get_by_role("cell").nth(5).inner_text() == "No"
+    # Its email availability says what its name cell says.
+    visible(row.get_by_text("(Not in ParishSoft)", exact=True))
     assert "2026" in page.locator("#directory-summary time").inner_text()
     response = page.get_by_label("Response", exact=True)
     assert response.input_value() == "link-followed"

@@ -35,6 +35,7 @@ import logging
 from django.db import connection, transaction
 
 from .count_names import DERIVED_COUNTS
+from .source_status import NAME_NOT_RECORDED
 
 # The counts that get example Families, in check order: Families, Members and
 # contacts. Ministry, roster and fund counts have none.
@@ -43,8 +44,8 @@ EXAMPLE_MEASURES = ("family", "member", *DERIVED_COUNTS)
 EXAMPLE_LIMIT = 5
 # The longest stored name; a longer directory name is cut short.
 NAME_LIMIT = 300
-# Names a Family whose record has no surname, as the report tables do.
-UNNAMED = "Unavailable Family"
+# Names a Family whose record has no surname, in the shared words (#1216).
+UNNAMED = NAME_NOT_RECORDED
 # The one refusal whose examples may be shown (see the module docstring).
 SHOWN_ATTEMPT_SQL = "SELECT public.stewardship_source_drop_example_attempt_v1()"
 

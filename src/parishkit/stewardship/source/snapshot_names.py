@@ -23,6 +23,7 @@ from django.db import connection
 
 from .family_names import family_display_name, family_heads_name
 from .snapshot_models import SourceCurrent
+from .source_status import NAME_NOT_RECORDED
 
 
 def current_snapshot():
@@ -55,7 +56,7 @@ def snapshot_family_names(snapshot_id, duids, default=""):
     return {duid: fact.name for duid, fact in facts.items()}
 
 
-def name_rows(snapshot_id, rows, default="Unavailable Family"):
+def name_rows(snapshot_id, rows, default=NAME_NOT_RECORDED):
     """Rename each row's ``family_name`` to the directory's surname-and-heads name.
 
     For report rows whose SQL read gives only the Family's surname, so every
@@ -186,7 +187,7 @@ FAMILY_NAMES_SURNAME = (
 )
 
 
-def name_file_rows(metadata, rows, default="Unavailable Family"):
+def name_file_rows(metadata, rows, default=NAME_NOT_RECORDED):
     """Name a file's rows with ``name_rows`` and record which form it used.
 
     Sets ``metadata["family_names"]`` to the "Family names" detail text, so

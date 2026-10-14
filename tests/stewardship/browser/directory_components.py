@@ -160,8 +160,8 @@ def components(context, admin):
         "family_id": UUID(int=82),
     }
     # The Response filter with its response columns and a data check
-    # (#933): a never-opened Family that followed its link, and one the
-    # current ParishSoft data no longer has.
+    # (#933): a never-opened Family that followed its link, one the current
+    # ParishSoft data no longer has, and one it marks inactive.
     responding = DirectoryQuery(
         search="Example", response="link-followed", responses="yes", check="anything"
     )
@@ -181,7 +181,7 @@ def components(context, admin):
         "family_duid": 777,
         "active": False,
         "reason": "inactive",
-        "reason_label": INACTIVE,
+        "reason_label": MISSING_NAME,
         "code": "HGFEDCBA",
         "date_cells": [(dates[0], invited), (dates[1], None)],
         "checks": [],
@@ -191,6 +191,16 @@ def components(context, admin):
         "address": {},
         "address_lines": (),
         "mailable": False,
+    }
+    # A Family the data still has but marks inactive: its name and the
+    # shared Inactive in ParishSoft badge beside it (#1216).
+    faded = gone | {
+        "family_id": UUID(int=85),
+        "family_name": "Faded",
+        "display_name": "Faded, Old Head",
+        "reason_label": INACTIVE,
+        "family_duid": 778,
+        "code": None,
     }
     responses = {
         "query": responding,
@@ -202,8 +212,8 @@ def components(context, admin):
         "export_headings": export_headings(
             postal=False, reach="any", dates=dates, counts=counts, checks=True
         ),
-        "table": _table([listed, gone], 2, "no", responding),
-        "total": 2,
+        "table": _table([listed, gone, faded], 3, "no", responding),
+        "total": 3,
         # The code list with response columns asks for a zone (#1127).
         "export_asks_zone": True,
     }

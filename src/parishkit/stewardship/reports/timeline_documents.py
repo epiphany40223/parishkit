@@ -23,6 +23,7 @@ from datetime import datetime
 from typing import ClassVar
 from zoneinfo import ZoneInfo
 
+from parishkit.stewardship.source.source_status import NOT_IN_PARISHSOFT
 from parishkit.stewardship.web import dates
 
 HEADINGS = ("When", "What happened", "Details")
@@ -101,7 +102,7 @@ def timeline_document(
     metadata = (
         ("Report", "Family timeline"),
         ("Parish", parish_name),
-        ("Family", family["name"] or "Not in the latest ParishSoft data"),
+        ("Family", family["name"] or NOT_IN_PARISHSOFT),
         ("Family DUID", str(family["duid"])),
         (
             "Envelope number",
