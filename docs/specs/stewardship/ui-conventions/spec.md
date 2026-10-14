@@ -1986,7 +1986,8 @@ With no rows at all the line is blank, since the table says it is empty,
 unless the table gives an empty-table reason (such as why there is nothing
 to import), which the line then shows and the unavailable buttons name.
 When rows are shown but none can be selected (every file in use), the line
-says why none can be ticked
+says why none can be ticked where the table gives that reason, and otherwise
+stays blank as for an empty table
 ([#1332](https://github.com/epiphany40223/parishkit/issues/1332)).
 The shared `table-selection.html` include and its `ui-v1.js` wiring give
 every such table this behavior. The server validates every submitted

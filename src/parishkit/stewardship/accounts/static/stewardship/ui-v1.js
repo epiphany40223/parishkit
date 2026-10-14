@@ -766,9 +766,9 @@
     const emptyHint = hint?.dataset.emptyHint || "";
     // Rows can be shown with none of them selectable (every file in use,
     // no open request): their selection cells are empty. The line then says
-    // why nothing can be ticked, from the table's data-none-hint, or its
-    // missing hint (#1332).
-    const noneHint = scope.dataset.noneHint || missingHint;
+    // why nothing can be ticked, from the table's data-none-hint; without
+    // one it stays blank, as for an empty table (#1332).
+    const noneHint = scope.dataset.noneHint || "";
     const update = () => {
       const all = rows();
       const chosen = all.filter((node) => node.checked).length;
@@ -796,7 +796,8 @@
         : scope.getAttribute(`data-kind-hint-${kinds.size > 1 ? "mixed" : [...kinds][0]}`) || "";
       // With no rows at all the table itself says it is empty, unless the
       // table gave an empty-table reason, which then stays in the line.
-      const none = !all.length && Boolean(scope.querySelector("tbody td.select-col"));
+      const none = !all.length && Boolean(noneHint)
+        && Boolean(scope.querySelector("tbody td.select-col"));
       const empty = !all.length && !none && Boolean(emptyHint);
       const explain = Boolean(hint)
         && (Boolean(kindHint) || (!chosen && (all.length > 0 || empty || none)));
@@ -3780,7 +3781,9 @@
   // .errorlist with an id) and each field is marked and described by it.
   // Confirm stays unavailable, naming the line, until one of them is
   // edited: the edit clears the mark (wireValidity) and then lets the
-  // form's complete gate decide again. False when nothing was marked.
+  // form's complete gate decide again. Any change on the form counts,
+  // since choosing no contact attempt greys Date and Time without an event
+  // on them. False when nothing was marked.
   const refuseAtFields = (state, raw, text) => {
     let ids = [];
     try {
@@ -3811,8 +3814,9 @@
     describe(accept);
     state.dialog.querySelector("[data-confirm-cancel]").disabled = false;
     state.busy = false;
-    // Registered after wireValidity's own listeners, so the mark is
-    // already cleared when this runs.
+    // In the capture phase on the form, so the button stops naming the
+    // line before wireValidity's clearFieldError (on the field) runs:
+    // that would otherwise mark the button aria-invalid too.
     const done = new AbortController();
     const release = () => {
       done.abort();
@@ -3824,8 +3828,8 @@
       accept.disabled = false;
       if (state.form.hasAttribute("data-require-complete")) gateComplete(state.form);
     };
-    fields.forEach((node) => ["input", "change"].forEach((type) =>
-      node.addEventListener(type, release, {signal: done.signal})));
+    ["input", "change"].forEach((type) =>
+      state.form.addEventListener(type, release, {capture: true, signal: done.signal}));
     state.dialog.addEventListener("close", release, {signal: done.signal});
     fields[0].focus();
     return true;

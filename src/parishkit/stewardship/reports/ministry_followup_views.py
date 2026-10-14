@@ -1241,7 +1241,13 @@ def bulk(request, campaign_id):
         if refusal.code not in REFUSALS or refusal.code == "outcome_kind":
             return _error(campaign_id)
         refused = _refusal_error(refusal, request.POST)
-        fields = [name for name in refused["fields"] if name in BULK_FIELD_IDS]
+        # A missing time zone cannot be fixed in Date or Time, so it is
+        # shown below the dialog's buttons (#1332).
+        fields = [
+            name
+            for name in refused["fields"]
+            if name in BULK_FIELD_IDS and refusal.code != "contact_zone"
+        ]
         return _bulk_refusal(400, refused["message"], fields)
     except ValueError:
         return _error(campaign_id)

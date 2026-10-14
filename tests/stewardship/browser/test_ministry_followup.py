@@ -805,23 +805,23 @@ def test_a_queue_page_with_no_open_request_says_why_nothing_can_be_ticked(
     assert page.locator("input[data-select-row]").count() == 0
     assert bulk_gate(page) == (
         [False] * 4,
-        "No request on this page is open for an outcome.",
+        "No request on this page has an outcome to record.",
     )
 
 
-def test_a_refused_bulk_contact_time_is_shown_at_the_fields(page, component_origin):
-    """A contact date and time refusal names its fields (#1332): the message
-    fills the fields' error line, not the box below the buttons; Date and
-    Time are marked; Record outcome waits, naming the line, until one of them
-    is edited, which clears the mark."""
-    failures = bulk_page(page, component_origin)
-    message = (
-        "The contact time came without your computer's time zone. Save "
-        "again; if this repeats, check your computer's time zone setting."
-    )
+FUTURE_REFUSAL = (
+    "The contact attempt's date and time can't be in the future. "
+    "If they aren't, check your computer's clock."
+)
+
+
+def refused_at_fields(page, component_origin):
+    """Open Mark as Joined with a contact attempt the server refuses at Date
+    and Time (as the bulk view does for a future time by its clock), and
+    return the dialog, the Date and Time fields and Record outcome."""
 
     def refuse(route):
-        """Answer as the bulk view does for a contact zone refusal."""
+        """Answer as the bulk view does for a contact attempt in the future."""
         route.fulfill(
             status=400,
             content_type="application/json",
@@ -831,7 +831,7 @@ def test_a_refused_bulk_contact_time_is_shown_at_the_fields(page, component_orig
                         {"code": "invalid", "field_id": "bulk-contact-date"},
                         {"code": "invalid", "field_id": "bulk-contact-time"},
                     ],
-                    "refusal": {"message": message, "fix": None},
+                    "refusal": {"message": FUTURE_REFUSAL, "fix": None},
                 }
             ),
         )
@@ -849,9 +849,21 @@ def test_a_refused_bulk_contact_time_is_shown_at_the_fields(page, component_orig
     record = dialog.get_by_role("button", name="Record outcome")
     available(record)
     record.click()
+    # The answer has arrived once the message shows at the fields.
+    visible(dialog.locator("#bulk-contact-error"))
+    return dialog, date, time, record
+
+
+def test_a_refused_bulk_contact_time_is_shown_at_the_fields(page, component_origin):
+    """A contact date and time refusal names its fields (#1332): the message
+    fills the fields' error line, not the box below the buttons; Date and
+    Time are marked; Record outcome waits, naming the line, until the form
+    changes, which clears the mark (and never marks the button invalid)."""
+    failures = bulk_page(page, component_origin)
+    dialog, date, time, record = refused_at_fields(page, component_origin)
     line = dialog.locator("#bulk-contact-error")
     visible(line)
-    assert line.inner_text().strip() == message
+    assert line.inner_text().strip() == FUTURE_REFUSAL
     assert dialog.locator("[data-confirm-error]").is_hidden()
     for field in (date, time):
         assert field.get_attribute("aria-invalid") == "true"
@@ -863,5 +875,24 @@ def test_a_refused_bulk_contact_time_is_shown_at_the_fields(page, component_orig
     assert date.get_attribute("aria-invalid") == "false"
     available(record)
     assert "bulk-contact-error" not in (record.get_attribute("aria-describedby") or "")
+    assert record.get_attribute("aria-invalid") is None
     assert page.evaluate("window.notReloaded === true")
+    assert not failures
+
+
+def test_choosing_no_contact_attempt_after_a_field_refusal_frees_record(
+    page, component_origin
+):
+    """Choosing "No contact attempt to record" after a refusal at Date and
+    Time greys them without an event on them; Record outcome still comes
+    back, with the message gone and no stale reason named."""
+    failures = bulk_page(page, component_origin)
+    dialog, date, _time, record = refused_at_fields(page, component_origin)
+    assert record.is_disabled()
+    dialog.get_by_label("How").select_option("")
+    hidden(dialog.locator("#bulk-contact-error"))
+    greyed(date)
+    available(record)
+    assert "bulk-contact-error" not in (record.get_attribute("aria-describedby") or "")
+    assert record.get_attribute("aria-invalid") is None
     assert not failures

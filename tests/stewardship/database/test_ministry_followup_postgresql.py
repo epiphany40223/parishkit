@@ -1552,12 +1552,11 @@ def test_bulk_outcome_route_refuses_in_the_dialog_and_marks_history(
             "bulk-contact-time",
         ]
         assert [e["field_id"] for e in json.loads(kind.content)["errors"]] == [None]
+        # A missing time zone is not Date's or Time's to fix: no field.
         zoneless = post(browser, route, form | {"contact_zone": "Not/A_Zone"})
         assert zoneless.status_code == 400
-        assert [e["field_id"] for e in json.loads(zoneless.content)["errors"]] == [
-            "bulk-contact-date",
-            "bulk-contact-time",
-        ]
+        assert refusal(zoneless).startswith("The contact time came without")
+        assert [e["field_id"] for e in json.loads(zoneless.content)["errors"]] == [None]
         assert post(browser, route, form | {"outcome": "join:other"}).status_code == 400
         assert MinistryWorkflowRevision.objects.count() == 0
         done = post(browser, route, form)

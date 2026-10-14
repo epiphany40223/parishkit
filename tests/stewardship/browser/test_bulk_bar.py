@@ -126,3 +126,22 @@ def test_rows_with_none_selectable_say_why_in_the_reason_line(page, component_or
     )
     assert described(action, hint)
     assert not failures
+
+
+def test_rows_with_none_selectable_and_no_reason_leave_the_line_blank(
+    page, component_origin
+):
+    """A table that gives no reason for having no selectable rows (Dates and
+    mail schedules with only a sent email) keeps the line blank, as for an
+    empty table, rather than asking for a selection that cannot be made."""
+    failures = []
+    page.on("pageerror", lambda error: failures.append(str(error)))
+    page.goto(component_origin + "/schedule-list-sent-only")
+    assert page.locator("tbody td.select-col").count() == 1
+    assert page.locator("input[data-select-row]").count() == 0
+    action = page.get_by_role("button", name="Delete selected", exact=True)
+    hint = page.locator("[data-selection-hint]").first
+    assert action.is_disabled()
+    assert not hint.is_visible()
+    assert not described(action, hint)
+    assert not failures
