@@ -266,6 +266,16 @@ hr { border: 0; border-top: 1px solid var(--border); margin-block: 2rem; }
 .compare-day-row { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: .25rem 0; }
 .compare-day-row > * { margin: 0; }
 .compare-day .compare-day-row input { width: 7rem; }
+/* The Campaign comparison's pledge distribution (#1221): every year's pane
+   sits in the same grid cell, so the section is as tall as the tallest
+   year's and choosing another year in its selector moves nothing on the
+   page. Only the chosen pane is visible; the others keep their layout
+   (so their charts are drawn to the panel's width) but are hidden from
+   sight, focus and assistive technology. */
+.band-panes { display: grid; }
+.band-panes > [data-pane] { grid-area: 1 / 1; min-width: 0; }
+.band-panes > [data-pane]:not([data-shown]) { visibility: hidden; }
+.band-year select { width: auto; max-width: 100%; }
 .stat-label { font-weight: 600; }
 .stat-value { font-size: 1.75rem; font-weight: 650; line-height: 1.2; font-variant-numeric: tabular-nums; }
 .stat-detail { color: var(--muted); font-size: .875rem; }

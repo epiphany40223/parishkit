@@ -990,19 +990,28 @@ first, explanation in the About this page panel.
    lighter and labeled "so far". Pointing anywhere on a year's row, not
    only at its bar, shows the year, whether its figures are final, partial
    or so far, and the value, so a short bar still reads.
-5. **Pledge distribution:** per year, a chart of two 100% stacked bars,
-   one of its pledging Families by band and one of its total pledged by
-   band, both ordered from the smallest band, with a band table (Families,
-   share of Families, total, share of total) and a quartile line (first
-   quartile, median, third quartile, mean). The current campaign's chart
-   and table show; each imported year's sit in a closed disclosure
-   ("2026 pledge bands"), newest first, after the current campaign's, so
-   opening one moves nothing above it (Administrator feedback, 2026-10-12,
-   [#1161](https://github.com/epiphany40223/parishkit/issues/1161)). A
-   chart in a closed disclosure is drawn when it opens, since its panel
-   has no width before then, and an opened disclosure stays open through
-   Compare on day ([in-place
-   controls](../ui-conventions/spec.md#in-place-controls)). Every year's quartiles stay in the Every number table.
+5. **Pledge distribution:** one year at a time (Administrator feedback,
+   2026-10-13, [#1221](https://github.com/epiphany40223/parishkit/issues/1221)).
+   A labelled Year selector lists the current campaign, then each
+   imported year newest first, and starts on the current campaign (on the
+   newest imported year when the current campaign has no bands). The
+   chosen year's chart has two bars per band, ordered from the smallest
+   band: the band's share of the year's pledging Families and of its total
+   pledged, each labelled with the band's exact Families or dollars, so
+   the chart has no exact-values table of its own. Under it, the band
+   table (Families, share of Families, total, share of total) with the
+   quartile line (first quartile, median, third quartile, mean) in its
+   caption lists every figure as text. Choosing another year swaps the
+   chart and table in place, with no request: every year's pane is on the
+   page, all in one grid cell, so the section is as tall as the tallest
+   year's and the choice moves nothing, and each chart is drawn at once
+   to the panel's width. The choice stays through Compare on day ([in-place
+   controls](../ui-conventions/spec.md#in-place-controls)). A year
+   imported with an older band set shows its "import the year again" note
+   in place of the chart and bands. With a single year there is nothing
+   to choose, so no selector. Every year's quartiles stay in the Every
+   number table, and downloads are unchanged: they leave the bands and
+   quartiles out (see [Pledge distribution](#pledge-distribution)).
    The section's note says amounts are nominal dollars.
 6. **Every number:** a table with one row per year (current first): year,
    day 1 date, days, Families at day N, percent at day N, pledges at day N,
@@ -1220,8 +1229,9 @@ committed.
   acknowledgement gate, the Compare on day control without reload, the
   `day` value range, `no-store`, the audit events, the chart
   accessibility checks of the chart engine in a browser test, and (also a
-  browser test) the current campaign's pledge bands shown while each
-  imported year's and the data notes start closed and open on request,
+  browser test) one pledge distribution chart and table whose year
+  selector swaps them in place, a year with an older band set showing its
+  note, the data notes starting closed and opening on request,
   the shared notes shown once and each year's own after them.
 - **Downloads and digest:** the three formats carry the same columns and
   aggregates only, with no note text; a saved digest page shows the stored

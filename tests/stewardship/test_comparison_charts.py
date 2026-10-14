@@ -493,12 +493,13 @@ def test_final_bars_mark_the_current_campaign_so_far_and_lighter():
 # ---------------------------------------------------- pledge distribution
 
 
-def test_band_charts_stack_each_years_shares_from_the_smallest_band():
-    """Per year, its shares of Families and of dollars by band, each 100%.
+def test_band_charts_label_each_bands_families_and_dollars():
+    """Per band, its share of Families and of dollars, labelled exactly.
 
-    One chart per year (#1161): the page shows the current campaign's and
-    keeps each imported year's in a closed disclosure, so each key names
-    its year.
+    One chart per year, shown one at a time by the year selector (#1221), so
+    each key names its year. Each bar carries its band's Families or dollars
+    (no separate exact-values table on the page), inside a long bar's end
+    and after a short one.
     """
     built = comparison()
     current = charts.distribution_chart(built.current, BAND_EDGES)
@@ -506,27 +507,51 @@ def test_band_charts_stack_each_years_shares_from_the_smallest_band():
     assert current.key == "comparison-bands"
     assert current.title == "Pledge bands, 2055 (so far)"
     rows = current.spec["data"]["values"]
-    assert {row["name"] for row in rows} == {"Families", "Dollars pledged"}
-    for name in ("Families", "Dollars pledged"):
-        shares = [row["share"] for row in rows if row["name"] == name]
+    measures = ["Share of Families", "Share of total pledged"]
+    assert [row["measure"] for row in rows[:2]] == measures
+    assert len(rows) == 2 * (len(BAND_EDGES) + 1)
+    for measure in measures:
+        shares = [row["share"] for row in rows if row["measure"] == measure]
         assert sum(shares) == pytest.approx(1)
-        assert len(shares) == len(BAND_EDGES) + 1
-    families = [row for row in rows if row["name"] == "Families"]
-    assert families[0]["shown"] == "42.9%" and families[0]["amount"] == "3 Families"
-    # The dollars bar's tooltip gives the band's dollars, not its Families.
-    dollars = [row for row in rows if row["name"] == "Dollars pledged"]
-    assert dollars[0]["amount"] == "$300.00 pledged"
-    assert current.spec["encoding"]["order"]["field"] == "band"
-    assert current.spec["encoding"]["color"]["scale"]["range"] == list(
-        charts.BAND_COLORS
-    )
+    # Band 1: 3 of 7 Families, $300.00 of $1,100.00; band 2: 4 and $800.00.
+    labelled = [(row["shown"], row["percent"]) for row in rows[:4]]
+    assert labelled == [
+        ("3", "42.9%"),
+        ("$300.00", "27.3%"),
+        ("4", "57.1%"),
+        ("$800.00", "72.7%"),
+    ]
+    # The axis ends at the largest share rounded up to a tenth (80%), and a
+    # bar of at least 55% of it (44%) carries its label inside: white on the
+    # accent bar, ink on the gold one; a shorter bar's label is ink after it.
+    assert current.spec["encoding"]["x"]["scale"]["domain"] == [0, 0.8]
+    assert [(row["inside"], row["ink"]) for row in rows[:4]] == [
+        (False, COLORS["ink"]),
+        (False, COLORS["ink"]),
+        (True, "#ffffff"),
+        (True, COLORS["ink"]),
+    ]
+    assert current.spec["encoding"]["yOffset"]["sort"] == measures
+    assert [layer["mark"]["type"] for layer in current.spec["layer"]] == [
+        "bar",
+        "text",
+        "text",
+    ]
     oldest = next(year for year in built.imported if year.year == 2052)
     found = charts.distribution_chart(oldest, BAND_EDGES)
     assert found.key == "comparison-bands-2052"
-    # Dollars: band 1 of 2052 holds $100 of $1,900.
-    assert found.table.headings[1] == "Under $250"
-    assert found.table.rows[1][:3] == ("Dollars pledged", "5.3%", "94.7%")
+    # Band 1 of 2052: one Family, $100 of $1,900.
+    assert found.table.rows[0] == ("Under $250", "1", "$100.00")
+    assert found.spec["data"]["values"][1]["percent"] == "5.3%"
     assert found.notes == (charts.NOMINAL_DOLLARS,)
+
+
+def test_share_axis_ends_at_a_tenth_above_the_largest_share():
+    """Rounded up to a tenth, from 10% to 100%; an exact tenth stays."""
+    assert charts.share_top(0.72) == pytest.approx(0.8)
+    assert charts.share_top(0.7) == pytest.approx(0.7)
+    assert charts.share_top(0.01) == pytest.approx(0.1)
+    assert charts.share_top(1.0) == pytest.approx(1.0)
 
 
 def test_band_charts_leave_out_a_year_with_older_bands():

@@ -8,7 +8,8 @@ page's real address too (``PAGE``), since an in-place answer must come
 from the page's own path, and Compare on day asks it for day 5
 (``DAY_5``), which answers with the same campaign on day 5. ``-crowded``
 has seven imported years whose final figures are close together, so their
-end labels would collide at phone width unless they are spaced apart.
+end labels would collide at phone width unless they are spaced apart; the
+oldest was imported with an older pledge band set.
 """
 
 from datetime import date, timedelta
@@ -19,6 +20,7 @@ from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.reports.comparison import (
+    OLDER_BANDS,
     OTHER_ID_SYSTEM,
     Band,
     Comparison,
@@ -101,7 +103,7 @@ def _at(series, day, final):
     return None
 
 
-def _year(value, series, renewal, day, final=True):
+def _year(value, series, renewal, day, final=True, distribution=None):
     """An imported year with its data notes: three every year shares, one its own."""
     return Year(
         value,
@@ -113,7 +115,7 @@ def _year(value, series, renewal, day, final=True):
         at_day=_at(series, day, final),
         end=series[-1],
         renewal=renewal,
-        distribution=_distribution(40, 60, 90, 70, 60, 30, 12, 4),
+        distribution=distribution or _distribution(40, 60, 90, 70, 60, 30, 12, 4),
         notes=(
             ("Source system", "Invented old system"),
             ("Active Families counted from", "An invented snapshot"),
@@ -193,6 +195,11 @@ def comparison(*, imported=True, financial=True, day=12, crowded=False):
                 ),
                 Renewal(130, 780),
                 day,
+                # The oldest was imported with an older pledge band set, so
+                # its pane shows the note in place of its bands (#1221).
+                distribution=Distribution(0, Decimal(0), (), None, OLDER_BANDS)
+                if value == 2020
+                else None,
             )
             for offset, value in enumerate((2023, 2022, 2021, 2020))
         )
