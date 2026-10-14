@@ -5824,8 +5824,8 @@
 // ("More about Phone") would make it a second match for that label's text,
 // both for voice control and for tests that find fields by label. Its
 // description (the label, when given an id) says which field it explains. One document-level listener serves every toggletip, including ones
-// page scripts add later. Only one bubble is open at a time; Escape or a
-// click elsewhere closes it. Without JavaScript the bubble stays hidden and
+// page scripts add later. Only one bubble is open at a time; Escape, a click
+// elsewhere or a click on the bubble itself closes it. Without JavaScript the bubble stays hidden and
 // the button does nothing, so keep anything essential in visible text.
 (() => {
   let count = 0;
@@ -5883,6 +5883,16 @@
     tip.querySelector(".toggletip-bubble").hidden = false;
     place(tip);
   }
+  function inBubbleTap(event) {
+    // A click or tap on the open bubble itself closes it, as in the usual
+    // toggletip pattern (Inclusive Components): the bubble holds only plain
+    // text, and since it floats it may cover the next field or "i", so a tap
+    // on it is how someone gets to what lies underneath (#1289). A drag that
+    // selects some of its text (to copy it) keeps it open. Focus stays put:
+    // the bubble itself is not focusable.
+    return Boolean(event.target.closest?.(".toggletip-bubble"))
+      && document.getSelection().isCollapsed;
+  }
   document.addEventListener("click", (event) => {
     const button = event.target.closest?.(".toggletip-button");
     const openTip = document.querySelector(".toggletip-open");
@@ -5890,7 +5900,9 @@
       const tip = button.closest(".toggletip");
       if (tip === openTip) close(tip);
       else open(tip);
-    } else if (openTip && !openTip.contains(event.target)) close(openTip);
+    } else if (openTip && (!openTip.contains(event.target) || inBubbleTap(event))) {
+      close(openTip);
+    }
   });
   document.addEventListener("keydown", (event) => {
     const openTip = document.querySelector(".toggletip-open");

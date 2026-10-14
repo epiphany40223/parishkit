@@ -5,7 +5,7 @@ import pytest
 from .test_family_ministry import begin
 from .test_family_pages import next_page, paged_form
 from .test_family_response import expect, review, show
-from .waits import same_place
+from .waits import same_place, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -111,18 +111,52 @@ def test_toggletip_opens_by_click_and_keyboard_and_closes(
 
 
 def test_only_one_toggletip_is_open_at_a_time(page, component_origin):
-    """Opening a second bubble closes the first."""
+    """Opening a second bubble closes the first, by pointer alone."""
     begin(page, component_origin, paged_form(), None)
     tip = phone_tip(page)
     tips = tip.locator("xpath=ancestor::section[@data-page]").locator(".toggletip")
     assert tips.count() >= 2
+    first, second = (tips.nth(n).locator(".toggletip-bubble") for n in (0, 1))
+    button = tips.nth(1).locator("button")
+    button.scroll_into_view_if_needed()
     tips.nth(0).locator("button").click()
-    # The open bubble floats over the page and may cover the next field's
-    # "i" (#1289), so reach that one from the keyboard.
-    tips.nth(1).locator("button").focus()
-    page.keyboard.press("Enter")
-    expect(tips.nth(0).locator(".toggletip-bubble")).to_be_hidden()
-    expect(tips.nth(1).locator(".toggletip-bubble")).to_be_visible()
+    visible(first)
+    box = button.bounding_box()
+    middle = (box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    # The first bubble floats and, depending on the engine's line breaks,
+    # may cover the next "i" (#1289). The first click there closes it
+    # either way (on the bubble, or outside it); while it covered the
+    # button, a second click reaches the button.
+    page.mouse.click(*middle)
+    expect(first).to_be_hidden()
+    if button.get_attribute("aria-expanded") == "false":
+        page.mouse.click(*middle)
+    expect(second).to_be_visible()
+    expect(button).to_have_attribute("aria-expanded", "true")
+
+
+def test_tap_on_the_bubble_closes_it_unless_selecting(page, component_origin):
+    """A tap on the open bubble closes it; selecting its text keeps it open."""
+    begin(page, component_origin, paged_form(), None)
+    tip = phone_tip(page)
+    button, bubble = tip.locator("button"), tip.locator(".toggletip-bubble")
+    button.click()
+    visible(bubble)
+    bubble.click()
+    expect(bubble).to_be_hidden()
+    expect(button).to_have_attribute("aria-expanded", "false")
+    # Dragging across the text to copy it selects it, and the bubble stays.
+    button.click()
+    visible(bubble)
+    box = bubble.bounding_box()
+    middle = box["y"] + box["height"] / 2
+    page.mouse.move(box["x"] + 12, middle)
+    page.mouse.down()
+    page.mouse.move(box["x"] + box["width"] - 12, middle, steps=5)
+    page.mouse.up()
+    assert page.evaluate("!getSelection().isCollapsed")
+    expect(bubble).to_be_visible()
+    expect(button).to_have_attribute("aria-expanded", "true")
 
 
 @pytest.mark.parametrize("width", [390, 1280])

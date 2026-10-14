@@ -43,23 +43,28 @@ PLACE = """id => {
     };
 }"""
 
-# Representative Admin pages and the toggletip buttons each one checks
-# (shown ones only: the directory's closed export form holds one more).
+# Representative Admin pages, the toggletip buttons each one checks (shown
+# ones only: the directory's closed export form holds one more), and how many
+# of them the page has at least, so that losing tips cannot quietly shrink
+# what the test covers.
 CASES = {
     # A setup form's field help (accounts/field_tips.py) in a .label-row.
-    "label-row": ("/setup-credential", ".label-row .toggletip-button"),
-    # A follow-up edit form's short fields share a .field-row (#1014).
-    "field-row": ("/followup-item", ".field-row .label-row .toggletip-button"),
-    # A report table's column headings (#932).
-    "table-heading": ("/financial-report", "th .toggletip-button"),
-    # The Family directory's filter bar (#957, #1158).
-    "filter-bar": ("/family-directory", ".filter-bar .toggletip-button:visible"),
-    # The directory as an Administrator sees a Testing preset, with the
+    "label-row": ("/setup-credential", ".label-row .toggletip-button", 2),
+    # A follow-up edit form's short fields share a .field-row (#1014):
+    # Outcome and How.
+    "field-row": ("/followup-item", ".field-row .label-row .toggletip-button", 2),
+    # A report table's column headings (#932): Pledged and Contributed.
+    "table-heading": ("/financial-report", "th .toggletip-button", 2),
+    # The Family directory's filter bar (#957, #1158): at least Email
+    # availability, Campaign mail can reach and Include mailing columns.
+    "filter-bar": ("/family-directory", ".filter-bar .toggletip-button:visible", 3),
+    # The directory as an Administrator sees a Testing preset, which adds the
     # Responses shown switch and its toggletip (#933).
     "filter-bar-testing": (
         reverse("admin:family_directory")
         + "?response=submitted&responses=yes&sort=submitted&mode=testing",
         ".filter-bar .toggletip-button:visible",
+        4,
     ),
 }
 
@@ -68,13 +73,13 @@ CASES = {
 @pytest.mark.parametrize("case", CASES)
 def test_toggletip_floats_without_moving_the_page(page, component_origin, case, width):
     """Each tip opens a floating bubble in the viewport and moves no control."""
-    path, selector = CASES[case]
+    path, selector, least = CASES[case]
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + path)
     buttons = page.locator(selector)
-    assert buttons.count() >= 1, selector
+    assert buttons.count() >= least, (selector, buttons.count())
     for index in range(buttons.count()):
         button = buttons.nth(index)
         tip = button.get_attribute("aria-controls")

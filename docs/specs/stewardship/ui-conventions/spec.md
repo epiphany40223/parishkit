@@ -1476,8 +1476,10 @@ button, or above it when there is no room below, kept inside the browser
 window at every width. The bubble floats over the page, so opening it never
 moves a label or control, never changes the size or scroll of a table's box
 and never scrolls the page ([no layout shift](#no-layout-shift)). It may cover
-the field while open, since a second click, Escape or a click elsewhere closes
-it, and Escape returns focus to the button. Help that expands inline and pushes
+the field while open, since a second click on the button, Escape, a click
+elsewhere or a click or tap on the bubble itself closes it (unless the reader
+is selecting its text). Escape returns focus to the button; the other ways
+leave focus where it is. Help that expands inline and pushes
 the page down is reserved for text-labelled disclosures, such as About this
 page, never an "i" (#1289).
 
