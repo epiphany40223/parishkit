@@ -119,6 +119,25 @@ def _unset(target):
     }
 
 
+def key_summary(configuration, target):
+    """The latest key change line for ``target``, or None (request-free).
+
+    The settings page's status line, Finish switching's offer and ``pk-admin
+    integration show`` and ``status`` read it here, against the applied
+    record (or the stand-in of an optional integration not set up).
+    """
+    return summary(target, _optional(configuration, target) or _unset(target))
+
+
+def integration_list(configuration):
+    """The Integrations page's rows: each target, its label and whether set up."""
+    records = _records(configuration)
+    return [
+        {"target": name, "label": label, "configured": name in records}
+        for name, label in LABELS.items()
+    ]
+
+
 def _form(target, *args, stored=None, **kwargs):
     """The settings form, with ParishSoft's organization ID fixed once loaded.
 
@@ -289,6 +308,15 @@ def _saved_folder_id(link):
 
 def _backup_context(request, configuration):
     """Off-site copy status and the viewer's latest access check."""
+    return backup_state(configuration, request.portal_session.principal_id)
+
+
+def backup_state(configuration, actor_id):
+    """The backup page's off-site copy status and ``actor_id``'s latest check.
+
+    Request-free, so ``pk-admin integration show backup`` and ``integration
+    status backup`` read what the page and its status line show.
+    """
     from django.db import transaction
 
     from parishkit.stewardship.jobs.ownership import database_now
@@ -298,7 +326,7 @@ def _backup_context(request, configuration):
     # The window is judged on the database's clock, which also stamped the
     # check, so clock skew between servers can't hide a fresh result.
     with transaction.atomic():
-        probe = latest_probe(request.portal_session.principal_id, database_now())
+        probe = latest_probe(actor_id, database_now())
     return {
         "offsite": offsite_status(),
         "probe": probe,
@@ -677,16 +705,10 @@ def integration_settings(request, target=None):
             filters(request.GET, allowed=set())
             if request.method == "POST":
                 raise ValueError("Choose an integration.")
-            records = _records(configuration)
             response = render(
                 request,
                 "stewardship/integrations.html",
-                {
-                    "integrations": [
-                        {"target": name, "label": label, "configured": name in records}
-                        for name, label in LABELS.items()
-                    ]
-                },
+                {"integrations": integration_list(configuration)},
             )
         elif target == "backup_key":
             # The backup encryption key has its own proof-of-possession steps.
@@ -790,8 +812,7 @@ def integration_status(request, target):
         # never waits behind an installer or a source promotion.
         with read_transaction():
             configuration = editable_configuration(service)
-            record = _optional(configuration, target) or _unset(target)
-            latest = summary(target, record)
+            latest = key_summary(configuration, target)
         pending = latest is not None and latest.kind == "pending"
         response = render(
             request,
@@ -927,7 +948,7 @@ def _selectable(configuration, receipt, target):
         return False
     if target not in ROTATING_TARGETS:
         return False
-    latest = summary(target, _optional(configuration, target) or _unset(target))
+    latest = key_summary(configuration, target)
     return (
         latest is not None
         and latest.kind == "unselected"

@@ -99,6 +99,9 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "artwork show",
         "artwork remove-preview",
         "artwork remove",
+        "integration list",
+        "integration show",
+        "integration status",
     }
     tests = {
         "test sample-preview",
