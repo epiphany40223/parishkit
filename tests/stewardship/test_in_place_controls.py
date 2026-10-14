@@ -126,12 +126,11 @@ SETTINGS_PAGES = (
     "parish-settings.html",
     "reminder-workgroup.html",
 )
-# Campaign images and Parish logos review their uploads (and removals) in the
-# same region (#750); neither has a settings form, so they are not
-# SETTINGS_PAGES. Ministries changes nothing any more (#1267).
+# Parish logos reviews its uploads in the same region (#750); it has no
+# settings form, so it is not one of SETTINGS_PAGES. Campaign images reviews
+# in the review dialog. Ministries changes nothing any more (#1267).
 REVIEW_PAGES = (
     *SETTINGS_PAGES,
-    "artwork-settings.html",
     "branding-settings.html",
 )
 HOSTED = {
@@ -648,6 +647,29 @@ def test_campaign_settings_reviews_in_the_dialog_once():
     assert "'stewardship/settings-review.html'" not in text
     assert 'dialog_id="campaign-review"' in text and "review=True" in text
     assert "(read-only)" not in text
+
+
+def test_campaign_images_review_in_the_dialog():
+    """Each Campaign images upload and removal opens the shared review dialog
+    (#750) from the slots' region, which is redrawn from the page's address
+    once a change is applied; the page draws no in-place review region, and
+    the dialog's Review sends an upload multipart, as the form would."""
+    text = (TEMPLATES / "artwork-settings.html").read_text()
+    forms = re.findall(r"<form\b[^>]*>", text)
+    assert len(forms) == 2
+    for form in forms:
+        assert 'data-review-open="artwork-review"' in form
+        assert "data-in-place" not in form
+    upload = next(form for form in forms if "artwork-upload-" in form)
+    assert 'enctype="multipart/form-data"' in upload
+    assert "data-require-complete" in upload
+    # Remove this image is drawn only when the slot has an image.
+    assert text.index("{% if entry.asset %}<form") < text.index("artwork-remove-")
+    assert 'data-refresh-url="{{ refresh_url }}"' in text
+    assert "settings-review" not in text
+    assert 'dialog_id="artwork-review"' in text and "review=True" in text
+    script = (TEMPLATES.parents[1] / "static/stewardship/ui-v1.js").read_text()
+    assert 'form.enctype === "multipart/form-data" ? data' in script
 
 
 def test_the_follow_up_carries_only_the_change():

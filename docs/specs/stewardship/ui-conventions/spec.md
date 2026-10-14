@@ -649,28 +649,17 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   in-place region of its own, so the quiet refresh once a change is applied
   brings it up to date; it sits below the review region, so a status whose
   length changes never moves the form or the review.
-- **In-place review: Campaign images (#750).** Campaign images has no
-  settings form: each slot's upload form (`data-in-place`, multipart) and
-  its Remove this image link (`a[data-in-place]`) answer with the page
-  naming the change (`?review=<slot>&bundle=<id>` or `?remove=<slot>`), whose
-  review region under every slot shows the image (or the removal) with
-  Apply, so a review appearing never moves a slot. Apply posts to that
-  address. The slots are one in-place region, redrawn by an upload's answer
-  and by the quiet refresh once a change is applied; a refused upload's
-  field error shows in its slot and, linked to that field, in the review
-  region, which takes focus. Each slot is the same height with or without
-  an image (its image box keeps the slot's image size, its caption is one
-  line, and the removal line keeps its space), so the quiet refresh never
-  moves the review region below the slots. A stale upload (the page's
-  settings changed elsewhere) is refused in the region too; a stale Apply
-  says to upload the image again, or for a removal, to choose Remove this
-  image again. A refused Apply's answer marks the slots
-  `data-in-place-always`, so their forms are redrawn at the current
-  version and the next upload is accepted. Loading an address whose change
-  can no longer be reviewed (an image already applied, expired, another
-  sign-in's or stale; a slot with nothing left to remove) shows the page
-  with that explanation in the review region. Each upload form has an id,
-  so a file chosen while the quiet refresh redraws it is said not to be
+- **Review dialog: Campaign images (#750).** Campaign images reviews in the
+  [review dialog](#review-dialog). It has no settings form: each slot's
+  upload form (multipart, which the dialog's Review sends as it is) and its
+  Remove this image (a text-styled button in a form of its own, drawn only
+  when the slot has an image) open the dialog with the image as it will
+  appear, or the removal. The slots are one in-place region, redrawn after
+  Apply with the new current image. Each slot is the same height with or
+  without an image (its image box keeps the slot's image size, its caption
+  is one line, and the removal line keeps the button's space), so that
+  redraw never moves the status line below the slots. Each upload form has
+  an id, so a file chosen while the slots are redrawn is said not to be
   kept.
 - **In-place review: Parish logos (#750).** Parish logos has no settings
   form: its upload form (`data-in-place`, multipart, a region of its own)
@@ -1111,9 +1100,9 @@ dialog is decided on [#750](https://github.com/epiphany40223/parishkit/issues/75
 
 Current state, to be converted: Users' New user, Edit user and Import
 Ministry leaders, New and Edit scheduled email,
-[Campaign settings](../admin-portal/spec.md#campaign-settings-page) (#1119)
-and Share options use the dialog. Parish
-settings, No-reminders WorkGroup, Campaign images and Parish logos show the in-place
+[Campaign settings](../admin-portal/spec.md#campaign-settings-page) (#1119),
+Share options and Campaign images use the dialog. Parish
+settings, No-reminders WorkGroup and Parish logos show the in-place
 review panel of #532 and #750
 ([in-place controls](#in-place-controls)); the other editors use separate
 Review and Change status pages.

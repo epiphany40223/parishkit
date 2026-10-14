@@ -4035,7 +4035,8 @@
   // #750): components/confirm-dialog.html with review=True, opened by a form
   // marked data-review-open="<dialog id>" (New and Edit user, Import
   // Ministry leaders, New and Edit scheduled email, Campaign settings, its
-  // date change on Dates and mail schedules, and Share options).
+  // date change on Dates and mail schedules, Share options and Campaign
+  // images).
   //
   // Review posts the form, submitter included, without a page load. Until
   // the answer arrives the form is inert and aria-busy, and its Review
@@ -4191,7 +4192,10 @@
     // answer and behind the modal dialog after it, so nothing typed can be
     // lost when Apply redraws the form's region: no "not kept" line then.
     editedSince.delete(form.id);
-    const body = new URLSearchParams(new FormData(form, submitter || undefined));
+    const data = new FormData(form, submitter || undefined);
+    // A form that sends a file (Campaign images' uploads) posts multipart,
+    // as it would natively; any other posts its fields URL-encoded.
+    const body = form.enctype === "multipart/form-data" ? data : new URLSearchParams(data);
     const opener = submitter || firstSubmit(form) || form;
     form.setAttribute("aria-busy", "true");
     opener.setAttribute("aria-disabled", "true");
