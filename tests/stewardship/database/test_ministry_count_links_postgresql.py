@@ -108,3 +108,27 @@ def test_staff_counts_link_every_ministry(response_service, google):
         assert listed(page(browser, LEAVE_4)) == {leave.pk}
         assert listed(page(browser, f"{QUEUE}?ministry=4")) == {leave.pk}
         assert join.pk not in listed(page(browser, LEAVE_4))
+
+
+def totals(body):
+    """The totals region's tile values and follow-up chart key (#720)."""
+    region = body.split('<div id="ministry-totals" data-table-sync>', 1)[1]
+    region = region.split("<div id=", 1)[0]
+    values = re.findall(r'<span class="stat-value">([^<]*)</span>', region)
+    return values, re.findall(r'data-chart="([a-z-]+)"', region)
+
+
+@pytest.mark.parametrize(
+    "roles, expected", [(None, ["1", "0"]), (("staff",), ["1", "1"])]
+)
+def test_totals_add_up_only_the_readers_ministries(
+    response_service, google, roles, expected
+):
+    """The totals and follow-up chart come from the same scoped summary as
+    the table (#720): a leader of Food pantry (9) counts its join request
+    alone, while Staff count Ministry 4's leave request too."""
+    harness = setup(response_service)
+    browser, _, _, _ = leader(harness, google, **({"roles": roles} if roles else {}))
+    requests()  # A join for Ministry 9, a leave for Ministry 4.
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        assert totals(page(browser, REPORT)) == (expected, ["ministry-followup-spec"])

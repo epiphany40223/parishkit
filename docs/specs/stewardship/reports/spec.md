@@ -1457,6 +1457,23 @@ superseded/history views. Requests for
 [Members no longer in ParishSoft](../admin-portal/spec.md#follow-up-workflows)
 are left out of the counts and lists for everyone (#1217).
 
+The page is visual first
+([#720](https://github.com/epiphany40223/parishkit/issues/720)). Above the
+table, "Totals for all matching Ministries" adds up the counts of every
+Ministry the search matches, within the reader's scope, not only the table's
+page: two tiles (join requests and leave requests), then one
+[chart engine](#chart-engine) chart, "Follow-up progress", with a progress bar
+for the resolved or closed requests and one for the unresolved requests
+against all those requests, which the two always add up to. The chart draws
+its values the way the
+[Participation statistics](#campaign-statistics) chart does, in each bar's
+axis label, so it has no exact-values table. With no request nothing is
+drawn. The totals follow the search in place; paging and sorting leave them
+unchanged. When the table holds only one page, the view reads the whole
+matching summary once more through the same scoped selection. In the table,
+each Follow-up progress cell has a small bar before its text, hidden from
+assistive technology since the text states the same share.
+
 "Not in ParishSoft data" and "No longer in this campaign" are the
 Administrator's concern and change nothing a leader does with a request, so
 only Admin/Staff see them: each Ministry's notes and the page help about

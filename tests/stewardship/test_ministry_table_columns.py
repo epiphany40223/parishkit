@@ -9,7 +9,13 @@ from datetime import UTC, datetime
 
 from django.template.loader import render_to_string
 
-from parishkit.stewardship.reports.ministries import SUMMARY_SORTING, MinistryQuery
+from parishkit.stewardship.reports.chart_specs import ministry_followup
+from parishkit.stewardship.reports.ministries import (
+    SUMMARY_SORTING,
+    TOTALS,
+    MinistryQuery,
+    summary_totals,
+)
 from parishkit.stewardship.web.tables import report_table
 
 SUBMITTED = datetime(2054, 10, 5, 14, 30, tzinfo=UTC)
@@ -23,6 +29,9 @@ def ministry_page(rows, *, summaries=(), packet_choices=()):
     """
     query = MinistryQuery()
     shown = list(summaries)
+    # The page's totals and follow-up chart (#720), as the view builds them;
+    # a sample row without a count adds nothing.
+    totals = summary_totals([{key: row.get(key, 0) for key in TOTALS} for row in shown])
     return render_to_string(
         "stewardship/ministry-report.html",
         {
@@ -34,6 +43,8 @@ def ministry_page(rows, *, summaries=(), packet_choices=()):
                 "source_generation": 1,
             },
             "summaries": list(summaries),
+            "totals": totals,
+            "followup_chart": ministry_followup(totals),
             "packet_choices": list(packet_choices),
             "packet_limit": 200,
             "rows": rows,

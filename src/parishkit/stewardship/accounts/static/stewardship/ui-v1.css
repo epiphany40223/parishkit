@@ -758,6 +758,9 @@ progress { width: 100%; height: .85rem; appearance: none; border: 0; border-radi
 progress::-webkit-progress-bar { background: #e3e8e7; border-radius: 999px; }
 progress::-webkit-progress-value { background: var(--accent); border-radius: 999px; }
 progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
+/* A table cell's bar before its "3 out of 5 (60%)" text (Ministry requests' Follow-up progress, #720). */
+.progress-cell { white-space: nowrap; }
+.progress-cell progress { width: 5rem; margin-inline-end: .4rem; vertical-align: middle; }
 
 /* Log levels: the icon's shape carries meaning; color only reinforces it. The
    icons are one matched set (components/level-icon.html): a blue "i", an amber
