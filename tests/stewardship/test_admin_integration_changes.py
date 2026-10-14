@@ -19,8 +19,12 @@ from parishkit.stewardship.admin_integration_changes import (
     IntegrationConfirm,
     IntegrationPreview,
     form_data,
+    parse_schedule,
     parse_settings,
     prompt_lines,
+    schedule_errors,
+    schedule_review,
+    schedule_rows,
     setting_names,
 )
 from parishkit.stewardship.admin_parity import LEDGER
@@ -215,11 +219,21 @@ VERSION = ["--expected-version", "a" * 64]
         ["integration", "confirm", "email"],
         ["integration", "confirm", "--token", "x"],
         ["integration", "confirm", "email", "--token", "-"],
+        [
+            "integration",
+            "preview",
+            "parishsoft",
+            *VERSION,
+            "--refresh-schedule",
+            "{}",
+            "--remove",
+        ],
     ],
 )
 def test_malformed_commands_are_usage_errors(argv):
     """Neither or both of a change and a removal, no version, an unknown
-    target, no token, or a token read from standard input without --yes."""
+    target, no token, a token read from standard input without --yes, or a
+    refresh schedule with a removal."""
     out = io.StringIO()
     code = admin_cli.main(
         [*argv, "--config", "web.yaml", "--session-stdin"],
@@ -228,3 +242,127 @@ def test_malformed_commands_are_usage_errors(argv):
         stderr=out,
     )
     assert code == 2 and json.loads(out.getvalue())["error"]["code"] == "usage"
+
+
+SCHEDULE = {
+    "rules": [
+        {"kind": "full", "at": "02:00"},
+        {"kind": "full", "every": 120, "from": "08:00", "to": "18:00"},
+    ],
+    "skips": [{"from": "12:00", "to": "13:00"}],
+    "skip_around_family_emails": True,
+}
+
+
+def test_a_refresh_schedule_reads_as_json_or_yaml():
+    """The stored ``refresh_rules`` shape; skips default to none and a switch
+    left out stays absent (the current one is kept)."""
+    assert parse_schedule(json.dumps(SCHEDULE)) == SCHEDULE
+    text = 'rules:\n  - {kind: full, at: "02:00"}\n'
+    assert parse_schedule(text) == {
+        "rules": [{"kind": "full", "at": "02:00"}],
+        "skips": [],
+    }
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["[]", "rules: [", "a: 1\na: 2", "x" * (CHANGES_LIMIT + 1), "&a [*a]"],
+)
+def test_a_malformed_refresh_schedule_is_invalid(text):
+    """Not an object, not YAML, a duplicate key, too long or self-referring."""
+    with pytest.raises(ValueError):
+        parse_schedule(text)
+
+
+def test_refresh_schedule_shape_problems_are_placed_never_echoed():
+    """Another member, a row of another shape, an unquoted YAML time (read as
+    a number), a non-integer interval and a non-boolean switch."""
+    text = (
+        "secret_member: 1\n"
+        "rules:\n"
+        "  - {kind: full, at: 12:30}\n"
+        "  - {kind: full, at: '02:00', every: 60}\n"
+        "  - {kind: full, every: '60', from: '00:00', to: '01:00'}\n"
+        "skips: {at: '01:00'}\n"
+        "skip_around_family_emails: 'yes'\n"
+    )
+    with pytest.raises(InvalidChange) as raised:
+        parse_schedule(text)
+    assert [p["field"] for p in raised.value.fields] == [
+        "refresh_schedule",
+        "refresh_schedule.rules[0]",
+        "refresh_schedule.rules[1]",
+        "refresh_schedule.rules[2]",
+        "refresh_schedule.skips",
+        "refresh_schedule.skip_around_family_emails",
+    ]
+    assert "secret_member" not in json.dumps(raised.value.fields)
+    with pytest.raises(InvalidChange) as raised:
+        parse_schedule("{}")
+    assert raised.value.fields[0]["field"] == "refresh_schedule.rules"
+
+
+def editor(document, stored=None):
+    """The page's editor reading ``document`` posted as the command posts it."""
+    from parishkit.stewardship.accounts.refresh_schedule_forms import ScheduleEditor
+
+    stored = {} if stored is None else stored
+    rows = schedule_rows(
+        parse_schedule(json.dumps(document)), ScheduleEditor(stored=stored)
+    )
+    return ScheduleEditor(rows, stored=stored)
+
+
+def test_the_page_editor_reads_the_posted_rows_back():
+    """The command posts the page's rows: the editor reads the same rules,
+    derives the stored settings and reports a change."""
+    from parishkit.stewardship.source.refresh_rules import stored_settings
+
+    read = editor(SCHEDULE)
+    assert read.posted and read.changed and not read.blocking
+    assert read.document() == SCHEDULE
+    assert read.settings() == stored_settings(SCHEDULE) | {
+        "refresh_schedule_mode": "advanced"
+    }
+
+
+def test_a_switch_left_out_keeps_the_shown_one_and_basic_is_kept():
+    """No switch keeps the page's (off for an existing schedule); a schedule
+    Basic can show is saved as Basic when none was saved, as the page opens."""
+    rules = {"rules": [{"kind": "full", "at": "02:00"}]}
+    read = editor(rules)
+    assert read.document()["skip_around_family_emails"] is False
+    assert read.settings()["refresh_schedule_mode"] == "basic"
+    stored = {
+        "refresh_rules": {**rules, "skips": [], "skip_around_family_emails": True}
+    }
+    stored["refresh_rules"]["rules"] = [{"kind": "full", "at": "03:00"}]
+    assert editor(rules, stored).document()["skip_around_family_emails"] is True
+
+
+def test_the_page_editors_problems_come_back_at_each_row():
+    """A time off the quarter hour and the cap, each
+    with the page's words; an unchanged schedule never blocks."""
+    close = {
+        "rules": [{"kind": "full", "at": "02:00"}, {"kind": "full", "at": "02:10"}]
+    }
+    problems = schedule_errors(editor(close))
+    assert {p["field"] for p in problems} == {"refresh_schedule.rules[1]"}
+    assert any(":00, :15, :30 or :45" in p["message"] for p in problems)
+    many = {"rules": [{"kind": "full", "at": "02:00"}] * 65}
+    messages = [p["message"] for p in schedule_errors(editor(many))]
+    assert "A schedule has at most 64 rules." in messages
+    shown = editor({"rules": [{"kind": "full", "at": "02:00"}]}).shown
+    assert schedule_errors(editor(shown)) == []
+
+
+def test_the_schedule_review_shows_before_after_and_differences():
+    """The schedule as the page showed it, as posted, and the review's words."""
+    read = editor(SCHEDULE)
+    review = schedule_review(read, {}, "America/New_York")
+    assert review["timezone"] == "America/New_York"
+    assert review["before"] == read.shown and review["after"] == SCHEDULE
+    assert any("Full refreshes added" in item for item in review["differences"])
+    assert schedule_review(editor(read.shown), {}, "UTC") is None
+    assert schedule_review(None, {}, "UTC") is None

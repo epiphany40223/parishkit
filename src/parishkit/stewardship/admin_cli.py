@@ -1211,16 +1211,35 @@ def integration_status(args, preamble, runtime, context):
 
 
 def integration_preview(args, preamble, runtime, context):
-    """Review a change to, or the removal of, an integration's settings (PR 10)."""
+    """Review a change to, or the removal of, an integration's settings (PR 10).
+
+    ``--refresh-schedule`` (ParishSoft's refresh schedule, #632) goes with
+    or instead of ``--changes``, never with ``--remove``; only one of them
+    may read standard input.
+    """
     from .admin_integration_changes import CHANGES_LIMIT, preview_integration
 
+    schedule = args.refresh_schedule
+    if args.remove and schedule is not None:
+        raise UsageError("--refresh-schedule does not go with --remove.")
+    if not args.remove and args.changes is None and schedule is None:
+        raise UsageError("Give --changes, --refresh-schedule or --remove.")
+    if args.changes == "-" and schedule == "-":
+        raise UsageError("Only one input may be read from standard input.")
     return preview_integration(
         context["caller"],
         runtime,
         args.target,
         expected_version=args.expected_version,
-        changes=(None if args.remove else _input(args.changes, context, CHANGES_LIMIT)),
+        changes=(
+            None
+            if args.changes is None
+            else _input(args.changes, context, CHANGES_LIMIT)
+        ),
         remove=args.remove,
+        refresh_schedule=(
+            None if schedule is None else _input(schedule, context, CHANGES_LIMIT)
+        ),
     )
 
 
@@ -2790,7 +2809,7 @@ def _integration_preview_options(parser):
         type=_digest,
         help="the version integration show printed",
     )
-    change = parser.add_mutually_exclusive_group(required=True)
+    change = parser.add_mutually_exclusive_group()
     change.add_argument(
         "--changes",
         help="the settings change as JSON, or - to read it from standard input",
@@ -2799,6 +2818,11 @@ def _integration_preview_options(parser):
         "--remove",
         action="store_true",
         help="review removing the integration (Slack or off-site backups)",
+    )
+    parser.add_argument(
+        "--refresh-schedule",
+        help="ParishSoft's refresh schedule as YAML or JSON in the stored "
+        "refresh_rules shape, or - to read it from standard input",
     )
 
 

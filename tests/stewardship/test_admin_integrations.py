@@ -37,6 +37,7 @@ ALLOWED = {
     "configured",
     "removable",
     "settings",
+    "refresh_schedule",
     "key",
     "state",
     "at",
@@ -133,6 +134,7 @@ def test_the_google_workspace_page_is_its_golden_document():
         "configured": True,
         "removable": False,
         "settings": {"delegated_email": "mail@x.org"},
+        "refresh_schedule": None,
         "key": {
             "state": "updated",
             "at": AT.isoformat(),
@@ -170,6 +172,15 @@ def test_parishsoft_prints_the_refresh_facts_of_refresh_status():
     )
     assert model.source == refresh_fields(status)
     assert document(model)["settings"] == {"organization_id": "12"}
+    # An existing schedule (the defaults) as the editor shows it (#632).
+    assert document(model)["refresh_schedule"] == {
+        "rules": [
+            {"kind": "full", "at": "02:00"},
+            {"kind": "quick", "every": 15, "from": "00:00", "to": "23:45"},
+        ],
+        "skips": [],
+        "skip_around_family_emails": False,
+    }
 
 
 def test_the_backup_page_prints_its_copy_and_check():
