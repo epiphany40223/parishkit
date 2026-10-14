@@ -58,6 +58,10 @@ DEBUG_STATUS = "/system-health-debug/status"
 DEBUG_PREVIEW = "/system-health-debug-preview"
 DEBUG_SET = "/system-health-debug-set"
 DEBUG_STEP_UP = "/system-health-debug-step-up"
+# The Debug logging tile (#1214 slice 5): the same page, whose next poll
+# finds the switch set and no service logging in debug form any more.
+DEBUG_TILE = "/system-health-debug-tile"
+DEBUG_TILE_STATUS = "/system-health-debug-tile/status"
 # Accept this change once (ADM-13 PR 5b): a page showing only a refused
 # large change, the answers its steps get, and its next poll, in which
 # another Administrator has accepted it. The browser test serves the page at
@@ -508,6 +512,20 @@ def components(context, admin):
             render_to_string(
                 "stewardship/system-health-status.html",
                 values(False, debug=True, switch=True),
+            ),
+        ),
+        DEBUG_TILE: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(False, debug=True, status_url=DEBUG_TILE_STATUS),
+            ),
+        ),
+        DEBUG_TILE_STATUS: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health-status.html",
+                values(False, switch=True),
             ),
         ),
         DEBUG_PREVIEW: (

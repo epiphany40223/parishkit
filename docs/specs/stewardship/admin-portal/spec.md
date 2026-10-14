@@ -5468,8 +5468,8 @@ approaches: a metrics dashboard with time-series charts, a restyle of the
 current page, a colour-only status, hiding healthy areas, and a second page
 for details.
 
-Status: the frame, the Mail tile and the ParishSoft refresh tile are
-built. The first dashboard pull
+Status: the frame and the Mail, ParishSoft refresh, Backups and Debug
+logging tiles are built. The first dashboard pull
 request delivered slices 2a and 2b of the
 [delivery slices](#dashboard-delivery-slices), together with the parts of
 slice 1 the frame needs: the registry's tile and severity for every
@@ -5485,7 +5485,12 @@ in a fixed order (see the
 [ParishSoft refresh panel](#parishsoft-refresh-panel)), the refused
 counts inside the refusal's own problem item, listed last so Accept this
 change once follows them, and a panel that repeats none of the tile's
-problems. The Administrator
+problems. Slice 5 delivered the Backups and Debug logging tiles: their
+Working summaries in a fixed order (see the
+[backups panel](#backups-panel) and the
+[debug logging panel](#debug-logging-panel)), the Backups page findings
+as Warning items of the tile's problems, and panels that repeat none of
+their tiles' problems. The Administrator
 answered the dashboard's questions on 2026-10-13; the
 [decisions](#administrator-decisions-2026-10-13) record the answers. Until
 the rest of slice 1 lands, the frame applies these defaults:
@@ -5494,7 +5499,9 @@ the rest of slice 1 lands, the frame applies these defaults:
   shared list: an unknown No-reminders WorkGroup, a newest backup sealed to
   another key, a requested backup that failed, did not finish or was not
   picked up, and, in Production, off-site copies that are not set up. They
-  raise their tile to Warning on the page. Home does not list them yet.
+  raise their tile to Warning on the page, and are listed as Warning items
+  after their tile's problems, each with its sentence and link. Home does
+  not list them yet.
   Slice 1 makes them registry kinds, so Home lists them too and an unknown
   WorkGroup becomes an error while Reminders are scheduled.
 - **The refusal's counts end the ParishSoft refresh tile's problems**, and
@@ -5516,9 +5523,10 @@ the rest of slice 1 lands, the frame applies these defaults:
   the line; the Admin session's own dialog offers to sign in again.
 - **Families the form cannot open, before any ParishSoft download**, is
   Working, with the summary "No ParishSoft data yet".
-- **Working summaries** come from a first closed set, which slices 5 and
-  6 refine tile by tile; the Mail tile's (slice 3) and the ParishSoft
-  refresh tile's (slice 4) are final.
+- **Working summaries** come from a first closed set, which slice 6
+  refines for its tiles; the Mail tile's (slice 3), the ParishSoft refresh
+  tile's (slice 4), and the Backups and Debug logging tiles' (slice 5) are
+  final.
 
 #### Overall status line
 
@@ -6242,7 +6250,44 @@ server?" (ADM-35):
   not finish, not picked up (it waited 30 minutes, linking the nightly
   backup section), or cancelled by a restore. The page applies the lapse
   rules before the next poll records them. See
-  [take a backup now](#take-a-backup-now).
+  [take a backup now](#take-a-backup-now). Why a held request can still
+  show for a few minutes after the send ends is in a toggletip beside it.
+
+The panel repeats none of the tile's problems. The open
+`backup_rpo_breach`, `backup_offsite_failed` and `backup_key_changed`
+incidents are the tile's problems, in their own sentences. Until the
+registry slice makes them shared kinds, the page findings are listed after
+them as Warning items, in this order, each with its sentence and link:
+
+- a newest backup sealed to another key, linking the **Backup encryption
+  key** settings;
+- a requested backup that failed or did not finish (the backup runbook's
+  "Checking" section) or was not picked up (linking the nightly backup);
+- in Production, off-site copies that are not set up, linking their setup
+  page.
+
+The panel then keeps the facts: the last backup's time, size and version,
+"sealed to the backup encryption key now configured" when it is, a live,
+finished or cancelled request, and the off-site line with **Off-site
+backup settings**. A failed newest copy without an open incident is a
+plain notice there. In Testing, off-site copies that are not set up are a
+panel line with the setup link, not a finding
+([decision 5](#administrator-decisions-2026-10-13)).
+
+While the Backups tile is Working, its summary names the first of these
+that holds:
+
+1. "Backup requested at 10:42 AM is running";
+2. "Backup requested at 10:42 AM is held during the email send";
+3. "Backup requested at 10:42 AM is waiting";
+4. "Last backup 3 hours ago", followed by the off-site copy: "; off-site
+   copy 3 hours ago", "; no off-site copy yet" (set up, nothing copied),
+   or "; off-site copies not set up" (which only Testing reaches while
+   Working);
+5. "No backup recorded yet".
+
+A request's time is a browser-local clock time, with the full date when it
+falls on another day; how long ago is counted in the browser.
 
 The web login already reads the run record's ID, completion time and
 recipient fingerprint. ADM-13 adds read access to its `database_bytes`,
@@ -6286,8 +6331,26 @@ a set switch keeps the line out.
   pre-launch deployment tool turns it on deliberately
   ([deployment runbook](../../../guides/stewardship-deployment-runbook.md#pre-launch-fast-deploys)).
   The button is offered in Testing too.
-- While the switch is set, the panel shows who set it and when, and that
-  the setting on the server still says "on".
+- While the switch is set, the panel says that the setting on the server
+  still says "on"; who set it and when is the greyed button's reason.
+
+The panel repeats nothing the tile already says. In Production the
+`debug_logging` problem names every service with debug logging in effect
+and what to do, so only Testing lists the services in the panel. That
+debug logging is off in every service is the greyed button's reason, and
+how the switch is cleared is the toggletip beside the region's
+explanation.
+
+While the Debug logging tile is Working, its summary names the first of
+these that holds:
+
+1. "Turned off from this page by admin@example.org at 9:12 AM", while the
+   switch is set (without the address when it cannot be read);
+2. "On in 4 services, as expected in Testing";
+3. "Off".
+
+The time is a browser-local clock time, with the full date when it falls
+on another day.
 
 "About this page" explains why debug logging must be off in Production
 (debug logs can hold personal data, as the

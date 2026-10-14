@@ -24,6 +24,7 @@ from .system_health_components import (
     DEBUG_PREVIEW,
     DEBUG_SET,
     DEBUG_STEP_UP,
+    DEBUG_TILE,
     HEALTHY,
     MAIL,
     PAGE,
@@ -865,7 +866,10 @@ def test_take_a_backup_now_previews_and_confirms_in_place(
         == []
     )
     confirm.click()
-    expect(page.get_by_text("Backup requested at")).to_be_visible()
+    # The tile's summary says so too once a poll brings the request.
+    expect(
+        page.locator("#backup-now").get_by_text("Backup requested at")
+    ).to_be_visible()
     assert kept()
     assert page.evaluate(
         "document.getElementById('backup-now').contains(document.activeElement)"
@@ -1038,7 +1042,7 @@ def test_the_debug_button_follows_a_switch_set_elsewhere(page, component_origin)
     expect(reason).to_contain_text("Debug logging was turned off by other@example.org")
     stamp = reason.locator("time").get_attribute("datetime")
     expect(reason.locator("time")).not_to_have_text(stamp)
-    # The tile's details say the same, and that the server's setting is on.
+    # The tile's details add that the server's setting is still on.
     panel = page.locator('[data-debug-switch="set"]')
     expect(panel).to_contain_text("still says “on”")
 
@@ -1411,3 +1415,138 @@ def test_the_allow_region_is_accessible_at_phone_and_desktop_widths(
         })).violations.map(({id,impact}) => ({id,impact}))""")
             == []
         )
+
+
+# ------------------------------ the Backups and Debug logging tiles (slice 5)
+
+
+def _row_of(tops, index):
+    """The summary rows' places up to and including the row holding tile
+    ``index``: what opening or growing that tile's band must never move."""
+    return [top for top in tops if top <= tops[index] + 0.5]
+
+
+def test_take_a_backup_now_from_its_tile(page, component_origin):
+    """The pk-local state of slice 5. Closed and Working, the tile names the
+    last backup and its off-site copy; opened, Take a backup now previews
+    and confirms in its band without moving its row, and the next poll's
+    request is named in the summary with the tile still open."""
+    _routed(
+        page,
+        component_origin,
+        {"preview": (200, BACKUP_PREVIEW), "confirm": (200, BACKUP_REQUESTED)},
+    )
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + BACKUP_PAGE)
+    kept = _not_reloaded(page)
+    expect(_word(page, "backups")).to_have_text("Working")
+    said = _said(page, "backups")
+    expect(said).to_contain_text("Last backup")
+    expect(said).to_contain_text("; off-site copy")
+    band = _band(page, "backups")
+    expect(band).to_be_hidden()
+    _toggle(page, "backups").click()
+    expect(band).to_be_visible()
+    expect(band.locator("[data-problem]")).to_have_count(0)
+    tops = page.evaluate(TOPS)
+    row = _row_of(tops, 2)
+    region = band.locator("#backup-now")
+    region.get_by_role("button", name="Take a backup now", exact=True).click()
+    confirm = region.get_by_role("button", name="Confirm: take a backup now")
+    expect(confirm).to_be_focused()
+    assert same_place(page.evaluate(TOPS)[: len(row)], row)
+    confirm.click()
+    expect(region.locator("[data-backup-requested]")).to_be_visible()
+    page.evaluate("document.activeElement.blur()")
+    _away(page)
+    # The next poll: the request waits for the Family email send.
+    expect(said).to_contain_text("is held during the email send", timeout=30000)
+    expect(said).to_contain_text("Backup requested at")
+    stamp = said.locator("time")
+    expected = page.evaluate(
+        "(stamp) => ParishDates.dayTime(new Date(stamp), new Date())",
+        stamp.get_attribute("datetime"),
+    )
+    expect(stamp).to_have_text(expected)
+    expect(_word(page, "backups")).to_have_text("Working")
+    expect(band).to_be_visible()
+    assert same_place(page.evaluate(TOPS)[: len(row)], row)
+    assert kept()
+
+
+def test_turn_off_debug_logging_from_its_tile(page, component_origin):
+    """The pk-local state of slice 5. In Production debug logging in effect
+    opens the tile as a Warning whose problem says it once; Turn off debug
+    logging previews and confirms in its band without moving its row, and
+    the next poll turns the tile Working, named for the switch, still
+    open."""
+    _routed(
+        page,
+        component_origin,
+        {
+            "debug_off_preview": (200, DEBUG_PREVIEW),
+            "debug_off_confirm": (200, DEBUG_SET),
+        },
+        shown=DEBUG_TILE,
+    )
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + BACKUP_PAGE)
+    kept = _not_reloaded(page)
+    band = _band(page, "debug")
+    expect(band).to_be_visible()
+    expect(_word(page, "debug")).to_have_text("Warning")
+    expect(band.locator('[data-problem="debug_logging"]')).to_have_count(1)
+    assert "Debug logging must be off in Production" not in band.inner_text()
+    tops = page.evaluate(TOPS)
+    row = _row_of(tops, 3)
+    region = band.locator("#debug-off")
+    region.get_by_role("button", name="Turn off debug logging", exact=True).click()
+    confirm = region.get_by_role("button", name="Confirm: turn off debug logging")
+    expect(confirm).to_be_focused()
+    assert same_place(page.evaluate(TOPS)[: len(row)], row)
+    confirm.click()
+    expect(region.locator("[data-debug-off-set]")).to_be_visible()
+    page.evaluate("document.activeElement.blur()")
+    _away(page)
+    # The next poll: the switch is set and no service logs in debug form.
+    expect(_word(page, "debug")).to_have_text("Working", timeout=30000)
+    said = _said(page, "debug")
+    expect(said).to_contain_text("Turned off from this page by other@example.org at")
+    stamp = said.locator("time")
+    expect(stamp).not_to_have_text(stamp.get_attribute("datetime"))
+    expect(band).to_be_visible()
+    expect(band.locator("[data-problem]")).to_have_count(0)
+    assert same_place(page.evaluate(TOPS)[: len(row)], row)
+    assert "UTC" not in band.inner_text()
+    assert kept()
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_working_backups_and_debug_tiles_fit_and_pass_axe(
+    page, component_origin, axe_source, width
+):
+    """Opened while Working, both bands pass axe and fit a phone; a held
+    request's help is a toggletip that moves no summary row and stays inside
+    the viewport."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + BACKUP_PAGE)
+    for tile in ("backups", "debug"):
+        _toggle(page, tile).click()
+        expect(_band(page, tile)).to_be_visible()
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    assert _axe(page, axe_source) == []
+    _away(page)
+    # The next poll brings a held request, with its toggletip.
+    panel = _band(page, "backups").locator('[data-backup-request="held"]')
+    expect(panel).to_be_visible(timeout=30000)
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    tops = page.evaluate(TOPS)
+    panel.locator(".toggletip-button").click()
+    bubble = panel.locator(".toggletip-bubble")
+    expect(bubble).to_contain_text(
+        "can still show for a few minutes after the send ends"
+    )
+    assert same_place(page.evaluate(TOPS), tops)
+    box = bubble.bounding_box()
+    assert box["x"] >= 0 and box["x"] + box["width"] <= width
+    assert _axe(page, axe_source) == []

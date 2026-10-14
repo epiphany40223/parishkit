@@ -469,6 +469,50 @@ SOURCE_SUMMARIES = ("accepted", "catching_up", "held", "running", "data", "none"
 
 
 @dataclass(frozen=True)
+class BackupSummary:
+    """What the Backups tile's Working summary names
+    (``SystemHealth.backup_summary``).
+
+    ``kind`` is one of ``BACKUP_SUMMARIES``; ``at`` is the time it states
+    (when a live request was made, or when the newest backup finished), and
+    ``offsite`` the off-site part of the ``backup`` kind: ``copied`` (with
+    ``offsite_at``), ``not_yet`` (set up, no copy made yet) or
+    ``not_set_up``.
+    """
+
+    kind: str
+    at: datetime | None = None
+    offsite: str | None = None
+    offsite_at: datetime | None = None
+
+
+# The Backups tile's Working summaries, in the order the first that holds
+# is named (admin-portal spec, "Backups panel"): a live request is what the
+# Administrator is waiting on, and a running one outranks one held or still
+# waiting; otherwise the newest backup's age with its off-site copy.
+BACKUP_SUMMARIES = ("running", "held", "waiting", "backup", "none")
+
+
+@dataclass(frozen=True)
+class DebugSummary:
+    """What the Debug logging tile's Working summary names
+    (``SystemHealth.debug_summary``): ``kind`` is one of
+    ``DEBUG_SUMMARIES``, ``at`` when the debug-off switch was set, and
+    ``count`` the services with debug logging in effect."""
+
+    kind: str
+    at: datetime | None = None
+    count: int = 0
+
+
+# The Debug logging tile's Working summaries, in the order the first that
+# holds is named (admin-portal spec, "Debug logging panel"): a set switch
+# says debug logging was turned off from the page, then Testing's deliberate
+# debug logging, then Off.
+DEBUG_SUMMARIES = ("switch", "testing", "off")
+
+
+@dataclass(frozen=True)
 class DropCount:
     """One count a refused ParishSoft load was checked on."""
 
@@ -943,6 +987,44 @@ class SystemHealth(ReadModel):
         full-refresh-status.html).
         """
         return any(problem.kind == "source_failed" for problem in self.problems)
+
+    @property
+    def backup_summary(self):
+        """The Backups tile's Working summary: the first of
+        ``BACKUP_SUMMARIES`` that holds.
+
+        A request that failed, did not finish or was not picked up is a
+        page finding (``page_findings``), so it never reaches this; nor, in
+        Production, do off-site copies that are not set up (decision 5 of
+        2026-10-13), but the words stay true if they do.
+        """
+        request = self.backup_request
+        if request is not None and request.status in LIVE_REQUEST:
+            return BackupSummary(request.status, request.created_at)
+        if self.backup_at is None:
+            return BackupSummary("none")
+        offsite = self.offsite
+        if offsite is None:
+            return BackupSummary("backup", self.backup_at, "not_set_up")
+        if offsite.last_copy_at is None:
+            return BackupSummary("backup", self.backup_at, "not_yet")
+        return BackupSummary("backup", self.backup_at, "copied", offsite.last_copy_at)
+
+    @property
+    def debug_summary(self):
+        """The Debug logging tile's Working summary: the first of
+        ``DEBUG_SUMMARIES`` that holds.
+
+        In Production, debug logging in effect is the ``debug_logging``
+        problem, whose words the tile shows instead; a set switch keeps it
+        out of effect (``debug_lines``).
+        """
+        switch = self.debug_switch
+        if switch is not None and switch.active:
+            return DebugSummary("switch", switch.set_at)
+        if self.debug_lines:
+            return DebugSummary("testing", count=len(self.debug_lines))
+        return DebugSummary("off")
 
     @property
     def live_request(self):
