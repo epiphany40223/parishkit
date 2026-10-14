@@ -53,14 +53,17 @@ delete`` and ``files rename`` (PR 10, in ``admin_hosted_files``),
 shares`` (PR 10, in ``admin_settings``), ``parish preview`` and
 ``parish confirm`` (PR 10, in ``admin_parish``), and ``events list`` and
 ``events acknowledge`` (PR 11, in ``admin_events``). A
-command that streams a file (``logs export``, ``export census`` and
-``export download --stream``) writes the file's bytes, and nothing else, to
-standard output, and its document to standard error. Other areas join the same
+command that streams a file (``logs export``, ``export census``,
+``export limitations`` and ``export download --stream``) writes the file's
+bytes, and nothing else, to standard output, and its document to standard
+error. Other areas join the same
 subparser tree in later pull requests, each listed in the catalog with the
 pull request that added it. ``report roster`` (in ``admin_roster``) counts
 the Roster changes to enter list, and ``report census`` (in
 ``admin_census``) the Census changes list (#463), whose download is
-``export census`` (in ``admin_census_export``). ``artwork show``,
+``export census`` (in ``admin_census_export``). ``export limitations``
+(in ``admin_limitations_export``) is the Limitations report's download.
+``artwork show``,
 ``artwork remove-preview`` and ``artwork remove`` (PR 10, in
 ``admin_artwork``) read Campaign images and remove one of them.
 """
@@ -2036,6 +2039,20 @@ def _census_filters(args):
     }
 
 
+def export_limitations(args, preamble, runtime, context):
+    """The Limitations download, streamed to standard output (#463)."""
+    from .admin_limitations_export import export_limitations as export
+
+    return export(
+        context["caller"],
+        runtime,
+        show=args.show,
+        fmt=args.format,
+        zone_name=args.timezone,
+        context=context,
+    )
+
+
 def export_census(args, preamble, runtime, context):
     """The Census changes download, streamed to standard output (#463)."""
     from .admin_census_export import export_census as export
@@ -3184,6 +3201,34 @@ def _report_roster_options(parser):
     )
     parser.add_argument(
         "--ministry", type=_ministry_duid, help="one Ministry, by its DUID"
+    )
+
+
+def _export_limitations_options(parser):
+    """Options of ``export limitations``: the page's Show, format and time zone.
+
+    The page's search is left out: no command takes text that names a
+    Family. The format choices are the page's own (``limitation_views.
+    FORMATS``, which a test keeps equal), listed here because the parser is
+    built before Django is set up.
+    """
+    parser.add_argument(
+        "--show",
+        choices=("any", "cannot_serve", "cannot_attend"),
+        default="any",
+        help="any (default), cannot_serve (cannot participate in ministries) "
+        "or cannot_attend (cannot attend Mass or prayer services)",
+    )
+    parser.add_argument(
+        "--format",
+        choices=("csv", "xlsx", "pdf"),
+        default=DEFAULT_EXPORT_FORMAT,
+        help=f"default {DEFAULT_EXPORT_FORMAT}",
+    )
+    parser.add_argument(
+        "--timezone",
+        default="UTC",
+        help="the time zone of the file's times (default UTC)",
     )
 
 
@@ -4356,6 +4401,7 @@ def _report_specs():
     from .admin_digests import DailyDigest, DigestList, WeeklyDigest, WeeklyRequest
     from .admin_exact_exports import ExactChange, ExactStatus
     from .admin_exports import ExportChange, ExportDownload, ExportStatus
+    from .admin_limitations_export import LimitationsExport
     from .admin_report_reads import (
         ComparisonReport,
         FinancialReport,
@@ -4771,6 +4817,20 @@ def _report_specs():
             8,
             options=(_report_roster_options,),
             audit_event="roster_changes_viewed",
+        ),
+        # The Limitations download (PR 8h): the page's file.
+        CommandSpec(
+            "export limitations",
+            "Write the Limitations download to standard output.",
+            export_limitations,
+            "full",
+            False,
+            LimitationsExport.field_names(),
+            8,
+            options=(_export_limitations_options,),
+            # The page keeps the event it recorded as Talents and limitations.
+            audit_event="talents_report_exported",
+            streams=True,
         ),
         # The Census changes download (PR 8h): the page's file, or JSON
         # Lines with each change's id and version for ``census resolve``.

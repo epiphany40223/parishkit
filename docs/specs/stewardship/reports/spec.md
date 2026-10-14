@@ -1935,7 +1935,9 @@ for a Family the data no longer has, whose Family cell is then blank
 words Latest response in the parish's date format. A download is rendered in memory on the web
 connection under the interactive campaign read guard, not through the
 dedicated download pool, whose login cannot read the response and source
-data the report needs.
+data the report needs. `pk-admin export limitations` writes these same
+files through the same writer
+([admin automation](../admin-automation/spec.md#reports-and-exports)).
 
 Viewing and downloading are audited with the row count, the Show choice
 (`report_filter`, a closed word), whether the search box was used

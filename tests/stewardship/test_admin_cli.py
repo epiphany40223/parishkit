@@ -149,6 +149,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         # A Census changes row's Record outcome (#528).
         "census resolve",
         "export census",
+        "export limitations",
         "report source-form",
         "report data-to-fix",
         "digest list",
@@ -245,7 +246,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
         assert ("--yes" in names) == entry["prompts"], name
         # Only the downloads stream a file to standard output.
         assert entry["streams"] == (
-            name in {"logs export", "export download", "export census"}
+            name
+            in {"logs export", "export download", "export census", "export limitations"}
         ), name
         if name in acknowledged:
             assert entry["prompts"], name
@@ -543,6 +545,20 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "sha256",
         "count",
     ]
+    # The Limitations download (PR 8h): a full-scope session, as every
+    # export; the page's own event (kept from Talents and limitations); the
+    # page's Show menu, no search; the page's three formats.
+    limitations = entries["export limitations"]
+    assert limitations["scope"] == "full" and not limitations["changes_state"]
+    assert limitations["audit_event"] == "talents_report_exported"
+    assert limitations["streams"] and not limitations["prompts"]
+    assert not limitations["fresh_gated"]
+    assert not limitations["request_key"] and not limitations["expected_version"]
+    options = {option["name"]: option for option in limitations["options"]}
+    assert options["--format"]["choices"] == ["csv", "xlsx", "pdf"]
+    assert options["--show"]["choices"] == ["any", "cannot_serve", "cannot_attend"]
+    assert "--search" not in options and "--campaign" not in options
+    assert limitations["result_fields"] == census["result_fields"]
     # The export lifecycle: status is any session's passive read with
     # --watch and no view event; every other command needs a full-scope
     # session. The four changes are keyed (but cancel) and record their

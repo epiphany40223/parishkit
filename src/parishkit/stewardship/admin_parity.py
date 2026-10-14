@@ -277,7 +277,8 @@ LEDGER = {
     # Creating a financial export is fresh-gated (#547): the command calls
     # the caller-aware require_fresh, as the page's view does.
     "financial_export": command("export financial"),
-    "limitations_export": pending("PR 8h", "export limitations"),
+    # The page's download, through the page's own writer.
+    "limitations_export": command("export limitations"),
     # The page's download, and JSON Lines with each change's id and version.
     "census_changes_export": command("export census"),
     "information_export": command("export information"),

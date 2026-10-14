@@ -133,6 +133,18 @@ FORMATS = {
 }
 
 
+def export_choice(fmt, zone_name):
+    """The download's format and display zone, as ``{"format", "zone"}``.
+
+    UTC or one supported timezone name, and one of ``FORMATS``; anything
+    else is a ``ValueError`` (the page's 400, the command's ``invalid``).
+    The page and ``pk-admin export limitations`` both check through here.
+    """
+    if fmt not in FORMATS or (zone_name != "UTC" and zone_name not in timezone_names()):
+        raise ValueError("Invalid Limitations export choice.")
+    return {"format": fmt, "zone": ZoneInfo(zone_name)}
+
+
 def _principal(request, store, *, read_only=False, export=False):
     """Every request reloads current policy; Ministry leaders never qualify."""
     principal = authenticated_admin(
@@ -223,14 +235,9 @@ def _respond(request, campaign_id, *, export, render):
             if export:
                 fmt = parameters.pop("format", [DEFAULT_EXPORT_FORMAT])
                 zone = parameters.pop("timezone", ["UTC"])
-                if (
-                    len(fmt) != 1
-                    or fmt[0] not in FORMATS
-                    or len(zone) != 1
-                    or (zone[0] != "UTC" and zone[0] not in timezone_names())
-                ):
+                if len(fmt) != 1 or len(zone) != 1:
                     raise ValueError("Invalid Limitations export choice.")
-                extra = {"format": fmt[0], "zone": ZoneInfo(zone[0])}
+                extra = export_choice(fmt[0], zone[0])
             query = LimitationsQuery.parse(parameters)
         except ValueError:
             return _error(campaign_id, status=400)
@@ -294,9 +301,8 @@ def _respond(request, campaign_id, *, export, render):
             return _error(campaign_id, status=503)
         handed_off = response.status_code == 200 and response.streaming
         if export and handed_off:
-            stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%SZ")
             for name, value in download_headers(
-                f"stewardship-limitations-{stamp}.{extra['format']}",
+                export_file_name(extra["format"], datetime.now(UTC)),
                 content_type=FORMATS[extra["format"]],
             ).items():
                 response[name] = value
@@ -311,6 +317,42 @@ def _respond(request, campaign_id, *, export, render):
     finally:
         if finish is not None and not handed_off:
             finish(False)
+
+
+def export_file_name(fmt, now):
+    """The download's file name, stamped with the UTC instant ``now``."""
+    return f"stewardship-limitations-{now.strftime('%Y%m%d-%H%M%SZ')}.{fmt}"
+
+
+def export_body(campaign_id, result, fmt, zone):
+    """The filtered report as the chosen file's bytes, times in ``zone``.
+
+    The page's download and ``pk-admin export limitations`` (#463) both
+    render through here, so their CSV, XLSX and PDF cannot drift. The PDF's
+    page header and the XLSX's "Report information" sheet also name the
+    parish, campaign and download time; the PDF dates itself in the
+    parish's date format, lent explicitly, as the Census changes download
+    does. The CSV is only the two tables, so it reads none of them.
+    """
+    if fmt == "csv":
+        return limitations_csv(result, zone)
+    parish = (
+        SystemConfiguration.objects.select_related("active_configuration__parish")
+        .get()
+        .active_configuration.parish
+    )
+    campaign = Campaign.objects.select_related("active_configuration").get(
+        pk=campaign_id
+    )
+    context = dict(
+        parish=parish.name,
+        campaign=campaign.active_configuration.name,
+        as_of=database_now(),
+    )
+    if fmt == "xlsx":
+        return limitations_xlsx(result, zone, **context)
+    with dates.using(parish.date_format):
+        return limitations_pdf(result, zone, **context)
 
 
 @require_http_methods(["GET", "POST"])
@@ -348,31 +390,7 @@ def export(request, campaign_id):
     """Download the filtered report as CSV, XLSX or PDF, rendered on request."""
 
     def render(result, query, extra):
-        """The chosen file format, with times in the chosen timezone.
-
-        The PDF's page header and the XLSX's "Report information" sheet
-        also name the parish, campaign and download time; the PDF dates
-        itself in the parish's date format, lent explicitly, as the Census
-        changes download does.
-        """
-        if extra["format"] == "csv":
-            return limitations_csv(result, extra["zone"])
-        parish = (
-            SystemConfiguration.objects.select_related("active_configuration__parish")
-            .get()
-            .active_configuration.parish
-        )
-        campaign = Campaign.objects.select_related("active_configuration").get(
-            pk=campaign_id
-        )
-        context = dict(
-            parish=parish.name,
-            campaign=campaign.active_configuration.name,
-            as_of=database_now(),
-        )
-        if extra["format"] == "xlsx":
-            return limitations_xlsx(result, extra["zone"], **context)
-        with dates.using(parish.date_format):
-            return limitations_pdf(result, extra["zone"], **context)
+        """The chosen file format, with times in the chosen timezone."""
+        return export_body(campaign_id, result, extra["format"], extra["zone"])
 
     return _respond(request, campaign_id, export=True, render=render)

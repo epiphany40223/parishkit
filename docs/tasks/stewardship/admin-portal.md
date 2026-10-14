@@ -667,6 +667,26 @@ keys against the page's headings, the formats and choices),
 with its count, refused choices `invalid` with nothing recorded, a
 read-only session refused, Staff, a Ministry leader denied, an ended
 session, no current campaign).
+A further follow-up (#463) adds `export limitations`, the Limitations
+download and the last part of PR 8h, in
+`parishkit.stewardship.admin_limitations_export`, through the page's own
+admission, `LimitationsQuery` (its Show choice, without the search),
+`limitations_report`, choice check and file writer
+(`limitation_views.export_choice` and `limitation_views.export_body`,
+extracted from the page's view) under the shared report read, recording
+the page's `talents_report_exported` with its count and #752's audit
+fields, and no schema change; proven by
+`tests/stewardship/test_admin_limitations_export.py` (the options against
+the page's choices, the choice check, the file name),
+`tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_exports.py`,
+`tests/stewardship/test_pk_admin.py` (the wrapper's streaming list),
+`tests/stewardship/test_admin_route_parity.py` and
+`tests/stewardship/database/test_admin_limitations_export_cli_postgresql.py`
+(the page's CSV byte for byte, XLSX sheet for sheet, PDF, the Show choice,
+the page's event with its count and choices, a refused choice `invalid`
+with nothing recorded, a read-only session refused, Staff, a Ministry
+leader denied, an ended session, no current campaign).
 ADM-11.08 lands in two parts. 7a adds `portal maintenance show` and
 `portal maintenance set` (fresh-gated, always prompts) in
 `parishkit.stewardship.admin_portal`, through the page's own

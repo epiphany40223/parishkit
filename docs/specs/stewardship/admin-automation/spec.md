@@ -960,8 +960,8 @@ needs no database: it checks the preamble's form and prints the catalog.
 
 A command prints exactly one JSON document to standard output, unless it
 runs with `--watch`, is `login start` (whose document has `final` false) or
-streams a file (`logs export`, `export census`, and `export download
---stream` from PR 8b),
+streams a file (`logs export`, `export census`, `export limitations`, and
+`export download --stream` from PR 8b),
 which writes the file's bytes alone to standard output and its one document,
 success or failure, to standard error:
 
@@ -2319,7 +2319,7 @@ file is regenerated from the retained capture, in its original format.
 | `find_family` | Permanent: a search by name; the command line takes no text that names a Family, and `export directory` is the file. This follows the pending "no search" default (PR 8e); if the Administrator allows searches, it becomes `--filter search=` on `export directory` |
 | `family_timeline`, `family_timeline_export` | One Family's timeline, so export only: the page's new export form and `export family-timeline FAMILY_RECORD_ID` (PR 8g, migration 0063); [fresh-gated](#fresh-gated-actions-from-the-command-line) |
 | `family_open_form` (new, #529) | Permanent: Open form signs this browser in to the Family form for a Family on the phone, a browser hand-off by nature; Families' responses are read through `report responses` and the directory exports with its Response filters |
-| `limitations_export` | `export limitations` (PR 8h, with #752's audit fields) |
+| `limitations_export` | `export limitations [--show S] [--format F] [--timezone Z]` (PR 8h, [#463](https://github.com/epiphany40223/parishkit/issues/463)): the page's download through the page's own writer (`limitation_views.export_body`), with #752's audit fields |
 | `census_changes`, `census_changes_export` | `report census`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the rows through `export census` (PR 8h, [#463](https://github.com/epiphany40223/parishkit/issues/463)). A row's Entered in ParishSoft, Ignore and Reopen ([#528](https://github.com/epiphany40223/parishkit/issues/528)) post to `census_changes`; their command is `census resolve PROPOSAL_ID --action entered\|ignored\|reopened` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), through the same `census_resolution` service |
 | `report_export_create`, `report_export`, `report_export_cancel`, `report_export_retry`, `report_export_regenerate`, `report_export_download` | `export create`, `export status --watch`, `export cancel`, `export retry`, `export regenerate`, `export download --stream` (PR 8b); an exact request's status, cancel and retry, which these pages also serve, are `export exact status --watch`, `export exact cancel` and `export exact retry` (PR 8h) |
 | `report_exact_create` | `export exact create` (PR 8h); the handed-off file through `export fetch` |
@@ -2517,10 +2517,34 @@ handoff, as the page delegates them. Each change admits as the page's form
 post does and runs in the export lifecycle's command scope, recording the
 services' own events and, when it made the change,
 `admin_cmd_export_exact_<verb>`. Once handed off, `export exact status`
-names the `export_id` that `export fetch` saves. The in-memory Limitations
-download (after #752's audit fields, PR 8h's second part) follows; the
-response lists' downloads were removed with their pages (#933), and the
-directory's export covers them.
+names the `export_id` that `export fetch` saves. The response lists'
+downloads were removed with their pages (#933), and the directory's export
+covers them.
+
+`export limitations` ([#463](https://github.com/epiphany40223/parishkit/issues/463),
+PR 8h's second part) is the Limitations report's in-memory download,
+streamed as `export census` is, with the same document (`campaign_id`,
+`file_name`, `content_type`, `format`, `timezone`, `size`, `sha256`,
+`count`) on standard error. It needs a full-scope session and is neither
+prompting nor fresh-gated, as the page asks for no recent sign-in. It
+admits as the download does (`limitation_views._principal` with `export`:
+`CAMPAIGN_REPORT` and `REPORT_EXPORT`, so Administrators and Staff, never a
+Ministry leader), passively and then recording activity as the download's
+post does, and reads through the shared report read and the page's
+`LimitationsQuery` (`--show`, the page's Show menu, without its search) and
+`limitations_report`. `--format csv|xlsx|pdf` and `--timezone` are checked
+by the page's own `limitation_views.export_choice` and written by the
+page's own `limitation_views.export_body` (both of which the page now
+calls), so its files are the page's; it has no command-only format, as no
+command acts on a row. It records the page's `talents_report_exported`
+(the name kept from Talents and limitations, #970) with the page's count
+(the Member and Family rows in the file) and #752's audit fields
+(`search_used`, always false, `report_filter` and, when no refresh promoted
+another snapshot during the read, `snapshot_id`), and no `admin_cmd_*`
+event. The name, `--show` without the search and the absent JSON Lines are
+defaults pending Administrator confirmation; the
+[operator guide](../../../guides/stewardship-admin-automation.md#limitations-download)
+lists them.
 
 `export census` ([#463](https://github.com/epiphany40223/parishkit/issues/463))
 is the Census changes page's in-memory download, streamed as `logs export`
@@ -3314,8 +3338,9 @@ exactly the commands that exist.
   postal`). **PR 8g:** the one-Family timeline export (`export
   family-timeline`, with the page's export form and migration 0063).
   **PR 8h:** the exact daily exports (`export exact …`), the Census changes
-  download (`export census`), then the in-memory Limitations download after
-  issue #752 (the response lists were removed, #933).
+  download (`export census`), then the in-memory Limitations download
+  (`export limitations`) after issue #752 (the response lists were
+  removed, #933).
 - **PR 9, operations,** in three parts. **PR 9a:** task retries. **PR 9b:**
   delivery reads and resolution. **PR 9c:** `resend` and refusal clearing, at
   the prompt.

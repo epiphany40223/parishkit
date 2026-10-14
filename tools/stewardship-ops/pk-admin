@@ -562,7 +562,7 @@ esac
 # Commands that stream a file to standard output, as AREA_VERB words
 # separated by spaces. Their bytes are never written to a terminal: redirect
 # standard output to a file.
-STREAMING="logs_export export_download export_census"
+STREAMING="logs_export export_download export_census export_limitations"
 # The work file the command's document is read from (see `reports`).
 documents=output
 for command in $STREAMING; do
