@@ -1,5 +1,6 @@
 """Render the real System health templates with sample states (ADM-13, #530)."""
 
+from dataclasses import replace
 from datetime import timedelta
 from types import SimpleNamespace
 from uuid import UUID
@@ -91,6 +92,11 @@ STALE_STATUS = "/system-health-stale/status"
 # The troubled page's page-load tiles (#1214): its re-save list has an item
 # that cannot be sent, so that tile is an Error tile, and the page passes
 # that to its polled status as ?loaded=, which the fragment counts.
+# The Mail tile in each state its pk-local check names (slice 3 of #1214):
+# a send, an Administrator's pause, the daily limit and a stopped mail
+# sender. Each page polls its own status, which brings the same state.
+MAIL_STATES = ("sending", "paused", "daily", "stopped")
+MAIL = "/system-health-mail-"
 LOADED = loaded_states(0, list(RESAVE))
 TROUBLED_STATUS = canonical(f"{STATUS}?{urlencode({'loaded': loaded_query(LOADED)})}")
 
@@ -245,6 +251,43 @@ def health(
     )
 
 
+def mail_state(model, now, state):
+    """``model``, a healthy read, with its Mail tile in ``state``
+    (``MAIL_STATES``); its problems are found again from its processes."""
+    rows = {
+        "daily": [
+            _row(now, "mail-dispatch", sender_state="daily_limit"),
+            _row(now, "mail-dispatch", "mail", sender_state="daily_limit"),
+        ],
+        "stopped": [
+            _row(now, "mail-dispatch", age=600),
+            _row(now, "mail-dispatch", "mail"),
+        ],
+    }.get(state)
+    values = {
+        "sending": {"send_active": True},
+        "paused": {"delivery_paused": True, "paused_at": now - timedelta(minutes=30)},
+        "daily": {"daily_sent": 1612, "daily_resume_at": now + timedelta(hours=5)},
+        "stopped": {},
+    }[state]
+    if rows:
+        kept = [line for line in model.processes if not line.sender]
+        processes = tuple(kept) + group_processes(rows, now)
+        values |= {
+            "processes": processes,
+            "problems": find_problems(
+                mode=model.mode,
+                processes=processes,
+                missing=(),
+                schema_current=True,
+                incidents=model.incidents,
+                refresh=model.refresh,
+                backup_at=model.backup_at,
+            ),
+        }
+    return replace(model, **values)
+
+
 def components(context, admin):
     """The troubled page (polling a healthy fragment) and the healthy page."""
     now = context["server_now"]
@@ -274,6 +317,7 @@ def components(context, admin):
         accepted=False,
         attempt=REFUSED_ATTEMPT,
         mode="production",
+        mail=None,
         **extra,
     ):
         """Template context the view would build.
@@ -293,6 +337,8 @@ def components(context, admin):
             accepted=accepted,
             mode=mode,
         )
+        if mail:
+            model = mail_state(model, now, mail)
         loaded = extra.pop("loaded", LOADED if troubled else {})
         return (
             context
@@ -318,7 +364,22 @@ def components(context, admin):
             | extra
         )
 
-    return {
+    mail = {}
+    for state in MAIL_STATES:
+        mail[MAIL + state] = (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(False, mail=state, status_url=f"{MAIL}{state}/status"),
+            ),
+        )
+        mail[f"{MAIL}{state}/status"] = (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health-status.html", values(False, mail=state)
+            ),
+        )
+    return mail | {
         PAGE: (
             "text/html",
             render_to_string(

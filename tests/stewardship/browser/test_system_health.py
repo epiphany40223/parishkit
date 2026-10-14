@@ -25,6 +25,7 @@ from .system_health_components import (
     DEBUG_SET,
     DEBUG_STEP_UP,
     HEALTHY,
+    MAIL,
     PAGE,
     STALE,
     STALE_STATUS,
@@ -650,6 +651,97 @@ def _routed(page, component_origin, answers, shown=None):
         route.fulfill(status=status, content_type="text/html", body=body)
 
     page.route(f"{component_origin}{BACKUP_PAGE}", respond)
+
+
+# ------------------------------------------------- the Mail tile (slice 3)
+
+
+@pytest.mark.parametrize(
+    "state, word, said, shown",
+    [
+        ("sending", "Working", "Sending", "A Family email send is in progress."),
+        ("paused", "Working", "Paused by an Administrator since", "Mail is paused"),
+        (
+            "daily",
+            "Working",
+            "Waiting for the daily limit until about",
+            "Waiting for the daily limit (Both mail senders).",
+        ),
+        (
+            "stopped",
+            "Error",
+            "Mail sender 1 not running",
+            "Mail sender 1: Not running.",
+        ),
+    ],
+)
+def test_the_mail_tile_says_what_mail_is_doing(
+    page, component_origin, axe_source, state, word, said, shown
+):
+    """The pk-local states of slice 3: a send, a pause and the daily limit
+    are Working tiles that name the wait (decision 3) and start closed; a
+    stopped mail sender is an Error tile that starts open. Opened, the band
+    shows the reason with its data and links, passes axe and fits a
+    phone."""
+    page.set_viewport_size({"width": 320, "height": 900})
+    page.goto(component_origin + MAIL + state)
+    expect(_word(page, "mail")).to_have_text(word)
+    summary = page.locator("#health-mail .health-counted .health-said")
+    expect(summary).to_contain_text(said)
+    band = _band(page, "mail")
+    if word == "Working":
+        expect(band).to_be_hidden()
+        _toggle(page, "mail").click()
+    expect(band).to_be_visible()
+    visible(band.get_by_text(shown))
+    # Each time reads in the browser's own clock, never with a zone label.
+    for time in summary.locator("time").all():
+        expected = page.evaluate(
+            "(stamp) => ParishDates.dayTime(new Date(stamp), new Date())",
+            time.get_attribute("datetime"),
+        )
+        expect(time).to_have_text(expected)
+    assert "UTC" not in band.inner_text()
+    senders = band.locator("[data-sender]")
+    if state == "stopped":
+        # The two senders differ, so each has its own line; only the server
+        # operator can start the stopped one.
+        expect(senders).to_have_count(2)
+        expect(band.get_by_role("link", name="deployment runbook")).to_be_visible()
+    else:
+        expect(senders).to_have_count(1)
+        expect(senders).to_contain_text("Both mail senders:")
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    assert _axe(page, axe_source) == []
+
+
+def test_a_mail_toggletip_opens_in_place_and_survives_an_unchanged_poll(
+    page, component_origin
+):
+    """Why a wait happens is one click away: the toggletip floats over the
+    band, so no summary row moves, and an unchanged poll leaves it open."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + MAIL + "daily")
+    kept = _not_reloaded(page)
+    _toggle(page, "mail").click()
+    band = _band(page, "mail")
+    tops = page.evaluate(TOPS)
+    height = band.bounding_box()["height"]
+    button = band.locator(".toggletip-button").first
+    button.click()
+    bubble = band.locator(".toggletip-bubble").first
+    expect(bubble).to_be_visible()
+    expect(bubble).to_contain_text("Sending resumes by itself")
+    expect(button).to_have_attribute("aria-expanded", "true")
+    assert same_place(page.evaluate(TOPS), tops)
+    assert same_place(band.bounding_box()["height"], height)
+    # Two polls bring the same state; the open tip and its band stay put.
+    checked = page.locator("time[data-live-checked]")
+    first = checked.get_attribute("datetime")
+    expect(checked).not_to_have_attribute("datetime", first, timeout=30000)
+    expect(bubble).to_be_visible()
+    assert same_place(page.evaluate(TOPS), tops)
+    assert kept()
 
 
 def _not_reloaded(page):

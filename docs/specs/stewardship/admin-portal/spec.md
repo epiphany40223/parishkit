@@ -5468,11 +5468,18 @@ approaches: a metrics dashboard with time-series charts, a restyle of the
 current page, a colour-only status, hiding healthy areas, and a second page
 for details.
 
-Status: the frame is built. The first dashboard pull request delivered
-slices 2a and 2b of the [delivery slices](#dashboard-delivery-slices),
-together with the parts of slice 1 the frame needs: the registry's tile and
-severity for every existing kind, the split of a grouped process problem,
-and `severity` and `tiles` in the command's document. The Administrator
+Status: the frame and the Mail tile are built. The first dashboard pull
+request delivered slices 2a and 2b of the
+[delivery slices](#dashboard-delivery-slices), together with the parts of
+slice 1 the frame needs: the registry's tile and severity for every
+existing kind, the split of a grouped process problem, and `severity` and
+`tiles` in the command's document. Slice 3 delivered the Mail tile: its
+Working summaries in a fixed order (see
+[why sends are waiting](#why-sends-are-waiting)), one line for both mail
+senders while they agree, and its explanations moved into toggletips and
+"About this page". A halt's kind and **Clear the halt** wait for ADM-13
+PR 4, which adds halt identities, so the Mail tile has no action region
+yet. The Administrator
 answered the dashboard's questions on 2026-10-13; the
 [decisions](#administrator-decisions-2026-10-13) record the answers. Until
 the rest of slice 1 lands, the frame applies these defaults:
@@ -5501,8 +5508,8 @@ the rest of slice 1 lands, the frame applies these defaults:
   the line; the Admin session's own dialog offers to sign in again.
 - **Families the form cannot open, before any ParishSoft download**, is
   Working, with the summary "No ParishSoft data yet".
-- **Working summaries** come from a first closed set, which slices 3 to 6
-  refine tile by tile.
+- **Working summaries** come from a first closed set, which slices 4 to 6
+  refine tile by tile; the Mail tile's are final (slice 3).
 
 #### Overall status line
 
@@ -6049,7 +6056,31 @@ When nothing is waiting, the panel says "Nothing is holding Family email
 back". During a send it links Family email progress, which counts the
 send's progress; this panel does not count it again. "About this page"
 explains the daily limit (including the 200 sends kept for receipts,
-reports and alerts), Gmail's own limit, and the outage pause.
+reports and alerts), Gmail's own limit, and the outage pause, under one
+**Mail** entry named for the tile. Each reason's line keeps its data and
+links visible; why it happens (the daily limit, Gmail's limit, the outage
+pause, held planning) is in a toggletip beside it, as
+[page help](../ui-conventions/spec.md#page-help) asks. A reason that both
+mail senders share is listed once ("Waiting for the daily limit (Both
+mail senders)").
+
+While the Mail tile is Working, its summary names the first of these that
+holds, because a deliberate wait says more than "Sending" does and an
+Administrator's pause holds everything else back
+([decision 3](#administrator-decisions-2026-10-13)):
+
+1. "Paused by an Administrator since 9:12 AM";
+2. "Waiting for the daily limit until about 3:10 PM", while a running mail
+   sender is held at it;
+3. "Held at Gmail's limit until 4:00 PM", likewise;
+4. "Planning is held";
+5. "3 emails waiting to retry";
+6. "Sending", during a Family email send;
+7. "Nothing due".
+
+Each time is a browser-local clock time, with "tomorrow" or the full date
+when it falls on another day. A limit held only by a sender that is not
+running is not named: that sender's stopped state is the tile's error.
 
 #### Mail sender panel
 
@@ -6072,7 +6103,10 @@ from its [service status record](#service-status-records):
   can start the service, linking the
   [deployment runbook](../../../guides/stewardship-deployment-runbook.md).
 
-When the two consumers differ, each has its own line. An open
+When the two consumers differ, each has its own line; while they show
+the same state (and, for a halt, an outage pause or Gmail's limit, the same
+time), one line names both ("Both mail senders: Running."). A stopped
+consumer always has its own line, with when it last reported. An open
 `mail_provider_unavailable` or `mail_provider_failed` incident is named in
 words, with when it opened. "About this page" explains each state and what
 the system does about it.

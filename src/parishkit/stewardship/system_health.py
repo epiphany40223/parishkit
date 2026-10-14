@@ -74,6 +74,10 @@ RUNBOOKS = {
         "https://github.com/epiphany40223/parishkit/blob/main/docs/guides/"
         "stewardship-backup-runbook.md#the-nightly-backup"
     ),
+    "mail_outage": (
+        "https://github.com/epiphany40223/parishkit/blob/main/docs/guides/"
+        "stewardship-launch-runbooks.md#mail-provider-outage"
+    ),
 }
 # Family email purposes, whose waiting retries the page counts.
 FAMILY_PURPOSES = ("initial", "reminder")
@@ -354,6 +358,84 @@ class Problem:
             return words
         name = self.names if words.startswith("%(name)s") else self.names_inline
         return words % {"name": name}
+
+
+def _sender_shown(line):
+    """What a mail consumer's panel line shows, so equal lines can be one.
+
+    A running consumer shows its state and the one time that state names
+    (when a halt began; until when an outage pause or Gmail's limit holds).
+    A stopped one shows when it last reported, and is always its own line,
+    so its key names it.
+    """
+    if not line.running:
+        return (False, line.process)
+    when = {
+        "halted": line.sender_since,
+        "outage_paused": line.sender_until,
+        "gmail_held": line.sender_until,
+    }.get(line.sender_state)
+    return (True, line.sender_state, when)
+
+
+@dataclass(frozen=True)
+class SenderGroup:
+    """One line of the Mail tile: a mail consumer, or both when they agree.
+
+    The mail sender panel gives each consumer its own line only when the
+    two differ (admin-portal spec, "Mail sender panel"); two consumers in
+    the same state read as one "Both mail senders" line, and "Why sends are
+    waiting" names their reason once.
+    """
+
+    lines: tuple
+
+    @property
+    def line(self):
+        """The line whose state the group shows (they all show the same)."""
+        return self.lines[0]
+
+    @property
+    def label(self):
+        """The group's name at the start of its line."""
+        from django.utils.translation import gettext as _
+
+        return _("Both mail senders") if len(self.lines) > 1 else self.line.label
+
+    @property
+    def key(self):
+        """The consumers' process names ("main", or "main-mail" for both),
+        for the line's data attribute and its toggletips' ids."""
+        return "-".join(line.process for line in self.lines)
+
+
+@dataclass(frozen=True)
+class MailSummary:
+    """What the Mail tile's Working summary names (``SystemHealth.mail_summary``).
+
+    ``kind`` is one of ``MAIL_SUMMARIES``; ``at`` is the time it states
+    (since when mail is paused, until when a limit holds), and ``count`` the
+    emails waiting to retry.
+    """
+
+    kind: str
+    at: datetime | None = None
+    count: int = 0
+
+
+# The Mail tile's Working summaries, in the order the first that holds is
+# named (admin-portal spec, "Why sends are waiting"): a deliberate wait
+# says why nothing is sent before Sending does, an Administrator's pause
+# first because it holds everything else back.
+MAIL_SUMMARIES = (
+    "paused",
+    "daily_limit",
+    "gmail_held",
+    "planning_held",
+    "retry",
+    "sending",
+    "idle",
+)
 
 
 @dataclass(frozen=True)
@@ -750,17 +832,41 @@ class SystemHealth(ReadModel):
         )
 
     @property
-    def mail_wait(self):
-        """The first running mail sender held at a limit (the daily limit or
-        Gmail's), which the Mail tile's summary names, or None."""
-        return next(
-            (
-                line
-                for line in self.senders
-                if line.running and line.sender_state in {"daily_limit", "gmail_held"}
-            ),
-            None,
-        )
+    def sender_groups(self):
+        """The mail consumers' lines, as the Mail tile shows them: one line
+        for both while they show the same (``_sender_shown``), otherwise one
+        line each."""
+        senders = self.senders
+        if len(senders) == 2 and len({_sender_shown(line) for line in senders}) == 1:
+            return (SenderGroup(senders),)
+        return tuple(SenderGroup((line,)) for line in senders)
+
+    @property
+    def mail_summary(self):
+        """The Mail tile's Working summary: the first of ``MAIL_SUMMARIES``
+        that holds.
+
+        A deliberate wait is named, not counted as a warning (decision 3 of
+        2026-10-13). A limit is named only while a running consumer is held
+        at it; the daily limit's time is when the 24-hour count falls below
+        it again, Gmail's the time the first held consumer waits until.
+        """
+        held = {
+            line.sender_state: line
+            for line in reversed(self.senders)
+            if line.running and line.sender_state in {"daily_limit", "gmail_held"}
+        }
+        if self.delivery_paused:
+            return MailSummary("paused", self.paused_at)
+        if "daily_limit" in held:
+            return MailSummary("daily_limit", self.daily_resume_at)
+        if "gmail_held" in held:
+            return MailSummary("gmail_held", held["gmail_held"].sender_until)
+        if self.planning_held:
+            return MailSummary("planning_held")
+        if self.retry_waiting:
+            return MailSummary("retry", count=self.retry_waiting)
+        return MailSummary("sending" if self.send_active else "idle")
 
     @property
     def live_request(self):
