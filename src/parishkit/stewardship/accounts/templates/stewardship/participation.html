@@ -26,10 +26,10 @@
 <section class="panel" id="participation-statistics" data-in-place-region><h2>{% translate "Current active population statistics" %}</h2>
 <p>{% translate "Families eligible right now and their latest answers." %}</p>
 {% if campaign.state == 'archived' %}<p class="notice">{% translate "Archived campaign: its Family information is kept as it was in the last ParishSoft data it used, not from a later campaign." %}</p>{% endif %}
-{# Visuals first (#720): the counts as tiles, then responded and email reach as progress bars against active Families, their exact values in the tooltips and the collapsed table. Without an observation every card is a tile reading Unavailable and nothing is drawn. #}
+{# Visuals first (#720): the counts as tiles, then responded and email reach as progress bars against active Families, each bar's count and share drawn in its axis label and repeated in its tooltip (#1266). Without an observation every card is a tile reading Unavailable and nothing is drawn. #}
 <ul class="stat-tiles">{% for label,value in tiles %}<li class="stat-tile"><span class="stat-label">{{ label }}</span> <span class="stat-value">{{ value }}</span></li>{% endfor %}</ul>
 {% if progress %}{% with chart=progress %}<h3>{{ chart.title }}</h3>
-{% include 'stewardship/components/chart.html' %}{% endwith %}{% endif %}
+{% include 'stewardship/components/chart.html' with no_table=True %}{% endwith %}{% endif %}
 <dl><dt>{% translate "Counted at" %}</dt><dd><time datetime="{{ statistics.observed_at|date:'c' }}" data-local-instant>{{ statistics.observed_at|date:'c' }}</time></dd>
 <dt>{% translate "ParishSoft data as of" %}</dt><dd>{% if statistics.source_as_of %}<time datetime="{{ statistics.source_as_of|date:'c' }}" data-local-instant>{{ statistics.source_as_of|date:'c' }}</time>{% else %}{% translate "Unavailable" %}{% endif %}</dd></dl>
 {% if statistics.financial %}

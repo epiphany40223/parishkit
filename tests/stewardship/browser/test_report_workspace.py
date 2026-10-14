@@ -5,6 +5,7 @@ from uuid import UUID
 import pytest
 from django.urls import reverse
 
+from .test_campaign_comparison import COLLISIONS
 from .test_charts import assert_clean, watch
 from .test_response_dashboard import AXE, FITTED
 from .waits import eventually, visible
@@ -73,16 +74,17 @@ INSIDE_AXIS = """(() => {
 })()"""
 
 
-def test_statistics_draw_as_progress_bars_with_exact_values(
+def test_statistics_draw_as_progress_bars_with_labelled_values(
     page, component_origin, axe_source
 ):
     """The statistics panel is tiles, then progress bars (#720).
 
     The chart draws under the CSP with no script error and is named and
-    focusable; a bar's tooltip has its count and share of active Families;
-    the collapsed table has every exact value; each bar's axis label is its
-    name over its value, in the cards' order; and the page still fits its
-    window.
+    focusable; a bar's tooltip and accessible name have its count and share
+    of active Families; each bar's axis label is its name over its value,
+    in the cards' order, so there is no Exact values table (#1266); and at
+    320 and 1280 pixels the page fits its window with every label inside
+    the chart and no text drawn over other text.
     """
     from playwright.sync_api import expect
 
@@ -112,22 +114,24 @@ def test_statistics_draw_as_progress_bars_with_exact_values(
     tooltip = page.locator("#vg-tooltip-element")
     visible(tooltip)
     assert "eligible email" in tooltip.inner_text() and "90%" in tooltip.inner_text()
-    table = panel.locator(".chart-table")
-    table.locator("summary").click()
-    assert [
-        row.locator("td").all_inner_texts() for row in table.locator("tbody tr").all()
-    ] == [
-        ["Families that have responded", "2", "0.2%"],
-        ["Families with eligible email", "900", "90%"],
-        ["Families with deliverable email", "800", "80%"],
-    ]
+    # Pointer away: axe must not catch the tooltip while it fades out.
+    page.mouse.move(0, 0)
+    expect(tooltip).to_be_hidden()
+    assert bars.nth(1).locator("path").nth(1).get_attribute("aria-label") == (
+        "Families with eligible email: 900 out of 1,000 (90%)"
+    )
+    # The values are in the chart, so there is no Exact values table (#1266).
+    expect(panel.locator(".chart-table")).to_have_count(0)
+    expect(panel.get_by_text("Exact values")).to_have_count(0)
     assert_clean(page, errors)
     for width in (320, 1280):
         page.set_viewport_size({"width": width, "height": 900})
         eventually(page, FITTED)
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
-        # Every label stays inside the chart and clear of the bars.
+        # Every label stays inside the chart and clear of the bars, and no
+        # text is drawn over other text or cut off (#1266).
         assert page.evaluate(INSIDE_AXIS)
+        assert page.evaluate(COLLISIONS) == []
     page.evaluate(axe_source)
     assert page.evaluate(AXE) == []
     assert_clean(page, errors)
