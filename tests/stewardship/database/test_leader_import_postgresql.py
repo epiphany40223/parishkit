@@ -551,7 +551,10 @@ def test_import_all_and_nothing_left(deployment):
     installed(store, applied)
     assert {email for email in users(store)} >= set(LISTED)
     region = leaders_region(page(browser))
-    assert "No ParishSoft Ministry leader is waiting for a user." in region
+    assert (
+        "No ParishSoft Ministry leader is waiting for a user, so there is nothing"
+        " to import." in region
+    )
     assert re.search(
         r'disabled data-server-disabled aria-describedby="leaders-import-reason"'
         r"\s*>Import all",

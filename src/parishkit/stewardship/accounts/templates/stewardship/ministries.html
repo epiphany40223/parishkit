@@ -42,7 +42,7 @@
       <th scope="row">{{ ministry.name }}</th>
       <td>{% if ministry.active %}<span class="status-badge status-badge-on">{% translate "Active" %}</span>{% else %}<span class="status-badge">{% translate "Inactive" %}</span>{% endif %}</td>
       <td>{% if campaign_link %}<a href="{{ campaign_link.url }}">{% if ministry.included %}{% translate "Included" %}{% else %}{% translate "Not included" %}{% endif %}</a>{% elif ministry.included %}{% translate "Included" %}{% else %}{% translate "Not included" %}{% endif %}</td>
-    </tr>{% empty %}<tr><td colspan="4">{% translate "No Ministries match these filters." %}</td></tr>{% endfor %}
+    </tr>{% empty %}<tr><td colspan="4">{% if query or state != "all" %}{% translate "No Ministries match these filters. Clear Search by name, or choose All under Activity." %}{% else %}{% translate "No Ministries yet. They come from ParishSoft with each data load; to load them now, use Refresh from ParishSoft." %}{% endif %}</td></tr>{% endfor %}
     </tbody>
   </table>
   </div>

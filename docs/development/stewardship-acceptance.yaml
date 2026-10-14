@@ -424,6 +424,7 @@ sections:
     "Family and Member names": [ADM-03, RPT-01]
     "Members and Families no longer in ParishSoft": [ADM-03, RPT-01]
     "Table fit and row height": [ADM-03]
+    "Empty tables and lists": [ADM-03]
     "Downloaded files": [RPT-01]
     "Family portal": [FAM-08]
   campaign-history/spec.md:

@@ -61,6 +61,7 @@ when it lands.
   [button labels](#button-labels), [shared visual style](#shared-visual-style),
   [time entry](#time-entry).
 - Tables: [Admin tables](#admin-tables),
+  [empty tables and lists](#empty-tables-and-lists),
   [row actions](#row-actions-and-confirmation),
   [column order](#table-column-order),
   [Family and Member names](#family-and-member-names),
@@ -1412,7 +1413,8 @@ own page, which the row's task icon opens, and the log download keeps every
 entry's (Administrator decision, 2026-10-11,
 [#1065](https://github.com/epiphany40223/parishkit/issues/1065);
 [System logs](../admin-portal/spec.md#logs)). An empty list says what to do
-next rather than only that it is empty.
+next rather than only that it is empty
+([empty tables and lists](#empty-tables-and-lists)).
 
 A hint that an action needs a sign-in from the last five minutes (the
 step-up) shows only when re-authentication would actually be asked for: the
@@ -2085,6 +2087,38 @@ cell's text for screen readers. Since
 other cells do not wrap, so a row is one line, or two where a Ministry name
 wraps, and the table scrolls sideways in its own box when it is wider than
 the page.
+
+### Empty tables and lists
+
+**Rule.** A table or list with nothing to show says, in plain words, why it
+is empty and what the reader can do next, never only that it is empty ("No
+users.", "No matching records."). The first sentence says why, in the
+reader's terms ("No Ministries match these filters."); the second names the
+next step by its visible label: the filter to widen or clear ("Clear Search
+by name, or choose All under Activity"), the button that adds the first item
+("Select New user to add one"), or when items appear by themselves ("Each
+send appears here as soon as it starts"). Where a filter could be the cause,
+the filtered and unfiltered cases have their own messages, since "clear the
+filters" does not help a list that is empty for another reason. An empty
+list that is good news or needs nothing done says so ("That is good news: no
+address is being skipped"). A table keeps its caption and headings and puts
+the message in one row spanning every column, and a list puts it in its one
+item, so a filter that empties the table and one that fills it again move
+nothing ([no layout shift](#no-layout-shift)). **Why.** "No users." leaves a
+mid-level IT administrator guessing whether something is broken, filtered
+out or not set up yet. **Shared code.** The `{% for %}…{% empty %}` row or
+item in each template; `components/table.html` shows its caller's
+`table_empty` message. `tests/stewardship/test_admin_empty_states.py` checks
+that every such message in an Admin template has a reason or next step after
+its first sentence; its allowlist names the pages still to convert and two
+reviewed exceptions: the "None" value of a before-and-after review list, and
+the shared chart's "Nothing to show yet." row, which sits in the collapsed
+Exact values table under a chart whose visible summary and page say what it
+covers.
+Empty states drawn by `{% if %}…{% else %}` follow the same rule and are
+reviewed by hand. **Precedent.** Outgoing mail, Background work and Hosted
+files' empty rows;
+[#227](https://github.com/epiphany40223/parishkit/issues/227).
 
 ## Downloaded files
 

@@ -161,7 +161,11 @@ def test_nothing_to_import_says_why(page, component_origin):
         )
         or ""
     )
-    visible(page.get_by_text("No ParishSoft Ministry leader is waiting for a user."))
+    visible(
+        page.get_by_text(
+            "No ParishSoft Ministry leader is waiting for a user, so there is nothing"
+        )
+    )
 
 
 def test_import_selected_posts_only_the_ticked_addresses(page, component_origin):

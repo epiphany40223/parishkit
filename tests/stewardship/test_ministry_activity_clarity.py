@@ -177,3 +177,31 @@ def test_only_staff_and_administrators_filter_by_ministry_activity(activity):
     with pytest.raises(ValueError):
         refuse_leader_activity(leader, query)
     assert refuse_leader_activity(leader, MinistryQuery()).activity == "any"
+
+
+@pytest.mark.parametrize(
+    ("query", "state", "message"),
+    [
+        ("", "all", "No Ministries yet. They come from ParishSoft"),
+        ("absent", "all", "No Ministries match these filters. Clear Search by name"),
+        ("", "inactive", "No Ministries match these filters. Clear Search by name"),
+    ],
+)
+def test_an_empty_listing_says_why_and_what_to_do(query, state, message):
+    """An empty listing tells a filter that matches nothing apart from a
+    catalog with no Ministries yet, and names the next step for each (#227)."""
+    html = render_to_string(
+        "stewardship/ministries.html",
+        {
+            "table": paginate(
+                [],
+                {},
+                carry=(("q", query), ("state", state)),
+                sorting=ministry_views.CATALOG_SORTING,
+            ),
+            "query": query,
+            "state": state,
+            "campaign_link": LINK,
+        },
+    )
+    assert message in html

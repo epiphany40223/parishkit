@@ -54,7 +54,7 @@
   </form>
   {% translate "Revoke {name}?" as title_one %}{% translate "Revoke {count} sessions?" as title_many %}{% translate "The session stops working at its next command, and its command line can no longer act as an Administrator." as body %}{% translate "This cannot be undone. If the work still needs a session, approve a new one." as caution %}{% translate "Revoke" as accept %}
   {% include "stewardship/components/confirm-dialog.html" with dialog_id="session-revoke" form_id="session-actions" fallback="automation-live-heading" title_one=title_one title_many=title_many body=body caution=caution accept=accept done_one=_("Revoked {name}.") done_many=_("Revoked {count} sessions.") %}
-  {% elif include_ended %}<p>{% translate "No live sessions." %}</p>
+  {% elif include_ended %}<p>{% translate "No live sessions. Select Approve a session to give a command line Administrator access." %}</p>
   {% else %}<p>{% translate "No live sessions. Tick “Include ended sessions” to see your past ones." %}</p>{% endif %}
   </div>
 </section>

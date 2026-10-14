@@ -104,6 +104,18 @@ def test_components_escape_content_and_link_error_fields():
     )
     assert "&lt;unsafe&gt;" in html
     assert 'scope="row"' in html and 'scope="col"' in html
+    # An empty table keeps its headings and shows the caller's reason (#227).
+    html = render_to_string(
+        "stewardship/components/table.html",
+        {
+            "table_caption": "Results",
+            "table_headings": ["Name", "Count"],
+            "table_rows": [],
+            "table_empty": "No results yet. Add one above.",
+        },
+    )
+    assert '<td colspan="2">No results yet. Add one above.</td>' in html
+    assert 'scope="col"' in html
 
 
 def test_family_shell_has_no_inline_assets_and_keeps_noscript_fallback():

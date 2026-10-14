@@ -16,5 +16,5 @@
 <div id="settings-review" data-in-place-region data-keep-height>{% include 'stewardship/settings-review.html' %}</div>
 {% comment %}The current logos are a region of their own, so the quiet refresh once a change is applied shows the new ones. They sit below the review region, so logos appearing never move the form or the review (#736).{% endcomment %}<section id="branding-current" class="panel" data-in-place-region{% if redraw %} data-in-place-always{% endif %} aria-labelledby="branding-current-title"><h2 id="branding-current-title">{% translate "Current logos" %}</h2>
 {% for asset in assets %}<figure><img src="{% url 'public:branding_asset' asset.pk %}" alt="{{ asset.label }}" width="{{ asset.width }}" height="{{ asset.height }}" class="branding-preview"><figcaption>{{ asset.label|capfirst }}</figcaption></figure>
-{% empty %}<p>{% translate "No stored logo variants are available for this configuration." %}</p>{% endfor %}</section>
+{% empty %}<p>{% translate "No logos are saved yet. Choose an image above and select Upload and review logos." %}</p>{% endfor %}</section>
 {% endblock %}
