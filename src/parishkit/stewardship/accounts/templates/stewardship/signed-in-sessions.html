@@ -4,9 +4,9 @@
 <h1>{% translate "Signed-in sessions" %}</h1>
 {% aboutpage "signed-in-sessions" %}
 <p>{% translate "Each row is one browser signed in to the Admin portal now, by an Administrator, Staff member or Ministry leader. A session ends when its person signs out, after 60 minutes without use, or 12 hours after sign-in, whichever comes first." %}</p>
-<p>{% translate "Sign out, in a row's Actions column, ends that session at once: the person's next click goes to the sign-in page, and they can sign in again with Google if they still have access. To stop someone signing in again, delete their user on the Users page." %}</p>
+<p>{% url 'admin:users' as users_url %}{% blocktranslate %}Sign out, in a row's Actions column, ends that session at once: the person's next click goes to the sign-in page, and they can sign in again with Google if they still have access. To stop someone signing in again, delete their user on the <a href="{{ users_url }}">Users</a> page.{% endblocktranslate %}</p>
 <p>{% translate "Your own session in this browser has no Sign out here; use Sign out at the top of the page. Command-line sessions are listed on Automation access instead." %}</p>
-<p>{% translate "Signed in is the person's latest confirmation with Google. Every sign-in and sign-out is recorded in System logs under Sign-in activity. Choose a column heading to sort the table by it; choose it again to reverse the order." %}</p>
+<p>{% url 'admin:logs' as logs_url %}{% blocktranslate %}Signed in is the person's latest confirmation with Google. Every sign-in and sign-out is recorded in <a href="{{ logs_url }}">System logs</a> under Sign-in activity. Choose a column heading to sort the table by it; choose it again to reverse the order.{% endblocktranslate %}</p>
 {% endaboutpage %}
 {% comment %}
   #953: every live interactive Admin session. The table is an action table

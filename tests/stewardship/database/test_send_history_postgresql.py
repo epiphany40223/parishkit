@@ -19,6 +19,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from django.db import connection
+from django.urls import reverse
 from psycopg import sql
 
 from parishkit.stewardship.accounts.models import PortalSession
@@ -232,6 +233,15 @@ def test_the_web_login_lists_a_real_send_during_a_work_order_hold(
     # In the sidebar beside the progress panel, and in the breadcrumb trail.
     assert f'<a href="{PAGE}" aria-current="page">' in body
     assert '<span aria-current="page">Family email history</span>' in body
+    # The help links each page it tells the reader to use (navigation rule 6,
+    # #521). Each check includes the help's own words around the link, since
+    # the sidebar links the same pages with the same labels.
+    for before, name, label, after in (
+        ("on the ", "admin:deliveries", "Outgoing mail", " page."),
+        ("on ", "admin:background", "Background work", ".</dd>"),
+        ("on ", "admin:schedule_settings", "Dates and mail schedules", ". A"),
+    ):
+        assert f'{before}<a href="{reverse(name)}">{label}</a>{after}' in body
     listed_body = filtered.content.decode()
     assert f'href="/admin/mail/outgoing/{message.pk}/"' in listed_body
     assert "Showing only the emails of one Family email send" in listed_body
