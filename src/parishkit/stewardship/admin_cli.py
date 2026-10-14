@@ -1266,6 +1266,26 @@ def integration_confirm(args, preamble, runtime, context):
     )
 
 
+def integration_backup_probe(args, preamble, runtime, context):
+    """Queue the Off-site backups page's Test access check (PR 10)."""
+    from .admin_integration_actions import backup_probe
+
+    return backup_probe(context["caller"], runtime, folder=args.folder, context=context)
+
+
+def integration_dismiss(args, preamble, runtime, context):
+    """Dismiss a finished key change's status line (PR 10)."""
+    from .admin_integration_actions import dismiss_key
+
+    return dismiss_key(
+        context["caller"],
+        runtime,
+        args.target,
+        request_id=args.request_id,
+        context=context,
+    )
+
+
 def parish_show(args, preamble, runtime, context):
     """The Parish settings page's profile (PR 10)."""
     from .admin_settings import read_parish
@@ -2787,6 +2807,8 @@ INTEGRATION_SHOW_TARGETS = (
     "backup",
 )
 INTEGRATION_STATUS_TARGETS = ("parishsoft", "google_workspace", "slack", "backup")
+# The integrations with a key change line to dismiss (the pages' rotating keys).
+INTEGRATION_DISMISS_TARGETS = ("parishsoft", "google_workspace", "slack")
 
 
 def _integration_show_options(parser):
@@ -2834,6 +2856,26 @@ def _integration_confirm_options(parser):
         required=True,
         help="preview.token from integration preview, or - for standard input "
         "(needs --yes)",
+    )
+
+
+def _integration_backup_probe_options(parser):
+    """Options of ``integration backup-probe``: a folder link, or the saved one."""
+    parser.add_argument(
+        "--folder",
+        metavar="LINK",
+        help="the Google Drive folder link to check (default: the saved folder)",
+    )
+
+
+def _integration_dismiss_options(parser):
+    """Options of ``integration dismiss``: the integration and its key change."""
+    parser.add_argument("target", choices=INTEGRATION_DISMISS_TARGETS, metavar="TARGET")
+    parser.add_argument(
+        "--request-id",
+        required=True,
+        type=_uuid,
+        help="key.request_id from integration show or integration status",
     )
 
 
@@ -4474,9 +4516,13 @@ def _integration_specs():
     ``integration confirm`` (``admin_integration_changes``), as ``parish
     preview`` and ``parish confirm``: full scope, as the page's posts record
     activity. The page asks for a recent sign-in (#547), so ``integration
-    confirm`` is fresh-gated and prompts; the preview records nothing. The
-    key steps come later in PR 10.
+    confirm`` is fresh-gated and prompts; the preview records nothing.
+    ``integration backup-probe`` (Test access) and ``integration dismiss``
+    (a key change line's Dismiss) are full scope and neither fresh-gated
+    nor prompting, as those pages ask for neither
+    (``admin_integration_actions``). The key steps come later in PR 10.
     """
+    from .admin_integration_actions import BackupProbe, KeyDismissal
     from .admin_integration_changes import IntegrationConfirm, IntegrationPreview
     from .admin_integrations import IntegrationList, IntegrationShow, IntegrationStatus
 
@@ -4537,6 +4583,26 @@ def _integration_specs():
             options=(_integration_confirm_options,),
             fresh_gated=True,
             prompts=True,
+        ),
+        CommandSpec(
+            "integration backup-probe",
+            "Check that off-site backups can be saved in a Google Drive folder.",
+            integration_backup_probe,
+            "full",
+            True,
+            BackupProbe.field_names(),
+            10,
+            options=(_integration_backup_probe_options,),
+        ),
+        CommandSpec(
+            "integration dismiss",
+            "Dismiss the result of a finished key change.",
+            integration_dismiss,
+            "full",
+            True,
+            KeyDismissal.field_names(),
+            10,
+            options=(_integration_dismiss_options,),
         ),
     )
 

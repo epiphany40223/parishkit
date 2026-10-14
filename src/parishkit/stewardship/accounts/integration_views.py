@@ -360,13 +360,8 @@ def _refuse_drive_in_local():
 def _test_access(request, configuration, actor):
     """Queue a "Test access" check of the entered (or saved) Drive folder.
 
-    The check runs as the Google Workspace delegated mailbox user, which is
-    the identity the backup copies use, so it proves exactly what they need.
+    Only the page's own fields may be posted; ``queue_probe`` does the rest.
     """
-    from parishkit.stewardship.backup_drive import folder_id_from_url
-
-    from .backup_destination import request_probe
-
     if set(request.POST) - {
         "action",
         "csrfmiddlewaretoken",
@@ -374,6 +369,23 @@ def _test_access(request, configuration, actor):
         "base_digest",
     } or any(len(values) != 1 for _, values in request.POST.lists()):
         raise ValueError("Invalid configuration action or fields.")
+    queue_probe(configuration, actor, request.POST.get("target", ""))
+    return HttpResponseRedirect(request.path)
+
+
+def queue_probe(configuration, actor, entered):
+    """Queue an access check of the ``entered`` (or saved) Drive folder link.
+
+    Request-free, so ``pk-admin integration backup-probe`` queues exactly
+    what the page's Test access does. The check runs as the Google Workspace
+    delegated mailbox user, which is the identity the backup copies use, so
+    it proves exactly what they need; the Workspace installer answers it.
+    Returns the queued ``BackupDriveProbe`` row.
+    """
+    from parishkit.stewardship.backup_drive import folder_id_from_url
+
+    from .backup_destination import request_probe
+
     _refuse_drive_in_local()
     records = _records(configuration)
     # Each refusal below says what to do next; a plain ValueError would show
@@ -389,7 +401,7 @@ def _test_access(request, configuration, actor):
             link=reverse("admin:integration_settings", args=["google_workspace"]),
             link_label=LABELS["google_workspace"],
         )
-    entered = request.POST.get("target", "").strip()
+    entered = entered.strip()
     if not entered and "backup" not in records:
         raise UserFacingError(
             _("Enter the Google Drive folder link first."),
@@ -412,12 +424,11 @@ def _test_access(request, configuration, actor):
                 "with https://drive.google.com/drive/folders/."
             ),
         ) from None
-    request_probe(
+    return request_probe(
         actor.identity,
         folder,
         records["google_workspace"]["values"]["settings"]["delegated_email"],
     )
-    return HttpResponseRedirect(request.path)
 
 
 def _inline_credential_form(configuration, request, target, *, required=False):

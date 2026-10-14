@@ -104,6 +104,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "integration status",
         "integration preview",
         "integration confirm",
+        "integration backup-probe",
+        "integration dismiss",
     }
     tests = {
         "test sample-preview",
@@ -762,6 +764,8 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_history_remove",
         "admin_cmd_artwork_remove",
         "admin_cmd_integration_confirm",
+        "admin_cmd_integration_backup_probe",
+        "admin_cmd_integration_dismiss",
     ]
     for event in events:
         assert Action(event) and event in DESCRIPTIONS, event

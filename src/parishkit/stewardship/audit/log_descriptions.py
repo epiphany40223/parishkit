@@ -175,6 +175,14 @@ DESCRIPTIONS = {
         "integration's settings, or its removal, which became a configuration "
         "request."
     ),
+    "admin_cmd_integration_backup_probe": _(
+        "An automation session asked for a check that off-site backups can "
+        "be saved in a Google Drive folder."
+    ),
+    "admin_cmd_integration_dismiss": _(
+        "An automation session dismissed the result of a finished key change "
+        "for an integration."
+    ),
     "admin_cmd_users_import_leaders": _(
         "An automation session confirmed a reviewed import of ParishSoft "
         "Ministry leaders as users, which became a configuration request."

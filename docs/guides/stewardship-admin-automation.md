@@ -1059,8 +1059,11 @@ pages, they need an Administrator; a session of any scope may run them, and
 they record nothing in System logs, as opening the pages records nothing.
 No key, key file or fingerprint is ever printed. `integration preview` and
 `integration confirm` save settings and remove an integration (see
-[Changing integration settings](#changing-integration-settings)); the backup
-folder check and every key step stay on the pages for now.
+[Changing integration settings](#changing-integration-settings)), and
+`integration backup-probe` and `integration dismiss` are the pages' Test
+access and Dismiss (see
+[Checking the backup folder and dismissing a key change](#checking-the-backup-folder-and-dismissing-a-key-change));
+every key step stays on the pages for now.
 
 ```sh
 pk-admin integration list
@@ -1195,6 +1198,43 @@ what changes in words; it is null when the schedule does not change. The
 preview changes nothing. `integration confirm` prompts with the stored
 setting names that change (such as `refresh_rules`) and records the
 request as above; the new schedule applies when the request installs.
+
+### Checking the backup folder and dismissing a key change
+
+`integration backup-probe` is the Off-site backups page's **Test access**:
+it asks for a check that off-site copies can be saved in a Google Drive
+folder, signing in as the Google Workspace mailbox user. Give a folder link
+with `--folder` to check it before saving it, or leave it out to check the
+saved folder. `integration dismiss` is a key change line's **Dismiss**: it
+hides a finished change's line (`updated` or `failed`) for every
+Administrator. Both need a full-scope session and an Administrator; neither
+asks for a recent sign-in or a confirmation, as on the pages.
+
+```sh
+pk-admin integration backup-probe --folder https://drive.google.com/drive/folders/FOLDER
+pk-admin integration status backup --watch 5
+pk-admin integration show parishsoft
+pk-admin integration dismiss parishsoft --request-id REQUEST_ID
+```
+
+`integration backup-probe` prints `pending` and `probe`, as `integration
+show backup` prints it, and records `admin_cmd_integration_backup_probe` in
+System logs. The check itself runs a moment later; follow it with
+`integration status backup --watch SECONDS`. It is exit 1 (`invalid`) in
+the local environment, at `google_workspace` when Google Workspace mail is
+not set up, and at `folder` when no folder is given and none is saved or
+the link is not a Google Drive folder, with the page's words. It is
+`stale_version` when the Google Workspace mailbox changed meanwhile; run it
+again.
+
+`integration dismiss` takes `parishsoft`, `google_workspace` or `slack` and
+the `key.request_id` that `integration show` or `integration status`
+printed. It prints `target`, `request_id` and `dismissed`. When it dismisses
+the line, System logs records `credential_result_dismissed`, as for the
+page, and `admin_cmd_integration_dismiss`. A change still running, one that
+needs Finish switching, or a request the page no longer shows is not
+dismissed: `dismissed` is false, exit 0, and nothing is recorded, as the
+page's Dismiss does nothing then.
 
 ## Past campaigns
 
@@ -2589,3 +2629,9 @@ print is exit 1 (`invalid`).
   when it is given); the preview gains `schedule` (null unless the
   schedule changes) and `integration show` gains `refresh_schedule`
   (ParishSoft only, else null).
+- `pk-admin/1` (#463): additive. `integration backup-probe [--folder
+  LINK]` (the Off-site backups page's Test access, recording
+  `admin_cmd_integration_backup_probe`) and `integration dismiss TARGET
+  --request-id ID` (a key change line's Dismiss, recording the page's
+  `credential_result_dismissed` and `admin_cmd_integration_dismiss`), full
+  scope, Administrators only, neither fresh-gated nor prompting.
