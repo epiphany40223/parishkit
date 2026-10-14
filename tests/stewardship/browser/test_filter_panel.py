@@ -118,3 +118,38 @@ def test_report_first_data_is_near_the_heading(page, component_origin, path):
     data = page.locator(FIRST_DATA[path]).first.bounding_box()
     assert data is not None and heading is not None
     assert data["y"] - heading["y"] <= BELOW_HEADING, (path, heading, data)
+
+
+# The width of a select's chosen text as drawn in its own font, and the room
+# its box leaves for it (inside its padding, which holds the arrow).
+CHOSEN_TEXT_FITS = """select => {
+    const style = getComputedStyle(select);
+    const context = document.createElement("canvas").getContext("2d");
+    context.font = style.font;
+    const text = context.measureText(select.selectedOptions[0].text).width;
+    const room = select.clientWidth - parseFloat(style.paddingLeft)
+        - parseFloat(style.paddingRight);
+    return [text, room];
+}"""
+
+
+@pytest.mark.parametrize("width", [320, 1366])
+def test_limitations_show_choice_is_not_clipped(page, component_origin, width):
+    """The Show menu is as wide as its longest choice, so each reads whole.
+
+    On a 320 px phone the row itself is narrower than "Cannot participate in
+    ministries" with the menu's arrow (as it was before the filter bar), so
+    there the menu must take the whole row and the short choice must fit;
+    the long choices are the report's own terms and keep their wording.
+    """
+    page.set_viewport_size({"width": width, "height": 800})
+    page.goto(component_origin + "/limitations-report")
+    show = page.get_by_label("Show", exact=True)
+    row = page.locator("#table-filters").evaluate("node => node.clientWidth")
+    for value in ("any", "cannot_serve", "cannot_attend"):
+        show.select_option(value)
+        text, room = show.evaluate(CHOSEN_TEXT_FITS)
+        if width >= 1024 or value == "any":
+            assert text <= room, (value, text, room)
+        else:
+            assert show.evaluate("node => node.offsetWidth") >= row - 1

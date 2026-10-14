@@ -231,18 +231,19 @@ class AboutPageNode(template.Node):
 NOT_FILTERS = frozenset({"sort", "page", "zone"})
 
 
-def applied_filters(query):
+def applied_filters(query, ignore=()):
     """Count a report query's fields that differ from its dataclass defaults.
 
     A report's query is a frozen dataclass whose defaults are the page's
     unfiltered view (an Additional information default such as "Current
     actionable requests" is the page's normal list, so it does not count).
-    Sort, page and zone are left out (``NOT_FILTERS``).
+    Sort, page and zone are left out (``NOT_FILTERS``), as is any field
+    named in ``ignore``: one another choice currently overrides.
     """
     return sum(
         getattr(query, name) != field.default
         for name, field in query.__dataclass_fields__.items()
-        if name not in NOT_FILTERS
+        if name not in NOT_FILTERS and name not in ignore
     )
 
 
@@ -252,8 +253,12 @@ def filterpanel(parser, token):
 
     Usage: ``{% filterpanel query %}<form id="table-filters" …>…</form>
     {% endfilterpanel %}``, or ``{% filterpanel query extra %}`` where
-    ``extra`` counts choices kept outside the query (the Family directory's
-    Include mailing columns). The panel starts closed so the report's data
+    ``extra`` counts a choice kept outside the query (the Family directory's
+    Include mailing columns), or ``{% filterpanel query extra "field" %}``
+    where, while that choice is on, the named query field is not counted
+    because the choice overrides it (mailing columns always use "By postal
+    mail only", so the reader's own Campaign mail can reach is not applied,
+    #951). The panel starts closed so the report's data
     comes first, and renders open whenever any filter is applied, so an
     applied filter is never hidden behind it. Its summary names how many are
     applied; that count is a data-table-sync node with a stable id, so it
@@ -261,9 +266,10 @@ def filterpanel(parser, token):
     elements (ui-v1.js ``syncControls``).
     """
     bits = token.split_contents()
-    if len(bits) not in (2, 3):
+    if len(bits) not in (2, 3, 4):
         raise template.TemplateSyntaxError(
-            "filterpanel takes a query and an optional extra count."
+            "filterpanel takes a query, an optional extra choice and the "
+            "query field that choice overrides."
         )
     nodelist = parser.parse(("endfilterpanel",))
     parser.delete_first_token()
@@ -278,8 +284,11 @@ class FilterPanelNode(template.Node):
         self.nodelist = nodelist
 
     def render(self, context):
-        query, *extra = (argument.resolve(context) for argument in self.arguments)
-        count = applied_filters(query) + sum(int(bool(value)) for value in extra)
+        query, extra, overridden = (
+            [argument.resolve(context) for argument in self.arguments] + [False, None]
+        )[:3]
+        ignore = (overridden,) if extra and overridden else ()
+        count = applied_filters(query, ignore) + int(bool(extra))
         if count:
             label = ngettext("%(count)s applied", "%(count)s applied", count) % {
                 "count": presentation.number(count)

@@ -71,9 +71,28 @@ def test_panel_opens_and_counts_applied_filters_and_extra_choices():
     )
 
 
+def test_an_extra_choice_stops_counting_the_field_it_overrides():
+    """While mailing columns are on, the reach they override is not counted.
+
+    Include mailing columns always lists "By postal mail only" (#951), so the
+    reader's own reach is kept but not applied; once the box is off it counts.
+    """
+    source = '{% filterpanel query mailing "reach" %}x{% endfilterpanel %}'
+    query = DirectoryQuery(reach="email")
+    # On: only Include mailing columns counts; the overridden reach does not.
+    assert ">1 applied</span>" in render(source, query=query, mailing=True)
+    assert ">2 applied</span>" in render(
+        source, query=DirectoryQuery(reach="email", phone="yes"), mailing=True
+    )
+    # Off: the reader's reach is applied again, and counts.
+    assert ">1 applied</span>" in render(source, query=query, mailing=False)
+    assert "none applied" in render(source, query=DirectoryQuery(), mailing=False)
+    assert applied_filters(query, ("reach",)) == 0
+
+
 def test_panel_takes_a_query_and_at_most_one_extra():
     """A typo in the tag fails loudly rather than rendering a wrong panel."""
     with pytest.raises(TemplateSyntaxError):
         Template("{% load stewardship %}{% filterpanel %}x{% endfilterpanel %}")
     with pytest.raises(TemplateSyntaxError):
-        Template("{% load stewardship %}{% filterpanel a b c %}x{% endfilterpanel %}")
+        Template("{% load stewardship %}{% filterpanel a b c d %}x{% endfilterpanel %}")

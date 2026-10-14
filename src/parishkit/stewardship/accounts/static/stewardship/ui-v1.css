@@ -812,6 +812,9 @@ details.export-panel > form { margin-top: .5rem; }
 .filter-bar label { margin: 0 0 .25rem; font-size: .925rem; }
 .filter-bar > div { flex: 0 1 26rem; min-width: 12rem; }
 .filter-bar > div.short { flex: 0 1 9rem; }
+/* A field as wide as its longest choice, so a long option reads whole
+   (Limitations' Show, #227); it still shrinks to the row on a phone. */
+.filter-bar > div.fit { flex: 0 1 auto; }
 .filter-bar button { margin: 0; }
 /* Short form fields side by side (the Ministry follow-up request, #1014).
    Unlike a filter bar the fields align at the top, since a time field keeps
