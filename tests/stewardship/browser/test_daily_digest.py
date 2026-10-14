@@ -100,9 +100,10 @@ def test_chart_pointer_and_keyboard_preserve_exact_values(
 def test_chart_hit_testing_follows_the_email_drawing(page, component_origin):
     """The email drawing's plot fills the image, so its upper part takes a pointer.
 
-    At 15% of the image height the plot of the email drawing (#720) begins;
-    the older Participation drawing's plot starts lower, at 26%, so a hover
-    there only shows a tooltip when the page uses the retained drawing's layout.
+    The email drawing's panels (#720) begin at 8% of the image height; the
+    older Participation drawing's plot starts lower, at 26%, so a hover at
+    15% only shows a tooltip when the page uses the retained drawing's
+    layout.
     """
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + "/daily-digest")

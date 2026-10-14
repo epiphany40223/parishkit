@@ -259,8 +259,10 @@ small ES5 feature check reveals it and never alters the form.
 All charts have title, legend, labeled axes with units, accessible color/line
 patterns, hover/focus values, and equivalent data tables or values drawn in
 the chart ([chart engine](../reports/spec.md#chart-engine)). They download as
-PNG or PDF. Dollar/count series on one chart use separate labeled axes rather
-than comparing unlike units on one scale.
+PNG or PDF. A chart never has a second y-axis: dollar and count series, or two
+series of very different size, go in separate panels on a shared axis, each
+with its own labeled scale
+([participation graph](../reports/spec.md#participation-graph)).
 A chart's caption never repeats figures its table, legend or drawn values
 already show; it keeps only what they don't, such as a scope note, and the
 chart keeps its accessible name and description

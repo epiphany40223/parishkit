@@ -352,19 +352,27 @@ invalid, absent, and suppressed head email without showing credential/link data.
 
 The x-axis is every campaign-local date from campaign start through the lesser
 of campaign end and today, using the Campaign's immutable timezone snapshot.
-The graph shows:
+The graph is stacked panels on that one shared date axis, top to bottom, each
+named by its own title (so there is no legend):
 
-- bars: Families making their first live submission that day;
-- line: cumulative Families that have submitted under the selected population
-  scope; and
-- line on a dollar axis, when financial is enabled: effective annual pledge
-  total at each day end.
+- **First submissions that day:** bars of Families making their first live
+  submission that day;
+- **Cumulative participating Families:** a line of cumulative Families that
+  have submitted under the selected population scope; and
+- **Effective annual pledges,** when financial is enabled: a line of the
+  effective annual pledge total at each day end, its ticks in short dollars
+  ("$250K", "$1.6M").
 
-Both axes are linear. The Families axis is scaled to the plotted counts: its
-top is the largest daily or cumulative count with about 10% headroom, and its
-ticks step by round 1, 2 or 5 multiples. It does not stretch to the eligible
-Family total, which would flatten the bars and line; the eligible total is not
-drawn (the table's participation column still states it per day).
+By Administrator decision
+([#720](https://github.com/epiphany40223/parishkit/issues/720), question 7)
+there is no second y-axis. Two independently scaled axes made any two growing
+totals draw almost the same curve, and a shared Families axis dwarfed the
+daily bars under the running total. Every panel's axis is linear and starts at
+zero. It is scaled to that panel's own values, with a top at the largest value
+plus about 10% headroom, and its ticks step by round 1, 2 or 5 multiples. No
+axis stretches to the eligible Family total, which would flatten the bars and
+line; the eligible total is not drawn (the table's participation column still
+states it per day). The date labels appear once, under the last panel.
 
 The chart image draws no source snapshot, request time or other provenance
 text. By Administrator decision

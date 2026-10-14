@@ -10,12 +10,14 @@ from uuid import UUID
 
 import pytest
 from PIL import Image
+from PIL.PngImagePlugin import PngInfo
 
 from parishkit.email.base import Email, build_message
 from parishkit.stewardship.reports.charts import (
+    DIGEST_PLOT_LAYOUTS,
     EMAIL_PLOT_LAYOUT,
     EMAIL_RENDERER_VERSION,
-    PLOT_LAYOUT,
+    LEGACY_PLOT_LAYOUT,
     render_participation,
 )
 from parishkit.stewardship.reports.daily_digest import (
@@ -421,16 +423,32 @@ def test_recovery_range_states_its_last_covered_day():
 
 
 def test_saved_page_hit_tests_the_drawing_the_digest_retained():
-    """New digests carry the email drawing; earlier retained ones keep theirs."""
+    """New digests carry the email drawing; earlier retained ones keep theirs.
+
+    A digest from before the separate panels (#720) holds the email drawing
+    with a second dollar axis, and one from before #720 the page drawing;
+    each keeps the plot box it was drawn with.
+    """
     result = render(document())
     assert chart_layout(result.chart.data) == EMAIL_PLOT_LAYOUT
     with Image.open(BytesIO(result.chart.data)) as image:
         assert image.size == (1440, 840)
         assert image.text["Creator"] == EMAIL_RENDERER_VERSION
+    dual_axis = BytesIO()
+    info = PngInfo()
+    info.add_text("Creator", "participation-email-v1")
+    Image.new("RGB", (4, 4)).save(dual_axis, format="png", pnginfo=info)
+    assert chart_layout(dual_axis.getvalue()) == {
+        "left": 0.09,
+        "right": 0.89,
+        "top": 0.90,
+        "bottom": 0.17,
+    }
+    assert DIGEST_PLOT_LAYOUTS["participation-email-v1"] != EMAIL_PLOT_LAYOUT
     older = BytesIO()
     render_participation(document().participation, older, format="png")
-    assert chart_layout(older.getvalue()) == PLOT_LAYOUT
-    assert chart_layout(b"not a png") == PLOT_LAYOUT
+    assert chart_layout(older.getvalue()) == LEGACY_PLOT_LAYOUT
+    assert chart_layout(b"not a png") == LEGACY_PLOT_LAYOUT
 
 
 class _Visible(HTMLParser):

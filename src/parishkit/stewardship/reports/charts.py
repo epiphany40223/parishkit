@@ -4,9 +4,11 @@ Matplotlib access is serialized process-locally, uses no pyplot figure registry,
 and resets style under that lock. Rendering is deterministic for the pinned
 runtime/fonts and input document, not promised byte-identical across upgrades.
 
-The plot is the same in every file. Its page furniture differs: the page PNG
-draws its own titles and footer, the daily email's PNG has none (#720), and
-the PDF is a US Letter page in the shared report frame (#926).
+The plot is the same in every file: stacked panels on one shared date axis,
+one per series, and never a second value axis (#720). Its page furniture
+differs: the page PNG draws its own titles and footer, the daily email's PNG
+has none (#720), and the PDF is a US Letter page in the shared report frame
+(#926).
 """
 
 from contextlib import contextmanager
@@ -23,52 +25,69 @@ from .participation import ParticipationDocument
 _RENDER_LOCK = RLock()
 # Chart PNGs kept per web process (#905); each is roughly 100 KB.
 PAGE_PNG_CACHE_SIZE = 32
-RENDERER_VERSION = "participation-v2"
+# Version 3 draws separate panels instead of a second dollar axis (#720).
+RENDERER_VERSION = "participation-v3"
 # The daily email's drawing (#720), named in its PNG's Creator text so the
 # saved report page can tell which drawing a retained digest holds.
-EMAIL_RENDERER_VERSION = "participation-email-v1"
+EMAIL_RENDERER_VERSION = "participation-email-v2"
 # The PDF's drawing: the plot inside the shared report page frame (#926).
-PDF_RENDERER_VERSION = "participation-pdf-v1"
-PLOT_LAYOUT = {"left": 0.09, "right": 0.89, "top": 0.74, "bottom": 0.29}
+PDF_RENDERER_VERSION = "participation-pdf-v2"
+# The plot box (figure fractions) spans every panel, from the top of the
+# first to the bottom of the last; the page's hover and date slider map the
+# box's left and right edges to the first and last dates. With no right-hand
+# dollar axis the box runs nearly to the right edge.
+PLOT_LAYOUT = {"left": 0.09, "right": 0.97, "top": 0.80, "bottom": 0.17}
 # The daily email's drawing has no page title or footer, so its plot fills
 # the image (#720). The saved report page hit-tests whichever one it shows.
-EMAIL_PLOT_LAYOUT = {"left": 0.09, "right": 0.89, "top": 0.90, "bottom": 0.17}
+EMAIL_PLOT_LAYOUT = {"left": 0.09, "right": 0.97, "top": 0.92, "bottom": 0.17}
+# The boxes of earlier drawings, which retained digests still hold and are
+# never redrawn: the page drawing before #720 ("participation-v2") and the
+# email drawing with a second dollar axis ("participation-email-v1").
+LEGACY_PLOT_LAYOUT = {"left": 0.09, "right": 0.89, "top": 0.74, "bottom": 0.29}
+DIGEST_PLOT_LAYOUTS = {
+    EMAIL_RENDERER_VERSION: EMAIL_PLOT_LAYOUT,
+    "participation-email-v1": {
+        "left": 0.09,
+        "right": 0.89,
+        "top": 0.90,
+        "bottom": 0.17,
+    },
+}
 
 
 class ChartLayout(NamedTuple):
-    """Where one drawing puts its plot, legend and note (figure fractions).
+    """Where one drawing puts its plot, panel titles and note (figure fractions).
 
-    ``furniture`` draws the page PNG's own parish, campaign and title lines
-    and its renderer footer; the email has none, and the PDF's shared frame
-    draws its own. ``zone_label`` names the campaign time zone on the date
-    axis (the email's as-of line names it instead).
+    ``title_size`` is the panel titles' font size. ``furniture`` draws the
+    page PNG's own parish, campaign and title lines and its renderer footer;
+    the email has none, and the PDF's shared frame draws its own.
+    ``zone_label`` names the campaign time zone on the date axis (the
+    email's as-of line names it instead).
     """
 
     plot: dict
-    legend_top: float
-    legend_size: float
-    legend_frame: bool
+    title_size: float
     note: tuple[float, float]
     furniture: bool
     zone_label: bool
 
 
-PAGE_LAYOUT = ChartLayout(PLOT_LAYOUT, 0.805, 8, True, (0.09, 0.055), True, True)
-# Without the page title the email's legend sits at the very top.
-EMAIL_LAYOUT = ChartLayout(
-    EMAIL_PLOT_LAYOUT, 0.99, 11, False, (0.09, 0.055), False, False
-)
+PAGE_LAYOUT = ChartLayout(PLOT_LAYOUT, 10, (0.09, 0.055), True, True)
+EMAIL_LAYOUT = ChartLayout(EMAIL_PLOT_LAYOUT, 11, (0.09, 0.055), False, False)
+# The vertical gap between panels, as a share of one panel's height: room
+# for the next panel's title above it.
+PANEL_GAP = 0.35
 
 
 def pdf_layout(frame):
     """The PDF's chart layout inside the shared page frame's body (#926).
 
-    The legend row sits at the top of the body. Under the plot there is room
-    for the rotated date ticks, the axis label and the gap note, which sits
-    on the body's last line. The left and right sides are only a first
-    guess: ``_fit_to_margins`` then moves them so the value axes' tick
-    labels and titles and the first rotated date end exactly at the page
-    margins, however wide the numbers are.
+    The first panel's title sits at the top of the body. Under the plot
+    there is room for the rotated date ticks, the axis label and the gap
+    note, which sits on the body's last line. The left and right sides are
+    only a first guess: ``_fit_to_margins`` then moves them so the value
+    axes' tick labels and titles and the first rotated date end exactly at
+    the page margins, however wide the numbers are.
     """
 
     def down(points):
@@ -79,13 +98,11 @@ def pdf_layout(frame):
     return ChartLayout(
         plot={
             "left": (pdf_design.MARGIN + 54) / width,
-            "right": (width - pdf_design.MARGIN - 70) / width,
-            "top": down(frame.body_top + 34),
+            "right": (width - pdf_design.MARGIN - 20) / width,
+            "top": down(frame.body_top + 16),
             "bottom": down(frame.body_bottom - 78),
         },
-        legend_top=down(frame.body_top + 4),
-        legend_size=8,
-        legend_frame=False,
+        title_size=9,
         note=(pdf_design.MARGIN / width, down(frame.body_bottom - 2)),
         furniture=False,
         zone_label=True,
@@ -129,20 +146,86 @@ def pdf_frame(document):
     )
 
 
-def family_axis_top(days):
-    """Return the Family axis top: the largest plotted count plus 10% headroom.
+def axis_top(values):
+    """Return a panel's value-axis top: its largest value plus 10% headroom.
 
-    Both the daily bars and the cumulative line share this axis. Unavailable
-    days are gaps and do not count; an empty or all-zero chart still gets a
-    top of 1 so the axis is drawable.
+    Each panel is scaled to its own series, never to the eligible population
+    (#575), which would flatten it. Unavailable days (NaN gaps) do not
+    count; an empty or all-zero series still gets a top of 1.1 so the axis
+    is drawable.
     """
-    counts = [
-        count
-        for day in days
-        if day.population_available
-        for count in (day.first_responses, day.cumulative_responses)
+    return max([1, *(value for value in values if value == value)]) * 1.1
+
+
+def short_dollars(value):
+    """A dollar tick label in thousands or millions: "$250K", "$1.6M", "$800".
+
+    A parish's pledge total can reach millions, and full "$1,600,000" labels
+    would push the axis title off the image's left edge; the exact amounts
+    are in the table and the exports.
+    """
+    for size, suffix in ((1_000_000, "M"), (1_000, "K")):
+        if abs(value) >= size:
+            scaled = f"{value / size:.1f}".rstrip("0").rstrip(".")
+            return f"${scaled}{suffix}"
+    return f"${value:,.0f}"
+
+
+class Panel(NamedTuple):
+    """One series of the participation chart, drawn in its own panel (#720).
+
+    ``values`` are plot coordinates (NaN for an unavailable day); ``unit``
+    labels the value axis and ``money`` formats its ticks as dollars.
+    """
+
+    title: str
+    unit: str
+    values: list
+    bars: bool = False
+    money: bool = False
+
+
+def participation_panels(document):
+    """The chart's panels, top to bottom, sharing one date axis.
+
+    Daily first submissions and the cumulative Families are separate panels
+    so the daily bars are not dwarfed by the running total, and pledges get
+    their own panel (when financial is enabled) instead of a second y-axis
+    whose independent scale made the two lines look alike (#720).
+    """
+    nan = float("nan")
+    panels = [
+        Panel(
+            "First submissions that day",
+            "Families",
+            [
+                day.first_responses if day.population_available else nan
+                for day in document.days
+            ],
+            bars=True,
+        ),
+        Panel(
+            "Cumulative participating Families",
+            "Families",
+            [
+                day.cumulative_responses if day.population_available else nan
+                for day in document.days
+            ],
+        ),
     ]
-    return max([1, *counts]) * 1.1
+    if document.financial_enabled:
+        panels.append(
+            Panel(
+                "Effective annual pledges",
+                "USD",
+                [
+                    float(day.pledge_total) if day.pledge_available else nan
+                    for day in document.days
+                ],
+                money=True,
+            )
+        )
+    return panels
 
 
 def participation_limits(day_count):
@@ -211,65 +294,86 @@ def participation_figure(document, *, email=False, pdf=False):
 
 
 def _draw(figure, document, layout):
-    """Separate units and line patterns; floats are only plot coordinates."""
+    """Draw one panel per series on a shared date axis; floats are coordinates.
+
+    The panels fill the layout's plot box together. Each is named by its own
+    title, so there is no legend; dates are labelled once, under the last.
+    """
     from matplotlib.ticker import FuncFormatter, MaxNLocator
 
-    axes = figure.add_subplot(111)
+    panels = participation_panels(document)
+    grid = figure.subplots(
+        len(panels), 1, sharex=True, squeeze=False, gridspec_kw={"hspace": PANEL_GAP}
+    )
     figure.subplots_adjust(**layout.plot)
     if layout.furniture:
         figure.text(0.5, 0.96, document.parish_name, ha="center", fontsize=14)
         figure.text(0.5, 0.915, document.campaign_name, ha="center", fontsize=12)
-        axes.set_title(f"Family participation — {document.scope_label}", pad=38)
+        figure.text(
+            0.5,
+            0.86,
+            f"Family participation — {document.scope_label}",
+            ha="center",
+            fontsize=12,
+        )
+    dates = list(range(len(document.days)))
+    for axes, panel in zip((row[0] for row in grid), panels, strict=True):
+        axes.set_title(panel.title, loc="left", fontsize=layout.title_size, pad=4)
+        axes.set_ylabel(panel.unit)
+        # Round 1/2/5 steps (10, 20, 50, ...) read more easily than 30 or 25.
+        axes.yaxis.set_major_locator(
+            MaxNLocator(integer=True, min_n_ticks=2, steps=[1, 2, 5, 10])
+        )
+        axes.yaxis.set_major_formatter(
+            FuncFormatter(
+                (lambda value, pos: short_dollars(value))
+                if panel.money
+                else (lambda value, pos: f"{value:,.0f}")
+            )
+        )
+        axes.grid(axis="y", color="#dddddd", linewidth=0.5)
+        if panel.bars:
+            axes.bar(
+                dates,
+                panel.values,
+                color="#9ecae1",
+                edgecolor="#26658b",
+                hatch="//",
+                zorder=2,
+            )
+        elif panel.money:
+            axes.plot(
+                dates,
+                panel.values,
+                color="#8a4f00",
+                linestyle="--",
+                marker="s",
+                markersize=3,
+                zorder=3,
+            )
+        else:
+            axes.plot(
+                dates,
+                panel.values,
+                color="#173d70",
+                linestyle="-",
+                marker="o",
+                markersize=3,
+                zorder=3,
+            )
+        axes.set_ylim(bottom=0, top=axis_top(panel.values))
+    first, last = grid[0][0], grid[-1][0]
     # The email's as-of line names the zone once (#720); the page names it here.
-    axes.set_xlabel(
+    last.set_xlabel(
         f"Campaign date ({document.campaign_timezone})"
         if layout.zone_label
         else "Campaign date"
     )
-    axes.set_ylabel("Families (count)")
-    # Round 1/2/5 steps (10, 20, 50, ...) read more easily than 30 or 25.
-    axes.yaxis.set_major_locator(
-        MaxNLocator(integer=True, min_n_ticks=2, steps=[1, 2, 5, 10])
-    )
-    axes.yaxis.set_major_formatter(FuncFormatter(lambda value, pos: f"{value:,.0f}"))
-    axes.grid(axis="y", color="#dddddd", linewidth=0.5)
-    dates = list(range(len(document.days)))
-    daily = [
-        day.first_responses if day.population_available else float("nan")
-        for day in document.days
-    ]
-    cumulative = [
-        day.cumulative_responses if day.population_available else float("nan")
-        for day in document.days
-    ]
-    axes.bar(
-        dates,
-        daily,
-        color="#9ecae1",
-        edgecolor="#26658b",
-        hatch="//",
-        label="First submissions that day",
-        zorder=2,
-    )
-    axes.plot(
-        dates,
-        cumulative,
-        color="#173d70",
-        linestyle="-",
-        marker="o",
-        markersize=3,
-        label="Cumulative participating Families",
-        zorder=3,
-    )
-    # Scale the Family axis to the plotted counts, not to the eligible
-    # population (#575): a top at the eligible total made the bars and the
-    # cumulative line tiny.
-    axes.set_ylim(bottom=0, top=family_axis_top(document.days))
     if dates:
         ticks = sorted(
             {0, len(dates) - 1} | set(range(0, len(dates), max(1, len(dates) // 8)))
         )
-        axes.set_xticks(
+        last.set_xticks(
             ticks,
             [
                 format_date(document.days[index].local_date, compact=True)
@@ -278,60 +382,16 @@ def _draw(figure, document, layout):
             rotation=30,
             ha="right",
         )
-        axes.set_xlim(*participation_limits(len(dates)))
+        last.set_xlim(*participation_limits(len(dates)))
     else:
-        axes.set_xticks([])
-        axes.text(
+        last.set_xticks([])
+        first.text(
             0.5,
             0.5,
             "No campaign days in this report",
-            transform=axes.transAxes,
+            transform=first.transAxes,
             ha="center",
         )
-    handles, labels = axes.get_legend_handles_labels()
-    if document.financial_enabled:
-        dollars = axes.twinx()
-        dollars.set_ylabel("Effective annual pledges (USD)")
-        dollars.yaxis.set_major_formatter(
-            FuncFormatter(lambda value, pos: f"${value:,.0f}")
-        )
-        amounts = [
-            float(day.pledge_total) if day.pledge_available else float("nan")
-            for day in document.days
-        ]
-        dollars.plot(
-            dates,
-            amounts,
-            color="#8a4f00",
-            linestyle="--",
-            marker="s",
-            markersize=3,
-            label="Effective annual pledges",
-        )
-        dollars.set_ylim(
-            bottom=0,
-            top=max(
-                [1.0]
-                + [
-                    float(day.pledge_total)
-                    for day in document.days
-                    if day.pledge_available
-                ]
-            )
-            * 1.1,
-        )
-        extra_handles, extra_labels = dollars.get_legend_handles_labels()
-        handles += extra_handles
-        labels += extra_labels
-    figure.legend(
-        handles,
-        labels,
-        loc="upper center",
-        bbox_to_anchor=(0.5, layout.legend_top),
-        ncol=3,
-        fontsize=layout.legend_size,
-        frameon=layout.legend_frame,
-    )
     unavailable = any(
         not day.population_available
         or (document.financial_enabled and not day.pledge_available)
@@ -340,7 +400,7 @@ def _draw(figure, document, layout):
     note = "Missing observations are gaps, not zero." if unavailable else ""
     figure.text(*layout.note, note, fontsize=8)
     if layout.furniture:
-        figure.text(0.89, 0.035, f"{RENDERER_VERSION} · Page 1", fontsize=7, ha="right")
+        figure.text(0.97, 0.035, f"{RENDERER_VERSION} · Page 1", fontsize=7, ha="right")
 
 
 def provenance_text(document):
