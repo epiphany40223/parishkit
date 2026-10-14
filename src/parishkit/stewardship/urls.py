@@ -17,17 +17,13 @@ from .accounts import (
     security_event_views,
     session_views,
     setup_branding_views,
-    setup_campaign_views,
     setup_cancellation_views,
     setup_confirmation_views,
-    setup_content_views,
     setup_credential_views,
     setup_mail_views,
     setup_notification_views,
     setup_preview_views,
     setup_progress_views,
-    setup_schedule_views,
-    setup_share_views,
     setup_views,
     signed_in_views,
     source_form_views,
@@ -170,8 +166,6 @@ admin_patterns = [
         setup_branding_views.setup_branding_asset,
         name="setup_branding_asset",
     ),
-    path("setup/campaign", setup_campaign_views.setup_campaign, name="setup_campaign"),
-    path("setup/shares", setup_share_views.setup_shares, name="setup_shares"),
     path("setup/preview", setup_preview_views.setup_preview, name="setup_preview"),
     path(
         "setup/confirm",
@@ -183,15 +177,6 @@ admin_patterns = [
         "setup/mail-test/status",
         setup_mail_views.setup_mail_status,
         name="setup_mail_status",
-    ),
-    path(
-        "setup/schedules", setup_schedule_views.setup_schedules, name="setup_schedules"
-    ),
-    path("setup/content", setup_content_views.setup_content, name="setup_content"),
-    path(
-        "setup/content/<str:kind>/<str:slot>",
-        setup_content_views.setup_content_edit,
-        name="setup_content_edit",
     ),
     path("setup/<str:step>", setup_views.setup_step, name="setup_step"),
     # The Restore review page (#537): where the access gate sends an

@@ -312,12 +312,11 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/setup-parish",
         "/setup-branding",
         "/setup-credential",
-        "/setup-campaign",
-        "/setup-content-edit",
-        "/setup-shares",
-        "/setup-schedules",
-        "/setup-schedules-mail",
-        "/setup-schedules-error",
+        "/campaign-create-long",
+        "/content-settings-page",
+        "/schedule-editor",
+        "/schedule-editor-mail",
+        "/schedule-editor-error",
         "/setup-preview",
         "/setup-confirmation",
         "/setup-confirmation-unready",
@@ -458,7 +457,7 @@ def test_skip_link_and_error_summary_focus(page, component_origin):
     assert page.locator(":focus").get_attribute("id") == "family-code"
 
 
-@pytest.mark.parametrize("path", ["/content-settings", "/setup-content-edit"])
+@pytest.mark.parametrize("path", ["/content-settings", "/content-settings-page"])
 def test_visual_content_editor_never_executes_source_or_pasted_markup(
     page, component_origin, path
 ):
@@ -995,8 +994,8 @@ def test_setup_stepper_is_compact_and_its_full_list_stays_accessible(
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + "/setup-testing")
     stepper = page.locator(".setup-stepper")
-    assert "Step 4 of 15: Testing recipient" in stepper.inner_text()
-    assert "1 of 15 steps completed" in stepper.inner_text()
+    assert "Step 4 of 12: Testing recipient" in stepper.inner_text()
+    assert "1 of 12 steps completed" in stepper.inner_text()
     # Far shorter than fifteen stacked cards, even at phone width.
     assert stepper.bounding_box()["height"] < (260 if width == 320 else 160)
     assert page.locator(".setup-steps").is_hidden()
@@ -1034,11 +1033,11 @@ def test_setup_track_segments_name_their_step_on_hover(page, component_origin, w
         "item.querySelector('.setup-step-label').lastChild.textContent.trim(),"
         "item.querySelector('.setup-step-status').textContent.trim()])"
     )
-    assert len(titles) == len(steps) == 15
+    assert len(titles) == len(steps) == 12
     for number, (title, (label, status)) in enumerate(
         zip(titles, steps, strict=True), 1
     ):
-        assert title == f"Step {number} of 15: {label} — {status}", title
+        assert title == f"Step {number} of 12: {label} — {status}", title
     assert any(title.endswith(" — Completed") for title in titles)
     assert "— Current step — " in titles[3]
     # The larger hover target is invisible: the track keeps its size.
@@ -1216,7 +1215,7 @@ def test_menu_sign_out_is_a_keyboard_reachable_csrf_post(page, component_origin,
 
 def test_web_only_page_editor_has_no_plain_text_panel(page, component_origin):
     """Web-only pages (#259) show no plain-text controls; the editor still works."""
-    page.goto(component_origin + "/setup-content-edit")
+    page.goto(component_origin + "/content-settings-page")
     editor = page.locator("[data-content-editor]")
     visible(editor)
     assert page.locator("[data-plain-text]").count() == 0

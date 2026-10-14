@@ -105,17 +105,11 @@ configured ([#142](https://github.com/epiphany40223/parishkit/issues/142)):
 6. Exact preview/readiness summary and final confirmation.
 
 The campaign is created afterwards, from Home, by
-[Create the campaign](#create-the-campaign). Status: this split is specified
-ahead of its implementation pull requests. Until they land, the wizard still
-has a First campaign step (name, modules, dates, Ministry/fund selection,
-financial period) and Share options, Pages and emails and Dates and mail
-schedules pages before Review, its email test sends that campaign's
-invitation, and finishing setup creates the campaign with its Family codes.
-The back end that lets setup finish without a campaign comes first, switched
-off until the wizard stops offering the campaign pages, so that setup never
-ends without a campaign before Create the campaign exists. Until both land,
-no real deployment reaches Create the campaign (setup always leaves a
-campaign), so it is exercised only by test fixtures that start without one.
+[Create the campaign](#create-the-campaign). The wizard has no campaign
+pages: the First campaign, Share options, Pages and emails and Dates and
+mail schedules pages it had before #142 are gone, and their old addresses
+are not kept (no redirects). Finishing setup creates no campaign, Families
+or Family codes.
 
 The [parish date format](../ui-conventions/spec.md#date-format) is not a wizard
 step: setup starts with the default US long style, and an Admin changes it
@@ -204,10 +198,10 @@ each mail type is, that exactly one initial invitation is required before
 go-live, that reminders and the daily and weekly Admin digests are optional (at
 most one digest of each kind), that submission receipts and critical alerts are
 sent automatically and never scheduled, the time zone send times are entered in
-(this computer's on the list, the New and Edit scheduled email pages and the
-first-campaign step; the campaign's on the date-change review, see [time
+(this computer's on the list and the New and Edit scheduled email pages; the
+campaign's on the date-change review, see [time
 entry](../ui-conventions/spec.md#time-entry)), and the current campaign dates. Wherever a schedule is
-edited (the first-campaign Mail schedules step, the date-change review and the
+edited (the date-change review and the
 New and Edit scheduled email pages below), its fields show only those its mail
 type uses (initial invitation and reminder: date, time and email; daily digest:
 time, email and the **Include Compared with past campaigns** checkbox, off by
@@ -219,8 +213,8 @@ entry](../ui-conventions/spec.md#time-entry) field. A saved schedule's mail type
 change. The server reports a missing or inapplicable value on its own field (for
 example a weekday on an invitation, or a date outside the campaign with the
 campaign's dates); only rules between schedules, such as a second initial
-invitation or a reminder before it, are page-level errors. On the first-campaign
-step and the date-change review, "Add another schedule" adds blank rows (with
+invitation or a reminder before it, are page-level errors. On the date-change
+review, "Add another schedule" adds blank rows (with
 the same per-type fields) before saving, and a row added this way can be removed
 again, so several schedules save in one submission and are validated together.
 
@@ -339,9 +333,7 @@ the upgrade finishes as it was confirmed: completion still accepts its
 one-campaign shape, so its campaign and Family codes are created as before,
 and Create the campaign never appears. In the
 [local environment](../local-environment/spec.md#operator-script), resuming the
-browser wizard behaves the same way. This paragraph describes the release
-that removes the wizard's campaign pages (#142); until it ships, every
-attempt still stages its first campaign, as the status note above says.
+browser wizard behaves the same way.
 
 Restore is an operator command performed before bootstrap/wizard. A restored,
 valid configured database skips initial setup after version/migration and
@@ -938,12 +930,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `setup_source_progress` | Loading parish data | Setup stepper | Administrator | (same) | `/admin/setup/source/<task>` | `/admin/setup/source/<task>/` |  |
 | `setup_branding` | Parish logos | Setup stepper | Administrator | Parish logo | `/admin/setup/branding` | `/admin/setup/branding/` |  |
 | `setup_step_access` | Administrative access | Setup stepper | Administrator | (same) | `/admin/setup/access` | `/admin/setup/access/` |  |
-| `setup_campaign` | First campaign | Setup stepper | Administrator | (same) | `/admin/setup/campaign` | `/admin/setup/campaign/` |  |
-| `setup_content` | Pages and emails | Setup stepper | Administrator | First-campaign content (stepper: Pages and email templates) | `/admin/setup/content` | `/admin/setup/content/` |  |
-| `setup_content_edit` | _page or email name_ | Setup stepper | Administrator | (same) | `/admin/setup/content/<kind>/<slot>` | `/admin/setup/content/<kind>/<slot>/` | Object-named (exception). |
-| `setup_shares` | Share options | Setup stepper | Administrator | How Families will share | `/admin/setup/shares` | `/admin/setup/shares/` |  |
-| `setup_schedules` | Dates and mail schedules | Setup stepper | Administrator | First-campaign mail schedules (stepper: Mail schedules) | `/admin/setup/schedules` | `/admin/setup/schedules/` |  |
-| `setup_preview` | Review | Setup stepper | Administrator | First-campaign setup preview (stepper: Review) | `/admin/setup/preview` | `/admin/setup/preview/` |  |
+| `setup_preview` | Review | Setup stepper | Administrator | Setup preview (stepper: Review) | `/admin/setup/preview` | `/admin/setup/preview/` |  |
 | `setup_mail` | Test email | Setup stepper | Administrator | Setup email test (stepper: Test email) | `/admin/setup/mail-test` | `/admin/setup/mail-test/` |  |
 | `setup_notification` | Test Slack | Setup stepper | Administrator | Setup Slack test (stepper: Test Slack) | `/admin/setup/slack-test` | `/admin/setup/slack-test/` |  |
 | `setup_confirmation` | Finish setup | Setup stepper | Administrator | Finish initial setup (stepper: Finish setup) | `/admin/setup/confirm` | `/admin/setup/confirmation/` |  |
@@ -2276,8 +2263,9 @@ Every editor in this section reviews and applies through the
 [review dialog](../ui-conventions/spec.md#review-dialog); the
 [Campaign settings page](#campaign-settings-page) says how Campaign
 settings does.
-On a draft, its Review changes button, like Save and continue on the
-wizard's First campaign step, stays unavailable, with the hint described under
+On a draft, its Review changes button, like Review changes on
+[Create the campaign](#create-the-campaign), stays unavailable, with the hint
+described under
 [Bootstrap and first-Admin wizard](#bootstrap-and-first-admin-wizard),
 until at least one module is ticked. While Financial stewardship is ticked
 it also waits for both financial periods, their funds and, while shown, the
@@ -2527,8 +2515,6 @@ read-only editors still post their saved values, so the posted form, its
 validation, the review and reminder planning are unchanged. When the browser
 restores a value into a closed editor (Back), `pageshow` opens that editor
 again; a value restored into a read-only editor is put back to its saved value.
-The first-campaign step keeps its plain list of editors, since nothing has sent
-there.
 
 The date-change review reviews and applies in the
 [review dialog](../ui-conventions/spec.md#review-dialog). **Review changes**
@@ -2734,9 +2720,7 @@ page shows them again. The page script's expansion and the server's
 [repeat entry](../admin-automation/spec.md#schedules-and-configuration)) both
 run the shared case table
 `tests/stewardship/fixtures/recurrence_cases.json`. Repeat is offered on New
-only: a saved reminder is changed one at a time. The first-campaign step keeps
-its **Repeat a reminder** panel below the schedule rows, which appends one
-ordinary reminder row per date to its form. Remembering a series for later
+only: a saved reminder is changed one at a time. Remembering a series for later
 "this and following" edits, and editing from the
 [campaign calendar](#campaign-calendar), are later slices of #469.
 
@@ -2850,13 +2834,9 @@ until #145 and the close-out wizard (#527).
 
 Status: the page (its admission, first page and what follows confirming) is
 built; its guided steps are not yet
-([#142](https://github.com/epiphany40223/parishkit/issues/142)). The back end
-that lets setup finish without a campaign is built but switched off
-(`SYSTEM_ONLY_SETUP` in `accounts/setup_preview.py`), so setup still creates
-the campaign, as the
-[first-Admin wizard](#bootstrap-and-first-admin-wizard)'s status note says;
-until it is switched on, only a deployment that has never had a campaign
-reaches the page.
+([#142](https://github.com/epiphany40223/parishkit/issues/142)). Setup ends
+without a campaign, so a newly set-up deployment reaches the page; a
+deployment set up before #142 already has its campaign and never does.
 
 **Admission.** Create the campaign follows the
 [draft-creation rules](#campaign-configuration) above, with three further

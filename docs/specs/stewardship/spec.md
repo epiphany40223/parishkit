@@ -289,12 +289,10 @@ and Admin confirmation.
 
 ## End-to-end sequence
 
-Steps 2 and 3 describe the setup split (#142). Until the setup wizard's
-campaign pages are removed
-([#142](https://github.com/epiphany40223/parishkit/issues/142)), the
-setup wizard still collects the first campaign and finishing setup creates it
-with its Family codes. Publishing census changes in step 7 is not built yet
-(#528).
+Steps 2 and 3 describe the setup split
+([#142](https://github.com/epiphany40223/parishkit/issues/142)): the setup
+wizard collects no campaign, and Create the campaign creates it afterwards.
+Publishing census changes in step 7 is not built yet (#528).
 
 1. An operator runs the minimal bootstrap command and starts Compose.
 2. The initial Admin authenticates with Google and completes the transactional

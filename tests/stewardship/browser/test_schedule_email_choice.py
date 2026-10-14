@@ -85,7 +85,7 @@ def test_a_new_schedule_describes_the_email_it_chooses(page, component_origin):
     assert summary(row).inner_text().strip() == ""
 
 
-@pytest.mark.parametrize("path", ["/setup-schedules-mail", "/clone-settings"])
+@pytest.mark.parametrize("path", ["/schedule-editor-mail", "/clone-settings"])
 def test_a_sole_sender_is_not_warned_on_setup_and_copy(page, component_origin, path):
     """Without the schedules table, a saved row still knows its own name.
 

@@ -48,6 +48,7 @@ from .test_setup_exchange_postgresql import target_login
 from .test_setup_final_loading_postgresql import load, prepared, queued
 from .test_setup_loading_postgresql import pages
 from .test_setup_mail_views_postgresql import web_login
+from .test_setup_preview_postgresql import before_142
 from .test_setup_staging_postgresql import setup_service  # noqa: F401
 from .test_source_refreshing_postgresql import fake_provider
 
@@ -56,7 +57,12 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 @pytest.fixture
 def ready_cleanup(setup_service, monkeypatch, tmp_path, config_role, settings):
-    """Reuse real setup once per case; replace only external source/mail/DNS calls."""
+    """Reuse real setup once per case; replace only external source/mail/DNS calls.
+
+    The campaign comes from a setup confirmed before #142 (``before_142``),
+    as Production's did: it has its Families and codes once setup finishes.
+    """
+    before_142(monkeypatch)
     request, _, identifier = prepared(setup_service, monkeypatch, tmp_path)
     ring = keys()
     task = queued(setup_service, identifier)

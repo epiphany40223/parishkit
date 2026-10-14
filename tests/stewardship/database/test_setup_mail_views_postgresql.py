@@ -44,9 +44,7 @@ def browser_for(service, monkeypatch, tmp_path):
 def values(response):
     """Read actual signed form values instead of fabricating preview authority."""
     form = response.context["form"]
-    return {
-        name: form[name].value() for name in ("preview_token", "request_key", "slot")
-    }
+    return {name: form[name].value() for name in ("preview_token", "request_key")}
 
 
 def test_explicit_send_redirects_and_passive_polling_does_not_renew_login(
@@ -96,16 +94,16 @@ def test_explicit_send_redirects_and_passive_polling_does_not_renew_login(
 def test_modified_preview_and_unexpected_recipient_fields_are_rejected(
     setup_http, monkeypatch, tmp_path
 ):
-    """Clients can choose only a named sample, not a credential, body or recipient."""
+    """Clients choose no message (#142), credential, body or recipient."""
     browser, request, attempt = browser_for(setup_http, monkeypatch, tmp_path)
     with web_login():
         payload = values(browser.get(PATH))
         for extra in (
             {"recipient": "different@example.org"},
             {"candidate": "synthetic-private"},
-            {"slot": ["initial", "reminder"]},
+            # The campaign email choice is gone (#142): a fixed message.
+            {"slot": "initial"},
             {"preview_token": "invalid"},
-            {"slot": "unknown"},
         ):
             response = post(browser, PATH, payload | extra)
             assert response.status_code == 400, response.content

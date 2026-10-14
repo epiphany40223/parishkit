@@ -19,7 +19,6 @@ from parishkit.stewardship.readiness_mail import ReadinessMail
 from parishkit.stewardship.sender_name import resolved_sender_name
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 
-from .content_forms import EMAIL_LABELS, sample_render
 from .credential_database import _identity
 from .delivery_results import settle_result
 from .sessions import authenticated_admin, database_now
@@ -82,51 +81,23 @@ def setup_test_message(parish):
     }
 
 
-def _campaign_sample(sections, slot):
-    """A sample of a first campaign's email, for an attempt staged before #142."""
-    selected = next(
-        (
-            row["values"]
-            for row in sections.get("content", [])
-            if row["values"]["kind"] == "email" and row["values"]["slot"] == slot
-        ),
-        {
-            "subject": "{{ parish_name }} readiness test",
-            "html": "<p>{{ head_salutation }}, this is a readiness sample "
-            "for {{ campaign_name }}.</p>",
-            "text": "{{ head_salutation }}, this is a readiness sample "
-            "for {{ campaign_name }}.",
-        },
-    )
-    return sample_render(
-        selected,
-        parish=document_parish({"sections": sections}),
-        campaign=sections["campaigns"][0]["values"],
-    )
-
-
 def request_sample(
     request,
     service,
     *,
     preview_token,
     request_key,
-    slot="initial",
     acknowledge_unknown=False,
 ):
     """Atomically store one explicitly requested sample and its durable Task root.
 
-    The selected sample and recipient come from the current signed preview, not
-    HTTP body fields. Repeating the same command cannot allocate another send.
+    The message is the fixed setup test (``setup_test_message``, #142) and the
+    recipient comes from the current signed preview, not HTTP body fields.
+    Repeating the same command cannot allocate another send.
     Any prior unknown send must be explicitly acknowledged by a later UI before
     it calls this service with a different command key; there is no retry here.
     """
-    if (
-        not isinstance(request_key, UUID)
-        or type(slot) is not str
-        or slot not in EMAIL_LABELS
-        or type(acknowledge_unknown) is not bool
-    ):
+    if not isinstance(request_key, UUID) or type(acknowledge_unknown) is not bool:
         raise ValueError("Invalid setup mail request.")
     with work_transaction():
         preview = verify_preview(request, service, preview_token)
@@ -153,13 +124,8 @@ def request_sample(
             "id", "version", "fingerprint", "settings"
         ).get(attempt_id=attempt_id, target="google_workspace", scrubbed_at=None)
         sections = preview.compiled.candidate.document()["sections"]
-        if not sections.get("campaigns"):
-            # System setup (#142): a fixed message that needs no campaign.
-            # ``slot`` (the Test email page's template choice) names a
-            # campaign email, so it is ignored here.
-            rendered = setup_test_message(document_parish({"sections": sections}))
-        else:
-            rendered = _campaign_sample(sections, slot)
+        # Setup collects no campaign (#142): a fixed message that needs none.
+        rendered = setup_test_message(document_parish({"sections": sections}))
         identifier = uuid5(attempt_id, "setup-mail:" + str(request_key))
         mail = ReadinessMail(
             delivery_id=identifier,

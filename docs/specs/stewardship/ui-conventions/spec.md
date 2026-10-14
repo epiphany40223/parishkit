@@ -1691,7 +1691,7 @@ the two cannot drift.
 
 **Time zones.** The fields read wall-clock times; each keeps its page's zone
 rule under the [global presentation rules](#dates-and-times).
-New and Edit scheduled email and the first-campaign step take send times in
+New and Edit scheduled email take send times in
 the browser's zone (see [New and Edit scheduled
 email](../admin-portal/spec.md#new-and-edit-scheduled-email)); the date-change
 review still takes them in the campaign's time zone, the dated exception

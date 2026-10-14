@@ -16,17 +16,12 @@ import pytest
 from .test_in_place import MARK, MARKED, count_requests
 from .upload_defaults_components import (
     BY_NAME,
-    CONTENT,
-    CONTENT_STEP_UP,
     ENDED,
-    FILLED,
     FULL_BY_SIZE,
     LIBRARY,
     LIMITS,
     REFUSED_SIZE,
     REFUSED_TYPE,
-    RESET,
-    RESET_DONE,
     STEP_UP,
     UPLOAD,
     UPLOADED,
@@ -281,76 +276,3 @@ def test_an_upload_after_the_session_ended_loads_the_sign_in(page, component_ori
     open_and_choose(page, component_origin, ENDED)
     page.locator(UPLOAD_BUTTON).click()
     page.wait_for_url(component_origin + "/login")
-
-
-def open_content(page, origin, address, selector):
-    """Open the content list at ``address``, mark it and wheel ``selector``
-    into view; return the scroll offset before the click."""
-    page.set_viewport_size(VIEWPORT)
-    page.goto(origin + address)
-    page.evaluate(MARK)
-    return wheel_below(page, selector)
-
-
-def test_fill_in_follows_its_redirect_in_place(page, component_origin):
-    """Fill in posts once (a double click included), follows the redirect
-    and swaps the page's regions in: no reload, not sent to the top, each
-    entry's state and the stepper's count updated, the notice that took
-    Fill in's place focused and read out, and the address the redirect's."""
-    posts = count_requests(page, "POST", CONTENT)
-    fill = "form[data-in-place='setup-content-fill'] button"
-    page.set_viewport_size(VIEWPORT)
-    page.goto(component_origin + CONTENT)
-    page.evaluate(MARK)
-    # The reader opened the step list, which must stay open.
-    page.locator("#setup-stepper-list summary").click()
-    offset = wheel_below(page, fill)
-    page.locator(fill).dblclick()
-    notice = (
-        "Filled in the default text for 2 page(s) and 1 email(s)."
-        " Review each one and edit it as needed."
-    )
-    has_text(page.locator(STATUS), notice)
-    kept_place(page, offset, "#setup-content-filled")
-    hidden(page.locator(fill))
-    entries = page.locator("#setup-content-entries")
-    visible(entries.get_by_text("Default text").first)
-    assert entries.get_by_text("Empty").count() == 0
-    visible(page.locator("#setup-stepper").get_by_text("1 of", exact=False).first)
-    # The step list the reader opened stays open (data-keep-open).
-    assert page.locator("#setup-stepper-list").evaluate("node => node.open")
-    assert posts == [component_origin + CONTENT]
-    assert page.url == component_origin + FILLED + "#setup-content-fill"
-
-
-def test_reset_follows_its_redirect_in_place(page, component_origin):
-    """Reset, once its box is ticked, posts once and swaps the list in: no
-    reload, not sent to the top, the box unticked again (holding Reset), so
-    focus goes to Reset's heading beside it, and the notice read out."""
-    posts = count_requests(page, "POST", RESET)
-    reset = "form[data-in-place='setup-content-reset'] button"
-    offset = open_content(page, component_origin, RESET, reset)
-    box = page.get_by_label("Yes, replace every page and email with the default text")
-    box.check()
-    page.locator(reset).click()
-    has_text(
-        page.locator(STATUS), "Reset 3 page(s) and 4 email(s) to the default text."
-    )
-    kept_place(page, offset, "#setup-content-reset h2")
-    assert not box.is_checked()
-    visible(page.locator("#setup-content-filled"))
-    assert posts == [component_origin + RESET]
-    assert page.url == component_origin + RESET_DONE + "#setup-content-reset"
-
-
-def test_a_refused_fill_in_shows_its_page_whole(page, component_origin):
-    """A Fill in the server refuses with a page of no region (a stale
-    version's error page, or a step-up) is shown whole, as a native
-    submission would show it, and was sent once."""
-    posts = answer(page, component_origin, CONTENT, CONTENT_STEP_UP, 403)
-    fill = "form[data-in-place='setup-content-fill'] button"
-    open_content(page, component_origin, CONTENT, fill)
-    page.locator(fill).click()
-    visible(page.get_by_role("button", name="Confirm with Google"))
-    hidden(page.locator("#setup-content-fill"))
-    assert len(posts) == 1

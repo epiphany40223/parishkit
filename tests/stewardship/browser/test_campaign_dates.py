@@ -10,8 +10,8 @@ pytestmark = pytest.mark.parametrize(
 
 
 def financial(page, component_origin):
-    """Open the first-campaign page with financial stewardship turned on."""
-    page.goto(component_origin + "/setup-campaign")
+    """Open Create the campaign with financial stewardship turned on."""
+    page.goto(component_origin + "/campaign-create-long")
     page.get_by_label("Financial stewardship").check()
     return page.locator("form[data-campaign-form]")
 
@@ -60,7 +60,7 @@ def test_overlap_confirmation_appears_only_while_needed(page, component_origin):
 
 def test_schedule_window_overlap_follows_the_campaign_dates(page, component_origin):
     """The schedules page mirrors the same rule for its fixed financial period."""
-    page.goto(component_origin + "/setup-schedules-financial")
+    page.goto(component_origin + "/schedule-editor-financial")
     group = page.locator("[data-overlap-confirmation]")
     assert group.is_hidden()
     page.locator('[name="window-end_date"]').fill("2055-01-05")
@@ -72,7 +72,7 @@ def test_schedule_window_overlap_follows_the_campaign_dates(page, component_orig
     # No emails are saved yet: say so instead of offering an empty list.
     visible(page.get_by_text("No invitation or reminder emails are saved yet"))
     assert page.get_by_role("link", name="Create the emails").get_attribute("href") == (
-        "/admin/setup/content"
+        "/admin/campaign/content/"
     )
 
 
@@ -82,7 +82,7 @@ def test_long_multi_selects_scroll_and_count_the_selection(
 ):
     """Hundreds of Ministries stay usable: a scroll bar, a count, no page scroll."""
     page.set_viewport_size({"width": width, "height": 900})
-    page.goto(component_origin + "/setup-campaign")
+    page.goto(component_origin + "/campaign-create-long")
     page.get_by_label("Ministry stewardship").check()
     ministries = page.locator('select[name="ministry_duids"]')
     metrics = ministries.evaluate(
@@ -95,7 +95,8 @@ def test_long_multi_selects_scroll_and_count_the_selection(
     assert metrics["overflow"] != "hidden"
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     count = ministries.locator("xpath=following-sibling::p[@aria-live]")
-    assert count.inner_text() == "0 of 213 selected"
+    # A new campaign starts with every Ministry selected (data-new-campaign).
+    assert count.inner_text() == "213 of 213 selected"
     ministries.select_option(["1", "5"])
     assert count.inner_text() == "2 of 213 selected"
     assert "Ctrl" in page.locator("#id_ministry_duids_helptext").inner_text()

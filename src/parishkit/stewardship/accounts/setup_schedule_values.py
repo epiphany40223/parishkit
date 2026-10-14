@@ -1,9 +1,12 @@
-"""Closed temporary schedules and coherent cross-section first-campaign edits."""
+"""Closed temporary schedules and coherent cross-section first-campaign edits.
+
+No wizard page saves first-campaign sections since #142, which removed those
+pages; this service code remains only until the #142 cleanup removes it.
+"""
 
 from copy import deepcopy
 from uuid import UUID
 
-from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.campaigns.configuration import validate_campaign_sections
@@ -97,8 +100,6 @@ def reconcile_preparation(request, service, attempt_id, updates):
                     "Dates and mail schedules first. Replacing the text (for "
                     "example, resetting it to the default) keeps the schedule."
                 ),
-                link=reverse("admin:setup_schedules"),
-                link_label=_("Go to “Dates and mail schedules”"),
             )
         for row in affected:
             row["values"].update(
@@ -124,8 +125,6 @@ def reconcile_preparation(request, service, attempt_id, updates):
         raise UserFacingError(
             _("A mail schedule uses an email template that is not saved."),
             fix=_("Choose an email saved under Pages and emails."),
-            link=reverse("admin:setup_content"),
-            link_label=_("Go to “Pages and emails”"),
         )
     if records != combined.get("schedules", {"records": []})["records"]:
         updates = updates | {"schedules": {"records": records}}

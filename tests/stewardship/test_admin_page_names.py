@@ -148,10 +148,6 @@ PENDING = {}
 # heading is the view's ``step_label``, taken from the same stepper entry.
 SETUP = {
     "branding": "setup-branding.html",
-    "campaign": "setup-campaign.html",
-    "content": "setup-content.html",
-    "shares": "setup-shares.html",
-    "schedules": "setup-schedules.html",
     "source": "setup-source.html",
     "preview": "setup-preview.html",
     "mail_test": "setup-mail.html",
@@ -431,9 +427,6 @@ RETIRED = (
 # Legitimate uses, as (path relative to the package, retired name), each
 # with the reason it is not a page name.
 ALLOWED = {
-    # "Mail schedules keep sending the same kind of email": the schedules
-    # themselves, not the page.
-    ("accounts/templates/stewardship/setup-content.html", "Mail schedules"),
     # "Back to edit" steps back inside the Family form, outside the Admin
     # portal and its page names.
     ("accounts/static/stewardship/family-v1.js", "Back to "),

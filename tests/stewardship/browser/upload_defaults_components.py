@@ -25,7 +25,6 @@ from parishkit.stewardship.accounts.hosted_file_views import (
     _upload_limits,
 )
 from parishkit.stewardship.accounts.hosted_files import placeholder
-from parishkit.stewardship.accounts.setup_wizard import build
 from parishkit.stewardship.web.tables import paginate
 
 from .step_up_components import render as step_up_page
@@ -47,14 +46,6 @@ ROOM_AGAIN = f"{LIBRARY}?case=room-again"
 REFUSED_TYPE = "/hosted-upload-refused-type"
 REFUSED_SIZE = "/hosted-upload-refused-size"
 STEP_UP = "/hosted-upload-step-up"
-
-CONTENT = reverse("admin:setup_content")
-# Reset posts to its own query, so the fixture server can answer it apart
-# from Fill in at the same path.
-RESET = f"{CONTENT}?case=reset"
-FILLED = f"{CONTENT}?filled_pages=2&filled_emails=1"
-RESET_DONE = f"{CONTENT}?reset_pages=3&reset_emails=4"
-CONTENT_STEP_UP = "/setup-content-step-up"
 
 
 def _row(slug, size=123456):
@@ -150,56 +141,6 @@ def _limited():
     return form
 
 
-def _content(context, admin, *, filled=None, sections=None, fillable=True):
-    """The content list as the view renders it: three Family pages, each
-    Empty until a fill, and the stepper for a draft holding ``sections``."""
-    draft = {
-        "status": {"attempt_id": uuid4(), "state": "collecting", "version": 2},
-        "sections": {},
-        "idle_at": context["deadline"],
-        "absolute_at": context["absolute_deadline"],
-        "watchdog_at": None,
-    }
-    wizard = build(
-        SimpleNamespace(
-            status=SimpleNamespace(state="collecting", attempt_id=uuid4(), version=2),
-            sections=sections or {},
-            source_task_id=None,
-        ),
-        "content",
-    )
-    state = "default" if filled else "empty"
-    labels = ["Family welcome", "Family review", "Thank you", "Pledge form"] * 4
-    groups = [
-        {
-            "kind": kind,
-            "entries": [
-                {
-                    "label": f"{label} {n}",
-                    "url": "/setup-content-edit",
-                    "state": state,
-                }
-                for n, label in enumerate(labels)
-            ],
-        }
-        for kind in ("page", "email")
-    ]
-    return render_to_string(
-        "stewardship/setup-content.html",
-        context
-        | {
-            "admin_chrome": admin,
-            "draft": draft,
-            "wizard": wizard,
-            "groups": groups,
-            "campaign_name": "Sample campaign",
-            "filled": filled,
-            "kept": [],
-            "fillable": fillable,
-        },
-    )
-
-
 def components(context, admin):
     """Each page as first shown, the pages the redirects lead to, and the
     refusals a test routes to."""
@@ -209,7 +150,6 @@ def components(context, admin):
     archive = _row(
         "parish-archive", MAX_LIBRARY_BYTES - sum(row["file"].size for row in rows)
     )
-    done = {"page_welcome": {"values": {"html": "<p>Welcome</p>"}}}
     pages = {
         LIBRARY: _library(context, admin, rows),
         UPLOADED: _library(context, admin, [flyer, *rows], uploaded=flyer["file"]),
@@ -225,25 +165,6 @@ def components(context, admin):
             context, admin, rows, form=_refused(REFUSALS["too_large"])
         ),
         STEP_UP: step_up_page("error", context, admin, next=LIBRARY),
-        CONTENT: _content(context, admin),
-        RESET: _content(context, admin, fillable=False).replace(
-            f'action="{CONTENT}#', f'action="{RESET}#'
-        ),
-        FILLED: _content(
-            context,
-            admin,
-            filled={"action": "filled", "pages": 2, "emails": 1},
-            sections=done,
-            fillable=False,
-        ),
-        RESET_DONE: _content(
-            context,
-            admin,
-            filled={"action": "reset", "pages": 3, "emails": 4},
-            sections=done,
-            fillable=False,
-        ),
-        CONTENT_STEP_UP: step_up_page("error", context, admin, next=CONTENT),
     }
     return {path: ("text/html", body) for path, body in pages.items()}
 
@@ -253,6 +174,4 @@ def posts():
     notice, Fill in and Reset back to the list with what they did."""
     return {
         UPLOAD: (303, UPLOADED, ""),
-        CONTENT: (303, FILLED, ""),
-        RESET: (303, RESET_DONE, ""),
     }

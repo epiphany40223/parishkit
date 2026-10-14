@@ -170,6 +170,21 @@ def test_a_server_refusal_is_cleared_by_the_first_edit(page, component_origin):
     assert page.locator("form.panel button[type=submit]").is_enabled()
 
 
+def change_the_window(page):
+    """Change the campaign end date, so Review changes waits only on the times.
+
+    Dates and mail schedules holds Review changes until the form differs from
+    the saved values (data-require-change); a later end date is a change that
+    strands no mailing, so the time checks alone decide what follows.
+    """
+    page.locator('[name="window-end_date"]').fill("2054-11-02")
+
+
+def open_saved(page):
+    """Open the first saved schedule's editor from the schedules table."""
+    page.locator("[data-schedule-edit]").first.click()
+
+
 def test_schedule_send_times_read_live_normalise_and_gate_save(
     page, component_origin, axe_source
 ):
@@ -177,13 +192,14 @@ def test_schedule_send_times_read_live_normalise_and_gate_save(
     page.set_viewport_size({"width": 320, "height": 900})
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
-    page.goto(component_origin + "/setup-schedules-mail")
-    save = page.get_by_role("button", name="Save and continue")
-    # The saved row shows its time canonically, with its reading, in this
-    # Los Angeles browser's zone (9:00 AM in the campaign's New York, #558).
+    page.goto(component_origin + "/schedule-editor-mail")
+    save = page.get_by_role("button", name="Review changes")
+    change_the_window(page)
+    # The saved row shows its time canonically, with its reading, in the
+    # campaign's time zone.
     saved = '[name="schedules-0-time"]'
-    assert page.locator(saved).input_value() == "06:00"
-    has_text(reading(page, saved), "Reads as 06:00 (6:00 AM)")
+    assert page.locator(saved).input_value() == "09:00"
+    has_text(reading(page, saved), "Reads as 09:00 (9:00 AM)")
     page.locator(f'[name="{NEW}kind"]').select_option("reminder")
     time = f'[name="{NEW}time"]'
     page.locator(time).fill("9p")
@@ -239,13 +255,14 @@ def test_a_value_restored_without_an_event_is_checked_on_pageshow(
 
 def test_a_schedule_time_refused_by_the_server_clears_on_edit(page, component_origin):
     """The send time's server error shows alone, then the live check takes over."""
-    page.goto(component_origin + "/setup-schedules-time-error")
+    page.goto(component_origin + "/schedule-editor-time-error")
     time = '[name="schedules-0-time"]'
     server = page.locator("#id_schedules-0-time_error")
     visible(server)
     assert "has no hour 25" in server.inner_text()
     assert reading(page, time).inner_text() == ""
-    save = page.get_by_role("button", name="Save and continue")
+    save = page.get_by_role("button", name="Review changes")
+    change_the_window(page)
     assert save.is_disabled()
     page.locator(time).fill("9:15 am")
     hidden(server)
@@ -254,35 +271,33 @@ def test_a_schedule_time_refused_by_the_server_clears_on_edit(page, component_or
 
 
 def test_a_saved_time_with_seconds_reads_and_saves_unchanged(page, component_origin):
-    """A schedule saved with seconds keeps them; typing new seconds is refused.
-
-    The saved 9:00:37 AM in New York shows as 6:00:37 AM in this Los Angeles
-    browser (#558).
-    """
-    page.goto(component_origin + "/setup-schedules-kept")
+    """A schedule saved with seconds keeps them; typing new seconds is refused."""
+    page.goto(component_origin + "/schedule-editor-kept")
     time = '[name="schedules-0-time"]'
-    save = page.get_by_role("button", name="Save and continue")
-    assert page.locator(time).input_value() == "06:00:37"
-    has_text(reading(page, time), "Reads as 06:00:37 (6:00:37 AM)")
+    save = page.get_by_role("button", name="Review changes")
+    change_the_window(page)
+    open_saved(page)
+    assert page.locator(time).input_value() == "09:00:37"
+    has_text(reading(page, time), "Reads as 09:00:37 (9:00:37 AM)")
     assert save.is_enabled()
-    page.locator(time).fill("06:00:38")
+    page.locator(time).fill("09:00:38")
     has_text(
         reading(page, time),
-        "“06:00:38” has seconds: these times are to the minute, so leave the "
+        "“09:00:38” has seconds: these times are to the minute, so leave the "
         "seconds out.",
     )
     assert save.is_disabled()
-    page.locator(time).fill("06:00:37")
+    page.locator(time).fill("09:00:37")
     page.locator(time).blur()
-    assert page.locator(time).input_value() == "06:00:37"
+    assert page.locator(time).input_value() == "09:00:37"
     assert save.is_enabled()
 
 
 def test_another_controls_change_announces_no_time_field(page, component_origin):
     """Choosing a mail type re-checks the time fields silently."""
-    page.goto(component_origin + "/setup-schedules-mail")
+    page.goto(component_origin + "/schedule-editor-mail")
     saved = '[name="schedules-0-time"]'
-    has_text(reading(page, saved), "Reads as 06:00 (6:00 AM)")
+    has_text(reading(page, saved), "Reads as 09:00 (9:00 AM)")
     page.locator(f'[name="{NEW}kind"]').select_option("reminder")
     page.locator(f'[name="{NEW}kind"]').select_option("daily_digest")
     page.wait_for_timeout(700)
