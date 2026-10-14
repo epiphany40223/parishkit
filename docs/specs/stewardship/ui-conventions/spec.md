@@ -1494,8 +1494,14 @@ decision, 2026-10-12,
 [#1159](https://github.com/epiphany40223/parishkit/issues/1159)). A page
 shows such a hint at most once: an integration page with a key field says
 once that what was entered, the pasted key included, is not kept, rather
-than repeating the hint for the key. The idle sign-out notice is not a
-step-up hint and is unaffected.
+than repeating the hint for the key. Every step-up hint, before an action
+or after one refused for a stale sign-in, is the one shared notice
+(`components/step-up-notice.html`): the same "For security, … needs a
+sign-in from the last five minutes." sentence and markup on every page,
+naming the action in a short phrase. No page words its own, and a template
+test fails when one does
+([#1192](https://github.com/epiphany40223/parishkit/issues/1192)). The idle
+sign-out notice is not a step-up hint and is unaffected.
 
 Template tests guard these rules: one fails when a paragraph shown without a
 click holds a message longer than about two sentences (50 words), one fails

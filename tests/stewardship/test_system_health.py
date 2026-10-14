@@ -975,7 +975,7 @@ def test_the_preview_and_each_refusal_read_in_the_region():
     )
     assert "data-debug-off-set" in done and "Debug logging turned off at" in done
     for refused, words in (
-        ("reauthenticate", "For your security, confirm it's you with Google"),
+        ("reauthenticate", "For security, turning off debug logging needs a Google"),
         ("busy", "Debug logging has already been turned off"),
         ("denied", "The server refused to turn off debug logging"),
         ("invalid", "That request could not be read."),
@@ -1352,7 +1352,7 @@ def test_the_examples_help_shows_only_when_a_failing_count_gets_examples():
 @pytest.mark.parametrize(
     ("refused", "marker", "words"),
     [
-        ("reauthenticate", "reauthenticate", "For your security, confirm it's you"),
+        ("reauthenticate", "reauthenticate", "For security, accepting this change"),
         ("busy", "changed", "This changed since you looked; review it again."),
         ("denied", "denied", "The server refused this acceptance"),
         ("invalid", "invalid", "or the box was not ticked"),
@@ -1468,7 +1468,7 @@ def test_the_allow_preview_result_and_refusals_read_in_the_region():
     )
     assert "data-debug-allowed" in done and "Debug-off switch cleared at" in done
     for refused, words in (
-        ("reauthenticate", "before allowing debug logging again"),
+        ("reauthenticate", "allowing debug logging again needs a Google sign-in"),
         ("busy", "The debug-off switch is no longer set"),
         ("production", "In Production only the server operator can clear"),
         ("denied", "The server refused to allow debug logging again"),

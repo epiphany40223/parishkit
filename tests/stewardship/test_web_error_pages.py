@@ -101,7 +101,7 @@ def test_fresh_authentication_offers_confirm_with_google():
     response = through(request, error_response(FreshAuthenticationRequired()))
     body = response.content.decode()
     assert response.status_code == 403
-    assert "you with Google before this action" in body
+    assert "For security, this action needs a Google sign-in" in body
     assert 'action="/admin/login"' in body
     assert 'name="next" value="/admin/setup/credentials/slack"' in body
     assert 'name="csrfmiddlewaretoken"' in body
@@ -130,7 +130,7 @@ def test_local_step_up_never_mentions_google(monkeypatch, outage):
     body = response.content.decode()
     assert response.status_code == 403
     assert "Google" not in body
-    assert "confirm your sign-in before this action" in body
+    assert "For security, this action needs a sign-in" in body
     assert "tools/stewardship-local.sh sign-in" in body
 
 
@@ -177,7 +177,7 @@ def test_post_only_routes_return_to_the_form_page(named, expected):
     assert "Nothing was done or sent." in body
     assert f'name="next" value="{expected}"' in body
     # The page names where the step-up returns, since it is not this page.
-    assert "You will then return to Active parishioner family directory." in body
+    assert "you will then return to Active parishioner family directory." in body
     assert "return to this page" not in body
 
 

@@ -31,9 +31,9 @@ PAGES = {
             "home_label": "Administration home",
         },
         (
-            "For your security, confirm it's you with Google before this action.",
-            "Google may ask you to choose your account or sign in. You will then"
-            " return to this page.",
+            "For security, this action needs a Google sign-in from the last five"
+            " minutes.",
+            "Confirm it's you with Google; you will come back to this page.",
         ),
     ),
     "delivery-control": (
@@ -45,8 +45,9 @@ PAGES = {
             "next_due": {},
         },
         (
-            "For your security, confirm it's you with Google before confirming a"
-            " pause, resume or resolution.",
+            "For security, pausing, resuming or resolving delivery needs a Google"
+            " sign-in from the last five minutes. Confirm it's you with Google;"
+            " you will come back to this page.",
         ),
     ),
     "production-withdrawal": (
@@ -112,10 +113,14 @@ PAGES = {
             "proved": True,
             "next": NEXT,
         },
-        ("For security, confirm your Google sign-in before reviewing the change.",),
+        (
+            "For security, reviewing the change needs a Google sign-in from the"
+            " last five minutes.",
+        ),
     ),
-    # The automation pages (#582) were already worded without Google; they
-    # are here so a later edit cannot add it back.
+    # Automation access (#582) is worded without Google in every profile, so
+    # it is here so a later edit cannot add it back; Automation approval uses
+    # the shared step-up notice (#1192), which names Google outside LOCAL.
     "automation-access": (
         "stewardship/automation-access.html",
         {"sessions": [], "live": [], "approval_url": "/admin/automation/approve"},
@@ -132,16 +137,18 @@ PAGES = {
             "back": "/admin/automation",
             "back_label": "Return to Automation access",
         },
-        ("For security, confirm your sign-in before approving a session.",),
+        (
+            "For security, approving a session needs a Google sign-in from the"
+            " last five minutes.",
+        ),
     ),
 }
 # Page name -> the sentences LOCAL shows instead of the Production ones.
 LOCAL_WORDING = {
-    "error": ("For your security, confirm your sign-in before this action.",),
+    "error": ("For security, this action needs a sign-in from the last five minutes.",),
     "delivery-control": (
-        "For your security, confirm your sign-in before you pause, resume or"
-        " resolve delivery. You need to have signed in within the last five"
-        " minutes.",
+        "For security, pausing, resuming or resolving delivery needs a sign-in"
+        " from the last five minutes.",
     ),
     "production-withdrawal": (
         "Cancelling go-live needs a sign-in from the last five minutes. Confirm"
@@ -161,11 +168,14 @@ LOCAL_WORDING = {
         " the same email address to continue; your setup is kept.",
     ),
     "backup-key": (
-        "For security, confirm your sign-in before reviewing the change. The"
-        " code does not need to be typed again.",
+        "For security, reviewing the change needs a sign-in from the last five"
+        " minutes. You do not need to type the code again.",
     ),
     "automation-access": PAGES["automation-access"][2],
-    "automation-approval": PAGES["automation-approval"][2],
+    "automation-approval": (
+        "For security, approving a session needs a sign-in from the last five"
+        " minutes. The code still works for ten minutes after it was shown.",
+    ),
 }
 
 

@@ -73,7 +73,7 @@ def test_delivery_confirms_wait_for_a_recent_sign_in():
     """Without a recent sign-in each Confirm is drawn disabled, named by the
     sign-in notice; with one it is the confirm form."""
     text = (TEMPLATES / "delivery-control.html").read_text()
-    assert '<p id="delivery-fresh-reason">' in text
+    assert 'id="delivery-fresh-reason"' in text
     assert "control_token and fresh" not in text
     assert text.count('aria-describedby="delivery-fresh-reason"') == 3
 

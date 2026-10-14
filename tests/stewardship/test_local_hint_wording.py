@@ -69,13 +69,13 @@ def pages():
             },
             (
                 "For security, saving a credential needs a Google sign-in from"
-                " the last five minutes; if yours is older, you will be asked to"
-                " confirm it's you with Google, which keeps this setup.",
+                " the last five minutes. When you continue, you are asked to"
+                " confirm it's you with Google first. This setup is kept.",
             ),
             (
                 "For security, saving a credential needs a sign-in from the last"
-                " five minutes; if yours is older, you will be asked to confirm"
-                " your sign-in, which keeps this setup.",
+                " five minutes. When you continue, you are asked to confirm your"
+                " sign-in first. This setup is kept.",
             ),
         ),
         "setup-access": (
@@ -129,13 +129,13 @@ def pages():
             {},
             (
                 "For security, queuing this export needs a Google sign-in from"
-                " the last five minutes. If yours is older, you are asked to"
-                " confirm it's you with Google first and nothing is queued:",
+                " the last five minutes. When you continue, you are asked to"
+                " confirm it's you with Google first. Nothing is queued:",
             ),
             (
                 "For security, queuing this export needs a sign-in from the last"
-                " five minutes. If yours is older, you are asked to confirm your"
-                " sign-in first and nothing is queued:",
+                " five minutes. When you continue, you are asked to confirm your"
+                " sign-in first. Nothing is queued:",
             ),
         ),
         "credential-selection": (
@@ -384,7 +384,7 @@ def test_integration_key_page_shows_the_step_up_notice_once(target, local, monke
         render_to_string("stewardship/integration-settings.html", page, request=request)
     )
     assert step_up_notices(html) == 1
-    assert "what you entered is not kept" in html
+    assert "What you entered is not kept" in html
 
 
 @pytest.mark.parametrize("local", [False, True])
