@@ -36,7 +36,7 @@ from .admin_editing import confirm_intent, error_response, principal, sign_previ
 from .authentication import runtime
 from .campaign_views import _scope, _state
 from .content_forms import revision_patch
-from .content_views import _campaign, _records
+from .content_views import _content_campaign, _records
 from .limiting import LimiterUnavailable
 from .policy import Capability, allows
 from .request_patch import build_candidate
@@ -130,7 +130,7 @@ def content_delete(request, campaign_id):
         with work_transaction():
             state = _state(service)
             configuration, fingerprint = state[0], state[-1]
-            campaign = _campaign(state, campaign_id)
+            campaign = _content_campaign(state, campaign_id)
             if (
                 request.POST.get("base_digest")
                 != configuration.active_configuration.digest
