@@ -165,7 +165,7 @@ def test_a_stale_review_still_steps_up(page, component_origin):
     is unavailable with why, and Confirm with Google is an ordinary
     submission to the sign-in page, never sent in place."""
     open_and_check(page, component_origin, REVIEW_STALE)
-    visible(page.get_by_text("requires confirming your sign-in with Google"))
+    visible(page.get_by_text("sending tests to real Families needs a Google sign-in"))
     assert page.evaluate(MARKED) == "kept"
     assert page.get_by_role("button", name="Send these Family tests").is_disabled()
     with page.expect_request(

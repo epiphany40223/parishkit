@@ -54,7 +54,7 @@ def test_final_confirmation_freezes_once_then_shows_passive_original_progress(
         assert b"Install the ParishSoft credential" in response.content
         assert b"Apply the configuration" in response.content
         assert b"actual consumer" in response.content
-        assert b"too old for installing credentials" not in response.content
+        assert b"installing credentials needs a" not in response.content
         assert response.context["attempt"].attempt_id == attempt.attempt_id
         assert response.context["overall"] == "working"
         # The page's poll is a passive read of the same status.
@@ -99,8 +99,8 @@ def test_finishing_page_asks_for_a_fresh_sign_in_when_install_cannot_start(
         response = browser.get("/admin/setup/cancel")
         assert response.status_code == 200, response.content
         body = response.content.decode()
-        assert "Your Google sign-in is too old for installing credentials." in body
-        assert "your setup is kept" in body
+        assert "For security, installing credentials needs a Google sign-in" in body
+        assert "Your setup is kept." in body
         assert 'name="next" value="/admin/setup/cancel"' in body
         assert response.context["reauthenticate"]
 

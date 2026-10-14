@@ -291,7 +291,7 @@ def test_family_test_check_and_send_are_in_place():
     assert 'data-in-place-message-from="family-test-sent"' in send.group(0)
     assert 'id="family-test-sent" tabindex="-1" data-in-place-focus' in region
     assert "family-test-available" in region
-    assert "components/reauthenticate.html" in region
+    assert "components/step-up-notice.html" in region
     refresh = re.search(r'<a [^>]*>{% translate "Refresh status" %}</a>', text)
     assert "data-in-place-only" in refresh.group(0)
 

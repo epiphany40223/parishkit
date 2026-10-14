@@ -17,11 +17,45 @@ TEMPLATES = (
     / "src/parishkit/stewardship/accounts/templates/stewardship"
 )
 COMPONENT = "stewardship/components/step-up-notice.html"
-# Only the component spells the lead-in. The idle sign-out banner says "For
-# security, you were signed out ..." and is not a step-up (ui-conventions
-# "Page help"), so it is the one other allowed use.
-LEAD_IN = re.compile(r"For (your )?security", re.IGNORECASE)
+# Step-up phrasing only the component may use: its lead-in and the ways
+# pages used to word their own hint (#1192, #1297 review).
+STEP_UP_PHRASING = re.compile(
+    r"For (your )?security"
+    r"|sign-in from the last"
+    r"|needs a (Google )?sign-in"
+    r"|confirm(ing)? your (Google )?sign-in"
+    r"|confirm it's you"
+    r"|sign-in is too old"
+    r"|last few minutes",
+    re.IGNORECASE,
+)
+# The idle sign-out banner says "For security, you were signed out ..." and is
+# not a step-up (ui-conventions "Page help"): the one exact sentence exempt.
 NOT_A_STEP_UP = "For security, you were signed out after a period of inactivity."
+# The hand-worded step-ups this guard replaced; each must still be caught.
+OLD_STEP_UPS = [
+    "For your security, confirm your sign-in before you close or reopen the"
+    " Family portal.",
+    "For security, saving or removing settings here needs a sign-in from the"
+    " last five minutes.",
+    "Changing this requires you to confirm your sign-in with Google, and every"
+    " change is recorded in the audit log.",
+    "Cancelling go-live needs a Google sign-in from the last five minutes.",
+    "Going live needs a sign-in from the last five minutes.",
+    "Sending tests to real Families requires confirming your sign-in with"
+    " Google (you signed in 7 minutes ago).",
+    "Your Google sign-in is too old for installing credentials.",
+    "Saving a credential needs a sign-in from the last five minutes.",
+    "Confirming needs a Google sign-in from the last few minutes; if yours is"
+    " older, you are asked to confirm it's you with Google first.",
+    "Approving a session first asks you to confirm your sign-in, then takes"
+    " you to the approval page.",
+]
+
+
+def step_up_wording(text):
+    """Whether template text words a step-up itself, outside the exemption."""
+    return bool(STEP_UP_PHRASING.search(text.replace(NOT_A_STEP_UP, "")))
 
 
 def notice(local=False, **values):
@@ -33,15 +67,26 @@ def notice(local=False, **values):
 
 
 def test_no_template_words_its_own_step_up_notice():
-    """Every "For security" sentence comes from the shared component."""
-    offenders = []
-    for path in sorted(TEMPLATES.rglob("*.html")):
-        if path == TEMPLATES / "components/step-up-notice.html":
-            continue
-        text = path.read_text().replace(NOT_A_STEP_UP, "")
-        if LEAD_IN.search(text):
-            offenders.append(str(path.relative_to(TEMPLATES)))
+    """Every step-up sentence comes from the shared component."""
+    offenders = [
+        str(path.relative_to(TEMPLATES))
+        for path in sorted(TEMPLATES.rglob("*.html"))
+        if path != TEMPLATES / "components/step-up-notice.html"
+        and step_up_wording(path.read_text())
+    ]
     assert offenders == []
+
+
+@pytest.mark.parametrize("sentence", OLD_STEP_UPS)
+def test_the_guard_catches_each_old_hand_worded_step_up(sentence):
+    """A page that brought back its own wording would fail the guard."""
+    assert step_up_wording(f"<p>{{% translate {sentence!r} %}}</p>")
+
+
+def test_the_idle_sign_out_banner_is_the_only_exemption():
+    """The exemption is one exact sentence, so it cannot hide a step-up."""
+    assert not step_up_wording(NOT_A_STEP_UP)
+    assert step_up_wording(NOT_A_STEP_UP + " For security, confirm your sign-in.")
 
 
 def test_with_a_return_page_it_offers_confirm_with_google():
@@ -67,11 +112,13 @@ def test_the_outcome_and_note_follow_the_lead_in():
         next_label="Home",
         outcome="Nothing was changed.",
         note="Then try again.",
-        alert=True,
+        role="alert",
         marker="done",
         marker_value="reauthenticate",
     )
-    assert 'data-done="reauthenticate" role="alert"' in html
+    # The live role covers the sentence only, never the Confirm control.
+    assert '<div class="notice" data-step-up-notice data-done="reauthenticate">' in html
+    assert '<p role="alert">' in html
     assert (
         "last five minutes. Nothing was changed. Confirm it's you with Google;"
         " you will then return to Home. Then try again.</p>"

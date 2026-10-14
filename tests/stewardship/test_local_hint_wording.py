@@ -49,14 +49,14 @@ def pages():
             "stewardship/setup.html",
             {"draft": None},
             (
-                "Saving a credential needs a Google sign-in from the last five"
-                " minutes. If yours is older, the page asks you to confirm it's"
-                " you with Google; your setup is kept.",
+                "For security, saving a credential needs a Google sign-in from"
+                " the last five minutes. When you continue, you are asked to"
+                " confirm it's you with Google first. Your setup is kept.",
             ),
             (
-                "Saving a credential needs a sign-in from the last five minutes."
-                " If yours is older, the page asks you to confirm your sign-in;"
-                " your setup is kept.",
+                "For security, saving a credential needs a sign-in from the last"
+                " five minutes. When you continue, you are asked to confirm your"
+                " sign-in first. Your setup is kept.",
             ),
         ),
         "setup-credential": (
@@ -130,12 +130,13 @@ def pages():
             (
                 "For security, queuing this export needs a Google sign-in from"
                 " the last five minutes. When you continue, you are asked to"
-                " confirm it's you with Google first. Nothing is queued:",
+                " confirm it's you with Google first. If you continue now,"
+                " nothing is queued:",
             ),
             (
                 "For security, queuing this export needs a sign-in from the last"
                 " five minutes. When you continue, you are asked to confirm your"
-                " sign-in first. Nothing is queued:",
+                " sign-in first. If you continue now, nothing is queued:",
             ),
         ),
         "credential-selection": (
@@ -146,25 +147,26 @@ def pages():
                 "preview": "p",
             },
             (
-                "Confirming needs a Google sign-in from the last few minutes; if"
-                " yours is older, you are asked to confirm it's you with Google"
-                " first.",
+                "For security, finishing the switch to the new key needs a Google"
+                " sign-in from the last five minutes. When you continue, you are"
+                " asked to confirm it's you with Google first.",
             ),
             (
-                "Confirming needs a sign-in from the last few minutes; if yours is"
-                " older, you are asked to confirm your sign-in first.",
+                "For security, finishing the switch to the new key needs a"
+                " sign-in from the last five minutes. When you continue, you are"
+                " asked to confirm your sign-in first.",
             ),
         ),
         "family-portal-maintenance": (
             "stewardship/family-portal-maintenance.html",
             {"state": Value(closed=False), "message_limit": 500},
             (
-                "Changing this requires you to confirm your sign-in with Google,"
-                " and every change is recorded in the audit log.",
+                "For security, closing or reopening the Family portal needs a"
+                " Google sign-in from the last five minutes.",
             ),
             (
-                "Changing this requires you to confirm your sign-in, and every"
-                " change is recorded in the audit log.",
+                "For security, closing or reopening the Family portal needs a"
+                " sign-in from the last five minutes.",
             ),
         ),
         "users": (
@@ -335,6 +337,12 @@ def test_fresh_pages_keep_their_other_rules(monkeypatch):
         "family-portal-maintenance", False, timedelta(0), monkeypatch
     )
     assert "Every change is recorded in the audit log." in maintenance
+    # The shared notice is the page's one step-up hint (#1297 review).
+    stale = render_signed_in(
+        "family-portal-maintenance", False, timedelta(minutes=6), monkeypatch
+    )
+    assert "Every change is recorded in the audit log." in stale
+    assert stale.count("the last five minutes") == 1
 
 
 # The integrations with a key field: ParishSoft and Slack drew a second
@@ -384,7 +392,7 @@ def test_integration_key_page_shows_the_step_up_notice_once(target, local, monke
         render_to_string("stewardship/integration-settings.html", page, request=request)
     )
     assert step_up_notices(html) == 1
-    assert "What you entered is not kept" in html
+    assert "what you entered is not kept" in html
 
 
 @pytest.mark.parametrize("local", [False, True])

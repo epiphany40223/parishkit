@@ -4,4 +4,4 @@
   step-up now (#1159): a sign-in that ages while the page is open gets the
   step-up page on submit, which explains itself, so no timer reveals it later
   (that would move the controls). LOCAL has no Google sign-in (#649).
-{% endcomment %}{% fresh_sign_in as fresh %}{% if not fresh %}{% translate "queuing this export" as step_up_action %}{% translate "Nothing is queued: when you come back, apply your filters again and queue the export again." as step_up_note %}{% include 'stewardship/components/step-up-notice.html' with action=step_up_action note=step_up_note %}{% endif %}
+{% endcomment %}{% fresh_sign_in as fresh %}{% if not fresh %}{% translate "queuing this export" as step_up_action %}{% translate "If you continue now, nothing is queued: when you come back, apply your filters again and queue the export again." as step_up_note %}{% include 'stewardship/components/step-up-notice.html' with action=step_up_action note=step_up_note %}{% endif %}

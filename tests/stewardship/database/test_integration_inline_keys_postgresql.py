@@ -576,7 +576,7 @@ def test_stale_key_save_page_says_nothing_was_done(working):
     # The page warns that a step-up discards what was entered (the pasted
     # key included) only when Save would ask for one (#1159); a sign-in that
     # ages after a fresh render gets this refusal page, which says the same.
-    hint = b"What you entered is not kept: enter it again when you return"
+    hint = b"what you entered is not kept: enter it again when you return"
     assert hint not in browser.get(URL).content
     stale_sign_in()
     page = browser.get(URL)
