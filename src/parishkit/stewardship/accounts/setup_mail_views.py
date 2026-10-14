@@ -14,7 +14,6 @@ from parishkit.stewardship.jobs.delivery_metadata import STATE_LABELS
 from parishkit.stewardship.web.acknowledgment import ACKNOWLEDGMENT
 
 from .authentication import runtime
-from .content_forms import EMAIL_LABELS
 from .setup_delivery_models import SetupMailDelivery
 from .setup_drafts import view_draft
 from .setup_mail import request_sample
@@ -35,13 +34,10 @@ LABELS = {
 
 
 class SetupMailForm(forms.Form):
-    """Only the slot and acknowledgement are editable; routing is server-owned."""
+    """Only the acknowledgement is editable; message and routing are server-owned."""
 
     preview_token = forms.CharField(max_length=4096, widget=forms.HiddenInput)
     request_key = forms.UUIDField(widget=forms.HiddenInput)
-    slot = forms.ChoiceField(
-        label=_("Email sample"), choices=list(EMAIL_LABELS.items())
-    )
     acknowledge_unknown = forms.BooleanField(
         widget=ACKNOWLEDGMENT,
         required=False,
@@ -100,7 +96,6 @@ def setup_mail(request):
             initial={
                 "preview_token": signing.dumps(preview.binding(), salt=PREVIEW_SALT),
                 "request_key": uuid4(),
-                "slot": "initial",
             },
         )
         status = 200

@@ -1,6 +1,9 @@
-"""Exact first-campaign preview binds the original live owner and staged evidence."""
+"""Exact setup preview binds the original live owner and staged evidence."""
 
 # ruff: noqa: F811 -- imported pytest fixtures are injected by name.
+
+import sys
+from types import SimpleNamespace
 
 import pytest
 from django.core import signing
@@ -28,6 +31,7 @@ from ..test_setup_forms import VALUES
 from .test_bootstrap_postgresql import bootstrapped  # noqa: F401
 from .test_branding_setup_postgresql import graphics
 from .test_runtime_auth_grants_postgresql import web_login
+from .test_setup_campaign_postgresql import completed
 from .test_setup_credentials_postgresql import publish
 from .test_setup_preparation_postgresql import with_schedules
 from .test_setup_staging_postgresql import login, setup_service  # noqa: F401
@@ -39,9 +43,18 @@ from .test_setup_views_postgresql import (
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-def complete_draft(service, monkeypatch, tmp_path):
-    """Prepare all public inputs and sealed credentials through actual owner APIs."""
-    request, status, _, _ = with_schedules(service, monkeypatch)
+def complete_draft(service, monkeypatch, tmp_path, *, campaign=False):
+    """Prepare all public inputs and sealed credentials through actual owner APIs.
+
+    The draft is the loaded system setup, with no first-campaign sections, as
+    the wizard saves since #142. ``campaign`` also stages first-campaign,
+    content and schedule sections, as an attempt saved before #142 may hold.
+    """
+    if campaign:
+        request, status, _, _ = with_schedules(service, monkeypatch)
+    else:
+        request, attempt = completed(service, monkeypatch)
+        status = SimpleNamespace(attempt_id=attempt.pk, version=attempt.version)
     publish("google_workspace", material=b"g" * 32)
     media = tmp_path / "media"
     media.mkdir(mode=0o700)
@@ -78,6 +91,32 @@ def complete_draft(service, monkeypatch, tmp_path):
             expected_version=status.version,
         )
     return request, status, media
+
+
+def before_142(monkeypatch):
+    """Stand in for an attempt confirmed before #142, whose Review held a campaign.
+
+    Such an attempt, frozen before the upgrade, still finishes as it was
+    confirmed, so the one-campaign completion stays tested. The release
+    before #142 compiled the draft's campaign, content and schedule sections
+    too; ``complete_draft`` then stages them, as its wizard pages did.
+    """
+    from parishkit.stewardship.accounts import setup_preview
+    from parishkit.stewardship.accounts.setup_content_values import CONTENT_STEPS
+
+    module = sys.modules[__name__]
+    monkeypatch.setattr(
+        setup_preview,
+        "SYSTEM_SECTIONS",
+        setup_preview.SYSTEM_SECTIONS | {"campaign", "schedules", *CONTENT_STEPS},
+    )
+
+    def staged(service, monkeypatch):
+        """The loaded draft with its first campaign, content and schedules."""
+        request, status, _, _ = with_schedules(service, monkeypatch)
+        return request, SimpleNamespace(pk=status.attempt_id, version=status.version)
+
+    monkeypatch.setattr(module, "completed", staged)
 
 
 def test_exact_preview_is_passive_and_stale_on_any_edit(
@@ -146,9 +185,12 @@ def test_retired_step_left_in_a_draft_blocks_neither_saving_nor_finishing(
     """A draft saved before a slot retired (#260, #913) still saves and previews.
 
     The leftover step is written straight to SQL, as the older release did;
-    the current code can no longer save it.
+    the current code can no longer save it. Like every first-campaign section
+    (#142), it never reaches the candidate.
     """
-    request, status, _ = complete_draft(setup_service, monkeypatch, tmp_path)
+    request, status, _ = complete_draft(
+        setup_service, monkeypatch, tmp_path, campaign=True
+    )
     kind, _, slot = step.partition("_")
     with web_login(), transaction.atomic(), work_transaction():
         SetupDraftSection.objects.create(
@@ -182,14 +224,12 @@ def test_retired_step_left_in_a_draft_blocks_neither_saving_nor_finishing(
                 expected_version=status.version,
             )
         preview = prepare_preview(request, setup_service)
-    rows = preview.compiled.candidate.document()["sections"]["content"]
-    assert replacement["id"] in {row["id"] for row in rows}
-    assert slot not in {row["values"]["slot"] for row in rows}
+    assert not preview.compiled.candidate.document()["sections"].get("content")
     # The leftover is inert, not rewritten.
     assert SetupDraftSection.objects.filter(step=step).exists()
 
 
-def test_preview_http_is_private_inert_and_contains_all_named_slots(
+def test_preview_http_is_private_inert_and_shows_the_system_settings(
     setup_http, monkeypatch, tmp_path, settings
 ):
     """Actual restricted web responses disclose public intent, never private bytes."""
@@ -204,8 +244,6 @@ def test_preview_http_is_private_inert_and_contains_all_named_slots(
         for expected in (
             b"<h1>Review</h1>",
             b"Sample Parish",
-            b"Thank You page",
-            b"Initial invitation",
             b"keys themselves are never displayed",
         ):
             assert expected in response.content
@@ -223,12 +261,8 @@ def test_preview_http_is_private_inert_and_contains_all_named_slots(
             "attempt": str(attempt.pk),
             "preview": attempt.version,
         }
-        # Invitation access placeholders render fictional values only.
-        assert (
-            b"https://stewardship.example.invalid/access/sample-household-link"
-            in response.content
-        )
-        assert b"ABCDEFGH" in response.content
+        # Setup collects no campaign (#142): no page or email samples.
+        assert b"Named pages and email samples" not in response.content
         assert browser.post("/admin/setup/preview", {}).status_code in {403, 405}
         assert browser.get("/admin/setup/preview?mode=production").status_code == 400
     assert not setup_http.configured()

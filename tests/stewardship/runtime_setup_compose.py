@@ -12,7 +12,6 @@ from parishkit.stewardship.deployment import DeploymentProfile
 from parishkit.stewardship.runtime_paths import RuntimeLayout
 from parishkit.stewardship.runtime_topology import render_runtime
 
-from .campaign_factory import campaign, financial
 from .test_integration_candidates import account
 from .test_runtime_topology import IMAGE as PRODUCTION_IMAGE
 from .test_setup_forms import VALUES
@@ -106,10 +105,6 @@ def complete_setup(file, project, configuration, mountpoint, *, abort=False):
         "steps": VALUES,
         "workspace": account().decode(),
         "abort": abort,
-        "campaign": campaign(
-            modules=["census", "financial"],
-            financial=financial(fund_duids=[9], comparison_fund_duids=[9]),
-        )["values"],
     }
     command = (
         "exec",
@@ -233,7 +228,9 @@ def complete_setup(file, project, configuration, mountpoint, *, abort=False):
         "-Atc",
         SETUP_PROOF,
     ).stdout.strip()
-    assert proof == "promoted|succeeded|1|1|1|0|t|0|0|1|0|0", proof
+    # Setup collects no campaign (#142): its final load reads no giving, and
+    # it creates no Families, codes or mail schedules.
+    assert proof == "promoted|succeeded|0|0|0|0|f|0|0|0|0|0", proof
 
 
 def restore_initial_consumers(file, project, configuration):

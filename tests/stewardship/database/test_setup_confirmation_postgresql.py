@@ -12,7 +12,7 @@ from django.db import DatabaseError, transaction
 from parishkit.stewardship.accounts import setup_notifications as notifications
 from parishkit.stewardship.accounts.models import ConfigurationChangeRequest
 from parishkit.stewardship.accounts.setup_confirmation import freeze_setup
-from parishkit.stewardship.accounts.setup_drafts import save_section, save_sections
+from parishkit.stewardship.accounts.setup_drafts import save_section
 from parishkit.stewardship.accounts.setup_mail import (
     begin_submission,
     finish_submission,
@@ -30,8 +30,6 @@ from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.readiness_delivery import DeliveryOutcome
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 
-from ..campaign_factory import schedule
-from ..content_factory import content
 from ..test_setup_forms import VALUES
 from .test_background_grants_postgresql import task_login
 from .test_bootstrap_postgresql import bootstrapped  # noqa: F401
@@ -73,49 +71,6 @@ def prepared(
         begin_submission(mail.identifier, owner)
         finish_submission(mail.identifier, owner, outcome)
     return request, attempt, token
-
-
-@pytest.mark.parametrize("digest_only", [False, True])
-def test_final_confirmation_requires_initial_mail_even_after_accepted_sample(
-    setup_service, monkeypatch, tmp_path, digest_only
-):
-    """Draft-valid empty/digest-only schedules cannot become completed setup."""
-    request, attempt, _ = complete_draft(setup_service, monkeypatch, tmp_path)
-    updates = {"schedules": {"records": []}}
-    if digest_only:
-        template = content(str(attempt.attempt_id), kind="email", slot="daily_digest")
-        updates["email_daily_digest"] = template
-        updates["schedules"]["records"] = [
-            schedule(
-                str(attempt.attempt_id),
-                kind="daily_digest",
-                date=None,
-                template_version=template["id"],
-                subject=template["values"]["subject"],
-            )
-        ]
-    with web_login():
-        save_sections(
-            request,
-            setup_service,
-            attempt.attempt_id,
-            updates=updates,
-            expected_version=attempt.version,
-        )
-        token = signing.dumps(
-            prepare_preview(request, setup_service).binding(), salt=PREVIEW_SALT
-        )
-        sample = request_sample(
-            request, setup_service, preview_token=token, request_key=uuid4()
-        )
-    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
-        owner = claim(sample)
-        begin_submission(sample.identifier, owner)
-        finish_submission(sample.identifier, owner, DeliveryOutcome.ACCEPTED)
-    with web_login(), pytest.raises(ValueError, match="initial invitation schedule"):
-        freeze_setup(request, setup_service, preview_token=token)
-    assert SetupAttempt.objects.get().state == "collecting"
-    assert not SetupConfigurationIntent.objects.exists()
 
 
 @pytest.mark.parametrize("slack", [False, True])

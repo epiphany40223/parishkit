@@ -2963,10 +2963,9 @@ backup`, and backup status is part of `status`.
 
 `setup`, `setup_cancel`, `setup_source`, `setup_source_progress`,
 `setup_branding`, `setup_branding_asset`, `setup_credential`,
-`setup_campaign`, `setup_shares`, `setup_preview`, `setup_confirmation`,
-`setup_mail`, `setup_mail_status`, `setup_notification`,
-`setup_notification_status`, `setup_schedules`, `setup_content`,
-`setup_content_edit` and `setup_step` are permanent exemptions. The
+`setup_preview`, `setup_confirmation`, `setup_mail`, `setup_mail_status`,
+`setup_notification`, `setup_notification_status` and `setup_step` are
+permanent exemptions. The
 first-Admin wizard is a one-time, browser-led flow that stages credentials and
 uploads, with `pk-stewardship bootstrap` as its offline counterpart. See
 [bootstrap and first-Admin wizard](../admin-portal/spec.md#bootstrap-and-first-admin-wizard).

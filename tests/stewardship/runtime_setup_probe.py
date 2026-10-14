@@ -65,7 +65,6 @@ def main():
     from PIL import Image
 
     from parishkit.stewardship.accounts.authentication import runtime
-    from parishkit.stewardship.accounts.campaign_forms import initial_fields
     from parishkit.stewardship.accounts.configuration_installation import (
         coherent_configuration,
     )
@@ -150,59 +149,8 @@ def main():
         assert time.monotonic() < deadline, data
         time.sleep(0.5)
     assert not runtime().configured() and not SetupCompletion.objects.exists()
-    data = initial_fields(fixture["campaign"], digest="")
-    data.pop("base_digest")
-    post(
-        "/admin/setup/campaign",
-        {key: "" if value is None else value for key, value in data.items()}
-        | {"version": version("/admin/setup/campaign")},
-    )
-    shares = get("/admin/setup/shares")
-    data = fields(shares.context["formset"].management_form)
-    for form in shares.context["formset"]:
-        data.update(fields(form))
-    post(
-        "/admin/setup/shares",
-        data | {"version": shares.context["draft"].status.version},
-    )
-    path = "/admin/setup/content/email/initial"
-    post(
-        path,
-        {
-            "version": version(path),
-            "subject": "Campaign invitation",
-            "html": (
-                "<p>Please review your Family information.</p>"
-                "<p>{{ family_code }} {{ family_url }}</p>"
-            ),
-            "text": "",
-            "generate_text": "on",
-        },
-    )
-    # Save an initial invitation schedule without materializing live fulfillment.
-    schedules = get("/admin/setup/schedules")
-    data = fields(schedules.context["window"])
-    data.update(fields(schedules.context["schedules"].management_form))
-    for form in schedules.context["schedules"]:
-        data.update(fields(form))
-    # Saving the campaign also saved every default email, so choose the
-    # initial invitation saved above rather than the first listed template.
-    template = schedules.context["draft"].sections["email_initial"]["id"]
-    data.update(
-        {
-            "schedules-0-kind": "initial",
-            "schedules-0-date": fixture["campaign"]["start_date"],
-            "schedules-0-time": "09:00:00",
-            "schedules-0-template_version": template,
-            # Send times are typed in the browser's zone (#558); the
-            # campaign's own zone keeps 09:00 as typed.
-            "zone": schedules.context["schedules"].timezone,
-        }
-    )
-    post(
-        "/admin/setup/schedules",
-        data | {"version": schedules.context["draft"].status.version},
-    )
+    # Setup collects no campaign (#142): the logo and access steps were the
+    # last data pages, so the review follows the load.
     get("/admin/setup/preview")
     mail = get("/admin/setup/mail-test")
     post("/admin/setup/mail-test", fields(mail.context["form"]))
@@ -256,7 +204,8 @@ def main():
     assert runtime().configured()
     current = coherent_configuration(runtime().store)
     assert current.mode == "testing"
-    assert current.current_campaign.state == "draft"
+    # Finishing setup creates no campaign, Families or codes (#142).
+    assert current.current_campaign is None
     assert SetupCompletion.objects.count() == 1
     assert get("/admin/").status_code == 200
     print("INITIAL_SETUP_ATOMIC_COMPLETION_OK")

@@ -10,9 +10,10 @@ from parishkit.stewardship.web.refusals import load_preview
 from .branding_staging import staged_bundle
 from .configuration_requests import policy_operation_id
 from .request_patch import PatchedConfiguration
-from .setup_campaign import admit_campaign_values, require_staged_load
+from .setup_campaign import require_staged_load
 from .setup_candidate import CandidateCredential, compile_candidate
 from .setup_drafts import DraftView, view_draft
+from .setup_forms import FORMS
 from .setup_secret_models import SetupSealedCredential
 
 PREVIEW_SALT = "stewardship-initial-setup-preview-v1"
@@ -39,12 +40,11 @@ class SetupPreview:
         }
 
 
-# Whether a draft without first-campaign sections may be previewed and
-# confirmed (#142). Off until the wizard stops offering the campaign pages
-# and Create the campaign (#142) can create the campaign afterwards; until
-# then a setup without a campaign would leave no way to create one. Tests of
-# the system-only back end turn it on.
-SYSTEM_ONLY_SETUP = False
+# The draft sections setup compiles. Setup collects no campaign (#142), so a
+# draft's campaign, content, share and schedule sections, which only an
+# attempt saved before that release can hold, are never read again; they are
+# scrubbed with the rest of the draft when the attempt completes or expires.
+SYSTEM_SECTIONS = frozenset(FORMS)
 
 
 def prepare_preview(request, service):
@@ -53,20 +53,11 @@ def prepare_preview(request, service):
         draft = view_draft(request, service)
         if draft is None or draft.status.state != "collecting":
             raise LookupError("An original collecting setup draft is required.")
-        required = {"parish", "access", "branding", "mail", "slack", "testing"}
-        if not required <= draft.sections.keys():
+        if not draft.sections.keys() >= FORMS.keys():
             raise ConfigError("Complete the setup sections before final preview.")
         identifier = draft.status.attempt_id
-        if "campaign" in draft.sections or not SYSTEM_ONLY_SETUP:
-            # A first campaign must still match the catalog.
-            if not {"campaign", "schedules"} <= draft.sections.keys():
-                raise ConfigError("Complete the setup sections before final preview.")
-            admit_campaign_values(
-                request, service, identifier, draft.sections["campaign"]
-            )
-        else:
-            # System setup (#142) still needs its exact, current source load.
-            require_staged_load(request, service, identifier)
+        # The exact, current source load is still required.
+        require_staged_load(request, service, identifier)
         _, assets = staged_bundle(
             request,
             service,
@@ -89,7 +80,11 @@ def prepare_preview(request, service):
             attempt_id=identifier,
             candidate_id=uuid5(operation_id, "initial-configuration"),
             operation_id=operation_id,
-            sections=draft.sections,
+            sections={
+                step: values
+                for step, values in draft.sections.items()
+                if step in SYSTEM_SECTIONS
+            },
             branding=branding,
             credentials=credentials,
         )
