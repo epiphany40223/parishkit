@@ -1464,7 +1464,8 @@ Families will see instead, and Apply posts the signed preview, with the slot
 (and staged image) it names, to Campaign images; the page takes no query. A
 refused upload keeps its error on the slot's field. An upload that expired,
 or was staged against settings changed since, is refused in the dialog with
-a request to upload it again.
+a request to reload the page and upload it again (the slots keep the version
+the page was loaded at).
 Artwork is presentation, not structure, so it stays editable while the campaign
 is live. Each Family email's editor (initial, reminder and confirmation) has a
 "Show the campaign banner at the top of this email" checkbox, on by default.

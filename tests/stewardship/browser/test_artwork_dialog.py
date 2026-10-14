@@ -111,11 +111,13 @@ def test_an_upload_is_reviewed_and_applied_in_the_dialog(page, component_origin)
 
 def test_remove_this_image_is_reviewed_in_the_dialog(page, component_origin):
     """Remove this image, offered only where a slot has an image, opens the
-    dialog with the removal; Apply closes it and says the image was removed,
-    without a reload."""
+    dialog with the removal; Apply closes it, and the status line says the
+    image was removed and takes focus. Nothing reloads, and neither a slot
+    nor the status line moves when the slots are redrawn."""
     reviews = answer_reviews(page, component_origin, REMOVAL, address=PAGE)
     page.goto(component_origin + PAGE)
     failures = watch(page)
+    places = page.evaluate(PLACES)
     assert page.get_by_role("button", name="Remove this image").count() == 1
     slot(page, "Welcome page icon").get_by_role(
         "button", name="Remove this image"
@@ -128,6 +130,8 @@ def test_remove_this_image_is_reviewed_in_the_dialog(page, component_origin):
     eventually(page, "document.getElementById('artwork-outcome').textContent !== ''")
     line = page.locator("#artwork-outcome").inner_text()
     assert applied_line("Campaign image removed.").search(line), line
+    assert page.evaluate(FOCUSED) == "artwork-outcome"
+    assert same_place(page.evaluate(PLACES), places)
     assert page.evaluate(MARKED) == "kept"
     assert not failures
 
@@ -169,7 +173,7 @@ def test_a_refused_apply_shows_in_the_dialog(page, component_origin):
                     "refusal": {
                         "message": "This upload expired, or the settings "
                         "changed after it was uploaded, so it was not used. "
-                        "Upload the image again."
+                        "Reload the page, then upload the image again."
                     },
                 }
             ),
@@ -183,7 +187,7 @@ def test_a_refused_apply_shows_in_the_dialog(page, component_origin):
     dialog.get_by_role("button", name="Apply").click()
     error = dialog.locator("[data-confirm-error]")
     visible(error)
-    assert "Upload the image again." in error.inner_text()
+    assert "Reload the page, then upload the image again." in error.inner_text()
     dialog.get_by_role("button", name="Cancel").click()
     hidden(dialog)
     assert page.locator("#artwork-outcome").inner_text() == ""

@@ -68,14 +68,19 @@ from .request_patch import build_candidate
 
 SALT = "stewardship-artwork-preview-v1-"
 # Why an Apply was refused because its change went stale, by change kind.
+# The slots' forms keep the version the page was loaded at (a refusal in
+# the review dialog never redraws them, as on every dialog editor), so each
+# message says to reload first; otherwise the next upload or removal would
+# be refused again as a stale page.
 STALE = {
     "image": _(
         "This upload expired, or the settings changed after it was uploaded, "
-        "so it was not used. Upload the image again."
+        "so it was not used. Reload the page, then upload the image again."
     ),
     "remove": _(
         "The settings changed after this removal was reviewed, so the image "
-        "was not removed. Choose Remove this image again."
+        "was not removed. Reload the page, then choose Remove this image "
+        "again if the slot still shows an image."
     ),
 }
 # Why a review address can no longer be reviewed, by change kind.
@@ -83,12 +88,12 @@ UNREVIEWABLE = {
     "image": _(
         "This uploaded image can no longer be reviewed: it was already "
         "applied, expired after a day, or the settings changed since it was "
-        "uploaded. Upload the image again."
+        "uploaded. Reload the page, then upload the image again."
     ),
     "remove": _(
         "This removal can no longer be reviewed: the slot has no image to "
-        "remove now, or the settings changed since. Choose Remove this image "
-        "again if the slot still shows one."
+        "remove now, or the settings changed since. Reload the page, then "
+        "choose Remove this image again if the slot still shows an image."
     ),
 }
 SLOT_LABELS = {
