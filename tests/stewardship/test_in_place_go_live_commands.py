@@ -33,7 +33,7 @@ def in_place_form(text, key):
             "go-live-readiness.html",
             "readiness-check",
             "{% url 'admin:go_live' %}#readiness-preview",
-            "Readiness checked.",
+            "Readiness checked: every check passed.",
             None,
         ),
         (
@@ -120,10 +120,12 @@ def test_every_go_live_post_form_is_in_place_except_start_cleanup():
         assert [form for form in plain if 'value="cleanup"' not in form] == [], name
 
 
-def test_check_readiness_reads_out_its_result():
-    """Check readiness announces the check's own result line, whichever of
-    passed or failed the page draws, both under the one id it names."""
+def test_check_readiness_reads_out_its_overall_result():
+    """Check readiness announces the overall result, never only the public
+    web address's: the line saying why cleanup can't start yet whenever it
+    is drawn, else its own message that every check passed."""
     text = (TEMPLATES / "go-live-readiness.html").read_text()
     form = in_place_form(text, "readiness-check")
-    assert 'data-in-place-message-from="origin-check"' in form
-    assert text.count('id="origin-check"') == 2
+    assert 'data-in-place-message-from="cleanup-unavailable"' in form
+    assert text.count('id="cleanup-unavailable"') == 1
+    assert "origin-check" not in text

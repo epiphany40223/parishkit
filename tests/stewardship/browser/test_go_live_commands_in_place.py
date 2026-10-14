@@ -144,7 +144,7 @@ def test_check_readiness_is_in_place(page, component_origin):
         "Check readiness and public web address",
         "/go-live",
     )
-    announced(page, "The public web address passed the URL and DNS checks.")
+    announced(page, "Readiness checked: every check passed.")
     stayed(page, offset)
     focused(page.get_by_role("button", name="Check readiness and public web address"))
     assert len(posts) == 1 and "action=verify" in posts[0]
@@ -153,6 +153,27 @@ def test_check_readiness_is_in_place(page, component_origin):
     greyed(start)
     page.get_by_label("I acknowledge", exact=False).check()
     available(start)
+
+
+def test_check_readiness_announces_a_failed_check(page, component_origin):
+    """When the public web address passes but another check fails, Check
+    readiness reads out why cleanup can't start yet, never only that the
+    address passed, so a screen-reader user is not told readiness passed."""
+    offset, posts = command(
+        page,
+        component_origin,
+        GO_LIVE,
+        "Check readiness and public web address",
+        "/go-live-problems",
+    )
+    announced(page, "Cleanup can't start yet. Fix the configuration and data checks")
+    stayed(page, offset)
+    from playwright.sync_api import expect
+
+    expect(page.locator(LIVE)).not_to_contain_text("passed")
+    visible(page.get_by_text("The public web address passed", exact=False))
+    focused(page.get_by_role("button", name="Check readiness and public web address"))
+    assert len(posts) == 1
 
 
 @pytest.mark.parametrize(

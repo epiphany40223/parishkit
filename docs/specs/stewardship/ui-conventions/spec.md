@@ -438,8 +438,9 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   own address this way rather than reloading it; Prepare Family links keeps
   the history page shown, and a disclosure such as Technical details stays
   open because only the list inside it is a region. Their command buttons
-  post in place too: Check readiness and public web address (its result
-  line is read out and focus returns to Check), Testing cleanup's Retry and
+  post in place too: Check readiness and public web address (focus returns
+  to Check, and the overall result is read out: why cleanup can't start yet
+  when any check failed, else that every check passed), Testing cleanup's Retry and
   Cancel, Prepare inactive Family links and each preparation's Cancel, Retry
   and Retry disposal, and Retry failed mail preparation. A button that is
   gone once its request is taken hands focus to the page's Refresh link just
