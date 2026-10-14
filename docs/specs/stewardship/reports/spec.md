@@ -834,7 +834,8 @@ the system is in Production and the Family is in the current campaign with a
 code. A signed-in Admin's refusal is audited as a denied `family_form_opened`
 (the Admin and the Family asked for, no reason). The POST carries the
 address of the page it was clicked on as `next`, and Back from the new tab
-returns there: only the Family directory (with its query, so its filters,
+returns there: only the Active parishioner family directory (with its
+query, so its filters,
 sort and page survive) or this Family's own timeline is accepted; anything
 else, including another host, falls back to the timeline, so `next` is never
 an open redirect. It stores a single-use hand-off in Valkey for one minute, keyed by the
@@ -905,7 +906,8 @@ PDF, with the export time zone), the shared export lifecycle's
 the page's mode to `reports/families/<family>/exports/`, which only an
 Administrator may use, as only an Administrator sees the full timeline;
 Staff get no form, and their post is denied. The file can hold the Family's
-live code, so, like the Family directory's exports, creating or regenerating
+live code, so, like the Active parishioner family directory's exports,
+creating or regenerating
 it needs a Google sign-in within five minutes
 ([#547](https://github.com/epiphany40223/parishkit/issues/547)); a stale
 sign-in gets the step-up page, which returns to the timeline, and nothing is

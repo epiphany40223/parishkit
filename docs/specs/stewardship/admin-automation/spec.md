@@ -2474,8 +2474,9 @@ search (and a page or page size) is refused, since a search's text would name a
 Family in the shell's history and the process list (a default, pending
 Administrator confirmation).
 
-`export directory` and `export postal` (PR 8f) are the Family directory's
-export form, for the Family-code directory and the mail merge, through
+`export directory` and `export postal` (PR 8f) are the Active parishioner
+family directory's export form, for the Family-code directory and the
+mail merge, through
 its own service, `create_directory_export`. As on the page, the mail merge
 always uses reach `mail` ([mailing columns](../reports/spec.md#mailing-columns)),
 so `export postal` accepts `--filter reach=mail` or `reach=any` and refuses
@@ -2929,7 +2930,7 @@ them is refused like any other malformed schedule, without echoing it
 Its preview lists the same differences the page's review does. `integration schedule-preview`
 takes the same option for a proposed schedule, or reads the applied one
 without it, and its JSON document carries the page's seven days, cost and
-freshness. Both follow the ParishSoft settings page's
+freshness. Both follow the ParishSoft page's
 [live checks and saving](../admin-portal/spec.md#live-checks-and-saving).
 
 `integration list` is the Integrations page: the applied configuration's
@@ -3360,8 +3361,9 @@ exactly the commands that exist.
   `digest weekly-request`, and later `digest list`). **PR 8e:** the Family-level exports that
   create an export record without the Family keys (`export financial`,
   `export information`, `export ministry`, `export ministry-packet`).
-  **PR 8f:** the Family directory's exports (`export directory`, `export
-  postal`). **PR 8g:** the one-Family timeline export (`export
+  **PR 8f:** the Active parishioner family directory's exports (`export
+  directory`, `export postal`). **PR 8g:** the one-Family timeline
+  export (`export
   family-timeline`, with the page's export form and migration 0063).
   **PR 8h:** the exact daily exports (`export exact …`), the Census changes
   download (`export census`), then the in-memory Limitations download

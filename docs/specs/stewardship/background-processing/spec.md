@@ -1442,7 +1442,7 @@ A held daytime full refresh still runs mid-send once the send outlasts the
 [hold](#deltas-wait-for-a-bulk-family-send). A full refresh also runs on
 initial setup and manual request. Scheduled refreshes
 never overlap: the mutation lease serializes execution and a waiting full load
-absorbs later requests. The Admin home page, the ParishSoft settings page and
+absorbs later requests. The Admin home page, the ParishSoft page and
 the manual refresh page show the last successful full refresh, a newer failed
 one, whether one is running, the last incremental update and when the next
 scheduled full refresh is due (skipping any

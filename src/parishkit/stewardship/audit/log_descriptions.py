@@ -307,11 +307,12 @@ DESCRIPTIONS = {
     ),
     "admin_cmd_export_directory": _(
         "An automation session requested a Family-code directory export, as "
-        "the Family directory's export form does."
+        "the Active parishioner family directory's export form does."
     ),
     "admin_cmd_export_postal": _(
         "An automation session requested a postal mail-merge export, as the "
-        "Family directory's export form does with mailing columns."
+        "Active parishioner family directory's export form does with "
+        "mailing columns."
     ),
     "admin_cmd_export_archive": _(
         "An automation session requested a campaign archive workbook, as Past "

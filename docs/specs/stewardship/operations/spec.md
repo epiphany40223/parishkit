@@ -1629,7 +1629,7 @@ scheduled full refresh is 02:00 tomorrow.
 
 - The alarm, the bulk-send hold and the Admin home page's problem line use
   the last full refresh and the out-of-date rule.
-- Home, the refresh page, the ParishSoft settings page, the daily digest and
+- Home, the refresh page, the ParishSoft page, the daily digest and
   the `source` member of `pk-admin status` (see the
   [automation guide](../../../guides/stewardship-admin-automation.md#status))
   show "data as of" and the connection line, and, when the data is out of
