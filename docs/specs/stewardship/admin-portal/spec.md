@@ -5319,20 +5319,11 @@ time, and the
 `system health` command. Three of the four actions have landed: **Take a
 backup now** (PR 3), **Accept this change once** (PR 5a to 5c, with its
 example Families) and **Turn off debug logging** (PR 6a
-and 6b; Testing's **Allow debug logging again** is not built yet). For
+and 6b, with Testing's **Allow debug logging again** in PR 6c). For
 **Clear the halt** (PR 4) no panel offers a button yet; its problem sentence
 names the runbook step instead, and that step, listed under
 [runbook steps the page replaces](#runbook-steps-the-page-replaces), remains
 the way to do it. A halt's kind arrives with PR 4.
-`system health` command. Two of the four actions have landed: **Take a
-backup now** (PR 3) and **Turn off debug logging** (PR 6a and 6b, with
-Testing's **Allow debug logging again** in PR 6c). For the other two (PR 4
-and PR 5) no panel offers a button yet; each problem sentence names the
-runbook step instead, and the steps listed under
-[runbook steps the page replaces](#runbook-steps-the-page-replaces) remain
-the way to do those things. Some panel details arrive with those pull
-requests too: a halt's kind (PR 4) and the example Families of a refused
-change (PR 5).
 
 ### System health page
 
