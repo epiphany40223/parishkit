@@ -1509,6 +1509,10 @@ a phone-width page scroll sideways; a table cell grows to fit its buttons,
 and a wide table scrolls inside its own region. A browser test checks the
 buttons and headings on representative pages at 320 px and 1280 px.
 
+Button labels don't end in an ellipsis, even when a review step follows
+(Administrator, 2026-10-13,
+[#1268](https://github.com/epiphany40223/parishkit/issues/1268)).
+
 ### Shared visual style
 
 The portal and the emails share one visual style

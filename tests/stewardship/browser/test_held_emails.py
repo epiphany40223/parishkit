@@ -68,7 +68,9 @@ def test_preview_and_settle_in_place(page, component_origin, width):
     assert summary.evaluate(
         "e => e.scrollHeight <= Math.ceil(parseFloat(getComputedStyle(e).minHeight))"
     )
-    assume = region.get_by_role("button", name="Assume these were sent…").first
+    assume = region.get_by_role(
+        "button", name="Assume these were sent", exact=True
+    ).first
     before = _top(assume)
     assume.click()
     confirm = region.get_by_role("button", name="Confirm: assume sent")
@@ -102,8 +104,10 @@ def test_refusals_answer_inside_the_region(page, component_origin):
     page.goto(component_origin + PAGE)
     kept = _not_reloaded(page)
     region = page.locator(REGION)
-    resend = region.get_by_role("button", name="Send these again…").first
-    assume = region.get_by_role("button", name="Assume these were sent…").nth(1)
+    resend = region.get_by_role("button", name="Send these again", exact=True).first
+    assume = region.get_by_role(
+        "button", name="Assume these were sent", exact=True
+    ).nth(1)
     before = (_top(resend), _top(assume))
     resend.click()
     expect(region.get_by_text("confirm it's you with Google first")).to_be_visible()
@@ -114,17 +118,17 @@ def test_refusals_answer_inside_the_region(page, component_origin):
 
 
 def test_a_blocked_resend_is_unavailable_with_its_reason(page, component_origin):
-    """ "Send these again…" is greyed out, named by a visible reason."""
+    """ "Send these again" is greyed out, named by a visible reason."""
     page.goto(component_origin + BLOCKED)
     region = page.locator(REGION)
-    buttons = region.get_by_role("button", name="Send these again…")
+    buttons = region.get_by_role("button", name="Send these again", exact=True)
     expect(buttons).to_have_count(2)
     for index in range(2):
         expect(buttons.nth(index)).to_be_disabled()
     expect(region.get_by_text("An earlier restore still holds")).to_be_visible()
     expect(region.get_by_text("can only be assumed sent")).to_be_visible()
     expect(
-        region.get_by_role("button", name="Assume these were sent…").first
+        region.get_by_role("button", name="Assume these were sent", exact=True).first
     ).to_be_enabled()
 
 

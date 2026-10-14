@@ -154,7 +154,7 @@ def test_home_links_to_held_emails_until_each_is_decided(released):
         # Families 2 and 3 have undecided invitations; only Family 3 can be
         # emailed, so only its reminders are counted as kept back.
         assert "1 Family gets no reminders until its held invitation" in text
-        assert "Assume these were sent…" in text
+        assert "Assume these were sent" in text
         for definition in ScheduleDefinition.objects.filter(
             restoredeliveryhold__isnull=False
         ).distinct():
