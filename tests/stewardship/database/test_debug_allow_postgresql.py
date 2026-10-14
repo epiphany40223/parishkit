@@ -123,7 +123,7 @@ def test_a_switch_cleared_by_someone_else_is_stale(auth_service, google):
     browser, _ = signed_in()
     key = key_of(post(browser, action="debug_allow_preview"))
     with connection.cursor() as cursor:
-        cursor.execute("SELECT public.stewardship_debug_off_clear_v1()")
+        cursor.execute("SELECT public.stewardship_debug_off_clear_v2()")
     answer = post(browser, action="debug_allow_confirm", key=key)
     assert answer.status_code == 409
     assert 'data-debug-allow-refused="busy"' in answer.content.decode()

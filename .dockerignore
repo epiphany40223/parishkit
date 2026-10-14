@@ -122,6 +122,7 @@
 !src/parishkit/stewardship/schema/migrations/0095_canonical_timezone.sql
 !src/parishkit/stewardship/schema/migrations/0096_proposal_review.sql
 !src/parishkit/stewardship/schema/migrations/0097_resume_sender_check.sql
+!src/parishkit/stewardship/schema/migrations/0098_debug_off_clear_subject.sql
 !src/parishkit/stewardship/schema/due_work_health.sql
 !src/parishkit/stewardship/schema/family_dispatch.sql
 !src/parishkit/stewardship/schema/production.sql

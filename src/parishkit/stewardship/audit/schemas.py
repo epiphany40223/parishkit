@@ -161,8 +161,8 @@ class Action(StrEnum):
     # The debug-off switch cleared: by an Administrator in Testing (Allow
     # debug logging again, ADM-13 PR 6c; the subject is the switch), or by
     # the server operator's offline ``debug-off-clear``, recorded with actor
-    # kind ``operator`` and no subject (that login cannot read the switch it
-    # cleared).
+    # kind ``operator``; both name the switch as the subject (the operator's
+    # definer returns the id it cleared, #1229).
     DEBUG_LOGGING_ALLOWED = "debug_logging_allowed"
     # Accept this change once (ADM-13 PR 5b); the subject is the acceptance.
     SOURCE_DROP_ACCEPTED = "source_drop_accepted"
