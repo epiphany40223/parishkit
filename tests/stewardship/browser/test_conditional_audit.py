@@ -348,4 +348,9 @@ def test_locked_followup_bulk_bar_stays_unavailable_with_why(page, component_ori
                 assert control.is_disabled()
                 described = control.get_attribute("aria-describedby").split()
                 assert "followup-locked" in described
+                # The locked notice takes precedence: the bar's none hint
+                # (no row to tick) never names a held page's buttons.
+                assert len(described) == 1
+        hint = page.locator("[data-selection-hint]")
+        assert "No request on this page" not in (hint.text_content() or "")
         page.evaluate(RESTORE)

@@ -612,13 +612,17 @@ def read_detail(message_id, parameters):
     )
     held = []
     if not can_resolve and campaign.state != "archived":
-        # What the page would offer once the campaign work finishes.
+        # What the page would offer once the campaign work finishes. The
+        # resend admission also refuses while campaign work holds the
+        # campaign, so the retry is held with the rest, named by the same
+        # notice, rather than drawn apart with a reason that misses the
+        # real blocker.
         held = offered_actions(
             message["state"],
             task and task["state"],
             campaign_state=campaign.state,
             can_resolve=True,
-            can_retry=can_retry,
+            can_retry=True,
         )[1:]
     notes, notes_following = window.rows(
         DeliveryResolution.objects.filter(message_id=message_id)
@@ -854,7 +858,11 @@ def read_refusal(refusal_id, parameters):
 
 
 # Why a refused address cannot be cleared now (read_refusal), in the order
-# the page names them: the first that applies.
+# the page names them: the first that applies. "busy" covers every refusal
+# of the campaign's export admission (stewardship_export_admitted_v1):
+# usually campaign work under way, but also no active configuration, no
+# credentials row or a held go-live gate, so the page words it as the
+# campaign not accepting changes rather than naming one cause.
 CLEAR_BLOCKS = ("no_campaign", "archived", "busy", "stale")
 
 

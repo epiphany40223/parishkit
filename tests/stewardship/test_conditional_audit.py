@@ -193,20 +193,22 @@ def test_held_decisions_on_the_mail_message_page_are_unavailable():
     assert "<form" not in section.split("</section>")[0]
 
 
-def test_an_unavailable_retry_shows_without_other_commands():
-    """With no other command offered, the unavailable retry still fills the
-    Resolve section rather than leaving it empty (#1331)."""
+def test_no_retry_panel_without_other_commands():
+    """With no command offered (an archived campaign), the unavailable retry
+    is not drawn on its own, so its reason never misnames the blocker; held
+    decisions carry the retry with the held notice instead (#1331)."""
     html = render_to_string(
         "stewardship/delivery.html",
         {
             "delivery": {"id": uuid4(), "state": "permanent_failure", "version": 1},
             "commands": [],
             "retry_unavailable": True,
-            "decisions": True,
+            "decisions": False,
             "retry_label": "Retry failed delivery",
         },
     )
-    unavailable(html, "Retry failed delivery", "retry-unavailable")
+    assert "retry-unavailable" not in html
+    assert 'id="resolve-heading"' not in html
 
 
 @pytest.mark.parametrize(
@@ -232,7 +234,7 @@ def test_a_refusal_clearance_names_its_first_missing_condition(flags, reason):
     [
         ("no_campaign", "there is no current campaign"),
         ("archived", "the current campaign is archived"),
-        ("busy", "other campaign work"),
+        ("busy", "the campaign is not accepting changes now"),
         ("stale", "up-to-date parish data from ParishSoft"),
     ],
 )

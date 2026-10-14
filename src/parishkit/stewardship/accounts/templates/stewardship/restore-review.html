@@ -20,7 +20,6 @@
   opened it (data-in-place-fallback).
 {% endcomment %}<section class="flow" id="restore-review" data-in-place-region data-keep-height aria-labelledby="restore-review-heading">
 <h2 id="restore-review-heading" class="visually-hidden">{% translate "Review" %}</h2>
-{# Settling and releasing need a recent sign-in: until then their buttons are unavailable, named by this notice (#1331). A refused step's own step-up (the outcome, after the panel's controls) takes the id instead, so nothing above the controls appears on a click. #}{% if not fresh and step.refused != "reauthenticate" %}{% translate "deciding on held emails or releasing the site" as step_up_action %}{% include 'stewardship/components/step-up-notice.html' with action=step_up_action next=page_url id="restore-fresh-reason" %}{% endif %}
 
 <div class="panel">
 <h2>{% translate "What was restored" %}</h2>
@@ -57,6 +56,7 @@
 <p class="help" id="restore-release-reason" data-restore-release-reason>{% if review.needed %}{% blocktranslate count n=review.needed trimmed %}{{ n }} email still needs a hold. Find the emails that may have gone out first, so you can decide on each before release.{% plural %}{{ n }} emails still need a hold. Find the emails that may have gone out first, so you can decide on each before release.{% endblocktranslate %}{% elif release_refusal == "blocked" %}{% translate "The site can't be released yet: a campaign change or a purge is still running. Ask the server operator." %}{% else %}{% translate "When you have settled what you can, release the site." %}{% endif %}</p>{% endif %}
 {% if step.panel == "release" %}{% include "stewardship/components/restore-review-outcome.html" %}{% endif %}
 </div>
+{# Settling and releasing need a recent sign-in: until then their buttons are unavailable, named by this notice (#1331). It is drawn last in the region, after every control, so it appearing on an in-place answer once the sign-in has aged (a Cancel, a Check again) moves nothing under the pointer; a refused step's own step-up (the outcome, after the panel's controls) takes the id instead. #}{% if not fresh and step.refused != "reauthenticate" %}{% translate "deciding on held emails or releasing the site" as step_up_action %}{% include 'stewardship/components/step-up-notice.html' with action=step_up_action next=page_url id="restore-fresh-reason" %}{% endif %}
 </section>
 <form method="post" action="{% url 'admin:logout' %}">{% csrf_token %}{% button type="submit" variant="secondary" %}{% translate "Sign out" %}{% endbutton %}</form>
 {% endblock %}

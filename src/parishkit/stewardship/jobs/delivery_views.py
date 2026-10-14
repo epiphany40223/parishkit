@@ -417,7 +417,7 @@ def delivery_detail(request, message_id):
             # An unavailable retry, or a held decision, is a decision too: it
             # is shown, greyed, in the "Resolve this email" section where it
             # would sit (#563).
-            decisions=data["retry_unavailable"]
+            decisions=(data["retry_unavailable"] and bool(data["actions"]))
             or bool(data["held"])
             or any(action != "note" for action in data["actions"]),
             commands=[

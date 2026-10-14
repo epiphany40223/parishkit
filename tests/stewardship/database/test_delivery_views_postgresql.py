@@ -1173,6 +1173,12 @@ def test_held_decisions_are_shown_unavailable_and_still_refused(
         "Confirm delivery using external evidence</button>"
     ) in section
     assert "<form" not in section
+    # The resend is held with the rest, named by the same notice (#1331).
+    assert (
+        'disabled aria-describedby="delivery-held">'
+        "Authorize potentially duplicate resend</button>"
+    ) in section
+    assert "retry-unavailable" not in html
     assert response.status_code != 302
     assert DeliveryResolution.objects.count() == 0
 
@@ -1203,6 +1209,60 @@ def test_clear_is_unavailable_while_campaign_work_holds_it(response_service, goo
         )
     assert 'id="refusal-clear-unavailable"' in html
     assert "other campaign work" in html
+    assert (
+        'disabled aria-describedby="refusal-clear-unavailable">'
+        "Clear verified refusal</button>"
+    ) in html
+    assert response.status_code != 302
+    assert RecipientRefusalResolution.objects.count() == 0
+
+
+@pytest.mark.parametrize(
+    ("change_sql", "words"),
+    [
+        (
+            "UPDATE stewardship_campaign_credentials SET population_dirty=true",
+            "it needs up-to-date parish data from ParishSoft",
+        ),
+        (
+            "UPDATE stewardship_campaign SET state='archived'",
+            "the current campaign is archived",
+        ),
+        (
+            "UPDATE stewardship_system_configuration SET current_campaign_id=NULL",
+            "there is no current campaign",
+        ),
+    ],
+)
+def test_clear_names_each_missing_condition(
+    response_service, google, change_sql, words
+):
+    """Stale ParishSoft data, an archived campaign or no current campaign each
+    show Clear unavailable with that reason; a posted clearance is still
+    refused (#1331). The state is loaded as offline input."""
+    harness = activate_response_service(response_service)
+    refusal = remember(refused(harness))
+    browser, _ = signed_in()
+    path = f"/admin/mail/refusals/{refusal.pk}/"
+    current = SourceCurrent.objects.get()
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute("SET LOCAL session_replication_role = replica")
+        cursor.execute(change_sql)
+        cursor.execute("SET LOCAL session_replication_role = origin")
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        html = browser.get(path).content.decode()
+        response = browser.post(
+            path + "clearance/",
+            dict(
+                command_id=str(uuid4()),
+                source_snapshot_id=str(current.snapshot_id),
+                source_generation=str(current.generation),
+                verified="yes",
+                note="Called the Family.",
+            ),
+            HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
+        )
+    assert words in html
     assert (
         'disabled aria-describedby="refusal-clear-unavailable">'
         "Clear verified refusal</button>"

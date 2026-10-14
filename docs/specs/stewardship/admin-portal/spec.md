@@ -3406,7 +3406,13 @@ campaign change still running. Counts name only emails
 that would be sent now; holds of Families that cannot be emailed, reminders
 waiting for an undecided invitation, and invitations only a deliverability
 change would retry are shown apart. "Release the site" stays unavailable, with
-its reason beside it, until no email still needs a hold. Its preview says what
+its reason beside it, until no email still needs a hold and no purge or
+campaign change is running (both read when the page is drawn, as the release
+reads them). Without a sign-in from the last five minutes, every decision and
+Release are unavailable, named by the shared step-up notice, which is drawn
+last in the region so its appearing on a later in-place answer moves nothing
+([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates), #1331);
+the Held emails page does the same. Its preview says what
 Families get as things stand (open, mail paused, not yet open, Testing or
 closed), how many held emails stay held, and how many Families' reminders an
 undecided invitation keeps back, then releases and ends on Home. Every control
@@ -4108,7 +4114,13 @@ its browser-local time and the Administrator's note; it
 links that Family's refused addresses and the recording email, and offers
 the verified clearance: a required note saying how the mailbox was
 verified and a required confirmation, available only with current
-ParishSoft data and a current campaign. **Clear verified refusal** is
+ParishSoft data and a current campaign. While the clearance cannot be made,
+the form is replaced by **Clear verified refusal** shown unavailable, named
+by the first reason: no current campaign, an archived campaign, a campaign
+not accepting changes (usually other campaign work), or ParishSoft data the
+campaign has not taken in
+([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates), #1331).
+Otherwise **Clear verified refusal** is
 unavailable until both are filled in, and clearing acts
 [in place](#in-place-controls): the page's answer replaces the clearance
 region, which then shows the resolution with focus on its heading. A

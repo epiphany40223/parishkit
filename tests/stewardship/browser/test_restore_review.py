@@ -18,6 +18,7 @@ from .restore_review_components import (
     RESEND_PREVIEW,
     REVIEWING,
     SETTLED,
+    STALE,
     STEP_UP,
     SUPERSEDED,
     TESTING,
@@ -379,3 +380,30 @@ def test_closing_a_preview_at_the_foot_keeps_the_page_height(
     )
     focused = page.evaluate_handle("document.activeElement")
     assert "Check again for emails" in focused.text_content()
+
+
+def test_a_sign_in_that_ages_during_a_preview_moves_nothing(page, component_origin):
+    """Cancel answered after the sign-in has aged draws the step-up notice
+    last in the region, so no control above it moves (#1331)."""
+    _routed(
+        page,
+        component_origin,
+        {"group-preview": (200, GROUP_PREVIEW), "cancel": (200, STALE)},
+        start=REVIEWING,
+    )
+    page.goto(component_origin + PAGE)
+    kept = _not_reloaded(page)
+    region = page.locator(REGION)
+    assume = region.get_by_role("button", name="Assume these were sent", exact=True)
+    check = region.get_by_role(
+        "button", name="Check again for emails that may have gone out"
+    )
+    before = (_top(assume.first), _top(assume.nth(1)), _top(check))
+    assume.first.click()
+    region.get_by_role("button", name="Cancel").click()
+    expect(region.locator("#restore-fresh-reason")).to_be_visible()
+    expect(assume.first).to_be_disabled()
+    assert (_top(assume.first), _top(assume.nth(1)), _top(check)) == pytest.approx(
+        before, abs=1
+    )
+    assert kept()

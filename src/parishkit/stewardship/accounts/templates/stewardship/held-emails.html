@@ -20,8 +20,9 @@
 <h2 id="held-emails-heading" class="visually-hidden">{% translate "Held emails by send" %}</h2>
 {% if not held.groups %}<p data-held-none>{% translate "No held emails. A restore holds emails only while its review is open; none is held for this campaign." %}</p>
 {% else %}<p class="reserve-lines-wrap" data-held-summary>{% if held.reminders_blocked %}<strong>{% blocktranslate count n=held.reminders_blocked trimmed %}{{ n }} Family gets no reminders until its held invitation is decided.{% plural %}{{ n }} Families get no reminders until their held invitations are decided.{% endblocktranslate %}</strong>{% elif not held.undecided %}{% translate "Every held email is decided." %}{% endif %}</p>
-{# Deciding needs a recent sign-in: until then the buttons are unavailable, named by this notice; a refused step's own step-up (after the table) takes the id instead (#1331). #}{% if held.undecided and not fresh and step.refused != "reauthenticate" %}{% translate "deciding on held emails" as step_up_action %}{% include 'stewardship/components/step-up-notice.html' with action=step_up_action next=page_url id="restore-fresh-reason" %}{% endif %}
 {% include 'stewardship/components/held-email-groups.html' with groups=held.groups after_release=True restore_id=held.restore_id region_id="held-emails" %}
-{% include "stewardship/components/restore-review-outcome.html" %}{% endif %}
+{% include "stewardship/components/restore-review-outcome.html" %}
+{# Deciding needs a recent sign-in: until then the buttons are unavailable, named by this notice, drawn last in the region so it appearing on an in-place answer once the sign-in has aged moves nothing; a refused step's own step-up (after the table) takes the id instead (#1331). #}{% if held.undecided and not fresh and step.refused != "reauthenticate" %}{% translate "deciding on held emails" as step_up_action %}{% include 'stewardship/components/step-up-notice.html' with action=step_up_action next=page_url id="restore-fresh-reason" %}{% endif %}
+{% endif %}
 </section>
 {% endblock %}

@@ -85,9 +85,9 @@ form's heading, so the form draws no h3 of its own there.{% endcomment %}
   {% button type="submit" aria-describedby="complete-hint-"|add:command.action %}{{ command.label }}{% endbutton %}<p class="help" id="complete-hint-{{ command.action }}" data-complete-hint hidden></p>
 </form>
 {% endfor %}
-{% if held %}{# While other campaign work holds the email, its decisions stay in view, unavailable and named by why (#1331). #}<div class="panel"><p class="notice" id="delivery-held">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so this email can't be resolved until it finishes or is cancelled." %}</p>
+{% if held %}{# While other campaign work holds the email, its decisions (the retry among them) stay in view, unavailable and named by why (#1331). #}<div class="panel"><p class="notice" id="delivery-held">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so this email can't be resolved until it finishes or is cancelled." %}</p>
 <p>{% for command in held %}{% button type="button" disabled=True aria-describedby="delivery-held" %}{{ command.label }}{% endbutton %}{% if not forloop.last %} {% endif %}{% endfor %}</p></div>{% endif %}
-{% if retry_unavailable %}{# The retry stays where it would sit, unavailable and named by why (#563). #}<div class="panel"><h3>{{ retry_label }}</h3>
+{% if commands and retry_unavailable %}{# The retry stays where it would sit, unavailable and named by why (#563). #}<div class="panel"><h3>{{ retry_label }}</h3>
 <p class="notice" id="retry-unavailable">{% translate "Retry is not available right now. It needs the campaign to be open, campaign email not paused, up-to-date ParishSoft data, and no other email already covering this one." %}</p>
 <p>{% button type="button" disabled=True aria-describedby="retry-unavailable" %}{{ retry_label }}{% endbutton %}</p></div>{% endif %}
 {% if decisions %}</section>{% elif commands %}</details>{% endif %}
