@@ -201,11 +201,16 @@ def test_images_are_reencoded_and_served_inline(auth_service, google, media):
 def test_hostile_uploads_are_refused_and_leave_nothing(
     auth_service, google, media, name, data, message
 ):
-    """Each refusal explains itself; no row, file or audit event remains."""
+    """Each refusal explains itself, beside the field and in the page's error
+    summary (which an in-place Upload focuses and reads out, #519); no row,
+    file or audit event remains."""
     browser, _ = signed_in()
     response = upload(browser, name, data)
     assert response.status_code == 400
-    assert message in unescape(response.content.decode())
+    page = unescape(response.content.decode())
+    assert message in page
+    summary = page.split("data-error-summary", 1)[1].split("</section>", 1)[0]
+    assert message in summary
     assert not HostedFile.objects.exists()
     assert not AuditEvent.objects.filter(event_type="hosted_file_uploaded").exists()
     directory = media / storage.DIRECTORY

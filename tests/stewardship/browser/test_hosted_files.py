@@ -158,6 +158,13 @@ def test_delete_asks_then_redraws_the_library_in_place(
         "document.activeElement.getAttribute('aria-label') === 'Delete parish-picnic'",
     )
     assert rows(page).count() == 3
+    # A file chosen and a name typed in the Upload panel survive the redraw:
+    # the panel is a region only its own answer replaces (data-in-place-own,
+    # #519).
+    page.locator("#id_file").set_input_files(
+        {"name": "flyer.pdf", "mimeType": "application/pdf", "buffer": b"%PDF-1.7"}
+    )
+    page.locator("#id_slug").fill("my-flyer")
     delete.click()
     with page.expect_request(lambda request: request.method == "POST") as sent:
         dialog(page).get_by_role("button", name="Delete", exact=True).click()
@@ -174,6 +181,8 @@ def test_delete_asks_then_redraws_the_library_in_place(
     eventually(page, "document.activeElement.id === 'hosted-file-table'")
     visible(page.locator("main > [role=status]", has_text="Deleted parish-picnic."))
     assert page.evaluate("window.notReloaded === true")
+    assert page.locator("#id_file").evaluate("input => input.files.length") == 1
+    assert page.locator("#id_slug").input_value() == "my-flyer"
     assert not failures
 
 

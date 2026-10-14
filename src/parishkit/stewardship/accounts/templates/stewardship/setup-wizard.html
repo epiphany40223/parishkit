@@ -15,7 +15,7 @@ mouse users the same step name and status on hover. ``stepper_open`` opens the l
 <p class="setup-overview-link"><a href="{% url 'admin:setup' %}">{% translate "Setup overview and cancellation" %}</a></p>
 </div>
 <div class="setup-track" aria-hidden="true">{% for step in wizard.steps %}<span class="setup-track-{{ step.state }}{% if step.current %} setup-track-current{% endif %}" title="{% blocktranslate trimmed with number=step.number total=wizard.total label=step.label %}Step {{ number }} of {{ total }}: {{ label }}{% endblocktranslate %} — {% if step.current %}{% translate "Current step" %} — {% endif %}{{ step.status }}"></span>{% endfor %}</div>
-<details class="setup-stepper-list"{% if stepper_open %} open{% endif %}>
+<details class="setup-stepper-list" id="setup-stepper-list" data-keep-open{% if stepper_open %} open{% endif %}>
 <summary>{% translate "All setup steps" %}</summary>
 <ol class="setup-steps">{% for step in wizard.steps %}
 <li class="setup-step setup-step-{{ step.state }}{% if step.current %} setup-step-current{% endif %}">{% if step.url %}<a href="{{ step.url }}"{% if step.current %} aria-current="step"{% endif %}>{% else %}<span class="setup-step-box"{% if step.current %} aria-current="step"{% endif %}>{% endif %}<span class="setup-step-number" aria-hidden="true">{% if step.state == 'done' %}&#10003;{% else %}{{ step.number }}{% endif %}</span>

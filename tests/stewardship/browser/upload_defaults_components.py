@@ -1,0 +1,236 @@
+"""Hosted file Upload and setup content's defaults at their real addresses.
+
+#519 PR 7c: Upload posts its multipart body to the upload route and Fill in
+/ Reset post to the content list; each server answers with a
+Post/Redirect/Get redirect back to its page, which a route cannot fulfil on
+every engine, so the fixture server answers those (``posts``). A refusal is
+answered by a route in the test with one of the pages here (the view's 400
+re-render). Every page sits at its view's real path, since an in-place
+answer from another path is shown by a full load instead.
+"""
+
+from types import SimpleNamespace
+from uuid import UUID, uuid4
+
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.template.loader import render_to_string
+from django.urls import reverse
+
+from parishkit.stewardship.accounts.admin_editing import summary_errors
+from parishkit.stewardship.accounts.hosted_file_views import (
+    LIBRARY_SORTING,
+    REFUSALS,
+    UploadForm,
+)
+from parishkit.stewardship.accounts.hosted_files import placeholder
+from parishkit.stewardship.accounts.setup_wizard import build
+from parishkit.stewardship.web.tables import paginate
+
+from .step_up_components import render as step_up_page
+
+LIBRARY = reverse("admin:hosted_files")
+UPLOAD = reverse("admin:hosted_file_upload")
+# The id the upload's redirect names (``?uploaded=``).
+UPLOADED_ID = UUID(int=519)
+UPLOADED = f"{LIBRARY}?uploaded={UPLOADED_ID}"
+# The same library whose Upload answers as an ended session does (the
+# fixture server's /redirect-to-login), and one with 2,000 bytes of room.
+ENDED = f"{LIBRARY}?case=ended"
+LIMITS = f"{LIBRARY}?case=limits"
+# Routed answers to UPLOAD, fetched by GET from these addresses.
+REFUSED_TYPE = "/hosted-upload-refused-type"
+REFUSED_SIZE = "/hosted-upload-refused-size"
+STEP_UP = "/hosted-upload-step-up"
+
+CONTENT = reverse("admin:setup_content")
+# Reset posts to its own query, so the fixture server can answer it apart
+# from Fill in at the same path.
+RESET = f"{CONTENT}?case=reset"
+FILLED = f"{CONTENT}?filled_pages=2&filled_emails=1"
+RESET_DONE = f"{CONTENT}?reset_pages=3&reset_emails=4"
+CONTENT_STEP_UP = "/setup-content-step-up"
+
+
+def _row(slug, size=123456):
+    """One unused PDF row shaped as ``hosted_file_views._rows`` builds it."""
+    file = SimpleNamespace(
+        pk=UUID(int=519) if slug == "parish-flyer" else uuid4(),
+        slug=slug,
+        original_name=f"{slug}.pdf",
+        kind="pdf",
+        size=size,
+        width=None,
+        height=None,
+    )
+    return {
+        "file": file,
+        "edit_url": f"/hosted-file-name/{slug}",
+        "link": "/files/" + "D" * 43,
+        "placeholder": placeholder(slug),
+        "image_tag": "",
+        "image": False,
+        "type": "PDF",
+        "uses": [],
+        "missing": False,
+    }
+
+
+# The library's twenty files, enough that the page scrolls.
+ROWS = [_row(f"file-{index:02d}") for index in range(1, 21)]
+# The address the library's Name heading leads to, for the re-sort test.
+BY_NAME = f"{LIBRARY}?" + paginate(ROWS, {}, sorting=LIBRARY_SORTING).heading_query(
+    "name"
+)
+
+
+def _refused(message):
+    """An upload form the view refused with ``message`` at its file field."""
+    form = UploadForm(
+        {"slug": ""},
+        {"file": SimpleUploadedFile("guide.pdf", b"<html>", "application/pdf")},
+    )
+    form.is_valid()
+    form.add_error("file", str(message))
+    return form
+
+
+def _library(context, admin, rows, *, form=None, uploaded=None, sort=None, **values):
+    """The library page listing ``rows`` (sorted by ``sort``), as the view
+    renders it. Each row list is long enough that the page scrolls."""
+    selected = {"sort": sort} if sort else {}
+    form = form or UploadForm()
+    html = render_to_string(
+        "stewardship/hosted-files.html",
+        context
+        | {
+            "admin_chrome": admin,
+            "form": form,
+            "library_full": False,
+            "table": paginate(rows, selected, sorting=LIBRARY_SORTING),
+            "refresh_url": LIBRARY,
+            "uploaded": uploaded,
+            "uploaded_placeholder": placeholder(uploaded.slug) if uploaded else "",
+            "example_link": '<a href="{{ file.guide }}">Guide (PDF)</a>',
+            "example_image": '<img src="{{ file.picnic }}" alt="Picnic" width="600">',
+            "notice": None,
+            "errors": summary_errors(form) if form.is_bound else [],
+            "count": len(rows),
+            "total": sum(row["file"].size for row in rows),
+            "max_files": 100,
+            "max_bytes": 200 * 1024 * 1024,
+        }
+        | values,
+    )
+    return html
+
+
+def _limited():
+    """An upload form whose file may be at most 2,000 bytes (#563)."""
+    form = UploadForm()
+    form.fields["file"].widget.attrs |= {
+        "data-max-bytes": 2000,
+        "data-max-bytes-message": "Choose a file no larger than 2 KB.",
+    }
+    return form
+
+
+def _content(context, admin, *, filled=None, sections=None, fillable=True):
+    """The content list as the view renders it: three Family pages, each
+    Empty until a fill, and the stepper for a draft holding ``sections``."""
+    draft = {
+        "status": {"attempt_id": uuid4(), "state": "collecting", "version": 2},
+        "sections": {},
+        "idle_at": context["deadline"],
+        "absolute_at": context["absolute_deadline"],
+        "watchdog_at": None,
+    }
+    wizard = build(
+        SimpleNamespace(
+            status=SimpleNamespace(state="collecting", attempt_id=uuid4(), version=2),
+            sections=sections or {},
+            source_task_id=None,
+        ),
+        "content",
+    )
+    state = "default" if filled else "empty"
+    labels = ["Family welcome", "Family review", "Thank you", "Pledge form"] * 4
+    groups = [
+        {
+            "kind": kind,
+            "entries": [
+                {
+                    "label": f"{label} {n}",
+                    "url": "/setup-content-edit",
+                    "state": state,
+                }
+                for n, label in enumerate(labels)
+            ],
+        }
+        for kind in ("page", "email")
+    ]
+    return render_to_string(
+        "stewardship/setup-content.html",
+        context
+        | {
+            "admin_chrome": admin,
+            "draft": draft,
+            "wizard": wizard,
+            "groups": groups,
+            "campaign_name": "Sample campaign",
+            "filled": filled,
+            "kept": [],
+            "fillable": fillable,
+        },
+    )
+
+
+def components(context, admin):
+    """Each page as first shown, the pages the redirects lead to, and the
+    refusals a test routes to."""
+    rows = ROWS
+    flyer = _row("parish-flyer")
+    done = {"page_welcome": {"values": {"html": "<p>Welcome</p>"}}}
+    pages = {
+        LIBRARY: _library(context, admin, rows),
+        UPLOADED: _library(context, admin, [flyer, *rows], uploaded=flyer["file"]),
+        ENDED: _library(context, admin, rows).replace(
+            f'action="{UPLOAD}#', 'action="/redirect-to-login#'
+        ),
+        LIMITS: _library(context, admin, rows, form=_limited()),
+        BY_NAME: _library(context, admin, rows, sort="name"),
+        REFUSED_TYPE: _library(context, admin, rows, form=_refused(REFUSALS["type"])),
+        REFUSED_SIZE: _library(
+            context, admin, rows, form=_refused(REFUSALS["too_large"])
+        ),
+        STEP_UP: step_up_page("error", context, admin, next=LIBRARY),
+        CONTENT: _content(context, admin),
+        RESET: _content(context, admin, fillable=False).replace(
+            f'action="{CONTENT}#', f'action="{RESET}#'
+        ),
+        FILLED: _content(
+            context,
+            admin,
+            filled={"action": "filled", "pages": 2, "emails": 1},
+            sections=done,
+            fillable=False,
+        ),
+        RESET_DONE: _content(
+            context,
+            admin,
+            filled={"action": "reset", "pages": 3, "emails": 4},
+            sections=done,
+            fillable=False,
+        ),
+        CONTENT_STEP_UP: step_up_page("error", context, admin, next=CONTENT),
+    }
+    return {path: ("text/html", body) for path, body in pages.items()}
+
+
+def posts():
+    """The fixture server's answers: Upload redirects to the library with its
+    notice, Fill in and Reset back to the list with what they did."""
+    return {
+        UPLOAD: (303, UPLOADED, ""),
+        CONTENT: (303, FILLED, ""),
+        RESET: (303, RESET_DONE, ""),
+    }
