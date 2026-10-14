@@ -289,14 +289,15 @@ whose view has the chart's name and is described by its summary, and is
 followed by the collapsed exact-values table, a region named by the table's
 caption. A chart that draws its values in the chart itself leaves that table
 out ([#1266](https://github.com/epiphany40223/parishkit/issues/1266)), and its
-feature spec says so: each bar, or each band of a stacked bar, is labelled
-with its count or dollars and its share (a band too narrow for its label has
-them in the chart's legend instead), and its tooltip and accessible name
-carry the same figures. A pointer shows exact values in tooltips; the view
-takes keyboard focus so a keyboard or screen-reader user hears its name and
-summary, and gets the exact values from the table, or without one from the
-marks' names, not the tooltips. Series are told apart by
-dash pattern as well as color. A layer with nothing to draw (no activity yet,
+feature spec says so: each bar, or each band of a stacked bar, shows its
+figures (its count or dollars, and its share where the chart gives one) on
+or after the mark or in its axis label, a band too narrow for its label
+having them in the chart's legend instead, and its tooltip and accessible
+name carry the same figures. A pointer shows exact values in tooltips; the
+view takes keyboard focus so a keyboard or screen-reader user hears its name
+and summary, and gets the exact values from the table, or without one from
+the marks' names, not the tooltips. Series are told apart by dash pattern as
+well as color. A layer with nothing to draw (no activity yet,
 or no send to mark) is hidden from assistive technology rather than announced
 as an unnamed graphic. In an email the PNG carries the summary as its alt text
 and the table follows it. Times on an axis are the campaign's wall clock

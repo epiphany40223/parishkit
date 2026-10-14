@@ -255,8 +255,9 @@ small ES5 feature check reveals it and never alters the form.
 
 All charts have title, legend, labeled axes with units, accessible color/line
 patterns, hover/focus values, and equivalent data tables or values drawn in
-the chart. They download as PNG or PDF. Dollar/count series on one chart use separate labeled axes rather than
-comparing unlike units on one scale.
+the chart ([chart engine](../reports/spec.md#chart-engine)). They download as
+PNG or PDF. Dollar/count series on one chart use separate labeled axes rather
+than comparing unlike units on one scale.
 
 ## Admin portal interaction
 
