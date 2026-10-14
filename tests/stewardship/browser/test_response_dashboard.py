@@ -297,6 +297,7 @@ TILE_BARS = """() => [...document.querySelectorAll('.stat-tile')].map(tile => {
   const bar = tile.querySelector('.stat-bar progress');
   const t = tile.getBoundingClientRect(), b = bar.getBoundingClientRect();
   return {value: bar.value, max: bar.max,
+          given: Number(bar.getAttribute('value')),
           hidden: bar.closest('[aria-hidden=true]') !== null,
           top: Math.round(t.top), tileBottom: t.bottom, barTop: b.top,
           barBottom: b.bottom, barWidth: b.width, tileWidth: t.width};
@@ -307,9 +308,11 @@ TILE_BARS = """() => [...document.querySelectorAll('.stat-tile')].map(tile => {
 def test_stage_tiles_draw_their_share_bars_at_their_feet(page, component_origin, width):
     """Every tile has a share bar of Invited, at its foot, hidden from AT (#720).
 
-    Invited's bar is full and a share past 100% (6 links followed for 5
-    invited) is full too. Tiles in one row stretch to one height, so their
-    bars line up whatever their labels' wrapping.
+    Invited's bar is full, and so is Link followed, whose share passes
+    100%: the fixture has 6 links followed for 5 invited, so the bar is
+    given 6 and the browser draws it full (its value reads back clamped to
+    5). Tiles in one row stretch to one height, so their bars line up
+    whatever their labels' wrapping.
     """
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + "/response-dashboard")
@@ -321,6 +324,7 @@ def test_stage_tiles_draw_their_share_bars_at_their_feet(page, component_origin,
         (3, 5),
         (3, 5),
     ]
+    assert [bar["given"] for bar in bars] == [5, 6, 4, 3, 3]
     assert all(bar["hidden"] for bar in bars)
     for bar in bars:
         # Inside the tile, near its foot, and nearly as wide as the tile.
