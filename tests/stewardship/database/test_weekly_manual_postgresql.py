@@ -279,6 +279,14 @@ def test_manual_form_requires_csrf_confirmation_and_reviewed_configuration(
                 )
                 assert response.status_code == (409 if stale else 302)
                 assert response["Cache-Control"] == "no-store"
+        if stale:
+            # The refusal links the pages it names (navigation rule 6, #521).
+            for name, label in (
+                ("background", "Background work"),
+                ("deliveries", "Outgoing mail"),
+            ):
+                link = f'<a href="{reverse(f"admin:{name}")}">{label}</a>'
+                assert link.encode() in response.content
         assert WeeklyManualRequest.objects.count() == (0 if stale else 1)
         assert TaskRun.objects.count() == before + (0 if stale else 1)
 
