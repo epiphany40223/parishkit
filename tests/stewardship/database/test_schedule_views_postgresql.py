@@ -20,7 +20,7 @@ from parishkit.stewardship.deployment import ServiceRole
 
 from ..campaign_factory import schedule
 from ..test_schedule_forms import data_for, window_data
-from .auth_builders import signed_in, unguarded
+from .auth_builders import signed_in
 from .campaign_builders import (
     add_draft,
     advance,
@@ -307,31 +307,6 @@ def test_schedule_preview_works_under_web_grants_and_rejects_hidden_changes(
         ).status_code
         == 400
     )
-
-
-def test_archived_campaign_greys_the_links_to_pages_and_emails(auth_service, google):
-    """The date-change page never links to Pages and emails once archived (#1255).
-
-    Pages and emails refuses an archived campaign with the menu's reason, so
-    a refused Review's page (the only date-change page an archived campaign
-    reaches) greys its link to the templates with that reason instead.
-    """
-    from parishkit.stewardship.accounts import admin_navigation as navigation
-
-    store = auth_service.store
-    campaign, path = setup(store)
-    with unguarded(), connection.cursor() as cursor:
-        cursor.execute("UPDATE public.stewardship_campaign SET state='archived'")
-    browser, _ = signed_in()
-    data, indexes = fields(store, campaign, editable=False)
-    data[f"schedules-{indexes['reminder']}-date"] = "not a date"
-    refused = post(browser, path, data)
-    assert refused.status_code == 400, refused.content
-    text = unescape(refused.content.decode())
-    assert 'id="schedule-dates-form"' in text
-    assert 'href="/admin/campaign/content/"' not in text
-    assert 'id="schedule-templates-edit-tip"' in text
-    assert str(navigation.ARCHIVED) in text
 
 
 @pytest.mark.parametrize(

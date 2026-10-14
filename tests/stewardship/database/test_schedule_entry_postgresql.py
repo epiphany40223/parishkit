@@ -40,6 +40,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 LIST = "/admin/campaign/schedules/"
 NEW = "/admin/campaign/schedules/addition/"
 DELETE = "/admin/campaign/schedules/deletion/"
+SETTINGS = "/admin/campaign/settings/"
 CHICAGO = "America/Chicago"
 
 
@@ -940,10 +941,8 @@ def test_a_stale_confirm_after_an_email_edit_adds_no_email(auth_service, google)
     assert refused.status_code == 409
     assert content_count(store) == before
     reminder.refresh_from_db()
-    assert (
-        reminder.current_revision.values["template_version"]
-        == (emails["reminder"]["id"])
-    )
+    sent = reminder.current_revision.values["template_version"]
+    assert sent == emails["reminder"]["id"]
 
 
 def test_a_refused_candidate_names_the_email(auth_service, google, monkeypatch):
@@ -986,3 +985,77 @@ def test_a_refused_candidate_names_the_email(auth_service, google, monkeypatch):
     assert 'id="id_html_error"' in page
     assert 'href="#id_html"' in page
     assert ConfigurationChangeRequest.objects.count() == before
+
+
+def test_an_archived_campaign_refuses_every_schedule_page(auth_service, google):
+    """Every Mail schedules page and save refuses an archived campaign (#1258).
+
+    Each answers 409 with the menu's own reason (ui-conventions,
+    "Unavailable menu pages"), never the held message that says to try
+    again later, by GET and by POST: the list, the date-change review, New,
+    Edit with its inline email editor, the calendar, Delete, the unsaved
+    email's test and the confirmation of a review signed before archiving,
+    on the list or on Campaign settings, which shares the review's salt.
+    Nothing is requested and no email is added, so no page of an archived
+    campaign can lead to an email's editor either.
+    """
+    from django.db import connection
+
+    from parishkit.stewardship.accounts import admin_navigation as navigation
+
+    from .auth_builders import unguarded
+
+    store = auth_service.store
+    _, emails = setup(store)
+    reminder = definition("reminder")
+    edit = f"/admin/campaign/schedules/{reminder.pk}/"
+    browser, _ = signed_in()
+    edited = entry(
+        store,
+        date="2054-10-25",
+        time="09:00",
+        template_version=emails["reminder"]["id"],
+    ) | email_fields(
+        subject="Archived", html="<p>Archived. {{ family_code }} {{ family_url }}</p>"
+    )
+    review = post(browser, edit, edited)
+    assert review.status_code == 200, review.content
+    with unguarded(), connection.cursor() as cursor:
+        cursor.execute("UPDATE public.stewardship_campaign SET state='archived'")
+    before = ConfigurationChangeRequest.objects.count()
+    records = content_count(store)
+    page = {"HTTP_ACCEPT": "text/html", "HTTP_SEC_FETCH_MODE": "navigate"}
+    for path in (
+        LIST,
+        f"{LIST}?end_date=2054-10-20",
+        NEW,
+        edit,
+        "/admin/campaign/schedules/calendar/",
+    ):
+        response = browser.get(path, **page)
+        body = response.content.decode()
+        assert response.status_code == 409, (path, body)
+        assert f"{navigation.ARCHIVED}." in body, path
+        assert "Try again later" not in body, path
+        assert "data-edit-url" not in body, path
+    window = {"action": "preview", "base_digest": store.active().digest}
+    for path, data in (
+        (edit, edited),
+        (NEW, entry(store, kind="reminder", date="2054-10-26", time="09:00")),
+        (LIST, window),
+        (LIST, {"action": "confirm", "preview": token(review)}),
+        # Campaign settings confirms a live end date signed with the same
+        # salt, so it must not confirm the earlier review either.
+        (SETTINGS, {"action": "confirm", "preview": token(review)}),
+        (DELETE, {"base_digest": store.active().digest, "schedule_id": reminder.pk}),
+        ("/admin/campaign/schedules/test-email/", {}),
+    ):
+        response = post(browser, path, data)
+        assert response.status_code == 409, (path, response.content)
+        refusal = json.loads(response.content)["refusal"]["message"]
+        assert refusal == f"{navigation.ARCHIVED}.", path
+    assert ConfigurationChangeRequest.objects.count() == before
+    assert content_count(store) == records
+    reminder.refresh_from_db()
+    sent = reminder.current_revision.values["template_version"]
+    assert sent == emails["reminder"]["id"]

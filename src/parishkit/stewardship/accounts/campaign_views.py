@@ -845,11 +845,14 @@ def _confirm(request, service, actor, campaign_id):
 
     The preview's salt says which change it is and how it is confirmed: a
     live end date (#912) is signed as the Dates and mail schedules change it
-    is; a live Ministry change (#342) records its audit companion with the
-    request; anything else is an ordinary Campaign settings change. The
-    review dialog follows the answer's status, then redraws this page in
-    place. A refusal (an out-of-date preview, settings changed elsewhere) is
-    raised and shown inside the dialog.
+    is, so it is confirmed as that page's own are, refusing an archived
+    campaign (#1258) so that no Mail schedules review signed before
+    archiving is confirmed here instead; a live Ministry change (#342)
+    records its audit companion with the request; anything else is an
+    ordinary Campaign settings change. The review dialog follows the
+    answer's status, then redraws this page in place. A refusal (an
+    out-of-date preview, settings changed elsewhere) is raised and shown
+    inside the dialog.
     """
     from . import campaign_ministry_changes
     from .campaign_end_date import signed_for
@@ -862,7 +865,9 @@ def _confirm(request, service, actor, campaign_id):
             service,
             actor,
             salt=preview_salt(campaign_id),
-            current_scope=lambda service: confirm_scope(service, campaign_id),
+            current_scope=lambda service: confirm_scope(
+                service, campaign_id, page=True
+            ),
         )
     if _signed_with(token, campaign_ministry_changes.SALT):
         return confirm(

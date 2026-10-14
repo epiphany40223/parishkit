@@ -159,7 +159,11 @@ def test_configuration_gone_while_sending_is_unavailable_not_an_error(monkeypatc
         "runtime": lambda: None,
         "principal": lambda *args, **kwargs: None,
         "read_transaction": nullcontext,
-        "schedule_state": lambda service, campaign_id: ((None,), campaign, False),
+        "schedule_state": lambda service, campaign_id, page=False: (
+            (None,),
+            campaign,
+            False,
+        ),
         "_records": lambda state, campaign_id: saved,
         "request_edited": gone,
     }.items():

@@ -495,7 +495,7 @@ MENU = (
     Entry("content_catalog", _ADMIN, _unarchived),
     # Theme artwork (#248) stays editable while the campaign runs.
     Entry("artwork_settings", _ADMIN, _unarchived),
-    Entry("schedule_settings", _ADMIN, _campaign),
+    Entry("schedule_settings", _ADMIN, _unarchived),
     Entry("share_settings", _ADMIN, _structural(FINANCIAL)),
     # Staff mark Families in ParishSoft while the campaign runs (#861).
     Entry("reminder_workgroup", _ADMIN, _unarchived),
@@ -634,6 +634,26 @@ def greyed_page(name, reason, items):
     target = next((page for known, page in FORWARD if known is reason), None)
     forward = (PAGES[target].label, offered[target]) if target in offered else None
     return Greyed(PAGES[name].label, reason, forward)
+
+
+def refuse_greyed(name, configuration, campaign):
+    """Raise the shared reason page when menu entry ``name`` greys ``campaign``.
+
+    For the pages under a greyed-out entry, by any method, which the access
+    gate (``greyed_page``) does not reach: they are refused with the menu's
+    own words (ui-conventions, "Unavailable menu pages"; #1255, #1258). Only
+    the current campaign is judged; any other is left to the caller's own
+    refusal. The caller passes rows read in its own snapshot or work lock,
+    so a change of state cannot slip in between this check and a save.
+    """
+    if campaign is None or configuration.current_campaign_id != campaign.pk:
+        return
+    # Only the campaign's state is judged here; the first-download check is the
+    # access gate's (``greyed_page``), so the data question is answered "yes".
+    state = MenuState(campaign, configuration.mode, lambda: True)
+    reason = MENU_REASONS[name](state)
+    if reason is not None:
+        raise Greyed(PAGES[name].label, reason, None).refusal()
 
 
 def menu(state, may_open):

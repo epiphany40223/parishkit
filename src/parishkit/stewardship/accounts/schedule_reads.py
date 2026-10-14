@@ -7,11 +7,27 @@ applied configuration. Nothing here takes a request or checks authority; the cal
 runs it inside its own snapshot or work lock.
 """
 
+from . import admin_navigation
 from .campaign_views import _state, _target
 from .content_views import _campaign
 
 
-def schedule_state(service, campaign_id):
+def refuse_archived(state, campaign_id):
+    """Refuse an Admin page under Mail schedules for an archived campaign.
+
+    The menu greys Dates and mail schedules once the current campaign is
+    archived (#1258): its schedules never send, so every page under it
+    (list, calendar, New, Edit, date change, Delete and their reviews and
+    confirmations) answers with the menu's own reason, by any method.
+    ``state`` is ``campaign_views._state``, read in the caller's snapshot or
+    work lock. The Admin command line does not call this.
+    """
+    configuration, campaigns = state[0], state[1]
+    campaign = next((row for row in campaigns if row.pk == campaign_id), None)
+    admin_navigation.refuse_greyed("schedule_settings", configuration, campaign)
+
+
+def schedule_state(service, campaign_id, *, page=False):
     """Pin the applied configuration and find the campaign and its editability.
 
     Returns ``(state, campaign, editable)``: ``state`` is
@@ -19,9 +35,13 @@ def schedule_state(service, campaign_id):
     and ``editable`` whether the campaign's dates may still change. Raises
     ``LookupError`` for an unknown campaign and ``UserFacingStale`` when the
     campaign is not the current one or background work holds it, as the
-    page does.
+    page does. A ``page`` (an Admin page, not the command line) first
+    refuses an archived campaign (``refuse_archived``), before the held or
+    non-current refusal, since archiving is permanent.
     """
     state = _state(service)
+    if page:
+        refuse_archived(state, campaign_id)
     campaign = _campaign(state, campaign_id)
     _, editable = _target(state[0], state[1], state[3], campaign_id)
     return state, campaign, editable

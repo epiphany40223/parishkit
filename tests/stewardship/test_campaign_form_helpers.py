@@ -133,12 +133,3 @@ def test_schedules_without_a_saved_email_explain_what_to_do_first():
     )
     assert "No invitation or reminder emails are saved yet." in html
     assert 'href="/admin/setup/content"' in html
-    # An archived campaign's Pages and emails is greyed out in the menu, so
-    # the link is greyed with the menu's reason, never a live link (#1255).
-    greyed = render_to_string(
-        "stewardship/schedule-fields.html",
-        {"schedules": schedules, "templates_reason": "The campaign is archived"},
-    )
-    assert "href=" not in greyed.split("data-schedule-rows")[0]
-    assert 'aria-disabled="true"' in greyed
-    assert "The campaign is archived" in greyed
