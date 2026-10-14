@@ -203,43 +203,86 @@ def test_aria_states_are_spelled_out(value, expected):
 # ---------------------------------------------------------------- labels
 # Button labels don't end in an ellipsis, even when a review step follows
 # (ui-conventions Button labels, #1268). The scan reads only what a button
-# says: the body of each {% button %}, raw <button> and button-class link.
-# Progress text ("Saving…", data-working) and truncation sit outside those
-# bodies, so they need no exception here.
+# says: the body of each {% button %}, raw <button> and button-class link,
+# one {% if %}/{% elif %}/{% else %} branch (or {% plural %} form) at a
+# time. A body that shows only a variable ({{ accept }} in the confirm
+# dialog, {{ submit }}, {{ send }} ...) is followed to where templates set
+# that name: {% translate "…" as accept %} or accept="…" on an
+# {% include %} or {% with %}. Progress text ("Saving…", data-working) and
+# truncation sit outside those bodies, so they need no exception here.
+#
+# Not covered: labels built in Python and passed in a context
+# ({{ command.label }}, {{ action.label }}), and text JavaScript writes
+# into a button. Neither ends in an ellipsis today.
 #
 # ELLIPSIS_ALLOWED names reviewed exceptions, template -> reason; it is
 # empty, and each new entry needs the reason a label must trail off.
 ELLIPSIS_ALLOWED: dict[str, str] = {}
 
+ANY_COMMENT = re.compile(r"{% comment %}.*?{% endcomment %}|{#.*?#}|<!--.*?-->", re.S)
 BUTTON_BODY = re.compile(
     r"{% button\b.*?%}(?P<tag>.*?){% endbutton %}"
     r"|<button\b[^>]*>(?P<raw>.*?)</button>"
     r"""|<a\b[^>]*\bclass=["']button\b[^>]*>(?P<link>.*?)</a>""",
     re.S,
 )
-TRANSLATED = re.compile(r"""{% translate (["'])(.*?)\1""")
+# Where one shown branch ends and the next begins.
+BRANCH = re.compile(r"{% (?:if|elif|else|endif|plural)\b.*?%}", re.S)
+# {% translate "…" as name %} sets a variable and shows nothing.
+TRANSLATE_AS = re.compile(r"""{% translate (["'])(.*?)\1[^%]*?\bas (\w+) %}""")
+TRANSLATED = re.compile(r"""{% translate (["'])(.*?)\1[^%]*%}""")
 MARKUP = re.compile(r"{%.*?%}|{{.*?}}|<[^>]*>", re.S)
+# A branch that shows a single plain variable, such as {{ accept }}.
+ONLY_VARIABLE = re.compile(r"\s*{{\s*(\w+)\s*}}\s*")
+# name="…" (or name=_("…")) on an {% include %} or {% with %} tag.
+SETTING_TAG = re.compile(r"{% (?:include|with)\b.*?%}", re.S)
+SET_LITERAL = re.compile(r"""\b(\w+)=(?:_\()?(["'])(.*?)\2""")
 TRAILING_ELLIPSIS = ("…", "...", "&hellip;")
 
 
-def label_texts(body):
-    """What a button body can show: each translated literal in it (one per
-    {% if %} branch) and its text once every tag and variable is removed."""
-    texts = [literal for _, literal in TRANSLATED.findall(body)]
-    return [*texts, MARKUP.sub("", body)]
+def button_branches(source):
+    """Each piece of text a button in ``source`` can show on its own: one
+    per {% if %} branch or plural form, with every translated literal put
+    in place and {% translate … as name %} assignments dropped."""
+    branches = []
+    for match in BUTTON_BODY.finditer(ANY_COMMENT.sub("", source)):
+        body = match["tag"] or match["raw"] or match["link"] or ""
+        body = TRANSLATED.sub(r"\2", TRANSLATE_AS.sub("", body))
+        branches += BRANCH.split(body)
+    return branches
+
+
+def label_variables(source):
+    """Names a button in ``source`` shows as its whole label."""
+    return {
+        found[1]
+        for branch in button_branches(source)
+        if (found := ONLY_VARIABLE.fullmatch(branch))
+    }
+
+
+# Every variable a portal template's button shows as its whole label; a
+# caller can set it from any template, so the set is shared.
+LABEL_VARIABLES = frozenset().union(
+    *(label_variables((TEMPLATES / name).read_text()) for name in ALL_TEMPLATES)
+)
+
+
+def assigned_labels(source, names):
+    """Literal values ``source`` gives any of ``names``."""
+    source = ANY_COMMENT.sub("", source)
+    found = [text for _, text, name in TRANSLATE_AS.findall(source) if name in names]
+    for tag in SETTING_TAG.findall(source):
+        found += [text for name, _, text in SET_LITERAL.findall(tag) if name in names]
+    return found
 
 
 def trailing_ellipsis_labels(source):
-    """Button labels in a template source that end in an ellipsis."""
-    found = []
-    for match in BUTTON_BODY.finditer(COMMENT.sub("", source)):
-        body = match["tag"] or match["raw"] or match["link"] or ""
-        found += [
-            text.strip()
-            for text in label_texts(body)
-            if text.strip().endswith(TRAILING_ELLIPSIS)
-        ]
-    return found
+    """Button labels in a template source that end in an ellipsis: shown in
+    a button there, or given to a variable some button shows as its label."""
+    texts = [MARKUP.sub("", branch) for branch in button_branches(source)]
+    texts += assigned_labels(source, LABEL_VARIABLES | label_variables(source))
+    return [text.strip() for text in texts if text.strip().endswith(TRAILING_ELLIPSIS)]
 
 
 @pytest.mark.parametrize("name", ALL_TEMPLATES)
@@ -263,6 +306,11 @@ def test_ellipsis_allowances_are_still_needed():
         assert trailing_ellipsis_labels((TEMPLATES / name).read_text()), name
 
 
+def test_the_label_variables_include_the_confirm_dialog():
+    """The variable scan finds the label names the templates use today."""
+    assert {"accept", "submit", "send"} <= LABEL_VARIABLES
+
+
 @pytest.mark.parametrize(
     "source",
     [
@@ -272,10 +320,27 @@ def test_ellipsis_allowances_are_still_needed():
         '{% else %}{% translate "Send" %}{% endif %}{% endbutton %}',
         '<button type="submit">Release the site&hellip;</button>',
         '<a href="/x" class="button button-secondary">Review… </a>',
+        # A plain-text branch, and a blocktranslate branch, before an else.
+        '{% button type="submit" %}{% if a %}Review…{% else %}Send{% endif %}'
+        "{% endbutton %}",
+        '{% button type="submit" %}{% if a %}{% blocktranslate %}Send {{ n }} '
+        "again…{% endblocktranslate %}{% else %}Send{% endif %}{% endbutton %}",
+        '{% button type="submit" %}{% elif b %}Check…{% endif %}{% endbutton %}',
+        '{% button type="submit" %}{% blocktranslate count n=n %}Send one…'
+        "{% plural %}Send {{ n }}{% endblocktranslate %}{% endbutton %}",
+        # A label set where the confirm dialog (or another caller) is used.
+        '{% translate "Revoke…" as accept %}'
+        '{% include "stewardship/components/confirm-dialog.html" %}',
+        '{% include "stewardship/components/confirm-dialog.html" with '
+        'accept="Revoke…" %}',
+        '{% with submit=_("Finish...") %}{% include "x.html" %}{% endwith %}',
+        # A variable this source itself shows in a button.
+        '{% translate "Go…" as go_label %}'
+        '{% button type="submit" %}{{ go_label }}{% endbutton %}',
     ],
 )
 def test_the_label_guard_catches_a_trailing_ellipsis(source):
-    """Each button form, and either branch of an {% if %}, is read."""
+    """Each button form, each branch and each way a label is set is read."""
     assert trailing_ellipsis_labels(source)
 
 
@@ -286,8 +351,16 @@ def test_the_label_guard_catches_a_trailing_ellipsis(source):
         '<p data-working="{% translate \'Working…\' %}">{% translate "Saving…" %}</p>',
         '{% button type="submit" %}{% translate "Use … in a name" %}{% endbutton %}',
         '{% comment %}{% button type="submit" %}Old…{% endbutton %}{% endcomment %}',
+        # An assignment inside a button shows nothing; comments are not markup.
+        '{% button type="submit" %}{% translate "Working…" as w %}Save{% endbutton %}',
+        '{# <button type="submit">Old…</button> #}',
+        '<!-- <button type="submit">Old…</button> -->',
+        # A variable no button shows may end in an ellipsis.
+        '{% translate "Checking…" as status_text %}<p>{{ status_text }}</p>',
+        '{% include "x.html" with message="Saving…" %}',
     ],
 )
 def test_the_label_guard_leaves_other_ellipses_alone(source):
-    """Progress text, a mid-label ellipsis and comments are not labels."""
+    """Progress text, a mid-label ellipsis, assignments that are not labels
+    and comments are not labels."""
     assert not trailing_ellipsis_labels(source)
