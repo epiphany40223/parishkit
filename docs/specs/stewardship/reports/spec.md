@@ -897,8 +897,12 @@ oldest first; the Family's identity line and the Summary panel are its report
 information, with the page's words in the page's order (Family, Family DUID,
 Envelope number, the mode, Counted at, Submitted, Last email, Family code,
 Reminders, Campaign email can reach this Family, Furthest step reached, Last
-seen). As for every shared export, the CSV is the table alone; the XLSX's
-Report information sheet and the PDF's summary cards carry the rest,
+seen). For a Family the data no longer has, Family is blank and a
+ParishSoft status detail right after it reads
+[Not in ParishSoft](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft),
+which the PDF's line under the title shows in place of the name, as the
+page's heading shows its badge. As for every shared export, the CSV is the
+table alone; the XLSX's Report information sheet and the PDF's summary cards carry the rest,
 including the code. The PDF is an infographic sheet
 ([File design](#file-design)). The page builds its timeline in
 Python, so the web supplies that document; the capture trigger admits it only
@@ -1065,17 +1069,18 @@ than show a head as having no email.
 
 Without [mailing columns](#mailing-columns), CSV, XLSX, and PDF exports are
 one header row plus one row per Family, with the page's columns in the
-page's order: Family (the same surname-and-heads name as the page), Family
-DUID, Envelope number, Family code, any Submissions, What to check and
-response dates (see [Response filters](#response-filters)), and Family head
-emails.
+page's order: Family (the same surname-and-heads name as the page),
+ParishSoft status, Family DUID, Envelope number, Family code, any
+Submissions, What to check and response dates (see
+[Response filters](#response-filters)), and Family head emails.
 The list filtered to Families no campaign mail can reach
 adds Phone numbers for follow-up calls, before Family head emails. In the
 [shared words](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft),
-a Family no longer active in ParishSoft has "(Inactive in ParishSoft)"
-after its name, and one the data no longer has reads "Not in ParishSoft" in
-place of a name. The PDF is the [shared design](#file-design)'s table: the
-columns share the page width, and long cells and headings wrap, so a file
+ParishSoft status, the page's badge in a column of its own, reads
+"Inactive in ParishSoft" for a Family no longer active in ParishSoft (its
+name stays in Family) and "Not in ParishSoft" for one the data no longer
+has (Family is blank); it is blank for every other Family. The PDF is the
+[shared design](#file-design)'s table: the columns share the page width, and long cells and headings wrap, so a file
 with many columns still fits the landscape page; times use the parish's
 compact date format and counts are grouped, as on the page. Family
 head emails reads like the Contact details: "Anna Example and Ben Example:
@@ -1703,16 +1708,20 @@ number of changes and the privacy line
 ([#926](https://github.com/epiphany40223/parishkit/issues/926)); like the
 PDF, it does not list the filters. `pk-admin export census` writes these
 same files through the same writer.
-The files have the page's columns in the page's order: Family, Family DUID,
-Who, Member DUID worded as on the page (the DUID, "New Member", or blank for a
-household change), What changed, ParishSoft now, Family's answer, Edited
+The files have the page's columns in the page's order: Family, ParishSoft
+status (the page's
+[Not in ParishSoft](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
+badge in a column of its own, with Family blank, for a Family the data no
+longer has; blank otherwise), Family DUID, Who, Member DUID worded as on
+the page (the DUID, "New Member", or blank for a household change), What changed, ParishSoft now, Family's answer, Edited
 value, How it reaches ParishSoft, Status, Submitted, then Recorded by,
 Recorded at and Note
 ([#932](https://github.com/epiphany40223/parishkit/issues/932),
 [#528](https://github.com/epiphany40223/parishkit/issues/528)). Member DUID
 used to be the files' last column; a spreadsheet that reads the columns by
-position needs updating. The page's Actions column has no file column.
-Fourteen columns share the PDF's one landscape table, so its Submitted and
+position needs updating, as since #1216 does one that reads Family DUID or a
+later column by position. The page's Actions column has no file column.
+Fifteen columns share the PDF's one landscape table, so its Submitted and
 Recorded at times keep the date on one line and the time on the next.
 
 The read-only page and its downloads are enough for staff to apply every

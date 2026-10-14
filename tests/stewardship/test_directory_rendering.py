@@ -152,27 +152,33 @@ def test_head_names_join_naturally(heads, expected):
     assert head_names(heads) == expected
 
 
-def test_code_directory_csv_has_exactly_five_plain_columns():
+def test_code_directory_csv_has_exactly_six_plain_columns():
     """No record column, no metadata row: a header and one row per Family.
 
     Family is the surname, then the heads of household; heads of another
-    surname are shown in full. Family head emails comes last (#604).
+    surname are shown in full. ParishSoft status follows it, blank for a
+    current Family (#1216). Family head emails comes last (#604).
     """
     rows = csv_rows(document([item(family_duid=12345 + index) for index in range(52)]))
     assert rows[0] == [*CODE_HEADINGS, EMAIL_HEADING]
     assert len(rows) == 53
-    # Family, Family DUID, Envelope number (#932, #933) and Family code.
+    # Family, ParishSoft status, Family DUID, Envelope number (#932, #933)
+    # and Family code.
     assert rows[1] == [
         "'=Sample Family, Aaron Williams and Isabelle Williams",
+        "",
         "12345",
         "",
         "ABCDEFGH",
         EMAILS,
     ]
     rows = csv_rows(document([item(envelope="4711")]))
-    assert rows[1][2] == "4711"
+    assert rows[1][3] == "4711"
     rows = csv_rows(document([item(family_name="Williams")]))
     assert rows[1][0] == "Williams, Aaron and Isabelle"
+    # A Family no longer active keeps its name; the mark is its own cell.
+    rows = csv_rows(document([item(family_name="Williams", active=False)]))
+    assert rows[1][:2] == ["Williams, Aaron and Isabelle", "Inactive in ParishSoft"]
 
 
 def test_unreachable_directory_adds_phone_numbers():
@@ -308,7 +314,7 @@ def test_xlsx_and_pdf_carry_the_same_columns_and_details():
     book = load_workbook(output)
     sheet = book["Families"]
     assert tuple(cell.value for cell in sheet[1]) == (*CODE_HEADINGS, EMAIL_HEADING)
-    assert sheet["E2"].value == EMAILS
+    assert sheet["F2"].value == EMAILS
     assert sheet["A2"].value == "=Sample Family, Aaron Williams and Isabelle Williams"
     assert sheet["A2"].data_type == "s"
     assert dict(
@@ -317,7 +323,7 @@ def test_xlsx_and_pdf_carry_the_same_columns_and_details():
     book.close()
     cells = directory_table(report).cells(report.rows[0])
     assert "".join(cells[0]) == "=Sample Family, Aaron Williams and Isabelle Williams"
-    assert cells[3] == ["ABCDEFGH"] and "".join(cells[4]) == EMAILS
+    assert cells[4] == ["ABCDEFGH"] and "".join(cells[5]) == EMAILS
     for postal in (False, True):
         output = io.BytesIO()
         assert render_directory(document([item()], postal=postal), output, format="pdf")
@@ -454,12 +460,12 @@ def test_pdf_table_rows_fit_the_page_with_phones_and_emails():
     ]
     report = document([item(phones=phones)], reach="neither")
     [row] = table_rows(report)
-    assert table.cells(row)[4] == [
+    assert table.cells(row)[5] == [
         "Isabelle Williams (mobile): +1 (202) 555-0123;",
         "Family (home): +1 (202) 555-0100",
     ]
     # CSV and XLSX keep the one-line cell.
-    assert report.rows[0][4].count("\n") == 0
+    assert report.rows[0][5].count("\n") == 0
 
 
 def test_current_head_emails_are_dated_in_the_report_details():
@@ -645,6 +651,7 @@ def test_response_columns_and_checks_follow_the_page():
     )
     assert report.headings == (
         "Family",
+        "ParishSoft status",
         "Family DUID",
         "Envelope number",
         "Family code",
@@ -657,8 +664,9 @@ def test_response_columns_and_checks_follow_the_page():
     output = io.BytesIO()
     render_directory(report, output, format="csv")
     lines = list(csv.reader(io.StringIO(output.getvalue().decode())))
-    assert lines[1][:8] == [
+    assert lines[1][:9] == [
         "'=Sample Family, Aaron Williams and Isabelle Williams",
+        "",
         "12345",
         "0",
         "ABCDEFGH",
@@ -667,7 +675,10 @@ def test_response_columns_and_checks_follow_the_page():
         "2026-10-01 09:00:00-04:00",
         "2026-10-02 09:00:00-04:00",
     ]
-    assert lines[2][:8] == [
+    # A Family the data no longer has: no name, and the shared words in
+    # their own column (#1216).
+    assert lines[2][:9] == [
+        "",
         "Not in ParishSoft",
         "2",
         "",
@@ -680,8 +691,8 @@ def test_response_columns_and_checks_follow_the_page():
     # The PDF prints the same cells as the page: compact times in the
     # display time zone and grouped counts.
     [first, _] = table_rows(report)
-    assert first[4] == "2"
-    assert first[6].startswith("Oct 1, 2026")
+    assert first[5] == "2"
+    assert first[7].startswith("Oct 1, 2026")
     details = dict(report.metadata)
     assert details["Responses counted at"].hour == 9
     assert "Response: Submitted more than once" in details["Filters applied"]

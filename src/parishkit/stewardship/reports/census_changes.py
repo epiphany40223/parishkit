@@ -35,7 +35,9 @@ from parishkit.stewardship.responses.member_requests import REQUEST_FIELDS
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.source.source_status import (
     NAME_NOT_RECORDED,
-    NOT_IN_PARISHSOFT,
+    STATUS_HEADING,
+    family_status,
+    source_status_label,
 )
 from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.content import bounded_text
@@ -80,11 +82,14 @@ ROUTES = ("any", "automatic", "by_hand")
 KINDS = ("any", "contact", "moved", "deceased", "new_member")
 EARLIEST, LATEST = date(2000, 1, 1), date(2999, 12, 31)
 # The download's columns: the page's columns, names and order (#932), so
-# Member DUID sits right after Who in every format. The latest Entered in
+# Member DUID sits right after Who in every format. ParishSoft status follows
+# Family, blank unless the data no longer has it: the page's badge beside the
+# name has a column of its own in a file (#1216). The latest Entered in
 # ParishSoft, Ignore or Reopen (#528) follows Submitted, as on the page: who,
 # when and its note.
 HEADINGS = (
     "Family",
+    STATUS_HEADING,
     "Family DUID",
     "Who",
     "Member DUID",
@@ -99,15 +104,17 @@ HEADINGS = (
     "Recorded at",
     "Note",
 )
-# Relative PDF column widths, in percent of the page's body width. Fourteen
+# Relative PDF column widths, in percent of the page's body width. Fifteen
 # columns share one landscape page, so a compact time ("Sep 30, 2026
 # 12:04 PM") keeps its date on one line and its time on the next, and a
 # status may take two lines ("Being" / "published"); a whole DUID and
-# "Automatic" stay on one line. The resolution's who and note get room of
+# "Automatic" stay on one line, and ParishSoft status, blank on most rows,
+# takes Family's narrow width. The resolution's who and note get room of
 # their own, and the values Families typed and ParishSoft holds share the
 # rest, long ones wrapping within their column.
 PDF_WEIGHTS = {
     "Family": 5,
+    STATUS_HEADING: 5,
     "Family DUID": 7,
     "Who": 5,
     "Member DUID": 7,
@@ -118,9 +125,9 @@ PDF_WEIGHTS = {
     "How it reaches ParishSoft": 8,
     "Status": 8,
     "Submitted": 10,
-    "Recorded by": 9,
+    "Recorded by": 7,
     "Recorded at": 10,
-    "Note": 10,
+    "Note": 7,
 }
 PRIVACY = "Sensitive parish report. Share only with authorized recipients."
 # The report's name: the PDF's page title, the XLSX sheet and workbook title.
@@ -507,7 +514,10 @@ def export_rows(result, zone, *, time_text=iso_time):
     """
     return [
         (
-            row["family_name"] or NOT_IN_PARISHSOFT,
+            # A Family the data no longer has: a blank name and the shared
+            # words in their own column (#1216).
+            row["family_name"] or "",
+            source_status_label(family_status(row["family_name"])),
             str(row["family_duid"]),
             row["who"],
             export_member_duid(row),

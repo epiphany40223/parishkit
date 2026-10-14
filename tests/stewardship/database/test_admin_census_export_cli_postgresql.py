@@ -177,9 +177,12 @@ def test_the_page_s_files_and_json_lines(response_service, google, cli):  # noqa
     assert records["First name"]["family_answer"] == "Requested"
     # The cells are the CSV's.
     assert sorted(
-        [record[key] for key in ("family", "family_duid", "who", "what")]
+        [
+            record[key]
+            for key in ("family", "parishsoft_status", "family_duid", "who", "what")
+        ]
         for record in records.values()
-    ) == sorted([cells[0], cells[1], cells[2], cells[4]] for cells in table[1:])
+    ) == sorted([*cells[:4], cells[5]] for cells in table[1:])
 
     # The filters narrow the file as they do the page's. The command
     # records the page's event and nothing else: no admin_cmd_* event.

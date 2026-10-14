@@ -76,6 +76,16 @@ def test_every_page_carries_the_frame_the_family_and_the_columns(monkeypatch):
         assert any(value.startswith("Requested ") for value in drawn)
 
 
+def test_a_missing_family_s_identity_line_says_not_in_parishsoft(monkeypatch):
+    """The line under the title reads the shared words in place of the
+    blank name, as the page's heading shows its badge (#1216)."""
+    report = document(family=PAYLOAD["family"] | {"name": None})
+    identity = "Not in ParishSoft · Family DUID 42 · Envelope number 7 · Production"
+    assert timeline_pdf.identity_line(report.metadata) == identity
+    # It is part of the identity line, never a summary card of its own.
+    assert "ParishSoft status" in timeline_pdf.NOT_CARDS
+
+
 def test_every_summary_line_the_code_and_every_timeline_line_are_drawn(
     monkeypatch,
 ):

@@ -26,6 +26,7 @@ import re
 from itertools import chain
 from typing import NamedTuple
 
+from parishkit.stewardship.source.source_status import STATUS_HEADING
 from parishkit.stewardship.web import dates
 
 from . import pdf_design as design
@@ -107,10 +108,17 @@ def kind_of(what):
 
 # Report details drawn somewhere other than a summary card: the frame (title,
 # parish, privacy line, request time and its zone), the line under the title
-# (the Family, its DUID and envelope number, the mode) and the timeline
-# heading. The Family code is a card of its own look (``code_card``).
+# (the Family or its ParishSoft status, its DUID and envelope number, the
+# mode) and the timeline heading. The Family code is a card of its own look
+# (``code_card``).
 FRAME_FIELDS = frozenset({"Report", "Parish", "Privacy", "Requested at"})
-IDENTITY_FIELDS = ("Family", "Family DUID", "Envelope number", "Mode")
+IDENTITY_FIELDS = (
+    "Family",
+    STATUS_HEADING,
+    "Family DUID",
+    "Envelope number",
+    "Mode",
+)
 CODE_FIELD = "Family code"
 LINES_FIELD = "Timeline lines"
 NOT_CARDS = FRAME_FIELDS | design.HIDDEN_FIELDS | set(IDENTITY_FIELDS) | {LINES_FIELD}
@@ -168,10 +176,15 @@ class Block(NamedTuple):
 
 
 def identity_line(metadata):
-    """The line under every page's title: Family, DUID, envelope and mode."""
+    """The line under every page's title: Family, DUID, envelope and mode.
+
+    A Family the data no longer has shows the shared "Not in ParishSoft" in
+    place of its blank name, as the page's heading shows its badge (#1216).
+    """
     values = {label: value for label, value in metadata if label in IDENTITY_FIELDS}
     parts = [
         str(values.get("Family", "")),
+        str(values.get(STATUS_HEADING, "")),
         f"Family DUID {values['Family DUID']}" if values.get("Family DUID") else "",
         (
             f"Envelope number {values['Envelope number']}"

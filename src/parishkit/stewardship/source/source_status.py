@@ -30,6 +30,9 @@ NOT_IN_PARISHSOFT = gettext_noop("Not in ParishSoft")
 INACTIVE_IN_PARISHSOFT = gettext_noop("Inactive in ParishSoft")
 DECEASED_IN_PARISHSOFT = gettext_noop("Deceased in ParishSoft")
 NAME_NOT_RECORDED = gettext_noop("Name not recorded in ParishSoft")
+# A download's own column for these words, beside the name it describes:
+# blank when current, so the name cell holds only a name (#1216).
+STATUS_HEADING = gettext_noop("ParishSoft status")
 
 # A Member who moved to another Family is no longer in this Family's
 # ParishSoft record, so it reads as not in ParishSoft, as a deleted one does.
@@ -50,3 +53,15 @@ def source_status_label(status):
     if status in (None, "current"):
         return ""
     return LABELS[status]
+
+
+def family_status(name, *, active=True):
+    """A Family row's status key from what its read returned.
+
+    ``name`` None means the current data no longer has the Family
+    (``missing``); otherwise it is ``inactive`` when ``active`` is false, and
+    ``current`` when there is nothing to mark.
+    """
+    if name is None:
+        return "missing"
+    return "current" if active else "inactive"

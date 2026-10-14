@@ -17,6 +17,7 @@ from parishkit.stewardship.source.source_status import (
     DECEASED_IN_PARISHSOFT,
     INACTIVE_IN_PARISHSOFT,
     NOT_IN_PARISHSOFT,
+    family_status,
     source_status_label,
 )
 
@@ -55,6 +56,23 @@ def test_an_unknown_status_fails_loudly():
     """A new status cannot reach a page without its words."""
     with pytest.raises(KeyError):
         source_status_label("archived")
+
+
+@pytest.mark.parametrize(
+    ("name", "active", "status"),
+    [
+        (None, True, "missing"),
+        # A Family the data no longer has is never also called inactive.
+        (None, False, "missing"),
+        ("Example", True, "current"),
+        ("Example", False, "inactive"),
+        # A blank but present name is a data gap, not a removal.
+        ("", True, "current"),
+    ],
+)
+def test_family_status_reads_a_family_row(name, active, status):
+    """A download's ParishSoft status cell comes from the row's own read."""
+    assert family_status(name, active=active) == status
 
 
 def _render(status):

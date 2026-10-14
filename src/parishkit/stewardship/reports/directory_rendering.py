@@ -23,10 +23,14 @@ from .information_rendering import information_xlsx
 # Relative column widths of the Family-code table. Family holds the surname
 # and the heads of household; long cells wrap within their column. Phone
 # numbers is wide enough that "Name (kind): +1 (555) 555-0123" fits a line.
+# ParishSoft status (#1216) took its room from Family and Family head emails,
+# which both wrap, so every table's total weight, and with it every other
+# column's width, is what it was before that column.
 # The response columns (#933) are only in the file when the page shows them;
 # a compact time ("Sep 30, 2026 12:04 PM") wraps onto two lines at its weight.
 COLUMN_WEIGHTS = {
-    "Family": 18,
+    "Family": 14,
+    "ParishSoft status": 8,
     "Family DUID": 7,
     "Envelope number": 6,
     "Submissions": 8,
@@ -39,7 +43,7 @@ COLUMN_WEIGHTS = {
     "Last submitted": 10,
     "Family code": 8,
     "Phone numbers": 31,
-    "Family head emails": 30,
+    "Family head emails": 26,
 }
 # List cells whose entries ("; "-separated) each start a new line in the PDF.
 LIST_COLUMNS = frozenset({"Phone numbers", "Family head emails"})

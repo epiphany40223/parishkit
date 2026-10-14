@@ -23,7 +23,11 @@ from datetime import datetime
 from typing import ClassVar
 from zoneinfo import ZoneInfo
 
-from parishkit.stewardship.source.source_status import NOT_IN_PARISHSOFT
+from parishkit.stewardship.source.source_status import (
+    STATUS_HEADING,
+    family_status,
+    source_status_label,
+)
 from parishkit.stewardship.web import dates
 
 HEADINGS = ("When", "What happened", "Details")
@@ -94,15 +98,19 @@ def timeline_document(
         else "Not yet"
     )
     # The page's own lines, in its order and words: the identity line
-    # (Family, Family DUID, Envelope number), the mode line, Counted at, then
-    # the Summary panel (Submitted, Last email, Family code, Reminders when
-    # the Family is in the Reminder WorkGroup, Campaign email can reach this
-    # Family, Furthest step reached, Last seen).
+    # (Family, any ParishSoft status, Family DUID, Envelope number), the mode
+    # line, Counted at, then the Summary panel (Submitted, Last email, Family
+    # code, Reminders when the Family is in the Reminder WorkGroup, Campaign
+    # email can reach this Family, Furthest step reached, Last seen).
     workgroup = family.get("reminder_workgroup")
+    status = source_status_label(family_status(family["name"]))
     metadata = (
         ("Report", "Family timeline"),
         ("Parish", parish_name),
-        ("Family", family["name"] or NOT_IN_PARISHSOFT),
+        # A Family the data no longer has: no name, and the page's badge
+        # words as a detail of their own, only when there is a mark (#1216).
+        ("Family", family["name"] or ""),
+        *(((STATUS_HEADING, status),) if status else ()),
         ("Family DUID", str(family["duid"])),
         (
             "Envelope number",
