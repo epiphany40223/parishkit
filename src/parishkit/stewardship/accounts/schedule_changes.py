@@ -41,14 +41,14 @@ DOES_NOT_FIT = (
     "exactly one initial mailing and use distinct times. Resolve all "
     "affected schedules, or change at most 100 records per request."
 )
-# Only a users-form configuration can hold a remembered series (#469), so
-# remembering one elsewhere is refused in plain words, not as DOES_NOT_FIT.
 # A remembered repeat's positions must name exactly the reminders it added;
 # when the added forms and adds disagree, refuse rather than guess (#469).
 SERIES_UNMATCHED = (
     "The repeat to remember could not be matched to the reminders it adds. "
     "Leave out added schedules that have no values."
 )
+# Only a users-form configuration can hold a remembered series (#469), so
+# remembering one elsewhere is refused in plain words, not as DOES_NOT_FIT.
 SERIES_NEEDS_USERS = (
     "A repeat can be remembered as a series only once the configuration "
     "holds Admin users; run upgrade-users first."
