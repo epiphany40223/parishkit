@@ -181,8 +181,9 @@ def system_health_status(request):
 
 # The form fields each action step accepts: Take a backup now's (ADM-13 PR
 # 3b), Accept this change once's (PR 5b, named accept_*; ``checked`` is the
-# "I checked this in ParishSoft" tick box) and Turn off debug logging's (PR
-# 6b, named debug_off_*).
+# "I checked this in ParishSoft" tick box), Turn off debug logging's (PR
+# 6b, named debug_off_*) and Allow debug logging again's (PR 6c, named
+# debug_allow_*, answered in Turn off debug logging's region).
 _ACTION_FIELDS = {
     "accept_preview": {"action"},
     "accept_confirm": {"action", "token", "checked"},
@@ -193,12 +194,25 @@ _ACTION_FIELDS = {
     "debug_off_preview": {"action"},
     "debug_off_confirm": {"action", "key"},
     "debug_off_cancel": {"action"},
+    "debug_allow_preview": {"action"},
+    "debug_allow_confirm": {"action", "key"},
+    "debug_allow_cancel": {"action"},
 }
 # What an in-place refusal is answered with (HTTP status, the region's words).
-_REFUSALS = {"reauthenticate": 403, "busy": 409, "invalid": 400, "denied": 403}
+_REFUSALS = {
+    "reauthenticate": 403,
+    "busy": 409,
+    "invalid": 400,
+    "denied": 403,
+    "production": 403,
+}
 # Each action's region (its template's context name) by its steps' prefix;
 # Take a backup now's steps have none.
-_REGIONS = (("accept_", "accept"), ("debug_off_", "debug_off"))
+_REGIONS = (
+    ("accept_", "accept"),
+    ("debug_off_", "debug_off"),
+    ("debug_allow_", "debug_off"),
+)
 
 
 def _step(action, request, service):
@@ -227,6 +241,14 @@ def _step(action, request, service):
             request, service, token=request.POST.get("token", "")
         )
         return {"requested": row, "created": created, "refresh": refresh}
+    if action == "debug_allow_preview":
+        preview = health_actions.preview_debug_allow(request, service.store)
+        return {"allow": True, "preview": preview}
+    if action == "debug_allow_confirm":
+        row, created = health_actions.allow_debug(
+            request, service.store, key=UUID(request.POST.get("key", ""))
+        )
+        return {"allow": True, "allowed": row, "created": created}
     if action in {"confirm", "debug_off_confirm"}:
         record = (
             health_actions.request_backup
@@ -248,19 +270,21 @@ def _act(request):
     The answer is the whole page at its own address, so ui-v1.js swaps the
     action's region (``#backup-now``, ``#accept-change`` or ``#debug-off``)
     in place; the step's result goes to the template as ``backup_now``,
-    ``accept`` or ``debug_off``. A step
+    ``accept`` or ``debug_off`` (where an Allow debug logging again step's
+    result is marked ``allow``). A step
     the server refuses for a reason the reader can act on (a stale sign-in,
-    a request already live or a switch already set, a malformed form) is
+    a request already live or a switch already set or already cleared, Allow
+    debug logging again in Production, a malformed form) is
     answered the same way, the region saying why, with a status ui-v1.js
     treats as refused; the stale sign-in offers the "Confirm with Google"
     step-up, which returns to this page. Anything else (not an
     Administrator, the system unavailable) is the usual closed refusal. No
     step records a page view; confirming records the action's audit event
-    (``backup_requested``, ``source_drop_accepted`` or
-    ``debug_logging_turned_off``). For Accept this change once, ``busy``
-    means the refusal reviewed changed (another refusal, a promoted full
-    refresh, an acceptance already given), which its region words as "This
-    changed since you looked".
+    (``backup_requested``, ``source_drop_accepted``,
+    ``debug_logging_turned_off`` or ``debug_logging_allowed``). For Accept
+    this change once, ``busy`` means the refusal reviewed changed (another
+    refusal, a promoted full refresh, an acceptance already given), which its
+    region words as "This changed since you looked".
     """
     from parishkit.config import ConfigError
     from parishkit.stewardship import system_health as health_actions
@@ -275,6 +299,7 @@ def _act(request):
     region = next(
         (name for prefix, name in _REGIONS if action.startswith(prefix)), "backup_now"
     )
+    allow = action.startswith("debug_allow_")
     result, status = None, 200
     try:
         service = runtime()
@@ -285,6 +310,9 @@ def _act(request):
             result = _step(action, request, service)
         except FreshAuthenticationRequired:
             result = {"refused": "reauthenticate"}
+        except health_actions.DebugAllowProduction:
+            # Only the server operator clears the switch in Production.
+            result = {"refused": "production"}
         except health_actions.ActionRefused:
             # The database refused it for a reason a new sign-in would not
             # fix; the service function logged why.
@@ -298,6 +326,7 @@ def _act(request):
         except ValueError:
             result = {"refused": "invalid"}
         if result and "refused" in result:
+            result["allow"] = allow
             status = _REFUSALS[result["refused"]]
             # The page itself is still only for an Administrator.
             _principal(request, service.store)

@@ -542,7 +542,12 @@ def _debug_in_production(configuration):
     Debug logs can hold personal data, so they are for disposable pre-launch
     data only. Nothing refuses to start with the switch on; every Admin page
     warns instead, so whoever sees it can ask the operator to turn it off.
-    Only this web process's own environment is visible here.
+    Only this web process's own effective state is visible here, which the
+    debug-off switch already turns off (``debug_switch``). The banner ends
+    with it on purpose (ADM-13 PR 6c, #1207): reading every service's status
+    record would add a query to every Admin page, and System health's
+    problems (and Home's) already name each other service still logging in
+    debug form.
     """
     return configuration.mode == "production" and debug_logging_enabled()
 

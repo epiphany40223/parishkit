@@ -19,7 +19,9 @@ words. The actions (take a backup now, clear a halt, accept a large change,
 turn off debug logging) come with ADM-13 PR 3 to PR 6, each with its own
 service function here; Take a backup now (PR 3), Accept this change once
 (PR 5b) and Turn off debug logging (PR 6b) have landed, and share
-``_record_fresh``.
+``_record_fresh``. Allow debug logging again (PR 6c), Testing's clear of the
+debug-off switch, has its own (``allow_debug``), since it updates the switch
+instead of recording a row.
 
 Pure helpers (``group_processes``, ``find_problems``) take every input as an
 argument, so they are unit tested without a database.
@@ -2171,4 +2173,242 @@ def refresh_accept(caller, service, *, token, context):
         expires_at=plain(row.expires_at),
         live=live == row.pk,
         task_root_id=refresh,
+    )
+
+
+# ------------------------------------------------- allow debug logging again
+
+
+# The words of the refusal in Production, where only the server operator
+# clears the switch (System health decision 3), from the page and the
+# command line alike; the switch's guard (0088) says the same.
+TESTING_ONLY = "Only the server operator clears the debug-off switch in Production."
+# The words of the refusal while no switch is set (or another Administrator,
+# or the server operator, has already cleared the one named).
+SWITCH_CLEARED = "The debug-off switch is not set."
+
+
+class DebugAllowProduction(ActionRefused):
+    """Allow debug logging again outside Testing mode: only the server
+    operator clears the debug-off switch there (decision 3)."""
+
+
+class DebugAllowRefused(ActionRefused):
+    """The database refused to clear the debug-off switch for another
+    reason (see ``ActionRefused``)."""
+
+
+@dataclass(frozen=True)
+class DebugAllowPreview:
+    """What Allow debug logging again's preview states before the
+    Administrator confirms (ADM-13 PR 6c).
+
+    ``key`` is the set switch's identity, which the confirmation clears,
+    so a repeated confirmation returns that switch instead of being
+    refused; ``set_at`` is when it was set.
+    """
+
+    key: object
+    set_at: datetime
+
+
+def _require_testing(store):
+    """Refuse (``DebugAllowProduction``) unless the global mode is Testing."""
+    from .accounts.configuration_installation import coherent_configuration
+
+    if coherent_configuration(store).mode != "testing":
+        raise DebugAllowProduction(TESTING_ONLY)
+
+
+def _set_switch():
+    """The debug-off switch set now, or None."""
+    from .jobs.debug_switch_models import DebugOffSwitch
+
+    return DebugOffSwitch.objects.filter(cleared_at__isnull=True).first()
+
+
+def preview_debug_allow(caller, store):
+    """Allow debug logging again's preview, for a freshly signed-in
+    Administrator in Testing mode.
+
+    Refused in Production (``DebugAllowProduction``) and while no switch is
+    set (``StaleRecordError``). Reads only; changes nothing.
+    """
+    from .campaigns.work_locks import read_transaction
+    from .storage import StaleRecordError
+
+    _admit_action(caller, store)
+    with read_transaction():
+        _require_testing(store)
+        switch = _set_switch()
+        if switch is None:
+            raise StaleRecordError(SWITCH_CLEARED)
+        return DebugAllowPreview(key=switch.pk, set_at=switch.set_at)
+
+
+def allow_debug(caller, store, *, key, command=False):
+    """Clear the debug-off switch ``key`` in Testing; return ``(row, created)``.
+
+    The Administrator's clear (``cleared_by`` ``administrator``) is one
+    UPDATE of the switch, in a transaction that also checks the fresh
+    sign-in (``sessions.require_fresh``, whose automation-session gate
+    commits or rolls back with it) and records ``debug_logging_allowed``
+    naming the switch, and from the command line (``command``) also
+    ``admin_cmd_system_debug_allow`` naming the automation session. The
+    switch's guard (0088) checks again that the mode is Testing, the
+    sign-in is fresh and the switch is cleared once. A repeat for a switch
+    this Administrator already cleared returns it (``created`` false); one
+    cleared by someone else, or a race lost to another clear, is refused
+    as stale. An unknown ``key`` is a ``ValueError``.
+    """
+    from django.db import DatabaseError, transaction
+    from django.db.models.functions import Now
+
+    from .accounts.sessions import FreshAuthenticationRequired, require_fresh
+    from .audit.schemas import Action, ActorKind, Outcome
+    from .audit.services import record_action
+    from .jobs.debug_switch_models import DebugOffSwitch
+    from .observability import emit_failure
+    from .storage import StaleRecordError
+
+    actor = _admit_requester(caller, store)
+
+    def cleared():
+        """The switch if this Administrator already cleared it, None while
+        it is still set; refused when unknown or cleared by another."""
+        row = DebugOffSwitch.objects.filter(pk=key).first()
+        if row is None:
+            raise ValueError("No debug-off switch has this key.")
+        if row.cleared_at is None:
+            return None
+        if row.cleared_by == "administrator" and row.cleared_actor_id == actor.identity:
+            return row
+        raise StaleRecordError(SWITCH_CLEARED)
+
+    try:
+        with transaction.atomic():
+            _require_testing(store)
+            row = cleared()
+            if row is not None:
+                return row, False
+            require_fresh(caller)
+            # The guard sets the clear time from the database clock.
+            changed = DebugOffSwitch.objects.filter(
+                pk=key, cleared_at__isnull=True
+            ).update(
+                cleared_at=Now(),
+                cleared_by="administrator",
+                cleared_actor_id=actor.identity,
+            )
+            if not changed:
+                # Another clear committed first (READ COMMITTED re-reads it).
+                row = cleared()
+                if row is None:
+                    raise StaleRecordError(SWITCH_CLEARED)
+                return row, False
+            record_action(
+                Action.DEBUG_LOGGING_ALLOWED,
+                actor_kind=ActorKind.PORTAL_USER,
+                actor_id=actor.identity,
+                subject_id=key,
+                context={"outcome": Outcome.SUCCEEDED},
+            )
+            if command:
+                record_action(
+                    Action.ADMIN_CMD_SYSTEM_DEBUG_ALLOW,
+                    actor_kind=ActorKind.PORTAL_USER,
+                    actor_id=actor.identity,
+                    subject_id=caller.automation_session_id,
+                    context={"outcome": Outcome.SUCCEEDED},
+                )
+            return DebugOffSwitch.objects.get(pk=key), True
+    except DatabaseError as error:
+        if getattr(error.__cause__, "sqlstate", None) != "42501":
+            raise
+        if FRESH_REFUSAL in str(error):
+            # The sign-in lapsed since the check above: the step-up helps.
+            raise FreshAuthenticationRequired(
+                "Please authenticate with Google again."
+            ) from error
+        if "in Production" in str(error):
+            # The mode changed since the check above.
+            raise DebugAllowProduction(TESTING_ONLY) from error
+        emit_failure(error)
+        raise DebugAllowRefused(
+            "The server refused this action; the System logs say why."
+        ) from error
+
+
+@dataclass(frozen=True)
+class DebugAllow(ReadModel):
+    """``system debug-allow``'s result: the switch it cleared (or the one an
+    earlier run with the same ``--switch`` cleared).
+
+    ``created`` is false for a repeat; ``cleared_at`` is when it was cleared.
+    """
+
+    switch_id: object
+    created: bool
+    cleared_at: str | None
+
+
+def debug_allow_preview_lines(store, *, switch=None):
+    """What Allow debug logging again's preview says, as plain lines for the
+    command line's confirmation prompt, with the switch it clears.
+
+    Returns ``(key, lines)``. ``switch`` names the switch (a repeat); by
+    default it is the one set now. Refused in Production and while no
+    switch is set, as the page's preview is. A repeat for a switch already
+    cleared needs no preview: ``lines`` is None, and ``allow_debug`` returns
+    it or refuses it.
+    """
+    from .campaigns.work_locks import read_transaction
+    from .jobs.debug_switch_models import DebugOffSwitch
+    from .storage import StaleRecordError
+
+    with read_transaction():
+        _require_testing(store)
+        if switch is not None:
+            row = DebugOffSwitch.objects.filter(pk=switch).first()
+            if row is not None and row.cleared_at is not None:
+                return switch, None
+        else:
+            row = _set_switch()
+        if row is None:
+            raise StaleRecordError(SWITCH_CLEARED)
+    return row.pk, (
+        f"Clear the debug-off switch set at {plain(row.set_at)} (Testing only).",
+        "Services started with debug logging on log in debug form again "
+        "within about a minute; it never turns debug logging on in a "
+        "service started without it.",
+        "Debug logs can hold Families' personal information.",
+    )
+
+
+def debug_allow(caller, service, *, switch, context):
+    """``system debug-allow``: Allow debug logging again, as System health's
+    button (Testing only).
+
+    The command has already shown ``debug_allow_preview_lines`` and had
+    them confirmed; ``switch`` is the switch they named. ``allow_debug``
+    checks the fresh sign-in (a full-scope automation session's, which the
+    switch's guard accepts too) inside the clear's transaction and records
+    ``debug_logging_allowed`` with the command's own
+    ``admin_cmd_system_debug_allow``. ``context["committed"]`` is set once
+    it may have committed (exit 6 then).
+    """
+    from django.db import DatabaseError
+
+    from .observability import _guard_refusal
+
+    try:
+        row, created = allow_debug(caller, service.store, key=switch, command=True)
+    except DatabaseError as error:
+        # A failure at the commit itself may have committed.
+        if not _guard_refusal(error):
+            context["committed"] = True
+        raise
+    context["committed"] = True
+    return DebugAllow(
+        switch_id=row.pk, created=created, cleared_at=plain(row.cleared_at)
     )

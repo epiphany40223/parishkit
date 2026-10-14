@@ -294,6 +294,9 @@ FROZEN = {
     "0087_publication_plans.sql": (
         "d46783894e0389933f9e1dd6a41785fb8d07c965f2b19fc7ac5670177535d15a"
     ),
+    "0088_debug_allow.sql": (
+        "a7ac3d137c80b4314e82d8bc7c8e19f96db67c78d8bff7edc3823d100bc6b52b"
+    ),
 }
 
 

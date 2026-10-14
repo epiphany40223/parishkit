@@ -429,8 +429,10 @@ of 2026-10-04 are recorded in the specification.
    with its preview, fresh sign-in, audit event and `system debug-off`,
    the operator clear's `debug_logging_allowed` event, the panel's
    who-and-when line and the runbook updates; **6c** Allow debug logging
-   again (Testing only; its guard change needs its own migration) and the
-   banner's end condition (every service, not only the web process).
+   again (Testing only; the guard change is frozen migration 0088, with the
+   web's column grant and `system debug-allow`) and the banner's end
+   condition, settled as the web process's own state (System health and
+   Home name every other service).
 
 PR 3 to PR 6 each add their command or its pending exemption.
 

@@ -16,6 +16,7 @@ from parishkit.stewardship.source.data_age import Connection
 from parishkit.stewardship.source.refresh_status import FullRefreshStatus
 from parishkit.stewardship.system_health import (
     AcceptPreview,
+    DebugAllowPreview,
     DebugOffPreview,
     DebugSwitchStatus,
     DropAcceptanceStatus,
@@ -642,16 +643,18 @@ def test_a_requested_backup_reads_as_the_page_words_it():
     assert "Its size is 3.0" in body and "taken by version 1.4.2" in body
 
 
-def debug_page(*, switch=None, debug=True, actor="admin@example.org", **values):
+def debug_page(
+    *, switch=None, debug=True, actor="admin@example.org", mode="production", **values
+):
     """Render the status region and the Turn off debug logging region together.
 
     ``switch`` is the newest debug-off switch; ``debug`` whether the web
-    portal reports debug logging in effect. ``values`` are the view's
-    other context (a step's ``debug_off`` result).
+    portal reports debug logging in effect; ``mode`` the global mode. ``values``
+    are the view's other context (a step's ``debug_off`` result).
     """
     processes = group_processes([row(debug_logging=debug)], NOW)
     context = {
-        "health": health(processes=processes, debug_switch=switch),
+        "health": health(processes=processes, debug_switch=switch, mode=mode),
         "pause": None,
         "debug_actor": actor if switch is not None and switch.active else None,
         "poll_interval": 10000,
@@ -1160,3 +1163,62 @@ def test_the_binding_lasts_the_shared_preview_lifetime():
     from parishkit.stewardship.web.refusals import PREVIEW_MAX_AGE
 
     assert system_health.ACCEPT_MAX_AGE == PREVIEW_MAX_AGE == 15 * 60
+
+
+SET = DebugSwitchStatus(set_at=NOW, cleared_at=None, cleared_by=None)
+
+
+def test_allow_debug_logging_again_is_offered_only_in_testing_while_set():
+    """Testing with the switch set: the button posts the preview in place,
+    and the polled copy carries it. Otherwise it is greyed with why."""
+    body = debug_page(switch=SET, debug=False, mode="testing")
+    assert 'value="debug_allow_preview"' in body
+    assert 'data-in-place="debug-allow-preview"' in body
+    assert body.count('value="debug_allow_preview"') == 2  # region and mirror
+    assert "Allow debug logging again, below, clears the switch in Testing" in body
+    production = debug_page(switch=SET, debug=False)
+    assert 'value="debug_allow_preview"' not in production
+    assert 'disabled aria-describedby="debug-allow-reason"' in production
+    assert "In Production only the server operator can clear" in production
+    unset = debug_page(mode="testing")
+    assert 'value="debug_allow_preview"' not in unset
+    assert "The debug-off switch is not set." in unset
+
+
+def test_the_allow_preview_result_and_refusals_read_in_the_region():
+    """Allow debug logging again answers inside #debug-off, in its own words."""
+    preview = DebugAllowPreview(key="k-2", set_at=NOW)
+    body = debug_page(
+        switch=SET, mode="testing", debug_off={"allow": True, "preview": preview}
+    )
+    for words in (
+        "This clears the debug-off switch set at",
+        "never turns debug logging on in a service started without it",
+        "Confirm: allow debug logging again",
+    ):
+        assert words in body, words
+    assert 'name="key" value="k-2"' in body
+    assert 'value="debug_allow_confirm"' in body
+    assert 'value="debug_allow_cancel"' in body
+    region = body[body.index('id="debug-off"') :]
+    assert "data-live-mirror-target" not in region
+    assert "Confirm: turn off debug logging" not in body
+    cleared = DebugSwitchStatus(
+        set_at=NOW - timedelta(hours=1), cleared_at=NOW, cleared_by="administrator"
+    )
+    done = debug_page(
+        switch=cleared,
+        mode="testing",
+        debug_off={"allow": True, "allowed": cleared, "created": True},
+    )
+    assert "data-debug-allowed" in done and "Debug-off switch cleared at" in done
+    for refused, words in (
+        ("reauthenticate", "before allowing debug logging again"),
+        ("busy", "The debug-off switch is no longer set"),
+        ("production", "In Production only the server operator can clear"),
+        ("denied", "The server refused to allow debug logging again"),
+        ("invalid", "That request could not be read."),
+    ):
+        answer = debug_page(debug_off={"allow": True, "refused": refused})
+        assert f'data-debug-allow-refused="{refused}"' in answer
+        assert words in answer, refused

@@ -1170,7 +1170,7 @@ Specification: [System health](../../specs/stewardship/admin-portal/spec.md#syst
 - [ ] ADM-13.03 — PR 3: add Take a backup now through a durable request and request mode (migration), with its command or its pending exemption.
 - [ ] ADM-13.04 — PR 4: add Clear the halt with halt identities, the mailbox check and the clear signal (migration), with its commands or their pending exemption.
 - [x] ADM-13.05 — PR 5: add Accept this change once, bound to every recorded count, with example Families (migration), with its commands or their pending exemption.
-- [ ] ADM-13.06 — PR 6: add the debug-off switch, its in-process override, its host clear command and Allow debug logging again (Testing only, refused in Production) (migration), with its command or its pending exemption.
+- [x] ADM-13.06 — PR 6: add the debug-off switch, its in-process override, its host clear command and Allow debug logging again (Testing only, refused in Production) (migration), with its command or its pending exemption.
 - [x] ADM-13.07 — specify the System health dashboard (#1214): the overall status line, the tiles, the problem registry, opening and closing tiles, Home and the critical-problems banner, and the delivery slices.
 - [ ] ADM-13.08 — dashboard slice 1: the problem registry, its severities and tiles, and the new warning kinds.
 - [ ] ADM-13.09 — dashboard slice 2a: the overall status line, its Not current state, the status indicator icons and the contrast test.
@@ -1319,5 +1319,17 @@ runbook updates, checked by
 `tests/stewardship/database/test_debug_off_now_postgresql.py`,
 `tests/stewardship/database/test_debug_off_switch_postgresql.py`,
 `tests/stewardship/test_system_health.py` and
-`tests/stewardship/browser/test_system_health.py`. Part 6c (Allow debug
-logging again in Testing, and the banner's end condition) remains.
+`tests/stewardship/browser/test_system_health.py`. Part 6c (#1207) adds the
+frozen forward migration `0088_debug_allow.sql` (`stewardship_jobs.0031`),
+which replaces the switch's guard so the web login may clear it only in
+Testing, for a freshly signed-in Administrator, once; the web's column
+UPDATE grant on the clear; Allow debug logging again in the Turn off debug
+logging region (a preview, the fresh sign-in step-up, `debug_logging_allowed`
+naming the switch, greyed with its reason in Production or while no switch
+is set, answered in place) and `pk-admin system debug-allow`; and the
+banner's end condition, kept as the web process's own state with the spec
+changed to match. It is checked by
+`tests/stewardship/database/test_debug_allow_postgresql.py`,
+`tests/stewardship/database/test_debug_off_switch_postgresql.py`,
+`tests/stewardship/test_system_health.py`, the runtime-grant and users swap
+tests and the regenerated schema baseline. ADM-13.06 is complete.

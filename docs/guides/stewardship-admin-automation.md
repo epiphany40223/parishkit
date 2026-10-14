@@ -412,6 +412,26 @@ and `active` (whether that switch is still set), and records
 pk-admin system debug-off
 ```
 
+### `system debug-allow`
+
+System health's **Allow debug logging again**, in Testing only: it clears
+the debug-off switch, so services started with `PARISHKIT_DEBUG_LOGGING=1`
+log in debug form again within about a minute. It needs a full-scope
+session and always prompts (or takes `--yes`), showing the page's preview:
+when the switch was set, and that it never turns debug logging on in a
+service started without it. It is refused (exit 1, `denied`) in
+Production, where only the server operator clears the switch, and (exit
+1, `stale_version`) while no switch is set. The session stands in for the
+page's recent sign-in. `--switch UUID` names the switch to clear (by
+default the one set now), so a repeat naming a switch you already cleared
+returns it (`created` false). It prints `switch_id`, `created` and
+`cleared_at`, and records `debug_logging_allowed` and
+`admin_cmd_system_debug_allow`.
+
+```text
+pk-admin system debug-allow
+```
+
 ### Watching and errors
 
 `--watch SECONDS` (2 to 300) on `task show`, `send progress`,
@@ -2249,6 +2269,8 @@ print is exit 1 (`invalid`).
 - `pk-admin/1` (ADM-13 PR 5c, #530): additive. `system
   refresh-accept-preview` gains `examples`, the example Family DUIDs of each
   failing count, without names.
+- `pk-admin/1` (ADM-13 PR 6c, #1207): additive. `system debug-allow`
+  (Testing only, fresh-gated, always prompts).
 - `pk-admin/1` (#1018): additive. `history list`, `history preview -`
   (the workbook on standard input), `history confirm` (prompts for a
   replacement) and `history remove` (prompts), the Past campaigns page's

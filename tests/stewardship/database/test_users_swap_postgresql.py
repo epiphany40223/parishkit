@@ -308,6 +308,8 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # 0087 (#528) creates the five
 # publication tables (in CLOSURE_TABLES) with their guards and deferred
 # checks and the worker's audit answer definer, and alters no table.
+# 0088 (#1207) creates nothing: it replaces 0078's switch guard in place, which
+# ``CLOSURE_REPLACED`` puts back after 0078's file has made the guard again.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -509,6 +511,20 @@ CLOSURE_ALTERED = {
     ("stewardship_daily_digest_ready", "funnel_chart"): (
         "stewardship_reports",
         "0022_digest_funnel_charts",
+    ),
+}
+
+
+# Functions a later closure migration's frozen file replaces in place after
+# an earlier one in CLOSURE_CREATED made them, with that migration and a
+# phrase only its body has. Installing the earlier file again (above) puts
+# the earlier body back, so ``swap_pending`` runs the later file again
+# unless the body already has the phrase. 0088 (#1207) replaces 0078's
+# debug-off switch guard with the Testing-only web clear.
+CLOSURE_REPLACED = {
+    "public.stewardship_debug_off_switch_guard_v1()": (
+        ("stewardship_jobs", "0031_debug_allow"),
+        "clears the debug-off switch in Production",
     ),
 }
 
@@ -755,6 +771,7 @@ def swap_pending():
     closure = sorted(runtime_database.users_swap_closure(loader.graph))
     assert set(CLOSURE_CREATED.values()) <= set(closure)
     assert set(CLOSURE_ALTERED.values()) <= set(closure)
+    assert {key for key, _ in CLOSURE_REPLACED.values()} <= set(closure)
     removed = []
     with transaction.atomic(), connection.cursor() as cursor:
         for app, name in closure:
@@ -806,6 +823,16 @@ def swap_pending():
                     [f"public.{table}", column],
                 )
                 if cursor.fetchone() is None:
+                    module = sys.modules[loader.disk_migrations[key].__module__]
+                    cursor.execute(Path(module.FROZEN_SQL).read_text(encoding="utf-8"))
+            # After both: a created function's earlier body, made again
+            # above, gets the later file's replacement back.
+            for function, (key, phrase) in CLOSURE_REPLACED.items():
+                cursor.execute(
+                    "SELECT prosrc LIKE %s FROM pg_proc WHERE oid=to_regprocedure(%s)",
+                    [f"%{phrase}%", function],
+                )
+                if not cursor.fetchone()[0]:
                     module = sys.modules[loader.disk_migrations[key].__module__]
                     cursor.execute(Path(module.FROZEN_SQL).read_text(encoding="utf-8"))
             for app, name, applied in removed:

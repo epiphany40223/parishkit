@@ -1494,6 +1494,25 @@ def system_refresh_accept(args, preamble, runtime, context):
     return refresh_accept(context["caller"], runtime, token=token, context=context)
 
 
+def system_debug_allow(args, preamble, runtime, context):
+    """Allow debug logging again, as System health's button does in Testing
+    (ADM-13 PR 6c).
+
+    It always prompts, with the page's preview, before any transaction; in
+    Production, or while no switch is set, it is refused before the prompt.
+    ``--switch`` names the switch to clear (by default the one set now), so
+    a repeat naming a switch this Administrator already cleared returns it.
+    The session stands in for the page's recent sign-in, as the switch's
+    guard admits.
+    """
+    from .system_health import debug_allow, debug_allow_preview_lines
+
+    switch, lines = debug_allow_preview_lines(runtime.store, switch=args.switch)
+    if lines is not None:
+        confirm(context, lines)
+    return debug_allow(context["caller"], runtime, switch=switch, context=context)
+
+
 def portal_maintenance_set(args, preamble, runtime, context):
     """Close or reopen the Family portal, as its page's buttons do (PR 7a).
 
@@ -2504,6 +2523,17 @@ def _refresh_accept_options(parser):
         required=True,
         help="preview.token from system refresh-accept-preview, or - for "
         "standard input (then answer the prompt with --yes)",
+    )
+
+
+def _debug_allow_options(parser):
+    """Options of ``system debug-allow``: the switch to clear, which makes a
+    repeat safe (default: the switch set now)."""
+    parser.add_argument(
+        "--switch",
+        type=_uuid,
+        help="the debug-off switch to clear, as an earlier run printed it "
+        "(default: the switch set now)",
     )
 
 
@@ -3531,6 +3561,7 @@ def _read_specs():
     )
     from .system_health import (
         BackupNow,
+        DebugAllow,
         DebugOff,
         RefreshAccept,
         RefreshAcceptPreview,
@@ -3685,6 +3716,20 @@ def _read_specs():
             RefreshAccept.field_names(),
             3,
             options=(_refresh_accept_options,),
+            fresh_gated=True,
+            prompts=True,
+        ),
+        # Allow debug logging again (ADM-13 PR 6c): Testing only, keyed by
+        # the switch it clears, fresh-gated, prompting.
+        CommandSpec(
+            "system debug-allow",
+            "Clear the debug-off switch in Testing, as System health does.",
+            system_debug_allow,
+            "full",
+            True,
+            DebugAllow.field_names(),
+            3,
+            options=(_debug_allow_options,),
             fresh_gated=True,
             prompts=True,
         ),

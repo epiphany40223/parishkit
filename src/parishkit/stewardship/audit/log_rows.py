@@ -416,11 +416,11 @@ UNGROUPED_REASONS = {
     ),
     # Turn off debug logging (#530): no group is about the server's logging;
     # System health's Debug logging panel shows the switch.
-    "Turning debug logging off, or the server operator allowing it again; "
-    "System health shows the switch": (
+    "Turning debug logging off, or allowing it again; System health shows the switch": (
         "debug_logging_turned_off",
         "admin_cmd_system_debug_off",
         "debug_logging_allowed",
+        "admin_cmd_system_debug_allow",
     ),
     "Reviewing a restore from backup, an operator's recovery": (
         "restore_review_started",

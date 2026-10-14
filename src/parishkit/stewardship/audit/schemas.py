@@ -158,9 +158,11 @@ class Action(StrEnum):
     BACKUP_REQUESTED = "backup_requested"
     # Turn off debug logging (ADM-13 PR 6b); the subject is the switch.
     DEBUG_LOGGING_TURNED_OFF = "debug_logging_turned_off"
-    # The debug-off switch cleared; the server operator's offline
-    # ``debug-off-clear`` records it with actor kind ``operator`` and no
-    # subject (that login cannot read the switch it cleared).
+    # The debug-off switch cleared: by an Administrator in Testing (Allow
+    # debug logging again, ADM-13 PR 6c; the subject is the switch), or by
+    # the server operator's offline ``debug-off-clear``, recorded with actor
+    # kind ``operator`` and no subject (that login cannot read the switch it
+    # cleared).
     DEBUG_LOGGING_ALLOWED = "debug_logging_allowed"
     # Accept this change once (ADM-13 PR 5b); the subject is the acceptance.
     SOURCE_DROP_ACCEPTED = "source_drop_accepted"
@@ -256,6 +258,8 @@ class Action(StrEnum):
     ADMIN_CMD_SYSTEM_DEBUG_OFF = "admin_cmd_system_debug_off"
     # system refresh-accept: System health's Accept this change once (PR 5b).
     ADMIN_CMD_SYSTEM_REFRESH_ACCEPT = "admin_cmd_system_refresh_accept"
+    # system debug-allow: System health's Allow debug logging again (PR 6c).
+    ADMIN_CMD_SYSTEM_DEBUG_ALLOW = "admin_cmd_system_debug_allow"
     # files delete and files rename: the Hosted files page's row actions.
     ADMIN_CMD_FILES_DELETE = "admin_cmd_files_delete"
     ADMIN_CMD_FILES_RENAME = "admin_cmd_files_rename"
