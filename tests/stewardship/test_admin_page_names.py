@@ -249,9 +249,30 @@ def test_title_and_heading_use_the_page_name(name):
     assert title <= shared and heading <= shared
 
 
-# "Return to" links whose target has no fixed name: the shared error page
-# returns to whatever page the reader came from (navigation rule 4).
-UNNAMED_RETURNS = {("error.html", "the previous page")}
+# "Return to" links whose target has no fixed name (navigation rule 4): the
+# shared error page returns to whatever page the reader came from, and the
+# export error page, which reads nothing from the database, cannot name the
+# export it returns to.
+UNNAMED_RETURNS = {
+    ("error.html", "the previous page"),
+    ("report-export-error.html", "the export status page"),
+}
+# "Return to {{ … }}" links, by template, and the variable each names its
+# target with. Each variable holds a registry label: the trail's parent
+# crumb (admin_chrome.back), the page a test email was opened from
+# (refusals.return_link), the integration's name (integration_views.LABELS)
+# and the export's report page (export_ui's report_name). A new one must
+# be added here once its variable is known to hold a page's name.
+VARIABLE_RETURNS = {
+    ("campaign-mail.html", "return_link.label"),
+    ("configuration-request.html", "admin_chrome.back.label"),
+    ("credential-status.html", "admin_chrome.back.label"),
+    ("integration-preview.html", "label"),
+    ("report-export.html", "report_name"),
+}
+VARIABLE_RETURN = re.compile(
+    r"{% blocktranslate(?: with (\w+)=([\w.]+))? %}Return to {{ (\w+) }}"
+)
 
 
 @pytest.mark.parametrize(
@@ -271,6 +292,34 @@ def test_return_links_name_a_page(template):
             template,
             target,
         )
+
+
+def test_variable_return_links_are_known():
+    """Every "Return to {{ … }}" link names its target from a variable known
+    to hold a page's name; a new one must be checked and listed."""
+    found = set()
+    for path in sorted(TEMPLATE_DIR.glob("*.html")):
+        for alias, value, used in VARIABLE_RETURN.findall(path.read_text("utf-8")):
+            found.add((path.name, value if alias == used else used))
+    assert found == VARIABLE_RETURNS, sorted(found ^ VARIABLE_RETURNS)
+
+
+# Python-built "Return to" link labels: a view's link_label or back_label.
+PYTHON_RETURN = re.compile(r'(?:link_label=|"back_label", )_\("Return to ([^"]+)"\)')
+
+
+def test_python_return_links_name_a_page():
+    """A "Return to" link label built in a view names a page by its label."""
+    labels = {str(page.label) for page in navigation.PAGES.values()}
+    found = [
+        (path.name, target)
+        for path in sorted(PACKAGE.rglob("*.py"))
+        for target in PYTHON_RETURN.findall(path.read_text("utf-8"))
+    ]
+    # The guard sees the known labels (Pages and emails, Automation access,
+    # Ministry follow-up, Ministry requests), so its pattern still matches.
+    assert len(found) >= 4, found
+    assert all(target in labels for _path, target in found), found
 
 
 # A link whose whole text is one translated string, to an Admin page.
@@ -347,7 +396,7 @@ def test_former_names_are_read_from_the_spec():
     former = _former_names()
     assert {"ParishSoft refresh", "Ministry reports", "Delivery controls"} <= former
     # Each of a cell's " / " alternatives is a name of its own.
-    assert {"Participation export", "Financial stewardship export"} <= former
+    assert {"Ministry export", "Family-directory mail-merge export"} <= former
     # An object-named row's former link names count; its placeholder does not.
     assert {"ParishSoft settings", "Off-site backup settings"} <= former
     assert {"Key change details", "Family-directory export"} <= former
