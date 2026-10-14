@@ -34,6 +34,7 @@ from parishkit.stewardship.runtime_grants import (
     CLOSURE_TABLES,
     PUBLICATION_WORKER_TABLES,
 )
+from parishkit.stewardship.schema_inventory import inventory
 
 from .campaign_builders import initialized
 from .test_background_grants_postgresql import task_login
@@ -48,6 +49,23 @@ from .test_users_upgrade_postgresql import (
 )
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+
+@pytest.fixture(autouse=True)
+def schema_restored(transactional_db):
+    """Fail the test that leaves the shared database unlike a fresh install.
+
+    These tests replace, drop and reinstall functions, tables and columns on
+    the session's one test database, and only their own restore puts them
+    back. Comparing the baseline test's per-object inventory before and
+    after each test reports any drift (#1284) here, by object name, rather
+    than in the baseline fingerprint of whatever later test shares the
+    database.
+    """
+    before = inventory(connection)
+    yield
+    assert inventory(connection) == before
+
 
 MIGRATIONS = Path(__file__).resolve().parents[3] / "src/parishkit/stewardship/schema"
 SWAP = (MIGRATIONS / "migrations/0052_users_swap.sql").read_text(encoding="utf-8")
@@ -312,8 +330,9 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # ``CLOSURE_REPLACED`` puts back after 0078's file has made the guard again.
 # 0089 (#1201) creates nothing:
 # it widens the operational event check and replaces the safe context and
-# log writer functions in place, so a rerun of its file is harmless and
-# nothing is registered for it.
+# log writer functions in place. The reinstalled 0078 (CLOSURE_CREATED) and
+# 0083 (CLOSURE_ALTERED) files bring back their older check and safe
+# context, so ``CLOSURE_REPLACED`` runs 0089's file again afterwards (#1284).
 # 0090 (#528) creates nothing: it replaces the derived guard (a base function)
 # and two of 0087's guards in place, so once 0087's file installs again with its
 # older guard bodies, 0090's file runs again too (``CLOSURE_RERUN``).
@@ -559,15 +578,22 @@ CLOSURE_ALTERED = {
 
 
 # Functions a later closure migration's frozen file replaces in place after
-# an earlier one in CLOSURE_CREATED made them, with that migration and a
-# phrase only its body has. Installing the earlier file again (above) puts
-# the earlier body back, so ``swap_pending`` runs the later file again
-# unless the body already has the phrase. 0088 (#1207) replaces 0078's
-# debug-off switch guard with the Testing-only web clear.
+# an earlier one in CLOSURE_CREATED or CLOSURE_ALTERED made or replaced
+# them, with that migration and a phrase only its body has. Installing the
+# earlier file again (above) puts the earlier body back, so
+# ``swap_pending`` runs the later file again unless the body already has
+# the phrase. 0088 (#1207) replaces 0078's
+# debug-off switch guard with the Testing-only web clear. 0089 (#1201)
+# replaces the safe context that 0083's file brings back (and the event
+# check 0078's file brings back) with its own, which admits 'retry_refusal'.
 CLOSURE_REPLACED = {
     "public.stewardship_debug_off_switch_guard_v1()": (
         ("stewardship_jobs", "0031_debug_allow"),
         "clears the debug-off switch in Production",
+    ),
+    "public.stewardship_safe_context_v1(text,jsonb)": (
+        ("stewardship_audit", "0003_retry_refusal_log"),
+        "'retry_refusal'",
     ),
 }
 
