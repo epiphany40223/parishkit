@@ -245,12 +245,17 @@ class Problem:
     that affects several of them at once (debug logging, a stopped or
     silent service, a halted mail sender) is one problem naming them all,
     so it is listed and announced once (#686). ``at`` is the time the
-    sentence states (when it began, or until when).
+    sentence states (when it began, or until when). ``count`` and
+    ``message_id`` belong to ``refusal_unrecorded`` alone (#1201): how many
+    addresses were not set aside, and the newest entry's email, which the
+    sentence links.
     """
 
     kind: str
     subjects: tuple = ()
     at: datetime | None = None
+    count: int = 0
+    message_id: str | None = None
 
     @property
     def names(self):
@@ -288,6 +293,7 @@ class Problem:
             "backup_offsite_failed": _("off-site copy failed"),
             "backup_key_changed": _("backup key changed"),
             "debug_logging": _("debug logging on in %(name)s"),
+            "refusal_unrecorded": _("refused address not set aside"),
             "versions_differ": _("versions differ"),
             "schema_mismatch": _("database does not match"),
         }.get(self.kind, self.kind)
@@ -399,6 +405,7 @@ def find_problems(
     incidents,
     refresh,
     backup_at,
+    unrecorded=None,
 ):
     """Every current problem, in the order the page lists them.
 
@@ -406,7 +413,9 @@ def find_problems(
     services, ParishSoft, backups, debug logging and the version, the order
     of the panels. ``refresh`` is a ``FullRefreshStatus`` (or None),
     ``incidents`` maps each open incident kind to when it began, and
-    ``backup_at`` is when the newest backup finished. A pause an
+    ``backup_at`` is when the newest backup finished. ``unrecorded`` is
+    ``HealthFacts.unrecorded``: the address follow-up refusals that could
+    not be set aside and are not yet acknowledged (#1201). A pause an
     Administrator chose, Gmail's own limit and the daily limit are reasons
     sends wait, shown in their panel, not problems.
     """
@@ -435,6 +444,15 @@ def find_problems(
         for kind in MAIL_INCIDENTS
         if kind in incidents
     )
+    if unrecorded is not None and unrecorded.count:
+        problems.append(
+            Problem(
+                "refusal_unrecorded",
+                at=unrecorded.since,
+                count=unrecorded.count,
+                message_id=unrecorded.message_id,
+            )
+        )
     # Stopped processes are stated from the most recent report among them.
     problems += _grouped(
         "not_running",
@@ -566,6 +584,8 @@ class SystemHealth(ReadModel):
                         "kind": problem.kind,
                         "subjects": [_members(subject) for subject in problem.subjects],
                         "at": problem.at,
+                        "count": problem.count,
+                        "message_id": problem.message_id,
                     }
                     for problem in value
                 ]
@@ -715,15 +735,46 @@ HEALTH_SQL = (
     "WHERE resolved_at IS NULL AND kind=ANY(%(health_incidents)s)),"
     "(SELECT array_agg(app||' '||name) FROM public.django_migrations),"
     "(SELECT completed_at FROM public.stewardship_backup_run "
-    "ORDER BY completed_at DESC,id DESC LIMIT 1)"
+    "ORDER BY completed_at DESC,id DESC LIMIT 1),"
+    # The address follow-up refusals not set aside (#1201) that the
+    # critical-problems banner still shows: inside its window and not
+    # acknowledged. How many addresses, since when, and the newest one's
+    # email.
+    "(SELECT json_build_array(coalesce(sum((l.context->>'count')::int),0),"
+    "min(l.created_at),"
+    "(array_agg(l.context->>'message_id' ORDER BY l.created_at DESC,l.id DESC))[1]) "
+    "FROM public.stewardship_operational_log l "
+    "WHERE l.level='CRITICAL' AND l.event='retry_refusal_unrecorded' "
+    "AND l.created_at>=statement_timestamp()-make_interval(secs=>%(critical_window)s) "
+    "AND NOT EXISTS(SELECT 1 FROM public.stewardship_critical_event_ack a "
+    "WHERE a.log_id=l.id))"
 )
-HEALTH_COLUMNS = 4
+HEALTH_COLUMNS = 5
 _TIMES = ("started_at", "reported_at", "sender_since", "sender_until")
 
 
 def health_params():
     """The named parameters ``HEALTH_SQL`` takes."""
-    return {"health_incidents": list(INCIDENTS)}
+    from .audit.critical_events import WINDOW
+
+    return {
+        "health_incidents": list(INCIDENTS),
+        "critical_window": int(WINDOW.total_seconds()),
+    }
+
+
+@dataclass(frozen=True)
+class Unrecorded:
+    """The unacknowledged ``retry_refusal_unrecorded`` entries (#1201).
+
+    ``count`` is how many addresses they name, ``since`` when the oldest was
+    recorded and ``message_id`` the newest one's email (its Mail message
+    page labels the address refused permanently).
+    """
+
+    count: int
+    since: datetime | None
+    message_id: str | None
 
 
 @dataclass(frozen=True)
@@ -734,13 +785,14 @@ class HealthFacts:
     ``incidents`` maps each open kind the page names to when it began;
     ``schema_current`` is whether the applied migrations are exactly the
     ones this version ships; ``backup_at`` is when the newest backup
-    finished.
+    finished; ``unrecorded`` is an ``Unrecorded``.
     """
 
     rows: list
     incidents: dict
     schema_current: bool
     backup_at: datetime | None
+    unrecorded: Unrecorded
 
 
 def _instant(value):
@@ -753,7 +805,7 @@ def health_facts(columns):
 
     psycopg decodes the JSON columns already.
     """
-    rows, incidents, applied, backup_at = columns
+    rows, incidents, applied, backup_at, unrecorded = columns
     for row in rows:
         for name in _TIMES:
             row[name] = _instant(row[name])
@@ -763,6 +815,7 @@ def health_facts(columns):
         {kind: _instant(since) for kind, since in incidents},
         applied == _image_migrations(),
         backup_at,
+        Unrecorded(unrecorded[0], _instant(unrecorded[1]), unrecorded[2]),
     )
 
 
@@ -1081,6 +1134,7 @@ def home_problems(configuration, now, refresh):
         incidents=facts.incidents,
         refresh=refresh,
         backup_at=facts.backup_at,
+        unrecorded=facts.unrecorded,
     )
 
 
@@ -1157,6 +1211,7 @@ def read_health(store):
             incidents=incidents,
             refresh=refresh,
             backup_at=backup_at,
+            unrecorded=facts.unrecorded,
         ),
         processes=processes,
         missing_services=missing,

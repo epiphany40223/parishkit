@@ -102,6 +102,12 @@ class Event(StrEnum):
     # (#617): one durable ERROR entry with what failed, its category and the
     # command's catalog name, written by admin_cli on the web login.
     ADMIN_COMMAND_FAILED = "admin_command_failed"
+    # An address follow-up recorded an address refused permanently in its
+    # outcome but could not set it aside as a recipient refusal (#1201): one
+    # durable CRITICAL entry, written by mail dispatch, naming only the
+    # email and how many addresses. The critical-problems banner and System
+    # health show it until an Administrator acknowledges it.
+    RETRY_REFUSAL_UNRECORDED = "retry_refusal_unrecorded"
     UNSTRUCTURED = "unstructured_log_suppressed"
 
 

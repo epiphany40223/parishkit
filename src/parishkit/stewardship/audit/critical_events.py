@@ -49,6 +49,9 @@ LABELS = {
     Event.DUE_WORK_LAG.value: "Scheduled work is running late",
     Event.BOUNDARY_LAG.value: "Campaign start or close is running late",
     Event.WEB_UNHEALTHY.value: "Web server is not responding",
+    Event.RETRY_REFUSAL_UNRECORDED.value: (
+        "A refused email address could not be set aside"
+    ),
 }
 
 

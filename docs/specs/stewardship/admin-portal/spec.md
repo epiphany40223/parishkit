@@ -5319,6 +5319,19 @@ change (PR 5).
   scheduler and both mail senders"), so Home lists it, and screen readers
   hear it, once (#686); the page shows it in the tile the
   [problem registry](#health-problem-registry) names.
+- **A refused address not set aside (#1201).** When an
+  [address follow-up](../background-processing/spec.md#addresses-refused-for-now)
+  could not record an address refused permanently as a recipient refusal,
+  its CRITICAL `retry_refusal_unrecorded` entry is a problem for exactly as
+  long as the critical-problems banner shows it (inside the banner's 24
+  hours and not acknowledged), so the banner's one Acknowledge clears both;
+  the alert email and the System logs entry remain. Its sentence says how
+  many addresses, since when, that later emails still go to them, and that
+  **Report a bounced address** on the email's
+  [Mail message page](#mail-message-page), where the address is labeled
+  refused permanently, sets it aside; it links the newest such email. It is
+  read with the page's other facts in the same statement, so Home's problem
+  lines carry it without another query.
 - **Families the form cannot open (#774).** Its own tile's details hold one
   sentence that says how many Families cannot open the Family form because a
   Member's ParishSoft data has a value the form cannot accept, linking the

@@ -25,6 +25,7 @@ from parishkit.stewardship.system_health import (
     RefreshAcceptPreview,
     Subject,
     SystemHealth,
+    Unrecorded,
     find_problems,
     group_processes,
 )
@@ -254,6 +255,8 @@ def test_the_document_holds_states_counts_and_instants_only():
                 {"service": "mail-dispatch", "process": "main", "target": None}
             ],
             "at": NOW.isoformat(),
+            "count": 0,
+            "message_id": None,
         }
     ]
     assert document["refused_counts"][0] == {
@@ -461,6 +464,41 @@ def test_a_stopped_mail_sender_links_the_deployment_runbook():
         'href="https://github.com/epiphany40223/parishkit/blob/main/docs/guides/'
         'stewardship-deployment-runbook.md"' in body
     )
+
+
+def test_an_unrecorded_follow_up_refusal_is_a_problem_linking_its_email():
+    """#1201: listed after the mail incidents while any address is counted,
+    saying what to do and linking the newest email's Mail message page."""
+    message = str(uuid4())
+    assert "refusal_unrecorded" not in problems(unrecorded=Unrecorded(0, None, None))
+    found = find_problems(
+        mode="testing",
+        processes=(),
+        missing=(),
+        schema_current=False,
+        incidents={"mail_provider_unavailable": NOW},
+        refresh=None,
+        backup_at=None,
+        unrecorded=Unrecorded(1, NOW, message),
+    )
+    assert [problem.kind for problem in found] == [
+        "mail_provider_unavailable",
+        "refusal_unrecorded",
+        "schema_mismatch",
+    ]
+    one = render_to_string(
+        "stewardship/system-health-problem.html", {"problem": found[1]}
+    )
+    assert "An address the mail service refused permanently could not" in one
+    assert "use Report a bounced address to set it aside" in one
+    assert f'href="/admin/mail/outgoing/{message}/">See the email</a>' in one
+    several = Problem("refusal_unrecorded", at=NOW, count=3, message_id=message)
+    body = render_to_string(
+        "stewardship/system-health-problem.html", {"problem": several}
+    )
+    assert "3 addresses the mail service refused permanently" in body
+    assert "See the newest email</a>" in body
+    assert several.summary == "refused address not set aside"
 
 
 def test_an_unreadable_configured_backup_key_is_unavailable(monkeypatch):

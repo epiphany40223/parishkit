@@ -241,6 +241,7 @@ ACTIVITY_TYPES = {
         "admin_cmd_test_sample",
         "admin_cmd_test_families",
         "mail_provider_failed",
+        "retry_refusal_unrecorded",
     ),
     "parishsoft": (
         "source_promoted",

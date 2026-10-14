@@ -638,6 +638,8 @@ GOLDEN = {
                         {"service": "mail-dispatch", "process": "main", "target": None}
                     ],
                     "at": iso(NOW),
+                    "count": 0,
+                    "message_id": None,
                 }
             ],
             "processes": [
@@ -946,6 +948,10 @@ ALLOWED = {
         "problems",
         "kind",
         "subjects",
+        # An unrecorded follow-up refusal's address count and its email's
+        # internal id (#1201): no address or name.
+        "count",
+        "message_id",
         "service",
         "process",
         "target",

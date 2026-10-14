@@ -116,6 +116,16 @@ SAMPLES = {
             "command": "export create",
         },
     ),
+    Event.RETRY_REFUSAL_UNRECORDED: (
+        ContextKind.FAILURE,
+        {
+            "failure": "retry_refusal",
+            "failure_kind": FailureKind.DATABASE_REFUSED,
+            "message_id": MESSAGE,
+            "count": 2,
+            "outcome": Outcome.FAILED,
+        },
+    ),
     Event.CONFIG_MISMATCH: (ContextKind.EXCEPTION, {"outcome": Outcome.CHANGED}),
     Event.TASK_TIMED_OUT: (ContextKind.TIMEOUT, {"what": "lease"}),
     Event.HELPER_TIMED_OUT: (ContextKind.TIMEOUT, {"what": "mail_helper"}),
