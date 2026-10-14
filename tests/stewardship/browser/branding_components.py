@@ -16,7 +16,9 @@ server:
   Advanced, the mode it was sent from;
 - ``ADVANCED_PAGE`` draws current logos saved from Advanced, which opens in
   Advanced and asks before Basic (#1062, #1121); it is redrawn from
-  ``SETTLED_ADVANCED``, the new logos saved from Advanced too.
+  ``SETTLED_ADVANCED``, the new logos saved from Advanced too;
+- ``BASIC_TO_ADVANCED`` is ``PAGE`` (no logos, opening in Basic) redrawn
+  from ``SETTLED_ADVANCED``: an Advanced upload applied from a Basic page.
 """
 
 from types import SimpleNamespace as Value
@@ -37,6 +39,7 @@ SETTLED_ADVANCED = "/branding-dialog-settled-advanced"
 REFUSED = "/branding-dialog-refused"
 REFUSED_SIZE = "/branding-dialog-refused-size"
 ADVANCED_PAGE = f"{PAGE}?stored=advanced"
+BASIC_TO_ADVANCED = f"{PAGE}?then=advanced"
 SIZE_ERROR = (
     "Favicon: the image is 400 × 120 pixels; a favicon must be square (within 10%)."
 )
@@ -122,4 +125,5 @@ def components(context, admin):
         REFUSED: page([], refused),
         REFUSED_SIZE: page([], refused_size),
         ADVANCED_PAGE: page(assets, stored="advanced", refresh=SETTLED_ADVANCED),
+        BASIC_TO_ADVANCED: page([], refresh=SETTLED_ADVANCED),
     }
