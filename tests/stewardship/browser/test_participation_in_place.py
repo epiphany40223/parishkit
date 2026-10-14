@@ -29,6 +29,16 @@ ZONE = "timezone=America%2FLos_Angeles"
 # The current-population answer's all-Families comparison card, which the
 # first page lacks: it shows that the statistics panel was swapped in place.
 REFRESHED = "$982,657.00"
+# The daily chart panel's top, measured from the top of the statistics
+# panel's progress chart: the redrawn chart keeps its space, so the panel
+# below it must not move (#720). Measured from the chart, not the page,
+# because the fresh answer's extra comparison tile can wrap the tiles above
+# it onto another row where the fonts are wider.
+CHART_TOP = (
+    "document.getElementById('participation-chart').getBoundingClientRect().top"
+    " - document.querySelector('#participation-statistics figure.chart')"
+    ".getBoundingClientRect().top"
+)
 # Counts every AbortController.abort() call, so a test can see that a
 # swapped-out chart's page-wide listeners were removed.
 COUNT_ABORTS = """(() => {
@@ -66,7 +76,7 @@ def test_options_apply_in_place(page, component_origin):
     visible(
         page.get_by_role("heading", name="Daily participation — Current population")
     )
-    visible(page.locator("#participation-statistics dd", has_text=REFRESHED))
+    visible(page.locator("#participation-statistics .stat-value", has_text=REFRESHED))
     assert page.evaluate(MARKED) == "kept"
     assert abs(page.evaluate("window.scrollY") - offset) < 40
     assert page.evaluate(
@@ -93,6 +103,31 @@ def test_options_apply_in_place(page, component_origin):
     visible(page.locator("[data-digest-tip]"))
 
 
+def test_options_redraw_the_progress_chart_in_place(page, component_origin):
+    """Apply report options redraws the statistics' progress chart (#720)
+    with the fresh counts, and it keeps its space until drawn, so the
+    daily chart panel below it stays as far below it as it was (#736)."""
+    from .test_charts import assert_clean, watch
+    from .test_response_dashboard import FITTED
+
+    errors = watch(page)
+    page.set_viewport_size(VIEWPORT)
+    page.goto(component_origin + REAL + "?" + ZONE)
+    rendered = page.locator("#participation-statistics [data-chart-state=rendered]")
+    expect(rendered).to_have_count(1)
+    eventually(page, FITTED)
+    top = page.evaluate(CHART_TOP)
+    page.get_by_label("Chart population").select_option("current")
+    page.locator(APPLY).click()
+    visible(page.locator("#participation-statistics .stat-value", has_text=REFRESHED))
+    expect(rendered).to_have_count(1)
+    eventually(page, FITTED)
+    assert abs(page.evaluate(CHART_TOP) - top) < 2
+    labels = rendered.locator("svg tspan").all_text_contents()
+    assert "450 out of 1,000 (45%)" in labels
+    assert_clean(page, errors)
+
+
 def test_daily_table_refreshes_every_panel(page, component_origin):
     """Sorting the daily table refreshes the statistics and export panels from
     the same answer, as every region on the page is refreshed."""
@@ -108,7 +143,7 @@ def test_daily_table_refreshes_every_panel(page, component_origin):
         ),
     )
     page.locator("#table a.sort-link").first.click()
-    visible(page.locator("#participation-statistics dd", has_text=REFRESHED))
+    visible(page.locator("#participation-statistics .stat-value", has_text=REFRESHED))
     assert page.locator("input[name=population_scope]").input_value() == "current"
     assert page.evaluate(MARKED) == "kept"
 

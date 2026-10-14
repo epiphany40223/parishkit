@@ -5,7 +5,9 @@ from uuid import UUID
 import pytest
 from django.urls import reverse
 
-from .waits import visible
+from .test_charts import assert_clean, watch
+from .test_response_dashboard import AXE, FITTED
+from .waits import eventually, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -30,7 +32,7 @@ def test_report_chart_scope_export_controls_and_accessibility(
     assert tip.is_visible()
     assert tip.locator("dd").all_inner_texts() == ["1", "1", "$1,235"]
     assert "Historical" not in tip.inner_text()
-    assert page.locator("tbody tr").count() == 3
+    assert page.locator("[data-table-region] tbody tr").count() == 3
     page.get_by_label("Export format", exact=True).select_option("xlsx")
     button = page.get_by_role("button", name="Generate export")
     button.focus()
@@ -56,10 +58,85 @@ def test_report_chart_scope_export_controls_and_accessibility(
         )
 
 
+# True when every y-axis label of the statistics chart ends left of the
+# bars and starts inside the chart (#720).
+INSIDE_AXIS = """(() => {
+  const svg = document.querySelector('#participation-statistics svg');
+  const left = svg.getBoundingClientRect().left;
+  const bars = Math.min(...[...svg.querySelectorAll('g.mark-rect path')]
+    .map((bar) => bar.getBoundingClientRect().left));
+  return [...svg.querySelectorAll('.role-axis-label text:has(tspan)')]
+    .every((text) => {
+      const box = text.getBoundingClientRect();
+      return box.left >= left && box.right <= bars;
+    });
+})()"""
+
+
+def test_statistics_draw_as_progress_bars_with_exact_values(
+    page, component_origin, axe_source
+):
+    """The statistics panel is tiles, then progress bars (#720).
+
+    The chart draws under the CSP with no script error and is named and
+    focusable; a bar's tooltip has its count and share of active Families;
+    the collapsed table has every exact value; each bar's axis label is its
+    name over its value, in the cards' order; and the page still fits its
+    window.
+    """
+    from playwright.sync_api import expect
+
+    errors = watch(page)
+    page.goto(component_origin + "/participation")
+    panel = page.locator("#participation-statistics")
+    expect(panel.locator("[data-chart][data-chart-state=rendered]")).to_have_count(1)
+    assert panel.locator(".stat-label").all_inner_texts() == [
+        "Active Families",
+        "Active Members",
+        "Current annual pledges",
+        "Last year's pledges (all Families)",
+    ]
+    view = panel.locator("[data-chart-view]")
+    assert view.get_attribute("aria-label") == "Responses and email reach"
+    assert view.get_attribute("tabindex") == "0"
+    ticks = panel.locator("svg .role-axis-label text:has(tspan)")
+    assert [tick.locator("tspan").all_text_contents() for tick in ticks.all()] == [
+        ["Families that have responded", "2 out of 1,000 (0.2%)"],
+        ["Families with eligible email", "900 out of 1,000 (90%)"],
+        ["Families with deliverable email", "800 out of 1,000 (80%)"],
+    ]
+    # The grey tracks, then the three bars.
+    bars = panel.locator("svg g.mark-rect")
+    assert bars.nth(0).locator("path").count() == 3
+    bars.nth(1).locator("path").nth(1).hover()
+    tooltip = page.locator("#vg-tooltip-element")
+    visible(tooltip)
+    assert "eligible email" in tooltip.inner_text() and "90%" in tooltip.inner_text()
+    table = panel.locator(".chart-table")
+    table.locator("summary").click()
+    assert [
+        row.locator("td").all_inner_texts() for row in table.locator("tbody tr").all()
+    ] == [
+        ["Families that have responded", "2", "0.2%"],
+        ["Families with eligible email", "900", "90%"],
+        ["Families with deliverable email", "800", "80%"],
+    ]
+    assert_clean(page, errors)
+    for width in (320, 1280):
+        page.set_viewport_size({"width": width, "height": 900})
+        eventually(page, FITTED)
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        # Every label stays inside the chart and clear of the bars.
+        assert page.evaluate(INSIDE_AXIS)
+    page.evaluate(axe_source)
+    assert page.evaluate(AXE) == []
+    assert_clean(page, errors)
+
+
 def test_report_and_export_pages_offer_their_actions(page, component_origin):
     """Scope, exact values and each export state's action are on the page."""
     page.goto(component_origin + "/participation")
-    assert "$3,234.56" in page.locator("table").inner_text()
+    assert "$3,234.56" in page.locator("[data-table-region] table").inner_text()
     visible(page.get_by_role("button", name="Apply report options"))
     visible(page.get_by_role("button", name="Generate export"))
     visible(page.get_by_role("button", name="Queue export with the latest data"))

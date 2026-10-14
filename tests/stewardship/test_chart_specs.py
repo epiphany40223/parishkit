@@ -22,10 +22,12 @@ from parishkit.stewardship.reports.chart_specs import (
     financial_charts,
     funnel_chart,
     label_room,
+    population_progress,
     quiet_slots,
     share,
     stage_label,
 )
+from parishkit.stewardship.reports.money import MoneyAmount
 from parishkit.stewardship.reports.response_metrics import (
     ActivityBucket,
     ResponseMetrics,
@@ -35,7 +37,9 @@ from parishkit.stewardship.reports.response_metrics import (
     activity_series,
     stage_counts,
 )
+from parishkit.stewardship.reports.statistics import PopulationStatistics
 from parishkit.stewardship.web.dates import using
+from parishkit.stewardship.web.report_markup import TRACK
 
 from .test_response_metrics import ROWS, START
 
@@ -503,3 +507,66 @@ def test_financial_share_chart_draws_every_offered_method_and_groups_retired():
         ("Unavailable share method", "3", "37.5%"),
         ("No share method chosen", "1", "12.5%"),
     )
+
+
+def test_population_progress_draws_each_card_against_active_families():
+    """Responded and email reach are progress bars against active Families (#720).
+
+    The axis ends at the active Families, a grey track shows the rest, and
+    the label, name, summary and table keep the cards' exact wording. The
+    value is the second line of each bar's axis label, and every layer reads
+    the rows untransformed, so the bars keep the cards' order.
+    """
+    active = PopulationStatistics(1000, 2345, 900, 800, 2, MoneyAmount(0))
+    chart = population_progress(active)
+    assert (chart.key, chart.title) == (
+        "active-population",
+        "Responses and email reach",
+    )
+    spec = json.loads(json.dumps(chart.spec))
+    assert spec["encoding"]["x"]["scale"] == {"domain": [0, 1000], "nice": False}
+    assert spec["encoding"]["x"]["axis"]["titlePadding"] == 8
+    rows = spec["data"]["values"]
+    assert [(row["label"], row["tick"]) for row in rows] == [
+        (
+            "Families that have responded",
+            "Families that have responded — 2 out of 1,000 (0.2%)",
+        ),
+        (
+            "Families with eligible email",
+            "Families with eligible email — 900 out of 1,000 (90%)",
+        ),
+        (
+            "Families with deliverable email",
+            "Families with deliverable email — 800 out of 1,000 (80%)",
+        ),
+    ]
+    assert rows[0]["name"] == "Families that have responded: 2 out of 1,000 (0.2%)"
+    y = spec["encoding"]["y"]
+    assert (y["field"], y["sort"]) == ("tick", {"field": "order"})
+    assert y["axis"]["labelExpr"] == "split(datum.label, ' — ')"
+    track, bar = spec["layer"]
+    assert track["mark"] == {"type": "bar", "color": TRACK, "aria": False}
+    assert track["encoding"]["x"] == {"field": "total", "type": "quantitative"}
+    assert bar["encoding"]["description"] == {"field": "name"}
+    assert not any("transform" in layer for layer in spec["layer"])
+    assert chart.summary == (
+        "Responses and email reach: Families that have responded 2 out of 1,000 "
+        "(0.2%), Families with eligible email 900 out of 1,000 (90%), Families "
+        "with deliverable email 800 out of 1,000 (80%)."
+    )
+    assert chart.table.headings == (
+        "Responses and email reach",
+        "Families",
+        "Share of active Families",
+    )
+    assert chart.table.rows[0] == ("Families that have responded", "2", "0.2%")
+
+
+def test_population_progress_without_families_or_observation():
+    """No active Families dashes every share; no observation draws nothing."""
+    chart = population_progress(PopulationStatistics(0, 0, 0, 0, 0, MoneyAmount(0)))
+    assert chart.spec["encoding"]["x"]["scale"]["domain"] == [0, 1]
+    assert {row[2] for row in chart.table.rows} == {"—"}
+    assert chart.spec["data"]["values"][0]["text"] == "0 out of 0 (—)"
+    assert population_progress(None) is None

@@ -530,6 +530,20 @@ Cards show:
 Giving cards include mapped funds/period and source as-of. Missing/incomplete
 source displays Unavailable, not zero.
 
+On the Participation page the cards are visuals first
+([#720](https://github.com/epiphany40223/parishkit/issues/720)): tiles for
+the active Families, active Members and the two pledge figures, then one
+[chart engine](#chart-engine) chart, "Responses and email reach", with a
+progress bar against the active Families for each of the responded, eligible
+email and deliverable email counts. The axis ends at the active Families and
+a grey track shows the remainder. Each bar's axis label has its value,
+"463 out of 1,240 (37.3%)" (the wording the cards always used), on a second
+line under its name, so it fits at phone width; its tooltip, accessible
+name and exact-values table carry the same count and share. Without an
+observation nothing is drawn and every card is a tile reading Unavailable.
+Applying report options redraws the chart in place, keeping its space until
+it is drawn.
+
 ## Response funnel
 
 **Access:** Admin and Staff (`CAMPAIGN_REPORT`).

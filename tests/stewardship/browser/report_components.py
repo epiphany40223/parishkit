@@ -9,11 +9,10 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 
 from parishkit.stewardship.jobs.queue_wait import QueueWait
-from parishkit.stewardship.reports.daily_digest import statistics_cards
 from parishkit.stewardship.reports.digest_presentation import participation_context
 from parishkit.stewardship.reports.money import MoneyAmount
 from parishkit.stewardship.reports.workspace import ReportQuery
-from parishkit.stewardship.reports.workspace_views import daily_table
+from parishkit.stewardship.reports.workspace_views import daily_table, statistics_panel
 
 from ..test_daily_digest_content import document
 from .automation_components import canonical
@@ -53,7 +52,7 @@ def components(context, admin):
         "query": ReportQuery(timezone="America/Los_Angeles"),
         "selection": SimpleNamespace(updating=True, expected=True),
         "statistics": value.statistics,
-        "cards": statistics_cards(value.statistics),
+        **statistics_panel(value.statistics),
         "timezones": ["UTC", "America/Los_Angeles"],
         "export_key": UUID(int=10),
         "exact_key": UUID(int=11),
@@ -184,7 +183,12 @@ def components(context, admin):
     current = ReportQuery(scope="current", timezone="America/Los_Angeles")
     # The current-population answer's statistics differ from the first page's,
     # so a test can see that the statistics panel was swapped in place.
-    refreshed = replace(value.statistics, comparison_pledge_all=MoneyAmount(98265700))
+    # Its responded count differs too, so the progress chart is redrawn (#720).
+    refreshed = replace(
+        value.statistics,
+        comparison_pledge_all=MoneyAmount(98265700),
+        active=replace(value.statistics.active, responses=450),
+    )
     pages[REAL + "?timezone=UTC"] = ("participation", page | {"query": ReportQuery()})
     for query in ("", "?sort=date_desc", "?scope=historical"):
         pages[REAL + query] = ("participation", fallback)
@@ -196,7 +200,7 @@ def components(context, admin):
         page
         | {
             "query": current,
-            "cards": statistics_cards(refreshed),
+            **statistics_panel(refreshed),
             **daily_table(chart, participation_context(chart), current),
         },
     )
