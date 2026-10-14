@@ -18,12 +18,14 @@ from parishkit.stewardship.campaigns import admission, configuration, live_minis
 from parishkit.stewardship.campaigns.lifecycle import Action
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.ministries import campaign_ids
+from parishkit.stewardship.reports.ministry_followup import FollowupQuery, followup_page
 from parishkit.stewardship.source.version_models import SourceMinistry
 from parishkit.stewardship.workflows.models import MinistryRequest
 
 from .auth_builders import signed_in
 from .campaign_builders import campaign_clock, change, close_campaign, command
 from .test_background_grants_postgresql import task_login
+from .test_ministry_followup_postgresql import member_gone
 from .test_ministry_followup_postgresql import read as followup
 from .test_ministry_packets_postgresql import packet, sections
 from .test_ministry_reports_postgresql import actor, page, setup
@@ -637,6 +639,51 @@ def test_removed_ministry_without_current_requests_leaves_reports(response_servi
         assert harness.campaign.pk not in campaign_ids(leader)
     with pytest.raises(ValueError, match="not in this campaign"):
         packet(harness, user("admin@example.org").pk, (9,))
+
+
+@pytest.mark.parametrize("case", ["moved", "inactive"])
+def test_removed_ministry_kept_only_by_gone_members_leaves_reports(
+    response_service, case
+):
+    """A removed Ministry whose only current requests are for Members no
+    longer in ParishSoft is not listed empty in the queue's Ministry filter,
+    the report summary or a packet; Staff still reach it where they list
+    those requests, and it is back once the Member is current (#1219)."""
+    harness = setup(response_service)
+    admin = user("admin@example.org")
+    staff = Principal(admin.pk, frozenset({"staff"}), frozenset())
+    (request,) = open_requests(9)
+    assert applied(select(harness, [4]))
+
+    def listed():
+        """Where the removed Ministry 9 appears: queue filter, summary, packet."""
+        queue = {row["duid"] for row in followup(harness, staff)["ministries"]}
+        _, captured = sections(packet(harness, admin.pk))
+        return 9 in queue, 9 in summaries(harness), 9 in captured
+
+    assert listed() == (True, True, True)
+    member_gone(harness, case)
+    assert listed() == (False, False, False)
+    # Ministry 4 is still selected, so it stays, now empty.
+    assert summaries(harness)[4]["requests"] == 0
+    with pytest.raises(ValueError, match="not in this campaign"):
+        packet(harness, admin.pk, (9,))
+    # Staff's own views of those requests keep it: the Status choice, the
+    # roster list's "any" and the request page by id.
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        every = followup_page(
+            harness.campaign.pk, FollowupQuery(), staff, every_member=True
+        )
+    for queue in (followup(harness, staff, state="not_in_parishsoft"), every):
+        assert 9 in {row["duid"] for row in queue["ministries"]}
+        assert [row["id"] for row in queue["rows"] if row["ministry_duid"] == 9] == [
+            str(request.pk)
+        ]
+    (row,) = followup(harness, staff, request_id=request.pk)["rows"]
+    assert row["ministry_duid"] == 9 and row["in_campaign"] is False
+    member_gone(harness, "current")
+    assert listed() == (True, True, True)
+    assert summaries(harness)[9]["joining"] == 1
 
 
 def test_editor_never_offers_a_ministry_parishsoft_no_longer_lists(

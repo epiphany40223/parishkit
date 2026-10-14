@@ -138,16 +138,26 @@ WITH selected AS MATERIALIZED (
     -- The campaign's selections plus any Ministry it no longer selects that
     -- still has a current request (not cancelled or replaced) from this
     -- campaign (#342): removing a Ministry never hides answers already given;
-    -- they are marked not in_campaign.
+    -- they are marked not in_campaign. A request for a Member no longer in
+    -- ParishSoft (#1217) does not keep one listed (#1219), as it is never
+    -- counted or listed under it.
+    -- Staff and Administrators still get it where they list such requests:
+    -- by id, and with the presence filters 'gone' and 'any'.
     CROSS JOIN LATERAL (
         SELECT n.duid,true FROM jsonb_array_elements_text(x.values->'ministry_duids') n(duid)
         UNION
         SELECT DISTINCT r.ministry_duid::text,false
         FROM stewardship_submission s
         JOIN stewardship_ministry_request r ON r.submission_id=s.id
+        JOIN stewardship_family_campaign f ON f.id=s.family_id
         WHERE s.campaign_id=x.id AND s.mode='live'
           AND r.state NOT IN ('cancelled','superseded')
           AND NOT x.values->'ministry_duids' @> to_jsonb(r.ministry_duid)
+          AND (r.entity_kind<>'member'
+              OR (operational AND (request_uuid IS NOT NULL
+                  OR coalesce(filters->>'presence','current') IN ('gone','any')))
+              OR stewardship_member_source_status_v1(
+                  x.source_id,r.entity_key,f.family_duid)='current')
     ) n(duid,in_campaign)
     LEFT JOIN stewardship_snapshot_ministry m
         ON m.snapshot_id=x.source_id AND m.source_key=n.duid

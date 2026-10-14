@@ -309,6 +309,9 @@ FROZEN = {
     "0092_hide_gone_members.sql": (
         "55c18819e14938c233345cccbc3e3c0dc8ab3f3a7651a641d252610f3f2fc29d"
     ),
+    "0093_removed_ministry_gone_members.sql": (
+        "9c9b4ebeb51da19ac20ee77465b6de325d70f4269913e47e1cfdb87194360050"
+    ),
 }
 
 
