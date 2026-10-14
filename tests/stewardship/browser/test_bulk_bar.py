@@ -105,3 +105,24 @@ def test_bulk_reason_is_visible_text_in_a_reserved_line(
     assert action.is_disabled() and hint.is_visible() and described(action, hint)
     assert layout(page) == start
     assert not failures
+
+
+def test_rows_with_none_selectable_say_why_in_the_reason_line(page, component_origin):
+    """Rows shown but none selectable (every file in use) say why (#1332).
+
+    The disabled button names the line, and the empty-table case (no rows
+    at all) is not taken for it.
+    """
+    failures = []
+    page.on("pageerror", lambda error: failures.append(str(error)))
+    page.goto(component_origin + "/hosted-files-all-used")
+    assert page.locator("input[data-select-row]").count() == 0
+    action = page.get_by_role("button", name="Delete selected", exact=True)
+    hint = page.locator("[data-selection-hint]").first
+    assert action.is_disabled()
+    assert hint.is_visible()
+    assert hint.inner_text().strip() == (
+        "Every file on this page is in use, so none can be deleted."
+    )
+    assert described(action, hint)
+    assert not failures

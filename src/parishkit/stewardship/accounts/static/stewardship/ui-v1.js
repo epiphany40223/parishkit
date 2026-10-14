@@ -764,6 +764,11 @@
     // A table that gives an empty-table reason (the include's empty_hint)
     // keeps it visible in the line while the table has no rows at all.
     const emptyHint = hint?.dataset.emptyHint || "";
+    // Rows can be shown with none of them selectable (every file in use,
+    // no open request): their selection cells are empty. The line then says
+    // why nothing can be ticked, from the table's data-none-hint, or its
+    // missing hint (#1332).
+    const noneHint = scope.dataset.noneHint || missingHint;
     const update = () => {
       const all = rows();
       const chosen = all.filter((node) => node.checked).length;
@@ -791,11 +796,12 @@
         : scope.getAttribute(`data-kind-hint-${kinds.size > 1 ? "mixed" : [...kinds][0]}`) || "";
       // With no rows at all the table itself says it is empty, unless the
       // table gave an empty-table reason, which then stays in the line.
-      const empty = !all.length && Boolean(emptyHint);
+      const none = !all.length && Boolean(scope.querySelector("tbody td.select-col"));
+      const empty = !all.length && !none && Boolean(emptyHint);
       const explain = Boolean(hint)
-        && (Boolean(kindHint) || (!chosen && (all.length > 0 || empty)));
+        && (Boolean(kindHint) || (!chosen && (all.length > 0 || empty || none)));
       if (hint) {
-        const text = kindHint || (empty ? emptyHint : missingHint);
+        const text = kindHint || (none ? noneHint : empty ? emptyHint : missingHint);
         if (hint.textContent !== text) hint.textContent = text;
       }
       hint?.toggleAttribute("data-cleared", !explain);

@@ -16,6 +16,7 @@ from parishkit.stewardship.reports.report_paging import pop_navigation
 
 from .followup_components import (
     BULK_CLOSED,
+    BULK_CLOSED_QUEUE,
     BULK_JOIN,
     BULK_KEY,
     BULK_LEAVE,
@@ -792,3 +793,17 @@ def test_members_no_longer_in_parishsoft_are_marked_with_nothing_to_record(
     assert page.get_by_role("button", name="Save follow-up").count() == 0
     assert page.get_by_text("This request is closed", exact=False).count() == 0
     visible(page.get_by_text("Left a <private> voicemail", exact=True).first)
+
+
+def test_a_queue_page_with_no_open_request_says_why_nothing_can_be_ticked(
+    page, component_origin
+):
+    """Rows but none selectable (#1332): the reserved line says why every
+    bulk button is unavailable, and each button names it."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + BULK_CLOSED_QUEUE)
+    assert page.locator("input[data-select-row]").count() == 0
+    assert bulk_gate(page) == (
+        [False] * 4,
+        "No request on this page is open for an outcome.",
+    )
