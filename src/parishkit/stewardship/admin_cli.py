@@ -1408,7 +1408,7 @@ def workgroup_preview(args, preamble, runtime, context):
     return preview_workgroup(
         context["caller"],
         runtime,
-        name="" if args.clear else args.name,
+        name=None if args.clear else args.name,
         expected_version=args.expected_version,
     )
 

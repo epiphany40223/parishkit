@@ -27,8 +27,10 @@ and what the newest refresh found (``source.workgroups.current_evidence``).
   request and records nothing new.
 
 None is fresh-gated or prompts, as the page asks for no recent sign-in and
-shows no confirmation dialog: the reviewed token is the confirmation, and
-the change takes effect only at the next ParishSoft refresh.
+shows no confirmation dialog: the reviewed token is the confirmation. Once
+the change is applied, the old WorkGroup stops applying at once; a new name
+applies only from the next ParishSoft refresh that reads it, so until then
+no Family is excluded (``source.workgroups.current_evidence``).
 """
 
 from dataclasses import dataclass
@@ -138,8 +140,12 @@ def read_workgroup(caller, service):
 def preview_workgroup(caller, service, *, name, expected_version):
     """``workgroup preview``: the page's review of setting the WorkGroup.
 
-    ``name`` is the new name, or "" to turn the setting off. Admits as the
-    page's Review post does, then, in one read snapshot, binds the name to
+    ``name`` is the new name, or None (``--clear``) to turn the setting off.
+    A name that is blank once trimmed is refused (``invalid`` at ``name``)
+    before anything else: the page's form would read it as off, and an
+    unset shell variable must never silently clear the exclusion; turning
+    it off takes ``--clear``. Admits as the page's Review post does, then,
+    in one read snapshot, binds the name to
     the page's form (a name it refuses is ``invalid`` at ``name``), checks
     the version (another is ``stale_version``) and builds the page's own
     review: no change is ``invalid``, as the page refuses it, and a
@@ -156,6 +162,16 @@ def preview_workgroup(caller, service, *, name, expected_version):
     from .campaigns.work_locks import read_transaction
     from .storage import StaleRecordError
 
+    if name is not None and not name.strip():
+        raise InvalidChange(
+            [
+                {
+                    "field": "name",
+                    "code": "required",
+                    "message": "Give a WorkGroup name; use --clear to name none.",
+                }
+            ]
+        )
     actor = _admit_change(caller, service)
 
     def step():
@@ -163,7 +179,7 @@ def preview_workgroup(caller, service, *, name, expected_version):
         with read_transaction():
             configuration = editable_configuration(service)
             campaign = _current_campaign(configuration)
-            form = WorkGroupForm({"name": name, "base_digest": expected_version})
+            form = WorkGroupForm({"name": name or "", "base_digest": expected_version})
             if not form.is_valid():
                 raise InvalidChange(
                     [

@@ -272,6 +272,22 @@ def test_preview_refusals(admin, current):
     assert ConfigurationChangeRequest.objects.count() == requests and events() == 0
 
 
+def test_a_blank_name_never_clears_a_set_workgroup(admin, current):
+    """With a WorkGroup set, an empty or whitespace-only --name is invalid
+    and points to --clear: nothing is requested and the name stays."""
+    set_name(admin, current, NAME)
+    _, secret, _ = paired(admin.service)
+    requests = ConfigurationChangeRequest.objects.count()
+    for blank in ("", "   ", "\t"):
+        code, document, _ = preview(admin, secret, blank)
+        assert code == 1, document
+        refused(document, "invalid")
+        (problem,) = document["error"]["fields"]
+        assert problem["field"] == "name" and "--clear" in problem["message"]
+    assert ConfigurationChangeRequest.objects.count() == requests and events() == 0
+    assert workgroup(current) == NAME
+
+
 def test_confirm_refuses_foreign_and_stale_tokens(admin, current):
     """An altered token or another page's is invalid; another
     Administrator's is denied; one reviewed before the settings changed is

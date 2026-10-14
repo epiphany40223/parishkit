@@ -2125,8 +2125,13 @@ records the configuration request as the page's Apply does, through
 returns the original request. The preview and confirm need a full-scope
 session; none is fresh-gated or prompts, as the page asks for no recent
 sign-in and shows no confirmation dialog: the reviewed token is the
-confirmation, and the change takes effect at the next ParishSoft
-refresh. The command names, `--name`/`--clear` and the `state` codes
+confirmation. A `--name` that is blank once trimmed is `invalid` before
+anything else (turning the exclusion off takes `--clear`), so an unset
+shell variable cannot silently clear it. Once the change is applied the
+old WorkGroup stops applying at once, and a new name applies only from
+the next ParishSoft refresh that reads it, so until then no Family is
+excluded (`source.workgroups.current_evidence`), on the page as on the
+command line. The command names, `--name`/`--clear` and the `state` codes
 are defaults, pending Administrator confirmation. The
 [operator guide](../../../guides/stewardship-admin-automation.md#no-reminders-workgroup)
 lists the fields.

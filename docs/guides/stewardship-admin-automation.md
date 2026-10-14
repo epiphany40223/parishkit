@@ -1006,9 +1006,14 @@ changes** and **Apply changes**, as `parish preview` and `parish
 confirm` are for the parish profile. They need a full-scope session.
 Give the new name with `--name`, as ParishSoft shows it (capital letters
 and spaces at the ends do not matter), or `--clear` to name none, so
-every eligible Family that has not responded gets the Reminders. Nothing
-changes until `workgroup confirm`, and the change takes effect at the
-next ParishSoft refresh.
+every eligible Family that has not responded gets the Reminders. A blank
+`--name` is refused (exit 1, `invalid`): turning the exclusion off takes
+`--clear`. Nothing changes until the change from `workgroup confirm` is
+applied. Then the old WorkGroup stops applying at once, but a new name
+applies only from the next ParishSoft refresh that reads it: until then
+no Family is excluded, and `workgroup show` says `pending`. Do not rename
+or clear the WorkGroup shortly before a Reminder send unless every
+Family should get that Reminder; run a refresh after renaming.
 
 ```sh
 VERSION=$(pk-admin workgroup show | jq -r .result.version)

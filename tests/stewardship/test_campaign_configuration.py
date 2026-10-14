@@ -335,7 +335,7 @@ def test_reminder_workgroup_name_is_bounded_trimmed_text(value):
 
 def test_reminder_workgroup_displayed_name_and_slug():
     """The displayed name (#1061) is not the retired one, and its slug is a
-    plain lowercase, hyphenated URL segment and CLI subcommand name."""
+    plain lowercase, hyphenated URL segment."""
     assert "Reminder WorkGroup" not in REMINDER_WORKGROUP_NAME
     assert re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", REMINDER_WORKGROUP_SLUG)
     assert REMINDER_WORKGROUP_SLUG == "no-reminders-workgroup"
