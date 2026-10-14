@@ -56,8 +56,12 @@
     // Drawn once: a figure already rendered (or failed) is left alone.
     root.dataset.chartState = "drawing";
     // The server renders the fixed width the spec carries (the email image);
-    // the page lets the same chart follow its panel's width instead.
-    spec.width = "container";
+    // the page lets the same chart follow its panel's width instead. A chart
+    // of stacked panels (the participation chart, #720) gives each panel
+    // that width; its own fit-x autosize keeps the axes inside it.
+    (Array.isArray(spec.vconcat) ? spec.vconcat : [spec]).forEach((part) => {
+      part.width = "container";
+    });
     // The CSP allows no eval and no inline styles: Vega runs in interpreter
     // mode (ast), nothing injects a stylesheet (chart-v1.css carries the
     // tooltip's), and there is no actions menu to style.

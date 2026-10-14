@@ -367,8 +367,8 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   loaded the ordinary way, without a jump to a panel. Because the chart,
   statistics and export panels are all regions, paging or sorting the daily
   table refreshes all three from the same answer: an export format chosen
-  but not yet used, an open "Technical details" and the chart's inspected
-  date return to their defaults, as an ordinary load would leave them. A
+  but not yet used and an open "Technical details" return to their
+  defaults, as an ordinary load would leave them. A
   disclosure marked `details[data-keep-open][id]` is the exception: one the
   reader opened stays open in the fresh copy of its region, so a refresh
   does not fold away what they were reading (the

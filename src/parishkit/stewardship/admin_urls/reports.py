@@ -59,11 +59,6 @@ patterns = [
     _page("reports/responses/", response_dashboard.dashboard, "response_dashboard"),
     _page("reports/participation/", workspace_views.participation, "participation"),
     _page(
-        "reports/participation/<uuid:fact_set_id>.png",
-        workspace_views.participation,
-        "participation_chart",
-    ),
-    _page(
         "reports/participation/exports/",
         export_ui.create,
         "report_export_create",

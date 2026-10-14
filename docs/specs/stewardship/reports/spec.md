@@ -229,8 +229,9 @@ Vega-Lite specification, built by a pure function of the report's query
 result (`reports/chart_specs.py`) together with a plain-language summary and
 a table of its exact values. The same JSON is drawn two ways, so the portal
 and the emails cannot disagree (the
-[participation graph](#participation-graph) predates the engine and keeps its
-own renderer):
+[participation graph](#participation-graph) predates the engine: only its
+Participation page chart is drawn by it, and its files and email image keep
+their own renderer):
 
 - **In the browser**, `chart-v1.js` reads the specification embedded in the
   page and draws it as SVG with the vendored Vega runtime, within the
@@ -291,8 +292,10 @@ caption. A chart that draws its values in the chart itself leaves that table
 out ([#1266](https://github.com/epiphany40223/parishkit/issues/1266)) and does
 not show its summary, which stays its view's description and shows only if
 the chart cannot be drawn
-([caption rule](../ui-conventions/spec.md#charts)); its feature spec says so
-(Campaign comparison's
+([caption rule](../ui-conventions/spec.md#charts)); so does a chart that the
+page's own table of the same values directly follows (the
+[participation graph](#participation-graph)'s daily table). Its feature spec
+says so (Campaign comparison's
 [pledge bands](../campaign-history/spec.md#page-layout) are one): each bar, or
 each band of a stacked bar, shows its figures (its count or dollars, and its
 share where the chart gives one) on or after the mark or in its axis label, a
@@ -399,20 +402,22 @@ or the submission cutoff
 and PDF are the chart, not a table.
 The daily digest email states a plain as-of line instead
 ([daily campaign digest](../background-processing/spec.md#daily-campaign-digest)),
-and its chart PNG keeps the metadata. The same plot is used on
-the Participation page, in PNG and PDF exports, and in the daily digest email;
-the PDF sets it in the shared report page frame ([file design](#file-design)),
-while the page and email PNGs keep their own titles and layout.
+and its chart PNG keeps the metadata. The PNG and PDF exports and the daily
+digest email draw this plot with matplotlib; the PDF sets it in the shared
+report page frame ([file design](#file-design)), while the export and email
+PNGs keep their own titles and layout. Each process draws one matplotlib file
+at a time, because matplotlib's style settings are process-global; only
+workers and export tasks draw one.
 
-Each process draws one matplotlib file at a time, because matplotlib's style
-settings are process-global, so a web process's chart image can wait behind a
-PDF that the same process is rendering. The Participation page's chart is drawn
-from an immutable fact set, so each web process keeps its most recent page
-chart PNGs in memory, keyed by the exact drawing inputs (the document and the
-date format). A repeat view returns the stored image without waiting. Only the
-first view of a newly calculated chart can wait, behind the other renderings
-in that process, within the read guard's deadline
-([#905](https://github.com/epiphany40223/parishkit/issues/905)).
+The Participation page draws the same design in the browser with the
+[chart engine](#chart-engine)
+([#720](https://github.com/epiphany40223/parishkit/issues/720)): the same
+panels, titles, colors, zero-based axes and round ticks, each campaign date one
+band of the shared date axis, and as many date labels under the last panel as
+fit without overlapping. The page's daily table directly follows the chart and
+is its exact values, so the chart adds no exact-values table of its own and
+does not show its summary, which would only repeat that table. There is no
+page image, so a page view draws nothing on the server.
 
 For **Historical as of day**, the source cutoff is the last promoted source
 generation at or before the resolved end instant of that local day, selected
@@ -488,7 +493,7 @@ the last complete generation only together with a conspicuous, non-blocking
 it never labels stale facts current. By Administrator decision
 ([#575](https://github.com/epiphany40223/parishkit/issues/575)), the
 Participation page's chart block shows no "data as of", campaign time zone or
-technical-details header, and no instruction line above the date slider; the
+technical-details header, and no instruction line above the chart; the
 chart's as-of values are in the chart file's metadata and in its exports, and
 the x-axis label names the campaign time zone. The user can refresh after the
 queued generation publishes. A pinned export or digest waits/retries for its
@@ -504,16 +509,23 @@ atomic reference/read guards; no consumer assumes an unpinned old generation
 will remain available indefinitely.
 
 The UI defaults to Historical as of day and offers a clearly labeled scope
-toggle. Changing scope updates every series together. Pointing at or tapping a
-date, or choosing it with the date slider, shows a short tooltip: the local date
-as a small heading, then "Families" (cumulative count), "New today" (daily
-count) and, when financial is enabled, "Pledges", aligned on the colon and with
-no explanatory text. The tooltip's pledge is whole dollars (halves round up,
-such as $760,410); everything else keeps exact cents. On a narrow screen the
-tooltip sits under the chart in reserved space, so the slider does not move. The
-screen-reader live text and the slider's value text keep the fuller form: scope,
-local date, daily count, cumulative count out of the scoped population with
-percentage, and exact pledge. Report URLs, pinned digest inputs, equivalent data
+toggle. Changing scope updates every series together. On the Participation
+page, pointing at or tapping anywhere in a date's column, in any panel, shows
+that date's tooltip: the local date as its heading, then "First submissions",
+"Families that have responded" (out of the scoped population, with
+percentage) and, when financial is enabled, "Effective annual pledges", with no
+explanatory text. A keyboard or screen-reader user gets every date's figures
+from the daily table ([chart engine](#chart-engine)). A saved daily digest's
+page shows its retained chart image instead: pointing at or tapping a date, or
+choosing it with the date slider, shows a short tooltip: the local date as a
+small heading, then "Families" (cumulative count), "New today" (daily count)
+and, when financial is enabled, "Pledges", aligned on the colon. On a narrow
+screen that tooltip sits under the chart in reserved space, so the slider does
+not move; the screen-reader live text and the slider's value text keep the
+fuller form: scope, local date, daily count, cumulative count out of the scoped
+population with percentage, and exact pledge. Either tooltip's pledge is whole
+dollars (halves round up, such as $760,410); everything else keeps exact
+cents. Report URLs, pinned digest inputs, equivalent data
 tables, PNG/PDF output, and structured downloads record the scope and exactly
 match the displayed values. A scope note explains why the historical endpoint
 may differ from current-statistics cards.

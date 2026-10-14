@@ -1,11 +1,11 @@
 """Shared exact-value presentation for the digest's protected snapshot page."""
 
-from decimal import ROUND_HALF_UP, Decimal
 from io import BytesIO
 
 from django.urls import reverse
 from PIL import Image
 
+from .chart_specs import whole_dollars as tooltip_dollars
 from .charts import (
     DIGEST_PLOT_LAYOUTS,
     LEGACY_PLOT_LAYOUT,
@@ -54,11 +54,6 @@ def snapshot_context(
 def comparison_path(section):
     """The Campaign comparison report on the section's day (``?day=N``)."""
     return f"{reverse('admin:campaign_comparison')}?day={int(section['day'])}"
-
-
-def tooltip_dollars(amount):
-    """Round an exact pledge total to whole dollars, halves up: $760,410."""
-    return f"${amount.quantize(Decimal(1), rounding=ROUND_HALF_UP):,}"
 
 
 def tooltip_point(day, row):
