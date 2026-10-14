@@ -782,6 +782,21 @@ def test_mail_summary_times_are_browser_local_clock_times():
     assert "UTC" not in tile
 
 
+def test_gmails_limit_names_the_earliest_time_sending_resumes():
+    """Both senders held at Gmail's limit until different times: the summary
+    says the earlier, when sending resumes."""
+    early, late = NOW + timedelta(hours=1), NOW + timedelta(hours=2)
+    held = group_processes(
+        [
+            row("mail-dispatch", sender_state="gmail_held", sender_until=late),
+            row("mail-dispatch", "mail", sender_state="gmail_held", sender_until=early),
+        ],
+        NOW,
+    )
+    summary = health(processes=held).mail_summary
+    assert (summary.kind, summary.at) == ("gmail_held", early)
+
+
 def test_a_limit_held_by_a_stopped_sender_is_not_named():
     """Only a running consumer's limit is a reason sends wait now."""
     stopped = group_processes(

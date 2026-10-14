@@ -849,19 +849,26 @@ class SystemHealth(ReadModel):
         A deliberate wait is named, not counted as a warning (decision 3 of
         2026-10-13). A limit is named only while a running consumer is held
         at it; the daily limit's time is when the 24-hour count falls below
-        it again, Gmail's the time the first held consumer waits until.
+        it again, Gmail's the earliest time a held consumer waits until,
+        when sending resumes.
         """
         held = {
-            line.sender_state: line
-            for line in reversed(self.senders)
-            if line.running and line.sender_state in {"daily_limit", "gmail_held"}
+            state: [
+                line
+                for line in self.senders
+                if line.running and line.sender_state == state
+            ]
+            for state in ("daily_limit", "gmail_held")
         }
         if self.delivery_paused:
             return MailSummary("paused", self.paused_at)
-        if "daily_limit" in held:
+        if held["daily_limit"]:
             return MailSummary("daily_limit", self.daily_resume_at)
-        if "gmail_held" in held:
-            return MailSummary("gmail_held", held["gmail_held"].sender_until)
+        if held["gmail_held"]:
+            times = [
+                line.sender_until for line in held["gmail_held"] if line.sender_until
+            ]
+            return MailSummary("gmail_held", min(times, default=None))
         if self.planning_held:
             return MailSummary("planning_held")
         if self.retry_waiting:
