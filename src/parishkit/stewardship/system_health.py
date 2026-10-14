@@ -78,6 +78,10 @@ RUNBOOKS = {
         "https://github.com/epiphany40223/parishkit/blob/main/docs/guides/"
         "stewardship-launch-runbooks.md#mail-provider-outage"
     ),
+    "source_outage": (
+        "https://github.com/epiphany40223/parishkit/blob/main/docs/guides/"
+        "stewardship-launch-runbooks.md#parishsoft-outage"
+    ),
 }
 # Family email purposes, whose waiting retries the page counts.
 FAMILY_PURPOSES = ("initial", "reminder")
@@ -436,6 +440,30 @@ MAIL_SUMMARIES = (
     "sending",
     "idle",
 )
+
+
+@dataclass(frozen=True)
+class SourceSummary:
+    """What the ParishSoft refresh tile's Working summary names
+    (``SystemHealth.source_summary``).
+
+    ``kind`` is one of ``SOURCE_SUMMARIES``; ``at`` is the time it states
+    (until when refreshes are held, or what "data as of" is), and
+    ``connection`` the refresh status's ``Connection`` (or None) for the
+    ``data`` kind.
+    """
+
+    kind: str
+    at: datetime | None = None
+    connection: object = None
+
+
+# The ParishSoft refresh tile's Working summaries, in the order the first
+# that holds is named (admin-portal spec, "ParishSoft refresh panel"): a
+# refusal the Administrator already accepted is what the tile is waiting
+# on, a hold during a send says why the data is not moving, and a running
+# refresh says it is about to; otherwise the data's age and the connection.
+SOURCE_SUMMARIES = ("accepted", "held", "running", "data", "none")
 
 
 @dataclass(frozen=True)
@@ -876,6 +904,32 @@ class SystemHealth(ReadModel):
         return MailSummary("sending" if self.send_active else "idle")
 
     @property
+    def source_summary(self):
+        """The ParishSoft refresh tile's Working summary: the first of
+        ``SOURCE_SUMMARIES`` that holds.
+
+        Only shown while the tile is Working, so a failing connection or a
+        late refresh (each a problem) never reaches it in practice; the
+        ``data`` kind still carries the connection whatever its state, so
+        the words stay true if it does.
+        """
+        status = self.refresh
+        refused = any(
+            problem.kind == "source_destructive_change" for problem in self.problems
+        )
+        if refused and self.accept_state == "accepted":
+            return SourceSummary("accepted")
+        if status is None:
+            return SourceSummary("none")
+        if status.held_for_send:
+            return SourceSummary("held", status.resume_at)
+        if status.running:
+            return SourceSummary("running")
+        if status.data_as_of is not None:
+            return SourceSummary("data", status.data_as_of, status.connection)
+        return SourceSummary("none")
+
+    @property
     def live_request(self):
         """Whether a requested backup is waiting, held or running."""
         request = self.backup_request
@@ -1067,6 +1121,34 @@ class Tile:
     def more(self):
         """How many more counted problems and findings the summary has."""
         return max(len(self.counted) + len(self.findings) - 1, 0)
+
+    @property
+    def listed(self):
+        """Its problem parts that its details list first, in registry order:
+        every part but a refused large change (``refusal``)."""
+        return tuple(
+            part
+            for part in self.problems
+            if part.problem.kind != "source_destructive_change"
+        )
+
+    @property
+    def refusal(self):
+        """A refused large change's part, which ends the tile's problems.
+
+        Its block holds the refused counts, and Accept this change once,
+        which follows the problems, must sit directly under them
+        (admin-portal spec, "Health tiles"), so it is listed after the
+        other problems and the page findings; None when there is none.
+        """
+        return next(
+            (
+                part
+                for part in self.problems
+                if part.problem.kind == "source_destructive_change"
+            ),
+            None,
+        )
 
     @property
     def open(self):
