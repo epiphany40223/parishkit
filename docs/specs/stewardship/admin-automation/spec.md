@@ -1686,6 +1686,10 @@ signatures:
   commands needed none: they call the pages' own `secret_request_status`,
   `_selectable`, `_selection` and `_changes` (which now also names each
   setting's stored field).
+  `workgroup preview` moved the No-reminders WorkGroup page's review into
+  `reminder_workgroup_views.review_change`, which the page's Review now
+  calls (`workgroup show` needed none: the page's campaign check and
+  `source.workgroups.current_evidence` were already request-free).
 - **PR 11:** user, event and follow-up actions from their views (the users
   model of #952 replaces the rule actions; #922 retired the assignment and
   Chairperson actions). The event acknowledgements moved each view's
@@ -1866,7 +1870,8 @@ none.
 | `campaign_end_date_check` | `schedule preview` (PR 4): Campaign settings' no-save live check of a live campaign's end date answers what a preview of that end date would refuse |
 | `configuration_request` | `config request show --watch` (PR 4); `config request cancel` ([#944](https://github.com/epiphany40223/parishkit/pull/944)), an operator recovery with no page button |
 | `campaign_settings`, `campaign_create`, `campaign_clone` | `campaign show`, `campaign preview`, `campaign confirm`, `campaign clone`, `campaign ministries` (PR 10; a live campaign's Ministries change on Campaign settings, #1119); until #145, creating or copying a campaign is refused, except the first campaign through [Create the campaign](../admin-portal/spec.md#create-the-campaign) (#142) ([navigation rule 10](../admin-portal/spec.md#navigation-rules)): commands that go through `confirm` and `_target`, or call `refuse_campaign_creation`, will get the same refusal as the pages; `privileged_actions.configuration_request` has no such check |
-| `share_settings`, `reminder_workgroup` | `campaign shares` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), the Share options read; `campaign no-reminders-workgroup` and Share option changes (PR 10) |
+| `share_settings` | `campaign shares` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), the Share options read; Share option changes (PR 10) |
+| `reminder_workgroup` (its review and apply, #750) | `workgroup show`, `workgroup preview`, `workgroup confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)) |
 | `content_catalog`, `content_edit`, `content_revision`, `content_delete`, `content_history`, `content_history_revision`, `content_plain_text` | `content list`, `content show`, `content history` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); `content preview`, `content confirm` (PR 10), the plain-text preview with `content preview` |
 | `parish_settings`, `ministries` | `parish show`, `parish preview`, `parish confirm`, `ministries list` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); Ministries changes nothing since [#1267](https://github.com/epiphany40223/parishkit/issues/1267) |
 | `hosted_files`, `hosted_file_delete`, `hosted_file_rename` | `files list`, `files delete`, `files rename` ([#463](https://github.com/epiphany40223/parishkit/issues/463)) |
@@ -2090,6 +2095,41 @@ and shows no confirmation dialog: the reviewed token is the confirmation,
 and a removal deletes nothing (the image stays in the activated
 configurations' history). The command shapes are defaults, pending
 Administrator confirmation.
+
+`workgroup show`, `workgroup preview (--name … | --clear)
+--expected-version …` and `workgroup confirm --token …` are the
+No-reminders WorkGroup page (#861): its read, Review and in-place Apply
+(#750), as `parish show`, `parish preview` and `parish confirm` are
+Parish settings'. All three act on the current campaign through the
+page's own campaign check (none is `not_available`). `workgroup show` is
+Administrators only (`CONFIGURE`), admitted passively so any session
+scope reads, with no event, as the page's GET records none; it prints
+the applied configuration's `version`, the `campaign_id`, the WorkGroup
+`name` (null when the setting is off) and the page's **Now** panel as a
+closed `state` (`off`, `pending` until a refresh reads that name,
+`missing` when the newest refresh found no such Family WorkGroup, or
+`found`) with `families`, the number of Families the refresh found when
+`found`, never a Family's DUID or name. `workgroup preview` admits as
+the page's Review post does (recording activity) and, in one read
+snapshot, binds the name to the page's form (`WorkGroupForm`: a name it
+refuses is `invalid` at `name`), checks the version (another is
+`stale_version`) and builds the page's own review
+(`reminder_workgroup_views.review_change`): no change is `invalid`, as
+the page refuses it in place. It prints `version`, `campaign_id`,
+`before`, `after` (null for off) and `preview.token`, the page's own
+signed binding (its salt, bound to the campaign), so a token from either
+channel confirms on the other; it records nothing. `workgroup confirm`
+records the configuration request as the page's Apply does, through
+`admin_editing.confirm_intent` with the page's salt and scope, with
+`admin_cmd_workgroup_confirm` in the request's own transaction; a repeat
+returns the original request. The preview and confirm need a full-scope
+session; none is fresh-gated or prompts, as the page asks for no recent
+sign-in and shows no confirmation dialog: the reviewed token is the
+confirmation, and the change takes effect at the next ParishSoft
+refresh. The command names, `--name`/`--clear` and the `state` codes
+are defaults, pending Administrator confirmation. The
+[operator guide](../../../guides/stewardship-admin-automation.md#no-reminders-workgroup)
+lists the fields.
 
 `parish show`, `ministries list`, `branding show` and `campaign shares
 [--campaign ID]` are the reads of Parish settings, Ministries, Parish
@@ -3542,7 +3582,9 @@ exactly the commands that exist.
   (`parish show`, `ministries list`, `branding show` and `campaign shares`
   first, then `parish preview` and `parish confirm`), hosted files (`files list`,
   `files delete`, `files rename`), artwork (`artwork show`, then
-  `artwork remove-preview` and `artwork remove`), branding confirmation, integration settings
+  `artwork remove-preview` and `artwork remove`), the No-reminders
+  WorkGroup (`workgroup show`, `workgroup preview`, `workgroup confirm`),
+  branding confirmation, integration settings
   (`integration list`, `integration show` and `integration status`, then
   `integration preview` and `integration confirm`) with the
   backup folder probe, and secret replacement: integration key replacement,

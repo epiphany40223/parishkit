@@ -20,7 +20,6 @@ or action lands with its command, or with an exemption here.
 from typing import NamedTuple
 
 from parishkit.stewardship.admin_urls.slashless import TARGETS as SLASHLESS_TARGETS
-from parishkit.stewardship.campaigns.configuration import REMINDER_WORKGROUP_SLUG
 
 
 class Parity(NamedTuple):
@@ -157,7 +156,10 @@ LEDGER = {
     "campaign_create": pending("PR 10", "campaign preview", "campaign confirm"),
     "campaign_clone": pending("PR 10", "campaign clone"),
     "share_settings": command("campaign shares", owed="PR 10"),
-    "reminder_workgroup": pending("PR 10", f"campaign {REMINDER_WORKGROUP_SLUG}"),
+    # The page's read, Review and Apply (#750), all on the page itself.
+    "reminder_workgroup": command(
+        "workgroup show", "workgroup preview", "workgroup confirm"
+    ),
     "content_catalog": command("content list"),
     # The editor as it opens; its Review and Apply are still owed.
     "content_edit": command("content show", owed="PR 10"),

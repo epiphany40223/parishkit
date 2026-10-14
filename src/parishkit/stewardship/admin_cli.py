@@ -67,6 +67,8 @@ the Roster changes to enter list, and ``report census`` (in
 ``artwork show``,
 ``artwork remove-preview`` and ``artwork remove`` (PR 10, in
 ``admin_artwork``) read Campaign images and remove one of them.
+``workgroup show``, ``workgroup preview`` and ``workgroup confirm`` (PR 10,
+in ``admin_workgroup``) read and change the No-reminders WorkGroup.
 """
 
 import argparse
@@ -1385,6 +1387,38 @@ def parish_confirm(args, preamble, runtime, context):
     from .admin_parish import TOKEN_LIMIT, confirm_parish
 
     return confirm_parish(
+        context["caller"],
+        runtime,
+        token=_input(args.token, context, TOKEN_LIMIT),
+        context=context,
+    )
+
+
+def workgroup_show(args, preamble, runtime, context):
+    """The current campaign's No-reminders WorkGroup (PR 10)."""
+    from .admin_workgroup import read_workgroup
+
+    return read_workgroup(context["caller"], runtime)
+
+
+def workgroup_preview(args, preamble, runtime, context):
+    """Review a change to the No-reminders WorkGroup (PR 10)."""
+    from .admin_workgroup import preview_workgroup
+
+    return preview_workgroup(
+        context["caller"],
+        runtime,
+        name="" if args.clear else args.name,
+        expected_version=args.expected_version,
+    )
+
+
+def workgroup_confirm(args, preamble, runtime, context):
+    """Confirm a reviewed No-reminders WorkGroup change as a request (PR 10)."""
+    from .admin_changes import TOKEN_LIMIT
+    from .admin_workgroup import confirm_workgroup
+
+    return confirm_workgroup(
         context["caller"],
         runtime,
         token=_input(args.token, context, TOKEN_LIMIT),
@@ -3806,6 +3840,34 @@ def _parish_confirm_options(parser):
     )
 
 
+def _workgroup_preview_options(parser):
+    """Options of ``workgroup preview``: the new name or --clear, and the version."""
+    choice = parser.add_mutually_exclusive_group(required=True)
+    choice.add_argument(
+        "--name", help="the ParishSoft Family WorkGroup's name, as ParishSoft shows it"
+    )
+    choice.add_argument(
+        "--clear",
+        action="store_true",
+        help="name no WorkGroup: every eligible Family gets the Reminders",
+    )
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_digest,
+        help="the version workgroup show printed",
+    )
+
+
+def _workgroup_confirm_options(parser):
+    """Options of ``workgroup confirm``: the preview's token."""
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from workgroup preview, or - for standard input",
+    )
+
+
 def _users_confirm_options(parser):
     """Options of ``users confirm``: the preview's token."""
     parser.add_argument(
@@ -4618,6 +4680,54 @@ def _settings_specs():
             campaign_shares,
             CampaignShares,
             options=(_schedule_options,),
+        ),
+    )
+
+
+def _workgroup_specs():
+    """The No-reminders WorkGroup page (PR 10, ``admin_workgroup``).
+
+    Like ``parish show``, any session runs ``workgroup show`` and it records
+    nothing, as the page's GET records nothing. The page's Review and Apply
+    are ``workgroup preview`` and ``workgroup confirm``, as ``parish
+    preview`` and ``parish confirm``: full scope, as the page's posts record
+    activity; neither is fresh-gated nor prompts, as the page asks for no
+    recent sign-in and its Apply is the reviewed token.
+    """
+    from .admin_workgroup import WorkGroupConfirm, WorkGroupPreview, WorkGroupShow
+
+    return (
+        CommandSpec(
+            "workgroup show",
+            "Show the current campaign's No-reminders WorkGroup.",
+            workgroup_show,
+            "read_only",
+            False,
+            WorkGroupShow.field_names(),
+            10,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "workgroup preview",
+            "Review a change to the No-reminders WorkGroup.",
+            workgroup_preview,
+            "full",
+            False,
+            WorkGroupPreview.field_names(),
+            10,
+            options=(_workgroup_preview_options,),
+            expected_version=True,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "workgroup confirm",
+            "Confirm a reviewed change to the No-reminders WorkGroup.",
+            workgroup_confirm,
+            "full",
+            True,
+            WorkGroupConfirm.field_names(),
+            10,
+            options=(_workgroup_confirm_options,),
         ),
     )
 
@@ -5503,6 +5613,7 @@ COMMANDS = (
     + _portal_specs()
     + _file_specs()
     + _settings_specs()
+    + _workgroup_specs()
     + _operation_specs()
     + _report_specs()
     + _users_specs()

@@ -982,6 +982,56 @@ slot's or an altered token is exit 1 (`invalid`). `artwork remove`
 records `admin_cmd_artwork_remove` in System logs with the request;
 repeating it with the same token returns the same request.
 
+## No-reminders WorkGroup
+
+`workgroup show` reads the current campaign's **No-reminders WorkGroup**:
+the ParishSoft Family WorkGroup whose Families get no Reminder emails.
+It needs an Administrator; a session of any scope may run it, and it
+records nothing in System logs, as opening the page records nothing.
+
+```sh
+pk-admin workgroup show
+```
+
+| Field | What it holds |
+| --- | --- |
+| `version` | The configuration version; `workgroup preview --expected-version` takes it |
+| `campaign_id` | The current campaign |
+| `name` | The WorkGroup's name, or null when no WorkGroup is set |
+| `state` | The page's **Now**: `off` (none set), `pending` (the next ParishSoft refresh reads it), `missing` (ParishSoft has no Family WorkGroup of that name: check the name) or `found` |
+| `families` | When `found`, how many Families the newest refresh found in it; otherwise null |
+
+`workgroup preview` and `workgroup confirm` are the page's **Review
+changes** and **Apply changes**, as `parish preview` and `parish
+confirm` are for the parish profile. They need a full-scope session.
+Give the new name with `--name`, as ParishSoft shows it (capital letters
+and spaces at the ends do not matter), or `--clear` to name none, so
+every eligible Family that has not responded gets the Reminders. Nothing
+changes until `workgroup confirm`, and the change takes effect at the
+next ParishSoft refresh.
+
+```sh
+VERSION=$(pk-admin workgroup show | jq -r .result.version)
+pk-admin workgroup preview --name "Active: Stewardship 2027" \
+    --expected-version "$VERSION" |
+  jq -r .result.preview.token | pk-admin workgroup confirm --token -
+```
+
+| Field | What it holds |
+| --- | --- |
+| `version`, `campaign_id` (`workgroup preview`) | The version the change was reviewed against, and the current campaign |
+| `before`, `after` | The WorkGroup now and the one proposed (null for none) |
+| `preview.token` | What `workgroup confirm --token` takes, valid for fifteen minutes |
+| `created`, `request` (`workgroup confirm`) | As `parish confirm` prints them; follow the change with `config request show --watch` |
+
+The same name again, or a name the page refuses (too long), is exit 1
+(`invalid`). A version that is no longer current, or an expired token,
+is exit 1 (`stale_version`): read `workgroup show` again. An altered
+token is exit 1 (`invalid`). With no current campaign, each command is
+exit 1 (`not_available`). `workgroup confirm` records
+`admin_cmd_workgroup_confirm` in System logs with the request; repeating
+it with the same token returns the same request.
+
 ## Parish, Ministry, logo and Share option settings
 
 `parish show`, `ministries list`, `branding show` and `campaign shares`
@@ -2649,6 +2699,12 @@ print is exit 1 (`invalid`).
   `artwork remove SLOT`, Campaign images' Remove this image and its Apply
   (full scope, Administrators only); `artwork remove` records
   `admin_cmd_artwork_remove`.
+- `pk-admin/1` (#463): additive. `workgroup show`, `workgroup preview
+  (--name NAME | --clear) --expected-version VERSION` and `workgroup
+  confirm --token TOKEN|-`, the No-reminders WorkGroup page's read, Review
+  and Apply (Administrators only; the read in any session, the others in
+  a full-scope one); `workgroup confirm` records
+  `admin_cmd_workgroup_confirm`.
 - `pk-admin/1` (#1161): additive. `export comparison` no longer needs
   `--timezone`; without it the file uses the parish's time zone.
 - `pk-admin/1` (#1211): additive. `delivery bounce-report MESSAGE_ID
