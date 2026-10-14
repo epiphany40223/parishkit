@@ -22,7 +22,12 @@ from parishkit.stewardship.storage import StaleRecordError
 
 from .test_background_grants_postgresql import task_login
 from .test_census_resolution_postgresql import prepared, resolve
-from .test_publication_plans_postgresql import owner
+from .test_publication_plans_postgresql import owner, ready  # noqa: F401
+from .test_publication_worker_postgresql import (  # noqa: F401 (fixture)
+    confirmed,
+    results,
+    run,
+)
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -134,6 +139,20 @@ def test_only_an_open_change_is_reviewed(
     with pytest.raises((IntegrityError, DatabaseError), match="current authority"):
         forge(name, admin, decision, update=False)
     assert ProposalReview.objects.count() == 0
+
+
+@pytest.mark.parametrize("decision", ["ignored", "unreviewed"])
+def test_a_review_after_confirmation_leaves_the_plan_stale(confirmed, decision):  # noqa: F811
+    """A review advances the version, so the confirmed plan that included the
+    approved change no longer matches: the worker writes nothing, the change
+    is never queued and keeps the decision the review gave it."""
+    state = confirmed
+    review(state.harness, state.admin, state.first, decision)
+    assert run(state).invalidated == 1
+    assert state.gateway.writes == []
+    assert results(state.entity) == [("invalidated", "")]
+    first = fresh(state.first)
+    assert (first.execution, first.decision) == ("pending", decision)
 
 
 def forge(proposal, actor, decision, *, update=True, assignments=None, version=None):
