@@ -104,11 +104,13 @@ def _selection(service, request_id):
 
 
 def _changes(configuration, patch):
-    """Settings the switch would change, as label/before/after rows.
+    """Settings the switch would change, as field/label/before/after rows.
 
     Shown on the confirm page, so an Administrator sees exactly what else
     the switch saves besides the key (normally nothing, or the Slack channel
-    or mailbox the key was checked against).
+    or mailbox the key was checked against). ``field`` is the setting's
+    stored name, which ``pk-admin integration key finish-switching-preview``
+    prints.
     """
     item = patch[0]
     records = integration_records(configuration.active_configuration.canonical_document)
@@ -120,6 +122,7 @@ def _changes(configuration, patch):
     fields = IntegrationForm(target).fields
     return [
         {
+            "field": name,
             "label": fields[name].label if name in fields else name,
             "before": before.get(name, ""),
             "after": after.get(name, ""),

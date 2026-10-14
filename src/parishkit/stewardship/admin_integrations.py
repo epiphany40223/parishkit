@@ -128,7 +128,7 @@ def backup_documents(state):
     )
 
 
-def _read(caller, service, read):
+def _read(caller, service, read, missing="That integration is not set up."):
     """Admit, run ``read(configuration, actor)`` in one snapshot, then recheck.
 
     The configuration is the pages' own ``editable_configuration``, so a
@@ -137,6 +137,8 @@ def _read(caller, service, read):
     Workspace mail before setup) is the pages' ``LookupError`` (their 404),
     reported as ``not_available`` only after the session recheck, so an
     ended session is still exit 5, as ``admin_settings._read`` does.
+    ``missing`` is that refusal's message (``integration key status`` names
+    a key change instead).
     """
     from .accounts.admin_editing import editable_configuration
     from .accounts.policy import Capability
@@ -145,16 +147,16 @@ def _read(caller, service, read):
     def step():
         """One attempt, repeated by ``_held`` while a change activates."""
         actor = _admit(caller, service.store, Capability.CONFIGURE)
-        missing = False
+        absent = False
         with read_transaction():
             configuration = editable_configuration(service)
             try:
                 model = read(configuration, actor)
             except LookupError:
-                missing = True
+                absent = True
         _recheck(caller, service.store, actor, Capability.CONFIGURE)
-        if missing:
-            raise NotAvailable("That integration is not set up.")
+        if absent:
+            raise NotAvailable(missing)
         return model
 
     return _held(step)

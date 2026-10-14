@@ -292,13 +292,13 @@ def test_the_catalog_entries(name, model, arguments, watch):
 
 
 def test_the_ledger_covers_the_pages_with_their_changes_owed():
-    """The reads are covered; the key steps are still PR 10's."""
+    """The reads are covered; replacing a key is still PR 10's."""
     assert LEDGER["integrations"].detail == ("integration list",)
     assert LEDGER["integration_status"].detail == ("integration status",)
     settings = LEDGER["integration_settings"]
     assert settings.kind == "command" and settings.owed == "PR 10"
     assert settings.detail[0] == "integration show"
-    assert LEDGER["credential_status"].kind == "pending"
+    assert LEDGER["credential_status"].detail == ("integration key status",)
 
 
 @pytest.mark.parametrize(

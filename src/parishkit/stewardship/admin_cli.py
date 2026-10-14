@@ -1286,6 +1286,40 @@ def integration_dismiss(args, preamble, runtime, context):
     )
 
 
+def integration_key_status(args, preamble, runtime, context):
+    """One of the Administrator's own key changes, as its status page (PR 10)."""
+    from .admin_integration_keys import read_key_status
+
+    return read_key_status(
+        context["caller"], runtime, args.target, request_id=args.request_id
+    )
+
+
+def integration_key_finish_switching_preview(args, preamble, runtime, context):
+    """Review Finish switching to an integration's new key (PR 10)."""
+    from .admin_integration_keys import preview_finish
+
+    return preview_finish(context["caller"], runtime, args.target)
+
+
+def integration_key_finish_switching(args, preamble, runtime, context):
+    """Finish switching an integration to its new key (PR 10).
+
+    The page needs a recent sign-in (#547), so this always prompts, naming
+    the integration and the settings the switch also changes (never their
+    values), after checking the token's signature and before any
+    transaction.
+    """
+    from .admin_changes import TOKEN_LIMIT
+    from .admin_integration_keys import confirm_finish, finish_prompt_lines
+
+    token = _input(args.token, context, TOKEN_LIMIT)
+    confirm(context, finish_prompt_lines(runtime, args.target, token))
+    return confirm_finish(
+        context["caller"], runtime, args.target, token=token, context=context
+    )
+
+
 def parish_show(args, preamble, runtime, context):
     """The Parish settings page's profile (PR 10)."""
     from .admin_settings import read_parish
@@ -2876,6 +2910,38 @@ def _integration_dismiss_options(parser):
         required=True,
         type=_uuid,
         help="key.request_id from integration show or integration status",
+    )
+
+
+# The integrations whose key the settings pages replace; a test keeps them
+# equal to ``admin_integration_keys.KEY_TARGETS``.
+INTEGRATION_KEY_TARGETS = ("parishsoft", "google_workspace", "slack")
+
+
+def _integration_key_status_options(parser):
+    """Options of ``integration key status``: the integration, a key change, --watch."""
+    parser.add_argument("target", choices=INTEGRATION_KEY_TARGETS, metavar="TARGET")
+    parser.add_argument(
+        "--request-id",
+        type=_uuid,
+        help="one of your key changes (default: your latest for TARGET)",
+    )
+    _watch_options(parser)
+
+
+def _integration_key_target_options(parser):
+    """Options of ``integration key finish-switching-preview``: the integration."""
+    parser.add_argument("target", choices=INTEGRATION_KEY_TARGETS, metavar="TARGET")
+
+
+def _integration_key_finish_options(parser):
+    """Options of ``integration key finish-switching``: the integration and token."""
+    parser.add_argument("target", choices=INTEGRATION_KEY_TARGETS, metavar="TARGET")
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from integration key finish-switching-preview, or - "
+        "for standard input (needs --yes)",
     )
 
 
@@ -4520,10 +4586,16 @@ def _integration_specs():
     ``integration backup-probe`` (Test access) and ``integration dismiss``
     (a key change line's Dismiss) are full scope and neither fresh-gated
     nor prompting, as those pages ask for neither
-    (``admin_integration_actions``). The key steps come later in PR 10.
+    (``admin_integration_actions``). A key change's status page and Finish
+    switching are ``integration key status`` (any session, records nothing)
+    and ``integration key finish-switching-preview`` and
+    ``integration key finish-switching`` (``admin_integration_keys``), the
+    confirmation fresh-gated and prompting, as ``integration confirm``.
+    Replacing a key comes later in PR 10.
     """
     from .admin_integration_actions import BackupProbe, KeyDismissal
     from .admin_integration_changes import IntegrationConfirm, IntegrationPreview
+    from .admin_integration_keys import FinishConfirm, FinishPreview, KeyStatus
     from .admin_integrations import IntegrationList, IntegrationShow, IntegrationStatus
 
     return (
@@ -4603,6 +4675,42 @@ def _integration_specs():
             KeyDismissal.field_names(),
             10,
             options=(_integration_dismiss_options,),
+        ),
+        CommandSpec(
+            "integration key status",
+            "Show the progress of one of your integration key changes.",
+            integration_key_status,
+            "read_only",
+            False,
+            KeyStatus.field_names(),
+            10,
+            options=(_integration_key_status_options,),
+            audit_event=None,
+            watch=True,
+            watch_subject="request_id",
+        ),
+        CommandSpec(
+            "integration key finish-switching-preview",
+            "Review finishing the switch to an integration's new key.",
+            integration_key_finish_switching_preview,
+            "full",
+            False,
+            FinishPreview.field_names(),
+            10,
+            options=(_integration_key_target_options,),
+            audit_event=None,
+        ),
+        CommandSpec(
+            "integration key finish-switching",
+            "Finish switching an integration to its new key.",
+            integration_key_finish_switching,
+            "full",
+            True,
+            FinishConfirm.field_names(),
+            10,
+            options=(_integration_key_finish_options,),
+            fresh_gated=True,
+            prompts=True,
         ),
     )
 

@@ -1062,8 +1062,11 @@ No key, key file or fingerprint is ever printed. `integration preview` and
 [Changing integration settings](#changing-integration-settings)), and
 `integration backup-probe` and `integration dismiss` are the pages' Test
 access and Dismiss (see
-[Checking the backup folder and dismissing a key change](#checking-the-backup-folder-and-dismissing-a-key-change));
-every key step stays on the pages for now.
+[Checking the backup folder and dismissing a key change](#checking-the-backup-folder-and-dismissing-a-key-change)),
+and `integration key status` and the Finish switching commands follow a key
+change and finish switching to it (see
+[Following a key change and finishing the switch](#following-a-key-change-and-finishing-the-switch));
+pasting a new key stays on the pages for now.
 
 ```sh
 pk-admin integration list
@@ -1235,6 +1238,43 @@ page, and `admin_cmd_integration_dismiss`. A change still running, one that
 needs Finish switching, or a request the page no longer shows is not
 dismissed: `dismissed` is false, exit 0, and nothing is recorded, as the
 page's Dismiss does nothing then.
+
+### Following a key change and finishing the switch
+
+A new key (API key, service-account key or bot token) is still pasted on
+the integration's settings page. `integration key status` is the **Key
+replacement status** page for one of your own key changes: by default your
+latest for the integration, or the one `--request-id` names. Any session of
+an Administrator may run it, and it records nothing. It prints `target`,
+`request_id`, `state`, `pending` and `selectable`, which is true when the
+page offers **Finish switching to the new key**. Another Administrator's
+key change, or one of another integration, is exit 1 (`not_available`).
+
+```sh
+pk-admin integration key status parishsoft --watch 5
+pk-admin integration key finish-switching-preview parishsoft
+pk-admin integration key finish-switching parishsoft --token TOKEN
+```
+
+When the new key is installed but switching to it did not finish (the
+settings page's key change line is `unselected`), the integration is
+stopped until an Administrator finishes the switch. `integration key
+finish-switching-preview` is that page's review: it needs a full-scope
+session and an Administrator and prints `version`, `target`, `name`,
+`request_id`, `changes` (the settings saved with the key that the switch
+also applies, each `field`, `before` and `after`) and `preview.token`. It
+changes nothing. When nothing waits to be switched to it is exit 1
+(`not_available`); when the key was saved with a different ParishSoft
+organization ID than the loaded data's it is exit 1 (`invalid`) at
+`organization_id`, with the page's words. `integration key
+finish-switching` takes that token (or `-` with `--yes`), or one the page
+signed for you, asks for confirmation naming the integration and the
+settings it also changes, and records the configuration request as the
+page's button does, with `admin_cmd_integration_key_finish_switching`, the
+fresh gate's event and notice and a `policy_change` notice for every
+Administrator. A token for an earlier key change is exit 1 (`invalid`); an
+expired one, or one whose key is no longer current, is `stale_version`:
+review again. Neither command prints a key or a fingerprint.
 
 ## Past campaigns
 
@@ -2635,3 +2675,11 @@ print is exit 1 (`invalid`).
   --request-id ID` (a key change line's Dismiss, recording the page's
   `credential_result_dismissed` and `admin_cmd_integration_dismiss`), full
   scope, Administrators only, neither fresh-gated nor prompting.
+- `pk-admin/1` (#463): additive. `integration key status TARGET
+  [--request-id ID] [--watch S]` (the Key replacement status page, any
+  session, recording nothing), `integration key finish-switching-preview
+  TARGET` (Finish switching's review, full scope) and `integration key
+  finish-switching TARGET --token TOKEN|-` (its confirm button, full scope,
+  fresh-gated and prompting, recording
+  `admin_cmd_integration_key_finish_switching` and a `policy_change`
+  notice).

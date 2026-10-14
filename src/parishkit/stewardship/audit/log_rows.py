@@ -196,6 +196,7 @@ ACTIVITY_TYPES = {
         "admin_cmd_integration_confirm",
         "admin_cmd_integration_backup_probe",
         "admin_cmd_integration_dismiss",
+        "admin_cmd_integration_key_finish_switching",
         "user_leaders_import_requested",
         "user_leader_imported",
         "admin_cmd_users_import_leaders",

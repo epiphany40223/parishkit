@@ -183,6 +183,10 @@ DESCRIPTIONS = {
         "An automation session dismissed the result of a finished key change "
         "for an integration."
     ),
+    "admin_cmd_integration_key_finish_switching": _(
+        "An automation session finished switching an integration to its new "
+        "key, which became a configuration request."
+    ),
     "admin_cmd_users_import_leaders": _(
         "An automation session confirmed a reviewed import of ParishSoft "
         "Ministry leaders as users, which became a configuration request."

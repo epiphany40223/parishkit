@@ -1310,11 +1310,13 @@ built yet.
   together, as on the page) runs the page's validation, prints the safe
   fingerprint and what will change, prompts, and submits the sealed request.
   `integration key status --watch` follows staged, testing, installing and
-  acknowledged progress. `integration key finish-switching` is the page's
-  **Finish switching to the new key** (`select_credential`) and prompts.
+  acknowledged progress, and `integration key finish-switching-preview`
+  and `integration key finish-switching` are the page's **Finish switching
+  to the new key** (`select_credential`), the confirmation prompting.
   A failed or expired change leaves the old key installed, as on the
-  page. Dismissing a finished change's line is `integration dismiss` (see
-  [Integrations and credentials](#integrations-and-credentials)).
+  page. Dismissing a finished change's line is `integration dismiss`; the
+  status and Finish switching commands are described in
+  [Integrations and credentials](#integrations-and-credentials).
 - **Backup key.** Three steps, as on the page: `integration backup-key
   challenge --public-key-file <path>` returns the proof-of-possession
   challenge; `integration backup-key preview --intent <token>
@@ -1668,7 +1670,10 @@ signatures:
   `integration_views.queue_probe`, which the page now calls; `integration
   dismiss` needed none: `integration_credentials.dismiss` now returns
   whether it dismissed and takes a callback, so the command's event shares
-  its transaction.
+  its transaction. `integration key status` and the Finish switching
+  commands needed none: they call the pages' own `secret_request_status`,
+  `_selectable`, `_selection` and `_changes` (which now also names each
+  setting's stored field).
 - **PR 11:** user, event and follow-up actions from their views (the users
   model of #952 replaces the rule actions; #922 retired the assignment and
   Chairperson actions). The event acknowledgements moved each view's
@@ -2921,11 +2926,12 @@ lists the fields.
 
 | URL names | Command or exemption |
 | --- | --- |
-| `integrations`, `integration_settings`, `integration_status`, `credential_status` | `integration list`, `integration show TARGET` and `integration status TARGET [--watch S]` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), the pages' reads (any session; no event, as the pages' reads record none; see below); `integration preview TARGET` and `integration confirm TARGET` for the settings page's non-secret Save and its Remove ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below); `integration backup-probe [--folder LINK]` for the Off-site backups page's Test access ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below); `integration preview parishsoft` takes the [refresh schedule](../background-processing/spec.md#refresh-schedule) with the page's validation, and `integration schedule-preview` prints the page's [seven-day preview](../admin-portal/spec.md#seven-day-preview) and [cost and freshness summary](../admin-portal/spec.md#cost-and-freshness-summary), for a saved or a proposed schedule ([#632](https://github.com/epiphany40223/parishkit/issues/632)) |
+| `integrations`, `integration_settings`, `integration_status` | `integration list`, `integration show TARGET` and `integration status TARGET [--watch S]` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), the pages' reads (any session; no event, as the pages' reads record none; see below); `integration preview TARGET` and `integration confirm TARGET` for the settings page's non-secret Save and its Remove ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below); `integration backup-probe [--folder LINK]` for the Off-site backups page's Test access ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below); `integration preview parishsoft` takes the [refresh schedule](../background-processing/spec.md#refresh-schedule) with the page's validation, and `integration schedule-preview` prints the page's [seven-day preview](../admin-portal/spec.md#seven-day-preview) and [cost and freshness summary](../admin-portal/spec.md#cost-and-freshness-summary), for a saved or a proposed schedule ([#632](https://github.com/epiphany40223/parishkit/issues/632)) |
 | `refresh_schedule_check` | `integration schedule-preview` (PR 10): the ParishSoft page's no-save live check of the refresh schedule editor's rows answers the same validation, preview and cost summary ([#632](https://github.com/epiphany40223/parishkit/issues/632)) |
 | `dismiss_credential_result` | `integration dismiss TARGET --request-id ID` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
-| Key replacement through `integration_settings` | `integration key replace --target …`, `integration key status --watch` (PR 10; see [secret replacement](#secret-replacement)) |
-| `select_credential` | `integration key finish-switching` (PR 10) |
+| `credential_status` | `integration key status TARGET [--request-id ID] [--watch S]` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
+| Key replacement through `integration_settings` | `integration key replace --target …` (PR 10; see [secret replacement](#secret-replacement)) |
+| `select_credential` | `integration key finish-switching-preview TARGET` and `integration key finish-switching TARGET` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
 | Backup encryption key change, through `integration_settings` with proof of possession | `integration backup-key challenge`, `integration backup-key preview`, `integration backup-key confirm` (PR 10) |
 
 The refresh schedule is given to `integration preview parishsoft` as
@@ -3039,6 +3045,40 @@ dismissed, recording the page's `credential_result_dismissed` with
 the page's silent no-op: `dismissed` false, exit 0, nothing recorded. A
 required integration not set up is `not_available`. It prints `target`,
 `request_id` and `dismissed`.
+
+`integration key status TARGET [--request-id ID] [--watch S]`
+(`parishsoft`, `google_workspace` or `slack`) is the **Key replacement
+status** page: any session of an Administrator reads it, and it records
+nothing, as the page's read records nothing. As on the page, only the
+session Administrator's own key changes are read (`secret_request_status`),
+by default the latest for `TARGET`; another Administrator's, another
+integration's or an unknown one is `not_available`. It prints `target`,
+`request_id`, `state` (the page's technical state), `pending` and
+`selectable` (the page's Finish switching button, `_selectable`); a watch
+stops once nothing is pending. `integration key finish-switching-preview
+TARGET` is the review on **Finish switching to the new key**: it needs a
+full-scope session, as the page records activity, stands in for the page's
+recent sign-in with it (a preview records no notice), and is offered only
+while the settings page's key change line is `unselected`; otherwise it is
+`not_available`. It runs the page's own `_selection`, candidate check and
+salt (bound to the key change), so a token from either channel confirms on
+the other: a key no longer current is `stale_version`, and a switch that
+would change the loaded ParishSoft organization is `invalid` at
+`organization_id` with the page's words. It prints `version`, `target`,
+`name`, `request_id`, `changes` (`field`, `before`, `after`: the settings
+saved with the key, as the page's table) and `preview.token`; the page's
+fingerprints are left out. `integration key finish-switching TARGET --token
+TOKEN` is the page's confirm button, through `admin_editing.confirm_intent`
+with the page's salt for `TARGET`'s latest key change, the page's
+frozen-base request schema, `_selection` as the current scope and the fresh
+gate: it is fresh-gated and prompts, naming the integration and the
+settings it also changes, never their values. A token for an earlier key
+change, or another page's, is `invalid`. In the request's transaction it
+records `admin_cmd_integration_key_finish_switching` with the fresh gate's
+event and `fresh_gated` notice and, as it selects a new integration key, a
+`policy_change` notice and the `automation_policy_change` incident (see
+[notifications](#notifications)). A repeat returns the original request and
+records nothing new.
 
 Secret values never pass through command output. The backup destination is an
 `integration` target; backups themselves already run as `pk-stewardship

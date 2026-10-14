@@ -908,6 +908,24 @@ dismissed with both events, a pending or other request dismissing nothing,
 a required integration not set up, a read-only session and Staff denied,
 an ended session) and the unchanged integration and backup page suites.
 
+Another part adds `integration key status` (the Key replacement status
+page) and `integration key finish-switching-preview` and
+`integration key finish-switching` (Finish switching to the new key) in
+`parishkit.stewardship.admin_integration_keys`, through the pages' own
+`secret_request_status`, `_selectable`, `_selection`, `_changes` (which now
+also names each setting's field) and salt, with no schema change; proven by
+`tests/stewardship/test_admin_integration_keys.py` (catalog flags, the
+described event, the ledger, usage errors, no fingerprint in any result
+field), `tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/database/test_admin_integration_keys_cli_postgresql.py`
+(a failed switch shown, reviewed, prompted and finished with its request,
+events and notices, a repeat recording nothing new, a page-signed token
+confirmed by the command, altered and other pages' tokens, nothing to
+switch, a key change still running, another integration's or an unknown
+key change, a changed loaded organization, read-only, Staff and ended
+sessions, and no key or fingerprint in any output) and the unchanged
+integration key page suites.
+
 ## ADM-12: Admin navigation overhaul
 
 Scope and dependencies: [ADM-12 work package](../../plans/stewardship/admin-portal.md#adm-12-admin-navigation-overhaul).
