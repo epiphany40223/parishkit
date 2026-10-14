@@ -597,9 +597,11 @@
   // earlier visit and is enabled again, as the server drew it.
   // live-status-v1.js holds a kept preview's button for good once the
   // status no longer shows what it reviews (data-live-stale-gated, #530).
+  // refresh-schedule-v1.js holds the ParishSoft Save while its schedule has
+  // problems (data-schedule-gated), alongside the change gate (#1330).
   const GATE_MARKS = [
     "data-time-gated", "data-acknowledgment-gated", "data-complete-gated", "data-change-gated",
-    "data-live-stale-gated",
+    "data-live-stale-gated", "data-schedule-gated",
   ];
   const gated = (node) => GATE_MARKS.some((mark) => node.hasAttribute(mark));
   document.querySelectorAll("button[disabled], input[disabled]").forEach((node) => {
@@ -2275,11 +2277,15 @@
   // blank row, above, is no change). A control
   // that is disabled (a hidden module's field) is not sent, so its value
   // does not count; the control that hid it differs instead.
-  const matchesSaved = (form, saved) => {
+  // changedNames lists the names of the controls that differ (#1330: the
+  // live Ministries must change alone, below in gateComplete).
+  const changedNames = (form, saved) => {
     const now = formState(form, false);
-    if ([...saved.keys()].some((key) => !now.has(key))) return false;
-    return [...now].every(([key, {value, blank, disabled}]) => disabled
-      || (saved.has(key) ? saved.get(key).value === value : blank));
+    const keys = [...saved.keys()].filter((key) => !now.has(key));
+    now.forEach(({value, blank, disabled}, key) => {
+      if (!disabled && !(saved.has(key) ? saved.get(key).value === value : blank)) keys.push(key);
+    });
+    return new Set(keys.map((key) => key.replace(/#\d+$/, "")));
   };
   // A Campaign setup step's Continue (#1404, campaign-step-actions.html)
   // records the step kept as is, so it waits while the page holds a change:
@@ -2303,10 +2309,9 @@
       else node.removeAttribute("aria-describedby");
     });
   };
-  const gateChange = (form) => {
-    if (!(form instanceof HTMLFormElement) || !form.id || !form.hasAttribute("data-require-change")) {
-      return;
-    }
+  const matchesSaved = (form, saved) => !changedNames(form, saved).size;
+  // The saved state of a data-require-change form at its current version.
+  const savedState = (form) => {
     const field = form.elements.namedItem(form.dataset.requireChange);
     const version = field instanceof HTMLInputElement ? field.value : "";
     let saved = savedStates.get(form.id);
@@ -2317,7 +2322,13 @@
       savedStates.set(form.id, saved);
       reviewApplied.delete(form.id);
     }
-    const unchanged = matchesSaved(form, saved.state);
+    return saved.state;
+  };
+  const gateChange = (form) => {
+    if (!(form instanceof HTMLFormElement) || !form.id || !form.hasAttribute("data-require-change")) {
+      return;
+    }
+    const unchanged = matchesSaved(form, savedState(form));
     form.toggleAttribute("data-holds-change", !unchanged);
     gateStepContinue();
     const hint = form.querySelector("[data-unchanged-hint]");
@@ -2326,8 +2337,10 @@
     if (hint) hint.id = `${form.id}-unchanged-hint`;
     hint?.toggleAttribute("data-idle", !unchanged);
     // isSubmit, not submitControls (defined below, after this first runs).
+    // A button marked data-change-exempt acts on what is saved as well as
+    // on an edit (Off-site backups' Test access, #1330), so it never waits.
     [...form.elements].filter(isSubmit).forEach((node) => {
-      if (node.formNoValidate) return;
+      if (node.formNoValidate || node.hasAttribute("data-change-exempt")) return;
       if (unchanged) holdButton(node, "data-change-gated");
       else releaseButton(node, "data-change-gated");
       if (!hint?.id) return;
@@ -2366,6 +2379,12 @@
     if (event.target instanceof Element) gateChange(event.target.closest("form"));
     if (event.target instanceof HTMLInputElement && event.target.type === "file") gateStepContinue();
   }));
+  // The Pages and emails visual editor's toolbar and paste write the HTML
+  // source with no input event; their stewardship:html-changed does not
+  // bubble, so it is caught on the way down (#1330).
+  document.addEventListener("stewardship:html-changed", (event) => {
+    if (event.target instanceof HTMLFormElement) gateChange(event.target);
+  }, true);
   window.addEventListener("pageshow", gateChanges);
   gateChanges();
   // A checkbox marked data-submit-on-change applies at once (Automation
@@ -2774,11 +2793,27 @@
       });
     });
   };
+  // A field that must change on its own (data-change-alone="<name>" on a
+  // data-require-change form, with its words in data-change-alone-hint): a
+  // live campaign's Ministries, whose review is applied by itself (#1330).
+  // While it and any other field differ from the saved values, the field
+  // carries the hint as its data-client-error, so the gate below holds
+  // Review with those words. The server still refuses such a change.
+  const changeAlone = (form) => {
+    const name = form.dataset.changeAlone;
+    const field = name && form.id && form.elements.namedItem(name);
+    if (!(field instanceof HTMLElement) || !form.hasAttribute("data-require-change")) return;
+    const names = changedNames(form, savedState(form));
+    const hint = form.dataset.changeAloneHint || "";
+    if (names.has(name) && names.size > 1) field.dataset.clientError = hint;
+    else if (field.dataset.clientError === hint) delete field.dataset.clientError;
+  };
   const gateComplete = (form) => {
     if (!form || !form.hasAttribute("data-require-complete")) return;
     requiredWhen(form);
     requireOne(form);
     maxTicked(form);
+    changeAlone(form);
     // A required text field holding only spaces is still empty: the server
     // trims it (notes for the outcome Other, a Slack token being set up).
     const blank = (node) => node.required

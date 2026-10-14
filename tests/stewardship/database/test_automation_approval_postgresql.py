@@ -8,6 +8,8 @@ scope as plain text, the host prefix) with a confused-deputy warning; and it
 lets the scope and lifetime be lowered, never raised.
 """
 
+import re
+
 import pytest
 from django.test import Client
 
@@ -97,7 +99,8 @@ def test_a_stale_sign_in_gets_the_confirm_step_not_a_refusal(auth_service, googl
     assert b'name="code" autocomplete="off" spellcheck="false" maxlength="16" ' in (
         page.content
     )
-    assert b"required disabled" in page.content
+    (field,) = re.findall(rb'<input id="automation-code"[^>]*>', page.content)
+    assert b" required " in field and b" disabled " in field
     review = lookup(browser, code)
     assert review.status_code == 200 and b"Confirm with Google" in review.content
     assert b"launch &lt;assistant&gt;" not in review.content

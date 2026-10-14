@@ -92,12 +92,31 @@ class PhoneField(forms.CharField):
             ) from None
 
 
+# The Parish website's refusal, at the field and as the browser's hint.
+WEBSITE_REFUSAL = _("Use a website URL without credentials, query or fragment.")
+# What the browser checks of it: a scheme, a host part without "@", then any
+# path; a lone "?" or "#" (an empty query or fragment) is still admitted, as
+# the server admits it. Written for the browser's "v" pattern flag.
+WEBSITE_PATTERN = r"[A-Za-z][A-Za-z0-9+.\-]*:\/\/[^\/?#@]*(\/[^?#]*)?\??#?"
+
+
 class ParishForm(AdminForm):
     """The profile form cannot modify branding, runtime mode or campaign snapshots."""
 
     name = forms.CharField(label=_("Parish name"), max_length=254)
     website = forms.URLField(
-        label=_("Parish website"), max_length=2048, assume_scheme="https"
+        label=_("Parish website"),
+        max_length=2048,
+        assume_scheme="https",
+        # The browser refuses a user name, query or fragment at once (#1330):
+        # no "@" before the path, and no "?" or "#" with anything after it.
+        # clean_website stays the authority.
+        widget=forms.URLInput(
+            attrs={
+                "pattern": WEBSITE_PATTERN,
+                "data-missing-hint": WEBSITE_REFUSAL,
+            }
+        ),
     )
     timezone = TimezoneField(label=_("Parish timezone"))
     phone = PhoneField(
@@ -139,6 +158,20 @@ class ParishForm(AdminForm):
     base_digest = forms.RegexField(
         regex=r"^[0-9a-f]{64}$", max_length=64, widget=forms.HiddenInput
     )
+
+    def clean_website(self):
+        """Refuse credentials, a query or a fragment at the field (#1330).
+
+        The configuration refuses them too (``typed(value, "url")``); checking
+        here shows the refusal beside the field, on Parish settings and in
+        setup, rather than as a notice above the form.
+        """
+        value = self.cleaned_data["website"]
+        try:
+            typed(value, "url")
+        except ConfigError:
+            raise forms.ValidationError(WEBSITE_REFUSAL, code="invalid_url") from None
+        return value
 
     def clean_date_format(self):
         """A blank choice (an older form post) keeps the default style."""

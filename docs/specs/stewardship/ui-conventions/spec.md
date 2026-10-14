@@ -939,6 +939,25 @@ missing Slack token or a new ParishSoft key sent with a refresh schedule
 change, is shown at that field rather than as a notice or an error page
 (#563).
 
+The settings editors follow the same gates (#1330). Save on every
+integration settings page, ParishSoft's included, waits for a change, and a
+pasted key counts as one; Off-site backups' Test access, which can test the
+saved folder, never waits for one (`data-change-exempt`), and a folder link
+that isn't a Drive folder is refused at its field, as Save refuses it. While
+an integration that isn't set up yet can't store its key, its Save is shown
+unavailable, named by the notice that says why. The Pages and emails editor's
+Preview changes waits for a change, except while the page offers saving what
+it shows as it is (the default text filled in, a saved text that needs
+re-saving, a refused Preview drawn again). On Campaign settings the Ministry
+leader roles need one ticked while Ministry stewardship is on, and on a live
+campaign Save waits while the Ministries and another setting both changed
+(`data-change-alone`), with the server's own words. The Parish website, the
+automation approval's user code and New and Edit user's Email and Name are
+checked in the browser, with their refusals at the field, and Continue,
+Add the user or Save waits for them. An integration page drawn again
+after a refused Save shows what was posted, so its Save does not wait
+for a change then.
+
 The same holds for the rest of the Admin portal (#563, the audit's last
 slice): Start Testing cleanup on Go-live readiness and Confirm Production
 before a passing check (named by the step still needed); Confirm cancelling

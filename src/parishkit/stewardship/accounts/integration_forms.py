@@ -29,6 +29,15 @@ MISSING_HINTS = {
     "target": _("Paste the Google Drive folder link."),
 }
 
+# What the browser checks of an off-site folder link (#1330), leniently: a
+# bare folder ID or any https link on drive.google.com, as folder_id_from_url
+# reads them (case-blind scheme and host, spaces around it). The server
+# decides whether the link names a folder. Written for the "v" pattern flag.
+FOLDER_LINK_PATTERN = (
+    r"\s*([A-Za-z0-9_\-]{10,200}|[Hh][Tt][Tt][Pp][Ss]:\/\/([^\/?#]*@)?"
+    r"[Dd][Rr][Ii][Vv][Ee]\.[Gg][Oo][Oo][Gg][Ll][Ee]\.[Cc][Oo][Mm]([:\/?#].*)?)\s*"
+)
+
 
 class IntegrationForm(AdminForm):
     """Non-secret settings never accept fingerprints, keys or arbitrary URLs."""
@@ -132,6 +141,8 @@ class IntegrationForm(AdminForm):
                 self.fields[name].widget.attrs["data-missing-hint"] = hint
         if "channel_id" in self.fields:
             self.fields["channel_id"].widget.attrs["pattern"] = "[CG][A-Z0-9]{1,63}"
+        if "target" in self.fields:
+            self.fields["target"].widget.attrs["pattern"] = FOLDER_LINK_PATTERN
         field_tips.shorten(
             self,
             {
