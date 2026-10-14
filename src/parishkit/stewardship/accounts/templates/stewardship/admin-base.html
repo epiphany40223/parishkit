@@ -15,8 +15,10 @@
   A CSS rule rather than a noscript element covers that failed-load case too.
   The content security policy still allows no inline script or style. Family
   pages extend base.html and are not gated.
+  The admin-document class stays: it lets ui-v1.css give Admin pages, and
+  only them, the dark colour scheme (#1264; ui-conventions "Colour scheme").
 {% endcomment %}
-{% block document_class %} class="js-required"{% endblock %}
+{% block document_class %} class="admin-document js-required"{% endblock %}
 {% block gate_script %}<script src="{% static 'stewardship/admin-gate-v1.js' %}"></script>{% endblock %}
 {% comment %}
   The tips of the Admin menu's unavailable entries and of unavailable in-page
