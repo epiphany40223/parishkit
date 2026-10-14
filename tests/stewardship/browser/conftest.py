@@ -159,6 +159,8 @@ from .signed_in_components import POSTS as SIGNED_IN_POSTS
 from .signed_in_components import components as signed_in_components
 from .source_form_components import components as source_form_components
 from .step_up_components import components as step_up_components
+from .stepper_components import POSTS as STEPPER_POSTS
+from .stepper_components import components as stepper_components
 from .system_health_components import components as system_health_components
 from .upload_defaults_components import components as upload_defaults_components
 from .upload_defaults_components import posts as upload_defaults_posts
@@ -2152,6 +2154,7 @@ def component_origin():
     responses.update(automation_components(context, admin))
     responses.update(signed_in_components(context, admin))
     responses.update(step_up_components(context, admin))
+    responses.update(stepper_components(context, admin))
     responses.update(refresh_schedule_components(context, admin, NOW))
     # The in-place form page's POST answers (#519, #562): refusals answer
     # with the page the view would render (400 with the summary in the
@@ -2171,6 +2174,7 @@ def component_origin():
         | SECURITY_POSTS
         | LIVE_STATUS_POSTS
         | SETTINGS_POSTS
+        | STEPPER_POSTS
         | CAMPAIGN_SETTINGS_POSTS
         | SCHEDULE_LIST_POSTS
         | HOSTED_FILE_POSTS
@@ -2217,6 +2221,7 @@ def component_origin():
         ("session-v1.css", "text/css"),
         ("digest-v1.css", "text/css"),
         ("setup-v1.css", "text/css"),
+        ("stepper-v1.css", "text/css"),
         ("select-arrow-v1.svg", "image/svg+xml"),
         ("select-arrow-dark-v1.svg", "image/svg+xml"),
         ("chart-v1.js", "application/javascript"),
