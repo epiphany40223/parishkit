@@ -295,12 +295,36 @@ def preview_integration(
     return model
 
 
-def prompt_lines(target, token):
+def applied_settings(service, target):
+    """The applied settings of ``target`` the prompt compares against, or {}.
+
+    A read before any transaction is held (the prompt waits for a person);
+    an integration not set up has none.
+    """
+    from .accounts.admin_editing import editable_configuration
+    from .accounts.integration_views import _optional
+    from .campaigns.work_locks import read_transaction
+
+    def read():
+        """The stored settings in one snapshot."""
+        with read_transaction():
+            try:
+                record = _optional(editable_configuration(service), target)
+            except LookupError:
+                return {}
+        return {} if record is None else dict(record["values"]["settings"])
+
+    return _held(read)
+
+
+def prompt_lines(target, token, applied):
     """The confirmation prompt's summary, from the token's reviewed patch.
 
-    Names the integration and what Apply does, never a setting's value. A
-    token that is not this target's is ``invalid`` before the prompt (an
-    expired one is checked properly by ``confirm_intent`` afterwards).
+    Names the integration and the settings the review changes against the
+    ``applied`` ones (so an unchanged stored refresh schedule's keys are
+    never listed), never a value. A token that is not this target's is
+    ``invalid`` before the prompt (an expired or out-of-date one is checked
+    properly by ``confirm_intent`` afterwards).
     """
     from django.core import signing
 
@@ -315,8 +339,17 @@ def prompt_lines(target, token):
     label = LABELS[target]
     if kind == "remove":
         return [f"This removes {label}."]
-    names = ", ".join(sorted(operation["values"].get("settings", {})))
-    return [f"This applies the reviewed {label} settings ({names})."]
+    after = operation["values"].get("settings", {})
+    changed = sorted(
+        name
+        for name in set(applied) | set(after)
+        if applied.get(name) != after.get(name)
+    )
+    if not changed:
+        # The applied settings already changed since the review; the
+        # confirmation then refuses the out-of-date token.
+        return [f"This applies the reviewed {label} settings."]
+    return [f"This changes the {label} settings: {', '.join(changed)}."]
 
 
 def confirm_integration(caller, service, target, *, token, context):

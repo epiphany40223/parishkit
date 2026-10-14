@@ -2979,7 +2979,7 @@ schedule keys are never accepted, and an unchanged ParishSoft schedule
 keeps its stored keys exactly. `integration confirm TARGET --token TOKEN`
 is the page's Apply, through `admin_editing.confirm_intent` with the
 page's salt and fresh gate: it is fresh-gated and prompts, naming the
-integration and the reviewed settings but never their values. In the
+integration and the settings the review changes, never their values. In the
 request's transaction it records `admin_cmd_integration_confirm` with the
 fresh gate's event and `fresh_gated` notice, and, for Slack, a
 `policy_change` notice and the `automation_policy_change` incident (see

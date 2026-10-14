@@ -1130,8 +1130,8 @@ changes nothing. The page's refusals are exit 1 (`invalid`) at
 `settings.<name>`, or at `settings` when nothing changed; a configuration
 changed since `integration show` is `stale_version`. `integration confirm`
 takes the token (or one the page made: tokens belong to you, not to the
-browser or the command line), prompts with the integration and the setting
-names (never their values), and records a configuration request, exactly
+browser or the command line), prompts with the integration and the names
+of the settings it changes (never their values), and records a configuration request, exactly
 as the page's Apply does. Follow it with `config request show`; the change
 applies when the request installs. System logs records
 `admin_cmd_integration_confirm` with the request. A Slack change or removal

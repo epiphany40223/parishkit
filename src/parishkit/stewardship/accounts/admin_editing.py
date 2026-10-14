@@ -394,7 +394,9 @@ def confirm_intent(
     the signed preview inside the request's own durable transaction, and is
     never called on a retry. With ``fresh``, the sign-in must also still be
     fresh (``require_fresh``) when rechecked under the work lock, so a
-    sign-in that ages while waiting for the lock is refused.
+    sign-in that ages while waiting for the lock is refused. A repeat
+    (the request already exists) still passes that gate, but an automation
+    session's repeated confirm records no second fresh-gate event or notice.
     ``first_campaign`` is Create the campaign's confirmation (#142): its
     intent must add exactly one campaign, and its ``current_scope`` refuses
     unless the deployment still has none. Returns the request's

@@ -30,6 +30,10 @@ from . import campaign_builders
 from .automation_builders import as_staff, paired
 from .test_admin_digest_list_cli_postgresql import revoke
 from .test_admin_test_sample_cli_postgresql import runner
+from .test_integration_views_postgresql import (
+    apply_rules_schedule,
+    stored_schedule,
+)
 
 pytestmark = pytest.mark.django_db(transaction=True)
 EVENT = "admin_cmd_integration_confirm"
@@ -308,6 +312,77 @@ def test_tokens_confirm_on_either_channel(mail):
     code, confirmed, _ = confirm(mail, secret, "email", token)
     assert code == 0 and confirmed["result"]["created"], confirmed
     assert ConfigurationChangeRequest.objects.count() == 2 and trail()[0] == 1
+
+
+def test_a_preview_that_went_out_of_date_is_stale(mail):
+    """Another change installed between the review and Apply: the old token
+    is ``stale_version``, with nothing requested or recorded."""
+    browser, secret, _ = paired(mail.service)
+    code, document, _ = preview(mail, secret, "email", {"sender": "q@example.org"})
+    assert code == 0, document
+    token = document["result"]["preview"]["token"]
+    response = browser.post(
+        "/admin/system/integrations/slack/",
+        {
+            "action": "confirm",
+            "preview": page_preview(
+                browser, mail.service.store, "slack", {"channel_id": "G0OTHER"}
+            ),
+            "csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value,
+        },
+    )
+    assert response.status_code == 302, response.content
+    [other] = ConfigurationChangeRequest.objects.all()
+    assert (
+        install_request(
+            mail.service.store, request_id=other.pk, correlation_id=uuid4()
+        ).state
+        == "applied"
+    )
+    code, document, _ = confirm(mail, secret, "email", token)
+    assert code == 1 and refused(document, "stale_version") == []
+    assert ConfigurationChangeRequest.objects.count() == 1
+    assert trail() == (0, 0, 0, 0)
+
+
+def test_a_parishsoft_change_keeps_the_stored_schedule_exactly(admin):
+    """Saving the organization ID from the command line stores the refresh
+    schedule's keys byte for byte, as the page's save does (#632); the
+    prompt names only the organization ID."""
+    apply_rules_schedule(admin.service.store)
+    before = stored_schedule(admin.service.store)
+    _, secret, _ = paired(admin.service)
+    code, document, _ = preview(admin, secret, "parishsoft", {"organization_id": "777"})
+    assert code == 0, document
+    assert document["result"]["changes"] == [
+        {"field": "organization_id", "before": "12345", "after": "777"}
+    ]
+    code, confirmed, errors = confirm(
+        admin,
+        secret,
+        "parishsoft",
+        document["result"]["preview"]["token"],
+        answer=b"yes\n",
+    )
+    assert code == 0, confirmed
+    assert "This changes the ParishSoft settings: organization_id." in errors
+    install(admin, confirmed)
+    assert records(admin)["parishsoft"]["settings"]["organization_id"] == "777"
+    assert stored_schedule(admin.service.store) == before
+
+
+def test_the_offsite_folder_is_refused_in_the_local_environment(mail, monkeypatch):
+    """The local environment never reaches Google Drive, as the page says."""
+    from parishkit.stewardship import deployment
+
+    monkeypatch.setattr(
+        deployment, "recorded_profile", lambda: deployment.DeploymentProfile.LOCAL
+    )
+    _, secret, _ = paired(mail.service)
+    code, document, _ = preview(mail, secret, "backup", {"target": LINK})
+    # Refused before the form is read: no field problem, unlike a bad link.
+    assert code == 1 and refused(document, "invalid") == []
+    assert not ConfigurationChangeRequest.objects.exists()
 
 
 def test_preview_refusals(mail):

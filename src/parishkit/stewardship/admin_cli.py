@@ -1228,14 +1228,20 @@ def integration_confirm(args, preamble, runtime, context):
     """Apply a reviewed integration settings change (PR 10).
 
     The page's Apply needs a recent sign-in (#547), so this always prompts,
-    naming the integration and the reviewed settings (never their values),
-    after checking the token's signature and before any transaction.
+    naming the integration and the settings the review changes (never their
+    values), after checking the token's signature and before any
+    transaction.
     """
     from .admin_changes import TOKEN_LIMIT
-    from .admin_integration_changes import confirm_integration, prompt_lines
+    from .admin_integration_changes import (
+        applied_settings,
+        confirm_integration,
+        prompt_lines,
+    )
 
     token = _input(args.token, context, TOKEN_LIMIT)
-    confirm(context, prompt_lines(args.target, token))
+    applied = applied_settings(runtime, args.target)
+    confirm(context, prompt_lines(args.target, token, applied))
     return confirm_integration(
         context["caller"], runtime, args.target, token=token, context=context
     )

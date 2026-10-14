@@ -121,25 +121,48 @@ def test_the_form_post_keeps_what_the_document_omits():
     }
 
 
-def test_the_prompt_names_settings_never_values():
-    """The reviewed patch's setting names, or the removal; another target's
-    token is refused before the prompt."""
+def test_the_prompt_names_changed_settings_never_values():
+    """Only the settings the reviewed patch changes against the applied ones
+    (never an unchanged stored schedule key), or the removal; another
+    target's token is refused before the prompt."""
+    applied = {"sender": "a@example.org", "reply_to": "r@x", "sender_name": "O"}
     update = [
         {
             "operation": "update",
             "section": "integrations",
             "id": "x",
-            "values": {"settings": {"sender": "a@example.org", "reply_to": "r@x"}},
+            "values": {"settings": {**applied, "reply_to": "s@x", "sender_name": None}},
         }
     ]
+    update[0]["values"]["settings"].pop("sender_name")
     token = signing.dumps({"patch": update}, salt=SALT + "email")
-    [line] = prompt_lines("email", token)
-    assert "reply_to, sender" in line and "a@example.org" not in line
+    [line] = prompt_lines("email", token, applied)
+    assert line == (
+        "This changes the Outgoing email addresses settings: reply_to, sender_name."
+    )
+    assert "a@example.org" not in line and "s@x" not in line
+    schedule = {"organization_id": "1", "refresh_rules": {"rules": []}}
+    patch = [
+        {
+            "operation": "update",
+            "section": "integrations",
+            "id": "p",
+            "values": {"settings": {**schedule, "organization_id": "2"}},
+        }
+    ]
+    token = signing.dumps({"patch": patch}, salt=SALT + "parishsoft")
+    assert prompt_lines("parishsoft", token, schedule) == [
+        "This changes the ParishSoft settings: organization_id."
+    ]
+    # Nothing differs any more (applied since): the plain wording.
+    assert prompt_lines("parishsoft", token, patch[0]["values"]["settings"]) == [
+        "This applies the reviewed ParishSoft settings."
+    ]
     removal = [{"operation": "remove", "section": "integrations", "id": "x"}]
     token = signing.dumps({"patch": removal}, salt=SALT + "slack")
-    assert prompt_lines("slack", token) == ["This removes Slack notifications."]
+    assert prompt_lines("slack", token, {}) == ["This removes Slack notifications."]
     with pytest.raises(ValueError):
-        prompt_lines("email", token)
+        prompt_lines("email", token, {})
 
 
 def test_the_catalog_entries():
