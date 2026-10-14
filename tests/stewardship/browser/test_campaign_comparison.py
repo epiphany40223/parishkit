@@ -239,6 +239,17 @@ def test_charts_show_each_year_and_their_exact_values(page, component_origin):
     finals = page.locator("[data-chart='comparison-final-families-spec']")
     finals_text = finals.locator("svg text").all_text_contents()
     assert "2027 (so far)" in finals_text and "880" in finals_text
+    # The figure is heard from its bar's name, not again from its label.
+    drawn = finals.locator("svg g.mark-rect.role-mark").nth(1).locator("path")
+    assert any(
+        "880" in (name or "")
+        for name in drawn.evaluate_all(
+            "(paths) => paths.map((p) => p.getAttribute('aria-label'))"
+        )
+    )
+    assert finals.locator("svg g.mark-text.role-mark").evaluate_all(
+        "(groups) => groups.map((g) => g.getAttribute('aria-hidden'))"
+    ) == ["true", "true"]
     expect(
         page.locator("[data-chart^='comparison-final-'] + .chart-table")
     ).to_have_count(0)

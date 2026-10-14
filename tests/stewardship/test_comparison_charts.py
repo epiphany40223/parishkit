@@ -488,6 +488,11 @@ def test_final_bars_mark_the_current_campaign_so_far_and_lighter():
     assert row["encoding"]["x"] == {"datum": 0}
     assert row["encoding"]["x2"] == {"datum": top}
     assert row["encoding"]["tooltip"] == bar["encoding"]["tooltip"]
+    # Each bar's drawn figure is hidden from assistive technology: the bar's
+    # name says it, and without an Exact values table it is heard once
+    # (#1266).
+    labels = [layer for layer in final.spec["layer"] if layer["mark"]["type"] == "text"]
+    assert labels and all(layer["mark"]["aria"] is False for layer in labels)
 
 
 # ---------------------------------------------------- pledge distribution

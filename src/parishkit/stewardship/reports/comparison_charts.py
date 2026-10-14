@@ -893,12 +893,16 @@ def final_chart(key, title, axis, kind, comparison):
             *(
                 {
                     "transform": [{"filter": {"field": "inside", "equal": inside}}],
+                    # The bar's figure, which its name (from its tooltip)
+                    # already says, so assistive technology hears it once,
+                    # from the bar (#1266).
                     "mark": {
                         "type": "text",
                         "align": "right" if inside else "left",
                         "baseline": "middle",
                         "dx": -4 if inside else 4,
                         "fontSize": LABEL_FONT,
+                        "aria": False,
                     },
                     "encoding": {
                         "text": {"field": "shown"},
