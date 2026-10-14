@@ -11,10 +11,10 @@ data-review-done starts the status line the page shows once the change is
 applied.
 {% endcomment %}<div data-review-answer data-review-done="{% if review.removing %}{% translate 'Campaign image removed.' %}{% else %}{% translate 'Campaign image changed.' %}{% endif %}">
 {% if review.removing %}<p class="notice">{% blocktranslate with slot=review.label %}Stop showing an image for: {{ slot }}. Families will see no image there until you upload a new one.{% endblocktranslate %}</p>
+{% comment %}An upload's notice already says it is not in use until applied; only a removal needs saying that nothing changes before Apply.{% endcomment %}<p>{% translate "Nothing changes until you choose Apply." %}</p>
 {% else %}<p class="notice">{% blocktranslate with slot=review.label %}This image is uploaded but not yet in use. Apply the change to use it as: {{ slot }}.{% endblocktranslate %}</p>
 <figure><img src="{% url 'admin:branding_asset' review.asset.pk %}" alt="" width="{{ review.asset.width }}" height="{{ review.asset.height }}" class="branding-preview artwork-{{ review.asset.label }}"><figcaption>{{ review.asset.width|number }} × {{ review.asset.height|number }} {% translate "pixels" %}</figcaption></figure>
 <p>{% translate "Uploads that are never applied are discarded after a day." %}</p>{% endif %}
-<p>{% translate "Nothing changes until you choose Apply." %}</p>
 <input type="hidden" name="preview" value="{{ review.preview }}" data-review-preview>
 <input type="hidden" name="slot" value="{{ review.slot }}">{% if not review.removing %}
 <input type="hidden" name="bundle" value="{{ review.bundle }}">{% endif %}

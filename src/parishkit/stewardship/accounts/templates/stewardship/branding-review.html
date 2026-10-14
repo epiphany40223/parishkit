@@ -12,7 +12,6 @@ status line the page shows once the change is applied.
 <section><h3>{% translate "Logo sizes" %}</h3>
 {% comment %}Each size says whether this upload changes it (#1062): a size uploaded on its own changes only itself; the others keep their current image. A changed size is marked with the shared .changed style and says so in words.{% endcomment %}{% for asset in review.assets %}<figure{% if asset.changed %} class="changed"{% endif %}><img src="{% url 'admin:branding_asset' asset.pk %}" alt="{{ asset.title|default:asset.label }}" width="{{ asset.width }}" height="{{ asset.height }}" class="branding-preview"><figcaption>{{ asset.title|default:asset.label|capfirst }} — {{ asset.width|number }} × {{ asset.height|number }} {% translate "pixels" %} — {% if asset.changed %}{% translate "Changed" %}{% else %}{% translate "Unchanged" %}{% endif %}</figcaption></figure>{% endfor %}</section>
 <p>{% translate "Uploads that are never applied are discarded after a day." %}</p>
-<p>{% translate "Nothing changes until you choose Apply." %}</p>
 <input type="hidden" name="preview" value="{{ review.preview }}" data-review-preview>
 <input type="hidden" name="bundle" value="{{ review.bundle }}">
 </div>
