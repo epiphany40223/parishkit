@@ -187,6 +187,31 @@ def test_other_login_cannot_preview_an_unapplied_upload(auth_service, google, me
     assert another.get(f"/branding/{asset.pk}.png").status_code == 404
 
 
+def test_an_expired_upload_is_refused_at_apply(
+    auth_service, google, media, monkeypatch
+):
+    """Staged logos past their day (staging's clock moved on) are refused
+    when applied, in the dialog's words saying to reload first, and
+    nothing is recorded."""
+    from datetime import timedelta
+
+    from parishkit.stewardship.accounts import branding_staging
+    from parishkit.stewardship.accounts.sessions import database_now
+
+    browser, _ = signed_in()
+    with task_login(ServiceRole.WEB):
+        review = stage(browser, auth_service)
+    before = ConfigurationChangeRequest.objects.count()
+    with monkeypatch.context() as clock, task_login(ServiceRole.WEB):
+        later = database_now() + timedelta(days=2)
+        clock.setattr(branding_staging, "database_now", lambda: later)
+        expired = confirm_review(browser, review)
+    assert expired.status_code == 409
+    assert refusal(expired).startswith("These logos expired")
+    assert "Reload the page, then upload the logo again." in refusal(expired)
+    assert ConfigurationChangeRequest.objects.count() == before
+
+
 @pytest.mark.parametrize("missing", [True, False])
 def test_preview_refuses_a_changed_yaml_base(
     auth_service, google, media, monkeypatch, missing

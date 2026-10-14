@@ -18,6 +18,7 @@ import pytest
 
 from .branding_components import (
     ADVANCED_PAGE,
+    BASIC_TO_ADVANCED,
     PAGE,
     REFUSED,
     REFUSED_SIZE,
@@ -164,15 +165,19 @@ def test_an_upload_is_reviewed_and_applied_in_the_dialog(page, component_origin)
 
 
 def test_an_advanced_upload_is_applied_and_reopens_in_advanced(page, component_origin):
-    """An Advanced upload (one size) is reviewed in the dialog with its
-    size marked Changed; once applied the form is redrawn in Advanced, the
-    mode that saved the new logos, with no reload."""
+    """A page opened in Basic, switched to Advanced and one size uploaded:
+    the dialog marks that size Changed; once applied the form is redrawn
+    from the server in Advanced, the mode that saved the new logos, which
+    Basic can no longer show (data-stored-basic), with no reload."""
     from playwright.sync_api import expect
 
     uploads = answer_uploads(page, component_origin)
-    page.goto(component_origin + ADVANCED_PAGE)
+    page.goto(component_origin + BASIC_TO_ADVANCED)
     failures = watch(page)
-    expect(mode(page, "Advanced")).to_be_checked()
+    expect(mode(page, "Basic")).to_be_checked()
+    editor = page.locator("[data-editor-modes]")
+    expect(editor).to_have_attribute("data-stored-basic", "true")
+    mode(page, "Advanced").check()
     page.locator("#id_favicon").set_input_files(png())
     page.get_by_role("button", name=UPLOAD).click()
     dialog = dialog_of(page)
@@ -182,9 +187,12 @@ def test_an_advanced_upload_is_applied_and_reopens_in_advanced(page, component_o
     dialog.get_by_role("button", name="Apply").click()
     hidden(dialog)
     eventually(page, "document.getElementById('branding-outcome').textContent !== ''")
+    # Only the redraw from the server's page can say this.
+    expect(editor).to_have_attribute("data-stored-basic", "false")
     expect(mode(page, "Advanced")).to_be_checked()
     expect(page.locator("#id_favicon")).to_be_visible()
     assert page.locator("#id_favicon").evaluate("node => node.files.length") == 0
+    expect(page.locator("#branding-current figure")).to_have_count(4)
     assert page.evaluate(MARKED) == "kept"
     assert not failures
 
