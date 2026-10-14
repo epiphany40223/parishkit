@@ -152,3 +152,68 @@ def test_only_the_shared_component_builds_email_buttons():
         "stewardship/web/buttons.py",
         "stewardship/web/report_markup.py",
     ]
+
+
+# The status indicators' looks (ui-conventions "Status indicators", #1214):
+# each state's text, its icon and border, and its background, as the
+# .status-* classes in ui-v1.css set them.
+STATUS_LOOKS = {
+    "working": ("ink", "accent", "accent-soft"),
+    "warning": ("warning-ink", "warning-border", "warning-bg"),
+    "error": ("error-ink", "error-border", "error-bg"),
+    "unknown": ("muted", "control-border", "paper-soft"),
+}
+
+
+def contrast(first, second):
+    """The WCAG contrast ratio of two colour tokens' values."""
+
+    def luminance(color):
+        """Relative luminance of a hex colour."""
+        digits = tokens.hex6(color).lstrip("#")
+        channels = [int(digits[i : i + 2], 16) / 255 for i in (0, 2, 4)]
+        linear = [
+            c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+            for c in channels
+        ]
+        return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+    high, low = sorted(
+        (luminance(tokens.COLORS[first]), luminance(tokens.COLORS[second])),
+        reverse=True,
+    )
+    return (high + 0.05) / (low + 0.05)
+
+
+@pytest.mark.parametrize("state", sorted(STATUS_LOOKS))
+def test_each_status_look_meets_the_contrast_minimums(state):
+    """Text meets 4.5:1 and the icon and border 3:1 on the state's background."""
+    text, line, background = STATUS_LOOKS[state]
+    assert contrast(text, background) >= 4.5
+    assert contrast(line, background) >= 3
+
+
+@pytest.mark.parametrize("state", sorted(STATUS_LOOKS))
+def test_the_stylesheet_gives_each_state_its_tokens(state):
+    """Each .status-* class reads exactly the tokens the contrast test checks."""
+    css = (STATIC / "ui-v1.css").read_text()
+    rule = re.search(rf"\.status-{state} {{([^}}]*)}}", css)[1]
+    text, line, background = STATUS_LOOKS[state]
+    assert f"--status-ink: var(--{text});" in rule
+    assert f"--status-line: var(--{line});" in rule
+    assert f"--status-bg: var(--{background});" in rule
+
+
+def test_level_icons_take_their_colours_from_tokens():
+    """No level icon has a fixed colour: not its class and not its marks."""
+    from django.template.loader import render_to_string
+
+    css = (STATIC / "ui-v1.css").read_text()
+    for rule in re.findall(r"\.level-icon-[a-z]+ {[^}]*}", css):
+        assert "#" not in rule, rule
+    for level in ("ok", "info", "warning", "error", "critical", "unknown", "audit"):
+        icon = render_to_string(
+            "stewardship/components/level-icon.html", {"level": level}
+        )
+        colours = set(re.findall(r'(?:fill|stroke)="([^"]+)"', icon))
+        assert colours <= {"currentColor", "none"}, (level, colours)

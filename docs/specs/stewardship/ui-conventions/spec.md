@@ -1553,7 +1553,7 @@ look per state:
 | Working | `ok`: a check mark in a circle | icon and border `--accent`, background `--accent-soft`, text `--ink` | none |
 | Warning | `warning`: a triangle with an exclamation mark | icon and border `--warning-border`, background `--warning-bg`, text `--warning-ink` | .35 rem, as a notice has today |
 | Error | `error`: a cross in a circle | icon and border `--error-border`, background `--error-bg`, text `--error-ink`, word in bold | .6 rem, new, so an error stands out more than a warning |
-| Not current | `unknown`: a question mark in a dashed circle | icon and border `--border`, background `--paper-soft`, text `--muted` | none |
+| Not current | `unknown`: a question mark in a dashed circle | icon and border `--control-border`, background `--paper-soft`, text `--muted` | none |
 
 - **Icons.** The icon is hidden from assistive technology, because the
   word carries the state. Every mark inside an icon (the check, the
@@ -1562,18 +1562,21 @@ look per state:
   mode keeps every shape and mark. Icon colours come only from the
   [design tokens](#shared-visual-style).
 - **Contrast.** Text meets 4.5:1, and icons and borders 3:1, against their
-  background, checked by a contrast test over the token pairs above.
+  background, checked by a contrast test over the token pairs above. Not
+  current uses `--control-border` (3.3:1 on `--paper-soft`), because the
+  fainter `--border` (1.2:1) fails the 3:1 minimum.
 
 **Why.** A colour-only dot fails colour-blind readers, forced-colours mode
 and print, and one set of shapes lets a reader learn it once. **Shared
-code.** The severity icon set in `components/level-icon.html` and state
-classes in `ui-v1.css` that read the tokens. Today the set draws its marks
-in fixed `#fff` and `#1b1300`, and the `.level-icon-*` colours are fixed
-hex values. The frame slice of
-[#1214](https://github.com/epiphany40223/parishkit/issues/1214) reworks
-the set to these rules, adds the `ok` and `unknown` shapes, moves the level colours into
-tokens, and adds the contrast test. System logs' level icons keep their
-shapes. **Precedent.** #601 (log level icons), #1214 (the
+code.** The severity icon set in `components/level-icon.html`, with the
+`ok` and `unknown` shapes, and the `.status-working`, `.status-warning`,
+`.status-error` and `.status-unknown` classes in `ui-v1.css`, which read
+the tokens; the level colours are tokens too, and `test_design_tokens.py`
+holds the contrast test. The first dashboard pull request of
+[#1214](https://github.com/epiphany40223/parishkit/issues/1214) reworked
+the set to these rules. System logs' level icons keep their shapes; their
+warning and error marks are now cut out, so they take the status border
+colours, which are dark enough for that. **Precedent.** #601 (log level icons), #1214 (the
 [System health dashboard](../admin-portal/spec.md#health-dashboard), its
 first user).
 

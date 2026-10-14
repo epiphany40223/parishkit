@@ -41,6 +41,10 @@
   --error-bg: #fcebe8;
   --error-border: #b42318;
   --error-ink: #8f1d12;
+  /* Log levels without a status colour of their own (#601) */
+  --level-info: #1d5fbf;
+  --level-critical: #7f0000;
+  --level-audit: #5b3fa0;
   /* Shape */
   --radius: .75rem;
   --radius-small: .5rem;
@@ -689,13 +693,31 @@ progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
 .log-level .level-icon { width: 1.25rem; height: 1.25rem; }
 .level-icon { flex: none; width: 1rem; height: 1rem; vertical-align: -.15em; }
 .level-icon-debug { color: var(--muted); }
-.level-icon-info { color: #1d5fbf; }
-.level-icon-warning { color: #e3a008; }
-.level-icon-error { color: #c62828; }
-.level-icon-critical { color: #7f0000; }
-.level-icon-audit { color: #5b3fa0; }
+.level-icon-info { color: var(--level-info); }
+.level-icon-warning { color: var(--warning-border); }
+.level-icon-error { color: var(--error-border); }
+.level-icon-critical { color: var(--level-critical); }
+.level-icon-audit { color: var(--level-audit); }
+.level-icon-ok { color: var(--accent); }
+.level-icon-unknown { color: var(--control-border); }
 .log-row-critical > th, .log-row-critical > td { background: var(--error-bg); }
-.log-row-critical > th:first-child { box-shadow: inset .35rem 0 0 #7f0000; }
+.log-row-critical > th:first-child { box-shadow: inset .35rem 0 0 var(--level-critical); }
+
+/* Status indicators (ui-conventions "Status indicators", #1214): a status
+   that says whether something works shows a word, an icon whose shape
+   differs per state (components/level-icon.html: ok, warning, error,
+   unknown) and these colours, never colour alone. Each state class sets
+   the custom properties a component reads: text, icon and border, the
+   background, and the start bar's width, so an Error stands out more than a
+   Warning. test_design_tokens.py checks every pair's contrast. Not current
+   takes --control-border for its icon and border: --border is too faint
+   against --paper-soft for the 3:1 non-text minimum. */
+.status-working { --status-ink: var(--ink); --status-line: var(--accent); --status-bg: var(--accent-soft); --status-bar: 0rem; }
+.status-warning { --status-ink: var(--warning-ink); --status-line: var(--warning-border); --status-bg: var(--warning-bg); --status-bar: .35rem; }
+.status-error { --status-ink: var(--error-ink); --status-line: var(--error-border); --status-bg: var(--error-bg); --status-bar: .6rem; }
+.status-unknown { --status-ink: var(--muted); --status-line: var(--control-border); --status-bg: var(--paper-soft); --status-bar: 0rem; }
+.status-working .level-icon, .status-warning .level-icon, .status-error .level-icon, .status-unknown .level-icon { color: var(--status-line); }
+.status-error .status-word { font-weight: 700; }
 .log-table th, .log-table td { vertical-align: top; }
 .log-filters { margin-block: 1rem; }
 .log-level-choices { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1rem; margin: 0; padding: 0; border: 0; }
