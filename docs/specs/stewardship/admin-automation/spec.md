@@ -2928,11 +2928,18 @@ The refresh schedule is given to `integration preview parishsoft` as
 stored `refresh_rules` shape, never the derived time lists. `rules` is
 required (each `{"kind", "at"}` or `{"kind", "every", "from", "to"}`),
 `skips` defaults to none, and `skip_around_family_emails` left out keeps
-the schedule's current value as the page shows it. Times are wall-clock
-`HH:MM` in the zone the schedule runs in, as on the page. Another member
-or a row of another shape is `invalid` at `refresh_schedule`,
-`refresh_schedule.rules[N]` or `refresh_schedule.skips[N]`, never echoing
-it; any other target is `invalid` at `refresh_schedule`. The command posts
+the schedule's current value as the page shows it (an explicit null is
+refused). Times are wall-clock `HH:MM` in the zone the schedule runs in,
+as on the page. Another member, a row of another shape, a `kind` other
+than `full` or `quick`, a time that is not exactly `HH:MM` or an `every`
+that is not one of the editor's intervals is `invalid` at
+`refresh_schedule`, `refresh_schedule.rules[N]` or
+`refresh_schedule.skips[N]` in fixed words, before the page's form could
+quote it back, so no refusal echoes the input; any other target is
+`invalid` at `refresh_schedule`. A quick rule is accepted only as the
+shown schedule has it, since the page no longer offers adding one
+([#1122](https://github.com/epiphany40223/parishkit/issues/1122)); the
+mode posted is the one the page opens in. The command posts
 the document as the [schedule editor](../admin-portal/spec.md#schedule-editor)'s
 own rows to the page's form, so the page's editor reads it: the same row
 checks, kept off-quarter-hour times, validator, derived lists and mode, and

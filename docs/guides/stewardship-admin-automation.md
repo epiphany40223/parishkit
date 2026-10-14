@@ -1170,21 +1170,24 @@ The document is YAML or JSON, the rules the page's Advanced mode shows:
 
 | Member | What it holds |
 | --- | --- |
-| `rules` | Required. Each rule is `{"kind": "full", "at": "HH:MM"}`, or `{"kind": "full", "every": MINUTES, "from": "HH:MM", "to": "HH:MM"}` with `every` one of 15, 30, 60, 120, 180, 240, 360, 480 or 720 |
+| `rules` | Required. Each rule is `{"kind": "full", "at": "HH:MM"}`, or `{"kind": "full", "every": MINUTES, "from": "HH:MM", "to": "HH:MM"}` with `every` one of 15, 30, 60, 120, 180, 240, 360, 480 or 720. A `"quick"` rule is accepted only exactly as `integration show` printed it, so an older schedule's quick updates can be kept; new quick updates can't be added, as on the page |
 | `skips` | Optional (none when left out). Each skip is `{"at": "HH:MM"}` or `{"from": "HH:MM", "to": "HH:MM"}` (`to` itself is not skipped) |
-| `skip_around_family_emails` | Optional: `true` or `false`, the page's "Skip refreshes around Family emails". Left out, it keeps its current value |
+| `skip_around_family_emails` | Optional: `true` or `false` (not null), the page's "Skip refreshes around Family emails". Left out, it keeps its current value |
 
 Times are the parish's wall-clock times, in the zone the schedule runs in
 (the current campaign's, else the parish's), as on the page; the preview
-names it. In YAML, quote each time (`"12:30"`), since YAML reads an
-unquoted `12:30` as a number. The page's own editor checks the schedule,
+names it. Give each time as exactly `HH:MM` text; in YAML, quote it
+(`"12:30"`), since YAML reads an unquoted `12:30` as a number. A kind,
+time or interval that is not one of these is refused in fixed words that
+never repeat what you sent. The page's own editor checks the schedule,
 so the rules are exactly the page's: times on the quarter hour (an older
 schedule's off-quarter-hour times may be kept), refreshes at least 15
 minutes apart, at least one full refresh a day, at most 64 rules and 16
 skips. Each problem is exit 1 (`invalid`) at `refresh_schedule.rules[N]`,
 `refresh_schedule.skips[N]` or `refresh_schedule`, with the page's words.
 The schedule you were shown, posted back unchanged, is "No settings have
-changed."
+changed." The editor's mode (Basic or Advanced) is saved as the page would
+save it with its toggle untouched.
 
 The preview's `schedule` holds `timezone`, `before` (the schedule as the
 page showed it), `after` and `differences`, the review page's list of

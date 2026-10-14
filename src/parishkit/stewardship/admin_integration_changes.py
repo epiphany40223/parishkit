@@ -54,6 +54,7 @@ and "an unchanged schedule keeps its stored keys exactly".
 """
 
 import json
+import re
 from dataclasses import dataclass
 
 from django.db import DatabaseError
@@ -68,6 +69,7 @@ SCHEDULE = "refresh_schedule"
 SCHEDULE_MEMBERS = frozenset({"rules", "skips", "skip_around_family_emails"})
 RULE_SHAPES = (frozenset({"kind", "at"}), frozenset({"kind", "every", "from", "to"}))
 SKIP_SHAPES = (frozenset({"at"}), frozenset({"from", "to"}))
+TIME_MEMBERS = frozenset({"at", "from", "to"})
 # The settings that may be null (or empty): the optional From name.
 NULLABLE = frozenset({"sender_name"})
 
@@ -131,30 +133,46 @@ def _schedule_problem(field, message, code="invalid"):
     return _problem(f"{SCHEDULE}{field}", {"code": code, "message": message})
 
 
-def _row_problems(rows, scope, shapes, noun):
-    """The problems of one list of schedule rows, without echoing a value.
+def _hhmm(value):
+    """Whether ``value`` is ``HH:MM`` text the page's time field reads as is."""
+    return (
+        isinstance(value, str)
+        and re.fullmatch(r"[0-9]{2}:[0-9]{2}", value) is not None
+        and int(value[:2]) < 24
+        and int(value[3:]) < 60
+    )
 
-    Each row must be an object with exactly one of ``shapes``' members, its
-    times text (YAML reads an unquoted 02:00 as a number) and a rule's
-    ``every`` a whole number; the page's editor checks the values.
+
+def _row_problems(rows, scope, shapes, noun):
+    """The problems of one list of schedule rows, in fixed words.
+
+    Each row must be an object with exactly one of ``shapes``' members, a
+    rule's ``kind`` "full" or "quick", its times ``HH:MM`` text (YAML reads
+    an unquoted 12:30 as a number) and a rule's ``every`` one of the
+    editor's intervals. Every value the page's form would quote back in its
+    own messages is checked here first, so a refusal never echoes the
+    input; the page's editor checks the rest (quarter hours, spacing, caps).
     """
+    from parishkit.stewardship.source.refresh_rules import STEPS
+
     found = []
     for index, row in enumerate(rows):
         field = f".{scope}[{index}]"
         if not isinstance(row, dict) or frozenset(row) not in shapes:
-            found.append(_schedule_problem(field, f"This is not a {noun}."))
-        elif any(not isinstance(row[name], str) for name in set(row) - {"every"}):
-            found.append(
-                _schedule_problem(
-                    field, 'Give each time and kind as quoted text, such as "02:00".'
-                )
-            )
+            message = f"This is not a {noun}."
+        elif "kind" in row and row["kind"] not in ("full", "quick"):
+            message = 'Give kind as "full" or "quick".'
+        elif not all(_hhmm(row[name]) for name in set(row) & TIME_MEMBERS):
+            message = 'Give each time as quoted HH:MM text, such as "02:00".'
         elif "every" in row and (
-            not isinstance(row["every"], int) or isinstance(row["every"], bool)
+            isinstance(row["every"], bool) or row["every"] not in STEPS
         ):
-            found.append(
-                _schedule_problem(field, "Give every as minutes, such as 120.")
+            message = "Give every as one of {}.".format(
+                ", ".join(str(step) for step in STEPS)
             )
+        else:
+            continue
+        found.append(_schedule_problem(field, message))
     return found
 
 
@@ -166,8 +184,9 @@ def parse_schedule(text):
     none and ``skip_around_family_emails`` stays absent when not given (the
     schedule's current value is then kept). A malformed document is
     ``ValueError`` and a member or row of another shape ``InvalidChange``
-    at ``refresh_schedule...``, never echoing the input. The values (times,
-    intervals, caps, spacing) are the page editor's to check.
+    at ``refresh_schedule...``, never echoing the input
+    (``_row_problems``); an explicit null switch is refused. Quarter hours,
+    spacing and caps are the page editor's to check.
     """
     import yaml
 
@@ -201,8 +220,9 @@ def parse_schedule(text):
             problems.append(_schedule_problem(f".{name}", "Give a list."))
         else:
             problems += _row_problems(value[name], name, shapes, noun)
+    # Present means true or false: a null would turn the switch off.
     switch = value.get("skip_around_family_emails")
-    if switch is not None and not isinstance(switch, bool):
+    if "skip_around_family_emails" in value and not isinstance(switch, bool):
         problems.append(
             _schedule_problem(".skip_around_family_emails", "Give true or false.")
         )
@@ -217,9 +237,11 @@ def schedule_rows(document, editor):
     Each row is posted as the page draws it (``rule_initial``,
     ``skip_initial``), so ``ScheduleEditor`` reads it exactly as a save from
     the page. A switch left out keeps the one the page shows (``editor`` is
-    the unbound editor of the stored schedule); the mode is the one last
-    saved (Basic when none was), which ``settings`` keeps only while Basic
-    can show the schedule, as the page does.
+    the unbound editor of the stored schedule); the mode is the one the
+    page opens in (``ScheduleEditor.mode``: Advanced when the shown
+    schedule has no Basic equivalent, else the one last saved, Basic when
+    none was), which ``settings`` keeps only while Basic can show the new
+    schedule, as the page's untouched toggle does.
     """
     from .accounts.refresh_schedule_forms import (
         MODE,
@@ -248,8 +270,27 @@ def schedule_rows(document, editor):
                 data[f"{prefix}-{index}-{name}"] = str(value)
     if document.get(SWITCH, editor.shown[SWITCH]):
         data[SWITCH] = "on"
-    data[MODE] = editor.stored.get(MODE, "basic")
+    # The mode the page opens in, which its toggle posts when untouched.
+    data[MODE] = editor.mode
     return data
+
+
+def quick_problems(document, editor):
+    """Refuse quick rules the shown schedule does not already have.
+
+    The page no longer offers quick updates (#1122): it shows a stored
+    quick rule read-only and posts it back, and can only remove it. So a
+    quick rule may be given only as ``integration show`` printed it.
+    """
+    return [
+        _schedule_problem(
+            f".rules[{index}]",
+            "Quick updates can't be added; keep only a quick rule the "
+            "schedule already has, or remove it.",
+        )
+        for index, rule in enumerate(document["rules"])
+        if rule["kind"] == "quick" and rule not in editor.shown["rules"]
+    ]
 
 
 def schedule_errors(editor):
@@ -399,7 +440,11 @@ def _review(
     names = setting_names(target)
     data = form_data(stored, names, fields, expected_version)
     if schedule is not None:
-        data |= schedule_rows(schedule, ScheduleEditor(stored=stored))
+        shown = ScheduleEditor(stored=stored)
+        problems = quick_problems(schedule, shown)
+        if problems:
+            raise InvalidChange(problems)
+        data |= schedule_rows(schedule, shown)
     form = _form(target, data, stored=record)
     review = review_settings(service, actor, configuration, target, form)
     if review is None:

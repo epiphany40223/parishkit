@@ -327,18 +327,76 @@ def test_the_page_editor_reads_the_posted_rows_back():
     }
 
 
-def test_a_switch_left_out_keeps_the_shown_one_and_basic_is_kept():
-    """No switch keeps the page's (off for an existing schedule); a schedule
-    Basic can show is saved as Basic when none was saved, as the page opens."""
+def test_a_switch_left_out_keeps_the_shown_one_and_the_mode_is_the_pages():
+    """No switch keeps the page's (off for an existing schedule). The mode is
+    the one the page opens in: Advanced for an older schedule Basic cannot
+    show (here with quick updates), else the last saved, Basic when none."""
     rules = {"rules": [{"kind": "full", "at": "02:00"}]}
     read = editor(rules)
     assert read.document()["skip_around_family_emails"] is False
+    assert read.settings()["refresh_schedule_mode"] == "advanced"
+    # Business hours, a Basic choice, saved with no mode.
+    business = [
+        {"kind": "full", "at": "02:00"},
+        {"kind": "full", "every": 120, "from": "08:00", "to": "18:00"},
+    ]
+    shown = {"rules": business, "skips": []}
+    stored = {"refresh_rules": shown | {"skip_around_family_emails": True}}
+    read = editor(rules, stored)
+    assert read.document()["skip_around_family_emails"] is True
     assert read.settings()["refresh_schedule_mode"] == "basic"
-    stored = {
-        "refresh_rules": {**rules, "skips": [], "skip_around_family_emails": True}
-    }
-    stored["refresh_rules"]["rules"] = [{"kind": "full", "at": "03:00"}]
-    assert editor(rules, stored).document()["skip_around_family_emails"] is True
+    stored["refresh_schedule_mode"] = "advanced"
+    assert editor(rules, stored).settings()["refresh_schedule_mode"] == "advanced"
+
+
+def test_a_null_switch_is_refused():
+    """Present means true or false; a null would silently turn it off."""
+    with pytest.raises(InvalidChange) as raised:
+        parse_schedule('{"rules": [], "skip_around_family_emails": null}')
+    assert [p["field"] for p in raised.value.fields] == [
+        "refresh_schedule.skip_around_family_emails"
+    ]
+
+
+SENTINEL = "SECRETXYZ"
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        {"kind": SENTINEL, "at": "02:00"},
+        {"kind": "full", "at": SENTINEL},
+        {"kind": "full", "at": "24:00"},
+        {"kind": "full", "at": "2pm"},
+        {"kind": "full", "every": 7777, "from": "00:00", "to": "01:00"},
+        {"kind": "full", "every": 60, "from": "00:00", "to": SENTINEL},
+    ],
+)
+def test_values_the_page_form_would_quote_are_refused_in_fixed_words(row):
+    """A kind, a time or an interval the page's form would quote back in its
+    own message is refused first, in words that never echo the input."""
+    with pytest.raises(InvalidChange) as raised:
+        parse_schedule(json.dumps({"rules": [row]}))
+    [problem] = raised.value.fields
+    assert problem["field"] == "refresh_schedule.rules[0]"
+    for value in (SENTINEL, "7777", "24:00", "2pm"):
+        assert value not in problem["message"]
+
+
+def test_new_quick_rules_are_refused():
+    """Only a quick rule the shown schedule already has may be posted back
+    (#1122); the page never offers adding one."""
+    from parishkit.stewardship.accounts.refresh_schedule_forms import ScheduleEditor
+    from parishkit.stewardship.admin_integration_changes import quick_problems
+
+    shown = ScheduleEditor(stored={})
+    kept = {"rules": shown.shown["rules"]}
+    assert quick_problems(parse_schedule(json.dumps(kept)), shown) == []
+    added = {"rules": [*kept["rules"], {"kind": "quick", "at": "12:00"}]}
+    problems = quick_problems(parse_schedule(json.dumps(added)), shown)
+    assert [p["field"] for p in problems] == [
+        f"refresh_schedule.rules[{len(kept['rules'])}]"
+    ]
 
 
 def test_the_page_editors_problems_come_back_at_each_row():

@@ -26,12 +26,14 @@ from parishkit.stewardship.accounts.integration_views import SALT
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.audit.models import AuditEvent
 
+from ..schedule_rows import rows, shown
 from . import campaign_builders
 from .automation_builders import as_staff, paired
 from .test_admin_digest_list_cli_postgresql import revoke
 from .test_admin_test_sample_cli_postgresql import runner
 from .test_integration_views_postgresql import (
     apply_rules_schedule,
+    replace_settings,
     stored_schedule,
 )
 
@@ -544,33 +546,106 @@ def test_a_refresh_schedule_is_reviewed_and_applied(admin):
     assert show_schedule(admin, secret) == SCHEDULE
 
 
-def test_the_command_and_the_page_build_the_same_change(admin):
-    """The command posts the page editor's own rows, so the page's review of
-    the same rows signs the same patch; the organization ID goes with it."""
-    from parishkit.stewardship.accounts.refresh_schedule_forms import ScheduleEditor
-    from parishkit.stewardship.admin_integration_changes import (
-        parse_schedule,
-        schedule_rows,
-    )
+# An older schedule, stored before the editor: two listed full times, one
+# kept off the quarter hour, and no saved mode, as Production's is.
+OLDER = {
+    "organization_id": "12345",
+    "nightly_time": "02:07",
+    "full_refresh_times": ["02:07", "13:00"],
+    "delta_refresh": "off",
+}
 
+
+def page_rows(browser, rules):
+    """The settings page's own post of ``rules``: its drawn mode toggle and
+    the switch as drawn, with the rule rows as its script writes them."""
+    page = browser.get("/admin/system/integrations/parishsoft/").content.decode()
+    drawn = shown(page)
+    [mode] = re.findall(
+        r'name="refresh_schedule_mode" value="(\w+)" data-editor-mode-choice checked',
+        page,
+    )
+    switch = drawn.get("skip_around_family_emails") == "on"
+    return rows(rules, switch=switch) | {"refresh_schedule_mode": mode}
+
+
+def test_the_command_and_the_page_build_the_same_change(admin):
+    """For an older schedule with no saved mode, the command's change equals
+    the page's own post of the same rules (built from the page as drawn, not
+    the command's rows): the same patch, mode included; the organization ID
+    goes with it."""
+    replace_settings(admin.service.store, OLDER)
     browser, secret, _ = paired(admin.service)
+    nightly = [{"kind": "full", "at": "02:00"}]
     code, document, _ = schedule_preview(
-        admin, secret, SCHEDULE, changes={"organization_id": "777"}
+        admin, secret, {"rules": nightly}, changes={"organization_id": "777"}
     )
     assert code == 0, document
     assert document["result"]["changes"] == [
         {"field": "organization_id", "before": "12345", "after": "777"}
     ]
-    stored = records(admin)["parishsoft"]["settings"]
-    rows = schedule_rows(
-        parse_schedule(json.dumps(SCHEDULE)), ScheduleEditor(stored=stored)
-    )
     page = page_preview(
-        browser, admin.service.store, "parishsoft", {"organization_id": "777"} | rows
+        browser,
+        admin.service.store,
+        "parishsoft",
+        {"organization_id": "777"} | page_rows(browser, nightly),
     )
     salt = SALT + "parishsoft"
     command = signing.loads(document["result"]["preview"]["token"], salt=salt)
     assert command["patch"] == signing.loads(page, salt=salt)["patch"]
+    settings = command["patch"][0]["values"]["settings"]
+    # The page opened in Advanced (Basic can't show the older schedule).
+    assert settings["refresh_schedule_mode"] == "advanced"
+
+
+def test_an_older_schedules_kept_times_stay_allowed(admin):
+    """The kept 02:07 posts back beside an edit and is saved; a new time off
+    the quarter hour is refused at its row."""
+    replace_settings(admin.service.store, OLDER)
+    _, secret, _ = paired(admin.service)
+    shown_schedule = show_schedule(admin, secret)
+    assert {"kind": "full", "at": "02:07"} in shown_schedule["rules"]
+    edited = dict(shown_schedule)
+    edited["rules"] = [*shown_schedule["rules"], {"kind": "full", "at": "18:00"}]
+    code, document, _ = schedule_preview(admin, secret, edited)
+    assert code == 0, document
+    code, confirmed, _ = confirm(
+        admin, secret, "parishsoft", document["result"]["preview"]["token"]
+    )
+    assert code == 0, confirmed
+    install(admin, confirmed)
+    times = records(admin)["parishsoft"]["settings"]["full_refresh_times"]
+    assert "02:07" in times and "18:00" in times
+    added = dict(shown_schedule)
+    added["rules"] = [*shown_schedule["rules"], {"kind": "full", "at": "03:10"}]
+    code, document, _ = schedule_preview(admin, secret, added)
+    index = len(shown_schedule["rules"])
+    assert code == 1
+    assert refused(document, "invalid") == [f"refresh_schedule.rules[{index}]"]
+
+
+def test_refusals_never_echo_the_input(mail):
+    """A kind, time or interval the page's form would quote back, and a new
+    quick rule, are refused in fixed words; the value never appears in the
+    output or the error stream."""
+    _, secret, _ = paired(mail.service)
+    for row in (
+        {"kind": "SECRETXYZ", "at": "02:00"},
+        {"kind": "full", "at": "SECRETXYZ"},
+        {"kind": "full", "every": 7777, "from": "00:00", "to": "01:00"},
+    ):
+        code, document, errors = schedule_preview(mail, secret, {"rules": [row]})
+        assert code == 1 and refused(document, "invalid") == [
+            "refresh_schedule.rules[0]"
+        ]
+        for value in ("SECRETXYZ", "7777"):
+            assert value not in json.dumps(document) and value not in errors
+    quick = {
+        "rules": [{"kind": "full", "at": "02:00"}, {"kind": "quick", "at": "12:00"}]
+    }
+    code, document, _ = schedule_preview(mail, secret, quick)
+    assert code == 1 and refused(document, "invalid") == ["refresh_schedule.rules[1]"]
+    assert not ConfigurationChangeRequest.objects.exists() and trail() == (0, 0, 0, 0)
 
 
 def test_an_unchanged_refresh_schedule_is_no_change(admin):
