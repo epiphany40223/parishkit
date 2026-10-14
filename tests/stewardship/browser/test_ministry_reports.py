@@ -219,6 +219,12 @@ def test_ministry_totals_draw_follow_up_progress_bars(page, component_origin):
     assert_clean(page, errors)
 
 
+# Pixels from the totals region's top to the summary table region's top.
+TABLE_OFFSET = """(() =>
+  document.querySelector("[data-table-region]").getBoundingClientRect().top
+  - document.querySelector("#ministry-totals").getBoundingClientRect().top)()"""
+
+
 def test_applied_search_redraws_the_totals_in_place(page, component_origin):
     """Apply filters swaps in the matching Ministries' totals and draws the
     fresh chart without a reload (#720)."""
@@ -230,6 +236,11 @@ def test_applied_search_redraws_the_totals_in_place(page, component_origin):
     totals = page.locator("#ministry-totals")
     expect(totals.locator("[data-chart][data-chart-state=rendered]")).to_have_count(1)
     page.evaluate("window.__ministryMarker = 1")
+    # The table's top relative to the totals region's top: the fresh chart
+    # holds its predecessor's space, so the table below does not move. The
+    # two-line tiles wrap alike before and after, and measuring from the
+    # region rather than the page keeps any wrap above it out (#720).
+    offset = page.evaluate(TABLE_OFFSET)
     page.route(
         "**" + reverse("admin:ministry_report"),
         lambda route: route.fulfill(body=answer, content_type="text/html"),
@@ -238,6 +249,8 @@ def test_applied_search_redraws_the_totals_in_place(page, component_origin):
     expect(totals.locator(".stat-value").nth(1)).to_have_text("9")
     expect(totals.locator("[data-chart][data-chart-state=rendered]")).to_have_count(1)
     assert page.evaluate("window.__ministryMarker") == 1
+    eventually(page, FITTED)
+    assert abs(page.evaluate(TABLE_OFFSET) - offset) < 2
     ticks = totals.locator("svg .role-axis-label text:has(tspan)")
     assert ticks.first.locator("tspan").all_text_contents() == [
         "Resolved or closed",
