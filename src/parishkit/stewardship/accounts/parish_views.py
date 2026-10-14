@@ -94,6 +94,7 @@ class PhoneField(forms.CharField):
 
 # The Parish website's refusal, at the field and as the browser's hint.
 WEBSITE_REFUSAL = _("Use a website URL without credentials, query or fragment.")
+WEBSITE_EMPTY = _("Enter the parish website, such as https://example.org.")
 # What the browser checks of it: a scheme, a host part without "@", then any
 # path; a lone "?" or "#" (an empty query or fragment) is still admitted, as
 # the server admits it. Written for the browser's "v" pattern flag.
@@ -115,6 +116,8 @@ class ParishForm(AdminForm):
             attrs={
                 "pattern": WEBSITE_PATTERN,
                 "data-missing-hint": WEBSITE_REFUSAL,
+                # An empty website says what to enter, not the format rule.
+                "data-empty-hint": WEBSITE_EMPTY,
             }
         ),
     )

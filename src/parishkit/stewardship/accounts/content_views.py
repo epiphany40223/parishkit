@@ -387,6 +387,7 @@ def _page(
     started=False,
     refusal=None,
     stale=None,
+    folded=False,
 ):
     """Never insert rejected user HTML into the visual editor without sanitizing it.
 
@@ -394,6 +395,8 @@ def _page(
     configured one) from its default text; ``started`` says the form now
     holds that unsaved default. ``stale`` is the saved revision's
     stale_markup result, shown as a "re-save recommended" notice (#832).
+    ``folded`` says the confirmation email shows a retired receipt closing
+    note folded in (#260), which previewing the form unchanged saves.
     """
     try:
         visual = sanitize_html(form["html"].value() or "")
@@ -419,8 +422,11 @@ def _page(
             "stale": stale,
             # Preview waits for a change (#1330) unless the page offers saving
             # what is shown as it is: the unsaved default text, a saved text
-            # that needs re-saving, or a refused Preview drawn with its posts.
-            "change_gate": not (form.is_bound or started or stale is not None),
+            # that needs re-saving, a confirmation email with a retired
+            # closing note folded in, or a refused Preview drawn with its posts.
+            "change_gate": not (
+                form.is_bound or started or folded or stale is not None
+            ),
             # Post to the clean path: a "?start=default" GET must not carry its
             # query into the POST, which accepts no query parameters.
             "post_url": request.path,
@@ -695,6 +701,7 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
                         started=start,
                         # Only the saved text, not a default being started.
                         stale=None if start else stale_markup(shown),
+                        folded=note is not None,
                     )
                 )
         # Recheck access after the observation ends, so a GET's read-only

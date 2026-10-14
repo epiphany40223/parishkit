@@ -526,7 +526,11 @@ def test_confirmation_editor_folds_a_retired_closing_note(
     assert "closing note" not in body and "submission_confirmation" not in body
     assert browser.get(catalog + "page/submission_confirmation/").status_code != 200
     path = catalog + "email/confirmation/"
-    assert "Call the office." in browser.get(path).content.decode()
+    shown = browser.get(path).content.decode()
+    assert "Call the office." in shown
+    # Previewing it as shown saves the fold, so it does not wait for an
+    # edit (#1330).
+    assert "data-require-change" not in shown
     # Saving the email exactly as shown folds the note into its body.
     html = email["values"]["html"] + note["values"]["html"]
     preview = post(
