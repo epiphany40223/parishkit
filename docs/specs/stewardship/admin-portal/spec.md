@@ -6607,18 +6607,21 @@ spec's
 [personal data rule](../admin-automation/spec.md#personal-data-on-the-command-line)
 requires.
 
-**Where it appears.** In the ParishSoft refresh panel, directly under the
-refused change it answers (Administrator, pk-local check of #1210: not at
-the foot of the page). The page draws it while the panel shows a refused
-change, including one a later 10-second status update brings; once drawn it
-stays in place, and its button follows the status. The panel is inside the
-region the status updates replace, so the action sits in an element those
-updates leave in place (`data-live-keep`, see
-[in-place controls](../ui-conventions/spec.md#in-place-controls)): an open
-preview, its tick box and the headings above it never move or disappear when
-the status changes. If a status update shows another refusal than the one
-an open preview reviews, or none, the preview says "This changed since you
-looked; review it again" on a line kept for it and Confirm is held. Once a
+**Where it appears.** In the [ParishSoft refresh tile](#health-tiles)'s
+details, directly after the refused change's counts table that ends its
+problems (Administrator, pk-local check of #1210: not at the foot of the
+page), and before the panel content. The page always draws the region,
+whatever the tile's state; while no refusal can be accepted, its button is
+greyed with its reason ("No refused ParishSoft refresh is waiting to be
+accepted"), and the 10-second status brings the button, in place, once a
+refusal shows. The region is outside the part the status updates replace,
+so an open preview, its tick box and the headings above it never move or
+disappear when the status changes. If a status update shows another
+refusal than the one an open preview reviews, or none (the status names
+its refusal for the region, see
+[in-place controls](../ui-conventions/spec.md#in-place-controls)), the
+preview says "This changed since you looked; review it again" on a line
+kept for it and Confirm is held. Once a
 refusal is accepted, its line in the problems list says "The refused
 ParishSoft change was accepted once by …; waiting for the next full
 refresh" and is no longer counted among the problems that need attention

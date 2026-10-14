@@ -501,14 +501,18 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   the status it answers, goes in an element marked `data-live-keep`: once
   it has contents, each status update puts the live element back in place
   of its fresh copy and ignores its contents when comparing, so an open
-  preview, its ticks and focus survive (System health's
-  [Accept this change once](../admin-portal/spec.md#accept-a-large-parishsoft-change-once),
-  under the refused change it answers); focus in it never holds an update,
+  preview, its ticks and focus survive; focus in it never holds an update,
   since the focused control is moved and focused again. An empty one takes
   the update's contents. When the update names something else than an open
   preview reviews (`data-live-keep-key` against `data-live-keep-for`), the
   preview says "This changed since you looked; review it again" on a line
-  reserved for it, and its confirming button is held for good. A Refresh reads out the region's coarse status sentence
+  reserved for it, and its confirming button is held for good. A control
+  outside the status region can be checked the same way: the region names
+  the current thing (`data-live-key`), and a preview inside an element
+  marked `data-live-keyed` with that name is marked changed the same way
+  (System health's
+  [Accept this change once](../admin-portal/spec.md#accept-a-large-parishsoft-change-once),
+  in its tile's details under the refused change it answers). A Refresh reads out the region's coarse status sentence
   when it changed, as a poll does. Dismiss refreshes only an integration's
   status line: if it brings back a new key change in progress (another
   Administrator started one), the settings form and notes below it keep the
