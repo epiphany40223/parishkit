@@ -12,8 +12,6 @@ from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
-from .schedule_forms import schedulable
-from .setup_content_values import CONTENT_STEPS
 from .setup_policy import SetupState
 
 
@@ -39,8 +37,9 @@ class Page:
 # and Testing for Google Workspace, Slack for its token). They no longer have
 # to race the five-minute fresh sign-in window: a stale sign-in is offered
 # "Confirm with Google", which keeps this setup. The source load then needs
-# the Parish profile and ParishSoft connection, and precedes the first
-# campaign that needs its catalog.
+# the Parish profile and ParishSoft connection. Setup collects nothing about
+# a campaign (#142): an Administrator creates it afterwards from Home, with
+# Create the campaign.
 PAGES = (
     Page("parish", _("Parish profile"), "admin:setup_step", ("parish",)),
     Page(
@@ -64,15 +63,6 @@ PAGES = (
     Page("source", _("Load parish data"), "admin:setup_source"),
     Page("branding", _("Parish logos"), "admin:setup_branding"),
     Page("access", _("Administrative access"), "admin:setup_step", ("access",)),
-    Page("campaign", _("First campaign"), "admin:setup_campaign"),
-    Page(
-        "content",
-        _("Pages and emails"),
-        "admin:setup_content",
-        required=False,
-    ),
-    Page("shares", _("Share options"), "admin:setup_shares"),
-    Page("schedules", _("Dates and mail schedules"), "admin:setup_schedules"),
     Page("preview", _("Review"), "admin:setup_preview"),
     Page("mail_test", _("Test email"), "admin:setup_mail"),
     Page("slack_test", _("Test Slack"), "admin:setup_notification"),
@@ -131,12 +121,9 @@ class Wizard:
 
 
 def applicable(key, sections):
-    """Optional Slack pages and the share page appear only when they apply."""
+    """The optional Slack pages appear only when Slack is turned on."""
     if key in {"slack_credential", "slack_test"}:
         return bool(sections.get("slack", {}).get("enabled"))
-    if key == "shares":
-        campaign = sections.get("campaign", {}).get("campaign", {})
-        return "financial" in campaign.get("modules", [])
     return True
 
 
@@ -156,14 +143,6 @@ def _done(key, draft, credentials, tests):
         return draft.source_task_id is not None and draft.status.state != (
             SetupState.LOADING
         )
-    if key == "content":
-        return any(sections.get(step, {}).get("values") for step in CONTENT_STEPS)
-    if key == "shares":
-        # The campaign page seeds default options, so their presence proves
-        # nothing; only a save on the shares page (of these exact options) does.
-        options = sections.get("campaign", {}).get("campaign", {}).get("share_options")
-        reviewed = getattr(draft, "reviewed", {}).get("shares")
-        return options is not None and reviewed == [row["id"] for row in options]
     if key in {"mail_test", "slack_test"}:
         return key in tests
     if key == "preview":
@@ -201,27 +180,7 @@ def _blocker(key, draft, done):
             ("mail", "testing"),
             _("Save the outgoing email settings and Testing recipient first."),
         ),
-        "campaign": (("source",), _("Load parish data first.")),
-        "content": (("campaign",), _("Save the first campaign first.")),
-        "shares": (("campaign",), _("Save the first campaign first.")),
-        "schedules": (("campaign",), _("Save the first campaign first.")),
     }
-    if key == "schedules" and done.get("campaign") and not done["schedules"]:
-        # Every schedule sends a saved email, so an empty template list would
-        # offer nothing to choose. (Saving no schedules at all stays allowed.)
-        saved = [
-            draft.sections[step]
-            for step in CONTENT_STEPS
-            if draft.sections.get(step, {}).get("values")
-        ]
-        if not schedulable(saved):
-            return (
-                _(
-                    "Save an invitation or reminder email under Pages and "
-                    "email templates first."
-                ),
-                "content",
-            )
     if key in FINAL:
         needed = tuple(
             page.key

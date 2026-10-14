@@ -16,7 +16,6 @@ from parishkit.stewardship.accounts.campaign_forms import (
     FINANCIAL_REQUIRED,
     CampaignForm,
 )
-from parishkit.stewardship.accounts.setup_campaign_views import SetupCampaignForm
 from parishkit.stewardship.accounts.setup_confirmation_views import (
     SetupConfirmationForm,
 )
@@ -84,20 +83,6 @@ def test_other_setup_steps_and_finish_keep_their_plain_action_row():
         candidate_digest="a" * 64,
     )
     assert "data-complete-hint" not in finish
-
-
-def test_first_campaign_waits_for_a_module_and_the_financial_fields():
-    """First campaign opts into the gate with its hint after Save."""
-    html = page(
-        "setup-campaign.html",
-        "campaign",
-        form=SetupCampaignForm(funds=[("9", "Offertory")]),
-    )
-    assert "data-require-complete" in form_tag(html)
-    assert "data-campaign-form" in form_tag(html)
-    tail = after_actions(html)
-    assert re.search(SAVE_NAMES_HINT, tail)
-    assert 'id="setup-complete-hint" data-complete-hint hidden' in tail
 
 
 def test_campaign_fields_group_the_modules_and_mark_the_financial_fields():

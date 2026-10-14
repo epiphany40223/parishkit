@@ -1,8 +1,11 @@
-"""Named temporary content remains owned by the original first-campaign draft."""
+"""Named temporary content remains owned by the original first-campaign draft.
+
+No wizard page saves first-campaign sections since #142, which removed those
+pages; this service code remains only until the #142 cleanup removes it.
+"""
 
 from uuid import uuid4
 
-from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.web.refusals import UserFacingMissing
@@ -64,8 +67,6 @@ def first_campaign_missing():
     """Refusal for a first-campaign child page opened before the campaign is saved."""
     return UserFacingMissing(
         _("Save the first campaign before preparing its pages, emails or schedules."),
-        link=reverse("admin:setup_campaign"),
-        link_label=_("Go to “First campaign”"),
     )
 
 

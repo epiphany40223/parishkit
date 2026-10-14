@@ -41,6 +41,7 @@ from .test_configuration_service_postgresql import (
 )
 from .test_runtime_auth_grants_postgresql import web_login
 from .test_setup_loading_postgresql import pages
+from .test_setup_preview_postgresql import before_142
 from .test_setup_staging_postgresql import setup_service  # noqa: F401
 from .test_setup_yaml_preparation_postgresql import install_inputs
 from .test_source_refreshing_postgresql import fake_provider
@@ -52,6 +53,8 @@ def prepared(service, monkeypatch, tmp_path, *, financial=False):
     """Use real original setup, initial target installation and YAML preparation."""
     short_request_budgets(monkeypatch)
     if financial:
+        # Only a campaign has giving to load: one confirmed before #142.
+        before_142(monkeypatch)
         from parishkit.stewardship.accounts.share_forms import default_share_options
 
         from ..campaign_factory import financial as periods

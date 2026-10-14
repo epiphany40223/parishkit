@@ -4,9 +4,8 @@ import pytest
 from django import forms
 
 from parishkit.stewardship.accounts import field_tips, setup_help
+from parishkit.stewardship.accounts.campaign_forms import CampaignForm
 from parishkit.stewardship.accounts.setup_branding_views import SetupLogoForm
-from parishkit.stewardship.accounts.setup_campaign_views import SetupCampaignForm
-from parishkit.stewardship.accounts.setup_content_views import SetupContentForm
 from parishkit.stewardship.accounts.setup_credential_views import SetupCredentialForm
 from parishkit.stewardship.accounts.setup_forms import FORMS
 
@@ -20,6 +19,13 @@ def visible(form):
     }
 
 
+def campaign_form():
+    """The campaign form with the help Create the campaign and Campaign settings use."""
+    form = CampaignForm()
+    setup_help.apply(form, setup_help.ADMIN_CAMPAIGN, replace=True)
+    return form
+
+
 def full_help(field):
     """The field's complete help: its tip when it has one, else its visible help."""
     return str(getattr(field, "tip", field.help_text))
@@ -30,11 +36,10 @@ def full_help(field):
     [
         *(form_type() for step, form_type in FORMS.items() if step != "branding"),
         SetupLogoForm(),
-        SetupCampaignForm(),
+        campaign_form(),
         SetupCredentialForm("parishsoft"),
         SetupCredentialForm("google_workspace"),
         SetupCredentialForm("slack"),
-        SetupContentForm(kind="email", slot="initial"),
     ],
     ids=lambda form: type(form).__name__,
 )
@@ -101,8 +106,8 @@ def test_service_account_json_stays_a_write_only_text_area():
 
 
 def test_multi_select_help_says_how_to_choose_several():
-    """Setup's own text keeps the shared multi-select instructions."""
-    form = SetupCampaignForm()
+    """The campaign help text keeps the shared multi-select instructions."""
+    form = campaign_form()
     for name in ("ministry_duids", "fund_duids", "comparison_fund_duids"):
         # The how-to line stays visible; the full help is in the tip.
         text = str(form.fields[name].help_text)

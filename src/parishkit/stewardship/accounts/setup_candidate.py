@@ -98,13 +98,13 @@ def compile_candidate(
 
     UUIDs for new public records are scoped to the original attempt. System
     setup (#142) has no campaign section, so the candidate has no campaign,
-    content or schedules, and any content a draft saved before the upgrade is
-    ignored. Until the wizard stops offering the campaign pages (#142 part b),
-    a draft that staged its first campaign keeps it, and afterwards only an
-    attempt confirmed before the upgrade still has one:
-    selected content/schedule/option IDs retain their draft identities, and
-    the first Campaign uses the attempt UUID already embedded in its
-    temporary children.
+    content or schedules: the setup preview passes only the system sections
+    (``setup_preview.SYSTEM_SECTIONS``). The one-campaign branch below is
+    what attempts confirmed before #142 compiled; nothing reaches it any
+    more, and it is removed with the rest of the first-campaign setup code
+    (#142 cleanup). There, selected content/schedule/option IDs retain their
+    draft identities, and the first Campaign uses the attempt UUID already
+    embedded in its temporary children.
     """
     if any(
         not isinstance(value, UUID)

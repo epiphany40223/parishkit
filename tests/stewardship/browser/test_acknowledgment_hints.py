@@ -82,19 +82,6 @@ def test_a_shown_may_have_arrived_prompt_holds_send_with_a_hint(page, component_
     ready(send, hint)
 
 
-def test_setup_reset_waits_for_its_confirmation(page, component_origin):
-    """Reset all pages and emails is an acknowledgment, with its own hint."""
-    page.goto(component_origin + "/setup-content")
-    reset = page.get_by_role(
-        "button", name="Reset all pages and emails to the default text"
-    )
-    hint = hint_for(reset)
-    waits_with(reset, hint, "Tick the box to confirm replacing every page and email.")
-    follows(reset, hint)
-    page.get_by_role("checkbox").check()
-    ready(reset, hint)
-
-
 def test_a_swapped_in_form_is_gated(page, component_origin):
     """A form an in-place update brings in waits for its box like any other."""
     page.goto(component_origin + "/campaign-mail")

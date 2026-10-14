@@ -47,18 +47,15 @@ from parishkit.stewardship.accounts.schedule_forms import (
 )
 from parishkit.stewardship.accounts.schedule_table import attach
 from parishkit.stewardship.accounts.setup_branding_views import SetupLogoForm
-from parishkit.stewardship.accounts.setup_campaign_views import SetupCampaignForm
 from parishkit.stewardship.accounts.setup_confirmation_views import (
     SetupConfirmationForm,
 )
-from parishkit.stewardship.accounts.setup_content_views import SetupContentForm
 from parishkit.stewardship.accounts.setup_credential_views import SetupCredentialForm
 from parishkit.stewardship.accounts.setup_forms import FORMS
 from parishkit.stewardship.accounts.setup_mail_views import SetupMailForm
 from parishkit.stewardship.accounts.setup_notification_views import (
     SetupNotificationForm,
 )
-from parishkit.stewardship.accounts.setup_schedule_views import SetupScheduleWindow
 from parishkit.stewardship.accounts.setup_wizard import BY_KEY as SETUP_STEPS
 from parishkit.stewardship.accounts.setup_wizard import build as setup_wizard
 from parishkit.stewardship.accounts.share_forms import (
@@ -341,91 +338,29 @@ def refused_refresh_times():
     return form
 
 
-# The first-campaign step shows and takes send times in the browser's zone
-# (#558), as its view draws it; the page fixture's browser is in Los Angeles.
-SETUP_BROWSER_TIMES = {
-    "browser_times": True,
-    "now": datetime(2054, 9, 1, 12, tzinfo=UTC),
-}
+def invalid_schedule_data(emails):
+    """A posted blank row the server refused: a weekday on an invitation."""
+    return {
+        "schedules-TOTAL_FORMS": "1",
+        "schedules-INITIAL_FORMS": "0",
+        "schedules-0-kind": "initial",
+        "schedules-0-date": "2054-10-01",
+        "schedules-0-time": "09:00:00",
+        "schedules-0-weekday": "0",
+        "schedules-0-template_version": emails[0]["id"],
+    }
 
 
-# The /setup-schedules-dst page's campaign, saved schedules and emails, for
-# its browser test to post back through the same formset (#558).
-SETUP_DST = {}
-
-
-def setup_dst_schedules(owner, emails):
-    """An invitation and two reminders either side of London's DST change.
-
-    London leaves summer time on October 25, 2054, a week before New York,
-    so the 9:00 AM New York reminders show as 14:00 on the 24th and 13:00 on
-    the 26th in a London browser.
-    """
-    by_kind = {row["values"]["slot"]: row for row in emails}
-
-    def saved(kind, **values):
-        """A saved schedule of ``kind`` that sends that type's email."""
-        email = by_kind[kind]
-        return schedule(
-            owner["id"],
-            kind=kind,
-            template_version=email["id"],
-            subject=email["values"]["subject"],
-            **values,
-        )
-
-    return [
-        saved("initial"),
-        saved("reminder", date="2054-10-24"),
-        saved("reminder", date="2054-10-26"),
-    ]
-
-
-def refused_send_time(owner, emails):
-    """A validated formset whose new invitation's send time cannot be read."""
-    schedules = Schedules(
-        {
-            "schedules-TOTAL_FORMS": "1",
-            "schedules-INITIAL_FORMS": "0",
-            "schedules-0-kind": "initial",
-            "schedules-0-date": "2054-10-01",
-            "schedules-0-time": "25:00",
-            "schedules-0-template_version": emails[0]["id"],
-        },
-        prefix="schedules",
-        previous=[],
-        templates=emails,
-        campaign_id=owner["id"],
-        campaign=owner["values"],
-        zone="America/Los_Angeles",
-        **SETUP_BROWSER_TIMES,
-    )
-    assert not schedules.is_valid()
-    return schedules
-
-
-def invalid_schedules(owner, emails):
-    """A validated formset whose only row reports a weekday on an invitation."""
-    schedules = Schedules(
-        {
-            "schedules-TOTAL_FORMS": "1",
-            "schedules-INITIAL_FORMS": "0",
-            "schedules-0-kind": "initial",
-            "schedules-0-date": "2054-10-01",
-            "schedules-0-time": "09:00:00",
-            "schedules-0-weekday": "0",
-            "schedules-0-template_version": emails[0]["id"],
-        },
-        prefix="schedules",
-        previous=[],
-        templates=emails,
-        campaign_id=owner["id"],
-        campaign=owner["values"],
-        zone="America/Los_Angeles",
-        **SETUP_BROWSER_TIMES,
-    )
-    assert not schedules.is_valid()
-    return schedules
+def refused_time_data(emails):
+    """A posted new invitation whose send time cannot be read."""
+    return {
+        "schedules-TOTAL_FORMS": "1",
+        "schedules-INITIAL_FORMS": "0",
+        "schedules-0-kind": "initial",
+        "schedules-0-date": "2054-10-01",
+        "schedules-0-time": "25:00",
+        "schedules-0-template_version": emails[0]["id"],
+    }
 
 
 # Between the fixture campaign's initial invitation (October 1, 2054) and
@@ -521,11 +456,6 @@ def component_origin():
         for kind in ("initial", "reminder", "daily_digest", "weekly_digest")
     ]
     table_rows = table_schedules(mail_campaign, mail_emails)
-    SETUP_DST.update(
-        owner=mail_campaign,
-        templates=mail_emails,
-        previous=setup_dst_schedules(mail_campaign, mail_emails),
-    )
     context = {
         "server_now": NOW,
         "deadline": NOW + timedelta(hours=1),
@@ -992,49 +922,33 @@ def component_origin():
                 ),
             },
         ),
+        # A web-only page in the campaign content editor: no plain-text panel
+        # (#259).
         (
-            "/setup-content-edit",
-            "setup-content-edit",
+            "/content-settings-page",
+            "content-settings",
             {
-                "draft": setup_draft,
+                "campaign": {
+                    "pk": uuid4(),
+                    "active_configuration": {"name": "Sample campaign"},
+                },
                 "label": "Family welcome",
                 "visual": "<p>Hello Sample Family</p>",
                 "placeholders": ["family_name", "parish_name"],
-                # A web-only page: no plain-text panel (#259).
-                "form": SetupContentForm(
+                "form": ContentForm(
                     kind="page",
                     slot="welcome",
                     initial={
+                        "base_digest": "a" * 64,
                         "html": "<p>Hello Sample Family</p>",
                         "text": "Hello Sample Family",
                         "generate_text": True,
                     },
                 ),
-                "sample": {
-                    "html": "<p>Hello Sample Family</p>",
-                    "text": "Hello Sample Family",
-                },
             },
-        ),
-        # The content list, for its acknowledged reset (#563).
-        (
-            "/setup-content",
-            "setup-content",
-            {"draft": setup_draft, "campaign_name": "Sample campaign", "groups": []},
         ),
         # Load parish data before the load starts (#227: its time-zone caution).
         ("/setup-source", "setup-source", {"draft": setup_draft}),
-        (
-            "/setup-shares",
-            "setup-shares",
-            {
-                "draft": setup_draft,
-                "campaign_name": "Sample campaign",
-                "formset": ShareOptions(
-                    prefix="options", previous=default_share_options()
-                ),
-            },
-        ),
         (
             "/setup-slack-test",
             "setup-notification",
@@ -1325,147 +1239,81 @@ def component_origin():
                 ],
             },
         ),
+        # The schedule editor (Dates and mail schedules), as its view draws
+        # it: the saved schedules' table, their editors and a blank row.
         (
-            "/setup-schedules",
-            "setup-schedules",
-            {
-                "draft": setup_draft,
-                "campaign_name": "Sample campaign",
-                "window": SetupScheduleWindow(
-                    prefix="window", previous=mail_campaign["values"]
-                ),
-                "schedules": Schedules(
-                    prefix="schedules",
-                    previous=[mail],
-                    templates=[],
-                    campaign_id=mail_campaign["id"],
-                    campaign=mail_campaign["values"],
-                    **SETUP_BROWSER_TIMES,
-                ),
-            },
+            "/schedule-editor",
+            "schedule-reconcile",
+            schedule_page(mail_campaign, [mail], now=datetime(2054, 9, 1, tzinfo=UTC)),
         ),
         (
             # Saved emails of every mail type: the blank row shows only the
             # fields and emails of the mail type chosen in it.
-            "/setup-schedules-mail",
-            "setup-schedules",
-            {
-                "draft": setup_draft,
-                "campaign_name": "Sample campaign",
-                "window": SetupScheduleWindow(
-                    prefix="window", previous=mail_campaign["values"]
-                ),
-                "schedules": Schedules(
-                    prefix="schedules",
-                    previous=[
-                        schedule(
-                            mail_campaign["id"],
-                            template_version=mail_emails[0]["id"],
-                            subject="initial mail",
-                        )
-                    ],
-                    templates=mail_emails,
-                    campaign_id=mail_campaign["id"],
-                    campaign=mail_campaign["values"],
-                    **SETUP_BROWSER_TIMES,
-                ),
-            },
+            "/schedule-editor-mail",
+            "schedule-reconcile",
+            schedule_page(
+                mail_campaign,
+                [
+                    schedule(
+                        mail_campaign["id"],
+                        template_version=mail_emails[0]["id"],
+                        subject="initial mail",
+                    )
+                ],
+                templates=mail_emails,
+                now=datetime(2054, 9, 1, tzinfo=UTC),
+            ),
         ),
         (
             # The owner's mistake posted without the page script: a new
             # initial invitation with a weekday. The error stays visible.
-            "/setup-schedules-error",
-            "setup-schedules",
-            {
-                "draft": setup_draft,
-                "campaign_name": "Sample campaign",
-                "window": SetupScheduleWindow(
-                    prefix="window", previous=mail_campaign["values"]
-                ),
-                "schedules": invalid_schedules(mail_campaign, mail_emails),
-            },
+            "/schedule-editor-error",
+            "schedule-reconcile",
+            schedule_page(
+                mail_campaign,
+                [],
+                templates=mail_emails,
+                data=invalid_schedule_data(mail_emails),
+                now=datetime(2054, 9, 1, tzinfo=UTC),
+            ),
         ),
         (
             # A send time the server refused (#631): its error clears on edit.
-            "/setup-schedules-time-error",
-            "setup-schedules",
-            {
-                "draft": setup_draft,
-                "campaign_name": "Sample campaign",
-                "window": SetupScheduleWindow(
-                    prefix="window", previous=mail_campaign["values"]
-                ),
-                "schedules": refused_send_time(mail_campaign, mail_emails),
-            },
+            "/schedule-editor-time-error",
+            "schedule-reconcile",
+            schedule_page(
+                mail_campaign,
+                [],
+                templates=mail_emails,
+                data=refused_time_data(mail_emails),
+                now=datetime(2054, 9, 1, tzinfo=UTC),
+            ),
         ),
         (
             # A schedule saved with seconds before #631 keeps them unchanged.
-            "/setup-schedules-kept",
-            "setup-schedules",
-            {
-                "draft": setup_draft,
-                "campaign_name": "Sample campaign",
-                "window": SetupScheduleWindow(
-                    prefix="window", previous=mail_campaign["values"]
-                ),
-                "schedules": Schedules(
-                    prefix="schedules",
-                    previous=[
-                        schedule(
-                            mail_campaign["id"],
-                            time="09:00:37",
-                            template_version=mail_emails[0]["id"],
-                            subject="initial mail",
-                        )
-                    ],
-                    templates=mail_emails,
-                    campaign_id=mail_campaign["id"],
-                    campaign=mail_campaign["values"],
-                    **SETUP_BROWSER_TIMES,
-                ),
-            },
-        ),
-        (
-            # Saved reminders either side of London's DST change (#558).
-            "/setup-schedules-dst",
-            "setup-schedules",
-            {
-                "draft": setup_draft,
-                "campaign_name": "Sample campaign",
-                "window": SetupScheduleWindow(
-                    prefix="window", previous=mail_campaign["values"]
-                ),
-                "schedules": Schedules(
-                    prefix="schedules",
-                    previous=SETUP_DST["previous"],
-                    templates=mail_emails,
-                    campaign_id=mail_campaign["id"],
-                    campaign=mail_campaign["values"],
-                    **SETUP_BROWSER_TIMES,
-                ),
-            },
+            "/schedule-editor-kept",
+            "schedule-reconcile",
+            schedule_page(
+                mail_campaign,
+                [
+                    schedule(
+                        mail_campaign["id"],
+                        time="09:00:37",
+                        template_version=mail_emails[0]["id"],
+                        subject="initial mail",
+                    )
+                ],
+                templates=mail_emails,
+                now=datetime(2054, 9, 1, tzinfo=UTC),
+            ),
         ),
         (
             # A financial campaign: its window shows the overlap confirmation
             # only while the dates overlap the fixed financial period.
-            "/setup-schedules-financial",
-            "setup-schedules",
-            {
-                "draft": setup_draft,
-                "campaign_name": "Sample campaign",
-                "window": SetupScheduleWindow(
-                    prefix="window", previous=financial_campaign["values"]
-                ),
-                "schedules": Schedules(
-                    prefix="schedules",
-                    previous=[],
-                    templates=[],
-                    campaign_id=financial_campaign["id"],
-                    campaign=financial_campaign["values"],
-                    **SETUP_BROWSER_TIMES,
-                ),
-                "templates_url": "/admin/setup/content",
-            },
+            "/schedule-editor-financial",
+            "schedule-reconcile",
+            schedule_page(financial_campaign, [], now=datetime(2054, 9, 1, tzinfo=UTC))
+            | {"templates_url": "/admin/campaign/content/"},
         ),
         (
             "/content-history",
@@ -1655,13 +1503,14 @@ def component_origin():
                 ),
             },
         ),
+        # Create the campaign (#142) with a real parish's long Ministry list.
         (
-            "/setup-campaign",
-            "setup-campaign",
+            "/campaign-create-long",
+            "campaign-create",
             {
-                "draft": setup_draft,
-                "form": SetupCampaignForm(
-                    initial={"timezone": "America/New_York"},
+                "form": CampaignForm(
+                    initial={"timezone": "America/New_York", "base_digest": "a" * 64},
+                    previous={},
                     # A real parish has hundreds of Ministries, some long-named.
                     ministries=[
                         ("1", "Music ministry"),

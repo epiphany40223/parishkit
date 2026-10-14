@@ -191,41 +191,6 @@ def test_staged_financial_funds_and_replaced_key_require_current_evidence(
     assert not Campaign.objects.exists()
 
 
-def test_first_campaign_http_is_private_versioned_and_csrf_protected(
-    setup_http, monkeypatch
-):
-    """Use the original issued browser session and actual web SQL grants."""
-    from parishkit.stewardship.accounts.campaign_forms import initial_fields
-
-    request, attempt = completed(setup_http, monkeypatch)
-    browser = Client(enforce_csrf_checks=True)
-    browser.cookies["pk_admin"] = request.session.session_key
-    with web_login():
-        response = browser.get("/admin/setup/campaign")
-        assert response.status_code == 200, response.content
-        assert response["Cache-Control"] == "no-store"
-        assert (
-            b"First campaign" in response.content and b"Offertory" in response.content
-        )
-        fields = initial_fields(campaign()["values"], digest="")
-        fields.pop("base_digest")
-        fields = {
-            key: "on" if value is True else value
-            for key, value in fields.items()
-            if value is not False and value is not None
-        }
-        fields["version"] = str(attempt.version)
-        assert browser.post("/admin/setup/campaign", fields).status_code == 403
-        bad = post(browser, "/admin/setup/campaign", fields | {"end_date": "invalid"})
-        assert bad.status_code == 400
-        assert not SetupDraftSection.objects.filter(step="campaign").exists()
-        accepted = post(browser, "/admin/setup/campaign", fields)
-        assert accepted.status_code == 302, accepted.content
-        assert post(browser, "/admin/setup/campaign", fields).status_code == 409
-        assert browser.get("/admin/setup/campaign").status_code == 200
-    assert not Campaign.objects.exists() and not setup_http.configured()
-
-
 def test_loaded_parish_form_explains_fixed_timezone_and_preserves_other_edits(
     setup_http, monkeypatch
 ):

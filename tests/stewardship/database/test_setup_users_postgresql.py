@@ -96,7 +96,7 @@ def test_a_fresh_install_finishes_setup_with_an_administrator_user(
         _, actor = sign_in(setup_service, "admin@example.org", "synthetic-setup-admin")
     assert allows(actor, Capability.CONFIGURE)
 
-    _, attempt, identifier = prepared(setup_service, monkeypatch, tmp_path)
+    _, _, identifier = prepared(setup_service, monkeypatch, tmp_path)
     ring = keys()
     task = queued(setup_service, identifier)
     fake_provider(monkeypatch, pages())
@@ -120,7 +120,8 @@ def test_a_fresh_install_finishes_setup_with_an_administrator_user(
     configured = runtime()
     assert configured.active_configuration_id == completed.activation.configuration_id
     assert configured.active_configuration.validation_schema == "users-v10"
-    assert configured.current_campaign_id == attempt.attempt_id
+    # Setup creates no campaign (#142).
+    assert configured.current_campaign_id is None
     # The setup request was the users format, and nothing converted anything.
     assert set(
         ConfigurationChangeRequest.objects.values_list("request_schema", flat=True)

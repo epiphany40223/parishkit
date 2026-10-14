@@ -1,4 +1,4 @@
-"""Non-mutating whole-wizard public preview and fictional named content samples."""
+"""Non-mutating whole-wizard public preview of the system settings."""
 
 import json
 from dataclasses import replace
@@ -12,7 +12,6 @@ from parishkit.stewardship.jobs.campaign_mail_values import document_parish
 from .authentication import runtime
 from .branding_context import header_logo_size
 from .branding_models import BrandingAsset
-from .content_forms import EMAIL_LABELS, page_slots, sample_render
 from .setup_drafts import mark_reviewed
 from .setup_preview import prepare_preview
 from .setup_views import ERRORS, _checked, _closed, _context, page_error
@@ -26,34 +25,9 @@ def setup_preview(request):
         service = runtime()
         preview = prepare_preview(request, service)
         document = preview.compiled.candidate.document()
-        sections = document["sections"]
-        # System setup (#142) has no campaign, so nothing to sample; a first
-        # campaign staged before #142 still shows its pages and emails.
-        campaigns = sections.get("campaigns", [])
+        # Setup collects no campaign (#142), so the review shows the parish,
+        # integration and access settings and no page or email samples.
         parish = document_parish(document)
-        campaign = campaigns[0]["values"] if campaigns else None
-        content = {
-            (row["values"]["kind"], row["values"]["slot"]): row["values"]
-            for row in sections.get("content", [])
-        }
-        samples = (
-            [
-                {
-                    "label": label,
-                    "kind": kind,
-                    "sample": sample_render(
-                        content.get((kind, slot)), parish=parish, campaign=campaign
-                    ),
-                }
-                for kind, labels in (
-                    ("page", page_slots(campaign)),
-                    ("email", EMAIL_LABELS),
-                )
-                for slot, label in labels.items()
-            ]
-            if campaign
-            else []
-        )
         # Showing the whole review is what completes this step, for this exact
         # draft version. Record it first so this page's own stepper and
         # Continue already reflect it; a draft that changes meanwhile has a
@@ -69,8 +43,6 @@ def setup_preview(request):
             _context(draft, "preview")
             | {
                 "parish": parish,
-                "campaign": campaign,
-                "samples": samples,
                 "candidate_digest": preview.compiled.candidate.digest,
                 "document": json.dumps(document, ensure_ascii=False, indent=2),
                 "testing_recipient": preview.draft.sections["testing"][
