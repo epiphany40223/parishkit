@@ -258,6 +258,10 @@ patterns, hover/focus values, and equivalent data tables or values drawn in
 the chart ([chart engine](../reports/spec.md#chart-engine)). They download as
 PNG or PDF. Dollar/count series on one chart use separate labeled axes rather
 than comparing unlike units on one scale.
+A chart's caption never repeats figures its table, legend or drawn values
+already show; it keeps only what they don't, such as a scope note, and the
+chart keeps its accessible name and description
+([chart engine](../reports/spec.md#chart-engine)).
 
 ## Admin portal interaction
 

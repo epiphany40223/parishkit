@@ -7,6 +7,13 @@
 [data-chart-view] { display: block; width: 100%; }
 [data-chart-view] svg { display: block; max-width: 100%; height: auto; }
 .chart-summary { color: var(--muted); }
+/* A chart that draws its values hides its summary, which would repeat them
+   (ui-conventions: Charts); if it cannot be drawn, the summary is all that
+   is left, so it shows. Undoes ui-v1.css's .visually-hidden. */
+.chart[data-chart-state=failed] .chart-summary.visually-hidden {
+  position: static; width: auto; height: auto; margin: 0; overflow: visible;
+  clip: auto; white-space: normal;
+}
 .chart-table { margin-top: .75rem; }
 .chart-notes { margin: .75rem 0 0; padding-left: 1.25rem; }
 

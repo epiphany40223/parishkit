@@ -351,6 +351,12 @@ def test_summary_charts_draw_with_tooltips_and_labelled_values(
     assert frequency.locator("svg g.mark-rect path").count() == 5
     view = frequency.locator("[data-chart-view]")
     assert view.get_attribute("aria-label") == "Pledges by frequency"
+    # The summary would repeat the drawn values, so it is not shown; it
+    # stays the view's description for assistive technology.
+    caption = frequency.locator("figcaption")
+    assert view.get_attribute("aria-describedby") == caption.get_attribute("id")
+    assert caption.inner_text().startswith("Pledges by frequency: Weekly")
+    assert caption.bounding_box()["width"] <= 1
     frequency.locator("svg g.mark-rect path").nth(1).hover()
     tooltip = page.locator("#vg-tooltip-element")
     visible(tooltip)
