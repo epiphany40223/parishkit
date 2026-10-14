@@ -29,13 +29,11 @@
 {% else %}<p>{% translate "This correction intentionally omits the former request text." %}</p>{% endif %}
 </section>
 {% endfor %}
-{% if detail %}<p><a href="{{ report_url }}">{% translate "Return to Weekly report" %}</a></p>
-{% elif total %}<nav aria-label="{% translate 'Report pages' %}">
+{% if total and not detail %}<nav aria-label="{% translate 'Report pages' %}">
 <p class="table-count">{% translate "Page" %} {{ page|number }} {% translate "of" %} {{ pages|number }}</p>
 {% if previous_page %}<a href="?page={{ previous_page }}#weekly-report-page" data-in-place="page-previous" data-in-place-fallback="page-next" data-in-place-message="{% translate 'Report page shown.' %}">{% translate "Previous page" %}</a>{% endif %}
 {% if next_page %}<a href="?page={{ next_page }}#weekly-report-page" data-in-place="page-next" data-in-place-fallback="page-previous" data-in-place-message="{% translate 'Report page shown.' %}">{% translate "Next page" %}</a>{% endif %}
 </nav>{% endif %}
 </div>
 {% if not detail %}{% include 'stewardship/components/digest-funnel.html' %}{% endif %}
-<p><a href="{% url 'admin:index' %}">{% translate "Return to Home" %}</a></p>
 {% endblock %}

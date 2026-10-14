@@ -10,7 +10,7 @@
 <p><a href="{% url 'admin:schedule_settings' %}">{% translate "Add a Weekly Admin digest schedule under Dates and mail schedules" %}</a>, {% translate "then return here." %}</p></div>
 {% elif blocker == "refused" %}
 <div class="notice" role="alert"><p>{% translate "A weekly report can't be sent now. Usually an earlier Weekly Admin digest is still being prepared or delivered, or it is waiting for review in Outgoing mail; otherwise the campaign settings changed after this form was opened." %}</p>
-<p>{% translate "Check Background work and Outgoing mail, then open this page again." %}</p></div>
+<p>{% url 'admin:background' as background_url %}{% url 'admin:deliveries' as outgoing_url %}{% blocktranslate %}Check <a href="{{ background_url }}">Background work</a> and <a href="{{ outgoing_url }}">Outgoing mail</a>, then open this page again.{% endblocktranslate %}</p></div>
 {% elif blocker == "in_progress" %}
 {% comment %}Found on GET, so Queue is shown unavailable with why rather
 than refused after submit (#563).{% endcomment %}
@@ -27,7 +27,6 @@ than refused after submit (#563).{% endcomment %}
 {% button type="submit" %}{% translate "Queue new manual report" %}{% endbutton %}
 </form>
 {% endif %}
-<p><a href="{% url 'admin:emailed_reports' %}">{% translate "Return to Emailed reports" %}</a></p>
 <p><a href="{% url 'admin:background' %}">{% translate "View background work" %}</a></p>
 <p><a href="{% url 'admin:deliveries' %}">{% translate "Review outgoing mail" %}</a></p>
 {% endblock %}
