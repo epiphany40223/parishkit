@@ -6240,18 +6240,20 @@ server?" (ADM-35):
 - **Off-site copy:** when the newest off-site copy to Google Drive finished
   and whether the newest attempt failed, from the
   `stewardship_backup_upload` record that Home already shows. When off-site
-  copies are not set up, the panel links the setup page.
+  copies are not set up, the setup page is linked, as the list below says.
 - **Problems:** the open `backup_rpo_breach`, `backup_offsite_failed` and
-  `backup_key_changed` incidents, in words.
+  `backup_key_changed` incidents are the tile's problems, as below.
 - **Requested backups:** the newest backup requested from this page, with
-  its state: waiting for the server, held for a Family email send (it says
-  the server checks again every five minutes and starts once the send has
-  finished, so the wording can outlast the send by a few minutes), running, finished, failed (its category under Technical details), did
-  not finish, not picked up (it waited 30 minutes, linking the nightly
-  backup section), or cancelled by a restore. The page applies the lapse
-  rules before the next poll records them. See
-  [take a backup now](#take-a-backup-now). Why a held request can still
-  show for a few minutes after the send ends is in a toggletip beside it.
+  its state: waiting for the server, held for a Family email send, running,
+  finished, failed (its category under Technical details), did not finish,
+  not picked up (it waited 30 minutes), or cancelled by a restore. The page
+  applies the lapse rules before the next poll records them. See
+  [take a backup now](#take-a-backup-now). While a request waits, is held
+  or runs, when it was requested is the greyed button's reason, so the
+  panel line names only its state (and when it started running). Why a
+  held request can still show for a few minutes after the send ends (the
+  server checks again every five minutes) is in a toggletip beside it. A
+  request that ended without a backup is a finding, below.
 
 The panel repeats none of the tile's problems. The open
 `backup_rpo_breach`, `backup_offsite_failed` and `backup_key_changed`
@@ -6261,8 +6263,9 @@ them as Warning items, in this order, each with its sentence and link:
 
 - a newest backup sealed to another key, linking the **Backup encryption
   key** settings;
-- a requested backup that failed or did not finish (the backup runbook's
-  "Checking" section) or was not picked up (linking the nightly backup);
+- a requested backup that failed or did not finish (linking the backup
+  runbook's "Checking" section) or was not picked up (linking the nightly
+  backup);
 - in Production, off-site copies that are not set up, linking their setup
   page.
 
@@ -6307,9 +6310,10 @@ schedule.
 
 #### Debug logging panel
 
-This panel shows whether debug logging is in effect in each online
-application service (web, worker, scheduler, mail-dispatch and the
-installers), from each one's
+This panel shows, in Testing, whether debug logging is in effect in each
+online application service (web, worker, scheduler, mail-dispatch and the
+installers; in Production the `debug_logging` problem names them, as
+below), from each one's
 [service status record](#service-status-records), and whether the
 **debug-off switch** is set (see
 [turn off debug logging](#turn-off-debug-logging)). A service's debug
@@ -6323,14 +6327,15 @@ the debug-off switch when it connects to the database, before this line, so
 a set switch keeps the line out.
 
 - **In Production, any service with debug logging in effect is a problem**
-  at the top of the page, and the panel offers **Turn off debug logging**.
+  in the Debug logging tile, whose band offers **Turn off debug logging**.
   The problem is a warning in the [health tiles](#health-tiles); the
   always-shown [debug logging banner](#navigation-and-home) keeps its
   error style, because it must stand out on every page.
 - In Testing it is shown as information, not a problem, because the
   pre-launch deployment tool turns it on deliberately
   ([deployment runbook](../../../guides/stewardship-deployment-runbook.md#pre-launch-fast-deploys)).
-  The button is offered in Testing too.
+  The button is offered in Testing too; the note that says so is left out
+  while the switch is set and the button is greyed.
 - While the switch is set, the panel says that the setting on the server
   still says "on"; who set it and when is the greyed button's reason.
 

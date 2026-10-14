@@ -70,6 +70,10 @@ RUNBOOKS = {
         "https://github.com/epiphany40223/parishkit/blob/main/docs/guides/"
         "stewardship-deployment-runbook.md"
     ),
+    "backup_checking": (
+        "https://github.com/epiphany40223/parishkit/blob/main/docs/guides/"
+        "stewardship-backup-runbook.md#checking"
+    ),
     "backup_schedule": (
         "https://github.com/epiphany40223/parishkit/blob/main/docs/guides/"
         "stewardship-backup-runbook.md#the-nightly-backup"

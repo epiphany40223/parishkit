@@ -1068,9 +1068,9 @@ def test_a_requested_backup_reads_as_the_page_words_it():
     assert status("expired", age=40, done=40) == "restored"
     for code, words in (
         ("waiting", "is waiting for the server"),
-        ("held", "was held while a Family email send was in progress"),
+        ("held", "is held while a Family email send is in progress"),
         ("not_picked_up", "The server did not pick up the backup requested at"),
-        ("running", "is running; it started at"),
+        ("running", "The requested backup is running; it started at"),
         ("did_not_finish", "did not finish."),
         ("failed", "failed. Ask the server operator"),
         ("finished", "finished at"),
@@ -2155,6 +2155,7 @@ def test_the_backup_findings_are_warning_items_after_the_problems():
         details = backups_details(tiles({"health": model}))
         assert details.count(words) == 1, status
         assert f'data-backup-request="{status}"' in details
+        assert "stewardship-backup-runbook.md#checking" in details, status
 
 
 def test_the_backups_panel_repeats_no_problem_sentence():
@@ -2204,7 +2205,7 @@ def test_a_held_request_explains_itself_in_a_toggletip():
     """Why a held request can outlast the send is one click away."""
     model = health(backup_request=backup_request("held"), offsite=offsite())
     details = backups_details(tiles({"health": model}))
-    assert "and was held while a Family email send was in progress." in details
+    assert "is held while a Family email send is in progress." in details
     tip = " ".join(tip_texts(details))
     assert "can still show for a few minutes after the send ends" in tip
     assert details.count("can still show for a few minutes") == 1
@@ -2282,3 +2283,50 @@ def test_the_debug_panel_repeats_no_sentence():
     # Off everywhere: said once, as the greyed button's reason.
     quiet = debug_details(tiles({"health": health()}))
     assert quiet.count("Debug logging is off in every service that reports.") == 1
+
+
+def test_a_live_request_is_stated_once_in_the_band():
+    """When a request was made is Take a backup now's greyed reason; the
+    panel line names only the request's state (and when it started), and
+    the confirmation says only that it was requested."""
+    made = NOW - timedelta(minutes=12)
+    started = NOW - timedelta(minutes=2)
+    for status in ("waiting", "held", "running"):
+        request = BackupRequestStatus(
+            state="waiting",
+            status=status,
+            created_at=made,
+            held_at=None,
+            claimed_at=started,
+            finished_at=None,
+            failure_kind=None,
+        )
+        model = health(backup_request=request, offsite=offsite())
+        details = backups_details(tiles({"health": model}))
+        assert details.count(f'datetime="{made.isoformat()}"') == 1, status
+        assert "A backup was requested at" in details, status
+        confirmed = backups_details(
+            tiles(
+                {
+                    "health": model,
+                    "backup_now": {"requested": SimpleNamespace(created_at=made)},
+                }
+            )
+        )
+        assert confirmed.count(f'datetime="{made.isoformat()}"') == 1, status
+        assert "Backup requested. The Backups details below" in confirmed
+    assert details.count(f'datetime="{started.isoformat()}"') == 1
+
+
+def test_the_debug_regions_answers_point_where_things_are_said():
+    """After turning it off, nothing points to a service list the
+    Production panel no longer has; a repeated request points to the greyed
+    button, which says who and when; the Testing note about the button is
+    left out while the switch greys it."""
+    body = debug_page(debug_off={"requested": SimpleNamespace(set_at=NOW)})
+    assert "Each service stops logging in debug form within about a minute." in body
+    assert "details below show when" not in body
+    busy = debug_page(switch=SET, debug_off={"refused": "busy"})
+    assert "The greyed button below says who did it and when." in busy
+    assert "Turn off debug logging works here too" in debug_page(mode="testing")
+    assert "works here too" not in debug_page(switch=SET, mode="testing")

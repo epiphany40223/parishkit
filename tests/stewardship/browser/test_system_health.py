@@ -867,9 +867,7 @@ def test_take_a_backup_now_previews_and_confirms_in_place(
     )
     confirm.click()
     # The tile's summary says so too once a poll brings the request.
-    expect(
-        page.locator("#backup-now").get_by_text("Backup requested at")
-    ).to_be_visible()
+    expect(page.locator("#backup-now [data-backup-requested]")).to_be_visible()
     assert kept()
     assert page.evaluate(
         "document.getElementById('backup-now').contains(document.activeElement)"
@@ -1550,3 +1548,33 @@ def test_working_backups_and_debug_tiles_fit_and_pass_axe(
     box = bubble.bounding_box()
     assert box["x"] >= 0 and box["x"] + box["width"] <= width
     assert _axe(page, axe_source) == []
+
+
+def test_the_held_request_toggletip_survives_an_unchanged_poll(page, component_origin):
+    """Why a held request can outlast the send is one click away; the tip
+    floats over the band, so no summary row moves, and polls that bring the
+    same state leave it open."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + BACKUP_REQUESTED)
+    kept = _not_reloaded(page)
+    _toggle(page, "backups").click()
+    band = _band(page, "backups")
+    panel = band.locator('[data-backup-request="held"]')
+    expect(panel).to_be_visible()
+    tops = page.evaluate(TOPS)
+    height = band.bounding_box()["height"]
+    button = panel.locator(".toggletip-button")
+    button.click()
+    bubble = panel.locator(".toggletip-bubble")
+    expect(bubble).to_contain_text("can still show for a few minutes")
+    expect(button).to_have_attribute("aria-expanded", "true")
+    assert same_place(page.evaluate(TOPS), tops)
+    assert same_place(band.bounding_box()["height"], height)
+    # Two polls bring the same state; the open tip and its band stay put.
+    checked = page.locator("time[data-live-checked]")
+    for _ in range(2):
+        first = checked.get_attribute("datetime")
+        expect(checked).not_to_have_attribute("datetime", first, timeout=30000)
+    expect(bubble).to_be_visible()
+    assert same_place(page.evaluate(TOPS), tops)
+    assert kept()
