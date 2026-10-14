@@ -1922,7 +1922,11 @@ current authorization/filter snapshot.
 5. If any field on an entity is a three-way conflict, block all writes to that
    entity and return it for re-review.
 6. Merge approved values into the freshly fetched full payload, leaving
-   unapproved fields at their current upstream values.
+   unapproved fields at their current upstream values. Only `approved`
+   decisions are planned. An approved proposal that reconciliation already
+   holds in `conflict` counts as a conflict until it is re-reviewed. A
+   fetched payload that lacks any field of the provider's request schema
+   blocks its entity, so a write can never clear a field that was not read.
 7. Persist the plan with the recorded source version and source-payload digests,
    present counts and conflicts, and require fresh Google authentication and
    final confirmation before queueing writes.
