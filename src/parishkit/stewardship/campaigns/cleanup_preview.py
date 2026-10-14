@@ -8,6 +8,7 @@ from django.db.models.functions import Lower
 from parishkit.stewardship.jobs.outbox_models import OutboxMessage
 from parishkit.stewardship.source.snapshot_name_sql import SnapshotFamilyName
 from parishkit.stewardship.source.snapshot_names import snapshot_family_names
+from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
 from parishkit.stewardship.web.tables import Sorting, bounded_count, read_window
 
 from .cleanup_catalog import (
@@ -91,11 +92,17 @@ def _sort_name(source_id, *, surname_only=False):
 
     NULL without a source snapshot or for a Family missing from it, so the
     table's nulls-last ordering lists those unnamed rows after every named
-    one in both directions, as Outgoing mail does.
+    one in both directions, as Outgoing mail does. A blank surname sorts as
+    the shown "Name not recorded in ParishSoft" (#1216).
     """
     if source_id is None:
         return Value(None, output_field=TextField())
-    name = SnapshotFamilyName(source_id, F("family_duid"), surname_only=surname_only)
+    name = SnapshotFamilyName(
+        source_id,
+        F("family_duid"),
+        surname_only=surname_only,
+        default=NAME_NOT_RECORDED,
+    )
     return Lower(name)
 
 
@@ -123,7 +130,11 @@ def cleanup_families(campaign_id, *, source_id, window, sort="duid"):
     window, rows, has_next = read_window(
         window, TESTING_FAMILY_SORTING.order(query, sort), total
     )
-    names = snapshot_family_names(source_id, [row.family_duid for row in rows])
+    # A blank surname is worded as the name, so the page's "Not in
+    # ParishSoft" badge marks only a Family the data no longer has (#1216).
+    names = snapshot_family_names(
+        source_id, [row.family_duid for row in rows], NAME_NOT_RECORDED
+    )
     return (
         window,
         [

@@ -32,6 +32,7 @@ from parishkit.stewardship.campaigns.runtime import _now, campaign_facts
 from parishkit.stewardship.campaigns.work_locks import read_transaction
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.source.snapshot_names import snapshot_family_names
+from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import PageWindow, expected_version, filters
 from parishkit.stewardship.web.tables import Sorting, clamp_window, window_table
@@ -175,9 +176,12 @@ def _names(configuration, rows):
     ):
         return {}
     # "Squyres, Tracy and Jeff", as on the Family codes directory; a Family
-    # with no name fields is "Family", as on the send page and directory.
+    # with no name fields is "Name not recorded in ParishSoft", as on the
+    # send page (#1216).
     return snapshot_family_names(
-        current.snapshot_id, [row.family.family_duid for row in rows], "Family"
+        current.snapshot_id,
+        [row.family.family_duid for row in rows],
+        NAME_NOT_RECORDED,
     )
 
 

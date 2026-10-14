@@ -70,8 +70,22 @@ def test_default_names_a_family_without_a_surname(monkeypatch):
     assert snapshot_names.snapshot_family_names("snap", [5], "Family") == {5: "Family"}
 
 
-def test_presence_names_a_nameless_family_family(monkeypatch):
-    """The presence page passes "Family" as the default, like the send page."""
+def test_outgoing_mail_words_a_nameless_family_as_name_not_recorded(monkeypatch):
+    """Outgoing mail and Refused addresses name a Family with no name fields
+    with the shared blank-name words, and a Family the snapshot lacks with
+    None, which the page marks Not in ParishSoft (#1216)."""
+    from parishkit.stewardship.jobs.delivery_reads import with_family_names
+
+    _install(monkeypatch, {"5": {"active_head_duids": []}}, {})
+    rows = [{"family_duid": 5}, {"family_duid": 6}, {"family_duid": None}]
+    assert [
+        row["family_name"] for row in with_family_names(rows, "snap", key="family_duid")
+    ] == ["Name not recorded in ParishSoft", None, None]
+
+
+def test_presence_words_a_nameless_family_as_name_not_recorded(monkeypatch):
+    """The presence page passes the shared blank-name words as the default,
+    like the send page (#1216)."""
     from parishkit.stewardship.accounts import presence
 
     current = SimpleNamespace(snapshot_id="snap", organization_id="org")
@@ -102,7 +116,9 @@ def test_presence_names_a_nameless_family_family(monkeypatch):
         )
     )
     rows = [SimpleNamespace(family=SimpleNamespace(family_duid=7))]
-    assert presence._names(configuration, rows) == {7: "Family, Jeff Squyres"}
+    assert presence._names(configuration, rows) == {
+        7: "Name not recorded in ParishSoft, Jeff Squyres"
+    }
 
 
 def test_facts_add_the_envelope_number_and_mailing_name(monkeypatch):

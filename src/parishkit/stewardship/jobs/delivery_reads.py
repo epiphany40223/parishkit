@@ -132,8 +132,9 @@ def with_family_names(rows, snapshot, key="family__family_duid"):
 
     ``family_name`` is the directory's surname-and-heads name from
     ``snapshot`` (the one the list was sorted by), read by
-    ``snapshot_family_names`` as the Family timeline names a Family, or
-    None for an Administrator report and for a Family that snapshot lacks.
+    ``snapshot_family_names`` as the Family timeline names a Family ("Name
+    not recorded in ParishSoft" for a blank surname, #1216), or None for an
+    Administrator report and for a Family that snapshot lacks.
     The email itself stores no name, so the names are read for the shown
     page only: at most two small queries (its Families and their heads),
     however many rows. The command line's ``delivery list`` does not read
@@ -142,9 +143,10 @@ def with_family_names(rows, snapshot, key="family__family_duid"):
     Refused addresses (#935).
     """
     from parishkit.stewardship.source.snapshot_names import snapshot_family_names
+    from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
 
     duids = {row[key] for row in rows} - {None}
-    names = snapshot_family_names(snapshot, duids, "Family")
+    names = snapshot_family_names(snapshot, duids, NAME_NOT_RECORDED)
     return [row | {"family_name": names.get(row[key])} for row in rows]
 
 

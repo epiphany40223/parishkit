@@ -24,6 +24,7 @@ from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports import family_timeline_views
 from parishkit.stewardship.source.models import SourceCurrent
 from parishkit.stewardship.source.snapshot_names import snapshot_family_names
+from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
 
 from ..policy_factory import address
 from .auth_builders import signed_in
@@ -86,7 +87,7 @@ def test_timeline_for_administrators_and_staff(
     assert response.status_code == 200
     assert response["Cache-Control"] == "no-store"
     snapshot = SourceCurrent.objects.get().snapshot_id
-    name = snapshot_family_names(snapshot, [1], "Family")[1]
+    name = snapshot_family_names(snapshot, [1], NAME_NOT_RECORDED)[1]
     assert f"<strong>{name}</strong>".encode() in body
     # The name is never in the title, so browser history does not keep it.
     assert name.encode() not in body.split(b"</title>")[0]

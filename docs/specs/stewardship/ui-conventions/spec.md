@@ -2155,9 +2155,12 @@ second. The Ministry follow-up pages, Ministry requests and packets still
 print "Unavailable Member" from their installed SQL, and the financial and
 information reports print "Unavailable Family" for a Family the data no
 longer has; they move to it, their downloads with a ParishSoft status
-column, in later changes of #1216, after #1217. The Family timeline, Outgoing mail and Testing submissions still stand
-"Family" in for a blank surname, and move to "Name not recorded in
-ParishSoft" in a later change too.
+column, in later changes of #1216, after #1217. The Family timeline,
+Outgoing mail, Refused addresses, Testing submissions, the chosen-Family
+send page and "Families on the form now" word a blank surname "Name not
+recorded in ParishSoft" since that second change; the Family codes
+directory and the information reports, whose names are built in installed
+SQL, still stand "Family" in for it until the same later changes.
 
 ### Table fit and row height
 
