@@ -4097,6 +4097,10 @@
   };
   const prepareReview = async (form, dialog, submitter) => {
     reviewing.add(form);
+    // What was typed is in this Review, and the form stays inert until its
+    // answer and behind the modal dialog after it, so nothing typed can be
+    // lost when Apply redraws the form's region: no "not kept" line then.
+    editedSince.delete(form.id);
     const body = new URLSearchParams(new FormData(form, submitter || undefined));
     const opener = submitter || firstSubmit(form) || form;
     form.setAttribute("aria-busy", "true");

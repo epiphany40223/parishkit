@@ -29,9 +29,9 @@ APPLIED_LINE = re.compile(
     r"^Share options changed\. Applied at \d{1,2}:\d{2}\s?[AP]M\.$"
 )
 DIGEST = "#settings-form input[name=base_digest]"
-# Where the form sits on the page (not in the window, which may scroll).
-FORM_PLACE = """() => {
-    const box = document.getElementById('settings-form').getBoundingClientRect();
+# Where an element sits on the page (not in the window, which may scroll).
+PLACE = """(id) => {
+    const box = document.getElementById(id).getBoundingClientRect();
     return [box.left + window.scrollX, box.top + window.scrollY];
 }"""
 
@@ -56,7 +56,8 @@ def test_a_change_is_reviewed_and_applied_in_the_dialog(page, component_origin):
     lists; Apply closes it, redraws the form in place with the applied list
     at the applied version, says what was applied in the status line and
     leaves Review waiting for the next change. Nothing reloads, the window
-    does not jump to the top and the form does not move."""
+    does not jump to the top, the form and the status line do not move, and
+    no line claims that typing was lost (what was typed was reviewed)."""
     reviews = answer_reviews(page, component_origin, SHARE_REVIEW, address=SHARE)
     page.goto(component_origin + SHARE)
     failures = watch(page)
@@ -71,7 +72,7 @@ def test_a_change_is_reviewed_and_applied_in_the_dialog(page, component_origin):
     visible(dialog.get_by_role("heading", name="Proposed order and labels"))
     assert "Renamed option" in dialog.inner_text()
     assert len(reviews) == 1 and "options-0-label=Renamed+option" in reviews[0]
-    place = page.evaluate(FORM_PLACE)
+    places = [page.evaluate(PLACE, id) for id in ("settings-form", "share-outcome")]
     dialog.get_by_role("button", name="Apply").click()
     hidden(dialog)
     eventually(page, "document.getElementById('share-outcome').textContent !== ''")
@@ -80,7 +81,11 @@ def test_a_change_is_reviewed_and_applied_in_the_dialog(page, component_origin):
     assert page.evaluate(FOCUSED) == "share-outcome"
     has_attribute(page.locator(DIGEST), "value", "b" * 64)
     assert label.input_value() == "Renamed option"
-    assert same_place(page.evaluate(FORM_PLACE), place)
+    assert page.locator("[data-edits-lost]").count() == 0
+    assert same_place(
+        [page.evaluate(PLACE, id) for id in ("settings-form", "share-outcome")],
+        places,
+    )
     # The applied list is now the saved one.
     expect_review(page, enabled=False, hint=OPTION_HINT)
     assert page.evaluate(MARKED) == "kept"
