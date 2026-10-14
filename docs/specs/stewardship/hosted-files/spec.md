@@ -458,8 +458,11 @@ audit event per file; the files' bytes are removed and the library swept, once,
 only after it commits. A file already deleted counts as deleted. A busy
 storage lock or a database failure rolls everything back ("The library was
 busy, so nothing was deleted."), so a request never deletes only some of its
-files. On success the table, the file count and usage line, and the upload
-notice (gone once its file is) redraw in place.
+files. On success the table, the file count and usage line, the upload
+notice (gone once its file is), Upload's availability and the file field's
+size limit (the room left in the library) redraw in place, so a file that
+now fits can be uploaded without a reload
+([#1252](https://github.com/epiphany40223/parishkit/issues/1252)).
 This replaced the earlier per-file results page (where one file's refusal
 never blocked the others), so the library follows the portal-wide rule that a
 request is refused whole when any chosen row cannot be acted on.

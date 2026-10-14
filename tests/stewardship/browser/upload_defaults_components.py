@@ -17,10 +17,12 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 
 from parishkit.stewardship.accounts.admin_editing import summary_errors
+from parishkit.stewardship.accounts.hosted_file_models import MAX_LIBRARY_BYTES
 from parishkit.stewardship.accounts.hosted_file_views import (
     LIBRARY_SORTING,
     REFUSALS,
     UploadForm,
+    _upload_limits,
 )
 from parishkit.stewardship.accounts.hosted_files import placeholder
 from parishkit.stewardship.accounts.setup_wizard import build
@@ -37,6 +39,10 @@ UPLOADED = f"{LIBRARY}?uploaded={UPLOADED_ID}"
 # fixture server's /redirect-to-login), and one with 2,000 bytes of room.
 ENDED = f"{LIBRARY}?case=ended"
 LIMITS = f"{LIBRARY}?case=limits"
+# A library full by size, whose redraw after a deletion (its refresh
+# address) has room again (#1252).
+FULL_BY_SIZE = f"{LIBRARY}?case=full-by-size"
+ROOM_AGAIN = f"{LIBRARY}?case=room-again"
 # Routed answers to UPLOAD, fetched by GET from these addresses.
 REFUSED_TYPE = "/hosted-upload-refused-type"
 REFUSED_SIZE = "/hosted-upload-refused-size"
@@ -124,6 +130,16 @@ def _library(context, admin, rows, *, form=None, uploaded=None, sort=None, **val
     return html
 
 
+def _sized(context, admin, rows):
+    """The library listing ``rows`` with the upload limits the view gives it
+    (``_upload_limits``), redrawn from ``ROOM_AGAIN``."""
+    form = UploadForm()
+    full = _upload_limits(form, [row["file"] for row in rows])
+    return _library(
+        context, admin, rows, form=form, library_full=full, refresh_url=ROOM_AGAIN
+    )
+
+
 def _limited():
     """An upload form whose file may be at most 2,000 bytes (#563)."""
     form = UploadForm()
@@ -189,6 +205,10 @@ def components(context, admin):
     refusals a test routes to."""
     rows = ROWS
     flyer = _row("parish-flyer")
+    # The file that fills the library to its byte limit.
+    archive = _row(
+        "parish-archive", MAX_LIBRARY_BYTES - sum(row["file"].size for row in rows)
+    )
     done = {"page_welcome": {"values": {"html": "<p>Welcome</p>"}}}
     pages = {
         LIBRARY: _library(context, admin, rows),
@@ -197,6 +217,8 @@ def components(context, admin):
             f'action="{UPLOAD}#', 'action="/redirect-to-login#'
         ),
         LIMITS: _library(context, admin, rows, form=_limited()),
+        FULL_BY_SIZE: _sized(context, admin, [archive, *rows]),
+        ROOM_AGAIN: _sized(context, admin, rows),
         BY_NAME: _library(context, admin, rows, sort="name"),
         REFUSED_TYPE: _library(context, admin, rows, form=_refused(REFUSALS["type"])),
         REFUSED_SIZE: _library(

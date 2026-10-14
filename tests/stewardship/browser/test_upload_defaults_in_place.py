@@ -20,6 +20,7 @@ from .upload_defaults_components import (
     CONTENT_STEP_UP,
     ENDED,
     FILLED,
+    FULL_BY_SIZE,
     LIBRARY,
     LIMITS,
     REFUSED_SIZE,
@@ -210,6 +211,37 @@ def test_a_file_too_large_for_the_room_sends_nothing(page, component_origin):
     painted(page)
     assert page.evaluate(MARKED) == "kept"
     assert posts == []
+
+
+def test_a_deletion_gives_the_upload_field_its_room_back(page, component_origin):
+    """In a library full by size the field refuses any file (its limit is
+    0) and Upload is unavailable. Deleting a file in place redraws the
+    field's limit from the room given back (#1252): the file already chosen
+    is released, and Upload sends it, all without a reload."""
+    posts = count_requests(page, "POST", UPLOAD)
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + FULL_BY_SIZE)
+    page.evaluate(MARK)
+    field = page.locator("#id_file")
+    assert field.get_attribute("data-max-bytes") == "0"
+    assert page.locator(UPLOAD_BUTTON).is_disabled()
+    field.set_input_files(PDF)
+    eventually(page, "() => !!document.querySelector('#id_file').dataset.clientError")
+    page.get_by_role("button", name="Delete parish-archive").click()
+    dialog = page.locator("dialog#hosted-file-delete")
+    dialog.get_by_role("button", name="Delete", exact=True).click()
+    hidden(dialog)
+    eventually(
+        page,
+        "() => document.querySelector('#id_file').dataset.maxBytes === '10485760'",
+    )
+    eventually(page, "() => !document.querySelector('#id_file').dataset.clientError")
+    assert field.get_attribute("aria-invalid") == "false"
+    assert field.evaluate(FILES) == 1
+    page.locator(UPLOAD_BUTTON).click()
+    visible(page.locator("#hosted-file-uploaded").get_by_text("Uploaded parish-flyer"))
+    assert page.evaluate(MARKED) == "kept"
+    assert posts == [component_origin + UPLOAD]
 
 
 def test_a_sort_keeps_the_chosen_file_and_typed_name(page, component_origin):

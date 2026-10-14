@@ -1321,6 +1321,21 @@
     document.querySelectorAll("[data-table-sync][id]").forEach((node) => {
       const fresh = parsed.getElementById(node.id);
       if (!fresh) return;
+      // A file field keeps its element, and so the file chosen in it, and
+      // takes only the fresh page's size limit: Hosted files' room in the
+      // library, which a deletion gives back (#1252). Its file is then
+      // checked against the new limit, and its form's gate answers again.
+      if (node instanceof HTMLInputElement && node.type === "file") {
+        ["data-max-bytes", "data-max-bytes-message"].forEach((name) => {
+          if (fresh.hasAttribute(name)) node.setAttribute(name, fresh.getAttribute(name));
+          else node.removeAttribute(name);
+        });
+        if (node.form) {
+          recheckSizes(node.form);
+          gateComplete(node.form);
+        }
+        return;
+      }
       if (node instanceof HTMLFormElement) {
         syncHidden(node, fresh);
         // The state a submit-on-change box's form now shows (see

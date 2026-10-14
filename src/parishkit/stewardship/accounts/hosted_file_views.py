@@ -113,6 +113,9 @@ def _upload_limits(form, files):
     total = sum(row.size for row in files)
     room = MAX_LIBRARY_BYTES - total
     attrs = form.fields["file"].widget.attrs
+    # data-table-sync: an in-place deletion's redraw gives the field its
+    # fresh limit, keeping the chosen file (syncControls in ui-v1.js, #1252).
+    attrs["data-table-sync"] = True
     attrs["data-max-bytes"] = max(min(MAX_FILE_BYTES, room), 0)
     attrs["data-max-bytes-message"] = (
         REFUSALS["too_large"]
