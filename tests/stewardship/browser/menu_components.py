@@ -13,13 +13,17 @@ with that logo, for the header-height test (#638). ``WIDE_PATH`` and
 ``FAMILY_WIDE_PATH`` are the same two pages with a 4:1 wordmark, the widest
 menu logo (#1062), served at ``WIDE_LOGO``. Each logo carries its drawn size
 as ``branding_for`` gives it. Additional information and Ministry follow-up
-carry open counts (``COUNTS``, #585).
+carry open counts (``COUNTS``, #585). ``LINKS_PATH`` is a page whose own
+links to menu pages go through ``menu_link`` before the first ParishSoft
+download (#1242): the directory and Additional information are greyed out
+in the text with the menu's reason, and Limitations stays a link.
 """
 
 from io import BytesIO
 from types import SimpleNamespace
 from uuid import UUID
 
+from django.template import engines
 from django.template.loader import render_to_string
 from PIL import Image
 
@@ -28,6 +32,7 @@ from parishkit.stewardship.accounts.branding_context import header_logo_size
 from parishkit.stewardship.accounts.policy import Principal
 
 PATH = "/admin-menu"
+LINKS_PATH = "/admin-menu-links"
 LOGO_PATH = "/admin-menu-logo"
 LOGO = "/branding/admin-menu-logo.png"
 FAMILY_LOGO_PATH = "/family-login-logo"
@@ -72,6 +77,16 @@ CAMPAIGN = SimpleNamespace(
     active_configuration=SimpleNamespace(values={"modules": ["financial", "ministry"]}),
 )
 
+# A Participation-style line of links to other report pages (#1242).
+LINKS = (
+    "{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}"
+    '{% block content %}<h1>Participation</h1><p id="report-links">'
+    '{% menu_link "information_queue" "Additional information" %} · '
+    '{% menu_link "limitations_report" "Limitations" %} · '
+    '{% menu_link "family_directory" "Active parishioner family directory" %}'
+    " · after</p>{% endblock %}"
+)
+
 # Open counts on the two follow-up queues' entries (#585).
 COUNTS = {"information_queue": 3, "ministry_followup": 1250}
 
@@ -84,7 +99,7 @@ def components(context, admin):
     """
     actor = Principal(UUID(int=1), frozenset({"administrator"}))
     items = admin_context._navigation_items(
-        actor, True, CAMPAIGN, SimpleNamespace(mode="testing")
+        actor, True, CAMPAIGN, SimpleNamespace(mode="testing"), parishsoft_data=True
     )
 
     def render(url_name, kwargs, extra=None):
@@ -121,8 +136,36 @@ def components(context, admin):
     url = {
         item["name"]: item["url"] for section in sections for item in section["items"]
     }
+    # No ParishSoft data yet: the chrome's own entries and state, as
+    # portal_chrome gives them to the page's links.
+    state = admin_context.menu_state(CAMPAIGN, SimpleNamespace(mode="testing"), False)
+    empty = admin_context._navigation_items(
+        actor, True, CAMPAIGN, SimpleNamespace(mode="testing"), state.parishsoft_data
+    )
+    match = SimpleNamespace(
+        url_name="participation", namespace=admin_navigation.NAMESPACE, kwargs={}
+    )
+    links_sections, links_trail = admin_navigation.build(match, empty)
+    links = (
+        engines["django"]
+        .from_string(LINKS)
+        .render(
+            context
+            | {
+                "configuration": {"mode": "testing"},
+                "admin_chrome": admin
+                | {
+                    "sections": links_sections,
+                    "breadcrumbs": links_trail,
+                    "entries": {item.name: item for item in empty},
+                    "menu_state": state,
+                },
+            }
+        )
+    )
     return {
         PATH: ("text/html", html),
+        LINKS_PATH: ("text/html", links),
         url["content_catalog"]: ("text/html", html),
         url["logs"]: ("text/html", logs),
         LOGO_PATH: ("text/html", branded),

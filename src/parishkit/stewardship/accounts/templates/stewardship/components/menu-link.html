@@ -1,0 +1,8 @@
+{% comment %}
+  An in-page link to an Admin page, from the menu_link tag (#1242): a link
+  while the viewer may open the page now, the shared greyed-out control with
+  the menu's reason while not (disabled-control.html), and plain text when
+  the viewer's role does not offer the page. It renders no surrounding
+  whitespace (no final newline here; spaceless trims the included control's),
+  so the link and the greyed control sit in running text the same way.
+{% endcomment %}{% if url %}<a href="{{ url }}">{{ label }}</a>{% elif tip %}{% spaceless %}{% include "stewardship/components/disabled-control.html" %}{% endspaceless %}{% else %}{{ label }}{% endif %}

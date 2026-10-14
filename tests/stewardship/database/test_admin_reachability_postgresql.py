@@ -15,8 +15,10 @@ against the rendered pages, not only the registry
 - the current campaign is implied: no ``href``, ``action``, ``src`` or
   ``data-*-url`` names its UUID.
 
-A linked page that answers 401 or 403, or a reader no longer signed in at
-the end, fails the crawl, so a lost session cannot empty the checks.
+A followed link that answers any 4xx or 5xx fails the crawl (rule 6: a page
+is linked only when the viewer may open it, #1242), apart from the
+``ALLOWED`` answers listed with their reasons, as does a reader no longer
+signed in at the end, so a lost session cannot empty the checks.
 
 ``PENDING`` lists the pages that still break rule 1 or rule 3 until #521
 (NAV-16) gives them a way in or back. It may only shrink: a listed page that
@@ -74,6 +76,22 @@ UNOPENED = {
 }
 # (scenario, rule, URL name) waiting for #521. May only shrink.
 PENDING = frozenset()
+# (scenario, URL name, status) a followed link may still answer, each with
+# why. May only shrink: an answer that no longer occurs fails the test, so
+# its entry is removed with the fix.
+ALLOWED = frozenset(
+    {
+        # The fixtures apply no email integration, which setup always
+        # applies, so Preview and test email and Send to chosen Families
+        # answer "not found" (see UNOPENED; test_campaign_mail_postgresql.py
+        # and test_family_mail_test_postgresql.py open them).
+        ("draft administrator", "campaign_mail_families", 404),
+        ("census administrator", "campaign_mail", 404),
+        # Production is forced without a stored Production confirmation,
+        # which only a whole go-live stores (see ``_go_live_in_production``).
+        ("production administrator", "production_progress", 404),
+    }
+)
 
 
 class _Page(HTMLParser):
@@ -189,9 +207,11 @@ def _add_reader(store, google, role):
 def _crawl(browser):
     """Follow every GET link to an Admin page from Home.
 
-    Returns ``{path: (url name, parsed page)}`` for each page that answered
-    200, opening at most ``PER_NAME`` paths per URL name. A redirect's target
-    is followed as a link; a redirect off the registry's pages (the sign-in,
+    Returns ``({path: (url name, parsed page)}, refused)``: each page that
+    answered 200, and the ``(url name, status)`` of each followed link that
+    answered 4xx or 5xx, with the page that linked it. It opens at most
+    ``PER_NAME`` paths per URL name. A redirect's target is followed as a
+    link; a redirect off the registry's pages (the sign-in,
     after a page signed the reader out or refused the session) fails the
     crawl, since every later page would then silently drop out of rules 1
     and 3. Links resolve against the page they are on; query strings are
@@ -200,17 +220,19 @@ def _crawl(browser):
     streamed report. Only anchors and redirects are followed, never forms,
     so Sign out and every other POST action are left alone.
     """
-    seen, opened, reached = {"/admin/"}, {}, {}
-    queue = ["/admin/"]
+    seen, opened, reached, refused = {"/admin/"}, {}, {}, {}
+    queue = [("/admin/", None)]
     while queue:
-        path = queue.pop(0)
+        path, source = queue.pop(0)
         name = _page_name(path)
         if name is None or opened.get(name, 0) >= PER_NAME:
             continue
         opened[name] = opened.get(name, 0) + 1
         response, content = read(browser, path)
-        # A link the viewer may not follow (rule 6), or a session lost midway.
-        assert response.status_code not in (401, 403), (path, response.status_code)
+        # A link the viewer may not follow now (rule 6), or a session lost
+        # midway; ``_check`` compares these with ALLOWED.
+        if response.status_code >= 400:
+            refused.setdefault((name, response.status_code), source)
         targets = []
         if response.status_code in (301, 302, 303, 307, 308):
             targets = [response["Location"]]
@@ -227,8 +249,8 @@ def _crawl(browser):
             target = urlsplit(target).path
             if target and target not in seen:
                 seen.add(target)
-                queue.append(target)
-    return reached
+                queue.append((target, path))
+    return reached, refused
 
 
 def _rule_one(browser, reached):
@@ -294,7 +316,11 @@ def _check(browser, scenario):
         for pk in Campaign.objects.values_list("pk", flat=True)
         for form in (str(pk), pk.hex)
     }
-    reached = _crawl(browser)
+    reached, refused = _crawl(browser)
+    allowed = {(name, status) for known, name, status in ALLOWED if known == scenario}
+    unexpected = {key: refused[key] for key in refused.keys() - allowed}
+    assert unexpected == {}, (scenario, "linked pages that refuse, and who links")
+    assert allowed - refused.keys() == set(), (scenario, "fixed: remove from ALLOWED")
 
     failures = {(scenario, "reachable", name) for name in _rule_one(browser, reached)}
     failures |= {(scenario, "way back", name) for name in _rule_three(browser, reached)}
@@ -370,7 +396,7 @@ def test_a_ministry_leader_reaches_their_ministry_pages(auth_service, google, me
     assert reached == {"index", "ministry_report", "ministry_followup"}
 
 
-def _go_live_in_production(store):
+def _go_live_in_production(auth_service, settings):
     """A live campaign with every module and Ministry 9, in Production mode.
 
     The campaign is activated through its lifecycle command. Only a whole
@@ -378,9 +404,16 @@ def _go_live_in_production(store):
     directly, as the debug-banner test does; every request runs guarded.
     No Production confirmation is stored, so Production activation (which
     the menu links in this state) and Cancel go-live answer "unavailable"
-    and are not crawled; test_withdrawal_postgresql.py opens both after a
-    real confirmation.
+    (``ALLOWED``); test_withdrawal_postgresql.py opens both after a real
+    confirmation. The Family web runtime is configured with the key rings
+    the capture was promoted with, as a deployment always has it, so the
+    directory can show codes.
     """
+    from parishkit.stewardship.accounts.family_authentication import FamilyRuntime
+
+    from .credential_builders import keys
+
+    store = auth_service.store
     row = campaign(
         modules=["census", "financial", "ministry"],
         financial=financial(),
@@ -392,6 +425,10 @@ def _go_live_in_production(store):
     make_leader(store, draft, "leader@example.org")
     command(draft, uuid4(), Action.ACTIVATE)
     force_mode("production")
+    rings = keys()
+    settings.STEWARDSHIP_FAMILY_RUNTIME = FamilyRuntime(
+        store, auth_service.limiter, rings.general, rings.mac, rings.public
+    )
 
 
 @pytest.mark.parametrize("role", ROLES)
@@ -400,12 +437,12 @@ def test_a_live_production_campaign_with_every_module_is_navigable(
     google,
     media,  # noqa: F811
     role,
+    settings,
 ):
     """The pages the other states grey out open here and are crawled too:
     Financial stewardship, Pause and resume mail and the Ministry pages."""
-    store = auth_service.store
-    _go_live_in_production(store)
-    browser = _sign_in(store, google, role)
+    _go_live_in_production(auth_service, settings)
+    browser = _sign_in(auth_service.store, google, role)
     reached = _check(browser, f"production {role}")
     assert {"financial_report", "ministry_report", "limitations_report"} <= reached
     assert ("delivery_control" in reached) == (role == "administrator")

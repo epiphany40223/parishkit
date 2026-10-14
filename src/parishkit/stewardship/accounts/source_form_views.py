@@ -16,6 +16,10 @@ from django.template.loader import render_to_string
 from django.views.decorators.http import require_safe
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.accounts.admin_context import (
+    page_unavailable,
+    parishsoft_downloaded,
+)
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
@@ -77,13 +81,16 @@ def _no_abort():
 def source_form_summary(campaign_id):
     """For System health: how many Families are blocked, or None if unknown.
 
-    With no current campaign it answers ``"no_campaign"``, so System health
-    says what the list says rather than that the check failed.
+    Before the first ParishSoft download it answers ``"no_data"``, and with
+    no current campaign ``"no_campaign"``, so System health says what the
+    list says rather than that the check failed.
 
     Read in its own guard. A scan that cannot run now (no promoted source, a
     restore review, a deadline) answers None, and System health says it
     could not check rather than failing the whole page.
     """
+    if not parishsoft_downloaded():
+        return "no_data"
     if campaign_id is None:
         return "no_campaign"
     try:
@@ -132,6 +139,11 @@ def source_form(request):
             paginate([], paging, sorting=SORTING)
         except ValueError:
             return _error(400)
+        # Before the first ParishSoft download there is nothing to check:
+        # the greyed reason page, as System health's link says, not a 503.
+        greyed = page_unavailable(principal, "source_form")
+        if greyed is not None:
+            return greyed
         campaign_id = _current_campaign()
         if campaign_id is None:
             response = HttpResponse(

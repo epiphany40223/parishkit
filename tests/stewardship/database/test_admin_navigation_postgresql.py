@@ -70,7 +70,9 @@ def test_navigation_and_testing_banner_match_current_capabilities(
     body = response.content
     assert b"Testing mode" in body
     assert (b"test@example.org" in body) == (role == "administrator")
-    assert (b'href="/admin/parish/ministries/"' in body) == (role == "administrator")
+    # No ParishSoft capture yet, so Ministries is greyed out for them (#1242).
+    assert b'href="/admin/parish/ministries/"' not in body
+    assert (b'id="admin-tip-ministries"' in body) == (role == "administrator")
     # Who else holds access is offered to Administrators only.
     assert (b'href="/admin/users/"' in body) == (role == "administrator")
     assert (b"Parish settings" in body) == (role == "administrator")
@@ -398,15 +400,18 @@ def test_critical_event_warning_is_persistent_and_admin_only(auth_service, googl
 # loads, so no role may pay more (admin-portal spec, "Stable menu shape").
 # The Administrator's count with a campaign fell by one: the campaign and its
 # configuration are now read together (admin_context._current_campaign).
-# The one deliberate addition is the open counts' query (#585), paid only by
-# a viewer whose menu links Additional information or Ministry follow-up:
-# here Administrators and Staff with the draft (it has no Ministry module).
-# A Ministry leader exists only in a campaign that asks about Ministries
-# (#922), so the leader's draft has the Ministry module and a promoted
-# source, a page NAV-1 never measured for leaders: its count is today's,
-# including the open counts' query.
+# The deliberate additions are the open counts' query (#585), paid only by
+# a viewer whose menu links Additional information or Ministry follow-up,
+# and whether ParishSoft data has been downloaded (#1242), paid only by a
+# viewer whose menu needs it: Administrators (Ministries) and Staff with a
+# campaign (the directory). These fixtures promote no ParishSoft capture,
+# so Additional information is greyed out and Administrators and Staff with
+# the draft no longer pay for open counts. A Ministry leader exists only in
+# a campaign that asks about Ministries (#922), so the leader's draft has
+# the Ministry module and a promoted source, a page NAV-1 never measured
+# for leaders: its count is today's, including the open counts' query.
 CHROME_QUERIES = {
-    ("administrator", False): (4, 4),
+    ("administrator", False): (4, 5),
     ("administrator", True): (7, 7),
     ("staff", False): (2, 2),
     ("staff", True): (4, 5),
@@ -417,6 +422,7 @@ CHROME_QUERIES = {
 # for the banner that says other changes wait.
 BANNER_QUERIES = {"administrator": 1}
 OPEN_COUNTS = {("administrator", True), ("staff", True)}
+DOWNLOADED = {("administrator", False), ("administrator", True), ("staff", True)}
 
 
 @pytest.mark.parametrize(
@@ -434,7 +440,8 @@ def test_building_the_menu_adds_only_the_open_counts_query(
     auth_service, google, monkeypatch, role, draft
 ):
     """The chrome's query count on a fresh report page is NAV-1's, plus one
-    for the menu's open counts where the viewer has a counted entry (#585).
+    for the menu's open counts where the viewer has a counted entry (#585)
+    and one for whether ParishSoft data is downloaded (#1242).
 
     The real context processor is wrapped where the template engine keeps
     it, so the count is of the one call the page's own render makes, with
@@ -497,4 +504,5 @@ def test_building_the_menu_adds_only_the_open_counts_query(
     assert b'aria-label="Administration"' in content
     before, now = CHROME_QUERIES[(role, draft)]
     assert counts == [now + BANNER_QUERIES.get(role, 0)], counts
-    assert now <= before + ((role, draft) in OPEN_COUNTS), counts
+    allowed = ((role, draft) in OPEN_COUNTS) + ((role, draft) in DOWNLOADED)
+    assert now <= before + allowed, counts

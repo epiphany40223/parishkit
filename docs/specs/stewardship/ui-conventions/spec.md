@@ -1328,7 +1328,8 @@ changed". Its heading names the page ("Share options isn't available right
 now"), its message is the entry's reason, and it links the entry that
 changes that reason when the viewer's menu offers it (Campaign settings for a missing module, Go-live
 readiness while Production is not confirmed or in Testing mode, Production
-activation once the campaign has gone live), besides the usual way back and
+activation once the campaign has gone live, Refresh from ParishSoft before
+the first ParishSoft download), besides the usual way back and
 Home. The answer is HTTP 409 Conflict (the state does not allow it now,
 never 404 or 403), and scripts get the closed `not_available` code (not
 `unavailable`, which means an outage to retry) with the same refusal. **Why.** Nothing changed and reloading does not help; the
@@ -1354,6 +1355,14 @@ opens one page per kind of reason. **Precedent.** #1128.
 - **Server checks stay.** The page shows only the menu's words and grants
   nothing; every view keeps its own checks, which still refuse anything the
   gate lets through.
+- **Links grey out with their pages.** A page's own link to a menu page the
+  viewer's menu greys out is the shared greyed-out control with the same
+  reason, never a link to the reason page; a page outside the menu that
+  refuses for a menu reason (Families the form cannot open before the first
+  ParishSoft download) is linked and refused the same way. **Shared code.**
+  the `menu_link` template tag (`components/menu-link.html`),
+  `admin_navigation.PAGE_REASONS`, `admin_context.page_unavailable`.
+  **Precedent.** #1242.
 
 ## Admin page layout and help
 

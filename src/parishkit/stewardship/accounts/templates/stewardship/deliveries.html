@@ -2,7 +2,7 @@
 {% block title %}{% translate "Outgoing mail" %}{% endblock %}
 {% block content %}
 {# The cross-links sit above the heading, not after the About panel: an Admin who keeps that panel open would otherwise find its long help pushing them below the fold (#938). The panel still directly follows the heading. #}
-<p><a href="{% url 'admin:family_email_progress' %}">{% translate "Watch Family email progress" %}</a> · <a href="{% url 'admin:family_email_sends' %}">{% translate "See Family email history" %}</a> · <a href="{% url 'admin:delivery_refusals' %}">{% if refusal_count %}{% blocktranslate with count=refusal_count|number %}Review refused addresses ({{ count }} unresolved){% endblocktranslate %}{% else %}{% translate "Review refused addresses" %}{% endif %}</a></p>
+<p>{% menu_link "family_email_progress" _("Watch Family email progress") %} · {% menu_link "family_email_sends" _("See Family email history") %} · <a href="{% url 'admin:delivery_refusals' %}">{% if refusal_count %}{% blocktranslate with count=refusal_count|number %}Review refused addresses ({{ count }} unresolved){% endblocktranslate %}{% else %}{% translate "Review refused addresses" %}{% endif %}</a></p>
 <h1>{% translate "Outgoing mail" %}</h1>
 {% aboutpage "outgoing-mail" %}<p>{% translate "Every email the system has sent or is about to send. Select a Family's name (or Administrator report) to see that email's history and, if its delivery is uncertain, decide what to do." %}</p>
 <p>{% translate "Each row is one email, like a log. When is the time of the email's current state: when it was last changed, such as when it was delivered. Sort by When to see the latest first; the email's own page shows its whole history." %}</p>

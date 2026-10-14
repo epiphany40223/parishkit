@@ -43,6 +43,18 @@ def campaign(modules=("financial", "ministry", "census"), state="active"):
 CONFIGURATION = SimpleNamespace(mode="production")
 
 
+@pytest.fixture(autouse=True)
+def _downloaded(monkeypatch):
+    """ParishSoft data has been downloaded, unless a test says otherwise.
+
+    The menu reads it from the database (``admin_context.menu_state``);
+    these tests run without one.
+    """
+    from parishkit.stewardship.accounts import admin_context
+
+    monkeypatch.setattr(admin_context, "parishsoft_downloaded", lambda: True)
+
+
 def test_the_sections_run_in_the_decided_order():
     """Form cannot open, refused addresses, no mail can reach, census."""
     assert ALL == [

@@ -15,8 +15,10 @@ Everything here is presentation only. It grants no authority: each view still
 checks its own capability, and ``portal_chrome`` applies the same capability
 decisions the pages use. Building navigation reads only the campaign and mode
 the chrome already loaded and reverses URLs from static route metadata and the
-current request's resolved arguments; it never queries the database, so it
-adds nothing to the Admin chrome's query budget.
+current request's resolved arguments. Its one database read is whether
+ParishSoft data has been downloaded (``MenuState.parishsoft_data``), which
+the caller supplies and which runs at most once, only when an entry's reason
+check asks for it.
 """
 
 import re
@@ -301,16 +303,20 @@ PAGES = {
 
 
 class MenuState(NamedTuple):
-    """What a menu entry's reason check may read: the chrome's campaign and mode.
+    """What a menu entry's reason check may read: campaign, mode and source data.
 
     ``campaign`` is the current campaign row (or None), already loaded with
     its active configuration by ``portal_chrome``, and ``mode`` is the
-    system's "testing" or "production". Reason checks read nothing else, so
-    building the menu runs no query.
+    system's "testing" or "production". ``parishsoft_data`` is a callable
+    answering whether a ParishSoft download has been promoted (#1242); the
+    caller (``admin_context.menu_state``) makes it read the database at most
+    once, and only an entry that needs the data calls it. Reason checks read
+    nothing else.
     """
 
     campaign: object
     mode: str
+    parishsoft_data: Callable[[], bool]
 
 
 class MenuItem(NamedTuple):
@@ -344,6 +350,7 @@ NOT_CONFIRMED = _(
     "Production has not been confirmed for this campaign; start at Go-live readiness"
 )
 PRODUCTION_ONLY = _("Available in Production mode")
+NO_SOURCE_DATA = _("ParishSoft data has not been downloaded yet")
 
 
 def _never(state):
@@ -378,6 +385,22 @@ def _module(module, missing):
         if not state.campaign:
             return NO_CAMPAIGN
         return None if module in _modules(state) else missing
+
+    return reason
+
+
+def _downloaded(base=_never):
+    """A reason check for a page that lists ParishSoft data (#1242).
+
+    ``base`` runs first, so a page that also needs a campaign says so
+    before it says the data is missing. Without a promoted download the
+    page has nothing to list, so it is greyed out with a forward link to
+    Refresh from ParishSoft, never linked to a "try again" failure.
+    """
+
+    def reason(state):
+        """Unavailable for ``base``'s reason, or until the first download."""
+        return base(state) or (None if state.parishsoft_data() else NO_SOURCE_DATA)
 
     return reason
 
@@ -492,16 +515,16 @@ MENU = (
     Entry("financial_report", Capability.FINANCIAL_DETAIL, FINANCIAL),
     Entry("limitations_report", Capability.CAMPAIGN_REPORT, MINISTRY),
     Entry("census_changes", Capability.VIEW_CENSUS, CENSUS),
-    Entry("information_queue", Capability.ADDITIONAL_FOLLOWUP, _campaign),
+    Entry("information_queue", Capability.ADDITIONAL_FOLLOWUP, _downloaded(_campaign)),
     Entry("ministry_report", Capability.MINISTRY_REPORT, MINISTRY, scoped=True),
     Entry("ministry_followup", Capability.MINISTRY_FOLLOWUP, MINISTRY, scoped=True),
-    Entry("family_directory", Capability.FAMILY_CODES, _campaign),
+    Entry("family_directory", Capability.FAMILY_CODES, _downloaded(_campaign)),
     # Staff see its daily reports; Send a weekly report now is on the page.
     Entry("emailed_reports", Capability.CAMPAIGN_REPORT),
     # Parish data
     Entry("parish_settings", _ADMIN),
     Entry("branding_settings", _ADMIN),
-    Entry("ministries", _ADMIN),
+    Entry("ministries", _ADMIN, _downloaded()),
     Entry("hosted_files", _ADMIN),
     # CONFIGURE is the Administrator's alone, so it implies the page's
     # FINANCIAL_DETAIL too (Staff hold that one only).
@@ -527,13 +550,18 @@ MENU_NAMES = frozenset(entry.name for entry in MENU)
 # Each entry's reason check by page, for a page that greys out its own link
 # to another menu page exactly as the menu does (Data to fix in ParishSoft).
 MENU_REASONS = {entry.name: entry.reason for entry in MENU}
+# Pages outside the menu that refuse for a menu reason, so their links are
+# greyed out the same way: Families the form cannot open checks ParishSoft
+# data that has not been downloaded yet (#1242).
+PAGE_REASONS = {"source_form": _downloaded()}
 
 
 # Where a greyed-out page opened directly leads (#1128): the menu entry that
 # changes what the reason names, linked only while the viewer's menu offers
 # it. A module is chosen on Campaign settings; Production starts at Go-live
 # readiness; a campaign that has gone live is followed on Production
-# activation. Other reasons (no current campaign, an archived campaign, a
+# activation. Missing ParishSoft data is fetched on Refresh from ParishSoft.
+# Other reasons (no current campaign, an archived campaign, a
 # structure fixed once the campaign went live) have no page that undoes them,
 # so their page offers only the usual way back and Home.
 FORWARD = (
@@ -543,6 +571,7 @@ FORWARD = (
     (NOT_CONFIRMED, "go_live"),
     (PRODUCTION_ONLY, "go_live"),
     (ALREADY_LIVE, "production_progress"),
+    (NO_SOURCE_DATA, "source_refresh"),
 )
 
 
@@ -591,10 +620,20 @@ def greyed_entry(name, items):
     item = next((entry for entry in items if entry.name == name), None)
     if item is None or item.reason is None:
         return None
+    return greyed_page(name, item.reason, items)
+
+
+def greyed_page(name, reason, items):
+    """Page ``name`` greyed out for ``reason``, with the way forward ``items`` offer.
+
+    ``greyed_entry`` uses it for a menu page; a page outside the menu that
+    refuses for one of ``PAGE_REASONS`` uses it directly, after its own
+    access check, so its refusal reads as the menu's would (#1242).
+    """
     offered = {entry.name: entry.url for entry in items if entry.url}
-    target = next((page for reason, page in FORWARD if reason is item.reason), None)
+    target = next((page for known, page in FORWARD if known is reason), None)
     forward = (PAGES[target].label, offered[target]) if target in offered else None
-    return Greyed(item.label, item.reason, forward)
+    return Greyed(PAGES[name].label, reason, forward)
 
 
 def menu(state, may_open):

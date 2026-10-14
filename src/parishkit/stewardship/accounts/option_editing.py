@@ -38,7 +38,7 @@ from parishkit.stewardship.campaigns.work_locks import (
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.refusals import UserFacingStale, stale_page
 
-from . import admin_navigation
+from . import admin_context, admin_navigation
 from .admin_editing import (
     confirm,
     error_response,
@@ -160,7 +160,7 @@ def _unavailable(editor, configuration, campaign):
     not grey out for (another change holding the settings queue) keeps the
     editor's own message.
     """
-    state = admin_navigation.MenuState(campaign, configuration.mode)
+    state = admin_context.menu_state(campaign, configuration)
     greyed = admin_navigation.MENU_REASONS[editor.page](state)
     if greyed is None:
         return StaleRecordError(editor.unavailable)

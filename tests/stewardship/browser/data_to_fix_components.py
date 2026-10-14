@@ -65,6 +65,7 @@ def components(context, admin):
             "administrator" in roles,
             CAMPAIGN,
             SimpleNamespace(mode="production"),
+            parishsoft_data=True,
         )
         match = SimpleNamespace(
             url_name="parishsoft_fixes", namespace=admin_navigation.NAMESPACE, kwargs={}

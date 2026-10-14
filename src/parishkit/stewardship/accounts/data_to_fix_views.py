@@ -44,7 +44,7 @@ from parishkit.stewardship.web.contracts import (
 )
 from parishkit.stewardship.web.report_errors import report_unavailable
 
-from . import admin_navigation
+from . import admin_context, admin_navigation
 from .authentication import denial, runtime
 from .policy import Capability, allows
 from .runtime_models import SystemConfiguration
@@ -89,7 +89,14 @@ class Section:
 # last. Keys are the command line's names for them.
 SECTIONS = (
     # Families the form cannot open: System health's list (SYSTEM_LOGS).
-    Section("form_cannot_open", Capability.SYSTEM_LOGS, "source_form"),
+    # Greyed out, as System health's link is, until ParishSoft data is
+    # downloaded (#1242).
+    Section(
+        "form_cannot_open",
+        Capability.SYSTEM_LOGS,
+        "source_form",
+        reason=admin_navigation.PAGE_REASONS["source_form"],
+    ),
     # Refused addresses: the delivery views' admission (BACKGROUND_WORK).
     Section("refused_addresses", Capability.BACKGROUND_WORK, "delivery_refusals"),
     # Families no mail can reach: Home's count, which is the directory's
@@ -223,7 +230,7 @@ def _sentence(text):
     return text if text.endswith(".") else f"{text}."
 
 
-def _read_one(section, principal, configuration, campaign):
+def _read_one(section, principal, state):
     """One section's count, or why it has none; never raises for a read.
 
     Returns ``{"count": n}`` (and ``"families"`` for refused addresses), or
@@ -231,9 +238,10 @@ def _read_one(section, principal, configuration, campaign):
     followed now. A section the campaign's state rules out is not read at
     all. A failed read is logged as a failed display step (WARNING, the
     section named by its shaping step) and the block says it could not
-    count; it never takes the page down with it.
+    count; it never takes the page down with it. ``state`` is the menu
+    state (``admin_context.menu_state``) the section's reason check reads.
     """
-    state = admin_navigation.MenuState(campaign, configuration.mode)
+    campaign = state.campaign
     blocked = section.reason(state) if section.reason else None
     if blocked:
         return {"reason": _sentence(blocked), "available": False}
@@ -267,8 +275,10 @@ def read_sections(principal, configuration, campaign):
     transaction: each guarded read owns its own.
     """
     rows = []
+    # One state for every section, so the download is read at most once.
+    state = admin_context.menu_state(campaign, configuration)
     for section in visible_sections(principal):
-        found = _read_one(section, principal, configuration, campaign)
+        found = _read_one(section, principal, state)
         url = None
         if found.pop("available"):
             url = reverse(f"{admin_navigation.NAMESPACE}:{section.page}") + (

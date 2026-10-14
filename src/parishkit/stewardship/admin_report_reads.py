@@ -68,8 +68,8 @@ class ReportList(ReadModel):
     None (the root then opens Participation, greyed out). ``reports`` has
     one row per report the reader's Admin menu offers: ``command``, the
     report's ``page`` (its URL name) and ``available``, false while the menu
-    greys it out (no current campaign, or a module the campaign does not
-    include).
+    greys it out (no current campaign, a module the campaign does not
+    include, or ParishSoft data not downloaded yet).
     """
 
     campaign_id: UUID | None
