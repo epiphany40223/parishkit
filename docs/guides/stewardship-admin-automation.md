@@ -1268,6 +1268,17 @@ pk-admin integration key finish-switching-preview parishsoft \
 
 The first preview is the review to read; the pipeline takes a fresh
 token straight through, so no file holds a usable token until it expires.
+The pipeline confirms that fresh preview, not the one you read: if the key
+change or the settings may have changed in between, read the review again.
+To confirm exactly the token you read, keep the review in a shell variable
+instead of a file:
+
+```sh
+review="$(pk-admin integration key finish-switching-preview parishsoft)"
+printf '%s\n' "$review"
+printf '%s' "$review" | jq -r .result.preview.token \
+    | pk-admin integration key finish-switching parishsoft --token - --yes
+```
 
 When the new key is installed but switching to it did not finish (the
 settings page's key change line is `unselected`), the integration is
