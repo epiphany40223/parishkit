@@ -612,10 +612,15 @@ def test_a_page_costs_a_bounded_number_of_queries(auth_service, google):
 
 
 def export(browser, values=None):
-    """Download the filtered log with a genuine CSRF token."""
+    """Download the filtered log with a genuine CSRF token.
+
+    CSV unless ``values`` names a format: these tests read the rows as text,
+    while the form's own default is XLSX (#1190).
+    """
     token = browser.cookies["pk_admin_csrf"].value
     return browser.post(
-        URL + "export/", {"csrfmiddlewaretoken": token} | (values or {})
+        URL + "export/",
+        {"csrfmiddlewaretoken": token, "format": "csv"} | (values or {}),
     )
 
 

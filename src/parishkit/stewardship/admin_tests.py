@@ -23,6 +23,7 @@ from uuid import UUID
 from django.db import DatabaseError
 
 from .admin_reads import NotAvailable, ReadModel, _held, _recheck
+from .web.exports import DEFAULT_EXPORT_FORMAT
 
 # The page's acknowledgement, asked at the prompt: the checkbox's words.
 UNKNOWN_ACKNOWLEDGEMENT = (
@@ -446,7 +447,7 @@ def preview_families_with_names(
     request_key,
     zone=None,
     context,
-    format="csv",
+    format=DEFAULT_EXPORT_FORMAT,
 ):
     """``test families-preview --names``: the review, and its names as a file.
 

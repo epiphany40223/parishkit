@@ -27,7 +27,11 @@ from parishkit.stewardship.source.ministry_catalog import catalog_names
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.web.contracts import MESSAGES, ErrorCode
 from parishkit.stewardship.web.dates import UnknownZone
-from parishkit.stewardship.web.exports import download_headers, page_download
+from parishkit.stewardship.web.exports import (
+    DEFAULT_EXPORT_FORMAT,
+    download_headers,
+    page_download,
+)
 
 from .log_reads import (
     EXPORT_FORMATS,
@@ -231,7 +235,7 @@ def export_logs(request):
             return _error(ErrorCode.INVALID, 400, query_string=True)
         parameters = request.POST.copy()
         parameters.pop("csrfmiddlewaretoken", None)
-        fmt = parameters.pop("format", ["csv"])
+        fmt = parameters.pop("format", [DEFAULT_EXPORT_FORMAT])
         zone_name = parameters.pop("timezone", ["UTC"])
         for name in ("through", "page", "size", "sort"):
             parameters.pop(name, None)

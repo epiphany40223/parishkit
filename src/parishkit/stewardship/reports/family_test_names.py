@@ -29,6 +29,7 @@ from parishkit.stewardship.campaigns.models import CampaignConfiguration
 from parishkit.stewardship.campaigns.work_locks import export_transaction
 from parishkit.stewardship.jobs.storage import enqueue
 from parishkit.stewardship.schema_primitives import timezone_names
+from parishkit.stewardship.web.exports import DEFAULT_EXPORT_FORMAT
 
 from .export_models import ExportRequest, FamilyTestNamesSnapshot
 from .export_services import (
@@ -60,7 +61,7 @@ def create_family_test_names_export(
     families,
     browser_timezone,
     request_key,
-    format="csv",
+    format=DEFAULT_EXPORT_FORMAT,
     snapshot=None,
 ):
     """Capture the reviewed names once and request their export as ``format``.

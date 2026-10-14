@@ -4,7 +4,7 @@ import re
 from datetime import date, time
 
 from django import template
-from django.utils.html import conditional_escape, format_html
+from django.utils.html import conditional_escape, format_html, format_html_join
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext as _
 
@@ -13,6 +13,7 @@ from parishkit.stewardship.campaigns import single_campaign
 from parishkit.stewardship.campaigns.configuration import REMINDER_WORKGROUP_NAME
 from parishkit.stewardship.web import dates, presentation
 from parishkit.stewardship.web.buttons import portal_classes
+from parishkit.stewardship.web.exports import DEFAULT_EXPORT_FORMAT
 
 register = template.Library()
 for name in (
@@ -51,6 +52,40 @@ def fresh_sign_in(context):
     """
     request = getattr(context, "request", None)
     return request is not None and freshness(request)[0]
+
+
+@register.simple_tag
+def export_format_options(*formats, disabled=""):
+    """The ``<option>`` list of an export form's format menu (#1190).
+
+    ``formats`` are the form's offered values. The default
+    (``DEFAULT_EXPORT_FORMAT``, XLSX) comes first and is selected, and the
+    rest keep the given order, so no form picks its own default and a new
+    export cannot forget the rule. The PDF-first comparison and Ministry
+    packet forms are documents, not data, and keep their own menus.
+
+    ``disabled`` names one offered format that is shown but unavailable
+    (for example a PDF above its row limit); an empty value disables none.
+    A disabled default is not selected, so the browser falls back to the
+    first available option.
+    """
+    labels = {"jsonl": _("JSON Lines")}
+    ordered = sorted(formats, key=lambda name: name != DEFAULT_EXPORT_FORMAT)
+    return format_html_join(
+        "",
+        '<option value="{}"{}{}>{}</option>',
+        (
+            (
+                name,
+                " selected"
+                if name == DEFAULT_EXPORT_FORMAT and name != disabled
+                else "",
+                " disabled" if name == disabled else "",
+                labels.get(name, name.upper()),
+            )
+            for name in ordered
+        ),
+    )
 
 
 def _calendar(value):

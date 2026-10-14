@@ -92,7 +92,7 @@ def test_the_page_s_files_and_json_lines(response_service, google, cli):  # noqa
 
     def command():
         """The command's CSV of the same list."""
-        found["command"] = export(run, *argv)
+        found["command"] = export(run, *argv, "--format", "csv")
 
     parity(EVENT, page, command)
     code, body, document = found["command"]

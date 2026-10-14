@@ -1108,7 +1108,7 @@ def families_preview(args, preamble, runtime, context):
             args.family,
             request_key=_request_key(args, context),
             zone=args.timezone,
-            format=args.format or "csv",
+            format=args.format or DEFAULT_EXPORT_FORMAT,
             context=context,
         )
     return preview_families(
@@ -2571,7 +2571,7 @@ def _families_preview_options(parser):
     parser.add_argument(
         "--format",
         choices=("csv", "xlsx", "pdf"),
-        help="with --names: the file format (default csv)",
+        help=f"with --names: the file format (default {DEFAULT_EXPORT_FORMAT})",
     )
 
 
@@ -2859,8 +2859,8 @@ def _logs_export_options(parser):
     parser.add_argument(
         "--format",
         choices=("csv", "xlsx", "jsonl"),
-        default="csv",
-        help="default csv",
+        default=DEFAULT_EXPORT_FORMAT,
+        help=f"default {DEFAULT_EXPORT_FORMAT}",
     )
     parser.add_argument(
         "--timezone",
@@ -2868,6 +2868,12 @@ def _logs_export_options(parser):
         help="the time zone of the file's times (default UTC)",
     )
 
+
+# The file format a command takes when --format is left out (#1190):
+# ``web.exports.DEFAULT_EXPORT_FORMAT``, the pages' preselected format.
+# Spelled out because the parser is built before Django is set up; a test
+# keeps the two equal.
+DEFAULT_EXPORT_FORMAT = "xlsx"
 
 # The participation export's formats (``export_services.create_export``).
 # Spelled out because the parser is built before Django is set up; a test
@@ -3163,8 +3169,9 @@ def _export_census_options(parser):
     parser.add_argument(
         "--format",
         choices=("csv", "xlsx", "pdf", "jsonl"),
-        default="csv",
-        help="default csv; jsonl adds each change's id, version and actions",
+        default=DEFAULT_EXPORT_FORMAT,
+        help=f"default {DEFAULT_EXPORT_FORMAT}; jsonl adds each change's id, "
+        "version and actions",
     )
     parser.add_argument(
         "--timezone",

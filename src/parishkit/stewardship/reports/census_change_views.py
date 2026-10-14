@@ -37,7 +37,11 @@ from parishkit.stewardship.responses.models import ProposedChange
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 from parishkit.stewardship.web import dates
-from parishkit.stewardship.web.exports import download_headers, page_download
+from parishkit.stewardship.web.exports import (
+    DEFAULT_EXPORT_FORMAT,
+    download_headers,
+    page_download,
+)
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
 
@@ -182,7 +186,7 @@ def _choices(parameters, *, export):
     """Parse the posted form: paging (page) or format and timezone (download)."""
     extra = {}
     if export:
-        fmt = parameters.pop("format", ["csv"])
+        fmt = parameters.pop("format", [DEFAULT_EXPORT_FORMAT])
         zone = parameters.pop("timezone", ["UTC"])
         if (
             len(fmt) != 1
