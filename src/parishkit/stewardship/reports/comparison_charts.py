@@ -113,6 +113,13 @@ NOMINAL_DOLLARS = "Amounts are nominal dollars, with no adjustment for inflation
 # plot's width (``legend_columns``), and without ``resize`` Vega would keep
 # the height it measured first, cutting off a legend that gained rows.
 AUTOSIZE = {"type": "fit-x", "contains": "padding", "resize": True}
+# The bar charts' band height in pixels per bar: a year's final figure, and
+# a pledge-band bar (tall enough for a segment's two-line label). A bar
+# chart's height is fixed at this times its bar count, rather than
+# Vega-Lite's {"step": ...}: a step height beside the page's "container"
+# width makes Vega-Lite warn on every draw that it drops fit-y (#1325).
+FINAL_STEP = 26
+BAND_STEP = 40
 # The horizontal bar charts' value-axis title ends at the plot's right
 # edge instead of being centered under the plot. At phone width the year
 # labels take the left of the chart, so the plot is narrower than a title
@@ -570,20 +577,29 @@ def day_chart(measure, comparison):
         "strokeWidth": ("width", 1),
         "strokeDash": ("dash", 2),
     }
+    # Vega-Lite merges the three channels' legends, which share the field,
+    # into the one color legend (stroke symbols in each line's width and
+    # dash). None of them sets "legend": None, which the merge ignores
+    # anyway while warning on every draw that the merged legends conflict.
     encoding_series = {
         channel: {
             "field": "series",
             "type": "nominal",
             "title": None,
             "scale": legend_scale(drawn, index),
-            **({} if channel == "color" else {"legend": None}),
         }
         for channel, (_name, index) in series.items()
     }
     # A nominal width would get a point scale, which spreads its range
     # between the first and last value (and has none for one line); each
-    # role's own width needs an ordinal scale.
+    # role's own width needs an ordinal scale. Its sort, the scale's own
+    # domain order, changes nothing drawn; without one Vega-Lite warns on
+    # every draw that strokeWidth should not encode an unsorted nominal
+    # field (#1325).
     encoding_series["strokeWidth"]["scale"]["type"] = "ordinal"
+    encoding_series["strokeWidth"]["sort"] = encoding_series["strokeWidth"]["scale"][
+        "domain"
+    ]
     encoding_series["color"]["legend"] = {
         "orient": "top",
         "columns": legend_columns(150),
@@ -644,7 +660,7 @@ def day_chart(measure, comparison):
             "encoding": {
                 "x": {"field": "day", "type": "quantitative"},
                 "y": {"field": "value", "type": "quantitative"},
-                "color": {**encoding_series["color"], "legend": None},
+                "color": encoding_series["color"],
                 "opacity": {
                     "condition": {"param": "hover", "empty": False, "value": 1},
                     "value": 0,
@@ -836,7 +852,7 @@ def final_chart(key, title, axis, kind, comparison):
         "config": CONFIG,
         "autosize": AUTOSIZE,
         "width": WIDTH,
-        "height": {"step": 26},
+        "height": FINAL_STEP * len(rows),
         "data": {"values": rows},
         "encoding": {
             "y": {
@@ -1073,8 +1089,7 @@ def distribution_chart(year, edges):
         "config": CONFIG,
         "autosize": AUTOSIZE,
         "width": WIDTH,
-        # Tall enough for a segment's two-line label.
-        "height": {"step": 40},
+        "height": BAND_STEP * len(DISTRIBUTIONS),
         "data": {"values": rows},
         # Each segment's ends, stacked from the smallest band, so the
         # labels can sit at a segment's middle and test its width.

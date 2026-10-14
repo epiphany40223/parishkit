@@ -341,7 +341,10 @@ def test_hovering_a_day_lists_every_line_on_that_day():
         "value": 0,
     }
     assert "tooltip" not in points["encoding"]
-    assert points["encoding"]["color"]["legend"] is None
+    # The points share the lines' merged legend (see day_chart).
+    line = next(x for x in spec["layer"] if x["mark"]["type"] == "line")
+    lines_color = line["encoding"]["color"]
+    assert points["encoding"]["color"] == lines_color
 
 
 def test_pledge_hover_tips_read_money_and_dates():

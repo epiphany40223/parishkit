@@ -92,6 +92,14 @@ class ChartDocument:
     notes: tuple[str, ...] = ()
 
 
+# Each bar's band height in pixels in the response funnel and the count bars
+# (``count_bars``). A chart with these bars has a fixed height of this times
+# its bar count, rather than Vega-Lite's {"step": 36}: a step height beside
+# the page's "container" width makes Vega-Lite warn on every draw that it
+# drops fit-y (#1325).
+BAR_STEP = 36
+
+
 def stage_label(stage, labels=STAGE_LABELS):
     """The stage's display label, with its note in parentheses when it has one."""
     label = labels[stage.key]
@@ -135,10 +143,9 @@ def funnel_chart(metrics, *, keys=STAGES, labels=STAGE_LABELS, phrases=STAGE_PHR
         {
             "stage": stage_label(stage, labels),
             "families": stage.count,
-            "order": index,
             "share": share(stage.count, invited),
         }
-        for index, stage in enumerate(stages)
+        for stage in stages
     ]
     summary = funnel_summary(stages, phrases)
     compared = f"Compared with {labels['invited'].lower()}"
@@ -147,13 +154,17 @@ def funnel_chart(metrics, *, keys=STAGES, labels=STAGE_LABELS, phrases=STAGE_PHR
         "description": summary,
         "title": {"text": "Response funnel", "anchor": "start"},
         "width": WIDTH,
-        "height": {"step": 36},
+        # A fixed height, BAR_STEP a stage (see BAR_STEP).
+        "height": BAR_STEP * len(rows),
         "data": {"values": rows},
         "encoding": {
             "y": {
                 "field": "stage",
                 "type": "nominal",
-                "sort": {"field": "order"},
+                # The stages in funnel order by name: a {"field": "order"}
+                # sort conflicts between the bar layer's stacked data and
+                # the text layer's, and Vega-Lite warns on every draw.
+                "sort": [row["stage"] for row in rows],
                 "title": None,
                 "axis": {"labelLimit": 300},
             },
@@ -446,10 +457,6 @@ def label_room(texts):
 TICK = " — "
 
 
-# Each count bar's band height in pixels (``count_bars``).
-BAR_STEP = 36
-
-
 def count_bars(key, title, bars, *, total, compared, noun="Families", progress=False):
     """A labelled horizontal bar per ``(label, count)`` pair, in the given order.
 
@@ -547,6 +554,10 @@ def count_bars(key, title, bars, *, total, compared, noun="Families", progress=F
             bar,
         ]
     else:
+        # The bars in the given order by name, as the funnel's: the text
+        # layer's data differs from the bar layer's stacked data, so an
+        # "order" sort conflicts and Vega-Lite warns on every draw.
+        y["sort"] = [row["label"] for row in rows]
         largest = max((row["count"] for row in rows), default=0)
         room = label_room(row["text"] for row in rows)
         # The longest bar ends ``room`` pixels before the plot's right edge:
@@ -585,9 +596,7 @@ def count_bars(key, title, bars, *, total, compared, noun="Families", progress=F
         "$schema": VEGA_LITE_SCHEMA,
         "description": summary,
         "width": WIDTH,
-        # 36 pixels a bar, as a fixed height rather than Vega-Lite's
-        # {"step": 36}: a step height beside the page's "container" width
-        # makes Vega-Lite warn on every draw that it drops fit-y.
+        # A fixed height, BAR_STEP a bar (see BAR_STEP).
         "height": BAR_STEP * max(len(rows), 1),
         "autosize": {"type": "fit-x", "contains": "padding"},
         "data": {"values": rows},
