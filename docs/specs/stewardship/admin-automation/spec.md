@@ -2031,13 +2031,13 @@ moving the plain-text preview to `content preview` are defaults, pending
 Administrator confirmation.
 
 `artwork remove-preview SLOT --expected-version …` and `artwork remove
-SLOT --token …` are the page's **Remove this image** and its in-place
-**Apply** (#750), as `parish preview` and `parish confirm` are Parish
+SLOT --token …` are the page's **Remove this image** and its review
+dialog's **Apply** (#750), as `parish preview` and `parish confirm` are Parish
 settings' Review and Apply. The preview admits as the page does
 (`CONFIGURE`, recording activity) and, in one read snapshot, checks the
 version (another is `stale_version`) and builds the page's own removal
 review (`artwork_views.review_removal`): a slot with no image is
-`not_available`, as the page answers 404, and a resulting document the
+`not_available`, as the page refuses it, and a resulting document the
 configuration refuses is `invalid`. A slot whose upload is unavailable can
 still be removed, as on the page. It prints `version`, `campaign_id`,
 `slot`, `name`, `image` (as `artwork show` prints it) and `preview.token`,

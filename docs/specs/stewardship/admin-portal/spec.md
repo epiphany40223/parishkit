@@ -834,7 +834,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `campaign_mail` | Preview and test email | _email name_ | Administrator | Campaign email test | `/admin/campaign/content/test/<revision>/` | (same) | Returns to the page it was opened from (Go-live readiness, Pause and resume mail). |
 | `campaign_mail_families` | Send to chosen Families | Preview and test email | Administrator | Send this email to chosen Families | `/admin/campaign/content/test/<revision>/families/` | (same) |  |
 | `artwork_settings` | Campaign images | Menu: Campaign images | Administrator | (same) | `/admin/campaign/images/` | (same) |  |
-| `artwork_upload` | Campaign images | Campaign images | Administrator | Campaign images (upload error); Campaign image upload | `/admin/campaign/images/<slot>/` (POST only) | (same) | POST-only: a staged upload answers with Campaign images naming it (`?review=<slot>&bundle=<id>`); a refused one re-renders Campaign images. Review campaign image and Remove campaign image are reviews on Campaign images itself (#750); their old addresses are gone. |
+| `artwork_upload` | Campaign images | Campaign images | Administrator | Campaign images (upload error); Campaign image upload | `/admin/campaign/images/<slot>/` (POST only) | (same) | POST-only: a staged upload answers with the review dialog's review of it (#750); a refused one re-renders Campaign images (status 400). Review campaign image and Remove campaign image are reviews in Campaign images' review dialog; their old addresses are gone. |
 | `schedule_settings` | Dates and mail schedules | Menu: Dates and mail schedules | Administrator | Mail schedules and campaign dates; Mail schedules | `/admin/campaign/schedules/` | (same) |  |
 | `schedule_new` | New scheduled email | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/addition/` | (same) | Its review confirms through Dates and mail schedules. |
 | `schedule_edit` | Edit scheduled email | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/<schedule>/` | (same) | The New page filled in; refuses a read-only schedule. |
@@ -1515,13 +1515,15 @@ The Financial page can still appear, with its icon, for a Family whose
 earlier financial answers await a decision after the module was turned off
 (an unresolved `financial.removed` conflict); that transitional page is not
 a reason to offer the upload.
-Both reviews, Apply and the change's status happen
-[in place](../ui-conventions/spec.md#in-place-controls) in a review region
-under the slots (#750): an upload answers with the page naming the staged
-image (`?review=<slot>&bundle=<id>`), Remove this image names the slot
-(`?remove=<slot>`), and Apply posts to that address. An upload that expired,
-or was staged against settings changed since, is refused there with a
-request to upload it again.
+An upload and Remove this image (offered only for a slot with an image) are
+reviewed and applied in the
+[review dialog](../ui-conventions/spec.md#review-dialog) (#750): a staged
+upload opens it with the image as it will appear, a removal with what
+Families will see instead, and Apply posts the signed preview, with the slot
+(and staged image) it names, to Campaign images; the page takes no query. A
+refused upload keeps its error on the slot's field. An upload that expired,
+or was staged against settings changed since, is refused in the dialog with
+a request to upload it again.
 Artwork is presentation, not structure, so it stays editable while the campaign
 is live. Each Family email's editor (initial, reminder and confirmation) has a
 "Show the campaign banner at the top of this email" checkbox, on by default.

@@ -1,6 +1,8 @@
 """Campaign artwork (#248): per-campaign images and the per-email banner choice."""
 
 import io
+import re
+from html import unescape
 from uuid import uuid4
 
 import pytest
@@ -15,6 +17,7 @@ from parishkit.stewardship.accounts.branding_context import (
     campaign_artwork,
 )
 from parishkit.stewardship.accounts.branding_models import BrandingAsset
+from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.campaigns.lifecycle import Action
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.deployment import ServiceRole
@@ -24,9 +27,8 @@ from .campaign_builders import add_draft, change, command
 from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_background_grants_postgresql import task_login
 from .test_branding_views_postgresql import post, preview_token
-from .test_campaign_views_postgresql import apply
+from .test_campaign_views_postgresql import apply, requested
 from .test_content_views_postgresql import values as content_values
-from .test_parish_views_postgresql import region
 
 pytestmark = pytest.mark.django_db(transaction=True)
 ORIGIN = "https://parish.example.org"
@@ -64,45 +66,68 @@ def artwork(row):
     return row.active_configuration.values.get("artwork", {})
 
 
-def address(response):
-    """Where a redirect leads, without its region fragment."""
+def carried(review):
+    """The hidden fields of a review dialog fragment, which its Apply posts:
+    the signed preview and the slot (and staged bundle) it was signed for."""
+    assert review.status_code == 200, review.content
+    # The review dialog's fragment, never a page (#750).
+    assert b"data-review-answer" in review.content
+    assert b"<h1>" not in review.content
+    return {
+        name: unescape(value)
+        for name, value in re.findall(
+            r'<input type="hidden" name="(\w+)" value="([^"]*)"',
+            review.content.decode(),
+        )
+    }
+
+
+def confirmed(browser, path, review):
+    """Apply a review as the dialog does: its fields posted to Campaign
+    images, answered with the change's status, which the dialog follows."""
+    response = post(browser, path, {"action": "confirm"} | carried(review))
     assert response.status_code == 302, response.content
-    return response["Location"].split("#")[0]
-
-
-def confirmed(browser, review_path):
-    """Review at ``review_path`` (Campaign images naming the change, #750) and
-    confirm it there; the answer is Campaign images naming the request."""
-    review = browser.get(review_path)
-    assert flow_steps(review.content) == (STEPS, "Review")
-    # The review and its Apply are in the page's review region.
-    assert "Apply changes" in region(review.content)
-    token = preview_token(review)
-    response = post(browser, review_path, {"action": "confirm", "preview": token})
-    assert address(response).startswith("/admin/campaign/images/?request=")
-    assert response["Location"].endswith("#settings-review")
-    # Where the one-time review was, for checks after it is confirmed.
-    response.review_path = review_path
+    assert response["Location"].startswith("/admin/changes/")
     return response
+
+
+def staged(browser, service, path, slot, upload):
+    """Upload one slot's image; the answer is the review dialog's fragment."""
+    return post(
+        browser,
+        f"{path}{slot}/",
+        {"base_digest": service.store.active().digest, "image": upload},
+    )
 
 
 def select(browser, service, path, slot, upload):
     """Upload, review and confirm one slot as the web role; returns the receipt."""
     with task_login(ServiceRole.WEB):
-        staged = post(
-            browser,
-            f"{path}{slot}/",
-            {"base_digest": service.store.active().digest, "image": upload},
-        )
-        # The upload answers with Campaign images naming the staged image.
-        assert address(staged).startswith(f"{path}?review={slot}&bundle=")
-        return confirmed(browser, address(staged))
+        return confirmed(browser, path, staged(browser, service, path, slot, upload))
 
 
-def remove(browser, path, slot):
+def removal(browser, service, path, slot, digest=None):
+    """Review removing one slot's image (Remove this image's own form)."""
+    return post(
+        browser,
+        path,
+        {
+            "action": "preview",
+            "slot": slot,
+            "base_digest": digest or service.store.active().digest,
+        },
+    )
+
+
+def remove(browser, service, path, slot):
     """Review and confirm removing one slot's image."""
     with task_login(ServiceRole.WEB):
-        return confirmed(browser, f"{path}?remove={slot}")
+        return confirmed(browser, path, removal(browser, service, path, slot))
+
+
+def refusal(response):
+    """A plain refusal's message, as the review dialog shows it."""
+    return response.json()["refusal"]["message"]
 
 
 def test_images_belong_to_the_campaign_publish_and_clear(auth_service, google, media):
@@ -113,25 +138,27 @@ def test_images_belong_to_the_campaign_publish_and_clear(auth_service, google, m
     page = browser.get(path)
     assert page.status_code == 200 and b"No image is set." in page.content
     assert flow_steps(page.content) == (STEPS, "Make changes")
-    accepted = select(browser, auth_service, path, "banner", image(1625, 345))
+    with task_login(ServiceRole.WEB):
+        review = staged(browser, auth_service, path, "banner", image(1625, 345))
+    assert b"This image is uploaded but not yet in use." in review.content
+    assert b'data-review-done="Campaign image changed."' in review.content
+    accepted = confirmed(browser, path, review)
     apply(store, accepted)
-    # Campaign images follows the change in place (#750): Applied in its
-    # review region, the new image among the slots.
-    followed = browser.get(address(accepted))
-    assert flow_steps(followed.content) == (STEPS, "Apply")
-    assert "Applied: your change is saved" in region(followed.content)
+    # Change status still returns to Campaign images (#196).
+    status = browser.get(accepted["Location"]).content
+    assert b"Applied: your change is saved" in status
+    assert f'<a href="{path}">Return to Campaign images</a>'.encode() in status
+    # The page the dialog redraws the slots from shows the new image.
+    followed = browser.get(path)
     assert b"No image is set." in followed.content
     assert followed.content.count(b"Current image") == 1
-    # Change status itself still returns to Campaign images (#196).
-    status = browser.get(
-        "/admin/changes/" + address(accepted).rsplit("=", 1)[1] + "/"
-    ).content
-    assert f'<a href="{path}">Return to Campaign images</a>'.encode() in status
-    # That review no longer opens now its image is chosen: the page says so
-    # where the review would be.
-    reloaded = browser.get(accepted.review_path)
-    assert reloaded.status_code == 409
-    assert "can no longer be reviewed" in region(reloaded.content)
+    # Only a slot with an image offers Remove this image.
+    assert followed.content.count(b'id="artwork-remove-') == 1
+    assert b'id="artwork-remove-banner"' in followed.content
+    # That upload's preview cannot be applied again as a new change: an
+    # exact retry returns the same request.
+    again = confirmed(browser, path, review)
+    assert requested(again) == requested(accepted)
     apply(store, select(browser, auth_service, path, "closing", image(600, 600)))
     images = artwork(row)["images"]
     banner = BrandingAsset.objects.get(pk=images["banner"])
@@ -157,16 +184,15 @@ def test_images_belong_to_the_campaign_publish_and_clear(auth_service, google, m
     assert banner_for_email(values, "initial", origin=ORIGIN) == resolved["banner"]
     # Selected images are pinned against staging cleanup.
     assert not unpinned_bundles().filter(pk=banner.bundle_id).exists()
-    removed = remove(browser, path, "closing")
+    removed = remove(browser, auth_service, path, "closing")
     apply(store, removed)
-    # The removal review now refuses (nothing left to remove), in place.
-    gone = browser.get(f"{path}?remove=closing")
-    assert gone.status_code == 404
-    assert "can no longer be reviewed" in region(gone.content)
-    followed = browser.get(address(removed))
-    assert flow_steps(followed.content) == (STEPS, "Apply")
-    assert "Applied: your change is saved" in region(followed.content)
-    apply(store, remove(browser, path, "banner"))
+    # The removal can no longer be reviewed (nothing left to remove): a
+    # plain refusal, shown in the dialog.
+    with task_login(ServiceRole.WEB):
+        gone = removal(browser, auth_service, path, "closing")
+    assert gone.status_code == 409
+    assert "can no longer be reviewed" in refusal(gone)
+    apply(store, remove(browser, auth_service, path, "banner"))
     # With no image left, the optional value is absent, not empty.
     assert artwork(row) == {}
 
@@ -187,20 +213,33 @@ def test_a_slot_refuses_the_wrong_image_kind(auth_service, google, media, monkey
     row, path = draft(store)
     browser, _ = signed_in()
     with task_login(ServiceRole.WEB):
-        staged = post(
-            browser,
-            f"{path}member/",
-            {"base_digest": store.active().digest, "image": image(90, 90)},
-        )
-        bundle = address(staged).rsplit("=", 1)[-1]
-        # The same staged icon is not an image for the banner slot.
-        wrong = browser.get(f"{path}?review=banner&bundle={bundle}")
-        assert wrong.status_code == 404
-        assert "can no longer be reviewed" in region(wrong.content)
-        assert browser.get(f"{path}?review=unknown&bundle={bundle}").status_code == 404
-        # Only the change, or the request, the page names may be read.
-        assert browser.get(f"{path}?review=member").status_code == 400
-        assert browser.get(f"{path}?remove=member&extra=1").status_code == 400
+        review = carried(staged(browser, auth_service, path, "member", image(90, 90)))
+        bundle = review["bundle"]
+        # The same staged icon's preview is not one for the banner slot, nor
+        # for a removal: its salt names the slot and the bundle.
+        for fields in (
+            review | {"slot": "banner"},
+            {"preview": review["preview"], "slot": "member"},
+        ):
+            assert (
+                post(browser, path, {"action": "confirm"} | fields).status_code == 400
+            )
+        assert (
+            post(browser, path, {"action": "confirm"} | review | {"slot": "unknown"})
+        ).status_code == 404
+        # An image is reviewed only by its upload; a Review naming a bundle,
+        # or any field beyond a removal's, is refused.
+        digest = store.active().digest
+        for fields in (
+            {"slot": "member", "bundle": bundle, "base_digest": digest},
+            {"slot": "member", "base_digest": digest, "extra": "1"},
+        ):
+            assert (
+                post(browser, path, {"action": "preview"} | fields).status_code == 400
+            )
+        # The page takes no query (no legacy review addresses).
+        for query in (f"review=member&bundle={bundle}", "remove=member", "request=1"):
+            assert browser.get(f"{path}?{query}").status_code == 400
     section = BrandingAsset.objects.get(bundle_id=bundle)
     patch = [
         {
@@ -236,11 +275,14 @@ def test_upload_rejects_non_images(auth_service, google, media):
         )
     assert result.status_code == 400
     assert b"Choose a supported, bounded static image:" in result.content
-    # Summarized in the review region too, linked to the slot's field (#750).
-    assert 'href="#id_banner_image"' in region(result.content)
+    # The page again (the dialog stays shut), its summary linked to the
+    # slot's field, which ui-v1.js marks on the form (#750).
+    assert b'<form id="artwork-upload-banner"' in result.content
+    assert b'href="#id_banner_image"' in result.content
+    assert b"data-error-summary" in result.content
     assert not BrandingAsset.objects.exists()
-    # An upload from a page whose settings changed elsewhere is refused in
-    # place too, and stages nothing.
+    # An upload from a page whose settings changed elsewhere is a plain
+    # refusal, shown in the dialog, and stages nothing.
     with task_login(ServiceRole.WEB):
         stale = post(
             browser,
@@ -248,7 +290,7 @@ def test_upload_rejects_non_images(auth_service, google, media):
             {"base_digest": "f" * 64, "image": image(1625, 345)},
         )
     assert stale.status_code == 409
-    assert "This page changed in another tab or session." in region(stale.content)
+    assert refusal(stale) == "This page changed in another tab or session."
     assert not BrandingAsset.objects.exists()
 
 
@@ -284,7 +326,7 @@ def test_a_slot_no_family_page_shows_cannot_take_an_upload(auth_service, google,
         )
     assert refused.status_code == 400
     assert reason in refused.content.decode()
-    assert 'href="#id_financial_image"' in region(refused.content)
+    assert 'href="#id_financial_image"' in refused.content.decode()
     assert not BrandingAsset.objects.exists()
 
 
@@ -302,72 +344,44 @@ def change_parish(store):
     assert change(store, store.active(), uuid4(), patch).state == "applied"
 
 
-def test_a_refused_apply_is_explained_in_place(auth_service, google, media):
-    """An Apply refused because the settings changed since the review is the
-    page again, explained in its review region (#750): an upload staged
-    against the old settings, and a removal whose preview is out of date."""
+def test_a_refused_apply_is_a_plain_refusal(auth_service, google, media):
+    """An Apply refused because the settings changed since the review is a
+    plain refusal, which the review dialog shows (#750): an upload staged
+    against the old settings, and a removal whose preview is out of date.
+    Nothing is recorded, and a preview is bound to its own change."""
     store = auth_service.store
     row, path = draft(store)
     browser, _ = signed_in()
     with task_login(ServiceRole.WEB):
-        staged = post(
-            browser,
-            f"{path}welcome/",
-            {"base_digest": store.active().digest, "image": image(90, 90)},
-        )
-        review_path = address(staged)
-        upload_token = preview_token(browser.get(review_path))
+        upload = carried(staged(browser, auth_service, path, "welcome", image(90, 90)))
     set_banner(store, row.pk)
     with task_login(ServiceRole.WEB):
-        removal_token = preview_token(browser.get(f"{path}?remove=banner"))
+        removing = carried(removal(browser, auth_service, path, "banner"))
+        # A removal reviewed from a page whose version is out of date is
+        # refused before any preview is signed.
+        stale = removal(browser, auth_service, path, "banner", digest="a" * 64)
+        assert stale.status_code == 409
+        assert refusal(stale) == "This page changed in another tab or session."
     change_parish(store)
+    before = ConfigurationChangeRequest.objects.count()
     with task_login(ServiceRole.WEB):
-        refused = post(
-            browser, review_path, {"action": "confirm", "preview": upload_token}
-        )
+        refused = post(browser, path, {"action": "confirm"} | upload)
         assert refused.status_code == 409
-        assert "Upload the image again." in region(refused.content)
-        # The slots are redrawn at the current version, though Apply's
-        # answer otherwise takes only the review region, so the next upload
-        # is accepted.
-        body = refused.content.decode()
-        assert (
-            '<div id="artwork-slots" data-in-place-region data-in-place-always>' in body
-        )
-        assert f'name="base_digest" value="{store.active().digest}"' in body
-        reloaded = browser.get(review_path)
-        assert reloaded.status_code == 409
-        assert "can no longer be reviewed" in region(reloaded.content)
-        refused = post(
-            browser,
-            f"{path}?remove=banner",
-            {"action": "confirm", "preview": removal_token},
-        )
+        assert "Upload the image again." in refusal(refused)
+        refused = post(browser, path, {"action": "confirm"} | removing)
         assert refused.status_code == 409
-        assert "This preview is out of date." in region(refused.content)
-        # Apply posts only to an address naming the change, and a preview
-        # signed for one change is refused at another change's address.
-        for address_for_another in (
-            path,
-            f"{path}?remove=welcome",
-            f"{path}?remove=financial",
+        assert "This preview is out of date." in refusal(refused)
+        # A preview signed for one change is refused for another.
+        for fields in (
+            removing | {"slot": "welcome"},
+            removing | {"slot": "financial"},
+            upload | {"slot": "closing"},
+            {"preview": upload["preview"], "slot": "welcome"},
         ):
             assert (
-                post(
-                    browser,
-                    address_for_another,
-                    {"action": "confirm", "preview": removal_token},
-                ).status_code
-                == 400
+                post(browser, path, {"action": "confirm"} | fields).status_code == 400
             )
-        assert (
-            post(
-                browser,
-                f"{path}?remove=welcome",
-                {"action": "confirm", "preview": upload_token},
-            ).status_code
-            == 400
-        )
+    assert ConfigurationChangeRequest.objects.count() == before
     assert set(artwork(row)["images"]) == {"banner"}
 
 
