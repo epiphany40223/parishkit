@@ -278,7 +278,6 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/campaign-settings-live",
         "/campaign-settings-locked",
         "/share-settings",
-        "/share-preview",
         "/presence",
         "/background-task",
         "/export-cleanup-task",

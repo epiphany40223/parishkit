@@ -1,0 +1,15 @@
+{% load i18n %}{% comment %}
+The review of one Share options change (#750; option_editing._preview),
+drawn in the shared review dialog (UX conventions, "Review dialog"), never
+as a page of its own: share-settings.html's Review changes posts without a
+page load and ui-v1.js moves this fragment's content into the dialog's body.
+It shows the current and the proposed order and labels. The signed preview
+(data-review-preview) is what the dialog's Apply posts to Share options, and
+data-review-done starts the status line the page shows once the change is
+applied. A review lasts fifteen minutes, as every review does.
+{% endcomment %}<div data-review-answer data-review-done="{% translate 'Share options changed.' %}">
+<section><h3>{% translate "Current order and labels" %}</h3><ol>{% for option in review.before %}<li>{{ option.label }}{% if option.free_text %} — {% translate "free-text response" %}{% endif %}</li>{% empty %}<li>{% translate "None" %}</li>{% endfor %}</ol></section>
+<section><h3>{% translate "Proposed order and labels" %}</h3><ol>{% for option in review.after %}<li>{{ option.label }}{% if option.free_text %} — {% translate "free-text response" %}{% endif %}</li>{% empty %}<li>{% translate "None" %}</li>{% endfor %}</ol></section>
+<p>{% translate "Nothing changes until you choose Apply." %}</p>
+<input type="hidden" name="preview" value="{{ review.preview }}" data-review-preview>
+</div>

@@ -1,6 +1,7 @@
 """Versioned share-option editing; these structural values never change live.
 
-The editor is ``option_editing``'s, reviewed and applied in place (#750).
+The editor is ``option_editing``'s, reviewed and applied in the review dialog
+(#750).
 """
 
 from django.utils.translation import gettext_lazy as _
@@ -13,6 +14,7 @@ EDITOR = OptionEditor(
     module="financial",
     page="share_settings",
     template="stewardship/share-settings.html",
+    review_template="stewardship/share-options-review.html",
     salt="stewardship-share-options-preview-v1",
     unchanged=_("No share options have changed."),
     unavailable="Financial share options are not currently editable.",
