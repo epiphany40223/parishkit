@@ -634,6 +634,8 @@ GOLDEN = {
             "problems": [
                 {
                     "kind": "sender_halted",
+                    "severity": "error",
+                    "tiles": ["mail"],
                     "subjects": [
                         {"service": "mail-dispatch", "process": "main", "target": None}
                     ],
@@ -947,6 +949,9 @@ ALLOWED = {
         "mode",
         "problems",
         "kind",
+        # The problem's registry severity and the tiles that show it (#1214).
+        "severity",
+        "tiles",
         "subjects",
         # An unrecorded follow-up refusal's address count and its email's
         # internal id (#1201): no address or name.

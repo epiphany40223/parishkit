@@ -15,6 +15,10 @@ from django.template.loader import render_to_string
 from parishkit.stewardship.source.data_age import Connection
 from parishkit.stewardship.source.refresh_status import FullRefreshStatus
 from parishkit.stewardship.system_health import (
+    INCIDENTS,
+    LOADED_TILES,
+    REGISTRY,
+    TILES,
     AcceptPreview,
     DebugAllowPreview,
     DebugOffPreview,
@@ -26,8 +30,14 @@ from parishkit.stewardship.system_health import (
     Subject,
     SystemHealth,
     Unrecorded,
+    dashboard,
     find_problems,
     group_processes,
+    loaded_query,
+    loaded_states,
+    page_findings,
+    parse_loaded,
+    tile_parts,
 )
 
 NOW = datetime(2026, 10, 6, 15, 0, tzinfo=UTC)
@@ -251,6 +261,8 @@ def test_the_document_holds_states_counts_and_instants_only():
     assert document["problems"] == [
         {
             "kind": "sender_halted",
+            "severity": "error",
+            "tiles": ["mail"],
             "subjects": [
                 {"service": "mail-dispatch", "process": "main", "target": None}
             ],
@@ -282,6 +294,197 @@ def test_the_document_holds_states_counts_and_instants_only():
         "cleared_at": None,
         "cleared_by": None,
     }
+
+
+def test_every_problem_kind_has_one_home_tile_and_a_severity():
+    """The registry covers every kind find_problems can return (#1214)."""
+    kinds = {
+        "sender_halted",
+        "sender_outage",
+        "refusal_unrecorded",
+        "not_running",
+        "not_reported",
+        "source_failing",
+        "source_failed",
+        "source_late",
+        "debug_logging",
+        "versions_differ",
+        "schema_mismatch",
+        *INCIDENTS,
+    }
+    assert set(REGISTRY) == kinds
+    for tile, severity in REGISTRY.values():
+        assert tile in TILES and tile not in LOADED_TILES
+        assert severity in {"warning", "error"}
+    # The Administrator's severity map (decisions 4 and 11, 2026-10-13).
+    assert REGISTRY["source_failed"] == ("source", "warning")
+    assert REGISTRY["source_late"] == ("source", "warning")
+    assert REGISTRY["debug_logging"] == ("debug", "warning")
+    assert REGISTRY["backup_rpo_breach"] == ("backups", "error")
+    assert REGISTRY["refusal_unrecorded"] == ("mail", "error")
+
+
+def test_a_process_problem_is_split_between_mail_and_version():
+    """Mail sender subjects go to Mail, the rest to Version and services,
+    each part naming only its own subjects and its own last report; a part
+    of installers alone is a warning. The problem itself stays one."""
+    lines = group_processes(
+        [
+            row("web", age=900),
+            row("mail-dispatch", age=600),
+            row("config-installer", age=1200),
+        ],
+        NOW,
+    )
+    (problem,) = find_problems(
+        mode="production",
+        processes=lines,
+        missing=(),
+        schema_current=True,
+        incidents={},
+        refresh=None,
+        backup_at=None,
+    )
+    assert problem.kind == "not_running"
+    assert problem.tiles == ("mail", "version")
+    assert problem.severity == "error"
+    (mail, mail_severity, mail_part), (version, severity, part) = tile_parts(
+        problem, lines
+    )
+    assert (mail, mail_severity) == ("mail", "error")
+    assert mail_part.subjects == (Subject("mail-dispatch", "main"),)
+    assert mail_part.at == NOW - timedelta(seconds=600)
+    assert (version, severity) == ("version", "error")
+    assert part.names == "The web portal and the settings installer"
+    assert part.at == NOW - timedelta(seconds=900)
+    installer = Problem("not_running", (Subject("config-installer", "main"),))
+    assert tile_parts(installer) == (("version", "warning", installer),)
+    assert installer.severity == "warning"
+    # Unsplit, the group's own time stays.
+    assert tile_parts(problem)[0][2].at == problem.at
+
+
+def _tiles(**values):
+    """The dashboard's tiles for a SystemHealth with ``values``, by key."""
+    found = dashboard(health(**values))
+    return found, {tile.key: tile for tile in found.tiles}
+
+
+def test_a_healthy_system_is_all_working_in_seven_tiles():
+    """Every tile is drawn, in the fixed order, closed and Working."""
+    found, tiles = _tiles()
+    assert tuple(tiles) == TILES
+    assert found.state == "working" and found.icon == "ok"
+    assert all(tile.state == "working" and not tile.open for tile in found.tiles)
+    assert found.announcement == "System health: all working."
+    assert [tile.name for tile in found.tiles] == [
+        "Mail",
+        "ParishSoft refresh",
+        "Backups",
+        "Debug logging",
+        "Families the form cannot open",
+        "Pages and emails to re-save",
+        "Version and services",
+    ]
+
+
+def test_tiles_take_their_worst_problem_and_the_line_counts_tiles():
+    """Two problems in one tile count once, under the worse; the summary
+    names the most severe and how many more there are."""
+    found, tiles = _tiles(
+        problems=(
+            Problem("sender_outage", (Subject("mail-dispatch", "main"),), at=NOW),
+            Problem("backup_offsite_failed", at=NOW),
+            Problem("backup_rpo_breach", at=NOW),
+            Problem("schema_mismatch"),
+        )
+    )
+    assert found.state == "error" and found.icon == "error"
+    assert [tile.key for tile in found.errors] == ["backups", "version"]
+    assert [tile.key for tile in found.warnings] == ["mail"]
+    backups = tiles["backups"]
+    assert backups.open and backups.icon == "error"
+    assert backups.top.problem.kind == "backup_rpo_breach"
+    assert backups.more == 1
+    assert tiles["mail"].top.severity == "warning" and tiles["mail"].more == 0
+    assert found.announcement == (
+        "System health: 2 errors (Backups, Version and services) and 1 warning (Mail)."
+    )
+    alone = dashboard(health(problems=(Problem("debug_logging", (Subject("web"),)),)))
+    assert alone.announcement == "System health: 1 warning (Debug logging)."
+
+
+def test_an_accepted_refusal_is_shown_in_its_tile_but_not_counted():
+    """The Administrator handled it; the tile lists it and stays Working."""
+    accepted = DropAcceptanceStatus(
+        id=UUID(int=5), created_at=NOW, expires_at=NOW + timedelta(hours=24), live=True
+    )
+    found, tiles = _tiles(
+        problems=(Problem("source_destructive_change", at=NOW),),
+        refused_at=NOW,
+        refused_counts=(DropCount("email_eligible_families", 1084, 612, 25, True),),
+        drop_acceptance=accepted,
+    )
+    source = tiles["source"]
+    assert source.state == "working" and len(source.problems) == 1
+    assert source.counted == () and source.top is None
+    assert found.state == "working"
+
+
+def test_page_findings_raise_their_tile_to_a_warning():
+    """Page notices not yet in the shared list still open their tile."""
+    failed = SimpleNamespace(status="not_picked_up")
+    assert page_findings(health()) == ("offsite_missing",)
+    offsite = SimpleNamespace(kind="succeeded", message="", at=NOW, last_copy_at=NOW)
+    assert page_findings(health(offsite=offsite)) == ()
+    assert page_findings(health(mode="testing")) == ()
+    found = page_findings(
+        health(backup_key_matches=False, backup_request=failed),
+        workgroup_missing="No reminders",
+    )
+    assert found == (
+        "workgroup_missing",
+        "backup_key_mismatch",
+        "backup_request_failed",
+        "offsite_missing",
+    )
+    tiles = {tile.key: tile for tile in dashboard(health(), findings=found).tiles}
+    assert tiles["source"].state == "warning"
+    assert tiles["source"].top_finding == "workgroup_missing"
+    assert tiles["backups"].state == "warning" and tiles["backups"].more == 2
+    # A counted problem names the summary ahead of a finding.
+    tiles = {
+        tile.key: tile
+        for tile in dashboard(
+            health(problems=(Problem("backup_rpo_breach", at=NOW),)), findings=found
+        ).tiles
+    }
+    assert tiles["backups"].state == "error"
+    assert tiles["backups"].top_finding is None
+
+
+def test_the_page_load_tiles_states_and_the_fragments_key():
+    """Their states come from the page's reads, and travel as ?loaded=."""
+    assert loaded_states(0, []) == {}
+    assert loaded_states("no_data", "no_campaign") == {}
+    assert loaded_states("no_campaign", "no_campaign") == {}
+    assert loaded_states(3, [{"blocked": False}]) == {
+        "source-form": "warning",
+        "resave": "warning",
+    }
+    assert loaded_states(None, None) == {"source-form": "warning", "resave": "warning"}
+    assert loaded_states(0, [{"blocked": False}, {"blocked": True}]) == {
+        "resave": "error"
+    }
+    states = {"resave": "error", "source-form": "warning"}
+    assert loaded_query(states) == "source-form:warning,resave:error"
+    assert parse_loaded(loaded_query(states)) == states
+    # Anything outside the closed set is ignored.
+    assert parse_loaded("resave:working,mail:error,x,source-form:fine") == {}
+    assert parse_loaded("") == {} and parse_loaded(None) == {}
+    tiles = {tile.key: tile for tile in dashboard(health(), loaded=states).tiles}
+    assert tiles["resave"].state == "error" and tiles["resave"].loaded
+    assert tiles["source-form"].open
 
 
 def test_nothing_waiting_and_everything_working_read_plainly():

@@ -311,9 +311,12 @@ failed preparation stays on the page until PR 12.
 ### `system health`
 
 The [System health](../specs/stewardship/admin-portal/spec.md#system-health)
-page as a document: `problems` (each `kind`, the `subjects` it is about,
-each a `service`, `process` and `target`, and the time `at` its sentence
-states; a condition in several processes is one problem), the
+page as a document: `problems` (each `kind`, its `severity`, `error` or
+`warning`, the `tiles` that show it in page order, the `subjects` it is
+about, each a `service`, `process` and `target`, and the time `at` its
+sentence states; a condition in several processes is one problem, which
+the page may split between two tiles, so its `severity` is the worse of
+the two), the
 `processes` with their state, version and mail sender state,
 `missing_services`, `versions`, `schema_current`, the reasons Family email
 waits (`delivery_paused`, `planning_held`, `retry_waiting`), the 24-hour
@@ -2129,6 +2132,10 @@ print is exit 1 (`invalid`).
 - `pk-admin/1` (ADM-13 PR 3b, #530): additive. `system backup-now`
   (keyed, fresh-gated, always prompts), and `system health`'s
   `backup_request` with the newest request's state.
+- `pk-admin/1` (#1214): additive. Each `system health` problem gains
+  `severity` (`error` or `warning`) and `tiles` (the System health tiles
+  that show it, in page order: `mail`, `source`, `backups`, `debug` or
+  `version`).
 - `pk-admin/1` (ADM-11 PR 9a): additive. `task retry`, the first command
   that takes `--request-key`, and `error.request_id` on its unknown
   outcome, holding the key.
