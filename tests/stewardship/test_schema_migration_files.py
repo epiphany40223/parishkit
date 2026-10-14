@@ -288,6 +288,9 @@ FROZEN = {
     "0085_drop_examples.sql": (
         "77666b75f3cbd17203b7ece92aec07bc81fb0ab8c50032e77cae48defb11743a"
     ),
+    "0086_snapshot_statistics.sql": (
+        "fd11700fc4872b5847afec7124f265b5950daca3a74f05e6ac87c912871f62c1"
+    ),
 }
 
 

@@ -45,6 +45,7 @@ from .loading import (
 from .requests import _window
 from .snapshot_models import SourceCurrent, SourceSnapshot
 from .snapshots import (
+    analyze_staging,
     complete_snapshot,
     finish_unchanged,
     reconstruct_snapshot,
@@ -534,6 +535,17 @@ def load_and_stage_attempt(execution, claim, credential, *, unchanged=None):
                 execution.progress(done, total, phase=TaskPhase.STAGING)
                 reported = done
     execution.progress(done, total, phase=TaskPhase.VALIDATING)
+    # Refresh the membership tables' planner statistics now, in a source step
+    # outside the global work order (#895, change 8). The ready transition's
+    # snapshot guard re-derives the corpus evidence under that lock before
+    # the completion trigger analyzes the tables, so with statistics that
+    # predate this snapshot it held the lock for about 1 s at 1,100 Families
+    # instead of about 0.1 s. Its own commit makes them visible to
+    # validation and to the ready transition.
+    with source_step(execution):
+        analyze_staging(
+            attempt.snapshot_id, claim, admit=staged, task_id=execution.claim.run_id
+        )
     # Validation reads the whole staged corpus and the base's manifest
     # (150-270 ms at 1,100 Families), so it is a source step, outside the
     # global work order (#895), like the staging batches whose rows it reads.

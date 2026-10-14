@@ -374,6 +374,10 @@ ADDRESS_RETRIES_FUNCTION = "stewardship_delivery_address_retries_v1(uuid, uuid)"
 BOUNCE_REPORT_FUNCTION = (
     "stewardship_report_recipient_bounce_v1(uuid, uuid, text, uuid, text)"
 )
+# A source refresh refreshes its staged snapshot's planner statistics
+# before the ready transition, outside the work-order lock (#895 change 8):
+# the worker gains no ANALYZE or MAINTAIN authority of its own.
+SNAPSHOT_ANALYZE_FUNCTION = "stewardship_source_snapshot_analyze_v1(uuid)"
 # Mail dispatch opens that follow-up (and its task, which it may not insert
 # itself) under its live delivery claim, and reads the Family's link token
 # for it under the follow-up's own claim, both in frozen migration 0077.
@@ -457,6 +461,11 @@ CLOSURE_FUNCTIONS = {
     ARCHIVE_ANSWERS_FUNCTION: (
         "stewardship_reports",
         "0023_campaign_archive_exports",
+    ),
+    # The staged snapshot's statistics (0086, #895) follow 0085.
+    SNAPSHOT_ANALYZE_FUNCTION: (
+        "stewardship_source",
+        "0010_snapshot_statistics",
     ),
 }
 
@@ -604,7 +613,8 @@ def runtime_functions(role, *, target=None):
     configuration installer checks that a Ministry added to a live
     campaign is in the promoted catalog, without source grants; the general
     worker purges the Django sessions of ended Admin sessions, counts an
-    export's read-guard stops and prunes old task events.
+    export's read-guard stops, prunes old task events and refreshes a staged
+    source snapshot's planner statistics (#895).
     Web and the parishsoft, google_workspace and slack credential installers
     check a secret request's automation sign-in instant (ADM-11 PR 5). Web,
     the general worker and the download login read a user's role-derived
@@ -676,6 +686,7 @@ def runtime_functions(role, *, target=None):
                 LEADER_CHANGES_FUNCTION,
                 COMPARISON_FUNCTION,
                 ARCHIVE_RENEWAL_FUNCTION,
+                SNAPSHOT_ANALYZE_FUNCTION,
                 DEBUG_OFF_FUNCTION,
                 ARCHIVE_ANSWERS_FUNCTION,
             },

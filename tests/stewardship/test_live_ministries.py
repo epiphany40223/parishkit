@@ -103,6 +103,9 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         # The archive's parts of each live answer, for the campaign archive
         # workbook (#1018 part (a)).
         "stewardship_campaign_archive_answers_v1(uuid, timestamp with time zone)",
+        # Analyze a staged snapshot's tables before the ready transition
+        # (0086, #895).
+        "stewardship_source_snapshot_analyze_v1(uuid)",
         DEBUG_OFF_FUNCTION,
     }
     assert runtime_functions("download") == {LEADER_SCOPE_FUNCTION}

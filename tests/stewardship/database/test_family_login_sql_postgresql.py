@@ -185,6 +185,8 @@ def test_web_admission_requires_exactly_the_login_function(family_service):  # n
         # The archive's parts of each live answer, for the campaign archive
         # workbook (#1018 part (a)).
         "stewardship_campaign_archive_answers_v1(uuid, timestamp with time zone)",
+        # Analyze a staged snapshot before the ready transition (0086, #895).
+        "stewardship_source_snapshot_analyze_v1(uuid)",
         "stewardship_debug_logging_off_v1()",
     }
     tables, columns = runtime_grants(ServiceRole.WEB)
