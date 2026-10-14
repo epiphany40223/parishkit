@@ -3023,7 +3023,12 @@ changed only through `--refresh-schedule`, above), and an unchanged
 ParishSoft schedule keeps its stored keys exactly. `integration confirm TARGET --token TOKEN`
 is the page's Apply, through `admin_editing.confirm_intent` with the
 page's salt and fresh gate: it is fresh-gated and prompts, naming the
-integration and the settings the review changes, never their values. In the
+integration and the settings the review changes, never their values. It
+checks the Administrator capability (renewing nothing) before it reads the
+token, the stored settings or anything else, so a full-scope session whose
+user is no longer an Administrator is `denied`, never `invalid` or
+`not_available`, and sees no prompt
+([#1339](https://github.com/epiphany40223/parishkit/issues/1339)). In the
 request's transaction it records `admin_cmd_integration_confirm` with the
 fresh gate's event and `fresh_gated` notice, and, for Slack, a
 `policy_change` notice and the `automation_policy_change` incident (see
@@ -3089,7 +3094,9 @@ TOKEN` is the page's confirm button, through `admin_editing.confirm_intent`
 with the page's salt for `TARGET`'s latest key change, the page's
 frozen-base request schema, `_selection` as the current scope and the fresh
 gate: it is fresh-gated and prompts, naming the integration and the
-settings it also changes, never their values. A token for an earlier key
+settings it also changes, never their values. As for `integration
+confirm`, the Administrator check comes before any lookup or prompt, so
+Staff is `denied` whatever the token or target. A token for an earlier key
 change, or another page's, is `invalid`; so a repeat of an applied token
 after a newer key change started is `invalid` too, not the original
 request. A switch that would change the loaded ParishSoft organization,

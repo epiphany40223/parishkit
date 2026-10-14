@@ -473,6 +473,15 @@ def test_refused_sessions(mail, monkeypatch):
         confirm(mail, staff, "email", token),
     ):
         assert code == 1 and refused(document, "denied") == []
+    # The role comes before any lookup or prompt (#1339): a typed answer, an
+    # altered token or an integration with no change is denied, unprompted.
+    for code, document, stderr in (
+        confirm(mail, staff, "email", token, answer=b"yes\n"),
+        confirm(mail, staff, "email", "altered"),
+        confirm(mail, staff, "parishsoft", token, answer=b"yes\n"),
+    ):
+        assert code == 1 and refused(document, "denied") == []
+        assert "This " not in stderr and "Type yes" not in stderr, stderr
     assert not ConfigurationChangeRequest.objects.exists() and trail()[0] == 0
 
 

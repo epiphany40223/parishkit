@@ -134,3 +134,31 @@ def test_a_watch_keeps_following_the_first_key_change(monkeypatch):
     admin_cli.integration_key_status(args, None, None, {"caller": None})
     assert seen == [None, UUID(first.request_id)]
     assert args.request_id == UUID(first.request_id)
+
+
+def test_the_role_is_checked_before_any_lookup_or_prompt(monkeypatch):
+    """Finish switching checks the Administrator role (renewing nothing)
+    before it reads the token, looks up the key change or prompts (#1339)."""
+    from argparse import Namespace
+
+    from parishkit.stewardship import admin_changes, admin_integration_keys
+
+    calls = []
+
+    def denied(caller, service, *, read_only=False):
+        """Refuse as the page does for a user who is now Staff."""
+        calls.append(read_only)
+        raise PermissionError("This page requires the configure capability.")
+
+    def unexpected(*arguments, **options):
+        """Nothing after the role check may run."""
+        raise AssertionError("looked up or prompted before the role check")
+
+    monkeypatch.setattr(admin_changes, "_admit_change", denied)
+    monkeypatch.setattr(admin_integration_keys, "finish_prompt_lines", unexpected)
+    monkeypatch.setattr(admin_cli, "_input", unexpected)
+    monkeypatch.setattr(admin_cli, "confirm", unexpected)
+    args = Namespace(target="parishsoft", token="-")
+    with pytest.raises(PermissionError):
+        admin_cli.integration_key_finish_switching(args, None, None, {"caller": None})
+    assert calls == [True]
