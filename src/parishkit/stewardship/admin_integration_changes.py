@@ -164,8 +164,10 @@ def _row_problems(rows, scope, shapes, noun):
             message = 'Give kind as "full" or "quick".'
         elif not all(_hhmm(row[name]) for name in set(row) & TIME_MEMBERS):
             message = 'Give each time as quoted HH:MM text, such as "02:00".'
+        # Exactly an int: 60.0 equals a step but the form would echo it, and
+        # a bool is an int subclass.
         elif "every" in row and (
-            isinstance(row["every"], bool) or row["every"] not in STEPS
+            type(row["every"]) is not int or row["every"] not in STEPS
         ):
             message = "Give every as one of {}.".format(
                 ", ".join(str(step) for step in STEPS)

@@ -369,6 +369,8 @@ SENTINEL = "SECRETXYZ"
         {"kind": "full", "at": "24:00"},
         {"kind": "full", "at": "2pm"},
         {"kind": "full", "every": 7777, "from": "00:00", "to": "01:00"},
+        {"kind": "full", "every": 60.0, "from": "00:00", "to": "01:00"},
+        {"kind": "full", "every": True, "from": "00:00", "to": "01:00"},
         {"kind": "full", "every": 60, "from": "00:00", "to": SENTINEL},
     ],
 )
@@ -379,7 +381,7 @@ def test_values_the_page_form_would_quote_are_refused_in_fixed_words(row):
         parse_schedule(json.dumps({"rules": [row]}))
     [problem] = raised.value.fields
     assert problem["field"] == "refresh_schedule.rules[0]"
-    for value in (SENTINEL, "7777", "24:00", "2pm"):
+    for value in (SENTINEL, "7777", "24:00", "2pm", "60.0", "True"):
         assert value not in problem["message"]
 
 
