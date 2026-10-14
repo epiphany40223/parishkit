@@ -124,3 +124,29 @@ def test_toggletip_flips_above_when_there_is_no_room_below(
     visible(page.locator("#" + tip))
     place = page.evaluate(PLACE, tip)
     assert place["inside"] and place["above"], place
+
+
+def test_right_edge_toggletip_adds_no_sideways_scroll(page, component_origin):
+    """No System health tip, right-edge ones included, widens the page (#1316).
+
+    At a 320 px phone width the bubble must stay inside the viewport, or
+    WebKit grows the document sideways and lets the whole page pan. Check
+    when the bubble opens and again after it has settled.
+    """
+    page.set_viewport_size({"width": 320, "height": 900})
+    page.goto(component_origin + "/system-health")
+    buttons = page.locator(".toggletip-button:visible")
+    assert buttons.count() >= 1
+    for index in range(buttons.count()):
+        button = buttons.nth(index)
+        tip = button.get_attribute("aria-controls")
+        button.scroll_into_view_if_needed()
+        painted(page)
+        button.click()
+        visible(page.locator("#" + tip))
+        assert not page.evaluate(PLACE, tip)["scrolls"], tip
+        # The page must also stay put once the bubble has been open a while.
+        page.wait_for_timeout(500)
+        assert not page.evaluate(PLACE, tip)["scrolls"], tip
+        button.click()
+        has_attribute(button, "aria-expanded", "false")
