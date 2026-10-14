@@ -60,7 +60,7 @@ ALLOWED = {
     # says what it covers.
     "components/chart.html": {"Nothing to show yet."},
     # A value in a before-and-after list, not an empty list.
-    "option-review.html": {"None"},
+    "share-options-review.html": {"None"},
 }
 
 

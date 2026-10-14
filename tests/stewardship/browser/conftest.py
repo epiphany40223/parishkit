@@ -1925,6 +1925,8 @@ def component_origin():
             "/share-settings",
             "share-settings",
             {
+                "page_url": "/share-settings",
+                "refresh_url": "/share-settings",
                 "campaign": {
                     "pk": uuid4(),
                     "active_configuration": {"name": "Sample campaign"},
@@ -1933,27 +1935,6 @@ def component_origin():
                 "formset": ShareOptions(
                     prefix="options", previous=default_share_options()
                 ),
-            },
-        ),
-        # Share options with its review shown in place (#750).
-        (
-            "/share-preview",
-            "share-settings",
-            {
-                "campaign": {
-                    "pk": uuid4(),
-                    "active_configuration": {"name": "Sample campaign"},
-                },
-                "base_digest": "a" * 64,
-                "formset": ShareOptions(
-                    prefix="options", previous=default_share_options()
-                ),
-                "review": {
-                    "template": "stewardship/option-review.html",
-                    "preview": "synthetic-signed-intent",
-                    "before": [],
-                    "after": default_share_options(),
-                },
             },
         ),
         (

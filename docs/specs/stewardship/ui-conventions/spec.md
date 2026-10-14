@@ -550,8 +550,8 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
 - **In-place review (#532, #750).** This panel is being replaced by the
   [review dialog](#review-dialog) (Administrator decision, 2026-10-11); it
   describes the pages that still use it until #750 converts them.
-  Parish settings and Share options
-  review, apply and follow a change on the page itself, not on
+  Parish settings
+  reviews, applies and follows a change on the page itself, not on
   separate Review and Change status pages. The settings form is a
   `form[data-in-place]` marked
   `data-table-sync`: its answer fills the review region under it, while the
@@ -607,24 +607,10 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   needs little or no hold, so a long review followed by Applied leaves no
   large gap. Apply still moves focus to Change status's heading, so on a
   window too short to show the whole region, focus may scroll the status
-  into view. Share options
-  (#750) work the same way, except that their form, to which
-  no script is bound, is an in-place region of its own: a Review's answer
-  redraws it with the values sent and their field errors. Edits typed into
-  that form since it was last sent are lost whenever an answer redraws it (a
-  Review's, accepted or refused, or the quiet refresh after Apply), so a
-  line at the top of the review region, below the form, says they were not
-  kept (never above the form, which would move it under the pointer); a
-  review that arrives with it matches the redrawn form, so it stays. Apply never redraws the
-  form unless its answer finds the change already applied, when it marks the
-  form `data-in-place-always` and the form is redrawn at the applied
-  version; otherwise a refused Apply keeps the reader's rows at the version
-  they were reviewed at (the next Review is refused until a reload), and the
-  quiet follow-up refresh draws the applied list. Their Review changes
-  waits for a change like the other settings forms (#921), with the hint
-  "Change an option to review it."; a form redrawn at the same version keeps
-  the saved list it is compared with, and the list an applied change is
-  redrawn with (its fresh blank row included) is the saved one. A live
+  into view. Share options reviews in the [review dialog](#review-dialog)
+  (#750); its form, a region of its own, is redrawn after Apply with the
+  applied list and a fresh blank row, which is then the saved list Review
+  changes compares with ("Change an option to review it."). A live
   campaign's Ministry selections change on
   [Campaign settings](../admin-portal/spec.md#campaign-settings-page), in the
   review dialog (#1119). Parish settings' form is never redrawn; until the
@@ -1103,11 +1089,10 @@ the flows their own sections describe; whether any of them moves to the
 dialog is decided on [#750](https://github.com/epiphany40223/parishkit/issues/750).
 
 Current state, to be converted: Users' New user, Edit user and Import
-Ministry leaders, New and Edit scheduled email, and
+Ministry leaders, New and Edit scheduled email,
 [Campaign settings](../admin-portal/spec.md#campaign-settings-page) (#1119)
-use the dialog. Parish
-settings, Share options, Ministries,
-No-reminders WorkGroup, Campaign images and Parish logos show the in-place
+and Share options use the dialog. Parish
+settings, No-reminders WorkGroup, Campaign images and Parish logos show the in-place
 review panel of #532 and #750
 ([in-place controls](#in-place-controls)); the other editors use separate
 Review and Change status pages.
