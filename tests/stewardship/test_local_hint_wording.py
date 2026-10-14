@@ -50,13 +50,13 @@ def pages():
             {"draft": None},
             (
                 "For security, saving a credential needs a Google sign-in from"
-                " the last five minutes. When you continue, you are asked to"
-                " confirm it's you with Google first. Your setup is kept.",
+                " the last five minutes. That step asks you to confirm it's you"
+                " with Google if you need to then. Your setup is kept.",
             ),
             (
                 "For security, saving a credential needs a sign-in from the last"
-                " five minutes. When you continue, you are asked to confirm your"
-                " sign-in first. Your setup is kept.",
+                " five minutes. That step asks you to confirm your sign-in if you"
+                " need to then. Your setup is kept.",
             ),
         ),
         "setup-credential": (

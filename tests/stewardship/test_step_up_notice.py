@@ -7,10 +7,13 @@ render the component's variants and guard that no template words its own.
 """
 
 import re
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 from django.template.loader import render_to_string
+
+from .browser.step_up_components import render
 
 TEMPLATES = (
     Path(__file__).resolve().parents[2]
@@ -139,6 +142,41 @@ def test_inside_a_form_it_explains_without_a_control(local):
         assert (
             "When you continue, you are asked to confirm it's you with Google first."
         ) in html
+
+
+@pytest.mark.parametrize("local", [False, True])
+def test_a_later_step_says_that_step_asks(local):
+    """The setup start page names the credential step, not its own Start."""
+    html = notice(local=local, later=True)
+    assert "<form" not in html and "When you continue" not in html
+    if local:
+        assert "That step asks you to confirm your sign-in if you need to then." in html
+    else:
+        assert (
+            "That step asks you to confirm it's you with Google if you need to then."
+        ) in html
+
+
+@pytest.mark.parametrize(
+    ("local", "reason"),
+    [
+        (False, "Use Confirm with Google above first, then verify final readiness"),
+        (True, "Sign in again as shown above first, then verify final readiness"),
+    ],
+)
+def test_confirm_production_names_the_control_above(local, reason):
+    """Confirm Production's unavailable reason names the real step-up control."""
+    now = datetime(2026, 9, 10, 12, tzinfo=UTC)
+    context = {
+        "server_now": now,
+        "deadline": now + timedelta(hours=1),
+        "absolute_deadline": now + timedelta(hours=4),
+        "csrf_token": "a" * 64,
+    }
+    html = render("production-confirmation", context, local=local)
+    reason_html = html.split('id="production-unavailable">', 1)[1].split("</p>")[0]
+    assert reason in reason_html
+    assert ("Google" in reason_html) is not local
 
 
 def test_local_never_mentions_google():
