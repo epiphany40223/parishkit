@@ -916,14 +916,17 @@ page) and `integration key finish-switching-preview` and
 also names each setting's field) and salt, with no schema change; proven by
 `tests/stewardship/test_admin_integration_keys.py` (catalog flags, the
 described event, the ledger, usage errors, no fingerprint in any result
-field), `tests/stewardship/test_admin_cli.py`,
+field, a watch pinned to its first key change), `tests/stewardship/test_admin_cli.py`,
 `tests/stewardship/database/test_admin_integration_keys_cli_postgresql.py`
 (a failed switch shown, reviewed, prompted and finished with its request,
 events and notices, a repeat recording nothing new, a page-signed token
-confirmed by the command, altered and other pages' tokens, nothing to
-switch, a key change still running, another integration's or an unknown
-key change, a changed loaded organization, read-only, Staff and ended
-sessions, and no key or fingerprint in any output) and the unchanged
+confirmed by the command from standard input, altered, other pages',
+another Administrator's, expired and earlier key changes' tokens, nothing
+to switch, a key change still running, another Administrator's, another
+integration's or an unknown key change, a key no longer current, a changed
+loaded organization on review and on confirm, read-only, Staff and ended
+sessions, and no key or fingerprint in any output outside the page's own
+signed token, which is decoded and checked apart) and the unchanged
 integration key page suites.
 
 ## ADM-12: Admin navigation overhaul

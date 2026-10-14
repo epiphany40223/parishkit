@@ -1249,11 +1249,16 @@ an Administrator may run it, and it records nothing. It prints `target`,
 `request_id`, `state`, `pending` and `selectable`, which is true when the
 page offers **Finish switching to the new key**. Another Administrator's
 key change, or one of another integration, is exit 1 (`not_available`).
+Without `--request-id`, a watch keeps following the key change it found
+first. A watch ends once the key is installed and confirmed, as the page's
+progress does, even if the automatic switch to it is still queued; run
+`integration status TARGET` to see whether the switch finished.
 
 ```sh
 pk-admin integration key status parishsoft --watch 5
-pk-admin integration key finish-switching-preview parishsoft
-pk-admin integration key finish-switching parishsoft --token TOKEN
+pk-admin integration key finish-switching-preview parishsoft > review.json
+jq -r .result.preview.token review.json \
+    | pk-admin integration key finish-switching parishsoft --token - --yes
 ```
 
 When the new key is installed but switching to it did not finish (the
@@ -1267,14 +1272,23 @@ changes nothing. When nothing waits to be switched to it is exit 1
 (`not_available`); when the key was saved with a different ParishSoft
 organization ID than the loaded data's it is exit 1 (`invalid`) at
 `organization_id`, with the page's words. `integration key
-finish-switching` takes that token (or `-` with `--yes`), or one the page
-signed for you, asks for confirmation naming the integration and the
-settings it also changes, and records the configuration request as the
-page's button does, with `admin_cmd_integration_key_finish_switching`, the
+finish-switching` takes that token, preferably on standard input
+(`--token -`, as above) so it stays out of the argument list and shell
+history, or one the page signed for you. Standard input then carries the
+token, so `--yes` stands in for the prompt: read the review first. The
+token is the page's own signed (not encrypted) binding: like the page's
+hidden form field, it includes the new key's fingerprint, though no output
+field prints one. Given on the command line, the token is confirmed after
+a prompt naming the integration and the settings it also changes. Either
+way the command records the configuration request as the page's button
+does, with `admin_cmd_integration_key_finish_switching`, the
 fresh gate's event and notice and a `policy_change` notice for every
-Administrator. A token for an earlier key change is exit 1 (`invalid`); an
-expired one, or one whose key is no longer current, is `stale_version`:
-review again. Neither command prints a key or a fingerprint.
+Administrator. A token for an earlier key change is exit 1 (`invalid`),
+including a repeat of an applied token after a newer key change started;
+an expired one, or one whose key is no longer current, is `stale_version`:
+review again. If the loaded ParishSoft organization changed meanwhile, the
+confirmation is exit 1 (`invalid`) at `organization_id`, where the page
+shows its refusal page. Neither command prints a key.
 
 ## Past campaigns
 

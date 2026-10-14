@@ -111,3 +111,26 @@ def test_malformed_commands_are_usage_errors(argv):
         stderr=out,
     )
     assert code == 2 and json.loads(out.getvalue())["error"]["code"] == "usage"
+
+
+def test_a_watch_keeps_following_the_first_key_change(monkeypatch):
+    """Without --request-id, the first read's key change is pinned, so a
+    watch never moves to a newer one that starts meanwhile."""
+    from argparse import Namespace
+    from uuid import UUID, uuid4
+
+    from parishkit.stewardship import admin_integration_keys
+
+    seen = []
+
+    def read(caller, runtime, target, request_id=None):
+        """Answer the latest key change, a new one on every call."""
+        seen.append(request_id)
+        return KeyStatus(target, str(uuid4()), "staged", True, False)
+
+    monkeypatch.setattr(admin_integration_keys, "read_key_status", read)
+    args = Namespace(target="slack", request_id=None)
+    first = admin_cli.integration_key_status(args, None, None, {"caller": None})
+    admin_cli.integration_key_status(args, None, None, {"caller": None})
+    assert seen == [None, UUID(first.request_id)]
+    assert args.request_id == UUID(first.request_id)

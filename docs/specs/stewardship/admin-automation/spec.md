@@ -3055,7 +3055,11 @@ by default the latest for `TARGET`; another Administrator's, another
 integration's or an unknown one is `not_available`. It prints `target`,
 `request_id`, `state` (the page's technical state), `pending` and
 `selectable` (the page's Finish switching button, `_selectable`); a watch
-stops once nothing is pending. `integration key finish-switching-preview
+stops once nothing is pending. Without `--request-id`, a watch keeps
+following the key change its first read found. As on the page, a change is
+no longer pending once the key is installed and acknowledged, even while
+its automatic switch is still queued; `integration status TARGET` shows
+whether that switch finished. `integration key finish-switching-preview
 TARGET` is the review on **Finish switching to the new key**: it needs a
 full-scope session, as the page records activity, stands in for the page's
 recent sign-in with it (a preview records no notice), and is offered only
@@ -3066,14 +3070,22 @@ the other: a key no longer current is `stale_version`, and a switch that
 would change the loaded ParishSoft organization is `invalid` at
 `organization_id` with the page's words. It prints `version`, `target`,
 `name`, `request_id`, `changes` (`field`, `before`, `after`: the settings
-saved with the key, as the page's table) and `preview.token`; the page's
-fingerprints are left out. `integration key finish-switching TARGET --token
+saved with the key, as the page's table) and `preview.token`. No output
+field prints a fingerprint, but `preview.token` is the page's own signed,
+not encrypted, binding of the reviewed patch, which selects the new key by
+its fingerprint, exactly as the page's hidden form field does; the guide
+passes it back on standard input (`--token -`) so it stays out of
+argument lists and shell history. `integration key finish-switching TARGET --token
 TOKEN` is the page's confirm button, through `admin_editing.confirm_intent`
 with the page's salt for `TARGET`'s latest key change, the page's
 frozen-base request schema, `_selection` as the current scope and the fresh
 gate: it is fresh-gated and prompts, naming the integration and the
 settings it also changes, never their values. A token for an earlier key
-change, or another page's, is `invalid`. In the request's transaction it
+change, or another page's, is `invalid`; so a repeat of an applied token
+after a newer key change started is `invalid` too, not the original
+request. A switch that would change the loaded ParishSoft organization,
+found again under the lock, is `invalid` at `organization_id`, where the
+page answers its refusal page with status 503. In the request's transaction it
 records `admin_cmd_integration_key_finish_switching` with the fresh gate's
 event and `fresh_gated` notice and, as it selects a new integration key, a
 `policy_change` notice and the `automation_policy_change` incident (see

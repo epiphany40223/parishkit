@@ -1287,12 +1287,22 @@ def integration_dismiss(args, preamble, runtime, context):
 
 
 def integration_key_status(args, preamble, runtime, context):
-    """One of the Administrator's own key changes, as its status page (PR 10)."""
+    """One of the Administrator's own key changes, as its status page (PR 10).
+
+    Without ``--request-id`` the first read finds the latest one; a watch
+    then keeps following that key change (and logs it as the watch's
+    subject), even if a newer one starts meanwhile.
+    """
+    from uuid import UUID
+
     from .admin_integration_keys import read_key_status
 
-    return read_key_status(
+    model = read_key_status(
         context["caller"], runtime, args.target, request_id=args.request_id
     )
+    if args.request_id is None:
+        args.request_id = UUID(model.request_id)
+    return model
 
 
 def integration_key_finish_switching_preview(args, preamble, runtime, context):

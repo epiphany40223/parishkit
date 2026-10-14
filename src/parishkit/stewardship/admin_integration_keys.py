@@ -23,10 +23,13 @@ pages and the command line cannot drift:
   work lock, ``admin_cmd_integration_key_finish_switching`` and, as it
   selects a new integration key, a ``policy_change`` notice.
 
-Neither key material nor a fingerprint is ever printed, logged or recorded
-here: the commands handle only request ids, states and the public settings
-the page's table shows. Replacing a key (which accepts the secret) is a
-separate command.
+No key material is ever printed, logged or recorded here, and no output
+field names a fingerprint: the commands print only request ids, states and
+the public settings the page's table shows. ``preview.token`` is the page's
+own signed (not encrypted) binding of the reviewed patch, which includes the
+new key's fingerprint, exactly as the page's hidden form field does; the
+guide recommends passing it back as ``--token -``. Replacing a key (which
+accepts the secret) is a separate command.
 """
 
 from dataclasses import dataclass
@@ -72,6 +75,10 @@ class KeyStatus(ReadModel):
     ``awaiting_ack``, ``applied``, ``cleanup_pending``, ``expired``, ...);
     ``pending`` whether it is still being checked or installed (a watch stops
     once it is not); ``selectable`` whether the page offers Finish switching.
+    As on the page, a change is no longer pending once the key is installed
+    and acknowledged, even while its automatic switch is still queued; the
+    settings page's line (``integration status``) says whether that switch
+    finished.
     """
 
     target: str
@@ -260,8 +267,10 @@ def _intent(target, token):
 
     The page's salt names the key change, so the token is read with the salt
     of ``target``'s latest one. Altered, another page's or an earlier key
-    change's token is ``invalid`` (``confirm_intent`` checks expiry later);
-    no key change at all is ``not_available``.
+    change's token is ``invalid`` (``confirm_intent`` checks expiry later),
+    so a repeat of an applied token after a newer key change started is
+    ``invalid`` too, not the original request; no key change at all is
+    ``not_available``.
     """
     from django.core import signing
 
@@ -322,7 +331,9 @@ def confirm_finish(caller, service, target, *, token, context):
     lock (``fresh``), repeats the page's ``_selection`` as the current scope
     with the page's frozen-base request schema, and records the request with
     ``admin_cmd_integration_key_finish_switching`` and the ``policy_change``
-    notice in its own durable transaction. ``context["committed"]`` and
+    notice in its own durable transaction. A changed loaded ParishSoft
+    organization found under the lock is ``invalid`` at ``organization_id``
+    (the page answers its 503 refusal page instead). ``context["committed"]`` and
     ``context["request_id"]`` follow ``parish confirm``'s rules, so a later
     error is ``outcome_unknown`` naming the request.
     """
