@@ -406,15 +406,48 @@ def test_schedule_patch_applies_dates_the_initial_and_eight_reminders():
     # The digest schedule is untouched, and the other campaign's rows ignored.
     assert not any(step.get("id") in {"cccc", "other"} for step in patch)
     # Without a Reminder email revision the existing Reminder schedule's
-    # reference is reused, then the Initial's; no Initial is refused.
-    del document["sections"]["content"]
+    # reference is reused, then the Initial's; with neither it is refused.
+    content = document["sections"].pop("content")
     patched = schedule_patch(document, campaign_id, cal)
     assert patched[3]["values"]["template_version"] == "rrrr"
     del document["sections"]["schedules"][1]
     patched = schedule_patch(document, campaign_id, cal)
     assert patched[2]["values"]["template_version"] == "tttt"
-    del document["sections"]["schedules"][0]
-    with pytest.raises(SeedRefused, match="exactly one Initial"):
+    initial = document["sections"]["schedules"].pop(0)
+    with pytest.raises(SeedRefused, match="no Reminder email"):
+        schedule_patch(document, campaign_id, cal)
+    # Create the campaign leaves no schedules (#142): the Initial is added
+    # with the campaign's Initial email, the Reminders with its Reminder.
+    document["sections"]["content"] = [
+        *content,
+        {
+            "id": "iiii",
+            "values": {
+                "campaign_id": campaign_id,
+                "kind": "email",
+                "slot": "initial",
+                "subject": "Initial email",
+            },
+        },
+    ]
+    patched = schedule_patch(document, campaign_id, cal)
+    assert patched[1]["operation"] == "add"
+    assert patched[1]["values"] | {"campaign_id": campaign_id} == {
+        "campaign_id": campaign_id,
+        "kind": "initial",
+        "date": "2026-09-26",
+        "time": "10:00:00",
+        "weekday": None,
+        "subject": "Initial email",
+        "template_version": "iiii",
+    }
+    assert [row["values"]["template_version"] for row in patched[2:]] == ["eeee"] * 8
+    # No Initial email to send is refused, and so are two Initials.
+    document["sections"]["content"] = content
+    with pytest.raises(SeedRefused, match="no Initial email"):
+        schedule_patch(document, campaign_id, cal)
+    document["sections"]["schedules"] += [initial, initial]
+    with pytest.raises(SeedRefused, match="more than one Initial"):
         schedule_patch(document, campaign_id, cal)
 
 
@@ -544,16 +577,17 @@ def test_leader_to_import_picks_the_busiest_ministrys_leader():
 
 def test_constants_match_the_specification():
     assert seeder.DEFAULT_WAIT_SECONDS == 600
-    assert seeder.STEPS[:6] == (
+    assert seeder.STEPS[:7] == (
         "timeline",
         "wizard",
+        "campaign",
         "prepare",
         "drive",
         "check",
         "finish",
     )
     # The BG-12 rehearsal's two steps (local/rehearsal.py) follow the seed's.
-    assert seeder.STEPS[6:] == ("reminder", "measure")
+    assert seeder.STEPS[7:] == ("reminder", "measure")
     assert sorted(seeder.FATAL_OCCURRENCE_STATES) == [
         "coalesced",
         "delivery_unknown",

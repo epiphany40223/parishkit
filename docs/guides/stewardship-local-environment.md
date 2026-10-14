@@ -186,15 +186,21 @@ credential (OPS-10.05). Those two credentials are installed by the real
 credential installers, exactly as in production, which is part of what the
 environment tests.
 
+Setup collects no campaign (#142). Once it is complete, open Home and choose
+**Create the campaign**, fill in its form (every module, for the seeder),
+review and create it, then press **Load the campaign's ParishSoft data** on
+the change's status so the campaign gets its Families and codes.
+
 For an unattended install, `tools/stewardship-local.sh wizard` completes the
 wizard through the wizard pages' own service layer with the fake ParishSoft
-key, the mail-catcher document, a first campaign with every module, default
-pages and emails and a generated logo, then follows the runbook's post-wizard
-step (recreating `worker` and `mail-dispatch` from `compose.json` and
-acknowledging each credential inside them) until setup is complete. The
-browser wizard remains the developer-facing path.
+key, the mail-catcher document and a generated logo, follows the runbook's
+post-wizard step (recreating `worker` and `mail-dispatch` from `compose.json`
+and acknowledging each credential inside them) until setup is complete, and
+then runs Create the campaign (every module, with its default pages and
+emails) and the campaign's full ParishSoft refresh. The browser wizard and
+Create the campaign remain the developer-facing path.
 
-After the wizard completes, take the post-setup snapshot:
+After the campaign has its Families, take the post-setup snapshot:
 `tools/stewardship-local.sh snapshot`. `reset` then returns to that state in
 about half a minute. (A snapshot taken before the wizard is allowed and noted
 as a pre-wizard snapshot; it is still useful for a fast return to a clean

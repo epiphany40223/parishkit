@@ -448,3 +448,47 @@ def test_two_creations_confirmed_together_apply_one(auth_service, google):
     assert "A campaign already exists." in failed
     assert "The campaign has been created." not in failed
     assert 'id="settings-form"' not in failed
+
+
+def test_local_seeder_creates_the_campaign_through_the_page(auth_service, google):
+    """The seeder's campaign step (#142) uses this page's form, review and Apply.
+
+    One request adds the draft with its default text; once a campaign exists
+    the seeder is refused, as the page is.
+    """
+    from datetime import date
+
+    from parishkit.stewardship.accounts.admin_session_store import SessionStore
+    from parishkit.stewardship.accounts.authentication import runtime
+    from parishkit.stewardship.accounts.configuration_installation import (
+        install_request,
+    )
+    from parishkit.stewardship.local import seed_web
+
+    publish(source())
+    browser, _ = signed_in()
+    request = seed_web.new_request(
+        session=SessionStore(session_key=browser.cookies["pk_admin"].value)
+    )
+    dates = (date(2054, 10, 10), date(2054, 11, 9))
+    receipt = seed_web.create_campaign(request, runtime(), dates)
+    row = ConfigurationChangeRequest.objects.get()
+    assert row.pk == receipt.request_id
+    applied = install_request(
+        auth_service.store, request_id=row.pk, correlation_id=uuid4()
+    )
+    assert applied.state == "applied"
+    campaign = Campaign.objects.get()
+    assert SystemConfiguration.objects.get().current_campaign_id == campaign.pk
+    values = campaign.active_configuration.values
+    assert values["modules"] == ["census", "financial", "ministry"]
+    assert values["start_date"] == "2054-10-10"
+    document = auth_service.store.active().document()["sections"]
+    slots = {
+        (record["values"]["kind"], record["values"]["slot"])
+        for record in document["content"]
+        if record["values"]["campaign_id"] == str(campaign.pk)
+    }
+    assert slots == set(applicable_slots(values))
+    with pytest.raises(seed_web.SeedWebRefused):
+        seed_web.create_campaign(request, runtime(), dates)
