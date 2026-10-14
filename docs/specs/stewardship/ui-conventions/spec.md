@@ -415,7 +415,12 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   happened ("By day", "List refreshed." and the rows now shown). A view
   choice replaces the address, and a followed redirect sets it to the
   redirect's page, so reload, bookmarks and Back never re-send a POST and do
-  not step through choices.
+  not step through choices. The Refresh links of Go-live readiness
+  ("Readiness preview refreshed."), Testing cleanup, Prepare Family links
+  and Production activation ("Progress refreshed.") re-read their page's
+  own address this way rather than reloading it; Prepare Family links keeps
+  the history page shown, and a disclosure such as Technical details stays
+  open because only the list inside it is a region.
 - **Errors and fallback.** A POST that got an answer is never sent again; a
   saving POST is never re-sent at all; a read-only table POST with no answer
   falls back to the ordinary submission. A refused POST (an error answer, or

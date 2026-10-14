@@ -4,6 +4,8 @@
 <h1>{% translate "Go-live readiness" %}</h1>
 <p>{{ campaign.active_configuration.name }}</p>
 <p>{% translate "Check that the campaign is ready, see how much mail going live would send right away, and delete the Testing data before going live." %}</p>
+{# Refresh readiness preview re-reads this region in place (ui-v1.js, a[data-in-place], #519). #}
+<div id="readiness-preview" data-in-place-region>
 <p>{% translate "As of" %} <time data-local-instant datetime="{{ preview.observed_at|instant }}">{{ preview.observed_at|instant }}</time></p>
 <p class="notice">{% translate "This preview has not changed the campaign or deleted any Testing data. Production activation requires completed cleanup and a separate final confirmation." %}</p>
 {% if cleanup_requests %}<section class="panel"><h2>{% translate "Recent cleanup requests" %}</h2><ul>{% for item in cleanup_requests %}<li><a href="{% url 'admin:go_live_cleanup' item.pk %}">{% include "stewardship/cleanup-state.html" with state=item.state %} — <time data-local-instant datetime="{{ item.created_at|instant }}">{{ item.created_at|instant }}</time></a></li>{% endfor %}</ul></section>{% endif %}
@@ -64,5 +66,6 @@ left out (#563).{% endcomment %}
 <p>{% button type="button" disabled=True aria-describedby="cleanup-unavailable" %}{% translate "Start Testing cleanup" %}{% endbutton %}</p>
 </section>
 {% endif %}
-<p><a href="">{% translate "Refresh readiness preview" %}</a></p>
+</div>
+<p><a href="{% url 'admin:go_live' %}#readiness-preview" data-in-place="refresh" data-in-place-message="{% translate 'Readiness preview refreshed.' %}">{% translate "Refresh readiness preview" %}</a></p>
 {% endblock %}

@@ -7,13 +7,17 @@
 <p class="notice">{% translate "Each Family gets a new link for the live campaign. The links stay inactive until you give the final go-live confirmation. Preparing them sends no email and does not change Family codes." %}</p>
 {% comment %}Prepare is always shown: while the server would refuse it, it is
 unavailable and described by the reason, chosen by progress()'s unavailable
-key (#563).{% endcomment %}
-{% if prepare %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ prepare }}">{% button type="submit" %}{% translate "Prepare inactive Family links" %}{% endbutton %}</form>
+key (#563). It is an in-place region, so Refresh preparation progress
+brings it up to date with the history below (#519).{% endcomment %}
+<div id="links-prepare" data-in-place-region>{% if prepare %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ prepare }}">{% button type="submit" %}{% translate "Prepare inactive Family links" %}{% endbutton %}</form>
 {% else %}<p role="status" id="prepare-unavailable">{% if unavailable == 'not_draft' %}{% translate "Links can't be prepared: this campaign is no longer a draft." %}{% elif unavailable == 'cleanup' %}{% translate "Links can't be prepared yet. Finish Testing cleanup, then reload this page." %}{% elif unavailable == 'inputs' %}{% translate "Links can't be prepared yet. Wait for any running ParishSoft refresh or campaign work to finish, then reload this page." %}{% elif unavailable == 'discarding' %}{% translate "Earlier links are still being discarded below. Wait for them to finish being discarded, then reload this page." %}{% else %}{% translate "Links are already prepared or being prepared below. To prepare new ones, cancel and discard those first, then reload this page." %}{% endif %}</p>
-<p>{% button type="button" disabled=True aria-describedby="prepare-unavailable" %}{% translate "Prepare inactive Family links" %}{% endbutton %}</p>{% endif %}
-{% comment %}Anchor id only, no data-table-region: live-status-v1.js owns the
-history panels below, so paging stays a full load that lands here.{% endcomment %}
-<div id="{{ table.anchor }}">
+<p>{% button type="button" disabled=True aria-describedby="prepare-unavailable" %}{% translate "Prepare inactive Family links" %}{% endbutton %}</p>{% endif %}</div>
+{% comment %}No data-table-region: live-status-v1.js owns the history panels
+below, so paging stays a full load that lands here. As an in-place region,
+Refresh preparation progress re-reads it, navigators included, in place
+(ui-v1.js, a[data-in-place], #519), and live-status-v1.js watches the fresh
+panels while they are still pending.{% endcomment %}
+<div id="{{ table.anchor }}" data-in-place-region>
 {% translate "Preparation history pages" as navigator_label %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <div data-live-status="links" aria-live="polite"{% if live_pending %} data-live-pending{% endif %}>
 {% if live_pending %}{% translate "Preparing Family links…" as running %}{% include 'stewardship/live-running.html' with message=running %}{% endif %}
@@ -35,5 +39,5 @@ history panels below, so paging stays a full load that lands here.{% endcomment 
 </div>
 {% translate "Preparation history pages" as navigator_label %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 </div>
-<p><a href="">{% translate "Refresh preparation progress" %}</a> · <a href="{% url 'admin:go_live_cleanup' transition.pk %}">{% translate "Return to Testing cleanup" %}</a></p>
+<p><a href="{% url 'admin:go_live_links' transition.pk %}?{{ table.current_query }}#{{ table.anchor }}" data-in-place="refresh" data-in-place-message="{% translate 'Progress refreshed.' %}">{% translate "Refresh preparation progress" %}</a> · <a href="{% url 'admin:go_live_cleanup' transition.pk %}">{% translate "Return to Testing cleanup" %}</a></p>
 {% endblock %}
