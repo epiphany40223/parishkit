@@ -1,43 +1,54 @@
-"""Parish logos are reviewed, applied and followed in place (#750).
+"""Parish logos reviewed and applied in the shared review dialog (#750).
 
-The pages are branding_components', served at Parish logos' real address so
-the in-place answers come from the page's own address. Each test sets a
-mark outside every region, which only a full page load could lose.
+The pages are branding_components', served at Parish logos' real address.
+An upload posts its files (multipart) without a page load and opens the
+dialog with every generated size; once Apply is applied, the dialog closes,
+the form and the current logos are redrawn in place and the status line
+under the form says what was applied, with no reload and nothing moving. A
+refused upload stays on its field; a refused Apply shows in the dialog. The
+Basic and Advanced modes (#1062, #1121) are checked here too. Each test
+sets a mark outside every region, which only a full page load could lose.
 """
 
 import io
+import json
+import re
 
 import pytest
 
 from .branding_components import (
     ADVANCED_PAGE,
     PAGE,
-    PENDING,
     REFUSED,
     REFUSED_SIZE,
     REVIEW,
     SIZE_ERROR,
 )
 from .test_in_place import MARK, MARKED
-from .test_settings_in_place import FOCUSED, current_step
-from .waits import visible
+from .waits import eventually, hidden, same_place, visible
 
 # The four logo sizes uploaded separately (#1062), by field name.
 SIZES = ("large", "menu", "icon", "favicon")
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
-
-# The upload form's top edge in the document: focus may scroll the window to
-# the review under it, but nothing may move the form on the page.
-FORM_PLACE = (
-    "document.getElementById('branding-upload').getBoundingClientRect().top"
-    " + window.scrollY"
-)
+FOCUSED = "document.activeElement && document.activeElement.id"
+# The form's, the status line's and the current logos' places in the
+# document: nothing may move them, and logos appearing below never move
+# what is above.
+PLACES = """() => ['branding-upload', 'branding-outcome', 'branding-current']
+    .map((id) => {
+        const box = document.getElementById(id).getBoundingClientRect();
+        return [box.left + window.scrollX, box.top + window.scrollY];
+    })"""
 FOLLOWS = (
     "([first, second]) => Boolean(document.querySelector(first)"
     ".compareDocumentPosition(document.querySelector(second))"
     " & Node.DOCUMENT_POSITION_FOLLOWING)"
+)
+REFUSAL = (
+    "These logos expired, or the settings changed after they were uploaded, "
+    "so they were not used. Reload the page, then upload the logo again."
 )
 
 
@@ -73,84 +84,181 @@ def png(size=0):
     return {"name": "logo.png", "mimeType": "image/png", "buffer": data}
 
 
-def answer_with(page, origin, refusal):
-    """Answer the upload's POST as the view refuses one, with ``refusal``."""
+def applied_line(start):
+    """The status line once a change is applied, starting with ``start``."""
+    return re.compile(rf"^{re.escape(start)} Applied at \d{{1,2}}:\d{{2}}\s?[AP]M\.$")
 
-    def refuse(route):
-        """Fetch the refusal page and give it as the POST's 400 answer."""
-        if route.request.method != "POST":
-            route.continue_()
+
+def watch(page):
+    """Fail on any script error, and mark the page so a reload shows."""
+    failures = []
+    page.on("pageerror", lambda error: failures.append(str(error)))
+    page.evaluate(MARK)
+    return failures
+
+
+def answer_uploads(page, origin, fixture=REVIEW, status=200):
+    """Answer the upload's POST (multipart) with ``fixture`` as the view
+    does: the dialog's fragment, or a refused upload's page (status 400).
+    Apply's POST goes through to the fixture server. Returns the uploads'
+    content types."""
+    uploads = []
+
+    def answer(route):
+        """Serve ``fixture`` for an upload; let loads and Apply through."""
+        kind = route.request.headers.get("content-type", "")
+        if route.request.method != "POST" or not kind.startswith("multipart/"):
+            route.fallback()
             return
-        fetched = route.fetch(url=origin + refusal, method="GET")
-        route.fulfill(response=fetched, status=400)
+        uploads.append(kind)
+        fetched = route.fetch(url=origin + fixture, method="GET")
+        route.fulfill(response=fetched, status=status)
 
-    page.route(lambda url: url.split("#")[0] == origin + PAGE, refuse)
+    page.route(lambda url: url.split("#")[0] == origin + PAGE, answer)
+    return uploads
 
 
-def test_upload_review_apply_and_status_happen_in_place(page, component_origin):
-    """An upload answers with every size under the form, which takes focus;
-    Apply shows the change's status there, and once applied the page
-    refreshes itself quietly with the new current logos below. Nothing
-    reloads, the form never moves, and the indicator follows each step."""
+def dialog_of(page):
+    """The review dialog, once it is open."""
+    dialog = page.get_by_role("dialog", name="Review parish logos")
+    visible(dialog)
+    return dialog
+
+
+def test_an_upload_is_reviewed_and_applied_in_the_dialog(page, component_origin):
+    """Upload and review sends the image multipart and opens the dialog on
+    its title with every generated size; Apply closes it, redraws the form
+    (cleared) and the current logos, and the status line says what was
+    applied and takes focus. Nothing reloads and nothing moves."""
     from playwright.sync_api import expect
 
+    uploads = answer_uploads(page, component_origin)
     page.goto(component_origin + PAGE)
-    page.evaluate(MARK)
-    # The current logos sit below the review region, so logos appearing
-    # there can never move the form or the review (#736).
-    assert page.evaluate(FOLLOWS, ["#branding-upload", "#settings-review"])
-    assert page.evaluate(FOLLOWS, ["#settings-review", "#branding-current"])
-    top = page.evaluate(FORM_PLACE)
-    page.get_by_label("Parish logo").set_input_files(png())
-    page.get_by_role("button", name="Upload and review logos").click()
-    region = page.locator("#settings-review")
-    visible(region.get_by_role("heading", name="Review your changes"))
-    assert page.evaluate(FOCUSED, "#settings-review-title")
-    expect(region.locator("figure")).to_have_count(4)
-    assert current_step(page) == "Review"
-    assert page.url == f"{component_origin}{REVIEW}#settings-review"
-    assert page.evaluate(FORM_PLACE) == pytest.approx(top, abs=1)
-    region.get_by_role("button", name="Apply changes").click()
-    visible(region.get_by_role("heading", name="Change status"))
-    assert current_step(page) == "Apply"
-    visible(region.get_by_role("heading", name="Applied: your change is saved"))
-    # The quiet refresh shows the new current logos.
+    failures = watch(page)
+    # The current logos sit below the form and the status line, so logos
+    # appearing there can never move either (#736).
+    assert page.evaluate(FOLLOWS, ["#branding-upload", "#branding-outcome"])
+    assert page.evaluate(FOLLOWS, ["#branding-outcome", "#branding-current"])
+    assert page.locator("#settings-review").count() == 0
+    places = page.evaluate(PLACES)
+    page.locator("#id_logo").set_input_files(png())
+    page.get_by_role("button", name=UPLOAD).click()
+    dialog = dialog_of(page)
+    assert len(uploads) == 1
+    assert page.evaluate(FOCUSED) == "branding-review-title"
+    assert "not yet in use" in dialog.inner_text()
+    expect(dialog.locator("figure")).to_have_count(4)
+    expect(page.locator("#branding-current figure")).to_have_count(0)
+    dialog.get_by_role("button", name="Apply").click()
+    hidden(dialog)
+    eventually(page, "document.getElementById('branding-outcome').textContent !== ''")
+    line = page.locator("#branding-outcome").inner_text()
+    assert applied_line("Parish logos changed.").search(line), line
+    assert page.evaluate(FOCUSED) == "branding-outcome"
     expect(page.locator("#branding-current figure")).to_have_count(4)
-    assert PENDING.split("?")[1] in page.url
-    assert page.evaluate(FORM_PLACE) == pytest.approx(top, abs=1)
+    assert page.locator("#id_logo").evaluate("node => node.files.length") == 0
+    assert same_place(page.evaluate(PLACES), places)
+    assert page.url == component_origin + PAGE
     assert page.evaluate(MARKED) == "kept"
+    assert not failures
 
 
-def test_a_refused_upload_is_explained_in_place(page, component_origin):
-    """A refused upload redraws the form with its field error, and its
-    summary in the review region, linked to the field, takes focus."""
+def test_an_advanced_upload_is_applied_and_reopens_in_advanced(page, component_origin):
+    """An Advanced upload (one size) is reviewed in the dialog with its
+    size marked Changed; once applied the form is redrawn in Advanced, the
+    mode that saved the new logos, with no reload."""
+    from playwright.sync_api import expect
 
-    answer_with(page, component_origin, REFUSED)
+    uploads = answer_uploads(page, component_origin)
+    page.goto(component_origin + ADVANCED_PAGE)
+    failures = watch(page)
+    expect(mode(page, "Advanced")).to_be_checked()
+    page.locator("#id_favicon").set_input_files(png())
+    page.get_by_role("button", name=UPLOAD).click()
+    dialog = dialog_of(page)
+    assert len(uploads) == 1
+    visible(dialog.locator("figure.changed"))
+    assert dialog.locator("figure.changed").count() == 1
+    dialog.get_by_role("button", name="Apply").click()
+    hidden(dialog)
+    eventually(page, "document.getElementById('branding-outcome').textContent !== ''")
+    expect(mode(page, "Advanced")).to_be_checked()
+    expect(page.locator("#id_favicon")).to_be_visible()
+    assert page.locator("#id_favicon").evaluate("node => node.files.length") == 0
+    assert page.evaluate(MARKED) == "kept"
+    assert not failures
+
+
+def test_a_refused_upload_stays_on_the_field(page, component_origin):
+    """A refused upload marks the field with its error and shows the
+    summary above the heading, linked to the field; no dialog opens and
+    nothing reloads."""
+    answer_uploads(page, component_origin, REFUSED, status=400)
     page.goto(component_origin + PAGE)
-    page.evaluate(MARK)
-    page.get_by_label("Parish logo").set_input_files(png())
-    page.get_by_role("button", name="Upload and review logos").click()
-    summary = page.locator("#settings-review [data-error-summary]")
+    failures = watch(page)
+    page.locator("#id_logo").set_input_files(png())
+    page.get_by_role("button", name=UPLOAD).click()
+    summary = page.locator("[data-error-summary]")
     visible(summary)
     visible(summary.locator('a[href="#id_logo"]'))
     visible(page.locator("#id_logo_error"))
+    assert not page.locator("dialog[data-review-dialog]").is_visible()
     assert page.url == component_origin + PAGE
     assert page.evaluate(MARKED) == "kept"
+    assert not failures
 
 
-def test_each_size_upload_shows_its_fields_and_refusals_in_place(
-    page, component_origin
-):
+def test_a_refused_apply_shows_in_the_dialog(page, component_origin):
+    """An Apply refused because the logos expired, or the settings changed
+    since, says why in the dialog (reload first), below its buttons, and
+    stays until closed; nothing is redrawn and the status line stays
+    empty."""
+    answer_uploads(page, component_origin)
+
+    def refuse(route):
+        """Refuse Apply as the server does; an upload (binary multipart,
+        whose body is not text) goes on to the upload's answer."""
+        body = route.request.post_data_buffer or b""
+        if b"action=confirm" not in body:
+            route.fallback()
+            return
+        route.fulfill(
+            status=409,
+            content_type="application/json",
+            body=json.dumps(
+                {"errors": [{"code": "stale"}], "refusal": {"message": REFUSAL}}
+            ),
+        )
+
+    page.route(lambda url: url.split("#")[0] == component_origin + PAGE, refuse)
+    page.goto(component_origin + PAGE)
+    failures = watch(page)
+    page.locator("#id_logo").set_input_files(png())
+    page.get_by_role("button", name=UPLOAD).click()
+    dialog = dialog_of(page)
+    dialog.get_by_role("button", name="Apply").click()
+    error = dialog.locator("[data-confirm-error]")
+    visible(error)
+    assert "Reload the page, then upload the logo again." in error.inner_text()
+    dialog.get_by_role("button", name="Cancel").click()
+    hidden(dialog)
+    assert page.locator("#branding-outcome").inner_text() == ""
+    assert page.locator("#branding-current figure").count() == 0
+    assert page.evaluate(MARKED) == "kept"
+    assert not failures
+
+
+def test_each_size_upload_shows_its_fields_and_refusals_on_them(page, component_origin):
     """Choosing Advanced (#1062) swaps the one image field for the four
     sizes, each with its one-line rule; a size refused by the server is
     explained at its field and in the summary, drawn in Advanced, the mode
     it was sent from. Nothing above the fields moves."""
     from playwright.sync_api import expect
 
-    answer_with(page, component_origin, REFUSED_SIZE)
+    answer_uploads(page, component_origin, REFUSED_SIZE, status=400)
     page.goto(component_origin + PAGE)
     page.evaluate(MARK)
-    one = page.get_by_label("Parish logo")
+    one = page.locator("#id_logo")
     expect(one).to_be_visible()
     sizes = [page.locator(f"#id_{name}") for name in SIZES]
     for field in sizes:
@@ -165,9 +273,10 @@ def test_each_size_upload_shows_its_fields_and_refusals_in_place(
     assert choice.bounding_box()["y"] == pytest.approx(top, abs=1)
     page.locator("#id_favicon").set_input_files(png())
     page.get_by_role("button", name="Upload and review logos").click()
-    summary = page.locator("#settings-review [data-error-summary]")
+    summary = page.locator("[data-error-summary]")
     visible(summary)
     visible(summary.locator('a[href="#id_favicon"]'))
+    assert not page.locator("dialog[data-review-dialog]").is_visible()
     favicon = page.locator("#id_favicon")
     expect(favicon).to_have_attribute("aria-invalid", "true")
     visible(page.locator("#branding-upload .errorlist", has_text=SIZE_ERROR))
@@ -261,7 +370,7 @@ def test_switching_modes_never_leaves_a_silent_refusal(page, component_origin):
     upload = page.get_by_role("button", name=UPLOAD)
     expect(upload).to_be_disabled()
     expect(page.locator("#branding-upload-hint")).to_have_text(BASIC_HINT)
-    page.get_by_label("Parish logo").set_input_files(png())
+    page.locator("#id_logo").set_input_files(png())
     expect(upload).to_be_enabled()
     assert favicon.evaluate("node => node.files.length") == 0
     assert favicon.evaluate("node => node.validationMessage") == ""
@@ -287,7 +396,7 @@ def test_basic_is_one_required_image_and_advanced_needs_one_size(
     line = hint.bounding_box()["height"]
     toggle = mode(page, "Advanced").bounding_box()["y"]
     mode(page, "Advanced").check()
-    expect(page.get_by_label("Parish logo")).to_be_hidden()
+    expect(page.locator("#id_logo")).to_be_hidden()
     expect(upload).to_be_disabled()
     expect(hint).to_have_text(ADVANCED_HINT)
     assert mode(page, "Advanced").bounding_box()["y"] == pytest.approx(toggle, abs=1)
@@ -302,13 +411,13 @@ def test_basic_is_one_required_image_and_advanced_needs_one_size(
     mode(page, "Basic").check()
     expect(page.get_by_role("dialog", name=NO_BASIC)).to_be_hidden()
     expect(hint).to_have_text(BASIC_HINT)
-    page.get_by_label("Parish logo").set_input_files(png())
+    page.locator("#id_logo").set_input_files(png())
     expect(upload).to_be_enabled()
     # A Basic image stays chosen across a visit to Advanced.
     mode(page, "Advanced").check()
     mode(page, "Basic").check()
     expect(page.get_by_role("dialog", name=NO_BASIC)).to_be_hidden()
-    assert page.get_by_label("Parish logo").evaluate("node => node.files.length") == 1
+    assert page.locator("#id_logo").evaluate("node => node.files.length") == 1
     # What the upload sends: the mode, the one image and no size's file.
     assert page.evaluate(SENT) == {
         "editor_mode": "basic",
@@ -318,9 +427,9 @@ def test_basic_is_one_required_image_and_advanced_needs_one_size(
         "icon": "",
         "favicon": "",
     }
+    answer_uploads(page, component_origin)
     upload.click()
-    region = page.locator("#settings-review")
-    visible(region.get_by_role("heading", name="Review your changes"))
+    expect(dialog_of(page).locator("figure")).to_have_count(4)
 
 
 @pytest.mark.parametrize("dismiss", ["Keep Advanced", "Escape"])
@@ -351,7 +460,7 @@ def test_logos_saved_from_advanced_open_advanced_and_ask_before_basic(
     mode(page, "Basic").click()
     dialog.get_by_role("button", name="Switch to Basic").click()
     expect(mode(page, "Basic")).to_be_checked()
-    expect(page.get_by_label("Parish logo")).to_be_visible()
+    expect(page.locator("#id_logo")).to_be_visible()
     expect(page.get_by_role("button", name=UPLOAD)).to_be_disabled()
 
 

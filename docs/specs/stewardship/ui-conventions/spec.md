@@ -672,22 +672,16 @@ never scrolls to show it (Administrator, pk-local review of
   never jumps to it. Each upload form has
   an id, so a file chosen while the slots are redrawn is said not to be
   kept.
-- **In-place review: Parish logos (#750).** Parish logos has no settings
-  form: its upload form (`data-in-place`, multipart, a region of its own)
-  answers with the page naming the staged logos (`?review=<bundle>`), whose
-  review region under the form shows every generated size with Apply, which
-  posts to that address. The current logos are a region of their own below
-  the review region, so the quiet refresh once a change is applied shows
-  the new ones without moving the form or the review. A refused upload's
-  field error shows in the form and, linked to that field, in the review
-  region, which takes focus; a stale upload or Apply is refused there too.
-  A refused Apply's answer marks the form and the current logos
-  `data-in-place-always`, so both are redrawn at the current version and
-  the next upload is accepted. Loading the address of logos that can no
-  longer be reviewed (already applied, expired, another sign-in's, or
-  staged against settings changed since) shows the page with that
-  explanation in the review region. The form has an id, so a file chosen
-  while the quiet refresh redraws it is said not to be kept.
+- **Review dialog: Parish logos (#750).** Parish logos reviews in the
+  [review dialog](#review-dialog). It has no settings form: its upload form
+  (multipart, sent as [preparing the review](#review-dialog) says, with its
+  [Basic and Advanced modes](#basic-and-advanced-modes)) opens the dialog
+  with every generated size, each marked changed or unchanged. The form is
+  an in-place region, redrawn after Apply (cleared, and opened in the mode
+  that saved the new logos), and the status line sits under it. The current
+  logos are a region of their own below the status line, so logos appearing
+  never move the form or the status line. The form has an id, so a file
+  chosen while it is redrawn is said not to be kept.
 
 ### No layout shift
 
@@ -1118,8 +1112,8 @@ dialog is decided on [#750](https://github.com/epiphany40223/parishkit/issues/75
 Current state, to be converted: Users' New user, Edit user and Import
 Ministry leaders, New and Edit scheduled email,
 [Campaign settings](../admin-portal/spec.md#campaign-settings-page) (#1119),
-Share options and Campaign images use the dialog. Parish
-settings, No-reminders WorkGroup and Parish logos show the in-place
+Share options, Campaign images and Parish logos use the dialog. Parish
+settings and No-reminders WorkGroup show the in-place
 review panel of #532 and #750
 ([in-place controls](#in-place-controls)); the other editors use separate
 Review and Change status pages.
