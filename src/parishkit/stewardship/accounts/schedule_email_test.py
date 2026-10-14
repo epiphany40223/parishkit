@@ -109,7 +109,7 @@ def _send(request, campaign_id):
     ):
         raise unexpected_fields()
     with read_transaction():
-        state, campaign, _editable = schedule_state(service, campaign_id)
+        state, campaign, _editable = schedule_state(service, campaign_id, page=True)
         records = _records(state[0], campaign.pk)
     chosen, kind = _chosen(records, request.POST.get(CHOSEN))
     form = ScheduleEmailForm(request.POST, kind="email", slot=kind)

@@ -138,7 +138,7 @@ def _summary(window, schedules):
     return errors
 
 
-def _page(request, campaign, window, schedules, digest, *, editable, mode, status=200):
+def _page(request, campaign, window, schedules, digest, *, editable, status=200):
     """The date-change review: proposed dates and every schedule's editor.
 
     Civil dates and the time zone show separately from browser-local audit
@@ -147,9 +147,6 @@ def _page(request, campaign, window, schedules, digest, *, editable, mode, statu
     """
     # Schedules stay editable when the dates are locked: step 1 of 3 (#196).
     admin_navigation.place(request, flow="change", step="edit")
-    templates_reason = admin_navigation.MENU_REASONS["content_catalog"](
-        admin_navigation.MenuState(campaign, mode)
-    )
     # The table of saved schedules (#448): what each is, when it sends and
     # whether it has already sent, from the counts the review also reads.
     rows = attach(
@@ -168,14 +165,7 @@ def _page(request, campaign, window, schedules, digest, *, editable, mode, statu
             "schedule_rows": rows,
             "base_digest": digest,
             "editable": editable,
-            # Both links to Pages and emails (the page's own and the "no
-            # emails yet" notice's) are greyed out with the menu entry's own
-            # reason when the menu greys it (an archived campaign, #1255),
-            # never links to a page that refuses.
-            "templates_url": None
-            if templates_reason
-            else reverse("admin:content_catalog"),
-            "templates_reason": templates_reason,
+            "templates_url": reverse("admin:content_catalog"),
             # Proposed dates arrive in the query string from campaign
             # settings, but POSTs with a query string are refused, so the
             # form posts to the clean path and carries the dates as fields.
@@ -222,7 +212,6 @@ def _preview(
             schedules,
             state[0].active_configuration.digest,
             editable=editable,
-            mode=state[0].mode,
             status=400,
         )
     return render(
@@ -259,14 +248,16 @@ def schedule_settings(request, campaign_id):
                 service,
                 actor,
                 salt=salt,
-                current_scope=lambda service: confirm_scope(service, campaign_id),
+                current_scope=lambda service: confirm_scope(
+                    service, campaign_id, page=True
+                ),
             )
         with (
             read_transaction()
             if request.method in {"GET", "HEAD"}
             else work_transaction()
         ):
-            state, campaign, editable = schedule_state(service, campaign_id)
+            state, campaign, editable = schedule_state(service, campaign_id, page=True)
             # A live campaign's end date alone may still change (#912).
             live_at = None if editable else live_end_at(state, campaign)
             if proposed and not editable and live_at is None:
@@ -325,7 +316,6 @@ def schedule_settings(request, campaign_id):
                     schedules,
                     state[0].active_configuration.digest,
                     editable=editable,
-                    mode=state[0].mode,
                 )
             )
         # Recheck access after the observation ends, so a GET's read-only

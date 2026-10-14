@@ -26,6 +26,7 @@ from .content_forms import EMAIL_LABELS
 from .request_patch import build_candidate
 from .schedule_forms import WEEKDAYS
 from .schedule_preview import fingerprint, work_summary
+from .schedule_reads import refuse_archived
 from .series_schema import upkeep
 
 # A preview that changes nothing is refused with this, not with the catch-all
@@ -56,9 +57,16 @@ def preview_salt(campaign_id):
     return f"stewardship-schedules-preview-v1:{campaign_id}"
 
 
-def confirm_scope(service, campaign_id):
-    """Confirmation rechecks the same schedule generation inside intake's work lock."""
+def confirm_scope(service, campaign_id, *, page=False):
+    """Confirmation rechecks the same schedule generation inside intake's work lock.
+
+    A ``page``'s confirmation (an Admin page's, including Campaign
+    settings' live end date, which signs with the same salt; not the
+    command line's) also refuses an archived campaign there (#1258).
+    """
     state = _state(service)
+    if page:
+        refuse_archived(state, campaign_id)
     return state[0], fingerprint(state[-1], work_summary(campaign_id))
 
 

@@ -60,7 +60,7 @@ def _content_campaign(state, campaign_id):
     """The campaign whose pages and emails may be edited now (``_campaign``).
 
     An archived current campaign is refused first with the menu entry's own
-    reason (ui-conventions, "Unavailable menu pages"; #1255): it is closed
+    reason (``admin_navigation.refuse_greyed``; #1255): it is closed
     history, so the refusal is permanent and must not say to try again
     later, as the held or non-current message does. It reads the same
     snapshot (or work lock) as the rest of the request, so archiving cannot
@@ -68,12 +68,7 @@ def _content_campaign(state, campaign_id):
     """
     configuration, campaigns = state[0], state[1]
     campaign = next((row for row in campaigns if row.pk == campaign_id), None)
-    if campaign is not None and configuration.current_campaign_id == campaign.pk:
-        menu_state = admin_navigation.MenuState(campaign, configuration.mode)
-        reason = admin_navigation.MENU_REASONS["content_catalog"](menu_state)
-        if reason is not None:
-            label = admin_navigation.PAGES["content_catalog"].label
-            raise admin_navigation.Greyed(label, reason, None).refusal()
+    admin_navigation.refuse_greyed("content_catalog", configuration, campaign)
     return _campaign(state, campaign_id)
 
 

@@ -601,7 +601,7 @@ def _entry(request, campaign_id, schedule_id=None):
     posted = request.POST if request.method == "POST" else None
     now = timezone.now()
     with work_transaction() if posted is not None else read_transaction():
-        state, campaign, editable = schedule_state(service, campaign_id)
+        state, campaign, editable = schedule_state(service, campaign_id, page=True)
         values = campaign.active_configuration.values
         saved = _saved(state, campaign)
         schedule = None
@@ -879,7 +879,7 @@ def schedule_delete(request, campaign_id):
         identifiers = _chosen(request.POST)
         listing = reverse("admin:schedule_settings")
         with work_transaction():
-            state, campaign, editable = schedule_state(service, campaign_id)
+            state, campaign, editable = schedule_state(service, campaign_id, page=True)
             saved = _saved(state, campaign)
             _changeable(saved, campaign, set(identifiers))
             reviewed, window, schedules, _forms = review(
@@ -911,7 +911,9 @@ def schedule_delete(request, campaign_id):
             token=reviewed["preview"],
             salt=preview_salt(campaign_id),
             link=listing,
-            current_scope=lambda service: confirm_scope(service, campaign_id),
+            current_scope=lambda service: confirm_scope(
+                service, campaign_id, page=True
+            ),
         )
         admin_navigation.remember_origin(request, receipt.request_id, path=listing)
         _recheck(request, service)

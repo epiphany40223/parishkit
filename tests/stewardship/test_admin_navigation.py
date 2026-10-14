@@ -715,6 +715,8 @@ def test_every_campaign_entry_is_greyed_out_without_a_current_campaign():
         ),
         ("archived", "production", "content_catalog", "The campaign is archived"),
         ("archived", "production", "artwork_settings", "The campaign is archived"),
+        # Its schedules never send, so they are not edited either (#1258).
+        ("archived", "production", "schedule_settings", "The campaign is archived"),
         (
             "census only",
             "testing",
@@ -1293,7 +1295,7 @@ def test_campaign_settings_body_links_no_menu_entry():
         ("content_catalog", "draft", "testing"),
         ("content_catalog", "active", "production"),
         ("schedule_settings", "draft", "testing"),
-        ("schedule_settings", "archived", "production"),
+        ("schedule_settings", "closed", "production"),
         ("share_settings", "draft", "testing"),
         ("go_live", "draft", "testing"),
         ("production_progress", "active", "production"),

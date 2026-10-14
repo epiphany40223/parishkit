@@ -476,7 +476,7 @@ Home, then these groups, each listing the entries the viewer's role may open:
 | Campaign setup | Campaign settings | `/admin/campaign/settings/` | Administrator | No current campaign |
 | Campaign setup | Pages and emails | `/admin/campaign/content/` | Administrator | No current campaign, or it is archived |
 | Campaign setup | Campaign images | `/admin/campaign/images/` | Administrator | No current campaign, or it is archived |
-| Campaign setup | Dates and mail schedules | `/admin/campaign/schedules/` | Administrator | No current campaign |
+| Campaign setup | Dates and mail schedules | `/admin/campaign/schedules/` | Administrator | No current campaign, or it is archived |
 | Campaign setup | Share options | `/admin/campaign/share-options/` | Administrator | The campaign has no financial module, or it is not an unlocked Testing draft |
 | Campaign setup | No-reminders WorkGroup | `/admin/campaign/no-reminders-workgroup/` | Administrator | No current campaign, or it is archived |
 | Campaign setup | Go-live readiness | `/admin/campaign/go-live/` | Administrator | The campaign is not a draft (it points to Production activation) |

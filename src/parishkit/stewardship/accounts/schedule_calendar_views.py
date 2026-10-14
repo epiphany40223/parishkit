@@ -120,7 +120,7 @@ def schedule_calendar(request, campaign_id):
         principal(request, service)
         filters(request.GET, allowed=set())
         with read_transaction():
-            state, campaign, _editable = schedule_state(service, campaign_id)
+            state, campaign, _editable = schedule_state(service, campaign_id, page=True)
             configuration = state[0]
             values = campaign.active_configuration.values
             sends = calendar_sends(
