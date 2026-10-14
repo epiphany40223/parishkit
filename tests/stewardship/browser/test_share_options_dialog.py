@@ -199,3 +199,48 @@ def test_review_is_unavailable_after_applying_a_row_change(
     hidden(dialog)
     has_attribute(page.locator(DIGEST), "value", "b" * 64)
     expect_review(page, enabled=False, hint=OPTION_HINT)
+
+
+def test_a_refused_apply_shows_in_the_dialog(page, component_origin):
+    """An Apply refused because the reviewed preview is out of date (the
+    list changed elsewhere) says why in the dialog, below its buttons, and
+    stays until closed; the page behind is not redrawn and keeps the
+    reader's rows at their version."""
+    answer_reviews(page, component_origin, SHARE_REVIEW, address=SHARE)
+
+    def refuse(route):
+        """Refuse Apply as the server does; Review falls back above."""
+        if "action=confirm" not in (route.request.post_data or ""):
+            route.fallback()
+            return
+        route.fulfill(
+            status=409,
+            content_type="application/json",
+            body=json.dumps(
+                {
+                    "errors": [{"code": "stale"}],
+                    "refusal": {
+                        "message": "This preview is out of date.",
+                        "fix": "Review the changes again, then confirm.",
+                    },
+                }
+            ),
+        )
+
+    page.route(lambda url: url.split("#")[0] == component_origin + SHARE, refuse)
+    page.goto(component_origin + SHARE)
+    failures = watch(page)
+    page.locator("#id_options-0-label").fill("Renamed option")
+    page.get_by_role("button", name="Review changes").click()
+    dialog = dialog_of(page)
+    dialog.get_by_role("button", name="Apply").click()
+    error = dialog.locator("[data-confirm-error]")
+    visible(error)
+    assert "This preview is out of date." in error.inner_text()
+    dialog.get_by_role("button", name="Cancel").click()
+    hidden(dialog)
+    assert page.locator("#share-outcome").inner_text() == ""
+    assert page.locator("#id_options-0-label").input_value() == "Renamed option"
+    assert page.locator(DIGEST).input_value() == "a" * 64
+    assert page.evaluate(MARKED) == "kept"
+    assert not failures
