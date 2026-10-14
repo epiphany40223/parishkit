@@ -394,6 +394,30 @@ FORM_TOP = (
 )
 
 
+def test_full_length_bar_labels_fit_beside_a_long_name_on_a_phone(
+    page, component_origin
+):
+    """A long share-method name leaves a full-length bar's label room (#1266).
+
+    The name takes much of a phone-width chart, so the value axis must keep
+    the label's whole room after the longest bar rather than at most half
+    the plot, and an axis tick near the stretched end must not be cut off.
+    """
+    from playwright.sync_api import expect
+
+    errors = watch(page)
+    page.goto(component_origin + "/financial-long-labels")
+    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(2)
+    for width in (320, 375, 1280):
+        page.set_viewport_size({"width": width, "height": 900})
+        eventually(page, FITTED)
+        assert page.evaluate(COLLISIONS) == []
+        labels = page.evaluate(VALUE_LABELS)
+        assert "1,031 (100%)" in dict(labels), labels
+        assert min(slack for _, slack in labels) >= 0, labels
+    assert_clean(page, errors)
+
+
 def test_applied_filters_redraw_the_summary_charts_in_place(page, component_origin):
     """Apply filters swaps in the new summary and draws its charts, no reload.
 

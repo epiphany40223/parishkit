@@ -496,16 +496,20 @@ def count_bars(key, title, bars, *, total, compared, noun="Families"):
                 "field": "count",
                 "type": "quantitative",
                 "title": noun,
-                "axis": {"format": ",d", "tickMinStep": 1},
+                # The stretched domain rarely ends on a round tick, so a
+                # tick just before the right edge would have its centred
+                # label cut off there; labelBound hides such a label.
+                "axis": {"format": ",d", "tickMinStep": 1, "labelBound": True},
                 # The longest bar ends ``room`` pixels before the plot's
                 # right edge: the domain grows by the share of the plot's
-                # width that the label needs (half the plot at most, for a
-                # chart too narrow to read anyway).
+                # width that the label needs. No floor short of the whole
+                # room, so a long share-method name on a phone still leaves
+                # the label its room; only a plot narrower than the label
+                # itself (a 1-pixel floor) cannot fit it.
                 "scale": {
                     "domainMin": 0,
                     "domainMax": {
-                        "expr": f"{max(largest, 1)} * width"
-                        f" / max(width - {room}, width / 2)"
+                        "expr": f"{max(largest, 1)} * width / max(width - {room}, 1)"
                     },
                     "nice": False,
                 },

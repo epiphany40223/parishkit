@@ -440,8 +440,10 @@ def test_financial_charts_carry_each_count_and_its_share_everywhere():
     # pixels, at whatever width the chart is drawn.
     room = label_room(["1 (12.5%)"])
     assert spec["encoding"]["x"]["scale"]["domainMax"] == {
-        "expr": f"4 * width / max(width - {room}, width / 2)"
+        "expr": f"4 * width / max(width - {room}, 1)"
     }
+    # A tick label cut off at the stretched domain's right edge is hidden.
+    assert spec["encoding"]["x"]["axis"]["labelBound"] is True
     tooltip = spec["layer"][0]["encoding"]["tooltip"]
     assert [field["title"] for field in tooltip] == [
         "Pledges by frequency",

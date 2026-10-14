@@ -99,6 +99,13 @@ def components(context, admin):
         share_counts={online: 2},
         no_share=1,
     )
+    long_choices = [(other, "Online giving through Faith Direct")]
+    crowded = summary | dict(
+        families=1031,
+        frequencies=[(label, 1031) for label in FREQUENCY_LABELS.values()],
+        share_counts={other: 1031},
+        no_share=0,
+    )
     values = dict(
         campaign_id=campaign,
         query=query,
@@ -139,6 +146,10 @@ def components(context, admin):
         # drawn again in place (#720).
         "/financial-filtered": values
         | dict(summary=filtered, charts=financial_charts(filtered, choices), total=4),
+        # Every Family chose one long-named method (#1266): its full-length
+        # bar's label must still fit after it at phone width.
+        "/financial-long-labels": values
+        | dict(charts=financial_charts(crowded, long_choices)),
     }
     result = {
         path: (
