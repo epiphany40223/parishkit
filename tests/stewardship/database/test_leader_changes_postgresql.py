@@ -22,7 +22,6 @@ from parishkit.stewardship.audit.models import AuditContext
 from parishkit.stewardship.campaigns import leader_changes
 from parishkit.stewardship.deployment import ServiceRole
 
-from ..test_ministry_activity import activity
 from .leader_builders import leader, promote_leaders
 from .test_background_grants_postgresql import task_login
 from .test_live_ministries_postgresql import changed
@@ -102,10 +101,16 @@ def copy_rows():
 
 @contextmanager
 def original_definition():
-    """Migration 0042's leaders body under ``PROBE``, for the duration."""
+    """Migration 0042's leaders body under ``PROBE``, for the duration.
+
+    Less its Ministry activity test, which #1267's 0091 removed from the
+    current definition along with the table it read.
+    """
     body = _old_definition().replace(
         "public.stewardship_ministry_leaders_v1(", f"public.{PROBE}(", 1
     )
+    assert body.count(ACTIVITY_TEST) == 1
+    body = body.replace(ACTIVITY_TEST, ";")
     with connection.cursor() as cursor:
         cursor.execute(body)
     try:
@@ -340,8 +345,8 @@ def test_the_event_is_attributed_and_rolls_back_with_its_change(response_service
 def test_the_wrapper_is_the_one_definition(response_service):
     """0070's definition answers exactly what 0042's original body answers,
     row for row, and so does the wrapper that replaced it: every kind of
-    leader and non-leader from the #922 tests, a custom role list, a removed
-    and an inactive Ministry.
+    leader and non-leader from the #922 tests, a custom role list and a
+    removed Ministry. (There is no inactive Ministry any more, #1267.)
     """
     harness = response_service
     promote_leaders(harness, source(), EVERY_KIND)
@@ -352,18 +357,6 @@ def test_the_wrapper_is_the_one_definition(response_service):
         assert same_rows()
         set_roles(harness, ["Chairperson", "Staff"])
         configure(harness, selected=(4,))
-        assert same_rows()
-        configure(
-            harness,
-            selected=(4, 9),
-            patches=[
-                {
-                    "operation": "add",
-                    "section": "ministries",
-                    **activity(ministry_duid=9, active=False),
-                }
-            ],
-        )
         assert same_rows()
     # Earlier pointers that name nothing give no leaders, not an error.
     with connection.cursor() as cursor:
@@ -382,7 +375,8 @@ def test_migration_check_refuses_absent_invoker_or_restored_functions(
 
     Each case runs the file's "before" block (the leaders digest it keeps in
     a transaction-local setting) and the check in one transaction, as the
-    migration does.
+    migration does, after ``as_0070_left_it`` restores what #1267's 0091
+    later changed.
     """
     started(response_service)
     text = MIGRATION.read_text(encoding="utf-8")
@@ -395,8 +389,10 @@ def test_migration_check_refuses_absent_invoker_or_restored_functions(
     recorder = f"public.{RECORDER_SIGNATURE}"
     with connection.cursor() as cursor:
         with transaction.atomic():
+            as_0070_left_it(cursor, text)
             cursor.execute(before)
             cursor.execute(check)  # The installed definitions pass.
+            transaction.set_rollback(True)
         for broken in (
             f"DROP FUNCTION {recorder}",
             f"DROP FUNCTION {copy}",
@@ -413,17 +409,43 @@ def test_migration_check_refuses_absent_invoker_or_restored_functions(
                 pytest.raises(DatabaseError, match="Migration 0070"),
                 transaction.atomic(),
             ):
+                as_0070_left_it(cursor, text)
                 cursor.execute(before)
                 cursor.execute(broken)
                 cursor.execute(check)
         with transaction.atomic():
+            as_0070_left_it(cursor, text)
             cursor.execute(before)
             cursor.execute(check)  # Rolled back to the installed definitions.
+            transaction.set_rollback(True)
 
 
 RECORDER_SIGNATURE = (
     "stewardship_ministry_leader_changes_v1(uuid, uuid, uuid, uuid, uuid, uuid, uuid)"
 )
+
+
+# 0042's and 0070's Ministry activity test, which 0091 (#1267) removed.
+ACTIVITY_TEST = """
+      AND NOT EXISTS (SELECT 1 FROM public.stewardship_ministry_activity activity
+          WHERE activity.configuration_id=current_configuration
+            AND activity.organization_id=ministry.organization_id
+            AND activity.ministry_duid=duid.ministry
+            AND NOT activity.active);"""
+
+
+def as_0070_left_it(cursor, text):
+    """Restore, within the caller's transaction, what 0070 left and 0091
+    (#1267) changed: the Ministry activity table, reduced to what the
+    leader definition reads, and 0070's own body of that definition, whose
+    activity test 0070's check names."""
+    cursor.execute(
+        "CREATE TABLE public.stewardship_ministry_activity (configuration_id uuid, "
+        "organization_id bigint, ministry_duid bigint, active boolean)"
+    )
+    start = text.index("CREATE FUNCTION public.stewardship_ministry_leaders_at_v1(")
+    body = text[start : text.index("END $$;", start) + len("END $$;")]
+    cursor.execute(body.replace("CREATE FUNCTION", "CREATE OR REPLACE FUNCTION", 1))
 
 
 def _old_definition():

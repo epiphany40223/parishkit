@@ -1198,8 +1198,8 @@ BEGIN
         -- open. The value must stay canonical: a strictly ascending array of
         -- whole numbers, as the YAML schema writes it. Removing is always
         -- allowed. Every added DUID must be visible now: in the promoted
-        -- catalog, not inactive in this candidate's Ministry activity, in a
-        -- campaign with the Ministry module. Answers are never touched here.
+        -- catalog, in a campaign with the Ministry module. Answers are never
+        -- touched here.
         -- Nested CASEs fix the evaluation order, so a malformed value is
         -- refused, not miscast.
         SELECT c.state, old_c.values->'ministry_duids' INTO live_state, live_before
@@ -1215,7 +1215,7 @@ BEGIN
                         FROM (SELECT DISTINCT (e.duid#>>'{}')::numeric AS duid
                               FROM jsonb_array_elements(candidate.values->'ministry_duids') e(duid)) d)
                     END,false) THEN
-                RAISE EXCEPTION 'Live Ministry selections can only add current active Ministries to an open campaign' USING ERRCODE='23514';
+                RAISE EXCEPTION 'Live Ministry selections can only add current Ministries to an open campaign' USING ERRCODE='23514';
             END IF;
             -- The value is now a canonical array of whole numbers.
             SELECT coalesce(array_agg((added.duid#>>'{}')::numeric),'{}') INTO live_added
@@ -1224,7 +1224,7 @@ BEGIN
             IF cardinality(live_added)>0 THEN
                 IF NOT coalesce(candidate.values->'modules' ? 'ministry',false)
                     OR EXISTS (SELECT 1 FROM unnest(live_added) d WHERE d NOT BETWEEN 1 AND 2147483647) THEN
-                    RAISE EXCEPTION 'Live Ministry selections can only add current active Ministries to an open campaign' USING ERRCODE='23514';
+                    RAISE EXCEPTION 'Live Ministry selections can only add current Ministries to an open campaign' USING ERRCODE='23514';
                 END IF;
                 -- A separate statement, reached only when a locked open campaign
                 -- gains a Ministry: PostgreSQL checks EXECUTE on the definer
@@ -1234,13 +1234,8 @@ BEGIN
                 -- it; setup completion and other activations never get here.
                 IF EXISTS (SELECT 1 FROM unnest(live_added) d
                     WHERE NOT EXISTS (SELECT 1 FROM stewardship_ministry_catalog_v1() present
-                        WHERE present.ministry_duid=d::integer
-                          AND NOT EXISTS (SELECT 1 FROM stewardship_ministry_activity activity
-                              WHERE activity.configuration_id=NEW.active_configuration_id
-                                AND activity.organization_id=present.organization_id
-                                AND activity.ministry_duid=present.ministry_duid
-                                AND NOT activity.active))) THEN
-                    RAISE EXCEPTION 'Live Ministry selections can only add current active Ministries to an open campaign' USING ERRCODE='23514';
+                        WHERE present.ministry_duid=d::integer)) THEN
+                    RAISE EXCEPTION 'Live Ministry selections can only add current Ministries to an open campaign' USING ERRCODE='23514';
                 END IF;
             END IF;
         END IF;
@@ -1665,11 +1660,6 @@ CREATE FUNCTION public.stewardship_chair_decisions_v1(configuration uuid) RETURN
             WHEN evidence.id IS NULL THEN 'missing_binding'
             WHEN evidence.organization_id::text IS DISTINCT FROM
                 integration.settings->>'organization_id' THEN 'organization_changed'
-            WHEN EXISTS (SELECT 1 FROM stewardship_ministry_activity activity
-                WHERE activity.configuration_id=configuration
-                  AND activity.organization_id=evidence.organization_id
-                  AND activity.ministry_duid=assignment.ministry_duid
-                  AND NOT activity.active) THEN 'ministry_inactive'
             WHEN EXISTS (SELECT 1 FROM chair
                 WHERE chair.organization_id=evidence.organization_id
                   AND chair.member_duid=evidence.member_duid
@@ -1897,11 +1887,7 @@ BEGIN
         WHERE snapshot_id=NEW.snapshot_id AND organization_id=NEW.organization_id
           AND member_duid=NEW.member_duid AND ministry_duid=assignment.ministry_duid
           AND email=assignment.email;
-    IF evidence IS NULL OR evidence IS DISTINCT FROM NEW.roster_keys
-       OR EXISTS (SELECT 1 FROM stewardship_ministry_activity
-          WHERE configuration_id=assignment.configuration_id
-            AND organization_id=NEW.organization_id
-            AND ministry_duid=assignment.ministry_duid AND NOT active) THEN
+    IF evidence IS NULL OR evidence IS DISTINCT FROM NEW.roster_keys THEN
         RAISE EXCEPTION 'Chair seed evidence requires the exact current relationship'
             USING ERRCODE='23514';
     END IF;
@@ -3259,42 +3245,22 @@ CREATE FUNCTION public.stewardship_ministry_activation_v1() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
-DECLARE before_records jsonb; after_records jsonb; snapshot uuid; seeded boolean;
+DECLARE snapshot uuid; seeded boolean;
 BEGIN
-    SELECT coalesce(canonical_document->'sections'->'ministries','[]'::jsonb)
-        INTO before_records FROM stewardship_configuration_version
-        WHERE id=NEW.predecessor_id;
-    SELECT coalesce(canonical_document->'sections'->'ministries','[]'::jsonb)
-        INTO after_records FROM stewardship_configuration_version
-        WHERE id=NEW.configuration_id;
+    -- The local Ministry activity is gone (#1267); an activation still needs
+    -- its Chair receipt while seeded assignments or Chair reviews exist.
     SELECT snapshot_id INTO snapshot FROM stewardship_source_current;
     seeded := EXISTS (SELECT 1 FROM stewardship_ministry_assignment
         WHERE configuration_id=NEW.configuration_id AND source='chair-seed');
-    IF snapshot IS NULL THEN
-        IF seeded AND coalesce(before_records,'[]'::jsonb)
-            IS DISTINCT FROM after_records THEN
-            RAISE EXCEPTION 'Ministry activity requires seeded reconciliation'
-                USING ERRCODE='23514';
-        END IF;
-    ELSIF seeded OR EXISTS (
+    IF snapshot IS NOT NULL AND (seeded OR EXISTS (
         SELECT 1 FROM stewardship_chair_review WHERE closed_by_id IS NULL
     ) OR EXISTS (SELECT 1 FROM stewardship_chair_reconciliation
-                 WHERE activation_id=NEW.id) THEN
+                 WHERE activation_id=NEW.id)) THEN
         PERFORM stewardship_require_chair_receipt_v1(NEW.configuration_id,snapshot);
     END IF;
     RETURN NULL;
 END;
 $$;
-
--- FUNCTION: stewardship_ministry_activity_immutable_v1()
-CREATE FUNCTION public.stewardship_ministry_activity_immutable_v1() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-            BEGIN
-                RAISE EXCEPTION 'Historical records are append-only'
-                    USING ERRCODE = '23514';
-            END;
-            $$;
 
 -- FUNCTION: stewardship_ministry_assignment_immutable_v1()
 CREATE FUNCTION public.stewardship_ministry_assignment_immutable_v1() RETURNS trigger
@@ -3310,85 +3276,17 @@ CREATE FUNCTION public.stewardship_ministry_assignment_immutable_v1() RETURNS tr
 CREATE FUNCTION public.stewardship_ministry_complete_v1() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
-    AS $_$
-DECLARE records jsonb; actual jsonb; vals jsonb;
+    AS $$
 BEGIN
-    records := coalesce(NEW.canonical_document->'sections'->'ministries', '[]'::jsonb);
-    IF NEW.validation_schema NOT IN ('ministry-activity-v4', 'campaign-content-v5', 'source-cadence-v8', 'users-v10', 'campaign-series-v11') THEN
-        IF records <> '[]'::jsonb THEN
-            RAISE EXCEPTION 'Ministry activity requires its versioned schema'
-                USING ERRCODE='23514';
-        END IF;
-        RETURN NULL;
-    END IF;
-    IF jsonb_typeof(records) IS DISTINCT FROM 'array' THEN
-        RAISE EXCEPTION 'Invalid Ministry activity shape' USING ERRCODE='23514';
-    END IF;
-    FOR vals IN SELECT item->'values' FROM jsonb_array_elements(records) item LOOP
-        IF jsonb_typeof(vals->'organization_id') IS DISTINCT FROM 'number'
-           OR jsonb_typeof(vals->'ministry_duid') IS DISTINCT FROM 'number'
-           OR vals->>'organization_id' !~ '^[1-9][0-9]*$'
-           OR vals->>'ministry_duid' !~ '^[1-9][0-9]*$'
-           OR jsonb_typeof(vals->'active') IS DISTINCT FROM 'boolean' THEN
-            RAISE EXCEPTION 'Invalid Ministry activity types' USING ERRCODE='23514';
-        END IF;
-    END LOOP;
-    SELECT coalesce(jsonb_agg(jsonb_build_object('id', record_id,
-        'values', jsonb_build_object('organization_id', organization_id,
-             'ministry_duid', ministry_duid, 'active', active)) ORDER BY record_id),
-        '[]'::jsonb) INTO actual
-    FROM public.stewardship_ministry_activity WHERE configuration_id=NEW.id;
-    IF actual IS DISTINCT FROM (
-        SELECT coalesce(jsonb_agg(item ORDER BY item->>'id'), '[]'::jsonb)
-        FROM jsonb_array_elements(records) item
-    ) THEN
-        RAISE EXCEPTION 'Ministry activity projections are incomplete'
+    -- The local Ministry activity section is retired (#1267): a new
+    -- configuration of any schema holds no record in it. Applied history
+    -- keeps what it recorded; this runs only when a version is inserted.
+    IF coalesce(NEW.canonical_document->'sections'->'ministries', '[]'::jsonb)
+        <> '[]'::jsonb THEN
+        RAISE EXCEPTION 'Ministry activity was removed; the ministries section must be empty'
             USING ERRCODE='23514';
     END IF;
     RETURN NULL;
-END $_$;
-
--- FUNCTION: stewardship_ministry_projection_v1()
-CREATE FUNCTION public.stewardship_ministry_projection_v1() RETURNS trigger
-    LANGUAGE plpgsql
-    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
-    AS $$
-DECLARE expected jsonb; predecessor uuid;
-BEGIN
-    SELECT item INTO expected
-    FROM public.stewardship_configuration_version v,
-         jsonb_array_elements(v.canonical_document->'sections'->'ministries') item
-    WHERE v.id=NEW.configuration_id AND v.validation_schema IN ('ministry-activity-v4', 'campaign-content-v5', 'source-cadence-v8', 'users-v10', 'campaign-series-v11')
-      AND item->>'id'=NEW.record_id::text;
-    IF expected IS DISTINCT FROM jsonb_build_object(
-        'id', NEW.record_id, 'values', jsonb_build_object(
-            'organization_id', NEW.organization_id,
-            'ministry_duid', NEW.ministry_duid, 'active', NEW.active)) THEN
-        RAISE EXCEPTION 'Ministry activity differs from YAML' USING ERRCODE='23514';
-    END IF;
-    SELECT predecessor_id INTO predecessor
-    FROM public.stewardship_configuration_version WHERE id=NEW.configuration_id;
-    IF EXISTS (
-        WITH RECURSIVE chain(id, predecessor_id) AS (
-            SELECT id, predecessor_id FROM public.stewardship_configuration_version
-            WHERE id=predecessor
-            UNION
-            SELECT p.id, p.predecessor_id
-            FROM public.stewardship_configuration_version p
-            JOIN chain c ON p.id=c.predecessor_id
-        ) SELECT 1 FROM public.stewardship_ministry_activity m
-          JOIN chain c ON m.configuration_id=c.id
-          WHERE (m.record_id=NEW.record_id AND
-                 (m.organization_id, m.ministry_duid) IS DISTINCT FROM
-                 (NEW.organization_id, NEW.ministry_duid))
-             OR (m.record_id<>NEW.record_id AND
-                 m.organization_id=NEW.organization_id AND
-                 m.ministry_duid=NEW.ministry_duid)
-    ) THEN
-        RAISE EXCEPTION 'Ministry activity identities must remain stable'
-            USING ERRCODE='23514';
-    END IF;
-    RETURN NEW;
 END $$;
 
 -- One pure predicate shared by write admission and replacement inventory.

@@ -39,8 +39,10 @@ WITH selected AS MATERIALIZED (
     SELECT n.duid::bigint AS duid,
         coalesce(nullif(btrim(p.canonical::jsonb->>'name'),''),
             'Unavailable Ministry') AS name,
+        -- Whether ParishSoft still lists the Ministry (true) or not (NULL);
+        -- there is no local inactive override any more (#1267).
         CASE WHEN p.canonical::jsonb->'catalog_present'='true'::jsonb
-            THEN coalesce(a.active,true) ELSE NULL END AS active,
+            THEN true ELSE NULL END AS active,
         n.in_campaign
     FROM source x
     -- The campaign's selections plus any Ministry it no longer selects that
@@ -60,9 +62,6 @@ WITH selected AS MATERIALIZED (
     LEFT JOIN stewardship_snapshot_ministry m
         ON m.snapshot_id=x.source_id AND m.source_key=n.duid
     LEFT JOIN stewardship_source_ministry p ON p.id=m.payload_id
-    LEFT JOIN stewardship_ministry_activity a
-        ON a.configuration_id=x.configuration_id
-        AND a.organization_id=x.organization_id AND a.ministry_duid=n.duid::bigint
     WHERE n.duid::bigint BETWEEN 1 AND 2147483647
       AND (operational OR n.duid::bigint=ANY(ministry_scope::bigint[]))
       AND (ministry_id::integer IS NULL OR n.duid::bigint=ministry_id)

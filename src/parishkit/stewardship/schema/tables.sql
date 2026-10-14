@@ -1141,22 +1141,6 @@ CREATE TABLE public.stewardship_limiter_health (
     CONSTRAINT stewardship_limiter_health_version_check CHECK ((version >= 0))
 );
 
--- TABLE: stewardship_ministry_activity
-CREATE TABLE public.stewardship_ministry_activity (
-    id uuid NOT NULL,
-    created_at timestamp with time zone DEFAULT statement_timestamp() NOT NULL,
-    actor_id uuid,
-    correlation_id uuid NOT NULL,
-    record_id uuid NOT NULL,
-    organization_id bigint NOT NULL,
-    ministry_duid bigint NOT NULL,
-    active boolean NOT NULL,
-    configuration_id uuid NOT NULL,
-    CONSTRAINT ministry_activity_duids CHECK (((ministry_duid > 0) AND (ministry_duid < '2147483648'::bigint) AND (organization_id > 0) AND (organization_id < '2147483648'::bigint))),
-    CONSTRAINT stewardship_ministry_activity_ministry_duid_check CHECK ((ministry_duid >= 0)),
-    CONSTRAINT stewardship_ministry_activity_organization_id_check CHECK ((organization_id >= 0))
-);
-
 -- TABLE: stewardship_ministry_assignment
 CREATE TABLE public.stewardship_ministry_assignment (
     id uuid NOT NULL,

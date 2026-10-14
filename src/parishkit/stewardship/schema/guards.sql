@@ -140,14 +140,6 @@ ALTER TABLE ONLY public.stewardship_family_token
 ALTER TABLE ONLY public.stewardship_family_token
     ADD CONSTRAINT family_token_generation_once UNIQUE (family_id, generation_id);
 
--- CONSTRAINT: stewardship_ministry_activity ministry_activity_identity
-ALTER TABLE ONLY public.stewardship_ministry_activity
-    ADD CONSTRAINT ministry_activity_identity UNIQUE (configuration_id, organization_id, ministry_duid);
-
--- CONSTRAINT: stewardship_ministry_activity ministry_activity_record
-ALTER TABLE ONLY public.stewardship_ministry_activity
-    ADD CONSTRAINT ministry_activity_record UNIQUE (configuration_id, record_id);
-
 -- CONSTRAINT: stewardship_ministry_assignment ministry_assignment_identity
 ALTER TABLE ONLY public.stewardship_ministry_assignment
     ADD CONSTRAINT ministry_assignment_identity UNIQUE (configuration_id, email, ministry_duid, source);
@@ -635,10 +627,6 @@ ALTER TABLE ONLY public.stewardship_limiter_health
 -- CONSTRAINT: stewardship_limiter_health stewardship_limiter_health_pkey
 ALTER TABLE ONLY public.stewardship_limiter_health
     ADD CONSTRAINT stewardship_limiter_health_pkey PRIMARY KEY (id);
-
--- CONSTRAINT: stewardship_ministry_activity stewardship_ministry_activity_pkey
-ALTER TABLE ONLY public.stewardship_ministry_activity
-    ADD CONSTRAINT stewardship_ministry_activity_pkey PRIMARY KEY (id);
 
 -- CONSTRAINT: stewardship_ministry_assignment stewardship_ministry_assignment_pkey
 ALTER TABLE ONLY public.stewardship_ministry_assignment
@@ -1593,12 +1581,6 @@ CREATE INDEX stewardship_limiter_health_correlation_id_e682d7b2 ON public.stewar
 
 -- INDEX: stewardship_limiter_health_namespace_fingerprint_dbe891db_like
 CREATE INDEX stewardship_limiter_health_namespace_fingerprint_dbe891db_like ON public.stewardship_limiter_health USING btree (namespace_fingerprint varchar_pattern_ops);
-
--- INDEX: stewardship_ministry_activity_configuration_id_68b9cd45
-CREATE INDEX stewardship_ministry_activity_configuration_id_68b9cd45 ON public.stewardship_ministry_activity USING btree (configuration_id);
-
--- INDEX: stewardship_ministry_activity_correlation_id_bcdaa576
-CREATE INDEX stewardship_ministry_activity_correlation_id_bcdaa576 ON public.stewardship_ministry_activity USING btree (correlation_id);
 
 -- INDEX: stewardship_ministry_assignment_configuration_id_5f298c17
 CREATE INDEX stewardship_ministry_assignment_configuration_id_5f298c17 ON public.stewardship_ministry_assignment USING btree (configuration_id);
@@ -2671,17 +2653,11 @@ CREATE TRIGGER stewardship_limiter_health_mutable_guard_v1 BEFORE UPDATE ON publ
 -- TRIGGER: stewardship_config_activation stewardship_ministry_activation_v1
 CREATE CONSTRAINT TRIGGER stewardship_ministry_activation_v1 AFTER INSERT ON public.stewardship_config_activation DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.stewardship_ministry_activation_v1();
 
--- TRIGGER: stewardship_ministry_activity stewardship_ministry_activity_immutable_guard_v1
-CREATE TRIGGER stewardship_ministry_activity_immutable_guard_v1 BEFORE DELETE OR UPDATE ON public.stewardship_ministry_activity FOR EACH ROW EXECUTE FUNCTION public.stewardship_ministry_activity_immutable_v1();
-
 -- TRIGGER: stewardship_ministry_assignment stewardship_ministry_assignment_immutable_guard_v1
 CREATE TRIGGER stewardship_ministry_assignment_immutable_guard_v1 BEFORE DELETE OR UPDATE ON public.stewardship_ministry_assignment FOR EACH ROW EXECUTE FUNCTION public.stewardship_ministry_assignment_immutable_v1();
 
 -- TRIGGER: stewardship_configuration_version stewardship_ministry_complete_v1
 CREATE CONSTRAINT TRIGGER stewardship_ministry_complete_v1 AFTER INSERT ON public.stewardship_configuration_version DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.stewardship_ministry_complete_v1();
-
--- TRIGGER: stewardship_ministry_activity stewardship_ministry_projection_v1
-CREATE TRIGGER stewardship_ministry_projection_v1 BEFORE INSERT ON public.stewardship_ministry_activity FOR EACH ROW EXECUTE FUNCTION public.stewardship_ministry_projection_v1();
 
 -- TRIGGER: stewardship_schedule_occurrence stewardship_occurrence_guard_v1
 CREATE TRIGGER stewardship_occurrence_guard_v1 BEFORE INSERT OR DELETE OR UPDATE ON public.stewardship_schedule_occurrence FOR EACH ROW EXECUTE FUNCTION public.stewardship_occurrence_guard_v1();
@@ -3449,10 +3425,6 @@ ALTER TABLE ONLY public.stewardship_family_token
 -- FK CONSTRAINT: stewardship_ministry_assignment stewardship_ministry_configuration_id_5f298c17_fk_stewardsh
 ALTER TABLE ONLY public.stewardship_ministry_assignment
     ADD CONSTRAINT stewardship_ministry_configuration_id_5f298c17_fk_stewardsh FOREIGN KEY (configuration_id) REFERENCES public.stewardship_configuration_version(id) DEFERRABLE INITIALLY DEFERRED;
-
--- FK CONSTRAINT: stewardship_ministry_activity stewardship_ministry_configuration_id_68b9cd45_fk_stewardsh
-ALTER TABLE ONLY public.stewardship_ministry_activity
-    ADD CONSTRAINT stewardship_ministry_configuration_id_68b9cd45_fk_stewardsh FOREIGN KEY (configuration_id) REFERENCES public.stewardship_configuration_version(id) DEFERRABLE INITIALLY DEFERRED;
 
 -- FK CONSTRAINT: stewardship_occurrence_transition stewardship_occurren_occurrence_id_f136d622_fk_stewardsh
 ALTER TABLE ONLY public.stewardship_occurrence_transition
@@ -5153,7 +5125,7 @@ CREATE INDEX "stewardship_ministry_request_resolution_source_id_0593e49f" ON "st
 CREATE INDEX "stewardship_ministry_request_superseded_by_id_a61bbc0c" ON "stewardship_ministry_request" ("superseded_by_id");
 CREATE INDEX "ministry_request_queue" ON "stewardship_ministry_request" ("ministry_duid", "state");
 
--- The same snapshot/catalog/activity/selection boundary used by form issuance.
+-- The same snapshot/catalog/selection boundary used by form issuance.
 CREATE FUNCTION public.stewardship_response_ministry_visible_v1(
     source_id uuid, configuration_id uuid, campaign_id uuid, ministry_id integer)
     RETURNS boolean LANGUAGE sql STABLE
@@ -5169,10 +5141,6 @@ AS $$
           AND ministry.canonical::jsonb->'catalog_present'='true'::jsonb
           AND campaign.values->'modules' ? 'ministry'
           AND campaign.values->'ministry_duids' @> to_jsonb(ministry_id)
-          AND NOT EXISTS (SELECT 1 FROM public.stewardship_ministry_activity activity
-              WHERE activity.configuration_id=campaign.configuration_id
-                AND activity.organization_id=ministry.organization_id
-                AND activity.ministry_duid=ministry_id AND NOT activity.active)
     )
 $$;
 
@@ -5180,7 +5148,7 @@ $$;
 -- no name, roster or payload. The configuration installer may add a Ministry
 -- to a live campaign only when it is in this catalog, but holds no source
 -- grants by design, so it reads presence through this definer function. The
--- caller applies local activity and campaign selection itself. Grant EXECUTE
+-- caller applies campaign selection itself. Grant EXECUTE
 -- only to logins whose runtime_functions() name it.
 CREATE FUNCTION public.stewardship_ministry_catalog_v1()
     RETURNS TABLE(organization_id bigint, ministry_duid integer)

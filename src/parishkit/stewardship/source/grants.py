@@ -17,7 +17,6 @@ SOURCE_READ = frozenset(
         "stewardship_source_refresh_attempt",
         "stewardship_source_refresh_fallback",
         "stewardship_ministry_assignment",
-        "stewardship_ministry_activity",
         "stewardship_chair_seed_evidence",
         "stewardship_current_chair",
         "stewardship_chair_reconciliation",
@@ -87,7 +86,6 @@ def add_configuration_reads(tables):
         "stewardship_address_rule",
         "stewardship_address_grant",
         "stewardship_ministry_assignment",
-        "stewardship_ministry_activity",
         "stewardship_schedule_revision",
         "stewardship_content_version",
     ):

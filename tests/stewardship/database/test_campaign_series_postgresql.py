@@ -408,6 +408,13 @@ EARLIER = {
     "stewardship_users_form_v1": "0055_setup_users.sql",
 }
 CHECK = MIGRATION[MIGRATION.index("DO $check$") :]
+# The Ministry activity functions as 0075 left them: #1267's 0091 replaced
+# the first and dropped the second, so each check below first puts them back
+# (rolled back with it) to see what 0075 installed.
+AS_0075_LEFT_THEM = (
+    "stewardship_ministry_complete_v1",
+    "stewardship_ministry_projection_v1",
+)
 
 
 def definition(source, name):
@@ -432,6 +439,12 @@ def earlier_definition(name):
     return text
 
 
+def as_0075_left_them(cursor):
+    """Put back 0075's own bodies of ``AS_0075_LEFT_THEM``."""
+    for name in AS_0075_LEFT_THEM:
+        cursor.execute(definition(MIGRATION, name))
+
+
 def check_refuses(statement, message):
     """Run ``statement`` and then 0075's closing check, which must refuse it."""
     with (
@@ -440,6 +453,7 @@ def check_refuses(statement, message):
         connection.cursor() as cursor,
     ):
         cursor.execute("SET LOCAL check_function_bodies = false")
+        as_0075_left_them(cursor)
         cursor.execute(statement)
         cursor.execute(CHECK)
 
@@ -450,7 +464,10 @@ def test_the_closing_check_passes_on_the_installed_schema():
         re.findall(r"^CREATE OR REPLACE FUNCTION public\.(\w+)\(", MIGRATION, re.M)
     )
     with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute("SET LOCAL check_function_bodies = false")
+        as_0075_left_them(cursor)
         cursor.execute(CHECK)
+        transaction.set_rollback(True)
 
 
 @pytest.mark.parametrize("name", sorted(EARLIER))

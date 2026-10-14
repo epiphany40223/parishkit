@@ -123,7 +123,6 @@ UNPINNED = frozenset(
         "stewardship_family_token_mutable_v1()",
         "stewardship_hosted_file_mutable_v1()",
         "stewardship_limiter_health_mutable_v1()",
-        "stewardship_ministry_activity_immutable_v1()",
         "stewardship_ministry_assignment_immutable_v1()",
         "stewardship_occurrence_transition_immutable_v1()",
         "stewardship_operational_log_immutable_v1()",
