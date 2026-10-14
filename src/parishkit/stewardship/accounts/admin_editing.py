@@ -265,12 +265,15 @@ def reviewed_base(parameters, salt):
 
 
 def summary_errors(form):
-    """A refused form's errors for the in-place review region's summary.
+    """A refused form's (or formset's) errors for an error summary.
 
-    The form itself may not be replaced in place (its scripts and the
-    reader's typing stay), so the summary names each field and links to it.
-    A hidden field's error (a stale version) has nothing to link to. A
-    formset's errors are its own, then each row's.
+    The summary is drawn in an in-place review region, or, for a review
+    dialog's editor, on the page a Review refused for its values answers
+    with (status 400), which the page script places above the heading. The
+    form itself is never replaced (its scripts and the reader's typing
+    stay), so the summary names each field and links to it. A hidden
+    field's error (a stale version) has nothing to link to. A formset's
+    errors are its own, then each row's.
     """
     if hasattr(form, "forms"):
         # A formset: its own errors, then each row's.
