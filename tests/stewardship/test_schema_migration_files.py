@@ -291,6 +291,9 @@ FROZEN = {
     "0086_snapshot_statistics.sql": (
         "fd11700fc4872b5847afec7124f265b5950daca3a74f05e6ac87c912871f62c1"
     ),
+    "0087_publication_plans.sql": (
+        "d46783894e0389933f9e1dd6a41785fb8d07c965f2b19fc7ac5670177535d15a"
+    ),
 }
 
 

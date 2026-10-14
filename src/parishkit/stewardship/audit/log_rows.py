@@ -473,6 +473,12 @@ UNGROUPED_REASONS = {
     "Found while using already-loaded ParishSoft data, not in a refresh": (
         "source_member_unusable",
     ),
+    # Publication plans (#528, DAT-09.01): no page shows them yet (ADM-09).
+    "Publishing census changes to ParishSoft; no page shows it yet": (
+        "census_publication_planned",
+        "census_publication_confirmed",
+        "census_publication_recorded",
+    ),
     "In the Action vocabulary, but nothing records it today": (
         "privileged_reauthentication",
     ),

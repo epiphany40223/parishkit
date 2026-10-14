@@ -602,3 +602,38 @@ def test_the_worker_records_and_web_reads_example_families():
         assert table not in columns, role
     # It follows the users swap, so its grants wait for its migration.
     assert CLOSURE_TABLES[table] == ("stewardship_source", "0009_drop_examples")
+
+
+def test_publication_plans_have_one_writer_each():
+    """Publication plans (#528, DAT-09.01): the worker writes plans, their
+    entities and fields and each attempt's outcome, and reads the
+    confirmation; web reads everything and writes only the confirmation; no
+    other login holds any grant on them. Only the worker runs the audit
+    answer, and every table waits for its migration (users swap closure)."""
+    from parishkit.stewardship.runtime_grants import (
+        CLOSURE_FUNCTIONS,
+        CLOSURE_TABLES,
+        PUBLICATION_AUDITED_FUNCTION,
+        PUBLICATION_TABLES,
+        runtime_functions,
+    )
+
+    key = ("stewardship_responses", "0004_publication_plans")
+    confirmation = "stewardship_publication_confirmation"
+    for _, _, role, target in database_identities():
+        if role is ServiceRole.MIGRATION:
+            continue
+        grants, columns = runtime_grants(role, target=target)
+        for table in PUBLICATION_TABLES:
+            if role is ServiceRole.WORKER:
+                expected = {"SELECT"} if table == confirmation else {"SELECT", "INSERT"}
+            elif role is ServiceRole.WEB:
+                expected = {"SELECT", "INSERT"} if table == confirmation else {"SELECT"}
+            else:
+                expected = set()
+            assert grants.get(table, set()) == expected, (role, table)
+            assert table not in columns, (role, table)
+            assert CLOSURE_TABLES[table] == key
+        audited = PUBLICATION_AUDITED_FUNCTION in runtime_functions(role, target=target)
+        assert audited is (role is ServiceRole.WORKER), role
+    assert CLOSURE_FUNCTIONS[PUBLICATION_AUDITED_FUNCTION] == key

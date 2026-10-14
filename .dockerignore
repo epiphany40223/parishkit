@@ -111,6 +111,7 @@
 !src/parishkit/stewardship/schema/migrations/0084_campaign_archive_exports.sql
 !src/parishkit/stewardship/schema/migrations/0085_drop_examples.sql
 !src/parishkit/stewardship/schema/migrations/0086_snapshot_statistics.sql
+!src/parishkit/stewardship/schema/migrations/0087_publication_plans.sql
 !src/parishkit/stewardship/schema/due_work_health.sql
 !src/parishkit/stewardship/schema/family_dispatch.sql
 !src/parishkit/stewardship/schema/production.sql

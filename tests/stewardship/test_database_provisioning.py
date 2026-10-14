@@ -18,6 +18,7 @@ from parishkit.stewardship.runtime_grants import (
     DISPATCH_TOKEN_FUNCTION,
     LEADERS_WITHOUT_USER_FUNCTION,
     MEMBER_NAMES_FOR_FUNCTION,
+    PUBLICATION_WORKER_TABLES,
     login_name,
     pending_revokes,
 )
@@ -37,10 +38,13 @@ BOTH = set(CLOSURE_FUNCTIONS.values()) & set(CLOSURE_TABLES.values())
 # The login that writes each closure table: web (the large-change
 # acceptances, 0080, since System health's button, ADM-13 PR 5b), except the
 # address follow-ups (0077), which mail dispatch updates, and a refused
-# change's example Families (0085, ADM-13 PR 5c), which the worker records.
+# change's example Families (0085, ADM-13 PR 5c), which the worker records,
+# and the publication plans and outcomes (0087, #528), which the worker
+# writes.
 TABLE_WRITERS = {
     "stewardship_outbox_address_retry": "pk_stewardship_mail_dispatch",
     "stewardship_source_drop_example": "pk_stewardship_worker",
+    **dict.fromkeys(PUBLICATION_WORKER_TABLES, "pk_stewardship_worker"),
 }
 
 

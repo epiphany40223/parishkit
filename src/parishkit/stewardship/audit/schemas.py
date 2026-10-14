@@ -115,6 +115,14 @@ class Action(StrEnum):
     CENSUS_CHANGES_EXPORTED = "census_changes_exported"
     CENSUS_CHANGE_UPDATED = "census_change_updated"
     MINISTRY_ROSTER_ENTERED = "ministry_roster_entered"
+    # Publication to ParishSoft (#528, DAT-09.01): a preflight's plan (count:
+    # its entities), an Administrator's confirmation (count: entities to
+    # write) and one entity's write attempt (count: fields it writes). The
+    # subject is the plan, confirmation or outcome row, whose plan rows name
+    # the fields; no event holds a value.
+    CENSUS_PUBLICATION_PLANNED = "census_publication_planned"
+    CENSUS_PUBLICATION_CONFIRMED = "census_publication_confirmed"
+    CENSUS_PUBLICATION_RECORDED = "census_publication_recorded"
     ROSTER_CHANGES_VIEWED = "roster_changes_viewed"
     ROSTER_CHANGES_EXPORTED = "roster_changes_exported"
     RESPONSE_DASHBOARD_VIEWED = "response_dashboard_viewed"
