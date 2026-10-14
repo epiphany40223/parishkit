@@ -22,7 +22,7 @@ from parishkit.stewardship.campaigns.lifecycle import Action
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.deployment import ServiceRole
 
-from .auth_builders import signed_in
+from .auth_builders import signed_in, unguarded
 from .campaign_builders import add_draft, change, command
 from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_background_grants_postgresql import task_login
@@ -344,6 +344,52 @@ def change_parish(store):
     assert change(store, store.active(), uuid4(), patch).state == "applied"
 
 
+def test_an_apply_needs_its_own_live_upload(auth_service, google, media, monkeypatch):
+    """Apply uses only the staged upload its preview was signed for, and only
+    while that upload is this sign-in's and unexpired: another staged
+    upload for the same slot, an expired upload and another sign-in's are
+    refused, and nothing is recorded."""
+    from datetime import timedelta
+    from uuid import UUID
+
+    from parishkit.stewardship.accounts import branding_staging
+    from parishkit.stewardship.accounts.branding_models import BrandingBundle
+    from parishkit.stewardship.accounts.sessions import database_now
+
+    store = auth_service.store
+    row, path = draft(store)
+    browser, _ = signed_in()
+    with task_login(ServiceRole.WEB):
+        first = carried(staged(browser, auth_service, path, "welcome", image(90, 90)))
+        second = carried(staged(browser, auth_service, path, "welcome", image(80, 80)))
+    assert first["bundle"] != second["bundle"]
+    before = ConfigurationChangeRequest.objects.count()
+
+    with task_login(ServiceRole.WEB):
+        # One upload's preview with another staged upload for the same slot.
+        swapped = first | {"bundle": second["bundle"]}
+        assert post(browser, path, {"action": "confirm"} | swapped).status_code == 400
+    # An expired upload (staging's clock past its day): refused in the
+    # dialog, saying to start again.
+    with monkeypatch.context() as clock, task_login(ServiceRole.WEB):
+        later = database_now() + timedelta(days=2)
+        clock.setattr(branding_staging, "database_now", lambda: later)
+        expired = post(browser, path, {"action": "confirm"} | first)
+    assert expired.status_code == 409
+    assert "Reload the page, then upload the image again." in refusal(expired)
+    # Another sign-in's upload is not this one's to apply (seeded past the
+    # bundle's SQL guard).
+    with unguarded():
+        BrandingBundle.objects.filter(pk=UUID(second["bundle"])).update(
+            session_id=uuid4()
+        )
+    with task_login(ServiceRole.WEB):
+        other = post(browser, path, {"action": "confirm"} | second)
+    assert other.status_code == 404
+    assert ConfigurationChangeRequest.objects.count() == before
+    assert artwork(row) == {}
+
+
 def test_a_refused_apply_is_a_plain_refusal(auth_service, google, media):
     """An Apply refused because the settings changed since the review is a
     plain refusal, which the review dialog shows (#750): an upload staged
@@ -367,7 +413,7 @@ def test_a_refused_apply_is_a_plain_refusal(auth_service, google, media):
     with task_login(ServiceRole.WEB):
         refused = post(browser, path, {"action": "confirm"} | upload)
         assert refused.status_code == 409
-        assert "Upload the image again." in refusal(refused)
+        assert "Reload the page, then upload the image again." in refusal(refused)
         refused = post(browser, path, {"action": "confirm"} | removing)
         assert refused.status_code == 409
         assert "This preview is out of date." in refusal(refused)
