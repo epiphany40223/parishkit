@@ -803,6 +803,10 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
 .spinner { display: inline-block; width: 1em; height: 1em; margin-inline-end: .35em; vertical-align: -.15em; border: 2px solid var(--accent); border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
 /* An export panel collapsed below a report's filters. */
 details.export-panel > form { margin-top: .5rem; }
+/* A report's Filters panel (#227, the filterpanel tag). At phone width its
+   box gives up its side gutters and borders, so its filter bar keeps the
+   full width it had before the panel and a label and its "i" keep one line. */
+@media (max-width: 40rem) { details.filter-panel { padding-inline: 0; border-inline: 0; border-radius: 0; } }
 /* Compact filter bars: short fields share one row on wider screens. */
 .filter-bar { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem 1rem; }
 .filter-bar label { margin: 0 0 .25rem; font-size: .925rem; }

@@ -8,6 +8,7 @@ from django.urls import reverse
 from django.utils.html import conditional_escape, format_html, format_html_join
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext as _
+from django.utils.translation import ngettext
 
 from parishkit.stewardship.accounts import admin_navigation
 from parishkit.stewardship.accounts.sessions import freshness
@@ -220,6 +221,78 @@ class AboutPageNode(template.Node):
             '<summary>{}</summary><div class="about-page-body">{}</div></details>',
             key,
             _("About this page"),
+            # Template output is already escaped and marked safe.
+            self.nodelist.render(context),
+        )
+
+
+# Query fields that order, page or place the results rather than filter them:
+# a report's sort, its page number and the browser's time zone.
+NOT_FILTERS = frozenset({"sort", "page", "zone"})
+
+
+def applied_filters(query):
+    """Count a report query's fields that differ from its dataclass defaults.
+
+    A report's query is a frozen dataclass whose defaults are the page's
+    unfiltered view (an Additional information default such as "Current
+    actionable requests" is the page's normal list, so it does not count).
+    Sort, page and zone are left out (``NOT_FILTERS``).
+    """
+    return sum(
+        getattr(query, name) != field.default
+        for name, field in query.__dataclass_fields__.items()
+        if name not in NOT_FILTERS
+    )
+
+
+@register.tag
+def filterpanel(parser, token):
+    """Wrap a report's filter form in a collapsible "Filters" panel (#227).
+
+    Usage: ``{% filterpanel query %}<form id="table-filters" …>…</form>
+    {% endfilterpanel %}``, or ``{% filterpanel query extra %}`` where
+    ``extra`` counts choices kept outside the query (the Family directory's
+    Include mailing columns). The panel starts closed so the report's data
+    comes first, and renders open whenever any filter is applied, so an
+    applied filter is never hidden behind it. Its summary names how many are
+    applied; that count is a data-table-sync node with a stable id, so it
+    follows an in-place Apply while the panel and the form keep their
+    elements (ui-v1.js ``syncControls``).
+    """
+    bits = token.split_contents()
+    if len(bits) not in (2, 3):
+        raise template.TemplateSyntaxError(
+            "filterpanel takes a query and an optional extra count."
+        )
+    nodelist = parser.parse(("endfilterpanel",))
+    parser.delete_first_token()
+    return FilterPanelNode([parser.compile_filter(bit) for bit in bits[1:]], nodelist)
+
+
+class FilterPanelNode(template.Node):
+    """Render the panel, open with its count when any filter is applied."""
+
+    def __init__(self, arguments, nodelist):
+        self.arguments = arguments
+        self.nodelist = nodelist
+
+    def render(self, context):
+        query, *extra = (argument.resolve(context) for argument in self.arguments)
+        count = applied_filters(query) + sum(int(bool(value)) for value in extra)
+        if count:
+            label = ngettext("%(count)s applied", "%(count)s applied", count) % {
+                "count": presentation.number(count)
+            }
+        else:
+            label = _("none applied")
+        return format_html(
+            '<details class="filter-panel" data-filter-panel{}>'
+            '<summary>{}: <span id="table-filters-applied" data-table-sync>{}</span>'
+            "</summary>{}</details>",
+            mark_safe(" open") if count else "",
+            _("Filters"),
+            label,
             # Template output is already escaped and marked safe.
             self.nodelist.render(context),
         )
