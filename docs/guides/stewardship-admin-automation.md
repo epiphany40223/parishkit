@@ -2377,3 +2377,17 @@ print is exit 1 (`invalid`).
   have no `activity`, and an `--filter activity=...` on `export ministry`
   is refused (`invalid`). The only readers are Administrator-run
   assistants.
+- `pk-admin/1` (#1216, migration 0094): a deliberate change, kept on
+  version 1, as for `export census` above. The files `export financial`,
+  `export information` and `export limitations` write have a `ParishSoft
+  status` column right after `Family` (both of `export limitations`'
+  tables): "Not in ParishSoft" for a Family the current data no longer
+  has, "Inactive in ParishSoft" for one ParishSoft marks inactive
+  (`export financial` and `export information`), blank otherwise. Such a
+  missing Family's `Family` cell is now blank; it read "Unavailable
+  Family" (financial, limitations) or "Family" (information). A Family or
+  Member with no usable name in these files and in `export ministry` and
+  `export ministry-packet` reads "Name not recorded in ParishSoft" (it
+  read "Family" or "Unavailable Member"). The commands' options and
+  documents are unchanged, and the only readers are Administrator-run
+  assistants; a script that reads these files by position must change.
