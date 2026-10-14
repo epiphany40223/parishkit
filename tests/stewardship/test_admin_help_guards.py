@@ -61,10 +61,9 @@ MESSAGE = re.compile(
 # panel or a field tip.
 LONG_PARAGRAPH_WORDS = 50
 # Pages not yet converted, with the longest visible message each may keep.
-# Lower or remove an entry when its page is converted; never raise one.
-LONG_PARAGRAPH_ALLOWED = {
-    "setup-source-progress.html": 67,
-}
+# Lower or remove an entry when its page is converted; never raise one or add
+# a page. Every page is converted now, so the list is empty.
+LONG_PARAGRAPH_ALLOWED = {}
 
 # The page's introduction: everything between its heading and the first
 # block of data or controls (a form, table, list, section, panel or included
@@ -85,22 +84,17 @@ LINK = re.compile(r"<a\b.*?</a>", re.S)
 INTRO_WORDS = 15
 # Pages whose introduction is not yet converted, with the visible
 # introductory words each may keep: pages other work was changing when the
-# rest were converted (#227 follow-ups), and the two pages both portals render
-# (error.html and denied.html), whose visible text is the error itself. Each
-# uses the Admin layout when ``admin`` is set and the Family layout otherwise,
-# and one template serves both, so their wording is kept as a reviewed
-# exception. Lower or remove an entry when its page is converted; never raise
-# one or add a page.
+# rest were converted (#227 follow-ups), and the three pages both portals
+# render (error.html, denied.html and availability.html), whose visible text
+# is the error itself. Each uses the Admin layout when ``admin`` is set and
+# the Family layout otherwise, and one template serves both, so their wording
+# is kept as a reviewed exception. Lower or remove an entry when its page is
+# converted; never raise one or add a page.
 INTRO_ALLOWED = {
-    # Its refusals are alternatives (one shows); a Testing view asked for
-    # after the rehearsal ended has its own (#933).
-    "directory-error.html": 28,
     # The step-up names its return page when it is another page (#547).
     "error.html": 61,
-    "setup.html": 46,
     "denied.html": 31,
     "go-live-readiness.html": 24,
-    "delivery-control.html": 24,
     "availability.html": 21,
 }
 
@@ -172,12 +166,18 @@ def test_long_help_is_not_always_visible(name):
     )
 
 
-@pytest.mark.parametrize("name", sorted(LONG_PARAGRAPH_ALLOWED))
-def test_long_help_allowances_are_still_needed(name):
-    """An allowance shrinks with its page, so the list cannot hide new text."""
-    assert longest_visible_message(name) == LONG_PARAGRAPH_ALLOWED[name], (
-        f"{name}: update or remove its LONG_PARAGRAPH_ALLOWED entry"
+def test_long_help_allowances_are_still_needed():
+    """An allowance shrinks with its page, so the list cannot hide new text.
+
+    One test over the whole list rather than one per entry, so an empty list
+    still runs (pytest reports an empty parameter set as a skip).
+    """
+    stale = sorted(
+        name
+        for name, words in LONG_PARAGRAPH_ALLOWED.items()
+        if longest_visible_message(name) != words
     )
+    assert not stale, f"update or remove LONG_PARAGRAPH_ALLOWED entries: {stale}"
 
 
 VALUE = re.compile(r"{{.*?}}", re.S)
