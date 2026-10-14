@@ -1482,8 +1482,13 @@ reviewed, applied and followed
 (#750), and editable while the campaign is live because staff mark Families
 in ParishSoft during the campaign. Below that, the page says what the
 newest refresh found: no WorkGroup set, the name not read yet (it takes
-effect at the next refresh), no ParishSoft WorkGroup by that name, or how
-many Families are in it. What the exclusion does and when it
+effect at the next refresh; meanwhile the page says how many Families of
+the previous WorkGroup the newest refresh found and still skips, or that no
+Family is skipped), no ParishSoft WorkGroup by that name (with how many
+Families skipped before are still skipped until a refresh finds it), or how
+many Families are in it. The review says when the change applies: a clear at
+once, the name the newest refresh read at once, and any other name at the
+next refresh, with the Families still skipped until then (#1305). What the exclusion does and when it
 applies is in the background-processing specification's
 [No-reminders WorkGroup](../background-processing/spec.md#family-invitations-and-reminders)
 rules; nothing else about those Families changes.
@@ -6195,9 +6200,11 @@ might be held back:
   resolves on the first refresh that is neither.
 - **An unknown No-reminders WorkGroup** (#861): the newest refresh found no
   ParishSoft Family WorkGroup with the campaign's
-  [No-reminders WorkGroup](#parish-and-integration-configuration) name, so no
-  Family's Reminders are being skipped. The notice names the setting and
-  links its page; the refresh itself logs a WARNING. Until the registry
+  [No-reminders WorkGroup](#parish-and-integration-configuration) name, so
+  only the Families skipped before stay skipped until a refresh finds it
+  ([#1305](https://github.com/epiphany40223/parishkit/issues/1305)). The
+  notice names the setting and links its page; the refresh itself logs a
+  WARNING. Until the registry
   slice makes it a shared kind, it is listed with the tile's problems as a
   Warning item, after the others and before a refused change, and it
   clears when a refresh finds the name or the setting is cleared.

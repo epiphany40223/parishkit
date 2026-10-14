@@ -137,9 +137,13 @@ frozen migration 0015), so it can change while the campaign runs, and needs
 no configuration schema version: like `artwork`, documents without it stay
 valid. Each source refresh records what it read in its snapshot cursor's
 load evidence, `cursor.load.reminder_workgroup = {name, found,
-family_duids}`; nothing else stores the membership, and no Family row,
+family_duids}`; when `found` is false, `family_duids` is the set the
+snapshot before it applied, kept until a refresh finds the named WorkGroup
+(#1305), not a membership ParishSoft reported. Nothing else stores the membership, and no Family row,
 eligibility flag, code or link changes because of it. The current snapshot's
-record applies only while its `name` equals the campaign's setting (see
+record applies while the campaign names any WorkGroup, even one whose `name`
+differs from the record's until a refresh reads it, and never while the
+setting is cleared (see
 [background processing](../background-processing/spec.md#family-invitations-and-reminders)).
 
 One versioned `SystemConfiguration` holds the global `testing` or `production`

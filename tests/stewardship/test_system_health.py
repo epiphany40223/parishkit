@@ -1979,6 +1979,10 @@ def test_the_refusal_holds_its_counts_and_ends_the_problems():
     workgroup = workgroup[: workgroup.index("</li>")]
     assert '<li class="notice" data-problem="workgroup_missing"' in details
     assert "Check the No-reminders WorkGroup setting" in workgroup
+    # A missing name keeps the set applied before (#1305).
+    assert (
+        "Until a refresh finds it, only the Families skipped before stay skipped."
+    ) in workgroup
     # Said once: the sentence states the refusal and what to do.
     assert details.count("refused because some counts fell too far") == 1
     assert "Check these numbers" not in details
