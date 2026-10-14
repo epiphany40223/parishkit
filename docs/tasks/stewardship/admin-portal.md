@@ -1171,6 +1171,15 @@ Specification: [System health](../../specs/stewardship/admin-portal/spec.md#syst
 - [ ] ADM-13.04 — PR 4: add Clear the halt with halt identities, the mailbox check and the clear signal (migration), with its commands or their pending exemption.
 - [x] ADM-13.05 — PR 5: add Accept this change once, bound to every recorded count, with example Families (migration), with its commands or their pending exemption.
 - [ ] ADM-13.06 — PR 6: add the debug-off switch, its in-process override, its host clear command and Allow debug logging again (Testing only, refused in Production) (migration), with its command or its pending exemption.
+- [x] ADM-13.07 — specify the System health dashboard (#1214): the overall status line, the tiles, the problem registry, opening and closing tiles, Home and the critical-problems banner, and the delivery slices.
+- [ ] ADM-13.08 — dashboard slice 1: the problem registry, its severities and tiles, and the new warning kinds.
+- [ ] ADM-13.09 — dashboard slice 2a: the overall status line, its Not current state, the status indicator icons and the contrast test.
+- [ ] ADM-13.10 — dashboard slice 2b: the tile frame, the tile grid and its bands, its mirror targets, the tiles' Not current state, and the moved, always-drawn controls.
+- [ ] ADM-13.11 — dashboard slice 3: the Mail tile.
+- [ ] ADM-13.12 — dashboard slice 4: the ParishSoft refresh tile.
+- [ ] ADM-13.13 — dashboard slice 5: the Backups and Debug logging tiles.
+- [ ] ADM-13.14 — dashboard slice 6: the page-load and services tiles.
+- [ ] ADM-13.15 — dashboard slice 7: Home and the critical-problems banner.
 
 Evidence: In progress. ADM-13.00 is this docs-only change: the Admin portal
 specification's System health section (panels, actions, service status

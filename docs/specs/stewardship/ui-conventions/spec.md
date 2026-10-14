@@ -59,7 +59,7 @@ when it lands.
   [unavailable menu pages](#unavailable-menu-pages).
 - Admin page layout: [page help](#page-help),
   [button labels](#button-labels), [shared visual style](#shared-visual-style),
-  [time entry](#time-entry).
+  [status indicators](#status-indicators), [time entry](#time-entry).
 - Tables: [Admin tables](#admin-tables),
   [empty tables and lists](#empty-tables-and-lists),
   [row actions](#row-actions-and-confirmation),
@@ -700,6 +700,21 @@ place, greyed, rather than disappearing, through `data-enabled-when` (#959)
 or `data-locked-when` (open #957) ([conditional
 fields](#conditional-fields)). **Precedent.** #736 and its review
 (Administrator, 2026-10-08), #563, open #957, #959.
+
+Clarification for disclosures. A disclosure moves only content after
+its toggle when it opens or closes, which this rule allows: the toggle
+and everything before it stay put. In a grid of disclosures, content
+beside the toggle counts as before it, so an opened disclosure's content
+never grows the toggle's own grid cell; it opens as a full-width band
+after the toggle's row, and the toggles of that row keep their places.
+The page source keeps each band directly after its toggle, so keyboard
+and screen-reader order goes from the toggle into its content; the next
+toggle of the same row can sit above that band on screen. A live update
+that would change an open band's height waits while the pointer is over
+the grid. First user: the
+[System health dashboard's tile grid](../admin-portal/spec.md#tile-grid)
+(Administrator, 2026-10-13, on
+[#1214](https://github.com/epiphany40223/parishkit/issues/1214)).
 
 Recorded exception (Administrator, 2026-10-11, on
 [#1015](https://github.com/epiphany40223/parishkit/issues/1015)): on the
@@ -1541,6 +1556,41 @@ The portal and the emails share one visual style
   on a night with no reminder the next morning.
 
 Portal notices, cards and headings follow in later slices of #732.
+
+### Status indicators
+
+**Rule.** A status that says whether something is working shows a word, an
+icon whose shape differs per state, and a colour, never colour alone. Its
+look per state:
+
+| State | Icon | Colours (design tokens) | Start bar |
+| --- | --- | --- | --- |
+| Working | `ok`: a check mark in a circle | icon and border `--accent`, background `--accent-soft`, text `--ink` | none |
+| Warning | `warning`: a triangle with an exclamation mark | icon and border `--warning-border`, background `--warning-bg`, text `--warning-ink` | .35 rem, as a notice has today |
+| Error | `error`: a cross in a circle | icon and border `--error-border`, background `--error-bg`, text `--error-ink`, word in bold | .6 rem, new, so an error stands out more than a warning |
+| Not current | `unknown`: a question mark in a dashed circle | icon and border `--border`, background `--paper-soft`, text `--muted` | none |
+
+- **Icons.** The icon is hidden from assistive technology, because the
+  word carries the state. Every mark inside an icon (the check, the
+  exclamation mark, the cross, the question mark) is cut out of the shape, or drawn as an
+  outline, in `currentColor`. No icon has a fixed colour, so forced-colours
+  mode keeps every shape and mark. Icon colours come only from the
+  [design tokens](#shared-visual-style).
+- **Contrast.** Text meets 4.5:1, and icons and borders 3:1, against their
+  background, checked by a contrast test over the token pairs above.
+
+**Why.** A colour-only dot fails colour-blind readers, forced-colours mode
+and print, and one set of shapes lets a reader learn it once. **Shared
+code.** The severity icon set in `components/level-icon.html` and state
+classes in `ui-v1.css` that read the tokens. Today the set draws its marks
+in fixed `#fff` and `#1b1300`, and the `.level-icon-*` colours are fixed
+hex values. The frame slice of
+[#1214](https://github.com/epiphany40223/parishkit/issues/1214) reworks
+the set to these rules, adds the `ok` and `unknown` shapes, moves the level colours into
+tokens, and adds the contrast test. System logs' level icons keep their
+shapes. **Precedent.** #601 (log level icons), #1214 (the
+[System health dashboard](../admin-portal/spec.md#health-dashboard), its
+first user).
 
 ### Time entry
 
