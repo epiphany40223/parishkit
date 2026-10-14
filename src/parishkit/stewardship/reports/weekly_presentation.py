@@ -117,5 +117,4 @@ def snapshot_context(snapshot, *, page=1, item_id=None):
         "pages": pages,
         "previous_page": page - 1 if page > 1 else None,
         "next_page": page + 1 if page < pages else None,
-        "report_url": reverse("admin:weekly_digest_snapshot", args=[snapshot.pk]),
     }

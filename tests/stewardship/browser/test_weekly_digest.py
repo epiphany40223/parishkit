@@ -23,7 +23,8 @@ def test_weekly_detail_is_responsive_accessible_and_escaped(
         "link", name="Open full captured request and current status"
     ).click()
     visible(page.get_by_role("heading", name="Full text at capture"))
-    visible(page.get_by_role("link", name="Return to Weekly report"))
+    # The trail is the way back to the report (navigation rule 3, #521).
+    assert page.get_by_role("link", name="Return to Weekly report").count() == 0
     # The Family DUID is an identifier, shown without grouping.
     assert "1234567" in page.locator("main").inner_text()
     assert "1,234,567" not in page.locator("main").inner_text()

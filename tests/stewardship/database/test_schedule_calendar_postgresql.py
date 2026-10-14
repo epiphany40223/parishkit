@@ -51,6 +51,10 @@ def test_calendar_lists_each_send_and_changes_nothing(auth_service, google):
     # No form of its own (the session's renewal form is every page's).
     assert 'action="/admin/campaign/' not in page
     assert flow_steps(response.content) is None
+    # The trail is the way back (navigation rule 3), not a link of its own
+    # (#521).
+    assert f'<li><a href="{LIST}">Dates and mail schedules</a></li>' in page
+    assert "Return to Dates and mail schedules" not in page
     assert ConfigurationChangeRequest.objects.count() == before
     # The list links it; the calendar takes no parameters and no POST.
     assert f'href="{CALENDAR}"' in unescape(browser.get(LIST).content.decode())

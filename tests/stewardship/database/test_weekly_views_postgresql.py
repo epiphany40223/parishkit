@@ -48,6 +48,10 @@ def test_weekly_page_and_detail_preserve_capture_but_show_current_status(
                 assert b"Saved report" in content
                 assert b"Current actionable request" in content
                 assert b"second@example.org" not in content
+        # The detail page's trail is its way back to the report (navigation
+        # rule 3), not a link of its own (#521).
+        assert f'<li><a href="{path}">Weekly report</a></li>'.encode() in content
+        assert b"Return to Weekly report" not in content
         harness, form, answers, _ = revisit(harness)
         answers["additional_information"] = "NEW-PRIVATE-REQUEST"
         submit(harness, form, answers)

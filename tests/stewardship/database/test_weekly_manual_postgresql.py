@@ -239,6 +239,13 @@ def test_manual_form_requires_csrf_confirmation_and_reviewed_configuration(
             assert (
                 page.status_code == 200 and b"Queue new manual report" in page.content
             )
+            # The trail is the way back (navigation rule 3), not a link of
+            # its own (#521).
+            emailed = reverse("admin:emailed_reports")
+            assert f'<li><a href="{emailed}">Emailed reports</a></li>'.encode() in (
+                page.content
+            )
+            assert b"Return to Emailed reports" not in page.content
             assert browser.post(path, values).status_code == 403
             assert (
                 browser.post(

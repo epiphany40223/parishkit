@@ -45,7 +45,6 @@ def components(context, admin):
         "page": 1,
         "pages": 2,
         "next_page": 2,
-        "report_url": "/weekly-digest",
         # A Production report's response funnel at capture (#477); the
         # template shows it on list pages only.
         **funnel_context(funnel_metrics(), "production"),

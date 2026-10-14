@@ -59,5 +59,4 @@ redraw keeps it) then says what was applied and when, and takes focus.
 {% else %}<p>{% translate "No emails are scheduled yet. Choose New scheduled email to add the Initial invitation first." %}</p>{% endif %}
 <p class="help">{% translate "Every reminder sends after the Initial invitation, no two Family emails share a date and time, and there is at most one Daily and one Weekly Admin digest." %}</p>
 </section>
-<p><a href="{% url 'admin:campaign_settings' %}">{% translate "Return to Campaign settings" %}</a></p>
 {% endblock %}

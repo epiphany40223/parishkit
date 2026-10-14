@@ -33,5 +33,4 @@ never moves the page.
 {% include 'stewardship/schedule-fields.html' %}
 <p>{% translate "Change the dates or a schedule to review it." as unchanged_hint %}{% include 'stewardship/components/review-changes-button.html' with hint=unchanged_hint %}</p></form>
 {% translate "Review dates and mail schedules" as review_title %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="schedule-dates-review" title=review_title apply_url=list_url return_url=list_url outcome_id="schedules-outcome" fallback="schedule-dates-form" %}
-<p><a href="{% url 'admin:campaign_settings' %}">{% translate "Return to Campaign settings" %}</a></p>
 {% endblock %}

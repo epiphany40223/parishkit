@@ -27,7 +27,6 @@ than refused after submit (#563).{% endcomment %}
 {% button type="submit" %}{% translate "Queue new manual report" %}{% endbutton %}
 </form>
 {% endif %}
-<p><a href="{% url 'admin:emailed_reports' %}">{% translate "Return to Emailed reports" %}</a></p>
 <p><a href="{% url 'admin:background' %}">{% translate "View background work" %}</a></p>
 <p><a href="{% url 'admin:deliveries' %}">{% translate "Review outgoing mail" %}</a></p>
 {% endblock %}

@@ -56,5 +56,4 @@
 <details class="technical-details"><summary>{% translate "Past campaigns compared" %}</summary><dl>{% for archive in comparison.archives %}<dt>{{ archive.year }}</dt><dd>{% translate "SHA-256" %} <code>{{ archive.checksum }}</code></dd>{% endfor %}</dl></details>
 <p><a href="{{ comparison_url }}">{% translate "Open the Campaign comparison report" %}</a></p>
 </section>{% endif %}
-<p><a href="{% url 'admin:index' %}">{% translate "Return to Home" %}</a></p>
 {% endblock %}
