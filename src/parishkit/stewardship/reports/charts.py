@@ -158,17 +158,25 @@ def axis_top(values):
 
 
 def short_dollars(value):
-    """A dollar tick label in thousands or millions: "$250K", "$1.6M", "$800".
+    """A dollar tick label in thousands, millions or billions: "$250K", "$1.6M".
 
     A parish's pledge total can reach millions, and full "$1,600,000" labels
     would push the axis title off the image's left edge; the exact amounts
-    are in the table and the exports.
+    are in the table and the exports. The unit is chosen after rounding, from
+    the smallest up: a value that rounds up to 1,000 of one unit is promoted
+    to the next ($999,999 reads "$1M", not "$1000K"). A negative reads
+    "-$250K".
     """
-    for size, suffix in ((1_000_000, "M"), (1_000, "K")):
-        if abs(value) >= size:
-            scaled = f"{value / size:.1f}".rstrip("0").rstrip(".")
-            return f"${scaled}{suffix}"
-    return f"${value:,.0f}"
+    sign, amount = ("-" if value < 0 else ""), abs(value)
+    scaled, suffix = round(amount), ""
+    for unit in ("K", "M", "B"):
+        if scaled < 1000:
+            break
+        amount /= 1000
+        scaled, suffix = round(amount, 1), unit
+    if suffix:
+        return f"{sign}${scaled:,.1f}".removesuffix(".0") + suffix
+    return f"{sign}${scaled:,}"
 
 
 class Panel(NamedTuple):
@@ -398,6 +406,9 @@ def _draw(figure, document, layout):
         for day in document.days
     )
     note = "Missing observations are gaps, not zero." if unavailable else ""
+    # Line the panels' value-axis titles up in one column, whatever the
+    # widths of their tick labels.
+    figure.align_ylabels([row[0] for row in grid])
     figure.text(*layout.note, note, fontsize=8)
     if layout.furniture:
         figure.text(0.97, 0.035, f"{RENDERER_VERSION} · Page 1", fontsize=7, ha="right")

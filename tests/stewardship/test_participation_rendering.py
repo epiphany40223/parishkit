@@ -218,6 +218,16 @@ def test_png_plot_box_is_the_hit_test_layout(email):
         (250_000, "$250K"),
         (1_600_000, "$1.6M"),
         (10_000_000, "$10M"),
+        # The unit is chosen after rounding, so a value is promoted.
+        (999.6, "$1K"),
+        (960_000, "$960K"),
+        (999_949, "$999.9K"),
+        (999_999, "$1M"),
+        (999_999_999, "$1B"),
+        (1_000_000_000, "$1B"),
+        (2_500_000_000_000, "$2,500B"),
+        (-250_000, "-$250K"),
+        (-800, "-$800"),
     ],
 )
 def test_dollar_ticks_are_short(value, label):
