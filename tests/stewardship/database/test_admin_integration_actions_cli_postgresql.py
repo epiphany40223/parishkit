@@ -15,9 +15,14 @@ from uuid import uuid4
 import pytest
 from django.utils import timezone
 
+from parishkit.stewardship import admin_integration_actions
 from parishkit.stewardship.accounts import integration_credentials, integration_views
 from parishkit.stewardship.accounts.integration_credentials import CredentialSummary
-from parishkit.stewardship.accounts.secret_requests import stage_secret_request
+from parishkit.stewardship.accounts.secret_requests import (
+    cancel_secret_request,
+    clean_secret_request,
+    stage_secret_request,
+)
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.jobs.backup_models import BackupDriveProbe
 
@@ -231,8 +236,21 @@ def test_a_pending_or_other_line_dismisses_nothing(admin, monkeypatch):
     """A staged change still running, or a request the page no longer shows,
     is the page's silent no-op: dismissed false, nothing recorded."""
     _, secret, row = paired(admin.service)
-    request_id = uuid4()
     # The settings page's own intake, with synthetic references: no key.
+    request_id = staged(row)
+    for target, wanted in (("parishsoft", request_id), ("parishsoft", uuid4())):
+        code, document, _ = dismiss(admin, secret, target, wanted)
+        assert code == 0, document
+        assert document["result"]["dismissed"] is False
+    # Slack is optional: not set up, it has no line to dismiss.
+    code, document, _ = dismiss(admin, secret, "slack", request_id)
+    assert code == 0 and document["result"]["dismissed"] is False
+    assert count(PAGE_DISMISS) == 0 and count(DISMISS) == 0
+
+
+def staged(row):
+    """Stage a synthetic ParishSoft key change (no key); return its id."""
+    request_id = uuid4()
     stage_secret_request(
         request_id=request_id,
         target="parishsoft",
@@ -243,14 +261,84 @@ def test_a_pending_or_other_line_dismisses_nothing(admin, monkeypatch):
         expected_fingerprint="a" * 64,
         correlation_id=uuid4(),
     )
-    for target, wanted in (("parishsoft", request_id), ("parishsoft", uuid4())):
-        code, document, _ = dismiss(admin, secret, target, wanted)
-        assert code == 0, document
-        assert document["result"]["dismissed"] is False
-    # Slack is optional: not set up, it has no line to dismiss.
-    code, document, _ = dismiss(admin, secret, "slack", request_id)
-    assert code == 0 and document["result"]["dismissed"] is False
+    return request_id
+
+
+def finished(row):
+    """A real finished (cancelled, so ``failed``) key change's id."""
+    request_id = staged(row)
+    cancel_secret_request(
+        request_id=request_id, actor_id=row.principal_id, correlation_id=uuid4()
+    )
+    # Nothing was staged (synthetic reference), so cleanup removes nothing.
+    clean_secret_request(
+        request_id=request_id,
+        target="parishsoft",
+        correlation_id=uuid4(),
+        remove_payload=lambda reference: None,
+    )
+    return request_id
+
+
+def test_a_real_finished_line_is_dismissed_once(admin):
+    """Against the real line: the first dismissal hides it with both events;
+    a repeat finds nothing shown, dismisses nothing and records nothing."""
+    _, secret, row = paired(admin.service)
+    request_id = finished(row)
+    code, shown, _ = admin("integration", "show", "parishsoft", secret=secret)
+    assert code == 0 and shown["result"]["key"]["state"] == "failed"
+    assert shown["result"]["key"]["request_id"] == str(request_id)
+    results = [dismiss(admin, secret, "parishsoft", request_id) for _ in range(2)]
+    assert [code for code, _, _ in results] == [0, 0]
+    assert [document["result"]["dismissed"] for _, document, _ in results] == [
+        True,
+        False,
+    ]
+    assert count(PAGE_DISMISS) == 1 and count(DISMISS) == 1
+    code, shown, _ = admin("integration", "show", "parishsoft", secret=secret)
+    assert code == 0 and shown["result"]["key"] is None
+
+
+def test_a_failed_command_event_rolls_the_dismissal_back(admin, monkeypatch):
+    """The page's event and the command's share one transaction: when the
+    command's cannot be written, neither is, and the line stays shown."""
+    from django.db import DatabaseError
+
+    _, secret, row = paired(admin.service)
+    request_id = finished(row)
+
+    def failing(*_args):
+        """Write nothing; fail as the database would."""
+        raise DatabaseError("synthetic failure")
+
+    original = admin_integration_actions._command_event
+    monkeypatch.setattr(admin_integration_actions, "_command_event", failing)
+    code, document, _ = dismiss(admin, secret, "parishsoft", request_id)
+    assert code != 0 and "result" not in document
     assert count(PAGE_DISMISS) == 0 and count(DISMISS) == 0
+    # Only this patch is put back: the runner's own patches stay.
+    monkeypatch.setattr(admin_integration_actions, "_command_event", original)
+    code, document, _ = dismiss(admin, secret, "parishsoft", request_id)
+    assert code == 0 and document["result"]["dismissed"] is True
+
+
+def test_a_malformed_saved_folder_is_an_invalid_link(backup, monkeypatch):
+    """With no --folder, a saved link that is not a Drive folder (an older or
+    restored configuration) is ``invalid`` at ``folder``, not ``required``."""
+    original = integration_views._records
+
+    def malformed(configuration):
+        """The records with the saved folder link broken."""
+        value = deepcopy(original(configuration))
+        value["backup"]["values"]["settings"]["target"] = "https://example.org/x"
+        return value
+
+    monkeypatch.setattr(integration_views, "_records", malformed)
+    _, secret, _ = paired(backup.service)
+    code, document, _ = probe(backup, secret)
+    assert code == 1
+    assert refused(document, "invalid") == [("folder", "invalid")]
+    assert not BackupDriveProbe.objects.exists() and count(PROBE) == 0
 
 
 def test_a_required_integration_not_set_up_is_not_available(admin):

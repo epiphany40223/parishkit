@@ -1312,8 +1312,9 @@ built yet.
   `integration key status --watch` follows staged, testing, installing and
   acknowledged progress. `integration key finish-switching` is the page's
   **Finish switching to the new key** (`select_credential`) and prompts.
-  `integration dismiss` dismisses a finished change. A failed or expired
-  change leaves the old key installed, as on the page.
+  A failed or expired change leaves the old key installed, as on the
+  page. Dismissing a finished change's line is `integration dismiss` (see
+  [Integrations and credentials](#integrations-and-credentials)).
 - **Backup key.** Three steps, as on the page: `integration backup-key
   challenge --public-key-file <path>` returns the proof-of-possession
   challenge; `integration backup-key preview --intent <token>

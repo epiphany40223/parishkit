@@ -74,19 +74,23 @@ def _command_event(action, caller, actor):
 def _probe_problem(configuration, folder, error):
     """The page's Test access refusal as an ``invalid`` field problem.
 
-    The field is told from the configuration, not the words: Google
-    Workspace mail not set up is at ``google_workspace``; otherwise the
-    folder link (none given and none saved, ``required``, or not a Drive
-    folder) is at ``folder``. The message is the page's own.
+    Which refusal fired is told from the configuration, in
+    ``queue_probe``'s order, not from the words: Google Workspace mail not
+    set up is ``required`` at ``google_workspace``; no folder given and none
+    saved is ``required`` at ``folder``; otherwise the link checked (the
+    given one, or a saved one that is not a Drive folder) is ``invalid`` at
+    ``folder``. The message is the page's own.
     """
     from .accounts.integration_views import _records
     from .admin_changes import InvalidChange
 
-    if "google_workspace" not in _records(configuration):
+    records = _records(configuration)
+    if "google_workspace" not in records:
         field, code = "google_workspace", "required"
+    elif not (folder or "").strip() and "backup" not in records:
+        field, code = "folder", "required"
     else:
-        field = "folder"
-        code = "invalid" if (folder or "").strip() else "required"
+        field, code = "folder", "invalid"
     return InvalidChange([{"field": field, "code": code, "message": str(error)}])
 
 
@@ -153,6 +157,11 @@ def dismiss_key(caller, service, target, *, request_id, context):
     up); a required integration that is not set up is ``not_available``.
     When the line is dismissed, the page's event and
     ``admin_cmd_integration_dismiss`` are recorded in one transaction.
+
+    ``dismiss`` checks for an earlier dismissal without a lock, so a page
+    Dismiss and this command at the same moment may each record their
+    events. That is harmless (the line is hidden either way) and the page
+    alone already behaves so; no lock is added.
     """
     from .accounts.admin_editing import editable_configuration
     from .accounts.integration_credentials import dismiss
