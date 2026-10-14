@@ -5482,11 +5482,41 @@ approaches: a metrics dashboard with time-series charts, a restyle of the
 current page, a colour-only status, hiding healthy areas, and a second page
 for details.
 
-Status: specified, not built. This specification merges after pull requests
-1206, 1210 and 1213, with its System health edits rebased onto theirs, and
-the [delivery slices](#dashboard-delivery-slices) build on that merged
-code. The Administrator answered its questions on 2026-10-13; the
-[decisions](#administrator-decisions-2026-10-13) record the answers.
+Status: the frame is built. The first dashboard pull request delivered
+slices 2a and 2b of the [delivery slices](#dashboard-delivery-slices),
+together with the parts of slice 1 the frame needs: the registry's tile and
+severity for every existing kind, the split of a grouped process problem,
+and `severity` and `tiles` in the command's document. The Administrator
+answered the dashboard's questions on 2026-10-13; the
+[decisions](#administrator-decisions-2026-10-13) record the answers. Until
+the rest of slice 1 lands, the frame applies these defaults:
+
+- **Page notices count on the page.** Four notices are not yet in the
+  shared list: an unknown No-reminders WorkGroup, a newest backup sealed to
+  another key, a requested backup that failed, did not finish or was not
+  picked up, and, in Production, off-site copies that are not set up. They
+  raise their tile to Warning on the page. Home does not list them yet.
+  Slice 1 makes them registry kinds, so Home lists them too and an unknown
+  WorkGroup becomes an error while Reminders are scheduled.
+- **The refusal's counts end the ParishSoft refresh tile's problems**, and
+  Accept this change once follows them directly, as the table asks.
+- **The overall line on a narrow screen.** The Not current form ("Not
+  current. Not checked since 3:42 PM", then the button) cannot fit one
+  320-pixel line, nor one line beside the menu on a window just wide
+  enough to show it. Wherever the line itself is too narrow, it wraps
+  after the state word, and the line reserves the height of that form in
+  every state, so it still never moves the tiles. Only a change of window
+  width changes this, never a poll.
+- **A refused change already accepted once** is shown in the ParishSoft
+  refresh tile but does not count toward its state, as the page counted it
+  before the dashboard.
+- **A refused check.** When a check is refused (signed out or no longer
+  allowed), the page turns Not current at once, with no other notice in
+  the line; the Admin session's own dialog offers to sign in again.
+- **Families the form cannot open, before any ParishSoft download**, is
+  Working, with the summary "No ParishSoft data yet".
+- **Working summaries** come from a first closed set, which slices 3 to 6
+  refine tile by tile.
 
 #### Overall status line
 
@@ -5588,7 +5618,7 @@ Working with a summary that says so ("No current campaign").
 | **Mail** | a mail consumer is halted (`sender_halted`); a mail consumer is not running, or mail dispatch has not reported (the `mail-dispatch` part of `not_running` and `not_reported`); the email provider is unavailable (`mail_provider_unavailable`); an address follow-up's permanent refusal could not be set aside (`refusal_unrecorded`, #1201) | a mail consumer is paused after an outage (`sender_outage`) | "Sending"; "Nothing due"; "Paused by an Administrator since 9:12 AM"; "Waiting for the daily limit until about 3:10 PM"; "Held at Gmail's limit until 4:00 PM"; "Planning is held"; "3 emails waiting to retry" | the [why sends are waiting](#why-sends-are-waiting) panel (every reason, the 24-hour count, the resume time, the Family email progress link) and the [mail sender panel](#mail-sender-panel) (each consumer's line and any open incident) | **Clear the halt** ([ADM-13 PR 4](#clear-a-halted-mail-sender), not built). The panel content keeps its links: the deployment runbook under a not-running line, Pause and resume mail beside the pause line, and Outgoing mail: waiting to retry beside the retry line. |
 | **ParishSoft refresh** | a refused large change (`source_destructive_change`, whose problem block holds the refused counts table); a different organization (`source_tenant_mismatch`); while the campaign has Reminders still scheduled, an unknown No-reminders WorkGroup (`workgroup_missing`, new in the shared list, the #861 concern) | the last full refresh failed (`source_failed`); ParishSoft could not be reached (`source_failing`); the data is out of date (`source_late`); old copies are not being removed (`source_retention_failing`); an unknown No-reminders WorkGroup while no Reminder is scheduled | "Data as of 6:02 AM; connection working", in the words of [ParishSoft data age and connection](../operations/spec.md#parishsoft-data-age-and-connection); "Refreshes held during the email send until about 4:30 PM" | the [ParishSoft refresh panel](#parishsoft-refresh-panel): refresh times, and held and skipped refreshes | **Accept this change once** (its tick box, preview and the example Families of #1213), directly after the refusal's counts table, as the Administrator asked on #1210. The problem sentences keep their links (the ParishSoft outage runbook, Check the No-reminders WorkGroup setting), and Refresh from ParishSoft ends the panel content. |
 | **Backups** | a backup is overdue (`backup_rpo_breach`) | an off-site copy failed (`backup_offsite_failed`); the backup key changed (`backup_key_changed`); the newest backup, finished after the configured key was activated, was sealed to another key (`backup_key_mismatch`, new); a requested backup failed, did not finish or was not picked up (`backup_request_failed`, new, until a newer request or a newer finished backup); in Production, off-site copies are not set up (`offsite_missing`, new) | "Last backup 3 hours ago; off-site copy 3 hours ago"; "Backup requested at 10:42 AM is running" | the [backups panel](#backups-panel) | **Take a backup now**. Off-site backup settings stays in the panel content beside the off-site line. |
-| **Debug logging** | none | in Production, debug logging is in effect in any service (`debug_logging`; a warning because nothing stops working, [decision 11](#administrator-decisions-2026-10-13)) | "Off"; "Turned off from this page by … at …"; "On in 4 services, as expected in Testing" | the [debug logging panel](#debug-logging-panel) | **Turn off debug logging**; in Testing, **Allow debug logging again** after it. |
+| **Debug logging** | none | in Production, debug logging is in effect in any service (`debug_logging`; a warning because nothing stops working, [decision 11](#administrator-decisions-2026-10-13)) | "Off"; "Turned off from this page by … at …"; "On in 4 services, as expected in Testing" | the [debug logging panel](#debug-logging-panel) | **Turn off debug logging**, then **Allow debug logging again**, which only Testing offers; in Production it stays greyed with its reason ([clearing the switch](#turn-off-debug-logging)). |
 | **Families the form cannot open** | none | at least one Family cannot open the form; the check could not run | "Every Family can open the form"; "No current campaign" | the sentence and the link of [Families the form cannot open](#system-health-page) | none; the list's link is in the sentence |
 | **Pages and emails to re-save** | an invitation or reminder cannot be sent until it is fixed (the list's `blocked` items) | other items are marked "Re-save recommended"; the check could not run | "Nothing to re-save"; "No current campaign" | the sentence and the linked list of [pages and emails to re-save](#system-health-page) | none; each item links its editor |
 | **Version and services** | a core service other than mail dispatch is not running or has not reported (the rest of `not_running` and `not_reported`); the services run different versions (`versions_differ`); the database does not match (`schema_mismatch`) | an installer that reports is not running (the installers' part of `not_running`) | "Version 1.12.0, Production, all services running" | the [version panel](#version-panel), then the closed Technical details disclosure (its values as of page load) and the links to System logs and Background work | none; the deployment runbook's upgrade link is in the versions sentence |
@@ -6697,10 +6727,13 @@ written stay in the logs; that the setting on the server still says "on"
 until the server operator recreates the services; and the startup gap
 above.
 
-**Where it appears.** The page draws the action only while some service
-has debug logging in effect, or the switch is set, when the page is drawn;
-once drawn it stays in place, and its buttons follow the 10-second status,
-so nothing moves under the pointer. Its help (who clears the switch, and
+**Where it appears.** In the [Debug logging tile](#health-tiles)'s
+details, after its problems and before the panel content. The page always
+draws the region, in Testing and in Production, whatever the tile's state;
+its buttons, Turn off debug logging and then Allow debug logging again,
+follow the 10-second status in place, each greyed with its reason when it
+does not apply, so nothing appears, disappears or moves under the pointer.
+Its help (who clears the switch, and
 that services started again afterwards log in debug form again where the
 server's setting is still on) is in an "i" toggletip.
 
