@@ -1897,7 +1897,12 @@ waits for PR 5. `schedule preview` admits as the page's form post does,
 recording activity, so it needs a full-scope session although it changes
 nothing. It takes `--expected-version` (the `version` of `schedule show`,
 the page's hidden base digest) and `--changes`, a JSON change document bound
-to the page's own forms: a saved schedule named by `id` keeps what the
+to the page's own forms. Unlike the page, which takes send dates and times in
+the browser's time zone ([#558](https://github.com/epiphany40223/parishkit/issues/558)),
+the document's `date`, `time` and `weekday` are campaign-local wall-clock
+values, as a schedule saves them; when the same document changes
+`window.timezone`, they are in the proposed zone, and a saved schedule the
+document leaves alone keeps its wall-clock time in that zone. A saved schedule named by `id` keeps what the
 document leaves out, `delete` removes it, an entry without `id` adds one,
 and saved schedules it does not name stay unchanged; a daily digest's
 `comparison` is the page's Include Compared with past campaigns checkbox,
